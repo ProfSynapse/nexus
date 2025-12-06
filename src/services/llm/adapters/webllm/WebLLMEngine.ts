@@ -9,6 +9,72 @@
  *
  * Loads WebLLM from CDN (esm.run) - this is the cleanest solution because
  * WebLLM is designed for browsers and esm.run serves browser-compatible ESM.
+ *
+ * ╔═══════════════════════════════════════════════════════════════════════════╗
+ * ║  MULTI-GENERATION CRASH INVESTIGATION NOTES (Dec 6, 2025)                 ║
+ * ╠═══════════════════════════════════════════════════════════════════════════╣
+ * ║  PROBLEM: Second generation (tool continuation) crashes Electron renderer ║
+ * ║                                                                            ║
+ * ║  CRASH LOCATION:                                                           ║
+ * ║  - engine.chat.completions.create() succeeds                              ║
+ * ║  - Stream object is created                                               ║
+ * ║  - Crash happens during `for await (const chunk of stream)` iteration     ║
+ * ║  - Specifically during WebLLM's prefill phase (processing input tokens)  ║
+ * ║  - No JavaScript error is caught - hard renderer process crash            ║
+ * ║                                                                            ║
+ * ║  TESTED MITIGATIONS (all failed):                                          ║
+ * ║  ┌─────────────────────────────────────────────────────────────────────┐  ║
+ * ║  │ 1. Generation lock mechanism                                        │  ║
+ * ║  │    - Added acquireGenerationLock() / releaseGenerationLock()       │  ║
+ * ║  │    - Ensures sequential access to GPU                               │  ║
+ * ║  │    - Result: Lock acquired, crash still happens during iteration   │  ║
+ * ║  ├─────────────────────────────────────────────────────────────────────┤  ║
+ * ║  │ 2. KV cache reset BEFORE generation                                 │  ║
+ * ║  │    - await this.resetChat() before each generation                  │  ║
+ * ║  │    - 100-300ms delay after reset                                    │  ║
+ * ║  │    - Result: Reset completes, crash still happens during prefill   │  ║
+ * ║  ├─────────────────────────────────────────────────────────────────────┤  ║
+ * ║  │ 3. KV cache reset AFTER generation                                  │  ║
+ * ║  │    - Reset in finally block after each generation                   │  ║
+ * ║  │    - Result: First gen resets successfully, second gen crashes     │  ║
+ * ║  ├─────────────────────────────────────────────────────────────────────┤  ║
+ * ║  │ 4. NO KV cache resets at all                                        │  ║
+ * ║  │    - Skipped all resetChat() calls                                  │  ║
+ * ║  │    - Result: Still crashes - not reset-related                      │  ║
+ * ║  ├─────────────────────────────────────────────────────────────────────┤  ║
+ * ║  │ 5. Non-streaming API for continuations                              │  ║
+ * ║  │    - Used stream: false for second generation                       │  ║
+ * ║  │    - Result: Also crashes - not streaming-specific                  │  ║
+ * ║  ├─────────────────────────────────────────────────────────────────────┤  ║
+ * ║  │ 6. Longer delays between generations                                │  ║
+ * ║  │    - 1000ms wait before second generation                           │  ║
+ * ║  │    - 300ms after KV reset                                           │  ║
+ * ║  │    - Result: Still crashes - not timing-related                     │  ║
+ * ║  └─────────────────────────────────────────────────────────────────────┘  ║
+ * ║                                                                            ║
+ * ║  ENVIRONMENT:                                                              ║
+ * ║  - macOS with Apple Silicon (M4)                                          ║
+ * ║  - 24GB unified memory                                                    ║
+ * ║  - WebGPU -> Metal translation layer                                      ║
+ * ║  - WebLLM v0.2.80 via CDN (esm.run)                                       ║
+ * ║  - Model: Nexus-Electron-Q3.0.2 (Qwen3-8B, 16K context, q4f16)           ║
+ * ║                                                                            ║
+ * ║  HYPOTHESIS:                                                               ║
+ * ║  WebGPU resource management bug in WebLLM or browser WebGPU->Metal layer ║
+ * ║  The second prefill allocates GPU buffers that conflict with state from  ║
+ * ║  the first generation, causing memory corruption or invalid GPU state.   ║
+ * ║  Similar issues reported: https://github.com/mlc-ai/web-llm/issues/647   ║
+ * ║                                                                            ║
+ * ║  CURRENT WORKAROUND:                                                       ║
+ * ║  Tool continuations are blocked in WebLLMAdapter.generateStreamAsync()   ║
+ * ║  Users see friendly error message suggesting Ollama/LM Studio             ║
+ * ║                                                                            ║
+ * ║  FUTURE FIX OPTIONS:                                                       ║
+ * ║  1. Wait for WebLLM upstream fix                                          ║
+ * ║  2. Try engine.unload() + reload between generations (slow)              ║
+ * ║  3. Compile custom WASM with different memory management                  ║
+ * ║  4. Test on different browser/Electron versions                           ║
+ * ╚═══════════════════════════════════════════════════════════════════════════╝
  */
 
 import { WebLLMModelSpec, WebLLMError } from './types';
@@ -46,6 +112,94 @@ let webllm: typeof WebLLMTypes | null = null;
 let sharedEngineInstance: WebLLMEngine | null = null;
 
 /**
+ * Patch WebAssembly.instantiate to inject FFI stub functions
+ *
+ * Custom-compiled WASMs may import TVM FFI functions that the CDN version
+ * of web-llm doesn't provide. We intercept WebAssembly.instantiate and
+ * inject no-op stubs into the imports object.
+ *
+ * This is necessary because:
+ * 1. Web-llm is loaded from CDN (esm.run), so we can't patch node_modules
+ * 2. The stubs must be in the WASM import object, not just on window
+ * 3. These are GPU stream management functions not used by WebGPU
+ */
+function patchWebAssemblyInstantiate(): void {
+  const win = window as any;
+
+  // Check if we've already patched
+  if (win.__nexus_wasm_patched) {
+    return;
+  }
+
+  console.log('[WebLLMEngine] Patching WebAssembly.instantiate for custom WASM compatibility...');
+
+  // Store original functions
+  const originalInstantiate = WebAssembly.instantiate.bind(WebAssembly);
+  const originalInstantiateStreaming = WebAssembly.instantiateStreaming?.bind(WebAssembly);
+
+  // FFI stub functions - these are for CUDA/ROCm features not used by WebGPU
+  // Add more stubs here as needed when new LinkErrors appear
+  const ffiStubs: Record<string, () => number> = {
+    TVMFFIEnvSetStream: () => 0,      // GPU stream management
+    TVMFFIEnvGetStream: () => 0,      // GPU stream management
+    TVMFFIEnvCheckSignals: () => 0,   // Interrupt/signal handling
+  };
+
+  // Helper to inject stubs into imports
+  function injectStubs(imports: WebAssembly.Imports | undefined): WebAssembly.Imports {
+    if (!imports) {
+      return { env: { ...ffiStubs } };
+    }
+
+    // Clone imports to avoid mutating the original
+    const patchedImports: WebAssembly.Imports = {};
+
+    for (const namespace of Object.keys(imports)) {
+      patchedImports[namespace] = { ...imports[namespace] };
+    }
+
+    // Inject stubs into 'env' namespace (where TVM FFI functions live)
+    if (!patchedImports.env) {
+      patchedImports.env = {};
+    }
+
+    // Add stubs only if not already present
+    for (const [name, stub] of Object.entries(ffiStubs)) {
+      if (!(name in (patchedImports.env as object))) {
+        (patchedImports.env as any)[name] = stub;
+      }
+    }
+
+    return patchedImports;
+  }
+
+  // Patch WebAssembly.instantiate
+  WebAssembly.instantiate = function(
+    source: BufferSource | WebAssembly.Module,
+    imports?: WebAssembly.Imports
+  ): Promise<WebAssembly.WebAssemblyInstantiatedSource | WebAssembly.Instance> {
+    const patchedImports = injectStubs(imports);
+    return originalInstantiate(source, patchedImports);
+  } as typeof WebAssembly.instantiate;
+
+  // Patch WebAssembly.instantiateStreaming if available
+  if (originalInstantiateStreaming) {
+    WebAssembly.instantiateStreaming = function(
+      source: Response | PromiseLike<Response>,
+      imports?: WebAssembly.Imports
+    ): Promise<WebAssembly.WebAssemblyInstantiatedSource> {
+      const patchedImports = injectStubs(imports);
+      return originalInstantiateStreaming(source, patchedImports);
+    };
+  }
+
+  // Mark as patched
+  win.__nexus_wasm_patched = true;
+
+  console.log('[WebLLMEngine] WebAssembly.instantiate patched with FFI stubs');
+}
+
+/**
  * Load WebLLM dynamically from CDN at runtime
  *
  * Uses jsDelivr's esm.run service which serves browser-compatible ESM modules.
@@ -56,6 +210,10 @@ async function loadWebLLM(): Promise<typeof WebLLMTypes> {
     console.log('[WebLLMEngine] Using cached WebLLM module');
     return webllm;
   }
+
+  // Patch WebAssembly.instantiate BEFORE loading WebLLM
+  // This ensures the stubs are injected when WASM is instantiated
+  patchWebAssemblyInstantiate();
 
   console.log('[WebLLMEngine] Loading WebLLM from CDN...');
 
@@ -145,6 +303,9 @@ export class WebLLMEngine {
   private isGenerating = false;
   private currentModelId: string | null = null;
   private abortController: AbortController | null = null;
+  private generationLock: Promise<void> = Promise.resolve();
+  private generationLockRelease: (() => void) | null = null;
+  private hasGeneratedOnce = false; // Track if we've done at least one generation
 
   /**
    * Get the shared singleton engine instance
@@ -156,6 +317,30 @@ export class WebLLMEngine {
       sharedEngineInstance = new WebLLMEngine();
     }
     return sharedEngineInstance;
+  }
+
+  /**
+   * Acquire the generation lock - ensures only one generation at a time
+   * This prevents race conditions when tool continuations start before previous generation cleanup
+   */
+  private async acquireGenerationLock(): Promise<void> {
+    // Wait for any existing generation to complete
+    await this.generationLock;
+
+    // Create a new lock
+    this.generationLock = new Promise<void>((resolve) => {
+      this.generationLockRelease = resolve;
+    });
+  }
+
+  /**
+   * Release the generation lock
+   */
+  private releaseGenerationLock(): void {
+    if (this.generationLockRelease) {
+      this.generationLockRelease();
+      this.generationLockRelease = null;
+    }
   }
 
   /**
@@ -346,11 +531,13 @@ export class WebLLMEngine {
   /**
    * Reset the chat state (clears KV cache from GPU memory)
    * CRITICAL for tool continuations - without this, OOM occurs!
+   * NOTE: Only call resetChat ONCE - calling twice can corrupt WebGPU state
    */
   async resetChat(): Promise<void> {
     if (this.engine) {
       console.log('[NEXUS_DEBUG] Resetting chat state (clearing KV cache)...');
       try {
+        // Single reset call - double reset can corrupt WebGPU state on Apple Silicon
         await this.engine.resetChat();
         console.log('[NEXUS_DEBUG] KV cache cleared successfully');
       } catch (error) {
@@ -362,6 +549,7 @@ export class WebLLMEngine {
 
   /**
    * Generate a streaming response
+   * @param isToolContinuation - If true, skip resetChat to preserve conversation context
    */
   async *generateStream(
     messages: { role: string; content: string }[],
@@ -370,18 +558,28 @@ export class WebLLMEngine {
       maxTokens?: number;
       topP?: number;
       stopSequences?: string[];
+      isToolContinuation?: boolean;
     }
   ): AsyncGenerator<StreamChunk | GenerationResult, void, unknown> {
     if (!this.engine) {
       throw new WebLLMError('Engine not initialized', 'GENERATION_FAILED');
     }
 
-    // If there's a lingering generation, try to clean it up
+    const isToolContinuation = options?.isToolContinuation || false;
+
+    // CRITICAL: Acquire lock to ensure sequential generation
+    // This prevents race conditions during tool continuations
+    console.log('[NEXUS_DEBUG] Acquiring generation lock...');
+    await this.acquireGenerationLock();
+    console.log('[NEXUS_DEBUG] Generation lock acquired');
+
+    // If there's a lingering generation flag, force cleanup
     if (this.isGenerating) {
-      console.warn('[NEXUS_DEBUG] ⚠️ Generation flag still set, attempting cleanup...');
+      console.warn('[NEXUS_DEBUG] ⚠️ Generation flag still set after lock, forcing cleanup...');
       try {
         this.engine.interruptGenerate();
-        await new Promise(resolve => setTimeout(resolve, 200));
+        // Longer wait for interrupt to take effect
+        await new Promise(resolve => setTimeout(resolve, 500));
       } catch (e) {
         console.warn('[NEXUS_DEBUG] Interrupt failed:', e);
       }
@@ -399,11 +597,25 @@ export class WebLLMEngine {
         // Ignore - might not have anything to interrupt
       }
 
-      // CRITICAL: Clear KV cache before each generation to prevent crashes
-      await this.resetChat();
+      console.log(`[NEXUS_DEBUG] isToolContinuation: ${isToolContinuation}`);
 
-      // Give GPU time to actually deallocate memory after resetChat
-      await new Promise(resolve => setTimeout(resolve, 200));
+      // For tool continuations, add a longer delay to let WebGPU fully release resources
+      if (isToolContinuation) {
+        console.log('[NEXUS_DEBUG] Tool continuation - waiting 1s for WebGPU resource cleanup...');
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        console.log('[NEXUS_DEBUG] WebGPU cooldown complete');
+      }
+
+      // Always reset KV cache BEFORE each generation to ensure clean state
+      console.log('[NEXUS_DEBUG] Pre-generation KV cache reset...');
+      try {
+        await this.resetChat();
+        // Longer delay after reset for GPU to fully process
+        await new Promise(resolve => setTimeout(resolve, 300));
+        console.log('[NEXUS_DEBUG] Pre-generation KV reset complete');
+      } catch (e) {
+        console.warn('[NEXUS_DEBUG] Pre-generation reset failed:', e);
+      }
 
       // Log message sizes for debugging
       const totalChars = messages.reduce((sum, m) => sum + m.content.length, 0);
@@ -415,16 +627,27 @@ export class WebLLMEngine {
         });
       }
 
+      // Create streaming request (same for first gen and tool continuations)
       console.log('[NEXUS_DEBUG] Creating chat completion stream...');
-      const stream = await this.engine.chat.completions.create({
-        messages: messages as WebLLMTypes.ChatCompletionMessageParam[],
-        temperature: options?.temperature ?? 0.7,
-        max_tokens: options?.maxTokens ?? 2048,
-        top_p: options?.topP ?? 0.95,
-        stop: options?.stopSequences,
-        stream: true,
-        stream_options: { include_usage: true },
-      });
+
+      // Wrap stream creation in try-catch to capture WebGPU errors
+      let stream: any;
+      try {
+        console.log('[NEXUS_DEBUG] Calling engine.chat.completions.create (streaming)...');
+        stream = await this.engine.chat.completions.create({
+          messages: messages as WebLLMTypes.ChatCompletionMessageParam[],
+          temperature: options?.temperature ?? 0.7,
+          max_tokens: options?.maxTokens ?? 2048,
+          top_p: options?.topP ?? 0.95,
+          stop: options?.stopSequences,
+          stream: true,
+          stream_options: { include_usage: true },
+        });
+        console.log('[NEXUS_DEBUG] Stream created successfully');
+      } catch (streamError) {
+        console.error('[NEXUS_DEBUG] Stream creation FAILED:', streamError);
+        throw streamError;
+      }
 
       let fullContent = '';
       let usage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
@@ -433,7 +656,23 @@ export class WebLLMEngine {
 
       console.log('[WebLLMEngine] Starting stream iteration...');
 
-      for await (const chunk of stream) {
+      // Debug: Check WebLLM internal state before iteration
+      try {
+        const engineAny = this.engine as any;
+        console.log('[NEXUS_DEBUG] WebLLM internal state:', {
+          hasChat: !!engineAny?.chat,
+          hasPipeline: !!engineAny?.currentModelId,
+          modelId: engineAny?.currentModelId,
+        });
+      } catch (e) {
+        console.log('[NEXUS_DEBUG] Could not inspect WebLLM state:', e);
+      }
+
+      // Wrap stream iteration in try-catch to capture actual WebGPU errors
+      console.log('[NEXUS_DEBUG] About to start iterating stream (prefill begins here)...');
+
+      try {
+        for await (const chunk of stream) {
         chunkCount++;
 
         // Log first few chunks in detail
@@ -473,6 +712,21 @@ export class WebLLMEngine {
           };
           console.log(`[WebLLMEngine] Usage:`, usage);
         }
+        }
+      } catch (streamIterError) {
+        // CRITICAL: Capture the actual WebGPU/WebLLM error
+        console.error('[NEXUS_DEBUG] ⚠️ STREAM ITERATION CRASHED:', streamIterError);
+        console.error('[NEXUS_DEBUG] Error type:', streamIterError?.constructor?.name);
+        console.error('[NEXUS_DEBUG] Error message:', streamIterError instanceof Error ? streamIterError.message : String(streamIterError));
+        console.error('[NEXUS_DEBUG] Error stack:', streamIterError instanceof Error ? streamIterError.stack : 'N/A');
+
+        // Check if it's a GPU device lost error
+        if (streamIterError instanceof Error && streamIterError.message?.includes('Device')) {
+          console.error('[NEXUS_DEBUG] GPU Device Lost - this is a WebGPU issue');
+        }
+
+        // Re-throw to propagate error
+        throw streamIterError;
       }
 
       console.log(`[WebLLMEngine] Stream complete. Chunks: ${chunkCount}, Content: "${fullContent.slice(0, 100)}..."`)
@@ -484,8 +738,19 @@ export class WebLLMEngine {
         finishReason,
       } as GenerationResult;
     } finally {
+      console.log('[NEXUS_DEBUG] Generation cleanup: resetting flags');
       this.isGenerating = false;
       this.abortController = null;
+
+      // NOTE: We do NOT reset KV cache after generation anymore
+      // The resetChat() was causing empty responses on tool continuations
+      // because WebLLM seems to need the KV cache state to persist
+      // We only reset at the START of first generation (hasGeneratedOnce check)
+      console.log('[NEXUS_DEBUG] Skipping post-generation KV reset (preserving for continuations)');
+
+      // Release the generation lock so next generation can proceed
+      console.log('[NEXUS_DEBUG] Releasing generation lock');
+      this.releaseGenerationLock();
     }
   }
 

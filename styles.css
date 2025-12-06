@@ -4921,3 +4921,177 @@ a:hover {
     font-size: var(--font-ui-small);
     color: var(--text-muted);
 }
+
+/* =========================== */
+/* NEXUS MODAL - REDESIGN     */
+/* =========================== */
+
+.nexus-modal {
+    padding: 0;
+}
+
+/* Hide the "Ready/Saved" status for Nexus - not applicable */
+.llm-provider-modal:has(.nexus-modal) .save-status {
+    display: none;
+}
+
+.nexus-description {
+    margin: 0 0 20px 0;
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
+    line-height: 1.5;
+}
+
+/* Device Status - Compact Single Line */
+.nexus-device-card {
+    margin-bottom: 16px;
+}
+
+.nexus-device-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: var(--font-ui-small);
+    color: var(--text-muted);
+}
+
+.nexus-device-icon {
+    flex-shrink: 0;
+}
+
+.nexus-device-success .nexus-device-icon {
+    color: var(--color-green);
+}
+
+.nexus-device-warning .nexus-device-icon {
+    color: var(--color-yellow);
+}
+
+.nexus-device-error .nexus-device-icon {
+    color: var(--color-red);
+}
+
+.nexus-icon-spin {
+    animation: nexus-icon-spin 1s linear infinite;
+}
+
+@keyframes nexus-icon-spin {
+    0% { opacity: 0.3; }
+    50% { opacity: 1; }
+    100% { opacity: 0.3; }
+}
+
+/* Model Section */
+.nexus-model-section {
+    margin-bottom: 20px;
+}
+
+.nexus-dropdown-container {
+    margin-bottom: 8px;
+}
+
+.nexus-dropdown-container .setting-item {
+    border: none;
+    padding: 0;
+}
+
+.nexus-dropdown-container .setting-item-control {
+    width: 100%;
+}
+
+.nexus-dropdown-container select {
+    width: 100%;
+}
+
+.nexus-label {
+    display: block;
+    font-size: var(--font-ui-small);
+    font-weight: 500;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+}
+
+.nexus-model-desc {
+    margin-bottom: 16px;
+}
+
+.nexus-model-desc-text {
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+}
+
+/* Action Area */
+.nexus-action-area {
+    margin-top: 16px;
+}
+
+/* Download Setting - full width CTA button */
+.nexus-download-setting.setting-item {
+    border: none;
+    padding: 0;
+}
+
+.nexus-download-setting .setting-item-control {
+    width: 100%;
+}
+
+.nexus-download-setting .setting-item-control button {
+    width: 100%;
+}
+
+/* Delete Setting - just the red button */
+.nexus-delete-setting.setting-item {
+    border: none;
+    padding: 0;
+}
+
+.nexus-delete-setting .setting-item-info {
+    display: none;
+}
+
+/* Cancel Setting - compact inline button */
+.nexus-cancel-setting.setting-item {
+    border: none;
+    padding: 0;
+    margin: 0;
+}
+
+.nexus-cancel-setting .setting-item-info {
+    display: none;
+}
+
+.nexus-cancel-setting .setting-item-control {
+    width: auto;
+}
+
+/* Progress */
+.nexus-progress-container {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.nexus-progress-bar {
+    height: 6px;
+    background: var(--background-modifier-border);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.nexus-progress-fill {
+    height: 100%;
+    background: var(--interactive-accent);
+    border-radius: 3px;
+    transition: width 0.3s ease;
+}
+
+.nexus-progress-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.nexus-progress-text {
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+}

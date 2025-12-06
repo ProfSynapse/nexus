@@ -173,16 +173,29 @@ export class ConversationService {
           content: msg.content || '',
           timestamp: msg.timestamp,
           state: msg.state,
-          toolCalls: msg.toolCalls?.map(tc => ({
-            id: tc.id,
-            type: tc.type,
-            name: tc.function.name,
-            function: tc.function,
-            parameters: JSON.parse(tc.function.arguments),
-            result: tc.result,
-            success: tc.success,
-            error: tc.error
-          })),
+          toolCalls: msg.toolCalls?.map(tc => {
+            // Handle both formats:
+            // 1. Standard OpenAI format: { function: { name, arguments } }
+            // 2. Result format from buildToolMetadata: { name, result, success, error }
+            const anyTc = tc as any;
+            const hasFunction = tc.function && typeof tc.function === 'object';
+            const name = hasFunction ? tc.function.name : anyTc.name;
+            const parameters = hasFunction && tc.function.arguments
+              ? (typeof tc.function.arguments === 'string'
+                  ? JSON.parse(tc.function.arguments)
+                  : tc.function.arguments)
+              : anyTc.parameters;
+            return {
+              id: tc.id,
+              type: tc.type || 'function',
+              name,
+              function: tc.function || { name, arguments: JSON.stringify(parameters || {}) },
+              parameters: parameters || {},
+              result: anyTc.result,
+              success: anyTc.success,
+              error: anyTc.error
+            };
+          }),
           reasoning: msg.reasoning,
           metadata: msg.metadata
         }))
@@ -683,16 +696,29 @@ export class ConversationService {
         content: msg.content || '',
         timestamp: msg.timestamp,
         state: msg.state,
-        toolCalls: msg.toolCalls?.map(tc => ({
-          id: tc.id,
-          type: tc.type,
-          name: tc.function.name,
-          function: tc.function,
-          parameters: JSON.parse(tc.function.arguments),
-          result: tc.result,
-          success: tc.success,
-          error: tc.error
-        })),
+        toolCalls: msg.toolCalls?.map(tc => {
+          // Handle both formats:
+          // 1. Standard OpenAI format: { function: { name, arguments } }
+          // 2. Result format from buildToolMetadata: { name, result, success, error }
+          const anyTc = tc as any;
+          const hasFunction = tc.function && typeof tc.function === 'object';
+          const name = hasFunction ? tc.function.name : anyTc.name;
+          const parameters = hasFunction && tc.function.arguments
+            ? (typeof tc.function.arguments === 'string'
+                ? JSON.parse(tc.function.arguments)
+                : tc.function.arguments)
+            : anyTc.parameters;
+          return {
+            id: tc.id,
+            type: tc.type || 'function',
+            name,
+            function: tc.function || { name, arguments: JSON.stringify(parameters || {}) },
+            parameters: parameters || {},
+            result: anyTc.result,
+            success: anyTc.success,
+            error: anyTc.error
+          };
+        }),
         reasoning: msg.reasoning,
         metadata: msg.metadata
       })),

@@ -50,7 +50,7 @@
         "@anthropic-ai/sdk": "^0.68.0",
         "@google/genai": "^1.28.0",
         "@mistralai/mistralai": "^1.10.0",
-        "@mlc-ai/web-llm": "^0.2.78",
+        "@mlc-ai/web-llm": "^0.2.80",
         "@modelcontextprotocol/sdk": "^1.20.2",
         "axios": "^1.13.1",
         "cors": "^2.8.5",

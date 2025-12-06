@@ -141,12 +141,43 @@ export class RequestRouter {
     private getAgent(name: string): IAgent {
         const agent = this.agents.get(name);
         if (!agent) {
+            // Build helpful error with suggestions
+            const errorMessage = this.buildAgentNotFoundError(name);
             throw new McpError(
                 ErrorCode.InvalidParams,
-                `Agent not found: ${name}`
+                errorMessage
             );
         }
         return agent;
+    }
+
+    /**
+     * Build helpful error message when agent is not found
+     * Suggests correct agent name if case is wrong, or lists available agents
+     */
+    private buildAgentNotFoundError(incorrectName: string): string {
+        const lines: string[] = [];
+
+        // Check for case-insensitive match
+        const lowerName = incorrectName.toLowerCase();
+        for (const agentName of this.agents.keys()) {
+            if (agentName.toLowerCase() === lowerName) {
+                lines.push(`Agent "${incorrectName}" not found.`);
+                lines.push(`💡 Did you mean: ${agentName}?`);
+                lines.push('');
+                lines.push('Note: Agent names are case-sensitive.');
+                return lines.join('\n');
+            }
+        }
+
+        // List available agents
+        const agentNames = Array.from(this.agents.keys());
+        lines.push(`Agent "${incorrectName}" not found.`);
+        lines.push('');
+        lines.push('Available agents:');
+        agentNames.forEach(name => lines.push(`  - ${name}`));
+
+        return lines.join('\n');
     }
 
     // Expose dependencies for testing or extended functionality

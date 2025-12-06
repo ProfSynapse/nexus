@@ -45,11 +45,9 @@ export const HF_BASE_URL = 'https://huggingface.co';
  * ╚═══════════════════════════════════════════════════════════════════════════╝
  */
 export const MODEL_LIBS = {
-  // Qwen3-8B library for Nexus Electron models (7-9B)
-  QWEN3_8B: 'https://raw.githubusercontent.com/mlc-ai/binary-mlc-llm-libs/main/web-llm-models/v0_2_80/Qwen3-8B-q4f16_1-ctx4k_cs1k-webgpu.wasm',
-
-  // Legacy Mistral 7B library (for old nexus-tools models)
-  MISTRAL_7B: 'https://raw.githubusercontent.com/mlc-ai/binary-mlc-llm-libs/main/web-llm-models/v0_2_80/Mistral-7B-Instruct-v0.3-q4f16_1-ctx4k_cs1k-webgpu.wasm',
+  // Qwen3-8B library with 16K context window - Custom compiled for Nexus
+  // Optimized for lower VRAM usage (~6.4GB total with 4K cache used)
+  QWEN3_8B_16K: 'https://huggingface.co/professorsynapse/Nexus-Electron-Q3-MLC/resolve/main/Nexus-Electron-Q3.0.2-ctx16k-webgpu.wasm',
 
   // ADD NEW LIBRARIES HERE:
   // PHI_3_MINI: 'https://raw.githubusercontent.com/.../Phi-3-mini-4k-instruct-q4f16_1-...-webgpu.wasm',
@@ -79,21 +77,21 @@ export const WEBLLM_MODELS: WebLLMModelSpec[] = [
   // ═══════════════════════════════════════════════════════════════════════════
   // NEXUS ELECTRON - 8B Qwen3-based model fine-tuned for tool calling
   // Uses <tool_call> XML format for function calling (native Qwen3 format)
+  // 16K context - balanced for VRAM efficiency and conversation length
+  // NOTE: Base VRAM ~6GB, KV cache ~2.3GB for full 16K context
   // ═══════════════════════════════════════════════════════════════════════════
   {
-    id: 'nexus-electron-q3.0.1',
+    id: 'nexus-electron-q3.0.2',
     name: 'Nexus Electron',
     provider: 'webllm',
-    apiName: 'nexus-electron-q3.0.1',
-    // IMPORTANT: Must match WASM library's context window!
-    // The WASM is ctx4k (4096 tokens), NOT 32k
-    contextWindow: 4096,
-    maxTokens: 2048, // Max output = half of context to leave room for input
-    vramRequired: 5.5,
+    apiName: 'nexus-electron-q3.0.2',
+    contextWindow: 16384,
+    maxTokens: 4096, // Larger output for extended context
+    vramRequired: 6, // Base requirement; KV cache scales with context usage
     quantization: 'q4f16',
     huggingFaceRepo: 'professorsynapse/Nexus-Electron-Q3.0.1-webllm',
-    modelLibUrl: MODEL_LIBS.QWEN3_8B,
-    flatStructure: true, // Files at repo root, not in quantization subfolder
+    modelLibUrl: MODEL_LIBS.QWEN3_8B_16K, // Custom compiled WASM with 16K context
+    flatStructure: true,
     capabilities: {
       supportsJSON: true,
       supportsImages: false,

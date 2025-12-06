@@ -91,7 +91,9 @@ export abstract class BaseAgent implements IAgent {
   async executeMode(modeSlug: string, params: any): Promise<any> {
     const mode = this.modes.get(modeSlug);
     if (!mode) {
-      throw new Error(`Mode ${modeSlug} not found in agent ${this.name}`);
+      // Build helpful error with suggestions
+      const errorInfo = this.buildModeNotFoundError(modeSlug);
+      throw new Error(errorInfo);
     }
     
     // Session ID and description are now required for all tool calls (in context)
@@ -146,5 +148,90 @@ export abstract class BaseAgent implements IAgent {
    */
   onunload(): void {
     // Default implementation does nothing
+  }
+
+  /**
+   * Build a helpful error message when a mode is not found
+   * Checks if the mode exists on other agents and suggests the correct one
+   */
+  private buildModeNotFoundError(modeSlug: string): string {
+    const lines: string[] = [];
+
+    // Check if this mode exists on another agent
+    if (this.agentManager) {
+      const correctAgent = this.findModeInOtherAgents(modeSlug);
+      if (correctAgent) {
+        lines.push(`Mode "${modeSlug}" not found in "${this.name}".`);
+        lines.push(`💡 Did you mean: ${correctAgent.agentName} with mode: ${correctAgent.modeName}?`);
+        lines.push('');
+        lines.push('Correct usage:');
+        lines.push(`  Tool: ${correctAgent.agentName}`);
+        lines.push(`  Arguments: { "mode": "${correctAgent.modeName}", ... }`);
+        return lines.join('\n');
+      }
+    }
+
+    // List available modes on this agent
+    const availableModes = Array.from(this.modes.keys());
+    lines.push(`Mode "${modeSlug}" not found in agent "${this.name}".`);
+    lines.push('');
+    lines.push(`Available modes for ${this.name}:`);
+    availableModes.forEach(m => lines.push(`  - ${m}`));
+
+    return lines.join('\n');
+  }
+
+  /**
+   * Search other agents for a mode by slug
+   * Returns the agent name and mode slug if found
+   */
+  private findModeInOtherAgents(modeSlug: string): { agentName: string; modeName: string } | null {
+    if (!this.agentManager) return null;
+
+    // Common LLM mistakes - maps FAKE mode names to correct agent/mode
+    // Only include modes that DON'T exist anywhere
+    const modeAliases: Record<string, { agent: string; mode: string }> = {
+      // LLMs often use "Note" instead of "Content" for content ops
+      // Note: deleteNote EXISTS on vaultManager, so not included here
+      'createNote': { agent: 'contentManager', mode: 'createContent' },
+      'readNote': { agent: 'contentManager', mode: 'readContent' },
+      'appendNote': { agent: 'contentManager', mode: 'appendContent' },
+      'writeNote': { agent: 'contentManager', mode: 'createContent' },
+      'editNote': { agent: 'contentManager', mode: 'replaceContent' },
+
+      // LLMs might call generic "search" on wrong agent
+      'search': { agent: 'vaultLibrarian', mode: 'searchContent' },
+    };
+
+    // Check aliases first
+    const alias = modeAliases[modeSlug];
+    if (alias && alias.agent !== this.name) {
+      return { agentName: alias.agent, modeName: alias.mode };
+    }
+
+    // Search known agent names for exact mode match
+    const agentNames = ['vaultManager', 'contentManager', 'vaultLibrarian', 'memoryManager', 'commandManager', 'agentManager'];
+
+    for (const agentName of agentNames) {
+      if (agentName === this.name) continue;
+
+      const agent = this.agentManager.getAgent(agentName);
+      if (agent) {
+        // Exact match
+        const mode = agent.getMode(modeSlug);
+        if (mode) {
+          return { agentName, modeName: mode.slug };
+        }
+
+        // Case-insensitive match
+        for (const m of agent.getModes()) {
+          if (m.slug.toLowerCase() === modeSlug.toLowerCase()) {
+            return { agentName, modeName: m.slug };
+          }
+        }
+      }
+    }
+
+    return null;
   }
 }

@@ -13,6 +13,42 @@
  * Note: Uses main-thread execution instead of Web Workers because
  * Obsidian's sandboxed Electron environment blocks CDN imports in workers.
  * WebGPU handles GPU compute, so main thread execution doesn't block UI.
+ *
+ * ╔═══════════════════════════════════════════════════════════════════════════╗
+ * ║  ⚠️ KNOWN LIMITATION: TOOL CONTINUATIONS DISABLED (Dec 2025)              ║
+ * ╠═══════════════════════════════════════════════════════════════════════════╣
+ * ║  Tool calling works for the FIRST generation only. Multi-turn tool        ║
+ * ║  continuations (ping-pong pattern) cause a hard Electron/WebGPU crash.    ║
+ * ║                                                                            ║
+ * ║  SYMPTOMS:                                                                 ║
+ * ║  - First generation completes successfully with tool call                 ║
+ * ║  - Tool execution works fine                                              ║
+ * ║  - Second generation (continuation) crashes Obsidian renderer process    ║
+ * ║  - Crash happens during prefill phase of stream iteration                ║
+ * ║  - No JavaScript error is caught - it's a hard renderer crash            ║
+ * ║                                                                            ║
+ * ║  INVESTIGATION DONE (Dec 6, 2025):                                         ║
+ * ║  1. Generation lock mechanism - prevents concurrent GPU ops               ║
+ * ║  2. KV cache reset timing - before/after/skip - all crash                 ║
+ * ║  3. Non-streaming API for continuations - also crashes                    ║
+ * ║  4. Longer delays (1s+) between generations - still crashes              ║
+ * ║  5. Skipping ALL resets - crashes during prefill                          ║
+ * ║                                                                            ║
+ * ║  LIKELY CAUSE:                                                             ║
+ * ║  WebGPU resource management issue in WebLLM on Apple Silicon.             ║
+ * ║  The second prefill operation corrupts GPU memory or hits an             ║
+ * ║  unhandled edge case in the WebGPU -> Metal translation layer.           ║
+ * ║  See: https://github.com/mlc-ai/web-llm/issues/647                        ║
+ * ║                                                                            ║
+ * ║  WORKAROUND:                                                               ║
+ * ║  Tool continuations are blocked with a user-friendly error message.       ║
+ * ║  Users should use Ollama or LM Studio for tool-calling workflows.         ║
+ * ║                                                                            ║
+ * ║  TO RE-ENABLE:                                                             ║
+ * ║  1. Update to newer WebLLM version when available                         ║
+ * ║  2. Remove the isToolContinuation check in generateStreamAsync()          ║
+ * ║  3. Test thoroughly on multiple macOS/GPU configurations                  ║
+ * ╚═══════════════════════════════════════════════════════════════════════════╝
  */
 
 import { Vault } from 'obsidian';
@@ -219,21 +255,51 @@ export class WebLLMAdapter extends BaseAdapter {
 
     // Check for pre-built conversation history (tool continuations)
     let messages: ChatMessage[];
+    const isToolContinuation = !!(options?.conversationHistory?.length);
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // TOOL CONTINUATION BLOCKED - See file header for full investigation notes
+    // WebLLM crashes during prefill on second generation (Apple Silicon WebGPU bug)
+    // ═══════════════════════════════════════════════════════════════════════
+    if (isToolContinuation) {
+      console.warn('[WebLLMAdapter] ⚠️ Tool continuation blocked - WebGPU crash workaround');
+      console.warn('[WebLLMAdapter] Use Ollama or LM Studio for multi-turn tool calling');
+
+      // Yield an error message explaining the limitation
+      yield {
+        content: '\n\n⚠️ **Nexus Limitation**: Tool continuations are temporarily disabled due to a WebGPU stability issue. The tool was executed successfully, but Nexus cannot generate a follow-up response.\n\n**Workarounds:**\n1. Switch to **Ollama** or **LM Studio** for multi-turn tool calling\n2. Start a new conversation to continue with Nexus\n\n*This is a known WebLLM/WebGPU issue being tracked for future fixes.*',
+        complete: true,
+        usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+      };
+      return;
+    }
+
     if (options?.conversationHistory && options.conversationHistory.length > 0) {
       messages = options.conversationHistory;
     } else {
       messages = this.buildMessages(prompt, options?.systemPrompt);
     }
 
+    // CRITICAL: Reset adapter state to 'ready' before starting new generation
+    // This ensures clean state regardless of previous generation's outcome
+    // The engine handles the actual locking via generationLock
+    if (this.state.status === 'generating') {
+      console.log(`[NEXUS_DEBUG] Resetting stale 'generating' status before new generation`);
+      this.state.status = 'ready';
+    }
+
+    const previousStatus = this.state.status;
+    // Note: isToolContinuation already checked and blocked above
+    console.log(`[NEXUS_DEBUG] Generation start instance=#${this.instanceId}`, {
+      statusChange: `${previousStatus} -> generating`,
+      messageCount: messages.length,
+      isToolContinuation,
+    });
+
+    // Set status AFTER logging for clearer debug output
+    this.state.status = 'generating';
+
     try {
-      const previousStatus = this.state.status;
-      this.state.status = 'generating';
-      const isToolContinuation = !!(options?.conversationHistory?.length);
-      console.log(`[NEXUS_DEBUG] Generation start instance=#${this.instanceId}`, {
-        statusChange: `${previousStatus} -> generating`,
-        messageCount: messages.length,
-        isToolContinuation,
-      });
 
       let accumulatedContent = '';
       let hasToolCallsFormat = false;
@@ -245,6 +311,7 @@ export class WebLLMAdapter extends BaseAdapter {
         maxTokens: options?.maxTokens,
         topP: options?.topP,
         stopSequences: options?.stopSequences,
+        isToolContinuation, // Pass flag to skip resetChat on continuations
       })) {
         // Check if this is a chunk or final result
         if ('tokenCount' in response && !('usage' in response)) {
@@ -311,10 +378,8 @@ export class WebLLMAdapter extends BaseAdapter {
       }
 
       console.log(`[NEXUS_DEBUG] Generation complete instance=#${this.instanceId}, status -> ready`);
-      this.state.status = 'ready';
     } catch (error) {
-      console.log(`[NEXUS_DEBUG] Generation error instance=#${this.instanceId}, status -> ready`);
-      this.state.status = 'ready';
+      console.log(`[NEXUS_DEBUG] Generation error instance=#${this.instanceId}:`, error);
 
       if (error instanceof WebLLMError) {
         throw error;
@@ -325,6 +390,11 @@ export class WebLLMAdapter extends BaseAdapter {
         'webllm',
         'GENERATION_FAILED'
       );
+    } finally {
+      // CRITICAL: Always reset adapter status in finally block
+      // This ensures clean state even if the generator is abandoned (not fully consumed)
+      console.log(`[NEXUS_DEBUG] Adapter cleanup instance=#${this.instanceId}, status -> ready`);
+      this.state.status = 'ready';
     }
   }
 
