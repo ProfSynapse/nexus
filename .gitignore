@@ -69,3 +69,4 @@ nexus-tools-*-mlc/
 models/
 nexus-tools-q4f16-mlc-new
 agentic-flow-main/
+local-models/
