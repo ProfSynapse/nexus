@@ -65,12 +65,11 @@ export class ChatInput {
     this.container.empty();
     this.container.addClass('chat-input');
 
-    // Input container with flex layout
-    const inputContainer = this.container.createDiv('chat-input-flex');
+    // Input wrapper - contains both textarea and embedded send button
+    const inputWrapper = this.container.createDiv('chat-input-wrapper');
 
-    // Contenteditable input container
-    const inputElementContainer = inputContainer.createDiv('chat-textarea-container');
-    this.inputElement = inputElementContainer.createDiv('chat-textarea');
+    // Contenteditable input
+    this.inputElement = inputWrapper.createDiv('chat-textarea');
     this.inputElement.contentEditable = 'true';
     this.inputElement.setAttribute('data-placeholder', 'Type your message...');
     this.inputElement.setAttribute('role', 'textbox');
@@ -97,21 +96,18 @@ export class ChatInput {
       this.autoResizeInput();
     });
 
-    // Send button container
-    const buttonContainer = inputContainer.createDiv('chat-send-container');
-    this.sendButton = buttonContainer.createEl('button', {
+    // Send button - embedded inside the input wrapper (bottom-right)
+    this.sendButton = inputWrapper.createEl('button', {
       cls: 'chat-send-button'
     });
 
-    // Add send icon using setIcon
-    setIcon(this.sendButton, 'send');
+    // Add send icon using Obsidian's setIcon
+    setIcon(this.sendButton, 'arrow-up');
     this.sendButton.setAttribute('aria-label', 'Send message');
 
     this.sendButton.addEventListener('click', () => {
       this.handleSendOrStop();
     });
-
-    // Model selector removed - now handled by separate ModelSelector component
 
     // Initialize suggesters if app is available
     if (this.app && this.inputElement) {
@@ -177,7 +173,7 @@ export class ChatInput {
   }
 
   /**
-   * Auto-resize input based on content (limited to 2 lines)
+   * Auto-resize input based on content (limited to ~4 lines)
    */
   private autoResizeInput(): void {
     if (!this.inputElement) return;
@@ -185,13 +181,13 @@ export class ChatInput {
     // Reset height to auto to get the correct scrollHeight
     this.inputElement.style.height = 'auto';
 
-    // Set height limits for 2 lines maximum
-    const minHeight = 40; // Single line height with padding
-    const maxHeight = 72; // Two line height (40px base + 32px for second line)
+    // Set height limits - matches CSS min/max heights
+    const minHeight = 48;
+    const maxHeight = 120;
     const newHeight = Math.min(Math.max(this.inputElement.scrollHeight, minHeight), maxHeight);
     this.inputElement.style.height = newHeight + 'px';
 
-    // Enable scrolling if content exceeds 2 lines
+    // Enable scrolling if content exceeds max height
     this.inputElement.style.overflowY = this.inputElement.scrollHeight > maxHeight ? 'auto' : 'hidden';
   }
 
@@ -208,15 +204,17 @@ export class ChatInput {
       // No conversation selected - disable everything
       this.sendButton.disabled = true;
       this.sendButton.classList.remove('stop-mode');
+      this.sendButton.classList.add('disabled-mode');
       this.sendButton.empty();
-      setIcon(this.sendButton, 'send');
+      setIcon(this.sendButton, 'arrow-up');
       this.sendButton.setAttribute('aria-label', 'No conversation selected');
       this.inputElement.contentEditable = 'false';
       this.inputElement.setAttribute('data-placeholder', 'Select or create a conversation to begin');
     } else if (actuallyLoading) {
-      // Show red stop button (keep enabled so user can click to stop)
+      // Show stop button (keep enabled so user can click to stop)
       this.sendButton.disabled = false;
       this.sendButton.classList.add('stop-mode');
+      this.sendButton.classList.remove('disabled-mode');
       this.sendButton.empty();
       setIcon(this.sendButton, 'square');
       this.sendButton.setAttribute('aria-label', 'Stop generation');
@@ -225,8 +223,9 @@ export class ChatInput {
       // Show normal send button
       this.sendButton.disabled = false;
       this.sendButton.classList.remove('stop-mode');
+      this.sendButton.classList.remove('disabled-mode');
       this.sendButton.empty();
-      setIcon(this.sendButton, 'send');
+      setIcon(this.sendButton, 'arrow-up');
       this.sendButton.setAttribute('aria-label', 'Send message');
       this.inputElement.contentEditable = 'true';
       this.inputElement.setAttribute('data-placeholder', 'Type your message...');
