@@ -107,7 +107,6 @@ export class WebLLMLifecycleManager {
     this.isChatViewOpen = true;
 
     if (!this.adapter) {
-      console.log('[NEXUS_DEBUG] ChatViewOpened: No adapter');
       return;
     }
 

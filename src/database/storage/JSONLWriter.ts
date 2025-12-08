@@ -26,6 +26,7 @@
 import { App } from 'obsidian';
 import { StorageEvent, BaseStorageEvent } from '../interfaces/StorageEvents';
 import { v4 as uuidv4 } from 'uuid';
+import { NamedLocks } from '../../utils/AsyncLock';
 
 /**
  * Configuration options for JSONLWriter
@@ -69,11 +70,13 @@ export class JSONLWriter {
   private app: App;
   private basePath: string;
   private deviceId: string;
+  private locks: NamedLocks;
 
   constructor(options: JSONLWriterOptions) {
     this.app = options.app;
     this.basePath = options.basePath;
     this.deviceId = this.getOrCreateDeviceId();
+    this.locks = new NamedLocks();
   }
 
   // ============================================================================
@@ -186,16 +189,30 @@ export class JSONLWriter {
       }
 
       // Use adapter methods for hidden folder support (.nexus/)
-      const exists = await this.app.vault.adapter.exists(fullPath);
+      // Use lock to prevent race conditions
+      await this.locks.acquire(fullPath, async () => {
+        const exists = await this.app.vault.adapter.exists(fullPath);
 
-      if (exists) {
-        // Append to existing file using adapter
-        const existingContent = await this.app.vault.adapter.read(fullPath);
-        await this.app.vault.adapter.write(fullPath, existingContent + line);
-      } else {
-        // Create new file with this line
-        await this.app.vault.adapter.write(fullPath, line);
-      }
+        if (exists) {
+          // Try to use atomic append if available
+          if (typeof (this.app.vault.adapter as any).append === 'function') {
+            // Blind append: Safety first -> always add newline prefix to ensure separation
+            // This might result in double newlines (harmless), but prevents merged lines (fatal)
+            await (this.app.vault.adapter as any).append(fullPath, '\n' + line);
+          } else {
+            // Fallback to read-modify-write (protected by lock)
+            const existingContent = await this.app.vault.adapter.read(fullPath);
+            // Ensure newline separation
+            const contentToWrite = existingContent.endsWith('\n') 
+              ? existingContent + line 
+              : existingContent + '\n' + line;
+            await this.app.vault.adapter.write(fullPath, contentToWrite);
+          }
+        } else {
+          // Create new file with this line
+          await this.app.vault.adapter.write(fullPath, line);
+        }
+      });
 
       return event;
     } catch (error) {
@@ -245,16 +262,29 @@ export class JSONLWriter {
       }
 
       // Use adapter methods for hidden folder support (.nexus/)
-      const exists = await this.app.vault.adapter.exists(fullPath);
+      // Use lock to prevent race conditions
+      await this.locks.acquire(fullPath, async () => {
+        const exists = await this.app.vault.adapter.exists(fullPath);
 
-      if (exists) {
-        // Append to existing file using adapter - single read/write
-        const existingContent = await this.app.vault.adapter.read(fullPath);
-        await this.app.vault.adapter.write(fullPath, existingContent + lines);
-      } else {
-        // Create new file with all lines
-        await this.app.vault.adapter.write(fullPath, lines);
-      }
+        if (exists) {
+          // Try to use atomic append if available
+          if (typeof (this.app.vault.adapter as any).append === 'function') {
+            // Blind append: Safety first -> always add newline prefix
+            await (this.app.vault.adapter as any).append(fullPath, '\n' + lines);
+          } else {
+            // Fallback to read-modify-write (protected by lock)
+            const existingContent = await this.app.vault.adapter.read(fullPath);
+            // Ensure newline separation
+            const contentToWrite = existingContent.endsWith('\n') 
+              ? existingContent + lines 
+              : existingContent + '\n' + lines;
+            await this.app.vault.adapter.write(fullPath, contentToWrite);
+          }
+        } else {
+          // Create new file with all lines
+          await this.app.vault.adapter.write(fullPath, lines);
+        }
+      });
 
       return events;
     } catch (error) {
