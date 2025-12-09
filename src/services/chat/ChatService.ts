@@ -292,6 +292,19 @@ export class ChatService {
     return await this.conversationManager.deleteConversation(id);
   }
 
+  /**
+   * Update conversation title
+   */
+  async updateConversationTitle(id: string, newTitle: string): Promise<boolean> {
+    try {
+      await this.conversationManager.updateTitle(id, newTitle);
+      return true;
+    } catch (error) {
+      console.error('Failed to update conversation title:', error);
+      return false;
+    }
+  }
+
   /** Search conversations */
   async searchConversations(query: string, limit = 10): Promise<any[]> {
     const results = await this.conversationQueryService.searchConversations(query, { limit });

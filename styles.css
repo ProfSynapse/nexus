@@ -67,12 +67,19 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
 }
 
 .chat-sidebar-header h3 {
     margin: 0;
     font-size: 1rem;
     color: var(--text-normal);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+    flex-shrink: 1;
 }
 
 .chat-new-button {
@@ -84,6 +91,8 @@
     font-size: 0.8rem;
     cursor: pointer;
     transition: background-color 0.2s;
+    flex-shrink: 0;
+    white-space: nowrap;
 }
 
 .chat-new-button:hover {
@@ -124,7 +133,8 @@
 }
 
 .conversation-content {
-    padding-right: 1.5rem;
+    padding-right: 3.5rem;
+    min-width: 0;
 }
 
 .conversation-title {
@@ -132,6 +142,9 @@
     color: var(--text-normal);
     margin-bottom: 0.25rem;
     line-height: 1.3;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .conversation-preview {
@@ -139,6 +152,9 @@
     color: var(--text-muted);
     line-height: 1.2;
     margin-bottom: 0.25rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .conversation-timestamp {
@@ -146,31 +162,76 @@
     color: var(--text-faint);
 }
 
-.conversation-delete {
+/* Conversation action buttons container */
+.conversation-actions {
     position: absolute;
     top: 0.5rem;
     right: 0.5rem;
-    width: 1.5rem;
-    height: 1.5rem;
     display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 50%;
-    background: var(--background-modifier-error);
-    color: var(--text-on-accent);
-    font-size: 1rem;
-    line-height: 1;
-    cursor: pointer;
+    gap: 0.25rem;
     opacity: 0;
     transition: opacity 0.2s;
 }
 
-.conversation-item:hover .conversation-delete {
+.conversation-item:hover .conversation-actions {
     opacity: 1;
 }
 
-.conversation-delete:hover {
-    background: var(--background-modifier-error-hover);
+/* Individual action button styling */
+.conversation-action-btn {
+    width: 1.75rem;
+    height: 1.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    border: none;
+    cursor: pointer;
+    background: var(--background-modifier-hover);
+    color: var(--text-muted);
+    padding: 0;
+    transition: background-color 0.15s, color 0.15s;
+}
+
+.conversation-action-btn:hover {
+    background: var(--background-modifier-active-hover);
+    color: var(--text-normal);
+}
+
+.conversation-action-btn svg {
+    width: 14px;
+    height: 14px;
+}
+
+/* Edit button specific styling */
+.conversation-edit-btn:hover {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+}
+
+/* Delete button specific styling */
+.conversation-delete-btn:hover {
+    background: var(--background-modifier-error);
+    color: var(--text-on-accent);
+}
+
+/* Inline rename input */
+.conversation-rename-input {
+    width: 100%;
+    padding: 0.25rem 0.5rem;
+    border: 1px solid var(--interactive-accent);
+    border-radius: 4px;
+    background: var(--background-primary);
+    color: var(--text-normal);
+    font-size: inherit;
+    font-weight: 500;
+    line-height: 1.3;
+    margin-bottom: 0.25rem;
+}
+
+.conversation-rename-input:focus {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--interactive-accent-hover);
 }
 
 /* Chat Header */
@@ -5324,4 +5385,306 @@ a:hover {
 .nexus-progress-text {
     font-size: var(--font-ui-smaller);
     color: var(--text-muted);
+}
+
+/* =========================== */
+/* MOBILE COMPATIBILITY        */
+/* =========================== */
+/*
+ * Obsidian adds .is-mobile class to body on mobile devices (phones only).
+ * Tablets use desktop layout.
+ *
+ * Touch target standards:
+ * - WCAG AA minimum: 24×24px
+ * - WCAG AAA / Apple HIG: 44×44px
+ * - Material Design: 48×48dp
+ */
+
+/* Mobile Provider Notice in Settings */
+.nexus-mobile-provider-notice {
+    margin-bottom: 1rem;
+}
+
+.nexus-mobile-notice-text {
+    font-size: var(--font-ui-small);
+    color: var(--text-muted);
+    font-style: italic;
+    padding: 0.75rem 1rem;
+    background: var(--background-secondary);
+    border-radius: var(--radius-s);
+    border-left: 3px solid var(--text-warning);
+}
+
+/* ------------------------------ */
+/* TOUCH TARGET SIZES (Mobile)    */
+/* ------------------------------ */
+/* Increase button sizes to 44px minimum for touch accessibility */
+
+body.is-mobile .chat-send-button {
+    width: 44px;
+    height: 44px;
+    bottom: 6px;
+    right: 6px;
+}
+
+body.is-mobile .chat-send-button svg {
+    width: 20px;
+    height: 20px;
+}
+
+body.is-mobile .message-action-btn {
+    width: 40px;
+    height: 40px;
+    padding: 0.5rem;
+}
+
+body.is-mobile .message-action-btn svg {
+    width: 16px;
+    height: 16px;
+}
+
+/* Mobile: conversation action buttons always visible */
+body.is-mobile .conversation-actions {
+    opacity: 0.7;
+}
+
+body.is-mobile .conversation-item:active .conversation-actions {
+    opacity: 1;
+}
+
+body.is-mobile .conversation-action-btn {
+    width: 36px;
+    height: 36px;
+}
+
+body.is-mobile .conversation-action-btn svg {
+    width: 16px;
+    height: 16px;
+}
+
+body.is-mobile .chat-new-button {
+    padding: 0.75rem 1rem;
+    min-height: 44px;
+}
+
+body.is-mobile .chat-hamburger,
+body.is-mobile .chat-settings-btn {
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0.5rem;
+}
+
+/* Tool accordion headers need larger tap targets */
+body.is-mobile .tool-accordion-header,
+body.is-mobile .progressive-tool-header {
+    min-height: 44px;
+    padding: 0.75rem 1rem;
+}
+
+/* ------------------------------ */
+/* ALWAYS-VISIBLE MESSAGE ACTIONS */
+/* ------------------------------ */
+/* Touch devices can't hover, so show actions by default */
+
+body.is-mobile .message-actions-external {
+    opacity: 0.85;
+    transform: translateY(0);
+}
+
+body.is-mobile .message-container:active .message-actions-external {
+    opacity: 1;
+}
+
+body.is-mobile .conversation-delete {
+    opacity: 0.6;
+}
+
+body.is-mobile .conversation-item:active .conversation-delete {
+    opacity: 1;
+}
+
+/* ------------------------------ */
+/* RESPONSIVE SIDEBAR (Mobile)    */
+/* ------------------------------ */
+/* Full-screen overlay sidebar on phones */
+
+body.is-mobile .chat-sidebar {
+    width: 100%;
+    max-width: 320px;
+    z-index: 1000;
+}
+
+body.is-mobile .chat-backdrop {
+    z-index: 999;
+}
+
+body.is-mobile .chat-main {
+    width: 100%;
+    margin-left: 0;
+}
+
+/* Hamburger always visible on mobile */
+body.is-mobile .chat-hamburger {
+    display: flex !important;
+}
+
+/* ------------------------------ */
+/* INPUT AREA ADJUSTMENTS         */
+/* ------------------------------ */
+/* Better mobile keyboard support */
+
+body.is-mobile .chat-input-container {
+    padding: 8px 12px;
+    /* Handle iOS safe area for home indicator */
+    padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+}
+
+body.is-mobile .chat-textarea {
+    font-size: 16px; /* Prevents iOS zoom on focus */
+    min-height: 44px;
+    padding: 12px 52px 12px 14px; /* More room for send button */
+}
+
+/* ------------------------------ */
+/* MESSAGE CONTAINER ADJUSTMENTS  */
+/* ------------------------------ */
+
+body.is-mobile .message-container {
+    width: 95%;
+    max-width: none;
+}
+
+body.is-mobile .message-bubble {
+    padding: 0.875rem;
+}
+
+/* ------------------------------ */
+/* MODAL ADJUSTMENTS              */
+/* ------------------------------ */
+/* Full-width modals on mobile */
+
+body.is-mobile .chat-modal,
+body.is-mobile .chat-settings-modal {
+    width: 100%;
+    max-width: 100%;
+    height: 100%;
+    max-height: 100%;
+    border-radius: 0;
+}
+
+body.is-mobile .modal {
+    max-width: 100vw;
+    max-height: 100vh;
+}
+
+/* ------------------------------ */
+/* REDUCED ANIMATIONS             */
+/* ------------------------------ */
+/* Simpler animations for better mobile performance */
+
+body.is-mobile .progressive-tool-header.tool-executing {
+    animation: none;
+    border-left: 3px solid var(--interactive-accent);
+}
+
+/* Respect user preference for reduced motion */
+@media (prefers-reduced-motion: reduce) {
+    .tool-accordion,
+    .progressive-tool-accordion,
+    .message-bubble,
+    .loading-spinner,
+    .chat-sidebar,
+    .chat-backdrop {
+        animation: none !important;
+        transition: none !important;
+    }
+}
+
+/* ------------------------------ */
+/* HEADER ADJUSTMENTS             */
+/* ------------------------------ */
+
+body.is-mobile .chat-header {
+    padding: 8px 12px;
+    /* Handle iOS safe area for notch */
+    padding-top: calc(8px + env(safe-area-inset-top, 0px));
+}
+
+body.is-mobile .chat-header-title {
+    font-size: 0.9rem;
+    max-width: 40%;
+}
+
+/* ------------------------------ */
+/* WELCOME SCREEN                 */
+/* ------------------------------ */
+
+body.is-mobile .chat-welcome-container {
+    padding: 1.5rem;
+}
+
+body.is-mobile .chat-welcome-title {
+    font-size: 1.25rem;
+}
+
+/* ------------------------------ */
+/* BRANCH NAVIGATOR               */
+/* ------------------------------ */
+
+body.is-mobile .branch-navigator {
+    min-height: 36px;
+}
+
+body.is-mobile .branch-navigator button {
+    min-width: 36px;
+    min-height: 36px;
+}
+
+/* ------------------------------ */
+/* LOADING OVERLAY                */
+/* ------------------------------ */
+
+body.is-mobile .chat-loading-overlay {
+    padding: 1rem;
+}
+
+/* ------------------------------ */
+/* DESKTOP HOVER STYLES           */
+/* ------------------------------ */
+/* Only apply hover effects on devices that support hover */
+
+@media (hover: hover) and (pointer: fine) {
+    .message-container:hover .message-actions-external {
+        opacity: 1;
+        transform: translateY(0);
+    }
+
+    .conversation-item:hover .conversation-delete {
+        opacity: 1;
+    }
+}
+
+/* ------------------------------ */
+/* FALLBACK: Touch device query   */
+/* ------------------------------ */
+/* For cases where .is-mobile may not be applied (tablets) */
+
+@media (hover: none) and (pointer: coarse) {
+    .message-actions-external {
+        opacity: 0.85;
+    }
+
+    .conversation-delete {
+        opacity: 0.6;
+    }
+
+    .chat-send-button {
+        width: 40px;
+        height: 40px;
+    }
+
+    .message-action-btn {
+        width: 36px;
+        height: 36px;
+    }
 }

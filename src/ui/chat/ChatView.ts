@@ -291,7 +291,8 @@ export class ChatView extends ItemView {
     this.conversationList = new ConversationList(
       this.layoutElements.conversationListContainer,
       (conversation) => this.conversationManager.selectConversation(conversation),
-      (conversationId) => this.conversationManager.deleteConversation(conversationId)
+      (conversationId) => this.conversationManager.deleteConversation(conversationId),
+      (conversationId, newTitle) => this.conversationManager.renameConversation(conversationId, newTitle)
     );
 
     this.messageDisplay = new MessageDisplay(

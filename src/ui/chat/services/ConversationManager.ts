@@ -156,13 +156,13 @@ export class ConversationManager {
   async deleteConversation(conversationId: string): Promise<void> {
     try {
       const success = await this.chatService.deleteConversation(conversationId);
-      
+
       if (success) {
         // If this was the current conversation, clear it
         if (this.currentConversation?.id === conversationId) {
           this.currentConversation = null;
         }
-        
+
         // Reload conversation list
         await this.loadConversations();
       } else {
@@ -170,6 +170,35 @@ export class ConversationManager {
       }
     } catch (error) {
       this.events.onError('Failed to delete conversation');
+    }
+  }
+
+  /**
+   * Rename a conversation
+   */
+  async renameConversation(conversationId: string, newTitle: string): Promise<void> {
+    try {
+      const success = await this.chatService.updateConversationTitle(conversationId, newTitle);
+
+      if (success) {
+        // Update current conversation title if this is the active one
+        if (this.currentConversation?.id === conversationId) {
+          this.currentConversation.title = newTitle;
+        }
+
+        // Update title in the local conversations list
+        const conversation = this.conversations.find(c => c.id === conversationId);
+        if (conversation) {
+          conversation.title = newTitle;
+        }
+
+        // Notify UI of the change
+        this.events.onConversationsChanged();
+      } else {
+        this.events.onError('Failed to rename conversation');
+      }
+    } catch (error) {
+      this.events.onError('Failed to rename conversation');
     }
   }
 
