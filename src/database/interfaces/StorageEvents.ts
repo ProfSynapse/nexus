@@ -70,6 +70,8 @@ export interface WorkspaceCreatedEvent extends BaseStorageEvent {
     rootFolder: string;
     /** Creation timestamp */
     created: number;
+    /** Whether this workspace is active (defaults to true) */
+    isActive?: boolean;
     /** Optional dedicated agent ID */
     dedicatedAgentId?: string;
     /** JSON-serialized workspace context */
@@ -271,6 +273,28 @@ export interface ConversationUpdatedEvent extends BaseStorageEvent {
 }
 
 /**
+ * Alternative message data for branching support
+ */
+export interface AlternativeMessageEvent {
+  /** Unique identifier for this alternative */
+  id: string;
+  /** Alternative content */
+  content: string | null;
+  /** Timestamp when alternative was created */
+  timestamp: number;
+  /** Tool calls made in this alternative */
+  tool_calls?: Array<{
+    id: string;
+    type: 'function';
+    function: { name: string; arguments: string };
+  }>;
+  /** Reasoning/thinking content for this alternative */
+  reasoning?: string;
+  /** Message lifecycle state */
+  state?: string;
+}
+
+/**
  * Event: Message added/updated
  *
  * Records a chat message in OpenAI fine-tuning format.
@@ -301,6 +325,10 @@ export interface MessageEvent extends BaseStorageEvent {
     reasoning?: string;
     /** Sequence number for ordering */
     sequenceNumber: number;
+    /** Alternative responses for branching */
+    alternatives?: AlternativeMessageEvent[];
+    /** Which alternative is active: 0 = original, 1+ = alternative index + 1 */
+    activeAlternativeIndex?: number;
   };
 }
 
@@ -326,6 +354,10 @@ export interface MessageUpdatedEvent extends BaseStorageEvent {
       function: { name: string; arguments: string };
     }>;
     tool_call_id: string;
+    /** Alternative responses for branching */
+    alternatives: AlternativeMessageEvent[];
+    /** Which alternative is active: 0 = original, 1+ = alternative index + 1 */
+    activeAlternativeIndex: number;
   }>;
 }
 

@@ -7,7 +7,7 @@
 import { ConversationData, ConversationMessage } from '../../../types/chat/ChatTypes';
 import { MessageBubble } from './MessageBubble';
 import { BranchManager } from '../services/BranchManager';
-import { App, setIcon } from 'obsidian';
+import { App, setIcon, ButtonComponent } from 'obsidian';
 
 export class MessageDisplay {
   private conversation: ConversationData | null = null;
@@ -149,19 +149,11 @@ export class MessageDisplay {
     const welcomeIcon = welcomeContent.createDiv('chat-welcome-icon');
     setIcon(welcomeIcon, 'message-circle');
 
-    welcomeContent.createEl('h2', { text: 'Welcome to AI Chat' });
-    welcomeContent.createEl('p', { text: 'Start a conversation with your AI assistant. You can:' });
-
-    const list = welcomeContent.createEl('ul');
-    list.createEl('li', { text: 'Ask questions about your notes' });
-    list.createEl('li', { text: 'Create and edit content' });
-    list.createEl('li', { text: 'Search and organize your vault' });
-    list.createEl('li', { text: 'Get help with any task' });
-
-    const startButton = welcomeContent.createEl('button', {
-      cls: 'chat-welcome-button mod-cta',
-      text: 'Start New Conversation'
-    });
+    // Use Obsidian's ButtonComponent
+    new ButtonComponent(welcomeContent)
+      .setButtonText('New conversation')
+      .setIcon('plus')
+      .setClass('chat-welcome-button');
   }
 
   /**

@@ -249,7 +249,7 @@
     box-sizing: border-box;
 }
 
-/* Welcome State */
+/* Welcome State - Minimal */
 .chat-welcome {
     display: flex;
     align-items: center;
@@ -259,42 +259,108 @@
 }
 
 .chat-welcome-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
     text-align: center;
-    max-width: 500px;
 }
 
 .chat-welcome-icon {
-    font-size: 4rem;
-    margin-bottom: 1rem;
+    display: flex;
+    justify-content: center;
+    color: var(--text-faint);
+    margin-bottom: 0.5rem;
 }
 
-.chat-welcome-content h2 {
+.chat-welcome-icon svg {
+    width: 28px;
+    height: 28px;
+    stroke-width: 1.5;
+}
+
+.chat-welcome-title {
+    font-size: 0.95rem;
+    font-weight: 600;
     color: var(--text-normal);
-    margin-bottom: 1rem;
+    margin-bottom: 0.25rem;
 }
 
-.chat-welcome-content p {
+.chat-welcome-desc {
+    font-size: 0.8rem;
     color: var(--text-muted);
-    margin-bottom: 1rem;
-    line-height: 1.5;
+    margin: 0 0 0.75rem 0;
 }
 
-.chat-welcome-content ul {
-    text-align: left;
+.chat-welcome-hint {
     color: var(--text-muted);
-    margin-bottom: 1.5rem;
-    line-height: 1.6;
+    font-size: 0.8rem;
+    margin: 0 0 0.75rem 0;
 }
 
+.chat-welcome-hotkeys-container {
+    background: #8b5cf6;
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    margin-bottom: 1rem;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.chat-welcome-hotkeys {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.chat-welcome-hotkey {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.75rem;
+    color: var(--text-on-accent);
+    position: relative;
+    z-index: 2;
+}
+
+.chat-welcome-hotkey code {
+    font-family: var(--font-monospace);
+    font-size: 0.7rem;
+    background: var(--background-primary);
+    padding: 2px 6px;
+    border-radius: 3px;
+    color: var(--text-normal);
+    min-width: 28px;
+    text-align: center;
+    flex-shrink: 0;
+}
+
+.chat-welcome-hotkey span {
+    white-space: nowrap;
+}
+
+/* Welcome screen button */
 .chat-welcome-button {
-    margin-top: 1.5rem;
-    padding: 0.75rem 1.5rem;
-    font-size: 1rem;
+    padding: 8px 16px;
+    font-size: 0.8rem;
+    border-radius: 6px;
     cursor: pointer;
+    border: 1px solid var(--background-modifier-border);
+    background: var(--interactive-normal);
+    color: var(--text-normal);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
 .chat-welcome-button:hover {
-    opacity: 0.9;
+    background: var(--interactive-hover);
+}
+
+.chat-welcome-button.mod-cta {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+    border: none;
+}
+
+.chat-welcome-button.mod-cta:hover {
+    background: var(--interactive-accent-hover);
 }
 
 /* Message Display */

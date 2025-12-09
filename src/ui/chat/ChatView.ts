@@ -77,7 +77,7 @@ export class ChatView extends ItemView {
 
   getDisplayText(): string {
     const conversation = this.conversationManager?.getCurrentConversation();
-    return conversation?.title || 'AI Chat';
+    return conversation?.title || 'Nexus Chat';
   }
 
   getIcon(): string {
@@ -280,6 +280,7 @@ export class ChatView extends ItemView {
       onSidebarToggled: (visible) => { /* Sidebar toggled */ }
     };
     this.uiStateController = new UIStateController(this.containerEl, uiStateEvents);
+    this.uiStateController.setOpenSettingsCallback(() => this.openChatSettingsModal());
     this.streamingController = new StreamingController(this.containerEl, this.app, this);
   }
 
@@ -387,11 +388,14 @@ export class ChatView extends ItemView {
       // Initialize with defaults (model, workspace, agent) for new chats
       await this.modelAgentManager.initializeDefaults();
 
-      this.uiStateController.showWelcomeState();
+      const hasProviders = this.chatService.hasConfiguredProviders();
+      this.uiStateController.showWelcomeState(hasProviders);
       if (this.chatInput) {
         this.chatInput.setConversationState(false);
       }
-      this.wireWelcomeButton();
+      if (hasProviders) {
+        this.wireWelcomeButton();
+      }
     }
   }
 
@@ -443,11 +447,14 @@ export class ChatView extends ItemView {
       // Re-initialize with defaults when returning to welcome state
       await this.modelAgentManager.initializeDefaults();
 
-      this.uiStateController.showWelcomeState();
+      const hasProviders = this.chatService.hasConfiguredProviders();
+      this.uiStateController.showWelcomeState(hasProviders);
       if (this.chatInput) {
         this.chatInput.setConversationState(false);
       }
-      this.wireWelcomeButton();
+      if (hasProviders) {
+        this.wireWelcomeButton();
+      }
     } else if (!currentConversation && conversations.length > 0) {
       await this.conversationManager.selectConversation(conversations[0]);
     }
@@ -625,7 +632,7 @@ export class ChatView extends ItemView {
     const conversation = this.conversationManager.getCurrentConversation();
 
     if (this.layoutElements.chatTitle) {
-      this.layoutElements.chatTitle.textContent = conversation?.title || 'AI Chat';
+      this.layoutElements.chatTitle.textContent = conversation?.title || 'Nexus Chat';
     }
   }
 

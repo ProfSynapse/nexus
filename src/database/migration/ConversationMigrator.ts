@@ -78,6 +78,7 @@ export class ConversationMigrator extends BaseMigrator<ConversationMigrationResu
 
       for (let i = 0; i < sortedMessages.length; i++) {
         const message = sortedMessages[i];
+        const anyMsg = message as any;
         events.push({
           type: 'message',
           conversationId: conversation.id,
@@ -95,6 +96,23 @@ export class ConversationMigrator extends BaseMigrator<ConversationMigrationResu
                 arguments: tc.function?.arguments || JSON.stringify(tc.parameters || {}),
               },
             })),
+            // Branching support - migrate alternatives from legacy JSON
+            alternatives: anyMsg.alternatives?.map((alt: any) => ({
+              id: alt.id,
+              content: alt.content,
+              timestamp: alt.timestamp,
+              tool_calls: alt.toolCalls?.map((tc: any) => ({
+                id: tc.id,
+                type: 'function' as const,
+                function: {
+                  name: tc.function?.name || tc.name || '',
+                  arguments: tc.function?.arguments || JSON.stringify(tc.parameters || {}),
+                },
+              })),
+              reasoning: alt.reasoning,
+              state: alt.state || 'complete',
+            })),
+            activeAlternativeIndex: anyMsg.activeAlternativeIndex ?? 0,
           },
         } as Omit<MessageEvent, 'id' | 'deviceId' | 'timestamp'>);
         result.messages++;

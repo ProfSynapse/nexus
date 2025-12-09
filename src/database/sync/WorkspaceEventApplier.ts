@@ -75,7 +75,8 @@ export class WorkspaceEventApplier {
         event.data.rootFolder ?? '',
         event.data.created ?? Date.now(),
         event.data.created ?? Date.now(),
-        0,
+        // Default to 1 (active) if not specified
+        event.data.isActive !== undefined ? (event.data.isActive ? 1 : 0) : 1,
         event.data.contextJson ?? null,
         event.data.dedicatedAgentId ?? null
       ]

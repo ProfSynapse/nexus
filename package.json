@@ -1,11 +1,11 @@
 {
     "name": "nexus",
-    "version": "3.2.0",
+    "version": "4.0.0",
     "description": "Model Context Protocol (MCP) integration for Obsidian",
     "main": "main.js",
     "scripts": {
         "dev": "node esbuild.config.mjs",
-        "build": "tsc --noEmit --skipLibCheck && node esbuild.config.mjs production && tsc connector.ts --outDir . --esModuleInterop true --module commonjs --skipLibCheck",
+        "build": "tsc --noEmit --skipLibCheck && node esbuild.config.mjs production && tsc connector.ts --outDir . --esModuleInterop true --module commonjs --skipLibCheck && node scripts/generate-connector-content.mjs",
         "version": "node version-bump.mjs && git add manifest.json versions.json",
         "test": "jest",
         "lint": "eslint . --ext .ts",

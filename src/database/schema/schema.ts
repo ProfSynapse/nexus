@@ -2,7 +2,10 @@
  * SQLite Schema for Hybrid Storage System
  * Location: src/database/schema/schema.ts
  * Purpose: Complete database schema with indexes and FTS
- * Version: 2.0.0
+ * Version: 3.0.0
+ *
+ * CHANGELOG:
+ * - v3.0.0: Added alternativesJson and activeAlternativeIndex to messages table for branching support
  *
  * NOTE: Uses camelCase column names to match TypeScript/JavaScript conventions.
  * This eliminates the need for snake_case <-> camelCase translation at the repository layer.
@@ -24,7 +27,7 @@ CREATE TABLE IF NOT EXISTS workspaces (
   rootFolder TEXT NOT NULL,
   created INTEGER NOT NULL,
   lastAccessed INTEGER NOT NULL,
-  isActive INTEGER DEFAULT 0,
+  isActive INTEGER DEFAULT 1,
   contextJson TEXT,
   dedicatedAgentId TEXT,
   UNIQUE(name)
@@ -119,6 +122,8 @@ CREATE TABLE IF NOT EXISTS messages (
   toolCallId TEXT,
   reasoningContent TEXT,
   sequenceNumber INTEGER NOT NULL,
+  alternativesJson TEXT,
+  activeAlternativeIndex INTEGER DEFAULT 0,
   FOREIGN KEY(conversationId) REFERENCES conversations(id) ON DELETE CASCADE
 );
 
@@ -216,5 +221,5 @@ CREATE INDEX IF NOT EXISTS idx_applied_events_time ON applied_events(appliedAt);
 
 -- ==================== INITIALIZATION ====================
 
-INSERT OR IGNORE INTO schema_version VALUES (2, strftime('%s', 'now') * 1000);
+INSERT OR IGNORE INTO schema_version VALUES (3, strftime('%s', 'now') * 1000);
 `;

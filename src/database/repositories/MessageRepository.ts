@@ -19,8 +19,8 @@
 
 import { BaseRepository, RepositoryDependencies } from './base/BaseRepository';
 import { IMessageRepository, CreateMessageData, UpdateMessageData } from './interfaces/IMessageRepository';
-import { MessageData } from '../../types/storage/HybridStorageTypes';
-import { MessageEvent, MessageUpdatedEvent } from '../interfaces/StorageEvents';
+import { MessageData, AlternativeMessage } from '../../types/storage/HybridStorageTypes';
+import { MessageEvent, MessageUpdatedEvent, AlternativeMessageEvent } from '../interfaces/StorageEvents';
 import { PaginatedResult, PaginationParams } from '../../types/pagination/PaginationTypes';
 
 /**
@@ -196,7 +196,10 @@ export class MessageRepository
             })),
             tool_call_id: data.toolCallId,
             state: data.state,
-            sequenceNumber
+            sequenceNumber,
+            // Branching support
+            alternatives: this.convertAlternativesToEvent(data.alternatives),
+            activeAlternativeIndex: data.activeAlternativeIndex ?? 0
           }
         } as any
       );
@@ -204,8 +207,8 @@ export class MessageRepository
       // 2. Update SQLite cache
       await this.sqliteCache.run(
         `INSERT INTO ${this.tableName}
-         (id, conversationId, role, content, timestamp, state, toolCallsJson, toolCallId, sequenceNumber, reasoningContent)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (id, conversationId, role, content, timestamp, state, toolCallsJson, toolCallId, sequenceNumber, reasoningContent, alternativesJson, activeAlternativeIndex)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           id,
           conversationId,
@@ -216,7 +219,9 @@ export class MessageRepository
           data.toolCalls ? JSON.stringify(data.toolCalls) : null,
           data.toolCallId ?? null,
           sequenceNumber,
-          data.reasoning ?? null
+          data.reasoning ?? null,
+          data.alternatives ? JSON.stringify(data.alternatives) : null,
+          data.activeAlternativeIndex ?? 0
         ]
       );
 
@@ -272,7 +277,10 @@ export class MessageRepository
                 error: anyTc.error
               };
             }),
-            tool_call_id: data.toolCallId ?? undefined
+            tool_call_id: data.toolCallId ?? undefined,
+            // Branching support
+            alternatives: this.convertAlternativesToEvent(data.alternatives),
+            activeAlternativeIndex: data.activeAlternativeIndex
           }
         } as any
       );
@@ -300,6 +308,14 @@ export class MessageRepository
       if (data.toolCallId !== undefined) {
         setClauses.push('toolCallId = ?');
         params.push(data.toolCallId);
+      }
+      if (data.alternatives !== undefined) {
+        setClauses.push('alternativesJson = ?');
+        params.push(data.alternatives ? JSON.stringify(data.alternatives) : null);
+      }
+      if (data.activeAlternativeIndex !== undefined) {
+        setClauses.push('activeAlternativeIndex = ?');
+        params.push(data.activeAlternativeIndex);
       }
 
       if (setClauses.length > 0) {
@@ -355,7 +371,30 @@ export class MessageRepository
       toolCalls: row.toolCallsJson ? JSON.parse(row.toolCallsJson) : undefined,
       toolCallId: row.toolCallId ?? undefined,
       reasoning: row.reasoningContent ?? undefined,
-      metadata: row.metadataJson ? JSON.parse(row.metadataJson) : undefined
+      metadata: row.metadataJson ? JSON.parse(row.metadataJson) : undefined,
+      alternatives: row.alternativesJson ? JSON.parse(row.alternativesJson) : undefined,
+      activeAlternativeIndex: row.activeAlternativeIndex ?? 0
     };
+  }
+
+  /**
+   * Convert AlternativeMessage[] to AlternativeMessageEvent[] for JSONL storage
+   */
+  private convertAlternativesToEvent(alternatives?: AlternativeMessage[]): AlternativeMessageEvent[] | undefined {
+    if (!alternatives || alternatives.length === 0) {
+      return undefined;
+    }
+    return alternatives.map(alt => ({
+      id: alt.id,
+      content: alt.content,
+      timestamp: alt.timestamp,
+      tool_calls: alt.toolCalls?.map(tc => ({
+        id: tc.id,
+        type: 'function' as const,
+        function: tc.function
+      })),
+      reasoning: alt.reasoning,
+      state: alt.state
+    }));
   }
 }

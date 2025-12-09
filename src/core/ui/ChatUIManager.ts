@@ -32,11 +32,6 @@ export class ChatUIManager {
     async registerChatUI(): Promise<void> {
         try {
             const { plugin, app } = this.config;
-            
-            // Check if ChatView is enabled in settings
-            if (!this.isChatViewEnabled()) {
-                return;
-            }
 
             // Skip if already registered
             if (this.chatUIRegistered) {
@@ -59,14 +54,14 @@ export class ChatUIManager {
             );
             
             // Add ribbon icon for chat
-            plugin.addRibbonIcon('message-square', 'AI Chat', () => {
+            plugin.addRibbonIcon('message-square', 'Nexus Chat', () => {
                 this.activateChatView();
             });
             
             // Add command to open chat
             plugin.addCommand({
                 id: 'open-chat',
-                name: 'Open AI Chat',
+                name: 'Open Nexus Chat',
                 callback: () => {
                     this.activateChatView();
                 }
@@ -86,13 +81,7 @@ export class ChatUIManager {
      */
     async activateChatView(): Promise<void> {
         const { app } = this.config;
-        
-        // Check if ChatView is enabled in settings
-        if (!this.isChatViewEnabled()) {
-            new Notice('AI Chat is disabled. Enable it in Plugin Settings > Agent Management > AI Chat tab.');
-            return;
-        }
-        
+
         const { CHAT_VIEW_TYPE } = await import('../../ui/chat/ChatView');
         
         // Check if chat view already exists
@@ -110,35 +99,6 @@ export class ChatUIManager {
         });
         
         app.workspace.revealLeaf(leaf);
-    }
-    
-    /**
-     * Check if ChatView is enabled in settings
-     */
-    isChatViewEnabled(): boolean {
-        const chatViewSettings = this.config.settings.settings.chatView;
-        return chatViewSettings?.enabled === true;
-    }
-    
-    /**
-     * Enable ChatView UI when user toggles it on in settings
-     * This registers the UI components and auto-opens the ChatView
-     */
-    async enableChatViewUI(): Promise<void> {
-        try {
-            if (!this.isChatViewEnabled()) {
-                return;
-            }
-            
-            // Register ChatView UI components if not already registered
-            await this.registerChatUI();
-            
-            // Auto-open ChatView in sidebar
-            await this.activateChatView();
-
-        } catch (error) {
-            console.error('Failed to enable ChatView UI:', error);
-        }
     }
 
     /**

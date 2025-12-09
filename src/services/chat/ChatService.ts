@@ -315,6 +315,18 @@ export class ChatService {
   }
 
   /**
+   * Check if any LLM providers are configured and available
+   */
+  hasConfiguredProviders(): boolean {
+    const llmService = this.dependencies.llmService;
+    if (!llmService || typeof llmService.getAvailableProviders !== 'function') {
+      return false;
+    }
+    const availableProviders = llmService.getAvailableProviders();
+    return availableProviders && availableProviders.length > 0;
+  }
+
+  /**
    * Cleanup resources
    */
   async dispose(): Promise<void> {

@@ -2,17 +2,27 @@
  * UIStateController - Manages all UI state transitions and visual feedback
  */
 
+import { setIcon, ButtonComponent } from 'obsidian';
+
 export interface UIStateControllerEvents {
   onSidebarToggled: (visible: boolean) => void;
 }
 
 export class UIStateController {
   private sidebarVisible = false;
+  private onOpenSettings?: () => void;
 
   constructor(
     private containerEl: HTMLElement,
     private events: UIStateControllerEvents
   ) {}
+
+  /**
+   * Set callback for opening settings
+   */
+  setOpenSettingsCallback(callback: () => void): void {
+    this.onOpenSettings = callback;
+  }
 
   /**
    * Get sidebar visibility state
@@ -23,29 +33,76 @@ export class UIStateController {
 
   /**
    * Show welcome state when no conversation is selected
+   * @param hasConfiguredProviders - Whether any LLM providers are set up
    */
-  showWelcomeState(): void {
+  showWelcomeState(hasConfiguredProviders: boolean = true): void {
     const messageDisplay = this.containerEl.querySelector('.message-display-container');
     if (!messageDisplay) return;
 
-    messageDisplay.empty();
+    (messageDisplay as HTMLElement).empty();
     messageDisplay.addClass('message-display');
 
-    const welcome = messageDisplay.createDiv('chat-welcome');
-    welcome.innerHTML = `
-      <div class="chat-welcome-content">
-        <div class="chat-welcome-icon">💬</div>
-        <h2>Welcome to AI Chat</h2>
-        <p>Start a conversation with your AI assistant. You can:</p>
-        <ul>
-          <li>Ask questions about your notes</li>
-          <li>Create and edit content</li>
-          <li>Search and organize your vault</li>
-          <li>Get help with any task</li>
-        </ul>
-        <button class="chat-welcome-button mod-cta">Start New Conversation</button>
-      </div>
-    `;
+    const welcome = (messageDisplay as HTMLElement).createDiv('chat-welcome');
+    const welcomeContent = welcome.createDiv('chat-welcome-content');
+
+    const welcomeIcon = welcomeContent.createDiv('chat-welcome-icon');
+
+    if (hasConfiguredProviders) {
+      // Normal welcome - ready to create conversation
+      setIcon(welcomeIcon, 'sparkles');
+
+      welcomeContent.createEl('div', {
+        text: 'Welcome to Nexus Chat',
+        cls: 'chat-welcome-title'
+      });
+
+      welcomeContent.createEl('p', {
+        text: 'Your AI assistant for exploring and managing your vault.',
+        cls: 'chat-welcome-desc'
+      });
+
+      // Hotkey hints in a container
+      const hotkeysContainer = welcomeContent.createDiv('chat-welcome-hotkeys-container');
+      const hotkeys = hotkeysContainer.createDiv('chat-welcome-hotkeys');
+
+      const hotkeyData = [
+        { key: '/', desc: 'Select a tool to use' },
+        { key: '@', desc: 'Select an agent to use' },
+        { key: '[[', desc: 'Select a note to reference' }
+      ];
+
+      hotkeyData.forEach(h => {
+        const row = hotkeys.createDiv('chat-welcome-hotkey');
+        row.createEl('code', { text: h.key });
+        row.createSpan({ text: h.desc });
+      });
+
+      welcomeContent.createEl('button', {
+        cls: 'chat-welcome-button mod-cta',
+        text: 'Start your first conversation'
+      });
+    } else {
+      // Setup needed - no providers configured
+      setIcon(welcomeIcon, 'settings');
+
+      welcomeContent.createEl('p', {
+        text: 'Configure an LLM provider to start chatting',
+        cls: 'chat-welcome-hint'
+      });
+
+      const settingsBtn = welcomeContent.createEl('button', {
+        cls: 'chat-welcome-button',
+        text: 'Open Settings'
+      });
+      const settingsBtnIcon = settingsBtn.createSpan({ cls: 'chat-welcome-button-icon' });
+      setIcon(settingsBtnIcon, 'settings');
+      settingsBtn.insertBefore(settingsBtnIcon, settingsBtn.firstChild);
+      settingsBtn.addEventListener('click', () => {
+        if (this.onOpenSettings) {
+          this.onOpenSettings();
+        }
+      });
+    }
   }
 
   /**

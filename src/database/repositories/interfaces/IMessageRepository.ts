@@ -12,7 +12,7 @@
  */
 
 import { PaginatedResult, PaginationParams } from '../../../types/pagination/PaginationTypes';
-import { MessageData } from '../../../types/storage/HybridStorageTypes';
+import { MessageData, AlternativeMessage } from '../../../types/storage/HybridStorageTypes';
 
 /**
  * Data for creating a new message
@@ -26,7 +26,7 @@ export interface CreateMessageData extends Omit<MessageData, 'id' | 'conversatio
 
 /**
  * Data for updating an existing message
- * Only content, state, reasoning, and tool call data can be updated
+ * Only content, state, reasoning, tool call data, and alternatives can be updated
  */
 export interface UpdateMessageData {
   content?: string | null;
@@ -34,6 +34,10 @@ export interface UpdateMessageData {
   reasoning?: string;
   toolCalls?: MessageData['toolCalls'];
   toolCallId?: string | null;
+  /** Alternative responses for branching */
+  alternatives?: AlternativeMessage[];
+  /** Which alternative is active: 0 = original, 1+ = alternative index + 1 */
+  activeAlternativeIndex?: number;
 }
 
 /**

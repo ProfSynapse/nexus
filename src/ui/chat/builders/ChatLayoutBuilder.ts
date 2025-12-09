@@ -120,7 +120,7 @@ export class ChatLayoutBuilder {
     const warningBanner = container.createDiv('chat-experimental-warning');
     warningBanner.innerHTML = `
       <span class="warning-icon">⚠️</span>
-      <span class="warning-text">Experimental Feature: AI Chat is in beta.</span>
+      <span class="warning-text">Experimental Feature: Nexus Chat is in beta.</span>
       <a href="https://github.com/ProfSynapse/nexus/issues" target="_blank" rel="noopener noreferrer" class="warning-link">Report issues</a>
       <span class="warning-text">• Use at your own risk</span>
     `;
@@ -152,7 +152,7 @@ export class ChatLayoutBuilder {
 
     // Center: Title
     const chatTitle = chatHeader.createDiv('chat-title');
-    chatTitle.textContent = 'AI Chat';
+    chatTitle.textContent = 'Nexus Chat';
 
     // Right: Settings gear icon
     const settingsButton = chatHeader.createEl('button', { cls: 'chat-settings-button' });

@@ -19,14 +19,6 @@ interface ProcessedFileState {
 }
 
 /**
- * ChatView settings for experimental AI chat interface
- */
-export interface ChatViewSettings {
-  enabled: boolean;
-  acknowledgedExperimental: boolean;
-}
-
-/**
  * Processed files data structure for file state management
  * Stores file processing state to prevent re-processing on startup
  */
@@ -46,7 +38,6 @@ export interface MCPSettings {
   memory?: MemorySettings;
   customPrompts?: CustomPromptsSettings;
   llmProviders?: LLMProviderSettings;
-  chatView?: ChatViewSettings;
   // Default selections for chat
   defaultWorkspaceId?: string;
   defaultAgentId?: string;

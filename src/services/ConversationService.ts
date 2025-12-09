@@ -197,7 +197,10 @@ export class ConversationService {
             };
           }),
           reasoning: msg.reasoning,
-          metadata: msg.metadata
+          metadata: msg.metadata,
+          // Branching support
+          alternatives: msg.alternatives,
+          activeAlternativeIndex: msg.activeAlternativeIndex
         }))
       };
     }
@@ -339,7 +342,10 @@ export class ConversationService {
             state: msg.state,
             reasoning: (msg as any).reasoning,
             toolCalls: convertedToolCalls,
-            toolCallId: (msg as any).toolCallId ?? null
+            toolCallId: (msg as any).toolCallId ?? null,
+            // Branching support
+            alternatives: (msg as any).alternatives,
+            activeAlternativeIndex: (msg as any).activeAlternativeIndex
           });
         }
 
@@ -720,7 +726,10 @@ export class ConversationService {
           };
         }),
         reasoning: msg.reasoning,
-        metadata: msg.metadata
+        metadata: msg.metadata,
+        // Branching support
+        alternatives: msg.alternatives,
+        activeAlternativeIndex: msg.activeAlternativeIndex
       })),
       metadata: {
         chatSettings: {

@@ -90,8 +90,8 @@ export class ConversationEventApplier {
 
     await this.sqliteCache.run(
       `INSERT OR REPLACE INTO messages
-       (id, conversationId, role, content, timestamp, state, toolCallsJson, toolCallId, reasoningContent, sequenceNumber)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, conversationId, role, content, timestamp, state, toolCallsJson, toolCallId, reasoningContent, sequenceNumber, alternativesJson, activeAlternativeIndex)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         event.data.id,
         event.conversationId,
@@ -102,7 +102,9 @@ export class ConversationEventApplier {
         event.data.tool_calls ? JSON.stringify(event.data.tool_calls) : null,
         event.data.tool_call_id ?? null,
         event.data.reasoning ?? null,
-        event.data.sequenceNumber ?? 0
+        event.data.sequenceNumber ?? 0,
+        event.data.alternatives ? JSON.stringify(event.data.alternatives) : null,
+        event.data.activeAlternativeIndex ?? 0
       ]
     );
 
@@ -127,6 +129,14 @@ export class ConversationEventApplier {
     if (event.data.tool_call_id !== undefined) {
       updates.push('toolCallId = ?');
       values.push(event.data.tool_call_id);
+    }
+    if (event.data.alternatives !== undefined) {
+      updates.push('alternativesJson = ?');
+      values.push(event.data.alternatives ? JSON.stringify(event.data.alternatives) : null);
+    }
+    if (event.data.activeAlternativeIndex !== undefined) {
+      updates.push('activeAlternativeIndex = ?');
+      values.push(event.data.activeAlternativeIndex);
     }
 
     if (updates.length > 0) {

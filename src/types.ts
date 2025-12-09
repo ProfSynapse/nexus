@@ -66,8 +66,7 @@ export type {
 
 // Plugin configuration types
 export type {
-  MCPSettings,
-  ChatViewSettings
+  MCPSettings
 } from './types/plugin/PluginTypes';
 
 // Common/shared types
@@ -94,10 +93,6 @@ export const DEFAULT_SETTINGS: MCPSettings = {
   memory: DEFAULT_MEMORY_SETTINGS,
   customPrompts: DEFAULT_CUSTOM_PROMPTS_SETTINGS,
   llmProviders: DEFAULT_LLM_PROVIDER_SETTINGS,
-  chatView: {
-    enabled: false,
-    acknowledgedExperimental: false
-  },
   lastUpdateVersion: undefined,
   lastUpdateDate: undefined,
   availableUpdateVersion: undefined,

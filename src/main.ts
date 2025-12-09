@@ -4,6 +4,7 @@ import { Settings } from './settings';
 import { ServiceManager } from './core/ServiceManager';
 import { PluginLifecycleManager, type PluginLifecycleConfig } from './core/PluginLifecycleManager';
 import { BRAND_NAME } from './constants/branding';
+import { ConnectorEnsurer } from './utils/ConnectorEnsurer';
 
 export default class NexusPlugin extends Plugin {
     public settings!: Settings;
@@ -54,6 +55,10 @@ export default class NexusPlugin extends Plugin {
 
     async onload() {
         try {
+            // Ensure connector.js exists (self-healing if missing)
+            const connectorEnsurer = new ConnectorEnsurer(this);
+            await connectorEnsurer.ensureConnectorExists();
+
             // Create service manager and settings
             this.settings = new Settings(this);
             this.serviceManager = new ServiceManager(this.app, this);

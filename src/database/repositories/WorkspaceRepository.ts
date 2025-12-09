@@ -109,9 +109,10 @@ export class WorkspaceRepository
             data.rootFolder,
             data.created ?? now,
             now,
-            data.isActive ? 1 : 0,
+            // Default to 1 (active) if not specified
+            data.isActive !== undefined ? (data.isActive ? 1 : 0) : 1,
             data.dedicatedAgentId ?? null,
-            contextJson
+            contextJson ?? null  // SQLite needs null, not undefined
           ]
         );
       });

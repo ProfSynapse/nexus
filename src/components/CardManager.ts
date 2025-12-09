@@ -90,8 +90,12 @@ export class CardManager<T extends CardItem> {
             isEnabled: item.isEnabled,
             showToggle: this.config.showToggle !== false,
             onToggle: async (enabled: boolean) => {
+                // Update the item's enabled state BEFORE calling the callback
+                // This prevents race conditions where refreshCards() uses stale data
+                item.isEnabled = enabled;
                 await this.config.onToggle(item, enabled);
-                this.refreshCards();
+                // Don't call refreshCards() - the toggle already reflects the new state
+                // and the item is already updated in place
             },
             onEdit: () => this.config.onEdit(item),
             onDelete: this.config.onDelete ? () => this.config.onDelete!(item) : undefined

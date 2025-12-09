@@ -247,6 +247,33 @@ export interface ConversationMetadata {
 }
 
 /**
+ * Alternative message for branching support
+ *
+ * When a user retries/regenerates a response, the new response is stored
+ * as an alternative rather than replacing the original. This enables
+ * navigation between different response versions.
+ */
+export interface AlternativeMessage {
+  /** Unique identifier for this alternative */
+  id: string;
+
+  /** Alternative content */
+  content: string | null;
+
+  /** Timestamp when alternative was created */
+  timestamp: number;
+
+  /** Tool calls made in this alternative */
+  toolCalls?: ToolCall[];
+
+  /** Reasoning/thinking content for this alternative */
+  reasoning?: string;
+
+  /** Message lifecycle state */
+  state: 'draft' | 'streaming' | 'complete' | 'aborted' | 'invalid';
+}
+
+/**
  * Message data in OpenAI format
  *
  * Compatible with OpenAI's chat completion and fine-tuning APIs.
@@ -285,6 +312,12 @@ export interface MessageData {
 
   /** Optional metadata */
   metadata?: Record<string, any>;
+
+  /** Alternative responses for branching (retry/regenerate creates alternatives) */
+  alternatives?: AlternativeMessage[];
+
+  /** Which alternative is active: 0 = original, 1+ = alternative index + 1 */
+  activeAlternativeIndex?: number;
 }
 
 /**

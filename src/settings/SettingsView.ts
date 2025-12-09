@@ -20,7 +20,7 @@ import { WorkspacesTab } from './tabs/WorkspacesTab';
 import { AgentsTab } from './tabs/AgentsTab';
 import { ProvidersTab } from './tabs/ProvidersTab';
 import { GetStartedTab } from './tabs/GetStartedTab';
-import { DataTab } from './tabs/DataTab';
+// import { DataTab } from './tabs/DataTab'; // TODO: Re-enable when Data tab is ready
 
 /**
  * SettingsView - New unified settings interface with tab-based navigation
@@ -54,7 +54,7 @@ export class SettingsView extends PluginSettingTab {
     private agentsTab: AgentsTab | undefined;
     private providersTab: ProvidersTab | undefined;
     private getStartedTab: GetStartedTab | undefined;
-    private dataTab: DataTab | undefined;
+    // private dataTab: DataTab | undefined; // TODO: Re-enable when Data tab is ready
 
     // Prefetched data cache
     private prefetchedWorkspaces: any[] | null = null;
@@ -175,7 +175,7 @@ export class SettingsView extends PluginSettingTab {
             { key: 'workspaces', label: 'Workspaces' },
             { key: 'agents', label: 'Agents' },
             { key: 'providers', label: 'Providers' },
-            { key: 'data', label: 'Data' },
+            // { key: 'data', label: 'Data' }, // TODO: Re-enable when Data tab is ready
             { key: 'getstarted', label: 'Get Started' }
         ];
 
@@ -300,9 +300,9 @@ export class SettingsView extends PluginSettingTab {
             case 'providers':
                 this.renderProvidersTab(pane, state, services);
                 break;
-            case 'data':
-                this.renderDataTab(pane);
-                break;
+            // case 'data': // TODO: Re-enable when Data tab is ready
+            //     this.renderDataTab(pane);
+            //     break;
             case 'getstarted':
                 this.renderGetStartedTab(pane, services);
                 break;
@@ -433,17 +433,18 @@ export class SettingsView extends PluginSettingTab {
         );
     }
 
-    /**
-     * Render Data tab content
-     */
-    private renderDataTab(container: HTMLElement): void {
-        if (!this.serviceManager) {
-            container.createEl('div', { text: 'Service Manager not available.' });
-            return;
-        }
-        this.dataTab = new DataTab(container, this.router, this.serviceManager);
-        this.dataTab.render();
-    }
+    // TODO: Re-enable when Data tab is ready
+    // /**
+    //  * Render Data tab content
+    //  */
+    // private renderDataTab(container: HTMLElement): void {
+    //     if (!this.serviceManager) {
+    //         container.createEl('div', { text: 'Service Manager not available.' });
+    //         return;
+    //     }
+    //     this.dataTab = new DataTab(container, this.router, this.serviceManager);
+    //     this.dataTab.render();
+    // }
 
     /**
      * Render Get Started tab content

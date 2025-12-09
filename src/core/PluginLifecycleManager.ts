@@ -1,8 +1,8 @@
 /**
  * Location: /src/core/PluginLifecycleManager.ts
- * 
+ *
  * Plugin Lifecycle Manager - Handles plugin initialization, startup, and shutdown logic
- * 
+ *
  * This service extracts complex lifecycle management from the main plugin class,
  * coordinating service initialization, background tasks, and cleanup procedures.
  * Used by main.ts to manage the plugin's lifecycle phases in a structured way.
@@ -44,7 +44,7 @@ export class PluginLifecycleManager {
 
     constructor(config: PluginLifecycleConfig) {
         this.config = config;
-        
+
         // Create service registrar with proper context
         const serviceContext: ServiceCreationContext = {
             plugin: config.plugin,
@@ -55,7 +55,7 @@ export class PluginLifecycleManager {
             manifest: config.manifest
         };
         this.serviceRegistrar = new ServiceRegistrar(serviceContext);
-        
+
         // Create command manager
         this.commandManager = new MaintenanceCommandManager({
             plugin: config.plugin,
@@ -63,7 +63,7 @@ export class PluginLifecycleManager {
             getService: (name, timeoutMs) => this.serviceRegistrar.getService(name, timeoutMs),
             isInitialized: () => this.isInitialized
         });
-        
+
         // Create chat UI manager
         this.chatUIManager = new ChatUIManager({
             plugin: config.plugin,
@@ -71,7 +71,7 @@ export class PluginLifecycleManager {
             settings: config.settings,
             getService: (name, timeoutMs) => this.serviceRegistrar.getService(name, timeoutMs)
         });
-        
+
         // Create background processor
         this.backgroundProcessor = new BackgroundProcessor({
             plugin: config.plugin,
@@ -81,7 +81,7 @@ export class PluginLifecycleManager {
             waitForService: (name, timeoutMs) => this.serviceRegistrar.waitForService(name, timeoutMs),
             isInitialized: () => this.isInitialized
         });
-        
+
         // Create settings tab manager
         this.settingsTabManager = new SettingsTabManager({
             plugin: config.plugin,
@@ -99,26 +99,26 @@ export class PluginLifecycleManager {
      */
     async initialize(): Promise<void> {
         const startTime = Date.now();
-        
+
         try {
             // PHASE 1: Foundation - Service container and settings already created by main.ts
-            
+
             // PHASE 2: Register core services (no initialization yet)
             await this.serviceRegistrar.registerCoreServices();
-            
+
             // PHASE 3: Initialize essential services only
             await this.serviceRegistrar.initializeEssentialServices();
 
             // Plugin is now "loaded" - defer full initialization to background
             const loadTime = Date.now() - startTime;
-            
+
             // PHASE 4: Start background initialization after onload completes
             setTimeout(() => {
                 this.startBackgroundInitialization().catch(error => {
                     console.error('[PluginLifecycleManager] Background initialization failed:', error);
                 });
             }, 0);
-            
+
         } catch (error) {
             console.error('[PluginLifecycleManager] Critical initialization failure:', error);
             this.enableFallbackMode();
@@ -130,11 +130,11 @@ export class PluginLifecycleManager {
      */
     private async startBackgroundInitialization(): Promise<void> {
         const bgStartTime = Date.now();
-        
+
         try {
             // Load settings first
             await this.config.settings.loadSettings();
-            
+
             // Log data.json for debugging StateManager
             try {
                 const data = await this.config.plugin.loadData();
@@ -142,7 +142,7 @@ export class PluginLifecycleManager {
             } catch (error) {
                 console.warn('Failed to debug data.json:', error);
             }
-            
+
             // Initialize data directories
             await this.serviceRegistrar.initializeDataDirectories();
 
@@ -178,53 +178,31 @@ export class PluginLifecycleManager {
                     console.error('[PluginLifecycleManager] Background service initialization failed:', error);
                 }
             }, 100);
-            
+
             // Create settings tab
             await this.settingsTabManager.initializeSettingsTab();
-            
+
             // Register all maintenance commands
             this.commandManager.registerMaintenanceCommands();
-            
+
             // Check for updates
             this.backgroundProcessor.checkForUpdatesOnStartup();
-            
+
             // Update settings tab with loaded services
             this.backgroundProcessor.updateSettingsTabServices();
-            
+
             // Mark as fully initialized
             this.isInitialized = true;
-            
+
             // Start background startup processing after everything is ready
             this.backgroundProcessor.startBackgroundStartupProcessing();
-            
+
             const bgLoadTime = Date.now() - bgStartTime;
-            
+
         } catch (error) {
             console.error('[PluginLifecycleManager] Background initialization failed:', error);
         }
     }
-
-
-
-
-
-
-
-
-
-    /**
-     * Enable ChatView UI when user toggles it on in settings
-     * This registers the UI components and auto-opens the ChatView
-     */
-    async enableChatViewUI(): Promise<void> {
-        try {
-            return await this.chatUIManager.enableChatViewUI();
-        } catch (error) {
-            console.error('[PluginLifecycleManager] Failed to enable ChatView UI:', error);
-        }
-    }
-
-
 
     /**
      * Enable fallback mode with minimal functionality
@@ -244,7 +222,7 @@ export class PluginLifecycleManager {
         if (!this.config.serviceManager) {
             return null;
         }
-        
+
         // Try to get service (will initialize if needed)
         try {
             return await this.config.serviceManager.getService<T>(name);
