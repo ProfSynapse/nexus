@@ -198,9 +198,8 @@
     color: var(--text-normal);
 }
 
-.conversation-action-btn svg {
-    width: 14px;
-    height: 14px;
+.conversation-action-btn {
+    --icon-size: 14px;
 }
 
 /* Edit button specific styling */
@@ -576,9 +575,10 @@
     display: flex;
     align-items: center;
     margin-bottom: 0.5rem;
+    justify-content: space-between;
 }
 
-/* User messages: icon on the right */
+/* User messages: icon on the right, actions on the left */
 .message-container.message-user .message-header {
     flex-direction: row-reverse;
 }
@@ -619,11 +619,11 @@
     width: fit-content;
 }
 
-/* User messages: pill in top-left (icon is in top-right), absolute positioning outside bubble */
+/* User messages: actions in header, flexbox handles positioning */
 .message-container.message-user .message-actions-external {
-    position: absolute;
-    top: 0.5rem;
-    left: 0.75rem;
+    position: relative;
+    top: auto;
+    left: auto;
 }
 
 /* Assistant messages: pill in top-right (icon is in top-left), inside bubble with sticky */
@@ -1358,10 +1358,9 @@
     opacity: 0.5;
 }
 
-.chat-send-button svg {
-    width: 16px;
-    height: 16px;
-    transition: transform 0.2s ease;
+/* Icon sizing via Obsidian's --icon-size variable (used by clickable-icon class) */
+.chat-send-button {
+    --icon-size: 16px;
 }
 
 /* Stop button mode - red circular button */
@@ -1376,9 +1375,8 @@
     opacity: 0.9;
 }
 
-.chat-send-button.stop-mode svg {
-    width: 12px;
-    height: 12px;
+.chat-send-button.stop-mode {
+    --icon-size: 12px;
 }
 
 @keyframes pulse-stop {
@@ -5425,22 +5423,48 @@ body.is-mobile .chat-send-button {
     height: 44px;
     bottom: 6px;
     right: 6px;
+    --icon-size: 18px;
 }
 
-body.is-mobile .chat-send-button svg {
-    width: 20px;
-    height: 20px;
-}
-
+/* Message action buttons - reasonable size that doesn't overlap content */
 body.is-mobile .message-action-btn {
-    width: 40px;
-    height: 40px;
-    padding: 0.5rem;
+    width: 36px;
+    height: 36px;
+    padding: 0.4rem;
+    --icon-size: 16px;
 }
 
-body.is-mobile .message-action-btn svg {
-    width: 16px;
-    height: 16px;
+/* Action button container - position BELOW the message on mobile */
+body.is-mobile .message-actions-external {
+    gap: 2px;
+    padding: 2px;
+    border-radius: 8px;
+}
+
+/* Assistant messages: keep in corner but smaller on mobile */
+body.is-mobile .message-container.message-assistant .message-actions-external {
+    top: 0.25rem;
+    right: 0.25rem;
+}
+
+/* Message bubbles - more padding and margin on mobile */
+body.is-mobile .message-bubble {
+    padding: 0.875rem 1rem;
+    font-size: 16px;
+    line-height: 1.5;
+    margin-bottom: 0.75rem;
+}
+
+/* Message content - ensure left alignment */
+body.is-mobile .message-content {
+    text-align: left;
+}
+
+/* Tool messages - better spacing */
+body.is-mobile .message-container.message-tool .message-bubble {
+    padding: 0.875rem 1rem;
+    word-break: break-word;
+    text-align: left;
 }
 
 /* Mobile: conversation action buttons always visible */
@@ -5455,11 +5479,7 @@ body.is-mobile .conversation-item:active .conversation-actions {
 body.is-mobile .conversation-action-btn {
     width: 36px;
     height: 36px;
-}
-
-body.is-mobile .conversation-action-btn svg {
-    width: 16px;
-    height: 16px;
+    --icon-size: 16px;
 }
 
 body.is-mobile .chat-new-button {

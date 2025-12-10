@@ -2,10 +2,13 @@
  * Enhanced Logger
  * Structured logging with multiple outputs and severity levels
  * Based on patterns from existing logging services
+ *
+ * MOBILE COMPATIBILITY (Dec 2025):
+ * - Removed Node.js fs and path imports
+ * - File logging only works via Obsidian vault adapter
+ * - Falls back to console-only logging if vault adapter not configured
  */
 
-import { appendFileSync, existsSync, mkdirSync } from 'fs';
-import { join } from 'path';
 import { normalizePath } from 'obsidian';
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
@@ -266,39 +269,28 @@ export class Logger {
   }
 
   private logToFile(entry: LogEntry): void {
-    const logFile = join(this.config.logDirectory, `lab-kit-${this.getDateString()}.log`);
-    const line = JSON.stringify(entry) + '\n';
-    
-    if (Logger.vaultAdapterConfig) {
-      this.writeViaVaultAdapter(logFile, line);
+    // File logging only available with vault adapter on mobile
+    if (!Logger.vaultAdapterConfig) {
+      // Silently skip file logging when no vault adapter configured
       return;
     }
 
-    try {
-      appendFileSync(logFile, line);
-      this.rotateLogsIfNeeded(logFile);
-    } catch (error) {
-      console.error('Failed to write to log file:', error);
-    }
+    const logFile = normalizePath(`${this.config.logDirectory}/lab-kit-${this.getDateString()}.log`);
+    const line = JSON.stringify(entry) + '\n';
+    this.writeViaVaultAdapter(logFile, line);
   }
 
   private ensureLogDirectory(): void {
     if (!this.config.enableFile) return;
 
+    // File logging only works with vault adapter (mobile compatible)
     if (Logger.vaultAdapterConfig) {
       const dir = normalizePath(Logger.vaultAdapterConfig.baseDir || '.nexus/logs');
       Logger.vaultAdapterConfig.adapter.mkdir(dir).catch(() => {});
       this.config.logDirectory = dir;
-      return;
-    }
-
-    if (!existsSync(this.config.logDirectory)) {
-      try {
-        mkdirSync(this.config.logDirectory, { recursive: true });
-      } catch (error) {
-        console.error('Failed to create log directory:', error);
-        this.config.enableFile = false;
-      }
+    } else {
+      // No vault adapter - disable file logging on mobile
+      this.config.enableFile = false;
     }
   }
 
@@ -306,54 +298,14 @@ export class Logger {
     return new Date().toISOString().split('T')[0]!;
   }
 
-  private rotateLogsIfNeeded(logFile: string): void {
-    if (Logger.vaultAdapterConfig) {
-      // Rotation not supported with vault adapter; rely on vault sync instead.
-      return;
-    }
-
-    try {
-      const stats = require('fs').statSync(logFile);
-      if (stats.size > this.config.maxFileSize) {
-        // Simple rotation - rename current file with timestamp
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const rotatedFile = logFile.replace('.log', `-${timestamp}.log`);
-        require('fs').renameSync(logFile, rotatedFile);
-        
-        // Clean up old files if we exceed maxFiles
-        this.cleanupOldLogs();
-      }
-    } catch (error) {
-      // Ignore rotation errors
-    }
+  // Log rotation not supported on mobile - rely on manual cleanup or vault sync
+  // These methods are kept as stubs for API compatibility
+  private rotateLogsIfNeeded(_logFile: string): void {
+    // Not supported with vault adapter approach - logs managed via vault sync
   }
 
   private cleanupOldLogs(): void {
-    try {
-      const fs = require('fs');
-      const files = fs.readdirSync(this.config.logDirectory)
-        .filter((file: string) => file.startsWith('lab-kit-') && file.endsWith('.log'))
-        .map((file: string) => ({
-          name: file,
-          path: join(this.config.logDirectory, file),
-          stats: fs.statSync(join(this.config.logDirectory, file))
-        }))
-        .sort((a: any, b: any) => b.stats.mtime - a.stats.mtime);
-
-      // Keep only the most recent files
-      if (files.length > this.config.maxFiles) {
-        const filesToDelete = files.slice(this.config.maxFiles);
-        filesToDelete.forEach((file: any) => {
-          try {
-            fs.unlinkSync(file.path);
-          } catch (error) {
-            // Ignore cleanup errors
-          }
-        });
-      }
-    } catch (error) {
-      // Ignore cleanup errors
-    }
+    // Not supported with vault adapter approach - logs managed via vault sync
   }
 
   /**

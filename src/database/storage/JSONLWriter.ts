@@ -25,7 +25,7 @@
 
 import { App } from 'obsidian';
 import { StorageEvent, BaseStorageEvent } from '../interfaces/StorageEvents';
-import { v4 as uuidv4 } from 'uuid';
+import { v4 as uuidv4 } from '../../utils/uuid';
 import { NamedLocks } from '../../utils/AsyncLock';
 
 /**

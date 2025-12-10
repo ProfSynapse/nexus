@@ -145,18 +145,24 @@ export class MessageBubble extends Component {
       this.startLoadingAnimation(loadingSpan);
     }
 
+    // Create actions in header for user messages (next to icon), elsewhere for others
+    // This prevents action buttons from overlapping message content on mobile
+    let actions: HTMLElement;
+    if (this.message.role === 'user') {
+      actions = header.createDiv('message-actions-external');
+    } else if (this.message.role === 'assistant') {
+      actions = bubble.createDiv('message-actions-external');
+    } else {
+      actions = messageContainer.createDiv('message-actions-external');
+    }
+
+    this.createActionButtons(actions, bubble);
+
     // Message content
     const content = bubble.createDiv('message-content');
     this.renderContent(content, activeContent).catch(error => {
       console.error('[MessageBubble] Error rendering initial content:', error);
     });
-
-    // Create actions - inside bubble for assistant, outside for user/tool
-    const actions = this.message.role === 'assistant'
-      ? bubble.createDiv('message-actions-external')
-      : messageContainer.createDiv('message-actions-external');
-
-    this.createActionButtons(actions, bubble);
 
     this.element = messageContainer;
     return messageContainer;
@@ -170,7 +176,7 @@ export class MessageBubble extends Component {
       // Edit button for user messages
       if (this.onEdit) {
         const editBtn = actions.createEl('button', {
-          cls: 'message-action-btn',
+          cls: 'message-action-btn clickable-icon',
           attr: { title: 'Edit message' }
         });
         setIcon(editBtn, 'edit');
@@ -179,7 +185,7 @@ export class MessageBubble extends Component {
 
       // Retry button for user messages
       const retryBtn = actions.createEl('button', {
-        cls: 'message-action-btn',
+        cls: 'message-action-btn clickable-icon',
         attr: { title: 'Retry message' }
       });
       setIcon(retryBtn, 'rotate-ccw');
@@ -193,7 +199,7 @@ export class MessageBubble extends Component {
     } else if (this.message.role === 'tool') {
       // Tool messages get minimal actions - just copy for debugging
       const copyBtn = actions.createEl('button', {
-        cls: 'message-action-btn',
+        cls: 'message-action-btn clickable-icon',
         attr: { title: 'Copy tool execution details' }
       });
       setIcon(copyBtn, 'copy');
@@ -204,7 +210,7 @@ export class MessageBubble extends Component {
     } else {
       // Copy button for AI messages
       const copyBtn = actions.createEl('button', {
-        cls: 'message-action-btn',
+        cls: 'message-action-btn clickable-icon',
         attr: { title: 'Copy message' }
       });
       setIcon(copyBtn, 'copy');

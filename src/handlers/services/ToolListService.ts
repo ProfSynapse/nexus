@@ -1,4 +1,4 @@
-import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
+import { NexusError, NexusErrorCode } from '../../utils/errors';
 import { IToolListService, ISchemaEnhancementService } from '../interfaces/IRequestHandlerServices';
 import { IAgent } from '../../agents/interfaces/IAgent';
 import { logger } from '../../utils/logger';
@@ -80,7 +80,7 @@ export class ToolListService implements IToolListService {
             return { tools };
         } catch (error) {
             logger.systemError(error as Error, "Error in generateToolList");
-            throw new McpError(ErrorCode.InternalError, 'Failed to list tools', error);
+            throw new NexusError(NexusErrorCode.InternalError, 'Failed to list tools', error);
         }
     }
 

@@ -1,13 +1,35 @@
 /**
  * Cache Manager
  * Provides in-memory LRU cache and file-based cache implementations
+ *
+ * MOBILE COMPATIBILITY (Dec 2025):
+ * - Uses Web Crypto API instead of Node.js crypto
+ * - Uses Obsidian's Vault API instead of Node.js fs
+ * - Falls back to memory-only caching if vault adapter not configured
  */
 
-import { createHash } from 'crypto';
-import { promises as fs } from 'fs';
-import { join } from 'path';
 import { normalizePath } from 'obsidian';
 import { logger } from './Logger';
+
+// Browser-compatible hash function using Web Crypto API
+async function generateHashAsync(input: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(input);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// Synchronous fallback using simple hash (for cases where async isn't possible)
+function generateHashSync(input: string): string {
+  // Simple djb2 hash - not cryptographically secure but sufficient for cache keys
+  let hash = 5381;
+  for (let i = 0; i < input.length; i++) {
+    hash = ((hash << 5) + hash) + input.charCodeAt(i);
+    hash = hash & hash; // Convert to 32bit integer
+  }
+  return Math.abs(hash).toString(16);
+}
 
 export interface CacheEntry<T> {
   value: T;
@@ -73,7 +95,12 @@ export abstract class BaseCache<T> {
   }
 
   protected generateHash(input: string): string {
-    return createHash('sha256').update(input).digest('hex');
+    // Use synchronous hash for cache keys (async not needed for this use case)
+    return generateHashSync(input);
+  }
+
+  protected async generateHashSecure(input: string): Promise<string> {
+    return generateHashAsync(input);
   }
 }
 
@@ -84,39 +111,30 @@ export class LRUCache<T> extends BaseCache<T> {
 
   async get(key: string): Promise<T | null> {
     const entry = this.cache.get(key);
-    
+
     if (!entry) {
       this.metrics.misses++;
       return null;
     }
 
     if (this.isExpired(entry)) {
-      this.cache.delete(key);
-      this.accessOrder.delete(key);
+      await this.delete(key);
       this.metrics.misses++;
-      this.metrics.size--;
       return null;
     }
 
-    // Update access order and hit count
-    entry.hits++;
+    // Update access order for LRU
     this.accessOrder.set(key, ++this.accessCounter);
+    entry.hits++;
     this.metrics.hits++;
-    
+
     return entry.value;
   }
 
   async set(key: string, value: T, ttl?: number): Promise<void> {
-    // Remove existing entry if present
-    if (this.cache.has(key)) {
-      this.cache.delete(key);
-      this.accessOrder.delete(key);
-      this.metrics.size--;
-    }
-
-    // Evict LRU entries if at capacity
-    while (this.cache.size >= this.config.maxSize) {
-      this.evictLRU();
+    // Check if we need to evict
+    if (this.cache.size >= this.config.maxSize && !this.cache.has(key)) {
+      await this.evictLRU();
     }
 
     const entry: CacheEntry<T> = {
@@ -128,73 +146,69 @@ export class LRUCache<T> extends BaseCache<T> {
 
     this.cache.set(key, entry);
     this.accessOrder.set(key, ++this.accessCounter);
-    this.metrics.size++;
+    this.metrics.size = this.cache.size;
 
-    if (this.config.persistToDisk) {
+    // Persist to disk if configured and vault adapter available
+    if (this.config.persistToDisk && CacheManager.vaultAdapterConfig) {
       await this.persistEntry(key, entry);
     }
   }
 
   async delete(key: string): Promise<boolean> {
     const deleted = this.cache.delete(key);
+    this.accessOrder.delete(key);
+
     if (deleted) {
-      this.accessOrder.delete(key);
-      this.metrics.size--;
+      this.metrics.size = this.cache.size;
     }
+
     return deleted;
   }
 
   async clear(): Promise<void> {
     this.cache.clear();
     this.accessOrder.clear();
+    this.accessCounter = 0;
     this.metrics.size = 0;
-    this.metrics.evictions = 0;
   }
 
   size(): number {
     return this.cache.size;
   }
 
-  private evictLRU(): void {
-    let oldestKey: string | null = null;
-    let oldestAccess = Infinity;
+  private async evictLRU(): Promise<void> {
+    let lruKey: string | null = null;
+    let lruOrder = Infinity;
 
-    for (const [key, accessTime] of this.accessOrder) {
-      if (accessTime < oldestAccess) {
-        oldestAccess = accessTime;
-        oldestKey = key;
+    for (const [key, order] of this.accessOrder.entries()) {
+      if (order < lruOrder) {
+        lruOrder = order;
+        lruKey = key;
       }
     }
 
-    if (oldestKey) {
-      this.cache.delete(oldestKey);
-      this.accessOrder.delete(oldestKey);
+    if (lruKey) {
+      await this.delete(lruKey);
       this.metrics.evictions++;
-      this.metrics.size--;
     }
   }
 
   private async persistEntry(key: string, entry: CacheEntry<T>): Promise<void> {
-    const hashed = `${this.generateHash(key)}.json`;
-    if (CacheManager.vaultAdapterConfig) {
-      const adapter = CacheManager.vaultAdapterConfig.adapter;
-      const dir = normalizePath(CacheManager.vaultAdapterConfig.baseDir);
-      const filePath = normalizePath(`${dir}/${hashed}`);
-      try {
-        await adapter.mkdir(dir);
-        await adapter.write(filePath, JSON.stringify({ key, entry }));
-      } catch (error) {
-        logger.warn('Failed to persist cache entry via vault adapter:', { error: (error as Error).message });
-      }
+    if (!CacheManager.vaultAdapterConfig) {
+      // No vault adapter configured - skip disk persistence
       return;
     }
 
+    const hashed = `${this.generateHash(key)}.json`;
+    const adapter = CacheManager.vaultAdapterConfig.adapter;
+    const dir = normalizePath(CacheManager.vaultAdapterConfig.baseDir);
+    const filePath = normalizePath(`${dir}/${hashed}`);
+
     try {
-      await fs.mkdir(this.config.cacheDir, { recursive: true });
-      const filePath = join(this.config.cacheDir, hashed);
-      await fs.writeFile(filePath, JSON.stringify({ key, entry }));
+      await adapter.mkdir(dir);
+      await adapter.write(filePath, JSON.stringify({ key, entry }));
     } catch (error) {
-      logger.warn('Failed to persist cache entry:', { error: (error as Error).message });
+      logger.warn('Failed to persist cache entry via vault adapter:', { error: (error as Error).message });
     }
   }
 }
@@ -212,7 +226,7 @@ export class FileCache<T> extends BaseCache<T> {
   async get(key: string): Promise<T | null> {
     // Check memory first
     let entry = this.memoryCache.get(key);
-    
+
     // If not in memory, try disk
     if (!entry) {
       entry = (await this.loadFromDisk(key)) || undefined;
@@ -253,7 +267,7 @@ export class FileCache<T> extends BaseCache<T> {
   async delete(key: string): Promise<boolean> {
     const memoryDeleted = this.memoryCache.delete(key);
     const diskDeleted = await this.deleteFromDisk(key);
-    
+
     if (memoryDeleted || diskDeleted) {
       this.metrics.size--;
       return true;
@@ -263,15 +277,7 @@ export class FileCache<T> extends BaseCache<T> {
 
   async clear(): Promise<void> {
     this.memoryCache.clear();
-    if (CacheManager.vaultAdapterConfig) {
-      await this.clearVaultCache();
-    } else {
-      try {
-        await fs.rm(this.config.cacheDir, { recursive: true, force: true });
-      } catch (error) {
-        logger.warn('Failed to clear disk cache:', { error: (error as Error).message });
-      }
-    }
+    await this.clearVaultCache();
     this.metrics.size = 0;
   }
 
@@ -280,88 +286,91 @@ export class FileCache<T> extends BaseCache<T> {
   }
 
   private async initializeCache(): Promise<void> {
-    if (CacheManager.vaultAdapterConfig) {
-      try {
-        const dir = this.getCacheDir();
-        await CacheManager.vaultAdapterConfig.adapter.mkdir(dir);
-      } catch (error) {
-        logger.warn('Failed to initialize cache directory via vault adapter:', { error: (error as Error).message });
-      }
-    } else {
-      try {
-        await fs.mkdir(this.config.cacheDir, { recursive: true });
-      } catch (error) {
-        logger.warn('Failed to initialize cache directory:', { error: (error as Error).message });
-      }
+    if (!CacheManager.vaultAdapterConfig) {
+      // No vault adapter - memory-only mode
+      return;
+    }
+
+    try {
+      const dir = this.getCacheDir();
+      await CacheManager.vaultAdapterConfig.adapter.mkdir(dir);
+    } catch (error) {
+      logger.warn('Failed to initialize cache directory via vault adapter:', { error: (error as Error).message });
     }
   }
 
   private async loadFromDisk(key: string): Promise<CacheEntry<T> | null> {
-    const hashed = `${this.generateHash(key)}.json`;
-    if (CacheManager.vaultAdapterConfig) {
-      const adapter = CacheManager.vaultAdapterConfig.adapter;
-      const filePath = this.normalizeVaultPath(`${this.baseDir}/${hashed}`);
-      try {
-        const exists = await adapter.exists(filePath);
-        if (!exists) return null;
-        const data = await adapter.read(filePath);
-        const parsed = JSON.parse(data);
-        return parsed.entry;
-      } catch {
-        return null;
-      }
+    if (!CacheManager.vaultAdapterConfig) {
+      return null;
     }
 
+    const hashed = `${this.generateHash(key)}.json`;
+    const adapter = CacheManager.vaultAdapterConfig.adapter;
+    const filePath = this.normalizeVaultPath(`${this.baseDir}/${hashed}`);
+
     try {
-      const filePath = join(this.config.cacheDir, hashed);
-      const data = await fs.readFile(filePath, 'utf-8');
+      const exists = await adapter.exists(filePath);
+      if (!exists) return null;
+      const data = await adapter.read(filePath);
       const parsed = JSON.parse(data);
       return parsed.entry;
-    } catch (error) {
+    } catch {
       return null;
     }
   }
 
   private async saveToDisk(key: string, entry: CacheEntry<T>): Promise<void> {
-    const hashed = `${this.generateHash(key)}.json`;
-    if (CacheManager.vaultAdapterConfig) {
-      const adapter = CacheManager.vaultAdapterConfig.adapter;
-      const filePath = this.normalizeVaultPath(`${this.baseDir}/${hashed}`);
-      try {
-        await adapter.write(filePath, JSON.stringify({ key, entry }));
-      } catch (error) {
-        logger.warn('Failed to save cache entry to vault:', { error: (error as Error).message });
-      }
+    if (!CacheManager.vaultAdapterConfig) {
       return;
     }
 
+    const hashed = `${this.generateHash(key)}.json`;
+    const adapter = CacheManager.vaultAdapterConfig.adapter;
+    const filePath = this.normalizeVaultPath(`${this.baseDir}/${hashed}`);
+
     try {
-      const filePath = join(this.config.cacheDir, hashed);
-      await fs.writeFile(filePath, JSON.stringify({ key, entry }));
+      await adapter.write(filePath, JSON.stringify({ key, entry }));
     } catch (error) {
-      logger.warn('Failed to save cache entry to disk:', { error: (error as Error).message });
+      logger.warn('Failed to save cache entry to vault:', { error: (error as Error).message });
     }
   }
 
   private async deleteFromDisk(key: string): Promise<boolean> {
-    const hashed = `${this.generateHash(key)}.json`;
-    if (CacheManager.vaultAdapterConfig) {
-      const adapter = CacheManager.vaultAdapterConfig.adapter;
-      const filePath = this.normalizeVaultPath(`${this.baseDir}/${hashed}`);
-      try {
-        await adapter.remove(filePath);
-        return true;
-      } catch {
-        return false;
-      }
+    if (!CacheManager.vaultAdapterConfig) {
+      return false;
     }
 
+    const hashed = `${this.generateHash(key)}.json`;
+    const adapter = CacheManager.vaultAdapterConfig.adapter;
+    const filePath = this.normalizeVaultPath(`${this.baseDir}/${hashed}`);
+
     try {
-      const filePath = join(this.config.cacheDir, hashed);
-      await fs.unlink(filePath);
+      await adapter.remove(filePath);
       return true;
-    } catch (error) {
+    } catch {
       return false;
+    }
+  }
+
+  private async clearVaultCache(): Promise<void> {
+    if (!CacheManager.vaultAdapterConfig) {
+      return;
+    }
+
+    const adapter = CacheManager.vaultAdapterConfig.adapter;
+    const dir = this.getCacheDir();
+
+    try {
+      if (adapter.list) {
+        const contents = await adapter.list(dir);
+        for (const file of contents.files) {
+          if (file.endsWith('.json')) {
+            await adapter.remove(this.normalizeVaultPath(`${dir}/${file}`));
+          }
+        }
+      }
+    } catch (error) {
+      logger.warn('Failed to clear vault cache:', { error: (error as Error).message });
     }
   }
 
@@ -372,42 +381,28 @@ export class FileCache<T> extends BaseCache<T> {
   private normalizeVaultPath(p: string): string {
     return normalizePath(p);
   }
-
-  private async clearVaultCache(): Promise<void> {
-    const adapter = CacheManager.vaultAdapterConfig?.adapter;
-    if (!adapter) return;
-    const dir = this.getCacheDir();
-    try {
-      const listing = await adapter.list?.(dir);
-      if (listing) {
-        for (const file of listing.files) {
-          await adapter.remove(normalizePath(file));
-        }
-      }
-    } catch (error) {
-      logger.warn('Failed to clear vault cache:', { error: (error as Error).message });
-    }
-  }
 }
 
+/**
+ * CacheManager singleton
+ * Manages multiple cache instances and provides centralized configuration
+ */
 export class CacheManager {
   private static instances = new Map<string, BaseCache<any>>();
   static vaultAdapterConfig: { adapter: VaultAdapter; baseDir: string } | null = null;
 
-  static createLRUCache<T>(name: string, config?: Partial<CacheConfig>): LRUCache<T> {
-    const cache = new LRUCache<T>(config);
-    this.instances.set(name, cache);
-    return cache;
+  static getLRUCache<T>(name: string, config?: Partial<CacheConfig>): LRUCache<T> {
+    if (!this.instances.has(name)) {
+      this.instances.set(name, new LRUCache<T>(config));
+    }
+    return this.instances.get(name) as LRUCache<T>;
   }
 
-  static createFileCache<T>(name: string, config?: Partial<CacheConfig>): FileCache<T> {
-    const cache = new FileCache<T>(config);
-    this.instances.set(name, cache);
-    return cache;
-  }
-
-  static getCache<T>(name: string): BaseCache<T> | null {
-    return this.instances.get(name) || null;
+  static getFileCache<T>(name: string, config?: Partial<CacheConfig>): FileCache<T> {
+    if (!this.instances.has(name)) {
+      this.instances.set(name, new FileCache<T>(config));
+    }
+    return this.instances.get(name) as FileCache<T>;
   }
 
   static async clearAll(): Promise<void> {
@@ -425,7 +420,8 @@ export class CacheManager {
   }
 
   /**
-   * Configure a vault adapter so cache persistence uses Obsidian API instead of Node fs.
+   * Configure a vault adapter so cache persistence uses Obsidian API.
+   * Must be called before creating file-based caches for disk persistence to work.
    */
   static configureVaultAdapter(adapter: VaultAdapter, baseDir: string = '.nexus/cache') {
     this.vaultAdapterConfig = { adapter, baseDir };

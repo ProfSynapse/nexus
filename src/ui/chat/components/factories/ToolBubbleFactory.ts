@@ -145,7 +145,7 @@ export class ToolBubbleFactory {
 
     // Copy button
     const copyBtn = actions.createEl('button', {
-      cls: 'message-action-btn',
+      cls: 'message-action-btn clickable-icon',
       attr: { title: 'Copy message' }
     });
     setIcon(copyBtn, 'copy');

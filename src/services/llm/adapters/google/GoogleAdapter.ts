@@ -2,9 +2,13 @@
  * Google Gemini Adapter with true streaming support
  * Implements Google Gemini streaming protocol using generateContentStream
  * Based on official Google Gemini JavaScript SDK documentation
+ *
+ * MOBILE COMPATIBILITY (Dec 2025):
+ * The @google/genai SDK uses gaxios which requires Node.js 'os' module.
+ * SDK import is now lazy (dynamic) to avoid bundling Node.js dependencies.
+ * This allows the plugin to load on mobile, but Google provider won't work there.
  */
 
-import { GoogleGenAI } from '@google/genai';
 import { BaseAdapter } from '../BaseAdapter';
 import {
   GenerateOptions,
@@ -22,19 +26,41 @@ import { ReasoningPreserver } from '../shared/ReasoningPreserver';
 import { SchemaValidator } from '../../utils/SchemaValidator';
 import { ThinkingEffortMapper } from '../../utils/ThinkingEffortMapper';
 
+// Type-only import for TypeScript (doesn't affect bundling)
+import type { GoogleGenAI as GoogleGenAIType } from '@google/genai';
+
 export class GoogleAdapter extends BaseAdapter implements MCPCapableAdapter {
   readonly name = 'google';
   readonly baseUrl = 'https://generativelanguage.googleapis.com/v1';
 
-  private client: GoogleGenAI;
+  private client: GoogleGenAIType | null = null;
+  private clientPromise: Promise<GoogleGenAIType> | null = null;
   mcpConnector?: any;
 
   constructor(apiKey: string, mcpConnector?: any, model?: string) {
     super(apiKey, model || GOOGLE_DEFAULT_MODEL);
-
-    this.client = new GoogleGenAI({ apiKey: this.apiKey });
     this.mcpConnector = mcpConnector;
     this.initializeCache();
+  }
+
+  /**
+   * Lazy-load the Google GenAI SDK to avoid bundling Node.js dependencies
+   * This allows the plugin to load on mobile (though Google won't work there)
+   */
+  private async getClient(): Promise<GoogleGenAIType> {
+    if (this.client) {
+      return this.client;
+    }
+
+    if (!this.clientPromise) {
+      this.clientPromise = (async () => {
+        const { GoogleGenAI } = await import('@google/genai');
+        this.client = new GoogleGenAI({ apiKey: this.apiKey });
+        return this.client;
+      })();
+    }
+
+    return this.clientPromise;
   }
 
   async generateUncached(prompt: string, options?: GenerateOptions): Promise<LLMResponse> {
@@ -167,7 +193,8 @@ export class GoogleAdapter extends BaseAdapter implements MCPCapableAdapter {
 
       let response;
       try {
-        response = await this.client.models.generateContentStream(request);
+        const client = await this.getClient();
+        response = await client.models.generateContentStream(request);
       } catch (error: any) {
         console.error('[Google Adapter] Error calling generateContentStream:', error);
         throw error;
@@ -389,7 +416,8 @@ export class GoogleAdapter extends BaseAdapter implements MCPCapableAdapter {
         },
 
         makeApiCall: async (requestBody: any) => {
-          return await this.client.models.generateContent(requestBody);
+          const client = await this.getClient();
+          return await client.models.generateContent(requestBody);
         },
 
         extractResponse: async (response: any) => {
@@ -461,7 +489,8 @@ export class GoogleAdapter extends BaseAdapter implements MCPCapableAdapter {
       request.tools = [{ googleSearch: {} }];
     }
 
-    const response = await this.client.models.generateContent(request);
+    const client = await this.getClient();
+    const response = await client.models.generateContent(request);
 
     const extractedUsage = this.extractUsage(response);
     const finishReason = this.mapFinishReason(response.candidates?.[0]?.finishReason);

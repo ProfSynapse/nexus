@@ -37,7 +37,7 @@ export class MessageBranchNavigator {
 
     // Previous alternative button
     this.prevButton = this.container.createEl('button', {
-      cls: 'message-action-btn message-branch-prev',
+      cls: 'message-action-btn message-branch-prev clickable-icon',
       attr: {
         'aria-label': 'Previous alternative',
         'title': 'Go to previous alternative response'
@@ -51,7 +51,7 @@ export class MessageBranchNavigator {
 
     // Next alternative button
     this.nextButton = this.container.createEl('button', {
-      cls: 'message-action-btn message-branch-next',
+      cls: 'message-action-btn message-branch-next clickable-icon',
       attr: {
         'aria-label': 'Next alternative',
         'title': 'Go to next alternative response'

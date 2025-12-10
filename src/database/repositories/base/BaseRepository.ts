@@ -21,7 +21,7 @@
  * - src/database/storage/JSONLWriter.ts - JSONL operations
  */
 
-import { v4 as uuidv4 } from 'uuid';
+import { v4 as uuidv4 } from '../../../utils/uuid';
 import { IRepository } from '../interfaces/IRepository';
 import { PaginatedResult, PaginationParams } from '../../../types/pagination/PaginationTypes';
 import { SQLiteCacheManager } from '../../storage/SQLiteCacheManager';

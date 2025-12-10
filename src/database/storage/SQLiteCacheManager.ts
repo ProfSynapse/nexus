@@ -27,6 +27,7 @@ import { SQLiteSearchService } from './SQLiteSearchService';
 
 // Import schema from TypeScript module (esbuild compatible)
 import { SCHEMA_SQL } from '../schema/schema';
+import { SchemaMigrator, CURRENT_SCHEMA_VERSION } from '../schema/SchemaMigrator';
 
 export interface SQLiteCacheManagerOptions {
   app: App;
@@ -87,12 +88,24 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
       if (existingData) {
         this.db = new this.SQL.Database(existingData);
         console.log('[SQLiteCacheManager] Loaded existing database');
+
+        // Run schema migrations if needed
+        const migrator = new SchemaMigrator(this.db);
+        const result = await migrator.migrate();
+
+        if (result.applied > 0) {
+          console.log(`[SQLiteCacheManager] Applied ${result.applied} migration(s): v${result.fromVersion} -> v${result.toVersion}`);
+          // Note: We don't clear data after migrations to avoid OOM during rebuild.
+          // New columns will have NULL/default values for existing rows.
+          this.isDirty = true;
+          await this.save(); // Persist migrations immediately
+        }
       } else {
         // Create new database with schema
         this.db = new this.SQL.Database();
         await this.exec(SCHEMA_SQL);
         await this.save(); // Persist the new database
-        console.log('[SQLiteCacheManager] Created new database with schema');
+        console.log(`[SQLiteCacheManager] Created new database with schema v${CURRENT_SCHEMA_VERSION}`);
       }
 
       this.isInitialized = true;
@@ -438,6 +451,7 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
         DELETE FROM sessions;
         DELETE FROM workspaces;
         DELETE FROM applied_events;
+        DELETE FROM sync_state;
       `);
     });
   }

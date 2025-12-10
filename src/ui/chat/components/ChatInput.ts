@@ -4,11 +4,12 @@
  * Provides text input, send button, and model selection
  */
 
-import { setIcon, App } from 'obsidian';
+import { setIcon, App, Platform } from 'obsidian';
 import { initializeSuggesters, SuggesterInstances } from './suggesters/initializeSuggesters';
 import { ContentEditableHelper } from '../utils/ContentEditableHelper';
 import { ReferenceExtractor, ReferenceMetadata } from '../utils/ReferenceExtractor';
 import { MessageEnhancement } from './suggesters/base/SuggesterInterfaces';
+import { isMobile, isIOS } from '../../../utils/platform';
 
 export class ChatInput {
   private element: HTMLElement | null = null;
@@ -96,9 +97,25 @@ export class ChatInput {
       this.autoResizeInput();
     });
 
+    // iOS: Scroll input into view when keyboard opens
+    if (isIOS()) {
+      this.inputElement.addEventListener('focus', () => {
+        // Wait for keyboard animation to complete
+        setTimeout(() => {
+          this.inputElement?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 300);
+      });
+    }
+
+    // Mobile: Add mobile-specific class for styling
+    if (isMobile()) {
+      inputWrapper.addClass('chat-input-mobile');
+    }
+
     // Send button - embedded inside the input wrapper (bottom-right)
+    // Uses Obsidian's clickable-icon class for proper icon sizing
     this.sendButton = inputWrapper.createEl('button', {
-      cls: 'chat-send-button'
+      cls: 'chat-send-button clickable-icon'
     });
 
     // Add send icon using Obsidian's setIcon

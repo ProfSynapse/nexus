@@ -1,12 +1,26 @@
 /**
  * LLM Validation Service
  * Direct API key validation without full adapter initialization
+ *
+ * MOBILE COMPATIBILITY (Dec 2025):
+ * - Removed Node.js crypto import
+ * - Uses simple djb2 hash for validation caching (not cryptographic, but sufficient)
+ * - All validation uses Obsidian's requestUrl (no SDK imports)
  */
 
-import OpenAI from 'openai';
 import { requestUrl } from 'obsidian';
-import { createHash } from 'crypto';
 import { BRAND_NAME } from '../../../constants/branding';
+
+// Browser-compatible hash function (djb2 algorithm)
+// Not cryptographically secure but sufficient for cache key validation
+function generateHash(input: string): string {
+  let hash = 5381;
+  for (let i = 0; i < input.length; i++) {
+    hash = ((hash << 5) + hash) + input.charCodeAt(i);
+    hash = hash & hash; // Convert to 32bit integer
+  }
+  return Math.abs(hash).toString(16);
+}
 
 export class LLMValidationService {
   private static readonly VALIDATION_TIMEOUT = 10000; // 10 seconds
@@ -16,7 +30,7 @@ export class LLMValidationService {
    * Create a hash of the API key for validation caching
    */
   private static createKeyHash(apiKey: string): string {
-    return createHash('sha256').update(apiKey).digest('hex').substring(0, 16);
+    return generateHash(apiKey).substring(0, 16);
   }
 
   /**
@@ -138,24 +152,34 @@ export class LLMValidationService {
 
   private static async validateOpenAI(apiKey: string): Promise<{ success: boolean; error?: string }> {
     try {
-      const client = new OpenAI({
-        apiKey: apiKey,
-        dangerouslyAllowBrowser: true,
-        timeout: this.VALIDATION_TIMEOUT
+      // Use Obsidian's requestUrl instead of SDK for mobile compatibility
+      const response = await this.requestWithTimeout({
+        url: 'https://api.openai.com/v1/chat/completions',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model: 'gpt-4.1-nano',
+          messages: [{ role: 'user', content: 'Hi' }],
+          max_tokens: 5
+        })
       });
 
-      // Make a simple test request
-      const response = await client.chat.completions.create({
-        model: 'gpt-4.1-nano',
-        messages: [{ role: 'user', content: 'Hi' }],
-        max_tokens: 5
-      });
-
-      return { success: true };
+      if (response.status >= 200 && response.status < 300) {
+        return { success: true };
+      } else {
+        const errorData = response.json || {};
+        return {
+          success: false,
+          error: errorData.error?.message || `HTTP ${response.status}`
+        };
+      }
     } catch (error: any) {
-      return { 
-        success: false, 
-        error: error.message || 'OpenAI API key validation failed' 
+      return {
+        success: false,
+        error: error.message || 'OpenAI API key validation failed'
       };
     }
   }

@@ -2,6 +2,10 @@
  * Base LLM Adapter
  * Abstract class that all provider adapters extend
  * Based on patterns from services/llm/BaseLLMProvider.ts
+ *
+ * MOBILE COMPATIBILITY (Dec 2025):
+ * - Removed Node.js crypto import
+ * - Uses simple djb2 hash for cache keys (not cryptographic, but sufficient)
  */
 
 import {
@@ -17,12 +21,22 @@ import {
   ModelPricing
 } from './types';
 import { BaseCache, CacheManager } from '../utils/CacheManager';
-import { createHash } from 'crypto';
 import { LLMCostCalculator } from '../utils/LLMCostCalculator';
 import { TokenUsageExtractor } from '../utils/TokenUsageExtractor';
 import { SchemaValidator } from '../utils/SchemaValidator';
 import { SSEStreamProcessor } from '../streaming/SSEStreamProcessor';
 import { StreamChunkProcessor } from '../streaming/StreamChunkProcessor';
+
+// Browser-compatible hash function (djb2 algorithm)
+// Not cryptographically secure but sufficient for cache keys
+function generateHash(input: string): string {
+  let hash = 5381;
+  for (let i = 0; i < input.length; i++) {
+    hash = ((hash << 5) + hash) + input.charCodeAt(i);
+    hash = hash & hash; // Convert to 32bit integer
+  }
+  return Math.abs(hash).toString(16);
+}
 
 export abstract class BaseAdapter {
   abstract readonly name: string;
@@ -49,12 +63,12 @@ export abstract class BaseAdapter {
 
   protected initializeCache(cacheConfig?: any): void {
     const cacheName = `${this.name}-responses`;
-    this.cache = CacheManager.getCache<LLMResponse>(cacheName) || 
-                 CacheManager.createLRUCache<LLMResponse>(cacheName, {
-                   maxSize: cacheConfig?.maxSize || 1000,
-                   defaultTTL: cacheConfig?.defaultTTL || 3600000, // 1 hour
-                   ...cacheConfig
-                 });
+    // getLRUCache creates a new cache if it doesn't exist
+    this.cache = CacheManager.getLRUCache<LLMResponse>(cacheName, {
+      maxSize: cacheConfig?.maxSize || 1000,
+      defaultTTL: cacheConfig?.defaultTTL || 3600000, // 1 hour
+      ...cacheConfig
+    });
   }
 
   // Abstract methods that each provider must implement
@@ -272,9 +286,9 @@ export abstract class BaseAdapter {
       systemPrompt: options?.systemPrompt,
       jsonMode: options?.jsonMode
     };
-    
+
     const serialized = JSON.stringify(cacheData);
-    return createHash('sha256').update(serialized).digest('hex');
+    return generateHash(serialized);
   }
 
   async clearCache(): Promise<void> {

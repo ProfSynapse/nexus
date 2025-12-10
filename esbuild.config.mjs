@@ -11,6 +11,9 @@ If you want to view the source, please visit the github repository
 
 const prod = process.argv[2] === "production";
 
+// Node.js built-ins with 'node:' prefix for packages that use modern syntax
+const nodeBuiltinsWithPrefix = builtins.map(mod => `node:${mod}`);
+
 const context = await esbuild.context({
   banner: {
     js: banner,
@@ -28,10 +31,23 @@ const context = await esbuild.context({
     "@codemirror/search",
     "@codemirror/state",
     "@codemirror/view",
+    // Node.js built-ins (both with and without node: prefix)
     ...builtins,
-    "onnxruntime-node",
-    "sharp",
-    "@xenova/transformers"
+    ...nodeBuiltinsWithPrefix,
+    // SDKs with Node.js dependencies - marked external for mobile compatibility
+    // These are dynamically imported and will fail gracefully on mobile
+    "@google/genai",
+    "@modelcontextprotocol/sdk",
+    "@modelcontextprotocol/sdk/types.js",
+    "@modelcontextprotocol/sdk/server/index.js",
+    "@modelcontextprotocol/sdk/server/stdio.js",
+    "@modelcontextprotocol/sdk/server/streamableHttp.js",
+    "groq-sdk",
+    "@anthropic-ai/sdk",
+    "openai",
+    "@mistralai/mistralai",
+    "express",
+    "raw-body"
   ],
   loader: {
     ".node": "file",

@@ -133,13 +133,17 @@ export class SyncCoordinator {
 
   /**
    * Full rebuild of SQLite from JSONL files.
+   *
+   * NOTE: Uses smaller batch size (25) to avoid OOM errors with sql.js asm.js version.
+   * Saves after each file to prevent memory accumulation.
    */
   async fullRebuild(options: SyncOptions = {}): Promise<SyncResult> {
     const startTime = Date.now();
     const errors: string[] = [];
     let eventsApplied = 0;
     const filesProcessed: string[] = [];
-    const batchSize = options.batchSize ?? 100;
+    // Use smaller batch size for full rebuild to avoid OOM
+    const batchSize = options.batchSize ?? 25;
 
     try {
       options.onProgress?.('Clearing cache', 0, 1);
@@ -271,13 +275,14 @@ export class SyncCoordinator {
         const events = await this.jsonlWriter.readEvents<WorkspaceEvent>(file);
         events.sort((a, b) => a.timestamp - b.timestamp);
 
+        // Process in very small batches with delays to avoid OOM
         const result = await BatchOperations.executeBatch(
           events,
           async (event) => {
             await this.workspaceApplier.apply(event);
             await this.sqliteCache.markEventApplied(event.id);
           },
-          { batchSize }
+          { batchSize: Math.min(batchSize, 10), delayBetweenBatches: 10 }
         );
 
         applied += result.totalProcessed;
@@ -287,6 +292,9 @@ export class SyncCoordinator {
 
         files.push(file);
         options.onProgress?.('Processing workspaces', i + 1, workspaceFiles.length);
+
+        // Save after each file to prevent memory accumulation (OOM prevention)
+        await this.sqliteCache.save();
       } catch (e) {
         errors.push(`Failed to process ${file}: ${e}`);
       }
@@ -328,6 +336,9 @@ export class SyncCoordinator {
 
         files.push(file);
         options.onProgress?.('Processing conversations', i + 1, conversationFiles.length);
+
+        // Save after each file to prevent memory accumulation (OOM prevention)
+        await this.sqliteCache.save();
       } catch (e) {
         errors.push(`Failed to process ${file}: ${e}`);
       }

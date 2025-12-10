@@ -36,9 +36,17 @@ export class ToolCallService {
 
   /**
    * Initialize available tools from MCPConnector
+   * On mobile, MCPConnector may be undefined - tools will be empty
    */
   async initialize(): Promise<void> {
     try {
+      // MCPConnector may be undefined on mobile (MCP not supported)
+      if (!this.mcpConnector || typeof this.mcpConnector.getAvailableTools !== 'function') {
+        console.log('[ToolCallService] MCPConnector not available - tools disabled (normal on mobile)');
+        this.availableTools = [];
+        return;
+      }
+
       // Get available tools from MCPConnector (queries all registered agents)
       this.availableTools = this.mcpConnector.getAvailableTools();
     } catch (error) {

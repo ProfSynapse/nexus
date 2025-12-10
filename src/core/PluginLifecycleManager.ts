@@ -11,7 +11,6 @@
 import { Plugin, Notice } from 'obsidian';
 import { ServiceManager } from './ServiceManager';
 import { Settings } from '../settings';
-import { MCPConnector } from '../connector';
 import { UpdateManager } from '../utils/UpdateManager';
 import { ServiceRegistrar } from './services/ServiceRegistrar';
 import { MaintenanceCommandManager } from './commands/MaintenanceCommandManager';
@@ -20,12 +19,15 @@ import { BackgroundProcessor } from './background/BackgroundProcessor';
 import { SettingsTabManager } from './settings/SettingsTabManager';
 import type { ServiceCreationContext } from './services/ServiceDefinitions';
 
+// Type-only import to avoid bundling Node.js dependencies on mobile
+type MCPConnectorType = import('../connector').MCPConnector;
+
 export interface PluginLifecycleConfig {
     plugin: Plugin;
     app: any;
     serviceManager: ServiceManager;
     settings: Settings;
-    connector: MCPConnector;
+    connector?: MCPConnectorType; // Optional - undefined on mobile
     manifest: any;
 }
 
@@ -159,10 +161,13 @@ export class PluginLifecycleManager {
                     await this.backgroundProcessor.validateSearchFunctionality();
 
                     // Start MCP server AFTER services are ready (registers agents)
-                    try {
-                        await this.config.connector.start();
-                    } catch (error) {
-                        console.warn('[PluginLifecycleManager] MCP initialization failed:', error);
+                    // Only on desktop - connector is undefined on mobile
+                    if (this.config.connector) {
+                        try {
+                            await this.config.connector.start();
+                        } catch (error) {
+                            console.warn('[PluginLifecycleManager] MCP initialization failed:', error);
+                        }
                     }
 
                     // Initialize ChatService AFTER agents are registered (so tools are available)

@@ -5,10 +5,16 @@
  * - gemini-3-pro-image-preview (Nano Banana Pro) - advanced with reference images
  *
  * Uses generateContent() API with responseModalities: ['TEXT', 'IMAGE']
+ *
+ * MOBILE COMPATIBILITY (Dec 2025):
+ * The @google/genai SDK uses gaxios which requires Node.js 'os' module.
+ * SDK import is now lazy (dynamic) to avoid bundling Node.js dependencies.
  */
 
-import { GoogleGenAI } from '@google/genai';
 import { Vault } from 'obsidian';
+
+// Type-only import for TypeScript (doesn't affect bundling)
+import type { GoogleGenAI as GoogleGenAIType } from '@google/genai';
 import { BaseImageAdapter } from '../BaseImageAdapter';
 import {
   ImageGenerationParams,
@@ -39,7 +45,8 @@ export class GeminiImageAdapter extends BaseImageAdapter {
   readonly supportedSizes: string[] = ['1024x1024', '1536x1024', '1024x1536', '1792x1024', '1024x1792'];
   readonly supportedFormats: string[] = ['png', 'jpeg', 'webp'];
 
-  private client: GoogleGenAI;
+  private client: GoogleGenAIType | null = null;
+  private clientPromise: Promise<GoogleGenAIType> | null = null;
   private vault: Vault | null = null;
   private readonly defaultModel = 'gemini-2.5-flash-image';
 
@@ -58,15 +65,30 @@ export class GeminiImageAdapter extends BaseImageAdapter {
     const apiKey = config?.apiKey || '';
     super(apiKey, 'gemini-2.5-flash-image', config?.baseUrl);
 
-    this.client = new GoogleGenAI({
-      apiKey: apiKey
-    });
-
     if (config?.vault) {
       this.vault = config.vault;
     }
 
     this.initializeCache();
+  }
+
+  /**
+   * Lazy-load the Google GenAI SDK to avoid bundling Node.js dependencies
+   */
+  private async getClient(): Promise<GoogleGenAIType> {
+    if (this.client) {
+      return this.client;
+    }
+
+    if (!this.clientPromise) {
+      this.clientPromise = (async () => {
+        const { GoogleGenAI } = await import('@google/genai');
+        this.client = new GoogleGenAI({ apiKey: this.apiKey });
+        return this.client;
+      })();
+    }
+
+    return this.clientPromise;
   }
 
   /**
@@ -116,7 +138,8 @@ export class GeminiImageAdapter extends BaseImageAdapter {
         }
 
         // Call generateContent API
-        const result = await (this.client as any).models.generateContent({
+        const client = await this.getClient();
+        const result = await (client as any).models.generateContent({
           model: model,
           contents: contents,
           config: config

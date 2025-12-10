@@ -2,10 +2,16 @@
  * SQLite Schema for Hybrid Storage System
  * Location: src/database/schema/schema.ts
  * Purpose: Complete database schema with indexes and FTS
- * Version: 3.0.0
+ *
+ * IMPORTANT: When updating the schema:
+ * 1. Update SCHEMA_SQL below for new installs
+ * 2. Add a migration in SchemaMigrator.ts for existing databases
+ * 3. Update CURRENT_SCHEMA_VERSION in SchemaMigrator.ts
  *
  * CHANGELOG:
- * - v3.0.0: Added alternativesJson and activeAlternativeIndex to messages table for branching support
+ * - v3: Added alternativesJson and activeAlternativeIndex to messages table for branching support
+ * - v2: Initial schema with all tables
+ * - v1: Legacy pre-versioning schema
  *
  * NOTE: Uses camelCase column names to match TypeScript/JavaScript conventions.
  * This eliminates the need for snake_case <-> camelCase translation at the repository layer.

@@ -83,10 +83,10 @@ export class ConversationList {
       // Action buttons container
       const actions = item.createDiv('conversation-actions');
 
-      // Edit/rename button
+      // Edit/rename button - uses clickable-icon for proper icon sizing
       if (this.onConversationRename) {
         const editBtn = actions.createEl('button', {
-          cls: 'conversation-action-btn conversation-edit-btn'
+          cls: 'conversation-action-btn conversation-edit-btn clickable-icon'
         });
         setIcon(editBtn, 'pencil');
         editBtn.setAttribute('aria-label', 'Rename conversation');
@@ -96,9 +96,9 @@ export class ConversationList {
         });
       }
 
-      // Delete button
+      // Delete button - uses clickable-icon for proper icon sizing
       const deleteBtn = actions.createEl('button', {
-        cls: 'conversation-action-btn conversation-delete-btn'
+        cls: 'conversation-action-btn conversation-delete-btn clickable-icon'
       });
       setIcon(deleteBtn, 'trash-2');
       deleteBtn.setAttribute('aria-label', 'Delete conversation');

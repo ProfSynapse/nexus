@@ -1,14 +1,16 @@
 import { Plugin, Notice } from 'obsidian';
-import { MCPConnector } from './connector';
 import { Settings } from './settings';
 import { ServiceManager } from './core/ServiceManager';
 import { PluginLifecycleManager, type PluginLifecycleConfig } from './core/PluginLifecycleManager';
 import { BRAND_NAME } from './constants/branding';
-import { ConnectorEnsurer } from './utils/ConnectorEnsurer';
+import { isMobile, supportsMCPBridge, getPlatformName } from './utils/platform';
+
+// MCPConnector type for desktop-only dynamic import
+type MCPConnectorType = import('./connector').MCPConnector;
 
 export default class NexusPlugin extends Plugin {
     public settings!: Settings;
-    private connector!: MCPConnector;
+    private connector!: MCPConnectorType;
     private serviceManager!: ServiceManager;
     private lifecycleManager!: PluginLifecycleManager;
 
@@ -55,16 +57,34 @@ export default class NexusPlugin extends Plugin {
 
     async onload() {
         try {
-            // Ensure connector.js exists (self-healing if missing)
-            const connectorEnsurer = new ConnectorEnsurer(this);
-            await connectorEnsurer.ensureConnectorExists();
+            const platform = getPlatformName();
+            console.log(`[${BRAND_NAME}] Loading on ${platform}${isMobile() ? ' (mobile)' : ''}`);
 
             // Create service manager and settings
             this.settings = new Settings(this);
             this.serviceManager = new ServiceManager(this.app, this);
 
-            // Initialize connector skeleton (no agents yet)
-            this.connector = new MCPConnector(this.app, this);
+            // MCP server and connector only work on desktop (requires Node.js)
+            // Use dynamic imports to avoid bundling Node.js dependencies on mobile
+            if (supportsMCPBridge()) {
+                try {
+                    // Dynamic import - only loads on desktop, avoids Node.js deps on mobile
+                    const { ConnectorEnsurer } = await import('./utils/ConnectorEnsurer');
+                    const { MCPConnector } = await import('./connector');
+
+                    // Ensure connector.js exists (self-healing if missing)
+                    const connectorEnsurer = new ConnectorEnsurer(this);
+                    await connectorEnsurer.ensureConnectorExists();
+
+                    // Initialize connector skeleton (no agents yet)
+                    this.connector = new MCPConnector(this.app, this);
+                } catch (error) {
+                    console.error(`[${BRAND_NAME}] Failed to initialize MCP connector:`, error);
+                    // Continue without MCP - chat still works
+                }
+            } else {
+                console.log(`[${BRAND_NAME}] MCP server disabled on mobile - chat works with cloud LLM providers`);
+            }
 
             // Create and initialize lifecycle manager
             const lifecycleConfig: PluginLifecycleConfig = {
@@ -72,7 +92,7 @@ export default class NexusPlugin extends Plugin {
                 app: this.app,
                 serviceManager: this.serviceManager,
                 settings: this.settings,
-                connector: this.connector,
+                connector: this.connector, // May be undefined on mobile
                 manifest: this.manifest
             };
 

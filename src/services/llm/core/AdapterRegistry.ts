@@ -7,25 +7,21 @@
  * - Managing adapter instances
  * - Providing adapter availability checks
  * - Handling adapter cleanup
+ *
+ * MOBILE COMPATIBILITY (Dec 2025):
+ * - SDK-based providers (OpenAI, Anthropic, Google, Mistral, Groq) are SKIPPED on mobile
+ * - Only fetch-based providers (OpenRouter, Requesty, Perplexity) work on mobile
+ * - These make direct HTTP requests without Node.js SDK dependencies
+ * - Use platform.ts `isProviderCompatible()` to check before initializing
  */
 
 import { Vault } from 'obsidian';
-import {
-  OpenAIAdapter,
-  AnthropicAdapter,
-  GoogleAdapter,
-  MistralAdapter,
-  GroqAdapter,
-  OpenRouterAdapter,
-  RequestyAdapter,
-  PerplexityAdapter
-} from '../adapters';
-import { OllamaAdapter } from '../adapters/ollama/OllamaAdapter';
-import { LMStudioAdapter } from '../adapters/lmstudio/LMStudioAdapter';
-import { WebLLMAdapter } from '../adapters/webllm/WebLLMAdapter';
-import { getWebLLMLifecycleManager } from '../adapters/webllm/WebLLMLifecycleManager';
 import { BaseAdapter } from '../adapters/BaseAdapter';
 import { LLMProviderSettings, LLMProviderConfig } from '../../../types';
+import { isProviderCompatible, isMobile, getPlatformName, getPlatformDebugInfo } from '../../../utils/platform';
+
+// Type imports for TypeScript (don't affect bundling)
+import type { WebLLMAdapter as WebLLMAdapterType } from '../adapters/webllm/WebLLMAdapter';
 
 /**
  * Interface for adapter registry operations
@@ -71,7 +67,8 @@ export class AdapterRegistry implements IAdapterRegistry {
   private settings: LLMProviderSettings;
   private mcpConnector?: any;
   private vault?: Vault;
-  private webllmAdapter?: WebLLMAdapter;
+  private webllmAdapter?: WebLLMAdapterType;
+  private initPromise?: Promise<void>;
 
   constructor(settings: LLMProviderSettings, mcpConnector?: any, vault?: Vault) {
     this.settings = settings;
@@ -81,13 +78,24 @@ export class AdapterRegistry implements IAdapterRegistry {
 
   /**
    * Initialize all adapters based on provider settings
+   * Now async to support dynamic imports for mobile compatibility
    */
   initialize(settings: LLMProviderSettings, mcpConnector?: any, vault?: Vault): void {
     this.settings = settings;
     this.mcpConnector = mcpConnector;
     if (vault) this.vault = vault;
     this.adapters.clear();
-    this.initializeAdapters();
+    // Start async initialization
+    this.initPromise = this.initializeAdaptersAsync();
+  }
+
+  /**
+   * Wait for initialization to complete (call after initialize if you need adapters immediately)
+   */
+  async waitForInit(): Promise<void> {
+    if (this.initPromise) {
+      await this.initPromise;
+    }
   }
 
   /**
@@ -124,9 +132,11 @@ export class AdapterRegistry implements IAdapterRegistry {
   clear(): void {
     // Dispose Nexus adapter properly (cleanup GPU resources)
     if (this.webllmAdapter) {
-      // Clear lifecycle manager reference first
-      const lifecycleManager = getWebLLMLifecycleManager();
-      lifecycleManager.setAdapter(null);
+      // Clear lifecycle manager reference first (dynamic import)
+      import('../adapters/webllm/WebLLMLifecycleManager').then(({ getWebLLMLifecycleManager }) => {
+        const lifecycleManager = getWebLLMLifecycleManager();
+        lifecycleManager.setAdapter(null);
+      }).catch(() => {});
 
       this.webllmAdapter.dispose().catch((error) => {
         console.warn('AdapterRegistry: Failed to dispose Nexus adapter:', error);
@@ -139,15 +149,16 @@ export class AdapterRegistry implements IAdapterRegistry {
   /**
    * Get the WebLLM adapter instance (for model management)
    */
-  getWebLLMAdapter(): WebLLMAdapter | undefined {
+  getWebLLMAdapter(): WebLLMAdapterType | undefined {
     return this.webllmAdapter;
   }
 
   /**
-   * Initialize adapters for all configured providers
-   * Only initializes adapters for providers that are enabled and have API keys
+   * Initialize adapters for all configured providers using dynamic imports
+   * MOBILE: Only initializes fetch-based providers (OpenRouter, Requesty, Perplexity)
+   * DESKTOP: Initializes all providers including SDK-based ones
    */
-  private initializeAdapters(): void {
+  private async initializeAdaptersAsync(): Promise<void> {
     const providers = this.settings?.providers;
 
     if (!providers) {
@@ -155,63 +166,107 @@ export class AdapterRegistry implements IAdapterRegistry {
       return;
     }
 
-    // Initialize each provider using adapter factory pattern
-    this.initializeProvider('openai', providers.openai,
-      (config) => new OpenAIAdapter(config.apiKey, this.mcpConnector));
+    const platform = getPlatformName();
+    const onMobile = isMobile();
+    const platformInfo = getPlatformDebugInfo();
 
-    this.initializeProvider('openrouter', providers.openrouter,
-      (config) => new OpenRouterAdapter(
-        config.apiKey,
-        this.mcpConnector,
-        {
-          httpReferer: config.httpReferer,
-          xTitle: config.xTitle
+    console.log(`[AdapterRegistry] Platform: ${platform}, isMobile: ${onMobile}`, platformInfo);
+
+    if (onMobile) {
+      console.log(`[AdapterRegistry] Mobile mode - only fetch-based providers available (OpenRouter, Requesty, Perplexity)`);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // MOBILE-COMPATIBLE PROVIDERS (use fetch, no SDK dependencies)
+    // These work on all platforms
+    // ═══════════════════════════════════════════════════════════════════════════
+    await this.initializeProviderAsync('openrouter', providers.openrouter, async (config) => {
+      const { OpenRouterAdapter } = await import('../adapters/openrouter/OpenRouterAdapter');
+      return new OpenRouterAdapter(config.apiKey, this.mcpConnector, {
+        httpReferer: config.httpReferer,
+        xTitle: config.xTitle
+      });
+    });
+
+    await this.initializeProviderAsync('requesty', providers.requesty, async (config) => {
+      const { RequestyAdapter } = await import('../adapters/requesty/RequestyAdapter');
+      return new RequestyAdapter(config.apiKey, this.mcpConnector);
+    });
+
+    await this.initializeProviderAsync('perplexity', providers.perplexity, async (config) => {
+      const { PerplexityAdapter } = await import('../adapters/perplexity/PerplexityAdapter');
+      return new PerplexityAdapter(config.apiKey, this.mcpConnector);
+    });
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // DESKTOP-ONLY PROVIDERS (use Node.js SDKs)
+    // Skip on mobile to avoid crashes from SDK Node.js dependencies
+    // ═══════════════════════════════════════════════════════════════════════════
+    if (!onMobile) {
+      await this.initializeProviderAsync('openai', providers.openai, async (config) => {
+        const { OpenAIAdapter } = await import('../adapters/openai/OpenAIAdapter');
+        return new OpenAIAdapter(config.apiKey, this.mcpConnector);
+      });
+
+      await this.initializeProviderAsync('anthropic', providers.anthropic, async (config) => {
+        const { AnthropicAdapter } = await import('../adapters/anthropic/AnthropicAdapter');
+        return new AnthropicAdapter(config.apiKey, this.mcpConnector);
+      });
+
+      await this.initializeProviderAsync('google', providers.google, async (config) => {
+        const { GoogleAdapter } = await import('../adapters/google/GoogleAdapter');
+        return new GoogleAdapter(config.apiKey, this.mcpConnector);
+      });
+
+      await this.initializeProviderAsync('mistral', providers.mistral, async (config) => {
+        const { MistralAdapter } = await import('../adapters/mistral/MistralAdapter');
+        return new MistralAdapter(config.apiKey, this.mcpConnector);
+      });
+
+      await this.initializeProviderAsync('groq', providers.groq, async (config) => {
+        const { GroqAdapter } = await import('../adapters/groq/GroqAdapter');
+        return new GroqAdapter(config.apiKey, this.mcpConnector);
+      });
+    } else {
+      // Log which providers are skipped on mobile
+      const skippedProviders = ['openai', 'anthropic', 'google', 'mistral', 'groq'];
+      for (const providerId of skippedProviders) {
+        const config = providers[providerId as keyof typeof providers];
+        if (config?.enabled && config?.apiKey) {
+          console.log(`[AdapterRegistry] Skipping ${providerId} on mobile (requires Node.js SDK)`);
         }
-      ));
-
-    this.initializeProvider('anthropic', providers.anthropic,
-      (config) => new AnthropicAdapter(config.apiKey, this.mcpConnector));
-
-    this.initializeProvider('google', providers.google,
-      (config) => new GoogleAdapter(config.apiKey, this.mcpConnector));
-
-    this.initializeProvider('mistral', providers.mistral,
-      (config) => new MistralAdapter(config.apiKey, this.mcpConnector));
-
-    this.initializeProvider('groq', providers.groq,
-      (config) => new GroqAdapter(config.apiKey, this.mcpConnector));
-
-    this.initializeProvider('requesty', providers.requesty,
-      (config) => new RequestyAdapter(config.apiKey, this.mcpConnector));
-
-    this.initializeProvider('perplexity', providers.perplexity,
-      (config) => new PerplexityAdapter(config.apiKey, this.mcpConnector));
-
-    // Ollama has special handling - apiKey is actually the server URL
-    if (providers.ollama?.enabled && providers.ollama.apiKey) {
-      try {
-        const ollamaModel = providers.ollama.ollamaModel;
-
-        if (!ollamaModel || !ollamaModel.trim()) {
-          console.warn('AdapterRegistry: Ollama enabled but no model configured');
-          return;
-        }
-
-        this.adapters.set('ollama', new OllamaAdapter(providers.ollama.apiKey, ollamaModel));
-      } catch (error) {
-        console.error('AdapterRegistry: Failed to initialize Ollama adapter:', error);
-        this.logError('ollama', error);
       }
     }
 
-    // LM Studio has special handling - apiKey is actually the server URL
-    // Models are discovered dynamically from the server
-    if (providers.lmstudio?.enabled && providers.lmstudio.apiKey) {
-      try {
-        this.adapters.set('lmstudio', new LMStudioAdapter(providers.lmstudio.apiKey, this.mcpConnector));
-      } catch (error) {
-        console.error('AdapterRegistry: Failed to initialize LM Studio adapter:', error);
-        this.logError('lmstudio', error);
+    // ═══════════════════════════════════════════════════════════════════════════
+    // LOCAL PROVIDERS (require localhost servers - desktop only)
+    // ═══════════════════════════════════════════════════════════════════════════
+    if (!onMobile) {
+      // Ollama - apiKey is actually the server URL
+      if (providers.ollama?.enabled && providers.ollama.apiKey) {
+        try {
+          const ollamaModel = providers.ollama.ollamaModel;
+          if (!ollamaModel || !ollamaModel.trim()) {
+            console.warn('AdapterRegistry: Ollama enabled but no model configured');
+          } else {
+            const { OllamaAdapter } = await import('../adapters/ollama/OllamaAdapter');
+            this.adapters.set('ollama', new OllamaAdapter(providers.ollama.apiKey, ollamaModel));
+          }
+        } catch (error) {
+          console.error('AdapterRegistry: Failed to initialize Ollama adapter:', error);
+          this.logError('ollama', error);
+        }
+      }
+
+      // LM Studio - apiKey is actually the server URL
+      if (providers.lmstudio?.enabled && providers.lmstudio.apiKey) {
+        try {
+          const { LMStudioAdapter } = await import('../adapters/lmstudio/LMStudioAdapter');
+          this.adapters.set('lmstudio', new LMStudioAdapter(providers.lmstudio.apiKey, this.mcpConnector));
+        } catch (error) {
+          console.error('AdapterRegistry: Failed to initialize LM Studio adapter:', error);
+          this.logError('lmstudio', error);
+        }
       }
     }
 
@@ -219,43 +274,17 @@ export class AdapterRegistry implements IAdapterRegistry {
     // NEXUS/WEBLLM DISABLED (Dec 6, 2025)
     // ═══════════════════════════════════════════════════════════════════════════
     // WebLLM causes hard Electron renderer crashes during multi-turn conversations.
-    // The crash happens during the prefill phase of the second generation.
-    // This is a WebGPU resource management bug in WebLLM on Apple Silicon.
-    //
-    // TO RE-ENABLE FOR TESTING:
-    // 1. Uncomment the webllm registration block below
-    // 2. Uncomment webllm entry in src/settings/tabs/ProvidersTab.ts
-    // 3. Rebuild the plugin
-    // 4. Test thoroughly before shipping
-    //
-    // Full investigation notes in:
-    // - WebLLMAdapter.ts (header comment)
-    // - WebLLMEngine.ts (header comment)
-    // - CLAUDE.md (Known Issues section)
-    //
-    // Related: https://github.com/mlc-ai/web-llm/issues/647
+    // See CLAUDE.md "Known Issues" for details.
     // ═══════════════════════════════════════════════════════════════════════════
     // if (providers.webllm?.enabled && this.vault) {
-    //   console.log('[AdapterRegistry] Nexus check:', {
-    //     webllmEnabled: providers.webllm?.enabled,
-    //     hasVault: !!this.vault,
-    //     vaultName: this.vault?.getName?.() || 'N/A'
-    //   });
-    //
     //   try {
-    //     console.log('[AdapterRegistry] Creating Nexus adapter...');
+    //     const { WebLLMAdapter } = await import('../adapters/webllm/WebLLMAdapter');
+    //     const { getWebLLMLifecycleManager } = await import('../adapters/webllm/WebLLMLifecycleManager');
     //     this.webllmAdapter = new WebLLMAdapter(this.vault, this.mcpConnector);
     //     this.adapters.set('webllm', this.webllmAdapter);
-    //     console.log('[AdapterRegistry] Nexus adapter registered, available adapters:', Array.from(this.adapters.keys()));
-    //
     //     const lifecycleManager = getWebLLMLifecycleManager();
     //     lifecycleManager.setAdapter(this.webllmAdapter);
-    //
-    //     this.webllmAdapter.initialize().then(() => {
-    //       console.log('[AdapterRegistry] Nexus adapter initialized (WebGPU ready)');
-    //     }).catch((error) => {
-    //       console.warn('[AdapterRegistry] Nexus background initialization failed:', error);
-    //     });
+    //     await this.webllmAdapter.initialize();
     //   } catch (error) {
     //     console.error('[AdapterRegistry] Failed to create Nexus adapter:', error);
     //     this.logError('webllm', error);
@@ -264,17 +293,17 @@ export class AdapterRegistry implements IAdapterRegistry {
   }
 
   /**
-   * Initialize a single provider adapter using factory pattern
-   * Handles common validation and error logging
+   * Initialize a single provider adapter using async factory pattern
+   * Handles common validation and error logging with dynamic import support
    */
-  private initializeProvider(
+  private async initializeProviderAsync(
     providerId: string,
     config: LLMProviderConfig | undefined,
-    factory: (config: LLMProviderConfig) => BaseAdapter
-  ): void {
+    factory: (config: LLMProviderConfig) => Promise<BaseAdapter>
+  ): Promise<void> {
     if (config?.apiKey && config.enabled) {
       try {
-        const adapter = factory(config);
+        const adapter = await factory(config);
         this.adapters.set(providerId, adapter);
       } catch (error) {
         console.error(`AdapterRegistry: Failed to initialize ${providerId} adapter:`, error);

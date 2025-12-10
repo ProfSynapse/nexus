@@ -11,15 +11,17 @@ import type { Plugin } from 'obsidian';
 import type { Settings } from '../../settings';
 // Use new SettingsView (tab-based UI) instead of old SettingsTab (accordion-based)
 import { SettingsView } from '../../settings/SettingsView';
-import type { MCPConnector } from '../../connector';
 import type { BackgroundProcessor } from '../background/BackgroundProcessor';
+
+// Type-only import to avoid bundling Node.js dependencies on mobile
+type MCPConnectorType = import('../../connector').MCPConnector;
 
 export interface SettingsTabManagerConfig {
     plugin: Plugin;
     app: any;
     settings: Settings;
     serviceManager: any;
-    connector: MCPConnector;
+    connector?: MCPConnectorType; // Optional - undefined on mobile
     lifecycleManager: any; // Reference to PluginLifecycleManager for ChatView activation
     backgroundProcessor?: BackgroundProcessor;
 }

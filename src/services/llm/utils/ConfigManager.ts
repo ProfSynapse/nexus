@@ -2,10 +2,13 @@
  * Configuration Manager
  * Centralized configuration management for the lab kit
  * Handles environment variables, validation, and default settings
+ *
+ * MOBILE COMPATIBILITY (Dec 2025):
+ * - Removed Node.js fs and path imports
+ * - File config loading only works via Obsidian vault adapter
+ * - Falls back to environment/default config if vault adapter not configured
  */
 
-import { readFileSync, existsSync } from 'fs';
-import { join } from 'path';
 import { normalizePath } from 'obsidian';
 
 export interface LabKitConfig {
@@ -266,6 +269,12 @@ export class ConfigManager {
   }
 
   private loadEnvironmentConfig(): void {
+    // Environment variables may not be available on mobile
+    // This is a no-op on mobile platforms
+    if (typeof process === 'undefined' || !process.env) {
+      return;
+    }
+
     // Provider API keys
     this.setIfExists('providers.openai.apiKey', process.env.OPENAI_API_KEY);
     this.setIfExists('providers.openai.organization', process.env.OPENAI_ORGANIZATION);
@@ -343,39 +352,9 @@ export class ConfigManager {
   }
 
   private loadFileConfig(): void {
-    // If a vault adapter is configured, avoid desktop fs reads (vault configs should be injected separately)
-    if (ConfigManager.vaultAdapterConfig) {
-      return;
-    }
-
-    const configPaths = [
-      this.configPath,
-      './lab-kit.config.json',
-      './lab-kit.config.js',
-      './.labkitrc',
-      join(process.cwd(), 'lab-kit.config.json')
-    ].filter(Boolean);
-
-    for (const path of configPaths) {
-      if (existsSync(path!)) {
-        try {
-          let fileConfig;
-          
-          if (path!.endsWith('.js')) {
-            fileConfig = require(path!);
-          } else {
-            const content = readFileSync(path!, 'utf8');
-            fileConfig = JSON.parse(content);
-          }
-
-          this.config = this.mergeConfigs(this.config, fileConfig);
-          console.log(`📁 Loaded configuration from ${path}`);
-          break;
-        } catch (error) {
-          console.warn(`Failed to load config from ${path}:`, error);
-        }
-      }
-    }
+    // File config loading only supported via vault adapter (mobile compatible)
+    // Desktop file system access removed for mobile compatibility
+    // Config will be loaded from vault adapter when setVaultAdapter is called
   }
 
   private setIfExists(path: string, value: any): void {

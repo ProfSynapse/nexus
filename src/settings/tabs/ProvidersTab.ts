@@ -18,6 +18,7 @@ import { LLMProviderManager } from '../../services/llm/providers/ProviderManager
 import { Settings } from '../../settings';
 import { Card, CardConfig } from '../../components/Card';
 import { LLMSettingsNotifier } from '../../services/llm/LLMSettingsNotifier';
+import { isMobile, supportsLocalLLM } from '../../utils/platform';
 
 /**
  * Provider display configuration
@@ -179,11 +180,19 @@ export class ProvidersTab {
     private renderProviderGroups(): void {
         const settings = this.getSettings();
 
-        // Local providers
-        this.container.createDiv('nexus-provider-group-title').setText('LOCAL PROVIDERS');
-        this.renderProviderList(['webllm', 'ollama', 'lmstudio'], settings);
+        // Local providers - only show on desktop (require localhost servers)
+        if (supportsLocalLLM()) {
+            this.container.createDiv('nexus-provider-group-title').setText('LOCAL PROVIDERS');
+            this.renderProviderList(['webllm', 'ollama', 'lmstudio'], settings);
+        } else {
+            // Show mobile notice instead
+            const mobileNotice = this.container.createDiv('nexus-mobile-provider-notice');
+            mobileNotice.createDiv('nexus-provider-group-title').setText('LOCAL PROVIDERS');
+            const notice = mobileNotice.createDiv('nexus-mobile-notice-text');
+            notice.setText('Local LLM providers (Ollama, LM Studio) require a localhost server and are only available on desktop.');
+        }
 
-        // Cloud providers
+        // Cloud providers - available on all platforms
         this.container.createDiv('nexus-provider-group-title').setText('CLOUD PROVIDERS');
         this.renderProviderList(
             ['openai', 'anthropic', 'google', 'mistral', 'groq', 'openrouter', 'requesty', 'perplexity'],

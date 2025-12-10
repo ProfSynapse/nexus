@@ -19,7 +19,7 @@ import { WorkspaceService } from '../../services/WorkspaceService';
 import { CustomPromptStorageService } from '../../agents/agentManager/services/CustomPromptStorageService';
 import { CustomPrompt } from '../../types/mcp/CustomPromptTypes';
 import { CardManager, CardItem } from '../../components/CardManager';
-import { v4 as uuidv4 } from 'uuid';
+import { v4 as uuidv4 } from '../../utils/uuid';
 
 export interface WorkspacesTabServices {
     app: App;
