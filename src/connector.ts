@@ -273,16 +273,27 @@ export class MCPConnector {
 
         const getToolsTool = {
             name: 'get_tools',
-            description: `Discover available tools on-demand. Request specific tool schemas only for capabilities you need.\n\nAvailable agents and modes:\n${agentModeList}\n\nTo use a tool, request its schema first:\n- get_tools({ tools: ["contentManager_createNote", "vaultManager_openNote"] })\n\nThen call the actual tool with required parameters.`,
+            description: `Discover available tools on-demand. Request specific tool schemas only for capabilities you need.\n\nAvailable agents and modes:\n${agentModeList}\n\nTo use tools, request their schemas first using ONE of these formats:\n\n1. GROUPED (recommended - saves tokens):\n   get_tools({ tools: { "contentManager": ["readContent", "createContent"], "vaultLibrarian": ["search"] } })\n\n2. FLAT (also supported):\n   get_tools({ tools: ["contentManager_readContent", "contentManager_createContent"] })\n\nThen call the actual tool with required parameters.`,
             inputSchema: {
                 type: 'object',
                 properties: {
                     tools: {
-                        type: 'array',
-                        items: {
-                            type: 'string'
-                        },
-                        description: 'Array of specific tool names to retrieve schemas for (format: "agentName_modeName"). Examples: ["contentManager_createNote", "vaultLibrarian_searchDirectory"]'
+                        oneOf: [
+                            {
+                                type: 'object',
+                                additionalProperties: {
+                                    type: 'array',
+                                    items: { type: 'string' }
+                                },
+                                description: 'RECOMMENDED: Object with agent names as keys and arrays of mode names as values. Example: { "contentManager": ["readContent", "createContent"] }'
+                            },
+                            {
+                                type: 'array',
+                                items: { type: 'string' },
+                                description: 'Array of full tool names (format: "agentName_modeName"). Example: ["contentManager_readContent"]'
+                            }
+                        ],
+                        description: 'Tools to retrieve schemas for. Use grouped format { agent: [modes] } to save tokens, or flat array ["agent_mode"].'
                     },
                     ...contextSchema
                 },
@@ -291,6 +302,33 @@ export class MCPConnector {
         };
 
         return [getToolsTool];
+    }
+
+    /**
+     * Normalize tool request input to flat array of tool names.
+     * Supports both grouped format { agent: [modes] } and flat array ["agent_mode"].
+     */
+    private normalizeToolRequest(tools: any): string[] {
+        // If already an array, return as-is (flat format)
+        if (Array.isArray(tools)) {
+            return tools;
+        }
+
+        // If object, convert grouped format to flat array
+        if (tools && typeof tools === 'object') {
+            const flatTools: string[] = [];
+            for (const [agentName, modes] of Object.entries(tools)) {
+                if (Array.isArray(modes)) {
+                    for (const mode of modes) {
+                        flatTools.push(`${agentName}_${mode}`);
+                    }
+                }
+            }
+            return flatTools;
+        }
+
+        // Fallback - return empty array
+        return [];
     }
 
     /**
@@ -385,16 +423,17 @@ export class MCPConnector {
 
     /**
      * Strip common parameters from tool schema to reduce context bloat
-     * Common parameters (context, workspaceContext, sessionId) are documented in get_tools instruction
+     * Common parameters (context, workspaceContext) are documented in get_tools instruction
+     * Note: sessionId lives inside context object, not as standalone field
      */
     private stripCommonParameters(schema: any): any {
         if (!schema || !schema.properties) {
             return schema;
         }
 
-        const { context, workspaceContext, sessionId, ...cleanProperties } = schema.properties;
+        const { context, workspaceContext, ...cleanProperties } = schema.properties;
         const cleanRequired = (schema.required || []).filter(
-            (field: string) => field !== 'context' && field !== 'workspaceContext' && field !== 'sessionId'
+            (field: string) => field !== 'context' && field !== 'workspaceContext'
         );
 
         return {
@@ -413,19 +452,14 @@ export class MCPConnector {
             // ========================================
             if (agent === 'get' && mode === 'tools') {
                 // This is a call to the get_tools meta-tool
-                const toolNames = modeParams.tools || modeParams.context?.tools || [];
-
-                if (!Array.isArray(toolNames)) {
-                    return {
-                        success: false,
-                        error: 'tools parameter must be an array'
-                    };
-                }
+                // Normalize input: supports both grouped { agent: [modes] } and flat ["agent_mode"] formats
+                const rawTools = modeParams.tools || modeParams.context?.tools || [];
+                const toolNames = this.normalizeToolRequest(rawTools);
 
                 const sessionId = modeParams.context?.sessionId;
                 const workspaceId = modeParams.context?.workspaceId || 'default';
 
-                // TIER 1: Discovery mode (empty array) - return agent/mode overview
+                // TIER 1: Discovery mode (empty array/object) - return agent/mode overview
                 if (toolNames.length === 0) {
                     const overview = this.getAgentModeOverview();
 
@@ -434,7 +468,7 @@ export class MCPConnector {
                         overview: overview,
                         sessionId: sessionId,
                         workspaceId: workspaceId,
-                        instruction: 'Above is the overview of all available agents and their modes. To use specific tools, call get_tools again with the exact tool names (e.g., get_tools({ tools: ["contentManager_createNote", "vaultLibrarian_searchDirectory"] }))'
+                        instruction: 'Above is the overview of all available agents and their modes. To use specific tools, call get_tools with grouped format (recommended): get_tools({ tools: { "contentManager": ["readContent", "createContent"], "vaultLibrarian": ["search"] } })'
                     };
                 }
 
@@ -444,7 +478,7 @@ export class MCPConnector {
                 if (tools.length === 0) {
                     return {
                         success: false,
-                        error: `No valid tools found for the requested names: ${toolNames.join(', ')}. Make sure to use exact tool names like "contentManager_createNote".`
+                        error: `No valid tools found for: ${toolNames.join(', ')}. Use grouped format { "agentName": ["mode1", "mode2"] } or flat format ["agentName_modeName"].`
                     };
                 }
 
