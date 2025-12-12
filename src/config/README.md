@@ -1,0 +1,12 @@
+# `src/config`
+
+## Purpose
+Static configuration (agent configs, defaults, registries).
+
+## What's Here
+- Subfolders: _None_
+- Files: `agentConfigs.ts`, `agents.ts`, `toolVisibility.ts`
+
+## Improvement Ideas
+- Add a short contract note for this module (inputs/outputs, side effects).
+- See `CODEBASE_AUDIT.md` (repo root) for cross-cutting cleanup opportunities.

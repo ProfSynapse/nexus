@@ -120,3 +120,11 @@ Add/merge the Nexus server entry into your `claude_desktop_config.json` (or `.mc
 - **Legacy clients:** Keep `claudesidian-mcp` entries if existing clients reference them; Nexus will serve both ids.
 
 Enjoy building with Nexus! If you hit issues, open a GitHub issue on the Nexus repo with your OS, Obsidian version, and any console logs.
+
+---
+
+## Developer Notes (Repo Map)
+
+- Folder READMEs: each folder under `src/` (and `scripts/`) contains a short `README.md` describing responsibilities and local improvement ideas.
+- Cross-cutting findings: `CODEBASE_AUDIT.md`.
+- Regenerate folder READMEs: `node scripts/generate-folder-readmes.mjs`
