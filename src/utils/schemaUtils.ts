@@ -224,7 +224,7 @@ export function mergeWithCommonSchema(customSchema: any): any {
   
   // Merge required arrays without duplicates
   const customRequired = customSchema.required || [];
-  const commonRequired = ['sessionId', 'context'];
+  const commonRequired = ['context'];
   const mergedRequired = Array.from(new Set([...customRequired, ...commonRequired]));
   
   return {

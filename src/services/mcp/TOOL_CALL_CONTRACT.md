@@ -28,6 +28,15 @@ This doc describes the tool naming + arguments conventions used across Nexus' MC
 
 ## Arguments
 
+## Context Normalization
+
+Tool-call boundaries normalize params via `normalizeToolContext(...)` (`src/utils/toolContextUtils.ts`):
+- Ensures `context` exists and `context.sessionId` is populated/validated
+- Ensures `context.workspaceId` and `workspaceContext.workspaceId` are populated and consistent
+- Marks the params object with `_normalizedContext: true` so deeper layers can skip duplicate validation/injection
+
+Keys beginning with `_` are reserved for internal plumbing and should not be treated as part of the public tool API.
+
 ### Common shape (MCP server)
 
 When calling an agent tool, pass:
@@ -35,7 +44,6 @@ When calling an agent tool, pass:
 ```json
 {
   "mode": "readContent",
-  "sessionId": "session_abc123",
   "context": {
     "sessionId": "session_abc123",
     "workspaceId": "default"
@@ -45,7 +53,6 @@ When calling an agent tool, pass:
 
 Notes:
 - `mode` is required.
-- `sessionId` is currently required by the *tool list* schema (legacy).
 - `context.sessionId` is treated as the canonical session identifier by execution + tracing.
   - If `context` is missing, the server will create it.
   - If `context.sessionId` is missing, the server will generate/validate a session ID and populate it.

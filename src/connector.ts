@@ -5,9 +5,9 @@ import type { ServiceManager } from './core/ServiceManager';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { logger } from './utils/logger';
 import { CustomPromptStorageService } from "./agents/agentManager/services/CustomPromptStorageService";
-import { generateSessionId, formatSessionInstructions, isStandardSessionId } from './utils/sessionUtils';
 import { getContextSchema } from './utils/schemaUtils';
 import { parseAgentModeToolName } from './utils/toolNameUtils';
+import { normalizeToolContext } from './utils/toolContextUtils';
 // ToolCallCaptureService removed in simplified architecture
 
 // Extracted services
@@ -445,12 +445,26 @@ export class MCPConnector {
 
     async callTool(params: AgentModeParams): Promise<any> {
         try {
-            const { agent, mode, params: modeParams } = params;
+            const { agent, mode } = params;
+            let modeParams = params.params;
 
             // ========================================
             // BOUNDED CONTEXT TOOL DISCOVERY - Intercept get_tools meta-tool
             // ========================================
             if (agent === 'get' && mode === 'tools') {
+                let sessionContextManager: SessionContextManager | undefined;
+                try {
+                    sessionContextManager = this.getSessionContextManagerFromService();
+                } catch {
+                    sessionContextManager = undefined;
+                }
+
+                const normalized = await normalizeToolContext(modeParams, {
+                    sessionContextManager,
+                    defaultWorkspaceId: 'default'
+                });
+                modeParams = normalized.params;
+
                 // This is a call to the get_tools meta-tool
                 // Normalize input: supports both grouped { agent: [modes] } and flat ["agent_mode"] formats
                 const rawTools = modeParams.tools || modeParams.context?.tools || [];
@@ -490,7 +504,7 @@ You MUST add the following 'context' object to EVERY tool call:
 
 {
   "context": {
-    "sessionId": "${sessionId || 'REQUIRED'}",
+    "sessionId": "${sessionId}",
     "workspaceId": "${workspaceId}",
     "sessionDescription": "Brief description of current session (10+ chars)",
     "sessionMemory": "Summary of conversation so far (10+ chars)",
@@ -514,53 +528,14 @@ Keep sessionId and workspaceId values EXACTLY as shown above throughout the conv
             }
 
             // ========================================
-            // SESSION VALIDATION & WORKSPACE CONTEXT INJECTION
+            // SESSION + WORKSPACE CONTEXT NORMALIZATION
             // ========================================
-
-            // Ensure context object exists
-            if (!modeParams.context) {
-                modeParams.context = {};
-            }
-
-            // 1. SESSION ID VALIDATION: Extract from context ONLY (no standalone fallback)
-            const providedSessionId = modeParams.context.sessionId;
-            let validatedSessionId: string;
-            let isNewSession = false;
-            let isNonStandardId = false;
-
-            if (!providedSessionId || !isStandardSessionId(providedSessionId)) {
-                // No sessionId or non-standard format - generate a new one
-                validatedSessionId = generateSessionId();
-                isNewSession = true;
-                isNonStandardId = !!providedSessionId; // True if they provided a friendly name
-            } else {
-                // Valid standard sessionId - use it
-                validatedSessionId = providedSessionId;
-            }
-
-            // 2. INJECT VALIDATED SESSION ID into context (single source of truth)
-            modeParams.context.sessionId = validatedSessionId;
-
-            // 3. WORKSPACE CONTEXT LOOKUP FROM SESSION
             const sessionContextManager = this.getSessionContextManagerFromService();
-            const workspaceContext = sessionContextManager.getWorkspaceContext(validatedSessionId);
-
-            if (workspaceContext) {
-                // Inject workspace context from session
-                modeParams.workspaceContext = workspaceContext;
-                modeParams.context.workspaceId = workspaceContext.workspaceId;
-            } else {
-                // Fallback to default if no session workspace
-                if (!modeParams.workspaceContext) {
-                    modeParams.workspaceContext = { workspaceId: 'default' };
-                } else if (!modeParams.workspaceContext.workspaceId) {
-                    modeParams.workspaceContext.workspaceId = 'default';
-                }
-
-                if (modeParams.context && !modeParams.context.workspaceId) {
-                    modeParams.context.workspaceId = modeParams.workspaceContext.workspaceId;
-                }
-            }
+            const normalized = await normalizeToolContext(modeParams, {
+                sessionContextManager,
+                defaultWorkspaceId: 'default'
+            });
+            modeParams = normalized.params;
 
             // Delegate validation and execution to ToolCallRouter
             this.toolRouter.validateBatchOperations(modeParams);

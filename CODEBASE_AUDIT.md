@@ -110,7 +110,7 @@ High-value test targets (small, deterministic, low mocking):
 ## Quick Wins (Implemented)
 
 - Canonical tool-name parsing: `src/utils/toolNameUtils.ts` now provides `parseAgentToolName(...)`, `parseAgentModeToolName(...)`, and `resolveAgentMode(...)`.
+- Centralized tool-call context normalization: `src/utils/toolContextUtils.ts` + adoption in `src/handlers/strategies/ToolExecutionStrategy.ts` and `src/connector.ts` (session/workspace consistency + `_normalizedContext` marker).
 - Tool-call contract doc: `src/services/mcp/TOOL_CALL_CONTRACT.md` (linked from `src/services/mcp/README.md`).
 - Trace identity consistency: `src/services/trace/ToolCallTraceService.ts` resolves `(agent, mode)` via `resolveAgentMode(...)` and prefers `params.mode` when available.
 - Encoding cleanup for docs: key READMEs and audit docs were rewritten to plain ASCII to avoid mojibake in terminals.
-

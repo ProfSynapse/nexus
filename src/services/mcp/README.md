@@ -17,6 +17,7 @@ MCP-specific glue code used by the Obsidian plugin to host an MCP server and rou
 - [`src/server/README.md`](../../server/README.md) (server internals)
 - [`src/services/trace/ToolCallTraceService.ts`](../trace/ToolCallTraceService.ts) (tool-call tracing)
 - [`src/utils/toolNameUtils.ts`](../../utils/toolNameUtils.ts) (canonical tool-name parsing/formatting)
+- [`src/utils/toolContextUtils.ts`](../../utils/toolContextUtils.ts) (tool-call context/session/workspace normalization)
 
 ## Improvement Ideas
 

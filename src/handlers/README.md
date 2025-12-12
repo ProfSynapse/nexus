@@ -16,6 +16,7 @@ Request handling strategies and helper services for MCP/server integration.
 - [`src/server/MCPServer.ts`](../server/MCPServer.ts) (server entry point)
 - [`src/services/trace/ToolCallTraceService.ts`](../services/trace/ToolCallTraceService.ts) (records executions)
 - [`src/utils/toolNameUtils.ts`](../utils/toolNameUtils.ts) (canonical tool-name parsing)
+- [`src/utils/toolContextUtils.ts`](../utils/toolContextUtils.ts) (tool-call context normalization)
 
 ## Improvement Ideas
 - See `CODEBASE_AUDIT.md` (repo root) for cross-cutting cleanup opportunities.

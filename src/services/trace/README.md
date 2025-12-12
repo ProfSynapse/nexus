@@ -9,6 +9,7 @@ Tool-call tracing and persistence services.
   - Resolves `(agent, mode)` using [`src/utils/toolNameUtils.ts`](../../utils/toolNameUtils.ts):
     - MCP server path: `params.mode`
     - Chat View path: `agent_mode` tool naming
+  - Sanitizes inputs by dropping `context`, `workspaceContext`, and internal `_...` marker keys.
 
 ## Tool Contract
 

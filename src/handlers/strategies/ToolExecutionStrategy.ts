@@ -6,6 +6,7 @@ import { SessionContextManager } from '../../services/SessionContextManager';
 import { logger } from '../../utils/logger';
 import { getErrorMessage } from '../../utils/errorUtils';
 import { parseAgentToolName } from '../../utils/toolNameUtils';
+import { normalizeToolContext } from '../../utils/toolContextUtils';
 
 interface ToolExecutionRequest {
     params: {
@@ -166,54 +167,29 @@ export class ToolExecutionStrategy implements IRequestStrategy<ToolExecutionRequ
             );
         }
 
-        // Use SessionContextManager for unified session handling instead of separate SessionService
-        // sessionId is ONLY read from context (single source of truth)
-        if (!params.context) {
-            params.context = {};
-        }
-        const sessionId = params.context.sessionId;
+        const normalized = await normalizeToolContext(params, {
+            sessionContextManager: this.sessionContextManager ?? undefined,
+            fallbackSessionIdProcessor: (sessionId: string) => this.dependencies.sessionService.processSessionId(sessionId),
+            defaultWorkspaceId: 'default'
+        });
 
-        let sessionInfo: any;
-        if (this.sessionContextManager && sessionId) {
-            try {
-                const validationResult = await this.sessionContextManager.validateSessionId(sessionId);
-                const isNonStandardId = validationResult.id !== sessionId;
-
-                sessionInfo = {
-                    sessionId: validationResult.id,
-                    isNewSession: validationResult.created,
-                    isNonStandardId: isNonStandardId,
-                    originalSessionId: isNonStandardId ? sessionId : undefined
-                };
-
-                // Update context with validated session ID (single source of truth)
-                params.context.sessionId = validationResult.id;
-            } catch (error) {
-                logger.systemWarn(`SessionContextManager validation failed: ${getErrorMessage(error)}. Falling back to SessionService`);
-                // Fallback to original SessionService if SessionContextManager fails
-                sessionInfo = await this.dependencies.sessionService.processSessionId(sessionId);
-                params.context.sessionId = sessionInfo.sessionId;
-            }
-        } else {
-            // Fallback to original SessionService if no SessionContextManager or sessionId
-            sessionInfo = await this.dependencies.sessionService.processSessionId(sessionId);
-            params.context.sessionId = sessionInfo.sessionId;
-        }
-        
         const shouldInjectInstructions = this.dependencies.sessionService.shouldInjectInstructions(
-            sessionInfo.sessionId, 
+            normalized.session.sessionId, 
             this.sessionContextManager
         );
 
         return {
             agentName,
             mode,
-            params,
-            sessionId: sessionInfo.sessionId,
+            params: normalized.params,
+            sessionId: normalized.session.sessionId,
             fullToolName,
             sessionContextManager: this.sessionContextManager,
             sessionInfo: {
-                ...sessionInfo,
+                sessionId: normalized.session.sessionId,
+                isNewSession: normalized.session.isNewSession,
+                isNonStandardId: normalized.session.isNonStandardId,
+                originalSessionId: normalized.session.originalSessionId,
                 shouldInjectInstructions
             }
         };
@@ -259,31 +235,7 @@ export class ToolExecutionStrategy implements IRequestStrategy<ToolExecutionRequ
             }
         }
 
-        let processedParams = { ...enhancedParams };
-        if (this.sessionContextManager && processedParams.context?.sessionId) {
-            // Check if we need to apply workspace context from session manager
-            // Skip if we already have workspaceId in context or workspaceContext
-            const hasWorkspaceId = processedParams.context?.workspaceId || 
-                                   (processedParams.workspaceContext && processedParams.workspaceContext.workspaceId);
-            
-            if (!hasWorkspaceId) {
-                processedParams = this.sessionContextManager.applyWorkspaceContext(
-                    processedParams.context.sessionId, 
-                    processedParams
-                );
-            }
-            
-            // If we have workspaceId in context but no workspaceContext, create one for backward compatibility
-            if (processedParams.context?.workspaceId && !processedParams.workspaceContext) {
-                processedParams.workspaceContext = {
-                    workspaceId: processedParams.context.workspaceId,
-                    workspacePath: [],
-                    contextDepth: 'standard'
-                };
-            }
-        }
-
-        return processedParams;
+        return enhancedParams;
     }
 
     private async executeTool(context: IRequestContext, processedParams: any): Promise<any> {

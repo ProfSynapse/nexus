@@ -214,7 +214,16 @@ export class ToolCallTraceService {
     }
 
     const { context, workspaceContext, mode, ...rest } = params;
-    return Object.keys(rest).length > 0 ? rest : undefined;
+    const sanitized: Record<string, any> = {};
+
+    for (const [key, value] of Object.entries(rest)) {
+      if (key.startsWith('_')) {
+        continue;
+      }
+      sanitized[key] = value;
+    }
+
+    return Object.keys(sanitized).length > 0 ? sanitized : undefined;
   }
 
   private buildOutcomeMetadata(success: boolean, response: any): TraceOutcomeMetadata {

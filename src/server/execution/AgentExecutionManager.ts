@@ -98,6 +98,12 @@ export class AgentExecutionManager {
      * Note: sessionId is ONLY read from params.context.sessionId (single source of truth)
      */
     private async processSessionContext(params: any): Promise<any> {
+        // Tool-call boundaries may already normalize/validate context.
+        // Skip duplicate session validation/workspace injection in that case.
+        if (params?._normalizedContext === true) {
+            return params;
+        }
+
         // Ensure context exists
         if (!params.context) {
             params.context = {};
