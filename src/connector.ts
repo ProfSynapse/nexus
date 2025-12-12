@@ -517,8 +517,13 @@ Keep sessionId and workspaceId values EXACTLY as shown above throughout the conv
             // SESSION VALIDATION & WORKSPACE CONTEXT INJECTION
             // ========================================
 
-            // 1. SESSION ID VALIDATION: Extract and validate/generate sessionId first
-            const providedSessionId = modeParams.context?.sessionId || modeParams.sessionId;
+            // Ensure context object exists
+            if (!modeParams.context) {
+                modeParams.context = {};
+            }
+
+            // 1. SESSION ID VALIDATION: Extract from context ONLY (no standalone fallback)
+            const providedSessionId = modeParams.context.sessionId;
             let validatedSessionId: string;
             let isNewSession = false;
             let isNonStandardId = false;
@@ -533,12 +538,8 @@ Keep sessionId and workspaceId values EXACTLY as shown above throughout the conv
                 validatedSessionId = providedSessionId;
             }
 
-            // 2. INJECT VALIDATED SESSION ID into all relevant locations
-            if (!modeParams.context) {
-                modeParams.context = {};
-            }
+            // 2. INJECT VALIDATED SESSION ID into context (single source of truth)
             modeParams.context.sessionId = validatedSessionId;
-            modeParams.sessionId = validatedSessionId;
 
             // 3. WORKSPACE CONTEXT LOOKUP FROM SESSION
             const sessionContextManager = this.getSessionContextManagerFromService();

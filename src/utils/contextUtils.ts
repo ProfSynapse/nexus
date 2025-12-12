@@ -186,17 +186,22 @@ export function prepareModeCallParams(
 ): any {
   // Start with a copy of the original parameters
   const params = { ...modeCall.parameters };
-  
-  // Apply session ID if not already present
-  if (sessionId && !params.sessionId) {
-    params.sessionId = sessionId;
+
+  // Ensure context object exists
+  if (!params.context) {
+    params.context = {};
   }
-  
+
+  // Apply session ID to context if not already present (single source of truth)
+  if (sessionId && !params.context.sessionId) {
+    params.context.sessionId = sessionId;
+  }
+
   // Apply workspace context if not already present
   if (currentContext && (!params.workspaceContext || !parseWorkspaceContext(params.workspaceContext)?.workspaceId)) {
     params.workspaceContext = currentContext;
   }
-  
+
   return params;
 }
 

@@ -87,7 +87,8 @@ export class UpdateSessionMode extends BaseMode<EditSessionParams, SessionResult
         }
 
         // Phase 2: Get target session ID and workspaceId
-        const targetSessionId = params.targetSessionId || params.sessionId;
+        // targetSessionId is explicit param, fallback to context.sessionId (single source of truth)
+        const targetSessionId = params.targetSessionId || params.context?.sessionId;
         if (!targetSessionId) {
             return this.prepareResult(false, undefined, 'No session ID provided for editing');
         }

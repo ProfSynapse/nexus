@@ -67,7 +67,8 @@ export class LoadSessionMode extends BaseMode<LoadSessionParams, SessionResult> 
             }
 
             // Phase 2: Get target session ID and workspaceId (consolidated from parameter handling)
-            const targetSessionId = params.targetSessionId || params.sessionId;
+            // targetSessionId is explicit param, fallback to context.sessionId (single source of truth)
+            const targetSessionId = params.targetSessionId || params.context?.sessionId;
             if (!targetSessionId) {
                 return this.prepareResult(false, undefined, 'No session ID provided to load');
             }

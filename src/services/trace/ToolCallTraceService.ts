@@ -124,15 +124,11 @@ export class ToolCallTraceService {
   }
 
   /**
-   * Extract session ID from various possible locations in params
+   * Extract session ID from context (single source of truth)
    */
   private extractSessionId(params: any): string | null {
-    // Try different locations where sessionId might be
-    if (params?.sessionId) return params.sessionId;
-    if (params?.context?.sessionId) return params.context.sessionId;
-    if (params?.params?.sessionId) return params.params.sessionId;
-
-    return null;
+    // sessionId is ONLY in context object
+    return params?.context?.sessionId || null;
   }
 
   /**

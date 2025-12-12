@@ -162,42 +162,37 @@ export class ToolExecutionStrategy implements IRequestStrategy<ToolExecutionRequ
         }
 
         // Use SessionContextManager for unified session handling instead of separate SessionService
-        const sessionId = params.context?.sessionId || params.sessionId;
-        
+        // sessionId is ONLY read from context (single source of truth)
+        if (!params.context) {
+            params.context = {};
+        }
+        const sessionId = params.context.sessionId;
+
         let sessionInfo: any;
         if (this.sessionContextManager && sessionId) {
             try {
                 const validationResult = await this.sessionContextManager.validateSessionId(sessionId);
                 const isNonStandardId = validationResult.id !== sessionId;
-                
+
                 sessionInfo = {
                     sessionId: validationResult.id,
                     isNewSession: validationResult.created,
                     isNonStandardId: isNonStandardId,
                     originalSessionId: isNonStandardId ? sessionId : undefined
                 };
-                
-                // Update params with validated session ID (both locations for compatibility)
-                if (params.context) {
-                    params.context.sessionId = validationResult.id;
-                }
-                params.sessionId = validationResult.id;
+
+                // Update context with validated session ID (single source of truth)
+                params.context.sessionId = validationResult.id;
             } catch (error) {
                 logger.systemWarn(`SessionContextManager validation failed: ${getErrorMessage(error)}. Falling back to SessionService`);
                 // Fallback to original SessionService if SessionContextManager fails
                 sessionInfo = await this.dependencies.sessionService.processSessionId(sessionId);
-                if (params.context) {
-                    params.context.sessionId = sessionInfo.sessionId;
-                }
-                params.sessionId = sessionInfo.sessionId;
+                params.context.sessionId = sessionInfo.sessionId;
             }
         } else {
             // Fallback to original SessionService if no SessionContextManager or sessionId
             sessionInfo = await this.dependencies.sessionService.processSessionId(sessionId);
-            if (params.context) {
-                params.context.sessionId = sessionInfo.sessionId;
-            }
-            params.sessionId = sessionInfo.sessionId;
+            params.context.sessionId = sessionInfo.sessionId;
         }
         
         const shouldInjectInstructions = this.dependencies.sessionService.shouldInjectInstructions(
