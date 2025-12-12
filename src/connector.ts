@@ -7,6 +7,7 @@ import { logger } from './utils/logger';
 import { CustomPromptStorageService } from "./agents/agentManager/services/CustomPromptStorageService";
 import { generateSessionId, formatSessionInstructions, isStandardSessionId } from './utils/sessionUtils';
 import { getContextSchema } from './utils/schemaUtils';
+import { parseAgentModeToolName } from './utils/toolNameUtils';
 // ToolCallCaptureService removed in simplified architecture
 
 // Extracted services
@@ -374,13 +375,12 @@ export class MCPConnector {
 
         for (const toolName of toolNames) {
             // Parse tool name: "contentManager_createNote" -> agentName="contentManager", modeName="createNote"
-            const parts = toolName.split('_');
-            if (parts.length < 2) {
+            const parsed = parseAgentModeToolName(toolName);
+            if (!parsed) {
                 continue; // Invalid tool name format
             }
 
-            const agentName = parts[0];
-            const modeName = parts.slice(1).join('_'); // Handle mode names with underscores
+            const { agentName, modeName } = parsed;
 
             // Find the agent
             const agent = registeredAgents.get(agentName);

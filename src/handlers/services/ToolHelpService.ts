@@ -6,6 +6,7 @@ import {
     generateModeHelp,
     formatModeHelp
 } from '../../utils/parameterHintUtils';
+import { parseAgentToolName } from '../../utils/toolNameUtils';
 
 /**
  * Help content interface for MCP tool help
@@ -38,7 +39,7 @@ export class ToolHelpService implements IToolHelpService {
             logger.systemLog(`ToolHelpService: Generating help for tool ${toolName}, mode ${mode}`);
             
             // Extract agent name from tool name (removes vault suffix if present)
-            const agentName = this.extractAgentName(toolName);
+            const agentName = parseAgentToolName(toolName).agentName;
             
             // Validate mode parameter
             if (!mode) {
@@ -107,7 +108,7 @@ export class ToolHelpService implements IToolHelpService {
         toolName: string
     ): Promise<{ content: HelpContent[] }> {
         try {
-            const agentName = this.extractAgentName(toolName);
+            const agentName = parseAgentToolName(toolName).agentName;
             const agent = getAgent(agentName);
             
             if (!agent) {
@@ -156,18 +157,6 @@ export class ToolHelpService implements IToolHelpService {
      * @returns Agent name without vault suffix
      * @private
      */
-    private extractAgentName(toolName: string): string {
-        const lastUnderscoreIndex = toolName.lastIndexOf('_');
-        
-        if (lastUnderscoreIndex === -1) {
-            // No underscore found, return the tool name as-is
-            return toolName;
-        }
-        
-        // Extract everything before the last underscore as the agent name
-        return toolName.substring(0, lastUnderscoreIndex);
-    }
-
     /**
      * Validate if mode exists for agent (utility method)
      * @param getAgent Function to retrieve agent by name
@@ -181,7 +170,7 @@ export class ToolHelpService implements IToolHelpService {
         mode: string
     ): Promise<boolean> {
         try {
-            const agentName = this.extractAgentName(toolName);
+            const agentName = parseAgentToolName(toolName).agentName;
             const agent = getAgent(agentName);
             
             if (!agent) {

@@ -9,6 +9,7 @@ import { SessionContextManager } from '../SessionContextManager';
 import { WorkspaceService } from '../WorkspaceService';
 import { TraceMetadataBuilder } from '../memory/TraceMetadataBuilder';
 import { TraceContextMetadata, TraceOutcomeMetadata } from '../../database/workspace-types';
+import { resolveAgentMode } from '../../utils/toolNameUtils';
 
 export interface ToolCallCaptureData {
   toolName: string;
@@ -52,8 +53,13 @@ export class ToolCallTraceService {
     executionTime: number
   ): Promise<void> {
     try {
-      // 1. Extract agent and mode from tool name
-      const { agent, mode } = this.parseToolName(toolName);
+      // 1. Resolve agent and mode
+      const resolved = resolveAgentMode(
+        toolName,
+        params?.mode ?? params?.params?.mode ?? params?.arguments?.mode
+      );
+      const agent = resolved.agentName;
+      const mode = resolved.modeName;
 
       // 2. Get session ID from params
       const sessionId = this.extractSessionId(params);
@@ -105,22 +111,6 @@ export class ToolCallTraceService {
       // Don't throw - tracing is a secondary operation that shouldn't break the main flow
       console.error('[ToolCallTraceService] Failed to capture tool call:', error);
     }
-  }
-
-  /**
-   * Parse tool name into agent and mode components
-   * Format: "agentName_modeName" -> { agent: "agentName", mode: "modeName" }
-   */
-  private parseToolName(toolName: string): { agent: string; mode: string } {
-    const lastUnderscore = toolName.lastIndexOf('_');
-    if (lastUnderscore === -1) {
-      return { agent: toolName, mode: 'unknown' };
-    }
-
-    return {
-      agent: toolName.substring(0, lastUnderscore),
-      mode: toolName.substring(lastUnderscore + 1)
-    };
   }
 
   /**
@@ -223,7 +213,7 @@ export class ToolCallTraceService {
       return params;
     }
 
-    const { context, workspaceContext, ...rest } = params;
+    const { context, workspaceContext, mode, ...rest } = params;
     return Object.keys(rest).length > 0 ? rest : undefined;
   }
 

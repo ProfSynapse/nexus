@@ -42,8 +42,11 @@ const curatedReadmes = new Set([
   'src/agents/vaultLibrarian',
   'src/agents/vaultManager',
   'src/database',
+  'src/handlers',
   'src/server',
   'src/services',
+  'src/services/mcp',
+  'src/services/trace',
   'src/services/llm/utils',
   'src/ui',
   'src/utils'

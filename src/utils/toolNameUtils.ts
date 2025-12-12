@@ -5,6 +5,18 @@ export interface ToolNameMetadata {
   actionName?: string;
 }
 
+export interface ParsedAgentToolName {
+  raw: string;
+  agentName: string;
+  suffix?: string;
+}
+
+export interface ParsedAgentModeToolName {
+  raw: string;
+  agentName: string;
+  modeName: string;
+}
+
 /**
  * Replace underscores with dots for consistent agent.mode formatting.
  */
@@ -59,4 +71,73 @@ function toTitleCase(value: string): string {
     .filter(part => part.length > 0)
     .map(part => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');
+}
+
+/**
+ * Parse a tool name that may include a suffix (e.g. vault identifier).
+ *
+ * Supported formats:
+ * - `agentName`
+ * - `agentName_<suffix...>` (suffix may contain underscores)
+ */
+export function parseAgentToolName(toolName: string): ParsedAgentToolName {
+  const raw = toolName ?? '';
+  const value = String(raw);
+
+  const underscore = value.indexOf('_');
+  if (underscore === -1) {
+    return { raw: value, agentName: value };
+  }
+
+  const agentName = value.slice(0, underscore);
+  const suffix = value.slice(underscore + 1);
+
+  return {
+    raw: value,
+    agentName: agentName || value,
+    suffix: suffix || undefined
+  };
+}
+
+/**
+ * Parse a tool identifier in `agentName_modeName` form.
+ */
+export function parseAgentModeToolName(toolName: string): ParsedAgentModeToolName | null {
+  const parsed = parseAgentToolName(toolName);
+  if (!parsed.suffix) {
+    return null;
+  }
+
+  return {
+    raw: parsed.raw,
+    agentName: parsed.agentName,
+    modeName: parsed.suffix
+  };
+}
+
+export function formatAgentModeToolName(agentName: string, modeName: string): string {
+  return `${agentName}_${modeName}`;
+}
+
+/**
+ * Resolve a canonical `{ agentName, modeName }` pair from the tool name + arguments.
+ *
+ * - For agent-tools: toolName is `agentName` (or `agentName_<vaultSuffix>`) and mode is in arguments.
+ * - For mode-tools: toolName is `agentName_modeName` and arguments may omit mode.
+ */
+export function resolveAgentMode(
+  toolName: string,
+  modeFromArguments?: unknown
+): ParsedAgentModeToolName {
+  const parsedAgent = parseAgentToolName(toolName);
+  const modeName =
+    typeof modeFromArguments === 'string' && modeFromArguments.trim().length > 0
+      ? modeFromArguments.trim()
+      : parsedAgent.suffix || 'unknown';
+
+  return {
+    raw: parsedAgent.raw,
+    agentName: parsedAgent.agentName,
+    modeName
+  };
 }

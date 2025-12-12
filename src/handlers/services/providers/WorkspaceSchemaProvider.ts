@@ -12,6 +12,7 @@
 import { ISchemaProvider } from '../../interfaces/ISchemaProvider';
 import { WorkspaceService, GLOBAL_WORKSPACE_ID } from '../../../services/WorkspaceService';
 import { logger } from '../../../utils/logger';
+import { parseAgentToolName } from '../../../utils/toolNameUtils';
 
 /**
  * Workspace enhancement data structure
@@ -68,7 +69,7 @@ export class WorkspaceSchemaProvider implements ISchemaProvider {
   async canEnhance(toolName: string, baseSchema: any): Promise<boolean> {
     try {
       // Extract agent name from tool name (handle both "memoryManager" and "memoryManager_vaultName" formats)
-      const agentName = toolName.split('_')[0];
+      const agentName = parseAgentToolName(toolName).agentName;
       
       // Only enhance memoryManager agent
       if (agentName !== 'memoryManager') {
