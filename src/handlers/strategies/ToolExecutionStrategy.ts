@@ -5,6 +5,7 @@ import { IAgent } from '../../agents/interfaces/IAgent';
 import { SessionContextManager } from '../../services/SessionContextManager';
 import { logger } from '../../utils/logger';
 import { getErrorMessage } from '../../utils/errorUtils';
+import { parseAgentToolName } from '../../utils/toolNameUtils';
 
 interface ToolExecutionRequest {
     params: {
@@ -55,9 +56,10 @@ export class ToolExecutionStrategy implements IRequestStrategy<ToolExecutionRequ
             if (this.onToolResponse) {
                 try {
                     const executionTime = Date.now() - startTime;
+                    const paramsForCapture = { ...context.params, mode: context.mode };
                     await this.onToolResponse(
                         request.params.name,
-                        context.params,
+                        paramsForCapture,
                         result,
                         success,
                         executionTime
@@ -77,9 +79,12 @@ export class ToolExecutionStrategy implements IRequestStrategy<ToolExecutionRequ
             if (this.onToolResponse && context) {
                 try {
                     const executionTime = Date.now() - startTime;
+                    const paramsForCapture = context?.params
+                        ? { ...context.params, ...(context?.mode ? { mode: context.mode } : {}) }
+                        : context?.params;
                     await this.onToolResponse(
                         request.params.name,
-                        context.params,
+                        paramsForCapture,
                         { error: (error as Error).message },
                         false,
                         executionTime
@@ -151,7 +156,7 @@ export class ToolExecutionStrategy implements IRequestStrategy<ToolExecutionRequ
             );
         }
 
-        const agentName = this.extractAgentName(fullToolName);
+        const agentName = parseAgentToolName(fullToolName).agentName;
         const { mode, ...params } = parsedArgs as { mode: string; [key: string]: any };
         
         if (!mode) {
@@ -290,15 +295,11 @@ export class ToolExecutionStrategy implements IRequestStrategy<ToolExecutionRequ
         );
 
         // Update session context from result (for load operations that return new workspace context)
-        if (this.sessionContextManager && processedParams.sessionId && result.workspaceContext) {
-            this.sessionContextManager.updateFromResult(processedParams.sessionId, result);
+        const sessionId = processedParams.context?.sessionId;
+        if (this.sessionContextManager && sessionId && result.workspaceContext) {
+            this.sessionContextManager.updateFromResult(sessionId, result);
         }
 
         return result;
-    }
-
-    private extractAgentName(toolName: string): string {
-        const lastUnderscoreIndex = toolName.lastIndexOf('_');
-        return lastUnderscoreIndex === -1 ? toolName : toolName.substring(0, lastUnderscoreIndex);
     }
 }
