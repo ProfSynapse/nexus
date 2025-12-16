@@ -118,14 +118,6 @@ Add/merge the Nexus server entry into your MCP client config (Claude Desktop use
 
 ---
 
-## Development
-
-- Build: `npm run build`
-- Test: `npm test` (if configured)
-- Typecheck only: `tsc --noEmit`
-
----
-
 ## Troubleshooting
 
 - **Server not found:** In Obsidian, go to **Settings → Nexus → Get Started → MCP Integration** and click **Add Nexus to Claude**, then restart Claude Desktop.
