@@ -963,7 +963,69 @@ setTimeout(async () => {
 | macOS (Intel) | ✅ | WASM works |
 | Windows | ✅ | WASM works |
 | Linux | ✅ | WASM works |
-| Mobile | ⚠️ | Memory constrained - consider smaller batches or opt-in |
+| Mobile (iOS/Android) | ❌ | **Disabled** - memory/battery constraints |
+
+### 8.5 Mobile Detection & Disabling
+
+Embeddings are **desktop-only**. Detect and skip on mobile:
+
+```typescript
+import { Platform } from 'obsidian';
+
+export class EmbeddingService {
+  private isEnabled: boolean;
+
+  constructor(private app: App) {
+    // Disable on mobile entirely
+    this.isEnabled = !Platform.isMobile;
+  }
+
+  async initialize(): Promise<void> {
+    if (!this.isEnabled) {
+      console.log('[Embeddings] Disabled on mobile');
+      return;
+    }
+    // ... normal initialization
+  }
+
+  async embedNote(notePath: string): Promise<void> {
+    if (!this.isEnabled) return;
+    // ... normal embedding
+  }
+
+  async semanticSearch(query: string): Promise<SimilarNote[]> {
+    if (!this.isEnabled) return [];
+    // ... normal search
+  }
+}
+```
+
+**In plugin initialization:**
+
+```typescript
+async onload() {
+  // Skip embedding setup entirely on mobile
+  if (Platform.isMobile) {
+    console.log('[Nexus] Embeddings disabled on mobile');
+    return;
+  }
+
+  // Desktop: initialize embeddings
+  this.indexingQueue = new IndexingQueue(embeddingService, db, this.app);
+  this.embeddingStatusBar = new EmbeddingStatusBar(this, this.indexingQueue);
+  this.embeddingStatusBar.init();
+
+  setTimeout(() => {
+    this.indexingQueue.startFullIndex();
+  }, 3000);
+}
+```
+
+**Why no mobile:**
+- Memory: Model requires ~50-100MB, devices are constrained
+- Battery: Embedding generation is CPU-intensive
+- No status bar: Can't show progress
+- Sync: Desktop will generate embeddings, mobile just uses the database
 
 ---
 
