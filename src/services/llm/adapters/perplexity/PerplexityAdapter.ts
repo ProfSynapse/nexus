@@ -17,7 +17,7 @@ import {
 } from '../types';
 import { PERPLEXITY_MODELS, PERPLEXITY_DEFAULT_MODEL } from './PerplexityModels';
 import { WebSearchUtils } from '../../utils/WebSearchUtils';
-import { MCPToolExecution } from '../shared/MCPToolExecution';
+import { MCPToolExecution } from '../shared/ToolExecutionUtils';
 
 export interface PerplexityOptions extends GenerateOptions {
   webSearch?: boolean;
@@ -163,94 +163,6 @@ export class PerplexityAdapter extends BaseAdapter {
         'citations'
       ]
     };
-  }
-
-  /**
-   * Check if MCP is available via connector
-   */
-  supportsMCP(): boolean {
-    return MCPToolExecution.supportsMCP(this);
-  }
-
-  /**
-   * Generate with pre-converted tools (from ChatService) using centralized execution
-   */
-  private async generateWithProvidedTools(prompt: string, options?: PerplexityOptions): Promise<LLMResponse> {
-    // Use centralized tool execution wrapper to eliminate code duplication
-    const model = options?.model || this.currentModel;
-
-    return MCPToolExecution.executeWithToolSupport(
-      this,
-      'perplexity',
-      {
-        model,
-        tools: options?.tools || [],
-        prompt,
-        systemPrompt: options?.systemPrompt
-      },
-      {
-        buildMessages: (prompt: string, systemPrompt?: string) => 
-          this.buildMessages(prompt, systemPrompt),
-        
-        buildRequestBody: (messages: any[], isInitial: boolean) => ({
-          model,
-          messages,
-          tools: options?.tools ? this.convertTools(options.tools) : undefined,
-          tool_choice: 'auto',
-          temperature: options?.temperature,
-          max_tokens: options?.maxTokens,
-          top_p: options?.topP,
-          presence_penalty: options?.presencePenalty,
-          frequency_penalty: options?.frequencyPenalty,
-          extra: {
-            search_mode: options?.searchMode || 'web',
-            reasoning_effort: options?.reasoningEffort || 'medium',
-            web_search_options: {
-              search_context_size: options?.searchContextSize || 'low'
-            }
-          }
-        }),
-        
-        makeApiCall: async (requestBody: any) => {
-          return await fetch(`${this.baseUrl}/chat/completions`, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${this.apiKey}`,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(requestBody)
-          });
-        },
-        
-        extractResponse: async (response: Response) => {
-          if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`HTTP ${response.status}: ${errorText}`);
-          }
-          const data = await response.json();
-          const choice = data.choices[0];
-          
-          return {
-            content: choice?.message?.content || '',
-            usage: this.extractUsage(data),
-            finishReason: choice?.finish_reason || 'stop',
-            toolCalls: choice?.message?.toolCalls,
-            choice: choice
-          };
-        },
-        
-        buildLLMResponse: async (
-          content: string,
-          model: string,
-          usage?: any,
-          metadata?: any,
-          finishReason?: any,
-          toolCalls?: any[]
-        ) => {
-          return this.buildLLMResponse(content, model, usage, metadata, finishReason, toolCalls);
-        }
-      }
-    );
   }
 
   /**

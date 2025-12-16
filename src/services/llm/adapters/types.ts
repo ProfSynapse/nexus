@@ -3,6 +3,11 @@
  * Based on patterns from services/llm/
  */
 
+/**
+ * Supported LLM providers
+ */
+export type SupportedProvider = 'openai' | 'openrouter' | 'anthropic' | 'google' | 'groq' | 'mistral' | 'perplexity' | 'requesty';
+
 export interface GenerateOptions {
   model?: string;
   temperature?: number;

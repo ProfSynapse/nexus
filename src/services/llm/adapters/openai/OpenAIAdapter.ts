@@ -18,7 +18,7 @@ import { ModelRegistry } from '../ModelRegistry';
 import { DeepResearchHandler } from './DeepResearchHandler';
 import { WebSearchUtils } from '../../utils/WebSearchUtils';
 import { OPENAI_MODELS } from './OpenAIModels';
-import { MCPToolExecution } from '../shared/MCPToolExecution';
+import { MCPToolExecution } from '../shared/ToolExecutionUtils';
 
 export class OpenAIAdapter extends BaseAdapter {
   readonly name = 'openai';
@@ -56,18 +56,9 @@ export class OpenAIAdapter extends BaseAdapter {
         return await this.deepResearch.generate(prompt, options);
       }
 
-      // If web search is requested, add web search tool
-      if (options?.webSearch) {
-        const webSearchTool = {
-          type: 'web_search' as const
-        };
-        const toolsWithWebSearch = [...(options.tools || []), webSearchTool];
-        return await this.generateWithProvidedTools(prompt, { ...options, tools: toolsWithWebSearch });
-      }
-
-      // If tools are provided (pre-converted by ChatService), use tool-enabled generation
+      // Tool execution requires streaming - use generateStreamAsync instead
       if (options?.tools && options.tools.length > 0) {
-        return await this.generateWithProvidedTools(prompt, options);
+        throw new Error('Tool execution requires streaming. Use generateStreamAsync() instead.');
       }
 
       // Otherwise use basic Responses API without tools
@@ -399,76 +390,6 @@ export class OpenAIAdapter extends BaseAdapter {
   }
 
   /**
-   * Generate with pre-converted tools (from ChatService) using centralized execution
-   */
-  private async generateWithProvidedTools(prompt: string, options?: GenerateOptions): Promise<LLMResponse> {
-    // Use centralized tool execution wrapper to eliminate code duplication
-    const model = options?.model || this.currentModel;
-
-    return MCPToolExecution.executeWithToolSupport(
-      this,
-      'openai',
-      {
-        model,
-        tools: options?.tools || [],
-        prompt,
-        systemPrompt: options?.systemPrompt
-      },
-      {
-        buildMessages: (prompt: string, systemPrompt?: string) => 
-          this.buildMessages(prompt, systemPrompt),
-        
-        buildRequestBody: (messages: any[], isInitial: boolean) => {
-          const chatParams: any = {
-            model,
-            messages,
-            tools: options?.tools,
-            tool_choice: 'auto'
-          };
-
-          // Add optional parameters
-          if (options?.temperature !== undefined) chatParams.temperature = options.temperature;
-          if (options?.maxTokens !== undefined) chatParams.max_tokens = options.maxTokens;
-          if (options?.jsonMode) chatParams.response_format = { type: 'json_object' };
-          if (options?.stopSequences) chatParams.stop = options.stopSequences;
-          if (options?.topP !== undefined) chatParams.top_p = options.topP;
-          if (options?.frequencyPenalty !== undefined) chatParams.frequency_penalty = options.frequencyPenalty;
-          if (options?.presencePenalty !== undefined) chatParams.presence_penalty = options.presencePenalty;
-
-          return chatParams;
-        },
-        
-        makeApiCall: async (requestBody: any) => {
-          return await this.client.chat.completions.create(requestBody);
-        },
-        
-        extractResponse: async (response: any) => {
-          const choice = response.choices[0];
-          
-          return {
-            content: choice?.message?.content || '',
-            usage: this.extractUsage({ usage: response.usage }),
-            finishReason: choice?.finish_reason || 'stop',
-            toolCalls: choice?.message?.toolCalls,
-            choice: choice
-          };
-        },
-        
-        buildLLMResponse: async (
-          content: string,
-          model: string,
-          usage?: any,
-          metadata?: any,
-          finishReason?: any,
-          toolCalls?: any[]
-        ) => {
-          return this.buildLLMResponse(content, model, usage, metadata, finishReason, toolCalls);
-        }
-      }
-    );
-  }
-
-  /**
    * Generate using Responses API for non-streaming requests
    */
   private async generateWithResponsesAPI(prompt: string, options?: GenerateOptions): Promise<LLMResponse> {
@@ -585,13 +506,6 @@ export class OpenAIAdapter extends BaseAdapter {
 
 
   /**
-   * Check if MCP is available via connector
-   */
-  supportsMCP(): boolean {
-    return MCPToolExecution.supportsMCP(this);
-  }
-
-  /**
    * Check if model supports reasoning/thinking (uses model registry)
    */
   private supportsReasoning(modelId: string): boolean {
@@ -621,11 +535,6 @@ export class OpenAIAdapter extends BaseAdapter {
         'deep_research'
       ]
     };
-
-    // Add MCP support if available
-    if (this.supportsMCP()) {
-      baseCapabilities.supportedFeatures.push('mcp_integration');
-    }
 
     return baseCapabilities;
   }

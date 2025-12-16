@@ -14,7 +14,7 @@ import {
   ModelPricing 
 } from '../types';
 import { REQUESTY_MODELS, REQUESTY_DEFAULT_MODEL } from './RequestyModels';
-import { MCPToolExecution } from '../shared/MCPToolExecution';
+import { MCPToolExecution } from '../shared/ToolExecutionUtils';
 
 export class RequestyAdapter extends BaseAdapter {
   readonly name = 'requesty';
@@ -29,16 +29,12 @@ export class RequestyAdapter extends BaseAdapter {
     try {
       const model = options?.model || this.currentModel;
       
-      // If tools are provided (pre-converted by ChatService), use tool-enabled generation
+      // Tool execution requires streaming - use generateStreamAsync instead
       if (options?.tools && options.tools.length > 0) {
-        console.log('[Requesty Adapter] Using tool-enabled generation', {
-          toolCount: options.tools.length
-        });
-        return await this.generateWithProvidedTools(prompt, options);
+        throw new Error('Tool execution requires streaming. Use generateStreamAsync() instead.');
       }
-      
-      // Otherwise use basic chat completions
-      console.log('[Requesty Adapter] Using basic chat completions (no tools)');
+
+      // Use basic chat completions
       return await this.generateWithChatCompletions(prompt, options);
     } catch (error) {
       throw this.handleError(error, 'generation');
@@ -142,95 +138,7 @@ export class RequestyAdapter extends BaseAdapter {
       ]
     };
 
-    // Add MCP support if available
-    if (this.supportsMCP()) {
-      baseCapabilities.supportedFeatures.push('mcp_integration');
-    }
-
     return baseCapabilities;
-  }
-
-  /**
-   * Check if MCP is available via connector
-   */
-  supportsMCP(): boolean {
-    return MCPToolExecution.supportsMCP(this);
-  }
-
-  /**
-   * Generate with pre-converted tools (from ChatService) using centralized execution
-   */
-  private async generateWithProvidedTools(prompt: string, options?: GenerateOptions): Promise<LLMResponse> {
-    // Use centralized tool execution wrapper to eliminate code duplication
-    const model = options?.model || this.currentModel;
-
-    return MCPToolExecution.executeWithToolSupport(
-      this,
-      'requesty',
-      {
-        model,
-        tools: options?.tools || [],
-        prompt,
-        systemPrompt: options?.systemPrompt
-      },
-      {
-        buildMessages: (prompt: string, systemPrompt?: string) => 
-          this.buildMessages(prompt, systemPrompt),
-        
-        buildRequestBody: (messages: any[], isInitial: boolean) => ({
-          model,
-          messages,
-          tools: options?.tools,
-          tool_choice: 'auto',
-          temperature: options?.temperature,
-          max_tokens: options?.maxTokens,
-          response_format: options?.jsonMode ? { type: 'json_object' } : undefined,
-          stop: options?.stopSequences
-        }),
-        
-        makeApiCall: async (requestBody: any) => {
-          return await fetch(`${this.baseUrl}/chat/completions`, {
-            method: 'POST',
-            headers: {
-              ...this.buildHeaders(),
-              'Authorization': `Bearer ${this.apiKey}`,
-              'HTTP-Referer': 'https://synaptic-lab-kit.com',
-              'X-Title': 'Synaptic Lab Kit',
-              'User-Agent': 'Synaptic-Lab-Kit/1.0.0'
-            },
-            body: JSON.stringify(requestBody)
-          });
-        },
-        
-        extractResponse: async (response: Response) => {
-          if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`HTTP ${response.status}: ${errorText}`);
-          }
-          const data = await response.json();
-          const choice = data.choices[0];
-          
-          return {
-            content: choice?.message?.content || '',
-            usage: this.extractUsage(data),
-            finishReason: choice?.finish_reason || 'stop',
-            toolCalls: choice?.message?.toolCalls,
-            choice: choice
-          };
-        },
-        
-        buildLLMResponse: async (
-          content: string,
-          model: string,
-          usage?: any,
-          metadata?: any,
-          finishReason?: any,
-          toolCalls?: any[]
-        ) => {
-          return this.buildLLMResponse(content, model, usage, metadata, finishReason, toolCalls);
-        }
-      }
-    );
   }
 
   /**

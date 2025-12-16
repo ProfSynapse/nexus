@@ -54,13 +54,15 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
     // Workspace service (centralized storage service)
     {
         name: 'workspaceService',
-        dependencies: ['hybridStorageAdapter'],
+        dependencies: ['hybridStorageAdapter', 'vaultOperations'],
         create: async (context) => {
             const { WorkspaceService } = await import('../../services/WorkspaceService');
             const { FileSystemService } = await import('../../services/storage/FileSystemService');
             const { IndexManager } = await import('../../services/storage/IndexManager');
+            const { VaultOperations } = await import('../VaultOperations');
 
-            const fileSystem = new FileSystemService(context.plugin);
+            const vaultOperations = await context.serviceManager.getService('vaultOperations') as InstanceType<typeof VaultOperations>;
+            const fileSystem = new FileSystemService(context.plugin, vaultOperations);
             const indexManager = new IndexManager(fileSystem);
 
             // Get storage adapter if available (may be null if initialization failed)
@@ -270,13 +272,15 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
     // Conversation service for chat storage
     {
         name: 'conversationService',
-        dependencies: ['hybridStorageAdapter'],
+        dependencies: ['hybridStorageAdapter', 'vaultOperations'],
         create: async (context) => {
             const { ConversationService } = await import('../../services/ConversationService');
             const { FileSystemService } = await import('../../services/storage/FileSystemService');
             const { IndexManager } = await import('../../services/storage/IndexManager');
+            const { VaultOperations } = await import('../VaultOperations');
 
-            const fileSystem = new FileSystemService(context.plugin);
+            const vaultOperations = await context.serviceManager.getService('vaultOperations') as InstanceType<typeof VaultOperations>;
+            const fileSystem = new FileSystemService(context.plugin, vaultOperations);
             const indexManager = new IndexManager(fileSystem);
 
             // Get storage adapter if available (may be null if initialization failed)

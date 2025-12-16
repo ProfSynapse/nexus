@@ -1,5 +1,5 @@
 /**
- * Tool Execution Utility
+ * Tool Execution Utilities
  *
  * Clean architecture: Tool execution is decoupled from LLM adapters.
  * Adapters handle LLM communication, this utility handles tool execution.
@@ -8,9 +8,9 @@
  * This enables tools to work on ALL platforms (desktop + mobile).
  */
 
-import { SupportedProvider } from '../../../mcp-bridge/types/BridgeTypes';
+import { SupportedProvider } from '../types';
 
-export interface MCPToolCall {
+export interface ToolCall {
   id: string;
   function: {
     name: string;
@@ -18,7 +18,7 @@ export interface MCPToolCall {
   };
 }
 
-export interface MCPToolResult {
+export interface ToolResult {
   id: string;
   name?: string;
   success: boolean;
@@ -29,55 +29,21 @@ export interface MCPToolResult {
 
 /**
  * Interface for tool executors
- * Both DirectToolExecutor and any future executors should implement this
+ * DirectToolExecutor implements this interface
  */
 export interface IToolExecutor {
   executeToolCalls(
-    toolCalls: MCPToolCall[],
+    toolCalls: ToolCall[],
     context?: { sessionId?: string; workspaceId?: string },
     onToolEvent?: (event: 'started' | 'completed', data: any) => void
-  ): Promise<MCPToolResult[]>;
-}
-
-/**
- * @deprecated Legacy interface - adapters no longer need mcpConnector
- * Kept for backward compatibility during migration
- */
-export interface MCPCapableAdapter {
-  mcpConnector?: any;
+  ): Promise<ToolResult[]>;
 }
 
 /**
  * Static utility class for tool execution
  * Decoupled from adapters - receives toolExecutor explicitly
  */
-export class MCPToolExecution {
-
-  /**
-   * @deprecated Tool support is now determined by whether toolExecutor is provided
-   * This method always returns false since adapters no longer have mcpConnector
-   */
-  static supportsMCP(_adapter: any): boolean {
-    console.warn('[MCPToolExecution] supportsMCP is deprecated - use toolExecutor instead');
-    return false;
-  }
-
-  /**
-   * @deprecated Use StreamingOrchestrator for tool execution instead
-   * This method is no longer functional - tool execution happens in StreamingOrchestrator
-   */
-  static async executeWithToolSupport<T>(
-    _adapter: any,
-    provider: string,
-    _options: any,
-    _callbacks: any
-  ): Promise<any> {
-    throw new Error(
-      `[MCPToolExecution] executeWithToolSupport is deprecated for ${provider}. ` +
-      `Tool execution now happens in StreamingOrchestrator. ` +
-      `Use the streaming API (generateResponseStream) for tool support.`
-    );
-  }
+export class ToolExecutionUtils {
 
   /**
    * Execute tool calls using the provided executor
@@ -85,13 +51,13 @@ export class MCPToolExecution {
    */
   static async executeToolCalls(
     toolExecutor: IToolExecutor | null | undefined,
-    toolCalls: MCPToolCall[],
+    toolCalls: ToolCall[],
     provider: SupportedProvider,
     onToolEvent?: (event: 'started' | 'completed', data: any) => void,
     context?: { sessionId?: string; workspaceId?: string }
-  ): Promise<MCPToolResult[]> {
+  ): Promise<ToolResult[]> {
     if (!toolExecutor) {
-      console.warn(`[MCPToolExecution] No tool executor available for ${provider}`);
+      console.warn(`[ToolExecutionUtils] No tool executor available for ${provider}`);
       return toolCalls.map(tc => ({
         id: tc.id,
         name: tc.function.name,
@@ -101,10 +67,10 @@ export class MCPToolExecution {
     }
 
     try {
-      console.log(`[MCPToolExecution] Executing ${toolCalls.length} tool calls for ${provider}`);
+      console.log(`[ToolExecutionUtils] Executing ${toolCalls.length} tool calls for ${provider}`);
       return await toolExecutor.executeToolCalls(toolCalls, context, onToolEvent);
     } catch (error) {
-      console.error(`[MCPToolExecution] Tool execution failed:`, error);
+      console.error(`[ToolExecutionUtils] Tool execution failed:`, error);
       throw error;
     }
   }
@@ -114,7 +80,7 @@ export class MCPToolExecution {
    * Formats differently for Anthropic, Google, vs other providers
    */
   static buildToolMessages(
-    toolResults: MCPToolResult[],
+    toolResults: ToolResult[],
     provider: SupportedProvider
   ): Array<any> {
     if (provider === 'anthropic') {
@@ -161,9 +127,8 @@ export class MCPToolExecution {
   /**
    * Build tool metadata for response
    */
-  static buildToolMetadata(toolResults: MCPToolResult[]) {
+  static buildToolMetadata(toolResults: ToolResult[]) {
     return {
-      mcpEnabled: true,
       toolCallCount: toolResults.length,
       toolCalls: toolResults.length > 0 ? toolResults.map(result => ({
         id: result.id,
@@ -176,3 +141,7 @@ export class MCPToolExecution {
     };
   }
 }
+
+// Re-export with old names for backward compatibility during migration
+export type { ToolCall as MCPToolCall, ToolResult as MCPToolResult };
+export { ToolExecutionUtils as MCPToolExecution };

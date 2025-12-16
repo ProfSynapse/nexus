@@ -24,7 +24,7 @@ import { WebSearchUtils } from '../../utils/WebSearchUtils';
 import { ReasoningPreserver } from '../shared/ReasoningPreserver';
 import { SchemaValidator } from '../../utils/SchemaValidator';
 import { ThinkingEffortMapper } from '../../utils/ThinkingEffortMapper';
-import { MCPToolExecution } from '../shared/MCPToolExecution';
+import { MCPToolExecution } from '../shared/ToolExecutionUtils';
 
 // Type-only import for TypeScript (doesn't affect bundling)
 import type { GoogleGenAI as GoogleGenAIType } from '@google/genai';
@@ -64,12 +64,12 @@ export class GoogleAdapter extends BaseAdapter {
   async generateUncached(prompt: string, options?: GenerateOptions): Promise<LLMResponse> {
     return this.withRetry(async () => {
       try {
-        // If tools are provided (pre-converted by ChatService), use tool-enabled generation
+        // Tool execution requires streaming - use generateStreamAsync instead
         if (options?.tools && options.tools.length > 0) {
-          return await this.generateWithProvidedTools(prompt, options);
+          throw new Error('Tool execution requires streaming. Use generateStreamAsync() instead.');
         }
 
-        // Otherwise use basic message generation
+        // Use basic message generation
         return await this.generateWithBasicMessages(prompt, options);
       } catch (error) {
         this.handleError(error, 'generation');
@@ -343,112 +343,6 @@ export class GoogleAdapter extends BaseAdapter {
         'thinking_mode'
       ]
     };
-  }
-
-  /**
-   * Generate with pre-converted tools (from ChatService) using centralized execution
-   */
-  private async generateWithProvidedTools(prompt: string, options?: GenerateOptions): Promise<LLMResponse> {
-    const model = options?.model || this.currentModel;
-    let systemInstruction: any = undefined;
-
-    return MCPToolExecution.executeWithToolSupport(
-      this,
-      'google',
-      {
-        model,
-        tools: options?.tools || [],
-        prompt,
-        systemPrompt: options?.systemPrompt,
-        onToolEvent: options?.onToolEvent
-      },
-      {
-        buildMessages: (prompt: string, systemPrompt?: string) => {
-          const contents = [];
-
-          // System instruction is handled separately in Gemini
-          if (systemPrompt) {
-            systemInstruction = {
-              parts: [{ text: systemPrompt }]
-            };
-          }
-
-          contents.push({
-            role: 'user',
-            parts: [{ text: prompt }]
-          });
-
-          return contents;
-        },
-
-        buildRequestBody: (messages: any[], isInitial: boolean) => {
-          const requestParams: any = {
-            model,
-            contents: messages,
-            generationConfig: {
-              temperature: options?.temperature,
-              maxOutputTokens: options?.maxTokens || 4096,
-              topK: 40,
-              topP: 0.95
-            }
-          };
-
-          // Add system instruction if available
-          if (systemInstruction) {
-            requestParams.systemInstruction = systemInstruction;
-          }
-
-          // Add tools
-          if (options?.tools && options.tools.length > 0) {
-            requestParams.tools = this.convertTools(options.tools);
-
-            // Add function calling config - let model decide when to use tools
-            requestParams.toolConfig = {
-              functionCallingConfig: {
-                mode: 'AUTO' // Model decides when tools are appropriate
-              }
-            };
-          }
-
-          return requestParams;
-        },
-
-        makeApiCall: async (requestBody: any) => {
-          const client = await this.getClient();
-          return await client.models.generateContent(requestBody);
-        },
-
-        extractResponse: async (response: any) => {
-          const toolCalls = this.extractToolCalls(response);
-          const textContent = this.extractTextFromParts(response.candidates?.[0]?.content?.parts || []);
-
-          return {
-            content: textContent,
-            usage: this.extractUsage(response),
-            finishReason: this.mapFinishReason(response.candidates?.[0]?.finishReason),
-            toolCalls: toolCalls,
-            choice: {
-              message: {
-                role: 'model',
-                content: response.candidates?.[0]?.content,
-                toolCalls: toolCalls.length > 0 ? toolCalls : undefined
-              }
-            }
-          };
-        },
-
-        buildLLMResponse: async (
-          content: string,
-          model: string,
-          usage?: any,
-          metadata?: any,
-          finishReason?: any,
-          toolCalls?: any[]
-        ) => {
-          return this.buildLLMResponse(content, model, usage, metadata, finishReason, toolCalls);
-        }
-      }
-    );
   }
 
   /**

@@ -15,7 +15,7 @@ import {
   ModelPricing
 } from '../types';
 import { MISTRAL_MODELS, MISTRAL_DEFAULT_MODEL } from './MistralModels';
-import { MCPToolExecution } from '../shared/MCPToolExecution';
+import { MCPToolExecution } from '../shared/ToolExecutionUtils';
 
 export class MistralAdapter extends BaseAdapter {
   readonly name = 'mistral';
@@ -34,16 +34,12 @@ export class MistralAdapter extends BaseAdapter {
     try {
       const model = options?.model || this.currentModel;
       
-      // If tools are provided (pre-converted by ChatService), use tool-enabled generation
+      // Tool execution requires streaming - use generateStreamAsync instead
       if (options?.tools && options.tools.length > 0) {
-        console.log('[Mistral Adapter] Using tool-enabled generation', {
-          toolCount: options.tools.length
-        });
-        return await this.generateWithProvidedTools(prompt, options);
+        throw new Error('Tool execution requires streaming. Use generateStreamAsync() instead.');
       }
-      
-      // Otherwise use basic chat completions
-      console.log('[Mistral Adapter] Using basic chat completions (no tools)');
+
+      // Use basic chat completions
       return await this.generateWithChatCompletions(prompt, options);
     } catch (error) {
       throw this.handleError(error, 'generation');
@@ -130,80 +126,7 @@ export class MistralAdapter extends BaseAdapter {
       ]
     };
 
-    // Add MCP support if available
-    if (this.supportsMCP()) {
-      baseCapabilities.supportedFeatures.push('mcp_integration');
-    }
-
     return baseCapabilities;
-  }
-
-  /**
-   * Check if MCP is available via connector
-   */
-  supportsMCP(): boolean {
-    return MCPToolExecution.supportsMCP(this);
-  }
-
-  /**
-   * Generate with pre-converted tools (from ChatService) using centralized execution
-   */
-  private async generateWithProvidedTools(prompt: string, options?: GenerateOptions): Promise<LLMResponse> {
-    // Use centralized tool execution wrapper to eliminate code duplication
-    const model = options?.model || this.currentModel;
-
-    return MCPToolExecution.executeWithToolSupport(
-      this,
-      'mistral',
-      {
-        model,
-        tools: options?.tools || [],
-        prompt,
-        systemPrompt: options?.systemPrompt
-      },
-      {
-        buildMessages: (prompt: string, systemPrompt?: string) => 
-          this.buildMessages(prompt, systemPrompt),
-        
-        buildRequestBody: (messages: any[], isInitial: boolean) => ({
-          model,
-          messages,
-          tools: options?.tools ? this.convertTools(options.tools) : undefined,
-          toolChoice: 'auto',
-          temperature: options?.temperature,
-          maxTokens: options?.maxTokens,
-          topP: options?.topP,
-          stop: options?.stopSequences
-        }),
-        
-        makeApiCall: async (requestBody: any) => {
-          return await this.client.chat.complete(requestBody);
-        },
-        
-        extractResponse: async (response: any) => {
-          const choice = response.choices[0];
-          
-          return {
-            content: this.extractMessageContent(choice?.message?.content) || '',
-            usage: this.extractUsage(response),
-            finishReason: choice?.finishReason || 'stop',
-            toolCalls: choice?.message?.toolCalls,
-            choice: choice
-          };
-        },
-        
-        buildLLMResponse: async (
-          content: string,
-          model: string,
-          usage?: any,
-          metadata?: any,
-          finishReason?: any,
-          toolCalls?: any[]
-        ) => {
-          return this.buildLLMResponse(content, model, usage, metadata, finishReason, toolCalls);
-        }
-      }
-    );
   }
 
   /**

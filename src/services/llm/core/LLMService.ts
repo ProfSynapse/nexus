@@ -7,7 +7,7 @@ import { Vault, EventRef } from 'obsidian';
 import { BaseAdapter } from '../adapters/BaseAdapter';
 import { GenerateOptions, LLMResponse, ModelInfo } from '../adapters/types';
 import { LLMProviderSettings, LLMProviderConfig } from '../../../types';
-import { IToolExecutor } from '../adapters/shared/MCPToolExecution';
+import { IToolExecutor } from '../adapters/shared/ToolExecutionUtils';
 import { ConversationContextBuilder } from '../../chat/ConversationContextBuilder';
 import { ConversationData } from '../../../types/chat/ChatTypes';
 import { AdapterRegistry } from './AdapterRegistry';

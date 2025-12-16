@@ -72,10 +72,13 @@ export class ServiceRegistrar {
      */
     async initializeDataDirectories(): Promise<void> {
         try {
-            const { app, plugin, settings, manifest } = this.context;
+            const { app, plugin, settings, manifest, serviceManager } = this.context;
+
+            // Get vaultOperations service
+            const vaultOperations = await serviceManager.getService('vaultOperations') as any;
 
             // Initialize storage services
-            const fileSystem = new FileSystemService(plugin);
+            const fileSystem = new FileSystemService(plugin, vaultOperations);
             const indexManager = new IndexManager(fileSystem);
 
             // Check migration status BEFORE creating directories
@@ -108,7 +111,7 @@ export class ServiceRegistrar {
 
             // Normalize memory trace schema across all workspaces (idempotent)
             try {
-                const traceMigrationService = new TraceSchemaMigrationService(plugin, fileSystem);
+                const traceMigrationService = new TraceSchemaMigrationService(plugin, fileSystem, vaultOperations);
                 await traceMigrationService.migrateIfNeeded();
             } catch (error) {
                 console.error('[ServiceRegistrar] Trace schema migration failed:', error);
@@ -120,8 +123,8 @@ export class ServiceRegistrar {
             const storageDir = `${dataDir}/storage`;
 
             try {
-                await app.vault.adapter.mkdir(normalizePath(dataDir));
-                await app.vault.adapter.mkdir(normalizePath(storageDir));
+                await vaultOperations.ensureDirectory(dataDir);
+                await vaultOperations.ensureDirectory(storageDir);
             } catch (error) {
                 // Directories may already exist
             }

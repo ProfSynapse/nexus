@@ -1,6 +1,7 @@
 import { normalizePath, Plugin } from 'obsidian';
 import { FileSystemService } from '../storage/FileSystemService';
 import { normalizeLegacyTraceMetadata } from '../memory/LegacyTraceMetadataNormalizer';
+import { VaultOperations } from '../../core/VaultOperations';
 
 const TRACE_SCHEMA_VERSION = 1;
 
@@ -16,7 +17,8 @@ export class TraceSchemaMigrationService {
 
   constructor(
     private plugin: Plugin,
-    private fileSystem: FileSystemService
+    private fileSystem: FileSystemService,
+    private vaultOperations: VaultOperations
   ) {}
 
   async migrateIfNeeded(): Promise<{ migratedWorkspaces: number; skipped: boolean }> {
@@ -80,12 +82,10 @@ export class TraceSchemaMigrationService {
 
   private async readStatus(): Promise<TraceSchemaStatus | null> {
     try {
-      const exists = await this.plugin.app.vault.adapter.exists(this.markerPath);
-      if (!exists) {
+      const content = await this.vaultOperations.readFile(this.markerPath);
+      if (!content) {
         return null;
       }
-
-      const content = await this.plugin.app.vault.adapter.read(this.markerPath);
       return JSON.parse(content);
     } catch {
       return null;
@@ -94,29 +94,25 @@ export class TraceSchemaMigrationService {
 
   private async writeStatus(status: TraceSchemaStatus): Promise<void> {
     const json = JSON.stringify(status, null, 2);
-    await this.plugin.app.vault.adapter.write(this.markerPath, json);
+    await this.vaultOperations.writeFile(this.markerPath, json);
   }
 
   private async ensureBackupsDir(): Promise<void> {
-    const exists = await this.plugin.app.vault.adapter.exists(this.backupsPath);
-    if (!exists) {
-      await this.plugin.app.vault.adapter.mkdir(this.backupsPath);
-    }
+    await this.vaultOperations.ensureDirectory(this.backupsPath);
   }
 
   private async createBackup(workspaceId: string): Promise<void> {
     try {
       const filePath = normalizePath(`${this.workspacesPath}/${workspaceId}.json`);
-      const exists = await this.plugin.app.vault.adapter.exists(filePath);
-      if (!exists) {
+      const content = await this.vaultOperations.readFile(filePath);
+      if (!content) {
         return;
       }
 
-      const content = await this.plugin.app.vault.adapter.read(filePath);
       await this.ensureBackupsDir();
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
       const backupPath = normalizePath(`${this.backupsPath}/${workspaceId}-${timestamp}.json.bak`);
-      await this.plugin.app.vault.adapter.write(backupPath, content);
+      await this.vaultOperations.writeFile(backupPath, content);
       console.log(`[TraceSchemaMigration] Backed up ${workspaceId} to ${backupPath}`);
     } catch (error) {
       console.error(`[TraceSchemaMigration] Failed to backup workspace ${workspaceId}:`, error);

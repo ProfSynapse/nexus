@@ -18,7 +18,7 @@ import { ModelRegistry } from '../ModelRegistry';
 import { ReasoningPreserver } from '../shared/ReasoningPreserver';
 import { WebSearchUtils } from '../../utils/WebSearchUtils';
 import { BRAND_NAME } from '../../../../constants/branding';
-import { MCPToolExecution } from '../shared/MCPToolExecution';
+import { MCPToolExecution } from '../shared/ToolExecutionUtils';
 
 export class OpenRouterAdapter extends BaseAdapter {
   readonly name = 'openrouter';
@@ -57,9 +57,9 @@ export class OpenRouterAdapter extends BaseAdapter {
         return await this.executeDetectedToolCalls(options.detectedToolCalls, model, prompt, options);
       }
 
-      // If tools are provided (pre-converted by ChatService), use tool-enabled generation
+      // Tool execution requires streaming - use generateStreamAsync instead
       if (options?.tools && options.tools.length > 0) {
-        return await this.generateWithProvidedTools(prompt, options);
+        throw new Error('Tool execution requires streaming. Use generateStreamAsync() instead.');
       }
 
       const requestBody = {
@@ -566,124 +566,7 @@ export class OpenRouterAdapter extends BaseAdapter {
       ]
     };
 
-    // Add MCP support if available
-    if (this.supportsMCP()) {
-      baseCapabilities.supportedFeatures.push('mcp_integration');
-    }
-
     return baseCapabilities;
-  }
-
-  /**
-   * Check if MCP is available via connector
-   */
-  supportsMCP(): boolean {
-    return MCPToolExecution.supportsMCP(this);
-  }
-
-  /**
-   * Generate with pre-converted tools (from ChatService) using iterative execution
-   */
-  private async generateWithProvidedTools(prompt: string, options?: GenerateOptions): Promise<LLMResponse> {
-    // Use centralized tool execution wrapper to eliminate code duplication
-    const model = options?.model || this.currentModel;
-    const hasTools = options?.tools && options.tools.length > 0;
-
-    return MCPToolExecution.executeWithToolSupport(
-      this,
-      'openrouter',
-      {
-        model,
-        tools: options?.tools || [],
-        prompt,
-        systemPrompt: options?.systemPrompt,
-        onToolEvent: options?.onToolEvent
-      },
-      {
-        buildMessages: (prompt: string, systemPrompt?: string) =>
-          this.buildMessages(prompt, systemPrompt),
-
-        buildRequestBody: (messages: any[], isInitial: boolean) => ({
-          model,
-          messages,
-          tools: options?.tools ? this.convertTools(options.tools) : undefined,
-          tool_choice: 'auto',
-          temperature: options?.temperature,
-          max_tokens: options?.maxTokens,
-          top_p: options?.topP,
-          frequency_penalty: options?.frequencyPenalty,
-          presence_penalty: options?.presencePenalty,
-          response_format: options?.jsonMode ? { type: 'json_object' } : undefined,
-          stop: options?.stopSequences,
-          usage: { include: true },
-          // Enable reasoning for Gemini models using centralized utility
-          ...ReasoningPreserver.getReasoningRequestParams(model, 'openrouter', hasTools || false)
-        }),
-        
-        makeApiCall: async (requestBody: any) => {
-          return await fetch(`${this.baseUrl}/chat/completions`, {
-            method: 'POST',
-            headers: {
-              ...this.buildHeaders(),
-              'Authorization': `Bearer ${this.apiKey}`,
-              'HTTP-Referer': this.httpReferer,
-              'X-Title': this.xTitle
-            },
-            body: JSON.stringify(requestBody)
-          });
-        },
-        
-        extractResponse: async (response: Response) => {
-          if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-          }
-          const data = await response.json();
-          const choice = data.choices[0];
-
-          // Extract tool calls and reasoning using centralized utility
-          let toolCalls = choice?.message?.tool_calls || choice?.message?.toolCalls;
-          const reasoning = ReasoningPreserver.extractFromResponse(choice);
-
-          // Attach reasoning to tool calls for preservation through execution flow
-          if (toolCalls && reasoning) {
-            toolCalls = ReasoningPreserver.attachToToolCalls(toolCalls, reasoning);
-          }
-
-          // Build message with reasoning preserved at message level
-          const messageWithDetails: any = {
-            ...choice?.message,
-            toolCalls
-          };
-
-          // CRITICAL: Preserve reasoning at message level for MCPToolExecution continuations
-          if (reasoning?.reasoning_details) {
-            messageWithDetails.reasoning_details = reasoning.reasoning_details;
-          }
-
-          return {
-            content: choice?.message?.content || '',
-            usage: this.extractUsage(data),
-            finishReason: choice?.finish_reason || 'stop',
-            toolCalls,
-            choice: {
-              ...choice,
-              message: messageWithDetails
-            }
-          };
-        },
-        
-        buildLLMResponse: async (
-          content: string,
-          model: string,
-          usage?: any,
-          metadata?: any,
-          finishReason?: any,
-          toolCalls?: any[]
-        ) => {
-          return this.buildLLMResponse(content, model, usage, metadata, finishReason, toolCalls);
-        }
-      }
-    );
   }
 
   /**

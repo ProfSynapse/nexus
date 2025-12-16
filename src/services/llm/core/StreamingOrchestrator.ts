@@ -14,7 +14,7 @@
 
 import { BaseAdapter } from '../adapters/BaseAdapter';
 import { ConversationContextBuilder } from '../../chat/ConversationContextBuilder';
-import { MCPToolExecution, IToolExecutor } from '../adapters/shared/MCPToolExecution';
+import { MCPToolExecution, IToolExecutor } from '../adapters/shared/ToolExecutionUtils';
 import { LLMProviderSettings } from '../../../types';
 import { IAdapterRegistry } from './AdapterRegistry';
 

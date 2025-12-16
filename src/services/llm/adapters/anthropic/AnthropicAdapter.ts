@@ -16,7 +16,7 @@ import {
 } from '../types';
 import { ANTHROPIC_MODELS, ANTHROPIC_DEFAULT_MODEL } from './AnthropicModels';
 import { ThinkingEffortMapper } from '../../utils/ThinkingEffortMapper';
-import { MCPToolExecution } from '../shared/MCPToolExecution';
+import { MCPToolExecution } from '../shared/ToolExecutionUtils';
 
 export class AnthropicAdapter extends BaseAdapter {
   readonly name = 'anthropic';
@@ -39,16 +39,12 @@ export class AnthropicAdapter extends BaseAdapter {
   async generateUncached(prompt: string, options?: GenerateOptions): Promise<LLMResponse> {
     return this.withRetry(async () => {
       try {
-        // If tools are provided (pre-converted by ChatService), use tool-enabled generation
+        // Tool execution requires streaming - use generateStreamAsync instead
         if (options?.tools && options.tools.length > 0) {
-          console.log('[Anthropic Adapter] Using tool-enabled generation', {
-            toolCount: options.tools.length
-          });
-          return await this.generateWithProvidedTools(prompt, options);
+          throw new Error('Tool execution requires streaming. Use generateStreamAsync() instead.');
         }
-        
-        // Otherwise use basic message generation
-        console.log('[Anthropic Adapter] Using basic message generation (no tools)');
+
+        // Use basic message generation
         return await this.generateWithBasicMessages(prompt, options);
       } catch (error) {
         this.handleError(error, 'generation');
@@ -273,123 +269,6 @@ export class AnthropicAdapter extends BaseAdapter {
         'streaming'
       ]
     };
-  }
-
-  /**
-   * Generate with pre-converted tools (from ChatService) using centralized execution
-   */
-  private async generateWithProvidedTools(prompt: string, options?: GenerateOptions): Promise<LLMResponse> {
-    // Use centralized tool execution wrapper to eliminate code duplication
-    const model = options?.model || this.currentModel;
-    let systemMessage: string | undefined;
-
-    return MCPToolExecution.executeWithToolSupport(
-      this,
-      'anthropic',
-      {
-        model,
-        tools: options?.tools || [],
-        prompt,
-        systemPrompt: options?.systemPrompt
-      },
-      {
-        buildMessages: (prompt: string, systemPrompt?: string) => {
-          const messages = this.buildMessages(prompt, systemPrompt);
-          systemMessage = messages.find(msg => msg.role === 'system')?.content;
-          return messages.filter(msg => msg.role !== 'system');
-        },
-        
-        buildRequestBody: (messages: any[], isInitial: boolean) => {
-          // Clean messages to only include role and content for Anthropic
-          const cleanedMessages = messages.map(msg => ({
-            role: msg.role,
-            content: msg.content
-          }));
-
-          const requestParams: any = {
-            model,
-            max_tokens: options?.maxTokens || 4096,
-            messages: cleanedMessages,
-            temperature: options?.temperature,
-            stop_sequences: options?.stopSequences,
-            tools: this.convertTools(options?.tools || [])
-          };
-
-          // Add system message if available
-          if (systemMessage) {
-            requestParams.system = systemMessage;
-          }
-
-          // Extended thinking mode for Claude 4 models
-          if (options?.enableThinking && this.supportsThinking(model)) {
-            const effort = options?.thinkingEffort || 'medium';
-            const thinkingParams = ThinkingEffortMapper.getAnthropicParams({ enabled: true, effort });
-            requestParams.thinking = {
-              type: 'enabled',
-              budget_tokens: thinkingParams?.budget_tokens || 16000
-            };
-          }
-
-          // Add web search tool if requested
-          if (options?.webSearch) {
-            requestParams.tools = requestParams.tools || [];
-            requestParams.tools.push({
-              type: 'web_search_20250305',
-              name: 'web_search',
-              max_uses: 5
-            });
-          }
-
-          // Add beta headers if model requires them (for 1M context window)
-          const modelSpec = ANTHROPIC_MODELS.find(m => m.apiName === this.normalizeModelId(model));
-          if (modelSpec?.betaHeaders && modelSpec.betaHeaders.length > 0) {
-            requestParams.betas = modelSpec.betaHeaders;
-          }
-
-          return requestParams;
-        },
-
-        makeApiCall: async (requestBody: any) => {
-          return await this.client.messages.create(requestBody);
-        },
-        
-        extractResponse: async (response: any) => {
-          const toolCalls = this.extractToolCalls(response.content);
-
-          return {
-            content: this.extractTextFromContent(response.content),
-            usage: this.extractUsage(response),
-            finishReason: this.mapStopReason(response.stop_reason),
-            toolCalls: toolCalls,
-            choice: {
-              message: {
-                role: 'assistant',
-                content: response.content,
-                toolCalls: toolCalls.length > 0 ? toolCalls : undefined
-              }
-            }
-          };
-        },
-        
-        buildLLMResponse: async (
-          content: string,
-          model: string,
-          usage?: any,
-          metadata?: any,
-          finishReason?: any,
-          toolCalls?: any[]
-        ) => {
-          // Find latest response to extract metadata
-          const finalMetadata = {
-            ...metadata,
-            thinking: this.extractThinking({ content: [] }), // Will be properly extracted during execution
-            stopSequence: undefined // Will be properly extracted during execution
-          };
-          
-          return this.buildLLMResponse(content, model, usage, finalMetadata, finishReason, toolCalls);
-        }
-      }
-    );
   }
 
   /**
