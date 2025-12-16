@@ -130,7 +130,8 @@ export class VaultLibrarianAgent extends BaseAgent {
     this.registerMode(new BatchMode(
       pluginRef || ({ app } as any), // Fallback to minimal plugin interface if not found
       this.memoryService || undefined,
-      this.workspaceService || undefined
+      this.workspaceService || undefined,
+      this.storageAdapter || undefined
     ));
     
     

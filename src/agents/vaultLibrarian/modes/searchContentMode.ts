@@ -30,9 +30,7 @@ export interface ContentSearchResult {
     filePath: string;
     frontmatter?: Record<string, any>;
     content?: string;  // Keyword search only
-    score?: number;    // Keyword search only
   }>;
-  totalResults: number;
   error?: string;
 }
 
@@ -201,8 +199,7 @@ export class SearchContentMode extends BaseMode<ContentSearchParams, ContentSear
       });
 
       return this.prepareResult(true, {
-        results,
-        totalResults: results.length
+        results
       });
 
     } catch (error) {
@@ -254,8 +251,7 @@ export class SearchContentMode extends BaseMode<ContentSearchParams, ContentSear
     });
 
     return this.prepareResult(true, {
-      results: searchResults,
-      totalResults: searchResults.length
+      results: searchResults
     });
   }
 
@@ -285,9 +281,14 @@ export class SearchContentMode extends BaseMode<ContentSearchParams, ContentSear
       allResults.push(...results);
     }
 
-    // Sort by score (higher is better) and take top results
-    allResults.sort((a, b) => (b.score || 0) - (a.score || 0));
-    return allResults.slice(0, limit);
+    // Sort by internal score (higher is better) and take top results
+    allResults.sort((a, b) => ((b as any)._score || 0) - ((a as any)._score || 0));
+    // Strip internal score before returning
+    const finalResults = allResults.slice(0, limit).map(r => {
+      const { _score, ...rest } = r as any;
+      return rest;
+    });
+    return finalResults;
   }
 
   /**
@@ -303,7 +304,6 @@ export class SearchContentMode extends BaseMode<ContentSearchParams, ContentSear
   ): Promise<ContentSearchResult['results']> {
     const results: ContentSearchResult['results'] = [];
     let maxScore = 0;
-    let bestMethod: 'fuzzy' | 'keyword' | 'combined' = 'fuzzy';
     let contentSnippet = '';
 
     // 1. Fuzzy search on filename
@@ -315,7 +315,6 @@ export class SearchContentMode extends BaseMode<ContentSearchParams, ContentSear
       // Normalize fuzzy score (fuzzy scores are negative, closer to 0 is better)
       fuzzyScore = Math.max(0, Math.min(1, 1 + (fuzzyResult.score / 100)));
       maxScore = Math.max(maxScore, fuzzyScore);
-      bestMethod = 'fuzzy';
     }
 
     // 2. Keyword search in file content and extract frontmatter
@@ -342,7 +341,6 @@ export class SearchContentMode extends BaseMode<ContentSearchParams, ContentSear
 
           if (keywordScore > maxScore) {
             maxScore = keywordScore;
-            bestMethod = 'keyword';
           }
         }
       } catch (error) {
@@ -365,7 +363,6 @@ export class SearchContentMode extends BaseMode<ContentSearchParams, ContentSear
     if (fuzzyScore > 0 && keywordScore > 0) {
       // Weighted combination: 60% keyword + 40% fuzzy
       maxScore = (keywordScore * 0.6) + (fuzzyScore * 0.4);
-      bestMethod = 'combined';
     }
 
     // Only include files with matches
@@ -377,12 +374,13 @@ export class SearchContentMode extends BaseMode<ContentSearchParams, ContentSear
 
       const entry: any = {
         filePath: file.path,
-        content: contentSnippet,
-        score: maxScore
+        content: contentSnippet
       };
       if (frontmatter && Object.keys(frontmatter).length > 0) {
         entry.frontmatter = frontmatter;
       }
+      // Store score internally for sorting, but don't include in output
+      (entry as any)._score = maxScore;
       results.push(entry);
     }
 
@@ -461,8 +459,7 @@ export class SearchContentMode extends BaseMode<ContentSearchParams, ContentSear
       properties: {
         query: {
           type: 'string',
-          description: 'Search query to find files and content.',
-          examples: ['project planning', 'how does authentication work', 'typescript']
+          description: 'Search query to find files and content.'
         },
         semantic: {
           type: 'boolean',
@@ -513,45 +510,33 @@ export class SearchContentMode extends BaseMode<ContentSearchParams, ContentSear
         },
         results: {
           type: 'array',
-          description: 'Search results ranked by relevance. Semantic: just filePath + frontmatter. Keyword: includes content snippets.',
+          description: 'Search results ranked by relevance',
           items: {
             type: 'object',
             properties: {
               filePath: {
                 type: 'string',
-                description: 'Path to the file (always present)'
+                description: 'Path to the file'
               },
               frontmatter: {
                 type: 'object',
-                description: 'File frontmatter (tags, properties, YAML metadata) if present',
+                description: 'File frontmatter if present',
                 additionalProperties: true
-              },
-              title: {
-                type: 'string',
-                description: 'File name (keyword search only)'
               },
               content: {
                 type: 'string',
-                description: 'Content snippet around the match (keyword search only)'
-              },
-              score: {
-                type: 'number',
-                description: 'Relevance score 0-1 (keyword search only)'
+                description: 'Content snippet (keyword search only)'
               }
             },
             required: ['filePath']
           }
         },
-        totalResults: {
-          type: 'number',
-          description: 'Number of results returned'
-        },
         error: {
           type: 'string',
-          description: 'Error message if search failed'
+          description: 'Error message if failed'
         }
       },
-      required: ['success', 'results', 'totalResults'],
+      required: ['success', 'results'],
       additionalProperties: false
     };
   }

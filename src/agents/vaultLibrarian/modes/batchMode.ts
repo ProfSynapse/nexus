@@ -2,76 +2,122 @@ import { Plugin } from 'obsidian';
 import { BaseMode } from '../../baseMode';
 import { MemoryService } from "../../memoryManager/services/MemoryService";
 import { WorkspaceService } from '../../../services/WorkspaceService';
-import { 
-  BatchUniversalSearchParams, 
-  BatchUniversalSearchResult,
-  UniversalSearchResult
-} from '../types';
 import { getErrorMessage } from '../../../utils/errorUtils';
-import { UniversalSearchService } from './services/universal/UniversalSearchService';
+import { CommonParameters, CommonResult } from '../../../types/mcp/AgentTypes';
+import { IStorageAdapter } from '../../../database/interfaces/IStorageAdapter';
+
+// Import the lean search modes
+import { SearchContentMode, ContentSearchParams, ContentSearchResult } from './searchContentMode';
+import { SearchDirectoryMode, SearchDirectoryParams, SearchDirectoryResult } from './searchDirectoryMode';
+import { SearchMemoryMode, SearchMemoryParams, SearchMemoryResult } from './searchMemoryMode';
 
 /**
- * Batch mode for executing multiple universal searches concurrently
- * Updated to use vector search for semantic search
+ * Individual search specification for batch execution
  */
-export class BatchMode extends BaseMode<BatchUniversalSearchParams, BatchUniversalSearchResult> {
-  private universalSearchService: UniversalSearchService;
+export interface BatchSearchSpec {
+  mode: 'content' | 'directory' | 'memory';
+
+  // Common params
+  query: string;
+  limit?: number;
+
+  // Content mode specific
+  semantic?: boolean;  // Required for content mode
+  paths?: string[];    // Used by both content and directory
+
+  // Memory mode specific
+  workspaceId?: string;
+  memoryTypes?: ('traces' | 'toolCalls' | 'sessions' | 'states' | 'workspaces')[];
+
+  // Directory mode specific
+  searchType?: 'files' | 'folders' | 'both';
+  fileTypes?: string[];
+}
+
+/**
+ * Batch search parameters - orchestrates multiple lean searches
+ */
+export interface BatchSearchParams extends CommonParameters {
+  searches: BatchSearchSpec[];
+  maxConcurrency?: number;
+}
+
+/**
+ * Individual search result wrapper
+ */
+export interface BatchSearchResultItem {
+  mode: 'content' | 'directory' | 'memory';
+  success: boolean;
+  results?: any[];
+  error?: string;
+}
+
+/**
+ * Batch search result - lean combined output
+ */
+export interface BatchSearchResult extends CommonResult {
+  results: BatchSearchResultItem[];
+}
+
+/**
+ * Batch mode for executing multiple lean searches concurrently
+ * Directly orchestrates SearchContentMode, SearchDirectoryMode, SearchMemoryMode
+ */
+export class BatchMode extends BaseMode<BatchSearchParams, BatchSearchResult> {
+  private plugin: Plugin;
+  private memoryService?: MemoryService;
+  private workspaceService?: WorkspaceService;
+  private storageAdapter?: IStorageAdapter;
 
   constructor(
     plugin: Plugin,
     memoryService?: MemoryService,
-    workspaceService?: WorkspaceService
+    workspaceService?: WorkspaceService,
+    storageAdapter?: IStorageAdapter
   ) {
-    super('batch', 'Batch Universal Search', 'Execute multiple universal searches concurrently. Each search automatically covers all content types (files, folders, content, workspaces, sessions, etc.). Use this for complex multi-query operations.', '2.0.0');
-    
-    this.universalSearchService = new UniversalSearchService(
-      plugin,
-      memoryService,
-      workspaceService
+    super(
+      'batch',
+      'Batch Search',
+      'Execute multiple searches concurrently across content, directory, and memory. Each search uses lean result format. Use when you need to run several different searches at once.',
+      '3.0.0'
     );
+
+    this.plugin = plugin;
+    this.memoryService = memoryService;
+    this.workspaceService = workspaceService;
+    this.storageAdapter = storageAdapter;
   }
 
-  /**
-   * Execute multiple universal searches concurrently
-   */
-  async execute(params: BatchUniversalSearchParams): Promise<BatchUniversalSearchResult> {
+  async execute(params: BatchSearchParams): Promise<BatchSearchResult> {
     try {
       // Validate parameters
       if (!params.searches || params.searches.length === 0) {
-        return this.prepareResult(false, undefined, 'At least one search query is required');
+        return this.prepareResult(false, undefined, 'At least one search is required');
       }
 
-      if (params.searches.length > (params.maxConcurrency || 10)) {
-        return this.prepareResult(false, undefined, `Too many searches requested. Maximum allowed: ${params.maxConcurrency || 10}`);
-      }
-
-      const startTime = performance.now();
       const maxConcurrency = params.maxConcurrency || 5;
-      
-      // Execute searches with concurrency control
-      const results = await this.executeConcurrentSearches(params.searches, maxConcurrency);
-      
-      const successful = results.filter(r => r.success);
-      const failed = results.filter(r => !r.success);
 
-      // Build response based on merge preference
-      if (params.mergeResults) {
-        const merged = this.mergeSearchResults(successful);
-
-        return this.prepareResult(true, {
-          merged: {
-            totalResults: merged.totalResults,
-            combinedCategories: merged.categories!
-          },
-          queriesFailed: failed.length
-        });
-      } else {
-        return this.prepareResult(true, {
-          searches: results,
-          queriesFailed: failed.length
-        });
+      // Validate search specs
+      for (const spec of params.searches) {
+        if (!spec.mode) {
+          return this.prepareResult(false, undefined, 'Each search must specify a mode (content, directory, or memory)');
+        }
+        if (!spec.query || spec.query.trim().length === 0) {
+          return this.prepareResult(false, undefined, 'Each search must have a non-empty query');
+        }
+        if (spec.mode === 'content' && spec.semantic === undefined) {
+          return this.prepareResult(false, undefined, 'Content searches require semantic parameter (true or false)');
+        }
+        if (spec.mode === 'directory' && (!spec.paths || spec.paths.length === 0)) {
+          return this.prepareResult(false, undefined, 'Directory searches require paths array');
+        }
       }
-      
+
+      // Execute searches with concurrency control
+      const results = await this.executeConcurrentSearches(params.searches, params.context, maxConcurrency);
+
+      return this.prepareResult(true, { results });
+
     } catch (error) {
       return this.prepareResult(false, undefined, `Batch search failed: ${getErrorMessage(error)}`);
     }
@@ -81,165 +127,221 @@ export class BatchMode extends BaseMode<BatchUniversalSearchParams, BatchUnivers
    * Execute searches with concurrency control
    */
   private async executeConcurrentSearches(
-    searches: BatchUniversalSearchParams['searches'],
+    searches: BatchSearchSpec[],
+    context: CommonParameters['context'],
     maxConcurrency: number
-  ): Promise<UniversalSearchResult[]> {
-    const results: UniversalSearchResult[] = [];
-    
+  ): Promise<BatchSearchResultItem[]> {
+    const results: BatchSearchResultItem[] = [];
+
     // Process searches in batches to control concurrency
     for (let i = 0; i < searches.length; i += maxConcurrency) {
       const batch = searches.slice(i, i + maxConcurrency);
-      
-      const batchPromises = batch.map(async (searchParams, index) => {
+
+      const batchPromises = batch.map(async (spec, index) => {
         try {
-          // Add a small delay between concurrent searches to avoid overwhelming the system
+          // Small delay between concurrent searches
           if (index > 0) {
             await new Promise(resolve => setTimeout(resolve, index * 50));
           }
-          
-          return await this.universalSearchService.executeUniversalSearch(searchParams);
+
+          return await this.executeSearch(spec, context);
         } catch (error) {
           return {
+            mode: spec.mode,
             success: false,
             error: `Search failed: ${getErrorMessage(error)}`
-          } as UniversalSearchResult;
+          } as BatchSearchResultItem;
         }
       });
-      
+
       const batchResults = await Promise.all(batchPromises);
       results.push(...batchResults);
     }
-    
+
     return results;
   }
 
   /**
-   * Merge multiple search results into a single unified result
+   * Execute a single search using the appropriate mode
    */
-  private mergeSearchResults(results: UniversalSearchResult[]): {
-    totalResults: number;
-    categories: NonNullable<BatchUniversalSearchResult['merged']>['combinedCategories'];
-  } {
-    const combinedCategories: NonNullable<BatchUniversalSearchResult['merged']>['combinedCategories'] = {};
-    let totalResults = 0;
-
-    // Combine results from each category across all searches
-    const categoryNames = ['files', 'folders', 'content', 'workspaces', 'sessions', 'states', 'memory_traces', 'tags', 'properties'] as const;
-    
-    for (const categoryName of categoryNames) {
-      const categoryResults = results
-        .map(result => result.categories[categoryName])
-        .filter(Boolean);
-      
-      if (categoryResults.length > 0) {
-        // Combine all results from this category
-        const allResults = categoryResults.flatMap(cat => cat!.results);
-        
-        // Remove duplicates based on ID
-        const uniqueResults = allResults.filter((result, index, arr) => 
-          arr.findIndex(r => r.id === result.id) === index
-        );
-        
-        // Sort by score and take top results
-        uniqueResults.sort((a, b) => b.score - a.score);
-        const topResults = uniqueResults.slice(0, 10); // Limit merged results
-        
-        combinedCategories[categoryName] = {
-          count: uniqueResults.length,
-          results: topResults,
-          hasMore: uniqueResults.length > 10,
-          searchMethod: categoryResults[0]!.searchMethod,
-          semanticAvailable: categoryResults[0]!.semanticAvailable
+  private async executeSearch(
+    spec: BatchSearchSpec,
+    context: CommonParameters['context']
+  ): Promise<BatchSearchResultItem> {
+    switch (spec.mode) {
+      case 'content':
+        return this.executeContentSearch(spec, context);
+      case 'directory':
+        return this.executeDirectorySearch(spec, context);
+      case 'memory':
+        return this.executeMemorySearch(spec, context);
+      default:
+        return {
+          mode: spec.mode,
+          success: false,
+          error: `Unknown search mode: ${spec.mode}`
         };
-        
-        totalResults += uniqueResults.length;
-      }
     }
+  }
+
+  /**
+   * Execute content search
+   */
+  private async executeContentSearch(
+    spec: BatchSearchSpec,
+    context: CommonParameters['context']
+  ): Promise<BatchSearchResultItem> {
+    const contentMode = new SearchContentMode(this.plugin);
+
+    const params: ContentSearchParams = {
+      query: spec.query,
+      semantic: spec.semantic!,
+      limit: spec.limit,
+      paths: spec.paths,
+      context
+    };
+
+    const result = await contentMode.execute(params) as ContentSearchResult;
 
     return {
-      totalResults,
-      categories: combinedCategories
+      mode: 'content',
+      success: result.success,
+      results: result.results,
+      error: result.error
     };
   }
 
   /**
-   * Get parameter schema for MCP tool definition
+   * Execute directory search
    */
+  private async executeDirectorySearch(
+    spec: BatchSearchSpec,
+    context: CommonParameters['context']
+  ): Promise<BatchSearchResultItem> {
+    const directoryMode = new SearchDirectoryMode(this.plugin, this.workspaceService);
+
+    const params: SearchDirectoryParams = {
+      query: spec.query,
+      paths: spec.paths!,
+      searchType: spec.searchType,
+      fileTypes: spec.fileTypes,
+      limit: spec.limit,
+      context
+    };
+
+    const result = await directoryMode.execute(params) as SearchDirectoryResult;
+
+    return {
+      mode: 'directory',
+      success: result.success,
+      results: result.results,
+      error: result.error
+    };
+  }
+
+  /**
+   * Execute memory search
+   */
+  private async executeMemorySearch(
+    spec: BatchSearchSpec,
+    context: CommonParameters['context']
+  ): Promise<BatchSearchResultItem> {
+    const memoryMode = new SearchMemoryMode(
+      this.plugin,
+      this.memoryService,
+      this.workspaceService,
+      this.storageAdapter
+    );
+
+    const params: SearchMemoryParams = {
+      query: spec.query,
+      workspaceId: spec.workspaceId || 'global-workspace',
+      memoryTypes: spec.memoryTypes,
+      limit: spec.limit,
+      context
+    };
+
+    const result = await memoryMode.execute(params) as SearchMemoryResult;
+
+    return {
+      mode: 'memory',
+      success: result.success,
+      results: result.results,
+      error: result.error
+    };
+  }
+
   getParameterSchema() {
     const batchSchema = {
       type: 'object',
-      title: 'Batch Universal Search Params',
-      description: 'Execute multiple universal searches concurrently. Each search automatically covers all content types. Use this when you need to run several different searches at once.',
+      title: 'Batch Search Params',
+      description: 'Execute multiple searches concurrently. Each search specifies its mode (content, directory, or memory) and mode-specific parameters.',
       properties: {
         searches: {
           type: 'array',
-          description: 'Array of universal search queries to execute concurrently. Each search automatically covers all content types.',
+          description: 'Array of search specifications to execute concurrently',
           items: {
             type: 'object',
-            title: 'Individual Universal Search',
-            description: 'A single universal search that automatically searches across all categories (files, folders, content, workspaces, sessions, etc.)',
+            title: 'Search Specification',
+            description: 'A single search with mode and mode-specific parameters',
             properties: {
+              mode: {
+                type: 'string',
+                enum: ['content', 'directory', 'memory'],
+                description: 'REQUIRED: Search mode - "content" (file contents with semantic/keyword), "directory" (file/folder names), or "memory" (traces/sessions/states)'
+              },
               query: {
                 type: 'string',
-                description: 'Search query to find content across all categories. No type parameter needed - automatically searches everything.',
-                examples: [
-                  'project planning',
-                  'machine learning notes',
-                  'typescript documentation'
-                ]
+                description: 'REQUIRED: Search query text',
+                minLength: 1
               },
               limit: {
                 type: 'number',
-                description: 'Maximum number of results per category (default: 5)',
+                description: 'Maximum results to return (default: 20)',
+                default: 20,
                 minimum: 1,
-                maximum: 20,
-                default: 5
+                maximum: 100
               },
-              excludeCategories: {
-                type: 'array',
-                description: 'Categories to exclude from this search',
-                items: {
-                  type: 'string',
-                  enum: ['files', 'folders', 'content', 'workspaces', 'sessions', 'states', 'memory_traces', 'tags', 'properties']
-                }
-              },
-              prioritizeCategories: {
-                type: 'array',
-                description: 'Categories to prioritize for this search',
-                items: {
-                  type: 'string',
-                  enum: ['files', 'folders', 'content', 'workspaces', 'sessions', 'states', 'memory_traces', 'tags', 'properties']
-                }
+              semantic: {
+                type: 'boolean',
+                description: 'REQUIRED for content mode: true for semantic/vector search, false for keyword search'
               },
               paths: {
                 type: 'array',
-                description: 'Restrict this search to specific folder paths. Supports glob patterns (e.g., "folder/*.md", "**/*.ts").',
-                items: { type: 'string' }
+                items: { type: 'string' },
+                description: 'REQUIRED for directory mode, optional for content mode: Folder paths to search. Use ["/"] for entire vault.'
               },
-              includeContent: {
-                type: 'boolean',
-                description: 'Whether to include full content in results',
-                default: true
+              workspaceId: {
+                type: 'string',
+                description: 'For memory mode: Workspace context (default: "global-workspace")'
               },
-              forceSemanticSearch: {
-                type: 'boolean',
-                description: 'Force semantic search for this query',
-                default: false
+              memoryTypes: {
+                type: 'array',
+                items: {
+                  type: 'string',
+                  enum: ['traces', 'toolCalls', 'sessions', 'states', 'workspaces']
+                },
+                description: 'For memory mode: Types of memory to search'
+              },
+              searchType: {
+                type: 'string',
+                enum: ['files', 'folders', 'both'],
+                description: 'For directory mode: What to search for (default: "both")'
+              },
+              fileTypes: {
+                type: 'array',
+                items: { type: 'string' },
+                description: 'For directory mode: Filter by file extensions (without dots)'
               }
             },
-            required: ['query']
+            required: ['mode', 'query']
           },
           minItems: 1,
-          maxItems: 100
-        },
-        mergeResults: {
-          type: 'boolean',
-          description: 'Whether to merge all search results into a single unified response (default: false)',
-          default: false
+          maxItems: 20
         },
         maxConcurrency: {
           type: 'number',
-          description: 'Maximum number of concurrent searches to execute (default: 5)',
+          description: 'Maximum concurrent searches (default: 5)',
           minimum: 1,
           maximum: 10,
           default: 5
@@ -248,14 +350,10 @@ export class BatchMode extends BaseMode<BatchUniversalSearchParams, BatchUnivers
       required: ['searches'],
       additionalProperties: false
     };
-    
-    // Merge with common schema (sessionId and context)
+
     return this.getMergedSchema(batchSchema);
   }
 
-  /**
-   * Get result schema for MCP tool definition
-   */
   getResultSchema() {
     return {
       type: 'object',
@@ -264,60 +362,39 @@ export class BatchMode extends BaseMode<BatchUniversalSearchParams, BatchUnivers
           type: 'boolean',
           description: 'Whether the batch search was successful'
         },
-        searches: {
+        results: {
           type: 'array',
-          description: 'Individual search results (if mergeResults is false)',
+          description: 'Array of search results, one per search specification',
           items: {
-            $ref: '#/definitions/UniversalSearchResult'
-          }
-        },
-        merged: {
-          type: 'object',
-          description: 'Merged search results (if mergeResults is true)',
-          properties: {
-            totalQueries: {
-              type: 'number',
-              description: 'Total number of queries executed'
+            type: 'object',
+            properties: {
+              mode: {
+                type: 'string',
+                enum: ['content', 'directory', 'memory'],
+                description: 'The search mode that was executed'
+              },
+              success: {
+                type: 'boolean',
+                description: 'Whether this individual search succeeded'
+              },
+              results: {
+                type: 'array',
+                description: 'Search results in the lean format for the mode'
+              },
+              error: {
+                type: 'string',
+                description: 'Error message if this search failed'
+              }
             },
-            totalResults: {
-              type: 'number',
-              description: 'Total number of unique results across all searches'
-            },
-            combinedCategories: {
-              type: 'object',
-              description: 'Combined results organized by category'
-            }
-          }
-        },
-        stats: {
-          type: 'object',
-          description: 'Execution statistics',
-          properties: {
-            totalExecutionTimeMS: {
-              type: 'number',
-              description: 'Total execution time in milliseconds'
-            },
-            queriesExecuted: {
-              type: 'number',
-              description: 'Number of queries executed'
-            },
-            queriesFailed: {
-              type: 'number',
-              description: 'Number of queries that failed'
-            },
-            avgExecutionTimeMS: {
-              type: 'number',
-              description: 'Average execution time per query'
-            }
+            required: ['mode', 'success']
           }
         },
         error: {
           type: 'string',
-          description: 'Error message if batch search failed'
+          description: 'Error message if batch search failed entirely'
         }
       },
-      required: ['success'],
-      additionalProperties: false
+      required: ['success', 'results']
     };
   }
 }

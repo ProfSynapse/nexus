@@ -145,9 +145,7 @@ export class SearchDirectoryMode extends BaseMode<SearchDirectoryParams, SearchD
       );
 
       return this.prepareResult(true, {
-        results: results,
-        total: matches.length,
-        hasMore: matches.length > limit
+        results
       });
 
     } catch (error) {
@@ -330,17 +328,9 @@ export class SearchDirectoryMode extends BaseMode<SearchDirectoryParams, SearchD
           type: 'boolean',
           description: 'Whether the search was successful'
         },
-        query: {
-          type: 'string',
-          description: 'The search query'
-        },
-        searchedPaths: {
-          type: 'array',
-          items: { type: 'string' },
-          description: 'Directory paths that were searched'
-        },
         results: {
           type: 'array',
+          description: 'Search results ranked by relevance',
           items: {
             type: 'object',
             properties: {
@@ -348,86 +338,25 @@ export class SearchDirectoryMode extends BaseMode<SearchDirectoryParams, SearchD
                 type: 'string',
                 description: 'Full path to the item'
               },
-              name: {
-                type: 'string',
-                description: 'Name of the item'
-              },
               type: {
                 type: 'string',
                 enum: ['file', 'folder'],
                 description: 'Type of the item'
               },
-              score: {
-                type: 'number',
-                description: 'Search relevance score'
-              },
-              searchMethod: {
-                type: 'string',
-                description: 'Method used to find this result'
-              },
               snippet: {
                 type: 'string',
                 description: 'Content snippet (files only)'
-              },
-              metadata: {
-                type: 'object',
-                properties: {
-                  fileType: {
-                    type: 'string',
-                    description: 'File extension (files only)'
-                  },
-                  created: {
-                    type: 'number',
-                    description: 'Creation timestamp (files only)'
-                  },
-                  modified: {
-                    type: 'number',
-                    description: 'Last modified timestamp (files only)'
-                  },
-                  size: {
-                    type: 'number',
-                    description: 'File size in bytes (files only)'
-                  },
-                  depth: {
-                    type: 'number',
-                    description: 'Folder depth level (folders only)'
-                  },
-                  fileCount: {
-                    type: 'number',
-                    description: 'Number of files in folder (folders only)'
-                  },
-                  folderCount: {
-                    type: 'number',
-                    description: 'Number of subfolders (folders only)'
-                  }
-                }
               }
-            }
-          }
-        },
-        totalResults: {
-          type: 'number',
-          description: 'Total number of results found'
-        },
-        executionTime: {
-          type: 'number',
-          description: 'Search execution time in milliseconds'
-        },
-        searchCapabilities: {
-          type: 'object',
-          properties: {
-            semanticSearch: { type: 'boolean' },
-            workspaceFiltering: { type: 'boolean' },
-            memorySearch: { type: 'boolean' },
-            hybridSearch: { type: 'boolean' }
+            },
+            required: ['path', 'type']
           }
         },
         error: {
           type: 'string',
-          description: 'Error message if search failed'
+          description: 'Error message if failed'
         }
       },
-      required: ['success', 'query', 'results', 'totalResults']
+      required: ['success', 'results']
     };
   }
 }
