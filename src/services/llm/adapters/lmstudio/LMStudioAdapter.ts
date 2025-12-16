@@ -340,14 +340,14 @@ export class LMStudioAdapter extends BaseAdapter {
       });
 
       if (response.status !== 200) {
-        console.warn(`Failed to fetch models from LM Studio: ${response.status}`);
+        // Server returned error - silently return empty (server may not be ready)
         return [];
       }
 
       const data = response.json;
 
       if (!data.data || !Array.isArray(data.data)) {
-        console.warn('Invalid models response format from LM Studio');
+        // Unexpected response format - silently return empty
         return [];
       }
 
@@ -374,8 +374,8 @@ export class LMStudioAdapter extends BaseAdapter {
           }
         };
       });
-    } catch (error) {
-      console.error('Error listing LM Studio models:', error);
+    } catch {
+      // Server not reachable - silently return empty (app probably not running)
       return [];
     }
   }

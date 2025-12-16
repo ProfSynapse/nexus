@@ -103,12 +103,32 @@ export class VaultOperations {
   }
 
   /**
+   * Check if path is hidden (starts with . in any segment)
+   */
+  private isHiddenPath(path: string): boolean {
+    return path.split('/').some(segment => segment.startsWith('.'));
+  }
+
+  /**
    * Read file content with caching support
+   * Uses adapter.read() for hidden files since Obsidian doesn't index them
    */
   async readFile(path: string, useCache: boolean = true): Promise<string | null> {
     try {
       const normalizedPath = this.pathManager.normalizePath(path);
-      
+
+      // For hidden files, use adapter directly (Obsidian doesn't index hidden files)
+      if (this.isHiddenPath(normalizedPath)) {
+        const exists = await this.vault.adapter.exists(normalizedPath);
+        if (!exists) {
+          this.logger.warn(`File not found: ${normalizedPath}`);
+          return null;
+        }
+        const content = await this.vault.adapter.read(normalizedPath);
+        this.logger.debug(`Successfully read hidden file: ${normalizedPath}`);
+        return content;
+      }
+
       if (useCache) {
         const file = await this.getFile(normalizedPath);
         if (file) {
@@ -127,7 +147,7 @@ export class VaultOperations {
       }
 
       const content = await this.vault.cachedRead(file);
-      
+
       if (useCache) {
         this.fileCache.set(normalizedPath, {
           content,
@@ -145,22 +165,39 @@ export class VaultOperations {
 
   /**
    * Write file content with automatic directory creation
+   * Uses adapter.write() for hidden files since Obsidian doesn't index them
    */
   async writeFile(path: string, content: string): Promise<boolean> {
     try {
       const normalizedPath = this.pathManager.normalizePath(path);
+
+      // For hidden files, use adapter directly (Obsidian doesn't index hidden files)
+      if (this.isHiddenPath(normalizedPath)) {
+        // Ensure parent directory exists using adapter
+        const parentPath = this.pathManager.getParentPath(normalizedPath);
+        if (parentPath) {
+          const parentExists = await this.vault.adapter.exists(parentPath);
+          if (!parentExists) {
+            await this.vault.adapter.mkdir(parentPath);
+          }
+        }
+        await this.vault.adapter.write(normalizedPath, content);
+        this.logger.debug(`Successfully wrote hidden file: ${normalizedPath}`);
+        return true;
+      }
+
       await this.pathManager.ensureParentExists(normalizedPath);
-      
+
       const existingFile = await this.getFile(normalizedPath);
       if (existingFile) {
         await this.vault.modify(existingFile, content);
       } else {
         await this.vault.create(normalizedPath, content);
       }
-      
+
       // Invalidate cache
       this.fileCache.delete(normalizedPath);
-      
+
       this.logger.debug(`Successfully wrote file: ${normalizedPath}`);
       return true;
     } catch (error) {
@@ -171,17 +208,36 @@ export class VaultOperations {
 
   /**
    * Create directory if it doesn't exist
+   * Uses adapter.mkdir() for hidden directories since Obsidian doesn't index them
    */
   async ensureDirectory(path: string): Promise<boolean> {
     try {
       const normalizedPath = this.pathManager.normalizePath(path);
-      const existingFolder = await this.getFolder(normalizedPath);
-      
-      if (!existingFolder) {
-        await this.vault.createFolder(normalizedPath);
-        this.logger.debug(`Created directory: ${normalizedPath}`);
+
+      // For hidden directories, use adapter directly
+      if (this.isHiddenPath(normalizedPath)) {
+        const exists = await this.vault.adapter.exists(normalizedPath);
+        if (!exists) {
+          await this.vault.adapter.mkdir(normalizedPath);
+          this.logger.debug(`Created hidden directory: ${normalizedPath}`);
+        }
+        return true;
       }
-      
+
+      const existingFolder = await this.getFolder(normalizedPath);
+
+      if (!existingFolder) {
+        try {
+          await this.vault.createFolder(normalizedPath);
+          this.logger.debug(`Created directory: ${normalizedPath}`);
+        } catch (createError) {
+          // Ignore "Folder already exists" - can happen during startup before vault is fully indexed
+          if (createError instanceof Error && !createError.message.includes('already exists')) {
+            throw createError;
+          }
+        }
+      }
+
       return true;
     } catch (error) {
       this.logger.error(`Failed to create directory ${path}`, error instanceof Error ? error : new Error(String(error)));

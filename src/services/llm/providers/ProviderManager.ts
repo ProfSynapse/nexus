@@ -120,7 +120,7 @@ export class LLMProviderManager {
           const adapter = this.llmService.getAdapter('lmstudio');
 
           if (!adapter) {
-            console.warn('LM Studio adapter not found in registry. Check if server URL is configured and provider is enabled.');
+            // Expected when LM Studio server URL isn't configured - silently skip
             continue;
           }
 
@@ -148,12 +148,8 @@ export class LLMProviderManager {
               userDescription: this.settings.providers.lmstudio?.userDescription
             });
           }
-        } catch (error) {
-          console.error('Error loading LM Studio models:', error);
-          console.error('LM Studio model load details:', {
-            message: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined
-          });
+        } catch {
+          // LM Studio server not reachable - silently skip (app probably not running)
           // Don't fail the entire method, just skip LM Studio models
         }
       } else {

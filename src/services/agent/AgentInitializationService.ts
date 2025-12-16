@@ -74,7 +74,6 @@ export class AgentInitializationService {
    */
   async initializeAgentManager(enableLLMModes: boolean): Promise<void> {
     if (!this.customPromptStorage) {
-      logger.systemWarn('AgentManager agent - no custom prompt storage available from constructor');
       // Try to create custom prompt storage directly if settings are available
       const pluginSettings = this.plugin && (this.plugin as any).settings;
       if (pluginSettings) {

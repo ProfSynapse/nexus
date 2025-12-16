@@ -194,22 +194,6 @@ export const OPENROUTER_MODELS: ModelSpec[] = [
   },
   {
     provider: 'openrouter',
-    name: 'Claude 4.1 Opus',
-    apiName: 'anthropic/claude-opus-4.1',
-    contextWindow: 200000,
-    maxTokens: 32000,
-    inputCostPerMillion: 15.00,
-    outputCostPerMillion: 75.00,
-    capabilities: {
-      supportsJSON: true,
-      supportsImages: true,
-      supportsFunctions: true,
-      supportsStreaming: true,
-      supportsThinking: false
-    }
-  },
-  {
-    provider: 'openrouter',
     name: 'Claude 4 Sonnet',
     apiName: 'anthropic/claude-sonnet-4',
     contextWindow: 200000,

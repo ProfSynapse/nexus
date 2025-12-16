@@ -153,7 +153,14 @@ export class ObsidianPathManager {
   async ensureParentExists(filePath: string): Promise<void> {
     const parentPath = this.getParentPath(filePath);
     if (parentPath && !this.vault.getFolderByPath(parentPath)) {
-      await this.vault.createFolder(parentPath);
+      try {
+        await this.vault.createFolder(parentPath);
+      } catch (error) {
+        // Ignore "Folder already exists" - can happen during startup before vault is fully indexed
+        if (error instanceof Error && !error.message.includes('already exists')) {
+          throw error;
+        }
+      }
     }
   }
 

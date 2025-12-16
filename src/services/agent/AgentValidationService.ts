@@ -1,16 +1,14 @@
 /**
  * Location: src/services/agent/AgentValidationService.ts
  *
- * Purpose: Handles API key validation for agent capabilities
+ * Purpose: Checks if API keys are configured for agent capabilities
  * Extracted from AgentRegistrationService.ts to follow Single Responsibility Principle
  *
  * Used by: AgentRegistrationService for capability validation
- * Dependencies: LLMValidationService
  */
 
 import { Plugin } from 'obsidian';
 import NexusPlugin from '../../main';
-import { LLMValidationService } from '../llm/validation/ValidationService';
 import { DEFAULT_LLM_PROVIDER_SETTINGS } from '../../types';
 import { logger } from '../../utils/logger';
 
@@ -21,7 +19,8 @@ export class AgentValidationService {
   constructor(private plugin: Plugin | NexusPlugin) {}
 
   /**
-   * Validate API keys for LLM providers used in agent modes
+   * Check if LLM API keys are configured (not validated - validation happens on first use)
+   * This enables LLM modes without making network requests on every startup
    */
   async validateLLMApiKeys(): Promise<boolean> {
     try {
@@ -38,30 +37,11 @@ export class AgentValidationService {
         return false;
       }
 
-      // Validate with caching - this will use cached validation if available
-      const validation = await LLMValidationService.validateApiKey(
-        defaultProvider,
-        providerConfig.apiKey,
-        {
-          forceValidation: false,  // Use cache during startup
-          providerConfig: providerConfig,
-          onValidationSuccess: (hash: string, timestamp: number) => {
-            // Update validation state in settings
-            if (providerConfig) {
-              providerConfig.lastValidated = timestamp;
-              providerConfig.validationHash = hash;
-              // Save settings asynchronously
-              (this.plugin as any)?.settings?.saveSettings().catch((err: Error) => {
-                logger.systemError(err, 'Failed to save validation state');
-              });
-            }
-          }
-        }
-      );
-
-      return validation.success;
+      // Just check if an API key is configured - don't validate on startup
+      // Validation will happen on first use, providing better UX
+      return true;
     } catch (error) {
-      logger.systemError(error as Error, 'LLM API Key Validation');
+      logger.systemError(error as Error, 'LLM API Key Check');
       return false;
     }
   }

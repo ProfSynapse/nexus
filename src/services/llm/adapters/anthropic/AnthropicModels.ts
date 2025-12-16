@@ -61,22 +61,6 @@ export const ANTHROPIC_MODELS: ModelSpec[] = [
   },
   {
     provider: 'anthropic',
-    name: 'Claude 4.1 Opus',
-    apiName: 'claude-opus-4-1-20250805',
-    contextWindow: 200000,
-    maxTokens: 32000,
-    inputCostPerMillion: 15.00,
-    outputCostPerMillion: 75.00,
-    capabilities: {
-      supportsJSON: true,
-      supportsImages: true,
-      supportsFunctions: true,
-      supportsStreaming: true,
-      supportsThinking: true
-    }
-  },
-  {
-    provider: 'anthropic',
     name: 'Claude 4 Sonnet',
     apiName: 'claude-sonnet-4-0',
     contextWindow: 200000,
