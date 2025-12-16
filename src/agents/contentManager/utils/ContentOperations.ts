@@ -504,26 +504,4 @@ export class ContentOperations {
   private static escapeRegExp(string: string): string {
     return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
-  
-  /**
-   * Calculate similarity between two strings (0.0 to 1.0)
-   * @param str1 First string
-   * @param str2 Second string
-   * @returns Similarity score between 0.0 and 1.0
-   */
-  private static calculateSimilarity(str1: string, str2: string): number {
-    if (str1 === str2) return 1.0;
-    if (str1.length === 0 || str2.length === 0) return 0.0;
-    
-    const dmp = new diff_match_patch();
-    const diffs = dmp.diff_main(str1, str2);
-    dmp.diff_cleanupSemantic(diffs);
-    
-    // Calculate similarity based on edit distance
-    const levenshtein = dmp.diff_levenshtein(diffs);
-    const maxLength = Math.max(str1.length, str2.length);
-    
-    // Return similarity as 1 - (edit distance / max length)
-    return 1.0 - (levenshtein / maxLength);
-  }
 }

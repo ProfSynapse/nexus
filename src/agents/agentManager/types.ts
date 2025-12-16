@@ -60,12 +60,3 @@ export interface DeleteAgentResult extends CommonResult {
     id: string;
   };
 }
-
-// Toggle Agent Mode
-export interface ToggleAgentParams extends CommonParameters {
-  id: string;
-}
-
-export interface ToggleAgentResult extends CommonResult {
-  data: CustomPrompt;
-}

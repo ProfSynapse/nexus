@@ -3,7 +3,7 @@ import { CreateAgentParams, CreateAgentResult } from '../types';
 import { CustomPromptStorageService } from '../services/CustomPromptStorageService';
 import { getCommonResultSchema, createResult } from '../../../utils/schemaUtils';
 import { addRecommendations } from '../../../utils/recommendationUtils';
-import { AGENT_MANAGER_RECOMMENDATIONS } from '../recommendations';
+import { NudgeHelpers } from '../../../utils/nudgeHelpers';
 
 /**
  * Mode for creating a new custom agent
@@ -57,7 +57,11 @@ export class CreateAgentMode extends BaseMode<CreateAgentParams, CreateAgentResu
       });
       
       const result = createResult<CreateAgentResult>(true, newPrompt, undefined);
-      return addRecommendations(result, AGENT_MANAGER_RECOMMENDATIONS.createAgent);
+      const nudges = [
+        NudgeHelpers.suggestWorkspaceIntegration(),
+        NudgeHelpers.suggestAgentTesting()
+      ];
+      return addRecommendations(result, nudges);
     } catch (error) {
       return createResult<CreateAgentResult>(false, null, `Failed to create agent: ${error}`);
     }

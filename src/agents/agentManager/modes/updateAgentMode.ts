@@ -3,7 +3,7 @@ import { UpdateAgentParams, UpdateAgentResult } from '../types';
 import { CustomPromptStorageService } from '../services/CustomPromptStorageService';
 import { getCommonResultSchema, createResult } from '../../../utils/schemaUtils';
 import { addRecommendations } from '../../../utils/recommendationUtils';
-import { AGENT_MANAGER_RECOMMENDATIONS } from '../recommendations';
+import { NudgeHelpers } from '../../../utils/nudgeHelpers';
 
 /**
  * Mode for updating an existing custom agent
@@ -77,7 +77,7 @@ export class UpdateAgentMode extends BaseMode<UpdateAgentParams, UpdateAgentResu
       const updatedPrompt = await this.storageService.updatePrompt(id.trim(), updates);
       
       const result = createResult<UpdateAgentResult>(true, updatedPrompt, undefined);
-      return addRecommendations(result, AGENT_MANAGER_RECOMMENDATIONS.updateAgent);
+      return addRecommendations(result, [NudgeHelpers.suggestAgentTesting()]);
     } catch (error) {
       return createResult<UpdateAgentResult>(false, null, `Failed to update prompt: ${error}`);
     }

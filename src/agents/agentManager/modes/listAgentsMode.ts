@@ -2,8 +2,9 @@ import { BaseMode } from '../../baseMode';
 import { ListAgentsParams, ListAgentsResult } from '../types';
 import { CustomPromptStorageService } from '../services/CustomPromptStorageService';
 import { getCommonResultSchema, createResult } from '../../../utils/schemaUtils';
-import { addRecommendations } from '../../../utils/recommendationUtils';
-import { AGENT_MANAGER_RECOMMENDATIONS } from '../recommendations';
+import { addRecommendations, Recommendation } from '../../../utils/recommendationUtils';
+import { NudgeHelpers } from '../../../utils/nudgeHelpers';
+import { parseWorkspaceContext } from '../../../utils/contextUtils';
 
 /**
  * Mode for listing custom prompts
@@ -58,8 +59,14 @@ export class ListAgentsMode extends BaseMode<ListAgentsParams, ListAgentsResult>
         enabledCount: enabledPrompts.length,
         message: warningMessage
       }, undefined);
-      
-      return addRecommendations(result, AGENT_MANAGER_RECOMMENDATIONS.listAgents);
+
+      // Dynamic nudge based on context
+      const hasWorkspace = !!parseWorkspaceContext(params.workspaceContext)?.workspaceId;
+      const nudges: Recommendation[] = [];
+      const bindingNudge = NudgeHelpers.checkAgentBindingOpportunity(promptList.length, hasWorkspace);
+      if (bindingNudge) nudges.push(bindingNudge);
+
+      return nudges.length > 0 ? addRecommendations(result, nudges) : result;
     } catch (error) {
       return createResult<ListAgentsResult>(false, null, `Failed to list prompts: ${error}`);
     }

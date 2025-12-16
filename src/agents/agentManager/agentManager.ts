@@ -6,7 +6,6 @@ import {
   CreateAgentMode,
   UpdateAgentMode,
   DeleteAgentMode,
-  ToggleAgentMode,
   ListModelsMode,
   ExecutePromptMode,
   BatchExecutePromptMode,
@@ -103,7 +102,6 @@ export class AgentManagerAgent extends BaseAgent {
     this.registerMode(new CreateAgentMode(this.storageService));
     this.registerMode(new UpdateAgentMode(this.storageService));
     this.registerMode(new DeleteAgentMode(this.storageService));
-    this.registerMode(new ToggleAgentMode(this.storageService));
 
     // Register LLM modes with dependencies already available
     this.registerMode(new ListModelsMode(this.providerManager));

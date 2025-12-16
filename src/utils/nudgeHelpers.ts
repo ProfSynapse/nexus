@@ -230,10 +230,67 @@ export class NudgeHelpers {
    */
   static countOperationsByType(operations: any[]): { read: number; create: number; total: number } {
     if (!Array.isArray(operations)) return { read: 0, create: 0, total: 0 };
-    
+
     const read = operations.filter(op => op.operation === 'read' || op.type === 'read').length;
     const create = operations.filter(op => op.operation === 'create' || op.type === 'create').length;
-    
+
     return { read, create, total: operations.length };
+  }
+
+  // ===================
+  // AgentManager Nudges
+  // ===================
+
+  /**
+   * Check if prompt execution suggests creating a reusable agent
+   * @param hasWorkspace Whether user is in a workspace context
+   */
+  static checkAgentCreationOpportunity(hasWorkspace: boolean): Recommendation | null {
+    if (hasWorkspace) {
+      return {
+        type: "agent_suggestion",
+        message: "Running prompts in a workspace? Consider creating a custom agent for repeated tasks."
+      };
+    }
+    return null;
+  }
+
+  /**
+   * Check batch operations for agent automation opportunity
+   * @param operationCount Number of operations in batch
+   */
+  static checkBatchAgentOpportunity(operationCount: number): Recommendation | null {
+    if (operationCount > 2) {
+      return {
+        type: "automation",
+        message: "Batch operations suggest routine workflows. A custom agent could automate this pattern."
+      };
+    }
+    return null;
+  }
+
+  /**
+   * Check if agent list shows opportunity for workspace binding
+   * @param agentCount Number of agents available
+   * @param hasWorkspace Whether user is in a workspace context
+   */
+  static checkAgentBindingOpportunity(agentCount: number, hasWorkspace: boolean): Recommendation | null {
+    if (agentCount > 0 && hasWorkspace) {
+      return {
+        type: "workspace_binding",
+        message: "Bind frequently used agents to your workspace for automatic availability."
+      };
+    }
+    return null;
+  }
+
+  /**
+   * Suggest testing after agent creation/update
+   */
+  static suggestAgentTesting(): Recommendation {
+    return {
+      type: "testing",
+      message: "Test your agent with executePrompt to verify it works as expected."
+    };
   }
 }

@@ -17,8 +17,9 @@ import {
     BudgetManager,
     ServiceDependencies
 } from './services';
-import { addRecommendations } from '../../../../utils/recommendationUtils';
-import { AGENT_MANAGER_RECOMMENDATIONS } from '../../recommendations';
+import { addRecommendations, Recommendation } from '../../../../utils/recommendationUtils';
+import { NudgeHelpers } from '../../../../utils/nudgeHelpers';
+import { parseWorkspaceContext } from '../../../../utils/contextUtils';
 
 export interface ExecutePromptParams extends CommonParameters {
     agent?: string;
@@ -239,7 +240,13 @@ export class ExecutePromptMode extends BaseMode<ExecutePromptParams, ExecuteProm
                 params.context
             );
             
-            return addRecommendations(result, AGENT_MANAGER_RECOMMENDATIONS.executePrompt);
+            // Dynamic nudges based on context
+            const hasWorkspace = !!parseWorkspaceContext(params.workspaceContext)?.workspaceId;
+            const nudges: Recommendation[] = [NudgeHelpers.suggestCaptureProgress()];
+            const agentNudge = NudgeHelpers.checkAgentCreationOpportunity(hasWorkspace);
+            if (agentNudge) nudges.push(agentNudge);
+
+            return addRecommendations(result, nudges);
 
         } catch (error) {
             return createResult<ExecutePromptResult>(

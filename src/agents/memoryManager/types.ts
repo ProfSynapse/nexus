@@ -121,29 +121,6 @@ export interface EditSessionParams extends Omit<MemoryParams, 'sessionId'> {
   sessionGoal?: string;
 }
 
-// Params for deleting a session
-export interface DeleteSessionParams extends Omit<MemoryParams, 'sessionId'> {
-  /**
-   * Session ID for tracking this tool call
-   */
-  sessionId: string;
-  
-  /**
-   * ID of the session to delete (same as sessionId for backward compatibility)
-   */
-  targetSessionId?: string;
-  
-  /**
-   * Whether to also delete associated memory traces
-   */
-  deleteMemoryTraces?: boolean;
-  
-  /**
-   * Whether to also delete associated states
-   */
-  deleteAssociatedStates?: boolean;
-}
-
 // Result for session operations
 export interface SessionResult extends MemoryResult {
   data?: {
@@ -399,14 +376,6 @@ export interface EditStateParams extends MemoryParams {
    * Remove specific tags from state
    */
   removeTags?: string[];
-}
-
-// Params for deleting a state
-export interface DeleteStateParams extends MemoryParams {
-  /**
-   * ID of the state to delete
-   */
-  stateId: string;
 }
 
 // Result for state operations

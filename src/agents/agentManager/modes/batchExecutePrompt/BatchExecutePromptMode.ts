@@ -25,8 +25,8 @@ import {
   ActionExecutor
 } from './services';
 import { PromptParser } from './utils';
-import { addRecommendations } from '../../../../utils/recommendationUtils';
-import { AGENT_MANAGER_RECOMMENDATIONS } from '../../recommendations';
+import { addRecommendations, Recommendation } from '../../../../utils/recommendationUtils';
+import { NudgeHelpers } from '../../../../utils/nudgeHelpers';
 
 /**
  * Refactored batch mode for executing multiple LLM prompts concurrently
@@ -232,7 +232,12 @@ export class BatchExecutePromptMode extends BaseMode<BatchExecutePromptParams, B
         params.context
       );
       
-      return addRecommendations(result, AGENT_MANAGER_RECOMMENDATIONS.batchExecutePrompt);
+      // Dynamic nudges based on operation count
+      const nudges: Recommendation[] = [NudgeHelpers.suggestCaptureProgress()];
+      const batchNudge = NudgeHelpers.checkBatchAgentOpportunity(processedResults.results?.length || 0);
+      if (batchNudge) nudges.push(batchNudge);
+
+      return addRecommendations(result, nudges);
       
     } catch (error) {
       console.error('Batch LLM prompt execution failed:', error);

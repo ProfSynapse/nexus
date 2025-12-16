@@ -2,8 +2,6 @@ import { BaseMode } from '../../baseMode';
 import { GetAgentParams, GetAgentResult } from '../types';
 import { CustomPromptStorageService } from '../services/CustomPromptStorageService';
 import { getCommonResultSchema, createResult } from '../../../utils/schemaUtils';
-import { addRecommendations } from '../../../utils/recommendationUtils';
-import { AGENT_MANAGER_RECOMMENDATIONS } from '../recommendations';
 
 /**
  * Mode for getting a specific custom agent for persona adoption
@@ -71,8 +69,7 @@ To execute tasks: User must explicitly request agentManager_executePrompt`;
         message: message
       };
       
-      const result = createResult<GetAgentResult>(true, resultWithMessage, undefined);
-      return addRecommendations(result, AGENT_MANAGER_RECOMMENDATIONS.getAgent);
+      return createResult<GetAgentResult>(true, resultWithMessage, undefined);
     } catch (error) {
       return createResult<GetAgentResult>(false, null, `Failed to get agent: ${error}`);
     }
