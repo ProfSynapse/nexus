@@ -91,27 +91,21 @@ export class LegacyMigrator {
     try {
       // Check if legacy folders have been archived (status file flag)
       const isArchivedFlag = await this.statusTracker.isLegacyArchived();
-      console.log(`[LegacyMigrator] isLegacyArchived (flag)=${isArchivedFlag}`);
       if (isArchivedFlag) {
-        console.log('[LegacyMigrator] Legacy folders already archived (status flag) - migration not needed');
         return false;
       }
 
       // Also check if archive folders exist (in case status file is incomplete)
       const archiveFoldersExist = await this.archiver.archiveFoldersExist();
-      console.log(`[LegacyMigrator] archiveFoldersExist=${archiveFoldersExist}`);
       if (archiveFoldersExist) {
         // Archive folders exist but flag not set - set it now and skip migration
-        console.log('[LegacyMigrator] Archive folders exist - marking as archived and skipping migration');
         await this.statusTracker.markLegacyArchived();
         return false;
       }
 
       // Check if legacy folders exist
       const hasLegacy = await this.archiver.hasLegacyFolders();
-      console.log(`[LegacyMigrator] hasLegacyFolders=${hasLegacy}`);
       if (!hasLegacy) {
-        console.log('[LegacyMigrator] No legacy folders found - migration not needed');
         return false;
       }
 
@@ -119,17 +113,7 @@ export class LegacyMigrator {
       const hasUnmigratedWorkspaces = await this.hasUnmigratedFiles('workspaces');
       const hasUnmigratedConversations = await this.hasUnmigratedFiles('conversations');
 
-      // Debug: log migrated files count
-      const migratedFiles = await this.statusTracker.getMigratedFiles();
-      console.log(`[LegacyMigrator] migratedFiles: workspaces=${migratedFiles.workspaces.length}, conversations=${migratedFiles.conversations.length}`);
-
-      if (hasUnmigratedWorkspaces || hasUnmigratedConversations) {
-        console.log(`[LegacyMigrator] Migration needed - unmigrated: workspaces=${hasUnmigratedWorkspaces}, conversations=${hasUnmigratedConversations}`);
-        return true;
-      }
-
-      console.log('[LegacyMigrator] All files already migrated - migration not needed');
-      return false;
+      return hasUnmigratedWorkspaces || hasUnmigratedConversations;
     } catch (error) {
       console.error('[LegacyMigrator] Error checking migration status:', error);
       return false;
@@ -173,11 +157,8 @@ export class LegacyMigrator {
           'Migration not needed - already completed or no legacy data found');
       }
 
-      console.log('[LegacyMigrator] Starting migration...');
-
       // Ensure directory structure exists
       await this.ensureDirectories();
-      console.log('[LegacyMigrator] Directory structure ready');
 
       // Record migration start
       await this.statusTracker.save({
@@ -200,11 +181,7 @@ export class LegacyMigrator {
       stats.messagesMigrated = conversationResult.messages;
 
       // Archive legacy folders after successful migration
-      console.log('[LegacyMigrator] Archiving legacy folders...');
       const archiveResult = await this.archiver.archiveLegacyFolders();
-      if (archiveResult.archived.length > 0) {
-        console.log(`[LegacyMigrator] Archived: ${archiveResult.archived.join(', ')}`);
-      }
       if (archiveResult.errors.length > 0) {
         errors.push(...archiveResult.errors);
       }
@@ -218,8 +195,6 @@ export class LegacyMigrator {
 
       const duration = Date.now() - startTime;
       const success = errors.length === 0;
-
-      console.log(`[LegacyMigrator] Migrated ${stats.conversationsMigrated} conversations, ${stats.messagesMigrated} messages (${duration}ms)`);
 
       return this.createResult(true, success, stats, errors, startTime,
         success

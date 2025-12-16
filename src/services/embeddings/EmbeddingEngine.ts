@@ -32,19 +32,8 @@ export class EmbeddingEngine {
       return;
     }
 
-    console.log('[EmbeddingEngine] ========================================');
-    console.log('[EmbeddingEngine] Initializing via iframe sandbox...');
-    console.log('[EmbeddingEngine] This avoids Electron/Node.js conflicts');
-
-    const startTime = performance.now();
-
     this.iframe = new EmbeddingIframe();
     await this.iframe.initialize();
-
-    const totalTime = (performance.now() - startTime).toFixed(0);
-    console.log(`[EmbeddingEngine] Model loaded in ${totalTime}ms`);
-    console.log('[EmbeddingEngine] Ready to generate embeddings');
-    console.log('[EmbeddingEngine] ========================================');
   }
 
   /**

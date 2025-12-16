@@ -103,7 +103,6 @@ export class ChatTraceService {
         });
 
         this.createdSessions.add(sessionKey);
-        console.log(`[ChatTraceService] Created session ${finalSessionId} in workspace ${workspaceId}`);
       } catch (error) {
         console.error(`[ChatTraceService] Failed to create session:`, error);
         // Continue anyway - traces will be created when session exists
@@ -131,7 +130,6 @@ export class ChatTraceService {
   ): Promise<void> {
     const context = this.conversationSessions.get(conversationId);
     if (!context) {
-      console.log(`[ChatTraceService] No session context for conversation ${conversationId}, skipping trace`);
       return;
     }
 
@@ -271,8 +269,6 @@ export class ChatTraceService {
           timestamp: Date.now()
         }
       );
-
-      console.log(`[ChatTraceService] Created trace ${trace.id} (${traceData.type}) in session ${context.sessionId}`);
 
       // Embed the trace if embedding service is available
       if (this.embeddingService?.isServiceEnabled()) {

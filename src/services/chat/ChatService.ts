@@ -91,7 +91,6 @@ export class ChatService {
    */
   setDirectToolExecutor(executor: any): void {
     this.toolCallService.setDirectToolExecutor(executor);
-    console.log('[ChatService] DirectToolExecutor set - tools enabled on all platforms');
   }
 
   /** Initialize the tool service */

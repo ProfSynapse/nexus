@@ -25,11 +25,11 @@ export class TraceSchemaMigrationService {
     try {
       const status = await this.readStatus();
       if (status && status.version >= TRACE_SCHEMA_VERSION) {
-        console.log('[TraceSchemaMigration] Schema already up-to-date.');
+        // Schema already up-to-date - silently skip
         return { migratedWorkspaces: 0, skipped: true };
       }
 
-      console.log('[TraceSchemaMigration] Starting trace schema migration...');
+      // Starting trace schema migration
       const workspaceIds = await this.fileSystem.listWorkspaceIds();
       let migratedCount = 0;
 
@@ -63,7 +63,6 @@ export class TraceSchemaMigrationService {
           await this.createBackup(workspaceId);
           await this.fileSystem.writeWorkspace(workspaceId, workspace);
           migratedCount++;
-          console.log(`[TraceSchemaMigration] Migrated workspace ${workspaceId}`);
         }
       }
 
@@ -72,7 +71,6 @@ export class TraceSchemaMigrationService {
         migratedAt: Date.now()
       });
 
-      console.log(`[TraceSchemaMigration] Completed. Workspaces migrated: ${migratedCount}`);
       return { migratedWorkspaces: migratedCount, skipped: false };
     } catch (error) {
       console.error('[TraceSchemaMigrationService] Migration failed:', error);
@@ -113,7 +111,6 @@ export class TraceSchemaMigrationService {
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
       const backupPath = normalizePath(`${this.backupsPath}/${workspaceId}-${timestamp}.json.bak`);
       await this.vaultOperations.writeFile(backupPath, content);
-      console.log(`[TraceSchemaMigration] Backed up ${workspaceId} to ${backupPath}`);
     } catch (error) {
       console.error(`[TraceSchemaMigration] Failed to backup workspace ${workspaceId}:`, error);
     }

@@ -169,7 +169,6 @@ export class HybridStorageAdapter implements IStorageAdapter {
    */
   async initialize(blocking = false): Promise<void> {
     if (this.initialized) {
-      console.warn('[HybridStorageAdapter] Already initialized');
       return;
     }
 
@@ -220,7 +219,6 @@ export class HybridStorageAdapter implements IStorageAdapter {
       const migrationNeeded = await migrator.isMigrationNeeded();
 
       if (migrationNeeded) {
-        console.log('[HybridStorageAdapter] Running legacy migration...');
         const migrationResult = await migrator.migrate();
         if (!migrationResult.success) {
           console.warn('[HybridStorageAdapter] Migration had issues:', migrationResult.errors);
@@ -229,18 +227,14 @@ export class HybridStorageAdapter implements IStorageAdapter {
 
       // 4. Perform initial sync (rebuild cache from JSONL)
       const syncState = await this.sqliteCache.getSyncState(this.jsonlWriter.getDeviceId());
-      console.log(`[HybridStorageAdapter] syncState exists: ${!!syncState}, migrationNeeded: ${migrationNeeded}`);
       if (!syncState || migrationNeeded) {
-        console.log('[HybridStorageAdapter] Performing full rebuild...');
         try {
-          const result = await this.syncCoordinator.fullRebuild();
-          console.log(`[HybridStorageAdapter] Full rebuild result: ${result.eventsApplied} events, ${result.errors.length} errors`);
+          await this.syncCoordinator.fullRebuild();
         } catch (rebuildError) {
           console.error('[HybridStorageAdapter] Full rebuild failed:', rebuildError);
           // Continue anyway - partial data is better than no data
         }
       } else {
-        console.log('[HybridStorageAdapter] Performing incremental sync...');
         try {
           await this.syncCoordinator.sync();
         } catch (syncError) {
@@ -249,7 +243,6 @@ export class HybridStorageAdapter implements IStorageAdapter {
       }
 
       this.initialized = true;
-      console.log(`[HybridStorageAdapter] Initialized successfully (${Date.now() - startTime}ms)`);
 
       // Resolve the ready promise
       if (this.initResolve) {
@@ -321,7 +314,6 @@ export class HybridStorageAdapter implements IStorageAdapter {
       await this.sqliteCache.close();
 
       this.initialized = false;
-      console.log('[HybridStorageAdapter] Closed successfully');
 
     } catch (error) {
       console.error('[HybridStorageAdapter] Error during close:', error);

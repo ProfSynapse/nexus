@@ -66,20 +66,16 @@ export class ToolCallService {
     try {
       // Prefer DirectToolExecutor - works on ALL platforms
       if (this.directToolExecutor) {
-        console.log('[ToolCallService] Using DirectToolExecutor for tools (works on desktop + mobile)');
         this.availableTools = await this.directToolExecutor.getAvailableTools();
-        console.log(`[ToolCallService] Loaded ${this.availableTools.length} tools via DirectToolExecutor`);
         return;
       }
 
       // Fallback to MCPConnector (legacy - only works on desktop)
       if (this.mcpConnector && typeof this.mcpConnector.getAvailableTools === 'function') {
-        console.log('[ToolCallService] Using MCPConnector for tools (legacy mode)');
         this.availableTools = this.mcpConnector.getAvailableTools();
         return;
       }
 
-      console.log('[ToolCallService] No tool executor available - tools disabled');
       this.availableTools = [];
     } catch (error) {
       console.error('[ToolCallService] Failed to initialize tools:', error);

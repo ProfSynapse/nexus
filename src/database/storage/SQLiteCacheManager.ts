@@ -109,50 +109,68 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
    */
   async initialize(): Promise<void> {
     if (this.isInitialized) {
-      console.warn('[SQLiteCacheManager] Already initialized');
       return;
     }
 
     try {
-      console.log('[SQLiteCacheManager] Initializing WASM SQLite with sqlite-vec...');
-
       // Load WASM binary using Obsidian's vault adapter
       // The WASM file is copied to the plugin directory by esbuild
       const wasmPath = await this.resolveSqliteWasmPath();
 
-      console.log('[SQLiteCacheManager] Loading WASM from:', wasmPath);
-
       // Read WASM binary using Obsidian's API
       const wasmBinary = await this.app.vault.adapter.readBinary(wasmPath);
 
-      console.log('[SQLiteCacheManager] WASM binary loaded:', wasmBinary.byteLength, 'bytes');
+      // Suppress WASM/emscripten debug output during initialization
+      // The OPFS warning and heap resize messages can't be suppressed via config
+      const originalWarn = console.warn;
+      const originalLog = console.log;
+      const suppressPatterns = [
+        /OPFS sqlite3_vfs/,
+        /Heap resize call/,
+        /instantiateWasm/
+      ];
+      console.warn = (...args: any[]) => {
+        const msg = args[0]?.toString() || '';
+        if (!suppressPatterns.some(p => p.test(msg))) {
+          originalWarn.apply(console, args);
+        }
+      };
+      console.log = (...args: any[]) => {
+        const msg = args[0]?.toString() || '';
+        if (!suppressPatterns.some(p => p.test(msg))) {
+          originalLog.apply(console, args);
+        }
+      };
 
-      // Initialize the WASM module with instantiateWasm callback
-      // This bypasses the module's own URL-based loading entirely
-      this.sqlite3 = await sqlite3InitModule({
-        // Use instantiateWasm for direct control over WASM instantiation
-        instantiateWasm: (imports: WebAssembly.Imports, successCallback: (instance: WebAssembly.Instance) => void) => {
-          WebAssembly.instantiate(wasmBinary, imports)
-            .then(result => {
-              successCallback(result.instance);
-            })
-            .catch(err => {
-              console.error('[SQLiteCacheManager] WASM instantiation failed:', err);
-            });
-          return {}; // Return empty object, actual instance provided via callback
-        },
-        print: (msg: string) => console.log('[SQLite]', msg),
-        printErr: (msg: string) => console.error('[SQLite]', msg)
-      });
-
-      console.log('[SQLiteCacheManager] WASM module loaded');
+      try {
+        // Initialize the WASM module with instantiateWasm callback
+        // This bypasses the module's own URL-based loading entirely
+        this.sqlite3 = await sqlite3InitModule({
+          // Use instantiateWasm for direct control over WASM instantiation
+          instantiateWasm: (imports: WebAssembly.Imports, successCallback: (instance: WebAssembly.Instance) => void) => {
+            WebAssembly.instantiate(wasmBinary, imports)
+              .then(result => {
+                successCallback(result.instance);
+              })
+              .catch(err => {
+                console.error('[SQLiteCacheManager] WASM instantiation failed:', err);
+              });
+            return {}; // Return empty object, actual instance provided via callback
+          },
+          print: () => {}, // Suppress SQLite print output
+          printErr: (msg: string) => console.error('[SQLite]', msg)
+        });
+      } finally {
+        // Restore console methods
+        console.warn = originalWarn;
+        console.log = originalLog;
+      }
 
       // Ensure parent directory exists
       const parentPath = this.dbPath.substring(0, this.dbPath.lastIndexOf('/'));
       const parentExists = await this.app.vault.adapter.exists(parentPath);
       if (!parentExists) {
         await this.app.vault.adapter.mkdir(parentPath);
-        console.log(`[SQLiteCacheManager] Created directory: ${parentPath}`);
       }
 
       // Check if database file exists
@@ -161,25 +179,22 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
       if (dbExists) {
         // Load existing database from file
         await this.loadFromFile();
-        console.log('[SQLiteCacheManager] Loaded existing database from file');
       } else {
         // Create new in-memory database
         this.db = new this.sqlite3.oo1.DB(':memory:');
 
         // Create schema
         this.db.exec(SCHEMA_SQL);
-        console.log('[SQLiteCacheManager] Created new database with schema');
 
         // Save initial database to file
         await this.saveToFile();
       }
 
-      // Verify sqlite-vec extension is loaded
+      // Verify sqlite-vec extension is loaded (silently)
       try {
-        const version = this.db.selectValue('SELECT vec_version()');
-        console.log(`[SQLiteCacheManager] sqlite-vec version: ${version}`);
-      } catch (e) {
-        console.warn('[SQLiteCacheManager] sqlite-vec extension not available:', e);
+        this.db.selectValue('SELECT vec_version()');
+      } catch {
+        // sqlite-vec extension not available - continue without it
       }
 
       // Start auto-save timer
@@ -194,7 +209,6 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
       }
 
       this.isInitialized = true;
-      console.log('[SQLiteCacheManager] Initialization complete');
     } catch (error) {
       console.error('[SQLiteCacheManager] Initialization failed:', error);
       throw error;
@@ -213,7 +227,6 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
 
       if (uint8.length === 0) {
         // Empty file, create new database
-        console.log('[SQLiteCacheManager] Empty database file, creating fresh database');
         this.db = new this.sqlite3.oo1.DB(':memory:');
         this.db.exec(SCHEMA_SQL);
         return;
@@ -246,9 +259,8 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
         if (integrityResult !== 'ok') {
           throw new Error(`Database integrity check failed: ${integrityResult}`);
         }
-        console.log('[SQLiteCacheManager] Database integrity check passed');
       } catch (integrityError) {
-        console.error('[SQLiteCacheManager] Database corrupted, recreating:', integrityError);
+        // Database corrupted, recreating
         await this.recreateCorruptedDatabase();
         return;
       }
@@ -265,13 +277,11 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
    * Deletes corrupt file and creates fresh database
    */
   private async recreateCorruptedDatabase(): Promise<void> {
-    console.log('[SQLiteCacheManager] Recreating database after corruption...');
-
     // Close existing DB if open
     if (this.db) {
       try {
         this.db.close();
-      } catch (e) {
+      } catch {
         // Ignore close errors on corrupted DB
       }
       this.db = null;
@@ -280,9 +290,8 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
     // Delete corrupted file
     try {
       await this.app.vault.adapter.remove(this.dbPath);
-      console.log('[SQLiteCacheManager] Deleted corrupted database file');
-    } catch (e) {
-      console.warn('[SQLiteCacheManager] Could not delete corrupt file:', e);
+    } catch {
+      // Could not delete corrupt file - continue anyway
     }
 
     // Create fresh database
@@ -291,7 +300,6 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
 
     // Save fresh database to file
     await this.saveToFile();
-    console.log('[SQLiteCacheManager] Fresh database created and saved');
   }
 
   /**
@@ -301,8 +309,22 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
     if (!this.db) return;
 
     try {
-      // Export database to Uint8Array
-      const data = this.sqlite3.capi.sqlite3_js_db_export(this.db.pointer);
+      // Suppress heap resize debug messages during export
+      const originalLog = console.log;
+      console.log = (...args: any[]) => {
+        const msg = args[0]?.toString() || '';
+        if (!/Heap resize call/.test(msg)) {
+          originalLog.apply(console, args);
+        }
+      };
+
+      let data: any;
+      try {
+        // Export database to Uint8Array
+        data = this.sqlite3.capi.sqlite3_js_db_export(this.db.pointer);
+      } finally {
+        console.log = originalLog;
+      }
 
       // Write to vault as binary
       await this.app.vault.adapter.writeBinary(this.dbPath, data.buffer);
@@ -335,7 +357,6 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
         this.db = null;
       }
       this.isInitialized = false;
-      console.log('[SQLiteCacheManager] Database closed');
     } catch (error) {
       console.error('[SQLiteCacheManager] Error closing database:', error);
       throw error;
@@ -697,8 +718,8 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
         const stat = await this.app.vault.adapter.stat(this.dbPath);
         dbSizeBytes = stat?.size ?? 0;
       }
-    } catch (e) {
-      console.warn('[SQLiteCacheManager] Could not get db file size:', e);
+    } catch {
+      // Could not get db file size - use 0
     }
 
     return {

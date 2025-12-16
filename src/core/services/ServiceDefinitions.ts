@@ -209,7 +209,6 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
             const directToolExecutor = await context.serviceManager.getService('directToolExecutor');
             if (directToolExecutor) {
                 llmService.setToolExecutor(directToolExecutor as any);
-                console.log('[ServiceDefinitions] Tool executor configured for LLMService');
             }
 
             return llmService;
@@ -260,11 +259,10 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
                 // Start initialization in background (non-blocking)
                 // ChatView will show loading indicator until ready
                 adapter.initialize(false);
-                console.log('[ServiceDefinitions] HybridStorageAdapter initialization started (deferred)');
                 return adapter;
-            } catch (error) {
-                console.warn('[ServiceDefinitions] HybridStorageAdapter creation failed, will use legacy storage:', error);
-                return null; // Graceful fallback - services will use legacy backend
+            } catch {
+                // HybridStorageAdapter creation failed - graceful fallback to legacy storage
+                return null;
             }
         }
     },
@@ -310,7 +308,6 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
             // Initialize all agents
             await agentService.initializeAllAgents();
 
-            console.log('[ServiceDefinitions] AgentRegistrationService initialized with agents');
             return agentService;
         }
     },
@@ -340,7 +337,6 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
                 sessionContextManager
             });
 
-            console.log('[ServiceDefinitions] DirectToolExecutor initialized (works on desktop + mobile)');
             return executor;
         }
     },

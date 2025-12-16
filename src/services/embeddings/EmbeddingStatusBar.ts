@@ -38,10 +38,6 @@ export class EmbeddingStatusBar {
 
     // Disable on mobile (status bar not available)
     this.isEnabled = !Platform.isMobile;
-
-    if (!this.isEnabled) {
-      console.log('[EmbeddingStatusBar] Disabled on mobile platform');
-    }
   }
 
   /**
@@ -76,8 +72,6 @@ export class EmbeddingStatusBar {
 
     // Initially hidden
     this.hide();
-
-    console.log('[EmbeddingStatusBar] Initialized');
   }
 
   /**

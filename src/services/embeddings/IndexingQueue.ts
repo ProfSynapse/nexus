@@ -72,16 +72,10 @@ export class IndexingQueue extends EventEmitter {
    */
   async startFullIndex(): Promise<void> {
     if (this.isRunning) {
-      console.warn('[IndexingQueue] Already running');
       return;
     }
 
-    console.log('[IndexingQueue] ========================================');
-    console.log('[IndexingQueue] Starting full index check...');
-
     if (!this.embeddingService.isServiceEnabled()) {
-      console.log('[IndexingQueue] Embedding service not enabled, skipping indexing');
-      console.log('[IndexingQueue] ========================================');
       this.emitProgress({
         phase: 'complete',
         totalNotes: 0,
@@ -93,21 +87,11 @@ export class IndexingQueue extends EventEmitter {
     }
 
     const allNotes = this.app.vault.getMarkdownFiles();
-    console.log(`[IndexingQueue] Found ${allNotes.length} markdown files in vault`);
 
     // Filter to notes not already indexed (or with changed content)
-    const filterStart = performance.now();
     const needsIndexing = await this.filterUnindexedNotes(allNotes);
-    const filterTime = (performance.now() - filterStart).toFixed(0);
-
-    const alreadyIndexed = allNotes.length - needsIndexing.length;
-    console.log(`[IndexingQueue] Filtering complete (${filterTime}ms)`);
-    console.log(`[IndexingQueue]   Already indexed: ${alreadyIndexed} notes`);
-    console.log(`[IndexingQueue]   Needs indexing: ${needsIndexing.length} notes`);
 
     if (needsIndexing.length === 0) {
-      console.log('[IndexingQueue] All notes are up to date');
-      console.log('[IndexingQueue] ========================================');
       this.emitProgress({
         phase: 'complete',
         totalNotes: 0,
@@ -117,10 +101,6 @@ export class IndexingQueue extends EventEmitter {
       });
       return;
     }
-
-    console.log('[IndexingQueue] ----------------------------------------');
-    console.log(`[IndexingQueue] Beginning indexing of ${needsIndexing.length} notes`);
-    console.log(`[IndexingQueue] Settings: batchSize=${this.BATCH_SIZE}, yieldMs=${this.YIELD_INTERVAL_MS}, saveEvery=${this.SAVE_INTERVAL}`);
 
     this.queue = needsIndexing.map(f => f.path);
     this.totalCount = this.queue.length;
@@ -152,8 +132,7 @@ export class IndexingQueue extends EventEmitter {
         if (!existing || existing.contentHash !== contentHash) {
           needsIndexing.push(note);
         }
-      } catch (error) {
-        console.error(`[IndexingQueue] Error checking ${note.path}:`, error);
+      } catch {
         // Include in indexing queue anyway
         needsIndexing.push(note);
       }
@@ -177,11 +156,7 @@ export class IndexingQueue extends EventEmitter {
 
     try {
       // Load model (one-time, ~50-100MB)
-      console.log('[IndexingQueue] Phase 1: Loading embedding model...');
-      const modelStart = performance.now();
       await this.embeddingService.initialize();
-      const modelTime = (performance.now() - modelStart).toFixed(0);
-      console.log(`[IndexingQueue] Model loaded (${modelTime}ms)`);
 
       this.emitProgress({
         phase: 'indexing',
@@ -191,14 +166,9 @@ export class IndexingQueue extends EventEmitter {
         estimatedTimeRemaining: null
       });
 
-      console.log('[IndexingQueue] Phase 2: Processing notes...');
-      let lastMilestone = 0;
-      const milestoneInterval = Math.max(1, Math.floor(this.totalCount / 10)); // Log every ~10%
-
       while (this.queue.length > 0) {
         // Check for abort/pause
         if (this.abortController?.signal.aborted) {
-          console.log('[IndexingQueue] Indexing cancelled');
           this.emitProgress({
             phase: 'paused',
             totalNotes: this.totalCount,
@@ -237,19 +207,6 @@ export class IndexingQueue extends EventEmitter {
             this.processingTimes.shift(); // Keep rolling window
           }
 
-          // Log progress milestones
-          const currentMilestone = Math.floor(this.processedCount / milestoneInterval);
-          if (currentMilestone > lastMilestone) {
-            lastMilestone = currentMilestone;
-            const percent = Math.round((this.processedCount / this.totalCount) * 100);
-            const avgMs = this.processingTimes.length > 0
-              ? Math.round(this.processingTimes.reduce((a, b) => a + b, 0) / this.processingTimes.length)
-              : 0;
-            const eta = this.calculateETA();
-            const etaStr = eta ? `${eta}s remaining` : 'calculating...';
-            console.log(`[IndexingQueue] Progress: ${this.processedCount}/${this.totalCount} (${percent}%) - avg ${avgMs}ms/note - ${etaStr}`);
-          }
-
           // Periodic DB save (embeddings are already in DB, this ensures WAL flush)
           if (this.processedCount % this.SAVE_INTERVAL === 0) {
             await this.db.save();
@@ -267,21 +224,6 @@ export class IndexingQueue extends EventEmitter {
       // Final save
       await this.db.save();
 
-      // Calculate and log final statistics
-      const totalTime = Date.now() - this.startTime;
-      const totalSeconds = Math.round(totalTime / 1000);
-      const avgMs = this.processingTimes.length > 0
-        ? Math.round(this.processingTimes.reduce((a, b) => a + b, 0) / this.processingTimes.length)
-        : 0;
-      const notesPerSecond = totalTime > 0 ? ((this.processedCount / totalTime) * 1000).toFixed(1) : '0';
-
-      console.log('[IndexingQueue] ----------------------------------------');
-      console.log('[IndexingQueue] Indexing complete!');
-      console.log(`[IndexingQueue]   Notes processed: ${this.processedCount}/${this.totalCount}`);
-      console.log(`[IndexingQueue]   Total time: ${totalSeconds}s`);
-      console.log(`[IndexingQueue]   Average: ${avgMs}ms/note (${notesPerSecond} notes/sec)`);
-      console.log('[IndexingQueue] ========================================');
-
       this.emitProgress({
         phase: 'complete',
         totalNotes: this.totalCount,
@@ -291,9 +233,7 @@ export class IndexingQueue extends EventEmitter {
       });
 
     } catch (error: any) {
-      console.error('[IndexingQueue] ========================================');
       console.error('[IndexingQueue] Processing failed:', error);
-      console.error('[IndexingQueue] ========================================');
       this.emitProgress({
         phase: 'error',
         totalNotes: this.totalCount,
@@ -325,7 +265,6 @@ export class IndexingQueue extends EventEmitter {
     if (!this.isRunning) return;
 
     this.isPaused = true;
-    console.log('[IndexingQueue] Paused');
     this.emitProgress({
       phase: 'paused',
       totalNotes: this.totalCount,
@@ -340,9 +279,7 @@ export class IndexingQueue extends EventEmitter {
    */
   resume(): void {
     if (!this.isRunning || !this.isPaused) return;
-
     this.isPaused = false;
-    console.log('[IndexingQueue] Resumed');
   }
 
   /**
@@ -350,8 +287,6 @@ export class IndexingQueue extends EventEmitter {
    */
   cancel(): void {
     if (!this.isRunning) return;
-
-    console.log('[IndexingQueue] Cancelled');
     this.abortController?.abort();
     this.queue = [];
   }
@@ -448,16 +383,10 @@ export class IndexingQueue extends EventEmitter {
    */
   async startTraceIndex(): Promise<void> {
     if (this.isRunning) {
-      console.warn('[IndexingQueue] Note indexing in progress, will run trace indexing after');
       return;
     }
 
-    console.log('[IndexingQueue] ========================================');
-    console.log('[IndexingQueue] Starting trace backfill...');
-
     if (!this.embeddingService.isServiceEnabled()) {
-      console.log('[IndexingQueue] Embedding service not enabled, skipping trace indexing');
-      console.log('[IndexingQueue] ========================================');
       return;
     }
 
@@ -469,10 +398,7 @@ export class IndexingQueue extends EventEmitter {
       content: string;
     }>('SELECT id, workspaceId, sessionId, content FROM memory_traces');
 
-    console.log(`[IndexingQueue] Found ${allTraces.length} traces in database`);
-
     // Filter to traces not already embedded
-    const filterStart = performance.now();
     const needsIndexing: typeof allTraces = [];
 
     for (const trace of allTraces) {
@@ -485,20 +411,9 @@ export class IndexingQueue extends EventEmitter {
       }
     }
 
-    const filterTime = (performance.now() - filterStart).toFixed(0);
-    const alreadyIndexed = allTraces.length - needsIndexing.length;
-    console.log(`[IndexingQueue] Filtering complete (${filterTime}ms)`);
-    console.log(`[IndexingQueue]   Already indexed: ${alreadyIndexed} traces`);
-    console.log(`[IndexingQueue]   Needs indexing: ${needsIndexing.length} traces`);
-
     if (needsIndexing.length === 0) {
-      console.log('[IndexingQueue] All traces are up to date');
-      console.log('[IndexingQueue] ========================================');
       return;
     }
-
-    console.log('[IndexingQueue] ----------------------------------------');
-    console.log(`[IndexingQueue] Beginning trace indexing (${needsIndexing.length} traces)`);
 
     this.isRunning = true;
     this.totalCount = needsIndexing.length;
@@ -516,12 +431,8 @@ export class IndexingQueue extends EventEmitter {
     });
 
     try {
-      let lastMilestone = 0;
-      const milestoneInterval = Math.max(1, Math.floor(this.totalCount / 10));
-
       for (const trace of needsIndexing) {
         if (this.abortController?.signal.aborted) {
-          console.log('[IndexingQueue] Trace indexing cancelled');
           break;
         }
 
@@ -529,8 +440,6 @@ export class IndexingQueue extends EventEmitter {
           await this.waitForResume();
           continue;
         }
-
-        const traceStart = Date.now();
 
         try {
           await this.embeddingService.embedTrace(
@@ -540,21 +449,6 @@ export class IndexingQueue extends EventEmitter {
             trace.content
           );
           this.processedCount++;
-
-          // Track timing for ETA
-          const elapsed = Date.now() - traceStart;
-          this.processingTimes.push(elapsed);
-          if (this.processingTimes.length > 20) {
-            this.processingTimes.shift();
-          }
-
-          // Log progress milestones
-          const currentMilestone = Math.floor(this.processedCount / milestoneInterval);
-          if (currentMilestone > lastMilestone) {
-            lastMilestone = currentMilestone;
-            const percent = Math.round((this.processedCount / this.totalCount) * 100);
-            console.log(`[IndexingQueue] Trace progress: ${this.processedCount}/${this.totalCount} (${percent}%)`);
-          }
 
           // Periodic DB save
           if (this.processedCount % this.SAVE_INTERVAL === 0) {
@@ -571,14 +465,6 @@ export class IndexingQueue extends EventEmitter {
 
       // Final save
       await this.db.save();
-
-      const totalTime = Date.now() - this.startTime;
-      const totalSeconds = Math.round(totalTime / 1000);
-      console.log('[IndexingQueue] ----------------------------------------');
-      console.log('[IndexingQueue] Trace indexing complete!');
-      console.log(`[IndexingQueue]   Traces processed: ${this.processedCount}/${this.totalCount}`);
-      console.log(`[IndexingQueue]   Total time: ${totalSeconds}s`);
-      console.log('[IndexingQueue] ========================================');
 
     } catch (error: any) {
       console.error('[IndexingQueue] Trace processing failed:', error);

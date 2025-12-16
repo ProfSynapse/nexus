@@ -53,10 +53,6 @@ export class EmbeddingService {
 
     // Disable on mobile entirely
     this.isEnabled = !Platform.isMobile;
-
-    if (!this.isEnabled) {
-      console.log('[EmbeddingService] Disabled on mobile platform');
-    }
   }
 
   /**
@@ -64,13 +60,11 @@ export class EmbeddingService {
    */
   async initialize(): Promise<void> {
     if (!this.isEnabled) {
-      console.log('[EmbeddingService] Skipping initialization on mobile');
       return;
     }
 
     try {
       await this.engine.initialize();
-      console.log('[EmbeddingService] Initialized successfully');
     } catch (error) {
       console.error('[EmbeddingService] Initialization failed:', error);
       new Notice('Failed to load embedding model. Vector search will be unavailable.');
@@ -106,7 +100,6 @@ export class EmbeddingService {
 
       // Skip empty notes
       if (!processedContent) {
-        console.log(`[EmbeddingService] Skipping empty note: ${notePath}`);
         return;
       }
 
@@ -347,7 +340,6 @@ export class EmbeddingService {
     try {
       const processedContent = this.preprocessContent(content);
       if (!processedContent) {
-        console.log(`[EmbeddingService] Skipping empty trace: ${traceId}`);
         return;
       }
 

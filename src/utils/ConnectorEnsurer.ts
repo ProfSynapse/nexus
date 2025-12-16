@@ -30,14 +30,11 @@ export class ConnectorEnsurer {
             const exists = await this.plugin.app.vault.adapter.exists(connectorPath);
 
             if (exists) {
-                console.log('[ConnectorEnsurer] connector.js exists');
                 return true;
             }
 
             // File doesn't exist - write it out
-            console.log('[ConnectorEnsurer] connector.js missing, creating...');
             await this.plugin.app.vault.adapter.write(connectorPath, CONNECTOR_JS_CONTENT);
-            console.log('[ConnectorEnsurer] connector.js created successfully');
             return true;
 
         } catch (error) {
@@ -61,9 +58,7 @@ export class ConnectorEnsurer {
         const connectorPath = `${pluginDir}/connector.js`;
 
         try {
-            console.log('[ConnectorEnsurer] Recreating connector.js...');
             await this.plugin.app.vault.adapter.write(connectorPath, CONNECTOR_JS_CONTENT);
-            console.log('[ConnectorEnsurer] connector.js recreated successfully');
             return true;
         } catch (error) {
             console.error('[ConnectorEnsurer] Failed to recreate connector.js:', error);

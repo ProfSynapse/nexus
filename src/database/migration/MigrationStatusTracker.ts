@@ -24,13 +24,11 @@ export class MigrationStatusTracker {
       // Use adapter directly for consistency with save()
       const exists = await this.app.vault.adapter.exists(this.statusPath);
       if (!exists) {
-        console.log(`[MigrationStatusTracker] Status file not found: ${this.statusPath}`);
         return null;
       }
 
       const content = await this.app.vault.adapter.read(this.statusPath);
       const status = JSON.parse(content);
-      console.log(`[MigrationStatusTracker] Loaded status: legacyArchived=${status.legacyArchived}, migratedFiles.conversations=${status.migratedFiles?.conversations?.length ?? 0}`);
       return status;
     } catch (error) {
       console.error('[MigrationStatusTracker] Failed to load status:', error);
@@ -49,22 +47,11 @@ export class MigrationStatusTracker {
       const dirPath = '.nexus';
       const dirExists = await this.app.vault.adapter.exists(dirPath);
       if (!dirExists) {
-        console.log(`[MigrationStatusTracker] Creating directory: ${dirPath}`);
         await this.app.vault.adapter.mkdir(dirPath);
       }
 
-      // Check if file exists
-      const fileExists = await this.app.vault.adapter.exists(this.statusPath);
-
-      if (fileExists) {
-        // Modify existing file
-        await this.app.vault.adapter.write(this.statusPath, content);
-        console.log(`[MigrationStatusTracker] Updated status file`);
-      } else {
-        // Create new file
-        await this.app.vault.adapter.write(this.statusPath, content);
-        console.log(`[MigrationStatusTracker] Created status file`);
-      }
+      // Write status file (create or update)
+      await this.app.vault.adapter.write(this.statusPath, content);
     } catch (error) {
       console.error('[MigrationStatusTracker] Failed to save migration status:', error);
       throw error;

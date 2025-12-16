@@ -75,7 +75,6 @@ export class LLMService {
 
     // Subscribe to settings changes for automatic adapter refresh (Obsidian Events API)
     this.settingsEventRef = LLMSettingsNotifier.onSettingsChanged((newSettings) => {
-      console.log('[LLMService] Settings changed, updating adapters');
       this.updateSettings(newSettings);
     });
   }
@@ -86,7 +85,6 @@ export class LLMService {
    */
   setToolExecutor(executor: IToolExecutor): void {
     this.toolExecutor = executor;
-    console.log('[LLMService] Tool executor configured');
   }
 
 

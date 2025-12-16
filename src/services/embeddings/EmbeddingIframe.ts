@@ -66,9 +66,6 @@ export class EmbeddingIframe {
   }
 
   private async doInitialize(): Promise<void> {
-    console.log('[EmbeddingIframe] ========================================');
-    console.log('[EmbeddingIframe] Creating sandboxed iframe for embeddings...');
-
     // Create the iframe HTML that will load transformers.js
     const iframeHtml = this.createIframeHtml();
 
@@ -111,9 +108,6 @@ export class EmbeddingIframe {
       this.iframe!.src = blobUrl;
       document.body.appendChild(this.iframe!);
     });
-
-    console.log('[EmbeddingIframe] Iframe ready, model loaded');
-    console.log('[EmbeddingIframe] ========================================');
   }
 
   /**
@@ -133,15 +127,15 @@ export class EmbeddingIframe {
     env.useBrowserCache = true;
     env.allowLocalModels = false;
     env.allowRemoteModels = true;
+    // Disable web workers - they fail in sandboxed iframe context
+    env.backends.onnx.wasm.numThreads = 1;
 
     let extractor = null;
     const MODEL_ID = '${this.MODEL_ID}';
 
     // Initialize the model
     async function initModel() {
-      console.log('[EmbeddingIframe] Loading model:', MODEL_ID);
       extractor = await pipeline('feature-extraction', MODEL_ID, { quantized: true });
-      console.log('[EmbeddingIframe] Model loaded successfully');
       return true;
     }
 

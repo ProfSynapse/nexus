@@ -415,7 +415,6 @@ export class WorkspaceService {
       if (!existingWorkspace) {
         // For 'default' workspace, create it automatically
         if (workspaceId === GLOBAL_WORKSPACE_ID) {
-          console.log(`[WorkspaceService] Default workspace not found, creating it`);
           await this.createWorkspace({
             id: GLOBAL_WORKSPACE_ID,
             name: 'Default Workspace',
@@ -610,7 +609,6 @@ export class WorkspaceService {
       // Ensure session exists before saving trace (referential integrity)
       const existingSession = await this.getSession(workspaceId, sessionId);
       if (!existingSession) {
-        console.log(`[WorkspaceService] Session ${sessionId} not found, creating it in workspace ${workspaceId}`);
         await this.addSession(workspaceId, {
           id: sessionId,
           name: `Session ${new Date().toLocaleString()}`,
@@ -710,7 +708,6 @@ export class WorkspaceService {
       // Ensure session exists before saving state (referential integrity)
       const existingSession = await this.getSession(workspaceId, sessionId);
       if (!existingSession) {
-        console.log(`[WorkspaceService] Session ${sessionId} not found, creating it in workspace ${workspaceId}`);
         await this.addSession(workspaceId, {
           id: sessionId,
           name: `Session ${new Date().toLocaleString()}`,

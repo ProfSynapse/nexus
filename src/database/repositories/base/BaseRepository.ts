@@ -227,18 +227,19 @@ export abstract class BaseRepository<T> implements IRepository<T> {
   }
 
   /**
-   * Log repository operation
+   * Log repository operation (disabled by default - enable for debugging)
    *
    * @param operation - Operation name
    * @param details - Optional details
    */
-  protected log(operation: string, details?: any): void {
-    const message = `[${this.entityType}Repository] ${operation}`;
-    if (details) {
-      console.log(message, details);
-    } else {
-      console.log(message);
-    }
+  protected log(_operation: string, _details?: any): void {
+    // Silenced - uncomment for debugging
+    // const message = `[${this.entityType}Repository] ${_operation}`;
+    // if (_details) {
+    //   console.log(message, _details);
+    // } else {
+    //   console.log(message);
+    // }
   }
 
   /**

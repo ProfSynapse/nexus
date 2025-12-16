@@ -86,24 +86,17 @@ export class EmbeddingWatcher {
         this.embeddingService.updatePath(oldPath, file.path);
       }
     });
-
-    console.log('[EmbeddingWatcher] Started watching vault events');
-    console.log(`[EmbeddingWatcher] Debounce interval: ${this.DEBOUNCE_MS}ms`);
   }
 
   /**
    * Stop watching vault events
    */
   stop(): void {
-    const pendingCount = this.debounceTimers.size;
-
     // Clear all pending timers
     for (const timer of this.debounceTimers.values()) {
       clearTimeout(timer);
     }
     this.debounceTimers.clear();
-
-    console.log(`[EmbeddingWatcher] Stopped watching vault events (${pendingCount} pending updates cancelled)`);
   }
 
   /**

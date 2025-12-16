@@ -2,7 +2,7 @@ import { Plugin, TFile, prepareFuzzySearch } from 'obsidian';
 import { BaseMode } from '../../baseMode';
 import { getErrorMessage } from '../../../utils/errorUtils';
 import { BRAND_NAME } from '../../../constants/branding';
-import { isGlobPattern, globToRegex } from '../../../utils/pathUtils';
+import { isGlobPattern, globToRegex, normalizePath } from '../../../utils/pathUtils';
 import { EmbeddingService } from '../../../services/embeddings/EmbeddingService';
 
 export interface ContentSearchParams {
@@ -148,9 +148,20 @@ export class SearchContentMode extends BaseMode<ContentSearchParams, ContentSear
       return this.prepareResult(false, undefined, 'Embedding service is disabled (mobile platform or initialization failed). Use semantic=false for keyword search.');
     }
 
+    // Check if we have any embeddings
+    const stats = await embeddingService.getStats();
+    if (stats.noteCount === 0) {
+      return this.prepareResult(false, undefined, 'No embeddings found. The vault is likely still being indexed. Please wait for indexing to complete, or use semantic=false for keyword search.');
+    }
+
     try {
       // Use EmbeddingService.semanticSearch()
       const semanticResults = await embeddingService.semanticSearch(searchParams.query, searchParams.limit * 2); // Get extra for path filtering
+
+      if (semanticResults.length === 0) {
+        console.warn(`[${BRAND_NAME}] Semantic search returned 0 results despite having ${stats.noteCount} embeddings.`);
+        return this.prepareResult(false, undefined, 'Semantic search returned no results. This may indicate an issue with the vector database. Please check the console for errors.');
+      }
 
       // Filter by paths if specified
       let filteredResults = semanticResults;
@@ -160,10 +171,15 @@ export class SearchContentMode extends BaseMode<ContentSearchParams, ContentSear
           .map(p => globToRegex(p));
 
         const literalPaths = searchParams.paths
-          .filter(p => !isGlobPattern(p));
+          .filter(p => !isGlobPattern(p))
+          .map(p => normalizePath(p));
 
         filteredResults = semanticResults.filter(result => {
-          const matchesLiteral = literalPaths.some(path => result.notePath.startsWith(path));
+          const matchesLiteral = literalPaths.some(path => {
+            // Empty path (from "/") matches everything
+            if (path === '') return true;
+            return result.notePath.startsWith(path);
+          });
           const matchesGlob = globPatterns.some(regex => regex.test(result.notePath));
           return matchesLiteral || matchesGlob;
         });
@@ -225,10 +241,15 @@ export class SearchContentMode extends BaseMode<ContentSearchParams, ContentSear
         .map(p => globToRegex(p));
 
       const literalPaths = searchParams.paths
-        .filter(p => !isGlobPattern(p));
+        .filter(p => !isGlobPattern(p))
+        .map(p => normalizePath(p));
 
       allFiles = allFiles.filter(file => {
-        const matchesLiteral = literalPaths.some(path => file.path.startsWith(path));
+        const matchesLiteral = literalPaths.some(path => {
+          // Empty path (from "/") matches everything
+          if (path === '') return true;
+          return file.path.startsWith(path);
+        });
         const matchesGlob = globPatterns.some(regex => regex.test(file.path));
         return matchesLiteral || matchesGlob;
       });
