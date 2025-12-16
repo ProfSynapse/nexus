@@ -457,44 +457,338 @@ export class EmbeddingWatcher {
 
 ---
 
-## 7. Obsidian/Electron Considerations
+## 7. Initial Indexing & Progress Tracking
 
-### 7.1 CDN Loading
+### 7.1 The Challenge
+
+First-time users may have **thousands of notes**. We need to:
+- Not freeze Obsidian
+- Show progress
+- Be memory-conscious
+- Resume if interrupted
+- Allow user to cancel
+
+### 7.2 IndexingQueue Implementation
+
+```typescript
+// src/services/embeddings/IndexingQueue.ts
+
+export interface IndexingProgress {
+  phase: 'idle' | 'loading_model' | 'indexing' | 'complete' | 'paused' | 'error';
+  totalNotes: number;
+  processedNotes: number;
+  currentNote: string | null;
+  estimatedTimeRemaining: number | null;  // seconds
+  error?: string;
+}
+
+export class IndexingQueue extends EventEmitter {
+  private queue: string[] = [];
+  private isRunning = false;
+  private isPaused = false;
+  private abortController: AbortController | null = null;
+
+  // Tuning parameters
+  private readonly BATCH_SIZE = 1;           // Process one at a time for memory
+  private readonly YIELD_INTERVAL_MS = 50;   // Yield to UI between notes
+  private readonly SAVE_INTERVAL = 10;       // Save DB every N notes
+
+  private processedCount = 0;
+  private totalCount = 0;
+  private startTime = 0;
+  private processingTimes: number[] = [];    // Rolling average for ETA
+
+  constructor(
+    private embeddingService: EmbeddingService,
+    private db: Database,
+    private app: App
+  ) {
+    super();
+  }
+
+  /**
+   * Start initial indexing of all notes
+   */
+  async startFullIndex(): Promise<void> {
+    if (this.isRunning) return;
+
+    const allNotes = this.app.vault.getMarkdownFiles();
+
+    // Filter to notes not already indexed (or with changed content)
+    const needsIndexing = await this.filterUnindexedNotes(allNotes);
+
+    if (needsIndexing.length === 0) {
+      this.emitProgress({ phase: 'complete', totalNotes: 0, processedNotes: 0, currentNote: null, estimatedTimeRemaining: null });
+      return;
+    }
+
+    this.queue = needsIndexing.map(f => f.path);
+    this.totalCount = this.queue.length;
+    this.processedCount = 0;
+    this.startTime = Date.now();
+    this.processingTimes = [];
+    this.abortController = new AbortController();
+
+    await this.processQueue();
+  }
+
+  /**
+   * Filter to only notes that need (re)indexing
+   */
+  private async filterUnindexedNotes(notes: TFile[]): Promise<TFile[]> {
+    const needsIndexing: TFile[] = [];
+
+    for (const note of notes) {
+      const content = await this.app.vault.cachedRead(note);
+      const contentHash = this.hashContent(content);
+
+      const existing = this.db.exec(
+        'SELECT contentHash FROM embedding_metadata WHERE notePath = ?',
+        [note.path]
+      );
+
+      // Needs indexing if: no embedding OR content changed
+      if (!existing.length || existing[0].contentHash !== contentHash) {
+        needsIndexing.push(note);
+      }
+    }
+
+    return needsIndexing;
+  }
+
+  /**
+   * Process the queue with memory-conscious batching
+   */
+  private async processQueue(): Promise<void> {
+    this.isRunning = true;
+    this.emitProgress({ phase: 'loading_model', totalNotes: this.totalCount, processedNotes: 0, currentNote: null, estimatedTimeRemaining: null });
+
+    try {
+      // Load model (one-time, ~50-100MB)
+      await this.embeddingService.initialize();
+
+      this.emitProgress({ phase: 'indexing', totalNotes: this.totalCount, processedNotes: 0, currentNote: null, estimatedTimeRemaining: null });
+
+      while (this.queue.length > 0) {
+        // Check for abort/pause
+        if (this.abortController?.signal.aborted) {
+          this.emitProgress({ phase: 'paused', totalNotes: this.totalCount, processedNotes: this.processedCount, currentNote: null, estimatedTimeRemaining: null });
+          break;
+        }
+
+        if (this.isPaused) {
+          await this.waitForResume();
+          continue;
+        }
+
+        const notePath = this.queue.shift()!;
+        const noteStart = Date.now();
+
+        try {
+          this.emitProgress({
+            phase: 'indexing',
+            totalNotes: this.totalCount,
+            processedNotes: this.processedCount,
+            currentNote: notePath,
+            estimatedTimeRemaining: this.calculateETA()
+          });
+
+          // Process single note - memory released after each
+          await this.embeddingService.embedNote(notePath);
+          this.processedCount++;
+
+          // Track timing for ETA
+          const elapsed = Date.now() - noteStart;
+          this.processingTimes.push(elapsed);
+          if (this.processingTimes.length > 20) {
+            this.processingTimes.shift(); // Keep rolling window
+          }
+
+          // Periodic DB save (embeddings are already in DB, this ensures WAL flush)
+          if (this.processedCount % this.SAVE_INTERVAL === 0) {
+            await this.db.save();
+          }
+
+        } catch (error) {
+          console.error(`Failed to embed ${notePath}:`, error);
+          // Continue with next note, don't fail entire queue
+        }
+
+        // Yield to UI - critical for responsiveness
+        await new Promise(r => setTimeout(r, this.YIELD_INTERVAL_MS));
+      }
+
+      // Final save
+      await this.db.save();
+
+      this.emitProgress({
+        phase: 'complete',
+        totalNotes: this.totalCount,
+        processedNotes: this.processedCount,
+        currentNote: null,
+        estimatedTimeRemaining: null
+      });
+
+    } catch (error) {
+      this.emitProgress({
+        phase: 'error',
+        totalNotes: this.totalCount,
+        processedNotes: this.processedCount,
+        currentNote: null,
+        estimatedTimeRemaining: null,
+        error: error.message
+      });
+    } finally {
+      this.isRunning = false;
+    }
+  }
+
+  /**
+   * Calculate estimated time remaining
+   */
+  private calculateETA(): number | null {
+    if (this.processingTimes.length < 3) return null;
+
+    const avgTime = this.processingTimes.reduce((a, b) => a + b, 0) / this.processingTimes.length;
+    const remaining = this.totalCount - this.processedCount;
+    return Math.round((remaining * avgTime) / 1000); // seconds
+  }
+
+  /**
+   * Pause indexing (can resume later)
+   */
+  pause(): void {
+    this.isPaused = true;
+    this.emitProgress({
+      phase: 'paused',
+      totalNotes: this.totalCount,
+      processedNotes: this.processedCount,
+      currentNote: null,
+      estimatedTimeRemaining: null
+    });
+  }
+
+  /**
+   * Resume paused indexing
+   */
+  resume(): void {
+    this.isPaused = false;
+  }
+
+  /**
+   * Cancel indexing entirely
+   */
+  cancel(): void {
+    this.abortController?.abort();
+    this.queue = [];
+  }
+
+  private async waitForResume(): Promise<void> {
+    while (this.isPaused && !this.abortController?.signal.aborted) {
+      await new Promise(r => setTimeout(r, 100));
+    }
+  }
+
+  private emitProgress(progress: IndexingProgress): void {
+    this.emit('progress', progress);
+  }
+
+  private hashContent(content: string): string {
+    let hash = 0;
+    for (let i = 0; i < content.length; i++) {
+      hash = ((hash << 5) - hash) + content.charCodeAt(i);
+      hash = hash & hash;
+    }
+    return hash.toString(36);
+  }
+}
+```
+
+### 7.3 Progress UI Integration
+
+```typescript
+// In your UI component
+indexingQueue.on('progress', (progress: IndexingProgress) => {
+  switch (progress.phase) {
+    case 'loading_model':
+      showStatus('Loading embedding model...');
+      break;
+    case 'indexing':
+      const pct = Math.round((progress.processedNotes / progress.totalNotes) * 100);
+      const eta = progress.estimatedTimeRemaining
+        ? `~${Math.ceil(progress.estimatedTimeRemaining / 60)} min remaining`
+        : 'Calculating...';
+      showStatus(`Indexing notes: ${pct}% (${progress.processedNotes}/${progress.totalNotes}) - ${eta}`);
+      break;
+    case 'complete':
+      showStatus(`Indexing complete! ${progress.processedNotes} notes indexed.`);
+      break;
+    case 'paused':
+      showStatus(`Indexing paused. ${progress.processedNotes}/${progress.totalNotes} complete.`);
+      break;
+    case 'error':
+      showError(`Indexing error: ${progress.error}`);
+      break;
+  }
+});
+```
+
+### 7.4 Memory Strategy
+
+| Resource | Size | Strategy |
+|----------|------|----------|
+| Embedding model | ~50-100MB | Load once, keep in memory during indexing |
+| Per-note embedding | ~1.5KB | Generate → save to DB → release immediately |
+| Note content | Varies | Use `cachedRead()`, don't keep in memory |
+| Queue | ~100 bytes/path | Keep full list (minimal memory) |
+
+**Key principle:** Only ONE embedding in JS memory at a time. Generate → SQLite → GC.
+
+### 7.5 Resumability
+
+Indexing is **automatically resumable** because:
+1. Each note's `contentHash` is stored in `embedding_metadata`
+2. `filterUnindexedNotes()` checks existing hashes before queuing
+3. If user closes Obsidian mid-index, next startup continues where left off
+
+No explicit checkpoint file needed.
+
+---
+
+## 8. Obsidian/Electron Considerations
+
+### 8.1 CDN Loading
 
 Load Transformers.js from CDN (same pattern as WebLLM):
 ```typescript
 const module = await import('https://esm.run/@huggingface/transformers');
 ```
 
-### 7.2 Background Processing
+### 8.2 Startup Sequence
 
-Don't block Obsidian startup:
 ```typescript
+// In plugin onload()
 setTimeout(async () => {
-  await embeddingService.initialize();
-  const notes = app.vault.getMarkdownFiles();
-  for (const note of notes) {
-    await embeddingService.embedNote(note.path);
-    await new Promise(r => setTimeout(r, 50)); // Yield to UI
-  }
+  // Don't block Obsidian startup
+  const indexingQueue = new IndexingQueue(embeddingService, db, app);
+
+  // Wire up progress UI
+  indexingQueue.on('progress', updateStatusBar);
+
+  // Start indexing (will skip already-indexed notes)
+  await indexingQueue.startFullIndex();
 }, 3000);
 ```
 
-### 7.3 Memory Management
+### 8.3 Platform Support
 
-- Model: ~50-100MB in memory
-- Embeddings: ~1.5KB per note (384 floats × 4 bytes)
-- Dispose model when plugin unloads
-
-### 7.4 Platform Support
-
-| Platform | Status |
-|----------|--------|
-| macOS (Apple Silicon) | ✅ WASM works |
-| macOS (Intel) | ✅ WASM works |
-| Windows | ✅ WASM works |
-| Linux | ✅ WASM works |
-| Mobile | ⚠️ Memory constrained |
+| Platform | Status | Notes |
+|----------|--------|-------|
+| macOS (Apple Silicon) | ✅ | WASM + WebGPU available |
+| macOS (Intel) | ✅ | WASM works |
+| Windows | ✅ | WASM works |
+| Linux | ✅ | WASM works |
+| Mobile | ⚠️ | Memory constrained - consider smaller batches or opt-in |
 
 ---
 
