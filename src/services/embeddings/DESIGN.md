@@ -704,33 +704,160 @@ export class IndexingQueue extends EventEmitter {
 }
 ```
 
-### 7.3 Progress UI Integration
+### 7.3 Progress UI: Status Bar Integration
+
+Use Obsidian's status bar API for progress display with pause/resume controls.
+
+**Note:** Status bar is NOT available on Obsidian mobile.
 
 ```typescript
-// In your UI component
-indexingQueue.on('progress', (progress: IndexingProgress) => {
-  switch (progress.phase) {
-    case 'loading_model':
-      showStatus('Loading embedding model...');
-      break;
-    case 'indexing':
-      const pct = Math.round((progress.processedNotes / progress.totalNotes) * 100);
-      const eta = progress.estimatedTimeRemaining
-        ? `~${Math.ceil(progress.estimatedTimeRemaining / 60)} min remaining`
-        : 'Calculating...';
-      showStatus(`Indexing notes: ${pct}% (${progress.processedNotes}/${progress.totalNotes}) - ${eta}`);
-      break;
-    case 'complete':
-      showStatus(`Indexing complete! ${progress.processedNotes} notes indexed.`);
-      break;
-    case 'paused':
-      showStatus(`Indexing paused. ${progress.processedNotes}/${progress.totalNotes} complete.`);
-      break;
-    case 'error':
-      showError(`Indexing error: ${progress.error}`);
-      break;
+// src/services/embeddings/EmbeddingStatusBar.ts
+
+import { Plugin, Notice } from 'obsidian';
+
+export class EmbeddingStatusBar {
+  private statusBarItem: HTMLElement | null = null;
+  private textEl: HTMLSpanElement | null = null;
+  private controlEl: HTMLSpanElement | null = null;
+
+  constructor(
+    private plugin: Plugin,
+    private indexingQueue: IndexingQueue
+  ) {}
+
+  /**
+   * Initialize status bar item
+   * Call in plugin onload()
+   */
+  init(): void {
+    // Create status bar item (returns HTMLElement)
+    this.statusBarItem = this.plugin.addStatusBarItem();
+    this.statusBarItem.addClass('nexus-embedding-status');
+
+    // Text display
+    this.textEl = this.statusBarItem.createEl('span', {
+      text: '',
+      cls: 'nexus-embedding-text'
+    });
+
+    // Clickable control (pause/resume)
+    this.controlEl = this.statusBarItem.createEl('span', {
+      text: '',
+      cls: 'nexus-embedding-control'
+    });
+    this.controlEl.style.cursor = 'pointer';
+    this.controlEl.style.marginLeft = '4px';
+
+    // Wire up progress events
+    this.indexingQueue.on('progress', this.handleProgress.bind(this));
+
+    // Initially hidden
+    this.hide();
   }
-});
+
+  private handleProgress(progress: IndexingProgress): void {
+    switch (progress.phase) {
+      case 'loading_model':
+        this.show();
+        this.setText('Loading embedding model...');
+        this.setControl('');
+        break;
+
+      case 'indexing':
+        this.show();
+        const pct = Math.round((progress.processedNotes / progress.totalNotes) * 100);
+        const eta = progress.estimatedTimeRemaining
+          ? `~${Math.ceil(progress.estimatedTimeRemaining / 60)}m`
+          : '';
+        this.setText(`Indexing: ${pct}% (${progress.processedNotes}/${progress.totalNotes}) ${eta}`);
+        this.setControl('⏸', () => this.indexingQueue.pause());
+        break;
+
+      case 'paused':
+        this.show();
+        this.setText(`Paused: ${progress.processedNotes}/${progress.totalNotes}`);
+        this.setControl('▶', () => this.indexingQueue.resume());
+        break;
+
+      case 'complete':
+        new Notice(`Embedding complete! ${progress.processedNotes} notes indexed.`);
+        this.hide();
+        break;
+
+      case 'error':
+        new Notice(`Embedding error: ${progress.error}`, 5000);
+        this.hide();
+        break;
+
+      case 'idle':
+        this.hide();
+        break;
+    }
+  }
+
+  private setText(text: string): void {
+    if (this.textEl) this.textEl.textContent = text;
+  }
+
+  private setControl(text: string, onClick?: () => void): void {
+    if (!this.controlEl) return;
+    this.controlEl.textContent = text;
+    this.controlEl.onclick = onClick || null;
+  }
+
+  private show(): void {
+    if (this.statusBarItem) this.statusBarItem.style.display = 'flex';
+  }
+
+  private hide(): void {
+    if (this.statusBarItem) this.statusBarItem.style.display = 'none';
+  }
+}
+```
+
+**Usage in main plugin:**
+
+```typescript
+// In main.ts onload()
+export default class NexusPlugin extends Plugin {
+  private embeddingStatusBar: EmbeddingStatusBar;
+  private indexingQueue: IndexingQueue;
+
+  async onload() {
+    // ... other initialization
+
+    // Create indexing queue
+    this.indexingQueue = new IndexingQueue(embeddingService, db, this.app);
+
+    // Create status bar (desktop only)
+    this.embeddingStatusBar = new EmbeddingStatusBar(this, this.indexingQueue);
+    this.embeddingStatusBar.init();
+
+    // Start background indexing after delay
+    setTimeout(() => {
+      this.indexingQueue.startFullIndex();
+    }, 3000);
+  }
+}
+```
+
+**Status bar appearance:**
+```
+| Indexing: 45% (450/1000) ~12m ⏸ |   ← Click ⏸ to pause
+| Paused: 450/1000 ▶ |              ← Click ▶ to resume
+```
+
+**Optional CSS (styles.css):**
+```css
+.nexus-embedding-status {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.nexus-embedding-control:hover {
+  opacity: 0.7;
+}
 ```
 
 ### 7.4 Memory Strategy
