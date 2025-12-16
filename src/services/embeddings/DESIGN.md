@@ -47,22 +47,20 @@ Replace `sql.js` with `@dao-xyz/sqlite3-vec` to get both standard SQLite feature
 | **Atomic** | Transactions span embeddings and other data |
 | **No sync issues** | Can't have embedding DB out of sync with main DB |
 
-### 1.3 Pre-requisite: Verify FTS4 Support
+### 1.3 FTS4/FTS5 Support Confirmed
 
-Before migration, verify `@dao-xyz/sqlite3-vec` supports FTS4 (used by existing search):
+`@dao-xyz/sqlite3-vec` **supports FTS4 and FTS5** because it wraps the official `@sqlite.org/sqlite-wasm` build, which includes these extensions by default.
+
+**Recommendation:** Use **FTS5** over FTS4 for new implementations - better query syntax and performance.
 
 ```typescript
 import { createDatabase } from '@dao-xyz/sqlite3-vec';
 
 const db = await createDatabase(':memory:');
 
-// Test FTS4 (will throw if not supported)
-db.exec(`CREATE VIRTUAL TABLE test_fts USING fts4(content)`);
-
-// Test vec0 (will throw if not supported)
-db.exec(`CREATE VIRTUAL TABLE test_vec USING vec0(embedding float[384])`);
-
-console.log('✓ Both FTS4 and vec0 supported!');
+// Both work!
+db.exec(`CREATE VIRTUAL TABLE text_search USING fts5(content)`);  // Recommended
+db.exec(`CREATE VIRTUAL TABLE vectors USING vec0(embedding float[384])`);
 ```
 
 ---
@@ -164,6 +162,32 @@ AND em2.notePath != ?
 ORDER BY ne.distance
 LIMIT 10;
 ```
+
+### 3.3 Hybrid Search (Vector + Keyword)
+
+Combine semantic similarity with keyword filtering using FTS5:
+
+```sql
+-- Create FTS5 table for note content (share rowid with vec0)
+CREATE VIRTUAL TABLE IF NOT EXISTS note_content_fts USING fts5(
+  content,
+  content=''  -- External content mode
+);
+
+-- Hybrid search: semantic similarity + keyword filter
+SELECT
+  em.notePath,
+  ne.distance
+FROM note_embeddings ne
+JOIN embedding_metadata em ON em.rowid = ne.rowid
+JOIN note_content_fts fts ON fts.rowid = ne.rowid
+WHERE ne.embedding MATCH ?
+  AND fts.content MATCH 'automation OR workflow'
+ORDER BY ne.distance
+LIMIT 10;
+```
+
+This enables powerful queries like "find notes semantically similar to X that also mention 'project management'".
 
 ---
 
