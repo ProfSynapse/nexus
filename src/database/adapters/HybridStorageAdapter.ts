@@ -116,8 +116,7 @@ export class HybridStorageAdapter implements IStorageAdapter {
 
     this.sqliteCache = new SQLiteCacheManager({
       app: this.app,
-      dbPath: `${this.basePath}/cache.db`,
-      autoSaveInterval: 30000
+      dbPath: `${this.basePath}/cache.db`
     });
 
     this.syncCoordinator = new SyncCoordinator(
@@ -293,6 +292,14 @@ export class HybridStorageAdapter implements IStorageAdapter {
    */
   getInitError(): Error | null {
     return this.initError;
+  }
+
+  /**
+   * Get the underlying SQLite cache manager
+   * Used by EmbeddingManager for vector storage
+   */
+  get cache(): SQLiteCacheManager {
+    return this.sqliteCache;
   }
 
   async close(): Promise<void> {

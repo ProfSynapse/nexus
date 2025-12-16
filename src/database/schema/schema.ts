@@ -138,75 +138,81 @@ CREATE INDEX IF NOT EXISTS idx_messages_sequence ON messages(conversationId, seq
 CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(timestamp);
 CREATE INDEX IF NOT EXISTS idx_messages_role ON messages(role);
 
--- ==================== FULL-TEXT SEARCH (FTS4) ====================
--- Note: Using FTS4 instead of FTS5 for compatibility with default sql.js build
+-- ==================== FULL-TEXT SEARCH (FTS5) ====================
+-- Using FTS5 for full-text search capabilities
 
-CREATE VIRTUAL TABLE IF NOT EXISTS workspace_fts USING fts4(
+CREATE VIRTUAL TABLE IF NOT EXISTS workspace_fts USING fts5(
   id,
   name,
   description,
   content='workspaces',
-  tokenize=porter
+  content_rowid='rowid'
 );
 
 CREATE TRIGGER IF NOT EXISTS workspace_fts_insert AFTER INSERT ON workspaces BEGIN
-  INSERT INTO workspace_fts(docid, id, name, description)
+  INSERT INTO workspace_fts(rowid, id, name, description)
   VALUES (new.rowid, new.id, new.name, new.description);
 END;
 
 CREATE TRIGGER IF NOT EXISTS workspace_fts_delete AFTER DELETE ON workspaces BEGIN
-  DELETE FROM workspace_fts WHERE docid = old.rowid;
+  INSERT INTO workspace_fts(workspace_fts, rowid, id, name, description)
+  VALUES ('delete', old.rowid, old.id, old.name, old.description);
 END;
 
 CREATE TRIGGER IF NOT EXISTS workspace_fts_update AFTER UPDATE ON workspaces BEGIN
-  DELETE FROM workspace_fts WHERE docid = old.rowid;
-  INSERT INTO workspace_fts(docid, id, name, description)
+  INSERT INTO workspace_fts(workspace_fts, rowid, id, name, description)
+  VALUES ('delete', old.rowid, old.id, old.name, old.description);
+  INSERT INTO workspace_fts(rowid, id, name, description)
   VALUES (new.rowid, new.id, new.name, new.description);
 END;
 
-CREATE VIRTUAL TABLE IF NOT EXISTS conversation_fts USING fts4(
+CREATE VIRTUAL TABLE IF NOT EXISTS conversation_fts USING fts5(
   id,
   title,
   content='conversations',
-  tokenize=porter
+  content_rowid='rowid'
 );
 
 CREATE TRIGGER IF NOT EXISTS conversation_fts_insert AFTER INSERT ON conversations BEGIN
-  INSERT INTO conversation_fts(docid, id, title)
+  INSERT INTO conversation_fts(rowid, id, title)
   VALUES (new.rowid, new.id, new.title);
 END;
 
 CREATE TRIGGER IF NOT EXISTS conversation_fts_delete AFTER DELETE ON conversations BEGIN
-  DELETE FROM conversation_fts WHERE docid = old.rowid;
+  INSERT INTO conversation_fts(conversation_fts, rowid, id, title)
+  VALUES ('delete', old.rowid, old.id, old.title);
 END;
 
 CREATE TRIGGER IF NOT EXISTS conversation_fts_update AFTER UPDATE ON conversations BEGIN
-  DELETE FROM conversation_fts WHERE docid = old.rowid;
-  INSERT INTO conversation_fts(docid, id, title)
+  INSERT INTO conversation_fts(conversation_fts, rowid, id, title)
+  VALUES ('delete', old.rowid, old.id, old.title);
+  INSERT INTO conversation_fts(rowid, id, title)
   VALUES (new.rowid, new.id, new.title);
 END;
 
-CREATE VIRTUAL TABLE IF NOT EXISTS message_fts USING fts4(
+CREATE VIRTUAL TABLE IF NOT EXISTS message_fts USING fts5(
   id,
   conversationId,
   content,
   reasoningContent,
   content='messages',
-  tokenize=porter
+  content_rowid='rowid'
 );
 
 CREATE TRIGGER IF NOT EXISTS message_fts_insert AFTER INSERT ON messages BEGIN
-  INSERT INTO message_fts(docid, id, conversationId, content, reasoningContent)
+  INSERT INTO message_fts(rowid, id, conversationId, content, reasoningContent)
   VALUES (new.rowid, new.id, new.conversationId, new.content, new.reasoningContent);
 END;
 
 CREATE TRIGGER IF NOT EXISTS message_fts_delete AFTER DELETE ON messages BEGIN
-  DELETE FROM message_fts WHERE docid = old.rowid;
+  INSERT INTO message_fts(message_fts, rowid, id, conversationId, content, reasoningContent)
+  VALUES ('delete', old.rowid, old.id, old.conversationId, old.content, old.reasoningContent);
 END;
 
 CREATE TRIGGER IF NOT EXISTS message_fts_update AFTER UPDATE ON messages BEGIN
-  DELETE FROM message_fts WHERE docid = old.rowid;
-  INSERT INTO message_fts(docid, id, conversationId, content, reasoningContent)
+  INSERT INTO message_fts(message_fts, rowid, id, conversationId, content, reasoningContent)
+  VALUES ('delete', old.rowid, old.id, old.conversationId, old.content, old.reasoningContent);
+  INSERT INTO message_fts(rowid, id, conversationId, content, reasoningContent)
   VALUES (new.rowid, new.id, new.conversationId, new.content, new.reasoningContent);
 END;
 
@@ -224,6 +230,48 @@ CREATE TABLE IF NOT EXISTS applied_events (
 );
 
 CREATE INDEX IF NOT EXISTS idx_applied_events_time ON applied_events(appliedAt);
+
+-- ==================== NOTE EMBEDDINGS ====================
+
+-- Vector storage (vec0 virtual table)
+CREATE VIRTUAL TABLE IF NOT EXISTS note_embeddings USING vec0(
+  embedding float[384]
+);
+
+-- Metadata linked to vec0 by rowid
+CREATE TABLE IF NOT EXISTS embedding_metadata (
+  rowid INTEGER PRIMARY KEY,
+  notePath TEXT NOT NULL UNIQUE,
+  model TEXT NOT NULL,
+  contentHash TEXT NOT NULL,
+  created INTEGER NOT NULL,
+  updated INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_embedding_meta_path ON embedding_metadata(notePath);
+CREATE INDEX IF NOT EXISTS idx_embedding_meta_hash ON embedding_metadata(contentHash);
+
+-- ==================== TRACE EMBEDDINGS ====================
+
+-- Vector storage for memory traces
+CREATE VIRTUAL TABLE IF NOT EXISTS trace_embeddings USING vec0(
+  embedding float[384]
+);
+
+-- Metadata linked to vec0 by rowid
+CREATE TABLE IF NOT EXISTS trace_embedding_metadata (
+  rowid INTEGER PRIMARY KEY,
+  traceId TEXT NOT NULL UNIQUE,
+  workspaceId TEXT NOT NULL,
+  sessionId TEXT,
+  model TEXT NOT NULL,
+  contentHash TEXT NOT NULL,
+  created INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_trace_embed_id ON trace_embedding_metadata(traceId);
+CREATE INDEX IF NOT EXISTS idx_trace_embed_workspace ON trace_embedding_metadata(workspaceId);
+CREATE INDEX IF NOT EXISTS idx_trace_embed_session ON trace_embedding_metadata(sessionId);
 
 -- ==================== INITIALIZATION ====================
 

@@ -1,10 +1,11 @@
 /**
  * Location: src/database/storage/SQLiteCacheManager.ts
- * Purpose: SQLite cache manager using sql.js for hybrid storage system
+ * Purpose: SQLite cache manager using @dao-xyz/sqlite3-vec WASM for hybrid storage system
  *
  * Provides:
  * - Local cache for fast queries and true pagination
- * - Can be rebuilt from JSONL files anytime
+ * - Native vector search via sqlite-vec (compiled into WASM)
+ * - Manual file persistence via serialize/deserialize (Obsidian Sync compatible)
  * - Full-text search via FTS4
  * - Transaction support
  * - Event tracking to prevent duplicate processing
@@ -13,13 +14,20 @@
  * - Used by StorageManager for fast queries
  * - Backed by JSONL files in EventLogManager
  * - Implements IStorageBackend interface
+ *
+ * Architecture Notes:
+ * - Uses WASM build of SQLite with sqlite-vec statically compiled
+ * - In-memory database with manual file persistence
+ * - sqlite3_js_db_export() to serialize, sqlite3_deserialize() to load
+ * - Works in Electron renderer (no native bindings)
  */
 
-// Use asm.js version (pure JS, no external WASM file needed)
-// This avoids CDN requests on every startup
-import initSqlJs from 'sql.js/dist/sql-asm.js';
-import type { Database, SqlJsStatic } from 'sql.js';
-import { App } from 'obsidian';
+// Import the raw WASM sqlite3 module (has sqlite-vec compiled in)
+// esbuild alias resolves this to index.mjs which exports sqlite3InitModule
+// @ts-ignore - esbuild alias handling
+import sqlite3InitModule from '@dao-xyz/sqlite3-vec/wasm';
+
+import { App, normalizePath } from 'obsidian';
 import { PaginatedResult, PaginationParams } from '../../types/pagination/PaginationTypes';
 import { IStorageBackend, RunResult, DatabaseStats } from '../interfaces/IStorageBackend';
 import type { SyncState, ISQLiteCacheManager } from '../sync/SyncCoordinator';
@@ -32,7 +40,7 @@ import { SchemaMigrator, CURRENT_SCHEMA_VERSION } from '../schema/SchemaMigrator
 export interface SQLiteCacheManagerOptions {
   app: App;
   dbPath: string;  // e.g., '.nexus/cache.db'
-  autoSaveInterval?: number; // Auto-save interval in ms (default: 30000)
+  autoSaveInterval?: number;  // ms between auto-saves (default: 30000)
 }
 
 export interface QueryResult<T> {
@@ -41,36 +49,63 @@ export interface QueryResult<T> {
 }
 
 /**
- * SQLite cache manager using sql.js
+ * SQLite cache manager using @dao-xyz/sqlite3-vec WASM
  *
  * Features:
- * - Pure JavaScript SQLite (no native dependencies)
- * - Stored as binary in Obsidian vault
+ * - SQLite + sqlite-vec via WASM (no native bindings)
+ * - Manual file persistence via serialize/deserialize
+ * - Native vector search for embeddings
  * - Full-text search with FTS4
  * - Cursor-based pagination
  * - Transaction support
- * - Auto-save with dirty tracking
  */
 export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager {
   private app: App;
-  private dbPath: string;
-  private db: Database | null = null;
-  private SQL: SqlJsStatic | null = null;
-  private isDirty: boolean = false;
-  private autoSaveInterval: number;
-  private autoSaveTimer: NodeJS.Timeout | null = null;
+  private dbPath: string;  // Relative path within vault
+  private sqlite3: any = null;  // The sqlite3 WASM module
+  private db: any = null;  // The oo1.DB instance
   private isInitialized: boolean = false;
   private searchService: SQLiteSearchService;
+  private hasUnsavedData: boolean = false;
+  private autoSaveInterval: number;
+  private autoSaveTimer: NodeJS.Timeout | null = null;
 
   constructor(options: SQLiteCacheManagerOptions) {
     this.app = options.app;
     this.dbPath = options.dbPath;
-    this.autoSaveInterval = options.autoSaveInterval ?? 30000;
+    this.autoSaveInterval = options.autoSaveInterval ?? 30000;  // 30 seconds default
     this.searchService = new SQLiteSearchService(this);
   }
 
   /**
-   * Initialize sql.js and create/open database
+   * Resolve the sqlite3.wasm path for the currently-installed plugin folder.
+   *
+   * Nexus supports legacy installs under `.obsidian/plugins/claudesidian-mcp/`
+   * as well as the current `.obsidian/plugins/nexus/` folder.
+   */
+  private async resolveSqliteWasmPath(): Promise<string> {
+    const configDir = (this.app.vault as any)?.configDir || '.obsidian';
+    const candidatePluginFolders = ['nexus', 'claudesidian-mcp'];
+    const candidates = candidatePluginFolders.map(folder => `${configDir}/plugins/${folder}/sqlite3.wasm`);
+
+    for (const candidate of candidates) {
+      try {
+        if (await this.app.vault.adapter.exists(candidate)) {
+          return candidate;
+        }
+      } catch (error) {
+        // Ignore adapter errors and continue trying other candidates.
+      }
+    }
+
+    throw new Error(
+      `[SQLiteCacheManager] sqlite3.wasm not found. Looked in: ${candidates.join(', ')}`
+    );
+  }
+
+  /**
+   * Initialize sqlite3 WASM and create/open database
+   * Uses in-memory database with manual file persistence
    */
   async initialize(): Promise<void> {
     if (this.isInitialized) {
@@ -79,39 +114,87 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
     }
 
     try {
-      // Initialize sql.js (asm.js version - no external files needed)
-      this.SQL = await initSqlJs();
+      console.log('[SQLiteCacheManager] Initializing WASM SQLite with sqlite-vec...');
 
-      // Try to load existing database
-      const existingData = await this.loadDatabaseFile();
+      // Load WASM binary using Obsidian's vault adapter
+      // The WASM file is copied to the plugin directory by esbuild
+      const wasmPath = await this.resolveSqliteWasmPath();
 
-      if (existingData) {
-        this.db = new this.SQL.Database(existingData);
-        console.log('[SQLiteCacheManager] Loaded existing database');
+      console.log('[SQLiteCacheManager] Loading WASM from:', wasmPath);
 
-        // Run schema migrations if needed
-        const migrator = new SchemaMigrator(this.db);
-        const result = await migrator.migrate();
+      // Read WASM binary using Obsidian's API
+      const wasmBinary = await this.app.vault.adapter.readBinary(wasmPath);
 
-        if (result.applied > 0) {
-          console.log(`[SQLiteCacheManager] Applied ${result.applied} migration(s): v${result.fromVersion} -> v${result.toVersion}`);
-          // Note: We don't clear data after migrations to avoid OOM during rebuild.
-          // New columns will have NULL/default values for existing rows.
-          this.isDirty = true;
-          await this.save(); // Persist migrations immediately
-        }
+      console.log('[SQLiteCacheManager] WASM binary loaded:', wasmBinary.byteLength, 'bytes');
+
+      // Initialize the WASM module with instantiateWasm callback
+      // This bypasses the module's own URL-based loading entirely
+      this.sqlite3 = await sqlite3InitModule({
+        // Use instantiateWasm for direct control over WASM instantiation
+        instantiateWasm: (imports: WebAssembly.Imports, successCallback: (instance: WebAssembly.Instance) => void) => {
+          WebAssembly.instantiate(wasmBinary, imports)
+            .then(result => {
+              successCallback(result.instance);
+            })
+            .catch(err => {
+              console.error('[SQLiteCacheManager] WASM instantiation failed:', err);
+            });
+          return {}; // Return empty object, actual instance provided via callback
+        },
+        print: (msg: string) => console.log('[SQLite]', msg),
+        printErr: (msg: string) => console.error('[SQLite]', msg)
+      });
+
+      console.log('[SQLiteCacheManager] WASM module loaded');
+
+      // Ensure parent directory exists
+      const parentPath = this.dbPath.substring(0, this.dbPath.lastIndexOf('/'));
+      const parentExists = await this.app.vault.adapter.exists(parentPath);
+      if (!parentExists) {
+        await this.app.vault.adapter.mkdir(parentPath);
+        console.log(`[SQLiteCacheManager] Created directory: ${parentPath}`);
+      }
+
+      // Check if database file exists
+      const dbExists = await this.app.vault.adapter.exists(this.dbPath);
+
+      if (dbExists) {
+        // Load existing database from file
+        await this.loadFromFile();
+        console.log('[SQLiteCacheManager] Loaded existing database from file');
       } else {
-        // Create new database with schema
-        this.db = new this.SQL.Database();
-        await this.exec(SCHEMA_SQL);
-        await this.save(); // Persist the new database
-        console.log(`[SQLiteCacheManager] Created new database with schema v${CURRENT_SCHEMA_VERSION}`);
+        // Create new in-memory database
+        this.db = new this.sqlite3.oo1.DB(':memory:');
+
+        // Create schema
+        this.db.exec(SCHEMA_SQL);
+        console.log('[SQLiteCacheManager] Created new database with schema');
+
+        // Save initial database to file
+        await this.saveToFile();
+      }
+
+      // Verify sqlite-vec extension is loaded
+      try {
+        const version = this.db.selectValue('SELECT vec_version()');
+        console.log(`[SQLiteCacheManager] sqlite-vec version: ${version}`);
+      } catch (e) {
+        console.warn('[SQLiteCacheManager] sqlite-vec extension not available:', e);
+      }
+
+      // Start auto-save timer
+      if (this.autoSaveInterval > 0) {
+        this.autoSaveTimer = setInterval(() => {
+          if (this.hasUnsavedData) {
+            this.saveToFile().catch(err => {
+              console.error('[SQLiteCacheManager] Auto-save failed:', err);
+            });
+          }
+        }, this.autoSaveInterval);
       }
 
       this.isInitialized = true;
-
-      // Start auto-save timer
-      this.startAutoSave();
+      console.log('[SQLiteCacheManager] Initialization complete');
     } catch (error) {
       console.error('[SQLiteCacheManager] Initialization failed:', error);
       throw error;
@@ -119,86 +202,120 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
   }
 
   /**
-   * Load database file from Obsidian vault
-   * Uses raw adapter to support hidden folders (like .nexus/)
+   * Load database from file using sqlite3_deserialize
+   * Includes corruption detection and auto-recovery
    */
-  private async loadDatabaseFile(): Promise<Uint8Array | null> {
+  private async loadFromFile(): Promise<void> {
     try {
-      // Use adapter directly - vault.getAbstractFileByPath doesn't work for hidden files
-      const exists = await this.app.vault.adapter.exists(this.dbPath);
-      if (!exists) {
-        console.log(`[SQLiteCacheManager] Database file not found: ${this.dbPath}`);
-        return null;
+      // Read binary data from vault
+      const data = await this.app.vault.adapter.readBinary(this.dbPath);
+      const uint8 = new Uint8Array(data);
+
+      if (uint8.length === 0) {
+        // Empty file, create new database
+        console.log('[SQLiteCacheManager] Empty database file, creating fresh database');
+        this.db = new this.sqlite3.oo1.DB(':memory:');
+        this.db.exec(SCHEMA_SQL);
+        return;
       }
 
-      const arrayBuffer = await this.app.vault.adapter.readBinary(this.dbPath);
-      console.log(`[SQLiteCacheManager] Loaded database file: ${this.dbPath} (${arrayBuffer.byteLength} bytes)`);
-      return new Uint8Array(arrayBuffer);
+      // Allocate memory for the database bytes
+      const ptr = this.sqlite3.wasm.allocFromTypedArray(uint8);
+
+      // Create empty in-memory database
+      this.db = new this.sqlite3.oo1.DB(':memory:');
+
+      // Deserialize the data into the database
+      const rc = this.sqlite3.capi.sqlite3_deserialize(
+        this.db.pointer,
+        'main',
+        ptr,
+        uint8.byteLength,
+        uint8.byteLength,
+        this.sqlite3.capi.SQLITE_DESERIALIZE_FREEONCLOSE |
+        this.sqlite3.capi.SQLITE_DESERIALIZE_RESIZEABLE
+      );
+
+      if (rc !== 0) {
+        throw new Error(`sqlite3_deserialize failed with code ${rc}`);
+      }
+
+      // Verify database integrity
+      try {
+        const integrityResult = this.db.selectValue('PRAGMA integrity_check');
+        if (integrityResult !== 'ok') {
+          throw new Error(`Database integrity check failed: ${integrityResult}`);
+        }
+        console.log('[SQLiteCacheManager] Database integrity check passed');
+      } catch (integrityError) {
+        console.error('[SQLiteCacheManager] Database corrupted, recreating:', integrityError);
+        await this.recreateCorruptedDatabase();
+        return;
+      }
+
+      this.hasUnsavedData = false;
     } catch (error) {
-      console.error('[SQLiteCacheManager] Failed to load database file:', error);
-      return null;
+      console.error('[SQLiteCacheManager] Failed to load from file:', error);
+      await this.recreateCorruptedDatabase();
     }
   }
 
   /**
-   * Save database to Obsidian vault
-   * Uses raw adapter to support hidden folders (like .nexus/)
+   * Recreate database after corruption detected
+   * Deletes corrupt file and creates fresh database
    */
-  async save(): Promise<void> {
-    if (!this.db) {
-      console.warn('[SQLiteCacheManager] Cannot save: database not initialized');
-      return;
+  private async recreateCorruptedDatabase(): Promise<void> {
+    console.log('[SQLiteCacheManager] Recreating database after corruption...');
+
+    // Close existing DB if open
+    if (this.db) {
+      try {
+        this.db.close();
+      } catch (e) {
+        // Ignore close errors on corrupted DB
+      }
+      this.db = null;
     }
 
-    if (!this.isDirty) {
-      return; // No changes to save
+    // Delete corrupted file
+    try {
+      await this.app.vault.adapter.remove(this.dbPath);
+      console.log('[SQLiteCacheManager] Deleted corrupted database file');
+    } catch (e) {
+      console.warn('[SQLiteCacheManager] Could not delete corrupt file:', e);
     }
+
+    // Create fresh database
+    this.db = new this.sqlite3.oo1.DB(':memory:');
+    this.db.exec(SCHEMA_SQL);
+
+    // Save fresh database to file
+    await this.saveToFile();
+    console.log('[SQLiteCacheManager] Fresh database created and saved');
+  }
+
+  /**
+   * Save database to file using sqlite3_js_db_export
+   */
+  private async saveToFile(): Promise<void> {
+    if (!this.db) return;
 
     try {
-      const data = this.db.export();
-      // Convert Uint8Array to ArrayBuffer (Obsidian adapter requires ArrayBuffer)
-      const buffer = new ArrayBuffer(data.byteLength);
-      new Uint8Array(buffer).set(data);
+      // Export database to Uint8Array
+      const data = this.sqlite3.capi.sqlite3_js_db_export(this.db.pointer);
 
-      // Ensure parent directory exists using adapter (works for hidden folders)
-      const parentPath = this.dbPath.substring(0, this.dbPath.lastIndexOf('/'));
-      const parentExists = await this.app.vault.adapter.exists(parentPath);
-      if (!parentExists) {
-        await this.app.vault.adapter.mkdir(parentPath);
-      }
+      // Write to vault as binary
+      await this.app.vault.adapter.writeBinary(this.dbPath, data.buffer);
 
-      // Write directly using adapter (works for hidden folders)
-      await this.app.vault.adapter.writeBinary(this.dbPath, buffer);
-
-      this.isDirty = false;
-      console.log(`[SQLiteCacheManager] Saved database: ${this.dbPath} (${buffer.byteLength} bytes)`);
+      this.hasUnsavedData = false;
     } catch (error) {
-      console.error('[SQLiteCacheManager] Failed to save database:', error);
+      console.error('[SQLiteCacheManager] Failed to save to file:', error);
       throw error;
     }
   }
 
   /**
-   * Start auto-save timer
-   */
-  private startAutoSave(): void {
-    if (this.autoSaveTimer) {
-      clearInterval(this.autoSaveTimer);
-    }
-
-    this.autoSaveTimer = setInterval(async () => {
-      if (this.isDirty) {
-        try {
-          await this.save();
-        } catch (error) {
-          console.error('[SQLiteCacheManager] Auto-save failed:', error);
-        }
-      }
-    }, this.autoSaveInterval);
-  }
-
-  /**
-   * Close the database
+   * Close the database and save to file
    */
   async close(): Promise<void> {
     try {
@@ -208,18 +325,17 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
         this.autoSaveTimer = null;
       }
 
-      // Save if dirty
-      if (this.isDirty) {
-        await this.save();
+      // Final save
+      if (this.hasUnsavedData) {
+        await this.saveToFile();
       }
 
-      // Close database
       if (this.db) {
         this.db.close();
         this.db = null;
       }
-
       this.isInitialized = false;
+      console.log('[SQLiteCacheManager] Database closed');
     } catch (error) {
       console.error('[SQLiteCacheManager] Error closing database:', error);
       throw error;
@@ -228,13 +344,14 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
 
   /**
    * Execute raw SQL (for schema creation and multi-statement execution)
+   * NOTE: Does not support parameters - use run() or query() for parameterized queries
    */
   async exec(sql: string): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
 
     try {
       this.db.exec(sql);
-      this.isDirty = true;
+      this.hasUnsavedData = true;
     } catch (error) {
       console.error('[SQLiteCacheManager] Exec failed:', error);
       throw error;
@@ -249,18 +366,18 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
 
     try {
       const stmt = this.db.prepare(sql);
-
-      if (params && params.length > 0) {
-        stmt.bind(params);
+      try {
+        if (params?.length) {
+          stmt.bind(params);
+        }
+        const results: T[] = [];
+        while (stmt.step()) {
+          results.push(stmt.get({}) as T);
+        }
+        return results;
+      } finally {
+        stmt.finalize();
       }
-
-      const results: T[] = [];
-      while (stmt.step()) {
-        results.push(stmt.getAsObject() as T);
-      }
-      stmt.free();
-
-      return results;
     } catch (error) {
       console.error('[SQLiteCacheManager] Query failed:', error, { sql, params });
       throw error;
@@ -271,28 +388,50 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
    * Query returning single row
    */
   async queryOne<T>(sql: string, params?: any[]): Promise<T | null> {
-    const results = await this.query<T>(sql, params);
-    return results.length > 0 ? results[0] : null;
+    if (!this.db) throw new Error('Database not initialized');
+
+    try {
+      const stmt = this.db.prepare(sql);
+      try {
+        if (params?.length) {
+          stmt.bind(params);
+        }
+        if (stmt.step()) {
+          return stmt.get({}) as T;
+        }
+        return null;
+      } finally {
+        stmt.finalize();
+      }
+    } catch (error) {
+      console.error('[SQLiteCacheManager] QueryOne failed:', error, { sql, params });
+      throw error;
+    }
   }
 
   /**
    * Run a statement (INSERT, UPDATE, DELETE)
+   * Returns changes count and last insert rowid
    */
   async run(sql: string, params?: any[]): Promise<RunResult> {
     if (!this.db) throw new Error('Database not initialized');
 
     try {
-      this.db.run(sql, params);
-      this.isDirty = true;
+      const stmt = this.db.prepare(sql);
+      try {
+        if (params?.length) {
+          stmt.bind(params);
+        }
+        stmt.stepReset();
+      } finally {
+        stmt.finalize();
+      }
 
-      const changes = this.db.getRowsModified();
+      // Get changes count and last insert rowid
+      const changes = this.db.changes();
+      const lastInsertRowid = Number(this.sqlite3.capi.sqlite3_last_insert_rowid(this.db.pointer));
 
-      // Get last insert rowid via query
-      const lastIdResult = this.db.exec('SELECT last_insert_rowid() as id');
-      const lastInsertRowid = lastIdResult.length > 0 && lastIdResult[0].values.length > 0
-        ? lastIdResult[0].values[0][0] as number
-        : 0;
-
+      this.hasUnsavedData = true;
       return { changes, lastInsertRowid };
     } catch (error) {
       console.error('[SQLiteCacheManager] Run failed:', error, { sql, params });
@@ -304,21 +443,22 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
    * Begin a transaction
    */
   async beginTransaction(): Promise<void> {
-    await this.exec('BEGIN TRANSACTION');
+    this.db.exec('BEGIN TRANSACTION');
   }
 
   /**
    * Commit a transaction
    */
   async commit(): Promise<void> {
-    await this.exec('COMMIT');
+    this.db.exec('COMMIT');
+    this.hasUnsavedData = true;
   }
 
   /**
    * Rollback a transaction
    */
   async rollback(): Promise<void> {
-    await this.exec('ROLLBACK');
+    this.db.exec('ROLLBACK');
   }
 
   /**
@@ -443,7 +583,7 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
    */
   async clearAllData(): Promise<void> {
     await this.transaction(async () => {
-      await this.exec(`
+      this.db.exec(`
         DELETE FROM messages;
         DELETE FROM conversations;
         DELETE FROM memory_traces;
@@ -457,29 +597,23 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
   }
 
   /**
-   * Update FTS indexes after bulk data changes
+   * Rebuild FTS5 indexes after bulk data changes
    */
   async rebuildFTSIndexes(): Promise<void> {
     await this.transaction(async () => {
-      // Rebuild workspace FTS (FTS4 uses docid)
-      await this.exec(`
-        DELETE FROM workspace_fts;
-        INSERT INTO workspace_fts(docid, id, name, description)
-        SELECT rowid, id, name, description FROM workspaces;
+      // Rebuild workspace FTS5
+      this.db.exec(`
+        INSERT INTO workspace_fts(workspace_fts) VALUES ('rebuild');
       `);
 
-      // Rebuild conversation FTS
-      await this.exec(`
-        DELETE FROM conversation_fts;
-        INSERT INTO conversation_fts(docid, id, title)
-        SELECT rowid, id, title FROM conversations;
+      // Rebuild conversation FTS5
+      this.db.exec(`
+        INSERT INTO conversation_fts(conversation_fts) VALUES ('rebuild');
       `);
 
-      // Rebuild message FTS
-      await this.exec(`
-        DELETE FROM message_fts;
-        INSERT INTO message_fts(docid, id, conversationId, content, reasoningContent)
-        SELECT rowid, id, conversationId, content, reasoningContent FROM messages;
+      // Rebuild message FTS5
+      this.db.exec(`
+        INSERT INTO message_fts(message_fts) VALUES ('rebuild');
       `);
     });
   }
@@ -491,8 +625,8 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
     if (!this.db) throw new Error('Database not initialized');
 
     try {
-      await this.exec('VACUUM');
-      await this.save(); // Vacuum requires immediate save
+      this.db.exec('VACUUM');
+      this.hasUnsavedData = true;
     } catch (error) {
       console.error('[SQLiteCacheManager] Vacuum failed:', error);
       throw error;
@@ -555,10 +689,16 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
       this.queryOne<{ count: number }>('SELECT COUNT(*) as count FROM applied_events'),
     ]);
 
+    // Get file size from filesystem
     let dbSizeBytes = 0;
-    if (this.db) {
-      const data = this.db.export();
-      dbSizeBytes = data.length;
+    try {
+      const exists = await this.app.vault.adapter.exists(this.dbPath);
+      if (exists) {
+        const stat = await this.app.vault.adapter.stat(this.dbPath);
+        dbSizeBytes = stat?.size ?? 0;
+      }
+    } catch (e) {
+      console.warn('[SQLiteCacheManager] Could not get db file size:', e);
     }
 
     return {
@@ -583,17 +723,24 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
   }
 
   /**
-   * Get database path
+   * Get database path (relative)
    */
   getDbPath(): string {
     return this.dbPath;
   }
 
   /**
+   * Force save to file
+   */
+  async save(): Promise<void> {
+    await this.saveToFile();
+  }
+
+  /**
    * Check if there are unsaved changes
    */
   hasUnsavedChanges(): boolean {
-    return this.isDirty;
+    return this.hasUnsavedData;
   }
 
   // ==================== IStorageBackend interface methods ====================
@@ -638,7 +785,7 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
         messages: stats.messages,
         applied_events: stats.appliedEvents
       },
-      walMode: false // sql.js doesn't support WAL mode
+      walMode: false  // WASM doesn't use WAL mode
     };
   }
 }

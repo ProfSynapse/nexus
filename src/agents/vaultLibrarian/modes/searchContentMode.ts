@@ -3,9 +3,11 @@ import { BaseMode } from '../../baseMode';
 import { getErrorMessage } from '../../../utils/errorUtils';
 import { BRAND_NAME } from '../../../constants/branding';
 import { isGlobPattern, globToRegex } from '../../../utils/pathUtils';
+import { EmbeddingService } from '../../../services/embeddings/EmbeddingService';
 
 export interface ContentSearchParams {
   query: string;
+  semantic: boolean;  // REQUIRED: true for vector/embedding search, false for keyword/fuzzy
   limit?: number;
   includeContent?: boolean;
   snippetLength?: number;
@@ -24,40 +26,66 @@ export interface ContentSearchParams {
 
 export interface ContentSearchResult {
   success: boolean;
-  query: string;
   results: Array<{
     filePath: string;
-    title: string;
-    content: string;
-    score: number;
-    searchMethod: 'fuzzy' | 'keyword' | 'combined';
     frontmatter?: Record<string, any>;
-    metadata?: {
-      fileExtension: string;
-      parentFolder: string;
-      modifiedTime: number;
-    };
+    content?: string;  // Keyword search only
   }>;
-  totalResults: number;
-  executionTime: number;
   error?: string;
 }
 
 /**
- * Content search mode using native Obsidian fuzzy search and keyword search APIs
- * Combines fuzzy matching for file names with keyword search in content
+ * Content search mode with both semantic (vector) and keyword search capabilities
+ *
+ * - semantic: true → Uses embedding-based vector similarity search (best for conceptual queries)
+ * - semantic: false → Uses Obsidian's fuzzy + keyword search (best for exact matches)
  */
 export class SearchContentMode extends BaseMode<ContentSearchParams, ContentSearchResult> {
   private plugin: Plugin;
+  private embeddingService: EmbeddingService | null = null;
 
   constructor(plugin: Plugin) {
     super(
       'searchContent',
       'Content Search',
-      'Search vault files using native Obsidian fuzzy search for file names combined with keyword search in content. Results include file frontmatter (tags, properties, metadata) and are ranked by relevance.',
-      '1.0.0'
+      'Search vault files. Set semantic=true for AI-powered conceptual search using local embeddings (best for concepts/related ideas), or semantic=false for keyword/fuzzy search (best for exact matches). Semantic search is desktop-only and becomes available once the embedding system initializes in the background (first run may take longer while the model downloads).',
+      '2.0.0'
     );
     this.plugin = plugin;
+  }
+
+  /**
+   * Set the embedding service for semantic search
+   */
+  setEmbeddingService(service: EmbeddingService): void {
+    this.embeddingService = service;
+  }
+
+  /**
+   * Lazily get the embedding service from the plugin
+   * This handles the timing issue where EmbeddingManager initializes after VaultLibrarian
+   */
+  private getEmbeddingService(): EmbeddingService | null {
+    // Return cached service if available
+    if (this.embeddingService) {
+      return this.embeddingService;
+    }
+
+    // Try to get from plugin's embeddingManager
+    try {
+      const pluginAny = this.plugin as any;
+      if (pluginAny.embeddingManager) {
+        const service = pluginAny.embeddingManager.getService();
+        if (service) {
+          this.embeddingService = service; // Cache for future use
+          return service;
+        }
+      }
+    } catch (error) {
+      console.warn('[SearchContentMode] Failed to get embedding service:', error);
+    }
+
+    return null;
   }
 
   async execute(params: ContentSearchParams): Promise<ContentSearchResult> {
@@ -68,8 +96,13 @@ export class SearchContentMode extends BaseMode<ContentSearchParams, ContentSear
         return this.prepareResult(false, undefined, 'Query parameter is required and cannot be empty');
       }
 
+      if (params.semantic === undefined) {
+        return this.prepareResult(false, undefined, 'semantic parameter is required. Set to true for AI-powered conceptual search, or false for keyword/fuzzy search.');
+      }
+
       const searchParams = {
         query: params.query.trim(),
+        semantic: params.semantic,
         limit: params.limit || 10,
         includeContent: params.includeContent !== false,
         snippetLength: params.snippetLength || 200,
@@ -77,53 +110,149 @@ export class SearchContentMode extends BaseMode<ContentSearchParams, ContentSear
         context: params.context
       };
 
-      console.log(`[${BRAND_NAME}] Starting content search:`, { query: searchParams.query, limit: searchParams.limit });
+      console.log(`[${BRAND_NAME}] Starting content search:`, {
+        query: searchParams.query,
+        semantic: searchParams.semantic,
+        limit: searchParams.limit
+      });
 
-      // Get all markdown files
-      let allFiles = this.plugin.app.vault.getMarkdownFiles();
-
-      // Filter by paths if specified
-      if (searchParams.paths.length > 0) {
-        const globPatterns = searchParams.paths
-          .filter(p => isGlobPattern(p))
-          .map(p => globToRegex(p));
-        
-        const literalPaths = searchParams.paths
-          .filter(p => !isGlobPattern(p));
-
-        allFiles = allFiles.filter(file => {
-          const matchesLiteral = literalPaths.some(path => file.path.startsWith(path));
-          const matchesGlob = globPatterns.some(regex => regex.test(file.path));
-          return matchesLiteral || matchesGlob;
-        });
+      // Use semantic search if requested
+      if (searchParams.semantic) {
+        return await this.performSemanticSearch(searchParams, startTime);
       }
 
-      // Perform combined fuzzy + keyword search
-      const searchResults = await this.performCombinedSearch(
-        searchParams.query,
-        allFiles,
-        searchParams.limit,
-        searchParams.includeContent,
-        searchParams.snippetLength
-      );
-
-      const executionTime = performance.now() - startTime;
-
-      console.log(`[${BRAND_NAME}] Content search completed:`, {
-        resultsCount: searchResults.length,
-        executionTime: Math.round(executionTime)
-      });
-
-      return this.prepareResult(true, {
-        results: searchResults,
-        total: searchResults.length,
-        hasMore: searchResults.length >= searchParams.limit
-      });
+      // Otherwise use keyword/fuzzy search
+      return await this.performKeywordFuzzySearch(searchParams, startTime);
 
     } catch (error) {
       console.error(`[${BRAND_NAME}] Content search failed:`, error);
       return this.prepareResult(false, undefined, `Search failed: ${getErrorMessage(error)}`);
     }
+  }
+
+  /**
+   * Perform semantic (vector) search using embeddings
+   */
+  private async performSemanticSearch(
+    searchParams: { query: string; limit: number; paths: string[]; includeContent: boolean; snippetLength: number },
+    startTime: number
+  ): Promise<ContentSearchResult> {
+    // Lazily get the embedding service (handles timing issues)
+    const embeddingService = this.getEmbeddingService();
+
+    if (!embeddingService) {
+      return this.prepareResult(false, undefined, 'Semantic search is not available yet. The embedding system may still be initializing (and may need to download the embedding model on first run). Try again in a moment, or use semantic=false for keyword search.');
+    }
+
+    if (!embeddingService.isServiceEnabled()) {
+      return this.prepareResult(false, undefined, 'Embedding service is disabled (mobile platform or initialization failed). Use semantic=false for keyword search.');
+    }
+
+    try {
+      // Use EmbeddingService.semanticSearch()
+      const semanticResults = await embeddingService.semanticSearch(searchParams.query, searchParams.limit * 2); // Get extra for path filtering
+
+      // Filter by paths if specified
+      let filteredResults = semanticResults;
+      if (searchParams.paths.length > 0) {
+        const globPatterns = searchParams.paths
+          .filter(p => isGlobPattern(p))
+          .map(p => globToRegex(p));
+
+        const literalPaths = searchParams.paths
+          .filter(p => !isGlobPattern(p));
+
+        filteredResults = semanticResults.filter(result => {
+          const matchesLiteral = literalPaths.some(path => result.notePath.startsWith(path));
+          const matchesGlob = globPatterns.some(regex => regex.test(result.notePath));
+          return matchesLiteral || matchesGlob;
+        });
+      }
+
+      // Convert to lean result format (just filePath + frontmatter)
+      const results: Array<{ filePath: string; frontmatter?: Record<string, any> }> = [];
+      for (const result of filteredResults.slice(0, searchParams.limit)) {
+        const file = this.plugin.app.vault.getAbstractFileByPath(result.notePath);
+        if (file instanceof TFile) {
+          // Get frontmatter only
+          let frontmatter: Record<string, any> | undefined;
+          const fileCache = this.plugin.app.metadataCache.getFileCache(file);
+          if (fileCache?.frontmatter) {
+            frontmatter = { ...fileCache.frontmatter };
+            delete frontmatter.position;
+          }
+
+          const entry: { filePath: string; frontmatter?: Record<string, any> } = {
+            filePath: result.notePath
+          };
+          if (frontmatter && Object.keys(frontmatter).length > 0) {
+            entry.frontmatter = frontmatter;
+          }
+          results.push(entry);
+        }
+      }
+
+      const executionTime = performance.now() - startTime;
+      console.log(`[${BRAND_NAME}] Semantic search completed:`, {
+        resultsCount: results.length,
+        executionTime: Math.round(executionTime)
+      });
+
+      return this.prepareResult(true, {
+        results
+      });
+
+    } catch (error) {
+      console.error(`[${BRAND_NAME}] Semantic search failed:`, error);
+      return this.prepareResult(false, undefined, `Semantic search failed: ${getErrorMessage(error)}. Try semantic=false for keyword search.`);
+    }
+  }
+
+  /**
+   * Perform keyword/fuzzy search (original behavior)
+   */
+  private async performKeywordFuzzySearch(
+    searchParams: { query: string; limit: number; paths: string[]; includeContent: boolean; snippetLength: number },
+    startTime: number
+  ): Promise<ContentSearchResult> {
+    // Get all markdown files
+    let allFiles = this.plugin.app.vault.getMarkdownFiles();
+
+    // Filter by paths if specified
+    if (searchParams.paths.length > 0) {
+      const globPatterns = searchParams.paths
+        .filter(p => isGlobPattern(p))
+        .map(p => globToRegex(p));
+
+      const literalPaths = searchParams.paths
+        .filter(p => !isGlobPattern(p));
+
+      allFiles = allFiles.filter(file => {
+        const matchesLiteral = literalPaths.some(path => file.path.startsWith(path));
+        const matchesGlob = globPatterns.some(regex => regex.test(file.path));
+        return matchesLiteral || matchesGlob;
+      });
+    }
+
+    // Perform combined fuzzy + keyword search
+    const searchResults = await this.performCombinedSearch(
+      searchParams.query,
+      allFiles,
+      searchParams.limit,
+      searchParams.includeContent,
+      searchParams.snippetLength
+    );
+
+    const executionTime = performance.now() - startTime;
+
+    console.log(`[${BRAND_NAME}] Keyword search completed:`, {
+      resultsCount: searchResults.length,
+      executionTime: Math.round(executionTime)
+    });
+
+    return this.prepareResult(true, {
+      results: searchResults
+    });
   }
 
   /**
@@ -152,9 +281,14 @@ export class SearchContentMode extends BaseMode<ContentSearchParams, ContentSear
       allResults.push(...results);
     }
 
-    // Sort by score (higher is better) and take top results
-    allResults.sort((a, b) => b.score - a.score);
-    return allResults.slice(0, limit);
+    // Sort by internal score (higher is better) and take top results
+    allResults.sort((a, b) => ((b as any)._score || 0) - ((a as any)._score || 0));
+    // Strip internal score before returning
+    const finalResults = allResults.slice(0, limit).map(r => {
+      const { _score, ...rest } = r as any;
+      return rest;
+    });
+    return finalResults;
   }
 
   /**
@@ -170,7 +304,6 @@ export class SearchContentMode extends BaseMode<ContentSearchParams, ContentSear
   ): Promise<ContentSearchResult['results']> {
     const results: ContentSearchResult['results'] = [];
     let maxScore = 0;
-    let bestMethod: 'fuzzy' | 'keyword' | 'combined' = 'fuzzy';
     let contentSnippet = '';
 
     // 1. Fuzzy search on filename
@@ -182,7 +315,6 @@ export class SearchContentMode extends BaseMode<ContentSearchParams, ContentSear
       // Normalize fuzzy score (fuzzy scores are negative, closer to 0 is better)
       fuzzyScore = Math.max(0, Math.min(1, 1 + (fuzzyResult.score / 100)));
       maxScore = Math.max(maxScore, fuzzyScore);
-      bestMethod = 'fuzzy';
     }
 
     // 2. Keyword search in file content and extract frontmatter
@@ -209,7 +341,6 @@ export class SearchContentMode extends BaseMode<ContentSearchParams, ContentSear
 
           if (keywordScore > maxScore) {
             maxScore = keywordScore;
-            bestMethod = 'keyword';
           }
         }
       } catch (error) {
@@ -232,7 +363,6 @@ export class SearchContentMode extends BaseMode<ContentSearchParams, ContentSear
     if (fuzzyScore > 0 && keywordScore > 0) {
       // Weighted combination: 60% keyword + 40% fuzzy
       maxScore = (keywordScore * 0.6) + (fuzzyScore * 0.4);
-      bestMethod = 'combined';
     }
 
     // Only include files with matches
@@ -242,19 +372,16 @@ export class SearchContentMode extends BaseMode<ContentSearchParams, ContentSear
         contentSnippet = `File: ${file.path}`;
       }
 
-      results.push({
+      const entry: any = {
         filePath: file.path,
-        title: filename,
-        content: contentSnippet,
-        score: maxScore,
-        searchMethod: bestMethod,
-        frontmatter,
-        metadata: {
-          fileExtension: file.extension,
-          parentFolder: file.parent?.path || '',
-          modifiedTime: file.stat.mtime
-        }
-      });
+        content: contentSnippet
+      };
+      if (frontmatter && Object.keys(frontmatter).length > 0) {
+        entry.frontmatter = frontmatter;
+      }
+      // Store score internally for sorting, but don't include in output
+      (entry as any)._score = maxScore;
+      results.push(entry);
     }
 
     return results;
@@ -328,12 +455,15 @@ export class SearchContentMode extends BaseMode<ContentSearchParams, ContentSear
     const schema = {
       type: 'object',
       title: 'Content Search Params',
-      description: 'Search vault files using native Obsidian fuzzy search for file names combined with keyword search in content. Results are ranked by relevance.',
+      description: 'Search vault files. REQUIRED: Set "semantic" parameter to choose search mode.',
       properties: {
         query: {
           type: 'string',
-          description: 'Search query to find files and content. Uses fuzzy matching for file names and keyword search in content.',
-          examples: ['project planning', 'typescript', 'notes', 'README']
+          description: 'Search query to find files and content.'
+        },
+        semantic: {
+          type: 'boolean',
+          description: 'REQUIRED. true = AI-powered conceptual search using embeddings (best for finding related content, concepts, similar ideas). false = keyword/fuzzy search (best for exact text matches, file names).',
         },
         limit: {
           type: 'number',
@@ -344,23 +474,23 @@ export class SearchContentMode extends BaseMode<ContentSearchParams, ContentSear
         },
         includeContent: {
           type: 'boolean',
-          description: 'Whether to search within file content and include snippets (default: true)',
+          description: 'For keyword search only: include content snippets (default: true). Ignored for semantic search.',
           default: true
         },
         snippetLength: {
           type: 'number',
-          description: 'Length of content snippets around matches (default: 200)',
+          description: 'For keyword search only: length of content snippets (default: 200). Ignored for semantic search.',
           minimum: 50,
           maximum: 1000,
           default: 200
         },
         paths: {
           type: 'array',
-          description: 'Restrict search to specific folder paths. Supports glob patterns (e.g., "folder/*.md", "**/*.ts").',
+          description: 'Restrict search to specific folder paths. Supports glob patterns.',
           items: { type: 'string' }
         }
       },
-      required: ['query'],
+      required: ['query', 'semantic'],
       additionalProperties: false
     };
 
@@ -378,10 +508,6 @@ export class SearchContentMode extends BaseMode<ContentSearchParams, ContentSear
           type: 'boolean',
           description: 'Whether the search was successful'
         },
-        query: {
-          type: 'string',
-          description: 'Original search query'
-        },
         results: {
           type: 'array',
           description: 'Search results ranked by relevance',
@@ -392,54 +518,25 @@ export class SearchContentMode extends BaseMode<ContentSearchParams, ContentSear
                 type: 'string',
                 description: 'Path to the file'
               },
-              title: {
-                type: 'string',
-                description: 'File name without extension'
+              frontmatter: {
+                type: 'object',
+                description: 'File frontmatter if present',
+                additionalProperties: true
               },
               content: {
                 type: 'string',
-                description: 'Content snippet around the match'
-              },
-              score: {
-                type: 'number',
-                description: 'Relevance score (0-1, higher is better)'
-              },
-              searchMethod: {
-                type: 'string',
-                enum: ['fuzzy', 'keyword', 'combined'],
-                description: 'Search method that found this result'
-              },
-              frontmatter: {
-                type: 'object',
-                description: 'File frontmatter including tags, properties, and other YAML metadata',
-                additionalProperties: true
-              },
-              metadata: {
-                type: 'object',
-                properties: {
-                  fileExtension: { type: 'string' },
-                  parentFolder: { type: 'string' },
-                  modifiedTime: { type: 'number' }
-                }
+                description: 'Content snippet (keyword search only)'
               }
             },
-            required: ['filePath', 'title', 'content', 'score', 'searchMethod']
+            required: ['filePath']
           }
-        },
-        totalResults: {
-          type: 'number',
-          description: 'Total number of results found'
-        },
-        executionTime: {
-          type: 'number',
-          description: 'Search execution time in milliseconds'
         },
         error: {
           type: 'string',
-          description: 'Error message if search failed'
+          description: 'Error message if failed'
         }
       },
-      required: ['success', 'query', 'results', 'totalResults', 'executionTime'],
+      required: ['success', 'results'],
       additionalProperties: false
     };
   }

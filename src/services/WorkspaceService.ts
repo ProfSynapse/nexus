@@ -405,10 +405,28 @@ export class WorkspaceService {
 
   /**
    * Add session to workspace
+   * Ensures the workspace exists before creating session
    */
   async addSession(workspaceId: string, sessionData: Partial<SessionData>): Promise<SessionData> {
     // Use new adapter if available
     if (this.storageAdapter) {
+      // Ensure workspace exists before creating session (referential integrity)
+      const existingWorkspace = await this.getWorkspace(workspaceId);
+      if (!existingWorkspace) {
+        // For 'default' workspace, create it automatically
+        if (workspaceId === GLOBAL_WORKSPACE_ID) {
+          console.log(`[WorkspaceService] Default workspace not found, creating it`);
+          await this.createWorkspace({
+            id: GLOBAL_WORKSPACE_ID,
+            name: 'Default Workspace',
+            description: 'Default workspace for general use',
+            rootFolder: '/'
+          });
+        } else {
+          throw new Error(`Workspace ${workspaceId} not found. Create it first or use the default workspace.`);
+        }
+      }
+
       const hybridSession: Omit<HybridTypes.SessionMetadata, 'id' | 'workspaceId'> = {
         name: sessionData.name || 'Untitled Session',
         description: sessionData.description,
@@ -584,10 +602,24 @@ export class WorkspaceService {
 
   /**
    * Add memory trace to session
+   * Ensures the session exists before saving (creates it if needed)
    */
   async addMemoryTrace(workspaceId: string, sessionId: string, traceData: Partial<MemoryTrace>): Promise<MemoryTrace> {
     // Use new adapter if available
     if (this.storageAdapter) {
+      // Ensure session exists before saving trace (referential integrity)
+      const existingSession = await this.getSession(workspaceId, sessionId);
+      if (!existingSession) {
+        console.log(`[WorkspaceService] Session ${sessionId} not found, creating it in workspace ${workspaceId}`);
+        await this.addSession(workspaceId, {
+          id: sessionId,
+          name: `Session ${new Date().toLocaleString()}`,
+          description: `Auto-created session for trace storage`,
+          startTime: Date.now(),
+          isActive: true
+        });
+      }
+
       const hybridTrace: Omit<HybridTypes.MemoryTraceData, 'id' | 'workspaceId' | 'sessionId'> = {
         timestamp: traceData.timestamp || Date.now(),
         type: traceData.type,
@@ -670,10 +702,24 @@ export class WorkspaceService {
 
   /**
    * Add state to session
+   * Ensures the session exists before saving (creates it if needed)
    */
   async addState(workspaceId: string, sessionId: string, stateData: Partial<StateData>): Promise<StateData> {
     // Use new adapter if available
     if (this.storageAdapter) {
+      // Ensure session exists before saving state (referential integrity)
+      const existingSession = await this.getSession(workspaceId, sessionId);
+      if (!existingSession) {
+        console.log(`[WorkspaceService] Session ${sessionId} not found, creating it in workspace ${workspaceId}`);
+        await this.addSession(workspaceId, {
+          id: sessionId,
+          name: `Session ${new Date().toLocaleString()}`,
+          description: `Auto-created session for state storage`,
+          startTime: Date.now(),
+          isActive: true
+        });
+      }
+
       const hybridState: Omit<HybridTypes.StateData, 'id' | 'workspaceId' | 'sessionId'> = {
         name: stateData.name || 'Untitled State',
         created: stateData.created || Date.now(),

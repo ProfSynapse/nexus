@@ -56,7 +56,19 @@
  * ============================================================================
  */
 
-import type { Database } from 'sql.js';
+/**
+ * Minimal interface for SQLite database operations needed by SchemaMigrator.
+ * Works with both sql.js and @dao-xyz/sqlite3-vec WASM databases.
+ */
+export interface MigratableDatabase {
+  /** Execute SQL and return results */
+  exec(sql: string): { values: any[][] }[];
+  /** Run a statement (INSERT/UPDATE/DELETE) */
+  run(sql: string, params?: any[]): void;
+}
+
+// Alias for backward compatibility
+type Database = MigratableDatabase;
 
 export const CURRENT_SCHEMA_VERSION = 3;
 

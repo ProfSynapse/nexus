@@ -13,6 +13,7 @@ import { CostTrackingService } from './CostTrackingService';
 import { ConversationQueryService } from './ConversationQueryService';
 import { ConversationManager } from './ConversationManager';
 import { StreamingResponseService } from './StreamingResponseService';
+import { ChatTraceService } from './ChatTraceService';
 
 export interface ChatServiceOptions {
   maxToolIterations?: number;
@@ -25,6 +26,7 @@ export interface ChatServiceDependencies {
   llmService: any;
   vaultName: string;
   mcpConnector: any; // Required - MCPConnector for tool execution
+  chatTraceService?: ChatTraceService; // Optional - for creating memory traces
 }
 
 export class ChatService {
@@ -33,6 +35,7 @@ export class ChatService {
   private conversationQueryService: ConversationQueryService;
   private conversationManager: ConversationManager;
   private streamingResponseService: StreamingResponseService;
+  private chatTraceService?: ChatTraceService;
   private currentProvider?: string; // Track current provider for context building
   private currentSessionId?: string; // Track current session ID for tool execution
   private isInitialized: boolean = false;
@@ -65,6 +68,16 @@ export class ChatService {
       },
       dependencies.vaultName
     );
+
+    // Optional trace service for memory traces
+    this.chatTraceService = dependencies.chatTraceService;
+  }
+
+  /**
+   * Set the chat trace service (can be set after construction)
+   */
+  setChatTraceService(service: ChatTraceService): void {
+    this.chatTraceService = service;
   }
 
   /** Set tool event callback for live UI updates */
@@ -119,19 +132,42 @@ export class ChatService {
         workspaceId: options?.workspaceId
       });
 
+      const sessionId = conversation.metadata?.chatSettings?.sessionId;
+      const workspaceId = options?.workspaceId || 'default';
+
+      // Initialize trace session if we have a workspace
+      if (this.chatTraceService && workspaceId) {
+        try {
+          await this.chatTraceService.initializeSession(conversation.id, workspaceId, sessionId);
+          await this.chatTraceService.traceConversationEvent(conversation.id, 'started', title);
+        } catch (error) {
+          console.warn('[ChatService] Failed to initialize trace session:', error);
+        }
+      }
+
       // If there's an initial message, get AI response
       if (initialMessage?.trim()) {
+        // Trace user message
+        if (this.chatTraceService) {
+          await this.chatTraceService.traceUserMessage(conversation.id, 'initial', initialMessage);
+        }
+
         // Generate streaming response
         let completeResponse = '';
         for await (const chunk of this.generateResponseStreaming(conversation.id, initialMessage, options)) {
           completeResponse += chunk.chunk;
+        }
+
+        // Trace assistant response
+        if (this.chatTraceService && completeResponse) {
+          await this.chatTraceService.traceAssistantMessage(conversation.id, 'initial_response', completeResponse);
         }
       }
 
       return {
         success: true,
         conversationId: conversation.id,
-        sessionId: conversation.metadata?.chatSettings?.sessionId
+        sessionId
       };
     } catch (error) {
       console.error('[ChatService] Failed to create conversation:', error);

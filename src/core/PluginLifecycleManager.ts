@@ -8,7 +8,7 @@
  * Used by main.ts to manage the plugin's lifecycle phases in a structured way.
  */
 
-import { Plugin, Notice } from 'obsidian';
+import { Plugin, Notice, Platform } from 'obsidian';
 import { ServiceManager } from './ServiceManager';
 import { Settings } from '../settings';
 import { UpdateManager } from '../utils/UpdateManager';
@@ -17,6 +17,7 @@ import { MaintenanceCommandManager } from './commands/MaintenanceCommandManager'
 import { ChatUIManager } from './ui/ChatUIManager';
 import { BackgroundProcessor } from './background/BackgroundProcessor';
 import { SettingsTabManager } from './settings/SettingsTabManager';
+import { EmbeddingManager } from '../services/embeddings/EmbeddingManager';
 import type { ServiceCreationContext } from './services/ServiceDefinitions';
 
 // Type-only import to avoid bundling Node.js dependencies on mobile
@@ -43,6 +44,7 @@ export class PluginLifecycleManager {
     private chatUIManager: ChatUIManager;
     private backgroundProcessor: BackgroundProcessor;
     private settingsTabManager: SettingsTabManager;
+    private embeddingManager: EmbeddingManager | null = null;
 
     constructor(config: PluginLifecycleConfig) {
         this.config = config;
@@ -177,8 +179,46 @@ export class PluginLifecycleManager {
                         console.warn('[PluginLifecycleManager] ChatService initialization failed:', error);
                     }
 
-                    // Register chat UI components AFTER ChatService is initialized
-                    await this.chatUIManager.registerChatUI();
+	                    // Register chat UI components AFTER ChatService is initialized
+	                    await this.chatUIManager.registerChatUI();
+
+	                    // Initialize embedding system (desktop only) after 3-second delay
+	                    if (!Platform.isMobile) {
+	                        setTimeout(async () => {
+	                            try {
+	                                const storageAdapter = await this.serviceRegistrar.getService<any>('hybridStorageAdapter');
+	                                if (storageAdapter && typeof storageAdapter.waitForReady === 'function') {
+	                                    const ready = await storageAdapter.waitForReady();
+	                                    if (!ready) {
+	                                        console.warn('[PluginLifecycleManager] HybridStorageAdapter not ready, skipping embedding initialization');
+	                                        return;
+	                                    }
+	                                }
+
+	                                if (storageAdapter && storageAdapter.cache) {
+	                                    this.embeddingManager = new EmbeddingManager(
+	                                        this.config.app,
+	                                        this.config.plugin,
+	                                        storageAdapter.cache
+	                                    );
+	                                    await this.embeddingManager.initialize();
+	                                    // Expose on plugin for lazy access by agents
+	                                    (this.config.plugin as any).embeddingManager = this.embeddingManager;
+
+	                                    // Wire embedding service into ChatTraceService so new traces get embedded
+	                                    const embeddingService = this.embeddingManager.getService();
+	                                    if (embeddingService) {
+	                                        const chatTraceService = await this.serviceRegistrar.getService<any>('chatTraceService');
+	                                        if (chatTraceService && typeof chatTraceService.setEmbeddingService === 'function') {
+	                                            chatTraceService.setEmbeddingService(embeddingService);
+	                                        }
+	                                    }
+	                                }
+	                            } catch (error) {
+	                                console.warn('[PluginLifecycleManager] Embedding system initialization failed:', error);
+	                            }
+	                        }, 3000);
+	                    }
                 } catch (error) {
                     console.error('[PluginLifecycleManager] Background service initialization failed:', error);
                 }
@@ -259,6 +299,15 @@ export class PluginLifecycleManager {
      */
     async shutdown(): Promise<void> {
         try {
+            // Shutdown embedding system first (before database closes)
+            if (this.embeddingManager) {
+                try {
+                    await this.embeddingManager.shutdown();
+                } catch (error) {
+                    console.warn('[PluginLifecycleManager] Error shutting down embedding system:', error);
+                }
+            }
+
             // Save processed files state before cleanup
             const stateManager = this.config.serviceManager?.getServiceIfReady('stateManager');
             if (stateManager && typeof (stateManager as any).saveState === 'function') {

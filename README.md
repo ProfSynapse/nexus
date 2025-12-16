@@ -17,7 +17,8 @@ Nexus turns your Obsidian vault into an MCP-enabled workspace. It exposes safe, 
 
 - **MCP server for Obsidian** – One server per vault with vault-aware identifiers.
 - **Native Chat View** – No external client required; stream tool calls, branch conversations, and manage models from inside Obsidian.
-- **Workspace Memory System** – Sessions, traces, and state snapshots stored in your vault (`.workspaces`, `.conversations`).
+- **Workspace Memory System** – Sessions, traces, and state snapshots stored in your vault under `.nexus/` (sync-friendly JSONL + local SQLite cache).
+- **Semantic Search (Embeddings)** – Desktop-only local embeddings + sqlite-vec vector search (via `vaultLibrarian.searchContent` with `semantic: true`).
 - **Full Vault Operations** – Create/read/update/delete notes, folders, frontmatter, and batch content edits.
 - **Agent-Mode Architecture** – Domain-specific agents with typed modes for predictable tool calling.
 - **Multi-vault support** – Independent MCP instances per vault, keyed by sanitized vault name.
@@ -86,9 +87,17 @@ Add/merge the Nexus server entry into your MCP client config (Claude Desktop use
 
 ## Workspace Memory at a Glance
 
-- Everything is local: workspaces, sessions, traces, and snapshots live under `.workspaces/` and `.conversations/`.
+- Everything is local: workspaces, sessions, traces, and snapshots live under `.nexus/` (JSONL source-of-truth) with a local SQLite cache at `.nexus/cache.db`.
 - Each tool call is tagged to a workspace and session automatically; you can create/load via tools or the UI.
-- No external vector DB is required; Nexus uses JSON storage with search utilities built in.
+- No external vector DB is required; embeddings and semantic search use `.nexus/cache.db` (SQLite + sqlite-vec).
+
+---
+
+## Semantic Search (Embeddings)
+
+- Use `vaultLibrarian.searchContent` with `semantic: true` for meaning-based search; use `semantic: false` for keyword/fuzzy snippets.
+- On desktop, Nexus indexes notes in the background and stores vectors in `.nexus/cache.db` (watch the status bar for progress; click to pause/resume).
+- First run may require internet access to download the local embedding model; it is cached locally afterwards.
 
 ---
 
@@ -105,6 +114,7 @@ Add/merge the Nexus server entry into your MCP client config (Claude Desktop use
 - MCP server binds locally; no remote listeners are opened.
 - All file operations stay inside the active vault.
 - Network calls happen only when you use remote LLM providers (per provider API keys) or local providers running on `localhost`.
+- Embeddings download the local model once (desktop only) and then run fully on-device; the model is cached locally.
 
 ---
 

@@ -1,6 +1,8 @@
 import esbuild from "esbuild";
 import process from "process";
 import builtins from "builtin-modules";
+import { copyFileSync, existsSync, mkdirSync } from "fs";
+import { dirname, join } from "path";
 
 const banner =
 `/*
@@ -13,6 +15,25 @@ const prod = process.argv[2] === "production";
 
 // Node.js built-ins with 'node:' prefix for packages that use modern syntax
 const nodeBuiltinsWithPrefix = builtins.map(mod => `node:${mod}`);
+
+// Copy WASM files plugin
+const copyWasmPlugin = {
+  name: 'copy-wasm',
+  setup(build) {
+    build.onEnd(() => {
+      // Copy sqlite3 WASM file to output directory
+      const wasmSrc = 'node_modules/@dao-xyz/sqlite3-vec/sqlite-wasm/jswasm/sqlite3.wasm';
+      const wasmDest = 'sqlite3.wasm';
+      if (existsSync(wasmSrc)) {
+        copyFileSync(wasmSrc, wasmDest);
+        console.log('[copy-wasm] Copied sqlite3.wasm');
+      }
+
+      // Note: ONNX WASM files NOT needed - transformers.js loads from CDN via iframe
+      // This avoids all Electron/Node.js bundling conflicts
+    });
+  }
+};
 
 const context = await esbuild.context({
   banner: {
@@ -34,9 +55,11 @@ const context = await esbuild.context({
     // Node.js built-ins (both with and without node: prefix)
     ...builtins,
     ...nodeBuiltinsWithPrefix,
+    "sharp",             // Image processing - not needed for embeddings
   ],
   loader: {
     ".node": "file",
+    ".wasm": "file",
   },
   format: "cjs",
   target: "es2020",
@@ -45,7 +68,19 @@ const context = await esbuild.context({
   treeShaking: true,
   outfile: "main.js",
   platform: "node",
-  mainFields: ["browser", "module", "main"]
+  mainFields: ["browser", "module", "main"],
+  plugins: [copyWasmPlugin],
+  alias: {
+    // Force browser/WASM version of sqlite3-vec (avoids native better-sqlite3)
+    // Use the raw WASM module to get access to sqlite3.capi for serialize/deserialize
+    "@dao-xyz/sqlite3-vec/wasm": "./node_modules/@dao-xyz/sqlite3-vec/index.mjs",
+    "@dao-xyz/sqlite3-vec": "./node_modules/@dao-xyz/sqlite3-vec/dist/unified-browser.js",
+    // Note: @xenova/transformers is NOT bundled - loaded via iframe from CDN
+    // This avoids all Electron/Node.js environment conflicts
+  },
+  define: {
+    'process.env.NODE_ENV': prod ? '"production"' : '"development"',
+  },
 });
 
 if (prod) {

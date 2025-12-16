@@ -17,24 +17,12 @@
 import { TFile, TFolder } from 'obsidian';
 
 /**
- * Directory item structure for search results
+ * Directory item structure for search results (lean format)
  */
 export interface DirectoryItem {
   path: string;
-  name: string;
   type: 'file' | 'folder';
-  score: number;
-  searchMethod: string;
-  snippet?: string;
-  metadata: {
-    fileType?: string;
-    created?: number;
-    modified?: number;
-    size?: number;
-    depth?: number;
-    fileCount?: number;
-    folderCount?: number;
-  };
+  snippet?: string;  // For files only
 }
 
 /**
@@ -73,26 +61,17 @@ export class SearchResultFormatter {
       const item = match.item;
       const isFile = item instanceof TFile;
 
-      let snippet = '';
-      if (isFile && includeContent) {
-        snippet = await this.extractSnippet(item as TFile);
-      }
-
       const result: DirectoryItem = {
         path: item.path,
-        name: isFile ? (item as TFile).basename : item.name,
-        type: isFile ? 'file' : 'folder',
-        score: match.score,
-        searchMethod: `fuzzy_${match.matchType}`,
-        snippet: snippet || undefined,
-        metadata: {}
+        type: isFile ? 'file' : 'folder'
       };
 
-      // Add type-specific metadata
-      if (isFile) {
-        result.metadata = this.formatFileMetadata(item as TFile);
-      } else {
-        result.metadata = this.formatFolderMetadata(item as TFolder);
+      // Add snippet for files if content requested
+      if (isFile && includeContent) {
+        const snippet = await this.extractSnippet(item as TFile);
+        if (snippet) {
+          result.snippet = snippet;
+        }
       }
 
       results.push(result);
@@ -119,34 +98,4 @@ export class SearchResultFormatter {
     }
   }
 
-  /**
-   * Format file metadata
-   * @param file The file to format metadata for
-   * @returns File metadata object
-   */
-  private formatFileMetadata(file: TFile): DirectoryItem['metadata'] {
-    return {
-      fileType: file.extension,
-      created: file.stat.ctime,
-      modified: file.stat.mtime,
-      size: file.stat.size
-    };
-  }
-
-  /**
-   * Format folder metadata
-   * @param folder The folder to format metadata for
-   * @returns Folder metadata object
-   */
-  private formatFolderMetadata(folder: TFolder): DirectoryItem['metadata'] {
-    const children = folder.children || [];
-    const fileCount = children.filter(child => child instanceof TFile).length;
-    const folderCount = children.filter(child => child instanceof TFolder).length;
-
-    return {
-      depth: folder.path.split('/').filter(p => p.length > 0).length,
-      fileCount: fileCount,
-      folderCount: folderCount
-    };
-  }
 }

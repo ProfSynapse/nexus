@@ -11,6 +11,7 @@ import { MemorySettings, DEFAULT_MEMORY_SETTINGS } from '../../types';
 import { MemoryService } from "../memoryManager/services/MemoryService";
 import { WorkspaceService } from '../../services/WorkspaceService';
 import { IStorageAdapter } from '../../database/interfaces/IStorageAdapter';
+import { EmbeddingService } from '../../services/embeddings/EmbeddingService';
 import { getErrorMessage } from '../../utils/errorUtils';
 import { getNexusPlugin } from '../../utils/pluginLocator';
 
@@ -23,6 +24,8 @@ export class VaultLibrarianAgent extends BaseAgent {
   private memoryService: MemoryService | null = null;
   private workspaceService: WorkspaceService | null = null;
   private storageAdapter: IStorageAdapter | null = null;
+  private embeddingService: EmbeddingService | null = null;
+  private searchContentMode: SearchContentMode | null = null;
   private settings: MemorySettings;
   
   /**
@@ -77,6 +80,10 @@ export class VaultLibrarianAgent extends BaseAgent {
               if (!this.storageAdapter) {
                 this.storageAdapter = pluginAny.serviceContainer.getIfReady('hybridStorageAdapter');
               }
+              // Get EmbeddingService for semantic search
+              if (!this.embeddingService) {
+                this.embeddingService = pluginAny.serviceContainer.getIfReady('embeddingService');
+              }
             }
           }
         }
@@ -95,10 +102,15 @@ export class VaultLibrarianAgent extends BaseAgent {
       console.warn('[VaultLibrarian] Failed to get plugin reference:', error);
     }
 
-    // Register ContentSearchMode (fuzzy + keyword search using native Obsidian APIs)
-    this.registerMode(new SearchContentMode(
+    // Register ContentSearchMode (fuzzy + keyword + semantic search)
+    this.searchContentMode = new SearchContentMode(
       pluginRef || ({ app } as any) // Fallback to minimal plugin interface if not found
-    ));
+    );
+    // Wire up EmbeddingService for semantic search if available
+    if (this.embeddingService) {
+      this.searchContentMode.setEmbeddingService(this.embeddingService);
+    }
+    this.registerMode(this.searchContentMode);
 
     // Register focused search modes with enhanced validation and service integration
     this.registerMode(new SearchDirectoryMode(
@@ -118,7 +130,8 @@ export class VaultLibrarianAgent extends BaseAgent {
     this.registerMode(new BatchMode(
       pluginRef || ({ app } as any), // Fallback to minimal plugin interface if not found
       this.memoryService || undefined,
-      this.workspaceService || undefined
+      this.workspaceService || undefined,
+      this.storageAdapter || undefined
     ));
     
     

@@ -201,14 +201,16 @@ export class SearchMemoryMode extends BaseMode<SearchMemoryParams, SearchMemoryR
             context = {};
           }
           
-          return {
-            content: trace.content || '',
-            tool: trace.metadata?.tool || '',
-            context: context,
-            score: result.score,
-            id: trace.id,
-            timestamp: trace.timestamp
+          const entry: any = {
+            content: trace.content || ''
           };
+          if (trace.metadata?.tool) {
+            entry.tool = trace.metadata.tool;
+          }
+          if (context && Object.keys(context).length > 0) {
+            entry.context = context;
+          }
+          return entry;
         } catch (error) {
           console.warn('[SearchMemoryMode] Failed to simplify result:', error);
           return null;
@@ -219,9 +221,7 @@ export class SearchMemoryMode extends BaseMode<SearchMemoryParams, SearchMemoryR
       const finalResults = simplifiedResults.filter(r => r !== null);
 
       const result = this.prepareResult(true, {
-        results: finalResults,
-        total: finalResults.length,
-        hasMore: false
+        results: finalResults
       });
 
       // Generate nudges based on memory search results
@@ -339,79 +339,34 @@ export class SearchMemoryMode extends BaseMode<SearchMemoryParams, SearchMemoryR
           type: 'boolean',
           description: 'Whether the search was successful'
         },
-        query: {
-          type: 'string',
-          description: 'The search query'
-        },
         results: {
           type: 'array',
+          description: 'Memory traces ranked by relevance',
           items: {
             type: 'object',
             properties: {
-              type: {
+              content: {
                 type: 'string',
-                enum: ['trace', 'toolCall', 'session', 'state', 'workspace'],
-                description: 'Type of memory result'
+                description: 'The trace content'
               },
-              id: {
+              tool: {
                 type: 'string',
-                description: 'Unique identifier of the memory item'
-              },
-              highlight: {
-                type: 'string',
-                description: 'Relevant snippet from the memory item'
-              },
-              metadata: {
-                type: 'object',
-                description: 'Metadata about the memory item'
+                description: 'Tool that created this trace (if applicable)'
               },
               context: {
                 type: 'object',
-                properties: {
-                  before: {
-                    type: 'string',
-                    description: 'Context before the match'
-                  },
-                  match: {
-                    type: 'string',
-                    description: 'The matching content'
-                  },
-                  after: {
-                    type: 'string',
-                    description: 'Context after the match'
-                  }
-                }
-              },
-              score: {
-                type: 'number',
-                description: 'Search relevance score'
+                description: 'Additional context from the trace'
               }
-            }
+            },
+            required: ['content']
           }
-        },
-        totalResults: {
-          type: 'number',
-          description: 'Total number of results found'
-        },
-        searchCapabilities: {
-          type: 'object',
-          properties: {
-            semanticSearch: { type: 'boolean' },
-            workspaceFiltering: { type: 'boolean' },
-            memorySearch: { type: 'boolean' },
-            hybridSearch: { type: 'boolean' }
-          }
-        },
-        executionTime: {
-          type: 'number',
-          description: 'Search execution time in milliseconds'
         },
         error: {
           type: 'string',
-          description: 'Error message if search failed'
+          description: 'Error message if failed'
         }
       },
-      required: ['success', 'query', 'results', 'totalResults', 'searchCapabilities']
+      required: ['success', 'results']
     };
   }
 

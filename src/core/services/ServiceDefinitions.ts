@@ -341,24 +341,43 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
         }
     },
 
+    // Chat trace service for creating memory traces from conversations
+    {
+        name: 'chatTraceService',
+        dependencies: ['workspaceService'],
+        create: async (context) => {
+            const { ChatTraceService } = await import('../../services/chat/ChatTraceService');
+            const { WorkspaceService } = await import('../../services/WorkspaceService');
+
+            const workspaceService = await context.serviceManager.getService('workspaceService') as InstanceType<typeof WorkspaceService>;
+
+            return new ChatTraceService({
+                workspaceService
+            });
+        }
+    },
+
     // Chat service with direct agent integration
-    // Now uses DirectToolExecutor instead of MCPConnector for tool execution
+    // Uses DirectToolExecutor for tool execution and ChatTraceService for memory traces
     {
         name: 'chatService',
-        dependencies: ['conversationService', 'llmService', 'directToolExecutor'],
+        dependencies: ['conversationService', 'llmService', 'directToolExecutor', 'chatTraceService'],
         create: async (context) => {
             const { ChatService } = await import('../../services/chat/ChatService');
+            const { ChatTraceService } = await import('../../services/chat/ChatTraceService');
 
             const conversationService = await context.serviceManager.getService('conversationService');
             const llmService = await context.serviceManager.getService('llmService');
             const directToolExecutor = await context.serviceManager.getService('directToolExecutor');
+            const chatTraceService = await context.serviceManager.getService('chatTraceService') as InstanceType<typeof ChatTraceService> | null;
 
             const chatService = new ChatService(
                 {
                     conversationService,
                     llmService,
                     vaultName: context.app.vault.getName(),
-                    mcpConnector: context.connector // Keep for backward compatibility, but not used for tool execution
+                    mcpConnector: context.connector, // Keep for backward compatibility, but not used for tool execution
+                    chatTraceService: chatTraceService || undefined
                 },
                 {
                     maxToolIterations: 10,
