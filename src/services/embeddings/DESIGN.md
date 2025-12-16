@@ -1029,7 +1029,309 @@ async onload() {
 
 ---
 
-## 9. Summary
+## 9. Edge Cases & Error Handling
+
+### 9.1 Note Content Edge Cases
+
+| Edge Case | Behavior | Implementation |
+|-----------|----------|----------------|
+| **Empty notes** | Skip embedding | Check `content.trim().length === 0` before processing |
+| **Very large notes** (>100KB) | Truncate to model limit | MiniLM max tokens ~512; truncate to ~2000 chars |
+| **Binary/non-text** | Skip | Only process `.md` files |
+| **Special characters** | Handle gracefully | Model handles Unicode; normalize whitespace |
+| **Frontmatter only** | Skip or embed frontmatter | Strip YAML frontmatter, embed remaining content |
+| **Embedded images/links** | Embed text portions | Strip `![[...]]` and `[[...]]` syntax, keep link text |
+
+```typescript
+function preprocessContent(content: string): string | null {
+  // Strip frontmatter
+  const withoutFrontmatter = content.replace(/^---[\s\S]*?---\n?/, '');
+
+  // Strip image embeds, keep link text
+  const withoutEmbeds = withoutFrontmatter
+    .replace(/!\[\[.*?\]\]/g, '')           // Obsidian image embeds
+    .replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, '$2')  // [[path|alias]] → alias
+    .replace(/\[\[([^\]]+)\]\]/g, '$1');    // [[path]] → path
+
+  // Normalize whitespace
+  const normalized = withoutEmbeds.replace(/\s+/g, ' ').trim();
+
+  // Skip if too short
+  if (normalized.length < 10) return null;
+
+  // Truncate if too long (model context limit)
+  const MAX_CHARS = 2000;
+  return normalized.length > MAX_CHARS
+    ? normalized.slice(0, MAX_CHARS)
+    : normalized;
+}
+```
+
+### 9.2 File System Edge Cases
+
+| Edge Case | Behavior | Implementation |
+|-----------|----------|----------------|
+| **Rename during indexing** | Handle gracefully | Use `vault.on('rename')` to update metadata |
+| **Delete during indexing** | Skip missing files | Catch file-not-found errors, remove from queue |
+| **Symlinks** | Follow or skip | Obsidian resolves symlinks; treat as normal files |
+| **Long file paths** | Handle gracefully | SQLite supports long TEXT values |
+| **Special chars in path** | Store as-is | Use parameterized queries, avoid string escaping |
+| **Vault moved** | Paths remain valid | Paths are relative to vault root |
+
+```typescript
+async embedNote(notePath: string): Promise<void> {
+  try {
+    const file = this.app.vault.getAbstractFileByPath(notePath);
+    if (!file || !(file instanceof TFile)) {
+      // File was deleted or moved - remove stale embedding
+      await this.removeEmbedding(notePath);
+      return;
+    }
+    // ... continue with embedding
+  } catch (error) {
+    if (error.message.includes('ENOENT') || error.message.includes('not found')) {
+      await this.removeEmbedding(notePath);
+      return;
+    }
+    throw error;
+  }
+}
+```
+
+### 9.3 Database Edge Cases
+
+| Edge Case | Behavior | Implementation |
+|-----------|----------|----------------|
+| **Corrupted database** | Rebuild from scratch | Delete `.nexus/cache.db`, re-index all notes |
+| **Database locked** | Retry with backoff | Single-writer in Obsidian, shouldn't happen |
+| **Disk full** | Fail gracefully, notify user | Catch write errors, pause indexing |
+| **Schema mismatch** | Migrate or rebuild | Check `user_version`, run migrations |
+| **Missing tables** | Create on startup | Use `CREATE TABLE IF NOT EXISTS` |
+| **Orphaned embeddings** | Clean up | Periodic garbage collection |
+
+```typescript
+class EmbeddingDatabaseManager {
+  private readonly SCHEMA_VERSION = 1;
+
+  async initialize(): Promise<void> {
+    // Check schema version
+    const result = this.db.exec('PRAGMA user_version');
+    const version = result[0]?.user_version ?? 0;
+
+    if (version === 0) {
+      // Fresh database - create tables
+      await this.createTables();
+      this.db.exec(`PRAGMA user_version = ${this.SCHEMA_VERSION}`);
+    } else if (version < this.SCHEMA_VERSION) {
+      // Run migrations
+      await this.migrate(version, this.SCHEMA_VERSION);
+    } else if (version > this.SCHEMA_VERSION) {
+      // Database from newer version - rebuild
+      console.warn('Database from newer version, rebuilding...');
+      await this.rebuild();
+    }
+  }
+
+  async cleanOrphanedEmbeddings(): Promise<number> {
+    // Find embeddings for notes that no longer exist
+    const orphans = this.db.exec(`
+      SELECT em.rowid, em.notePath
+      FROM embedding_metadata em
+    `);
+
+    let removed = 0;
+    for (const row of orphans) {
+      const exists = this.app.vault.getAbstractFileByPath(row.notePath);
+      if (!exists) {
+        this.db.run('DELETE FROM note_embeddings WHERE rowid = ?', [row.rowid]);
+        this.db.run('DELETE FROM embedding_metadata WHERE rowid = ?', [row.rowid]);
+        removed++;
+      }
+    }
+    return removed;
+  }
+}
+```
+
+### 9.4 Network & Model Edge Cases
+
+| Edge Case | Behavior | Implementation |
+|-----------|----------|----------------|
+| **CDN unavailable** | Retry with backoff, then fail | 3 retries, notify user |
+| **Partial model download** | Transformers.js handles | Cache management built into library |
+| **Model cache corrupted** | Clear and re-download | Delete HuggingFace cache dir |
+| **Different model version** | Re-embed all notes | Track model version in metadata |
+| **Offline after first load** | Works offline | Model cached locally |
+
+```typescript
+async loadModel(retries = 3): Promise<void> {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      await this.initialize();
+      return;
+    } catch (error) {
+      if (attempt === retries) {
+        new Notice(`Failed to load embedding model: ${error.message}`, 10000);
+        throw error;
+      }
+      // Exponential backoff: 2s, 4s, 8s
+      await new Promise(r => setTimeout(r, 2000 * Math.pow(2, attempt - 1)));
+    }
+  }
+}
+
+// Check model version on startup
+async checkModelVersion(): Promise<boolean> {
+  const stored = this.db.exec('SELECT model FROM embedding_metadata LIMIT 1');
+  if (stored.length && stored[0].model !== this.MODEL_ID) {
+    // Model changed - need to re-embed everything
+    console.log(`Model changed from ${stored[0].model} to ${this.MODEL_ID}`);
+    return false; // Trigger full re-index
+  }
+  return true;
+}
+```
+
+### 9.5 Memory & Performance Edge Cases
+
+| Edge Case | Behavior | Implementation |
+|-----------|----------|----------------|
+| **Large vault (10k+ notes)** | Batch processing | One note at a time, yield to UI |
+| **Low memory** | Reduce batch size | Monitor memory if possible |
+| **Very slow device** | Longer timeouts | Adaptive yield intervals |
+| **User closes Obsidian mid-index** | Resume on restart | Content hash check resumes |
+| **Many concurrent edits** | Debounce | 2s debounce per file |
+
+```typescript
+// Adaptive performance based on device
+class AdaptiveIndexer {
+  private yieldInterval = 50; // Start conservative
+
+  async adjustPerformance(): Promise<void> {
+    // Measure time for a test embedding
+    const start = performance.now();
+    await this.embeddingService.generateEmbedding('test content');
+    const elapsed = performance.now() - start;
+
+    // Adjust yield interval based on embedding speed
+    if (elapsed < 100) {
+      this.yieldInterval = 10;  // Fast device
+    } else if (elapsed < 500) {
+      this.yieldInterval = 50;  // Normal device
+    } else {
+      this.yieldInterval = 100; // Slow device
+    }
+  }
+}
+```
+
+### 9.6 Sync & Multi-Device Edge Cases
+
+| Edge Case | Behavior | Implementation |
+|-----------|----------|----------------|
+| **Two devices open same vault** | Last write wins | No locking, accept data loss |
+| **Sync conflict on cache.db** | Use latest, re-index stale | Content hash detects changes |
+| **Mobile opens desktop-indexed vault** | Use existing embeddings | Read-only on mobile |
+| **Desktop opens mobile-edited notes** | Re-embed changed notes | Content hash triggers update |
+| **Sync deletes cache.db** | Rebuild | Normal startup behavior |
+
+```typescript
+// On startup, verify embeddings match current content
+async verifyEmbeddings(): Promise<string[]> {
+  const stale: string[] = [];
+  const allNotes = this.app.vault.getMarkdownFiles();
+
+  for (const note of allNotes) {
+    const content = await this.app.vault.cachedRead(note);
+    const currentHash = this.hashContent(content);
+
+    const stored = this.db.exec(
+      'SELECT contentHash FROM embedding_metadata WHERE notePath = ?',
+      [note.path]
+    );
+
+    if (!stored.length || stored[0].contentHash !== currentHash) {
+      stale.push(note.path);
+    }
+  }
+
+  return stale; // Notes needing re-embedding
+}
+```
+
+### 9.7 User Behavior Edge Cases
+
+| Edge Case | Behavior | Implementation |
+|-----------|----------|----------------|
+| **Disable plugin mid-index** | Stop gracefully | AbortController, save progress |
+| **Delete .nexus folder** | Rebuild from scratch | Normal startup creates folder/tables |
+| **Change settings mid-index** | Apply after current batch | Check settings between notes |
+| **Rapid enable/disable** | Debounce | Don't restart index within 5s |
+| **Exclude folders from embedding** | Respect settings | Filter by path prefix |
+
+```typescript
+// Respect folder exclusions
+filterExcludedNotes(notes: TFile[]): TFile[] {
+  const excludedFolders = this.settings.excludeFolders || [];
+  return notes.filter(note => {
+    return !excludedFolders.some(folder =>
+      note.path.startsWith(folder + '/')
+    );
+  });
+}
+
+// Graceful shutdown
+async onunload(): Promise<void> {
+  // Stop indexing gracefully
+  this.indexingQueue?.cancel();
+
+  // Wait for current operation to complete (max 5s)
+  const timeout = Date.now() + 5000;
+  while (this.indexingQueue?.isProcessing && Date.now() < timeout) {
+    await new Promise(r => setTimeout(r, 100));
+  }
+
+  // Final save
+  await this.db?.save();
+}
+```
+
+### 9.8 Error Recovery Summary
+
+```typescript
+// Centralized error handling
+class EmbeddingErrorHandler {
+  async handleError(error: Error, context: string): Promise<'retry' | 'skip' | 'abort'> {
+    console.error(`[Embeddings] Error in ${context}:`, error);
+
+    // Categorize error
+    if (error.message.includes('ENOENT') || error.message.includes('not found')) {
+      return 'skip'; // File gone, move on
+    }
+
+    if (error.message.includes('ENOSPC') || error.message.includes('disk full')) {
+      new Notice('Disk full - pausing embedding indexing', 10000);
+      return 'abort';
+    }
+
+    if (error.message.includes('network') || error.message.includes('fetch')) {
+      return 'retry'; // Transient network error
+    }
+
+    if (error.message.includes('memory') || error.message.includes('OOM')) {
+      new Notice('Low memory - pausing embedding indexing', 10000);
+      return 'abort';
+    }
+
+    // Unknown error - log and skip
+    return 'skip';
+  }
+}
+```
+
+---
+
+## 10. Summary
 
 **Approach:**
 1. Replace `sql.js` with `@dao-xyz/sqlite3-vec` (single database)
