@@ -47,19 +47,18 @@ Replace `sql.js` with `@dao-xyz/sqlite3-vec` to get both standard SQLite feature
 | **Atomic** | Transactions span embeddings and other data |
 | **No sync issues** | Can't have embedding DB out of sync with main DB |
 
-### 1.3 FTS4/FTS5 Support Confirmed
+### 1.3 FTS5 Support
 
-`@dao-xyz/sqlite3-vec` **supports FTS4 and FTS5** because it wraps the official `@sqlite.org/sqlite-wasm` build, which includes these extensions by default.
+`@dao-xyz/sqlite3-vec` **supports FTS5** (wraps official `@sqlite.org/sqlite-wasm`).
 
-**Recommendation:** Use **FTS5** over FTS4 for new implementations - better query syntax and performance.
+**Use FTS5 for all full-text search** - better query syntax, BM25 ranking, and performance.
 
 ```typescript
 import { createDatabase } from '@dao-xyz/sqlite3-vec';
 
 const db = await createDatabase(':memory:');
 
-// Both work!
-db.exec(`CREATE VIRTUAL TABLE text_search USING fts5(content)`);  // Recommended
+db.exec(`CREATE VIRTUAL TABLE text_search USING fts5(content)`);
 db.exec(`CREATE VIRTUAL TABLE vectors USING vec0(embedding float[384])`);
 ```
 
