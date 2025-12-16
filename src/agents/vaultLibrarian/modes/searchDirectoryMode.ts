@@ -45,21 +45,9 @@ export interface SearchDirectoryParams extends CommonParameters {
   workspaceId?: string;
 }
 
-interface SearchModeCapabilities {
-  semanticSearch: boolean;
-  workspaceFiltering: boolean;
-  memorySearch: boolean;
-  hybridSearch: boolean;
-}
-
 export interface SearchDirectoryResult {
   success: boolean;
-  query: string;
-  searchedPaths?: string[];
   results: DirectoryItem[];
-  totalResults: number;
-  executionTime?: number;
-  searchCapabilities?: SearchModeCapabilities;
   error?: string;
 }
 
@@ -210,19 +198,6 @@ export class SearchDirectoryMode extends BaseMode<SearchDirectoryParams, SearchD
       console.warn(`Could not apply workspace context for ${workspaceId}:`, error);
       return items;
     }
-  }
-
-  /**
-   * Get search capabilities
-   * @returns Capabilities object
-   */
-  private getCapabilities(): SearchModeCapabilities {
-    return {
-      semanticSearch: false,
-      workspaceFiltering: !!this.workspaceService,
-      memorySearch: false,
-      hybridSearch: false
-    };
   }
 
   getParameterSchema() {

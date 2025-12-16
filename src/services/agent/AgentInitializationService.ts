@@ -54,15 +54,7 @@ export class AgentInitializationService {
    * Initialize CommandManager agent
    */
   async initializeCommandManager(): Promise<void> {
-    // CommandManager with lazy memory service - NON-BLOCKING
-    const memoryService = this.serviceManager ?
-      this.serviceManager.getServiceIfReady('memoryService') : null;
-
-    const commandManagerAgent = new CommandManagerAgent(
-      this.app,
-      memoryService as any
-    );
-
+    const commandManagerAgent = new CommandManagerAgent(this.app);
     this.agentManager.registerAgent(commandManagerAgent);
     logger.systemLog('CommandManager agent initialized successfully');
   }

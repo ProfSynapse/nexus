@@ -87,16 +87,15 @@ export class ContentManagerAgentFactory extends BaseAgentFactory<ContentManagerA
 }
 
 /**
- * CommandManager agent factory with memory service dependency
+ * CommandManager agent factory - no external dependencies
  */
 export class CommandManagerAgentFactory extends BaseAgentFactory<CommandManagerAgent> {
     constructor() {
-        super('commandManager', ['memoryService']); // Optional dependency
+        super('commandManager', []);
     }
 
     async create(dependencies: Map<string, any>, app: App, plugin: Plugin): Promise<CommandManagerAgent> {
-        const memoryService = this.getOptionalDependency<MemoryService>(dependencies, 'memoryService');
-        return new CommandManagerAgent(app, memoryService || undefined);
+        return new CommandManagerAgent(app);
     }
 }
 

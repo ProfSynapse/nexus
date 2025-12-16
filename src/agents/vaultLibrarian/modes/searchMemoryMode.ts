@@ -67,18 +67,8 @@ export interface SearchMemoryParams extends CommonParameters {
   filterBySession?: boolean;
 }
 
-interface SearchModeCapabilities {
-  semanticSearch: boolean;
-  workspaceFiltering: boolean;
-  memorySearch: boolean;
-  hybridSearch: boolean;
-}
-
-// Enhanced SearchMemoryResult with capabilities and execution time
-export interface SearchMemoryResult extends SearchMemoryModeResult {
-  searchCapabilities?: SearchModeCapabilities;
-  executionTime?: number;
-}
+// SearchMemoryResult extends the base type
+export interface SearchMemoryResult extends SearchMemoryModeResult {}
 
 // Legacy interface names for backward compatibility
 export type { MemorySearchResult };
@@ -403,15 +393,6 @@ export class SearchMemoryMode extends BaseMode<SearchMemoryParams, SearchMemoryR
       maxHighlightLength: 200,
       contextLength: 50,
       enhanceToolCallContext: true
-    };
-  }
-
-  private getCapabilities(): SearchModeCapabilities {
-    return {
-      semanticSearch: false, // Memory search typically uses exact/fuzzy matching
-      workspaceFiltering: !!this.workspaceService,
-      memorySearch: !!this.memoryService,
-      hybridSearch: false
     };
   }
 

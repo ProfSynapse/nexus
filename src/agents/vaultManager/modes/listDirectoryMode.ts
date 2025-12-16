@@ -111,16 +111,6 @@ export class ListDirectoryMode extends BaseDirectoryMode<ListDirectoryParams, Li
    * Resolve include options based on parameters
    */
   private resolveIncludeOptions(params: ListDirectoryParams): { includeFiles: boolean; includeFolders: boolean } {
-    // Handle shortcut parameters first
-    if (params.filesOnly) {
-      return { includeFiles: true, includeFolders: false };
-    }
-    
-    if (params.foldersOnly) {
-      return { includeFiles: false, includeFolders: true };
-    }
-    
-    // Use explicit parameters or defaults
     return {
       includeFiles: params.includeFiles ?? true,
       includeFolders: params.includeFolders ?? true
@@ -218,16 +208,6 @@ export class ListDirectoryMode extends BaseDirectoryMode<ListDirectoryParams, Li
           type: 'boolean',
           description: 'Whether to include folders in the results',
           default: true
-        },
-        filesOnly: {
-          type: 'boolean',
-          description: 'Shortcut to only return files (overrides includeFiles/includeFolders)',
-          default: false
-        },
-        foldersOnly: {
-          type: 'boolean',
-          description: 'Shortcut to only return folders (overrides includeFiles/includeFolders)',
-          default: false
         }
       },
       required: ['path']

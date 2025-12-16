@@ -5,7 +5,6 @@ import {
   ListCommandsMode,
   ExecuteCommandMode
 } from './modes';
-import { MemoryService } from "../../agents/memoryManager/services/MemoryService";
 import { isAgentHidden } from '../../config/toolVisibility';
 
 /**
@@ -16,35 +15,25 @@ export class CommandManagerAgent extends BaseAgent {
    * Obsidian app instance
    */
   private app: App;
-  
-  /**
-   * Memory service for activity recording
-   */
-  private memoryService: MemoryService | null = null;
-  
+
   /**
    * Create a new CommandManagerAgent
    * @param app Obsidian app instance
-   * @param memoryService Optional memory service for activity recording
    */
-  constructor(app: App, memoryService?: MemoryService) {
+  constructor(app: App) {
     super(
       CommandManagerConfig.name,
       CommandManagerConfig.description,
       CommandManagerConfig.version
     );
-    
+
     this.app = app;
-    this.memoryService = memoryService || null;
 
     // Register modes only if agent is not hidden
     if (!isAgentHidden('commandManager')) {
       this.registerMode(new ListCommandsMode(app));
       this.registerMode(new ExecuteCommandMode(app, this));
     }
-
-    // Memory service is now injected via constructor or remains null
-    // Backward compatibility: if no service injected, it will remain null
   }
   
   /**
@@ -108,51 +97,6 @@ export class CommandManagerAgent extends BaseAgent {
     } catch (error) {
       console.error(`Error executing command ${commandId}:`, error);
       throw error;
-    }
-  }
-  
-  /**
-   * Record command execution activity in workspace memory
-   * @param commandId ID of the executed command
-   * @param commandName Name of the executed command
-   * @param workspaceId ID of the workspace
-   * @param workspacePath Path of the workspace
-   */
-  async recordCommandActivity(
-    commandId: string,
-    commandName: string,
-    workspaceId: string,
-    workspacePath?: string[]
-  ): Promise<void> {
-    // Skip if no memory service
-    if (!this.memoryService) {
-      return;
-    }
-    
-    try {
-      // Create a descriptive content about this command execution
-      const content = `Executed command: ${commandName}\n` +
-                      `Command ID: ${commandId}\n`;
-      
-      // Record the activity using memory service
-      await this.memoryService.recordActivityTrace({
-        workspaceId,
-        type: 'command',
-        content,
-        timestamp: Date.now(),
-        metadata: {
-          tool: 'ExecuteCommandMode',
-          params: { commandId },
-          result: { success: true }
-        }
-      }
-      );
-    } catch (error) {
-      // Log but don't fail the main operation
-      console.error('Failed to record command activity:', error);
-      
-      // Memory service not available - activity recording skipped
-      // Note: In constructor injection pattern, service should be provided at initialization
     }
   }
   

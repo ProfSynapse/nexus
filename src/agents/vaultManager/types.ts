@@ -377,21 +377,11 @@ export interface ListDirectoryParams extends CommonParameters {
    * Whether to include files in the results (default: true)
    */
   includeFiles?: boolean;
-  
+
   /**
    * Whether to include folders in the results (default: true)
    */
   includeFolders?: boolean;
-
-  /**
-   * Shortcut: Only return files (equivalent to includeFiles=true, includeFolders=false)
-   */
-  filesOnly?: boolean;
-
-  /**
-   * Shortcut: Only return folders (equivalent to includeFiles=false, includeFolders=true)
-   */
-  foldersOnly?: boolean;
 }
 
 /**

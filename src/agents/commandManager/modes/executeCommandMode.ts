@@ -53,18 +53,7 @@ export class ExecuteCommandMode extends BaseMode<ExecuteCommandParams, ExecuteCo
       
       // Execute the command
       await this.app.commands.executeCommandById(commandId);
-      
-      // Record activity if in a workspace context
-      const parsedContext = parseWorkspaceContext(workspaceContext) || undefined;
-      if (parsedContext) {
-        await this.agent.recordCommandActivity(
-          commandId,
-          command.name,
-          parsedContext.workspaceId,
-          parsedContext.workspacePath
-        );
-      }
-      
+
       // Prepare result with workspace context
       const response = this.prepareResult(
         true,

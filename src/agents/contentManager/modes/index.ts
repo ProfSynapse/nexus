@@ -6,4 +6,4 @@ export { ReplaceContentMode } from './replaceContentMode';
 export { ReplaceByLineMode } from './replaceByLineMode';
 export { DeleteContentMode } from './deleteContentMode';
 export { FindReplaceContentMode } from './findReplaceContentMode';
-export { BatchContentMode } from './batchContentMode';
+export { BatchContentMode } from './batch/BatchContentMode';

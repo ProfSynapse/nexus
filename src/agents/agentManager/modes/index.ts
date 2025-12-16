@@ -6,6 +6,6 @@ export { UpdateAgentMode } from './updateAgentMode';
 export { DeleteAgentMode } from './deleteAgentMode';
 export { ToggleAgentMode } from './toggleAgentMode';
 export { ListModelsMode } from './listModelsMode';
-export { ExecutePromptMode } from './executePromptMode';
+export { ExecutePromptMode } from './execute/ExecutePromptMode';
 export { BatchExecutePromptMode } from './batchExecutePrompt';
 export { GenerateImageMode } from './generateImageMode';
