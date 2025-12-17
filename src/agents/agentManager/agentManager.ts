@@ -1,5 +1,4 @@
 import { BaseAgent } from '../baseAgent';
-import { AgentManagerConfig } from '../../config/agents';
 import {
   ListAgentsTool,
   GetAgentTool,
@@ -7,8 +6,7 @@ import {
   UpdateAgentTool,
   DeleteAgentTool,
   ListModelsTool,
-  ExecutePromptTool,
-  BatchExecutePromptTool,
+  ExecutePromptsTool,
   GenerateImageTool
 } from './tools';
 import { CustomPromptStorageService } from './services/CustomPromptStorageService';
@@ -18,7 +16,6 @@ import { LLMProviderManager } from '../../services/llm/providers/ProviderManager
 import { AgentManager } from '../../services/AgentManager';
 import { UsageTracker } from '../../services/UsageTracker';
 import { Vault, EventRef } from 'obsidian';
-import { isModeHidden } from '../../config/toolVisibility';
 import { LLMSettingsNotifier } from '../../services/llm/LLMSettingsNotifier';
 import { LLMProviderSettings } from '../../types';
 
@@ -82,9 +79,9 @@ export class AgentManagerAgent extends BaseAgent {
     vault: Vault
   ) {
     super(
-      AgentManagerConfig.name,
-      AgentManagerConfig.description,
-      AgentManagerConfig.version
+      'agentManager',
+      'Manage custom prompt agents for personalized AI interactions',
+      '1.0.0'
     );
 
     // Store injected dependencies
@@ -106,17 +103,8 @@ export class AgentManagerAgent extends BaseAgent {
     // Register LLM tools with dependencies already available
     this.registerTool(new ListModelsTool(this.providerManager));
 
-    // Conditionally register ExecutePromptTool based on visibility config
-    if (!isModeHidden('agentManager', 'executePrompt')) {
-      this.registerTool(new ExecutePromptTool({
-        providerManager: this.providerManager,
-        promptStorage: this.storageService,
-        agentManager: this.parentAgentManager,
-        usageTracker: this.usageTracker
-      }));
-    }
-
-    this.registerTool(new BatchExecutePromptTool(
+    // Register unified prompt execution tool (handles single and batch)
+    this.registerTool(new ExecutePromptsTool(
       undefined, // plugin - not needed in constructor injection pattern
       undefined, // llmService - will be resolved internally
       this.providerManager,
@@ -186,7 +174,7 @@ export class AgentManagerAgent extends BaseAgent {
    * Dynamic description that includes information about custom prompt agents
    */
   get description(): string {
-    const baseDescription = AgentManagerConfig.description;
+    const baseDescription = 'Manage custom prompt agents for personalized AI interactions';
     
     // Prevent infinite recursion
     if (this.isGettingDescription) {

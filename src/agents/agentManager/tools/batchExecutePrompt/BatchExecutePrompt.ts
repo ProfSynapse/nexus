@@ -29,15 +29,16 @@ import { addRecommendations, Recommendation } from '../../../../utils/recommenda
 import { NudgeHelpers } from '../../../../utils/nudgeHelpers';
 
 /**
- * Refactored batch tool for executing multiple LLM prompts concurrently
- * Now follows SOLID principles with service composition
+ * ExecutePromptsTool - Execute one or more LLM prompts
+ * For single prompt: pass one item in prompts array
+ * For multiple: supports sequencing, parallel groups, and result forwarding
  *
  * Responsibilities:
  * - Orchestrate prompt execution workflow
  * - Coordinate specialized services
  * - Handle high-level error management
  */
-export class BatchExecutePromptTool extends BaseTool<BatchExecutePromptParams, BatchExecutePromptResult> {
+export class ExecutePromptsTool extends BaseTool<BatchExecutePromptParams, BatchExecutePromptResult> {
   // Core services (injected)
   private llmService: LLMService | null = null;
   private providerManager: LLMProviderManager | null = null;
@@ -65,9 +66,9 @@ export class BatchExecutePromptTool extends BaseTool<BatchExecutePromptParams, B
     promptStorage?: CustomPromptStorageService
   ) {
     super(
-      'batchExecutePrompt',
-      'Batch Execute LLM Prompts',
-      'Execute multiple LLM and image prompts concurrently across different providers. Supports context gathering, workspace integration, and result merging.',
+      'executePrompts',
+      'Execute LLM Prompts',
+      'Execute one or more LLM prompts. For single: pass one item. For multiple: supports sequencing (sequence: 0,1,2), parallel groups, and result forwarding (includePreviousResults: true).',
       '1.0.0'
     );
     

@@ -1,6 +1,5 @@
 import { App, TFile, TFolder } from 'obsidian';
 import { BaseAgent } from '../baseAgent';
-import { VaultManagerConfig } from '../../config/agents';
 import {
   ListDirectoryTool,
   CreateFolderTool,
@@ -28,9 +27,9 @@ export class VaultManagerAgent extends BaseAgent {
    */
   constructor(app: App) {
     super(
-      VaultManagerConfig.name,
-      VaultManagerConfig.description,
-      VaultManagerConfig.version
+      'vaultManager',
+      'File system operations for Obsidian vault',
+      '1.0.0'
     );
 
     this.app = app;
@@ -52,7 +51,7 @@ export class VaultManagerAgent extends BaseAgent {
    * Dynamic description that includes current vault structure
    */
   get description(): string {
-    const baseDescription = VaultManagerConfig.description;
+    const baseDescription = 'File system operations for Obsidian vault';
 
     // Prevent infinite recursion
     if (this.isGettingDescription) {

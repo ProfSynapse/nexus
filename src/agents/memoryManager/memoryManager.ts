@@ -1,6 +1,5 @@
 import { App } from 'obsidian';
 import { BaseAgent } from '../baseAgent';
-import { MemoryManagerConfig } from '../../config/agents';
 import { MemoryService } from "./services/MemoryService";
 import { WorkspaceService } from "../../services/WorkspaceService";
 import { sanitizeVaultName } from '../../utils/vaultUtils';
@@ -71,9 +70,9 @@ export class MemoryManagerAgent extends BaseAgent {
     workspaceService: WorkspaceService
   ) {
     super(
-      MemoryManagerConfig.name,
-      MemoryManagerConfig.description,
-      MemoryManagerConfig.version
+      'memoryManager',
+      'Manages workspaces, memory sessions, and states for contextual recall',
+      '1.2.0'
     );
 
     this.app = app;
@@ -106,7 +105,7 @@ export class MemoryManagerAgent extends BaseAgent {
    * Dynamic description that includes current workspace information
    */
   get description(): string {
-    const baseDescription = MemoryManagerConfig.description;
+    const baseDescription = 'Manages workspaces, memory sessions, and states for contextual recall';
     
     // Prevent infinite recursion
     if (this.isGettingDescription) {

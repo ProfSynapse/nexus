@@ -9,7 +9,6 @@
 import { ITool } from '../../interfaces/ITool';
 import { GetToolsParams, GetToolsResult, ToolSchema, getToolContextSchema } from '../types';
 import { IAgent } from '../../interfaces/IAgent';
-import { AGENT_REGISTRY } from '../../../config/agents';
 import { getErrorMessage } from '../../../utils/errorUtils';
 import { SchemaData } from '../toolManager';
 
@@ -33,14 +32,15 @@ export class GetToolsTool implements ITool<GetToolsParams, GetToolsResult> {
   constructor(agentRegistry: Map<string, IAgent>, schemaData: SchemaData) {
     this.slug = 'getTools';
     this.name = 'Get Tools';
-    this.description = this.buildDescription(schemaData);
     this.version = '1.0.0';
-
     this.agentRegistry = agentRegistry;
+
+    // Build description AFTER agentRegistry is set (uses actual registered agents)
+    this.description = this.buildDescription(schemaData);
   }
 
   /**
-   * Build the dynamic description with all available info
+   * Build the dynamic description from actual registered agents
    */
   private buildDescription(schemaData: SchemaData): string {
     const lines = [
@@ -48,18 +48,18 @@ export class GetToolsTool implements ITool<GetToolsParams, GetToolsResult> {
       ''
     ];
 
-    // System tools section
-    lines.push('System Tools:');
-    for (const [agentName, config] of Object.entries(AGENT_REGISTRY)) {
+    // Build from actual registered agents (single source of truth)
+    lines.push('Agents:');
+    for (const [agentName, agent] of this.agentRegistry) {
       if (agentName === 'toolManager') continue;
-      const toolArray = JSON.stringify(config.tools);
-      lines.push(`${agentName}: ${toolArray}`);
+      const tools = agent.getTools().map(t => t.slug);
+      lines.push(`${agentName}: [${tools.join(',')}]`);
     }
 
     // Custom agents section
     if (schemaData.customAgents.length > 0) {
       lines.push('');
-      lines.push('Your Custom Agents:');
+      lines.push('Custom Agents:');
       for (const agent of schemaData.customAgents) {
         lines.push(`- "${agent.name}": ${agent.description || 'No description'}`);
       }
@@ -67,22 +67,13 @@ export class GetToolsTool implements ITool<GetToolsParams, GetToolsResult> {
 
     // Workspaces section
     lines.push('');
-    lines.push('Your Workspaces:');
-    lines.push('- "default": Global workspace (always available)');
-    for (const workspace of schemaData.workspaces) {
-      lines.push(`- "${workspace.name}": ${workspace.description || 'No description'}`);
-    }
+    lines.push('Workspaces: [default' + (schemaData.workspaces.length > 0 ? ',' + schemaData.workspaces.map(w => w.name).join(',') : '') + ']');
 
-    // Vault structure section
+    // Vault structure section (compact)
     if (schemaData.vaultRoot.length > 0) {
-      lines.push('');
-      lines.push('Vault Root:');
-      for (const item of schemaData.vaultRoot.slice(0, 10)) { // Limit to 10 items
-        lines.push(`- /${item}`);
-      }
-      if (schemaData.vaultRoot.length > 10) {
-        lines.push(`- ... and ${schemaData.vaultRoot.length - 10} more`);
-      }
+      const folders = schemaData.vaultRoot.slice(0, 5);
+      if (schemaData.vaultRoot.length > 5) folders.push('...');
+      lines.push('Vault: [' + folders.join(',') + ']');
     }
 
     return lines.join('\n');

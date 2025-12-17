@@ -1,6 +1,5 @@
 import { App } from 'obsidian';
 import { BaseAgent } from '../baseAgent';
-import { CommandManagerConfig } from '../../config/agents';
 import {
   ListCommandsTool,
   ExecuteCommandTool
@@ -22,9 +21,9 @@ export class CommandManagerAgent extends BaseAgent {
    */
   constructor(app: App) {
     super(
-      CommandManagerConfig.name,
-      CommandManagerConfig.description,
-      CommandManagerConfig.version
+      'commandManager',
+      'Command palette operations for Obsidian',
+      '1.0.0'
     );
 
     this.app = app;

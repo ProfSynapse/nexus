@@ -1,6 +1,5 @@
 import { App } from 'obsidian';
 import { BaseAgent } from '../baseAgent';
-import { ContentManagerConfig } from '../../config/agents';
 import {
   ReadContentTool,
   CreateContentTool,
@@ -41,9 +40,9 @@ export class ContentManagerAgent extends BaseAgent {
     workspaceService?: WorkspaceService | null
   ) {
     super(
-      ContentManagerConfig.name,
-      ContentManagerConfig.description,
-      ContentManagerConfig.version
+      'contentManager',
+      'Content operations for Obsidian notes',
+      '1.0.0'
     );
 
     this.app = app;

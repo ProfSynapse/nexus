@@ -1,6 +1,5 @@
 import { App, Plugin } from 'obsidian';
 import { BaseAgent } from '../baseAgent';
-import { VaultLibrarianConfig } from '../../config/agents';
 import {
   SearchContentTool,
   SearchDirectoryTool,
@@ -55,9 +54,9 @@ export class VaultLibrarianAgent extends BaseAgent {
     workspaceService?: WorkspaceService | null
   ) {
     super(
-      VaultLibrarianConfig.name,
-      VaultLibrarianConfig.description,
-      VaultLibrarianConfig.version
+      'vaultLibrarian',
+      'Search operations for Obsidian vault',
+      '1.0.0'
     );
 
     this.app = app;

@@ -15,7 +15,7 @@ Nexus turns your Obsidian vault into an MCP-enabled workspace. It exposes safe, 
 
 ## Highlights
 
-- **Two-Tool Architecture** – Just 2 MCP tools (`getTools` + `useTool`) replace 50+ individual tools, reducing upfront token cost by ~95%.
+- **Two-Tool Architecture** – Just 2 MCP tools (`getTools` + `useTool`) replace 40+ individual tools, reducing upfront token cost by ~95%.
 - **Native Chat View** – Stream tool calls, branch conversations, and manage models directly inside Obsidian.
 - **Workspace Memory** – Sessions, traces, and state snapshots in `.nexus/` (sync-friendly JSONL + local SQLite cache).
 - **Local Semantic Search** – Desktop-only embeddings via sqlite-vec vector search—no external API calls.
