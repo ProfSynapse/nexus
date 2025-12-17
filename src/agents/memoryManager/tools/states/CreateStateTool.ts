@@ -125,7 +125,7 @@ export class CreateStateTool extends BaseTool<CreateStateParams, StateResult> {
 
             // Extract workspaceId and sessionId for verification
             const workspaceId = workspaceResult.data.workspaceId;
-            const sessionId = params.targetSessionId || params.context.sessionId || 'current';
+            const sessionId = params.targetSessionId || params.context?.sessionId || 'current';
 
             // Phase 6: Verify persistence (data integrity check)
             const verificationResult = await this.verifyStatePersistence(workspaceId, sessionId, persistResult.stateId, memoryService);
@@ -310,7 +310,7 @@ export class CreateStateTool extends BaseTool<CreateStateParams, StateResult> {
                 context: context,  // The inner StateContext with activeTask, activeFiles, etc.
 
                 // Additional WorkspaceState fields
-                sessionId: params.targetSessionId || params.context.sessionId || 'current',
+                sessionId: params.targetSessionId || params.context?.sessionId || 'current',
                 timestamp: now,
                 description: `${params.activeTask} - ${params.reasoning}`,
                 state: {
@@ -332,7 +332,7 @@ export class CreateStateTool extends BaseTool<CreateStateParams, StateResult> {
             };
 
             // Persist to MemoryService - pass the full WorkspaceState
-            const sessionId = params.targetSessionId || params.context.sessionId || 'current';
+            const sessionId = params.targetSessionId || params.context?.sessionId || 'current';
             const stateId = await memoryService.saveState(
                 workspaceId,
                 sessionId,
@@ -426,16 +426,10 @@ export class CreateStateTool extends BaseTool<CreateStateParams, StateResult> {
         };
 
         const contextString = `State "${savedState.name}" created and persisted successfully with ID: ${savedState.id}`;
-        const workspaceContext = this.getInheritedWorkspaceContext({ 
-            context: { 
-                sessionId: params.context.sessionId,
-                sessionDescription: params.context.sessionDescription,
-                sessionMemory: params.context.sessionMemory,
-                toolContext: params.context.toolContext,
-                primaryGoal: params.context.primaryGoal,
-                subgoal: params.context.subgoal
-            },
-            workspaceContext: { workspaceId: workspaceData.workspaceId } 
+        // Use new ToolContext format
+        const workspaceContext = this.getInheritedWorkspaceContext({
+            context: params.context,
+            workspaceContext: { workspaceId: workspaceData.workspaceId }
         } as CommonParameters);
 
         const result = this.prepareResult(

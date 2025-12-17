@@ -9,9 +9,9 @@ export class ResponseFormatter implements IResponseFormatter {
             return this.formatDetailedError(result, sessionInfo);
         }
 
-        // CRITICAL: Always show session ID changes/creation, regardless of shouldInjectInstructions
-        // This ensures Claude Desktop always knows when its session ID was replaced or assigned
-        if (sessionInfo && (sessionInfo.isNonStandardId || sessionInfo.isNewSession)) {
+        // Only show session ID message when Claude's ID was REPLACED (non-standard format)
+        // If Claude provided a valid format ID, no need to announce - just use it silently
+        if (sessionInfo && sessionInfo.isNonStandardId) {
             return this.formatWithSessionInstructions(result, sessionInfo);
         }
 
@@ -44,26 +44,9 @@ export class ResponseFormatter implements IResponseFormatter {
     private formatDetailedError(result: any, sessionInfo?: any): any {
         let errorText = "";
         
-        // CRITICAL: Show session ID changes EVEN IN ERROR RESPONSES
-        // This ensures Claude knows the correct session ID even when operations fail
-        if (sessionInfo && (sessionInfo.isNonStandardId || sessionInfo.isNewSession)) {
-            if (sessionInfo.isNonStandardId && sessionInfo.originalSessionId) {
-                errorText += `⚠️ SESSION ID CHANGED ⚠️\n`;
-                errorText += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-                errorText += `Your session ID "${sessionInfo.originalSessionId}" was replaced.\n`;
-                errorText += `NEW SESSION ID: ${sessionInfo.sessionId}\n`;
-                errorText += `\n`;
-                errorText += `🔴 MANDATORY: Use "${sessionInfo.sessionId}" in ALL future requests!\n`;
-                errorText += `🔴 DO NOT use "${sessionInfo.originalSessionId}" anymore!\n`;
-                errorText += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
-            } else if (sessionInfo.isNewSession) {
-                errorText += `🆕 NEW SESSION CREATED\n`;
-                errorText += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-                errorText += `SESSION ID: ${sessionInfo.sessionId}\n`;
-                errorText += `\n`;
-                errorText += `🔴 MANDATORY: Use this ID in all future requests!\n`;
-                errorText += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
-            }
+        // Compact session ID notice when replaced
+        if (sessionInfo?.isNonStandardId && sessionInfo.originalSessionId) {
+            errorText += `[Session ID changed: Use "${sessionInfo.sessionId}" for all future requests]\n\n`;
         }
         
         errorText += `❌ Error: ${result.error}\n\n`;
@@ -107,23 +90,9 @@ export class ResponseFormatter implements IResponseFormatter {
 
         let responseText = "";
 
-        // CRITICAL: Make session ID changes extremely prominent
-        if (sessionInfo.isNonStandardId && sessionInfo.originalSessionId) {
-            responseText += `⚠️ SESSION ID CHANGED ⚠️\n`;
-            responseText += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-            responseText += `Your session ID "${sessionInfo.originalSessionId}" was replaced.\n`;
-            responseText += `NEW SESSION ID: ${sessionInfo.sessionId}\n`;
-            responseText += `\n`;
-            responseText += `🔴 MANDATORY: Use "${sessionInfo.sessionId}" in ALL future requests!\n`;
-            responseText += `🔴 DO NOT use "${sessionInfo.originalSessionId}" anymore!\n`;
-            responseText += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
-        } else if (sessionInfo.isNewSession) {
-            responseText += `🆕 NEW SESSION CREATED\n`;
-            responseText += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-            responseText += `SESSION ID: ${sessionInfo.sessionId}\n`;
-            responseText += `\n`;
-            responseText += `🔴 MANDATORY: Use this ID in all future requests!\n`;
-            responseText += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+        // Compact session ID notice when replaced
+        if (sessionInfo.originalSessionId) {
+            responseText += `[Session ID changed: Use "${sessionInfo.sessionId}" for all future requests]\n\n`;
         }
 
         responseText += safeStringify(result);

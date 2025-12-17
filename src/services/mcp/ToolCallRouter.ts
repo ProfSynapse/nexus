@@ -161,7 +161,7 @@ export class ToolCallRouter implements ToolCallRouterInterface {
             logger.systemError(error as Error, 'Agent Tool Execution');
             throw new McpError(
                 ErrorCode.InternalError,
-                `Failed to execute ${agent}.${tool}`,
+                `Failed to execute ${agent}_${tool}`,
                 error
             );
         }

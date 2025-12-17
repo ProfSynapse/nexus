@@ -10,7 +10,7 @@ export interface IValidationService {
 }
 
 export interface ISessionService {
-    processSessionId(sessionId: string): Promise<{
+    processSessionId(sessionId: string | undefined): Promise<{
         sessionId: string;
         isNewSession: boolean;
         isNonStandardId: boolean;

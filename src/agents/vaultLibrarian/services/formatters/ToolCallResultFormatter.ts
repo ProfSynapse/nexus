@@ -61,7 +61,7 @@ export class ToolCallResultFormatter extends BaseResultFormatter {
 
   protected addTypeSpecificMetadata(formatted: Record<string, string>, metadata: any): void {
     if (metadata.agent && metadata.mode) {
-      formatted['Tool'] = `${metadata.agent}.${metadata.mode}`;
+      formatted['Tool'] = `${metadata.agent}_${metadata.mode}`;
     }
     if (metadata.executionTime) {
       formatted['Execution Time'] = `${metadata.executionTime}ms`;

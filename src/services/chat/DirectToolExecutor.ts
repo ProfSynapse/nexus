@@ -98,42 +98,45 @@ export class DirectToolExecutor {
     }
 
     /**
-     * Get available tools in OpenAI format
-     * Returns only the get_tools meta-tool initially (matches MCP connector pattern)
-     * LLM calls get_tools to discover and request specific tool schemas
+     * Get available tools in OpenAI format - Two-Tool Architecture
+     * Returns only toolManager.getTools and toolManager.useTool
+     *
+     * This is the new two-tool architecture that replaces the old 50+ tool surface.
+     * LLMs discover tools via getTools (which lists all available agents/tools in its description),
+     * then execute tools via useTool with unified context.
      */
-    async getAvailableTools(): Promise<any[]> {
-        // Return only the meta-tool - LLM will call this to get actual tools
-        return this.getMetaToolOnly();
+    async getAvailableTools(): Promise<unknown[]> {
+        // Get toolManager agent from the registry
+        const toolManagerAgent = this.getAgentByName('toolManager');
+
+        if (!toolManagerAgent) {
+            console.error('[DirectToolExecutor] ToolManager agent not found - returning empty tools list');
+            return [];
+        }
+
+        // Get tools from toolManager (getTools and useTool)
+        const tools = toolManagerAgent.getTools();
+
+        // Convert to OpenAI format
+        return tools.map(tool => ({
+            type: 'function',
+            function: {
+                name: `toolManager.${tool.slug}`,
+                description: tool.description,
+                parameters: tool.getParameterSchema()
+            }
+        }));
     }
 
     /**
-     * Get the meta-tool (get_tools) that LLM uses to fetch tool schemas
-     * The system prompt already tells the LLM what agents are available
+     * Get an agent by name from the registry
      */
-    private getMetaToolOnly(): any[] {
-        return [{
-            type: 'function',
-            function: {
-                name: 'get_tools',
-                description: `Get full tool schemas for specific agents. The system prompt lists available agents - use this to get their parameter schemas before calling them.
-
-Example: get_tools({ tools: ["contentManager"] }) returns the full schema for contentManager.
-
-After getting the schema, call the agent directly: contentManager({ mode: "readContent", path: "note.md", context: {...} })`,
-                parameters: {
-                    type: 'object',
-                    properties: {
-                        tools: {
-                            type: 'array',
-                            items: { type: 'string' },
-                            description: 'Agent names to get schemas for (e.g., ["contentManager", "vaultLibrarian"])'
-                        }
-                    },
-                    required: ['tools']
-                }
-            }
-        }];
+    private getAgentByName(name: string): IAgent | null {
+        const result = this.agentProvider.getAllAgents();
+        if (result instanceof Map) {
+            return result.get(name) || null;
+        }
+        return result.find(a => a.name === name) || null;
     }
 
     /**
@@ -190,29 +193,71 @@ After getting the schema, call the agent directly: contentManager({ mode: "readC
      */
     async executeTool(
         toolName: string,
-        params: Record<string, any>,
+        params: Record<string, unknown>,
         context?: { sessionId?: string; workspaceId?: string }
-    ): Promise<any> {
+    ): Promise<unknown> {
         try {
-            // Handle special get_tools meta-tool
+            // Handle legacy get_tools meta-tool (backward compatibility)
             if (toolName === 'get_tools') {
                 return await this.handleGetTools(params, context);
             }
 
-            // Tool name format: "agentName" with mode in params
-            // Or legacy format: "agentName_modeName"
-            let agent: string;
-            let mode: string;
+            // Two-tool architecture: "agentName.toolName" format
+            if (toolName.includes('.')) {
+                const [agentName, toolSlug] = toolName.split('.');
 
-            if (params.mode) {
+                // Get the agent
+                const agent = this.getAgentByName(agentName);
+                if (!agent) {
+                    throw new Error(`Agent "${agentName}" not found`);
+                }
+
+                // Get the tool
+                const tool = agent.getTool(toolSlug);
+                if (!tool) {
+                    throw new Error(`Tool "${toolSlug}" not found in agent "${agentName}"`);
+                }
+
+                // Determine sessionId and workspaceId
+                const paramsWithContext = params as Record<string, unknown> & {
+                    context?: { sessionId?: string; workspaceId?: string };
+                };
+                const effectiveSessionId = context?.sessionId
+                    || paramsWithContext.context?.sessionId
+                    || `session_${Date.now()}`;
+                const effectiveWorkspaceId = context?.workspaceId
+                    || paramsWithContext.context?.workspaceId
+                    || 'default';
+
+                // Build params with context
+                const toolParams = {
+                    ...params,
+                    context: {
+                        ...(paramsWithContext.context || {}),
+                        sessionId: effectiveSessionId,
+                        workspaceId: effectiveWorkspaceId
+                    }
+                };
+
+                // Execute via agent's executeTool method
+                return await agent.executeTool(toolSlug, toolParams);
+            }
+
+            // Legacy format: "agentName" with mode in params
+            // Or: "agentName_modeName"
+            let agentName: string;
+            let modeName: string;
+            const paramsTyped = params as Record<string, unknown> & { mode?: string; context?: Record<string, unknown> };
+
+            if (paramsTyped.mode) {
                 // New format: mode is in params
-                agent = toolName;
-                mode = params.mode;
+                agentName = toolName;
+                modeName = paramsTyped.mode;
             } else if (toolName.includes('_')) {
                 // Legacy format: agentName_modeName
                 const parts = toolName.split('_');
-                agent = parts[0];
-                mode = parts.slice(1).join('_');
+                agentName = parts[0];
+                modeName = parts.slice(1).join('_');
             } else {
                 throw new Error(`Invalid tool call: no mode specified for ${toolName}`);
             }
@@ -222,16 +267,16 @@ After getting the schema, call the agent directly: contentManager({ mode: "readC
             // 2. LLM-provided params.context
             // 3. Generate default if neither exists
             const effectiveSessionId = context?.sessionId
-                || params.context?.sessionId
+                || (paramsTyped.context?.sessionId as string | undefined)
                 || `session_${Date.now()}`;
             const effectiveWorkspaceId = context?.workspaceId
-                || params.context?.workspaceId
+                || (paramsTyped.context?.workspaceId as string | undefined)
                 || 'default';
 
             const paramsWithContext = {
                 ...params,
                 context: {
-                    ...params.context,
+                    ...paramsTyped.context,
                     sessionId: effectiveSessionId,
                     workspaceId: effectiveWorkspaceId
                 }
@@ -239,8 +284,8 @@ After getting the schema, call the agent directly: contentManager({ mode: "readC
 
             // Execute via AgentExecutionManager
             const result = await this.executionManager.executeAgentModeWithValidation(
-                agent,
-                mode,
+                agentName,
+                modeName,
                 paramsWithContext
             );
 
@@ -328,29 +373,34 @@ After getting the schema, call the agent directly: contentManager({ mode: "readC
                 });
 
                 // Execute the tool
-                const result = await this.executeTool(
+                const rawResult = await this.executeTool(
                     toolCall.function.name,
                     parameters,
                     context
                 );
+
+                // Cast result to expected shape
+                const result = rawResult as { success?: boolean; error?: string } | null;
+                const isSuccess = result?.success !== false;
+                const errorMessage = result?.success === false ? (result?.error || 'Tool execution failed') : undefined;
 
                 const executionTime = Date.now() - startTime;
 
                 results.push({
                     id: toolCall.id,
                     name: toolCall.function.name,
-                    success: result.success !== false, // Default to true if not explicitly false
-                    result: result.success !== false ? result : undefined,
-                    error: result.success === false ? (result.error || 'Tool execution failed') : undefined,
+                    success: isSuccess,
+                    result: isSuccess ? rawResult : undefined,
+                    error: errorMessage,
                     executionTime
                 });
 
                 // Notify tool completed
                 onToolEvent?.('completed', {
                     toolId: toolCall.id,
-                    result: result.success !== false ? result : undefined,
-                    success: result.success !== false,
-                    error: result.success === false ? (result.error || 'Tool execution failed') : undefined
+                    result: isSuccess ? rawResult : undefined,
+                    success: isSuccess,
+                    error: errorMessage
                 });
 
             } catch (error) {

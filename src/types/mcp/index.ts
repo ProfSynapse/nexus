@@ -3,11 +3,12 @@
  * Centralizes all MCP protocol type exports
  */
 
-export type {
-  ModeCall,
-  CommonParameters,
-  CommonResult,
-  ModeCallResult
+export {
+  type ToolContext,
+  type ModeCall,
+  type CommonParameters,
+  type CommonResult,
+  type ModeCallResult
 } from './AgentTypes';
 
 export type {

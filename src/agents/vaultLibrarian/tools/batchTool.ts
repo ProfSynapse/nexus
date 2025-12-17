@@ -3,7 +3,8 @@ import { BaseTool } from '../../baseTool';
 import { MemoryService } from "../../memoryManager/services/MemoryService";
 import { WorkspaceService } from '../../../services/WorkspaceService';
 import { getErrorMessage } from '../../../utils/errorUtils';
-import { CommonParameters, CommonResult } from '../../../types/mcp/AgentTypes';
+import { CommonParameters, CommonResult } from '../../../types';
+import type { ToolContext } from '../../../types/mcp/AgentTypes';
 import { IStorageAdapter } from '../../../database/interfaces/IStorageAdapter';
 
 // Import the lean search tools
@@ -193,6 +194,7 @@ export class BatchTool extends BaseTool<BatchSearchParams, BatchSearchResult> {
   ): Promise<BatchSearchResultItem> {
     const contentTool = new SearchContentTool(this.plugin);
 
+    // Use CommonParameters context directly
     const params: ContentSearchParams = {
       query: spec.query,
       semantic: spec.semantic!,

@@ -28,17 +28,18 @@ export const DEFAULT_MEMORY_SETTINGS: MemorySettings = {
 };
 
 // MCP protocol types
-export type {
-  ModeCall,
-  CommonParameters,
-  CommonResult,
-  ModeCallResult,
-  CustomPrompt,
-  CustomPromptsSettings,
-  ServerStatus,
-  IMCPServer,
-  MutualTLSOptions,
-  ServerState
+export {
+  type ToolContext,
+  type ModeCall,
+  type CommonParameters,
+  type CommonResult,
+  type ModeCallResult,
+  type CustomPrompt,
+  type CustomPromptsSettings,
+  type ServerStatus,
+  type IMCPServer,
+  type MutualTLSOptions,
+  type ServerState
 } from './mcp';
 
 export {

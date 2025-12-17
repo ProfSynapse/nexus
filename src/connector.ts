@@ -254,52 +254,31 @@ export class MCPConnector {
      */
 
     /**
-     * Get available tools for ChatService - Bounded Context Discovery
-     * Returns single get_tools meta-tool instead of all 46 tools
+     * Get available tools for ChatService - Two-Tool Architecture
+     * Returns only toolManager.getTools and toolManager.useTool
+     *
+     * This is the new two-tool architecture that replaces the old 50+ tool surface.
+     * LLMs discover tools via getTools (which lists all available agents/tools in its description),
+     * then execute tools via useTool with unified context.
      */
-    getAvailableTools(): any[] {
-        // Build agent/tool list for bootup visibility
-        let agentToolList = '';
+    getAvailableTools(): unknown[] {
+        // Get toolManager agent
+        const toolManagerAgent = this.agentRegistry?.getAgent('toolManager');
 
-        if (this.agentRegistry) {
-            const registeredAgents = this.agentRegistry.getAllAgents();
-            const agentToolLines: string[] = [];
-
-            for (const [agentName, agent] of registeredAgents) {
-                const tools = agent.getTools();
-                const toolNames = tools.map((t: ITool<unknown, unknown>) => t.slug || t.name || 'unknown');
-                agentToolLines.push(`- ${agentName}: [${toolNames.join(', ')}]`);
-            }
-
-            agentToolList = agentToolLines.join('\n');
-        } else {
-            // Fallback to static agent descriptions if registry not yet initialized
-            agentToolList = AGENTS.map(a => `- ${a.name}: ${a.description}`).join('\n');
+        if (!toolManagerAgent) {
+            logger.systemWarn('ToolManager agent not yet initialized - returning empty tools list');
+            return [];
         }
 
-        // Get standard context schema to ensure sessionId persistence
-        const contextSchema = getContextSchema();
+        // Get tools from toolManager (getTools and useTool)
+        const toolManagerTools = toolManagerAgent.getTools();
 
-        const getToolsTool = {
-            name: 'get_tools',
-            description: `Discover available tools on-demand. Request specific tool schemas only for capabilities you need.\n\nAvailable agents and tools:\n${agentToolList}\n\nTo use a tool, request its schema first:\n- get_tools({ tools: ["contentManager_createNote", "vaultManager_openNote"] })\n\nThen call the actual tool with required parameters.`,
-            inputSchema: {
-                type: 'object',
-                properties: {
-                    tools: {
-                        type: 'array',
-                        items: {
-                            type: 'string'
-                        },
-                        description: 'Array of specific tool names to retrieve schemas for (format: "agentName_modeName"). Examples: ["contentManager_createNote", "vaultLibrarian_searchDirectory"]'
-                    },
-                    ...contextSchema
-                },
-                required: ['tools', 'context']
-            }
-        };
-
-        return [getToolsTool];
+        // Convert to MCP tool format
+        return toolManagerTools.map((tool: ITool<unknown, unknown>) => ({
+            name: `toolManager.${tool.slug}`,
+            description: tool.description,
+            inputSchema: tool.getParameterSchema()
+        }));
     }
 
     /**

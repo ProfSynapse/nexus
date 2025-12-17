@@ -79,7 +79,7 @@ export class ToolHelpService implements IToolHelpService {
             // Format the help text
             const helpText = formatToolHelp(help);
             
-            logger.systemLog(`ToolHelpService: Generated help for ${agentName}.${mode}`);
+            logger.systemLog(`ToolHelpService: Generated help for ${agentName}_${mode}`);
             
             return {
                 content: [{

@@ -1,18 +1,6 @@
 import { IAgent } from './interfaces/IAgent';
 import { ITool } from './interfaces/ITool';
-import { CommonParameters, CommonResult } from '../types';
-import { parseWorkspaceContext } from '../utils/contextUtils';
-import { createErrorMessage } from '../utils/errorUtils';
-
-/**
- * Extended tool interface that includes optional BaseTool methods
- * Used for type-safe access to workspace context propagation methods
- */
-interface IToolWithContext extends ITool {
-  sessionId?: string;
-  setParentContext?(context: CommonResult['workspaceContext']): void;
-  getInheritedWorkspaceContext?(params: CommonParameters): CommonResult['workspaceContext'] | null;
-}
+import { CommonResult } from '../types';
 
 /**
  * Base class for all agents in the MCP plugin
@@ -111,11 +99,11 @@ export abstract class BaseAgent implements IAgent {
   /**
    * Execute a tool by slug
    * @param toolSlug Slug of the tool to execute
-   * @param params Parameters to pass to the tool
+   * @param params Parameters to pass to the tool (tool-specific only, no context)
    * @returns Promise that resolves with the tool's result
    * @throws Error if tool not found
    */
-  async executeTool(toolSlug: string, params: CommonParameters): Promise<CommonResult> {
+  async executeTool(toolSlug: string, params: Record<string, unknown>): Promise<CommonResult> {
     const tool = this.tools.get(toolSlug);
     if (!tool) {
       // Build helpful error with suggestions
@@ -123,52 +111,8 @@ export abstract class BaseAgent implements IAgent {
       throw new Error(errorInfo);
     }
 
-    // Session ID and description are now required for all tool calls (in context)
-    if (!params.context?.sessionId) {
-      // Return error if sessionId is missing - provide helpful message about providing session name
-      return {
-        success: false,
-        error: createErrorMessage('Session ID required: ',
-          `Tool ${toolSlug} requires context.sessionId. Provide a 2-4 word session name or existing session ID in the context block.`),
-        data: null
-      };
-    }
-
-    // sessionDescription is optional but recommended for better session management
-
-    // Cast to extended interface for type-safe access to optional methods
-    const toolWithContext = tool as IToolWithContext;
-
-    // Store the sessionId on the tool instance for use in prepareResult
-    if ('sessionId' in toolWithContext) {
-      toolWithContext.sessionId = params.context.sessionId;
-    }
-
-    // If the tool has setParentContext method, use it to propagate workspace context
-    // Pass the workspace context even if undefined, as the tool's setParentContext
-    // method can handle the default context inheritance logic
-    if (typeof toolWithContext.setParentContext === 'function') {
-      // Parse workspace context if it's a string, to ensure it's a proper WorkspaceContext object
-      const parsedContext = typeof params.workspaceContext === 'string'
-        ? parseWorkspaceContext(params.workspaceContext) ?? undefined
-        : params.workspaceContext;
-      toolWithContext.setParentContext(parsedContext);
-    }
-
-    // If the tool supports getInheritedWorkspaceContext and there's no explicit workspace context,
-    // try to retrieve the inherited context and apply it to the params
-    if (typeof toolWithContext.getInheritedWorkspaceContext === 'function' &&
-        (!params.workspaceContext || !parseWorkspaceContext(params.workspaceContext)?.workspaceId)) {
-      const inheritedContext = toolWithContext.getInheritedWorkspaceContext(params);
-      if (inheritedContext) {
-        params = {
-          ...params,
-          workspaceContext: inheritedContext
-        };
-      }
-    }
-
-    // Execute the requested tool
+    // Execute the tool with its specific params
+    // Context/session validation happens at useTool level, not here
     const result = await tool.execute(params);
 
     return result;

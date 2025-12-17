@@ -211,6 +211,9 @@ export class AgentRegistrationService implements AgentRegistrationServiceInterfa
       await this.safeInitialize('vaultLibrarian', () => this.initializationService.initializeVaultLibrarian(enableSearchModes, memorySettings ?? { enabled: false }));
       await this.safeInitialize('memoryManager', () => this.initializationService.initializeMemoryManager());
 
+      // ToolManager MUST be initialized LAST - it needs all other agents to be registered
+      await this.safeInitialize('toolManager', () => this.initializationService.initializeToolManager());
+
       logger.systemLog('Using native chatbot UI instead of ChatAgent');
 
       // Calculate final statistics

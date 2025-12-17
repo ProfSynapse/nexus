@@ -130,47 +130,23 @@ export abstract class BaseTool<T extends CommonParameters = CommonParameters, R 
 
   /**
    * Prepare a standardized result object
+   * With Two-Tool Architecture, tools receive only their params - no context validation needed here.
+   * Context/session validation happens at useTool level.
    * @param success Whether the operation was successful
    * @param data Operation-specific data
    * @param error Error message if operation failed
-   * @param context Either a string with contextual information or a record of additional properties to include
-   * @param workspaceContext Workspace context used
+   * @param _context Deprecated - ignored (context handled at useTool level)
+   * @param _workspaceContext Deprecated - ignored (context handled at useTool level)
    * @returns Standardized result object
    */
   protected prepareResult(
     success: boolean,
-    data?: any,
+    data?: unknown,
     error?: string,
-    context?: CommonResult['context'],
-    workspaceContext?: CommonResult['workspaceContext']
+    _context?: unknown,
+    _workspaceContext?: unknown
   ): R {
-    // Extract sessionId from context parameter (DRY fix for all tools)
-    let sessionId: string | undefined;
-
-    if (context && typeof context === 'object' && 'sessionId' in context) {
-      // New pattern: extract sessionId from context object
-      sessionId = context.sessionId;
-    } else {
-      // Fallback: try to get from instance (backward compatibility)
-      sessionId = this.sessionId;
-    }
-
-    if (!sessionId) {
-      // Session ID is required, so we should report an error
-      return createResult<R>(
-        false,
-        null,
-        'Session ID is required but not provided'
-      );
-    }
-
-    // Don't echo back context fields - the LLM already knows them since it passed them in.
-    // Only return success, data, and error.
-    return createResult<R>(
-      success,
-      data,
-      error
-    );
+    return createResult<R>(success, data, error);
   }
 
   /**

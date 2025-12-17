@@ -327,21 +327,20 @@ export class CreateSessionTool extends BaseTool<CreateSessionParams, SessionResu
             if (typeof params.context === 'string') {
                 return params.context;
             } else {
-                // Convert context object to string
+                // Use new ToolContext format (memory/goal/constraints)
                 const parts: string[] = [];
-                if (params.context.primaryGoal) parts.push(`Goal: ${params.context.primaryGoal}`);
-                if (params.context.sessionMemory) parts.push(`Memory: ${params.context.sessionMemory}`);
-                if (params.context.toolContext) parts.push(`Context: ${params.context.toolContext}`);
-                if (params.context.subgoal) parts.push(`Subgoal: ${params.context.subgoal}`);
+                if (params.context.goal) parts.push(`Goal: ${params.context.goal}`);
+                if (params.context.memory) parts.push(`Memory: ${params.context.memory}`);
+                if (params.context.constraints) parts.push(`Constraints: ${params.context.constraints}`);
                 return parts.join('. ');
             }
         }
-        
+
         const parts: string[] = [];
         if (params.sessionGoal) parts.push(`Goal: ${params.sessionGoal}`);
         if (params.description) parts.push(`Description: ${params.description}`);
         if (params.previousSessionId) parts.push(`Continuation from: ${params.previousSessionId}`);
-        
+
         return parts.join('. ');
     }
 

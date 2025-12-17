@@ -143,7 +143,7 @@ export class ToolExecutionStrategy implements IRequestStrategy<ToolExecutionRequ
 
     private async buildRequestContext(request: ToolExecutionRequest): Promise<IRequestContext & { sessionInfo: any }> {
         const { name: fullToolName, arguments: parsedArgs } = request.params;
-        
+
         if (!parsedArgs) {
             throw new McpError(
                 ErrorCode.InvalidParams,
@@ -151,14 +151,35 @@ export class ToolExecutionStrategy implements IRequestStrategy<ToolExecutionRequ
             );
         }
 
-        const agentName = this.extractAgentName(fullToolName);
-        const { tool, ...params } = parsedArgs as { tool: string; [key: string]: any };
+        // Two-Tool Architecture: Handle underscore format (toolManager_getTools, toolManager_useTool)
+        // MCP requires tool names match ^[a-zA-Z0-9_-]{1,64}$ (no dots allowed)
+        let agentName: string;
+        let tool: string;
+        let params: Record<string, unknown> & {
+            context?: { sessionId?: string; workspaceId?: string; [key: string]: unknown };
+            sessionId?: string;
+            workspaceContext?: { workspaceId?: string; [key: string]: unknown };
+        };
 
-        if (!tool) {
-            throw new McpError(
-                ErrorCode.InvalidParams,
-                `❌ Missing required parameter: tool for agent ${agentName}\n\n💡 Specify which tool to use.\n\nExample: { "tool": "searchDirectory", "query": "search term", ... }`
-            );
+        // Check if this is a toolManager tool (toolManager_getTools or toolManager_useTool)
+        if (fullToolName.startsWith('toolManager_')) {
+            // Two-tool architecture: "toolManager_getTools" → agent="toolManager", tool="getTools"
+            agentName = 'toolManager';
+            tool = fullToolName.substring('toolManager_'.length);
+            params = { ...(parsedArgs as typeof params) };
+        } else {
+            // Legacy format: "contentManager_readContent" → agent="contentManager", tool from args
+            agentName = this.extractAgentName(fullToolName);
+            const { tool: toolFromArgs, ...restParams } = parsedArgs as { tool: string; [key: string]: unknown };
+            tool = toolFromArgs;
+            params = restParams as typeof params;
+
+            if (!tool) {
+                throw new McpError(
+                    ErrorCode.InvalidParams,
+                    `❌ Missing required parameter: tool for agent ${agentName}\n\n💡 Specify which tool to use.\n\nExample: { "tool": "searchDirectory", "query": "search term", ... }`
+                );
+            }
         }
 
         // Use SessionContextManager for unified session handling instead of separate SessionService
@@ -193,6 +214,7 @@ export class ToolExecutionStrategy implements IRequestStrategy<ToolExecutionRequ
             }
         } else {
             // Fallback to original SessionService if no SessionContextManager or sessionId
+            // processSessionId handles undefined by generating a new session ID
             sessionInfo = await this.dependencies.sessionService.processSessionId(sessionId);
             if (params.context) {
                 params.context.sessionId = sessionInfo.sessionId;

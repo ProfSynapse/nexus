@@ -96,7 +96,12 @@ export function getSessionSchema(): any {
 }
 
 /**
- * Get schema for context parameter
+ * Get schema for context parameter - NEW ToolContext format
+ * Uses memory → goal → constraints flow (1-3 sentences each)
+ *
+ * Note: When tools are accessed via toolManager.useTool, context is injected automatically.
+ * This schema is used for direct tool access (backward compatibility).
+ *
  * @returns JSON schema for context
  */
 export function getContextSchema(): any {
@@ -104,37 +109,29 @@ export function getContextSchema(): any {
     context: {
       type: 'object',
       properties: {
-        sessionId: {
-          type: 'string',
-          description: '2-4 word name for this session, or the session ID when provided by system'
-        },
         workspaceId: {
           type: 'string',
-          description: 'REQUIRED: Workspace identifier for associating this tool call with the correct workspace. Use the workspace ID from the most recent loadWorkspace call, or the workspace ID that was provided/discussed in the conversation. If no workspace has been loaded, use "default".'
+          description: 'Workspace scope identifier'
         },
-        sessionDescription: {
+        sessionId: {
           type: 'string',
-          description: 'Brief description of what this session is about - updates as conversation evolves'
+          description: 'Session identifier for tracking'
         },
-        sessionMemory: {
+        memory: {
           type: 'string',
-          description: 'Summary of what has happened in the conversation so far, including key decisions, actions taken, and important context'
+          description: 'Essence of conversation so far (1-3 sentences)'
         },
-        toolContext: {
+        goal: {
           type: 'string',
-          description: 'Specific context for why this tool/mode is being used at this moment'
+          description: 'Current objective (1-3 sentences)'
         },
-        primaryGoal: {
+        constraints: {
           type: 'string',
-          description: 'The overarching goal of the current conversation/task'
-        },
-        subgoal: {
-          type: 'string',
-          description: 'What this specific tool call is trying to accomplish'
+          description: 'Rules/limits to follow (1-3 sentences, optional)'
         }
       },
-      required: ['sessionId', 'workspaceId', 'sessionDescription', 'sessionMemory', 'toolContext', 'primaryGoal', 'subgoal'],
-      description: 'Rich contextual information for this tool call including session management'
+      required: ['workspaceId', 'sessionId', 'memory', 'goal'],
+      description: 'Context for this tool call. Use toolManager.useTool for automatic context handling.'
     }
   });
 }

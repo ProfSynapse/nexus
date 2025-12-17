@@ -12,11 +12,12 @@
  */
 export const AGENT_CATEGORIES = {
   CONTENT_OPERATIONS: 'content-operations',
-  FILE_SYSTEM: 'file-system', 
+  FILE_SYSTEM: 'file-system',
   SEARCH_RETRIEVAL: 'search-retrieval',
   MEMORY_MANAGEMENT: 'memory-management',
   LLM_INTEGRATION: 'llm-integration',
-  SYSTEM_COMMANDS: 'system-commands'
+  SYSTEM_COMMANDS: 'system-commands',
+  TOOL_MANAGEMENT: 'tool-management'
 } as const;
 
 /**
@@ -167,6 +168,24 @@ export const AGENT_REGISTRY = {
     ] as const,
     capabilities: ['command-execution', 'system-integration'] as string[],
     requiresVault: true,
+  },
+
+  /**
+   * Tool Manager - Unified tool discovery and execution
+   * Provides the two-tool architecture: getTools + useTool
+   */
+  toolManager: {
+    name: 'toolManager',
+    displayName: 'Tool Manager',
+    description: 'Discover and execute tools across all agents with unified context',
+    version: '1.0.0',
+    category: AGENT_CATEGORIES.TOOL_MANAGEMENT,
+    tools: [
+      'getTools',
+      'useTool'
+    ] as const,
+    capabilities: ['tool-discovery', 'tool-execution', 'context-management'] as string[],
+    requiresVault: false,
   }
 } as const;
 
@@ -299,4 +318,10 @@ export const CommandManagerConfig = {
   name: AGENT_REGISTRY.commandManager.name,
   description: AGENT_REGISTRY.commandManager.description,
   version: AGENT_REGISTRY.commandManager.version
+};
+
+export const ToolManagerConfig = {
+  name: AGENT_REGISTRY.toolManager.name,
+  description: AGENT_REGISTRY.toolManager.description,
+  version: AGENT_REGISTRY.toolManager.version
 };

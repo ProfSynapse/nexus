@@ -54,29 +54,50 @@ export interface ToolCall {
 export type ModeCall = ToolCall;
 
 /**
+ * New context schema for Two-Tool Architecture
+ * Uses memory → goal → constraints flow instead of verbose legacy fields
+ *
+ * This is the CANONICAL context format used by:
+ * - toolManager.useTool (required)
+ * - All tools via CommonParameters (optional, for backward compatibility)
+ */
+export interface ToolContext {
+  /** Workspace scope identifier */
+  workspaceId: string;
+
+  /** Session identifier for tracking */
+  sessionId: string;
+
+  /** Compressed essence of conversation so far (1-3 sentences) */
+  memory: string;
+
+  /** Current objective informed by memory (1-3 sentences) */
+  goal: string;
+
+  /** Optional rules/limits to follow (1-3 sentences) */
+  constraints?: string;
+}
+
+/**
  * Common parameters structure for standardized agent tools
  * Provides session tracking and workspace context
+ *
+ * Uses new ToolContext format (memory/goal/constraints)
+ * Context is REQUIRED - all tools are called via useTool which provides context
  */
 export interface CommonParameters {
   /**
-   * Rich contextual information for this tool call including session management
+   * Contextual information for this tool call (REQUIRED)
+   * Uses ToolContext format with memory, goal, and optional constraints
    */
-  context: {
-    sessionId: string;
-    workspaceId?: string;
-    sessionDescription: string;
-    sessionMemory: string;
-    toolContext: string;
-    primaryGoal: string;
-    subgoal: string;
-  };
-  
+  context: ToolContext;
+
   /**
    * Optional workspace context for scoping operations
    * Can be either an object with workspaceId or a JSON string representation
    */
   workspaceContext?: WorkspaceContext | string;
-  
+
 }
 
 /**
@@ -87,36 +108,28 @@ export interface CommonResult {
    * Whether the operation succeeded
    */
   success: boolean;
-  
+
   /**
    * Error message if success is false
    */
   error?: string;
-  
+
   /**
    * Operation-specific result data
    */
-  data?: any;
-  
+  data?: unknown;
+
   /**
-   * Contextual information for this tool call including session management
-   * Results can contain string context for backward compatibility
+   * Contextual information echoed back
+   * Uses ToolContext format (memory/goal/constraints)
    */
-  context?: {
-    sessionId: string;
-    workspaceId?: string;
-    sessionDescription: string;
-    sessionMemory: string;
-    toolContext: string;
-    primaryGoal: string;
-    subgoal: string;
-  } | string;
-  
+  context?: ToolContext | string;
+
   /**
    * Workspace context that was used (for continuity)
    */
   workspaceContext?: WorkspaceContext;
-  
+
 }
 
 /**

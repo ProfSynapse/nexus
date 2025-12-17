@@ -329,7 +329,7 @@ export class CommonValidators {
     ];
 
     for (const field of contextFields) {
-      const contextObj = params.context as Record<string, unknown>;
+      const contextObj = params.context as unknown as Record<string, unknown>;
       const value = contextObj[field.key];
       if (value !== undefined && (typeof value !== 'string' || value.trim().length < opts.minContextLength)) {
         errors.push(this.createFieldError(

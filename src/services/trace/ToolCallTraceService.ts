@@ -144,7 +144,7 @@ export class ToolCallTraceService {
     success: boolean
   ): string {
     const status = success ? 'Successfully executed' : 'Failed to execute';
-    let description = `${status} ${agent}.${mode}`;
+    let description = `${status} ${agent}_${mode}`;
 
     // Add context-specific details
     if (params?.filePath) {
@@ -185,7 +185,7 @@ export class ToolCallTraceService {
 
     return TraceMetadataBuilder.create({
       tool: {
-        id: `${options.agent}.${options.mode}`,
+        id: `${options.agent}_${options.mode}`,
         agent: options.agent,
         mode: options.mode
       },
@@ -207,16 +207,14 @@ export class ToolCallTraceService {
   ): TraceContextMetadata {
     const contextSource = params?.context || {};
 
+    // Use new V2 format: memory, goal, constraints
+    // These come from the ToolContext provided via getTools/useTool
     return {
       workspaceId,
       sessionId,
-      sessionDescription: contextSource.sessionDescription,
-      sessionMemory: contextSource.sessionMemory,
-      toolContext: contextSource.toolContext,
-      primaryGoal: contextSource.primaryGoal,
-      subgoal: contextSource.subgoal,
-      tags: contextSource.tags,
-      additionalContext: contextSource.additionalContext
+      memory: contextSource.memory || '',
+      goal: contextSource.goal || '',
+      constraints: contextSource.constraints
     };
   }
 

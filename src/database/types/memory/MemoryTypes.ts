@@ -16,20 +16,68 @@ export interface TraceToolMetadata {
 }
 
 /**
- * Canonical context object that replaces the previous ad-hoc usage of params/result.
- * Additional context can be provided through the `additionalContext` property without
- * requiring a schema change.
+ * Legacy context object - kept for backward compatibility with existing traces.
+ * New traces should use TraceContextMetadataV2.
  */
-export interface TraceContextMetadata {
+export interface LegacyTraceContextMetadata {
   workspaceId: string;
   sessionId: string;
   sessionDescription?: string;
   sessionMemory?: string;
-  toolContext?: Record<string, any>;
+  toolContext?: Record<string, unknown>;
   primaryGoal?: string;
   subgoal?: string;
   tags?: string[];
-  additionalContext?: Record<string, any>;
+  additionalContext?: Record<string, unknown>;
+}
+
+/**
+ * New context schema for two-tool architecture.
+ * Uses memory/goal/constraints instead of the verbose legacy fields.
+ * This schema is designed for:
+ * - Context efficiency (local models with small context windows)
+ * - Memory → Goal → Constraints flow (each informs the next)
+ * - Queryable through searchMemory for later reference
+ */
+export interface TraceContextMetadataV2 {
+  /** Workspace scope identifier */
+  workspaceId: string;
+
+  /** Session identifier for tracking */
+  sessionId: string;
+
+  /** Compressed essence of conversation (1-3 sentences) */
+  memory: string;
+
+  /** Current objective informed by memory (1-3 sentences) */
+  goal: string;
+
+  /** Optional rules/limits to follow (1-3 sentences) */
+  constraints?: string;
+
+  /** Optional tags for categorization */
+  tags?: string[];
+}
+
+/**
+ * Union type that accepts both legacy and new context formats.
+ * Use `isNewTraceContextFormat()` to determine which version.
+ */
+export type TraceContextMetadata = LegacyTraceContextMetadata | TraceContextMetadataV2;
+
+/**
+ * Type guard to check if context is the new V2 format.
+ * New format has 'memory' and 'goal' fields.
+ */
+export function isNewTraceContextFormat(context: TraceContextMetadata): context is TraceContextMetadataV2 {
+  return 'memory' in context && 'goal' in context;
+}
+
+/**
+ * Type guard to check if context is the legacy format.
+ */
+export function isLegacyTraceContextFormat(context: TraceContextMetadata): context is LegacyTraceContextMetadata {
+  return !isNewTraceContextFormat(context);
 }
 
 /**

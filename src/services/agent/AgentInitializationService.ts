@@ -18,7 +18,8 @@ import {
   VaultManagerAgent,
   VaultLibrarianAgent,
   MemoryManagerAgent,
-  AgentManagerAgent
+  AgentManagerAgent,
+  ToolManagerAgent
 } from '../../agents';
 import { logger } from '../../utils/logger';
 import { CustomPromptStorageService } from "../../agents/agentManager/services/CustomPromptStorageService";
@@ -251,5 +252,96 @@ export class AgentInitializationService {
 
     this.agentManager.registerAgent(memoryManagerAgent);
     logger.systemLog('MemoryManager agent initialized successfully');
+  }
+
+  /**
+   * Initialize ToolManager agent
+   * MUST be called AFTER all other agents are initialized
+   * ToolManager needs access to all registered agents for tool discovery/execution
+   */
+  async initializeToolManager(): Promise<void> {
+    // Get all currently registered agents as a Map
+    const agents = this.agentManager.getAgents();
+    const agentRegistry = new Map<string, typeof agents[0]>();
+    for (const agent of agents) {
+      agentRegistry.set(agent.name, agent);
+    }
+
+    // Build schema data for dynamic tool descriptions
+    const schemaData = await this.buildSchemaData();
+
+    // Create ToolManagerAgent with the full agent registry and schema data
+    const toolManagerAgent = new ToolManagerAgent(this.app, agentRegistry, schemaData);
+
+    this.agentManager.registerAgent(toolManagerAgent);
+    logger.systemLog(`ToolManager agent initialized successfully with ${agentRegistry.size} agents`);
+  }
+
+  /**
+   * Build schema data for ToolManager
+   * Fetches workspaces, custom agents, and vault root structure
+   */
+  private async buildSchemaData(): Promise<{
+    workspaces: { name: string; description?: string }[];
+    customAgents: { name: string; description?: string }[];
+    vaultRoot: string[];
+  }> {
+    const schemaData: {
+      workspaces: { name: string; description?: string }[];
+      customAgents: { name: string; description?: string }[];
+      vaultRoot: string[];
+    } = {
+      workspaces: [],
+      customAgents: [],
+      vaultRoot: []
+    };
+
+    // Fetch workspaces
+    try {
+      let workspaceService: WorkspaceService | null = null;
+
+      if (this.serviceManager) {
+        workspaceService = this.serviceManager.getServiceIfReady<WorkspaceService>('workspaceService');
+      } else if (hasServices(this.plugin)) {
+        workspaceService = this.plugin.services.workspaceService as WorkspaceService | undefined || null;
+      }
+
+      if (workspaceService) {
+        const workspaces = await workspaceService.listWorkspaces();
+        schemaData.workspaces = workspaces.map(w => ({
+          name: w.name,
+          description: w.description
+        }));
+      }
+    } catch (error) {
+      logger.systemWarn('Failed to fetch workspaces for schema data');
+    }
+
+    // Fetch custom agents
+    try {
+      if (this.customPromptStorage) {
+        const prompts = await this.customPromptStorage.getAllPrompts();
+        schemaData.customAgents = prompts.map(p => ({
+          name: p.name,
+          description: p.description
+        }));
+      }
+    } catch (error) {
+      logger.systemWarn('Failed to fetch custom agents for schema data');
+    }
+
+    // Get vault root structure (top-level files and folders)
+    try {
+      const root = this.app.vault.getRoot();
+      const children = root.children || [];
+      schemaData.vaultRoot = children
+        .map(child => child.name)
+        .filter(name => !name.startsWith('.')) // Exclude hidden folders
+        .sort();
+    } catch (error) {
+      logger.systemWarn('Failed to fetch vault root for schema data');
+    }
+
+    return schemaData;
   }
 }

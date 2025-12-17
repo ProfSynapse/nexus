@@ -209,10 +209,11 @@ export class ActionExecutor {
         return { success: false, error: 'Invalid response from generateImage tool' };
       }
 
-      if (imageResult.success && imageResult.data?.imagePath) {
+      const data = imageResult.data as { imagePath?: string } | undefined;
+      if (imageResult.success && data?.imagePath) {
         return {
           success: true,
-          imagePath: imageResult.data.imagePath as string
+          imagePath: data.imagePath
         };
       } else {
         return {

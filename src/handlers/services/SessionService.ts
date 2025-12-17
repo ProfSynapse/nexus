@@ -7,7 +7,7 @@ import {
 import { logger } from '../../utils/logger';
 
 export class SessionService implements ISessionService {
-    async processSessionId(sessionId: string): Promise<{
+    async processSessionId(sessionId: string | undefined): Promise<{
         sessionId: string;
         isNewSession: boolean;
         isNonStandardId: boolean;

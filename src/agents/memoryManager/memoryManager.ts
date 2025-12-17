@@ -1,14 +1,11 @@
 import { App } from 'obsidian';
 import { BaseAgent } from '../baseAgent';
 import { MemoryManagerConfig } from '../../config/agents';
-import { parseWorkspaceContext } from '../../utils/contextUtils';
 import { MemoryService } from "./services/MemoryService";
 import { WorkspaceService } from "../../services/WorkspaceService";
-import { getErrorMessage } from '../../utils/errorUtils';
 import { sanitizeVaultName } from '../../utils/vaultUtils';
 import { getNexusPlugin } from '../../utils/pluginLocator';
 import { NexusPluginWithServices } from './tools/utils/pluginTypes';
-import { CommonParameters, CommonResult } from '../../types';
 
 // Import consolidated tools
 import { CreateSessionTool } from './tools/sessions/CreateSessionTool';
@@ -174,65 +171,6 @@ export class MemoryManagerAgent extends BaseAgent {
   getCacheManager() {
     const plugin = getNexusPlugin<NexusPluginWithServices>(this.app);
     return plugin?.getServiceIfReady('cacheManager') || null;
-  }
-
-  /**
-   * Execute a tool with automatic session context tracking
-   * @param toolSlug The tool to execute
-   * @param params Parameters for the tool
-   * @returns Result from tool execution
-   */
-  async executeTool(toolSlug: string, params: CommonParameters): Promise<CommonResult> {
-    // If there's a workspace context but no session ID in context, try to get or create a session
-    const wsContext = typeof params.workspaceContext === 'object' ? params.workspaceContext : null;
-    const hasSessionId = params.context?.sessionId;
-
-    if (wsContext?.workspaceId && !hasSessionId) {
-      try {
-        const workspaceId = parseWorkspaceContext(params.workspaceContext)?.workspaceId;
-        if (workspaceId) {
-          // Try to get an active session
-          let sessionId: string | null = null;
-
-          // Get memory service and then get the most recent active session for this workspace
-          const memoryService = await this.getMemoryServiceAsync();
-          if (!memoryService) {
-            return super.executeTool(toolSlug, params);
-          }
-
-          const sessionsResult = await memoryService.getSessions(workspaceId);
-          const activeSessions = sessionsResult.items;
-
-          if (activeSessions && activeSessions.length > 0) {
-            sessionId = activeSessions[0].id;
-          }
-
-          // If no active session, create one automatically for non-session tools
-          // (for session creation, we don't want to create a session automatically)
-          if (!sessionId && !toolSlug.startsWith('createSession')) {
-            const newSession = await memoryService.createSession({
-              workspaceId: workspaceId,
-              name: `Auto-created session for ${toolSlug}`,
-              description: `Automatically created for ${toolSlug} operation`
-            });
-
-            sessionId = newSession.id;
-          }
-
-          if (sessionId) {
-            // Add the session ID to the context parameters
-            if (params.context) {
-              params.context.sessionId = sessionId;
-            }
-          }
-        }
-      } catch (error) {
-        console.error('Failed to get/create session:', getErrorMessage(error));
-      }
-    }
-
-    // Call the parent executeTool method
-    return super.executeTool(toolSlug, params);
   }
 
   /**

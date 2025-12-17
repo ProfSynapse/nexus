@@ -4,7 +4,9 @@ import {
   TraceInputMetadata,
   TraceLegacyMetadata,
   TraceOutcomeMetadata,
-  TraceToolMetadata
+  TraceToolMetadata,
+  isLegacyTraceContextFormat,
+  LegacyTraceContextMetadata
 } from '../../database/types/memory/MemoryTypes';
 
 export interface TraceMetadataBuilderOptions {
@@ -73,10 +75,17 @@ export class TraceMetadataBuilder {
       throw new Error('[TraceMetadataBuilder] sessionId is required in context');
     }
 
-    return {
-      ...context,
-      additionalContext: context.additionalContext ? { ...context.additionalContext } : context.additionalContext
-    };
+    // Handle both legacy and V2 context formats
+    if (isLegacyTraceContextFormat(context)) {
+      const legacyContext = context as LegacyTraceContextMetadata;
+      return {
+        ...legacyContext,
+        additionalContext: legacyContext.additionalContext ? { ...legacyContext.additionalContext } : undefined
+      };
+    }
+
+    // V2 format - just copy as-is (no additionalContext field)
+    return { ...context };
   }
 
   private static normalizeInput(input?: TraceInputMetadata): TraceInputMetadata | undefined {

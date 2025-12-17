@@ -5,6 +5,7 @@ import { BRAND_NAME } from '../../../constants/branding';
 import { isGlobPattern, globToRegex, normalizePath } from '../../../utils/pathUtils';
 import { EmbeddingService } from '../../../services/embeddings/EmbeddingService';
 import { EmbeddingManager } from '../../../services/embeddings/EmbeddingManager';
+import { CommonParameters } from '../../../types';
 
 /**
  * Extended plugin interface that includes optional embedding manager
@@ -24,23 +25,13 @@ interface ScoredSearchResult {
   _score: number; // Internal property for sorting
 }
 
-export interface ContentSearchParams {
+export interface ContentSearchParams extends CommonParameters {
   query: string;
   semantic: boolean;  // REQUIRED: true for vector/embedding search, false for keyword/fuzzy
   limit?: number;
   includeContent?: boolean;
   snippetLength?: number;
   paths?: string[];
-  context: {
-    sessionId: string;
-    workspaceId?: string;
-    sessionDescription: string;
-    sessionMemory: string;
-    toolContext: string;
-    primaryGoal: string;
-    subgoal: string;
-  };
-  sessionId?: string;
 }
 
 export interface ContentSearchResult {
