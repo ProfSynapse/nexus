@@ -1,5 +1,5 @@
 // Export all search tools
-export * from './searchContentTool';
-export * from './searchDirectoryTool';
-export * from './searchMemoryTool';
-export * from './batchTool';
+export * from './searchContent';
+export * from './searchDirectory';
+export * from './searchMemory';
+export * from './batch';

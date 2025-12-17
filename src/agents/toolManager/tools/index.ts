@@ -1,5 +1,5 @@
 /**
  * ToolManager tool exports
  */
-export { GetToolsTool } from './getToolsTool';
-export { UseToolTool } from './useToolTool';
+export { GetToolsTool } from './getTools';
+export { UseToolTool } from './useTool';

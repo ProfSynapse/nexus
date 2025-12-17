@@ -1,5 +1,5 @@
 import { App, TFile, TFolder } from 'obsidian';
-import { BaseDirectoryTool } from './baseDirectoryTool';
+import { BaseDirectoryTool } from './baseDirectory';
 import { ListDirectoryParams, ListDirectoryResult } from '../types';
 import { createErrorMessage } from '../../../utils/errorUtils';
 import { filterByName, FILTER_DESCRIPTION } from '../../../utils/filterUtils';

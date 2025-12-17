@@ -8,9 +8,9 @@ import type { ToolContext } from '../../../types/mcp/AgentTypes';
 import { IStorageAdapter } from '../../../database/interfaces/IStorageAdapter';
 
 // Import the lean search tools
-import { SearchContentTool, ContentSearchParams, ContentSearchResult } from './searchContentTool';
-import { SearchDirectoryTool, SearchDirectoryParams, SearchDirectoryResult } from './searchDirectoryTool';
-import { SearchMemoryTool, SearchMemoryParams, SearchMemoryResult } from './searchMemoryTool';
+import { SearchContentTool, ContentSearchParams, ContentSearchResult } from './searchContent';
+import { SearchDirectoryTool, SearchDirectoryParams, SearchDirectoryResult } from './searchDirectory';
+import { SearchMemoryTool, SearchMemoryParams, SearchMemoryResult } from './searchMemory';
 
 /**
  * Individual search specification for batch execution

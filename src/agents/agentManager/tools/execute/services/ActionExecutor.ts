@@ -4,7 +4,7 @@
  */
 
 import { AgentManager } from '../../../../../services/AgentManager';
-import { ExecutePromptParams } from '../ExecutePromptTool';
+import { ExecutePromptParams } from '../ExecutePrompt';
 import { WebSearchUtils } from '../../../../../services/llm/utils/WebSearchUtils';
 
 export interface ActionExecutionResult {

@@ -5,7 +5,7 @@
 
 import { LLMProviderManager } from '../../../../../services/llm/providers/ProviderManager';
 import { CustomPromptStorageService } from '../../../services/CustomPromptStorageService';
-import { ExecutePromptParams } from '../ExecutePromptTool';
+import { ExecutePromptParams } from '../ExecutePrompt';
 
 export interface PromptExecutionResult {
     success: boolean;

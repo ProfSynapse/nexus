@@ -11,7 +11,7 @@ import {
   DuplicateNoteTool,
   OpenNoteTool
 } from './tools';
-import { MoveNoteTool } from './tools/moveNoteTool';
+import { MoveNoteTool } from './tools/moveNote';
 import { sanitizeVaultName } from '../../utils/vaultUtils';
 
 /**

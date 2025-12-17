@@ -1,2 +1,2 @@
-export { ListCommandsTool } from './listCommandsTool';
-export { ExecuteCommandTool } from './executeCommandTool';
+export { ListCommandsTool } from './listCommands';
+export { ExecuteCommandTool } from './executeCommand';

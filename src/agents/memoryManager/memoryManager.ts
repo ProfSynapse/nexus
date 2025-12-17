@@ -8,18 +8,18 @@ import { getNexusPlugin } from '../../utils/pluginLocator';
 import { NexusPluginWithServices } from './tools/utils/pluginTypes';
 
 // Import consolidated tools
-import { CreateSessionTool } from './tools/sessions/CreateSessionTool';
-import { ListSessionsTool } from './tools/sessions/ListSessionsTool';
-import { LoadSessionTool } from './tools/sessions/LoadSessionTool';
-import { UpdateSessionTool } from './tools/sessions/UpdateSessionTool';
-import { CreateStateTool } from './tools/states/CreateStateTool';
-import { ListStatesTool } from './tools/states/ListStatesTool';
-import { LoadStateTool } from './tools/states/LoadStateTool';
-import { UpdateStateTool } from './tools/states/UpdateStateTool';
-import { CreateWorkspaceTool } from './tools/workspaces/CreateWorkspaceTool';
-import { ListWorkspacesTool } from './tools/workspaces/ListWorkspacesTool';
-import { LoadWorkspaceTool } from './tools/workspaces/LoadWorkspaceTool';
-import { UpdateWorkspaceTool } from './tools/workspaces/UpdateWorkspaceTool';
+import { CreateSessionTool } from './tools/sessions/CreateSession';
+import { ListSessionsTool } from './tools/sessions/ListSessions';
+import { LoadSessionTool } from './tools/sessions/LoadSession';
+import { UpdateSessionTool } from './tools/sessions/UpdateSession';
+import { CreateStateTool } from './tools/states/CreateState';
+import { ListStatesTool } from './tools/states/ListStates';
+import { LoadStateTool } from './tools/states/LoadState';
+import { UpdateStateTool } from './tools/states/UpdateState';
+import { CreateWorkspaceTool } from './tools/workspaces/CreateWorkspace';
+import { ListWorkspacesTool } from './tools/workspaces/ListWorkspaces';
+import { LoadWorkspaceTool } from './tools/workspaces/LoadWorkspace';
+import { UpdateWorkspaceTool } from './tools/workspaces/UpdateWorkspace';
 
 /**
  * Agent for managing workspace memory, sessions, and states

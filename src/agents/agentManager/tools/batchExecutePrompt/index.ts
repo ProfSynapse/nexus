@@ -2,4 +2,4 @@
 export * from './types';
 export * from './services';
 export * from './utils';
-export { BatchExecutePromptTool } from './BatchExecutePromptTool';
+export { BatchExecutePromptTool } from './BatchExecutePrompt';
