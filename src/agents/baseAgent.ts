@@ -135,9 +135,6 @@ export abstract class BaseAgent implements IAgent {
     }
 
     // sessionDescription is optional but recommended for better session management
-    if (!params.context?.sessionDescription) {
-      console.warn(`[${this.name}] context.sessionDescription not provided for ${toolSlug}. Consider providing a brief description for better session tracking.`);
-    }
 
     // Cast to extended interface for type-safe access to optional methods
     const toolWithContext = tool as IToolWithContext;

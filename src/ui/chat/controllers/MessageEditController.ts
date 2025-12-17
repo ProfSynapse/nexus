@@ -34,9 +34,6 @@ export class MessageEditController {
     const textarea = document.createElement('textarea');
     textarea.className = 'message-edit-textarea';
     textarea.value = message.content;
-    textarea.style.width = '100%';
-    textarea.style.minHeight = '60px';
-    textarea.style.resize = 'vertical';
 
     // Create edit controls
     const editControls = document.createElement('div');

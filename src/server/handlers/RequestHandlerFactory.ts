@@ -117,7 +117,6 @@ export class RequestHandlerFactory {
         try {
             await this.onToolCall(toolName, params);
         } catch (error) {
-            console.warn('[MCPServer] Tool call hook failed:', error);
         }
     }
 

@@ -26,7 +26,6 @@ export abstract class BaseSuggester<T> extends EditorSuggest<SuggestionItem<T>> 
   constructor(app: App, config: SuggesterConfig) {
     super(app);
     this.config = config;
-    console.log('[BaseSuggester] Initialized with config:', config);
   }
 
   // ==========================================================================
@@ -90,18 +89,10 @@ export abstract class BaseSuggester<T> extends EditorSuggest<SuggestionItem<T>> 
     const line = editor.getLine(cursor.line);
     const textBeforeCursor = line.substring(0, cursor.ch);
 
-    console.log('[BaseSuggester] onTrigger called:', {
-      line,
-      textBeforeCursor,
-      trigger: this.config.trigger,
-      cursorPos: cursor
-    });
-
     // Check trigger pattern
     const match = this.config.trigger.exec(textBeforeCursor);
 
     if (!match) {
-      console.log('[BaseSuggester] No match for trigger pattern');
       return null;
     }
 
@@ -114,13 +105,6 @@ export abstract class BaseSuggester<T> extends EditorSuggest<SuggestionItem<T>> 
       line: cursor.line,
       ch: cursor.ch - triggerLength
     };
-
-    console.log('[BaseSuggester] Trigger matched!', {
-      query,
-      match: match[0],
-      triggerLength,
-      start
-    });
 
     return {
       query,

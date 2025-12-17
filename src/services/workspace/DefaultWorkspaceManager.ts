@@ -77,10 +77,9 @@ export class DefaultWorkspaceManager {
    */
   setDefaultWorkspaceId(workspaceId: string): void {
     if (!workspaceId || workspaceId.trim() === '') {
-      console.warn('[DefaultWorkspaceManager] Invalid workspace ID provided, keeping current default');
       return;
     }
-    
+
     this.defaultWorkspaceId = workspaceId.trim();
     this.defaultConfig.id = this.defaultWorkspaceId;
   }
@@ -109,7 +108,6 @@ export class DefaultWorkspaceManager {
    */
   private async ensureDefaultWorkspace(): Promise<void> {
     if (!this.workspaceService) {
-      console.warn('[DefaultWorkspaceManager] WorkspaceService not available, skipping default workspace creation');
       return;
     }
 

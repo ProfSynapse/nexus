@@ -127,7 +127,6 @@ export class SchemaValidator {
     if (sanitized.items) {
       if (Array.isArray(sanitized.items)) {
         // Convert array of schemas to prefixItems (tuple validation)
-        console.warn('[SchemaValidator] Converting items array to prefixItems for tuple validation');
         sanitized.prefixItems = sanitized.items.map((itemSchema: any) =>
           this.sanitizeSchemaForGoogle(itemSchema)
         );
@@ -151,27 +150,14 @@ export class SchemaValidator {
 
     // CRITICAL: Validate required array - remove any properties that don't exist in sanitized.properties
     if (sanitized.required && Array.isArray(sanitized.required) && sanitized.properties) {
-      const originalRequired = [...sanitized.required];
       sanitized.required = sanitized.required.filter((propName: string) => {
-        const exists = propName in sanitized.properties;
-        if (!exists) {
-          console.warn(`[SchemaValidator] Removed required property "${propName}" - not in sanitized properties`);
-        }
-        return exists;
+        return propName in sanitized.properties;
       });
 
       // If required array is now empty, remove it
       if (sanitized.required.length === 0) {
         delete sanitized.required;
-      } else if (originalRequired.length !== sanitized.required.length) {
-        console.warn(`[SchemaValidator] Required array modified: ${originalRequired.length} -> ${sanitized.required.length}`);
       }
-    }
-
-    // Log removed properties for debugging
-    const removedProps = Object.keys(schema).filter(key => !(key in sanitized));
-    if (removedProps.length > 0) {
-      console.debug(`[SchemaValidator] Removed unsupported properties: ${removedProps.join(', ')}`);
     }
 
     return sanitized;

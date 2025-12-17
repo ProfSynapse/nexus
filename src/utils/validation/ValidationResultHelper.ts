@@ -28,6 +28,11 @@ export interface ToolInterface {
 }
 
 /**
+ * @deprecated Use ToolInterface instead
+ */
+export type ModeInterface = ToolInterface;
+
+/**
  * Validation error interface for detailed error reporting
  */
 export interface ValidationError {
@@ -357,7 +362,7 @@ export class ValidationResultHelper {
     }
     
     // Extract workspace context from params if available
-    // Note: We only extract from params here. BaseMode's getInheritedWorkspaceContext
+    // Note: We only extract from params here. BaseTool's getInheritedWorkspaceContext
     // handles inheritance logic internally, but we don't call it directly as it's protected.
     if (params.workspaceContext) {
       try {
@@ -366,7 +371,6 @@ export class ValidationResultHelper {
           result.workspaceContext = params.workspaceContext;
         }
       } catch (error) {
-        console.warn('Error extracting workspace context:', error);
       }
     }
     
@@ -425,12 +429,5 @@ export class ValidationResultHelper {
       );
     }
 
-    // Additional performance logging for debugging
-    if (duration > 10) { // Log slow operations (>10ms)
-      console.debug(`ValidationResultHelper: ${operation} in ${toolName} took ${duration.toFixed(2)}ms`, {
-        success,
-        metadata
-      });
-    }
   }
 }

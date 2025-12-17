@@ -5695,3 +5695,283 @@ body.is-mobile .chat-loading-overlay {
         height: 36px;
     }
 }
+
+/* ------------------------------ */
+/* SUGGESTER STYLES               */
+/* ------------------------------ */
+
+/* Suggester container positioning */
+.suggester-container-positioned {
+  position: fixed;
+}
+
+/* Suggester container display states */
+.suggester-container-visible {
+  display: block;
+}
+
+.suggester-container-hidden {
+  display: none;
+}
+
+/* Suggester dropdown styles (TextAreaSuggester specific) */
+.suggester-dropdown-styled {
+  max-height: 300px;
+  z-index: 1000;
+}
+
+/* ------------------------------ */
+/* Progressive Tool Accordion     */
+/* ------------------------------ */
+
+.progressive-accordion-hidden {
+  display: none;
+}
+
+.progressive-accordion-header-visible {
+  display: flex;
+}
+
+.progressive-accordion-content-visible {
+  display: block;
+}
+
+.progressive-accordion-section-visible {
+  display: block;
+}
+
+/* ------------------------------ */
+/* MODAL BUTTON CONTAINERS        */
+/* ------------------------------ */
+
+.modal-button-container-flex {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 20px;
+}
+
+/* ------------------------------ */
+/* CONVERSATION LIST STATES       */
+/* ------------------------------ */
+
+.conversation-actions-hidden {
+    opacity: 0;
+    pointer-events: none;
+}
+
+/* ------------------------------ */
+/* CONTEXT PROGRESS BAR           */
+/* ------------------------------ */
+
+.context-progress-bar-fill-initial {
+    width: 0%;
+}
+
+.context-progress-segment-positioned {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: var(--background-modifier-border);
+}
+
+/* ------------------------------ */
+/* PROGRESS BAR UTILITIES         */
+/* ------------------------------ */
+
+.mcp-progress-container-hidden {
+    display: none;
+}
+
+.mcp-progress-container-visible {
+    display: flex;
+}
+
+/* ------------------------------ */
+/* LLM PROVIDER MODALS            */
+/* ------------------------------ */
+
+/* Model list styles */
+.llm-provider-model-list {
+    margin: 0.5em 0;
+    padding-left: 1.5em;
+}
+
+/* Help section styles */
+.llm-provider-help-summary {
+    cursor: pointer;
+    font-weight: 500;
+}
+
+.llm-provider-help-content {
+    margin-top: 0.5em;
+    padding-left: 1em;
+}
+
+.llm-provider-help-list {
+    margin: 0.5em 0;
+}
+
+/* Model row in generic provider */
+.llm-provider-model-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.llm-provider-model-toggle {
+    margin-left: auto;
+}
+
+/* Nexus progress bar fill - width set dynamically via JS */
+.llm-provider-progress-fill {
+    height: 100%;
+    transition: width 0.2s ease;
+}
+
+/* Hidden state */
+.llm-provider-hidden {
+    display: none;
+}
+
+/* Visible state */
+.llm-provider-visible {
+    display: block;
+}
+
+/* ------------------------------ */
+/* EMBEDDING STATUS BAR           */
+/* ------------------------------ */
+
+.nexus-embedding-control-interactive {
+    cursor: pointer;
+    margin-left: 4px;
+}
+
+.nexus-embedding-status-visible {
+    display: flex;
+}
+
+.nexus-embedding-status-hidden {
+    display: none;
+}
+
+/* ------------------------------ */
+/* EMBEDDING IFRAME               */
+/* ------------------------------ */
+
+.nexus-embedding-iframe-hidden {
+    display: none;
+    width: 0;
+    height: 0;
+}
+
+/* ------------------------------ */
+/* MESSAGE EDIT TEXTAREA          */
+/* ------------------------------ */
+
+.message-edit-textarea {
+    width: 100%;
+    min-height: 60px;
+    resize: vertical;
+}
+
+/* ------------------------------ */
+/* MARKDOWN RENDERER FALLBACK     */
+/* ------------------------------ */
+
+.markdown-renderer-plaintext {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+/* ------------------------------ */
+/* INLINE STYLE REFACTOR          */
+/* ------------------------------ */
+/* Refactored inline styles to CSS classes for better maintainability */
+
+/* Loading Overlay Styles */
+.chat-loading-overlay-visible {
+    display: flex !important;
+}
+
+.chat-loading-overlay-hidden {
+    display: none !important;
+}
+
+/* Progress Bar Styles */
+.chat-progress-bar-reset {
+    width: 0%;
+}
+
+/* Warning Banner Fade Out */
+.chat-warning-banner-fadeout {
+    opacity: 0;
+    transition: opacity 0.5s ease-out;
+}
+
+/* Input Auto-Resize Styles */
+.chat-input-auto-height {
+    height: auto;
+}
+
+.chat-input-overflow-auto {
+    overflow-y: auto;
+}
+
+.chat-input-overflow-hidden {
+    overflow-y: hidden;
+}
+
+/* ------------------------------ */
+/* LLM PROVIDER MODALS            */
+/* ------------------------------ */
+
+/* Model list styles */
+.llm-provider-model-list {
+    margin: 0.5em 0;
+    padding-left: 1.5em;
+}
+
+/* Help section styles */
+.llm-provider-help-summary {
+    cursor: pointer;
+    font-weight: 500;
+}
+
+.llm-provider-help-content {
+    margin-top: 0.5em;
+    padding-left: 1em;
+}
+
+.llm-provider-help-list {
+    margin: 0.5em 0;
+}
+
+/* Model row in generic provider */
+.llm-provider-model-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.llm-provider-model-toggle {
+    margin-left: auto;
+}
+
+/* Nexus progress bar fill - width set dynamically via JS */
+.llm-provider-progress-fill {
+    height: 100%;
+    transition: width 0.2s ease;
+}
+
+/* Hidden state */
+.llm-provider-hidden {
+    display: none;
+}
+
+/* Visible state */
+.llm-provider-visible {
+    display: block;
+}

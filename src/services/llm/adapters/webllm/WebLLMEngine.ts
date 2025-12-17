@@ -136,8 +136,6 @@ function patchWebAssemblyInstantiate(): void {
     return;
   }
 
-  console.log('[WebLLMEngine] Patching WebAssembly.instantiate for custom WASM compatibility...');
-
   // Store original functions
   const originalInstantiate = WebAssembly.instantiate.bind(WebAssembly);
   const originalInstantiateStreaming = WebAssembly.instantiateStreaming?.bind(WebAssembly);
@@ -205,8 +203,6 @@ function patchWebAssemblyInstantiate(): void {
 
   // Mark as patched
   win.__nexus_wasm_patched = true;
-
-  console.log('[WebLLMEngine] WebAssembly.instantiate patched with FFI stubs');
 }
 
 /**
@@ -217,15 +213,12 @@ function patchWebAssemblyInstantiate(): void {
  */
 async function loadWebLLM(): Promise<typeof WebLLMTypes> {
   if (webllm) {
-    console.log('[WebLLMEngine] Using cached WebLLM module');
     return webllm;
   }
 
   // Patch WebAssembly.instantiate BEFORE loading WebLLM
   // This ensures the stubs are injected when WASM is instantiated
   patchWebAssemblyInstantiate();
-
-  console.log('[WebLLMEngine] Loading WebLLM from CDN...');
 
   try {
     // Dynamic import from jsDelivr's esm.run service
@@ -239,8 +232,6 @@ async function loadWebLLM(): Promise<typeof WebLLMTypes> {
       throw new Error('CreateMLCEngine not found in module');
     }
 
-    console.log('[WebLLMEngine] WebLLM loaded successfully from CDN');
-    console.log('[WebLLMEngine] Available exports:', Object.keys(webllm as object).slice(0, 10));
     return webllm;
   } catch (error) {
     console.error('[WebLLMEngine] Failed to load WebLLM from CDN:', error);
@@ -280,7 +271,6 @@ const STOCK_TEST_MODEL_ID = 'Mistral-7B-Instruct-v0.3-q4f16_1-MLC';
 function createNexusAppConfig(selectedModel?: WebLLMModelSpec): WebLLMTypes.AppConfig | undefined {
   if (USE_STOCK_MODEL_FOR_TESTING) {
     // Return undefined to use WebLLM's built-in model list
-    console.log('[WebLLMEngine] Using stock WebLLM model for testing');
     return undefined;
   }
 
@@ -302,8 +292,6 @@ function createNexusAppConfig(selectedModel?: WebLLMModelSpec): WebLLMTypes.AppC
   }
 
   const targetModel = selectedModel || WEBLLM_MODELS[0];
-  console.log('[WebLLMEngine] Creating config with', modelList.length, 'model(s)');
-  console.log('[WebLLMEngine] Target model:', targetModel?.name, targetModel?.apiName);
 
   return { model_list: modelList };
 }
@@ -323,7 +311,6 @@ export class WebLLMEngine {
    */
   static getSharedInstance(): WebLLMEngine {
     if (!sharedEngineInstance) {
-      console.log('[WebLLMEngine] Creating shared singleton instance');
       sharedEngineInstance = new WebLLMEngine();
     }
     return sharedEngineInstance;
@@ -364,7 +351,6 @@ export class WebLLMEngine {
   ): Promise<{ modelId: string; contextWindow: number; maxTokens: number }> {
     // If same model already loaded, skip
     if (this.engine && this.currentModelId === modelSpec.apiName) {
-      console.log('[WebLLMEngine] Model already loaded:', modelSpec.apiName);
       return {
         modelId: modelSpec.apiName,
         contextWindow: modelSpec.contextWindow, // Use model's actual context window
@@ -377,17 +363,15 @@ export class WebLLMEngine {
       try {
         await this.unloadModel();
       } catch (unloadError) {
-        console.warn('[WebLLMEngine] Error unloading previous model:', unloadError);
+        // Ignore unload errors
       }
     }
 
     // Use stock model for testing, or custom model for production
     const modelIdToLoad = USE_STOCK_MODEL_FOR_TESTING ? STOCK_TEST_MODEL_ID : modelSpec.apiName;
-    console.log('[WebLLMEngine] Loading model:', modelIdToLoad);
 
     try {
       // Load WebLLM at runtime (not bundled)
-      console.log('[WebLLMEngine] Step 1: Loading WebLLM library from CDN...');
       const webllmLib = await loadWebLLM();
 
       // Progress callback adapter with error protection
@@ -403,12 +387,11 @@ export class WebLLMEngine {
             });
           }
         } catch (progressError) {
-          console.warn('[WebLLMEngine] Progress callback error:', progressError);
+          // Ignore progress callback errors
         }
       };
 
       // Create custom app config for Nexus model (or undefined to use built-in list)
-      console.log('[WebLLMEngine] Step 2: Creating app config...');
       const appConfig = createNexusAppConfig();
 
       // Validate config before proceeding
@@ -418,9 +401,6 @@ export class WebLLMEngine {
           'CONFIG_INVALID'
         );
       }
-
-      console.log('[WebLLMEngine] Step 3: Creating MLC engine for model:', modelIdToLoad);
-      console.log('[WebLLMEngine] App config model count:', appConfig.model_list.length);
 
       // Create the MLC engine with timeout protection
       const enginePromise = webllmLib.CreateMLCEngine(modelIdToLoad, {
@@ -436,8 +416,6 @@ export class WebLLMEngine {
       this.engine = await Promise.race([enginePromise, timeoutPromise]);
 
       this.currentModelId = modelIdToLoad;
-
-      console.log('[WebLLMEngine] Model loaded successfully:', modelIdToLoad);
 
       return {
         modelId: modelSpec.apiName,
@@ -545,13 +523,10 @@ export class WebLLMEngine {
    */
   async resetChat(): Promise<void> {
     if (this.engine) {
-      console.log('[NEXUS_DEBUG] Resetting chat state (clearing KV cache)...');
       try {
         // Single reset call - double reset can corrupt WebGPU state on Apple Silicon
         await this.engine.resetChat();
-        console.log('[NEXUS_DEBUG] KV cache cleared successfully');
       } catch (error) {
-        console.warn('[WebLLMEngine] Failed to reset chat:', error);
         // Non-fatal - continue anyway
       }
     }
@@ -579,19 +554,16 @@ export class WebLLMEngine {
 
     // CRITICAL: Acquire lock to ensure sequential generation
     // This prevents race conditions during tool continuations
-    console.log('[NEXUS_DEBUG] Acquiring generation lock...');
     await this.acquireGenerationLock();
-    console.log('[NEXUS_DEBUG] Generation lock acquired');
 
     // If there's a lingering generation flag, force cleanup
     if (this.isGenerating) {
-      console.warn('[NEXUS_DEBUG] ⚠️ Generation flag still set after lock, forcing cleanup...');
       try {
         this.engine.interruptGenerate();
         // Longer wait for interrupt to take effect
         await new Promise(resolve => setTimeout(resolve, 500));
       } catch (e) {
-        console.warn('[NEXUS_DEBUG] Interrupt failed:', e);
+        // Ignore interrupt errors
       }
       this.isGenerating = false;
     }
@@ -607,43 +579,23 @@ export class WebLLMEngine {
         // Ignore - might not have anything to interrupt
       }
 
-      console.log(`[NEXUS_DEBUG] isToolContinuation: ${isToolContinuation}`);
-
       // For tool continuations, add a longer delay to let WebGPU fully release resources
       if (isToolContinuation) {
-        console.log('[NEXUS_DEBUG] Tool continuation - waiting 1s for WebGPU resource cleanup...');
         await new Promise(resolve => setTimeout(resolve, 1000));
-        console.log('[NEXUS_DEBUG] WebGPU cooldown complete');
       }
 
       // Always reset KV cache BEFORE each generation to ensure clean state
-      console.log('[NEXUS_DEBUG] Pre-generation KV cache reset...');
       try {
         await this.resetChat();
         // Longer delay after reset for GPU to fully process
         await new Promise(resolve => setTimeout(resolve, 300));
-        console.log('[NEXUS_DEBUG] Pre-generation KV reset complete');
       } catch (e) {
-        console.warn('[NEXUS_DEBUG] Pre-generation reset failed:', e);
+        // Ignore reset errors
       }
-
-      // Log message sizes for debugging
-      const totalChars = messages.reduce((sum, m) => sum + m.content.length, 0);
-      console.log(`[NEXUS_DEBUG] Generation context: ${messages.length} messages, ~${totalChars} chars`);
-      if (messages.length > 2) {
-        // Log each message size for tool continuations
-        messages.forEach((m, i) => {
-          console.log(`[NEXUS_DEBUG] Message ${i} (${m.role}): ${m.content.length} chars`);
-        });
-      }
-
-      // Create streaming request (same for first gen and tool continuations)
-      console.log('[NEXUS_DEBUG] Creating chat completion stream...');
 
       // Wrap stream creation in try-catch to capture WebGPU errors
       let stream: any;
       try {
-        console.log('[NEXUS_DEBUG] Calling engine.chat.completions.create (streaming)...');
         stream = await this.engine.chat.completions.create({
           messages: messages as WebLLMTypes.ChatCompletionMessageParam[],
           temperature: options?.temperature ?? 0.7,
@@ -653,7 +605,6 @@ export class WebLLMEngine {
           stream: true,
           stream_options: { include_usage: true },
         });
-        console.log('[NEXUS_DEBUG] Stream created successfully');
       } catch (streamError) {
         console.error('[NEXUS_DEBUG] Stream creation FAILED:', streamError);
         throw streamError;
@@ -664,34 +615,9 @@ export class WebLLMEngine {
       let finishReason = 'stop';
       let chunkCount = 0;
 
-      console.log('[WebLLMEngine] Starting stream iteration...');
-
-      // Debug: Check WebLLM internal state before iteration
-      try {
-        // Type guard to check if engine has internal debug properties (runtime-only inspection)
-        type EngineInternal = { chat?: unknown; currentModelId?: string };
-        const engineInternal = this.engine as unknown as EngineInternal;
-
-        console.log('[NEXUS_DEBUG] WebLLM internal state:', {
-          hasChat: !!engineInternal.chat,
-          hasPipeline: !!engineInternal.currentModelId,
-          modelId: engineInternal.currentModelId,
-        });
-      } catch (e) {
-        console.log('[NEXUS_DEBUG] Could not inspect WebLLM state:', e);
-      }
-
-      // Wrap stream iteration in try-catch to capture actual WebGPU errors
-      console.log('[NEXUS_DEBUG] About to start iterating stream (prefill begins here)...');
-
       try {
         for await (const chunk of stream) {
         chunkCount++;
-
-        // Log first few chunks in detail
-        if (chunkCount <= 5) {
-          console.log(`[WebLLMEngine] Raw chunk ${chunkCount}:`, JSON.stringify(chunk, null, 2).slice(0, 500));
-        }
 
         // Check for abort
         if (this.abortController?.signal.aborted) {
@@ -713,7 +639,6 @@ export class WebLLMEngine {
         // Capture finish reason
         if (chunk.choices[0]?.finish_reason) {
           finishReason = chunk.choices[0].finish_reason;
-          console.log(`[WebLLMEngine] Finish reason: ${finishReason}`);
         }
 
         // Capture usage from final chunk
@@ -723,7 +648,6 @@ export class WebLLMEngine {
             completionTokens: chunk.usage.completion_tokens || 0,
             totalTokens: chunk.usage.total_tokens || 0,
           };
-          console.log(`[WebLLMEngine] Usage:`, usage);
         }
         }
       } catch (streamIterError) {
@@ -742,8 +666,6 @@ export class WebLLMEngine {
         throw streamIterError;
       }
 
-      console.log(`[WebLLMEngine] Stream complete. Chunks: ${chunkCount}, Content: "${fullContent.slice(0, 100)}..."`)
-
       // Yield final result
       yield {
         content: fullContent,
@@ -751,7 +673,6 @@ export class WebLLMEngine {
         finishReason,
       } as GenerationResult;
     } finally {
-      console.log('[NEXUS_DEBUG] Generation cleanup: resetting flags');
       this.isGenerating = false;
       this.abortController = null;
 
@@ -759,10 +680,8 @@ export class WebLLMEngine {
       // The resetChat() was causing empty responses on tool continuations
       // because WebLLM seems to need the KV cache state to persist
       // We only reset at the START of first generation (hasGeneratedOnce check)
-      console.log('[NEXUS_DEBUG] Skipping post-generation KV reset (preserving for continuations)');
 
       // Release the generation lock so next generation can proceed
-      console.log('[NEXUS_DEBUG] Releasing generation lock');
       this.releaseGenerationLock();
     }
   }
@@ -785,7 +704,6 @@ export class WebLLMEngine {
    */
   async unloadModel(): Promise<void> {
     if (this.engine) {
-      console.log('[WebLLMEngine] Unloading model:', this.currentModelId);
       await this.engine.unload();
       this.engine = null;
       this.currentModelId = null;

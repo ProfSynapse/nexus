@@ -139,7 +139,6 @@ export class AdapterRegistry implements IAdapterRegistry {
       }).catch(() => {});
 
       this.webllmAdapter.dispose().catch((error) => {
-        console.warn('AdapterRegistry: Failed to dispose Nexus adapter:', error);
       });
       this.webllmAdapter = undefined;
     }
@@ -162,7 +161,6 @@ export class AdapterRegistry implements IAdapterRegistry {
     const providers = this.settings?.providers;
 
     if (!providers) {
-      console.warn('AdapterRegistry: No provider settings found, skipping initialization');
       return;
     }
 
@@ -229,9 +227,7 @@ export class AdapterRegistry implements IAdapterRegistry {
       if (providers.ollama?.enabled && providers.ollama.apiKey) {
         try {
           const ollamaModel = providers.ollama.ollamaModel;
-          if (!ollamaModel || !ollamaModel.trim()) {
-            console.warn('AdapterRegistry: Ollama enabled but no model configured');
-          } else {
+          if (ollamaModel && ollamaModel.trim()) {
             const { OllamaAdapter } = await import('../adapters/ollama/OllamaAdapter');
             this.adapters.set('ollama', new OllamaAdapter(providers.ollama.apiKey, ollamaModel));
           }
@@ -256,23 +252,11 @@ export class AdapterRegistry implements IAdapterRegistry {
     // ═══════════════════════════════════════════════════════════════════════════
     // NEXUS/WEBLLM DISABLED (Dec 6, 2025)
     // ═══════════════════════════════════════════════════════════════════════════
-    // WebLLM causes hard Electron renderer crashes during multi-turn conversations.
-    // See CLAUDE.md "Known Issues" for details.
+    // WebLLM adapter intentionally disabled - WebGPU crashes Electron renderer on
+    // Apple Silicon during second generation in multi-turn conversations.
+    // See: https://github.com/mlc-ai/web-llm/issues/647
+    // To re-enable: uncomment WebLLM registration code in AdapterRegistry.ts (~258)
     // ═══════════════════════════════════════════════════════════════════════════
-    // if (providers.webllm?.enabled && this.vault) {
-    //   try {
-    //     const { WebLLMAdapter } = await import('../adapters/webllm/WebLLMAdapter');
-    //     const { getWebLLMLifecycleManager } = await import('../adapters/webllm/WebLLMLifecycleManager');
-    //     this.webllmAdapter = new WebLLMAdapter(this.vault, this.mcpConnector);
-    //     this.adapters.set('webllm', this.webllmAdapter);
-    //     const lifecycleManager = getWebLLMLifecycleManager();
-    //     lifecycleManager.setAdapter(this.webllmAdapter);
-    //     await this.webllmAdapter.initialize();
-    //   } catch (error) {
-    //     console.error('[AdapterRegistry] Failed to create Nexus adapter:', error);
-    //     this.logError('webllm', error);
-    //   }
-    // }
   }
 
   /**

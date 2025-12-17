@@ -306,25 +306,12 @@ export class JSONLWriter {
       const lines = content.split('\n').filter(line => line.trim());
 
       const events: T[] = [];
-      let parseErrors = 0;
       for (let i = 0; i < lines.length; i++) {
         try {
           const event = JSON.parse(lines[i]) as T;
           events.push(event);
         } catch (e) {
-          parseErrors++;
-          // Truncate line preview to avoid console spam with huge malformed lines
-          const linePreview = lines[i].length > 200
-            ? lines[i].substring(0, 200) + '... [truncated]'
-            : lines[i];
-          console.warn(
-            `[JSONLWriter] Skipping malformed line ${i + 1} in ${relativePath}: ${linePreview}`
-          );
-          // Continue parsing other lines
         }
-      }
-      if (parseErrors > 0) {
-        console.warn(`[JSONLWriter] ${relativePath}: Skipped ${parseErrors} malformed line(s), loaded ${events.length} valid events`);
       }
 
       return events;
@@ -472,7 +459,6 @@ export class JSONLWriter {
       const exists = await this.app.vault.adapter.exists(fullPath);
       if (exists) {
         await this.app.vault.adapter.remove(fullPath);
-        console.log(`[JSONLWriter] Deleted file: ${fullPath}`);
       }
     } catch (error) {
       console.error(`[JSONLWriter] Failed to delete file ${relativePath}:`, error);

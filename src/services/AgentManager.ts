@@ -64,15 +64,22 @@ export class AgentManager {
   }
   
   /**
-   * Execute a mode on an agent
+   * Execute a tool on an agent
    * @param agentName Name of the agent
-   * @param mode Mode to execute
-   * @param params Parameters to pass to the mode
-   * @returns Promise that resolves with the mode's result
+   * @param tool Tool to execute
+   * @param params Parameters to pass to the tool
+   * @returns Promise that resolves with the tool's result
    */
-  async executeAgentMode(agentName: string, mode: string, params: any): Promise<any> {
+  async executeAgentTool(agentName: string, tool: string, params: Record<string, unknown>): Promise<unknown> {
     const agent = this.getAgent(agentName);
-    return await agent.executeMode(mode, params);
+    return await agent.executeTool(tool, params);
+  }
+
+  /**
+   * @deprecated Use executeAgentTool instead
+   */
+  async executeAgentMode(agentName: string, mode: string, params: Record<string, unknown>): Promise<unknown> {
+    return this.executeAgentTool(agentName, mode, params);
   }
   
   

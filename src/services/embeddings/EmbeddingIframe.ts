@@ -76,9 +76,7 @@ export class EmbeddingIframe {
 
     // Create and configure iframe
     this.iframe = document.createElement('iframe');
-    this.iframe.style.display = 'none';
-    this.iframe.style.width = '0';
-    this.iframe.style.height = '0';
+    this.iframe.className = 'nexus-embedding-iframe-hidden';
     this.iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin');
 
     // Set up message listener before loading iframe

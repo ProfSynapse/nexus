@@ -137,7 +137,6 @@ export class UsageTracker {
             localStorage.setItem(this.budgetKey, budget.toString());
             this.cleanupLegacyKeys(this.legacyBudgetKeys);
         } catch (error) {
-            console.warn(`Failed to save ${this.usageType} budget:`, error);
         }
     }
 
@@ -151,7 +150,6 @@ export class UsageTracker {
             const budget = this.getWithLegacyKeys(this.budgetKey, this.legacyBudgetKeys);
             return budget ? parseFloat(budget) : 0;
         } catch (error) {
-            console.warn(`Failed to load ${this.usageType} budget:`, error);
             return 0;
         }
     }
@@ -189,7 +187,6 @@ export class UsageTracker {
                 lastUpdated: parsed.lastUpdated || new Date().toISOString()
             };
         } catch (error) {
-            console.warn(`Failed to load ${this.usageType} usage data:`, error);
             return defaultData;
         }
     }
@@ -204,7 +201,6 @@ export class UsageTracker {
             localStorage.setItem(this.storageKeyPrefix, JSON.stringify(data));
             this.cleanupLegacyKeys(this.legacyStorageKeys);
         } catch (error) {
-            console.warn(`Failed to save ${this.usageType} usage data:`, error);
         }
     }
 
@@ -223,7 +219,6 @@ export class UsageTracker {
                     localStorage.setItem(primaryKey, legacyValue);
                     this.cleanupLegacyKeys(legacyKeys);
                 } catch (error) {
-                    console.warn(`Failed to migrate ${this.usageType} data from ${key}:`, error);
                 }
                 return legacyValue;
             }

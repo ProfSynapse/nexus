@@ -71,7 +71,7 @@ export class NexusProviderModal implements IProviderModal {
 
     // Model section (hidden until device check complete)
     this.modelSection = container.createDiv('nexus-model-section');
-    this.modelSection.style.display = 'none';
+    this.modelSection.addClass('llm-provider-hidden');
 
     // Start device detection
     this.detectDevice();
@@ -109,7 +109,8 @@ export class NexusProviderModal implements IProviderModal {
 
       // Show model section
       if (this.modelSection) {
-        this.modelSection.style.display = 'block';
+        this.modelSection.removeClass('llm-provider-hidden');
+        this.modelSection.addClass('llm-provider-visible');
         this.renderModelSection(availableModels);
       }
 
@@ -308,6 +309,7 @@ export class NexusProviderModal implements IProviderModal {
     // Progress bar
     const barBg = container.createDiv('nexus-progress-bar');
     const barFill = barBg.createDiv('nexus-progress-fill');
+    barFill.addClass('llm-provider-progress-fill');
     barFill.style.width = `${this.downloadProgress}%`;
 
     // Status row with progress text
@@ -360,8 +362,12 @@ export class NexusProviderModal implements IProviderModal {
         if (this.actionArea) {
           const fill = this.actionArea._progressFill;
           const text = this.actionArea._statusText;
-          if (fill) fill.style.width = `${this.downloadProgress}%`;
-          if (text) text.textContent = `${stage} · ${this.downloadProgress}%`;
+          if (fill) {
+            fill.style.width = `${this.downloadProgress}%`;
+          }
+          if (text) {
+            text.textContent = `${stage} · ${this.downloadProgress}%`;
+          }
         }
       });
 

@@ -195,7 +195,6 @@ export class SearchDirectoryTool extends BaseTool<SearchDirectoryParams, SearchD
       return items;
 
     } catch (error) {
-      console.warn(`Could not apply workspace context for ${workspaceId}:`, error);
       return items;
     }
   }

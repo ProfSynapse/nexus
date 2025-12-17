@@ -60,7 +60,7 @@ export class ProgressBar {
         
         // Create the container
         this.container = containerEl.createDiv({ cls: 'mcp-progress-container' });
-        this.container.style.display = 'none';
+        this.container.addClass('mcp-progress-container-hidden');
         
         // Progress info
         const infoContainer = this.container.createDiv({ cls: 'mcp-progress-info' });
@@ -157,14 +157,16 @@ export class ProgressBar {
      * Show the progress bar
      */
     show(): void {
-        this.container.style.display = 'flex';
+        this.container.removeClass('mcp-progress-container-hidden');
+        this.container.addClass('mcp-progress-container-visible');
     }
-    
+
     /**
      * Hide the progress bar
      */
     hide(): void {
-        this.container.style.display = 'none';
+        this.container.removeClass('mcp-progress-container-visible');
+        this.container.addClass('mcp-progress-container-hidden');
     }
     
     /**

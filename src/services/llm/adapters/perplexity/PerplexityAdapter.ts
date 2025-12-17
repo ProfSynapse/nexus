@@ -65,10 +65,7 @@ export class PerplexityAdapter extends BaseAdapter {
       const model = options?.model || this.currentModel;
 
       // Perplexity does not support native function calling
-      // If tools are requested, inform user and proceed without tools
-      if (options?.tools && options.tools.length > 0) {
-        console.warn('[Perplexity Adapter] Tools requested but Perplexity API does not support function calling. Proceeding without tools.');
-      }
+      // If tools are requested, proceed without tools
 
       // Use standard chat completions (Perplexity's strength is web search, not tool calling)
       return await this.generateWithChatCompletions(prompt, options);
@@ -279,7 +276,6 @@ export class PerplexityAdapter extends BaseAdapter {
         }))
         .filter((result: SearchResult | null): result is SearchResult => result !== null);
     } catch (error) {
-      console.warn('[Perplexity] Failed to extract search sources:', error);
       return [];
     }
   }

@@ -327,13 +327,11 @@ export class WorkspaceRepository
   // ============================================================================
 
   protected rowToEntity(row: any): WorkspaceMetadata {
-    // Parse context from JSON string
     let context = undefined;
     if (row.contextJson) {
       try {
         context = JSON.parse(row.contextJson);
       } catch (e) {
-        console.warn('[WorkspaceRepository] Failed to parse contextJson:', e);
       }
     }
 

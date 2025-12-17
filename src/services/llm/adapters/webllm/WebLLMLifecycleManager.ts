@@ -76,8 +76,6 @@ export class WebLLMLifecycleManager {
    * Called when AdapterRegistry initializes
    */
   setAdapter(adapter: WebLLMAdapter | null): void {
-    const instanceId = getAdapterInstanceId(adapter);
-    console.log(`[NEXUS_DEBUG] LifecycleManager.setAdapter instance=#${instanceId}`);
     this.adapter = adapter;
   }
 
@@ -95,7 +93,6 @@ export class WebLLMLifecycleManager {
     try {
       const registry = getPluginRegistry();
       if (!registry) {
-        console.log('[NEXUS_DEBUG] isNexusDefault: No plugin registry');
         return false;
       }
 
@@ -133,7 +130,6 @@ export class WebLLMLifecycleManager {
         const defaultModelObj = defaultModel as Record<string, unknown>;
         const provider = defaultModelObj.provider;
 
-        console.log('[NEXUS_DEBUG] isNexusDefault:', { provider });
         if (provider === 'webllm') {
           return true;
         }
@@ -141,7 +137,6 @@ export class WebLLMLifecycleManager {
 
       return false;
     } catch (error) {
-      console.error('[NEXUS_DEBUG] isNexusDefault error:', error);
       return false;
     }
   }
@@ -178,17 +173,9 @@ export class WebLLMLifecycleManager {
 
     const isNexusDefault = this.isNexusDefaultProvider();
     const isLoaded = this.adapter.isModelLoaded();
-    const adapterState = this.adapter.getState();
-
-    console.log('[NEXUS_DEBUG] ChatViewOpened:', {
-      isNexusDefault,
-      isLoaded,
-      status: adapterState?.status,
-    });
 
     // Auto-load if Nexus is default - WebLLM will use browser cache if available
     if (isNexusDefault && !isLoaded && !this.isLoading) {
-      console.log('[NEXUS_DEBUG] Auto-loading Nexus model');
       await this.loadModel();
     }
   }
@@ -216,7 +203,6 @@ export class WebLLMLifecycleManager {
       const isLoaded = this.adapter.isModelLoaded();
 
       if (isInstalled && !isLoaded && !this.isLoading) {
-        console.log('[NexusLifecycle] Switched to Nexus - loading model');
         await this.loadModel();
       }
 
@@ -226,7 +212,6 @@ export class WebLLMLifecycleManager {
     } else if (fromProvider === 'webllm') {
       // Switching AWAY from Nexus
       if (this.adapter.isModelLoaded()) {
-        console.log('[NexusLifecycle] Switched away from Nexus - unloading model');
         await this.unloadModel();
       }
     }
@@ -253,12 +238,8 @@ export class WebLLMLifecycleManager {
 
     const modelSpec = WEBLLM_MODELS[0];
     if (!modelSpec) {
-      console.warn('[NEXUS_DEBUG] loadModel: No model spec');
       return;
     }
-
-    const adapterInstanceId = getAdapterInstanceId(this.adapter);
-    console.log(`[NEXUS_DEBUG] loadModel: Starting for ${modelSpec.name} on adapter instance=#${adapterInstanceId}`);
 
     this.isLoading = true;
     this.callbacks.onLoadingStart?.();
@@ -273,8 +254,6 @@ export class WebLLMLifecycleManager {
       this.callbacks.onLoadingComplete?.();
 
       new Notice('Nexus model loaded', 3000);
-      console.log('[NexusLifecycle] Model loaded successfully');
-
     } catch (error) {
       this.isLoading = false;
       const err = error instanceof Error ? error : new Error(String(error));
@@ -299,8 +278,6 @@ export class WebLLMLifecycleManager {
       this.callbacks.onUnload?.();
 
       new Notice('Nexus model unloaded to free GPU memory', 3000);
-      console.log('[NexusLifecycle] Model unloaded successfully');
-
     } catch (error) {
       console.error('[NexusLifecycle] Failed to unload model:', error);
     }
@@ -320,7 +297,6 @@ export class WebLLMLifecycleManager {
 
       const idleTime = Date.now() - this.lastActivityTime;
       if (idleTime >= WebLLMLifecycleManager.IDLE_TIMEOUT_MS) {
-        console.log('[NexusLifecycle] Idle timeout reached - unloading model');
         await this.unloadModel();
       }
     }, WebLLMLifecycleManager.IDLE_TIMEOUT_MS);

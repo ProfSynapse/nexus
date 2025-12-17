@@ -67,8 +67,7 @@ export class EmbeddingStatusBar {
       text: '',
       cls: 'nexus-embedding-control'
     });
-    this.controlEl.style.cursor = 'pointer';
-    this.controlEl.style.marginLeft = '4px';
+    this.controlEl.addClass('nexus-embedding-control-interactive');
 
     // Wire up progress events
     this.indexingQueue.on('progress', this.handleProgress.bind(this));
@@ -171,7 +170,8 @@ export class EmbeddingStatusBar {
    */
   private show(): void {
     if (this.statusBarItem) {
-      this.statusBarItem.style.display = 'flex';
+      this.statusBarItem.removeClass('nexus-embedding-status-hidden');
+      this.statusBarItem.addClass('nexus-embedding-status-visible');
     }
   }
 
@@ -180,7 +180,8 @@ export class EmbeddingStatusBar {
    */
   private hide(): void {
     if (this.statusBarItem) {
-      this.statusBarItem.style.display = 'none';
+      this.statusBarItem.removeClass('nexus-embedding-status-visible');
+      this.statusBarItem.addClass('nexus-embedding-status-hidden');
     }
   }
 

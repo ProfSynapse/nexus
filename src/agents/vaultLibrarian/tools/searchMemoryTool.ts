@@ -153,7 +153,6 @@ export class SearchMemoryTool extends BaseTool<SearchMemoryParams, SearchMemoryR
           // Access the raw trace that was attached during enrichment
           const trace = result._rawTrace;
           if (!trace) {
-            console.warn('[SearchMemoryTool] No raw trace found for result:', result.id);
             return null;
           }
 
@@ -178,15 +177,10 @@ export class SearchMemoryTool extends BaseTool<SearchMemoryParams, SearchMemoryR
           if (context && typeof context === 'object' && !Array.isArray(context)) {
             // Clone it so we don't mutate the original data
             context = { ...context };
-            
+
             // Remove the technical IDs we don't want
             delete context.sessionId;
             delete context.workspaceId;
-            
-            // Log the final cleaned context
-            if (Object.keys(context).length > 0) {
-                console.log(`[SearchMemoryTool] Final context for ${trace.id} (from ${source}):`, context);
-            }
           } else {
             // Fallback to empty if it's not a valid object
             context = {};
@@ -203,7 +197,6 @@ export class SearchMemoryTool extends BaseTool<SearchMemoryParams, SearchMemoryR
           }
           return entry;
         } catch (error) {
-          console.warn('[SearchMemoryTool] Failed to simplify result:', error);
           return null;
         }
       });

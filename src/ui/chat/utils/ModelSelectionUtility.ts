@@ -98,11 +98,9 @@ export class ModelSelectionUtility {
 
       // If still no default, return the hardcoded default (openai/gpt-4o)
       // This prevents errors during initial setup
-      console.warn('[ModelSelectionUtility] No default model configured, using fallback');
       return { provider: 'openai', model: 'gpt-4o' };
     } catch (error) {
       // Return fallback instead of throwing to prevent UI errors
-      console.warn('[ModelSelectionUtility] Error getting default model, using fallback:', error);
       return { provider: 'openai', model: 'gpt-4o' };
     }
   }

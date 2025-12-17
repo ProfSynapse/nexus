@@ -61,7 +61,7 @@ export class ModelAgentManager {
   private currentSystemPrompt: string | null = null;
   private selectedWorkspaceId: string | null = null;
   private workspaceContext: WorkspaceContext | null = null;
-  private loadedWorkspaceData: any = null; // Full comprehensive workspace data from LoadWorkspaceMode
+  private loadedWorkspaceData: any = null; // Full comprehensive workspace data from LoadWorkspaceTool
   private contextNotesManager: ContextNotesManager;
   private currentConversationId: string | null = null;
   private messageEnhancement: MessageEnhancement | null = null;
@@ -365,8 +365,8 @@ export class ModelAgentManager {
     // Notify Nexus lifecycle manager of provider changes
     if (previousProvider !== newProvider) {
       const lifecycleManager = getWebLLMLifecycleManager();
-      lifecycleManager.handleProviderChanged(previousProvider, newProvider).catch((error) => {
-        console.warn('[ModelAgentManager] Nexus lifecycle manager error:', error);
+      lifecycleManager.handleProviderChanged(previousProvider, newProvider).catch(() => {
+        // Lifecycle manager error handling
       });
     }
   }
@@ -590,11 +590,11 @@ export class ModelAgentManager {
         const agentMap = agents instanceof Map ? agents : new Map(agents.map((a: any) => [a.name, a]));
 
         return Array.from(agentMap.entries()).map(([name, agent]: [string, any]) => {
-          const modes = agent.getModes?.() || [];
+          const tools = agent.getTools?.() || [];
           return {
             name,
             description: agent.description || '',
-            modes: modes.map((m: any) => m.slug || m.name || 'unknown')
+            modes: tools.map((t: any) => t.slug || t.name || 'unknown')
           };
         });
       }
@@ -606,11 +606,11 @@ export class ModelAgentManager {
         const result: ToolAgentInfo[] = [];
 
         for (const [name, agent] of agents) {
-          const modes = agent.getModes?.() || [];
+          const tools = agent.getTools?.() || [];
           result.push({
             name,
             description: agent.description || '',
-            modes: modes.map((m: any) => m.slug || m.name || 'unknown')
+            modes: tools.map((t: any) => t.slug || t.name || 'unknown')
           });
         }
 
@@ -619,7 +619,6 @@ export class ModelAgentManager {
 
       return [];
     } catch (error) {
-      console.warn('[ModelAgentManager] Failed to get tool agent info:', error);
       return [];
     }
   }

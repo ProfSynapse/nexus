@@ -125,8 +125,8 @@ export class ChatView extends ItemView {
 
     // Notify Nexus lifecycle manager that ChatView is open
     // This triggers pre-loading if Nexus is the default provider
-    lifecycleManager.handleChatViewOpened().catch((error) => {
-      console.warn('[ChatView] Nexus lifecycle manager error on open:', error);
+    lifecycleManager.handleChatViewOpened().catch(() => {
+      // Silently handle errors
     });
   }
 
@@ -154,13 +154,8 @@ export class ChatView extends ItemView {
 
       // Hide overlay
       this.hideDatabaseLoadingOverlay();
-
-      if (!success) {
-        console.warn('[ChatView] Database initialization failed, using legacy storage');
-      }
     } catch (error) {
       this.hideDatabaseLoadingOverlay();
-      console.warn('[ChatView] Error waiting for database:', error);
     }
   }
 
@@ -175,7 +170,7 @@ export class ChatView extends ItemView {
     const statusEl = overlay.querySelector('[data-status-el]');
     if (statusEl) statusEl.textContent = 'Loading database...';
 
-    overlay.style.display = 'flex';
+    overlay.addClass('chat-loading-overlay-visible');
     overlay.offsetHeight; // Trigger reflow
     overlay.addClass('is-visible');
   }
@@ -189,7 +184,8 @@ export class ChatView extends ItemView {
 
     overlay.removeClass('is-visible');
     setTimeout(() => {
-      overlay.style.display = 'none';
+      overlay.removeClass('chat-loading-overlay-visible');
+      overlay.addClass('chat-loading-overlay-hidden');
       // Reset text for potential Nexus loading later
       const statusEl = overlay.querySelector('[data-status-el]');
       if (statusEl) statusEl.textContent = 'Loading Nexus model...';
@@ -692,7 +688,7 @@ export class ChatView extends ItemView {
     const overlay = this.layoutElements?.loadingOverlay;
     if (!overlay) return;
 
-    overlay.style.display = 'flex';
+    overlay.addClass('chat-loading-overlay-visible');
     // Trigger reflow for animation
     overlay.offsetHeight;
     overlay.addClass('is-visible');
@@ -716,7 +712,7 @@ export class ChatView extends ItemView {
     }
 
     if (progressBar) {
-      progressBar.style.width = `${percent}%`;
+      progressBar.style.setProperty('width', `${percent}%`);
     }
 
     if (progressText) {
@@ -735,14 +731,15 @@ export class ChatView extends ItemView {
 
     // Wait for transition then hide
     setTimeout(() => {
-      overlay.style.display = 'none';
+      overlay.removeClass('chat-loading-overlay-visible');
+      overlay.addClass('chat-loading-overlay-hidden');
 
       // Reset progress
       const progressBar = overlay.querySelector('[data-progress-el]') as HTMLElement;
       const progressText = overlay.querySelector('[data-progress-text-el]');
       const statusEl = overlay.querySelector('[data-status-el]');
 
-      if (progressBar) progressBar.style.width = '0%';
+      if (progressBar) progressBar.addClass('chat-progress-bar-reset');
       if (progressText) progressText.textContent = '0%';
       if (statusEl) statusEl.textContent = 'Loading Nexus model...';
     }, 300);

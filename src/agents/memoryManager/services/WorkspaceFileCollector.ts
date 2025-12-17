@@ -73,7 +73,6 @@ export class WorkspaceFileCollector {
       const folder = app.vault.getAbstractFileByPath(rootFolder);
 
       if (!folder || !(folder instanceof TFolder)) {
-        console.warn('[WorkspaceFileCollector] Workspace root folder not found or empty:', rootFolder);
         return { path: { folder: rootFolder, files: [] }, failed: true };
       }
 
@@ -89,7 +88,6 @@ export class WorkspaceFileCollector {
       };
 
     } catch (error) {
-      console.warn('[WorkspaceFileCollector] Failed to build workspace path:', error);
       return { path: { folder: rootFolder, files: [] }, failed: true };
     }
   }
@@ -134,7 +132,6 @@ export class WorkspaceFileCollector {
   ): Promise<RecentFileInfo[]> {
     try {
       if (!cacheManager) {
-        console.warn('[WorkspaceFileCollector] CacheManager not available for recent files');
         return [];
       }
 
@@ -151,7 +148,6 @@ export class WorkspaceFileCollector {
       }));
 
     } catch (error) {
-      console.warn('[WorkspaceFileCollector] Failed to get recent files:', error);
       return [];
     }
   }

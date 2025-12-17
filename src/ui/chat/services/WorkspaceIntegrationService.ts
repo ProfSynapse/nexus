@@ -26,7 +26,7 @@ export class WorkspaceIntegrationService {
 
   /**
    * Load workspace by ID with full context (like loadWorkspace tool)
-   * This executes the LoadWorkspaceMode to get comprehensive data including file structure
+   * This executes the LoadWorkspaceTool to get comprehensive data including file structure
    */
   async loadWorkspace(workspaceId: string): Promise<Record<string, unknown> | null> {
     try {
@@ -43,8 +43,8 @@ export class WorkspaceIntegrationService {
           const memoryManager = agentManager.getAgent('memoryManager');
 
           if (memoryManager) {
-            // Execute LoadWorkspaceMode to get comprehensive workspace data
-            const result = await memoryManager.executeMode('loadWorkspace', {
+            // Execute loadWorkspace tool to get comprehensive workspace data
+            const result = await memoryManager.executeTool('loadWorkspace', {
               id: workspaceId,
               limit: 3 // Get recent sessions, states, and activity
             });
@@ -65,7 +65,7 @@ export class WorkspaceIntegrationService {
         }
       }
 
-      // Fallback: just load basic workspace data if LoadWorkspaceMode fails
+      // Fallback: just load basic workspace data if LoadWorkspaceTool fails
       const workspaceService = await plugin.getService<WorkspaceService>('workspaceService');
       if (workspaceService) {
         const workspace = await workspaceService.getWorkspace(workspaceId);

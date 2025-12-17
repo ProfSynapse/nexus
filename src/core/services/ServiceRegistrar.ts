@@ -70,7 +70,6 @@ export class ServiceRegistrar {
 
         for (const serviceFactory of ADDITIONAL_SERVICE_FACTORIES) {
             if (!isValidServiceFactory(serviceFactory)) {
-                console.warn('[ServiceRegistrar] Skipping invalid service factory:', serviceFactory);
                 continue;
             }
 
@@ -167,7 +166,6 @@ export class ServiceRegistrar {
 
             // Save settings in background
             settings.saveSettings().catch(error => {
-                console.warn('[ServiceRegistrar] Failed to save settings after directory init:', error);
             });
 
         } catch (error) {
@@ -260,7 +258,6 @@ export class ServiceRegistrar {
         try {
             return await this.context.serviceManager.getService<T>(name);
         } catch (error) {
-            console.warn(`[ServiceRegistrar] Failed to get service '${name}':`, error);
             return null;
         }
     }
@@ -285,8 +282,7 @@ export class ServiceRegistrar {
             // Wait before retrying
             await new Promise(resolve => setTimeout(resolve, retryInterval));
         }
-        
-        console.warn(`[ServiceRegistrar] Service '${serviceName}' not ready after ${timeoutMs}ms`);
+
         return null;
     }
 }

@@ -78,7 +78,6 @@ export class ModelDiscoveryService implements IModelDiscoveryService {
 
           allModels.push(...modelsWithProvider);
         } catch (error) {
-          console.warn(`ModelDiscoveryService: Failed to get models from ${providerId}:`, error);
         }
       })
     );

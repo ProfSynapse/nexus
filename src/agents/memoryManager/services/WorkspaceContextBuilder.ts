@@ -196,7 +196,6 @@ export class WorkspaceContextBuilder {
 
       return activities.length > 0 ? activities : ['No recent activity'];
     } catch (error) {
-      console.warn('[WorkspaceContextBuilder] Failed to get recent activity:', error);
       return ['Recent activity unavailable'];
     }
   }

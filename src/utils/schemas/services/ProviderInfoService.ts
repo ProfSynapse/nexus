@@ -48,7 +48,6 @@ export class ProviderInfoService {
       return Object.keys(settings.providers)
         .filter(id => settings.providers[id]?.enabled && settings.providers[id]?.apiKey);
     } catch (error) {
-      console.warn('ProviderInfoService: Error getting enabled providers:', error);
       return [];
     }
   }
@@ -69,13 +68,11 @@ export class ProviderInfoService {
           const providerModels = staticModelsService.getModelsForProvider(providerId);
           models.push(...providerModels.map((m: any) => m.id));
         } catch (error) {
-          console.warn(`ProviderInfoService: Error getting models for provider ${providerId}:`, error);
         }
       });
 
       return [...new Set(models)]; // Remove duplicates
     } catch (error) {
-      console.warn('ProviderInfoService: Error getting available models:', error);
       return [];
     }
   }
@@ -90,7 +87,6 @@ export class ProviderInfoService {
       const settings = this.providerManager.getSettings();
       return settings.defaultModel || null;
     } catch (error) {
-      console.warn('ProviderInfoService: Error getting default model:', error);
       return null;
     }
   }

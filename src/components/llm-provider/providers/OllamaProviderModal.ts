@@ -154,18 +154,16 @@ export class OllamaProviderModal implements IProviderModal {
 
     const details = descDiv.createEl('details');
     const summary = details.createEl('summary', { text: 'Setup Help' });
-    summary.style.cursor = 'pointer';
-    summary.style.fontWeight = '500';
+    summary.addClass('llm-provider-help-summary');
 
     const contentDiv = details.createDiv();
-    contentDiv.style.marginTop = '0.5em';
-    contentDiv.style.paddingLeft = '1em';
+    contentDiv.addClass('llm-provider-help-content');
 
     const titleP = contentDiv.createEl('p');
     titleP.createEl('strong', { text: 'To configure Ollama:' });
 
     const ol = contentDiv.createEl('ol');
-    ol.style.margin = '0.5em 0';
+    ol.addClass('llm-provider-help-list');
 
     const li1 = ol.createEl('li');
     li1.appendText('Install the model: ');

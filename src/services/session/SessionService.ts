@@ -112,7 +112,6 @@ export class SessionService {
 
       return sessions;
     } catch (error) {
-      console.warn(`[SessionService] Failed to get sessions from workspace ${workspaceId}:`, error);
       return [];
     }
   }

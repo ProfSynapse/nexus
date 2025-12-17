@@ -123,7 +123,6 @@ export class StreamingOrchestrator {
           const toolName = isToolType(tool) ? tool.function?.name : 'name' in tool ? tool.name : undefined;
 
           if (!toolName) {
-            console.warn('[StreamingOrchestrator] Skipping tool with no name:', tool);
             continue;
           }
 

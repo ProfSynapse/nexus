@@ -8,7 +8,7 @@ import { getErrorMessage, createErrorMessage } from '../../../utils/errorUtils';
 import { addRecommendations, Recommendation } from '../../../utils/recommendationUtils';
 import { NudgeHelpers } from '../../../utils/nudgeHelpers';
 import { getNexusPlugin } from '../../../utils/pluginLocator';
-import { NexusPluginWithServices } from '../../memoryManager/modes/utils/pluginTypes';
+import { NexusPluginWithServices } from '../../memoryManager/tools/utils/pluginTypes';
 
 /**
  * Tool for reading content from a file

@@ -199,7 +199,7 @@ export class ToolListService implements IToolListService {
         // If allOf has items, we need to flatten them or remove them
         // Claude API doesn't support conditional schemas at top level
         if (cleaned.allOf && Array.isArray(cleaned.allOf) && cleaned.allOf.length > 0) {
-            // For now, just remove allOf - mode-specific validation will happen server-side
+            // For now, just remove allOf - tool-specific validation will happen server-side
             // We keep all properties merged, just remove the conditional required fields
             delete cleaned.allOf;
         }

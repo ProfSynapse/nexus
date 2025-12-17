@@ -12,7 +12,7 @@
  */
 
 import { App } from 'obsidian';
-import { BaseMode } from '../../../baseMode';
+import { BaseTool } from '../../../baseTool';
 import { MemoryManagerAgent } from '../../memoryManager'
 import { CreateStateParams, StateResult } from '../../types';
 import { createErrorMessage } from '../../../../utils/errorUtils';
@@ -27,7 +27,7 @@ import { addRecommendations } from '../../../../utils/recommendationUtils';
 /**
  * Consolidated CreateStateMode - combines all state creation functionality
  */
-export class CreateStateMode extends BaseMode<CreateStateParams, StateResult> {
+export class CreateStateTool extends BaseTool<CreateStateParams, StateResult> {
     private app: App;
     private serviceIntegration: ReturnType<typeof createServiceIntegration>;
     private schemaBuilder: SchemaBuilder;

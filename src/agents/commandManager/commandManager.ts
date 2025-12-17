@@ -134,7 +134,6 @@ export class CommandManagerAgent extends BaseAgent {
         return [...modifierKeys, key].join('+');
       });
     } catch (error) {
-      console.warn(`Error retrieving hotkeys for command ${commandId}:`, error);
       return undefined;
     }
   }

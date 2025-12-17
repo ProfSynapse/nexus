@@ -13,7 +13,7 @@
  */
 
 import { App } from 'obsidian';
-import { BaseMode } from '../../../baseMode';
+import { BaseTool } from '../../../baseTool';
 import { MemoryManagerAgent } from '../../memoryManager'
 import { LoadStateParams, StateResult } from '../../types';
 import { createErrorMessage } from '../../../../utils/errorUtils';
@@ -26,7 +26,7 @@ import { SchemaBuilder, SchemaType } from '../../../../utils/schemas/SchemaBuild
 /**
  * Consolidated LoadStateMode - combines all state loading functionality
  */
-export class LoadStateMode extends BaseMode<LoadStateParams, StateResult> {
+export class LoadStateTool extends BaseTool<LoadStateParams, StateResult> {
     private app: App;
     private serviceIntegration: ReturnType<typeof createServiceIntegration>;
     private schemaBuilder: SchemaBuilder;
@@ -240,7 +240,6 @@ export class LoadStateMode extends BaseMode<LoadStateParams, StateResult> {
             };
 
         } catch (error) {
-            console.warn('Error processing context:', error);
             return {
                 summary: `State "${stateData.loadedState.name}" loaded successfully`,
                 associatedNotes: [],
@@ -289,7 +288,6 @@ export class LoadStateMode extends BaseMode<LoadStateParams, StateResult> {
             return { success: true, sessionId: continuationSession.id };
 
         } catch (error) {
-            console.warn('Warning creating continuation session:', error);
             return { success: false, error: createErrorMessage('Error creating continuation session: ', error) };
         }
     }
@@ -379,7 +377,6 @@ export class LoadStateMode extends BaseMode<LoadStateParams, StateResult> {
             });
 
         } catch (error) {
-            console.warn('Warning creating restoration trace:', error);
             // Don't fail state loading if trace creation fails
         }
     }

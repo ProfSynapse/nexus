@@ -203,16 +203,25 @@ export class ChatInput {
     if (!this.inputElement) return;
 
     // Reset height to auto to get the correct scrollHeight
-    this.inputElement.style.height = 'auto';
+    this.inputElement.addClass('chat-input-auto-height');
 
     // Set height limits - matches CSS min/max heights
     const minHeight = 48;
     const maxHeight = 120;
     const newHeight = Math.min(Math.max(this.inputElement.scrollHeight, minHeight), maxHeight);
-    this.inputElement.style.height = newHeight + 'px';
+
+    // Remove auto-height class and set specific height
+    this.inputElement.removeClass('chat-input-auto-height');
+    this.inputElement.style.setProperty('height', newHeight + 'px');
 
     // Enable scrolling if content exceeds max height
-    this.inputElement.style.overflowY = this.inputElement.scrollHeight > maxHeight ? 'auto' : 'hidden';
+    if (this.inputElement.scrollHeight > maxHeight) {
+      this.inputElement.removeClass('chat-input-overflow-hidden');
+      this.inputElement.addClass('chat-input-overflow-auto');
+    } else {
+      this.inputElement.removeClass('chat-input-overflow-auto');
+      this.inputElement.addClass('chat-input-overflow-hidden');
+    }
   }
 
   /**

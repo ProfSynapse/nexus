@@ -140,7 +140,6 @@ export class ChatService {
           await this.chatTraceService.initializeSession(conversation.id, workspaceId, sessionId);
           await this.chatTraceService.traceConversationEvent(conversation.id, 'started', title);
         } catch (error) {
-          console.warn('[ChatService] Failed to initialize trace session:', error);
         }
       }
 

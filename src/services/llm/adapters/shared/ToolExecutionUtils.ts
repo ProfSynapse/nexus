@@ -57,7 +57,6 @@ export class ToolExecutionUtils {
     context?: { sessionId?: string; workspaceId?: string }
   ): Promise<ToolResult[]> {
     if (!toolExecutor) {
-      console.warn(`[ToolExecutionUtils] No tool executor available for ${provider}`);
       return toolCalls.map(tc => ({
         id: tc.id,
         name: tc.function.name,

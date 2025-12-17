@@ -40,7 +40,6 @@ export class ImageGenerationService {
   private initializeAdapters(): void {
     try {
       if (!this.llmSettings) {
-        console.warn('No LLM settings provided to ImageGenerationService - image generation will be unavailable');
         return;
       }
 
@@ -77,11 +76,6 @@ export class ImageGenerationService {
           xTitle: openRouterConfig.xTitle
         });
         this.adapters.set('openrouter', openRouterAdapter);
-      }
-
-      if (this.adapters.size === 0) {
-        console.warn('No image generation providers configured. Please configure Google or OpenRouter API keys in plugin settings and enable the providers.');
-      } else {
       }
     } catch (error) {
       console.error('Failed to initialize image generation adapters:', error);
@@ -246,7 +240,6 @@ export class ImageGenerationService {
       const available = await adapter.isImageGenerationAvailable();
       return available ? adapter.supportedModels : [];
     } catch (error) {
-      console.warn(`Failed to get models for ${provider}:`, error);
       return [];
     }
   }
@@ -271,7 +264,6 @@ export class ImageGenerationService {
     try {
       return adapter.getImageCapabilities();
     } catch (error) {
-      console.warn(`Failed to get capabilities for ${provider}:`, error);
       return null;
     }
   }
@@ -303,7 +295,6 @@ export class ImageGenerationService {
         breakdown: `1 image using ${model}: ${pricing.totalCost} ${pricing.currency}`
       };
     } catch (error) {
-      console.warn(`Failed to estimate cost for ${params.provider}:`, error);
       return null;
     }
   }

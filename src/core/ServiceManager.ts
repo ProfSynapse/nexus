@@ -205,29 +205,21 @@ export class ServiceManager implements IServiceManager {
         return this.container.getIfReady<T>(name);
     }
 
-    /**
-     * Get service synchronously - only works for immediate services
-     */
     getServiceSync<T>(name: string): T | null {
         const stage = this.serviceStages.get(name);
         if (stage !== ServiceStage.IMMEDIATE) {
-            console.warn(`[ServiceManager] getServiceSync called on non-immediate service '${name}' (stage: ${stage})`);
             return null;
         }
-        
+
         return this.container.getIfReady<T>(name);
     }
 
-    /**
-     * Initialize all services in dependency order
-     */
     async initializeServices(): Promise<void> {
         if (this.initializationPromise) {
             return this.initializationPromise;
         }
-        
+
         if (this.isInitializing) {
-            console.warn('[ServiceManager] Services are already initializing');
             return;
         }
         
@@ -243,27 +235,17 @@ export class ServiceManager implements IServiceManager {
         }
     }
 
-    /**
-     * Internal initialization logic
-     */
     private async performInitialization(): Promise<void> {
-        const startTime = Date.now();
-        
         try {
-            // Initialize in stage order for optimal startup performance
             await this.initializeStage(ServiceStage.IMMEDIATE);
             await this.initializeStage(ServiceStage.FAST);
-            
-            // Background services can be initialized in parallel
+
             setTimeout(() => {
                 this.initializeStage(ServiceStage.BACKGROUND).catch(error => {
                     console.error('[ServiceManager] Background service initialization failed:', error);
                 });
             }, 0);
-            
-            const duration = Date.now() - startTime;
-            // Critical services initialized
-            
+
         } catch (error) {
             console.error('[ServiceManager] Service initialization failed:', error);
             throw error;

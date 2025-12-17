@@ -58,7 +58,6 @@ export class ToolCallTraceService {
       // 2. Get session ID from params
       const sessionId = this.extractSessionId(params);
       if (!sessionId) {
-        console.warn('[ToolCallTraceService] No session ID available, skipping trace');
         return;
       }
 
@@ -70,7 +69,6 @@ export class ToolCallTraceService {
                          'default';
 
       if (!workspaceId) {
-        console.warn('[ToolCallTraceService] No workspace context available, skipping trace');
         return;
       }
 

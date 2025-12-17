@@ -42,7 +42,7 @@ export class ProgressiveToolAccordion {
     const header = accordion.createDiv('progressive-tool-header');
     const toggleHandler = () => this.toggle();
     this.component!.registerDomEvent(header, 'click', toggleHandler);
-    header.style.display = 'none'; // Hidden until first tool starts
+    header.addClass('progressive-accordion-hidden'); // Hidden until first tool starts
 
     // Status summary
     const summary = header.createDiv('tool-summary');
@@ -59,7 +59,7 @@ export class ProgressiveToolAccordion {
 
     // Content (initially hidden)
     const content = accordion.createDiv('progressive-tool-content');
-    content.style.display = 'none';
+    content.addClass('progressive-accordion-hidden');
 
     this.element = accordion;
     return accordion;
@@ -195,11 +195,13 @@ export class ProgressiveToolAccordion {
     const text = this.element.querySelector('.tool-text') as HTMLElement;
 
     if (this.tools.length === 0) {
-      header.style.display = 'none';
+      header.addClass('progressive-accordion-hidden');
+      header.removeClass('progressive-accordion-header-visible');
       return;
     }
 
-    header.style.display = 'flex';
+    header.removeClass('progressive-accordion-hidden');
+    header.addClass('progressive-accordion-header-visible');
 
     const executing = this.tools.filter(t => t.status === 'executing');
     const completed = this.tools.filter(t => t.status === 'completed');
@@ -295,12 +297,12 @@ export class ProgressiveToolAccordion {
     // Result section (will be filled when completed)
     const resultSection = item.createDiv('tool-section tool-result-section');
     resultSection.setAttribute('data-result-section', tool.id);
-    resultSection.style.display = 'none'; // Hidden until completed
+    resultSection.addClass('progressive-accordion-hidden'); // Hidden until completed
 
     // Error section (will be shown if failed)
     const errorSection = item.createDiv('tool-section tool-error-section');
     errorSection.setAttribute('data-error-section', tool.id);
-    errorSection.style.display = 'none'; // Hidden unless failed
+    errorSection.addClass('progressive-accordion-hidden'); // Hidden unless failed
 
     content.appendChild(item);
   }
@@ -426,7 +428,8 @@ export class ProgressiveToolAccordion {
     // Show result section if completed successfully
     if (tool.status === 'completed' && tool.result) {
       const resultSection = item.querySelector(`[data-result-section="${tool.id}"]`) as HTMLElement;
-      resultSection.style.display = 'block';
+      resultSection.removeClass('progressive-accordion-hidden');
+      resultSection.addClass('progressive-accordion-section-visible');
 
       const resultHeader = resultSection.createDiv('tool-section-header');
       resultHeader.textContent = 'Result:';
@@ -442,7 +445,8 @@ export class ProgressiveToolAccordion {
     // Show error section if failed
     if (tool.status === 'failed' && tool.error) {
       const errorSection = item.querySelector(`[data-error-section="${tool.id}"]`) as HTMLElement;
-      errorSection.style.display = 'block';
+      errorSection.removeClass('progressive-accordion-hidden');
+      errorSection.addClass('progressive-accordion-section-visible');
       
       const errorHeader = errorSection.createDiv('tool-section-header');
       errorHeader.textContent = 'Error:';
@@ -534,14 +538,16 @@ export class ProgressiveToolAccordion {
     
     const content = this.element.querySelector('.progressive-tool-content') as HTMLElement;
     const expandIcon = this.element.querySelector('.tool-expand-icon') as HTMLElement;
-    
+
     if (this.isExpanded) {
-      content.style.display = 'block';
+      content.removeClass('progressive-accordion-hidden');
+      content.addClass('progressive-accordion-content-visible');
       expandIcon.empty();
       setIcon(expandIcon, 'chevron-down');
       this.element.addClass('expanded');
     } else {
-      content.style.display = 'none';
+      content.removeClass('progressive-accordion-content-visible');
+      content.addClass('progressive-accordion-hidden');
       expandIcon.empty();
       setIcon(expandIcon, 'chevron-right');
       this.element.removeClass('expanded');

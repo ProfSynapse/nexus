@@ -38,7 +38,6 @@ export class WorkspaceSuggester extends BaseSuggester<WorkspaceSuggestionItem> {
 
     this.messageEnhancer = messageEnhancer;
     this.workspaceService = workspaceService;
-    console.log('[WorkspaceSuggester] Initialized - trigger pattern:', /#(\w*)$/);
   }
 
   // ==========================================================================
@@ -54,14 +53,10 @@ export class WorkspaceSuggester extends BaseSuggester<WorkspaceSuggestionItem> {
     context: EditorSuggestContext
   ): Promise<SuggestionItem<WorkspaceSuggestionItem>[]> {
 
-    console.log('[WorkspaceSuggester] getSuggestions called with query:', context.query);
-
     // Get workspaces sorted by last accessed
     const workspaces = await this.workspaceService.listWorkspaces();
-    console.log('[WorkspaceSuggester] Found', workspaces.length, 'workspaces');
 
     if (workspaces.length === 0) {
-      console.log('[WorkspaceSuggester] No workspaces available');
       return [];
     }
 

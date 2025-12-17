@@ -1,13 +1,13 @@
 /**
  * Tool Visibility Configuration
  *
- * Controls which agents and modes are exposed as MCP tools.
+ * Controls which agents and tools are exposed as MCP tools.
  * Set `hidden: true` to temporarily disable tools without deleting code.
  *
  * This configuration affects:
  * - Claude Desktop MCP tool list
  * - Internal chat bounded context tool discovery
- * - Agent mode registration at initialization
+ * - Agent tool registration at initialization
  */
 
 export interface ModeVisibilityConfig {
@@ -41,17 +41,17 @@ export function isAgentHidden(agentName: string): boolean {
 }
 
 /**
- * Check if a specific mode should be hidden
+ * Check if a specific tool should be hidden
  */
 export function isModeHidden(agentName: string, modeName: string): boolean {
     const config = TOOL_VISIBILITY[agentName];
 
-    // If entire agent is hidden, all modes are hidden
+    // If entire agent is hidden, all tools are hidden
     if (config?.hidden === true) {
         return true;
     }
 
-    // Check specific mode visibility
+    // Check specific tool visibility
     return config?.modes?.[modeName]?.hidden === true;
 }
 

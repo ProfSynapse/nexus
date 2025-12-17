@@ -64,7 +64,6 @@ export class WorkspaceDataFetcher {
 
       // Validate workspace ID
       if (!workspaceId || workspaceId === 'unknown') {
-        console.warn('[WorkspaceDataFetcher] Invalid workspace ID for session fetching');
         return createEmptyPaginatedResult<SessionSummary>(0, options?.pageSize ?? 10);
       }
 
@@ -136,7 +135,6 @@ export class WorkspaceDataFetcher {
 
       // Validate workspace ID
       if (!workspaceId || workspaceId === 'unknown') {
-        console.warn('[WorkspaceDataFetcher] Invalid workspace ID for state fetching');
         return createEmptyPaginatedResult<StateSummary>(0, options?.pageSize ?? 10);
       }
 

@@ -12,7 +12,7 @@
  */
 
 import { App } from 'obsidian';
-import { BaseMode } from '../../../baseMode';
+import { BaseTool } from '../../../baseTool';
 import { MemoryManagerAgent } from '../../memoryManager'
 import { EditStateParams, StateResult } from '../../types';
 import { createErrorMessage } from '../../../../utils/errorUtils';
@@ -27,7 +27,7 @@ type UpdateStateParams = EditStateParams;
 /**
  * Consolidated UpdateStateMode - combines all state update functionality
  */
-export class UpdateStateMode extends BaseMode<UpdateStateParams, StateResult> {
+export class UpdateStateTool extends BaseTool<UpdateStateParams, StateResult> {
     private app: App;
     private serviceIntegration: ReturnType<typeof createServiceIntegration>;
     private schemaBuilder: SchemaBuilder;

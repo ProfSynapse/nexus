@@ -136,13 +136,6 @@ export class GoogleAdapter extends BaseAdapter {
 
       // Add tools if provided (inside config)
       if (options?.tools && options.tools.length > 0) {
-        // Google recommends max 10-20 tools for optimal performance
-        if (options.tools.length > 20) {
-          console.warn(`[Google Adapter] ⚠️ ${options.tools.length} tools provided - Google recommends max 10-20`);
-          console.warn('[Google Adapter] Large tool sets may cause MALFORMED_FUNCTION_CALL errors');
-          console.warn('[Google Adapter] Consider using bounded-context tool packs (see CLAUDE.md)');
-        }
-
         const convertedTools = this.convertTools(options.tools);
 
         // Merge with existing tools array if web search was added
@@ -194,7 +187,6 @@ export class GoogleAdapter extends BaseAdapter {
         const client = await this.getClient();
         response = await client.models.generateContentStream(request);
       } catch (error: any) {
-        console.error('[Google Adapter] Error calling generateContentStream:', error);
         throw error;
       }
 
@@ -491,14 +483,12 @@ export class GoogleAdapter extends BaseAdapter {
               sources.push(...extractedSources);
             }
           } catch (error) {
-            console.warn('[Google] Failed to parse search tool response:', error);
           }
         }
       }
 
       return sources;
     } catch (error) {
-      console.warn('[Google] Failed to extract search sources:', error);
       return [];
     }
   }

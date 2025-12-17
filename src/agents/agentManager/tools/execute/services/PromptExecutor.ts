@@ -103,7 +103,6 @@ export class PromptExecutor {
             const customPrompt = await this.promptStorage.getPromptByNameOrId(agentIdentifier);
             return customPrompt && customPrompt.isEnabled ? customPrompt : null;
         } catch (error) {
-            console.warn(`Failed to get custom prompt '${agentIdentifier}':`, error);
             return null;
         }
     }
@@ -202,7 +201,6 @@ export class PromptExecutor {
             }
             return [];
         } catch (error) {
-            console.warn('Failed to get available models:', error);
             return [];
         }
     }
@@ -223,7 +221,6 @@ export class PromptExecutor {
             }
             return [];
         } catch (error) {
-            console.warn('Failed to get available providers:', error);
             return [];
         }
     }

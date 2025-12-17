@@ -27,7 +27,6 @@ export class Settings {
             const loadedData = await this.plugin.loadData();
             this.applyLoadedData(loadedData);
         } catch (error) {
-            console.warn('[Settings] Failed to load settings, using defaults:', error);
             // Continue with defaults - plugin should still function
         }
     }
@@ -64,7 +63,6 @@ export class Settings {
                 };
             }
         } catch (error) {
-            console.warn('[Settings] Failed to merge settings, using defaults:', error);
             // Continue with defaults - plugin should still function
         }
     }

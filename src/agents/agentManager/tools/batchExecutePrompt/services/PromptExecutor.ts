@@ -131,8 +131,6 @@ export class PromptExecutor {
       };
       
     } catch (error) {
-      console.warn(`LLM prompt execution failed for prompt "${promptConfig.prompt.substring(0, 50)}...":`, error);
-      
       return {
         type: 'text',
         id: promptConfig.id,
@@ -266,7 +264,6 @@ export class PromptExecutor {
           agentUsed = customPrompt.name;
         }
       } catch (error) {
-        console.warn(`Failed to resolve custom prompt "${agentIdentifier}":`, error);
       }
     }
 

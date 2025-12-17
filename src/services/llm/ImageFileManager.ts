@@ -284,7 +284,6 @@ export class ImageFileManager {
         }
       };
     } catch (error) {
-      console.warn('Failed to validate image buffer:', error);
       return null;
     }
   }

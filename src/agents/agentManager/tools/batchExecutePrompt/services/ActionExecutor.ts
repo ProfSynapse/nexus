@@ -1,5 +1,19 @@
 import { AgentManager } from '../../../../../services/AgentManager';
 import { ContentAction, ImagePromptConfig } from '../types';
+import { CommonResult } from '../../../../../types';
+
+/**
+ * Type guard to verify a value conforms to CommonResult interface
+ * This allows safe narrowing from unknown returns of executeAgentTool
+ */
+function isCommonResult(value: unknown): value is CommonResult {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'success' in value &&
+    typeof (value as CommonResult).success === 'boolean'
+  );
+}
 
 /**
  * Service responsible for executing content actions with LLM responses
@@ -22,7 +36,7 @@ export class ActionExecutor {
     }
 
     try {
-      const actionParams: any = {
+      const actionParams: Record<string, unknown> = {
         sessionId: sessionId || '',
         context: context || '',
         content
@@ -54,11 +68,14 @@ export class ActionExecutor {
    * Execute create content action
    */
   private async executeCreateAction(
-    actionParams: any,
+    actionParams: Record<string, unknown>,
     action: ContentAction
   ): Promise<{ success: boolean; error?: string }> {
     actionParams.filePath = action.targetPath;
-    const createResult = await this.agentManager!.executeAgentMode('contentManager', 'createContent', actionParams);
+    const createResult = await this.agentManager!.executeAgentTool('contentManager', 'createContent', actionParams);
+    if (!isCommonResult(createResult)) {
+      return { success: false, error: 'Invalid response from createContent tool' };
+    }
     return { success: createResult.success, error: createResult.error };
   }
 
@@ -66,11 +83,14 @@ export class ActionExecutor {
    * Execute append content action
    */
   private async executeAppendAction(
-    actionParams: any,
+    actionParams: Record<string, unknown>,
     action: ContentAction
   ): Promise<{ success: boolean; error?: string }> {
     actionParams.filePath = action.targetPath;
-    const appendResult = await this.agentManager!.executeAgentMode('contentManager', 'appendContent', actionParams);
+    const appendResult = await this.agentManager!.executeAgentTool('contentManager', 'appendContent', actionParams);
+    if (!isCommonResult(appendResult)) {
+      return { success: false, error: 'Invalid response from appendContent tool' };
+    }
     return { success: appendResult.success, error: appendResult.error };
   }
 
@@ -78,11 +98,14 @@ export class ActionExecutor {
    * Execute prepend content action
    */
   private async executePrependAction(
-    actionParams: any,
+    actionParams: Record<string, unknown>,
     action: ContentAction
   ): Promise<{ success: boolean; error?: string }> {
     actionParams.filePath = action.targetPath;
-    const prependResult = await this.agentManager!.executeAgentMode('contentManager', 'prependContent', actionParams);
+    const prependResult = await this.agentManager!.executeAgentTool('contentManager', 'prependContent', actionParams);
+    if (!isCommonResult(prependResult)) {
+      return { success: false, error: 'Invalid response from prependContent tool' };
+    }
     return { success: prependResult.success, error: prependResult.error };
   }
 
@@ -90,19 +113,22 @@ export class ActionExecutor {
    * Execute replace content action
    */
   private async executeReplaceAction(
-    actionParams: any,
+    actionParams: Record<string, unknown>,
     action: ContentAction
   ): Promise<{ success: boolean; error?: string }> {
     actionParams.filePath = action.targetPath;
-    let replaceResult;
-    
+    let replaceResult: unknown;
+
     if (action.position !== undefined) {
       actionParams.line = action.position;
-      replaceResult = await this.agentManager!.executeAgentMode('contentManager', 'replaceByLine', actionParams);
+      replaceResult = await this.agentManager!.executeAgentTool('contentManager', 'replaceByLine', actionParams);
     } else {
-      replaceResult = await this.agentManager!.executeAgentMode('contentManager', 'replaceContent', actionParams);
+      replaceResult = await this.agentManager!.executeAgentTool('contentManager', 'replaceContent', actionParams);
     }
-    
+
+    if (!isCommonResult(replaceResult)) {
+      return { success: false, error: 'Invalid response from replace tool' };
+    }
     return { success: replaceResult.success, error: replaceResult.error };
   }
 
@@ -110,21 +136,24 @@ export class ActionExecutor {
    * Execute find and replace content action
    */
   private async executeFindReplaceAction(
-    actionParams: any,
+    actionParams: Record<string, unknown>,
     action: ContentAction
   ): Promise<{ success: boolean; error?: string }> {
     if (!action.findText) {
       return { success: false, error: 'findText is required for findReplace action' };
     }
-    
+
     actionParams.filePath = action.targetPath;
     actionParams.findText = action.findText;
     actionParams.replaceText = actionParams.content; // LLM response becomes the replacement text
     actionParams.replaceAll = action.replaceAll ?? false;
     actionParams.caseSensitive = action.caseSensitive ?? true;
     actionParams.wholeWord = action.wholeWord ?? false;
-    
-    const findReplaceResult = await this.agentManager!.executeAgentMode('contentManager', 'findReplaceContent', actionParams);
+
+    const findReplaceResult = await this.agentManager!.executeAgentTool('contentManager', 'findReplaceContent', actionParams);
+    if (!isCommonResult(findReplaceResult)) {
+      return { success: false, error: 'Invalid response from findReplaceContent tool' };
+    }
     return { success: findReplaceResult.success, error: findReplaceResult.error };
   }
 
@@ -164,8 +193,7 @@ export class ActionExecutor {
     }
 
     try {
-      console.log(`[ActionExecutor] Image config aspectRatio:`, imageConfig.aspectRatio);
-      const imageParams = {
+      const imageParams: Record<string, unknown> = {
         prompt: imageConfig.prompt,
         provider: imageConfig.provider,
         model: imageConfig.model,
@@ -174,19 +202,22 @@ export class ActionExecutor {
         sessionId: sessionId || '',
         context: context || ''
       };
-      console.log(`[ActionExecutor] Image params aspectRatio:`, imageParams.aspectRatio);
 
-      const imageResult = await this.agentManager.executeAgentMode('agentManager', 'generateImage', imageParams);
-      
+      const imageResult = await this.agentManager.executeAgentTool('agentManager', 'generateImage', imageParams);
+
+      if (!isCommonResult(imageResult)) {
+        return { success: false, error: 'Invalid response from generateImage tool' };
+      }
+
       if (imageResult.success && imageResult.data?.imagePath) {
-        return { 
-          success: true, 
-          imagePath: imageResult.data.imagePath 
+        return {
+          success: true,
+          imagePath: imageResult.data.imagePath as string
         };
       } else {
-        return { 
-          success: false, 
-          error: imageResult.error || 'Image generation failed without specific error' 
+        return {
+          success: false,
+          error: imageResult.error || 'Image generation failed without specific error'
         };
       }
     } catch (error) {

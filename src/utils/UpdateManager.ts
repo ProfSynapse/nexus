@@ -163,7 +163,6 @@ export class UpdateManager {
                 errors.push(new Error(`GitHub API error: ${response.status} (${endpoint})`));
             } catch (error) {
                 const err = error as Error;
-                console.warn(`Failed to fetch release info from ${endpoint}: ${err.message}`);
                 errors.push(err);
             }
         }

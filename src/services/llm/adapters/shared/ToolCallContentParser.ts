@@ -136,7 +136,6 @@ export class ToolCallContentParser {
       // Extract the JSON array after [TOOL_CALLS]
       const jsonMatch = normalizedContent.match(this.TOOL_CALLS_JSON_PATTERN);
       if (!jsonMatch || !jsonMatch[1]) {
-        console.warn('[ToolCallContentParser] Found [TOOL_CALLS] but could not extract JSON array');
         return result;
       }
 
@@ -146,7 +145,6 @@ export class ToolCallContentParser {
       const rawToolCalls: RawToolCall[] = JSON.parse(jsonString);
 
       if (!Array.isArray(rawToolCalls)) {
-        console.warn('[ToolCallContentParser] Parsed content is not an array');
         return result;
       }
 
@@ -211,7 +209,6 @@ export class ToolCallContentParser {
       }
 
       if (toolCallMatches.length === 0) {
-        console.warn('[ToolCallContentParser] Found <tool_call> but could not extract JSON');
         return result;
       }
 
@@ -229,7 +226,6 @@ export class ToolCallContentParser {
             result.toolCalls.push(this.convertToToolCall(rawCall, result.toolCalls.length));
           }
         } catch (parseError) {
-          console.warn(`[ToolCallContentParser] Failed to parse tool call JSON at index ${i}:`, parseError);
         }
       }
 

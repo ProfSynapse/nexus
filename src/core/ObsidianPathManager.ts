@@ -343,12 +343,6 @@ export class ObsidianPathManager {
         throw new Error(`Path validation failed: ${validation.errors.join(', ')}`);
       }
 
-      // Log warnings if any
-      if (validation.warnings.length > 0) {
-        console.warn(`[ObsidianPathManager] Path warnings for ${operationName}:`, validation.warnings);
-      }
-
-      // Execute operation with normalized path
       return await operation(validation.normalizedPath);
 
     } catch (error) {

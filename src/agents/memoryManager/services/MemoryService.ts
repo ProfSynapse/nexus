@@ -1,6 +1,6 @@
 // Location: src/agents/memoryManager/services/MemoryService.ts
 // Agent-specific memory management service that delegates to WorkspaceService or IStorageAdapter
-// Used by: MemoryManager agent modes for memory operations
+// Used by: MemoryManager agent tools for memory operations
 // Dependencies: WorkspaceService (legacy) or IStorageAdapter (new) for all data access
 
 import { Plugin } from 'obsidian';

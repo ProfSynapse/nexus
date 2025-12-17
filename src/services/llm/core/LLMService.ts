@@ -159,9 +159,7 @@ export class LLMService {
       // Add file content if filepaths provided
       let filesIncluded: string[] = [];
       if (options.filepaths && options.filepaths.length > 0) {
-        if (!this.fileContentService) {
-          console.warn('LLMService: FileContentService not initialized. Call setVaultOperations() first.');
-        } else {
+        if (this.fileContentService) {
           const fileContent = await this.fileContentService.gatherFileContent(options.filepaths);
           if (fileContent.length > 0) {
             fullPrompt = `Context from files:\n\n${fileContent}\n\n---\n\nUser request: ${options.userPrompt}`;

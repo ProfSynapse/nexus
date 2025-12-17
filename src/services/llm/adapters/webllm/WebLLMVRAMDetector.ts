@@ -92,16 +92,10 @@ export class WebLLMVRAMDetector {
    */
   static async isWebGPUAvailable(): Promise<boolean> {
     if (typeof navigator === 'undefined') {
-      console.log('[WebLLMVRAMDetector] navigator is undefined (not in browser context)');
       return false;
     }
 
     if (!hasGPU(navigator)) {
-      console.log('[WebLLMVRAMDetector] WebGPU not available - navigator.gpu is missing');
-      console.log('[WebLLMVRAMDetector] This may be due to:');
-      console.log('  - Outdated Obsidian version (needs recent Electron)');
-      console.log('  - Outdated GPU drivers (NVIDIA: needs Vulkan support)');
-      console.log('  - WebGPU not enabled in Chromium flags');
       return false;
     }
 
@@ -114,20 +108,11 @@ export class WebLLMVRAMDetector {
 
       if (!adapter) {
         // Fallback: try without power preference
-        console.log('[WebLLMVRAMDetector] high-performance adapter not found, trying default...');
         adapter = await gpu.requestAdapter();
       }
 
-      if (!adapter) {
-        console.log('[WebLLMVRAMDetector] No WebGPU adapter found');
-        console.log('[WebLLMVRAMDetector] Platform:', navigator.platform || 'unknown');
-        console.log('[WebLLMVRAMDetector] Check GPU drivers are up-to-date');
-        return false;
-      }
-
-      return true;
+      return !!adapter;
     } catch (error) {
-      console.warn('[WebLLMVRAMDetector] WebGPU check failed:', error);
       return false;
     }
   }
@@ -151,7 +136,6 @@ export class WebLLMVRAMDetector {
 
     // Check WebGPU support
     if (typeof navigator === 'undefined' || !hasGPU(navigator)) {
-      console.log('[WebLLMVRAMDetector] WebGPU API not available');
       this.cachedInfo = info;
       return info;
     }
@@ -160,12 +144,10 @@ export class WebLLMVRAMDetector {
       const gpu = navigator.gpu;
 
       // Request high-performance adapter first (important for Windows/NVIDIA)
-      console.log('[WebLLMVRAMDetector] Requesting WebGPU adapter...');
       let adapter = await gpu.requestAdapter({ powerPreference: 'high-performance' });
 
       if (!adapter) {
         // Fallback to default adapter
-        console.log('[WebLLMVRAMDetector] High-performance adapter not found, trying default...');
         adapter = await gpu.requestAdapter();
       }
 
@@ -190,7 +172,7 @@ export class WebLLMVRAMDetector {
           gpuDescription = adapterInfo.description || adapterInfo.device || 'Unknown GPU';
         }
       } catch (infoError) {
-        console.warn('[WebLLMVRAMDetector] Could not get adapter info:', infoError);
+        // Ignore error getting adapter info
       }
       info.gpuName = gpuDescription;
 
@@ -214,7 +196,6 @@ export class WebLLMVRAMDetector {
       this.cachedInfo = info;
       return info;
     } catch (error) {
-      console.warn('[WebLLMVRAMDetector] Detection failed:', error);
       this.cachedInfo = info;
       return info;
     }

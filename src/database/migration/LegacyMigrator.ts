@@ -109,7 +109,6 @@ export class LegacyMigrator {
         return false;
       }
 
-      // Check if there are unmigrated files
       const hasUnmigratedWorkspaces = await this.hasUnmigratedFiles('workspaces');
       const hasUnmigratedConversations = await this.hasUnmigratedFiles('conversations');
 

@@ -218,10 +218,7 @@ export class SchemaMigrator {
     const currentVersion = this.getCurrentVersion();
     const targetVersion = CURRENT_SCHEMA_VERSION;
 
-    console.log(`[SchemaMigrator] Current version: ${currentVersion}, Target version: ${targetVersion}`);
-
     if (currentVersion >= targetVersion) {
-      console.log('[SchemaMigrator] Database is up to date');
       return { applied: 0, fromVersion: currentVersion, toVersion: currentVersion, needsRebuild: false };
     }
 
@@ -232,28 +229,21 @@ export class SchemaMigrator {
     const pendingMigrations = MIGRATIONS.filter(m => m.version > currentVersion);
 
     if (pendingMigrations.length === 0) {
-      // No migrations but version is behind - just update version
       this.setVersion(targetVersion);
       return { applied: 0, fromVersion: currentVersion, toVersion: targetVersion, needsRebuild: false };
     }
 
-    console.log(`[SchemaMigrator] Applying ${pendingMigrations.length} migration(s)`);
-
     let appliedCount = 0;
 
     for (const migration of pendingMigrations) {
-      console.log(`[SchemaMigrator] Applying migration v${migration.version}: ${migration.description}`);
-
       try {
         for (const sql of migration.sql) {
-          // Handle ALTER TABLE ADD COLUMN specially - check if column exists first
           const alterMatch = sql.match(/ALTER TABLE (\w+) ADD COLUMN (\w+)/i);
 
           if (alterMatch) {
             const [, tableName, columnName] = alterMatch;
 
             if (this.columnExists(tableName, columnName)) {
-              console.log(`[SchemaMigrator] Column ${tableName}.${columnName} already exists, skipping`);
               continue;
             }
           }
@@ -261,26 +251,19 @@ export class SchemaMigrator {
           this.db.run(sql);
         }
 
-        // Record this migration
         this.setVersion(migration.version);
         appliedCount++;
-
-        console.log(`[SchemaMigrator] Migration v${migration.version} applied successfully`);
       } catch (error) {
         console.error(`[SchemaMigrator] Migration v${migration.version} failed:`, error);
         throw error;
       }
     }
 
-    // NOTE: We do NOT force a full rebuild because it can cause OOM with large vaults.
-    // The new columns will have NULL/default values for existing rows, which is fine.
-    // New data will populate the columns correctly.
-    // If a full rebuild is needed, users can delete .nexus/cache.db manually.
     return {
       applied: appliedCount,
       fromVersion: currentVersion,
       toVersion: targetVersion,
-      needsRebuild: false  // Don't force rebuild - can cause OOM
+      needsRebuild: false
     };
   }
 

@@ -185,7 +185,6 @@ export class PrefetchManager extends Events {
                     this.prefetchHistory.set(item, Date.now());
                     this.trigger('prefetch:completed', { type, id });
                 } catch (error) {
-                    console.warn(`Failed to prefetch ${type} ${id}:`, error);
                     this.trigger('prefetch:failed', { type, id, error });
                 }
             });

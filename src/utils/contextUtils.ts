@@ -47,7 +47,6 @@ export function parseWorkspaceContext(
     try {
       parsedContext = JSON.parse(workspaceContext);
     } catch (e) {
-      console.warn('Invalid workspace context JSON:', e);
       return {
         workspaceId: workspaceId || fallbackId,
         workspacePath: [],
@@ -60,9 +59,8 @@ export function parseWorkspaceContext(
 
   // Use workspaceId from context if available, otherwise from workspaceContext
   const finalWorkspaceId = workspaceId || parsedContext.workspaceId;
-  
+
   if (!finalWorkspaceId) {
-    console.warn('workspaceId is required but was not provided in context or workspaceContext');
     return {
       workspaceId: fallbackId,
       workspacePath: [],

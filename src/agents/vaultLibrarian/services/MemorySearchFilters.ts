@@ -124,7 +124,6 @@ export class MemorySearchFilters implements MemorySearchFiltersInterface {
         return searchableContent.includes(searchPattern);
       });
     } catch (error) {
-      console.warn('[MemorySearchFilters] Content filter error:', error);
       return this.configuration.strictFiltering ? [] : results;
     }
   }

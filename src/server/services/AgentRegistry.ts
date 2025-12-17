@@ -244,7 +244,7 @@ export class AgentRegistry {
         modeName: string;
         description: string;
     }> {
-        // Convert tool names to mode names for backward compatibility
+        // Convert tool names to legacy mode names for backward compatibility
         return this.getAllAvailableTools().map(t => ({
             agentName: t.agentName,
             modeName: t.toolName,

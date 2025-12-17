@@ -336,7 +336,7 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
                 getAllAgents: () => agentService.getAllAgents(),
                 getAgent: (name: string) => agentService.getAgent(name),
                 hasAgent: (name: string) => agentService.getAgent(name) !== null,
-                agentSupportsMode: () => true // Let execution fail if mode not supported
+                agentSupportsMode: () => true // Let execution fail if tool not supported
             };
 
             const executor = new DirectToolExecutor({

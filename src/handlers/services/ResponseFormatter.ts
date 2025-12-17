@@ -3,7 +3,7 @@ import { safeStringify } from '../../utils/jsonUtils';
 
 export class ResponseFormatter implements IResponseFormatter {
 
-    formatToolExecutionResponse(result: any, sessionInfo?: any, _context?: { mode?: string }): any {
+    formatToolExecutionResponse(result: any, sessionInfo?: any, _context?: { tool?: string }): any {
         // Check if result contains an error and format it appropriately
         if (result && !result.success && result.error) {
             return this.formatDetailedError(result, sessionInfo);

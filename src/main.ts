@@ -44,7 +44,7 @@ export default class NexusPlugin extends Plugin {
             return services;
         }
         // Return only ready services for immediate access
-        // These are used by agent modes for activity recording and UI components
+        // These are used by agent tools for activity recording and UI components
         const serviceNames = ['memoryService', 'workspaceService', 'sessionService', 'conversationService', 'customPromptStorageService'];
         for (const name of serviceNames) {
             const service = this.serviceManager.getServiceIfReady(name);

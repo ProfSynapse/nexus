@@ -177,7 +177,8 @@ export abstract class ContentEditableSuggester<T> {
     // Position above the input
     this.positionSuggestions();
 
-    this.suggestionContainer.style.display = 'block';
+    this.suggestionContainer.classList.remove('suggester-container-hidden');
+    this.suggestionContainer.classList.add('suggester-container-visible');
     this.isActive = true;
   }
 
@@ -186,7 +187,7 @@ export abstract class ContentEditableSuggester<T> {
    */
   private createSuggestionContainer(): void {
     this.suggestionContainer = document.body.createDiv('suggester-container');
-    this.suggestionContainer.style.display = 'none';
+    this.suggestionContainer.classList.add('suggester-container-positioned', 'suggester-container-hidden');
   }
 
   /**
@@ -196,7 +197,6 @@ export abstract class ContentEditableSuggester<T> {
     if (!this.suggestionContainer) return;
 
     const rect = this.element.getBoundingClientRect();
-    this.suggestionContainer.style.position = 'fixed';
     this.suggestionContainer.style.left = rect.left + 'px';
     this.suggestionContainer.style.bottom = (window.innerHeight - rect.top + 4) + 'px';
     this.suggestionContainer.style.width = rect.width + 'px';
@@ -237,7 +237,8 @@ export abstract class ContentEditableSuggester<T> {
    */
   protected closeSuggestions(): void {
     if (this.suggestionContainer) {
-      this.suggestionContainer.style.display = 'none';
+      this.suggestionContainer.classList.remove('suggester-container-visible');
+      this.suggestionContainer.classList.add('suggester-container-hidden');
     }
     this.isActive = false;
     this.currentSuggestions = [];

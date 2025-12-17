@@ -50,8 +50,8 @@ export class ListAgentsTool extends BaseTool<ListAgentsParams, ListAgentsResult>
         isEnabled: prompt.isEnabled
       }));
 
-      // Add warning message about execute mode
-      const warningMessage = "IMPORTANT: Do not use the executePrompt mode or run any tasks automatically when working with these agents. Only take on their persona and respond in character. If the user wants you to actually execute tasks or use the executePrompt functionality, they must explicitly ask you to do so.";
+      // Add warning message about execute tool
+      const warningMessage = "IMPORTANT: Do not use the executePrompt tool or run any tasks automatically when working with these agents. Only take on their persona and respond in character. If the user wants you to actually execute tasks or use the executePrompt functionality, they must explicitly ask you to do so.";
       
       const result = createResult<ListAgentsResult>(true, {
         prompts: promptList,

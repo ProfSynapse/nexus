@@ -7,30 +7,31 @@ import { WorkspaceService } from "../../services/WorkspaceService";
 import { getErrorMessage } from '../../utils/errorUtils';
 import { sanitizeVaultName } from '../../utils/vaultUtils';
 import { getNexusPlugin } from '../../utils/pluginLocator';
-import { NexusPluginWithServices } from './modes/utils/pluginTypes';
+import { NexusPluginWithServices } from './tools/utils/pluginTypes';
+import { CommonParameters, CommonResult } from '../../types';
 
-// Import consolidated modes
-import { CreateSessionMode } from './modes/sessions/CreateSessionMode';
-import { ListSessionsMode } from './modes/sessions/ListSessionsMode';
-import { LoadSessionMode } from './modes/sessions/LoadSessionMode';
-import { UpdateSessionMode } from './modes/sessions/UpdateSessionMode';
-import { CreateStateMode } from './modes/states/CreateStateMode';
-import { ListStatesMode } from './modes/states/ListStatesMode';
-import { LoadStateMode } from './modes/states/LoadStateMode';
-import { UpdateStateMode } from './modes/states/UpdateStateMode';
-import { CreateWorkspaceMode } from './modes/workspaces/CreateWorkspaceMode';
-import { ListWorkspacesMode } from './modes/workspaces/ListWorkspacesMode';
-import { LoadWorkspaceMode } from './modes/workspaces/LoadWorkspaceMode';
-import { UpdateWorkspaceMode } from './modes/workspaces/UpdateWorkspaceMode';
+// Import consolidated tools
+import { CreateSessionTool } from './tools/sessions/CreateSessionTool';
+import { ListSessionsTool } from './tools/sessions/ListSessionsTool';
+import { LoadSessionTool } from './tools/sessions/LoadSessionTool';
+import { UpdateSessionTool } from './tools/sessions/UpdateSessionTool';
+import { CreateStateTool } from './tools/states/CreateStateTool';
+import { ListStatesTool } from './tools/states/ListStatesTool';
+import { LoadStateTool } from './tools/states/LoadStateTool';
+import { UpdateStateTool } from './tools/states/UpdateStateTool';
+import { CreateWorkspaceTool } from './tools/workspaces/CreateWorkspaceTool';
+import { ListWorkspacesTool } from './tools/workspaces/ListWorkspacesTool';
+import { LoadWorkspaceTool } from './tools/workspaces/LoadWorkspaceTool';
+import { UpdateWorkspaceTool } from './tools/workspaces/UpdateWorkspaceTool';
 
 /**
  * Agent for managing workspace memory, sessions, and states
  *
  * CONSOLIDATED ARCHITECTURE:
  * - 15 files total (down from 50+)
- * - 3 session modes: create/load/manage
- * - 3 state modes: create/load/manage  
- * - 4 workspace modes: create/load/manage/associated-notes
+ * - 4 session tools: create/list/load/update
+ * - 4 state tools: create/list/load/update
+ * - 4 workspace tools: create/list/load/update
  * - 3 services: ValidationService/ContextBuilder/MemoryTraceService
  */
 export class MemoryManagerAgent extends BaseAgent {
@@ -85,23 +86,23 @@ export class MemoryManagerAgent extends BaseAgent {
     this.memoryService = memoryService;
     this.workspaceService = workspaceService;
     
-    // Register session modes (4 modes: create, list, load, update - following workspace pattern)
-    this.registerMode(new CreateSessionMode(this));
-    this.registerMode(new ListSessionsMode(this));
-    this.registerMode(new LoadSessionMode(this));
-    this.registerMode(new UpdateSessionMode(this));
-    
-    // Register state modes (4 modes: create, list, load, update - following workspace pattern) 
-    this.registerMode(new CreateStateMode(this));
-    this.registerMode(new ListStatesMode(this));
-    this.registerMode(new LoadStateMode(this));
-    this.registerMode(new UpdateStateMode(this));
-    
-    // Register consolidated workspace modes (5 modes instead of 7)
-    this.registerMode(new CreateWorkspaceMode(this));
-    this.registerMode(new ListWorkspacesMode(this));
-    this.registerMode(new LoadWorkspaceMode(this));
-    this.registerMode(new UpdateWorkspaceMode(this));
+    // Register session tools (4 tools: create, list, load, update)
+    this.registerTool(new CreateSessionTool(this));
+    this.registerTool(new ListSessionsTool(this));
+    this.registerTool(new LoadSessionTool(this));
+    this.registerTool(new UpdateSessionTool(this));
+
+    // Register state tools (4 tools: create, list, load, update)
+    this.registerTool(new CreateStateTool(this));
+    this.registerTool(new ListStatesTool(this));
+    this.registerTool(new LoadStateTool(this));
+    this.registerTool(new UpdateStateTool(this));
+
+    // Register workspace tools (4 tools: create, list, load, update)
+    this.registerTool(new CreateWorkspaceTool(this));
+    this.registerTool(new ListWorkspacesTool(this));
+    this.registerTool(new LoadWorkspaceTool(this));
+    this.registerTool(new UpdateWorkspaceTool(this));
   }
 
   /**
@@ -176,58 +177,62 @@ export class MemoryManagerAgent extends BaseAgent {
   }
 
   /**
-   * Execute a mode with automatic session context tracking
-   * @param modeSlug The mode to execute
-   * @param params Parameters for the mode
-   * @returns Result from mode execution
+   * Execute a tool with automatic session context tracking
+   * @param toolSlug The tool to execute
+   * @param params Parameters for the tool
+   * @returns Result from tool execution
    */
-  async executeMode(modeSlug: string, params: any): Promise<any> {
-    // If there's a workspace context but no session ID, try to get or create a session
-    if (params.workspaceContext?.workspaceId && !params.workspaceContext.sessionId) {
+  async executeTool(toolSlug: string, params: CommonParameters): Promise<CommonResult> {
+    // If there's a workspace context but no session ID in context, try to get or create a session
+    const wsContext = typeof params.workspaceContext === 'object' ? params.workspaceContext : null;
+    const hasSessionId = params.context?.sessionId;
+
+    if (wsContext?.workspaceId && !hasSessionId) {
       try {
         const workspaceId = parseWorkspaceContext(params.workspaceContext)?.workspaceId;
         if (workspaceId) {
           // Try to get an active session
           let sessionId: string | null = null;
-          
+
           // Get memory service and then get the most recent active session for this workspace
           const memoryService = await this.getMemoryServiceAsync();
           if (!memoryService) {
-            console.warn('[MemoryManagerAgent] Memory service not available for session management');
-            return super.executeMode(modeSlug, params);
+            return super.executeTool(toolSlug, params);
           }
-          
+
           const sessionsResult = await memoryService.getSessions(workspaceId);
           const activeSessions = sessionsResult.items;
 
           if (activeSessions && activeSessions.length > 0) {
             sessionId = activeSessions[0].id;
           }
-          
-          // If no active session, create one automatically for non-session modes
+
+          // If no active session, create one automatically for non-session tools
           // (for session creation, we don't want to create a session automatically)
-          if (!sessionId && !modeSlug.startsWith('createSession')) {
+          if (!sessionId && !toolSlug.startsWith('createSession')) {
             const newSession = await memoryService.createSession({
               workspaceId: workspaceId,
-              name: `Auto-created session for ${modeSlug}`,
-              description: `Automatically created for ${modeSlug} operation`
+              name: `Auto-created session for ${toolSlug}`,
+              description: `Automatically created for ${toolSlug} operation`
             });
-            
+
             sessionId = newSession.id;
           }
-          
+
           if (sessionId) {
-            // Add the session ID to the parameters
-            params.workspaceContext.sessionId = sessionId;
+            // Add the session ID to the context parameters
+            if (params.context) {
+              params.context.sessionId = sessionId;
+            }
           }
         }
       } catch (error) {
         console.error('Failed to get/create session:', getErrorMessage(error));
       }
     }
-    
-    // Call the parent executeMode method
-    return super.executeMode(modeSlug, params);
+
+    // Call the parent executeTool method
+    return super.executeTool(toolSlug, params);
   }
 
   /**
@@ -244,7 +249,7 @@ export class MemoryManagerAgent extends BaseAgent {
       }
 
       // Service is available - return success message
-      return `🏗️ Workspaces: Available (use listWorkspaces mode to see details)`;
+      return `🏗️ Workspaces: Available (use listWorkspaces tool to see details)`;
       
     } catch (error) {
       return `🏗️ Workspaces: Error loading workspace information (${error})`;

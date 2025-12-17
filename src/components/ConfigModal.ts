@@ -416,7 +416,6 @@ export class ConfigModal extends Modal {
                 }
             } catch (error) {
                 // Fall through and try next folder
-                console.warn(`[ConfigModal] Failed to check connector path ${relativeConnectorPath}:`, error);
             }
         }
 

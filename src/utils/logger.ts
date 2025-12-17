@@ -17,19 +17,14 @@ export const logger = {
      * Log system warnings that don't prevent functionality but indicate issues
      */
     systemWarn(message: string, context?: string) {
-        console.warn(
-            `SYSTEM WARNING${context ? ` [${context}]` : ''}: ${message}`
-        );
+        // No-op
     },
     
     /**
      * Log informational messages during development
      */
     systemLog(message: string, context?: string) {
-        // Disabled to reduce console output during production
-        // console.log(
-        //     `SYSTEM INFO${context ? ` [${context}]` : ''}: ${message}`
-        // );
+        // No-op
     }
     
     // operationError function removed to eliminate unnecessary console logs

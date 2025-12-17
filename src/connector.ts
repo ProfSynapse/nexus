@@ -34,7 +34,7 @@ function isNexusPlugin(plugin: Plugin | NexusPlugin): plugin is NexusPlugin {
  * MCP Connector
  * Orchestrates MCP server operations through extracted services:
  * - MCPConnectionManager: Handles server lifecycle
- * - ToolCallRouter: Routes tool calls to agents/modes
+ * - ToolCallRouter: Routes tool calls to agents/tools
  * - AgentRegistrationService: Manages agent initialization and registration
  */
 export class MCPConnector {
@@ -258,23 +258,23 @@ export class MCPConnector {
      * Returns single get_tools meta-tool instead of all 46 tools
      */
     getAvailableTools(): any[] {
-        // Build agent/mode list for bootup visibility
-        let agentModeList = '';
+        // Build agent/tool list for bootup visibility
+        let agentToolList = '';
 
         if (this.agentRegistry) {
             const registeredAgents = this.agentRegistry.getAllAgents();
-            const agentModeLines: string[] = [];
+            const agentToolLines: string[] = [];
 
             for (const [agentName, agent] of registeredAgents) {
-                const modes = agent.getModes();
-                const modeNames = modes.map((m: IMode) => m.slug || m.name || 'unknown');
-                agentModeLines.push(`- ${agentName}: [${modeNames.join(', ')}]`);
+                const tools = agent.getTools();
+                const toolNames = tools.map((t: ITool<unknown, unknown>) => t.slug || t.name || 'unknown');
+                agentToolLines.push(`- ${agentName}: [${toolNames.join(', ')}]`);
             }
 
-            agentModeList = agentModeLines.join('\n');
+            agentToolList = agentToolLines.join('\n');
         } else {
             // Fallback to static agent descriptions if registry not yet initialized
-            agentModeList = AGENTS.map(a => `- ${a.name}: ${a.description}`).join('\n');
+            agentToolList = AGENTS.map(a => `- ${a.name}: ${a.description}`).join('\n');
         }
 
         // Get standard context schema to ensure sessionId persistence
@@ -282,7 +282,7 @@ export class MCPConnector {
 
         const getToolsTool = {
             name: 'get_tools',
-            description: `Discover available tools on-demand. Request specific tool schemas only for capabilities you need.\n\nAvailable agents and modes:\n${agentModeList}\n\nTo use a tool, request its schema first:\n- get_tools({ tools: ["contentManager_createNote", "vaultManager_openNote"] })\n\nThen call the actual tool with required parameters.`,
+            description: `Discover available tools on-demand. Request specific tool schemas only for capabilities you need.\n\nAvailable agents and tools:\n${agentToolList}\n\nTo use a tool, request its schema first:\n- get_tools({ tools: ["contentManager_createNote", "vaultManager_openNote"] })\n\nThen call the actual tool with required parameters.`,
             inputSchema: {
                 type: 'object',
                 properties: {
@@ -303,11 +303,11 @@ export class MCPConnector {
     }
 
     /**
-     * Get overview of all agents and their available modes (no schemas)
+     * Get overview of all agents and their available tools (no schemas)
      * Used when get_tools is called with empty tools array
      */
-    private getAgentModeOverview(): any {
-        const overview: any = {};
+    private getAgentToolOverview(): Record<string, { description: string; tools: string[] }> {
+        const overview: Record<string, { description: string; tools: string[] }> = {};
 
         if (!this.agentRegistry) {
             return overview;
@@ -316,12 +316,12 @@ export class MCPConnector {
         const registeredAgents = this.agentRegistry.getAllAgents();
 
         for (const [agentName, agent] of registeredAgents) {
-            const modes = agent.getModes();
+            const tools = agent.getTools();
             const agentDescription = agent.description;
 
             overview[agentName] = {
                 description: agentDescription,
-                modes: modes.map((mode: IMode) => mode.slug || mode.name || 'unknown')
+                tools: tools.map((tool: ITool<unknown, unknown>) => tool.slug || tool.name || 'unknown')
             };
         }
 
@@ -334,8 +334,8 @@ export class MCPConnector {
      *
      * @param toolNames Array of specific tool names like ["contentManager_createNote", "vaultLibrarian_searchDirectory"]
      */
-    private getToolsForSpecificNames(toolNames: string[]): any[] {
-        const tools: any[] = [];
+    private getToolsForSpecificNames(toolNames: string[]): Array<{ name: string; description: string; inputSchema: Record<string, unknown> }> {
+        const toolSchemas: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }> = [];
 
         if (!this.agentRegistry) {
             return [];
@@ -344,14 +344,14 @@ export class MCPConnector {
         const registeredAgents = this.agentRegistry.getAllAgents();
 
         for (const toolName of toolNames) {
-            // Parse tool name: "contentManager_createNote" -> agentName="contentManager", modeName="createNote"
+            // Parse tool name: "contentManager_createNote" -> agentName="contentManager", toolSlug="createNote"
             const parts = toolName.split('_');
             if (parts.length < 2) {
                 continue; // Invalid tool name format
             }
 
             const agentName = parts[0];
-            const modeName = parts.slice(1).join('_'); // Handle mode names with underscores
+            const toolSlug = parts.slice(1).join('_'); // Handle tool names with underscores
 
             // Find the agent
             const agent = registeredAgents.get(agentName);
@@ -359,37 +359,37 @@ export class MCPConnector {
                 continue; // Agent not found
             }
 
-            // Find the mode
-            const modes = agent.getModes();
-            const modeInstance = modes.find((m: IMode) =>
-                (m.slug || m.name) === modeName
+            // Find the tool
+            const tools = agent.getTools();
+            const toolInstance = tools.find((t: ITool<unknown, unknown>) =>
+                (t.slug || t.name) === toolSlug
             );
 
-            if (!modeInstance) {
-                continue; // Mode not found
+            if (!toolInstance) {
+                continue; // Tool not found
             }
 
             // Get and clean the schema
-            if (typeof modeInstance.getParameterSchema === 'function') {
+            if (typeof toolInstance.getParameterSchema === 'function') {
                 try {
-                    const paramSchema = modeInstance.getParameterSchema();
+                    const paramSchema = toolInstance.getParameterSchema();
 
                     // Strip common parameters to reduce context bloat
                     // The instruction in get_tools result will tell LLM to add them
                     const cleanSchema = this.stripCommonParameters(paramSchema);
 
-                    tools.push({
+                    toolSchemas.push({
                         name: toolName,
-                        description: modeInstance.description || `Execute ${modeName} on ${agentName}`,
+                        description: toolInstance.description || `Execute ${toolSlug} on ${agentName}`,
                         inputSchema: cleanSchema
                     });
                 } catch (error) {
-                    // Skip modes with invalid schemas
+                    // Skip tools with invalid schemas
                 }
             }
         }
 
-        return tools;
+        return toolSchemas;
     }
 
     /**
@@ -413,16 +413,18 @@ export class MCPConnector {
         };
     }
 
-    async callTool(params: AgentModeParams): Promise<any> {
+    async callTool(params: AgentToolParams): Promise<unknown> {
         try {
-            const { agent, mode, params: modeParams } = params;
+            const { agent, tool, params: toolParams } = params;
 
             // ========================================
             // BOUNDED CONTEXT TOOL DISCOVERY - Intercept get_tools meta-tool
             // ========================================
-            if (agent === 'get' && mode === 'tools') {
+            if (agent === 'get' && tool === 'tools') {
                 // This is a call to the get_tools meta-tool
-                const toolNames = modeParams.tools || modeParams.context?.tools || [];
+                const toolParamsTyped = toolParams as Record<string, unknown>;
+                const contextTyped = toolParamsTyped.context as Record<string, unknown> | undefined;
+                const toolNames = (toolParamsTyped.tools || contextTyped?.tools || []) as string[];
 
                 if (!Array.isArray(toolNames)) {
                     return {
@@ -431,19 +433,19 @@ export class MCPConnector {
                     };
                 }
 
-                const sessionId = modeParams.context?.sessionId;
-                const workspaceId = modeParams.context?.workspaceId || 'default';
+                const sessionId = contextTyped?.sessionId as string | undefined;
+                const workspaceId = (contextTyped?.workspaceId || 'default') as string;
 
-                // TIER 1: Discovery mode (empty array) - return agent/mode overview
+                // TIER 1: Discovery mode (empty array) - return agent/tool overview
                 if (toolNames.length === 0) {
-                    const overview = this.getAgentModeOverview();
+                    const overview = this.getAgentToolOverview();
 
                     return {
                         success: true,
                         overview: overview,
                         sessionId: sessionId,
                         workspaceId: workspaceId,
-                        instruction: 'Above is the overview of all available agents and their modes. To use specific tools, call get_tools again with the exact tool names (e.g., get_tools({ tools: ["contentManager_createNote", "vaultLibrarian_searchDirectory"] }))'
+                        instruction: 'Above is the overview of all available agents and their tools. To use specific tools, call get_tools again with the exact tool names (e.g., get_tools({ tools: ["contentManager_createNote", "vaultLibrarian_searchDirectory"] }))'
                     };
                 }
 
@@ -492,8 +494,15 @@ Keep sessionId and workspaceId values EXACTLY as shown above throughout the conv
             // SESSION VALIDATION & WORKSPACE CONTEXT INJECTION
             // ========================================
 
+            // Type the toolParams for proper access
+            const typedParams = toolParams as Record<string, unknown> & {
+                context?: Record<string, unknown>;
+                sessionId?: string;
+                workspaceContext?: { workspaceId?: string };
+            };
+
             // 1. SESSION ID VALIDATION: Extract and validate/generate sessionId first
-            const providedSessionId = modeParams.context?.sessionId || modeParams.sessionId;
+            const providedSessionId = (typedParams.context?.sessionId || typedParams.sessionId) as string | undefined;
             let validatedSessionId: string;
             let isNewSession = false;
             let isNonStandardId = false;
@@ -509,11 +518,11 @@ Keep sessionId and workspaceId values EXACTLY as shown above throughout the conv
             }
 
             // 2. INJECT VALIDATED SESSION ID into all relevant locations
-            if (!modeParams.context) {
-                modeParams.context = {};
+            if (!typedParams.context) {
+                typedParams.context = {};
             }
-            modeParams.context.sessionId = validatedSessionId;
-            modeParams.sessionId = validatedSessionId;
+            typedParams.context.sessionId = validatedSessionId;
+            typedParams.sessionId = validatedSessionId;
 
             // 3. WORKSPACE CONTEXT LOOKUP FROM SESSION
             const sessionContextManager = this.getSessionContextManagerFromService();
@@ -521,25 +530,25 @@ Keep sessionId and workspaceId values EXACTLY as shown above throughout the conv
 
             if (workspaceContext) {
                 // Inject workspace context from session
-                modeParams.workspaceContext = workspaceContext;
-                modeParams.context.workspaceId = workspaceContext.workspaceId;
+                typedParams.workspaceContext = workspaceContext;
+                typedParams.context.workspaceId = workspaceContext.workspaceId;
             } else {
                 // Fallback to default if no session workspace
-                if (!modeParams.workspaceContext) {
-                    modeParams.workspaceContext = { workspaceId: 'default' };
-                } else if (!modeParams.workspaceContext.workspaceId) {
-                    modeParams.workspaceContext.workspaceId = 'default';
+                if (!typedParams.workspaceContext) {
+                    typedParams.workspaceContext = { workspaceId: 'default' };
+                } else if (!typedParams.workspaceContext.workspaceId) {
+                    typedParams.workspaceContext.workspaceId = 'default';
                 }
 
-                if (modeParams.context && !modeParams.context.workspaceId) {
-                    modeParams.context.workspaceId = modeParams.workspaceContext.workspaceId;
+                if (typedParams.context && !typedParams.context.workspaceId) {
+                    typedParams.context.workspaceId = typedParams.workspaceContext.workspaceId;
                 }
             }
 
             // Delegate validation and execution to ToolCallRouter
-            this.toolRouter.validateBatchOperations(modeParams);
+            this.toolRouter.validateBatchOperations(typedParams);
             const startTime = Date.now();
-            const result = await this.toolRouter.executeAgentMode(agent, mode, modeParams);
+            const result = await this.toolRouter.executeAgentTool(agent, tool, typedParams);
             const executionTime = Date.now() - startTime;
 
             // ========================================
@@ -547,12 +556,13 @@ Keep sessionId and workspaceId values EXACTLY as shown above throughout the conv
             // ========================================
             const traceService = this.serviceManager?.getServiceIfReady<ToolCallTraceService>('toolCallTraceService');
             if (traceService && typeof traceService.captureToolCall === 'function') {
-                const toolName = `${agent}_${mode}`;
-                const success = !result?.error;
+                const toolTraceName = `${agent}_${tool}`;
+                const resultObj = result as Record<string, unknown> | null;
+                const success = !resultObj?.error;
 
                 traceService.captureToolCall(
-                    toolName,
-                    modeParams,
+                    toolTraceName,
+                    typedParams,
                     result,
                     success,
                     executionTime

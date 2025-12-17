@@ -6,7 +6,7 @@ import { createErrorMessage, getErrorMessage } from '../../../utils/errorUtils';
 import { parseWorkspaceContext } from '../../../utils/contextUtils';
 import { MemoryService } from '../../memoryManager/services/MemoryService';
 import { getNexusPlugin } from '../../../utils/pluginLocator';
-import { NexusPluginWithServices } from '../../memoryManager/modes/utils/pluginTypes';
+import { NexusPluginWithServices } from '../../memoryManager/tools/utils/pluginTypes';
 
 /**
  * Tool for prepending content to a file

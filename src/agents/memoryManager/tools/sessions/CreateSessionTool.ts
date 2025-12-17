@@ -14,7 +14,7 @@
  */
 
 import { App } from 'obsidian';
-import { BaseMode } from '../../../baseMode';
+import { BaseTool } from '../../../baseTool';
 import { MemoryManagerAgent } from '../../memoryManager'
 import { CreateSessionParams, SessionResult } from '../../types';
 import { createErrorMessage } from '../../../../utils/errorUtils';
@@ -27,7 +27,7 @@ import { SchemaBuilder, SchemaType } from '../../../../utils/schemas/SchemaBuild
 /**
  * Consolidated CreateSessionMode - combines all session creation functionality
  */
-export class CreateSessionMode extends BaseMode<CreateSessionParams, SessionResult> {
+export class CreateSessionTool extends BaseTool<CreateSessionParams, SessionResult> {
     private app: App;
     private serviceIntegration: ReturnType<typeof createServiceIntegration>;
     private schemaBuilder: SchemaBuilder;
@@ -233,7 +233,6 @@ export class CreateSessionMode extends BaseMode<CreateSessionParams, SessionResu
             };
 
         } catch (error) {
-            console.warn('Error building session context:', error);
             return {
                 summary: 'Session created successfully',
                 associatedNotes: [],
@@ -278,7 +277,6 @@ export class CreateSessionMode extends BaseMode<CreateSessionParams, SessionResu
             });
 
         } catch (error) {
-            console.warn('Warning creating memory traces:', error);
             // Don't fail session creation if memory trace fails
         }
     }

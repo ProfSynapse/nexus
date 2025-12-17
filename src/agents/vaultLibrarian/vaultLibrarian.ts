@@ -102,7 +102,6 @@ export class VaultLibrarianAgent extends BaseAgent {
           }
         }
       } catch (error) {
-        console.warn('[VaultLibrarian] Failed to access plugin services:', error);
       }
     }
     
@@ -113,7 +112,6 @@ export class VaultLibrarianAgent extends BaseAgent {
         pluginRef = getNexusPlugin(app);
       }
     } catch (error) {
-      console.warn('[VaultLibrarian] Failed to get plugin reference:', error);
     }
 
     // Create minimal plugin fallback if plugin not found

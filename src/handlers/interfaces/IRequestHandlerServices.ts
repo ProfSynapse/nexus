@@ -1,6 +1,5 @@
 import { IAgent } from '../../agents/interfaces/IAgent';
 import { SessionContextManager } from '../../services/SessionContextManager';
-import { ModeCall, ModeCallResult } from '../../types';
 import { ISchemaProvider } from './ISchemaProvider';
 
 export interface IValidationService {
@@ -25,15 +24,20 @@ export interface ISessionService {
 export interface IToolExecutionService {
     executeAgent(
         agent: IAgent,
-        mode: string,
+        tool: string,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         params: any
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ): Promise<any>;
 }
 
 
 export interface IResponseFormatter {
-    formatToolExecutionResponse(result: any, sessionInfo?: any, context?: { mode?: string }): any;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    formatToolExecutionResponse(result: any, sessionInfo?: any, context?: { tool?: string }): any;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     formatSessionInstructions(sessionId: string, result: any): any;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     formatErrorResponse(error: Error): any;
 }
 
@@ -42,9 +46,12 @@ export interface IToolListService {
         agents: Map<string, IAgent>,
         isVaultEnabled: boolean,
         vaultName?: string
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
     ): Promise<{ tools: any[] }>;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     buildAgentSchema(agent: IAgent): any;
-    mergeModeSchemasIntoAgent(agent: IAgent, agentSchema: any): any;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    mergeToolSchemasIntoAgent(agent: IAgent, agentSchema: any): any;
     setSchemaEnhancementService(service: ISchemaEnhancementService): void;
 }
 
@@ -70,23 +77,23 @@ export interface IToolHelpService {
     generateToolHelp(
         getAgent: (name: string) => IAgent,
         toolName: string,
-        mode: string
+        toolSlug: string
     ): Promise<{ content: Array<{ type: string; text: string }> }>;
     generateAgentHelp(
         getAgent: (name: string) => IAgent,
         toolName: string
     ): Promise<{ content: Array<{ type: string; text: string }> }>;
-    validateModeExists(
+    validateToolExists(
         getAgent: (name: string) => IAgent,
         toolName: string,
-        mode: string
+        toolSlug: string
     ): Promise<boolean>;
 }
 
 export interface IRequestContext {
     agentName: string;
-    mode: string;
-    params: any;
+    tool: string;
+    params: Record<string, unknown>;
     sessionId: string;
     fullToolName: string;
     sessionContextManager?: SessionContextManager;

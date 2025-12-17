@@ -121,20 +121,14 @@ export class AgentInitializationService {
         // Create LLM Provider Manager with vault for Nexus (WebLLM) support
         llmProviderManager = new LLMProviderManager(llmProviderSettings, this.app.vault);
 
-        // Set VaultOperations for file reading from service manager
         if (this.serviceManager) {
           try {
             const vaultOperations = await this.serviceManager.getService('vaultOperations');
             if (vaultOperations) {
               llmProviderManager.setVaultOperations(vaultOperations);
-            } else {
-              console.warn('VaultOperations service not yet initialized, file reading may not work');
             }
           } catch (error) {
-            console.warn('Failed to get VaultOperations from service manager:', error);
           }
-        } else {
-          console.warn('ServiceManager not available, file reading may not work');
         }
 
         // Create usage tracker

@@ -40,7 +40,6 @@ export class AgentSuggester extends BaseSuggester<AgentSuggestionItem> {
 
     this.messageEnhancer = messageEnhancer;
     this.promptStorage = promptStorage;
-    console.log('[AgentSuggester] Initialized - trigger pattern:', /@(\w*)$/);
   }
 
   // ==========================================================================
@@ -56,14 +55,10 @@ export class AgentSuggester extends BaseSuggester<AgentSuggestionItem> {
     context: EditorSuggestContext
   ): Promise<SuggestionItem<AgentSuggestionItem>[]> {
 
-    console.log('[AgentSuggester] getSuggestions called with query:', context.query);
-
     // Get enabled agents only
     const agents = this.promptStorage.getEnabledPrompts();
-    console.log('[AgentSuggester] Found', agents.length, 'enabled agents');
 
     if (agents.length === 0) {
-      console.log('[AgentSuggester] No enabled agents available');
       return [];
     }
 

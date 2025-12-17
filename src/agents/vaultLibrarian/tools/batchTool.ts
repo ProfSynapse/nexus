@@ -21,15 +21,15 @@ export interface BatchSearchSpec {
   query: string;
   limit?: number;
 
-  // Content mode specific
-  semantic?: boolean;  // Required for content mode
+  // Content tool specific
+  semantic?: boolean;  // Required for content tool
   paths?: string[];    // Used by both content and directory
 
-  // Memory mode specific
+  // Memory tool specific
   workspaceId?: string;
   memoryTypes?: ('traces' | 'toolCalls' | 'sessions' | 'states' | 'workspaces')[];
 
-  // Directory mode specific
+  // Directory tool specific
   searchType?: 'files' | 'folders' | 'both';
   fileTypes?: string[];
 }

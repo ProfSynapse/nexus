@@ -92,7 +92,6 @@ export class WorkspaceAgentResolver {
       return await this.fetchAgentByNameOrId(agentId, app);
 
     } catch (error) {
-      console.warn('[WorkspaceAgentResolver] Failed to fetch workspace agent:', error);
       return null;
     }
   }
@@ -112,20 +111,17 @@ export class WorkspaceAgentResolver {
       // Get CustomPromptStorageService through plugin's agentManager
       const plugin = getNexusPlugin(app);
       if (!plugin || !this.hasAgentManager(plugin)) {
-        console.warn('[WorkspaceAgentResolver] AgentManager not available');
         return null;
       }
 
       const agentManagerAgent = plugin.agentManager.getAgent('agentManager');
       if (!this.isAgentManagerAgent(agentManagerAgent)) {
-        console.warn('[WorkspaceAgentResolver] AgentManagerAgent or storage service not available');
         return null;
       }
 
       // Use unified lookup that tries ID first, then name
       const agent = agentManagerAgent.storageService.getPromptByNameOrId(identifier);
       if (!agent) {
-        console.warn(`[WorkspaceAgentResolver] Agent '${identifier}' not found in storage (searched by both name and ID)`);
         return null;
       }
 
@@ -136,7 +132,6 @@ export class WorkspaceAgentResolver {
       };
 
     } catch (error) {
-      console.warn(`[WorkspaceAgentResolver] Failed to fetch agent '${identifier}':`, error);
       return null;
     }
   }

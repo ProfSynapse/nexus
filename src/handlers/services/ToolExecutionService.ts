@@ -7,63 +7,63 @@ import { getErrorMessage } from '../../utils/errorUtils';
 export class ToolExecutionService implements IToolExecutionService {
     async executeAgent(
         agent: IAgent,
-        mode: string,
-        params: any
-    ): Promise<any> {
+        tool: string,
+        params: Record<string, unknown>
+    ): Promise<unknown> {
         try {
-            this.validateModeSpecificParams(agent.name, mode, params);
-            return await agent.executeMode(mode, params);
+            this.validateToolSpecificParams(agent.name, tool, params);
+            return await agent.executeTool(tool, params);
         } catch (error) {
-            logger.systemError(error as Error, `Tool Execution - ${agent.name}:${mode}`);
+            logger.systemError(error as Error, `Tool Execution - ${agent.name}:${tool}`);
             throw error;
         }
     }
 
-    private validateModeSpecificParams(agentName: string, mode: string, params: any): void {
+    private validateToolSpecificParams(agentName: string, tool: string, params: Record<string, unknown>): void {
         switch (agentName) {
             case 'memoryManager':
-                this.validateMemoryManagerParams(mode, params);
+                this.validateMemoryManagerParams(tool, params);
                 break;
             case 'vaultManager':
-                this.validateVaultManagerParams(mode, params);
+                this.validateVaultManagerParams(tool, params);
                 break;
             case 'contentManager':
-                this.validateContentManagerParams(mode, params);
+                this.validateContentManagerParams(tool, params);
                 break;
         }
     }
 
-    private validateMemoryManagerParams(mode: string, params: any): void {
-        if (mode === 'createState' && !params.name) {
+    private validateMemoryManagerParams(tool: string, params: Record<string, unknown>): void {
+        if (tool === 'createState' && !params.name) {
             throw new McpError(
                 ErrorCode.InvalidParams,
-                'Missing required parameter: name for createState mode'
+                'Missing required parameter: name for createState tool'
             );
         }
     }
 
-    private validateVaultManagerParams(mode: string, params: any): void {
-        if (['listFolders', 'createFolder', 'listFiles'].includes(mode) && 
+    private validateVaultManagerParams(tool: string, params: Record<string, unknown>): void {
+        if (['listFolders', 'createFolder', 'listFiles'].includes(tool) &&
             params.path === undefined) {
             throw new McpError(
                 ErrorCode.InvalidParams,
-                `Missing required parameter: path for ${mode} mode`
+                `Missing required parameter: path for ${tool} tool`
             );
         }
     }
 
-    private validateContentManagerParams(mode: string, params: any): void {
-        if (mode === 'createContent') {
+    private validateContentManagerParams(tool: string, params: Record<string, unknown>): void {
+        if (tool === 'createContent') {
             if (!params.filePath) {
                 throw new McpError(
                     ErrorCode.InvalidParams,
-                    'Missing required parameter: filePath for createContent mode'
+                    'Missing required parameter: filePath for createContent tool'
                 );
             }
             if (params.content === undefined || params.content === null) {
                 throw new McpError(
                     ErrorCode.InvalidParams,
-                    'Missing required parameter: content for createContent mode'
+                    'Missing required parameter: content for createContent tool'
                 );
             }
         }

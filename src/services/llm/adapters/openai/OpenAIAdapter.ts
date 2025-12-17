@@ -475,14 +475,12 @@ export class OpenAIAdapter extends BaseAdapter {
               sources.push(...extractedSources);
             }
           } catch (error) {
-            console.warn('[OpenAI] Failed to parse web search tool result:', error);
           }
         }
       }
 
       return sources;
     } catch (error) {
-      console.warn('[OpenAI] Failed to extract search sources:', error);
       return [];
     }
   }
@@ -553,7 +551,6 @@ export class OpenAIAdapter extends BaseAdapter {
         currency: 'USD'
       };
     } catch (error) {
-      console.warn(`Failed to get pricing for model ${modelId}:`, error);
       return null;
     }
   }

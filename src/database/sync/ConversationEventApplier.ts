@@ -44,7 +44,6 @@ export class ConversationEventApplier {
   private async applyConversationCreated(event: ConversationCreatedEvent): Promise<void> {
     // Skip invalid conversation events
     if (!event.data?.id) {
-      console.warn('[ConversationEventApplier] Skipping invalid metadata event - missing id');
       return;
     }
 
@@ -84,7 +83,6 @@ export class ConversationEventApplier {
   private async applyMessageAdded(event: MessageEvent): Promise<void> {
     // Skip invalid message events
     if (!event.data?.id || !event.conversationId) {
-      console.warn('[ConversationEventApplier] Skipping invalid message event - missing id or conversationId');
       return;
     }
 

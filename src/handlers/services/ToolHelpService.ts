@@ -3,8 +3,8 @@ import { IToolHelpService } from '../interfaces/IRequestHandlerServices';
 import { IAgent } from '../../agents/interfaces/IAgent';
 import { logger } from '../../utils/logger';
 import {
-    generateModeHelp,
-    formatModeHelp
+    generateToolHelp,
+    formatToolHelp
 } from '../../utils/parameterHintUtils';
 
 /**
@@ -57,27 +57,27 @@ export class ToolHelpService implements IToolHelpService {
                 );
             }
             
-            // Get the mode instance
-            const modeInstance = agent.getMode(mode);
-            if (!modeInstance) {
+            // Get the tool instance
+            const toolInstance = agent.getTool(mode);
+            if (!toolInstance) {
                 throw new McpError(
                     ErrorCode.InvalidParams,
-                    `Mode ${mode} not found in agent ${agentName}`
+                    `Tool ${mode} not found in agent ${agentName}`
                 );
             }
-            
-            // Get the mode's parameter schema
-            const schema = modeInstance.getParameterSchema();
-            
+
+            // Get the tool's parameter schema
+            const schema = toolInstance.getParameterSchema();
+
             // Generate help content
-            const help = generateModeHelp(
+            const help = generateToolHelp(
                 mode,
-                modeInstance.description,
+                toolInstance.description,
                 schema
             );
-            
+
             // Format the help text
-            const helpText = formatModeHelp(help);
+            const helpText = formatToolHelp(help);
             
             logger.systemLog(`ToolHelpService: Generated help for ${agentName}.${mode}`);
             
@@ -117,26 +117,26 @@ export class ToolHelpService implements IToolHelpService {
                 );
             }
             
-            const modes = agent.getModes().map(mode => mode.slug);
+            const tools = agent.getTools().map(tool => tool.slug);
             const helpContent: HelpContent[] = [];
-            
+
             // Add agent overview
             helpContent.push({
                 type: "text",
-                text: `# ${agentName} Agent\n\n${agent.description}\n\n## Available Modes:\n`
+                text: `# ${agentName} Agent\n\n${agent.description}\n\n## Available Tools:\n`
             });
-            
-            // Add help for each mode
-            for (const modeName of modes) {
+
+            // Add help for each tool
+            for (const toolSlug of tools) {
                 try {
-                    const modeHelp = await this.generateToolHelp(getAgent, toolName, modeName);
-                    helpContent.push(...modeHelp.content);
+                    const toolHelpContent = await this.generateToolHelp(getAgent, toolName, toolSlug);
+                    helpContent.push(...toolHelpContent.content);
                     helpContent.push({
                         type: "text",
                         text: "\n---\n"
                     });
                 } catch (error) {
-                    logger.systemWarn(`ToolHelpService: Failed to generate help for mode ${modeName}`);
+                    logger.systemWarn(`ToolHelpService: Failed to generate help for tool ${toolSlug}`);
                 }
             }
             
@@ -169,30 +169,41 @@ export class ToolHelpService implements IToolHelpService {
     }
 
     /**
-     * Validate if mode exists for agent (utility method)
+     * Validate if tool exists for agent (utility method)
      * @param getAgent Function to retrieve agent by name
      * @param toolName Full tool name
-     * @param mode Mode name to validate
+     * @param toolSlug Tool slug to validate
      * @returns Promise resolving to boolean
+     */
+    async validateToolExists(
+        getAgent: (name: string) => IAgent,
+        toolName: string,
+        toolSlug: string
+    ): Promise<boolean> {
+        try {
+            const agentName = this.extractAgentName(toolName);
+            const agent = getAgent(agentName);
+
+            if (!agent) {
+                return false;
+            }
+
+            const toolInstance = agent.getTool(toolSlug);
+            return toolInstance !== undefined;
+        } catch (error) {
+            logger.systemWarn(`ToolHelpService: Tool validation failed for ${toolName}.${toolSlug}`);
+            return false;
+        }
+    }
+
+    /**
+     * @deprecated Use validateToolExists instead
      */
     async validateModeExists(
         getAgent: (name: string) => IAgent,
         toolName: string,
         mode: string
     ): Promise<boolean> {
-        try {
-            const agentName = this.extractAgentName(toolName);
-            const agent = getAgent(agentName);
-            
-            if (!agent) {
-                return false;
-            }
-            
-            const modeInstance = agent.getMode(mode);
-            return modeInstance !== undefined;
-        } catch (error) {
-            logger.systemWarn(`ToolHelpService: Mode validation failed for ${toolName}.${mode}`);
-            return false;
-        }
+        return this.validateToolExists(getAgent, toolName, mode);
     }
 }

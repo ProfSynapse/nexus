@@ -51,8 +51,9 @@ export class MessageContentRenderer {
     } catch (error) {
       console.error('[MessageContentRenderer] Error rendering markdown:', error);
       // Fallback to plain text
-      const pre = container.createEl('pre');
-      pre.style.whiteSpace = 'pre-wrap';
+      const pre = container.createEl('pre', {
+        cls: 'markdown-renderer-plaintext'
+      });
       pre.textContent = contentToRender;
     }
 

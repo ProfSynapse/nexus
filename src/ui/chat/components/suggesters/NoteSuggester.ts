@@ -33,7 +33,6 @@ export class NoteSuggester extends BaseSuggester<NoteSuggestionItem> {
     });
 
     this.messageEnhancer = messageEnhancer;
-    console.log('[NoteSuggester] Initialized - trigger pattern:', /\[\[([^\]]*?)$/);
   }
 
   // ==========================================================================
@@ -49,11 +48,8 @@ export class NoteSuggester extends BaseSuggester<NoteSuggestionItem> {
     context: EditorSuggestContext
   ): Promise<SuggestionItem<NoteSuggestionItem>[]> {
 
-    console.log('[NoteSuggester] getSuggestions called with query:', context.query);
-
     // Get all markdown files
     const files = this.app.vault.getMarkdownFiles();
-    console.log('[NoteSuggester] Found', files.length, 'markdown files');
 
     // If no query, return all files (sorted by recent modification)
     if (!context.query || context.query.trim().length === 0) {

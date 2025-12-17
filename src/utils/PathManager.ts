@@ -93,7 +93,6 @@ export class PathManager {
    */
   makeVaultRelative(absolutePath: string): string {
     if (!this.vaultBasePath) {
-      console.warn('[PathManager] Cannot convert to relative - vault base path unavailable');
       return this.extractPluginPathFallback(absolutePath);
     }
 
@@ -111,7 +110,6 @@ export class PathManager {
       }
 
       // Strategy 3: Fallback to safe plugin path
-      console.warn(`[PathManager] All conversion strategies failed for: ${absolutePath}`);
       return this.createDataPath('storage');
 
     } catch (error) {

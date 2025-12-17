@@ -253,15 +253,6 @@ export class Logger {
     }
 
     switch (entry.level) {
-      case 'debug':
-        console.debug(output);
-        break;
-      case 'info':
-        console.info(output);
-        break;
-      case 'warn':
-        console.warn(output);
-        break;
       case 'error':
         console.error(output);
         break;
@@ -269,9 +260,7 @@ export class Logger {
   }
 
   private logToFile(entry: LogEntry): void {
-    // File logging only available with vault adapter on mobile
     if (!Logger.vaultAdapterConfig) {
-      // Silently skip file logging when no vault adapter configured
       return;
     }
 

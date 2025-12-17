@@ -158,7 +158,6 @@ export class TokenCounter {
         return data.token_count || 0;
       }
     } catch (error) {
-      console.warn('OpenAI token counting failed, using fallback:', error);
     }
 
     return this.fallbackTokenCount(text);
@@ -187,7 +186,6 @@ export class TokenCounter {
         return data.totalTokens || 0;
       }
     } catch (error) {
-      console.warn('Google token counting failed, using fallback:', error);
     }
 
     return this.fallbackTokenCount(text);
@@ -217,7 +215,6 @@ export class TokenCounter {
         return data.input_tokens || 0;
       }
     } catch (error) {
-      console.warn('Anthropic token counting failed, using fallback:', error);
     }
 
     return this.fallbackTokenCount(text);
@@ -268,7 +265,6 @@ export class TokenCounter {
           break;
       }
     } catch (error) {
-      console.warn(`Token counting failed for ${provider}, using fallback:`, error);
       tokenCount = this.fallbackTokenCount(text);
     }
 
@@ -295,7 +291,6 @@ export class CostCalculator {
   ): CostBreakdown | null {
     const modelSpec = ModelRegistry.findModel(provider, model);
     if (!modelSpec) {
-      console.warn(`Model not found in registry: ${provider}/${model}`);
       return null;
     }
 
@@ -392,7 +387,6 @@ export class CostCalculator {
           break;
       }
     } catch (error) {
-      console.warn(`Failed to extract token usage from ${provider} response:`, error);
     }
 
     return null;

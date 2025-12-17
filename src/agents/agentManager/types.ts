@@ -1,6 +1,6 @@
 import { CommonParameters, CommonResult, CustomPrompt } from '../../types';
 
-// List Agents Mode
+// List Agents Tool
 export interface ListAgentsParams extends CommonParameters {
   enabledOnly?: boolean;
 }
@@ -14,7 +14,7 @@ export interface ListAgentsResult extends CommonResult {
   };
 }
 
-// Get Agent Mode
+// Get Agent Tool
 export interface GetAgentParams extends CommonParameters {
   id?: string;
   name?: string;
@@ -24,7 +24,7 @@ export interface GetAgentResult extends CommonResult {
   data: (CustomPrompt & { message: string }) | null;
 }
 
-// Create Agent Mode
+// Create Agent Tool
 export interface CreateAgentParams extends CommonParameters {
   name: string;
   description: string;
@@ -36,7 +36,7 @@ export interface CreateAgentResult extends CommonResult {
   data: CustomPrompt;
 }
 
-// Update Agent Mode
+// Update Agent Tool
 export interface UpdateAgentParams extends CommonParameters {
   id: string;
   name?: string;
@@ -49,7 +49,7 @@ export interface UpdateAgentResult extends CommonResult {
   data: CustomPrompt;
 }
 
-// Delete Agent Mode
+// Delete Agent Tool
 export interface DeleteAgentParams extends CommonParameters {
   id: string;
 }

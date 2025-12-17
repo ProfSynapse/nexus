@@ -100,9 +100,6 @@ export class BackgroundProcessor {
         }, 2000); // 2 second delay
     }
 
-    /**
-     * Validate core services are available
-     */
     async validateSearchFunctionality(): Promise<void> {
         try {
             const serviceManager = this.config.serviceManager;
@@ -114,7 +111,6 @@ export class BackgroundProcessor {
                 const availableCore = coreServices.filter(service => serviceNames.includes(service));
             }
         } catch (error) {
-            console.warn('Service validation error:', error);
         }
     }
 

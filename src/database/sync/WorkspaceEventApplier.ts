@@ -58,9 +58,7 @@ export class WorkspaceEventApplier {
   }
 
   private async applyWorkspaceCreated(event: WorkspaceCreatedEvent): Promise<void> {
-    // Skip invalid workspace events
     if (!event.data?.id || !event.data?.name) {
-      console.warn('[WorkspaceEventApplier] Skipping invalid workspace_created event - missing id or name:', event);
       return;
     }
 
@@ -109,12 +107,7 @@ export class WorkspaceEventApplier {
   }
 
   private async applySessionCreated(event: SessionCreatedEvent): Promise<void> {
-    // Skip invalid session events
     if (!event.data?.id || !event.workspaceId) {
-      console.warn('[WorkspaceEventApplier] Skipping invalid session_created event - missing required fields:', {
-        hasId: !!event.data?.id,
-        hasWorkspaceId: !!event.workspaceId
-      });
       return;
     }
 
@@ -152,13 +145,7 @@ export class WorkspaceEventApplier {
   }
 
   private async applyStateSaved(event: StateSavedEvent): Promise<void> {
-    // Skip invalid state events
     if (!event.data?.id || !event.sessionId || !event.workspaceId) {
-      console.warn('[WorkspaceEventApplier] Skipping invalid state_saved event - missing required fields:', {
-        hasId: !!event.data?.id,
-        hasSessionId: !!event.sessionId,
-        hasWorkspaceId: !!event.workspaceId
-      });
       return;
     }
 
@@ -184,13 +171,7 @@ export class WorkspaceEventApplier {
   }
 
   private async applyTraceAdded(event: TraceAddedEvent): Promise<void> {
-    // Skip invalid trace events
     if (!event.data?.id || !event.sessionId || !event.workspaceId) {
-      console.warn('[WorkspaceEventApplier] Skipping invalid trace_added event - missing required fields:', {
-        hasId: !!event.data?.id,
-        hasSessionId: !!event.sessionId,
-        hasWorkspaceId: !!event.workspaceId
-      });
       return;
     }
 

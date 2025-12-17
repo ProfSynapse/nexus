@@ -3,7 +3,7 @@
  * Following the same pattern as ListWorkspacesMode for consistency
  */
 
-import { BaseMode } from '../../../baseMode';
+import { BaseTool } from '../../../baseTool';
 import { MemoryManagerAgent } from '../../memoryManager'
 import { ListSessionsParams, SessionResult } from '../../types';
 import { createErrorMessage } from '../../../../utils/errorUtils';
@@ -15,7 +15,7 @@ import { PaginationParams } from '../../../../types/pagination/PaginationTypes';
 /**
  * Mode for listing sessions with filtering and sorting
  */
-export class ListSessionsMode extends BaseMode<ListSessionsParams, SessionResult> {
+export class ListSessionsTool extends BaseTool<ListSessionsParams, SessionResult> {
   private agent: MemoryManagerAgent;
 
   constructor(agent: MemoryManagerAgent) {

@@ -57,13 +57,13 @@ export interface SystemPromptOptions {
   messageEnhancement?: MessageEnhancement | null;
   agentPrompt?: string | null;
   workspaceContext?: WorkspaceContext | null;
-  // Full comprehensive workspace data from LoadWorkspaceMode (when workspace selected in settings)
+  // Full comprehensive workspace data from LoadWorkspaceTool (when workspace selected in settings)
   loadedWorkspaceData?: any | null;
   // Dynamic context (always loaded fresh)
   vaultStructure?: VaultStructure | null;
   availableWorkspaces?: WorkspaceSummary[];
   availableAgents?: AgentSummary[];
-  // Tool agents with their modes (dynamically loaded from agent registry)
+  // Tool agents with their tools (dynamically loaded from agent registry)
   toolAgents?: ToolAgentInfo[];
 }
 
@@ -340,11 +340,11 @@ Keep sessionId and workspaceId EXACTLY as shown above for the entire conversatio
       try {
         const workspaceData = await this.loadWorkspace(workspaceRef.id);
         if (workspaceData) {
-          // Check if this is comprehensive data from LoadWorkspaceMode or basic workspace object
+          // Check if this is comprehensive data from LoadWorkspaceTool or basic workspace object
           const isComprehensive = workspaceData.context && typeof workspaceData.context === 'object' && 'name' in workspaceData.context;
 
           if (isComprehensive) {
-            // Comprehensive workspace data from LoadWorkspaceMode
+            // Comprehensive workspace data from LoadWorkspaceTool
             const workspaceName = workspaceData.context?.name || workspaceRef.name;
             prompt += `<workspace name="${this.escapeXmlAttribute(workspaceName)}" id="${this.escapeXmlAttribute(workspaceRef.id)}">\n`;
 

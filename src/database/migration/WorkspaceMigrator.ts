@@ -72,9 +72,7 @@ export class WorkspaceMigrator extends BaseMigrator<WorkspaceMigrationResult> {
       return;
     }
 
-    // Validate workspace has required fields
     if (!workspace.id || !workspace.name) {
-      console.warn(`[WorkspaceMigrator] Skipping invalid workspace file (missing id/name): ${filePath}`);
       return;
     }
 

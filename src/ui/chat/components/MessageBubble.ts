@@ -383,7 +383,6 @@ export class MessageBubble extends Component {
     const info = ToolEventParser.getToolEventInfo(data);
     const toolId = info.toolId;
     if (!toolId) {
-      console.warn('[MessageBubble] Tool event missing ID:', data);
       return;
     }
 
@@ -406,7 +405,6 @@ export class MessageBubble extends Component {
     }
 
     if (!accordion) {
-      console.warn('[MessageBubble] No accordion found for tool:', toolId);
       return;
     }
 

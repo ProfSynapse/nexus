@@ -45,7 +45,6 @@ export class WebLLMWorkerService {
    */
   async initialize(fileHandler?: (path: string) => Promise<ArrayBuffer>): Promise<void> {
     if (this.worker) {
-      console.warn('[WebLLMWorkerService] Worker already initialized');
       return;
     }
 
@@ -63,7 +62,6 @@ export class WebLLMWorkerService {
       URL.revokeObjectURL(workerUrl);
 
       this.isInitialized = true;
-      console.log('[WebLLMWorkerService] Worker initialized successfully');
     } catch (error) {
       console.error('[WebLLMWorkerService] Failed to initialize worker:', error);
       throw new WebLLMError(
@@ -121,9 +119,6 @@ self.onmessage = async function(event) {
         // Response from main thread for file request
         // Handled by pending promise in custom fetch
         break;
-
-      default:
-        console.warn('[WebLLM Worker] Unknown message type:', message.type);
     }
   } catch (error) {
     self.postMessage({
@@ -339,8 +334,6 @@ async function handleUnload(message) {
     }
   });
 }
-
-console.log('[WebLLM Worker] Worker initialized and ready');
 `;
   }
 
@@ -369,7 +362,6 @@ console.log('[WebLLM Worker] Worker initialized and ready');
       // Handle pending request promises
       const pending = this.pendingRequests.get(requestId);
       if (!pending) {
-        console.warn('[WebLLMWorkerService] No pending request for ID:', requestId);
         return;
       }
 
@@ -401,9 +393,6 @@ console.log('[WebLLM Worker] Worker initialized and ready');
             error.payload.details
           ));
           break;
-
-        default:
-          console.warn('[WebLLMWorkerService] Unhandled response type:', response.type);
       }
     };
 

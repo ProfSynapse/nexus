@@ -166,7 +166,6 @@ export class ArchitectureMigrationHelper {
     if (!this.plugin.logger) {
       const { StructuredLogger } = await import('./StructuredLogger');
       this.plugin.logger = new StructuredLogger(this.plugin);
-      // StructuredLogger initialized
     }
   }
   
@@ -177,10 +176,9 @@ export class ArchitectureMigrationHelper {
     if (!this.plugin.pathManager) {
       const { ObsidianPathManager } = await import('./ObsidianPathManager');
       this.plugin.pathManager = new ObsidianPathManager(
-        this.plugin.app.vault, 
+        this.plugin.app.vault,
         this.plugin.manifest
       );
-      // ObsidianPathManager initialized
     }
   }
   
@@ -195,7 +193,6 @@ export class ArchitectureMigrationHelper {
         this.plugin.pathManager,
         this.plugin.logger
       );
-      // VaultOperations initialized
     }
   }
   
@@ -207,7 +204,6 @@ export class ArchitectureMigrationHelper {
       const { PluginDataManager } = await import('./PluginDataManager');
       this.plugin.dataManager = new PluginDataManager(this.plugin);
       await this.plugin.dataManager.load();
-      // PluginDataManager initialized
     }
   }
   
@@ -215,21 +211,9 @@ export class ArchitectureMigrationHelper {
    * Complete migration in phases
    */
   async performFullMigration(defaults: any): Promise<void> {
-    // Starting architecture migration
-    
     await this.migrateLogging();
     await this.migratePaths();
     await this.migrateFileOperations();
     await this.migrateDataManagement(defaults);
-    
-    // Architecture migration completed
-    
-    // Validate the migration
-    const validation = validateArchitecture(this.plugin);
-    if (validation.valid) {
-      // Architecture validation passed
-    } else {
-      console.warn('[Migration] ⚠️ Architecture validation issues:', validation.issues);
-    }
   }
 }

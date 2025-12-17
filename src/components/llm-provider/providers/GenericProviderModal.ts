@@ -165,10 +165,8 @@ export class GenericProviderModal implements IProviderModal {
     this.models.forEach(model => {
       const modelEl = modelsList.createDiv('model-item');
 
-      const modelRow = modelEl.createDiv('model-row llm-provider-model-row');
-      modelRow.style.display = 'flex';
-      modelRow.style.justifyContent = 'space-between';
-      modelRow.style.alignItems = 'center';
+      const modelRow = modelEl.createDiv('model-row');
+      modelRow.addClass('llm-provider-model-row');
 
       // Model name
       const modelNameEl = modelRow.createDiv('model-name llm-provider-model-name');
@@ -177,7 +175,7 @@ export class GenericProviderModal implements IProviderModal {
       // Model toggle
       const currentEnabled = this.config.config.models?.[model.id]?.enabled ?? true;
       const toggleContainer = modelRow.createDiv('model-toggle-container');
-      toggleContainer.style.marginLeft = 'auto';
+      toggleContainer.addClass('llm-provider-model-toggle');
 
       new Setting(toggleContainer)
         .addToggle(toggle => toggle

@@ -62,8 +62,6 @@ export class DeepResearchHandler {
   async generate(prompt: string, options?: GenerateOptions): Promise<LLMResponse> {
     const model = options?.model || 'sonar-deep-research';
 
-    console.log(`[DeepResearchHandler] Starting deep research for model: ${model}`);
-
     // Build input format for Deep Research API
     const input: any[] = [];
 
@@ -149,14 +147,11 @@ export class DeepResearchHandler {
     const startTime = Date.now();
     const pollInterval = (model.includes('o4-mini') || model.includes('gpt-5.2-pro')) ? 2000 : 5000; // Faster polling for mini model and pro model
 
-    console.log(`[DeepResearchHandler] Polling for completion of ${responseId} with ${pollInterval}ms intervals`);
-
     while (Date.now() - startTime < maxWaitTime) {
       try {
         const response = await this.client.responses.retrieve(responseId);
 
         if (response.status === 'completed' || this.isComplete(response)) {
-          console.log(`[DeepResearchHandler] Deep research completed after ${Date.now() - startTime}ms`);
           return response;
         }
 
@@ -164,14 +159,12 @@ export class DeepResearchHandler {
           throw new Error(`Deep research ${response.status}: ${response.error || 'Unknown error'}`);
         }
 
-        console.log(`[DeepResearchHandler] Deep research in progress... (${response.status})`);
         await new Promise(resolve => setTimeout(resolve, pollInterval));
 
       } catch (error) {
         if (error instanceof Error && error.message.includes('Deep research')) {
           throw error; // Re-throw deep research specific errors
         }
-        console.warn(`[DeepResearchHandler] Polling error:`, error);
         await new Promise(resolve => setTimeout(resolve, pollInterval));
       }
     }

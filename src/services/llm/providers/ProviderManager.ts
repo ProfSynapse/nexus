@@ -56,7 +56,6 @@ export class LLMProviderManager {
    * Kept for backward compatibility
    */
   setVaultAdapter(adapter: any): void {
-    console.warn('ProviderManager.setVaultAdapter() is deprecated. Plugin should call setVaultOperations() instead.');
   }
 
   /**

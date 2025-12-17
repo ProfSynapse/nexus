@@ -101,7 +101,6 @@ export class SearchContentTool extends BaseTool<ContentSearchParams, ContentSear
         }
       }
     } catch (error) {
-      console.warn('[SearchContentTool] Failed to get embedding service:', error);
     }
 
     return null;
@@ -128,12 +127,6 @@ export class SearchContentTool extends BaseTool<ContentSearchParams, ContentSear
         paths: params.paths || [],
         context: params.context
       };
-
-      console.log(`[${BRAND_NAME}] Starting content search:`, {
-        query: searchParams.query,
-        semantic: searchParams.semantic,
-        limit: searchParams.limit
-      });
 
       // Use semantic search if requested
       if (searchParams.semantic) {
@@ -178,7 +171,6 @@ export class SearchContentTool extends BaseTool<ContentSearchParams, ContentSear
       const semanticResults = await embeddingService.semanticSearch(searchParams.query, searchParams.limit * 2); // Get extra for path filtering
 
       if (semanticResults.length === 0) {
-        console.warn(`[${BRAND_NAME}] Semantic search returned 0 results despite having ${stats.noteCount} embeddings.`);
         return this.prepareResult(false, undefined, 'Semantic search returned no results. This may indicate an issue with the vector database. Please check the console for errors.');
       }
 
@@ -228,10 +220,6 @@ export class SearchContentTool extends BaseTool<ContentSearchParams, ContentSear
       }
 
       const executionTime = performance.now() - startTime;
-      console.log(`[${BRAND_NAME}] Semantic search completed:`, {
-        resultsCount: results.length,
-        executionTime: Math.round(executionTime)
-      });
 
       return this.prepareResult(true, {
         results
@@ -284,11 +272,6 @@ export class SearchContentTool extends BaseTool<ContentSearchParams, ContentSear
     );
 
     const executionTime = performance.now() - startTime;
-
-    console.log(`[${BRAND_NAME}] Keyword search completed:`, {
-      resultsCount: searchResults.length,
-      executionTime: Math.round(executionTime)
-    });
 
     return this.prepareResult(true, {
       results: searchResults
@@ -384,7 +367,6 @@ export class SearchContentTool extends BaseTool<ContentSearchParams, ContentSear
           }
         }
       } catch (error) {
-        console.warn(`[${BRAND_NAME}] Failed to read file content:`, file.path, error);
       }
     } else {
       // Even if not including content, still extract frontmatter
@@ -395,7 +377,6 @@ export class SearchContentTool extends BaseTool<ContentSearchParams, ContentSear
           delete frontmatter.position;
         }
       } catch (error) {
-        console.warn(`[${BRAND_NAME}] Failed to extract frontmatter:`, file.path, error);
       }
     }
 

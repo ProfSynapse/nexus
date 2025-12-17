@@ -285,7 +285,6 @@ export class LMStudioAdapter extends BaseAdapter {
               };
             } else {
               // Parsing failed - yield original chunk
-              console.warn('[LMStudioAdapter] [TOOL_CALLS] parsing failed, yielding raw content');
               yield chunk;
             }
           }
@@ -300,9 +299,6 @@ export class LMStudioAdapter extends BaseAdapter {
 
       // Check if it's a CORS error - fall back to non-streaming
       if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
-        console.warn('[LMStudioAdapter] CORS blocked - falling back to non-streaming mode');
-        console.warn('[LMStudioAdapter] To enable streaming, configure LM Studio to allow CORS from app://obsidian.md');
-
         // Fall back to non-streaming (which also handles [TOOL_CALLS])
         const result = await this.generateUncached(prompt, options);
         yield {

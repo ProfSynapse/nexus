@@ -52,23 +52,18 @@ export abstract class TextAreaSuggester<T> {
     const cursorPos = this.textarea.selectionStart;
     const text = this.textarea.value.substring(0, cursorPos);
 
-    console.log('[TextAreaSuggester] Input event:', { text, cursorPos });
-
     // Check if trigger pattern matches
     const match = this.config.trigger.exec(text);
 
     if (!match) {
-      console.log('[TextAreaSuggester] No trigger match');
       this.close();
       return;
     }
 
     const query = match[1] || '';
-    console.log('[TextAreaSuggester] Trigger matched! Query:', query);
 
     // Get suggestions
     this.suggestions = await this.getSuggestions(query);
-    console.log('[TextAreaSuggester] Got', this.suggestions.length, 'suggestions');
 
     if (this.suggestions.length === 0) {
       this.close();
@@ -116,20 +111,15 @@ export abstract class TextAreaSuggester<T> {
       return;
     }
 
-    console.log('[TextAreaSuggester] Showing suggestions');
-
     // Create container
     this.suggestionContainer = document.createElement('div');
-    this.suggestionContainer.addClass('suggestion-container', 'suggester-dropdown');
+    this.suggestionContainer.addClass('suggestion-container', 'suggester-dropdown', 'suggester-container-positioned', 'suggester-dropdown-styled');
 
     // Position ABOVE textarea (not below)
     const rect = this.textarea.getBoundingClientRect();
-    this.suggestionContainer.style.position = 'fixed';
     this.suggestionContainer.style.left = rect.left + 'px';
     this.suggestionContainer.style.bottom = (window.innerHeight - rect.top + 4) + 'px';
     this.suggestionContainer.style.width = rect.width + 'px';
-    this.suggestionContainer.style.maxHeight = '300px';
-    this.suggestionContainer.style.zIndex = '1000';
 
     document.body.appendChild(this.suggestionContainer);
     this.isActive = true;
@@ -148,7 +138,6 @@ export abstract class TextAreaSuggester<T> {
 
     const target = e.target as Node;
     if (!this.suggestionContainer.contains(target) && target !== this.textarea) {
-      console.log('[TextAreaSuggester] Click outside detected, closing');
       this.close();
     }
   };
@@ -198,15 +187,12 @@ export abstract class TextAreaSuggester<T> {
     if (this.suggestions.length === 0) return;
 
     const selected = this.suggestions[this.selectedIndex];
-    console.log('[TextAreaSuggester] Confirmed selection:', selected.displayText);
 
     this.selectSuggestion(selected);
     this.close();
   }
 
   close(): void {
-    console.log('[TextAreaSuggester] Closing suggestions');
-
     if (this.suggestionContainer) {
       this.suggestionContainer.remove();
       this.suggestionContainer = null;

@@ -96,11 +96,6 @@ export class WebLLMAdapter extends BaseAdapter {
     super('', '', '', false);
 
     this.instanceId = ++webllmAdapterInstanceCount;
-    console.log(`[NEXUS_DEBUG] Adapter created, instance #${this.instanceId}`);
-    // Log stack trace to see where adapters are being created from
-    if (this.instanceId > 1) {
-      console.warn(`[NEXUS_DEBUG] ⚠️ Multiple adapter instances (using shared engine)`);
-    }
 
     this.vault = vault;
     this.mcpConnector = mcpConnector;
@@ -132,12 +127,10 @@ export class WebLLMAdapter extends BaseAdapter {
 
     if (!vramInfo.webGPUSupported) {
       this.state.status = 'unavailable';
-      console.warn('[WebLLMAdapter] WebGPU not supported');
       return;
     }
 
     this.state.status = 'available';
-    console.log('[WebLLMAdapter] Initialized successfully (WebGPU available)');
   }
 
   /**
@@ -167,8 +160,6 @@ export class WebLLMAdapter extends BaseAdapter {
       this.state.status = 'ready';
       this.state.loadedModel = modelSpec.id;
       this.currentModel = modelSpec.apiName;
-
-      console.log(`[WebLLMAdapter] Model ${modelSpec.id} loaded successfully`);
     } catch (error) {
       this.state.status = 'error';
       this.state.error = error instanceof Error ? error.message : 'Unknown error';
@@ -265,19 +256,11 @@ export class WebLLMAdapter extends BaseAdapter {
     // This ensures clean state regardless of previous generation's outcome
     // The engine handles the actual locking via generationLock
     if (this.state.status === 'generating') {
-      console.log(`[NEXUS_DEBUG] Resetting stale 'generating' status before new generation`);
       this.state.status = 'ready';
     }
 
-    const previousStatus = this.state.status;
     const isToolContinuation = !!(options?.conversationHistory?.length);
-    console.log(`[NEXUS_DEBUG] Generation start instance=#${this.instanceId}`, {
-      statusChange: `${previousStatus} -> generating`,
-      messageCount: messages.length,
-      isToolContinuation,
-    });
 
-    // Set status AFTER logging for clearer debug output
     this.state.status = 'generating';
 
     try {
@@ -299,9 +282,6 @@ export class WebLLMAdapter extends BaseAdapter {
           // This is a StreamChunk from the engine
           const chunk = response;
           chunkCount++;
-          if (chunkCount <= 3 || chunkCount % 20 === 0) {
-            console.log(`[WebLLMAdapter] Chunk ${chunkCount}:`, chunk.content.slice(0, 50));
-          }
           accumulatedContent += chunk.content;
 
           // Check for [TOOL_CALLS] format early in stream
@@ -318,7 +298,6 @@ export class WebLLMAdapter extends BaseAdapter {
           }
         } else if ('usage' in response) {
           // This is a GenerationResult (final)
-          console.log(`[WebLLMAdapter] Generation complete. Total chunks: ${chunkCount}, Content length: ${accumulatedContent.length}`);
           const complete = response as GenerationResult;
 
           finalUsage = {
@@ -341,7 +320,6 @@ export class WebLLMAdapter extends BaseAdapter {
               };
             } else {
               // Parsing failed - yield raw content
-              console.warn('[WebLLMAdapter] [TOOL_CALLS] parsing failed, yielding raw content');
               yield {
                 content: accumulatedContent,
                 complete: true,
@@ -357,10 +335,7 @@ export class WebLLMAdapter extends BaseAdapter {
           }
         }
       }
-
-      console.log(`[NEXUS_DEBUG] Generation complete instance=#${this.instanceId}, status -> ready`);
     } catch (error) {
-      console.log(`[NEXUS_DEBUG] Generation error instance=#${this.instanceId}:`, error);
 
       if (error instanceof WebLLMError) {
         throw error;
@@ -374,7 +349,6 @@ export class WebLLMAdapter extends BaseAdapter {
     } finally {
       // CRITICAL: Always reset adapter status in finally block
       // This ensures clean state even if the generator is abandoned (not fully consumed)
-      console.log(`[NEXUS_DEBUG] Adapter cleanup instance=#${this.instanceId}, status -> ready`);
       this.state.status = 'ready';
     }
   }
@@ -506,13 +480,6 @@ export class WebLLMAdapter extends BaseAdapter {
   private async ensureModelLoadedAsync(): Promise<void> {
     const engineLoaded = this.engine?.isModelLoaded();
 
-    // DIAGNOSTIC: Log current state on every call with instance ID
-    console.log(`[NEXUS_DEBUG] ensureModelLoaded instance=#${this.instanceId}`, {
-      status: this.state.status,
-      loadedModel: this.state.loadedModel,
-      engineLoaded,
-    });
-
     if (this.state.status === 'unavailable') {
       throw new LLMProviderError(
         'WebGPU not available',
@@ -527,30 +494,19 @@ export class WebLLMAdapter extends BaseAdapter {
       // Sync adapter state with engine state
       const engineModelId = this.engine.getCurrentModelId();
       if (engineModelId && !this.state.loadedModel) {
-        console.log(`[NEXUS_DEBUG] Syncing adapter state with engine, model=${engineModelId}`);
         this.state.loadedModel = engineModelId;
         this.state.status = 'ready';
       }
-      console.log(`[NEXUS_DEBUG] Engine has model, skipping reload instance=#${this.instanceId}`);
       return;
     }
 
     // Also check if status is ready (normal case)
     if (this.state.loadedModel && this.state.status === 'ready') {
-      console.log(`[NEXUS_DEBUG] Model ready, skipping reload instance=#${this.instanceId}`);
       return;
     }
 
-    // DIAGNOSTIC: Log why we're continuing (model NOT loaded)
-    console.warn(`[NEXUS_DEBUG] ⚠️ RELOAD TRIGGERED instance=#${this.instanceId}`, {
-      hasLoadedModel: !!this.state.loadedModel,
-      status: this.state.status,
-      engineLoaded,
-    });
-
     // If currently loading, wait
     if (this.state.status === 'loading') {
-      console.log('[WebLLMAdapter] Model is loading, waiting...');
       // Wait for loading to complete (poll every 500ms, max 60s)
       for (let i = 0; i < 120; i++) {
         await new Promise(resolve => setTimeout(resolve, 500));
@@ -567,8 +523,6 @@ export class WebLLMAdapter extends BaseAdapter {
     }
 
     // No model loaded - try to auto-load the default model
-    console.log('[WebLLMAdapter] No model loaded, attempting auto-load...');
-
     // Get the default/first available model
     const modelSpec = WEBLLM_MODELS[0];
     if (!modelSpec) {
@@ -582,8 +536,6 @@ export class WebLLMAdapter extends BaseAdapter {
     // WebLLM handles its own model caching via browser Cache API / IndexedDB
     // No need to check if model is "installed" locally - just load it
     // First load will download from HuggingFace, subsequent loads use cache
-    console.log(`[WebLLMAdapter] Auto-loading model: ${modelSpec.name}`);
-    console.log('[WebLLMAdapter] First load will download from HuggingFace (~4GB)...');
     await this.loadModel(modelSpec);
   }
 

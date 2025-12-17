@@ -133,14 +133,11 @@ export class StructuredLogger {
     this.loadLogSettings();
   }
 
-  /**
-   * Load logging configuration from plugin settings
-   */
   private async loadLogSettings(): Promise<void> {
     try {
       const settings = await this.plugin.loadData();
       const loggingSettings = settings?.logging;
-      
+
       if (loggingSettings) {
         this.config = {
           debugMode: loggingSettings.debugMode || false,
@@ -151,8 +148,6 @@ export class StructuredLogger {
         };
       }
     } catch (error) {
-      // Fallback to defaults if settings can't be loaded
-      console.warn('[StructuredLogger] Failed to load log settings, using defaults:', error);
     }
   }
 
@@ -220,7 +215,6 @@ export class StructuredLogger {
   time(label: string): void {
     if (this.config.enablePerformanceLogging || this.config.debugMode) {
       this.timers.set(label, performance.now());
-      console.time(`[${this.plugin.manifest.id}] ${label}`);
     }
   }
 
@@ -238,8 +232,6 @@ export class StructuredLogger {
           duration: `${duration.toFixed(2)}ms`,
           label
         }, 'Performance');
-        
-        console.timeEnd(`[${this.plugin.manifest.id}] ${label}`);
       }
     }
   }
@@ -280,9 +272,6 @@ export class StructuredLogger {
     }
   }
 
-  /**
-   * Core logging method
-   */
   private log(level: LogLevel, message: string, data?: any, context?: string): void {
     const timestamp = new Date().toISOString();
     const logEntry: LogEntry = {
@@ -294,7 +283,6 @@ export class StructuredLogger {
       plugin: this.plugin.manifest.id
     };
 
-    // Add performance data if available
     if (this.config.enablePerformanceLogging && hasMemoryAPI(performance)) {
       const memInfo = performance.memory;
       logEntry.performance = {
@@ -302,27 +290,12 @@ export class StructuredLogger {
       };
     }
 
-    // Add to buffer
     this.addToBuffer(logEntry);
 
-    // Output to console with proper formatting
     const formattedMessage = this.formatMessage(logEntry);
-    
-    switch (level) {
-      case LogLevel.DEBUG:
-        if (this.config.debugMode) {
-          console.log(formattedMessage, data);
-        }
-        break;
-      case LogLevel.INFO:
-        console.log(formattedMessage, data || '');
-        break;
-      case LogLevel.WARN:
-        console.warn(formattedMessage, data || '');
-        break;
-      case LogLevel.ERROR:
-        console.error(formattedMessage, data || '');
-        break;
+
+    if (level === LogLevel.ERROR) {
+      console.error(formattedMessage, data || '');
     }
   }
 
@@ -410,9 +383,6 @@ export class StructuredLogger {
     };
   }
 
-  /**
-   * Clear log buffer
-   */
   clearBuffer(): void {
     const clearedCount = this.logBuffer.length;
     this.logBuffer = [];

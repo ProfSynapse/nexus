@@ -55,7 +55,7 @@ export class ContextProgressBar {
     
     // Progress bar (filled portion)
     this.progressBar = backgroundBar.createDiv('context-progress-bar-fill');
-    this.progressBar.style.width = '0%';
+    this.progressBar.addClass('context-progress-bar-fill-initial');
 
     // Segments for visual indication
     this.createSegments(backgroundBar);
@@ -70,9 +70,10 @@ export class ContextProgressBar {
   private createSegments(container: HTMLElement): void {
     // Add segment markers at 25%, 50%, 75% for visual reference
     const segments = [25, 50, 75];
-    
+
     segments.forEach(percent => {
       const segment = container.createDiv('context-progress-segment');
+      segment.addClass('context-progress-segment-positioned');
       segment.style.left = `${percent}%`;
     });
   }

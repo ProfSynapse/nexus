@@ -79,7 +79,7 @@ export class ChatLayoutBuilder {
    */
   private static createLoadingOverlay(container: HTMLElement): HTMLElement {
     const overlay = container.createDiv('nexus-loading-overlay');
-    overlay.style.display = 'none';
+    overlay.addClass('chat-loading-overlay-hidden');
 
     const content = overlay.createDiv('nexus-loading-content');
 
@@ -105,7 +105,7 @@ export class ChatLayoutBuilder {
     // Progress bar
     const progressContainer = content.createDiv('nexus-loading-progress-container');
     const progressBar = progressContainer.createDiv('nexus-loading-progress-bar');
-    progressBar.style.width = '0%';
+    progressBar.addClass('chat-progress-bar-reset');
     progressBar.dataset.progressEl = 'true';
 
     // Progress text
@@ -132,10 +132,9 @@ export class ChatLayoutBuilder {
 
     // Auto-hide warning after 5 seconds
     setTimeout(() => {
-      warningBanner.style.opacity = '0';
-      warningBanner.style.transition = 'opacity 0.5s ease-out';
+      warningBanner.addClass('chat-warning-banner-fadeout');
       setTimeout(() => {
-        warningBanner.style.display = 'none';
+        warningBanner.addClass('chat-loading-overlay-hidden');
       }, 500);
     }, 5000);
   }

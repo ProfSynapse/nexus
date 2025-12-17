@@ -158,7 +158,6 @@ export class CostTrackingService {
     const cost = this.calculateCost(provider, model, usage);
 
     if (!cost) {
-      console.warn('[CostTrackingService] Could not calculate cost for message:', messageId);
       return null;
     }
 

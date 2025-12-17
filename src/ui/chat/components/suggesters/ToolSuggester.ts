@@ -49,7 +49,6 @@ export class ToolSuggester extends BaseSuggester<ToolSuggestionItem> {
     this.getAgents = getAgents;
     this.isVaultEnabled = isVaultEnabled;
     this.getVaultName = getVaultName;
-    console.log('[ToolSuggester] Initialized - trigger pattern:', /^\/(\w*)$/);
   }
 
   // ==========================================================================
@@ -65,13 +64,10 @@ export class ToolSuggester extends BaseSuggester<ToolSuggestionItem> {
     context: EditorSuggestContext
   ): Promise<SuggestionItem<ToolSuggestionItem>[]> {
 
-    console.log('[ToolSuggester] getSuggestions called with query:', context.query);
-
     // Check cache first
     let tools = this.getCached('tools');
 
     if (!tools) {
-      console.log('[ToolSuggester] Cache miss, fetching tools from service');
       // Fetch tools from service
       const toolData = await this.toolListService.generateToolList(
         this.getAgents(),
@@ -81,13 +77,9 @@ export class ToolSuggester extends BaseSuggester<ToolSuggestionItem> {
 
       tools = toolData.tools.map(tool => this.convertToToolItem(tool));
       this.setCached('tools', tools);
-      console.log('[ToolSuggester] Cached', tools.length, 'tools');
-    } else {
-      console.log('[ToolSuggester] Cache hit,', tools.length, 'tools available');
     }
 
     if (tools.length === 0) {
-      console.log('[ToolSuggester] No tools available');
       return [];
     }
 

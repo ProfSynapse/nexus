@@ -142,8 +142,7 @@ export class ConversationList {
     // Hide action buttons while editing
     const actions = item.querySelector('.conversation-actions') as HTMLElement;
     if (actions) {
-      actions.style.opacity = '0';
-      actions.style.pointerEvents = 'none';
+      actions.addClass('conversation-actions-hidden');
     }
 
     const finishRename = (save: boolean) => {
@@ -157,8 +156,7 @@ export class ConversationList {
 
       // Restore action buttons
       if (actions) {
-        actions.style.opacity = '';
-        actions.style.pointerEvents = '';
+        actions.removeClass('conversation-actions-hidden');
       }
 
       // Call rename callback if title changed

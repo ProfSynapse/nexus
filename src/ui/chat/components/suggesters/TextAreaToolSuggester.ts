@@ -65,24 +65,24 @@ export class TextAreaToolSuggester extends ContentEditableSuggester<ToolSuggesti
         return;
       }
 
-      // Extract individual tools from each agent's modes
+      // Extract individual tools from each agent
       this.cachedTools = [];
 
       for (const agent of Array.from(agents.values())) {
-        const modes = agent.getModes();
+        const tools = agent.getTools();
 
-        for (const mode of modes) {
-          const toolName = `${agent.name}.${mode.slug}`;
+        for (const tool of tools) {
+          const toolName = `${agent.name}.${tool.slug}`;
 
           this.cachedTools.push({
             name: toolName, // Technical name: "vaultManager.readFile"
             displayName: formatToolDisplayName(toolName), // "Read File"
-            description: mode.description || `Execute ${mode.slug} on ${agent.name}`,
+            description: tool.description || `Execute ${tool.slug} on ${agent.name}`,
             category: agent.name,
             schema: {
               name: toolName,
-              description: mode.description || `Execute ${mode.slug}`,
-              inputSchema: mode.getParameterSchema?.() || {}
+              description: tool.description || `Execute ${tool.slug}`,
+              inputSchema: tool.getParameterSchema?.() || {}
             }
           });
         }

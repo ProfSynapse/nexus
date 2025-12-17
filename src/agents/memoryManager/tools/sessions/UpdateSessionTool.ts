@@ -12,7 +12,7 @@
  */
 
 import { App } from 'obsidian';
-import { BaseMode } from '../../../baseMode';
+import { BaseTool } from '../../../baseTool';
 import { MemoryManagerAgent } from '../../memoryManager'
 import { EditSessionParams, SessionResult } from '../../types';
 import { createErrorMessage } from '../../../../utils/errorUtils';
@@ -25,7 +25,7 @@ import { SchemaBuilder, SchemaType } from '../../../../utils/schemas/SchemaBuild
 /**
  * Consolidated UpdateSessionMode - combines all session update functionality
  */
-export class UpdateSessionMode extends BaseMode<EditSessionParams, SessionResult> {
+export class UpdateSessionTool extends BaseTool<EditSessionParams, SessionResult> {
     private app: App;
     private serviceIntegration: ReturnType<typeof createServiceIntegration>;
     private schemaBuilder: SchemaBuilder;

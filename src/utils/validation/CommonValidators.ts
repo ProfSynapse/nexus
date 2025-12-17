@@ -356,7 +356,6 @@ export class CommonValidators {
             ));
           }
         } catch (error) {
-          console.warn('Error validating workspace context:', error);
         }
       }
     }
@@ -559,12 +558,5 @@ export class CommonValidators {
       );
     }
 
-    // Debug logging for performance issues
-    if (duration > 5) { // Log operations taking >5ms
-      console.debug(`CommonValidators: ${operation} took ${duration.toFixed(2)}ms`, {
-        success,
-        duration
-      });
-    }
   }
 }

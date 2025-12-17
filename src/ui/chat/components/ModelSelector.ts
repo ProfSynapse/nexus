@@ -134,11 +134,9 @@ export class ModelSelector {
             );
             if (foundDefault) {
               defaultModel = foundDefault;
-            } else {
-              console.warn('[ModelSelector] Configured default model not found in available models:', configuredDefault);
             }
           } catch (error) {
-            console.warn('[ModelSelector] Failed to get configured default model:', error);
+            // Failed to get configured default model
           }
         }
 

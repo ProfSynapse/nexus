@@ -336,7 +336,6 @@ export class VaultFileIndex extends Events {
      */
     private setupMetadataCacheEvents(): void {
         if (!this.app?.metadataCache) {
-            console.warn('MetadataCache not available - metadata events will not be tracked');
             return;
         }
 

@@ -211,11 +211,8 @@ export class MemorySearchProcessor implements MemorySearchProcessorInterface {
         const enriched = await this.enrichSingleResult(result, context);
         if (enriched) {
           enrichedResults.push(enriched);
-        } else {
-          console.warn('[MemorySearchProcessor] enrichSingleResult returned null for:', result.trace?.id);
         }
       } catch (error) {
-        console.warn('[MemorySearchProcessor] Failed to enrich result:', error);
       }
     }
 
@@ -282,7 +279,6 @@ export class MemorySearchProcessor implements MemorySearchProcessorInterface {
     const workspaceService = this.workspaceService || this.getWorkspaceService();
 
     if (!workspaceService) {
-      console.warn('[MemorySearchProcessor] No workspaceService available');
       return [];
     }
 
@@ -290,7 +286,6 @@ export class MemorySearchProcessor implements MemorySearchProcessorInterface {
       // Get the entire workspace
       const workspace = await workspaceService.getWorkspace(workspaceId);
       if (!workspace) {
-        console.warn('[MemorySearchProcessor] Workspace not found:', workspaceId);
         return [];
       }
 
@@ -369,7 +364,6 @@ export class MemorySearchProcessor implements MemorySearchProcessorInterface {
 
   private async searchToolCallTraces(query: string, options: MemorySearchExecutionOptions): Promise<RawMemoryResult[]> {
     // MemoryTraceService not available in simplified architecture
-    console.warn('[MemorySearchProcessor] Tool call trace search not available in simplified architecture');
     return [];
   }
 
@@ -484,7 +478,6 @@ export class MemorySearchProcessor implements MemorySearchProcessorInterface {
 
   private async searchToolCallsExact(query: string, options: MemorySearchExecutionOptions): Promise<RawMemoryResult[]> {
     // MemoryTraceService not available in simplified architecture
-    console.warn('[MemorySearchProcessor] Exact tool call search not available in simplified architecture');
     return [];
   }
 
@@ -688,7 +681,6 @@ export class MemorySearchProcessor implements MemorySearchProcessorInterface {
       }
       return undefined;
     } catch (error) {
-      console.warn('[MemorySearchProcessor] Failed to get MemoryService:', error);
       return undefined;
     }
   }

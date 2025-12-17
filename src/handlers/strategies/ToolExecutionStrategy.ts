@@ -63,14 +63,14 @@ export class ToolExecutionStrategy implements IRequestStrategy<ToolExecutionRequ
                         executionTime
                     );
                 } catch (captureError) {
-                    console.warn('[ToolExecutionStrategy] Response capture failed:', captureError);
+                    // Silently ignore capture errors
                 }
             }
             
             return this.dependencies.responseFormatter.formatToolExecutionResponse(
                 result,
                 context.sessionInfo,
-                { mode: context.mode }
+                { tool: context.tool }
             );
         } catch (error) {
             // Trigger error response capture callback if available
@@ -85,7 +85,7 @@ export class ToolExecutionStrategy implements IRequestStrategy<ToolExecutionRequ
                         executionTime
                     );
                 } catch (captureError) {
-                    console.warn('[ToolExecutionStrategy] Error response capture failed:', captureError);
+                    // Silently ignore capture errors
                 }
             }
             
@@ -103,12 +103,12 @@ export class ToolExecutionStrategy implements IRequestStrategy<ToolExecutionRequ
                 enhancedMessage += '\n\n💡 Parameter Help: Check the tool schema for required parameters and their correct format.';
                 
                 // Try to get parameter schema for additional context
-                if (context && context.agentName && context.mode) {
+                if (context && context.agentName && context.tool) {
                     try {
                         const agent = this.getAgent(context.agentName);
-                        const modeInstance = agent.getMode(context.mode);
-                        if (modeInstance && typeof modeInstance.getParameterSchema === 'function') {
-                            parameterSchema = modeInstance.getParameterSchema();
+                        const toolInstance = agent.getTool(context.tool);
+                        if (toolInstance && typeof toolInstance.getParameterSchema === 'function') {
+                            parameterSchema = toolInstance.getParameterSchema();
                             if (parameterSchema && parameterSchema.required) {
                                 enhancedMessage += `\n\n📋 Required Parameters: ${parameterSchema.required.join(', ')}`;
                             }
@@ -136,7 +136,7 @@ export class ToolExecutionStrategy implements IRequestStrategy<ToolExecutionRequ
             return this.dependencies.responseFormatter.formatToolExecutionResponse(
                 errorResult,
                 context?.sessionInfo,
-                { mode: context?.mode }
+                { tool: context?.tool }
             );
         }
     }
@@ -147,17 +147,17 @@ export class ToolExecutionStrategy implements IRequestStrategy<ToolExecutionRequ
         if (!parsedArgs) {
             throw new McpError(
                 ErrorCode.InvalidParams,
-                `❌ Missing arguments for tool ${fullToolName}\n\n💡 Provide the required parameters including "mode" to specify the operation.`
+                `❌ Missing arguments for tool ${fullToolName}\n\n💡 Provide the required parameters including "tool" to specify the operation.`
             );
         }
 
         const agentName = this.extractAgentName(fullToolName);
-        const { mode, ...params } = parsedArgs as { mode: string; [key: string]: any };
-        
-        if (!mode) {
+        const { tool, ...params } = parsedArgs as { tool: string; [key: string]: any };
+
+        if (!tool) {
             throw new McpError(
                 ErrorCode.InvalidParams,
-                `❌ Missing required parameter: mode for agent ${agentName}\n\n💡 Specify which operation mode to use.\n\nExample: { "mode": "searchDirectoryMode", "query": "search term", ... }`
+                `❌ Missing required parameter: tool for agent ${agentName}\n\n💡 Specify which tool to use.\n\nExample: { "tool": "searchDirectory", "query": "search term", ... }`
             );
         }
 
@@ -207,7 +207,7 @@ export class ToolExecutionStrategy implements IRequestStrategy<ToolExecutionRequ
 
         return {
             agentName,
-            mode,
+            tool,
             params,
             sessionId: sessionInfo.sessionId,
             fullToolName,
@@ -221,15 +221,15 @@ export class ToolExecutionStrategy implements IRequestStrategy<ToolExecutionRequ
 
     private async processParameters(context: IRequestContext): Promise<any> {
         const agent = this.getAgent(context.agentName);
-        const modeInstance = agent.getMode(context.mode);
-        
+        const toolInstance = agent.getTool(context.tool);
+
         let paramSchema;
         try {
-            if (modeInstance && typeof modeInstance.getParameterSchema === 'function') {
-                paramSchema = modeInstance.getParameterSchema();
+            if (toolInstance && typeof toolInstance.getParameterSchema === 'function') {
+                paramSchema = toolInstance.getParameterSchema();
             }
         } catch (error) {
-            logger.systemWarn(`Failed to get parameter schema for mode ${context.mode}: ${getErrorMessage(error)}`);
+            logger.systemWarn(`Failed to get parameter schema for tool ${context.tool}: ${getErrorMessage(error)}`);
         }
 
         const enhancedParams = await this.dependencies.validationService.validateToolParams(
@@ -290,7 +290,7 @@ export class ToolExecutionStrategy implements IRequestStrategy<ToolExecutionRequ
         const agent = this.getAgent(context.agentName);
         const result = await this.dependencies.toolExecutionService.executeAgent(
             agent,
-            context.mode,
+            context.tool,
             processedParams
         );
 

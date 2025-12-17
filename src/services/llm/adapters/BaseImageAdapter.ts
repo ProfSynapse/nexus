@@ -142,7 +142,6 @@ export abstract class BaseImageAdapter extends BaseAdapter {
       const capabilities = this.getImageCapabilities();
       return capabilities.supportsImageGeneration || false;
     } catch (error) {
-      console.warn(`Image generation unavailable for ${this.name}:`, error);
       return false;
     }
   }
@@ -186,7 +185,6 @@ export abstract class BaseImageAdapter extends BaseAdapter {
         imagesGenerated: usage.imagesGenerated
       };
     } catch (error) {
-      console.warn(`Failed to calculate image cost for ${model}:`, error);
       return null;
     }
   }

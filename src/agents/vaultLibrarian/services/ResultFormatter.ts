@@ -89,7 +89,6 @@ export class ResultFormatter implements ResultFormatterInterface {
         const formattedResult = await formatter.formatSingleResult(result, options);
         formatted.push(formattedResult);
       } catch (error) {
-        console.warn('[ResultFormatter] Failed to format result:', error);
       }
     }
 

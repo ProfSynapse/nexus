@@ -367,14 +367,10 @@ export class ServiceContainer implements IServiceContainer {
     return metadata;
   }
 
-  /**
-   * Pre-initialize a service without waiting
-   */
   async preInitialize(name: string): Promise<void> {
     try {
       await this.get(name);
     } catch (error) {
-      console.warn(`[ServiceContainer] Failed to pre-initialize service '${name}':`, error);
     }
   }
 

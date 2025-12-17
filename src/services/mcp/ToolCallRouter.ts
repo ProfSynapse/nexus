@@ -14,10 +14,10 @@ import { logger } from '../../utils/logger';
  * Dependencies: Agent implementations, ToolCallCaptureService
  */
 
-export interface AgentModeParams {
+export interface AgentToolParams {
     agent: string;
-    mode: string;
-    params: Record<string, any>;
+    tool: string;
+    params: Record<string, unknown>;
 }
 
 export interface ToolCallRequest {
@@ -57,13 +57,13 @@ export interface ToolCallRouterInterface {
     route(request: ToolCallRequest): Promise<ToolCallResponse>;
 
     /**
-     * Executes agent mode directly
+     * Executes agent tool directly
      * @param agent Agent name
-     * @param mode Mode name
-     * @param params Mode parameters
+     * @param tool Tool name
+     * @param params Tool parameters
      * @returns Promise resolving to execution result
      */
-    executeAgentMode(agent: string, mode: string, params: Record<string, any>): Promise<any>;
+    executeAgentTool(agent: string, tool: string, params: Record<string, unknown>): Promise<unknown>;
 
     /**
      * Validates tool call request
@@ -80,10 +80,10 @@ export interface ToolCallRouterInterface {
     validateBatchOperations(params: Record<string, any>): void;
 
     /**
-     * Sets the server reference for agent mode execution
-     * @param server Server instance that handles agent mode execution
+     * Sets the server reference for agent tool execution
+     * @param server Server instance that handles agent tool execution
      */
-    setServer(server: any): void;
+    setServer(server: unknown): void;
 }
 
 export interface ValidationResult {
@@ -92,12 +92,12 @@ export interface ValidationResult {
 }
 
 export class ToolCallRouter implements ToolCallRouterInterface {
-    private server: any = null;
+    private server: { executeAgentTool: (agent: string, tool: string, params: Record<string, unknown>) => Promise<unknown> } | null = null;
 
     constructor() {}
 
     /**
-     * Routes tool call request to appropriate agent/mode
+     * Routes tool call request to appropriate agent/tool
      */
     async route(request: ToolCallRequest): Promise<ToolCallResponse> {
         try {
@@ -113,22 +113,22 @@ export class ToolCallRouter implements ToolCallRouterInterface {
             // Parse tool name to get agent (strip vault suffix)
             const { agentName } = this.parseToolName(request.params.name);
 
-            // Get mode from arguments
-            const modeName = request.params.arguments.mode;
-            if (!modeName) {
+            // Get tool from arguments
+            const toolName = request.params.arguments.tool;
+            if (!toolName) {
                 throw new McpError(
                     ErrorCode.InvalidParams,
-                    'Mode parameter is required in tool arguments'
+                    'Tool parameter is required in tool arguments'
                 );
             }
 
             // Validate batch operations if present
             this.validateBatchOperations(request.params.arguments);
 
-            // Execute the agent mode
-            const result = await this.executeAgentMode(
+            // Execute the agent tool
+            const result = await this.executeAgentTool(
                 agentName,
-                modeName,
+                toolName,
                 request.params.arguments
             );
 
@@ -140,9 +140,9 @@ export class ToolCallRouter implements ToolCallRouterInterface {
     }
 
     /**
-     * Executes agent mode directly
+     * Executes agent tool directly
      */
-    async executeAgentMode(agent: string, mode: string, params: Record<string, any>): Promise<any> {
+    async executeAgentTool(agent: string, tool: string, params: Record<string, unknown>): Promise<unknown> {
         if (!this.server) {
             throw new McpError(
                 ErrorCode.InternalError,
@@ -151,17 +151,17 @@ export class ToolCallRouter implements ToolCallRouterInterface {
         }
 
         try {
-            // Delegate to server's executeAgentMode method
-            return await this.server.executeAgentMode(agent, mode, params);
+            // Delegate to server's executeAgentTool method
+            return await this.server.executeAgentTool(agent, tool, params);
         } catch (error) {
             if (error instanceof McpError) {
                 throw error;
             }
             
-            logger.systemError(error as Error, 'Agent Mode Execution');
+            logger.systemError(error as Error, 'Agent Tool Execution');
             throw new McpError(
                 ErrorCode.InternalError,
-                `Failed to execute ${agent}.${mode}`,
+                `Failed to execute ${agent}.${tool}`,
                 error
             );
         }
@@ -238,14 +238,14 @@ export class ToolCallRouter implements ToolCallRouterInterface {
     }
 
     /**
-     * Sets the server reference for agent mode execution
+     * Sets the server reference for agent tool execution
      */
-    setServer(server: any): void {
+    setServer(server: { executeAgentTool: (agent: string, tool: string, params: Record<string, unknown>) => Promise<unknown> }): void {
         this.server = server;
     }
 
     /**
-     * Parses tool name into agent and mode components
+     * Parses tool name into agent and tool components
      * Tool name format: agentName (vault context is implicit from IPC connection)
      * Mode is extracted from request parameters, not tool name
      * @private

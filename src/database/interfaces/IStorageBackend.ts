@@ -31,7 +31,6 @@ export interface RunResult {
  * Pluggable storage backend interface
  *
  * Provides a common interface for different database implementations.
- * All implementations must provide these core operations.
  */
 export interface IStorageBackend {
   // ============================================================================

@@ -58,7 +58,6 @@ export class WebLLMModelManager {
       const content = await this.vault.adapter.read(manifestPath);
       return JSON.parse(content);
     } catch (error) {
-      console.warn('[WebLLMModelManager] Failed to read installed models:', error);
       return [];
     }
   }
@@ -140,8 +139,6 @@ export class WebLLMModelManager {
         installedAt: new Date().toISOString(),
         path: modelPath,
       });
-
-      console.log(`[WebLLMModelManager] Model ${modelSpec.id} installed successfully`);
     } catch (error) {
       // Clean up partial download on failure
       await this.deleteModelFiles(modelPath);
@@ -242,8 +239,6 @@ export class WebLLMModelManager {
         }
       } catch {
         // No tensor cache, fall back to probing for shards
-        console.log('[WebLLMModelManager] No tensor-cache.json, probing for shards...');
-
         // Probe for weight shards until we get a 404
         for (let i = 0; i < 200; i++) { // Max 200 shards
           const shardName = `params_shard_${i}.bin`;
@@ -293,7 +288,6 @@ export class WebLLMModelManager {
       // Check if file already exists (for resume support)
       const exists = await this.vault.adapter.exists(localPath);
       if (exists) {
-        console.log(`[WebLLMModelManager] File already exists, skipping: ${localPath}`);
         return;
       }
 
@@ -345,8 +339,6 @@ export class WebLLMModelManager {
 
     // Update installed models manifest
     await this.removeInstalledModel(modelId);
-
-    console.log(`[WebLLMModelManager] Model ${modelId} deleted`);
   }
 
   /**
@@ -378,7 +370,7 @@ export class WebLLMModelManager {
         await this.vault.adapter.remove(path);
       }
     } catch (error) {
-      console.warn(`[WebLLMModelManager] Failed to delete ${path}:`, error);
+      // Ignore deletion errors
     }
   }
 

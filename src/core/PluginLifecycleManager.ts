@@ -126,8 +126,6 @@ export class PluginLifecycleManager {
             await this.serviceRegistrar.initializeEssentialServices();
 
             // Plugin is now "loaded" - defer full initialization to background
-            const loadTime = Date.now() - startTime;
-
             // PHASE 4: Start background initialization after onload completes
             setTimeout(() => {
                 this.startBackgroundInitialization().catch(error => {
@@ -151,14 +149,6 @@ export class PluginLifecycleManager {
             // Load settings first
             await this.config.settings.loadSettings();
 
-            // Log data.json for debugging StateManager
-            try {
-                const data = await this.config.plugin.loadData();
-                // Plugin data.json loaded successfully
-            } catch (error) {
-                console.warn('Failed to debug data.json:', error);
-            }
-
             // Initialize data directories
             await this.serviceRegistrar.initializeDataDirectories();
 
@@ -180,7 +170,6 @@ export class PluginLifecycleManager {
                         try {
                             await this.config.connector.start();
                         } catch (error) {
-                            console.warn('[PluginLifecycleManager] MCP initialization failed:', error);
                         }
                     }
 
@@ -188,7 +177,6 @@ export class PluginLifecycleManager {
                     try {
                         await this.serviceRegistrar.initializeChatService();
                     } catch (error) {
-                        console.warn('[PluginLifecycleManager] ChatService initialization failed:', error);
                     }
 
 	                    // Register chat UI components AFTER ChatService is initialized
@@ -202,7 +190,6 @@ export class PluginLifecycleManager {
 	                                if (storageAdapter && typeof storageAdapter.waitForReady === 'function') {
 	                                    const ready = await storageAdapter.waitForReady();
 	                                    if (!ready) {
-	                                        console.warn('[PluginLifecycleManager] HybridStorageAdapter not ready, skipping embedding initialization');
 	                                        return;
 	                                    }
 	                                }
@@ -227,7 +214,6 @@ export class PluginLifecycleManager {
 	                                    }
 	                                }
 	                            } catch (error) {
-	                                console.warn('[PluginLifecycleManager] Embedding system initialization failed:', error);
 	                            }
 	                        }, 3000);
 	                    }
@@ -253,8 +239,6 @@ export class PluginLifecycleManager {
 
             // Start background startup processing after everything is ready
             this.backgroundProcessor.startBackgroundStartupProcessing();
-
-            const bgLoadTime = Date.now() - bgStartTime;
 
         } catch (error) {
             console.error('[PluginLifecycleManager] Background initialization failed:', error);
@@ -284,7 +268,6 @@ export class PluginLifecycleManager {
         try {
             return await this.config.serviceManager.getService<T>(name);
         } catch (error) {
-            console.warn(`[PluginLifecycleManager] Failed to get service '${name}':`, error);
             return null;
         }
     }
@@ -316,7 +299,6 @@ export class PluginLifecycleManager {
                 try {
                     await this.embeddingManager.shutdown();
                 } catch (error) {
-                    console.warn('[PluginLifecycleManager] Error shutting down embedding system:', error);
                 }
             }
 
@@ -331,9 +313,7 @@ export class PluginLifecycleManager {
             if (storageAdapter && typeof storageAdapter.close === 'function') {
                 try {
                     await storageAdapter.close();
-                    console.log('[PluginLifecycleManager] HybridStorageAdapter closed successfully');
                 } catch (error) {
-                    console.warn('[PluginLifecycleManager] Error closing HybridStorageAdapter:', error);
                 }
             }
 

@@ -63,20 +63,15 @@ export class StreamingController {
     
     if (messageElement) {
       const contentElement = messageElement.querySelector('.message-bubble .message-content');
-      
+
       if (contentElement) {
         // Stop loading animation
         this.stopLoadingAnimation(contentElement);
-        
+
         // Initialize streaming-markdown parser for this message
         const streamingState = MarkdownRenderer.initializeStreamingParser(contentElement as HTMLElement);
         this.streamingStates.set(messageId, streamingState);
-        
-      } else {
-        console.warn(`[StreamingController] Content element not found for message ${messageId}`);
       }
-    } else {
-      console.warn(`[StreamingController] Message element not found for messageId: ${messageId}`);
     }
   }
 
@@ -85,12 +80,10 @@ export class StreamingController {
    */
   updateStreamingChunk(messageId: string, chunk: string): void {
     const streamingState = this.streamingStates.get(messageId);
-    
+
     if (streamingState) {
-      
       MarkdownRenderer.writeStreamingChunk(streamingState, chunk);
     } else {
-      console.warn(`[StreamingController] No streaming state found for message ${messageId}`);
       // Initialize streaming if we missed the start
       this.startStreaming(messageId);
       // Try again
@@ -110,9 +103,8 @@ export class StreamingController {
     
     if (streamingState && messageElement) {
       const contentElement = messageElement.querySelector('.message-bubble .message-content');
-      
+
       if (contentElement) {
-        
         MarkdownRenderer.finalizeStreamingContent(
           streamingState,
           finalContent,
@@ -128,8 +120,6 @@ export class StreamingController {
           this.streamingStates.delete(messageId);
         });
       }
-    } else {
-      console.warn(`[StreamingController] Cannot finalize - no streaming state or element for ${messageId}`);
     }
   }
 
@@ -196,8 +186,6 @@ export class StreamingController {
    * Remove loading message from UI
    */
   removeLoadingMessage(messageId: string): void {
-    console.log(`[StreamingController] Removing loading message: ${messageId}`);
-    
     const messageElement = this.containerEl.querySelector(`[data-message-id="${messageId}"]`);
     if (messageElement) {
       // Stop any active animation for this message

@@ -13,7 +13,7 @@
  */
 
 import { App } from 'obsidian';
-import { BaseMode } from '../../../baseMode';
+import { BaseTool } from '../../../baseTool';
 import { MemoryManagerAgent } from '../../memoryManager'
 import { LoadSessionParams, SessionResult } from '../../types';
 import { createErrorMessage } from '../../../../utils/errorUtils';
@@ -26,7 +26,7 @@ import { SchemaBuilder, SchemaType } from '../../../../utils/schemas/SchemaBuild
 /**
  * Consolidated LoadSessionMode - combines all session loading functionality
  */
-export class LoadSessionMode extends BaseMode<LoadSessionParams, SessionResult> {
+export class LoadSessionTool extends BaseTool<LoadSessionParams, SessionResult> {
     private app: App;
     private serviceIntegration: ReturnType<typeof createServiceIntegration>;
     private schemaBuilder: SchemaBuilder;
@@ -218,7 +218,6 @@ export class LoadSessionMode extends BaseMode<LoadSessionParams, SessionResult> 
             };
 
         } catch (error) {
-            console.warn('Error building session context:', error);
             return {
                 summary: `Session "${sessionData.session.name}" loaded successfully`,
                 associatedNotes: [],
@@ -254,7 +253,6 @@ export class LoadSessionMode extends BaseMode<LoadSessionParams, SessionResult> 
             return { success: true, sessionId: continuationSession.id };
 
         } catch (error) {
-            console.warn('Warning creating continuation session:', error);
             return { success: false, error: createErrorMessage('Error creating continuation session: ', error) };
         }
     }
@@ -322,7 +320,6 @@ export class LoadSessionMode extends BaseMode<LoadSessionParams, SessionResult> 
             });
 
         } catch (error) {
-            console.warn('Warning creating restoration trace:', error);
             // Don't fail session loading if trace creation fails
         }
     }

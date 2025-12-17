@@ -454,11 +454,6 @@ export class OpenRouterAdapter extends BaseAdapter {
         }
 
         if (!response.ok) {
-          console.warn('[OpenRouter] generation stats fetch non-OK response', {
-            generationId,
-            status: response.status,
-            statusText: response.statusText
-          });
           return null;
         }
 
@@ -484,20 +479,8 @@ export class OpenRouterAdapter extends BaseAdapter {
         // Data returned but no tokens - might not be ready yet
       } catch (error) {
         if (attempt === maxRetries - 1) {
-          console.warn('[OpenRouter] Failed to fetch generation stats after retries:', {
-            generationId,
-            lastStatus,
-            error: error instanceof Error ? error.message : String(error)
-          });
           return null;
         }
-        console.warn('[OpenRouter] generation stats fetch error, will retry', {
-          generationId,
-          attempt: attempt + 1,
-          maxRetries,
-          lastStatus,
-          error: error instanceof Error ? error.message : String(error)
-        });
       }
     }
 

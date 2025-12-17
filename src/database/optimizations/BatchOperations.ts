@@ -155,7 +155,6 @@ export class BatchOperations {
         onBatchComplete(batchNum + 1, batchResults);
       }
 
-      // Delay between batches (for rate limiting)
       if (delayBetweenBatches > 0 && batchNum < totalBatches - 1) {
         await new Promise(resolve => setTimeout(resolve, delayBetweenBatches));
       }

@@ -150,8 +150,7 @@ export class MarkdownRenderer {
    */
   private static renderPlainText(content: string, container: HTMLElement): void {
     const pre = document.createElement('pre');
-    pre.style.whiteSpace = 'pre-wrap';
-    pre.style.wordWrap = 'break-word';
+    pre.className = 'markdown-renderer-plaintext';
     pre.textContent = content;
     container.appendChild(pre);
   }

@@ -120,8 +120,6 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
       // Read WASM binary using Obsidian's API
       const wasmBinary = await this.app.vault.adapter.readBinary(wasmPath);
 
-      // Suppress WASM/emscripten debug output during initialization
-      // The OPFS warning and heap resize messages can't be suppressed via config
       const originalWarn = console.warn;
       const originalLog = console.log;
       const suppressPatterns = [
@@ -143,10 +141,7 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
       };
 
       try {
-        // Initialize the WASM module with instantiateWasm callback
-        // This bypasses the module's own URL-based loading entirely
         this.sqlite3 = await sqlite3InitModule({
-          // Use instantiateWasm for direct control over WASM instantiation
           instantiateWasm: (imports: WebAssembly.Imports, successCallback: (instance: WebAssembly.Instance) => void) => {
             WebAssembly.instantiate(wasmBinary, imports)
               .then(result => {
@@ -155,13 +150,12 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
               .catch(err => {
                 console.error('[SQLiteCacheManager] WASM instantiation failed:', err);
               });
-            return {}; // Return empty object, actual instance provided via callback
+            return {};
           },
-          print: () => {}, // Suppress SQLite print output
+          print: () => {},
           printErr: (msg: string) => console.error('[SQLite]', msg)
         });
       } finally {
-        // Restore console methods
         console.warn = originalWarn;
         console.log = originalLog;
       }
@@ -180,21 +174,9 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
         // Load existing database from file
         await this.loadFromFile();
       } else {
-        // Create new in-memory database
         this.db = new this.sqlite3.oo1.DB(':memory:');
-
-        // Create schema
         this.db.exec(SCHEMA_SQL);
-
-        // Save initial database to file
         await this.saveToFile();
-      }
-
-      // Verify sqlite-vec extension is loaded (silently)
-      try {
-        this.db.selectValue('SELECT vec_version()');
-      } catch {
-        // sqlite-vec extension not available - continue without it
       }
 
       // Start auto-save timer
@@ -260,7 +242,6 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
           throw new Error(`Database integrity check failed: ${integrityResult}`);
         }
       } catch (integrityError) {
-        // Database corrupted, recreating
         await this.recreateCorruptedDatabase();
         return;
       }
@@ -277,28 +258,21 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
    * Deletes corrupt file and creates fresh database
    */
   private async recreateCorruptedDatabase(): Promise<void> {
-    // Close existing DB if open
     if (this.db) {
       try {
         this.db.close();
       } catch {
-        // Ignore close errors on corrupted DB
       }
       this.db = null;
     }
 
-    // Delete corrupted file
     try {
       await this.app.vault.adapter.remove(this.dbPath);
     } catch {
-      // Could not delete corrupt file - continue anyway
     }
 
-    // Create fresh database
     this.db = new this.sqlite3.oo1.DB(':memory:');
     this.db.exec(SCHEMA_SQL);
-
-    // Save fresh database to file
     await this.saveToFile();
   }
 
@@ -309,7 +283,6 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
     if (!this.db) return;
 
     try {
-      // Suppress heap resize debug messages during export
       const originalLog = console.log;
       console.log = (...args: any[]) => {
         const msg = args[0]?.toString() || '';
@@ -320,13 +293,11 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
 
       let data: any;
       try {
-        // Export database to Uint8Array
         data = this.sqlite3.capi.sqlite3_js_db_export(this.db.pointer);
       } finally {
         console.log = originalLog;
       }
 
-      // Write to vault as binary
       await this.app.vault.adapter.writeBinary(this.dbPath, data.buffer);
 
       this.hasUnsavedData = false;
@@ -719,7 +690,6 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
         dbSizeBytes = stat?.size ?? 0;
       }
     } catch {
-      // Could not get db file size - use 0
     }
 
     return {

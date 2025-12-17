@@ -9,6 +9,28 @@ import { NexusError, NexusErrorCode } from '../../utils/errors';
 import { logger } from '../../utils/logger';
 import { getErrorMessage } from '../../utils/errorUtils';
 import { generateToolHelp, formatToolHelp } from '../../utils/parameterHintUtils';
+import { CommonResult } from '../../types';
+
+/**
+ * Safely extracts sessionId from params as a string
+ * Returns undefined if not present or not a string
+ */
+function getSessionIdFromParams(params: Record<string, unknown>): string | undefined {
+    const sessionId = params.sessionId;
+    return typeof sessionId === 'string' ? sessionId : undefined;
+}
+
+/**
+ * Type guard to verify a value conforms to CommonResult interface
+ */
+function isCommonResult(value: unknown): value is CommonResult {
+    return (
+        typeof value === 'object' &&
+        value !== null &&
+        'success' in value &&
+        typeof (value as CommonResult).success === 'boolean'
+    );
+}
 
 /**
  * Service responsible for agent execution and session management
@@ -111,24 +133,18 @@ export class AgentExecutionManager {
      * Process session context for parameters
      */
     private async processSessionContext(params: Record<string, unknown>): Promise<Record<string, unknown>> {
-        if (!this.sessionContextManager || !params.sessionId) {
+        const sessionId = getSessionIdFromParams(params);
+        if (!this.sessionContextManager || !sessionId) {
             return params;
         }
 
-        const originalSessionId = params.sessionId;
-
         try {
-            // DIAGNOSTIC: Track session ID flow
-            
             // Validate session ID - destructure the result to get the actual ID
-            const {id: validatedSessionId, created} = await this.sessionContextManager.validateSessionId(params.sessionId);
-            
-            
+            const { id: validatedSessionId } = await this.sessionContextManager.validateSessionId(sessionId);
             params.sessionId = validatedSessionId;
-            
 
             // Apply workspace context
-            params = this.sessionContextManager.applyWorkspaceContext(params.sessionId, params);
+            params = this.sessionContextManager.applyWorkspaceContext(validatedSessionId, params);
 
             return params;
         } catch (error) {
@@ -140,13 +156,14 @@ export class AgentExecutionManager {
     /**
      * Update session context with execution result
      */
-    private async updateSessionContext(params: Record<string, unknown>, result: Record<string, unknown>): Promise<void> {
-        if (!this.sessionContextManager || !params.sessionId || !result.workspaceContext) {
+    private async updateSessionContext(params: Record<string, unknown>, result: unknown): Promise<void> {
+        const sessionId = getSessionIdFromParams(params);
+        if (!this.sessionContextManager || !sessionId || !isCommonResult(result) || !result.workspaceContext) {
             return;
         }
 
         try {
-            this.sessionContextManager.updateFromResult(params.sessionId, result);
+            this.sessionContextManager.updateFromResult(sessionId, result);
         } catch (error) {
             logger.systemWarn(`Session context update failed: ${getErrorMessage(error)}`);
         }
@@ -155,37 +172,45 @@ export class AgentExecutionManager {
     /**
      * Add session instructions to result if needed
      */
-    private addSessionInstructions(params: Record<string, unknown>, result: Record<string, unknown>): Record<string, unknown> {
-        if (!this.sessionContextManager) {
+    private addSessionInstructions(params: Record<string, unknown>, result: unknown): unknown {
+        if (!this.sessionContextManager || !result || typeof result !== 'object') {
             return result;
         }
 
-        const needsInstructions = (params._isNewSession || params._isNonStandardId) && 
-                               result && 
-                               !this.sessionContextManager.hasReceivedInstructions(params.sessionId);
+        const sessionId = getSessionIdFromParams(params);
+        if (!sessionId) {
+            return result;
+        }
+
+        const needsInstructions = (params._isNewSession || params._isNonStandardId) &&
+                               !this.sessionContextManager.hasReceivedInstructions(sessionId);
 
         if (!needsInstructions) {
             return result;
         }
 
+        // Cast to Record for mutation - this is safe since we verified it's an object
+        const resultObj = result as Record<string, unknown>;
+
         // Add session instructions
-        if (params._isNonStandardId && params._originalSessionId) {
-            result.sessionIdCorrection = {
-                originalId: params._originalSessionId,
-                correctedId: params.sessionId,
+        const originalSessionId = typeof params._originalSessionId === 'string' ? params._originalSessionId : undefined;
+        if (params._isNonStandardId && originalSessionId) {
+            resultObj.sessionIdCorrection = {
+                originalId: originalSessionId,
+                correctedId: sessionId,
                 message: "Your session ID has been standardized. Please use this corrected session ID for all future requests in this conversation."
             };
-        } else if (params._isNewSession && !params._originalSessionId) {
-            result.newSessionInfo = {
-                sessionId: params.sessionId,
+        } else if (params._isNewSession && !originalSessionId) {
+            resultObj.newSessionInfo = {
+                sessionId: sessionId,
                 message: "A new session has been created. This ID must be used for all future requests in this conversation."
             };
         }
 
         // Mark instructions as received
-        this.sessionContextManager.markInstructionsReceived(params.sessionId);
+        this.sessionContextManager.markInstructionsReceived(sessionId);
 
-        return result;
+        return resultObj;
     }
 
     /**

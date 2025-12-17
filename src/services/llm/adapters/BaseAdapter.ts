@@ -55,10 +55,6 @@ export abstract class BaseAdapter {
       apiKey: this.apiKey,
       baseUrl: baseUrl || ''
     };
-
-    if (!this.apiKey && requiresApiKey) {
-      console.warn(`⚠️ API key not provided for adapter`);
-    }
   }
 
   protected initializeCache(cacheConfig?: any): void {
@@ -304,7 +300,6 @@ export abstract class BaseAdapter {
       await this.listModels();
       return true;
     } catch (error) {
-      console.warn(`Provider ${this.name} unavailable:`, error);
       return false;
     }
   }
@@ -373,7 +368,6 @@ export abstract class BaseAdapter {
           throw error;
         }
 
-        console.log(`[${this.name}] Retrying after ${delay}ms (attempt ${attempt + 1}/${maxRetries}) - previous_response_not_found`);
         await new Promise(resolve => setTimeout(resolve, delay));
         delay *= 2; // Exponential backoff: 50ms, 100ms, 200ms
       }
@@ -502,10 +496,9 @@ export abstract class BaseAdapter {
             throw error;
           }
         }
-        
+
         if (attempt < maxRetries) {
           const delay = baseDelay * Math.pow(2, attempt);
-          console.warn(`Attempt ${attempt + 1} failed, retrying in ${delay}ms...`);
           await new Promise(resolve => setTimeout(resolve, delay));
         }
       }

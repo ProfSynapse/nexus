@@ -50,11 +50,9 @@ export class HttpTransportManager {
         
         // Parse JSON bodies
         this.app.use(express.json());
-        
+
         // Add request logging
         this.app.use((req, res, next) => {
-            console.log(`[HTTP Transport] ${req.method} ${req.path} from ${req.ip}`);
-            console.log(`[HTTP Transport] Headers:`, req.headers);
             logger.systemLog(`[HTTP Transport] ${req.method} ${req.path} from ${req.ip}`);
             next();
         });

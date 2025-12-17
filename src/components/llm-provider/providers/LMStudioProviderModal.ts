@@ -139,8 +139,7 @@ export class LMStudioProviderModal implements IProviderModal {
       titleP.createEl('strong', { text: `Discovered Models (${this.discoveredModels.length}):` });
 
       const ul = descDiv.createEl('ul');
-      ul.style.margin = '0.5em 0';
-      ul.style.paddingLeft = '1.5em';
+      ul.addClass('llm-provider-model-list');
 
       this.discoveredModels.forEach(model => {
         const li = ul.createEl('li');
@@ -161,18 +160,16 @@ export class LMStudioProviderModal implements IProviderModal {
 
     const details = descDiv.createEl('details');
     const summary = details.createEl('summary', { text: 'Setup Help' });
-    summary.style.cursor = 'pointer';
-    summary.style.fontWeight = '500';
+    summary.addClass('llm-provider-help-summary');
 
     const contentDiv = details.createDiv();
-    contentDiv.style.marginTop = '0.5em';
-    contentDiv.style.paddingLeft = '1em';
+    contentDiv.addClass('llm-provider-help-content');
 
     const titleP = contentDiv.createEl('p');
     titleP.createEl('strong', { text: 'To configure LM Studio:' });
 
     const ol = contentDiv.createEl('ol');
-    ol.style.margin = '0.5em 0';
+    ol.addClass('llm-provider-help-list');
     ol.createEl('li', { text: 'Open LM Studio and load your desired model(s)' });
     ol.createEl('li', { text: 'Start the local server (usually on port 1234)' });
     ol.createEl('li', { text: 'Click "Discover Models" to fetch available models' });

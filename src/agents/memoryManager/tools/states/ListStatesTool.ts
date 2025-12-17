@@ -3,7 +3,7 @@
  * Following the same pattern as ListWorkspacesMode for consistency
  */
 
-import { BaseMode } from '../../../baseMode';
+import { BaseTool } from '../../../baseTool';
 import { MemoryManagerAgent } from '../../memoryManager'
 import { ListStatesParams, StateResult } from '../../types';
 import { createErrorMessage } from '../../../../utils/errorUtils';
@@ -14,7 +14,7 @@ import { WorkspaceService } from '../../../../services/WorkspaceService';
 /**
  * Mode for listing states with filtering and sorting
  */
-export class ListStatesMode extends BaseMode<ListStatesParams, StateResult> {
+export class ListStatesTool extends BaseTool<ListStatesParams, StateResult> {
   private agent: MemoryManagerAgent;
 
   constructor(agent: MemoryManagerAgent) {

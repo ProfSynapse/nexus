@@ -49,10 +49,7 @@ export class ConversationTitleModal extends Modal {
 
     // Action buttons
     const buttonContainer = contentEl.createDiv('modal-button-container');
-    buttonContainer.style.display = 'flex';
-    buttonContainer.style.justifyContent = 'flex-end';
-    buttonContainer.style.gap = '8px';
-    buttonContainer.style.marginTop = '20px';
+    buttonContainer.addClass('modal-button-container-flex');
 
     const cancelBtn = buttonContainer.createEl('button', {
       text: 'Cancel',

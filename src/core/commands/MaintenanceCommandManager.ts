@@ -15,7 +15,6 @@ export class MaintenanceCommandManager {
    */
   async executeMaintenanceCommand(commandId: string): Promise<void> {
     // Basic maintenance operations
-    console.log(`Executing maintenance command: ${commandId}`);
   }
 
   /**
@@ -36,7 +35,6 @@ export class MaintenanceCommandManager {
    * Register troubleshoot command
    */
   registerTroubleshootCommand(): void {
-    console.log('Troubleshoot command registered');
   }
 
   /**
@@ -56,7 +54,6 @@ export class MaintenanceCommandManager {
    * Run comprehensive service diagnostics
    */
   private async runServiceDiagnostics(): Promise<void> {
-    console.log('🔍 Running Service Diagnostics...\n');
     new Notice('Running service diagnostics... Check console for results.');
 
     let passed = 0;
@@ -86,7 +83,6 @@ export class MaintenanceCommandManager {
 
         const service = await this.context.getService(serviceName, 5000);
         if (service) {
-          console.log(`✅ ${serviceName}: OK`);
           results.push(`✅ ${serviceName}`);
           passed++;
         } else {
@@ -102,13 +98,11 @@ export class MaintenanceCommandManager {
     }
 
     // Check plugin.services getter
-    console.log('\n🔍 Checking plugin.services getter...');
     const services = (this.context.plugin as NexusPlugin).services;
     const expectedServices = ['memoryService', 'workspaceService', 'sessionService', 'conversationService', 'customPromptStorageService'];
 
     for (const name of expectedServices) {
       if (services && services[name]) {
-        console.log(`✅ plugin.services.${name}: Available`);
         results.push(`✅ plugin.services.${name}`);
         passed++;
       } else {
@@ -119,13 +113,9 @@ export class MaintenanceCommandManager {
     }
 
     // Final report
-    console.log(`\n📊 Results: ${passed} passed, ${failed} failed`);
-
     if (failed === 0) {
-      console.log('🎉 All services healthy!');
       new Notice(`✅ All services healthy! (${passed} passed)`);
     } else {
-      console.warn('⚠️ Some services are not available');
       new Notice(`⚠️ ${failed} service(s) failed. Check console for details.`);
     }
   }

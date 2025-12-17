@@ -214,15 +214,11 @@ export class HybridStorageAdapter implements IStorageAdapter {
       await this.jsonlWriter.ensureDirectory('workspaces');
       await this.jsonlWriter.ensureDirectory('conversations');
 
-      // 3. Check for and run legacy migration if needed
       const migrator = new LegacyMigrator(this.app);
       const migrationNeeded = await migrator.isMigrationNeeded();
 
       if (migrationNeeded) {
-        const migrationResult = await migrator.migrate();
-        if (!migrationResult.success) {
-          console.warn('[HybridStorageAdapter] Migration had issues:', migrationResult.errors);
-        }
+        await migrator.migrate();
       }
 
       // 4. Perform initial sync (rebuild cache from JSONL)
