@@ -50,11 +50,7 @@ export class TabContainer {
       });
 
       const clickHandler = () => this.switchToTab(config.key);
-      if (this.component) {
-        this.component.registerDomEvent(tabEl, 'click', clickHandler);
-      } else {
-        tabEl.addEventListener('click', clickHandler);
-      }
+      this.component!.registerDomEvent(tabEl, 'click', clickHandler);
       this.tabs[config.key] = tabEl;
     });
 

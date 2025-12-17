@@ -68,11 +68,7 @@ export class UnifiedTabs {
       const clickHandler = () => {
         this.switchToTab(key);
       };
-      if (this.component) {
-        this.component.registerDomEvent(tab, 'click', clickHandler);
-      } else {
-        tab.addEventListener('click', clickHandler);
-      }
+      this.component!.registerDomEvent(tab, 'click', clickHandler);
     });
   }
 

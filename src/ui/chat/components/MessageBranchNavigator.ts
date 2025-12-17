@@ -63,13 +63,8 @@ export class MessageBranchNavigator {
     // Event listeners
     const prevHandler = () => this.handlePreviousAlternative();
     const nextHandler = () => this.handleNextAlternative();
-    if (this.component) {
-      this.component.registerDomEvent(this.prevButton, 'click', prevHandler);
-      this.component.registerDomEvent(this.nextButton, 'click', nextHandler);
-    } else {
-      this.prevButton.addEventListener('click', prevHandler);
-      this.nextButton.addEventListener('click', nextHandler);
-    }
+    this.component!.registerDomEvent(this.prevButton, 'click', prevHandler);
+    this.component!.registerDomEvent(this.nextButton, 'click', nextHandler);
   }
 
   /**

@@ -52,13 +52,8 @@ export abstract class ContentEditableSuggester<T> {
     const inputHandler = () => this.onInput();
     const keydownHandler = (e: KeyboardEvent) => this.onKeyDown(e);
 
-    if (this.component) {
-      this.component.registerDomEvent(this.element, 'input', inputHandler);
-      this.component.registerDomEvent(this.element, 'keydown', keydownHandler);
-    } else {
-      this.element.addEventListener('input', inputHandler);
-      this.element.addEventListener('keydown', keydownHandler);
-    }
+    this.component!.registerDomEvent(this.element, 'input', inputHandler);
+    this.component!.registerDomEvent(this.element, 'keydown', keydownHandler);
 
     // Click outside to close - stored as instance property for cleanup
     this.clickOutsideHandler = (e: MouseEvent) => {
@@ -176,11 +171,7 @@ export abstract class ContentEditableSuggester<T> {
         this.selectCurrentSuggestion();
       };
 
-      if (this.component) {
-        this.component.registerDomEvent(item, 'click', clickHandler);
-      } else {
-        item.addEventListener('click', clickHandler);
-      }
+      this.component!.registerDomEvent(item, 'click', clickHandler);
     });
 
     // Position above the input
@@ -266,6 +257,11 @@ export abstract class ContentEditableSuggester<T> {
   destroy(): void {
     if (this.debounceTimer) {
       clearTimeout(this.debounceTimer);
+    }
+
+    // Remove document click listener
+    if (this.clickOutsideHandler) {
+      document.removeEventListener('click', this.clickOutsideHandler);
     }
 
     if (this.suggestionContainer) {

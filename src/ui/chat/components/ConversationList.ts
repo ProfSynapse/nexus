@@ -62,11 +62,7 @@ export class ConversationList {
       const selectHandler = () => {
         this.onConversationSelect(conversation);
       };
-      if (this.component) {
-        this.component.registerDomEvent(content, 'click', selectHandler);
-      } else {
-        content.addEventListener('click', selectHandler);
-      }
+      this.component!.registerDomEvent(content, 'click', selectHandler);
 
       // Title
       const title = content.createDiv('conversation-title');
@@ -100,11 +96,7 @@ export class ConversationList {
           e.stopPropagation();
           this.showRenameInput(item, content, conversation);
         };
-        if (this.component) {
-          this.component.registerDomEvent(editBtn, 'click', editHandler);
-        } else {
-          editBtn.addEventListener('click', editHandler);
-        }
+        this.component!.registerDomEvent(editBtn, 'click', editHandler);
       }
 
       // Delete button - uses clickable-icon for proper icon sizing
@@ -119,11 +111,7 @@ export class ConversationList {
           this.onConversationDelete(conversation.id);
         }
       };
-      if (this.component) {
-        this.component.registerDomEvent(deleteBtn, 'click', deleteHandler);
-      } else {
-        deleteBtn.addEventListener('click', deleteHandler);
-      }
+      this.component!.registerDomEvent(deleteBtn, 'click', deleteHandler);
     });
   }
 
@@ -195,13 +183,8 @@ export class ConversationList {
       }
     };
 
-    if (this.component) {
-      this.component.registerDomEvent(input, 'blur', blurHandler);
-      this.component.registerDomEvent(input, 'keydown', keydownHandler);
-    } else {
-      input.addEventListener('blur', blurHandler);
-      input.addEventListener('keydown', keydownHandler);
-    }
+    this.component!.registerDomEvent(input, 'blur', blurHandler);
+    this.component!.registerDomEvent(input, 'keydown', keydownHandler);
   }
 
   /**

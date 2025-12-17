@@ -79,11 +79,7 @@ export class ProgressBar {
         const cancelHandler = () => {
             this.triggerCancel();
         };
-        if (this.component) {
-            this.component.registerDomEvent(this.cancelButton, 'click', cancelHandler);
-        } else {
-            this.cancelButton.addEventListener('click', cancelHandler);
-        }
+        this.component!.registerDomEvent(this.cancelButton, 'click', cancelHandler);
         
         // Create event handlers
         this.setupEventHandlers();

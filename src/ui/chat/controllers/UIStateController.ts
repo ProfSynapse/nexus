@@ -103,11 +103,7 @@ export class UIStateController {
           this.onOpenSettings();
         }
       };
-      if (this.component) {
-        this.component.registerDomEvent(settingsBtn, 'click', settingsHandler);
-      } else {
-        settingsBtn.addEventListener('click', settingsHandler);
-      }
+      this.component!.registerDomEvent(settingsBtn, 'click', settingsHandler);
     }
   }
 
@@ -195,11 +191,7 @@ export class UIStateController {
     const hamburgerButton = this.containerEl.querySelector('.chat-hamburger-button');
     if (hamburgerButton) {
       const hamburgerHandler = () => this.toggleConversationList();
-      if (this.component) {
-        this.component.registerDomEvent(hamburgerButton as HTMLElement, 'click', hamburgerHandler);
-      } else {
-        hamburgerButton.addEventListener('click', hamburgerHandler);
-      }
+      this.component!.registerDomEvent(hamburgerButton as HTMLElement, 'click', hamburgerHandler);
     }
 
     // Backdrop click to close sidebar
@@ -210,11 +202,7 @@ export class UIStateController {
           this.toggleConversationList();
         }
       };
-      if (this.component) {
-        this.component.registerDomEvent(backdrop as HTMLElement, 'click', backdropHandler);
-      } else {
-        backdrop.addEventListener('click', backdropHandler);
-      }
+      this.component!.registerDomEvent(backdrop as HTMLElement, 'click', backdropHandler);
     }
   }
 

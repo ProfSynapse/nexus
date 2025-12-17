@@ -26,11 +26,7 @@ export class BackButton {
         this.element.createSpan({ text: label });
 
         // Click handler
-        if (component) {
-            component.registerDomEvent(this.element, 'click', onClick);
-        } else {
-            this.element.addEventListener('click', onClick);
-        }
+        component!.registerDomEvent(this.element, 'click', onClick);
     }
 
     /**

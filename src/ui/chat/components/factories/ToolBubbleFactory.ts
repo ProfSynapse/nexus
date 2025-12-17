@@ -155,11 +155,7 @@ export class ToolBubbleFactory {
       showCopyFeedback(copyBtn);
       onCopy(message.id);
     };
-    if (component) {
-      component.registerDomEvent(copyBtn, 'click', copyHandler);
-    } else {
-      copyBtn.addEventListener('click', copyHandler);
-    }
+    component!.registerDomEvent(copyBtn, 'click', copyHandler);
 
     // Message branch navigator for messages with alternatives
     if (message.alternatives && message.alternatives.length > 0 && messageBranchNavigator) {

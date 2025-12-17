@@ -84,15 +84,9 @@ export class MessageEditController {
       }
     };
 
-    if (component) {
-      component.registerDomEvent(saveBtn, 'click', saveHandler);
-      component.registerDomEvent(cancelBtn, 'click', cancelHandler);
-      component.registerDomEvent(textarea, 'keydown', keydownHandler);
-    } else {
-      saveBtn.addEventListener('click', saveHandler);
-      cancelBtn.addEventListener('click', cancelHandler);
-      textarea.addEventListener('keydown', keydownHandler);
-    }
+    component!.registerDomEvent(saveBtn, 'click', saveHandler);
+    component!.registerDomEvent(cancelBtn, 'click', cancelHandler);
+    component!.registerDomEvent(textarea, 'keydown', keydownHandler);
   }
 
   /**

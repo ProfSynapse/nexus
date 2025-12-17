@@ -67,11 +67,7 @@ export class Card {
       });
       editBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-edit"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="m18.5 2.5 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>`;
       const editHandler = () => this.config.onEdit!();
-      if (this.component) {
-        this.component.registerDomEvent(editBtn, 'click', editHandler);
-      } else {
-        editBtn.addEventListener('click', editHandler);
-      }
+      this.component!.registerDomEvent(editBtn, 'click', editHandler);
     }
 
     // Delete button (if provided)
@@ -82,11 +78,7 @@ export class Card {
       });
       deleteBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trash"><polyline points="3,6 5,6 21,6"></polyline><path d="m19,6v14a2,2 0 0,1 -2,2H7a2,2 0 0,1 -2,-2V6m3,0V4a2,2 0 0,1 2,-2h4a2,2 0 0,1 2,2v2"></path></svg>`;
       const deleteHandler = () => this.config.onDelete!();
-      if (this.component) {
-        this.component.registerDomEvent(deleteBtn, 'click', deleteHandler);
-      } else {
-        deleteBtn.addEventListener('click', deleteHandler);
-      }
+      this.component!.registerDomEvent(deleteBtn, 'click', deleteHandler);
     }
 
     // Additional actions (if provided)
@@ -97,11 +89,7 @@ export class Card {
           attr: { 'aria-label': action.label }
         });
         actionBtn.innerHTML = action.icon;
-        if (this.component) {
-          this.component.registerDomEvent(actionBtn, 'click', action.onClick);
-        } else {
-          actionBtn.addEventListener('click', action.onClick);
-        }
+        this.component!.registerDomEvent(actionBtn, 'click', action.onClick);
       });
     }
     

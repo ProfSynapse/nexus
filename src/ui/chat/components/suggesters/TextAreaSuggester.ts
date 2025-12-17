@@ -41,13 +41,8 @@ export abstract class TextAreaSuggester<T> {
     const inputHandler = this.onInput.bind(this);
     const keydownHandler = this.onKeyDown.bind(this);
 
-    if (this.component) {
-      this.component.registerDomEvent(this.textarea, 'input', inputHandler);
-      this.component.registerDomEvent(this.textarea, 'keydown', keydownHandler);
-    } else {
-      this.textarea.addEventListener('input', inputHandler);
-      this.textarea.addEventListener('keydown', keydownHandler);
-    }
+    this.component!.registerDomEvent(this.textarea, 'input', inputHandler);
+    this.component!.registerDomEvent(this.textarea, 'keydown', keydownHandler);
 
     // Don't close on blur - let user click suggestions
     // Suggestions will close on selection or Escape key
@@ -184,13 +179,8 @@ export abstract class TextAreaSuggester<T> {
         this.renderSuggestions();
       };
 
-      if (this.component) {
-        this.component.registerDomEvent(el, 'mousedown', mousedownHandler);
-        this.component.registerDomEvent(el, 'mouseenter', mouseenterHandler);
-      } else {
-        el.addEventListener('mousedown', mousedownHandler);
-        el.addEventListener('mouseenter', mouseenterHandler);
-      }
+      this.component!.registerDomEvent(el, 'mousedown', mousedownHandler);
+      this.component!.registerDomEvent(el, 'mouseenter', mouseenterHandler);
     });
   }
 

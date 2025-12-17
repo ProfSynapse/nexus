@@ -61,11 +61,7 @@ export class AgentSelector {
     const changeHandler = () => {
       this.handleAgentChange();
     };
-    if (this.component) {
-      this.component.registerDomEvent(this.selectElement, 'change', changeHandler);
-    } else {
-      this.selectElement.addEventListener('change', changeHandler);
-    }
+    this.component!.registerDomEvent(this.selectElement, 'change', changeHandler);
 
     this.element = this.container;
   }

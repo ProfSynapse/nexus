@@ -76,11 +76,7 @@ export class GetStartedTab {
             this.currentView = 'internal-chat';
             this.render();
         };
-        if (this.services.component) {
-            this.services.component.registerDomEvent(chatPath, 'click', chatClickHandler);
-        } else {
-            chatPath.addEventListener('click', chatClickHandler);
-        }
+        this.services.component!.registerDomEvent(chatPath, 'click', chatClickHandler);
 
         // Path 2: MCP Integration
         const mcpPath = paths.createDiv('nexus-setup-path');
@@ -91,11 +87,7 @@ export class GetStartedTab {
             this.currentView = 'mcp-setup';
             this.render();
         };
-        if (this.services.component) {
-            this.services.component.registerDomEvent(mcpPath, 'click', mcpClickHandler);
-        } else {
-            mcpPath.addEventListener('click', mcpClickHandler);
-        }
+        this.services.component!.registerDomEvent(mcpPath, 'click', mcpClickHandler);
     }
 
     /**
@@ -178,19 +170,11 @@ export class GetStartedTab {
             const actions = row.createDiv('nexus-mcp-actions');
             const downloadBtn = actions.createEl('button', { text: 'Download', cls: 'mod-cta' });
             const downloadHandler = () => window.open('https://claude.ai/download', '_blank');
-            if (this.services.component) {
-                this.services.component.registerDomEvent(downloadBtn, 'click', downloadHandler);
-            } else {
-                downloadBtn.addEventListener('click', downloadHandler);
-            }
+            this.services.component!.registerDomEvent(downloadBtn, 'click', downloadHandler);
 
             const refreshBtn = actions.createEl('button', { text: 'Refresh' });
             const refreshHandler = () => this.render();
-            if (this.services.component) {
-                this.services.component.registerDomEvent(refreshBtn, 'click', refreshHandler);
-            } else {
-                refreshBtn.addEventListener('click', refreshHandler);
-            }
+            this.services.component!.registerDomEvent(refreshBtn, 'click', refreshHandler);
 
             // Help text below
             this.container.createEl('p', {
@@ -208,19 +192,11 @@ export class GetStartedTab {
             const actions = row.createDiv('nexus-mcp-actions');
             const openBtn = actions.createEl('button', { text: 'Open Config' });
             const openHandler = () => this.openConfigFile(configPath);
-            if (this.services.component) {
-                this.services.component.registerDomEvent(openBtn, 'click', openHandler);
-            } else {
-                openBtn.addEventListener('click', openHandler);
-            }
+            this.services.component!.registerDomEvent(openBtn, 'click', openHandler);
 
             const revealBtn = actions.createEl('button', { text: this.getRevealButtonText() });
             const revealHandler = () => this.revealInFolder(configPath);
-            if (this.services.component) {
-                this.services.component.registerDomEvent(revealBtn, 'click', revealHandler);
-            } else {
-                revealBtn.addEventListener('click', revealHandler);
-            }
+            this.services.component!.registerDomEvent(revealBtn, 'click', revealHandler);
 
             this.container.createEl('p', {
                 text: 'Restart Claude Desktop if you haven\'t already.',
@@ -237,11 +213,7 @@ export class GetStartedTab {
             const actions = row.createDiv('nexus-mcp-actions');
             const configBtn = actions.createEl('button', { text: 'Add Nexus to Claude', cls: 'mod-cta' });
             const configHandler = () => this.autoConfigureNexus(configPath);
-            if (this.services.component) {
-                this.services.component.registerDomEvent(configBtn, 'click', configHandler);
-            } else {
-                configBtn.addEventListener('click', configHandler);
-            }
+            this.services.component!.registerDomEvent(configBtn, 'click', configHandler);
         }
     }
 

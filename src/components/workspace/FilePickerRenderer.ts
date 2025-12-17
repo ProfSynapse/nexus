@@ -272,11 +272,7 @@ export class FilePickerRenderer {
       }
       this.renderRoot(); // Re-render tree
     };
-    if (this.component) {
-      this.component.registerDomEvent(row, 'click', clickHandler);
-    } else {
-      row.addEventListener('click', clickHandler);
-    }
+    this.component!.registerDomEvent(row, 'click', clickHandler);
 
     // Render children if expanded
     if (isExpanded) {
@@ -305,11 +301,7 @@ export class FilePickerRenderer {
         this.selectedFiles.delete(file.path);
       }
     };
-    if (this.component) {
-      this.component.registerDomEvent(checkbox, 'change', changeHandler);
-    } else {
-      checkbox.addEventListener('change', changeHandler);
-    }
+    this.component!.registerDomEvent(checkbox, 'change', changeHandler);
 
     // File icon
     const iconEl = row.createSpan({ cls: 'nexus-tree-icon' });
@@ -325,11 +317,7 @@ export class FilePickerRenderer {
         checkbox.dispatchEvent(new Event('change'));
       }
     };
-    if (this.component) {
-      this.component.registerDomEvent(row, 'click', rowClickHandler);
-    } else {
-      row.addEventListener('click', rowClickHandler);
-    }
+    this.component!.registerDomEvent(row, 'click', rowClickHandler);
   }
 
   /**

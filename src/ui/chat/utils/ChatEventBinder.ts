@@ -17,36 +17,24 @@ export class ChatEventBinder {
   /**
    * Wire up new chat button
    */
-  static bindNewChatButton(button: HTMLElement, createNewConversation: () => void, component?: Component): void {
-    if (component) {
-      component.registerDomEvent(button, 'click', () => createNewConversation());
-    } else {
-      button.addEventListener('click', () => createNewConversation());
-    }
+  static bindNewChatButton(button: HTMLElement, createNewConversation: () => void, component: Component): void {
+    component.registerDomEvent(button, 'click', () => createNewConversation());
   }
 
   /**
    * Wire up settings button
    */
-  static bindSettingsButton(button: HTMLElement, openSettings: () => void, component?: Component): void {
-    if (component) {
-      component.registerDomEvent(button, 'click', () => openSettings());
-    } else {
-      button.addEventListener('click', () => openSettings());
-    }
+  static bindSettingsButton(button: HTMLElement, openSettings: () => void, component: Component): void {
+    component.registerDomEvent(button, 'click', () => openSettings());
   }
 
   /**
    * Wire up welcome screen button
    */
-  static bindWelcomeButton(container: HTMLElement, createNewConversation: () => void, component?: Component): void {
+  static bindWelcomeButton(container: HTMLElement, createNewConversation: () => void, component: Component): void {
     const welcomeButton = container.querySelector('.chat-welcome-button');
     if (welcomeButton) {
-      if (component) {
-        component.registerDomEvent(welcomeButton as HTMLElement, 'click', () => createNewConversation());
-      } else {
-        welcomeButton.addEventListener('click', () => createNewConversation());
-      }
+      component.registerDomEvent(welcomeButton as HTMLElement, 'click', () => createNewConversation());
     }
   }
 }

@@ -41,11 +41,7 @@ export class ProgressiveToolAccordion {
     // Header with summary (initially hidden until first tool)
     const header = accordion.createDiv('progressive-tool-header');
     const toggleHandler = () => this.toggle();
-    if (this.component) {
-      this.component.registerDomEvent(header, 'click', toggleHandler);
-    } else {
-      header.addEventListener('click', toggleHandler);
-    }
+    this.component!.registerDomEvent(header, 'click', toggleHandler);
     header.style.display = 'none'; // Hidden until first tool starts
 
     // Status summary

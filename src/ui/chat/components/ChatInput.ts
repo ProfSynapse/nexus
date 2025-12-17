@@ -131,12 +131,7 @@ export class ChatInput {
     const sendClickHandler = () => {
       this.handleSendOrStop();
     };
-
-    if (this.component) {
-      this.component.registerDomEvent(this.sendButton, 'click', sendClickHandler);
-    } else {
-      this.sendButton.addEventListener('click', sendClickHandler);
-    }
+    this.component!.registerDomEvent(this.sendButton, 'click', sendClickHandler);
 
     // Initialize suggesters if app is available
     if (this.app && this.inputElement) {
