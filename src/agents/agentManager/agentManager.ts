@@ -1,16 +1,16 @@
 import { BaseAgent } from '../baseAgent';
 import { AgentManagerConfig } from '../../config/agents';
 import {
-  ListAgentsMode,
-  GetAgentMode,
-  CreateAgentMode,
-  UpdateAgentMode,
-  DeleteAgentMode,
-  ListModelsMode,
-  ExecutePromptMode,
-  BatchExecutePromptMode,
-  GenerateImageMode
-} from './modes';
+  ListAgentsTool,
+  GetAgentTool,
+  CreateAgentTool,
+  UpdateAgentTool,
+  DeleteAgentTool,
+  ListModelsTool,
+  ExecutePromptTool,
+  BatchExecutePromptTool,
+  GenerateImageTool
+} from './tools';
 import { CustomPromptStorageService } from './services/CustomPromptStorageService';
 import { Settings } from '../../settings';
 import { sanitizeVaultName } from '../../utils/vaultUtils';
@@ -96,19 +96,19 @@ export class AgentManagerAgent extends BaseAgent {
     this.storageService = new CustomPromptStorageService(settings);
     this.vaultName = sanitizeVaultName(vault.getName());
 
-    // Register prompt management modes
-    this.registerMode(new ListAgentsMode(this.storageService));
-    this.registerMode(new GetAgentMode(this.storageService));
-    this.registerMode(new CreateAgentMode(this.storageService));
-    this.registerMode(new UpdateAgentMode(this.storageService));
-    this.registerMode(new DeleteAgentMode(this.storageService));
+    // Register prompt management tools
+    this.registerTool(new ListAgentsTool(this.storageService));
+    this.registerTool(new GetAgentTool(this.storageService));
+    this.registerTool(new CreateAgentTool(this.storageService));
+    this.registerTool(new UpdateAgentTool(this.storageService));
+    this.registerTool(new DeleteAgentTool(this.storageService));
 
-    // Register LLM modes with dependencies already available
-    this.registerMode(new ListModelsMode(this.providerManager));
+    // Register LLM tools with dependencies already available
+    this.registerTool(new ListModelsTool(this.providerManager));
 
-    // Conditionally register ExecutePromptMode based on visibility config
+    // Conditionally register ExecutePromptTool based on visibility config
     if (!isModeHidden('agentManager', 'executePrompt')) {
-      this.registerMode(new ExecutePromptMode({
+      this.registerTool(new ExecutePromptTool({
         providerManager: this.providerManager,
         promptStorage: this.storageService,
         agentManager: this.parentAgentManager,
@@ -116,7 +116,7 @@ export class AgentManagerAgent extends BaseAgent {
       }));
     }
 
-    this.registerMode(new BatchExecutePromptMode(
+    this.registerTool(new BatchExecutePromptTool(
       undefined, // plugin - not needed in constructor injection pattern
       undefined, // llmService - will be resolved internally
       this.providerManager,
@@ -124,19 +124,19 @@ export class AgentManagerAgent extends BaseAgent {
       this.storageService
     ));
 
-    // Register image generation mode only if Google or OpenRouter API keys are configured
+    // Register image generation tool only if Google or OpenRouter API keys are configured
     const llmProviders = settings.settings.llmProviders;
     const hasGoogleKey = llmProviders?.providers?.google?.apiKey && llmProviders?.providers?.google?.enabled;
     const hasOpenRouterKey = llmProviders?.providers?.openrouter?.apiKey && llmProviders?.providers?.openrouter?.enabled;
 
     if (hasGoogleKey || hasOpenRouterKey) {
-      this.registerMode(new GenerateImageMode({
+      this.registerTool(new GenerateImageTool({
         vault: this.vault,
         llmSettings: llmProviders
       }));
     }
 
-    // Subscribe to settings changes to dynamically register/unregister modes (Obsidian Events API)
+    // Subscribe to settings changes to dynamically register/unregister tools (Obsidian Events API)
     this.settingsEventRef = LLMSettingsNotifier.onSettingsChanged((newSettings) => {
       this.handleSettingsChange(newSettings);
     });
@@ -144,27 +144,27 @@ export class AgentManagerAgent extends BaseAgent {
 
   /**
    * Handle LLM provider settings changes
-   * Dynamically registers/unregisters GenerateImageMode based on API key availability
+   * Dynamically registers/unregisters GenerateImageTool based on API key availability
    */
   private handleSettingsChange(settings: LLMProviderSettings): void {
     const hasGoogleKey = settings.providers?.google?.apiKey && settings.providers?.google?.enabled;
     const hasOpenRouterKey = settings.providers?.openrouter?.apiKey && settings.providers?.openrouter?.enabled;
     const shouldHaveGenerateImage = hasGoogleKey || hasOpenRouterKey;
-    const hasGenerateImage = this.hasMode('generateImage');
+    const hasGenerateImage = this.hasTool('generateImage');
 
     if (shouldHaveGenerateImage && !hasGenerateImage) {
-      // Register the mode - API key now available
-      this.registerMode(new GenerateImageMode({
+      // Register the tool - API key now available
+      this.registerTool(new GenerateImageTool({
         vault: this.vault,
         llmSettings: settings
       }));
     } else if (!shouldHaveGenerateImage && hasGenerateImage) {
-      // Unregister the mode - API key removed
-      this.unregisterMode('generateImage');
+      // Unregister the tool - API key removed
+      this.unregisterTool('generateImage');
     } else if (shouldHaveGenerateImage && hasGenerateImage) {
-      // Update the existing mode with new settings
-      this.unregisterMode('generateImage');
-      this.registerMode(new GenerateImageMode({
+      // Update the existing tool with new settings
+      this.unregisterTool('generateImage');
+      this.registerTool(new GenerateImageTool({
         vault: this.vault,
         llmSettings: settings
       }));

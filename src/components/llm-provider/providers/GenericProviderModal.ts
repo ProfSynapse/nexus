@@ -140,12 +140,10 @@ export class GenericProviderModal implements IProviderModal {
     } catch (error) {
       console.error('[GenericProvider] Error loading models:', error);
       this.modelsContainer.empty();
-      this.modelsContainer.innerHTML = `
-        <div class="models-error">
-          <p><strong>Error loading models:</strong></p>
-          <p>${error instanceof Error ? error.message : 'Unknown error'}</p>
-        </div>
-      `;
+      const errorDiv = this.modelsContainer.createDiv('models-error');
+      const titleP = errorDiv.createEl('p');
+      titleP.createEl('strong', { text: 'Error loading models:' });
+      errorDiv.createEl('p', { text: error instanceof Error ? error.message : 'Unknown error' });
     }
   }
 

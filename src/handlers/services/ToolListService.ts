@@ -6,15 +6,15 @@ import { logger } from '../../utils/logger';
 interface AgentSchema {
     type: string;
     properties: {
-        mode: {
+        tool: {
             type: string;
             enum: string[];
             description: string;
         };
-        [key: string]: any;
+        [key: string]: unknown;
     };
     required: string[];
-    allOf: any[];
+    allOf: unknown[];
 }
 
 export class ToolListService implements IToolListService {
@@ -33,7 +33,7 @@ export class ToolListService implements IToolListService {
             
             for (const agent of agents.values()) {
                 const agentSchema = this.buildAgentSchema(agent);
-                this.mergeModeSchemasIntoAgent(agent, agentSchema);
+                this.mergeToolSchemasIntoAgent(agent, agentSchema);
 
                 // Use agent name directly - vault context is already provided by IPC connection
                 // No need to add vault suffix which causes parsing issues with vault names containing underscores
@@ -88,47 +88,50 @@ export class ToolListService implements IToolListService {
         return {
             type: 'object',
             properties: {
-                mode: {
+                tool: {
                     type: 'string',
                     enum: [] as string[],
-                    description: 'The operation mode for this agent'
+                    description: 'The tool to execute on this agent'
                 },
                 sessionId: {
                     type: 'string',
                     description: 'Session identifier to track related tool calls'
                 }
             },
-            required: ['mode', 'sessionId'],
+            required: ['tool', 'sessionId'],
             allOf: []
         };
     }
 
-    mergeModeSchemasIntoAgent(agent: IAgent, agentSchema: AgentSchema): any {
-        const agentModes = agent.getModes();
-        
-        for (const mode of agentModes) {
-            agentSchema.properties.mode.enum.push(mode.slug);
-            
+    mergeToolSchemasIntoAgent(agent: IAgent, agentSchema: AgentSchema): AgentSchema {
+        const agentTools = agent.getTools();
+
+        for (const tool of agentTools) {
+            agentSchema.properties.tool.enum.push(tool.slug);
+
             try {
-                const modeSchema = mode.getParameterSchema();
-                
-                if (modeSchema && typeof modeSchema === 'object') {
-                    const modeSchemaCopy = JSON.parse(JSON.stringify(modeSchema));
-                    
-                    if (modeSchemaCopy.properties && modeSchemaCopy.properties.mode) {
-                        delete modeSchemaCopy.properties.mode;
+                const toolSchema = tool.getParameterSchema();
+
+                if (toolSchema && typeof toolSchema === 'object') {
+                    const toolSchemaCopy = JSON.parse(JSON.stringify(toolSchema)) as Record<string, unknown>;
+
+                    if (toolSchemaCopy.properties && typeof toolSchemaCopy.properties === 'object') {
+                        const props = toolSchemaCopy.properties as Record<string, unknown>;
+                        if (props.tool) {
+                            delete props.tool;
+                        }
                     }
-                    
-                    if (modeSchemaCopy.required && modeSchemaCopy.required.length > 0) {
-                        const conditionalRequired = modeSchemaCopy.required.filter(
-                            (prop: string) => prop !== 'mode' && prop !== 'sessionId'
+
+                    if (toolSchemaCopy.required && Array.isArray(toolSchemaCopy.required) && toolSchemaCopy.required.length > 0) {
+                        const conditionalRequired = (toolSchemaCopy.required as string[]).filter(
+                            (prop: string) => prop !== 'tool' && prop !== 'sessionId'
                         );
-                        
+
                         if (conditionalRequired.length > 0) {
                             agentSchema.allOf.push({
                                 if: {
                                     properties: {
-                                        mode: { enum: [mode.slug] }
+                                        tool: { enum: [tool.slug] }
                                     }
                                 },
                                 then: {
@@ -137,36 +140,44 @@ export class ToolListService implements IToolListService {
                             });
                         }
                     }
-                    
-                    if (modeSchemaCopy.properties) {
-                        for (const [propName, propSchema] of Object.entries(modeSchemaCopy.properties)) {
-                            if (propName !== 'mode' && propName !== 'sessionId') {
+
+                    if (toolSchemaCopy.properties && typeof toolSchemaCopy.properties === 'object') {
+                        const props = toolSchemaCopy.properties as Record<string, unknown>;
+                        for (const [propName, propSchema] of Object.entries(props)) {
+                            if (propName !== 'tool' && propName !== 'sessionId') {
                                 agentSchema.properties[propName] = propSchema;
                             }
                         }
                     }
-                    
+
                     ['allOf', 'anyOf', 'oneOf', 'not'].forEach(validationType => {
-                        if (modeSchemaCopy[validationType]) {
+                        if (toolSchemaCopy[validationType]) {
                             agentSchema.allOf.push({
                                 if: {
                                     properties: {
-                                        mode: { enum: [mode.slug] }
+                                        tool: { enum: [tool.slug] }
                                     }
                                 },
                                 then: {
-                                    [validationType]: modeSchemaCopy[validationType]
+                                    [validationType]: toolSchemaCopy[validationType]
                                 }
                             });
                         }
                     });
                 }
             } catch (error) {
-                logger.systemError(error as Error, `Error processing schema for mode ${mode.slug}`);
+                logger.systemError(error as Error, `Error processing schema for tool ${tool.slug}`);
             }
         }
-        
+
         return agentSchema;
+    }
+
+    /**
+     * @deprecated Use mergeToolSchemasIntoAgent instead
+     */
+    mergeModeSchemasIntoAgent(agent: IAgent, agentSchema: AgentSchema): AgentSchema {
+        return this.mergeToolSchemasIntoAgent(agent, agentSchema);
     }
 
     setSchemaEnhancementService(service: ISchemaEnhancementService): void {

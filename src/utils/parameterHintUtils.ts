@@ -5,30 +5,35 @@ import { getErrorMessage } from './errorUtils';
 import { ValidationError } from './validationUtils';
 
 /**
- * Parameter hint for a specific mode parameter
+ * Parameter hint for a specific tool parameter
  */
 export interface ParameterHint {
     name: string;
     description: string;
     type: string;
     required: boolean;
-    defaultValue?: any;
+    defaultValue?: unknown;
     constraints?: string;
-    example?: any;
+    example?: unknown;
 }
 
 /**
- * Contextual help for a specific mode
+ * Contextual help for a specific tool
  */
-export interface ModeHelp {
-    modeName: string;
+export interface ToolHelp {
+    toolName: string;
     description: string;
     parameters: ParameterHint[];
     examples?: {
         description: string;
-        parameters: Record<string, any>;
+        parameters: Record<string, unknown>;
     }[];
 }
+
+/**
+ * @deprecated Use ToolHelp instead
+ */
+export type ModeHelp = ToolHelp;
 
 /**
  * Generate structured parameter hints from a JSON schema
@@ -84,22 +89,22 @@ export function generateStructuredHints(schema: any): ParameterHint[] {
 }
 
 /**
- * Generate structured mode help from a mode's schema and metadata
- * 
- * @param modeName Name of the mode
- * @param description Description of the mode
- * @param schema JSON schema for the mode parameters
- * @param examples Optional examples of mode usage
- * @returns Structured help object for the mode
+ * Generate structured tool help from a tool's schema and metadata
+ *
+ * @param toolName Name of the tool
+ * @param description Description of the tool
+ * @param schema JSON schema for the tool parameters
+ * @param examples Optional examples of tool usage
+ * @returns Structured help object for the tool
  */
-export function generateModeHelp(
-    modeName: string, 
-    description: string, 
-    schema: any,
-    examples?: { description: string; parameters: Record<string, any> }[]
-): ModeHelp {
+export function generateToolHelp(
+    toolName: string,
+    description: string,
+    schema: Record<string, unknown>,
+    examples?: { description: string; parameters: Record<string, unknown> }[]
+): ToolHelp {
     return {
-        modeName,
+        toolName,
         description,
         parameters: generateStructuredHints(schema),
         examples
@@ -107,42 +112,61 @@ export function generateModeHelp(
 }
 
 /**
- * Format mode help into a user-friendly string
- * 
- * @param help Structured mode help object
+ * @deprecated Use generateToolHelp instead
+ */
+export function generateModeHelp(
+    modeName: string,
+    description: string,
+    schema: Record<string, unknown>,
+    examples?: { description: string; parameters: Record<string, unknown> }[]
+): ToolHelp {
+    return generateToolHelp(modeName, description, schema, examples);
+}
+
+/**
+ * Format tool help into a user-friendly string
+ *
+ * @param help Structured tool help object
  * @returns Formatted help string
  */
-export function formatModeHelp(help: ModeHelp): string {
-    let output = `## ${help.modeName}\n\n${help.description}\n\n### Parameters:\n\n`;
-    
+export function formatToolHelp(help: ToolHelp): string {
+    let output = `## ${help.toolName}\n\n${help.description}\n\n### Parameters:\n\n`;
+
     for (const param of help.parameters) {
         output += `**${param.name}**${param.required ? ' (Required)' : ' (Optional)'}: ${param.description}\n`;
         output += `- Type: ${param.type}\n`;
-        
+
         if (param.defaultValue !== undefined) {
             output += `- Default: ${JSON.stringify(param.defaultValue)}\n`;
         }
-        
+
         if (param.constraints) {
             output += `- Constraints: ${param.constraints}\n`;
         }
-        
+
         if (param.example !== undefined) {
             output += `- Example: ${JSON.stringify(param.example)}\n`;
         }
-        
+
         output += '\n';
     }
-    
+
     if (help.examples && help.examples.length > 0) {
         output += `### Examples:\n\n`;
-        
+
         for (const example of help.examples) {
             output += `#### ${example.description}\n\`\`\`json\n${JSON.stringify(example.parameters, null, 2)}\n\`\`\`\n\n`;
         }
     }
-    
+
     return output;
+}
+
+/**
+ * @deprecated Use formatToolHelp instead
+ */
+export function formatModeHelp(help: ToolHelp): string {
+    return formatToolHelp(help);
 }
 
 /**

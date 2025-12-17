@@ -46,7 +46,10 @@ export class StreamingController {
     if (messageElement) {
       const contentElement = messageElement.querySelector('.message-bubble .message-content');
       if (contentElement) {
-        contentElement.innerHTML = '<span class="ai-loading">Thinking<span class="dots">...</span></span>';
+        contentElement.empty();
+        const loadingSpan = contentElement.createEl('span', { cls: 'ai-loading' });
+        loadingSpan.appendText('Thinking');
+        loadingSpan.createEl('span', { cls: 'dots', text: '...' });
         this.startLoadingAnimation(contentElement);
       }
     }

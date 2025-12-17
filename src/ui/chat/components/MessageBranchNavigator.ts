@@ -36,7 +36,6 @@ export class MessageBranchNavigator {
   private createBranchNavigator(): void {
     this.container.addClass('message-branch-navigator');
 
-    // Previous alternative button
     this.prevButton = this.container.createEl('button', {
       cls: 'message-action-btn message-branch-prev clickable-icon',
       attr: {
@@ -44,13 +43,12 @@ export class MessageBranchNavigator {
         'title': 'Go to previous alternative response'
       }
     });
-    this.prevButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15,18 9,12 15,6"></polyline></svg>`;
+    setIcon(this.prevButton, 'chevron-left');
 
     // Branch indicator (shows current/total like "2/4")
     this.branchIndicator = this.container.createDiv('message-branch-indicator');
     this.branchIndicator.textContent = '1/1';
 
-    // Next alternative button
     this.nextButton = this.container.createEl('button', {
       cls: 'message-action-btn message-branch-next clickable-icon',
       attr: {
@@ -58,7 +56,7 @@ export class MessageBranchNavigator {
         'title': 'Go to next alternative response'
       }
     });
-    this.nextButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9,18 15,12 9,6"></polyline></svg>`;
+    setIcon(this.nextButton, 'chevron-right');
 
     // Event listeners
     const prevHandler = () => this.handlePreviousAlternative();

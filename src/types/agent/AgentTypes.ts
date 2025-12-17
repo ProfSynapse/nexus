@@ -1,18 +1,23 @@
 /**
  * Location: src/types/agent/AgentTypes.ts
- * 
+ *
  * Type definitions for agent-related interfaces and data structures.
  * Used throughout the agent system for type safety and consistency.
  */
 
 /**
- * Interface for agent-mode tool call parameters
+ * Interface for agent tool call parameters
  */
-export interface AgentModeParams {
+export interface AgentToolParams {
     agent: string;
-    mode: string;
-    params: Record<string, any>;
+    tool: string;
+    params: Record<string, unknown>;
 }
+
+/**
+ * @deprecated Use AgentToolParams instead
+ */
+export type AgentModeParams = AgentToolParams;
 
 /**
  * Agent registration status information

@@ -2,11 +2,11 @@ import { App, Plugin } from 'obsidian';
 import { BaseAgent } from '../baseAgent';
 import { VaultLibrarianConfig } from '../../config/agents';
 import {
-  SearchContentMode,
-  SearchDirectoryMode,
-  SearchMemoryMode,
-  BatchMode
-} from './modes';
+  SearchContentTool,
+  SearchDirectoryTool,
+  SearchMemoryTool,
+  BatchTool
+} from './tools';
 import { MemorySettings, DEFAULT_MEMORY_SETTINGS } from '../../types';
 import { MemoryService } from "../memoryManager/services/MemoryService";
 import { WorkspaceService } from '../../services/WorkspaceService';
@@ -39,13 +39,13 @@ export class VaultLibrarianAgent extends BaseAgent {
   private workspaceService: WorkspaceService | null = null;
   private storageAdapter: IStorageAdapter | null = null;
   private embeddingService: EmbeddingService | null = null;
-  private searchContentMode: SearchContentMode | null = null;
+  private searchContentTool: SearchContentTool | null = null;
   private settings: MemorySettings;
   
   /**
    * Create a new VaultLibrarianAgent
    * @param app Obsidian app instance
-   * @param enableVectorModes Whether to enable vector-based modes (legacy parameter)
+   * @param enableVectorModes Whether to enable vector-based tools (legacy parameter)
    * @param memoryService Optional injected memory service
    * @param workspaceService Optional injected workspace service
    */
@@ -106,7 +106,7 @@ export class VaultLibrarianAgent extends BaseAgent {
       }
     }
     
-    // Get plugin reference for modes that need it
+    // Get plugin reference for tools that need it
     let pluginRef: Plugin | null = null;
     try {
       if (app.plugins) {
@@ -117,33 +117,33 @@ export class VaultLibrarianAgent extends BaseAgent {
     }
 
     // Create minimal plugin fallback if plugin not found
-    // Modes accept Plugin interface which only requires app property
+    // Tools accept Plugin interface which only requires app property
     const pluginOrFallback: Plugin = pluginRef || this.createMinimalPlugin(app);
 
-    // Register ContentSearchMode (fuzzy + keyword + semantic search)
-    this.searchContentMode = new SearchContentMode(pluginOrFallback);
+    // Register ContentSearchTool (fuzzy + keyword + semantic search)
+    this.searchContentTool = new SearchContentTool(pluginOrFallback);
     // Wire up EmbeddingService for semantic search if available
     if (this.embeddingService) {
-      this.searchContentMode.setEmbeddingService(this.embeddingService);
+      this.searchContentTool.setEmbeddingService(this.embeddingService);
     }
-    this.registerMode(this.searchContentMode);
+    this.registerTool(this.searchContentTool);
 
-    // Register focused search modes with enhanced validation and service integration
-    this.registerMode(new SearchDirectoryMode(
+    // Register focused search tools with enhanced validation and service integration
+    this.registerTool(new SearchDirectoryTool(
       pluginOrFallback,
       this.workspaceService || undefined
     ));
 
 
-    this.registerMode(new SearchMemoryMode(
+    this.registerTool(new SearchMemoryTool(
       pluginOrFallback,
       this.memoryService || undefined,
       this.workspaceService || undefined,
       this.storageAdapter || undefined  // SQLite storage adapter for memory trace search
     ));
 
-    // Always register BatchMode (supports both semantic and non-semantic users)
-    this.registerMode(new BatchMode(
+    // Always register BatchTool (supports both semantic and non-semantic users)
+    this.registerTool(new BatchTool(
       pluginOrFallback,
       this.memoryService || undefined,
       this.workspaceService || undefined,
@@ -155,16 +155,16 @@ export class VaultLibrarianAgent extends BaseAgent {
   
   
   /**
-   * Create a minimal Plugin interface for modes when actual plugin is unavailable
+   * Create a minimal Plugin interface for tools when actual plugin is unavailable
    * This satisfies the Plugin interface requirements with stub implementations
    *
    * Uses 'as unknown as Plugin' because we're creating a stub object that only implements
-   * the subset of Plugin methods actually used by the modes (primarily app property).
+   * the subset of Plugin methods actually used by the tools (primarily app property).
    * The Plugin class is abstract and cannot be instantiated directly.
    */
   private createMinimalPlugin(app: App): Plugin {
-    // Create a minimal object that satisfies what modes actually use from Plugin
-    // Modes primarily access plugin.app, so we provide that and stub the rest
+    // Create a minimal object that satisfies what tools actually use from Plugin
+    // Tools primarily access plugin.app, so we provide that and stub the rest
     return {
       app,
       manifest: {

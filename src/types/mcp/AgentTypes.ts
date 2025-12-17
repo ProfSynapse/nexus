@@ -1,55 +1,60 @@
 /**
- * MCP Agent and Mode-related Types
+ * MCP Agent and Tool-related Types
  * Extracted from types.ts for better organization
  */
 
 import { WorkspaceContext } from '../../utils/contextUtils';
 
 /**
- * Mode call definition for chaining to another agent/mode
+ * Tool call definition for chaining to another agent/tool
  */
-export interface ModeCall {
+export interface ToolCall {
   /**
-   * Agent name to execute mode on
+   * Agent name to execute tool on
+   */
+  agent: string;
+
+  /**
+   * Tool to execute
    */
   tool: string;
-  
+
   /**
-   * Mode to execute
-   */
-  mode: string;
-  
-  /**
-   * Parameters to pass to the mode
+   * Parameters to pass to the tool
    */
   parameters: any;
-  
+
   /**
    * Whether to return results to original agent
    */
   returnHere?: boolean;
-  
+
   /**
-   * Whether this mode should be executed regardless of previous mode failures
+   * Whether this tool should be executed regardless of previous tool failures
    * Default is false - execution stops on first failure
    */
   continueOnFailure?: boolean;
-  
+
   /**
-   * Mode execution strategy
-   * - serial: wait for previous modes to complete before executing (default)
-   * - parallel: execute in parallel with other modes marked as parallel
+   * Tool execution strategy
+   * - serial: wait for previous tools to complete before executing (default)
+   * - parallel: execute in parallel with other tools marked as parallel
    */
   strategy?: 'serial' | 'parallel';
-  
+
   /**
-   * Optional name to identify this mode call in the results
+   * Optional name to identify this tool call in the results
    */
   callName?: string;
 }
 
 /**
- * Common parameters structure for standardized agent modes
+ * @deprecated Use ToolCall instead
+ */
+export type ModeCall = ToolCall;
+
+/**
+ * Common parameters structure for standardized agent tools
  * Provides session tracking and workspace context
  */
 export interface CommonParameters {
@@ -115,41 +120,46 @@ export interface CommonResult {
 }
 
 /**
- * Mode call result for tracking execution outcomes
+ * Tool call result for tracking execution outcomes
  */
-export interface ModeCallResult extends CommonResult {
+export interface ToolCallResult extends CommonResult {
   /**
-   * Agent name that executed the mode
+   * Agent name that executed the tool
+   */
+  agent?: string;
+
+  /**
+   * Tool that was executed
    */
   tool?: string;
-  
+
   /**
-   * Mode that was executed
-   */
-  mode?: string;
-  
-  /**
-   * Name of the mode call if specified
+   * Name of the tool call if specified
    */
   callName?: string;
-  
+
   /**
-   * Sequence number of this mode call
+   * Sequence number of this tool call
    */
   sequence?: number;
-  
+
   /**
-   * Timestamp when the mode call started
+   * Timestamp when the tool call started
    */
   startTime?: number;
-  
+
   /**
-   * Timestamp when the mode call completed
+   * Timestamp when the tool call completed
    */
   endTime?: number;
-  
+
   /**
-   * Duration of the mode call in milliseconds
+   * Duration of the tool call in milliseconds
    */
   duration?: number;
 }
+
+/**
+ * @deprecated Use ToolCallResult instead
+ */
+export type ModeCallResult = ToolCallResult;

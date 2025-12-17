@@ -119,22 +119,22 @@ export class AgentRegistry {
         agentInfo: Array<{
             name: string;
             description: string;
-            modeCount: number;
+            toolCount: number;
         }>;
     } {
         const agentInfo = Array.from(this.agents.values()).map(agent => {
             try {
-                const modes = agent.getModes();
+                const tools = agent.getTools();
                 return {
                     name: agent.name,
                     description: agent.description,
-                    modeCount: modes.length
+                    toolCount: tools.length
                 };
             } catch (error) {
                 return {
                     name: agent.name,
                     description: agent.description,
-                    modeCount: 0
+                    toolCount: 0
                 };
             }
         });
@@ -161,64 +161,94 @@ export class AgentRegistry {
     }
 
     /**
-     * Get agent mode help
+     * Get agent tool help
      */
-    getAgentModeHelp(agentName: string, modeName: string): string {
+    getAgentToolHelp(agentName: string, toolName: string): string {
         const agent = this.validateAndGetAgent(agentName);
-        const mode = agent.getMode(modeName);
+        const tool = agent.getTool(toolName);
 
-        if (!mode) {
+        if (!tool) {
             throw new NexusError(
                 NexusErrorCode.InvalidParams,
-                `Mode ${modeName} not found in agent ${agentName}`
+                `Tool ${toolName} not found in agent ${agentName}`
             );
         }
 
-        const modeWithHelp = mode as { getHelpText?: () => string };
-        return modeWithHelp.getHelpText?.() || `Help for ${agentName}.${modeName}`;
+        const toolWithHelp = tool as { getHelpText?: () => string };
+        return toolWithHelp.getHelpText?.() || `Help for ${agentName}.${toolName}`;
     }
 
     /**
-     * Check if agent supports a specific mode
+     * @deprecated Use getAgentToolHelp instead
      */
-    agentSupportsMode(agentName: string, modeName: string): boolean {
+    getAgentModeHelp(agentName: string, modeName: string): string {
+        return this.getAgentToolHelp(agentName, modeName);
+    }
+
+    /**
+     * Check if agent supports a specific tool
+     */
+    agentSupportsTool(agentName: string, toolName: string): boolean {
         try {
             const agent = this.getAgent(agentName);
-            return agent.getMode(modeName) !== null;
+            return agent.getTool(toolName) !== undefined;
         } catch (error) {
             return false;
         }
     }
 
     /**
-     * Get all available modes across all agents
+     * @deprecated Use agentSupportsTool instead
+     */
+    agentSupportsMode(agentName: string, modeName: string): boolean {
+        return this.agentSupportsTool(agentName, modeName);
+    }
+
+    /**
+     * Get all available tools across all agents
+     */
+    getAllAvailableTools(): Array<{
+        agentName: string;
+        toolName: string;
+        description: string;
+    }> {
+        const allTools: Array<{
+            agentName: string;
+            toolName: string;
+            description: string;
+        }> = [];
+
+        for (const [agentName, agent] of this.agents) {
+            try {
+                const tools = agent.getTools();
+                for (const tool of tools) {
+                    allTools.push({
+                        agentName,
+                        toolName: tool.name,
+                        description: tool.description
+                    });
+                }
+            } catch (error) {
+                logger.systemError(error as Error, `Tool Enumeration: ${agentName}`);
+            }
+        }
+
+        return allTools;
+    }
+
+    /**
+     * @deprecated Use getAllAvailableTools instead
      */
     getAllAvailableModes(): Array<{
         agentName: string;
         modeName: string;
         description: string;
     }> {
-        const allModes: Array<{
-            agentName: string;
-            modeName: string;
-            description: string;
-        }> = [];
-
-        for (const [agentName, agent] of this.agents) {
-            try {
-                const modes = agent.getModes();
-                for (const mode of modes) {
-                    allModes.push({
-                        agentName,
-                        modeName: mode.name,
-                        description: mode.description
-                    });
-                }
-            } catch (error) {
-                logger.systemError(error as Error, `Mode Enumeration: ${agentName}`);
-            }
-        }
-
-        return allModes;
+        // Convert tool names to mode names for backward compatibility
+        return this.getAllAvailableTools().map(t => ({
+            agentName: t.agentName,
+            modeName: t.toolName,
+            description: t.description
+        }));
     }
 }

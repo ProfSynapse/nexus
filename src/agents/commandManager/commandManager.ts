@@ -2,9 +2,9 @@ import { App } from 'obsidian';
 import { BaseAgent } from '../baseAgent';
 import { CommandManagerConfig } from '../../config/agents';
 import {
-  ListCommandsMode,
-  ExecuteCommandMode
-} from './modes';
+  ListCommandsTool,
+  ExecuteCommandTool
+} from './tools';
 import { isAgentHidden } from '../../config/toolVisibility';
 
 /**
@@ -29,10 +29,10 @@ export class CommandManagerAgent extends BaseAgent {
 
     this.app = app;
 
-    // Register modes only if agent is not hidden
+    // Register tools only if agent is not hidden
     if (!isAgentHidden('commandManager')) {
-      this.registerMode(new ListCommandsMode(app));
-      this.registerMode(new ExecuteCommandMode(app, this));
+      this.registerTool(new ListCommandsTool(app));
+      this.registerTool(new ExecuteCommandTool(app, this));
     }
   }
   

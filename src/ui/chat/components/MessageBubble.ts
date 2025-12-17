@@ -143,7 +143,8 @@ export class MessageBubble extends Component {
     // Add loading state in header if AI message is loading with empty content
     if (this.message.role === 'assistant' && this.message.isLoading && !this.message.content.trim()) {
       const loadingSpan = header.createEl('span', { cls: 'ai-loading-header' });
-      loadingSpan.innerHTML = 'Thinking<span class="dots">...</span>';
+      loadingSpan.appendText('Thinking');
+      loadingSpan.createEl('span', { cls: 'dots', text: '...' });
       this.startLoadingAnimation(loadingSpan);
     }
 
@@ -368,7 +369,9 @@ export class MessageBubble extends Component {
 
     if (newMessage.isLoading && newMessage.role === 'assistant') {
       const loadingDiv = contentElement.createDiv('ai-loading-continuation');
-      loadingDiv.innerHTML = '<span class="ai-loading">Thinking<span class="dots">...</span></span>';
+      const loadingSpan = loadingDiv.createEl('span', { cls: 'ai-loading' });
+      loadingSpan.appendText('Thinking');
+      loadingSpan.createEl('span', { cls: 'dots', text: '...' });
       this.startLoadingAnimation(loadingDiv);
     }
   }
@@ -629,15 +632,13 @@ export class MessageBubble extends Component {
    * Show visual feedback when copy button is clicked
    */
   private showCopyFeedback(button: HTMLElement): void {
-    const originalIcon = button.innerHTML;
     const originalTitle = button.getAttribute('title') || '';
-
     setIcon(button, 'check');
     button.setAttribute('title', 'Copied!');
     button.classList.add('copy-success');
 
     setTimeout(() => {
-      button.innerHTML = originalIcon;
+      setIcon(button, 'copy');
       button.setAttribute('title', originalTitle);
       button.classList.remove('copy-success');
     }, 1500);

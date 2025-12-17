@@ -83,16 +83,19 @@ export class ChatLayoutBuilder {
 
     const content = overlay.createDiv('nexus-loading-content');
 
-    // Animated spinner
+    // Animated spinner - using createSvg for safe SVG creation
     const spinner = content.createDiv('nexus-loading-spinner');
-    spinner.innerHTML = `
-      <svg viewBox="0 0 50 50" class="nexus-spinner">
-        <circle cx="25" cy="25" r="20" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round">
-          <animate attributeName="stroke-dasharray" values="1,150;90,150;90,150" dur="1.5s" repeatCount="indefinite"/>
-          <animate attributeName="stroke-dashoffset" values="0;-35;-125" dur="1.5s" repeatCount="indefinite"/>
-        </circle>
-      </svg>
-    `;
+    const svg = spinner.createSvg('svg', { attr: { viewBox: '0 0 50 50', class: 'nexus-spinner' } });
+    const circle = svg.createSvg('circle', {
+      attr: { cx: '25', cy: '25', r: '20', fill: 'none', stroke: 'currentColor', 'stroke-width': '4', 'stroke-linecap': 'round' }
+    });
+    // Add animations via DOM
+    const animate1 = circle.createSvg('animate', {
+      attr: { attributeName: 'stroke-dasharray', values: '1,150;90,150;90,150', dur: '1.5s', repeatCount: 'indefinite' }
+    });
+    const animate2 = circle.createSvg('animate', {
+      attr: { attributeName: 'stroke-dashoffset', values: '0;-35;-125', dur: '1.5s', repeatCount: 'indefinite' }
+    });
 
     // Status text
     const statusText = content.createDiv('nexus-loading-status');
@@ -118,12 +121,14 @@ export class ChatLayoutBuilder {
    */
   private static createWarningBanner(container: HTMLElement): void {
     const warningBanner = container.createDiv('chat-experimental-warning');
-    warningBanner.innerHTML = `
-      <span class="warning-icon">⚠️</span>
-      <span class="warning-text">Experimental Feature: Nexus Chat is in beta.</span>
-      <a href="https://github.com/ProfSynapse/nexus/issues" target="_blank" rel="noopener noreferrer" class="warning-link">Report issues</a>
-      <span class="warning-text">• Use at your own risk</span>
-    `;
+
+    warningBanner.createEl('span', { cls: 'warning-icon', text: '⚠️' });
+    warningBanner.createEl('span', { cls: 'warning-text', text: 'Experimental Feature: Nexus Chat is in beta.' });
+    const link = warningBanner.createEl('a', { cls: 'warning-link', text: 'Report issues' });
+    link.href = 'https://github.com/ProfSynapse/nexus/issues';
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    warningBanner.createEl('span', { cls: 'warning-text', text: '• Use at your own risk' });
 
     // Auto-hide warning after 5 seconds
     setTimeout(() => {
@@ -145,9 +150,8 @@ export class ChatLayoutBuilder {
   } {
     const chatHeader = container.createDiv('chat-header');
 
-    // Left: Hamburger button
     const hamburgerButton = chatHeader.createEl('button', { cls: 'chat-hamburger-button' });
-    hamburgerButton.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="18" y2="18"/></svg>';
+    setIcon(hamburgerButton, 'menu');
     hamburgerButton.setAttribute('aria-label', 'Toggle conversations');
 
     // Center: Title

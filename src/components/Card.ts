@@ -3,10 +3,10 @@
  * Matches the existing Custom Agent card styling and behavior
  */
 
-import { ToggleComponent, Component } from 'obsidian';
+import { ToggleComponent, Component, setIcon } from 'obsidian';
 
 export interface CardAction {
-  icon: string; // SVG icon as string
+  icon: string; // Obsidian icon name (e.g., 'edit', 'trash') - uses setIcon
   label: string; // aria-label for accessibility
   onClick: () => void;
 }
@@ -59,36 +59,33 @@ export class Card {
         });
     }
     
-    // Edit button (if provided)
     if (this.config.onEdit) {
       const editBtn = actionsEl.createEl('button', {
         cls: 'clickable-icon agent-management-edit-btn',
         attr: { 'aria-label': 'Edit' }
       });
-      editBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-edit"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="m18.5 2.5 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>`;
+      setIcon(editBtn, 'edit');
       const editHandler = () => this.config.onEdit!();
       this.component!.registerDomEvent(editBtn, 'click', editHandler);
     }
 
-    // Delete button (if provided)
     if (this.config.onDelete) {
       const deleteBtn = actionsEl.createEl('button', {
         cls: 'clickable-icon agent-management-delete-btn',
         attr: { 'aria-label': 'Delete' }
       });
-      deleteBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trash"><polyline points="3,6 5,6 21,6"></polyline><path d="m19,6v14a2,2 0 0,1 -2,2H7a2,2 0 0,1 -2,-2V6m3,0V4a2,2 0 0,1 2,-2h4a2,2 0 0,1 2,2v2"></path></svg>`;
+      setIcon(deleteBtn, 'trash');
       const deleteHandler = () => this.config.onDelete!();
       this.component!.registerDomEvent(deleteBtn, 'click', deleteHandler);
     }
 
-    // Additional actions (if provided)
     if (this.config.additionalActions) {
       this.config.additionalActions.forEach(action => {
         const actionBtn = actionsEl.createEl('button', {
           cls: 'clickable-icon agent-management-action-btn',
           attr: { 'aria-label': action.label }
         });
-        actionBtn.innerHTML = action.icon;
+        setIcon(actionBtn, action.icon);
         this.component!.registerDomEvent(actionBtn, 'click', action.onClick);
       });
     }

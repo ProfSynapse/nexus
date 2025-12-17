@@ -132,21 +132,23 @@ export class LMStudioProviderModal implements IProviderModal {
     if (!this.modelsContainer) return;
     this.modelsContainer.empty();
 
+    const descDiv = this.modelsContainer.createDiv('setting-item-description');
+
     if (this.discoveredModels.length > 0) {
-      this.modelsContainer.innerHTML = `
-        <div class="setting-item-description">
-          <p><strong>Discovered Models (${this.discoveredModels.length}):</strong></p>
-          <ul style="margin: 0.5em 0; padding-left: 1.5em;">
-            ${this.discoveredModels.map(m => `<li><code>${m}</code></li>`).join('')}
-          </ul>
-        </div>
-      `;
+      const titleP = descDiv.createEl('p');
+      titleP.createEl('strong', { text: `Discovered Models (${this.discoveredModels.length}):` });
+
+      const ul = descDiv.createEl('ul');
+      ul.style.margin = '0.5em 0';
+      ul.style.paddingLeft = '1.5em';
+
+      this.discoveredModels.forEach(model => {
+        const li = ul.createEl('li');
+        li.createEl('code', { text: model });
+      });
     } else {
-      this.modelsContainer.innerHTML = `
-        <div class="setting-item-description">
-          <p><em>No models discovered yet. Click "Discover Models" to scan the server.</em></p>
-        </div>
-      `;
+      const p = descDiv.createEl('p');
+      p.createEl('em', { text: 'No models discovered yet. Click "Discover Models" to scan the server.' });
     }
   }
 
@@ -155,20 +157,26 @@ export class LMStudioProviderModal implements IProviderModal {
    */
   private renderHelpSection(container: HTMLElement): void {
     const helpDiv = container.createDiv('setting-item');
-    helpDiv.createDiv('setting-item-description').innerHTML = `
-      <details>
-        <summary style="cursor: pointer; font-weight: 500;">Setup Help</summary>
-        <div style="margin-top: 0.5em; padding-left: 1em;">
-          <p><strong>To configure LM Studio:</strong></p>
-          <ol style="margin: 0.5em 0;">
-            <li>Open LM Studio and load your desired model(s)</li>
-            <li>Start the local server (usually on port 1234)</li>
-            <li>Click "Discover Models" to fetch available models</li>
-            <li>The first discovered model will be used by default</li>
-          </ol>
-        </div>
-      </details>
-    `;
+    const descDiv = helpDiv.createDiv('setting-item-description');
+
+    const details = descDiv.createEl('details');
+    const summary = details.createEl('summary', { text: 'Setup Help' });
+    summary.style.cursor = 'pointer';
+    summary.style.fontWeight = '500';
+
+    const contentDiv = details.createDiv();
+    contentDiv.style.marginTop = '0.5em';
+    contentDiv.style.paddingLeft = '1em';
+
+    const titleP = contentDiv.createEl('p');
+    titleP.createEl('strong', { text: 'To configure LM Studio:' });
+
+    const ol = contentDiv.createEl('ol');
+    ol.style.margin = '0.5em 0';
+    ol.createEl('li', { text: 'Open LM Studio and load your desired model(s)' });
+    ol.createEl('li', { text: 'Start the local server (usually on port 1234)' });
+    ol.createEl('li', { text: 'Click "Discover Models" to fetch available models' });
+    ol.createEl('li', { text: 'The first discovered model will be used by default' });
   }
 
   /**

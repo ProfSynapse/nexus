@@ -2,16 +2,16 @@ import { App } from 'obsidian';
 import { BaseAgent } from '../baseAgent';
 import { ContentManagerConfig } from '../../config/agents';
 import {
-  ReadContentMode,
-  CreateContentMode,
-  AppendContentMode,
-  PrependContentMode,
-  ReplaceContentMode,
-  ReplaceByLineMode,
-  DeleteContentMode,
-  FindReplaceContentMode,
-  BatchContentMode
-} from './modes';
+  ReadContentTool,
+  CreateContentTool,
+  AppendContentTool,
+  PrependContentTool,
+  ReplaceContentTool,
+  ReplaceByLineTool,
+  DeleteContentTool,
+  FindReplaceContentTool,
+  BatchContentTool
+} from './tools';
 // import { AgentManager } from '../../services/AgentManager';
 import NexusPlugin from '../../main';
 import { WorkspaceService } from '../../services/WorkspaceService';
@@ -63,16 +63,16 @@ export class ContentManagerAgent extends BaseAgent {
       this.workspaceService = plugin.services.workspaceService;
     }
     
-    // Register modes with access to memory services
-    this.registerMode(new ReadContentMode(app, this.memoryService));
-    this.registerMode(new CreateContentMode(app));
-    this.registerMode(new AppendContentMode(app));
-    this.registerMode(new PrependContentMode(app));
-    this.registerMode(new ReplaceContentMode(app));
-    this.registerMode(new ReplaceByLineMode(app));
-    this.registerMode(new DeleteContentMode(app));
-    this.registerMode(new FindReplaceContentMode(app));
-    this.registerMode(new BatchContentMode(app, this.memoryService));
+    // Register tools with access to memory services
+    this.registerTool(new ReadContentTool(app, this.memoryService));
+    this.registerTool(new CreateContentTool(app));
+    this.registerTool(new AppendContentTool(app));
+    this.registerTool(new PrependContentTool(app));
+    this.registerTool(new ReplaceContentTool(app));
+    this.registerTool(new ReplaceByLineTool(app));
+    this.registerTool(new DeleteContentTool(app));
+    this.registerTool(new FindReplaceContentTool(app));
+    this.registerTool(new BatchContentTool(app, this.memoryService));
   }
   
   

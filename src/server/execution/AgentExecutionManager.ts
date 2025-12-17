@@ -8,7 +8,7 @@ import { SessionContextManager, WorkspaceContext } from '../../services/SessionC
 import { NexusError, NexusErrorCode } from '../../utils/errors';
 import { logger } from '../../utils/logger';
 import { getErrorMessage } from '../../utils/errorUtils';
-import { generateModeHelp, formatModeHelp } from '../../utils/parameterHintUtils';
+import { generateToolHelp, formatToolHelp } from '../../utils/parameterHintUtils';
 
 /**
  * Service responsible for agent execution and session management
@@ -21,9 +21,9 @@ export class AgentExecutionManager {
     ) {}
 
     /**
-     * Execute a mode on an agent
+     * Execute a tool on an agent
      */
-    async executeAgentMode(agentName: string, mode: string, params: any): Promise<any> {
+    async executeAgentTool(agentName: string, tool: string, params: Record<string, unknown>): Promise<unknown> {
         try {
             // Get the agent
             const agent = this.agentRegistry.validateAndGetAgent(agentName);
@@ -31,8 +31,8 @@ export class AgentExecutionManager {
             // Process session context
             const processedParams = await this.processSessionContext(params);
 
-            // Execute the mode
-            const result = await agent.executeMode(mode, processedParams);
+            // Execute the tool
+            const result = await agent.executeTool(tool, processedParams);
 
             // Update session context with result
             await this.updateSessionContext(processedParams, result);
@@ -45,58 +45,72 @@ export class AgentExecutionManager {
             }
             throw new NexusError(
                 NexusErrorCode.InternalError,
-                `Failed to execute agent ${agentName} in mode ${mode}`,
+                `Failed to execute agent ${agentName} tool ${tool}`,
                 error
             );
         }
     }
 
     /**
-     * Get detailed help for a specific mode
+     * @deprecated Use executeAgentTool instead
      */
-    getModeHelp(agentName: string, modeName: string): string {
+    async executeAgentMode(agentName: string, mode: string, params: Record<string, unknown>): Promise<unknown> {
+        return this.executeAgentTool(agentName, mode, params);
+    }
+
+    /**
+     * Get detailed help for a specific tool
+     */
+    getToolHelp(agentName: string, toolName: string): string {
         try {
             // Get the agent
             const agent = this.agentRegistry.validateAndGetAgent(agentName);
 
-            // Get the mode
-            const mode = agent.getMode(modeName);
+            // Get the tool
+            const tool = agent.getTool(toolName);
 
-            if (!mode) {
+            if (!tool) {
                 throw new NexusError(
                     NexusErrorCode.InvalidParams,
-                    `Mode ${modeName} not found in agent ${agentName}`
+                    `Tool ${toolName} not found in agent ${agentName}`
                 );
             }
 
-            // Get the mode's parameter schema
-            const schema = mode.getParameterSchema();
+            // Get the tool's parameter schema
+            const schema = tool.getParameterSchema();
 
-            // Generate mode help
-            const help = generateModeHelp(
-                modeName,
-                mode.description,
+            // Generate tool help
+            const help = generateToolHelp(
+                toolName,
+                tool.description,
                 schema
             );
 
             // Format and return the help
-            return formatModeHelp(help);
+            return formatToolHelp(help);
         } catch (error) {
             if (error instanceof NexusError) {
                 throw error;
             }
             throw new NexusError(
                 NexusErrorCode.InternalError,
-                `Failed to get help for agent ${agentName} mode ${modeName}`,
+                `Failed to get help for agent ${agentName} tool ${toolName}`,
                 error
             );
         }
     }
 
     /**
+     * @deprecated Use getToolHelp instead
+     */
+    getModeHelp(agentName: string, modeName: string): string {
+        return this.getToolHelp(agentName, modeName);
+    }
+
+    /**
      * Process session context for parameters
      */
-    private async processSessionContext(params: any): Promise<any> {
+    private async processSessionContext(params: Record<string, unknown>): Promise<Record<string, unknown>> {
         if (!this.sessionContextManager || !params.sessionId) {
             return params;
         }
@@ -126,7 +140,7 @@ export class AgentExecutionManager {
     /**
      * Update session context with execution result
      */
-    private async updateSessionContext(params: any, result: any): Promise<void> {
+    private async updateSessionContext(params: Record<string, unknown>, result: Record<string, unknown>): Promise<void> {
         if (!this.sessionContextManager || !params.sessionId || !result.workspaceContext) {
             return;
         }
@@ -141,7 +155,7 @@ export class AgentExecutionManager {
     /**
      * Add session instructions to result if needed
      */
-    private addSessionInstructions(params: any, result: any): any {
+    private addSessionInstructions(params: Record<string, unknown>, result: Record<string, unknown>): Record<string, unknown> {
         if (!this.sessionContextManager) {
             return result;
         }
@@ -177,7 +191,7 @@ export class AgentExecutionManager {
     /**
      * Add auto-generated session info if needed
      */
-    private addAutoGeneratedSessionInfo(params: any, result: any): any {
+    private addAutoGeneratedSessionInfo(params: Record<string, unknown>, result: Record<string, unknown>): Record<string, unknown> {
         if (!params._autoGeneratedSessionId || !result || params._originalSessionId) {
             return result;
         }
@@ -197,21 +211,21 @@ export class AgentExecutionManager {
      */
     getExecutionStatistics(): {
         totalAgents: number;
-        totalModes: number;
-        availableModes: Array<{
+        totalTools: number;
+        availableTools: Array<{
             agentName: string;
-            modeName: string;
+            toolName: string;
             description: string;
         }>;
         hasSessionManager: boolean;
     } {
         const agentStats = this.agentRegistry.getAgentStatistics();
-        const availableModes = this.agentRegistry.getAllAvailableModes();
+        const availableTools = this.agentRegistry.getAllAvailableTools();
 
         return {
             totalAgents: agentStats.totalAgents,
-            totalModes: availableModes.length,
-            availableModes,
+            totalTools: availableTools.length,
+            availableTools,
             hasSessionManager: !!this.sessionContextManager
         };
     }
@@ -219,7 +233,7 @@ export class AgentExecutionManager {
     /**
      * Validate execution parameters
      */
-    validateExecutionParameters(agentName: string, mode: string, params: any): {
+    validateExecutionParameters(agentName: string, tool: string, params: Record<string, unknown> | null | undefined): {
         isValid: boolean;
         errors: string[];
         warnings: string[];
@@ -234,11 +248,11 @@ export class AgentExecutionManager {
             errors.push(`Agent ${agentName} not found`);
         }
 
-        // Validate mode
-        if (!mode || typeof mode !== 'string') {
-            errors.push('Mode must be a non-empty string');
-        } else if (agentName && !this.agentRegistry.agentSupportsMode(agentName, mode)) {
-            errors.push(`Agent ${agentName} does not support mode ${mode}`);
+        // Validate tool
+        if (!tool || typeof tool !== 'string') {
+            errors.push('Tool must be a non-empty string');
+        } else if (agentName && !this.agentRegistry.agentSupportsTool(agentName, tool)) {
+            errors.push(`Agent ${agentName} does not support tool ${tool}`);
         }
 
         // Validate params
@@ -261,12 +275,12 @@ export class AgentExecutionManager {
     }
 
     /**
-     * Execute agent mode with validation
+     * Execute agent tool with validation
      */
-    async executeAgentModeWithValidation(agentName: string, mode: string, params: any): Promise<any> {
+    async executeAgentToolWithValidation(agentName: string, tool: string, params: Record<string, unknown>): Promise<unknown> {
         // Validate parameters
-        const validation = this.validateExecutionParameters(agentName, mode, params);
-        
+        const validation = this.validateExecutionParameters(agentName, tool, params);
+
         if (!validation.isValid) {
             throw new NexusError(
                 NexusErrorCode.InvalidParams,
@@ -280,24 +294,38 @@ export class AgentExecutionManager {
         });
 
         // Execute with validation passed
-        return await this.executeAgentMode(agentName, mode, params);
+        return await this.executeAgentTool(agentName, tool, params);
     }
 
     /**
-     * Get agent mode schema
+     * @deprecated Use executeAgentToolWithValidation instead
      */
-    getAgentModeSchema(agentName: string, modeName: string): any {
-        const agent = this.agentRegistry.validateAndGetAgent(agentName);
-        const mode = agent.getMode(modeName);
+    async executeAgentModeWithValidation(agentName: string, mode: string, params: Record<string, unknown>): Promise<unknown> {
+        return this.executeAgentToolWithValidation(agentName, mode, params);
+    }
 
-        if (!mode) {
+    /**
+     * Get agent tool schema
+     */
+    getAgentToolSchema(agentName: string, toolName: string): Record<string, unknown> {
+        const agent = this.agentRegistry.validateAndGetAgent(agentName);
+        const tool = agent.getTool(toolName);
+
+        if (!tool) {
             throw new NexusError(
                 NexusErrorCode.InvalidParams,
-                `Mode ${modeName} not found in agent ${agentName}`
+                `Tool ${toolName} not found in agent ${agentName}`
             );
         }
 
-        return mode.getParameterSchema();
+        return tool.getParameterSchema();
+    }
+
+    /**
+     * @deprecated Use getAgentToolSchema instead
+     */
+    getAgentModeSchema(agentName: string, modeName: string): Record<string, unknown> {
+        return this.getAgentToolSchema(agentName, modeName);
     }
 
     /**

@@ -1,9 +1,9 @@
 /**
  * Location: /src/config/agents.ts
- * 
- * Unified configuration registry for all MCP agents. This file consolidates individual 
+ *
+ * Unified configuration registry for all MCP agents. This file consolidates individual
  * agent configs into a single source of truth with type safety and centralized management.
- * 
+ *
  * Used by: All agent implementations, MCP connector, agent registration, and agent discovery
  */
 
@@ -20,7 +20,7 @@ export const AGENT_CATEGORIES = {
 } as const;
 
 /**
- * Comprehensive agent registry with metadata, modes, and categorization
+ * Comprehensive agent registry with metadata, tools, and categorization
  */
 export const AGENT_REGISTRY = {
   /**
@@ -28,13 +28,13 @@ export const AGENT_REGISTRY = {
    */
   contentManager: {
     name: 'contentManager',
-    displayName: 'Content Manager', 
+    displayName: 'Content Manager',
     description: 'Content operations for Obsidian notes',
     version: '1.0.0',
     category: AGENT_CATEGORIES.CONTENT_OPERATIONS,
-    modes: [
+    tools: [
       'readContent',
-      'createContent', 
+      'createContent',
       'appendContent',
       'prependContent',
       'replaceContent',
@@ -53,13 +53,13 @@ export const AGENT_REGISTRY = {
   vaultManager: {
     name: 'vaultManager',
     displayName: 'Vault Manager',
-    description: 'File system operations for Obsidian vault', 
+    description: 'File system operations for Obsidian vault',
     version: '1.0.0',
     category: AGENT_CATEGORIES.FILE_SYSTEM,
-    modes: [
+    tools: [
       'listDirectory',
       'createFolder',
-      'editFolder', 
+      'editFolder',
       'deleteFolder',
       'deleteNote',
       'moveNote',
@@ -78,9 +78,9 @@ export const AGENT_REGISTRY = {
     name: 'vaultLibrarian',
     displayName: 'Vault Librarian',
     description: 'Search operations for Obsidian vault',
-    version: '1.0.0', 
+    version: '1.0.0',
     category: AGENT_CATEGORIES.SEARCH_RETRIEVAL,
-    modes: [
+    tools: [
       'search',
       'searchDirectory',
       'searchWorkspace',
@@ -100,20 +100,20 @@ export const AGENT_REGISTRY = {
     description: 'Manages workspaces, memory sessions, and states for contextual recall',
     version: '1.2.0',
     category: AGENT_CATEGORIES.MEMORY_MANAGEMENT,
-    modes: [
-      // Session modes
+    tools: [
+      // Session tools
       'createSession',
       'listSessions',
       'editSession',
-      'deleteSession', 
+      'deleteSession',
       'loadSession',
-      // State modes
+      // State tools
       'createState',
       'listStates',
       'loadState',
       'editState',
       'deleteState',
-      // Workspace modes
+      // Workspace tools
       'addFilesToWorkspace',
       'createWorkspace',
       'deleteWorkspace',
@@ -131,11 +131,11 @@ export const AGENT_REGISTRY = {
    */
   agentManager: {
     name: 'agentManager',
-    displayName: 'Agent Manager', 
+    displayName: 'Agent Manager',
     description: 'Manage custom prompt agents for personalized AI interactions',
     version: '1.0.0',
     category: AGENT_CATEGORIES.LLM_INTEGRATION,
-    modes: [
+    tools: [
       // Prompt management
       'listPrompts',
       'getPrompt',
@@ -161,7 +161,7 @@ export const AGENT_REGISTRY = {
     description: 'Command palette operations for Obsidian',
     version: '1.0.0',
     category: AGENT_CATEGORIES.SYSTEM_COMMANDS,
-    modes: [
+    tools: [
       'listCommands',
       'executeCommand'
     ] as const,
@@ -178,9 +178,9 @@ export type AgentName = keyof typeof AGENT_REGISTRY;
 export type AgentConfig = typeof AGENT_REGISTRY[AgentName];
 
 /**
- * Type for agent mode references 
+ * Type for agent tool references
  */
-export type AgentModes<T extends AgentName> = typeof AGENT_REGISTRY[T]['modes'][number];
+export type AgentTools<T extends AgentName> = typeof AGENT_REGISTRY[T]['tools'][number];
 
 /**
  * Utility functions for agent registry operations
@@ -208,30 +208,30 @@ export class AgentRegistryUtils {
   }
 
   /**
-   * Check if an agent supports a specific mode
+   * Check if an agent supports a specific tool
    */
-  static hasMode(agentName: AgentName, mode: string): boolean {
-    return (AGENT_REGISTRY[agentName].modes as readonly string[]).includes(mode);
+  static hasTool(agentName: AgentName, tool: string): boolean {
+    return (AGENT_REGISTRY[agentName].tools as readonly string[]).includes(tool);
   }
 
   /**
    * Get agents that support a specific capability
    */
   static getAgentsByCapability(capability: string): AgentConfig[] {
-    return Object.values(AGENT_REGISTRY).filter(agent => 
+    return Object.values(AGENT_REGISTRY).filter(agent =>
       agent.capabilities.includes(capability)
     );
   }
 
 
   /**
-   * Validate agent and mode combination
+   * Validate agent and tool combination
    */
-  static validateAgentMode(agentName: string, mode: string): boolean {
+  static validateAgentTool(agentName: string, tool: string): boolean {
     if (!(agentName in AGENT_REGISTRY)) {
       return false;
     }
-    return this.hasMode(agentName as AgentName, mode);
+    return this.hasTool(agentName as AgentName, tool);
   }
 
   /**
@@ -243,7 +243,7 @@ export class AgentRegistryUtils {
     description: string;
     version: string;
     category: string;
-    modeCount: number;
+    toolCount: number;
     capabilities: string[];
   } {
     const agent = AGENT_REGISTRY[name];
@@ -253,7 +253,7 @@ export class AgentRegistryUtils {
       description: agent.description,
       version: agent.version,
       category: agent.category,
-      modeCount: agent.modes.length,
+      toolCount: agent.tools.length,
       capabilities: agent.capabilities
     };
   }

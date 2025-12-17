@@ -16,12 +16,12 @@ import { AgentRegistrationService, AgentRegistrationServiceInterface } from './s
 import { ToolCallTraceService } from './services/trace/ToolCallTraceService';
 
 // Type definitions
-import { AgentModeParams } from './types/agent/AgentTypes';
+import { AgentToolParams } from './types/agent/AgentTypes';
 import { VaultLibrarianAgent } from './agents';
 import { MemoryManagerAgent } from './agents';
 import { AGENTS } from './config/agentConfigs';
 import { IAgent } from './agents/interfaces/IAgent';
-import { IMode } from './agents/interfaces/IMode';
+import { ITool } from './agents/interfaces/ITool';
 
 /**
  * Type guard to check if a plugin is a NexusPlugin instance

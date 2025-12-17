@@ -1,17 +1,17 @@
 import { App, TFile, TFolder } from 'obsidian';
 import { BaseAgent } from '../baseAgent';
 import { VaultManagerConfig } from '../../config/agents';
-import { 
-  ListDirectoryMode, 
-  CreateFolderMode, 
-  EditFolderMode,
-  DeleteFolderMode,
-  DeleteNoteMode,
-  MoveFolderMode,
-  DuplicateNoteMode,
-  OpenNoteMode
-} from './modes';
-import { MoveNoteMode } from './modes/moveNoteMode';
+import {
+  ListDirectoryTool,
+  CreateFolderTool,
+  EditFolderTool,
+  DeleteFolderTool,
+  DeleteNoteTool,
+  MoveFolderTool,
+  DuplicateNoteTool,
+  OpenNoteTool
+} from './tools';
+import { MoveNoteTool } from './tools/moveNoteTool';
 import { sanitizeVaultName } from '../../utils/vaultUtils';
 
 /**
@@ -32,20 +32,20 @@ export class VaultManagerAgent extends BaseAgent {
       VaultManagerConfig.description,
       VaultManagerConfig.version
     );
-    
+
     this.app = app;
     this.vaultName = sanitizeVaultName(app.vault.getName());
-    
-    // Register modes
-    this.registerMode(new ListDirectoryMode(app));
-    this.registerMode(new CreateFolderMode(app));
-    this.registerMode(new EditFolderMode(app));
-    this.registerMode(new DeleteFolderMode(app));
-    this.registerMode(new DeleteNoteMode(app));
-    this.registerMode(new MoveNoteMode(app));
-    this.registerMode(new MoveFolderMode(app));
-    this.registerMode(new DuplicateNoteMode(app));
-    this.registerMode(new OpenNoteMode(app));
+
+    // Register tools
+    this.registerTool(new ListDirectoryTool(app));
+    this.registerTool(new CreateFolderTool(app));
+    this.registerTool(new EditFolderTool(app));
+    this.registerTool(new DeleteFolderTool(app));
+    this.registerTool(new DeleteNoteTool(app));
+    this.registerTool(new MoveNoteTool(app));
+    this.registerTool(new MoveFolderTool(app));
+    this.registerTool(new DuplicateNoteTool(app));
+    this.registerTool(new OpenNoteTool(app));
   }
 
   /**
@@ -53,12 +53,12 @@ export class VaultManagerAgent extends BaseAgent {
    */
   get description(): string {
     const baseDescription = VaultManagerConfig.description;
-    
+
     // Prevent infinite recursion
     if (this.isGettingDescription) {
       return `[${this.vaultName}] ${baseDescription}`;
     }
-    
+
     this.isGettingDescription = true;
     try {
       const vaultContext = this.getVaultStructureSummary();
@@ -77,7 +77,7 @@ export class VaultManagerAgent extends BaseAgent {
     try {
       const markdownFiles = this.app.vault.getMarkdownFiles();
       const rootFolder = this.app.vault.getRoot();
-      
+
       // Get root folders (folders directly in vault root)
       const rootFolders = rootFolder.children
         .filter(child => child instanceof TFolder)
@@ -88,14 +88,14 @@ export class VaultManagerAgent extends BaseAgent {
       const folderStructure: string[] = [];
 
       for (const folderName of rootFolders) {
-        const filesInFolder = markdownFiles.filter(file => 
+        const filesInFolder = markdownFiles.filter(file =>
           file.path.startsWith(folderName + '/')
         ).length;
         folderStructure.push(`   └── ${folderName}/ (${filesInFolder} files)`);
       }
 
       // Count files in root
-      const rootFiles = markdownFiles.filter(file => 
+      const rootFiles = markdownFiles.filter(file =>
         !file.path.includes('/')
       ).length;
 

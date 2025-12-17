@@ -1,13 +1,13 @@
 /**
  * Location: /src/utils/validation/ValidationResultHelper.ts
- * Purpose: Centralized result creation patterns to ensure consistency across all modes
- * 
+ * Purpose: Centralized result creation patterns to ensure consistency across all tools
+ *
  * This utility provides standardized methods for creating error and success results,
  * ensuring consistent error handling, context extraction, and response formatting
- * across all agents and modes.
- * 
- * Used by: All BaseMode implementations for standardized result creation
- * Integrates with: BaseMode, CommonParameters, CommonResult, contextUtils
+ * across all agents and tools.
+ *
+ * Used by: All BaseTool implementations for standardized result creation
+ * Integrates with: BaseTool, CommonParameters, CommonResult, contextUtils
  */
 
 import { CommonParameters, CommonResult } from '../../types/mcp/AgentTypes';
@@ -16,10 +16,10 @@ import { getErrorMessage } from '../errorUtils';
 import { createResult } from '../schemaUtils';
 
 /**
- * Type for BaseMode interface without direct import to avoid file casing conflicts
- * Exported for use by BaseMode and other classes that need to match this interface
+ * Type for BaseTool interface without direct import to avoid file casing conflicts
+ * Exported for use by BaseTool and other classes that need to match this interface
  */
-export interface ModeInterface {
+export interface ToolInterface {
   slug: string;
   name: string;
   description: string;
@@ -152,28 +152,28 @@ interface ContextExtractionResult {
 export class ValidationResultHelper {
   /**
    * Create standardized error result with automatic context handling
-   * 
-   * This method provides consistent error formatting across all modes, ensuring
+   *
+   * This method provides consistent error formatting across all tools, ensuring
    * proper session tracking, workspace context handling, and error message formatting.
-   * 
-   * @param mode The mode instance creating the result
+   *
+   * @param tool The tool instance creating the result
    * @param error Error string, Error object, or array of ValidationErrors
    * @param params Original parameters (for context extraction)
    * @param additionalContext Additional context to include in result
    * @returns Standardized error result
    */
   static createErrorResult<TResult extends CommonResult>(
-    mode: ModeInterface,
+    tool: ToolInterface,
     error: string | Error | ValidationError[],
     params?: CommonParameters,
     additionalContext?: Record<string, any>
   ): TResult {
     const startTime = performance.now();
-    
+
     try {
       // Extract context information
-      const contextResult = this.extractAndValidateContext(params, mode);
-      
+      const contextResult = this.extractAndValidateContext(params, tool);
+
       // Format error message
       let errorMessage: string;
       let errorCode: string = 'VALIDATION_ERROR';
@@ -207,13 +207,13 @@ export class ValidationResultHelper {
       
       // Track error creation performance
       this.trackPerformance(
-        mode.constructor.name,
+        tool.constructor.name,
         'error-result-creation',
         startTime,
         false,
         { errorCode, hasValidationErrors: Array.isArray(error) }
       );
-      
+
       // Create standardized result - don't echo back context fields the LLM already knows
       return createResult<TResult>(
         false,
@@ -226,14 +226,14 @@ export class ValidationResultHelper {
           errorCode,
           errorDetails,
           timestamp: Date.now(),
-          mode: mode.name,
+          tool: tool.name,
           ...additionalContext
         }
       );
-      
+
     } catch (resultError) {
       // Fallback error creation if the main process fails
-      console.error(`Error creating error result in ${mode.constructor.name}:`, resultError);
+      console.error(`Error creating error result in ${tool.constructor.name}:`, resultError);
       
       return createResult<TResult>(
         false,
@@ -249,37 +249,37 @@ export class ValidationResultHelper {
   
   /**
    * Create standardized success result with context propagation
-   * 
+   *
    * Ensures consistent success result formatting with proper context handling
-   * and session tracking across all modes.
-   * 
-   * @param mode The mode instance creating the result
+   * and session tracking across all tools.
+   *
+   * @param tool The tool instance creating the result
    * @param data Result data to include
    * @param params Original parameters (for context extraction)
    * @param additionalData Additional properties to include in result
    * @returns Standardized success result
    */
   static createSuccessResult<TResult extends CommonResult>(
-    mode: ModeInterface,
+    tool: ToolInterface,
     data: any,
     params?: CommonParameters,
     additionalData?: Record<string, any>
   ): TResult {
     const startTime = performance.now();
-    
+
     try {
       // Extract context information
-      const contextResult = this.extractAndValidateContext(params, mode);
-      
+      const contextResult = this.extractAndValidateContext(params, tool);
+
       // Track success result creation performance
       this.trackPerformance(
-        mode.constructor.name,
+        tool.constructor.name,
         'success-result-creation',
         startTime,
         true,
         { hasData: !!data, dataType: typeof data }
       );
-      
+
       // Create standardized result - don't echo back context fields the LLM already knows
       return createResult<TResult>(
         true,
@@ -290,17 +290,17 @@ export class ValidationResultHelper {
         undefined,
         {
           timestamp: Date.now(),
-          mode: mode.name,
+          tool: tool.name,
           ...additionalData
         }
       );
-      
+
     } catch (resultError) {
-      console.error(`Error creating success result in ${mode.constructor.name}:`, resultError);
-      
+      console.error(`Error creating success result in ${tool.constructor.name}:`, resultError);
+
       // Fallback to error result if success result creation fails
       return this.createErrorResult(
-        mode,
+        tool,
         `Error creating success result: ${getErrorMessage(resultError)}`,
         params
       );
@@ -333,17 +333,17 @@ export class ValidationResultHelper {
   
   /**
    * Extract and validate session context from parameters
-   * 
+   *
    * Handles the complex logic of extracting session IDs, workspace context,
    * and contextual information from parameters with proper fallbacks.
-   * 
+   *
    * @param params Parameters to extract context from
-   * @param mode Mode instance for context inheritance
+   * @param tool Tool instance for context inheritance
    * @returns Extracted context information
    */
   private static extractAndValidateContext(
     params?: CommonParameters,
-    mode?: ModeInterface
+    tool?: ToolInterface
   ): ContextExtractionResult {
     const result: ContextExtractionResult = {};
     
@@ -397,14 +397,14 @@ export class ValidationResultHelper {
    *
    * Integrates with existing CompatibilityMonitor system when available
    *
-   * @param modeName Name of the mode performing validation
+   * @param toolName Name of the tool performing validation
    * @param operation Type of operation being tracked
    * @param startTime Start time of the operation
    * @param success Whether the operation succeeded
    * @param metadata Additional metadata to track
    */
   private static trackPerformance(
-    modeName: string,
+    toolName: string,
     operation: string,
     startTime: number,
     success: boolean,
@@ -417,7 +417,7 @@ export class ValidationResultHelper {
     const global = globalThis as GlobalWithMonitor;
     if (global.CompatibilityMonitor) {
       global.CompatibilityMonitor.trackValidation(
-        `ValidationResultHelper_${modeName}`,
+        `ValidationResultHelper_${toolName}`,
         operation,
         startTime,
         performance.now(),
@@ -427,7 +427,7 @@ export class ValidationResultHelper {
 
     // Additional performance logging for debugging
     if (duration > 10) { // Log slow operations (>10ms)
-      console.debug(`ValidationResultHelper: ${operation} in ${modeName} took ${duration.toFixed(2)}ms`, {
+      console.debug(`ValidationResultHelper: ${operation} in ${toolName} took ${duration.toFixed(2)}ms`, {
         success,
         metadata
       });

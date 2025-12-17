@@ -1,14 +1,14 @@
 import { IAgent } from './interfaces/IAgent';
-import { IMode } from './interfaces/IMode';
+import { ITool } from './interfaces/ITool';
 import { CommonParameters, CommonResult } from '../types';
 import { parseWorkspaceContext } from '../utils/contextUtils';
 import { createErrorMessage } from '../utils/errorUtils';
 
 /**
- * Extended mode interface that includes optional BaseMode methods
+ * Extended tool interface that includes optional BaseTool methods
  * Used for type-safe access to workspace context propagation methods
  */
-interface IModeWithContext extends IMode {
+interface IToolWithContext extends ITool {
   sessionId?: string;
   setParentContext?(context: CommonResult['workspaceContext']): void;
   getInheritedWorkspaceContext?(params: CommonParameters): CommonResult['workspaceContext'] | null;
@@ -22,8 +22,8 @@ export abstract class BaseAgent implements IAgent {
   name: string;
   protected _description: string;
   version: string;
-  protected modes: Map<string, IMode> = new Map();
-  
+  protected tools: Map<string, ITool> = new Map();
+
   // Reference to agent manager
   protected agentManager?: {
     getAgent(agentName: string): IAgent | undefined;
@@ -58,45 +58,45 @@ export abstract class BaseAgent implements IAgent {
   }
   
   /**
-   * Get all modes provided by this agent
-   * @returns Array of modes
+   * Get all tools provided by this agent
+   * @returns Array of tools
    */
-  getModes(): IMode[] {
-    return Array.from(this.modes.values());
-  }
-  
-  /**
-   * Get a specific mode by slug
-   * @param modeSlug Slug of the mode to get
-   * @returns Mode with the specified slug or undefined if not found
-   */
-  getMode(modeSlug: string): IMode | undefined {
-    return this.modes.get(modeSlug);
-  }
-  
-  /**
-   * Register a mode with this agent
-   * @param mode Mode to register
-   */
-  registerMode(mode: IMode): void {
-    this.modes.set(mode.slug, mode);
+  getTools(): ITool[] {
+    return Array.from(this.tools.values());
   }
 
   /**
-   * Unregister a mode from this agent
-   * @param modeSlug Slug of the mode to unregister
-   * @returns true if mode was removed, false if it didn't exist
+   * Get a specific tool by slug
+   * @param toolSlug Slug of the tool to get
+   * @returns Tool with the specified slug or undefined if not found
    */
-  unregisterMode(modeSlug: string): boolean {
-    return this.modes.delete(modeSlug);
+  getTool(toolSlug: string): ITool | undefined {
+    return this.tools.get(toolSlug);
   }
 
   /**
-   * Check if a mode is registered
-   * @param modeSlug Slug of the mode to check
+   * Register a tool with this agent
+   * @param tool Tool to register
    */
-  hasMode(modeSlug: string): boolean {
-    return this.modes.has(modeSlug);
+  registerTool(tool: ITool): void {
+    this.tools.set(tool.slug, tool);
+  }
+
+  /**
+   * Unregister a tool from this agent
+   * @param toolSlug Slug of the tool to unregister
+   * @returns true if tool was removed, false if it didn't exist
+   */
+  unregisterTool(toolSlug: string): boolean {
+    return this.tools.delete(toolSlug);
+  }
+
+  /**
+   * Check if a tool is registered
+   * @param toolSlug Slug of the tool to check
+   */
+  hasTool(toolSlug: string): boolean {
+    return this.tools.has(toolSlug);
   }
   
   /**
@@ -109,17 +109,17 @@ export abstract class BaseAgent implements IAgent {
   }
   
   /**
-   * Execute a mode by slug
-   * @param modeSlug Slug of the mode to execute
-   * @param params Parameters to pass to the mode
-   * @returns Promise that resolves with the mode's result
-   * @throws Error if mode not found
+   * Execute a tool by slug
+   * @param toolSlug Slug of the tool to execute
+   * @param params Parameters to pass to the tool
+   * @returns Promise that resolves with the tool's result
+   * @throws Error if tool not found
    */
-  async executeMode(modeSlug: string, params: CommonParameters): Promise<CommonResult> {
-    const mode = this.modes.get(modeSlug);
-    if (!mode) {
+  async executeTool(toolSlug: string, params: CommonParameters): Promise<CommonResult> {
+    const tool = this.tools.get(toolSlug);
+    if (!tool) {
       // Build helpful error with suggestions
-      const errorInfo = this.buildModeNotFoundError(modeSlug);
+      const errorInfo = this.buildToolNotFoundError(toolSlug);
       throw new Error(errorInfo);
     }
 
@@ -129,40 +129,40 @@ export abstract class BaseAgent implements IAgent {
       return {
         success: false,
         error: createErrorMessage('Session ID required: ',
-          `Mode ${modeSlug} requires context.sessionId. Provide a 2-4 word session name or existing session ID in the context block.`),
+          `Tool ${toolSlug} requires context.sessionId. Provide a 2-4 word session name or existing session ID in the context block.`),
         data: null
       };
     }
 
     // sessionDescription is optional but recommended for better session management
     if (!params.context?.sessionDescription) {
-      console.warn(`[${this.name}] context.sessionDescription not provided for ${modeSlug}. Consider providing a brief description for better session tracking.`);
+      console.warn(`[${this.name}] context.sessionDescription not provided for ${toolSlug}. Consider providing a brief description for better session tracking.`);
     }
 
     // Cast to extended interface for type-safe access to optional methods
-    const modeWithContext = mode as IModeWithContext;
+    const toolWithContext = tool as IToolWithContext;
 
-    // Store the sessionId on the mode instance for use in prepareResult
-    if ('sessionId' in modeWithContext) {
-      modeWithContext.sessionId = params.context.sessionId;
+    // Store the sessionId on the tool instance for use in prepareResult
+    if ('sessionId' in toolWithContext) {
+      toolWithContext.sessionId = params.context.sessionId;
     }
 
-    // If the mode has setParentContext method, use it to propagate workspace context
-    // Pass the workspace context even if undefined, as the mode's setParentContext
+    // If the tool has setParentContext method, use it to propagate workspace context
+    // Pass the workspace context even if undefined, as the tool's setParentContext
     // method can handle the default context inheritance logic
-    if (typeof modeWithContext.setParentContext === 'function') {
+    if (typeof toolWithContext.setParentContext === 'function') {
       // Parse workspace context if it's a string, to ensure it's a proper WorkspaceContext object
       const parsedContext = typeof params.workspaceContext === 'string'
         ? parseWorkspaceContext(params.workspaceContext) ?? undefined
         : params.workspaceContext;
-      modeWithContext.setParentContext(parsedContext);
+      toolWithContext.setParentContext(parsedContext);
     }
 
-    // If the mode supports getInheritedWorkspaceContext and there's no explicit workspace context,
+    // If the tool supports getInheritedWorkspaceContext and there's no explicit workspace context,
     // try to retrieve the inherited context and apply it to the params
-    if (typeof modeWithContext.getInheritedWorkspaceContext === 'function' &&
+    if (typeof toolWithContext.getInheritedWorkspaceContext === 'function' &&
         (!params.workspaceContext || !parseWorkspaceContext(params.workspaceContext)?.workspaceId)) {
-      const inheritedContext = modeWithContext.getInheritedWorkspaceContext(params);
+      const inheritedContext = toolWithContext.getInheritedWorkspaceContext(params);
       if (inheritedContext) {
         params = {
           ...params,
@@ -171,8 +171,8 @@ export abstract class BaseAgent implements IAgent {
       }
     }
 
-    // Execute the requested mode
-    const result = await mode.execute(params);
+    // Execute the requested tool
+    const result = await tool.execute(params);
 
     return result;
   }
@@ -187,65 +187,65 @@ export abstract class BaseAgent implements IAgent {
   }
 
   /**
-   * Build a helpful error message when a mode is not found
-   * Checks if the mode exists on other agents and suggests the correct one
+   * Build a helpful error message when a tool is not found
+   * Checks if the tool exists on other agents and suggests the correct one
    */
-  private buildModeNotFoundError(modeSlug: string): string {
+  private buildToolNotFoundError(toolSlug: string): string {
     const lines: string[] = [];
 
-    // Check if this mode exists on another agent
+    // Check if this tool exists on another agent
     if (this.agentManager) {
-      const correctAgent = this.findModeInOtherAgents(modeSlug);
+      const correctAgent = this.findToolInOtherAgents(toolSlug);
       if (correctAgent) {
-        lines.push(`Mode "${modeSlug}" not found in "${this.name}".`);
-        lines.push(`💡 Did you mean: ${correctAgent.agentName} with mode: ${correctAgent.modeName}?`);
+        lines.push(`Tool "${toolSlug}" not found in "${this.name}".`);
+        lines.push(`💡 Did you mean: ${correctAgent.agentName} with tool: ${correctAgent.toolName}?`);
         lines.push('');
         lines.push('Correct usage:');
-        lines.push(`  Tool: ${correctAgent.agentName}`);
-        lines.push(`  Arguments: { "mode": "${correctAgent.modeName}", ... }`);
+        lines.push(`  Agent: ${correctAgent.agentName}`);
+        lines.push(`  Arguments: { "tool": "${correctAgent.toolName}", ... }`);
         return lines.join('\n');
       }
     }
 
-    // List available modes on this agent
-    const availableModes = Array.from(this.modes.keys());
-    lines.push(`Mode "${modeSlug}" not found in agent "${this.name}".`);
+    // List available tools on this agent
+    const availableTools = Array.from(this.tools.keys());
+    lines.push(`Tool "${toolSlug}" not found in agent "${this.name}".`);
     lines.push('');
-    lines.push(`Available modes for ${this.name}:`);
-    availableModes.forEach(m => lines.push(`  - ${m}`));
+    lines.push(`Available tools for ${this.name}:`);
+    availableTools.forEach(t => lines.push(`  - ${t}`));
 
     return lines.join('\n');
   }
 
   /**
-   * Search other agents for a mode by slug
-   * Returns the agent name and mode slug if found
+   * Search other agents for a tool by slug
+   * Returns the agent name and tool slug if found
    */
-  private findModeInOtherAgents(modeSlug: string): { agentName: string; modeName: string } | null {
+  private findToolInOtherAgents(toolSlug: string): { agentName: string; toolName: string } | null {
     if (!this.agentManager) return null;
 
-    // Common LLM mistakes - maps FAKE mode names to correct agent/mode
-    // Only include modes that DON'T exist anywhere
-    const modeAliases: Record<string, { agent: string; mode: string }> = {
+    // Common LLM mistakes - maps FAKE tool names to correct agent/tool
+    // Only include tools that DON'T exist anywhere
+    const toolAliases: Record<string, { agent: string; tool: string }> = {
       // LLMs often use "Note" instead of "Content" for content ops
       // Note: deleteNote EXISTS on vaultManager, so not included here
-      'createNote': { agent: 'contentManager', mode: 'createContent' },
-      'readNote': { agent: 'contentManager', mode: 'readContent' },
-      'appendNote': { agent: 'contentManager', mode: 'appendContent' },
-      'writeNote': { agent: 'contentManager', mode: 'createContent' },
-      'editNote': { agent: 'contentManager', mode: 'replaceContent' },
+      'createNote': { agent: 'contentManager', tool: 'createContent' },
+      'readNote': { agent: 'contentManager', tool: 'readContent' },
+      'appendNote': { agent: 'contentManager', tool: 'appendContent' },
+      'writeNote': { agent: 'contentManager', tool: 'createContent' },
+      'editNote': { agent: 'contentManager', tool: 'replaceContent' },
 
       // LLMs might call generic "search" on wrong agent
-      'search': { agent: 'vaultLibrarian', mode: 'searchContent' },
+      'search': { agent: 'vaultLibrarian', tool: 'searchContent' },
     };
 
     // Check aliases first
-    const alias = modeAliases[modeSlug];
+    const alias = toolAliases[toolSlug];
     if (alias && alias.agent !== this.name) {
-      return { agentName: alias.agent, modeName: alias.mode };
+      return { agentName: alias.agent, toolName: alias.tool };
     }
 
-    // Search known agent names for exact mode match
+    // Search known agent names for exact tool match
     const agentNames = ['vaultManager', 'contentManager', 'vaultLibrarian', 'memoryManager', 'commandManager', 'agentManager'];
 
     for (const agentName of agentNames) {
@@ -254,15 +254,15 @@ export abstract class BaseAgent implements IAgent {
       const agent = this.agentManager.getAgent(agentName);
       if (agent) {
         // Exact match
-        const mode = agent.getMode(modeSlug);
-        if (mode) {
-          return { agentName, modeName: mode.slug };
+        const tool = agent.getTool(toolSlug);
+        if (tool) {
+          return { agentName, toolName: tool.slug };
         }
 
         // Case-insensitive match
-        for (const m of agent.getModes()) {
-          if (m.slug.toLowerCase() === modeSlug.toLowerCase()) {
-            return { agentName, modeName: m.slug };
+        for (const t of agent.getTools()) {
+          if (t.slug.toLowerCase() === toolSlug.toLowerCase()) {
+            return { agentName, toolName: t.slug };
           }
         }
       }

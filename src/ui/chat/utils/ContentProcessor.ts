@@ -16,9 +16,8 @@ export class ContentProcessor {
    * Unescape HTML entities
    */
   static unescapeHtml(html: string): string {
-    const div = document.createElement('div');
-    div.innerHTML = html;
-    return div.textContent || div.innerText || '';
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    return doc.body.textContent || '';
   }
 
   /**
@@ -91,9 +90,8 @@ export class ContentProcessor {
    * Extract plain text from HTML content
    */
   static extractPlainText(html: string): string {
-    const div = document.createElement('div');
-    div.innerHTML = html;
-    return div.textContent || div.innerText || '';
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    return doc.body.textContent || '';
   }
 
   /**

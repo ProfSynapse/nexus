@@ -150,20 +150,34 @@ export class OllamaProviderModal implements IProviderModal {
    */
   private renderHelpSection(container: HTMLElement): void {
     const helpDiv = container.createDiv('setting-item');
-    helpDiv.createDiv('setting-item-description').innerHTML = `
-      <details>
-        <summary style="cursor: pointer; font-weight: 500;">Setup Help</summary>
-        <div style="margin-top: 0.5em; padding-left: 1em;">
-          <p><strong>To configure Ollama:</strong></p>
-          <ol style="margin: 0.5em 0;">
-            <li>Install the model: <code>ollama pull [model-name]</code></li>
-            <li>Common models: llama3.1, mistral, codellama, phi3, gemma</li>
-            <li>View installed models: <code>ollama list</code></li>
-            <li>Enter the exact model name above</li>
-          </ol>
-        </div>
-      </details>
-    `;
+    const descDiv = helpDiv.createDiv('setting-item-description');
+
+    const details = descDiv.createEl('details');
+    const summary = details.createEl('summary', { text: 'Setup Help' });
+    summary.style.cursor = 'pointer';
+    summary.style.fontWeight = '500';
+
+    const contentDiv = details.createDiv();
+    contentDiv.style.marginTop = '0.5em';
+    contentDiv.style.paddingLeft = '1em';
+
+    const titleP = contentDiv.createEl('p');
+    titleP.createEl('strong', { text: 'To configure Ollama:' });
+
+    const ol = contentDiv.createEl('ol');
+    ol.style.margin = '0.5em 0';
+
+    const li1 = ol.createEl('li');
+    li1.appendText('Install the model: ');
+    li1.createEl('code', { text: 'ollama pull [model-name]' });
+
+    ol.createEl('li', { text: 'Common models: llama3.1, mistral, codellama, phi3, gemma' });
+
+    const li3 = ol.createEl('li');
+    li3.appendText('View installed models: ');
+    li3.createEl('code', { text: 'ollama list' });
+
+    ol.createEl('li', { text: 'Enter the exact model name above' });
   }
 
   /**

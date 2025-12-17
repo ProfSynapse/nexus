@@ -3,7 +3,7 @@
  * Uses Obsidian-native styling patterns
  */
 
-import { Component } from 'obsidian';
+import { Component, setIcon } from 'obsidian';
 
 export class BackButton {
     private element: HTMLElement;
@@ -18,9 +18,8 @@ export class BackButton {
     constructor(container: HTMLElement, label: string, onClick: () => void, component?: Component) {
         this.element = container.createDiv('nexus-back-button');
 
-        // SVG arrow icon
         const iconSpan = this.element.createSpan({ cls: 'nexus-back-button-icon' });
-        iconSpan.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>`;
+        setIcon(iconSpan, 'chevron-left');
 
         // Label text
         this.element.createSpan({ text: label });
