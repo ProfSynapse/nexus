@@ -113,7 +113,7 @@ export class ListDirectoryTool extends BaseDirectoryTool<ListDirectoryParams, Li
   private resolveIncludeOptions(params: ListDirectoryParams): { includeFiles: boolean; includeFolders: boolean } {
     return {
       includeFiles: params.includeFiles ?? true,
-      includeFolders: params.includeFolders ?? true
+      includeFolders: true // Always include folders - it's listDirectory
     };
   }
 
@@ -201,12 +201,7 @@ export class ListDirectoryTool extends BaseDirectoryTool<ListDirectoryParams, Li
         },
         includeFiles: {
           type: 'boolean',
-          description: 'Whether to include files in the results',
-          default: true
-        },
-        includeFolders: {
-          type: 'boolean',
-          description: 'Whether to include folders in the results',
+          description: 'Include files in results (default: true). Set false for folders only.',
           default: true
         }
       },

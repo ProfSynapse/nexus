@@ -374,14 +374,9 @@ export interface ListDirectoryParams extends CommonParameters {
   depth?: number;
   
   /**
-   * Whether to include files in the results (default: true)
+   * Include files in results (default: true). Set false for folders only.
    */
   includeFiles?: boolean;
-
-  /**
-   * Whether to include folders in the results (default: true)
-   */
-  includeFolders?: boolean;
 }
 
 /**
