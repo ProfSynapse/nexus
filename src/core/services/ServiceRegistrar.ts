@@ -14,7 +14,9 @@ import { DataMigrationService } from '../../services/migration/DataMigrationServ
 import { TraceSchemaMigrationService } from '../../services/migration/TraceSchemaMigrationService';
 import { normalizePath } from 'obsidian';
 import { CORE_SERVICE_DEFINITIONS, ADDITIONAL_SERVICE_FACTORIES } from './ServiceDefinitions';
-import type { ServiceCreationContext } from './ServiceDefinitions';
+import type { ServiceCreationContext, AdditionalServiceFactory } from './ServiceDefinitions';
+import type { VaultOperations } from '../VaultOperations';
+import type { ChatService } from '../../services/chat/ChatService';
 
 export class ServiceRegistrar {
     private context: ServiceCreationContext;
@@ -41,10 +43,39 @@ export class ServiceRegistrar {
      */
     registerAdditionalServices(): void {
         const { serviceManager, plugin, settings, app } = this.context;
-        
+
+        // Early return if no additional service factories defined
+        if (!ADDITIONAL_SERVICE_FACTORIES || ADDITIONAL_SERVICE_FACTORIES.length === 0) {
+            return;
+        }
+
+        // Type guard to ensure service factory has required properties
+        const isValidServiceFactory = (factory: unknown): factory is AdditionalServiceFactory => {
+            if (factory === null || typeof factory !== 'object') {
+                return false;
+            }
+
+            // At this point we know factory is a non-null object
+            const obj = factory as Record<string, unknown>;
+
+            return (
+                'name' in obj &&
+                'dependencies' in obj &&
+                'factory' in obj &&
+                typeof obj.name === 'string' &&
+                Array.isArray(obj.dependencies) &&
+                typeof obj.factory === 'function'
+            );
+        };
+
         for (const serviceFactory of ADDITIONAL_SERVICE_FACTORIES) {
+            if (!isValidServiceFactory(serviceFactory)) {
+                console.warn('[ServiceRegistrar] Skipping invalid service factory:', serviceFactory);
+                continue;
+            }
+
             serviceManager.registerFactory(
-                (serviceFactory as any).name,
+                serviceFactory.name,
                 async (deps) => {
                     // Create enhanced dependency context
                     const enhancedDeps = {
@@ -53,9 +84,9 @@ export class ServiceRegistrar {
                         app,
                         memorySettings: settings.settings.memory || {}
                     };
-                    return (serviceFactory as any).factory(enhancedDeps);
+                    return serviceFactory.factory(enhancedDeps);
                 },
-                { dependencies: (serviceFactory as any).dependencies }
+                { dependencies: serviceFactory.dependencies }
             );
         }
     }
@@ -74,8 +105,8 @@ export class ServiceRegistrar {
         try {
             const { app, plugin, settings, manifest, serviceManager } = this.context;
 
-            // Get vaultOperations service
-            const vaultOperations = await serviceManager.getService('vaultOperations') as any;
+            // Get vaultOperations service with proper typing
+            const vaultOperations = await serviceManager.getService<VaultOperations>('vaultOperations');
 
             // Initialize storage services
             const fileSystem = new FileSystemService(plugin, vaultOperations);
@@ -191,9 +222,10 @@ export class ServiceRegistrar {
      */
     async initializeChatService(): Promise<void> {
         try {
-            const chatService = await this.context.serviceManager.getService('chatService') as any;
+            const chatService = await this.context.serviceManager.getService<ChatService>('chatService');
 
-            if (chatService && typeof chatService.initialize === 'function') {
+            // Type guard to ensure chatService has initialize method
+            if (chatService && 'initialize' in chatService && typeof chatService.initialize === 'function') {
                 await chatService.initialize();
             }
         } catch (error) {

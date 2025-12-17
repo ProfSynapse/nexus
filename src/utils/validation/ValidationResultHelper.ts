@@ -15,8 +15,11 @@ import { extractContextFromParams, WorkspaceContext } from '../contextUtils';
 import { getErrorMessage } from '../errorUtils';
 import { createResult } from '../schemaUtils';
 
-// Type for BaseMode interface without direct import to avoid file casing conflicts
-interface ModeInterface {
+/**
+ * Type for BaseMode interface without direct import to avoid file casing conflicts
+ * Exported for use by BaseMode and other classes that need to match this interface
+ */
+export interface ModeInterface {
   slug: string;
   name: string;
   description: string;
@@ -97,21 +100,41 @@ export interface ValidationMetadata {
    * Time taken to perform validation (milliseconds)
    */
   duration?: number;
-  
+
   /**
    * Number of fields validated
    */
   fieldCount?: number;
-  
+
   /**
    * Whether fallback validation was used
    */
   usedFallback?: boolean;
-  
+
   /**
    * Additional context-specific metadata
    */
   [key: string]: any;
+}
+
+/**
+ * Interface for CompatibilityMonitor if available on globalThis
+ */
+interface CompatibilityMonitor {
+  trackValidation(
+    component: string,
+    operation: string,
+    startTime: number,
+    endTime: number,
+    success: boolean
+  ): void;
+}
+
+/**
+ * Extended globalThis interface with optional CompatibilityMonitor
+ */
+interface GlobalWithMonitor {
+  CompatibilityMonitor?: CompatibilityMonitor;
 }
 
 /**
@@ -333,12 +356,14 @@ export class ValidationResultHelper {
       result.sessionId = params.context.sessionId;
     }
     
-    // Extract workspace context using existing utility
-    if (params.workspaceContext || (mode && typeof (mode as any).getInheritedWorkspaceContext === 'function')) {
+    // Extract workspace context from params if available
+    // Note: We only extract from params here. BaseMode's getInheritedWorkspaceContext
+    // handles inheritance logic internally, but we don't call it directly as it's protected.
+    if (params.workspaceContext) {
       try {
-        const workspaceContext = mode ? (mode as any).getInheritedWorkspaceContext(params) : null;
-        if (workspaceContext) {
-          result.workspaceContext = workspaceContext;
+        // If it's already an object, use it directly; otherwise it might be a string representation
+        if (typeof params.workspaceContext === 'object') {
+          result.workspaceContext = params.workspaceContext;
         }
       } catch (error) {
         console.warn('Error extracting workspace context:', error);
@@ -369,9 +394,9 @@ export class ValidationResultHelper {
   
   /**
    * Track performance metrics for validation operations
-   * 
+   *
    * Integrates with existing CompatibilityMonitor system when available
-   * 
+   *
    * @param modeName Name of the mode performing validation
    * @param operation Type of operation being tracked
    * @param startTime Start time of the operation
@@ -386,10 +411,12 @@ export class ValidationResultHelper {
     metadata?: Record<string, any>
   ): void {
     const duration = performance.now() - startTime;
-    
+
     // Integration with existing CompatibilityMonitor if available
-    if (typeof (globalThis as any).CompatibilityMonitor !== 'undefined') {
-      (globalThis as any).CompatibilityMonitor.trackValidation(
+    // Type-safe access using defined interface
+    const global = globalThis as GlobalWithMonitor;
+    if (global.CompatibilityMonitor) {
+      global.CompatibilityMonitor.trackValidation(
         `ValidationResultHelper_${modeName}`,
         operation,
         startTime,
@@ -397,7 +424,7 @@ export class ValidationResultHelper {
         success
       );
     }
-    
+
     // Additional performance logging for debugging
     if (duration > 10) { // Log slow operations (>10ms)
       console.debug(`ValidationResultHelper: ${operation} in ${modeName} took ${duration.toFixed(2)}ms`, {

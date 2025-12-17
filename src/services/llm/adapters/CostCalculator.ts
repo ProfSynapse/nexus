@@ -14,6 +14,73 @@
 import { ModelRegistry } from './ModelRegistry';
 
 /**
+ * OpenAI tokenize API response
+ */
+interface OpenAITokenizeResponse {
+  token_count?: number;
+}
+
+/**
+ * Google countTokens API response
+ */
+interface GoogleCountTokensResponse {
+  totalTokens?: number;
+}
+
+/**
+ * Anthropic count tokens API response
+ */
+interface AnthropicCountTokensResponse {
+  input_tokens?: number;
+}
+
+/**
+ * OpenAI-style usage object (used by OpenAI, OpenRouter, Requesty)
+ */
+interface OpenAIUsage {
+  input_tokens?: number;
+  prompt_tokens?: number;
+  output_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+  input_tokens_details?: {
+    cachedTokens?: number;
+    audioTokens?: number;
+    textTokens?: number;
+  };
+  output_tokens_details?: {
+    reasoningTokens?: number;
+    audioTokens?: number;
+    textTokens?: number;
+  };
+}
+
+/**
+ * Google Gemini usage metadata
+ */
+interface GoogleUsageMetadata {
+  promptTokenCount?: number;
+  candidatesTokenCount?: number;
+  totalTokenCount?: number;
+}
+
+/**
+ * Anthropic Claude usage object
+ */
+interface AnthropicUsage {
+  input_tokens?: number;
+  output_tokens?: number;
+}
+
+/**
+ * Generic provider response that might contain usage information
+ */
+interface ProviderResponse {
+  usage?: OpenAIUsage | AnthropicUsage;
+  usageMetadata?: GoogleUsageMetadata;
+}
+
+/**
  * Detailed token usage information from provider APIs or fallback tokenization
  */
 export interface DetailedTokenUsage {
@@ -87,7 +154,7 @@ export class TokenCounter {
       });
 
       if (response.ok) {
-        const data = await response.json() as any;
+        const data = await response.json() as OpenAITokenizeResponse;
         return data.token_count || 0;
       }
     } catch (error) {
@@ -116,7 +183,7 @@ export class TokenCounter {
       });
 
       if (response.ok) {
-        const data = await response.json() as any;
+        const data = await response.json() as GoogleCountTokensResponse;
         return data.totalTokens || 0;
       }
     } catch (error) {
@@ -146,7 +213,7 @@ export class TokenCounter {
       });
 
       if (response.ok) {
-        const data = await response.json() as any;
+        const data = await response.json() as AnthropicCountTokensResponse;
         return data.input_tokens || 0;
       }
     } catch (error) {
@@ -254,14 +321,28 @@ export class CostCalculator {
   }
 
   /**
+   * Type guard to check if usage object is OpenAI format
+   */
+  private static isOpenAIUsage(usage: OpenAIUsage | AnthropicUsage): usage is OpenAIUsage {
+    return 'prompt_tokens' in usage || 'completion_tokens' in usage || 'total_tokens' in usage;
+  }
+
+  /**
+   * Type guard to check if usage object is Anthropic format
+   */
+  private static isAnthropicUsage(usage: OpenAIUsage | AnthropicUsage): usage is AnthropicUsage {
+    return !this.isOpenAIUsage(usage);
+  }
+
+  /**
    * Extract token usage from provider response objects
    */
-  static extractTokenUsage(response: any, provider: string): DetailedTokenUsage | null {
+  static extractTokenUsage(response: ProviderResponse, provider: string): DetailedTokenUsage | null {
     try {
       switch (provider) {
         case 'openai':
           // OpenAI Responses API and Chat Completions format
-          if (response.usage) {
+          if (response.usage && this.isOpenAIUsage(response.usage)) {
             return {
               inputTokens: response.usage.input_tokens || response.usage.prompt_tokens || 0,
               outputTokens: response.usage.output_tokens || response.usage.completion_tokens || 0,
@@ -287,7 +368,7 @@ export class CostCalculator {
 
         case 'anthropic':
           // Anthropic Claude format
-          if (response.usage) {
+          if (response.usage && this.isAnthropicUsage(response.usage)) {
             return {
               inputTokens: response.usage.input_tokens || 0,
               outputTokens: response.usage.output_tokens || 0,
@@ -300,7 +381,7 @@ export class CostCalculator {
         case 'openrouter':
         case 'requesty':
           // OpenRouter/Requesty typically pass through OpenAI format
-          if (response.usage) {
+          if (response.usage && this.isOpenAIUsage(response.usage)) {
             return {
               inputTokens: response.usage.prompt_tokens || 0,
               outputTokens: response.usage.completion_tokens || 0,

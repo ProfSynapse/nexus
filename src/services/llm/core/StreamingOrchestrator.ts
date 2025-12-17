@@ -14,17 +14,35 @@
 
 import { BaseAdapter } from '../adapters/BaseAdapter';
 import { ConversationContextBuilder } from '../../chat/ConversationContextBuilder';
-import { MCPToolExecution, IToolExecutor } from '../adapters/shared/ToolExecutionUtils';
+import { MCPToolExecution, IToolExecutor, ToolResult } from '../adapters/shared/ToolExecutionUtils';
 import { LLMProviderSettings } from '../../../types';
 import { IAdapterRegistry } from './AdapterRegistry';
+import { Tool, TokenUsage, CostDetails, ToolCall as AdapterToolCall, SupportedProvider } from '../adapters/types';
+import { ToolCall as ChatToolCall } from '../../../types/chat/ChatTypes';
+
+// Union type for tool calls from different sources
+type ToolCallUnion = AdapterToolCall | ChatToolCall;
+
+// Standardized message format for conversation history
+export interface ConversationMessage {
+  role: 'user' | 'assistant' | 'system' | 'tool';
+  content: string;
+  tool_calls?: ToolCallUnion[];
+}
+
+// Google-specific message format
+export interface GoogleMessage {
+  role: 'user' | 'model' | 'function';
+  parts: Array<{ text?: string; functionCall?: any; functionResponse?: any }>;
+}
 
 export interface StreamingOptions {
   provider?: string;
   model?: string;
   systemPrompt?: string;
-  tools?: any[];
+  tools?: Tool[];
   onToolEvent?: (event: 'started' | 'completed', data: any) => void;
-  onUsageAvailable?: (usage: any, cost?: any) => void;
+  onUsageAvailable?: (usage: TokenUsage, cost?: CostDetails) => void;
   sessionId?: string;
   workspaceId?: string;
   conversationId?: string; // Required for OpenAI Responses API response ID tracking
@@ -42,12 +60,25 @@ export interface StreamYield {
   chunk: string;
   complete: boolean;
   content: string;
-  toolCalls?: any[];
+  toolCalls?: ChatToolCall[];
   toolCallsReady?: boolean;
-  usage?: any;
+  usage?: TokenUsage;
   // Reasoning/thinking support (Claude, GPT-5, Gemini, etc.)
   reasoning?: string;           // Incremental reasoning text
   reasoningComplete?: boolean;  // True when reasoning finished
+}
+
+// Internal options type used during streaming orchestration
+interface GenerateOptionsInternal {
+  model: string;
+  systemPrompt?: string;
+  conversationHistory?: GoogleMessage[] | ConversationMessage[] | any[]; // any[] for OpenAI Responses API
+  tools?: Tool[];
+  onToolEvent?: (event: 'started' | 'completed', data: any) => void;
+  onUsageAvailable?: (usage: TokenUsage, cost?: CostDetails) => void;
+  enableThinking?: boolean;
+  thinkingEffort?: 'low' | 'medium' | 'high';
+  previousResponseId?: string; // OpenAI Responses API
 }
 
 export class StreamingOrchestrator {
@@ -62,16 +93,16 @@ export class StreamingOrchestrator {
    * @private
    */
   private parseAndMergeTools(
-    existingTools: any[],
-    toolCalls: any[],
-    toolResults: any[]
-  ): any[] {
+    existingTools: Tool[],
+    toolCalls: ToolCallUnion[],
+    toolResults: ToolResult[]
+  ): Tool[] {
     const newTools = [...existingTools];
 
     // Build a set of existing tool names for fast deduplication
     const existingNames = new Set<string>();
     for (const tool of existingTools) {
-      const name = tool.name || tool.function?.name;
+      const name = tool.function?.name;
       if (name) existingNames.add(name);
     }
 
@@ -81,12 +112,15 @@ export class StreamingOrchestrator {
 
       // Check if this was a get_tools call
       if (toolCall.function?.name === 'get_tools' && result?.success && result?.result?.tools) {
-        const returnedTools = result.result.tools;
+        const returnedTools = result.result.tools as Array<Tool | { name: string; description?: string; inputSchema?: Record<string, any> }>;
 
         // Handle both MCP format and OpenAI format tools
         for (const tool of returnedTools) {
+          // Type guard to check if it's already a Tool type
+          const isToolType = (t: typeof tool): t is Tool => 'type' in t && 'function' in t;
+
           // Extract tool name - handle both formats
-          const toolName = tool.name || tool.function?.name;
+          const toolName = isToolType(tool) ? tool.function?.name : 'name' in tool ? tool.name : undefined;
 
           if (!toolName) {
             console.warn('[StreamingOrchestrator] Skipping tool with no name:', tool);
@@ -101,9 +135,9 @@ export class StreamingOrchestrator {
           // Mark as added to prevent duplicates within this batch
           existingNames.add(toolName);
 
-          // Normalize to OpenAI Chat Completions format: {type, function: {name, description, parameters}}
-          if (tool.function) {
-            // Already in OpenAI format
+          // Normalize to Tool format
+          if (isToolType(tool)) {
+            // Already in Tool format
             newTools.push(tool);
           } else {
             // MCP format - convert
@@ -136,7 +170,7 @@ export class StreamingOrchestrator {
    * @returns AsyncGenerator yielding chunks and tool calls
    */
   async* generateResponseStream(
-    messages: Array<{ role: string; content: string }>,
+    messages: ConversationMessage[],
     options?: StreamingOptions
   ): AsyncGenerator<StreamYield, void, unknown> {
     try {
@@ -165,11 +199,11 @@ export class StreamingOrchestrator {
       // Note: OpenRouter always uses OpenAI format, even for Google models
       const isGoogleModel = provider === 'google';
 
-      let generateOptions: any;
+      let generateOptions: GenerateOptionsInternal;
 
       if (isGoogleModel) {
         // For Google, build proper conversation history in Google format
-        const googleConversationHistory: any[] = [];
+        const googleConversationHistory: GoogleMessage[] = [];
 
         // Add all messages in Google format
         for (const msg of messages) {
@@ -226,8 +260,8 @@ export class StreamingOrchestrator {
 
       // Execute initial stream and detect tool calls
       let fullContent = '';
-      let detectedToolCalls: any[] = [];
-      let finalUsage: any = undefined;
+      let detectedToolCalls: ChatToolCall[] = [];
+      let finalUsage: TokenUsage | undefined = undefined;
 
       // For Google, pass empty string as prompt since conversation is in conversationHistory
       // For other providers, pass the extracted userPrompt
@@ -266,18 +300,25 @@ export class StreamingOrchestrator {
 
         // Handle dynamic tool call detection
         if (chunk.toolCalls) {
+          // Convert adapter ToolCalls to ChatToolCalls
+          const chatToolCalls: ChatToolCall[] = chunk.toolCalls.map(tc => ({
+            ...tc,
+            type: tc.type || 'function',
+            function: tc.function || { name: '', arguments: '{}' }
+          }));
+
           // ALWAYS yield tool calls for progressive UI display
           yield {
             chunk: '',
             complete: false,
             content: fullContent,
-            toolCalls: chunk.toolCalls,
+            toolCalls: chatToolCalls,
             toolCallsReady: chunk.complete || false
           };
 
           // Only STORE tool calls for execution when streaming is COMPLETE
           if (chunk.complete) {
-            detectedToolCalls = chunk.toolCalls;
+            detectedToolCalls = chatToolCalls;
           }
         }
 
@@ -323,15 +364,21 @@ export class StreamingOrchestrator {
    * Build conversation history string from messages
    * @private - Internal helper
    */
-  private buildConversationHistory(messages: any[]): string {
+  private buildConversationHistory(messages: ConversationMessage[]): string {
     if (messages.length <= 1) {
       return '';
     }
 
-    return messages.slice(0, -1).map((msg: any) => {
+    return messages.slice(0, -1).map((msg: ConversationMessage) => {
       if (msg.role === 'user') return `User: ${msg.content}`;
       if (msg.role === 'assistant') {
-        if (msg.tool_calls) return `Assistant: [Calling tools: ${msg.tool_calls.map((tc: any) => tc.function.name).join(', ')}]`;
+        if (msg.tool_calls && msg.tool_calls.length > 0) {
+          return `Assistant: [Calling tools: ${msg.tool_calls.map((tc) => {
+            // Handle both AdapterToolCall and ChatToolCall
+            if ('name' in tc && tc.name) return tc.name;
+            return tc.function?.name || 'unknown';
+          }).join(', ')}]`;
+        }
         return `Assistant: ${msg.content}`;
       }
       if (msg.role === 'tool') return `Tool Result: ${msg.content}`;
@@ -347,22 +394,22 @@ export class StreamingOrchestrator {
   private async* executeToolsAndContinue(
     adapter: BaseAdapter,
     provider: string,
-    detectedToolCalls: any[],
-    previousMessages: any[],
+    detectedToolCalls: ChatToolCall[],
+    previousMessages: ConversationMessage[],
     userPrompt: string,
-    generateOptions: any,
+    generateOptions: GenerateOptionsInternal,
     options: StreamingOptions | undefined,
-    initialUsage: any
+    initialUsage: TokenUsage | undefined
   ): AsyncGenerator<StreamYield, void, unknown> {
-    let completeToolCallsWithResults: any[] = [];
+    let completeToolCallsWithResults: ChatToolCall[] = [];
     let toolIterationCount = 1;
 
     try {
       // Step 1: Execute tools via MCP to get results
-      const mcpToolCalls = detectedToolCalls.map((tc: any) => ({
+      const mcpToolCalls = detectedToolCalls.map((tc) => ({
         id: tc.id,
         function: {
-          name: tc.function?.name || tc.name,
+          name: tc.function?.name || tc.name || '',
           arguments: tc.function?.arguments || JSON.stringify(tc.parameters || {})
         }
       }));
@@ -370,7 +417,7 @@ export class StreamingOrchestrator {
       const toolResults = await MCPToolExecution.executeToolCalls(
         this.toolExecutor,
         mcpToolCalls,
-        provider as any,
+        provider as SupportedProvider,
         generateOptions.onToolEvent,
         { sessionId: options?.sessionId, workspaceId: options?.workspaceId }
       );
@@ -383,6 +430,7 @@ export class StreamingOrchestrator {
         const result = toolResults.find(r => r.id === originalCall.id);
         return {
           id: originalCall.id,
+          type: originalCall.type || 'function',
           name: originalCall.function?.name || originalCall.name,
           parameters: JSON.parse(originalCall.function?.arguments || '{}'),
           result: result?.result,
@@ -441,12 +489,19 @@ export class StreamingOrchestrator {
 
         // Handle recursive tool calls (another pingpong iteration)
         if (chunk.toolCalls) {
+          // Convert adapter ToolCalls to ChatToolCalls
+          const chatToolCalls: ChatToolCall[] = chunk.toolCalls.map(tc => ({
+            ...tc,
+            type: tc.type || 'function',
+            function: tc.function || { name: '', arguments: '{}' }
+          }));
+
           // ALWAYS yield tool calls for progressive UI display
           yield {
             chunk: '',
             complete: false,
             content: fullContent,
-            toolCalls: chunk.toolCalls,
+            toolCalls: chatToolCalls,
             toolCallsReady: chunk.complete || false
           };
 
@@ -471,7 +526,7 @@ export class StreamingOrchestrator {
           yield* this.handleRecursiveToolCalls(
             adapter,
             provider,
-            chunk.toolCalls,
+            chatToolCalls,
             previousMessages,
             userPrompt,
             generateOptions,
@@ -520,16 +575,16 @@ export class StreamingOrchestrator {
   private async* handleRecursiveToolCalls(
     adapter: BaseAdapter,
     provider: string,
-    recursiveToolCalls: any[],
-    previousMessages: any[],
+    recursiveToolCalls: ChatToolCall[],
+    previousMessages: ConversationMessage[],
     userPrompt: string,
-    generateOptions: any,
+    generateOptions: GenerateOptionsInternal,
     options: StreamingOptions | undefined,
-    completeToolCallsWithResults: any[]
+    completeToolCallsWithResults: ChatToolCall[]
   ): AsyncGenerator<StreamYield, void, unknown> {
     try {
       // Convert recursive tool calls to MCP format
-      const recursiveMcpToolCalls = recursiveToolCalls.map((tc: any) => {
+      const recursiveMcpToolCalls = recursiveToolCalls.map((tc) => {
         let argumentsStr = '';
 
         if (tc.function?.arguments) {
@@ -543,7 +598,7 @@ export class StreamingOrchestrator {
         return {
           id: tc.id,
           function: {
-            name: tc.function?.name || tc.name,
+            name: tc.function?.name || tc.name || '',
             arguments: argumentsStr
           }
         };
@@ -552,7 +607,7 @@ export class StreamingOrchestrator {
       const recursiveToolResults = await MCPToolExecution.executeToolCalls(
         this.toolExecutor,
         recursiveMcpToolCalls,
-        provider as any,
+        provider as SupportedProvider,
         generateOptions.onToolEvent,
         { sessionId: options?.sessionId, workspaceId: options?.workspaceId }
       );
@@ -561,7 +616,7 @@ export class StreamingOrchestrator {
       await new Promise(resolve => setTimeout(resolve, 100));
 
       // Build complete tool calls with recursive results
-      const recursiveCompleteToolCalls = recursiveToolCalls.map((tc, index) => ({
+      const recursiveCompleteToolCalls: ChatToolCall[] = recursiveToolCalls.map((tc, index) => ({
         ...tc,
         result: recursiveToolResults[index]?.result,
         success: recursiveToolResults[index]?.success || false,
@@ -614,7 +669,7 @@ export class StreamingOrchestrator {
       };
 
       let fullContent = '\n\n';
-      let recursiveToolCallsDetected: any[] = [];
+      let recursiveToolCallsDetected: ChatToolCall[] = [];
 
       for await (const recursiveChunk of adapter.generateStreamAsync('', recursiveContinuationOptions)) {
         if (recursiveChunk.content) {
@@ -629,17 +684,24 @@ export class StreamingOrchestrator {
 
         // Handle nested recursive tool calls if any (up to iteration limit)
         if (recursiveChunk.toolCalls) {
+          // Convert adapter ToolCalls to ChatToolCalls
+          const nestedChatToolCalls: ChatToolCall[] = recursiveChunk.toolCalls.map(tc => ({
+            ...tc,
+            type: tc.type || 'function',
+            function: tc.function || { name: '', arguments: '{}' }
+          }));
+
           yield {
             chunk: '',
             complete: false,
             content: fullContent,
-            toolCalls: recursiveChunk.toolCalls,
+            toolCalls: nestedChatToolCalls,
             toolCallsReady: recursiveChunk.complete || false
           };
 
           // Store for execution after stream completes
           if (recursiveChunk.complete && recursiveChunk.toolCallsReady) {
-            recursiveToolCallsDetected = recursiveChunk.toolCalls;
+            recursiveToolCallsDetected = nestedChatToolCalls;
           }
         }
 
@@ -678,10 +740,10 @@ export class StreamingOrchestrator {
    */
   private updatePreviousMessagesWithToolExecution(
     provider: string,
-    previousMessages: any[],
-    toolCalls: any[],
-    toolResults: any[]
-  ): any[] {
+    previousMessages: ConversationMessage[],
+    toolCalls: ToolCallUnion[],
+    toolResults: ToolResult[]
+  ): ConversationMessage[] {
     // Use appendToolExecution which does NOT add the user message
     // This is the architectural fix - we only append tool execution, not the full continuation
 
@@ -697,7 +759,7 @@ export class StreamingOrchestrator {
     // Return the updated messages for next iteration
     // This accumulates: [previous messages, assistant with tool_use, user with tool_result]
     // NOTE: User message is NOT added here - it's already in previousMessages
-    return updatedMessages;
+    return updatedMessages as ConversationMessage[];
   }
 
   /**
@@ -707,12 +769,12 @@ export class StreamingOrchestrator {
   private buildContinuationOptions(
     provider: string,
     userPrompt: string,
-    toolCalls: any[],
-    toolResults: any[],
-    previousMessages: any[],
-    generateOptions: any,
+    toolCalls: ToolCallUnion[],
+    toolResults: ToolResult[],
+    previousMessages: ConversationMessage[],
+    generateOptions: GenerateOptionsInternal,
     options?: StreamingOptions
-  ): any {
+  ): GenerateOptionsInternal {
     // Check if this is an Anthropic model (direct only)
     // Note: OpenRouter always uses OpenAI format, even for Anthropic models
     const isAnthropicModel = provider === 'anthropic';
@@ -730,7 +792,7 @@ export class StreamingOrchestrator {
         toolResults,
         previousMessages,
         generateOptions.systemPrompt
-      ) as any[];
+      ) as ConversationMessage[];
 
       // IMPORTANT: Disable thinking for tool continuations
       // Anthropic requires assistant messages to start with a thinking block when thinking is enabled,
@@ -752,7 +814,7 @@ export class StreamingOrchestrator {
         toolResults,
         previousMessages,
         generateOptions.systemPrompt
-      ) as any[];
+      ) as GoogleMessage[];
 
       return {
         ...generateOptions,
@@ -789,7 +851,7 @@ export class StreamingOrchestrator {
         toolResults,
         previousMessages,
         generateOptions.systemPrompt
-      ) as any[];
+      ) as ConversationMessage[];
 
       return {
         ...generateOptions,

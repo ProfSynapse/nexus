@@ -13,6 +13,10 @@ import type { Plugin } from 'obsidian';
 import { Events } from 'obsidian';
 import type { ServiceManager } from '../ServiceManager';
 import type { Settings } from '../../settings';
+import type { IStorageAdapter } from '../../database/interfaces/IStorageAdapter';
+import type { DirectToolExecutor } from '../../services/chat/DirectToolExecutor';
+import type { AgentRegistrationService } from '../../services/agent/AgentRegistrationService';
+import type { SessionContextManager } from '../../services/SessionContextManager';
 
 export interface ServiceDefinition {
     name: string;
@@ -66,7 +70,7 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
             const indexManager = new IndexManager(fileSystem);
 
             // Get storage adapter if available (may be null if initialization failed)
-            const storageAdapter = await context.serviceManager.getService('hybridStorageAdapter') as any;
+            const storageAdapter = await context.serviceManager.getService<IStorageAdapter | null>('hybridStorageAdapter');
 
             return new WorkspaceService(context.plugin, fileSystem, indexManager, storageAdapter || undefined);
         }
@@ -97,7 +101,7 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
             const workspaceService = await context.serviceManager.getService('workspaceService') as InstanceType<typeof WorkspaceService>;
 
             // Get storage adapter if available (may be null if initialization failed)
-            const storageAdapter = await context.serviceManager.getService('hybridStorageAdapter') as any;
+            const storageAdapter = await context.serviceManager.getService<IStorageAdapter | null>('hybridStorageAdapter');
 
             return new MemoryService(context.plugin, workspaceService, storageAdapter || undefined);
         }
@@ -109,14 +113,16 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
         dependencies: ['workspaceService', 'memoryService'],
         create: async (context) => {
             const { CacheManager } = await import('../../database/services/cache/CacheManager');
+            const { WorkspaceService } = await import('../../services/WorkspaceService');
+            const { MemoryService } = await import('../../agents/memoryManager/services/MemoryService');
 
-            const workspaceService = await context.serviceManager.getService('workspaceService');
-            const memoryService = await context.serviceManager.getService('memoryService');
+            const workspaceService = await context.serviceManager.getService<InstanceType<typeof WorkspaceService>>('workspaceService');
+            const memoryService = await context.serviceManager.getService<InstanceType<typeof MemoryService>>('memoryService');
 
             const cacheManager = new CacheManager(
                 context.plugin.app,
-                workspaceService as any,
-                memoryService as any,
+                workspaceService,
+                memoryService,
                 {
                     enableEntityCache: true,
                     enableFileIndex: true,
@@ -206,9 +212,9 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
             }
 
             // Inject DirectToolExecutor for tool execution (works on ALL platforms)
-            const directToolExecutor = await context.serviceManager.getService('directToolExecutor');
+            const directToolExecutor = await context.serviceManager.getService<DirectToolExecutor>('directToolExecutor');
             if (directToolExecutor) {
-                llmService.setToolExecutor(directToolExecutor as any);
+                llmService.setToolExecutor(directToolExecutor);
             }
 
             return llmService;
@@ -236,7 +242,7 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
             return new AgentManager(
                 context.plugin.app,
                 llmService,
-                {} as any // Placeholder for EventManager
+                new Events() // Placeholder Events instance for unused parameter
             );
         }
     },
@@ -282,7 +288,7 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
             const indexManager = new IndexManager(fileSystem);
 
             // Get storage adapter if available (may be null if initialization failed)
-            const storageAdapter = await context.serviceManager.getService('hybridStorageAdapter') as any;
+            const storageAdapter = await context.serviceManager.getService<IStorageAdapter | null>('hybridStorageAdapter');
 
             return new ConversationService(context.plugin, fileSystem, indexManager, storageAdapter || undefined);
         }
@@ -295,7 +301,8 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
         dependencies: ['memoryService', 'workspaceService'],
         create: async (context) => {
             const { AgentRegistrationService } = await import('../../services/agent/AgentRegistrationService');
-            const plugin = context.plugin as any; // NexusPlugin
+            // Plugin type augmentation - NexusPlugin extends Plugin with events property
+            const plugin = context.plugin as Plugin & { events?: Events };
 
             // Create agent registration service (same as connector but standalone)
             const agentService = new AgentRegistrationService(
@@ -320,9 +327,8 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
         create: async (context) => {
             const { DirectToolExecutor } = await import('../../services/chat/DirectToolExecutor');
 
-            const agentService = await context.serviceManager.getService('agentRegistrationService') as any;
-            // SessionContextManager type comes from DirectToolExecutor module - cast to any for simplicity
-            const sessionContextManager = context.serviceManager.getServiceIfReady('sessionContextManager') as any;
+            const agentService = await context.serviceManager.getService<AgentRegistrationService>('agentRegistrationService');
+            const sessionContextManager = context.serviceManager.getServiceIfReady<SessionContextManager>('sessionContextManager') ?? undefined;
 
             // Wrap agentService to match AgentProvider interface
             const agentProvider = {
@@ -387,7 +393,7 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
             );
 
             // Set up DirectToolExecutor for tool execution (works on ALL platforms)
-            chatService.setDirectToolExecutor(directToolExecutor as any);
+            chatService.setDirectToolExecutor(directToolExecutor as DirectToolExecutor);
 
             return chatService;
         }
@@ -395,9 +401,18 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
 ];
 
 /**
+ * Interface for additional service factories with enhanced dependency injection
+ */
+export interface AdditionalServiceFactory {
+    name: string;
+    dependencies: string[];
+    factory: (deps: Record<string, any>) => Promise<any>;
+}
+
+/**
  * Additional services for UI and maintenance functionality
  */
-export const ADDITIONAL_SERVICE_FACTORIES = [
+export const ADDITIONAL_SERVICE_FACTORIES: AdditionalServiceFactory[] = [
     // Note: ChatDatabaseService removed in simplify-search-architecture
     // Chat data now stored in simplified JSON format
 ];

@@ -13,6 +13,7 @@ export interface MemorySearchParameters extends CommonParameters {
   query: string;
   memoryTypes?: ('traces' | 'toolCalls' | 'sessions' | 'states' | 'workspaces')[];
   workspace?: string;
+  workspaceId?: string;
   dateRange?: DateRange;
   limit?: number;
   toolCallFilters?: ToolCallFilter;
@@ -41,6 +42,7 @@ export interface MemorySearchExecutionOptions {
   sessionId?: string;
   limit?: number;
   toolCallFilters?: ToolCallFilter;
+  memoryTypes?: ('traces' | 'toolCalls' | 'sessions' | 'states' | 'workspaces')[];
 }
 
 // Memory search context

@@ -135,8 +135,8 @@ export class CommonValidators {
       maxLength: 500,
       allowEmpty: false,
       trimWhitespace: true,
-      pattern: undefined as any,
-      patternHint: undefined as any,
+      pattern: undefined as unknown as string,
+      patternHint: undefined as unknown as string,
       ...options
     };
 
@@ -265,7 +265,7 @@ export class CommonValidators {
    */
   static validateSessionContext(
     params: CommonParameters,
-    mode?: any, // Accept any type to avoid protected method access issues
+    mode?: unknown,
     options: SessionContextOptions = {}
   ): ValidationError[] {
     const errors: ValidationError[] = [];
@@ -329,7 +329,8 @@ export class CommonValidators {
     ];
 
     for (const field of contextFields) {
-      const value = (params.context as any)[field.key];
+      const contextObj = params.context as Record<string, unknown>;
+      const value = contextObj[field.key];
       if (value !== undefined && (typeof value !== 'string' || value.trim().length < opts.minContextLength)) {
         errors.push(this.createFieldError(
           `context.${field.key}`,
@@ -341,19 +342,22 @@ export class CommonValidators {
     }
 
     // Workspace context validation if required
-    if (opts.requireWorkspace && mode && typeof mode.getInheritedWorkspaceContext === 'function') {
-      try {
-        const workspaceContext = mode.getInheritedWorkspaceContext(params);
-        if (!workspaceContext?.workspaceId) {
-          errors.push(this.createFieldError(
-            'workspaceContext',
-            'WORKSPACE_CONTEXT_REQUIRED',
-            'Workspace context is required',
-            'Provide workspaceContext or ensure inherited context is available'
-          ));
+    if (opts.requireWorkspace && mode) {
+      const modeObj = mode as { getInheritedWorkspaceContext?: (params: CommonParameters) => unknown };
+      if (typeof modeObj.getInheritedWorkspaceContext === 'function') {
+        try {
+          const workspaceContext = modeObj.getInheritedWorkspaceContext(params) as { workspaceId?: string } | undefined;
+          if (!workspaceContext?.workspaceId) {
+            errors.push(this.createFieldError(
+              'workspaceContext',
+              'WORKSPACE_CONTEXT_REQUIRED',
+              'Workspace context is required',
+              'Provide workspaceContext or ensure inherited context is available'
+            ));
+          }
+        } catch (error) {
+          console.warn('Error validating workspace context:', error);
         }
-      } catch (error) {
-        console.warn('Error validating workspace context:', error);
       }
     }
 
@@ -380,7 +384,8 @@ export class CommonValidators {
     for (const [fieldName, validator] of Object.entries(validators)) {
       try {
         if (typeof validator === 'function') {
-          const fieldValue = (params as any)[fieldName];
+          const paramsObj = params as Record<string, unknown>;
+          const fieldValue = paramsObj[fieldName];
           const error = validator(fieldValue, fieldName);
           if (error) {
             errors.push(error);
@@ -537,10 +542,15 @@ export class CommonValidators {
     success: boolean
   ): void {
     const duration = performance.now() - startTime;
-    
+
     // Integration with existing CompatibilityMonitor
-    if (typeof (globalThis as any).CompatibilityMonitor !== 'undefined') {
-      (globalThis as any).CompatibilityMonitor.trackValidation(
+    const globalObj = globalThis as Record<string, unknown>;
+    const compatMonitor = globalObj.CompatibilityMonitor as {
+      trackValidation?: (source: string, op: string, start: number, end: number, success: boolean) => void
+    } | undefined;
+
+    if (compatMonitor && typeof compatMonitor.trackValidation === 'function') {
+      compatMonitor.trackValidation(
         'CommonValidators',
         operation,
         startTime,

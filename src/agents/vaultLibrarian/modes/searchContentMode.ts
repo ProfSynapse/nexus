@@ -4,6 +4,25 @@ import { getErrorMessage } from '../../../utils/errorUtils';
 import { BRAND_NAME } from '../../../constants/branding';
 import { isGlobPattern, globToRegex, normalizePath } from '../../../utils/pathUtils';
 import { EmbeddingService } from '../../../services/embeddings/EmbeddingService';
+import { EmbeddingManager } from '../../../services/embeddings/EmbeddingManager';
+
+/**
+ * Extended plugin interface that includes optional embedding manager
+ */
+interface PluginWithEmbeddings extends Plugin {
+  embeddingManager?: EmbeddingManager;
+}
+
+/**
+ * Internal search result with scoring
+ * Used internally for ranking before returning clean results to caller
+ */
+interface ScoredSearchResult {
+  filePath: string;
+  frontmatter?: Record<string, any>;
+  content?: string;
+  _score: number; // Internal property for sorting
+}
 
 export interface ContentSearchParams {
   query: string;
@@ -73,9 +92,9 @@ export class SearchContentMode extends BaseMode<ContentSearchParams, ContentSear
 
     // Try to get from plugin's embeddingManager
     try {
-      const pluginAny = this.plugin as any;
-      if (pluginAny.embeddingManager) {
-        const service = pluginAny.embeddingManager.getService();
+      const pluginWithEmbeddings = this.plugin as PluginWithEmbeddings;
+      if (pluginWithEmbeddings.embeddingManager) {
+        const service = pluginWithEmbeddings.embeddingManager.getService();
         if (service) {
           this.embeddingService = service; // Cache for future use
           return service;
@@ -288,7 +307,7 @@ export class SearchContentMode extends BaseMode<ContentSearchParams, ContentSear
   ): Promise<ContentSearchResult['results']> {
     const normalizedQuery = query.toLowerCase();
     const fuzzySearch = prepareFuzzySearch(normalizedQuery);
-    const allResults: ContentSearchResult['results'] = [];
+    const allResults: ScoredSearchResult[] = [];
 
     for (const file of files) {
       const results = await this.searchInFile(
@@ -303,10 +322,10 @@ export class SearchContentMode extends BaseMode<ContentSearchParams, ContentSear
     }
 
     // Sort by internal score (higher is better) and take top results
-    allResults.sort((a, b) => ((b as any)._score || 0) - ((a as any)._score || 0));
+    allResults.sort((a, b) => (b._score || 0) - (a._score || 0));
     // Strip internal score before returning
     const finalResults = allResults.slice(0, limit).map(r => {
-      const { _score, ...rest } = r as any;
+      const { _score, ...rest } = r;
       return rest;
     });
     return finalResults;
@@ -322,8 +341,8 @@ export class SearchContentMode extends BaseMode<ContentSearchParams, ContentSear
     fuzzySearch: (text: string) => { score: number } | null,
     includeContent: boolean,
     snippetLength: number
-  ): Promise<ContentSearchResult['results']> {
-    const results: ContentSearchResult['results'] = [];
+  ): Promise<ScoredSearchResult[]> {
+    const results: ScoredSearchResult[] = [];
     let maxScore = 0;
     let contentSnippet = '';
 
@@ -393,15 +412,14 @@ export class SearchContentMode extends BaseMode<ContentSearchParams, ContentSear
         contentSnippet = `File: ${file.path}`;
       }
 
-      const entry: any = {
+      const entry: ScoredSearchResult = {
         filePath: file.path,
-        content: contentSnippet
+        content: contentSnippet,
+        _score: maxScore
       };
       if (frontmatter && Object.keys(frontmatter).length > 0) {
         entry.frontmatter = frontmatter;
       }
-      // Store score internally for sorting, but don't include in output
-      (entry as any)._score = maxScore;
       results.push(entry);
     }
 

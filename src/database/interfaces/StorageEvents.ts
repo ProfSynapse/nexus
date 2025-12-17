@@ -311,11 +311,18 @@ export interface MessageEvent extends BaseStorageEvent {
     role: 'system' | 'user' | 'assistant' | 'tool';
     /** Message content (null for tool calls) */
     content: string | null;
-    /** Tool calls (OpenAI format) */
+    /** Tool calls (OpenAI format with extended properties for tool bubble reconstruction) */
     tool_calls?: Array<{
       id: string;
-      type: 'function';
+      type: 'function' | string;
       function: { name: string; arguments: string };
+      // Extended properties for tool bubbles reconstruction after reload
+      name?: string;
+      parameters?: Record<string, unknown>;
+      result?: unknown;
+      success?: boolean;
+      error?: string;
+      executionTime?: number;
     }>;
     /** Tool call ID (for tool role messages) */
     tool_call_id?: string;
@@ -350,8 +357,14 @@ export interface MessageUpdatedEvent extends BaseStorageEvent {
     reasoning: string;
     tool_calls: Array<{
       id: string;
-      type: 'function';
+      type: 'function' | string;
       function: { name: string; arguments: string };
+      // Extended properties for tool bubbles reconstruction
+      name?: string;
+      parameters?: Record<string, unknown>;
+      result?: unknown;
+      success?: boolean;
+      error?: string;
     }>;
     tool_call_id: string;
     /** Alternative responses for branching */

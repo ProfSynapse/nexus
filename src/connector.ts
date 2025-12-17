@@ -13,19 +13,28 @@ import { getContextSchema } from './utils/schemaUtils';
 import { MCPConnectionManager, MCPConnectionManagerInterface } from './services/mcp/MCPConnectionManager';
 import { ToolCallRouter, ToolCallRouterInterface } from './services/mcp/ToolCallRouter';
 import { AgentRegistrationService, AgentRegistrationServiceInterface } from './services/agent/AgentRegistrationService';
+import { ToolCallTraceService } from './services/trace/ToolCallTraceService';
 
 // Type definitions
 import { AgentModeParams } from './types/agent/AgentTypes';
 import { VaultLibrarianAgent } from './agents';
 import { MemoryManagerAgent } from './agents';
 import { AGENTS } from './config/agentConfigs';
+import { IAgent } from './agents/interfaces/IAgent';
+import { IMode } from './agents/interfaces/IMode';
 
+/**
+ * Type guard to check if a plugin is a NexusPlugin instance
+ */
+function isNexusPlugin(plugin: Plugin | NexusPlugin): plugin is NexusPlugin {
+    return 'getServiceContainer' in plugin && 'settings' in plugin;
+}
 
 /**
  * MCP Connector
  * Orchestrates MCP server operations through extracted services:
  * - MCPConnectionManager: Handles server lifecycle
- * - ToolCallRouter: Routes tool calls to agents/modes  
+ * - ToolCallRouter: Routes tool calls to agents/modes
  * - AgentRegistrationService: Manages agent initialization and registration
  */
 export class MCPConnector {
@@ -46,13 +55,13 @@ export class MCPConnector {
         // SessionContextManager will be retrieved from ServiceManager via lazy getter
 
         // Get service manager reference
-        if (this.plugin && (this.plugin as any).getServiceContainer) {
-            this.serviceManager = (this.plugin as any).getServiceContainer();
+        if (this.plugin && isNexusPlugin(this.plugin)) {
+            this.serviceManager = this.plugin.getServiceContainer();
         }
-        
+
         // Initialize custom prompt storage if possible
         // Note: Settings might not be fully loaded yet, so we'll check again during initialization
-        const pluginSettings = this.plugin && (this.plugin as any).settings;
+        const pluginSettings = this.plugin && isNexusPlugin(this.plugin) ? this.plugin.settings : null;
         if (pluginSettings) {
             try {
                 this.customPromptStorage = new CustomPromptStorageService(pluginSettings);
@@ -155,11 +164,11 @@ export class MCPConnector {
         try {
             // Ensure customPromptStorage is available if settings are now loaded
             if (!this.customPromptStorage) {
-                const pluginSettings = this.plugin && (this.plugin as any).settings;
+                const pluginSettings = this.plugin && isNexusPlugin(this.plugin) ? this.plugin.settings : null;
                 if (pluginSettings) {
                     try {
                         this.customPromptStorage = new CustomPromptStorageService(pluginSettings);
-                        
+
                         // Update the agent registry with the new storage service
                         this.agentRegistry = new AgentRegistrationService(
                             this.app,
@@ -168,7 +177,7 @@ export class MCPConnector {
                             this.serviceManager,
                             this.customPromptStorage
                         );
-                        
+
                         logger.systemLog('CustomPromptStorageService initialized during agent initialization');
                     } catch (error) {
                         logger.systemError(error as Error, 'Late CustomPromptStorageService Initialization');
@@ -187,9 +196,9 @@ export class MCPConnector {
             
             // Initialize all agents through the registration service
             await this.agentRegistry.initializeAllAgents();
-            
+
             // Register agents with server through the registration service
-            this.agentRegistry.registerAgentsWithServer((agent: any) => {
+            this.agentRegistry.registerAgentsWithServer((agent: IAgent) => {
                 if (server) {
                     server.registerAgent(agent);
                 }
@@ -257,8 +266,8 @@ export class MCPConnector {
             const agentModeLines: string[] = [];
 
             for (const [agentName, agent] of registeredAgents) {
-                const modes = (agent as any).getModes?.() || [];
-                const modeNames = modes.map((m: any) => m.slug || m.name || 'unknown');
+                const modes = agent.getModes();
+                const modeNames = modes.map((m: IMode) => m.slug || m.name || 'unknown');
                 agentModeLines.push(`- ${agentName}: [${modeNames.join(', ')}]`);
             }
 
@@ -307,12 +316,12 @@ export class MCPConnector {
         const registeredAgents = this.agentRegistry.getAllAgents();
 
         for (const [agentName, agent] of registeredAgents) {
-            const modes = (agent as any).getModes?.() || [];
-            const agentDescription = (agent as any).description || '';
+            const modes = agent.getModes();
+            const agentDescription = agent.description;
 
             overview[agentName] = {
                 description: agentDescription,
-                modes: modes.map((mode: any) => mode.slug || mode.name || 'unknown')
+                modes: modes.map((mode: IMode) => mode.slug || mode.name || 'unknown')
             };
         }
 
@@ -351,8 +360,8 @@ export class MCPConnector {
             }
 
             // Find the mode
-            const modes = (agent as any).getModes?.() || [];
-            const modeInstance = modes.find((m: any) =>
+            const modes = agent.getModes();
+            const modeInstance = modes.find((m: IMode) =>
                 (m.slug || m.name) === modeName
             );
 
@@ -536,7 +545,7 @@ Keep sessionId and workspaceId values EXACTLY as shown above throughout the conv
             // ========================================
             // CAPTURE TOOL CALL TRACE TO WORKSPACE
             // ========================================
-            const traceService = this.serviceManager?.getServiceIfReady?.('toolCallTraceService') as any;
+            const traceService = this.serviceManager?.getServiceIfReady<ToolCallTraceService>('toolCallTraceService');
             if (traceService && typeof traceService.captureToolCall === 'function') {
                 const toolName = `${agent}_${mode}`;
                 const success = !result?.error;

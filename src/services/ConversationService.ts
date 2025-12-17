@@ -177,23 +177,22 @@ export class ConversationService {
             // Handle both formats:
             // 1. Standard OpenAI format: { function: { name, arguments } }
             // 2. Result format from buildToolMetadata: { name, result, success, error }
-            const anyTc = tc as any;
             const hasFunction = tc.function && typeof tc.function === 'object';
-            const name = hasFunction ? tc.function.name : anyTc.name;
+            const name = (hasFunction ? tc.function.name : tc.name) || 'unknown_tool';
             const parameters = hasFunction && tc.function.arguments
               ? (typeof tc.function.arguments === 'string'
                   ? JSON.parse(tc.function.arguments)
                   : tc.function.arguments)
-              : anyTc.parameters;
+              : tc.parameters;
             return {
               id: tc.id,
               type: tc.type || 'function',
               name,
               function: tc.function || { name, arguments: JSON.stringify(parameters || {}) },
               parameters: parameters || {},
-              result: anyTc.result,
-              success: anyTc.success,
-              error: anyTc.error
+              result: tc.result,
+              success: tc.success,
+              error: tc.error
             };
           }),
           reasoning: msg.reasoning,
@@ -328,24 +327,24 @@ export class ConversationService {
             id: tc.id,
             type: 'function' as const,
             function: tc.function || {
-              name: (tc as any).name || 'unknown_tool',
-              arguments: JSON.stringify((tc as any).parameters || {})
+              name: tc.name || 'unknown_tool',
+              arguments: JSON.stringify(tc.parameters || {})
             },
-            result: (tc as any).result,
-            success: (tc as any).success,
-            error: (tc as any).error,
-            executionTime: (tc as any).executionTime
+            result: tc.result,
+            success: tc.success,
+            error: tc.error,
+            executionTime: tc.executionTime
           }));
 
           await this.storageAdapter.updateMessage(id, msg.id, {
             content: msg.content ?? null,
             state: msg.state,
-            reasoning: (msg as any).reasoning,
+            reasoning: msg.reasoning,
             toolCalls: convertedToolCalls,
-            toolCallId: (msg as any).toolCallId ?? null,
-            // Branching support
-            alternatives: (msg as any).alternatives,
-            activeAlternativeIndex: (msg as any).activeAlternativeIndex
+            toolCallId: msg.toolCallId,
+            // Branching support - cast needed due to type differences between storage layers
+            alternatives: msg.alternatives as unknown as import('../types/storage/HybridStorageTypes').AlternativeMessage[] | undefined,
+            activeAlternativeIndex: msg.activeAlternativeIndex
           });
         }
 
@@ -706,29 +705,28 @@ export class ConversationService {
           // Handle both formats:
           // 1. Standard OpenAI format: { function: { name, arguments } }
           // 2. Result format from buildToolMetadata: { name, result, success, error }
-          const anyTc = tc as any;
           const hasFunction = tc.function && typeof tc.function === 'object';
-          const name = hasFunction ? tc.function.name : anyTc.name;
+          const name = (hasFunction ? tc.function.name : tc.name) || 'unknown_tool';
           const parameters = hasFunction && tc.function.arguments
             ? (typeof tc.function.arguments === 'string'
                 ? JSON.parse(tc.function.arguments)
                 : tc.function.arguments)
-            : anyTc.parameters;
+            : tc.parameters;
           return {
             id: tc.id,
             type: tc.type || 'function',
             name,
             function: tc.function || { name, arguments: JSON.stringify(parameters || {}) },
             parameters: parameters || {},
-            result: anyTc.result,
-            success: anyTc.success,
-            error: anyTc.error
+            result: tc.result,
+            success: tc.success,
+            error: tc.error
           };
         }),
         reasoning: msg.reasoning,
         metadata: msg.metadata,
-        // Branching support
-        alternatives: msg.alternatives,
+        // Branching support - cast needed due to AlternativeMessage vs ConversationMessage type differences
+        alternatives: msg.alternatives as unknown as import('../types/storage/StorageTypes').ConversationMessage[] | undefined,
         activeAlternativeIndex: msg.activeAlternativeIndex
       })),
       metadata: {

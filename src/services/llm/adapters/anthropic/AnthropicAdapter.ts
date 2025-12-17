@@ -5,6 +5,13 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk';
+import type {
+  MessageStartEvent,
+  ContentBlockStartEvent,
+  ContentBlockDeltaEvent,
+  ContentBlockStopEvent,
+  MessageDeltaEvent
+} from '@anthropic-ai/sdk/resources/messages';
 import { BaseAdapter } from '../BaseAdapter';
 import {
   GenerateOptions,
@@ -120,12 +127,14 @@ export class AnthropicAdapter extends BaseAdapter {
       for await (const event of stream) {
         if ('type' in event) {
           switch (event.type) {
-            case 'message_start':
-              usage = (event as any).message.usage;
+            case 'message_start': {
+              const msgStartEvent = event as MessageStartEvent;
+              usage = msgStartEvent.message.usage;
               break;
+            }
 
-            case 'content_block_start':
-              const startEvent = event as any;
+            case 'content_block_start': {
+              const startEvent = event as ContentBlockStartEvent;
               if (startEvent.content_block?.type === 'tool_use') {
                 // Initialize tool call tracking
                 const index = startEvent.index;
@@ -142,17 +151,19 @@ export class AnthropicAdapter extends BaseAdapter {
                 thinkingBlockIndex = startEvent.index;
               }
               break;
+            }
 
-            case 'content_block_delta':
-              const delta = (event as any).delta;
-              const deltaIndex = (event as any).index;
+            case 'content_block_delta': {
+              const deltaEvent = event as ContentBlockDeltaEvent;
+              const delta = deltaEvent.delta;
+              const deltaIndex = deltaEvent.index;
 
-              if (delta.type === 'text_delta' && delta.text) {
+              if (delta.type === 'text_delta' && 'text' in delta) {
                 yield {
                   content: delta.text,
                   complete: false
                 };
-              } else if (delta.type === 'thinking_delta' && delta.thinking) {
+              } else if (delta.type === 'thinking_delta' && 'thinking' in delta) {
                 // Stream thinking content as reasoning (displayed in Reasoning accordion)
                 yield {
                   content: '',  // Don't mix with regular content
@@ -160,7 +171,7 @@ export class AnthropicAdapter extends BaseAdapter {
                   reasoningComplete: false,
                   complete: false
                 };
-              } else if (delta.type === 'input_json_delta' && delta.partial_json) {
+              } else if (delta.type === 'input_json_delta' && 'partial_json' in delta) {
                 // Accumulate tool input JSON
                 const toolCall = toolCalls.get(deltaIndex);
                 if (toolCall) {
@@ -168,13 +179,16 @@ export class AnthropicAdapter extends BaseAdapter {
                 }
               }
               break;
-              
-            case 'message_delta':
-              if ((event as any).usage) {
-                usage = (event as any).usage;
+            }
+
+            case 'message_delta': {
+              const msgDeltaEvent = event as MessageDeltaEvent;
+              if (msgDeltaEvent.usage) {
+                usage = msgDeltaEvent.usage;
               }
               break;
-              
+            }
+
             case 'message_stop':
               // Convert accumulated tool calls to array
               const finalToolCalls = toolCalls.size > 0 ? Array.from(toolCalls.values()) : undefined;
@@ -187,10 +201,10 @@ export class AnthropicAdapter extends BaseAdapter {
                 toolCallsReady: finalToolCalls ? true : undefined
               };
               break;
-              
-            case 'content_block_stop':
+
+            case 'content_block_stop': {
               // Check if this is the thinking block completing
-              const stopEvent = event as any;
+              const stopEvent = event as ContentBlockStopEvent;
               if (thinkingBlockIndex !== null && stopEvent.index === thinkingBlockIndex) {
                 yield {
                   content: '',
@@ -202,16 +216,20 @@ export class AnthropicAdapter extends BaseAdapter {
               }
               // Tool call blocks already tracked in our map
               break;
+            }
 
-            default:
-              // Handle ping, error, and other events
-              if ((event as any).type === 'ping') {
+            default: {
+              // Handle ping, error, and other events not covered by the switch
+              // Use type assertion since TypeScript sees this as 'never' after exhaustive switch
+              const unknownEvent = event as { type: string; error?: { message: string } };
+              if (unknownEvent.type === 'ping') {
                 // Ignore ping events
-              } else if ((event as any).type === 'error') {
-                console.error('[AnthropicAdapter] Stream error:', (event as any).error);
-                throw new Error(`Anthropic stream error: ${(event as any).error.message}`);
+              } else if (unknownEvent.type === 'error' && unknownEvent.error) {
+                console.error('[AnthropicAdapter] Stream error:', unknownEvent.error);
+                throw new Error(`Anthropic stream error: ${unknownEvent.error.message}`);
               }
               break;
+            }
           }
         }
       }

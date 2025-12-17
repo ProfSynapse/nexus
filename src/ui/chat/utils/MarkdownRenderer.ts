@@ -7,6 +7,7 @@
 
 import { App, Component, MarkdownRenderer as ObsidianMarkdownRenderer } from 'obsidian';
 import * as smd from 'streaming-markdown';
+import type { StreamingState } from '../types/streaming';
 
 export class MarkdownRenderer {
   
@@ -43,7 +44,7 @@ export class MarkdownRenderer {
   /**
    * Initialize streaming markdown parser for progressive rendering
    */
-  static initializeStreamingParser(container: HTMLElement): any {
+  static initializeStreamingParser(container: HTMLElement): StreamingState {
     
     // Clear container
     container.empty();
@@ -65,7 +66,7 @@ export class MarkdownRenderer {
   /**
    * Write chunk to streaming markdown parser
    */
-  static writeStreamingChunk(streamingState: any, chunk: string): void {
+  static writeStreamingChunk(streamingState: StreamingState, chunk: string): void {
     
     if (streamingState && streamingState.parser) {
       try {
@@ -81,7 +82,7 @@ export class MarkdownRenderer {
    * Finalize streaming parser and optionally render with Obsidian
    */
   static async finalizeStreamingContent(
-    streamingState: any,
+    streamingState: StreamingState,
     finalContent: string,
     container: HTMLElement,
     app: App,

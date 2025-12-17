@@ -43,8 +43,18 @@ export interface Conversation {
   messages: ChatMessage[];
   created: number;
   updated: number;
+  cost?: {
+    totalCost: number;
+    currency: string;
+  };
   metadata?: {
     previousResponseId?: string; // OpenAI Responses API: Track last response ID for continuations
+    cost?: {
+      totalCost: number;
+      currency: string;
+    };
+    totalCost?: number;
+    currency?: string;
     [key: string]: any;
   };
 }

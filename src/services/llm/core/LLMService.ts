@@ -257,7 +257,13 @@ export class LLMService {
       this.settings,
       this.toolExecutor
     );
-    yield* orchestrator.generateResponseStream(messages, options);
+    // Convert messages to ConversationMessage format
+    const conversationMessages = messages.map(msg => ({
+      role: msg.role as 'user' | 'assistant' | 'system' | 'tool',
+      content: msg.content,
+      tool_calls: 'tool_calls' in msg ? (msg as any).tool_calls : undefined
+    }));
+    yield* orchestrator.generateResponseStream(conversationMessages, options);
   }
 
   /** Get a specific adapter instance for direct access */

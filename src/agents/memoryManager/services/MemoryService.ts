@@ -11,7 +11,7 @@ import {
   WorkspaceSession,
   WorkspaceState
 } from '../../../database/workspace-types';
-import { MemoryTraceData } from '../../../types/storage/HybridStorageTypes';
+import { MemoryTraceData, SessionMetadata } from '../../../types/storage/HybridStorageTypes';
 import { PaginatedResult, PaginationParams, calculatePaginationMetadata } from '../../../types/pagination/PaginationTypes';
 import { normalizeLegacyTraceMetadata } from '../../../services/memory/LegacyTraceMetadataNormalizer';
 
@@ -282,7 +282,7 @@ export class MemoryService {
   /**
    * Helper to convert SessionMetadata to WorkspaceSession format
    */
-  private convertSessionMetadataToWorkspaceSession(metadata: any): WorkspaceSession {
+  private convertSessionMetadataToWorkspaceSession(metadata: SessionMetadata): WorkspaceSession {
     return {
       id: metadata.id,
       workspaceId: metadata.workspaceId,
@@ -294,17 +294,23 @@ export class MemoryService {
   /**
    * Create session in workspace
    */
-  async createSession(session: Omit<WorkspaceSession, 'id'>): Promise<WorkspaceSession> {
-    const workspaceId = (session as any).workspaceId;
-    const sessionId = (session as any).id; // Extract ID if provided
+  async createSession(session: Omit<WorkspaceSession, 'id'> & {
+    id?: string;
+    workspaceId: string;
+    startTime?: number;
+    endTime?: number;
+    isActive?: boolean;
+  }): Promise<WorkspaceSession> {
+    const workspaceId = session.workspaceId;
+    const sessionId = session.id; // Extract ID if provided
 
     const createdSession = await this.workspaceService.addSession(workspaceId, {
       id: sessionId, // Pass the ID through!
       name: session.name,
       description: session.description,
-      startTime: (session as any).startTime || Date.now(),
-      endTime: (session as any).endTime,
-      isActive: (session as any).isActive ?? true,
+      startTime: session.startTime || Date.now(),
+      endTime: session.endTime,
+      isActive: session.isActive ?? true,
       memoryTraces: {},
       states: {}
     });

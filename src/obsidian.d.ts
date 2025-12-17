@@ -1,4 +1,9 @@
 import { App as ObsidianApp } from 'obsidian';
+import type {
+  ProgressUpdateData,
+  ProgressCompleteData,
+  ProgressCancelData
+} from './components/ProgressBar';
 
 // Extend the Obsidian App interface to include the version property
 declare module 'obsidian' {
@@ -11,9 +16,9 @@ declare global {
   interface Window {
     app: App;
     mcpProgressHandlers?: {
-      updateProgress: (data: any) => void;
-      completeProgress: (data: any) => void;
-      cancelProgress: (data: any) => void;
+      updateProgress: (data: ProgressUpdateData) => void;
+      completeProgress: (data: ProgressCompleteData) => void;
+      cancelProgress: (data: ProgressCancelData) => void;
     };
   }
 }

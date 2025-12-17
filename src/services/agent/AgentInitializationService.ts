@@ -23,7 +23,26 @@ import {
 import { logger } from '../../utils/logger';
 import { CustomPromptStorageService } from "../../agents/agentManager/services/CustomPromptStorageService";
 import { LLMProviderManager } from '../llm/providers/ProviderManager';
-import { DEFAULT_LLM_PROVIDER_SETTINGS } from '../../types';
+import { DEFAULT_LLM_PROVIDER_SETTINGS, MCPSettings, MemorySettings } from '../../types';
+import { Settings } from '../../settings';
+import { MemoryService } from '../../agents/memoryManager/services/MemoryService';
+import { WorkspaceService } from '../WorkspaceService';
+import { VaultOperations } from '../../core/VaultOperations';
+import { UsageTracker } from '../UsageTracker';
+
+/**
+ * Type guard to check if plugin has Settings
+ */
+function hasSettings(plugin: Plugin | NexusPlugin): plugin is NexusPlugin {
+  return 'settings' in plugin && plugin.settings !== undefined;
+}
+
+/**
+ * Type guard to check if plugin has services
+ */
+function hasServices(plugin: Plugin | NexusPlugin): plugin is NexusPlugin & { services: Record<string, unknown> } {
+  return 'services' in plugin && typeof plugin.services === 'object' && plugin.services !== null;
+}
 
 /**
  * Service for initializing individual agents
@@ -43,7 +62,7 @@ export class AgentInitializationService {
   async initializeContentManager(): Promise<void> {
     const contentManagerAgent = new ContentManagerAgent(
       this.app,
-      this.plugin as NexusPlugin
+      hasSettings(this.plugin) ? this.plugin : undefined
     );
 
     this.agentManager.registerAgent(contentManagerAgent);
@@ -75,10 +94,9 @@ export class AgentInitializationService {
   async initializeAgentManager(enableLLMModes: boolean): Promise<void> {
     if (!this.customPromptStorage) {
       // Try to create custom prompt storage directly if settings are available
-      const pluginSettings = this.plugin && (this.plugin as any).settings;
-      if (pluginSettings) {
+      if (hasSettings(this.plugin)) {
         try {
-          this.customPromptStorage = new CustomPromptStorageService(pluginSettings);
+          this.customPromptStorage = new CustomPromptStorageService(this.plugin.settings);
           logger.systemLog('AgentManager - created custom prompt storage during initialization');
         } catch (error) {
           logger.systemError(error as Error, 'AgentManager - Failed to create custom prompt storage');
@@ -92,12 +110,12 @@ export class AgentInitializationService {
 
     // Initialize LLM Provider Manager if LLM modes are enabled
     let llmProviderManager: LLMProviderManager | null = null;
-    let usageTracker: any = null;
+    let usageTracker: UsageTracker | null = null;
 
     if (enableLLMModes) {
       try {
         // Get LLM provider settings from plugin settings or use defaults
-        const pluginSettings = (this.plugin as any)?.settings?.settings;
+        const pluginSettings = hasSettings(this.plugin) ? this.plugin.settings.settings : undefined;
         const llmProviderSettings = pluginSettings?.llmProviders || DEFAULT_LLM_PROVIDER_SETTINGS;
 
         // Create LLM Provider Manager with vault for Nexus (WebLLM) support
@@ -132,9 +150,9 @@ export class AgentInitializationService {
     }
 
     // Create AgentManagerAgent with constructor injection
-    if (llmProviderManager && usageTracker) {
+    if (llmProviderManager && usageTracker && hasSettings(this.plugin)) {
       const agentManagerAgent = new AgentManagerAgent(
-        (this.plugin as any).settings,
+        this.plugin.settings,
         llmProviderManager,
         this.agentManager,
         usageTracker,
@@ -147,15 +165,19 @@ export class AgentInitializationService {
       // Create basic AgentManager with minimal dependencies for prompt management
       try {
         // Create minimal LLM provider manager and usage tracker for basic functionality
-        const pluginSettings = (this.plugin as any)?.settings?.settings;
+        const pluginSettings = hasSettings(this.plugin) ? this.plugin.settings.settings : undefined;
         const llmProviderSettings = pluginSettings?.llmProviders || DEFAULT_LLM_PROVIDER_SETTINGS;
 
         const minimalProviderManager = new LLMProviderManager(llmProviderSettings, this.app.vault);
-        const { UsageTracker } = await import('../UsageTracker');
         const minimalUsageTracker = new UsageTracker('llm', pluginSettings);
 
+        if (!hasSettings(this.plugin)) {
+          logger.systemError(new Error('Plugin settings not available for basic AgentManager'), 'Basic AgentManager Creation');
+          return;
+        }
+
         const agentManagerAgent = new AgentManagerAgent(
-          (this.plugin as any).settings,
+          this.plugin.settings,
           minimalProviderManager,
           this.agentManager,
           minimalUsageTracker,
@@ -174,21 +196,18 @@ export class AgentInitializationService {
   /**
    * Initialize VaultLibrarian agent
    */
-  async initializeVaultLibrarian(enableSearchModes: boolean, memorySettings: any): Promise<void> {
+  async initializeVaultLibrarian(enableSearchModes: boolean, memorySettings: MemorySettings): Promise<void> {
     // Get required services
-    let memoryService: any = null;
-    let workspaceService: any = null;
+    let memoryService: MemoryService | null = null;
+    let workspaceService: WorkspaceService | null = null;
 
     if (this.serviceManager) {
-      memoryService = this.serviceManager.getServiceIfReady('memoryService');
-      workspaceService = this.serviceManager.getServiceIfReady('workspaceService');
-    } else {
+      memoryService = this.serviceManager.getServiceIfReady<MemoryService>('memoryService');
+      workspaceService = this.serviceManager.getServiceIfReady<WorkspaceService>('workspaceService');
+    } else if (hasServices(this.plugin)) {
       // Fallback to plugin's direct service access
-      const pluginServices = (this.plugin as any).services;
-      if (pluginServices) {
-        memoryService = pluginServices.memoryService;
-        workspaceService = pluginServices.workspaceService;
-      }
+      memoryService = this.plugin.services.memoryService as MemoryService | undefined || null;
+      workspaceService = this.plugin.services.workspaceService as WorkspaceService | undefined || null;
     }
 
     const vaultLibrarianAgent = new VaultLibrarianAgent(
@@ -212,19 +231,16 @@ export class AgentInitializationService {
    */
   async initializeMemoryManager(): Promise<void> {
     // Get required services - try ServiceManager first, then plugin direct access
-    let memoryService: any = null;
-    let workspaceService: any = null;
+    let memoryService: MemoryService | null = null;
+    let workspaceService: WorkspaceService | null = null;
 
     if (this.serviceManager) {
-      memoryService = this.serviceManager.getServiceIfReady('memoryService');
-      workspaceService = this.serviceManager.getServiceIfReady('workspaceService');
-    } else {
+      memoryService = this.serviceManager.getServiceIfReady<MemoryService>('memoryService');
+      workspaceService = this.serviceManager.getServiceIfReady<WorkspaceService>('workspaceService');
+    } else if (hasServices(this.plugin)) {
       // Fallback to plugin's direct service access
-      const pluginServices = (this.plugin as any).services;
-      if (pluginServices) {
-        memoryService = pluginServices.memoryService;
-        workspaceService = pluginServices.workspaceService;
-      }
+      memoryService = this.plugin.services.memoryService as MemoryService | undefined || null;
+      workspaceService = this.plugin.services.workspaceService as WorkspaceService | undefined || null;
     }
 
     if (!memoryService || !workspaceService) {

@@ -8,7 +8,7 @@
  * Used by main.ts to manage the plugin's lifecycle phases in a structured way.
  */
 
-import { Plugin, Notice, Platform } from 'obsidian';
+import { Plugin, Notice, Platform, App, PluginManifest } from 'obsidian';
 import { ServiceManager } from './ServiceManager';
 import { Settings } from '../settings';
 import { UpdateManager } from '../utils/UpdateManager';
@@ -19,17 +19,29 @@ import { BackgroundProcessor } from './background/BackgroundProcessor';
 import { SettingsTabManager } from './settings/SettingsTabManager';
 import { EmbeddingManager } from '../services/embeddings/EmbeddingManager';
 import type { ServiceCreationContext } from './services/ServiceDefinitions';
+import type { HybridStorageAdapter } from '../database/adapters/HybridStorageAdapter';
+import type { ChatTraceService } from '../services/chat/ChatTraceService';
 
 // Type-only import to avoid bundling Node.js dependencies on mobile
 type MCPConnectorType = import('../connector').MCPConnector;
 
+// Interface for services with storage state management
+interface StateManager {
+    saveState(): Promise<void>;
+}
+
+// Extended Plugin interface with optional embeddingManager property
+interface PluginWithEmbedding extends Plugin {
+    embeddingManager?: EmbeddingManager;
+}
+
 export interface PluginLifecycleConfig {
     plugin: Plugin;
-    app: any;
+    app: App;
     serviceManager: ServiceManager;
     settings: Settings;
     connector?: MCPConnectorType; // Optional - undefined on mobile
-    manifest: any;
+    manifest: PluginManifest;
 }
 
 /**
@@ -186,7 +198,7 @@ export class PluginLifecycleManager {
 	                    if (!Platform.isMobile) {
 	                        setTimeout(async () => {
 	                            try {
-	                                const storageAdapter = await this.serviceRegistrar.getService<any>('hybridStorageAdapter');
+	                                const storageAdapter = await this.serviceRegistrar.getService<HybridStorageAdapter>('hybridStorageAdapter');
 	                                if (storageAdapter && typeof storageAdapter.waitForReady === 'function') {
 	                                    const ready = await storageAdapter.waitForReady();
 	                                    if (!ready) {
@@ -203,12 +215,12 @@ export class PluginLifecycleManager {
 	                                    );
 	                                    await this.embeddingManager.initialize();
 	                                    // Expose on plugin for lazy access by agents
-	                                    (this.config.plugin as any).embeddingManager = this.embeddingManager;
+	                                    (this.config.plugin as PluginWithEmbedding).embeddingManager = this.embeddingManager;
 
 	                                    // Wire embedding service into ChatTraceService so new traces get embedded
 	                                    const embeddingService = this.embeddingManager.getService();
 	                                    if (embeddingService) {
-	                                        const chatTraceService = await this.serviceRegistrar.getService<any>('chatTraceService');
+	                                        const chatTraceService = await this.serviceRegistrar.getService<ChatTraceService>('chatTraceService');
 	                                        if (chatTraceService && typeof chatTraceService.setEmbeddingService === 'function') {
 	                                            chatTraceService.setEmbeddingService(embeddingService);
 	                                        }
@@ -309,16 +321,16 @@ export class PluginLifecycleManager {
             }
 
             // Save processed files state before cleanup
-            const stateManager = this.config.serviceManager?.getServiceIfReady('stateManager');
-            if (stateManager && typeof (stateManager as any).saveState === 'function') {
-                await (stateManager as any).saveState();
+            const stateManager = this.config.serviceManager?.getServiceIfReady<StateManager>('stateManager');
+            if (stateManager && typeof stateManager.saveState === 'function') {
+                await stateManager.saveState();
             }
 
             // Close HybridStorageAdapter to properly shut down SQLite
-            const storageAdapter = this.config.serviceManager?.getServiceIfReady('hybridStorageAdapter');
-            if (storageAdapter && typeof (storageAdapter as any).close === 'function') {
+            const storageAdapter = this.config.serviceManager?.getServiceIfReady<HybridStorageAdapter>('hybridStorageAdapter');
+            if (storageAdapter && typeof storageAdapter.close === 'function') {
                 try {
-                    await (storageAdapter as any).close();
+                    await storageAdapter.close();
                     console.log('[PluginLifecycleManager] HybridStorageAdapter closed successfully');
                 } catch (error) {
                     console.warn('[PluginLifecycleManager] Error closing HybridStorageAdapter:', error);

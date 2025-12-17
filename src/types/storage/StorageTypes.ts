@@ -56,8 +56,18 @@ export interface ConversationMessage {
   state?: 'draft' | 'streaming' | 'complete' | 'aborted' | 'invalid'; // Message lifecycle state
   toolCalls?: ToolCall[];
   toolName?: string;
-  toolParams?: any;
-  toolResult?: any;
+  toolParams?: Record<string, unknown>;
+  toolResult?: unknown;
+
+  // Tool response context
+  toolCallId?: string;
+
+  // Reasoning/thinking content from LLMs (Claude, GPT-5, Gemini)
+  reasoning?: string;
+
+  // Message branching support
+  alternatives?: ConversationMessage[];
+  activeAlternativeIndex?: number;
 
   // Cost tracking (primarily for assistant messages)
   usage?: {
@@ -84,10 +94,11 @@ export interface ToolCall {
     name: string;
     arguments: string;
   };
-  parameters?: any;
-  result?: any;
+  parameters?: Record<string, unknown>;
+  result?: unknown;
   success?: boolean;
   error?: string;
+  executionTime?: number;
 }
 
 /**
@@ -164,6 +175,7 @@ export interface MemoryTrace {
 export interface StateData {
   id: string;
   name: string;
+  description?: string;
   created: number;
   state: WorkspaceState;
 }

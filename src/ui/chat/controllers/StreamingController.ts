@@ -19,6 +19,7 @@
 
 import { MarkdownRenderer } from '../utils/MarkdownRenderer';
 import { App, Component } from 'obsidian';
+import type { StreamingState, ElementWithLoadingInterval } from '../types/streaming';
 
 export interface StreamingControllerEvents {
   onAnimationStarted: (messageId: string) => void;
@@ -26,8 +27,8 @@ export interface StreamingControllerEvents {
 }
 
 export class StreamingController {
-  private activeAnimations = new Map<string, any>(); // messageId -> intervalId
-  private streamingStates = new Map<string, any>(); // messageId -> streaming-markdown state
+  private activeAnimations = new Map<string, NodeJS.Timeout>(); // messageId -> intervalId
+  private streamingStates = new Map<string, StreamingState>(); // messageId -> streaming-markdown state
 
   constructor(
     private containerEl: HTMLElement,
@@ -147,9 +148,9 @@ export class StreamingController {
         this.activeAnimations.set(messageId, interval);
         this.events?.onAnimationStarted(messageId);
       }
-      
+
       // Also store on element for backward compatibility
-      (element as any)._loadingInterval = interval as any;
+      (element as ElementWithLoadingInterval)._loadingInterval = interval;
     }
   }
 
@@ -158,10 +159,11 @@ export class StreamingController {
    */
   stopLoadingAnimation(element: Element): void {
     // Clean up from element storage (backward compatibility)
-    const elementInterval = (element as any)._loadingInterval;
+    const elementWithInterval = element as ElementWithLoadingInterval;
+    const elementInterval = elementWithInterval._loadingInterval;
     if (elementInterval) {
       clearInterval(elementInterval);
-      delete (element as any)._loadingInterval;
+      delete elementWithInterval._loadingInterval;
     }
 
     // Clean up from our tracking

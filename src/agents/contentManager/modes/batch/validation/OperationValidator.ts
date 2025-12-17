@@ -105,7 +105,7 @@ export class OperationValidator {
       default:
         return {
           success: false,
-          error: `Unknown operation type: ${(operation as any).type} at index ${index}`
+          error: `Unknown operation type: ${(operation as unknown as { type: string }).type} at index ${index}`
         };
     }
   }

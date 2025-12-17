@@ -10,6 +10,8 @@ import { IndexManager } from './storage/IndexManager';
 import { IndividualWorkspace, WorkspaceMetadata, SessionData, MemoryTrace, StateData } from '../types/storage/StorageTypes';
 import { IStorageAdapter } from '../database/interfaces/IStorageAdapter';
 import * as HybridTypes from '../types/storage/HybridStorageTypes';
+import { TraceMetadata, LegacyWorkspaceTraceMetadata } from '../database/types/memory/MemoryTypes';
+import { WorkspaceState } from '../database/types/session/SessionTypes';
 
 // Export constant for backward compatibility
 export const GLOBAL_WORKSPACE_ID = 'default';
@@ -633,7 +635,10 @@ export class WorkspaceService {
         timestamp: hybridTrace.timestamp,
         type: hybridTrace.type || 'generic',
         content: hybridTrace.content,
-        metadata: hybridTrace.metadata as any // Type conversion between different metadata schemas
+        // Safe conversion: HybridTypes.MemoryTraceData.metadata (Record<string, any>)
+        // is cast to TraceMetadata which is the expected type for MemoryTrace.metadata
+        // Note: This metadata may be either TraceMetadata or LegacyWorkspaceTraceMetadata at runtime
+        metadata: hybridTrace.metadata as TraceMetadata | undefined
       };
     }
 
@@ -684,7 +689,10 @@ export class WorkspaceService {
         timestamp: t.timestamp,
         type: t.type || 'generic',
         content: t.content,
-        metadata: t.metadata as any // Type conversion between different metadata schemas
+        // Safe conversion: HybridTypes.MemoryTraceData.metadata (Record<string, any>)
+        // is cast to TraceMetadata which is the expected type for MemoryTrace.metadata
+        // Note: This metadata may be either TraceMetadata or LegacyWorkspaceTraceMetadata at runtime
+        metadata: t.metadata as TraceMetadata | undefined
       }));
     }
 
@@ -717,12 +725,17 @@ export class WorkspaceService {
         });
       }
 
+      // Support both new 'state' property and legacy 'snapshot' property
+      const stateContent = stateData.state ||
+        (stateData as Partial<StateData> & { snapshot?: WorkspaceState }).snapshot ||
+        {};
+
       const hybridState: Omit<HybridTypes.StateData, 'id' | 'workspaceId' | 'sessionId'> = {
         name: stateData.name || 'Untitled State',
         created: stateData.created || Date.now(),
         description: undefined,
         tags: undefined,
-        content: stateData.state || (stateData as any).snapshot || {}
+        content: stateContent
       };
 
       const stateId = await this.storageAdapter.saveState(workspaceId, sessionId, hybridState);
@@ -750,11 +763,17 @@ export class WorkspaceService {
 
     // Create state
     const stateId = stateData.id || `state_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+    // Support both new 'state' property and legacy 'snapshot' property
+    const stateContent = stateData.state ||
+      (stateData as Partial<StateData> & { snapshot?: WorkspaceState }).snapshot ||
+      {} as WorkspaceState;
+
     const state: StateData = {
       id: stateId,
       name: stateData.name || 'Untitled State',
       created: stateData.created || Date.now(),
-      state: stateData.state || (stateData as any).snapshot || {} as any  // Support both new and legacy property names
+      state: stateContent
     };
 
     // Add to session
@@ -1047,7 +1066,8 @@ export class WorkspaceService {
       // Check if steps is an array (legacy format)
       if (Array.isArray(workflow.steps)) {
         // Convert array to string with newlines
-        (workflow.steps as any) = (workflow.steps as string[]).join('\n');
+        // Type assertion needed: workflow.steps is typed as string but legacy data may have string[]
+        (workflow as { steps: string | string[] }).steps = (workflow.steps as string[]).join('\n');
         migrated = true;
       }
     }

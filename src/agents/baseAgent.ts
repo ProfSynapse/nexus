@@ -5,6 +5,16 @@ import { parseWorkspaceContext } from '../utils/contextUtils';
 import { createErrorMessage } from '../utils/errorUtils';
 
 /**
+ * Extended mode interface that includes optional BaseMode methods
+ * Used for type-safe access to workspace context propagation methods
+ */
+interface IModeWithContext extends IMode {
+  sessionId?: string;
+  setParentContext?(context: CommonResult['workspaceContext']): void;
+  getInheritedWorkspaceContext?(params: CommonParameters): CommonResult['workspaceContext'] | null;
+}
+
+/**
  * Base class for all agents in the MCP plugin
  * Provides common functionality for agent implementation
  */
@@ -105,45 +115,54 @@ export abstract class BaseAgent implements IAgent {
    * @returns Promise that resolves with the mode's result
    * @throws Error if mode not found
    */
-  async executeMode(modeSlug: string, params: any): Promise<any> {
+  async executeMode(modeSlug: string, params: CommonParameters): Promise<CommonResult> {
     const mode = this.modes.get(modeSlug);
     if (!mode) {
       // Build helpful error with suggestions
       const errorInfo = this.buildModeNotFoundError(modeSlug);
       throw new Error(errorInfo);
     }
-    
+
     // Session ID and description are now required for all tool calls (in context)
     if (!params.context?.sessionId) {
       // Return error if sessionId is missing - provide helpful message about providing session name
       return {
         success: false,
-        error: createErrorMessage('Session ID required: ', 
+        error: createErrorMessage('Session ID required: ',
           `Mode ${modeSlug} requires context.sessionId. Provide a 2-4 word session name or existing session ID in the context block.`),
         data: null
       };
     }
-    
+
     // sessionDescription is optional but recommended for better session management
     if (!params.context?.sessionDescription) {
       console.warn(`[${this.name}] context.sessionDescription not provided for ${modeSlug}. Consider providing a brief description for better session tracking.`);
     }
-    
+
+    // Cast to extended interface for type-safe access to optional methods
+    const modeWithContext = mode as IModeWithContext;
+
     // Store the sessionId on the mode instance for use in prepareResult
-    (mode as any).sessionId = params.context.sessionId;
-    
+    if ('sessionId' in modeWithContext) {
+      modeWithContext.sessionId = params.context.sessionId;
+    }
+
     // If the mode has setParentContext method, use it to propagate workspace context
     // Pass the workspace context even if undefined, as the mode's setParentContext
     // method can handle the default context inheritance logic
-    if (typeof (mode as any).setParentContext === 'function') {
-      (mode as any).setParentContext(params.workspaceContext);
+    if (typeof modeWithContext.setParentContext === 'function') {
+      // Parse workspace context if it's a string, to ensure it's a proper WorkspaceContext object
+      const parsedContext = typeof params.workspaceContext === 'string'
+        ? parseWorkspaceContext(params.workspaceContext) ?? undefined
+        : params.workspaceContext;
+      modeWithContext.setParentContext(parsedContext);
     }
-    
+
     // If the mode supports getInheritedWorkspaceContext and there's no explicit workspace context,
     // try to retrieve the inherited context and apply it to the params
-    if (typeof (mode as any).getInheritedWorkspaceContext === 'function' && 
+    if (typeof modeWithContext.getInheritedWorkspaceContext === 'function' &&
         (!params.workspaceContext || !parseWorkspaceContext(params.workspaceContext)?.workspaceId)) {
-      const inheritedContext = (mode as any).getInheritedWorkspaceContext(params);
+      const inheritedContext = modeWithContext.getInheritedWorkspaceContext(params);
       if (inheritedContext) {
         params = {
           ...params,
@@ -151,10 +170,10 @@ export abstract class BaseAgent implements IAgent {
         };
       }
     }
-    
+
     // Execute the requested mode
     const result = await mode.execute(params);
-    
+
     return result;
   }
   

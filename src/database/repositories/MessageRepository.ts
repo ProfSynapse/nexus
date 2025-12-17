@@ -184,15 +184,15 @@ export class MessageRepository
             content: data.content,
             tool_calls: data.toolCalls?.map(tc => ({
               id: tc.id,
-              type: (tc as any).type || 'function',
+              type: tc.type || 'function',
               function: tc.function,
               // Persist extras so tool bubbles can be reconstructed after reload
-              name: (tc as any).name,
-              parameters: (tc as any).parameters,
-              result: (tc as any).result,
-              success: (tc as any).success,
-              error: (tc as any).error,
-              executionTime: (tc as any).executionTime
+              name: tc.name,
+              parameters: tc.parameters,
+              result: tc.result,
+              success: tc.success,
+              error: tc.error,
+              executionTime: tc.executionTime
             })),
             tool_call_id: data.toolCallId,
             state: data.state,
@@ -201,7 +201,7 @@ export class MessageRepository
             alternatives: this.convertAlternativesToEvent(data.alternatives),
             activeAlternativeIndex: data.activeAlternativeIndex ?? 0
           }
-        } as any
+        }
       );
 
       // 2. Update SQLite cache
@@ -264,25 +264,22 @@ export class MessageRepository
             state: data.state,
             reasoning: data.reasoning,
             // Persist full tool call data including results so tool bubbles can be reconstructed
-            tool_calls: data.toolCalls?.map(tc => {
-              const anyTc: any = tc as any;
-              return {
-                id: tc.id,
-                type: anyTc.type || 'function',
-                function: tc.function,
-                name: anyTc.name,
-                parameters: anyTc.parameters,
-                result: anyTc.result,
-                success: anyTc.success,
-                error: anyTc.error
-              };
-            }),
+            tool_calls: data.toolCalls?.map(tc => ({
+              id: tc.id,
+              type: tc.type || 'function',
+              function: tc.function,
+              name: tc.name,
+              parameters: tc.parameters,
+              result: tc.result,
+              success: tc.success,
+              error: tc.error
+            })),
             tool_call_id: data.toolCallId ?? undefined,
             // Branching support
             alternatives: this.convertAlternativesToEvent(data.alternatives),
             activeAlternativeIndex: data.activeAlternativeIndex
           }
-        } as any
+        }
       );
 
       // 2. Update SQLite cache

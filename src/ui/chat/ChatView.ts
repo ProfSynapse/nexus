@@ -8,7 +8,7 @@
  * and tool event coordination to ToolEventCoordinator.
  */
 
-import { ItemView, WorkspaceLeaf, setIcon } from 'obsidian';
+import { ItemView, WorkspaceLeaf, setIcon, Plugin } from 'obsidian';
 import { ConversationList } from './components/ConversationList';
 import { MessageDisplay } from './components/MessageDisplay';
 import { ChatInput } from './components/ChatInput';
@@ -17,6 +17,9 @@ import { ChatSettingsModal } from './components/ChatSettingsModal';
 import { ChatService } from '../../services/chat/ChatService';
 import { ConversationData, ConversationMessage } from '../../types/chat/ChatTypes';
 import { MessageEnhancement } from './components/suggesters/base/SuggesterInterfaces';
+import type { ServiceManager } from '../../core/ServiceManager';
+import type NexusPlugin from '../../main';
+import type { WorkspaceService } from '../../services/WorkspaceService';
 
 // Services
 import { ConversationManager, ConversationManagerEvents } from './services/ConversationManager';
@@ -131,11 +134,11 @@ export class ChatView extends ItemView {
    * Wait for database to be ready, showing loading overlay if needed
    */
   private async waitForDatabaseReady(): Promise<void> {
-    const plugin = getNexusPlugin(this.app) as any;
-    if (!plugin?.serviceManager) return;
+    const plugin = getNexusPlugin<NexusPlugin>(this.app);
+    if (!plugin) return;
 
     try {
-      const storageAdapter = await plugin.serviceManager.getService('hybridStorageAdapter') as any;
+      const storageAdapter = await plugin.getService<{ isReady?: () => boolean; waitForReady?: () => Promise<boolean> }>('hybridStorageAdapter');
       if (!storageAdapter) return;
 
       // If already ready, no need to show overlay
@@ -355,13 +358,13 @@ export class ChatView extends ItemView {
    * Open chat settings modal
    */
   private async openChatSettingsModal(): Promise<void> {
-    const plugin = getNexusPlugin(this.app) as any;
+    const plugin = getNexusPlugin<NexusPlugin>(this.app);
     if (!plugin) {
       console.error('[ChatView] Plugin not found');
       return;
     }
 
-    const workspaceService = await plugin.getService('workspaceService');
+    const workspaceService = await plugin.getService<WorkspaceService>('workspaceService');
     if (!workspaceService) {
       console.error('[ChatView] WorkspaceService not available');
       return;
@@ -370,7 +373,8 @@ export class ChatView extends ItemView {
     const currentConversation = this.conversationManager.getCurrentConversation();
 
     if (currentConversation) {
-      (this.modelAgentManager as any).currentConversationId = currentConversation.id;
+      // Access private property via type assertion - currentConversationId exists but is private
+      (this.modelAgentManager as unknown as { currentConversationId: string | null }).currentConversationId = currentConversation.id;
     }
 
     const modal = new ChatSettingsModal(
@@ -425,7 +429,8 @@ export class ChatView extends ItemView {
       this.streamingController.cleanup();
     }
 
-    (this.modelAgentManager as any).currentConversationId = conversation.id;
+    // Access private property via type assertion - currentConversationId exists but is private
+    (this.modelAgentManager as unknown as { currentConversationId: string | null }).currentConversationId = conversation.id;
     await this.modelAgentManager.initializeFromConversation(conversation.id);
     this.messageDisplay.setConversation(conversation);
     this.updateChatTitle();
@@ -472,7 +477,7 @@ export class ChatView extends ItemView {
 
   private handleStreamingUpdate(messageId: string, content: string, isComplete: boolean, isIncremental?: boolean): void {
     const currentConversation = this.conversationManager?.getCurrentConversation();
-    const message = currentConversation?.messages.find((m: any) => m.id === messageId);
+    const message = currentConversation?.messages.find((m) => m.id === messageId);
     const isRetry = message && message.alternatives && message.alternatives.length > 0;
 
     if (isIncremental) {
@@ -601,11 +606,10 @@ export class ChatView extends ItemView {
     if (!conversation) return null;
 
     // Prefer structured cost field if present
-    const cost = (conversation as any).cost;
-    if (cost?.totalCost !== undefined) {
+    if (conversation.cost?.totalCost !== undefined) {
       return {
-        totalCost: cost.totalCost,
-        currency: cost.currency || 'USD'
+        totalCost: conversation.cost.totalCost,
+        currency: conversation.cost.currency || 'USD'
       };
     }
 

@@ -6,7 +6,7 @@
  * Used by: SearchMemoryMode for processing search requests and enriching results
  */
 
-import { Plugin, prepareFuzzySearch } from 'obsidian';
+import { App, Plugin, prepareFuzzySearch } from 'obsidian';
 import {
   MemorySearchParameters,
   MemorySearchResult,
@@ -22,8 +22,9 @@ import {
 import { MemoryService } from "../../memoryManager/services/MemoryService";
 import { WorkspaceService, GLOBAL_WORKSPACE_ID } from '../../../services/WorkspaceService';
 import { IStorageAdapter } from '../../../database/interfaces/IStorageAdapter';
-import { MemoryTraceData } from '../../../types/storage/HybridStorageTypes';
+import { MemoryTraceData, StateMetadata } from '../../../types/storage/HybridStorageTypes';
 import { getNexusPlugin } from '../../../utils/pluginLocator';
+import type NexusPlugin from '../../../main';
 
 export interface MemorySearchProcessorInterface {
   process(params: MemorySearchParameters): Promise<MemorySearchResult[]>;
@@ -153,7 +154,7 @@ export class MemorySearchProcessor implements MemorySearchProcessorInterface {
     const searchPromises: Promise<RawMemoryResult[]>[] = [];
 
     // Get default memory types if not specified
-    const memoryTypes = (options as any).memoryTypes || ['traces', 'toolCalls', 'sessions', 'states', 'workspaces'];
+    const memoryTypes = options.memoryTypes || ['traces', 'toolCalls', 'sessions', 'states', 'workspaces'];
     const limit = options.limit || this.configuration.defaultLimit;
 
     // Search legacy traces
@@ -238,7 +239,7 @@ export class MemorySearchProcessor implements MemorySearchProcessorInterface {
 
   private buildSearchOptions(params: MemorySearchParameters): MemorySearchExecutionOptions {
     return {
-      workspaceId: (params as any).workspaceId || params.workspace,
+      workspaceId: params.workspaceId || params.workspace,
       sessionId: params.filterBySession ? params.context.sessionId : undefined,
       limit: params.limit || this.configuration.defaultLimit,
       toolCallFilters: params.toolCallFilters
@@ -420,16 +421,13 @@ export class MemorySearchProcessor implements MemorySearchProcessorInterface {
 
       for (const state of statesResult.items) {
         let score = 0;
-        
+
         // Check name match
         if (state.name.toLowerCase().includes(queryLower)) {
           score += 0.9;
         }
-        
-        // Check description match
-        if ((state as any).description?.toLowerCase().includes(queryLower)) {
-          score += 0.8;
-        }
+
+        // Note: State items from getStates don't have description, only id/name/created/state
 
         if (score > 0) {
           results.push({
@@ -496,27 +494,25 @@ export class MemorySearchProcessor implements MemorySearchProcessorInterface {
     try {
       // Determine result type
       const resultType = this.determineResultType(trace);
-      
+
       // Generate highlight
       const highlight = this.generateHighlight(trace, query);
-      
+
       // Build metadata
       const metadata = this.buildMetadata(trace, resultType);
-      
+
       // Generate context
       const searchContext = this.generateSearchContext(trace, query, resultType);
 
-      const enrichedResult = {
+      const enrichedResult: MemorySearchResult = {
         type: resultType,
         id: trace.id,
         highlight,
         metadata,
         context: searchContext,
-        score: result.similarity || 0,
-        // Attach the raw trace for later access
-        _rawTrace: trace
-      } as any;
-      
+        score: result.similarity || 0
+      };
+
       return enrichedResult;
     } catch (error) {
       console.error('[MemorySearchProcessor] Failed to enrich result:', {
@@ -529,10 +525,14 @@ export class MemorySearchProcessor implements MemorySearchProcessorInterface {
   }
 
   private determineResultType(trace: any): MemoryType {
-    if ((trace as any).toolCallId) return MemoryType.TOOL_CALL;
-    if (trace.name && trace.startTime !== undefined) return MemoryType.SESSION;
-    if (trace.name && trace.timestamp !== undefined) return MemoryType.STATE;
-    if (trace.name && trace.created !== undefined) return MemoryType.WORKSPACE;
+    // Check for tool call specific properties
+    if ('toolCallId' in trace && trace.toolCallId) return MemoryType.TOOL_CALL;
+    // Check for session specific properties
+    if ('name' in trace && 'startTime' in trace && trace.startTime !== undefined) return MemoryType.SESSION;
+    // Check for state specific properties
+    if ('name' in trace && 'timestamp' in trace && trace.timestamp !== undefined) return MemoryType.STATE;
+    // Check for workspace specific properties
+    if ('name' in trace && 'created' in trace && trace.created !== undefined) return MemoryType.WORKSPACE;
     return MemoryType.TRACE;
   }
 
@@ -573,18 +573,17 @@ export class MemorySearchProcessor implements MemorySearchProcessorInterface {
     };
 
     if (resultType === MemoryType.TOOL_CALL) {
-      const toolCallTrace = trace as any;
       return {
         ...baseMetadata,
-        toolUsed: metadata.tool?.id || toolCallTrace.toolName,
-        modeUsed: metadata.tool?.mode || toolCallTrace.mode,
-        toolCallId: toolCallTrace.toolCallId,
-        agent: metadata.tool?.agent || toolCallTrace.agent,
-        mode: metadata.tool?.mode || toolCallTrace.mode,
-        executionTime: toolCallTrace.executionContext?.timing?.executionTime,
-        success: metadata.outcome?.success ?? toolCallTrace.metadata?.response?.success,
-        errorMessage: metadata.outcome?.error?.message || toolCallTrace.metadata?.response?.error?.message,
-        affectedResources: toolCallTrace.relationships?.affectedResources || metadata.legacy?.relatedFiles || []
+        toolUsed: metadata.tool?.id || trace.toolName,
+        modeUsed: metadata.tool?.mode || trace.mode,
+        toolCallId: trace.toolCallId,
+        agent: metadata.tool?.agent || trace.agent,
+        mode: metadata.tool?.mode || trace.mode,
+        executionTime: trace.executionContext?.timing?.executionTime,
+        success: metadata.outcome?.success ?? trace.metadata?.response?.success,
+        errorMessage: metadata.outcome?.error?.message || trace.metadata?.response?.error?.message,
+        affectedResources: trace.relationships?.affectedResources || metadata.legacy?.relatedFiles || []
       };
     }
 
@@ -680,10 +679,10 @@ export class MemorySearchProcessor implements MemorySearchProcessorInterface {
   // Service access methods
   private getMemoryService(): MemoryService | undefined {
     try {
-      const app = (this.plugin as any)?.app;
-      const plugin = app ? (getNexusPlugin(app) as any) : null;
-      if (plugin?.serviceContainer) {
-        return plugin.serviceContainer.getIfReady('memoryService') || undefined;
+      const app: App = this.plugin.app;
+      const plugin = getNexusPlugin(app) as NexusPlugin | null;
+      if (plugin) {
+        return plugin.getServiceIfReady<MemoryService>('memoryService') || undefined;
       }
       return undefined;
     } catch (error) {
@@ -695,10 +694,10 @@ export class MemorySearchProcessor implements MemorySearchProcessorInterface {
 
   private getWorkspaceService(): WorkspaceService | undefined {
     try {
-      const app = (this.plugin as any)?.app;
-      const plugin = app ? (getNexusPlugin(app) as any) : null;
-      if (plugin?.serviceContainer) {
-        return plugin.serviceContainer.getIfReady('workspaceService') || undefined;
+      const app: App = this.plugin.app;
+      const plugin = getNexusPlugin(app) as NexusPlugin | null;
+      if (plugin) {
+        return plugin.getServiceIfReady<WorkspaceService>('workspaceService') || undefined;
       }
       return undefined;
     } catch (error) {

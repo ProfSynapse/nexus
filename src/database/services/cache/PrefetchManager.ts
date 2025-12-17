@@ -2,6 +2,7 @@ import { Events } from 'obsidian';
 import { CacheManager } from './CacheManager';
 import { WorkspaceService } from '../../../services/WorkspaceService';
 import { MemoryService } from '../../../agents/memoryManager/services/MemoryService';
+import { WorkspaceSession, WorkspaceState } from '../../types/session/SessionTypes';
 
 export interface PrefetchOptions {
     maxConcurrentPrefetches?: number;
@@ -65,9 +66,9 @@ export class PrefetchManager extends Events {
             // Get the session to find its workspace
             const session = await this.memoryService.getSession('default-workspace', sessionId);
 
-            if (session && (session as any).workspaceId) {
+            if (session && session.workspaceId) {
                 // Prefetch the parent workspace if not already cached
-                this.queuePrefetch('workspace', (session as any).workspaceId);
+                this.queuePrefetch('workspace', session.workspaceId);
             }
 
             // Get recent memory traces
@@ -103,19 +104,19 @@ export class PrefetchManager extends Events {
         try {
             // Get the state to find related states
             const statesResult = await this.memoryService.getStates('default-workspace');
-            const state = statesResult.items.find(s => s.id === stateId);
+            const stateItem = statesResult.items.find(s => s.id === stateId);
 
-            if (state) {
+            if (stateItem) {
                 // Prefetch parent session
-                if ((state as any).sessionId) {
-                    this.queuePrefetch('session', (state as any).sessionId);
+                if (stateItem.state.sessionId) {
+                    this.queuePrefetch('session', stateItem.state.sessionId);
                 }
 
                 // Prefetch sibling states (same session)
-                if ((state as any).sessionId) {
+                if (stateItem.state.sessionId) {
                     const siblingStates = statesResult.items
-                        .filter(s => (s as any).sessionId === (state as any).sessionId && s.id !== stateId)
-                        .sort((a, b) => ((b as any).timestamp ?? 0) - ((a as any).timestamp ?? 0))
+                        .filter(s => s.state.sessionId === stateItem.state.sessionId && s.id !== stateId)
+                        .sort((a, b) => (b.state.timestamp ?? 0) - (a.state.timestamp ?? 0))
                         .slice(0, 3);
 
                     for (const sibling of siblingStates) {

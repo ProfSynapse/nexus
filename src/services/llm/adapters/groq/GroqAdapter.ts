@@ -6,17 +6,34 @@
  */
 
 import Groq from 'groq-sdk';
+import type { ChatCompletion, ChatCompletionChunk, ChatCompletionMessageToolCall, ChatCompletionMessageParam } from 'groq-sdk/resources/chat/completions';
+import type { CompletionUsage } from 'groq-sdk/resources/completions';
 import { BaseAdapter } from '../BaseAdapter';
-import { 
-  GenerateOptions, 
-  StreamChunk, 
-  LLMResponse, 
-  ModelInfo, 
+import {
+  GenerateOptions,
+  StreamChunk,
+  LLMResponse,
+  ModelInfo,
   ProviderCapabilities,
-  ModelPricing
+  ModelPricing,
+  Tool,
+  TokenUsage
 } from '../types';
 import { GROQ_MODELS, GROQ_DEFAULT_MODEL } from './GroqModels';
 import { MCPToolExecution } from '../shared/ToolExecutionUtils';
+
+/**
+ * Extended Groq chunk type with x_groq metadata
+ * x_groq contains timing information (queue_time, prompt_time, completion_time)
+ */
+interface GroqChatCompletionChunk extends ChatCompletionChunk {
+  usage?: CompletionUsage;
+  x_groq?: {
+    id?: string;
+    error?: string;
+    usage?: CompletionUsage;
+  };
+}
 
 export class GroqAdapter extends BaseAdapter {
   readonly name = 'groq';
@@ -76,10 +93,11 @@ export class GroqAdapter extends BaseAdapter {
         extractFinishReason: (chunk) => chunk.choices[0]?.finish_reason || null,
         extractUsage: (chunk) => {
           // Groq has both standard usage and x_groq metadata
-          if ((chunk as any).usage || (chunk as any).x_groq) {
+          const groqChunk = chunk as GroqChatCompletionChunk;
+          if (groqChunk.usage || groqChunk.x_groq) {
             return {
-              usage: (chunk as any).usage,
-              x_groq: (chunk as any).x_groq
+              usage: groqChunk.usage,
+              x_groq: groqChunk.x_groq
             };
           }
           return null;
@@ -147,10 +165,22 @@ export class GroqAdapter extends BaseAdapter {
    */
   private async generateWithChatCompletions(prompt: string, options?: GenerateOptions): Promise<LLMResponse> {
     const model = options?.model || this.currentModel;
-    
-    const chatParams: any = {
+
+    interface ChatCompletionParams {
+      model: string;
+      messages: ChatCompletionMessageParam[];
+      temperature?: number;
+      max_completion_tokens?: number;
+      top_p?: number;
+      stop?: string[];
+      response_format?: { type: 'json_object' };
+      tools?: Array<{ type: 'function'; function: { name: string; description: string; parameters: Record<string, any> } }>;
+    }
+
+    const chatParams: ChatCompletionParams = {
       model,
-      messages: this.buildMessages(prompt, options?.systemPrompt),
+      // Safe cast: buildMessages creates objects compatible with ChatCompletionMessageParam
+      messages: this.buildMessages(prompt, options?.systemPrompt) as ChatCompletionMessageParam[],
       temperature: options?.temperature,
       max_completion_tokens: options?.maxTokens,
       top_p: options?.topP,
@@ -172,7 +202,7 @@ export class GroqAdapter extends BaseAdapter {
     
     let text = choice.message?.content || '';
     const usage = this.extractUsage(response);
-    let finishReason = choice.finish_reason || 'stop';
+    const finishReason = this.mapFinishReason(choice.finish_reason);
 
     // If tools were provided and we got tool calls, we need to handle them
     // For now, just return the response as-is since tool execution is complex
@@ -185,31 +215,30 @@ export class GroqAdapter extends BaseAdapter {
       model,
       usage,
       undefined,
-      finishReason as any
+      finishReason
     );
   }
 
   // Private methods
-  private convertTools(tools: any[]): any[] {
+  private convertTools(tools: Tool[]): Array<{ type: 'function'; function: { name: string; description: string; parameters: Record<string, any> } }> {
     return tools.map(tool => {
-      if (tool.type === 'function') {
-        // Handle both nested (Chat Completions) and flat (Responses API) formats
-        const toolDef = tool.function || tool;
+      if (tool.type === 'function' && tool.function) {
         return {
-          type: 'function',
+          type: 'function' as const,
           function: {
-            name: toolDef.name,
-            description: toolDef.description,
-            parameters: toolDef.parameters || toolDef.input_schema
+            name: tool.function.name,
+            description: tool.function.description,
+            parameters: tool.function.parameters
           }
         };
       }
-      return tool;
+      // Fallback for malformed tools - should not happen with proper Tool type
+      throw new Error(`Unsupported tool type: ${tool.type}`);
     });
   }
 
-  private extractToolCalls(message: any): any[] {
-    return message?.toolCalls || [];
+  private extractToolCalls(message: ChatCompletion['choices'][0]['message']): ChatCompletionMessageToolCall[] {
+    return message?.tool_calls || [];
   }
 
   private mapFinishReason(reason: string | null): 'stop' | 'length' | 'tool_calls' | 'content_filter' {
@@ -224,18 +253,20 @@ export class GroqAdapter extends BaseAdapter {
     return reasonMap[reason] || 'stop';
   }
 
-  protected extractUsage(response: any): any {
+  protected extractUsage(response: ChatCompletion | GroqChatCompletionChunk): TokenUsage | undefined {
     const usage = response?.usage;
     if (usage) {
+      const groqResponse = response as GroqChatCompletionChunk;
       return {
         promptTokens: usage.prompt_tokens || 0,
         completionTokens: usage.completion_tokens || 0,
         totalTokens: usage.total_tokens || 0,
-        // Groq-specific extended metrics
-        queueTime: response?.x_groq?.queue_time,
-        promptTime: response?.x_groq?.prompt_time,
-        completionTime: response?.x_groq?.completion_time
-      };
+        // Groq-specific extended metrics (queue_time, prompt_time, completion_time)
+        // These are available directly on CompletionUsage from Groq SDK
+        ...(usage.queue_time !== undefined && { queueTime: usage.queue_time }),
+        ...(usage.prompt_time !== undefined && { promptTime: usage.prompt_time }),
+        ...(usage.completion_time !== undefined && { completionTime: usage.completion_time })
+      } as TokenUsage & { queueTime?: number; promptTime?: number; completionTime?: number };
     }
     return undefined;
   }

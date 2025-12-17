@@ -8,51 +8,69 @@
  * Dependencies: WorkspaceService, SessionContextManager, Obsidian Vault API
  */
 
+import { App, TFile, TFolder } from 'obsidian';
 import { WorkspaceContext } from '../../../database/types/workspace/WorkspaceTypes';
-import { TFile, TFolder } from 'obsidian';
 import { VaultStructure, WorkspaceSummary } from './SystemPromptBuilder';
 import { getNexusPlugin } from '../../../utils/pluginLocator';
+import type NexusPlugin from '../../../main';
+import type { WorkspaceService } from '../../../services/WorkspaceService';
+import type { SessionContextManager } from '../../../services/SessionContextManager';
+import type { AgentManager } from '../../../services/AgentManager';
+import type { IAgent } from '../../../agents/interfaces/IAgent';
 
 /**
  * Service for workspace integration with chat
  */
 export class WorkspaceIntegrationService {
-  constructor(private app: any) {}
+  constructor(private app: App) {}
 
   /**
    * Load workspace by ID with full context (like loadWorkspace tool)
    * This executes the LoadWorkspaceMode to get comprehensive data including file structure
    */
-  async loadWorkspace(workspaceId: string): Promise<any> {
+  async loadWorkspace(workspaceId: string): Promise<Record<string, unknown> | null> {
     try {
-      const plugin = getNexusPlugin(this.app) as any;
+      const plugin = getNexusPlugin<NexusPlugin>(this.app);
+      if (!plugin) {
+        return null;
+      }
 
-      // Try to get the memoryManager agent and execute LoadWorkspaceMode
-      const memoryManager = plugin?.agentManager?.getAgent('memoryManager');
+      // Try to get the agentManager and memoryManager agent
+      const agentManager = await plugin.getService<AgentManager>('agentManager');
 
-      if (memoryManager) {
-        // Execute LoadWorkspaceMode to get comprehensive workspace data
-        const result = await memoryManager.executeMode('loadWorkspace', {
-          id: workspaceId,
-          limit: 3 // Get recent sessions, states, and activity
-        });
+      if (agentManager) {
+        try {
+          const memoryManager = agentManager.getAgent('memoryManager');
 
-        if (result.success && result.data) {
-          // Return the comprehensive workspace data from the tool
-          return {
-            id: workspaceId,
-            ...result.data,
-            // Keep the workspace context from the result
-            workspaceContext: result.workspaceContext
-          };
+          if (memoryManager) {
+            // Execute LoadWorkspaceMode to get comprehensive workspace data
+            const result = await memoryManager.executeMode('loadWorkspace', {
+              id: workspaceId,
+              limit: 3 // Get recent sessions, states, and activity
+            });
+
+            if (result.success && result.data) {
+              // Return the comprehensive workspace data from the tool
+              return {
+                id: workspaceId,
+                ...result.data,
+                // Keep the workspace context from the result
+                workspaceContext: result.workspaceContext
+              };
+            }
+          }
+        } catch (agentError) {
+          // If agent execution fails, fall through to basic workspace loading
+          console.error('[WorkspaceIntegrationService] Agent execution failed:', agentError);
         }
       }
 
       // Fallback: just load basic workspace data if LoadWorkspaceMode fails
-      const workspaceService = await plugin?.getService('workspaceService');
+      const workspaceService = await plugin.getService<WorkspaceService>('workspaceService');
       if (workspaceService) {
         const workspace = await workspaceService.getWorkspace(workspaceId);
-        return workspace;
+        // Convert IndividualWorkspace to Record<string, unknown> for dynamic usage
+        return workspace as unknown as Record<string, unknown>;
       }
 
       return null;
@@ -61,10 +79,12 @@ export class WorkspaceIntegrationService {
 
       // Fallback: try basic workspace loading
       try {
-        const plugin = getNexusPlugin(this.app) as any;
-        const workspaceService = await plugin?.getService('workspaceService');
+        const plugin = getNexusPlugin<NexusPlugin>(this.app);
+        const workspaceService = await plugin?.getService<WorkspaceService>('workspaceService');
         if (workspaceService) {
-          return await workspaceService.getWorkspace(workspaceId);
+          const workspace = await workspaceService.getWorkspace(workspaceId);
+          // Convert IndividualWorkspace to Record<string, unknown> for dynamic usage
+          return workspace as unknown as Record<string, unknown>;
         }
       } catch (fallbackError) {
         console.error(`Fallback workspace loading also failed:`, fallbackError);
@@ -101,8 +121,12 @@ export class WorkspaceIntegrationService {
     }
 
     try {
-      const plugin = getNexusPlugin(this.app) as any;
-      const sessionContextManager = await plugin.getService('sessionContextManager');
+      const plugin = getNexusPlugin<NexusPlugin>(this.app);
+      if (!plugin) {
+        return;
+      }
+
+      const sessionContextManager = await plugin.getService<SessionContextManager>('sessionContextManager');
 
       if (sessionContextManager) {
         sessionContextManager.setWorkspaceContext(sessionId, {
@@ -158,8 +182,12 @@ export class WorkspaceIntegrationService {
    */
   async listAvailableWorkspaces(): Promise<WorkspaceSummary[]> {
     try {
-      const plugin = getNexusPlugin(this.app) as any;
-      const workspaceService = await plugin?.getService('workspaceService');
+      const plugin = getNexusPlugin<NexusPlugin>(this.app);
+      if (!plugin) {
+        return [];
+      }
+
+      const workspaceService = await plugin.getService<WorkspaceService>('workspaceService');
 
       if (!workspaceService) {
         return [];
@@ -168,7 +196,7 @@ export class WorkspaceIntegrationService {
       // Use listWorkspaces for lightweight index-based listing
       const workspaces = await workspaceService.listWorkspaces();
 
-      return workspaces.map((ws: any) => ({
+      return workspaces.map((ws) => ({
         id: ws.id,
         name: ws.name,
         description: ws.description || undefined,

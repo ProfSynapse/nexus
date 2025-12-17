@@ -19,13 +19,23 @@ import { WEBLLM_MODELS, getModelsForVRAM, getWebLLMModel } from '../../../servic
 
 type DeviceStatus = 'checking' | 'compatible' | 'limited' | 'incompatible';
 
+/**
+ * Extended HTMLElement with download progress tracking properties.
+ * These properties are attached to the action area container to enable
+ * live UI updates during download without full re-renders.
+ */
+interface ActionAreaWithProgress extends HTMLElement {
+  _progressFill?: HTMLElement;
+  _statusText?: HTMLElement;
+}
+
 export class NexusProviderModal implements IProviderModal {
   private config: ProviderModalConfig;
 
   // UI containers
   private deviceCard: HTMLElement | null = null;
   private modelSection: HTMLElement | null = null;
-  private actionArea: HTMLElement | null = null;
+  private actionArea: ActionAreaWithProgress | null = null;
 
   // State
   private vramInfo: VRAMInfo | null = null;
@@ -217,7 +227,7 @@ export class NexusProviderModal implements IProviderModal {
       });
 
     // Action area
-    this.actionArea = this.modelSection.createDiv('nexus-action-area');
+    this.actionArea = this.modelSection.createDiv('nexus-action-area') as ActionAreaWithProgress;
     this.renderActionArea();
   }
 
@@ -320,8 +330,10 @@ export class NexusProviderModal implements IProviderModal {
         }));
 
     // Store references for live updates during download
-    (this.actionArea as any)._progressFill = barFill;
-    (this.actionArea as any)._statusText = statusText;
+    if (this.actionArea) {
+      this.actionArea._progressFill = barFill;
+      this.actionArea._statusText = statusText;
+    }
   }
 
   /**
@@ -346,8 +358,8 @@ export class NexusProviderModal implements IProviderModal {
 
         // Update UI without full re-render
         if (this.actionArea) {
-          const fill = (this.actionArea as any)._progressFill as HTMLElement;
-          const text = (this.actionArea as any)._statusText as HTMLElement;
+          const fill = this.actionArea._progressFill;
+          const text = this.actionArea._statusText;
           if (fill) fill.style.width = `${this.downloadProgress}%`;
           if (text) text.textContent = `${stage} · ${this.downloadProgress}%`;
         }

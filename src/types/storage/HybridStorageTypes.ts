@@ -321,7 +321,7 @@ export interface MessageData {
 }
 
 /**
- * Tool call structure (OpenAI format)
+ * Tool call structure (OpenAI format with extended properties)
  */
 export interface ToolCall {
   /** Unique tool call identifier */
@@ -339,8 +339,14 @@ export interface ToolCall {
     arguments: string;
   };
 
+  /** Direct tool name (alternative to function.name) */
+  name?: string;
+
+  /** Tool parameters as object (alternative to function.arguments) */
+  parameters?: Record<string, unknown>;
+
   /** Optional result from tool execution */
-  result?: any;
+  result?: unknown;
 
   /** Whether tool execution succeeded */
   success?: boolean;

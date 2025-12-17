@@ -21,13 +21,39 @@
  * - Error tracking and reporting
  */
 
-import { Plugin } from 'obsidian';
+import { Platform, Plugin } from 'obsidian';
 
 export enum LogLevel {
   DEBUG = 0,
   INFO = 1,
   WARN = 2,
   ERROR = 3
+}
+
+/**
+ * Extended Performance interface for Chrome's memory API
+ * Chrome-specific extension not available in all browsers
+ */
+interface PerformanceMemory {
+  usedJSHeapSize: number;
+  totalJSHeapSize: number;
+  jsHeapSizeLimit: number;
+}
+
+interface PerformanceWithMemory extends Performance {
+  memory: PerformanceMemory;
+}
+
+/**
+ * Type guard to check if performance.memory is available
+ * This is a Chrome-specific feature not available in all environments
+ */
+function hasMemoryAPI(perf: Performance): perf is PerformanceWithMemory {
+  return 'memory' in perf &&
+         perf.memory !== undefined &&
+         perf.memory !== null &&
+         typeof perf.memory === 'object' &&
+         'usedJSHeapSize' in perf.memory;
 }
 
 export interface LogEntry {
@@ -244,8 +270,8 @@ export class StructuredLogger {
    * Log memory usage
    */
   logMemoryUsage(context?: string): void {
-    if (this.config.enablePerformanceLogging && 'memory' in performance) {
-      const memInfo = (performance as any).memory;
+    if (this.config.enablePerformanceLogging && hasMemoryAPI(performance)) {
+      const memInfo = performance.memory;
       this.debug('Memory usage', {
         used: `${(memInfo.usedJSHeapSize / 1024 / 1024).toFixed(2)} MB`,
         total: `${(memInfo.totalJSHeapSize / 1024 / 1024).toFixed(2)} MB`,
@@ -269,8 +295,8 @@ export class StructuredLogger {
     };
 
     // Add performance data if available
-    if (this.config.enablePerformanceLogging && 'memory' in performance) {
-      const memInfo = (performance as any).memory;
+    if (this.config.enablePerformanceLogging && hasMemoryAPI(performance)) {
+      const memInfo = performance.memory;
       logEntry.performance = {
         memory: memInfo.usedJSHeapSize
       };
@@ -344,7 +370,7 @@ export class StructuredLogger {
       version: this.plugin.manifest.version,
       exported: new Date().toISOString(),
       config: this.config,
-      platform: (this.plugin.app as any).isMobile ? 'mobile' : 'desktop',
+      platform: Platform.isMobile ? 'mobile' : 'desktop',
       logCount: this.logBuffer.length,
       logs: this.logBuffer
     };

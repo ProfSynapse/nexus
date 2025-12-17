@@ -1,3 +1,9 @@
+import type {
+  ProgressUpdateData,
+  ProgressCompleteData,
+  ProgressCancelData
+} from '../../components/ProgressBar';
+
 /**
  * Tracks progress for long-running operations
  */
@@ -5,43 +11,30 @@ export class ProgressTracker {
   /**
    * Update progress
    */
-  updateProgress(data: {
-    processed: number;
-    total: number;
-    remaining: number;
-    operationId: string | null;
-  }): void {
+  updateProgress(data: ProgressUpdateData): void {
     // Use global handler if available
-    if ((window as any).mcpProgressHandlers?.updateProgress) {
-      (window as any).mcpProgressHandlers.updateProgress(data);
+    if (window.mcpProgressHandlers?.updateProgress) {
+      window.mcpProgressHandlers.updateProgress(data);
     }
   }
 
   /**
    * Complete progress
    */
-  completeProgress(data: {
-    success: boolean;
-    processed: number;
-    failed: number;
-    error?: string;
-    operationId: string;
-  }): void {
+  completeProgress(data: ProgressCompleteData): void {
     // Use global handler if available
-    if ((window as any).mcpProgressHandlers?.completeProgress) {
-      (window as any).mcpProgressHandlers.completeProgress(data);
+    if (window.mcpProgressHandlers?.completeProgress) {
+      window.mcpProgressHandlers.completeProgress(data);
     }
   }
 
   /**
    * Cancel progress
    */
-  cancelProgress(data: {
-    operationId: string;
-  }): void {
+  cancelProgress(data: ProgressCancelData): void {
     // Use global handler if available
-    if ((window as any).mcpProgressHandlers?.cancelProgress) {
-      (window as any).mcpProgressHandlers.cancelProgress(data);
+    if (window.mcpProgressHandlers?.cancelProgress) {
+      window.mcpProgressHandlers.cancelProgress(data);
     }
   }
 }

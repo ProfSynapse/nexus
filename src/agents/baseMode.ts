@@ -11,10 +11,11 @@ import { getErrorMessage } from '../utils/errorUtils';
 import { enhanceSchemaDocumentation } from '../utils/validationUtils';
 
 // Import new validation utilities
-import { 
-  ValidationResultHelper, 
+import {
+  ValidationResultHelper,
   ValidationError,
-  ValidationResult
+  ValidationResult,
+  ModeInterface
 } from '../utils/validation/ValidationResultHelper';
 import { 
   CommonValidators,
@@ -30,6 +31,12 @@ export abstract class BaseMode<T extends CommonParameters = CommonParameters, R 
   name: string;
   description: string;
   version: string;
+
+  /** Parent workspace context for session tracking */
+  protected parentContext?: CommonResult['workspaceContext'];
+
+  /** Session ID for tracking related operations */
+  protected sessionId?: string;
   
   /**
    * Create a new mode
@@ -145,7 +152,7 @@ export abstract class BaseMode<T extends CommonParameters = CommonParameters, R 
       sessionId = context.sessionId;
     } else {
       // Fallback: try to get from instance (backward compatibility)
-      sessionId = (this as any).sessionId;
+      sessionId = this.sessionId;
     }
     
     if (!sessionId) {
@@ -172,7 +179,7 @@ export abstract class BaseMode<T extends CommonParameters = CommonParameters, R 
    * @param context Parent workspace context
    */
   setParentContext(context: CommonResult['workspaceContext']): void {
-    (this as any).parentContext = context;
+    this.parentContext = context;
   }
   
   /**
@@ -192,15 +199,15 @@ export abstract class BaseMode<T extends CommonParameters = CommonParameters, R 
     // 1. Use explicitly provided context if available
     if (params.workspaceContext) {
       // Use the utility function to safely parse context
-      const fallbackId = ((this as any).parentContext?.workspaceId) || 'default-workspace';
+      const fallbackId = this.parentContext?.workspaceId || 'default-workspace';
       return parseWorkspaceContext(params.workspaceContext, fallbackId);
     }
-    
+
     // 2. Fall back to parent context
-    if ((this as any).parentContext?.workspaceId) {
-      return (this as any).parentContext;
+    if (this.parentContext?.workspaceId) {
+      return this.parentContext;
     }
-    
+
     // 3. No context available
     return null;
   }
@@ -226,7 +233,7 @@ export abstract class BaseMode<T extends CommonParameters = CommonParameters, R 
     params?: T,
     context?: any
   ): R {
-    return ValidationResultHelper.createErrorResult(this as any, error, params, context);
+    return ValidationResultHelper.createErrorResult(this as ModeInterface, error, params, context);
   }
 
   /**
@@ -245,7 +252,7 @@ export abstract class BaseMode<T extends CommonParameters = CommonParameters, R 
     params?: T,
     additionalData?: any
   ): R {
-    return ValidationResultHelper.createSuccessResult(this as any, data, params, additionalData);
+    return ValidationResultHelper.createSuccessResult(this as ModeInterface, data, params, additionalData);
   }
 
   /**
@@ -284,7 +291,7 @@ export abstract class BaseMode<T extends CommonParameters = CommonParameters, R 
       minContextLength?: number;
     }
   ): ValidationError[] {
-    return CommonValidators.validateSessionContext(params, this as any, options);
+    return CommonValidators.validateSessionContext(params, this as ModeInterface, options);
   }
 
   /**
@@ -303,7 +310,7 @@ export abstract class BaseMode<T extends CommonParameters = CommonParameters, R 
   ): R | null {
     const validation = this.validateCustom(params, validators);
     if (!validation.success) {
-      return this.createErrorResult(validation.errors, params as any);
+      return this.createErrorResult(validation.errors, params as unknown as T);
     }
     return null;
   }

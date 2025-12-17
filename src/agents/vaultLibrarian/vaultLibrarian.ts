@@ -1,4 +1,4 @@
-import { App } from 'obsidian';
+import { App, Plugin } from 'obsidian';
 import { BaseAgent } from '../baseAgent';
 import { VaultLibrarianConfig } from '../../config/agents';
 import {
@@ -14,6 +14,20 @@ import { IStorageAdapter } from '../../database/interfaces/IStorageAdapter';
 import { EmbeddingService } from '../../services/embeddings/EmbeddingService';
 import { getErrorMessage } from '../../utils/errorUtils';
 import { getNexusPlugin } from '../../utils/pluginLocator';
+import { ServiceManager } from '../../core/ServiceManager';
+
+/**
+ * Interface for accessing NexusPlugin services
+ * Represents the plugin structure needed by VaultLibrarian for service access
+ */
+interface NexusPluginWithServices extends Plugin {
+  settings?: {
+    settings?: {
+      memory?: MemorySettings;
+    };
+  };
+  getServiceContainer?(): ServiceManager;
+}
 
 /**
  * Agent for searching and navigating the vault
@@ -58,31 +72,31 @@ export class VaultLibrarianAgent extends BaseAgent {
 
     // If services not injected, try to get them from plugin (backward compatibility)
     if (!this.memoryService || !this.workspaceService) {
-      let plugin: any = null;
+      let plugin: NexusPluginWithServices | null = null;
       try {
         if (app.plugins) {
-          plugin = getNexusPlugin(app);
+          plugin = getNexusPlugin<NexusPluginWithServices>(app);
           if (plugin) {
-            const pluginAny = plugin as any;
-            const memorySettings = pluginAny.settings?.settings?.memory;
+            const memorySettings = plugin.settings?.settings?.memory;
             if (memorySettings) {
               this.settings = memorySettings;
             }
 
-            if (pluginAny.serviceContainer) {
+            const serviceContainer = plugin.getServiceContainer?.();
+            if (serviceContainer) {
               if (!this.memoryService) {
-                this.memoryService = pluginAny.serviceContainer.getIfReady('memoryService');
+                this.memoryService = serviceContainer.getServiceIfReady<MemoryService>('memoryService');
               }
               if (!this.workspaceService) {
-                this.workspaceService = pluginAny.serviceContainer.getIfReady('workspaceService');
+                this.workspaceService = serviceContainer.getServiceIfReady<WorkspaceService>('workspaceService');
               }
               // Get SQLite storage adapter for memory search
               if (!this.storageAdapter) {
-                this.storageAdapter = pluginAny.serviceContainer.getIfReady('hybridStorageAdapter');
+                this.storageAdapter = serviceContainer.getServiceIfReady<IStorageAdapter>('hybridStorageAdapter');
               }
               // Get EmbeddingService for semantic search
               if (!this.embeddingService) {
-                this.embeddingService = pluginAny.serviceContainer.getIfReady('embeddingService');
+                this.embeddingService = serviceContainer.getServiceIfReady<EmbeddingService>('embeddingService');
               }
             }
           }
@@ -93,7 +107,7 @@ export class VaultLibrarianAgent extends BaseAgent {
     }
     
     // Get plugin reference for modes that need it
-    let pluginRef: any = null;
+    let pluginRef: Plugin | null = null;
     try {
       if (app.plugins) {
         pluginRef = getNexusPlugin(app);
@@ -102,10 +116,12 @@ export class VaultLibrarianAgent extends BaseAgent {
       console.warn('[VaultLibrarian] Failed to get plugin reference:', error);
     }
 
+    // Create minimal plugin fallback if plugin not found
+    // Modes accept Plugin interface which only requires app property
+    const pluginOrFallback: Plugin = pluginRef || this.createMinimalPlugin(app);
+
     // Register ContentSearchMode (fuzzy + keyword + semantic search)
-    this.searchContentMode = new SearchContentMode(
-      pluginRef || ({ app } as any) // Fallback to minimal plugin interface if not found
-    );
+    this.searchContentMode = new SearchContentMode(pluginOrFallback);
     // Wire up EmbeddingService for semantic search if available
     if (this.embeddingService) {
       this.searchContentMode.setEmbeddingService(this.embeddingService);
@@ -114,21 +130,21 @@ export class VaultLibrarianAgent extends BaseAgent {
 
     // Register focused search modes with enhanced validation and service integration
     this.registerMode(new SearchDirectoryMode(
-      pluginRef || ({ app } as any),
+      pluginOrFallback,
       this.workspaceService || undefined
     ));
 
 
     this.registerMode(new SearchMemoryMode(
-      pluginRef || ({ app } as any),
+      pluginOrFallback,
       this.memoryService || undefined,
       this.workspaceService || undefined,
       this.storageAdapter || undefined  // SQLite storage adapter for memory trace search
     ));
-    
+
     // Always register BatchMode (supports both semantic and non-semantic users)
     this.registerMode(new BatchMode(
-      pluginRef || ({ app } as any), // Fallback to minimal plugin interface if not found
+      pluginOrFallback,
       this.memoryService || undefined,
       this.workspaceService || undefined,
       this.storageAdapter || undefined
@@ -138,6 +154,60 @@ export class VaultLibrarianAgent extends BaseAgent {
   }
   
   
+  /**
+   * Create a minimal Plugin interface for modes when actual plugin is unavailable
+   * This satisfies the Plugin interface requirements with stub implementations
+   *
+   * Uses 'as unknown as Plugin' because we're creating a stub object that only implements
+   * the subset of Plugin methods actually used by the modes (primarily app property).
+   * The Plugin class is abstract and cannot be instantiated directly.
+   */
+  private createMinimalPlugin(app: App): Plugin {
+    // Create a minimal object that satisfies what modes actually use from Plugin
+    // Modes primarily access plugin.app, so we provide that and stub the rest
+    return {
+      app,
+      manifest: {
+        id: 'vault-librarian-fallback',
+        name: 'VaultLibrarian Fallback',
+        version: '1.0.0',
+        minAppVersion: '0.0.0',
+        description: 'Fallback plugin interface',
+        author: 'System',
+        isDesktopOnly: false
+      },
+      // Stub implementations for Plugin methods
+      onload: () => {},
+      addCommand: () => ({ id: '', name: '', callback: () => {} }),
+      removeCommand: () => {},
+      addRibbonIcon: () => document.createElement('div'),
+      loadData: async () => ({}),
+      saveData: async () => {},
+      registerView: () => {},
+      registerHoverLinkSource: () => {},
+      registerExtensions: () => {},
+      registerMarkdownPostProcessor: () => {},
+      registerMarkdownCodeBlockProcessor: () => {},
+      registerEditorExtension: () => {},
+      registerObsidianProtocolHandler: () => {},
+      registerEditorSuggest: () => {},
+      onExternalSettingsChange: () => {},
+      addStatusBarItem: () => document.createElement('div'),
+      addSettingTab: () => {},
+      registerDomEvent: () => {},
+      registerScopeEvent: () => {},
+      registerInterval: () => 0,
+      register: () => {},
+      onUserEnable: () => {},
+      // Component methods (Plugin extends Component)
+      load: () => {},
+      unload: () => {},
+      addChild: <T>(component: T): T => component,
+      removeChild: () => {},
+      registerEvent: () => {}
+    } as unknown as Plugin;
+  }
+
   /**
    * Update the agent settings
    * @param settings New memory settings
