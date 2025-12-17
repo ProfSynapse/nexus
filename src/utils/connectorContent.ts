@@ -5,7 +5,7 @@
  * DO NOT EDIT MANUALLY - This file is regenerated during the build process.
  * To update, modify connector.ts and rebuild.
  *
- * Generated: 2025-12-17T12:24:59.796Z
+ * Generated: 2025-12-17T12:26:24.987Z
  */
 
 export const CONNECTOR_JS_CONTENT = `"use strict";
