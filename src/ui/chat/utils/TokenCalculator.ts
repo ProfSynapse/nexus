@@ -3,7 +3,7 @@
  */
 
 import { ConversationData } from '../../../types/chat/ChatTypes';
-import { ModelOption } from '../components/ModelSelector';
+import { ModelOption } from '../types/SelectionTypes';
 import { ContextUsage } from '../components/ContextProgressBar';
 
 export class TokenCalculator {

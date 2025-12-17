@@ -8,7 +8,7 @@
  * Dependencies: AgentDiscoveryService
  */
 
-import { AgentOption } from '../components/AgentSelector';
+import { AgentOption } from '../types/SelectionTypes';
 import { AgentDiscoveryService, AgentInfo } from '../../../services/agent/AgentDiscoveryService';
 import { getNexusPlugin } from '../../../utils/pluginLocator';
 import type { App } from 'obsidian';

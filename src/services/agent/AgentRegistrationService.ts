@@ -68,9 +68,11 @@ export class AgentRegistrationService implements AgentRegistrationServiceInterfa
     private plugin: Plugin | NexusPlugin,
     private events: Events,
     private serviceManager?: ServiceManager,
-    private customPromptStorage?: CustomPromptStorageService
+    private customPromptStorage?: CustomPromptStorageService,
+    sharedAgentManager?: AgentManager
   ) {
-    this.agentManager = new AgentManager(app, plugin, events);
+    // Use shared AgentManager if provided, otherwise create a new one
+    this.agentManager = sharedAgentManager ?? new AgentManager(app, plugin, events);
     this.factoryRegistry = new AgentFactoryRegistry();
     this.registrationStatus = {
       totalAgents: 0,

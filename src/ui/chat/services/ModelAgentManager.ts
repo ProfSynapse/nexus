@@ -3,8 +3,7 @@
  * Refactored to use extracted utilities following SOLID principles
  */
 
-import { ModelOption } from '../components/ModelSelector';
-import { AgentOption } from '../components/AgentSelector';
+import { ModelOption, AgentOption } from '../types/SelectionTypes';
 import { WorkspaceContext } from '../../../database/types/workspace/WorkspaceTypes';
 import { MessageEnhancement } from '../components/suggesters/base/SuggesterInterfaces';
 import { SystemPromptBuilder, AgentSummary, ToolAgentInfo } from './SystemPromptBuilder';

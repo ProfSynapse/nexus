@@ -9,7 +9,7 @@
  */
 
 import { Plugin } from 'obsidian';
-import { ModelOption } from '../components/ModelSelector';
+import { ModelOption } from '../types/SelectionTypes';
 import { ProviderUtils } from '../utils/ProviderUtils';
 import { getNexusPlugin } from '../../../utils/pluginLocator';
 import { getAvailableProviders } from '../../../utils/platform';

@@ -299,18 +299,24 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
     // This initializes agents without requiring the MCP connector
     {
         name: 'agentRegistrationService',
-        dependencies: ['memoryService', 'workspaceService'],
+        dependencies: ['memoryService', 'workspaceService', 'agentManager'],
         create: async (context) => {
             const { AgentRegistrationService } = await import('../../services/agent/AgentRegistrationService');
+            const { AgentManager } = await import('../../services/AgentManager');
             // Plugin type augmentation - NexusPlugin extends Plugin with events property
             const plugin = context.plugin as Plugin & { events?: Events };
 
-            // Create agent registration service (same as connector but standalone)
+            // Get the AgentManager service instance (not create a new one)
+            const agentManager = await context.serviceManager.getService('agentManager') as InstanceType<typeof AgentManager>;
+
+            // Create agent registration service with the shared AgentManager
             const agentService = new AgentRegistrationService(
                 context.app,
                 plugin,
                 plugin.events || new Events(),
-                context.serviceManager
+                context.serviceManager,
+                undefined, // customPromptStorage - optional
+                agentManager // pass the shared AgentManager
             );
 
             // Initialize all agents
