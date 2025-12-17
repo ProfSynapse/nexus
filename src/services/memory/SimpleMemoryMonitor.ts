@@ -5,6 +5,20 @@
  * Uses hardcoded balanced settings as requested by user.
  */
 
+/**
+ * Chrome-specific memory API (non-standard)
+ * Only available in Chromium-based browsers
+ */
+interface ChromeMemoryInfo {
+  usedJSHeapSize?: number;
+  totalJSHeapSize?: number;
+  jsHeapSizeLimit?: number;
+}
+
+interface PerformanceWithMemory extends Performance {
+  memory?: ChromeMemoryInfo;
+}
+
 interface MemoryInfo {
   used: number;
   total: number;
@@ -60,8 +74,9 @@ export class SimpleMemoryMonitor {
   }
 
   getCurrentMemoryInfo(): MemoryInfo {
-    const memInfo = (performance as any).memory;
-    
+    const perfWithMemory = performance as PerformanceWithMemory;
+    const memInfo = perfWithMemory.memory;
+
     if (!memInfo) {
       // Fallback if memory API not available
       return {

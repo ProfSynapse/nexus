@@ -8,6 +8,7 @@ import { getErrorMessage, createErrorMessage } from '../../../utils/errorUtils';
 import { addRecommendations, Recommendation } from '../../../utils/recommendationUtils';
 import { NudgeHelpers } from '../../../utils/nudgeHelpers';
 import { getNexusPlugin } from '../../../utils/pluginLocator';
+import { NexusPluginWithServices } from '../../memoryManager/modes/utils/pluginTypes';
 
 /**
  * Mode for reading content from a file
@@ -96,7 +97,7 @@ export class ReadContentMode extends BaseMode<ReadContentParams, ReadContentResu
    * Get the JSON schema for the mode's parameters
    * @returns JSON schema object
    */
-  getParameterSchema(): any {
+  getParameterSchema(): Record<string, unknown> {
     // Create the mode-specific schema
     const modeSchema = {
       type: 'object',
@@ -153,7 +154,7 @@ export class ReadContentMode extends BaseMode<ReadContentParams, ReadContentResu
     if (!this.memoryService) {
       try {
         // Try to get the memory service from the plugin
-        const plugin = getNexusPlugin(this.app) as any;
+        const plugin = getNexusPlugin<NexusPluginWithServices>(this.app);
         if (plugin?.services?.memoryService) {
           this.memoryService = plugin.services.memoryService;
         } else {
@@ -209,7 +210,7 @@ export class ReadContentMode extends BaseMode<ReadContentParams, ReadContentResu
     }
   }
 
-  getResultSchema(): any {
+  getResultSchema(): Record<string, unknown> {
     // Use the base result schema from BaseMode, which includes common result properties
     const baseSchema = super.getResultSchema();
     

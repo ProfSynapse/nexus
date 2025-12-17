@@ -41,7 +41,8 @@ export class TraceSchemaMigrationService {
 
         for (const session of Object.values(workspace.sessions)) {
           for (const trace of Object.values(session.memoryTraces)) {
-            if (trace.metadata && (trace.metadata as any).schemaVersion >= TRACE_SCHEMA_VERSION) {
+            const metadata = trace.metadata as Record<string, unknown> | undefined;
+            if (metadata && typeof metadata.schemaVersion === 'number' && metadata.schemaVersion >= TRACE_SCHEMA_VERSION) {
               continue;
             }
 

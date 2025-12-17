@@ -66,7 +66,10 @@ export class ListStatesMode extends BaseMode<ListStatesParams, StateResult> {
       // Note: This happens AFTER pagination, so may return fewer results than pageSize
       if (params.tags && params.tags.length > 0) {
         processedStates = processedStates.filter(state => {
-          const stateTags = (state.state as any)?.state?.metadata?.tags || [];
+          const stateData = state.state as unknown as Record<string, unknown> | undefined;
+          const nestedState = stateData?.state as Record<string, unknown> | undefined;
+          const metadata = nestedState?.metadata as Record<string, unknown> | undefined;
+          const stateTags = (metadata?.tags as string[]) || [];
           return params.tags!.some(tag => stateTags.includes(tag));
         });
       }
@@ -80,7 +83,7 @@ export class ListStatesMode extends BaseMode<ListStatesParams, StateResult> {
         : sortedStates.map(state => ({
             ...state,
             workspaceName: 'Unknown Workspace',
-            created: state.created || (state as any).timestamp
+            created: state.created || (state as unknown as { timestamp?: number }).timestamp
           }));
 
       return this.prepareResult(true, {

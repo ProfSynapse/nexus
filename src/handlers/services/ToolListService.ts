@@ -46,14 +46,14 @@ export class ToolListService implements IToolListService {
                 if (this.schemaEnhancementService) {
                     try {
                         // Cast to our enhanced interface if available
-                        const enhancedService = this.schemaEnhancementService as any;
-                        
+                        const enhancedService = this.schemaEnhancementService as ISchemaEnhancementService & { enhanceAgentDescription?: (agent: IAgent, vaultName?: string) => Promise<string> };
+
                         // Enhance schema with agent context
                         finalSchema = await this.schemaEnhancementService.enhanceToolSchema(
-                            toolName, 
+                            toolName,
                             agentSchema
                         );
-                        
+
                         // Enhance description if the service supports it
                         if (enhancedService.enhanceAgentDescription) {
                             finalDescription = await enhancedService.enhanceAgentDescription(agent, vaultName);

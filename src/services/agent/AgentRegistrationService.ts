@@ -187,7 +187,8 @@ export class AgentRegistrationService implements AgentRegistrationServiceInterfa
 
     try {
       // Get memory settings to determine what to enable
-      const memorySettings = this.plugin && (this.plugin as any).settings?.settings?.memory;
+      const pluginWithSettings = this.plugin as Plugin & { settings?: { settings?: { memory?: { enabled?: boolean } } } };
+      const memorySettings = pluginWithSettings?.settings?.settings?.memory;
       const isMemoryEnabled = memorySettings?.enabled;
 
       // Get capability status
@@ -205,7 +206,7 @@ export class AgentRegistrationService implements AgentRegistrationServiceInterfa
       await this.safeInitialize('commandManager', () => this.initializationService.initializeCommandManager());
       await this.safeInitialize('vaultManager', () => this.initializationService.initializeVaultManager());
       await this.safeInitialize('agentManager', () => this.initializationService.initializeAgentManager(enableLLMModes));
-      await this.safeInitialize('vaultLibrarian', () => this.initializationService.initializeVaultLibrarian(enableSearchModes, memorySettings));
+      await this.safeInitialize('vaultLibrarian', () => this.initializationService.initializeVaultLibrarian(enableSearchModes, memorySettings ?? { enabled: false }));
       await this.safeInitialize('memoryManager', () => this.initializationService.initializeMemoryManager());
 
       logger.systemLog('Using native chatbot UI instead of ChatAgent');

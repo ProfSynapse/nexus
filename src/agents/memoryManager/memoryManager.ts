@@ -7,6 +7,7 @@ import { WorkspaceService } from "../../services/WorkspaceService";
 import { getErrorMessage } from '../../utils/errorUtils';
 import { sanitizeVaultName } from '../../utils/vaultUtils';
 import { getNexusPlugin } from '../../utils/pluginLocator';
+import { NexusPluginWithServices } from './modes/utils/pluginTypes';
 
 // Import consolidated modes
 import { CreateSessionMode } from './modes/sessions/CreateSessionMode';
@@ -170,7 +171,7 @@ export class MemoryManagerAgent extends BaseAgent {
    * Get the CacheManager service instance
    */
   getCacheManager() {
-    const plugin = getNexusPlugin(this.app) as any;
+    const plugin = getNexusPlugin<NexusPluginWithServices>(this.app);
     return plugin?.getServiceIfReady('cacheManager') || null;
   }
 

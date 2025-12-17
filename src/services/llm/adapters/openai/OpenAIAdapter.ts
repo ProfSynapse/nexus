@@ -4,7 +4,12 @@
  */
 
 import OpenAI from 'openai';
+import { Stream } from 'openai/streaming';
 import { BaseAdapter } from '../BaseAdapter';
+
+// OpenAI Responses API types - using namespace for proper type access
+type OpenAIResponse = OpenAI.Responses.Response;
+type OpenAIStreamEvent = OpenAI.Responses.ResponseStreamEvent;
 import {
   GenerateOptions,
   StreamChunk,
@@ -146,7 +151,9 @@ export class OpenAIAdapter extends BaseAdapter {
         }
 
         // Create Responses API stream
-        return await this.client.responses.create(responseParams) as any;
+        // TypeScript can't narrow the overloaded create() return type based on params,
+        // so we cast to the expected streaming type
+        return await this.client.responses.create(responseParams) as unknown as Stream<OpenAIStreamEvent>;
       });
 
       // Process Responses API stream events
@@ -401,7 +408,9 @@ export class OpenAIAdapter extends BaseAdapter {
     if (options?.frequencyPenalty !== undefined) responseParams.frequency_penalty = options.frequencyPenalty;
     if (options?.presencePenalty !== undefined) responseParams.presence_penalty = options.presencePenalty;
 
-    const response = await this.client.responses.create(responseParams) as any;
+    // TypeScript can't narrow the overloaded create() return type based on params,
+    // so we cast to the expected non-streaming Response type
+    const response = await this.client.responses.create(responseParams) as unknown as OpenAIResponse;
 
     if (!response.output || response.output.length === 0) {
       throw new Error('No output from OpenAI Responses API');
@@ -412,7 +421,7 @@ export class OpenAIAdapter extends BaseAdapter {
     for (const item of response.output) {
       if (item.type === 'message' && item.content) {
         for (const content of item.content) {
-          if (content.type === 'text') {
+          if (content.type === 'output_text') {
             text += content.text || '';
           }
         }

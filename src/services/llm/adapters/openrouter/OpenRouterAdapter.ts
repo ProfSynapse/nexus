@@ -107,7 +107,7 @@ export class OpenRouterAdapter extends BaseAdapter {
         baseModel, // Use base model name, not :online version
         usage,
         { webSearchResults },
-        finishReason as any
+        finishReason as 'stop' | 'length' | 'tool_calls' | 'content_filter'
       );
     } catch (error) {
       throw this.handleError(error, 'generation');

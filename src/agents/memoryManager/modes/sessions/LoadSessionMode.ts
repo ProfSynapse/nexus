@@ -274,7 +274,7 @@ export class LoadSessionMode extends BaseMode<LoadSessionParams, SessionResult> 
             continuationSessionId,
             restorationTime: new Date().toLocaleString(),
             contextSummary: contextResult.summary,
-            continuationHistory: undefined as any[] | undefined
+            continuationHistory: undefined as Array<{ timestamp: number; description: string }> | undefined
         };
 
         // Add continuation history if applicable

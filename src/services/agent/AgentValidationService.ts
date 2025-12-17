@@ -24,7 +24,8 @@ export class AgentValidationService {
    */
   async validateLLMApiKeys(): Promise<boolean> {
     try {
-      const pluginSettings = (this.plugin as any)?.settings?.settings;
+      const pluginWithSettings = this.plugin as Plugin & { settings?: { settings?: { llmProviders?: typeof DEFAULT_LLM_PROVIDER_SETTINGS } } };
+      const pluginSettings = pluginWithSettings?.settings?.settings;
       const llmProviderSettings = pluginSettings?.llmProviders || DEFAULT_LLM_PROVIDER_SETTINGS;
 
       const defaultProvider = llmProviderSettings.defaultModel?.provider;

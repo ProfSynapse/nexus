@@ -174,7 +174,8 @@ export class AgentRegistry {
             );
         }
 
-        return (mode as any).getHelpText?.() || `Help for ${agentName}.${modeName}`;
+        const modeWithHelp = mode as { getHelpText?: () => string };
+        return modeWithHelp.getHelpText?.() || `Help for ${agentName}.${modeName}`;
     }
 
     /**

@@ -166,7 +166,7 @@ export class MistralAdapter extends BaseAdapter {
       model,
       usage,
       undefined,
-      finishReason as any
+      finishReason as 'stop' | 'length' | 'tool_calls' | 'content_filter'
     );
   }
 

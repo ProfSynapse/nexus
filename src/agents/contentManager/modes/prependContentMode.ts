@@ -6,6 +6,7 @@ import { createErrorMessage, getErrorMessage } from '../../../utils/errorUtils';
 import { parseWorkspaceContext } from '../../../utils/contextUtils';
 import { MemoryService } from '../../memoryManager/services/MemoryService';
 import { getNexusPlugin } from '../../../utils/pluginLocator';
+import { NexusPluginWithServices } from '../../memoryManager/modes/utils/pluginTypes';
 
 /**
  * Mode for prepending content to a file
@@ -64,7 +65,7 @@ export class PrependContentMode extends BaseMode<PrependContentParams, PrependCo
    * Get the JSON schema for the mode's parameters
    * @returns JSON schema object
    */
-  getParameterSchema(): any {
+  getParameterSchema(): Record<string, unknown> {
     const customSchema = {
       type: 'object',
       properties: {
@@ -87,7 +88,7 @@ export class PrependContentMode extends BaseMode<PrependContentParams, PrependCo
    * Get the JSON schema for the mode's result
    * @returns JSON schema object
    */
-  getResultSchema(): any {
+  getResultSchema(): Record<string, unknown> {
     return {
       type: 'object',
       properties: {
@@ -167,7 +168,7 @@ export class PrependContentMode extends BaseMode<PrependContentParams, PrependCo
     if (!this.memoryService) {
       try {
         // Try to get the memory service from the plugin
-        const plugin = getNexusPlugin(this.app) as any;
+        const plugin = getNexusPlugin<NexusPluginWithServices>(this.app);
         if (plugin?.services?.memoryService) {
           this.memoryService = plugin.services.memoryService;
         } else {

@@ -14,6 +14,22 @@
  * - Get recently modified files in workspace
  */
 
+import { App, TFolder, TAbstractFile, TFile } from 'obsidian';
+
+/**
+ * Interface for workspace data
+ */
+interface IWorkspaceData {
+  rootFolder: string;
+}
+
+/**
+ * Interface for cache manager
+ */
+interface ICacheManager {
+  getRecentFiles(limit: number, folder: string): Array<{ path: string; modified: number }> | null;
+}
+
 /**
  * Workspace path structure with files list
  */
@@ -51,18 +67,18 @@ export class WorkspaceFileCollector {
    */
   async buildWorkspacePath(
     rootFolder: string,
-    app: any
+    app: App
   ): Promise<WorkspacePathResult> {
     try {
       const folder = app.vault.getAbstractFileByPath(rootFolder);
 
-      if (!folder || !('children' in folder)) {
+      if (!folder || !(folder instanceof TFolder)) {
         console.warn('[WorkspaceFileCollector] Workspace root folder not found or empty:', rootFolder);
         return { path: { folder: rootFolder, files: [] }, failed: true };
       }
 
       // Collect all files recursively with relative paths
-      const files = this.collectAllFiles(folder as any, rootFolder);
+      const files = this.collectAllFiles(folder, rootFolder);
 
       return {
         path: {
@@ -84,7 +100,7 @@ export class WorkspaceFileCollector {
    * @param basePath The base path for relative path calculation
    * @returns Array of relative file paths
    */
-  collectAllFiles(folder: any, basePath: string): string[] {
+  collectAllFiles(folder: TFolder, basePath: string): string[] {
     const files: string[] = [];
 
     if (!folder.children) {
@@ -92,7 +108,7 @@ export class WorkspaceFileCollector {
     }
 
     for (const child of folder.children) {
-      if ('children' in child) {
+      if (child instanceof TFolder) {
         // It's a folder - recurse into it
         const subFiles = this.collectAllFiles(child, basePath);
         files.push(...subFiles);
@@ -113,8 +129,8 @@ export class WorkspaceFileCollector {
    * @returns Array of recent file info
    */
   async getRecentFilesInWorkspace(
-    workspace: any,
-    cacheManager: any
+    workspace: IWorkspaceData,
+    cacheManager: ICacheManager | null
   ): Promise<RecentFileInfo[]> {
     try {
       if (!cacheManager) {
@@ -129,7 +145,7 @@ export class WorkspaceFileCollector {
       }
 
       // Map IndexedFile[] to simple {path, modified} objects
-      return recentFiles.map((file: any) => ({
+      return recentFiles.map((file) => ({
         path: file.path,
         modified: file.modified
       }));

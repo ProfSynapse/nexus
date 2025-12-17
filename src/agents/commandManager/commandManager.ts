@@ -108,23 +108,27 @@ export class CommandManagerAgent extends BaseAgent {
   private getCommandHotkeys(commandId: string): string[] | undefined {
     try {
       // Access the Obsidian internal API to retrieve hotkeys
-      const hotkeyManager = (this.app as any).hotkeyManager;
+      // Using Record<string, unknown> pattern for internal API access
+      const appInternal = this.app as unknown as Record<string, unknown>;
+      const hotkeyManager = appInternal.hotkeyManager as Record<string, unknown> | undefined;
       if (!hotkeyManager) return undefined;
-      
+
       // Get all hotkeys from the manager
-      const hotkeys = hotkeyManager.getHotkeys(commandId) || [];
-      
+      const getHotkeys = hotkeyManager.getHotkeys as ((id: string) => Array<{ modifiers: string[]; key: string }>) | undefined;
+      if (!getHotkeys) return undefined;
+      const hotkeys = getHotkeys(commandId) || [];
+
       // Format hotkey strings
-      return hotkeys.map((hotkey: any) => {
+      return hotkeys.map((hotkey) => {
         // Accessing internal Obsidian API properties
         const { modifiers, key } = hotkey;
         const modifierKeys = [];
         
         // Add modifiers in a standard order
-        if (modifiers.contains('Mod')) modifierKeys.push('Ctrl/Cmd');
-        if (modifiers.contains('Shift')) modifierKeys.push('Shift');
-        if (modifiers.contains('Alt')) modifierKeys.push('Alt');
-        if (modifiers.contains('Meta')) modifierKeys.push('Meta');
+        if (modifiers.includes('Mod')) modifierKeys.push('Ctrl/Cmd');
+        if (modifiers.includes('Shift')) modifierKeys.push('Shift');
+        if (modifiers.includes('Alt')) modifierKeys.push('Alt');
+        if (modifiers.includes('Meta')) modifierKeys.push('Meta');
         
         // Join modifiers + key with + sign
         return [...modifierKeys, key].join('+');

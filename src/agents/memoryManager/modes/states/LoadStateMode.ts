@@ -315,7 +315,7 @@ export class LoadStateMode extends BaseMode<LoadStateParams, StateResult> {
             activeFiles: stateContext.activeFiles || [],
             nextSteps: stateContext.nextSteps || [],
             reasoning: stateContext.reasoning,
-            continuationHistory: undefined as any[] | undefined
+            continuationHistory: undefined as Array<{ timestamp: number; description: string }> | undefined
         };
 
         // Add continuation history if applicable

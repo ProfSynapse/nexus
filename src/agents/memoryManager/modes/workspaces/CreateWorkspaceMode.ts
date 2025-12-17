@@ -76,11 +76,15 @@ export class CreateWorkspaceMode extends BaseMode<CreateWorkspaceParameters, Cre
             if (params.dedicatedAgentId) {
                 try {
                     // Get the agent name from CustomPromptStorageService
-                    const plugin = this.app.plugins.getPlugin('claudesidian-mcp') as any;
-                    if (plugin?.agentManager) {
-                        const agentManagerAgent = plugin.agentManager.getAgent('agentManager');
-                        if (agentManagerAgent?.storageService) {
-                            const agent = agentManagerAgent.storageService.getPromptById(params.dedicatedAgentId);
+                    const plugin = this.app.plugins.getPlugin('claudesidian-mcp') as unknown as Record<string, unknown> | null;
+                    const agentManager = plugin?.agentManager as Record<string, unknown> | undefined;
+                    if (agentManager?.getAgent) {
+                        const getAgent = agentManager.getAgent as (name: string) => Record<string, unknown> | undefined;
+                        const agentManagerAgent = getAgent('agentManager');
+                        const storageService = agentManagerAgent?.storageService as Record<string, unknown> | undefined;
+                        if (storageService?.getPromptById) {
+                            const getPromptById = storageService.getPromptById as (id: string) => { id: string; name: string } | undefined;
+                            const agent = getPromptById(params.dedicatedAgentId);
                             if (agent) {
                                 dedicatedAgent = {
                                     agentId: agent.id,
@@ -156,7 +160,7 @@ export class CreateWorkspaceMode extends BaseMode<CreateWorkspaceParameters, Cre
 
             const folder = this.app.vault.getAbstractFileByPath(rootFolder);
             if (folder && 'children' in folder && Array.isArray(folder.children)) {
-                for (const child of folder.children as any[]) {
+                for (const child of folder.children as Array<{ path: string; name: string; cachedData?: { frontmatter?: { key?: boolean } } }>) {
                     if (child.path.endsWith('.md')) {
                         const fileName = child.name.toLowerCase();
 

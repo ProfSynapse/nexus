@@ -203,13 +203,17 @@ export class RequestRouter {
             }
 
             // Get WorkspaceService from MemoryManager agent
-            const workspaceService = await (memoryManagerAgent as any).getWorkspaceServiceAsync();
+            const agentWithWorkspaceService = memoryManagerAgent as { getWorkspaceServiceAsync?: () => Promise<unknown> };
+            const workspaceService = agentWithWorkspaceService.getWorkspaceServiceAsync
+                ? await agentWithWorkspaceService.getWorkspaceServiceAsync()
+                : null;
             if (!workspaceService) {
                 return;
             }
 
             // Create and register WorkspaceSchemaProvider
-            const workspaceSchemaProvider = WorkspaceSchemaProvider.forMemoryManager(workspaceService);
+            // Cast to unknown first since workspaceService comes from dynamic agent method
+            const workspaceSchemaProvider = WorkspaceSchemaProvider.forMemoryManager(workspaceService as unknown as import('../services/WorkspaceService').WorkspaceService);
             this.dependencies.schemaEnhancementService.registerProvider(workspaceSchemaProvider);
             
         } catch (error) {

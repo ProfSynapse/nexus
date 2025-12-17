@@ -3,7 +3,18 @@ export interface SessionData {
   workspaceId: string;
   name?: string;
   description?: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * Interface for the memory service dependency
+ */
+export interface IMemoryService {
+  createSession(data: { workspaceId: string; id: string; name?: string; description?: string }): Promise<void>;
+  getSession(workspaceId: string, sessionId: string): Promise<SessionData | null>;
+  getSessions(workspaceId: string): Promise<SessionData[]>;
+  updateSession(workspaceId: string, sessionId: string, data: { name?: string; description?: string }): Promise<void>;
+  deleteSession(workspaceId: string, sessionId: string): Promise<void>;
 }
 
 /**
@@ -13,7 +24,7 @@ export interface SessionData {
 export class SessionService {
   private sessions = new Map<string, SessionData>();
 
-  constructor(private memoryService: any) {
+  constructor(private memoryService: IMemoryService) {
   }
 
   /**
@@ -21,7 +32,7 @@ export class SessionService {
    */
   async createSession(sessionData: Omit<SessionData, 'id'> | SessionData): Promise<SessionData> {
     // Use provided ID if available, otherwise generate one
-    const id = (sessionData as any).id || this.generateSessionId();
+    const id = ('id' in sessionData && sessionData.id) ? sessionData.id : this.generateSessionId();
     const workspaceId = sessionData.workspaceId || 'default';
 
     const session: SessionData = {
@@ -88,7 +99,7 @@ export class SessionService {
     try {
       const workspaceSessions = await this.memoryService.getSessions(workspaceId);
       // Convert to SessionData format and cache
-      const sessions = workspaceSessions.map((ws: any) => ({
+      const sessions = workspaceSessions.map((ws: SessionData) => ({
         id: ws.id,
         workspaceId,
         name: ws.name,

@@ -141,7 +141,8 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
         dependencies: ['memoryService'],
         create: async (context) => {
             const { SessionService } = await import('../../services/session/SessionService');
-            const memoryService = await context.serviceManager.getService('memoryService');
+            type IMemoryService = import('../../services/session/SessionService').IMemoryService;
+            const memoryService = await context.serviceManager.getService('memoryService') as IMemoryService;
 
             const service = new SessionService(memoryService);
             return service;

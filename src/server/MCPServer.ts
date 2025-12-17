@@ -80,7 +80,7 @@ export class MCPServer implements IMCPServer {
         // Initialize lifecycle manager
         this.lifecycleManager = new ServerLifecycleManager(
             this.agentRegistry,
-            this.httpTransportManager as any,
+            this.httpTransportManager,
             this.ipcTransportManager,
             this.events
         );

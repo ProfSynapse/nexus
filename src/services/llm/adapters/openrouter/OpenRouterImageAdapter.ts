@@ -164,7 +164,7 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
         }
 
         // Read file as binary
-        const arrayBuffer = await this.vault.readBinary(file as any);
+        const arrayBuffer = await this.vault.readBinary(file as import('obsidian').TFile);
         const buffer = Buffer.from(arrayBuffer);
         const base64 = buffer.toString('base64');
 

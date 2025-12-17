@@ -200,10 +200,10 @@ export class DataTransformer {
     }, {} as Record<string, T[]>);
   }
 
-  private keyBy<T>(array: T[], key: string): Record<string, T> {
+  private keyBy<T extends Record<string, unknown>>(array: T[], key: keyof T): Record<string, T> {
     return array.reduce((result, item) => {
-      const keyValue = (item as any)[key];
-      if (keyValue) result[keyValue] = item;
+      const keyValue = item[key];
+      if (keyValue && typeof keyValue === 'string') result[keyValue] = item;
       return result;
     }, {} as Record<string, T>);
   }

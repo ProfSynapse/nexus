@@ -18,6 +18,22 @@
 import { ProjectWorkspace } from '../../../database/types/workspace/WorkspaceTypes';
 
 /**
+ * Interface for memory service methods used by this builder
+ */
+interface IMemoryServiceForContext {
+  getMemoryTraces(workspaceId: string): Promise<Array<{
+    timestamp?: number;
+    content?: string;
+    metadata?: {
+      request?: {
+        normalizedParams?: { context?: { sessionMemory?: string } };
+        originalParams?: { context?: { sessionMemory?: string } };
+      };
+    };
+  }>>;
+}
+
+/**
  * Context briefing structure
  */
 export interface ContextBriefing {
@@ -42,7 +58,7 @@ export class WorkspaceContextBuilder {
    */
   async buildContextBriefing(
     workspace: ProjectWorkspace,
-    memoryService: any,
+    memoryService: IMemoryServiceForContext | null,
     limit: number
   ): Promise<ContextBriefing> {
     let recentActivity: string[] = [];
@@ -103,10 +119,11 @@ export class WorkspaceContextBuilder {
       }
       // Legacy format: array of categorized files (for backward compatibility)
       else if (typeof workspace.context.keyFiles === 'object' && 'length' in workspace.context.keyFiles) {
-        (workspace.context.keyFiles as any).forEach((category: any) => {
+        const legacyKeyFiles = workspace.context.keyFiles as Array<{ files?: Record<string, string> }>;
+        legacyKeyFiles.forEach((category) => {
           if (category.files) {
             Object.entries(category.files).forEach(([name, path]) => {
-              keyFiles[name] = path as string;
+              keyFiles[name] = path;
             });
           }
         });
@@ -145,7 +162,7 @@ export class WorkspaceContextBuilder {
    */
   private async getRecentActivity(
     workspaceId: string,
-    memoryService: any,
+    memoryService: IMemoryServiceForContext,
     limit: number
   ): Promise<string[]> {
     try {
@@ -157,7 +174,7 @@ export class WorkspaceContextBuilder {
       }
 
       // Sort by timestamp descending (newest first)
-      traces.sort((a: any, b: any) => (b.timestamp || 0) - (a.timestamp || 0));
+      traces.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 
       // Extract sessionMemory from trace metadata
       const activities: string[] = [];

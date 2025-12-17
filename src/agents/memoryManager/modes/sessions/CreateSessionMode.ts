@@ -180,7 +180,7 @@ export class CreateSessionMode extends BaseMode<CreateSessionParams, SessionResu
      */
     private async createSession(params: CreateSessionParams, workspaceData: any, memoryService: MemoryService): Promise<{success: boolean; error?: string; data?: any}> {
         try {
-            const sessionData = {
+            const sessionData: { workspaceId: string; name: string; description: string; id?: string } = {
                 workspaceId: workspaceData.workspaceId,
                 name: params.name || `Session ${new Date().toLocaleString()}`,
                 description: params.description || ''
@@ -188,7 +188,7 @@ export class CreateSessionMode extends BaseMode<CreateSessionParams, SessionResu
 
             // Use specific session ID if provided
             if (params.newSessionId) {
-                (sessionData as any).id = params.newSessionId;
+                sessionData.id = params.newSessionId;
             }
 
             const session = await memoryService.createSession(sessionData);

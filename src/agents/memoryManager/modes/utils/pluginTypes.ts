@@ -9,7 +9,8 @@ export interface NexusPluginWithServices extends Plugin {
   services: {
     workspaceService: WorkspaceService;
     memoryService: MemoryService;
-    [key: string]: any;
+    [key: string]: unknown;
   };
   getService<T>(serviceName: string): Promise<T | null>;
+  getServiceIfReady<T>(serviceName: string): T | null;
 }

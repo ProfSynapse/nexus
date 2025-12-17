@@ -162,13 +162,13 @@ export class MCPConnectionManager implements MCPConnectionManagerInterface {
     private async initializeToolCallTracing(): Promise<void> {
         try {
             // Get ToolCallTraceService from service manager
-            const pluginWithServices = this.plugin as any;
+            const pluginWithServices = this.plugin as Plugin & { getService?: (name: string) => Promise<unknown> };
             if (!pluginWithServices.getService) {
                 logger.systemWarn('Plugin does not support getService - tool call tracing disabled');
                 return;
             }
 
-            const toolCallTraceService = await pluginWithServices.getService('toolCallTraceService');
+            const toolCallTraceService = await pluginWithServices.getService('toolCallTraceService') as { captureToolCall: (toolName: string, params: unknown, response: unknown, success: boolean, executionTime: number) => Promise<void> } | null;
             if (!toolCallTraceService) {
                 logger.systemWarn('ToolCallTraceService not available - tool call tracing disabled');
                 return;
