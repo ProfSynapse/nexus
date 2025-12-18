@@ -1372,28 +1372,36 @@ async switchAlternative(messageId: string, index: number): Promise<void> {
 
 | Path | Purpose |
 |------|---------|
-| `src/services/chat/SubagentExecutor.ts` | Core subagent execution loop |
-| `src/services/chat/MessageQueueService.ts` | Async message queue |
+| `src/types/branch/BranchTypes.ts` | Branch + subagent type definitions |
 | `src/services/chat/BranchService.ts` | Unified branch management (human + subagent) |
-| `src/agents/agentManager/tools/subagent.ts` | Tool definition |
-| `src/types/branch/BranchTypes.ts` | Branch type definitions |
+| `src/services/chat/MessageQueueService.ts` | Async message queue with priority |
+| `src/services/chat/SubagentExecutor.ts` | Core subagent execution loop |
+| `src/agents/agentManager/tools/subagent.ts` | Spawn subagent tool |
+| `src/agents/agentManager/tools/cancelSubagent.ts` | Cancel running subagent tool |
+| `src/ui/chat/components/AgentStatusMenu.ts` | Header icon + badge |
+| `src/ui/chat/components/AgentStatusModal.ts` | Running agents modal |
+| `src/ui/chat/components/BranchHeader.ts` | Branch navigation header |
 
 ## Files to Modify
 
 | Path | Changes |
 |------|---------|
 | `src/types/chat/ChatTypes.ts` | Add `branches[]` to ConversationMessage |
-| `src/agents/agentManager/agentManager.ts` | Register SubagentTool |
+| `src/agents/agentManager/agentManager.ts` | Register SubagentTool + CancelSubagentTool |
 | `src/services/chat/ChatService.ts` | Add `generateResponseStreamingForBranch()` |
 | `src/services/chat/StreamingResponseService.ts` | Branch context building, queue hooks |
-| `src/services/ConversationService.ts` | Branch CRUD operations |
-| `src/ui/chat/services/MessageManager.ts` | Route through queue |
-| `src/ui/chat/services/BranchManager.ts` | Extend for unified branching |
-| `src/ui/chat/ChatView.ts` | Branch navigation, subagent indicators |
+| `src/ui/chat/services/MessageManager.ts` | Route through queue, set processor |
+| `src/ui/chat/ChatView.ts` | Branch navigation, agent status menu integration |
 | `src/ui/chat/components/ToolResultDisplay.ts` | [View Branch] link for subagent results |
-| `src/config/toolVisibility.ts` | Add `INTERNAL_ONLY_TOOLS` |
 | `src/agents/toolManager/tools/getTools.ts` | Filter internal-only tools for MCP |
-| `src/database/schema/schema.ts` | Add branches to message schema (if using SQLite) |
+
+## Files to Review (Janitorial)
+
+| Path | Action |
+|------|--------|
+| `src/ui/chat/services/BranchManager.ts` | Check for overlap with BranchService |
+| `src/ui/chat/services/MessageAlternativeService.ts` | Reuse patterns, don't duplicate |
+| `src/config/` | Check if toolVisibility.ts exists or needs creation |
 
 ---
 
@@ -1483,31 +1491,419 @@ if (message.type === 'subagent_result') {
 
 ---
 
+## Parent Cancellation: `cancelSubagent` Tool
+
+Location: `/src/agents/agentManager/tools/cancelSubagent.ts`
+
+Parent agent can cancel running subagents programmatically:
+
+```typescript
+export interface CancelSubagentParams {
+  subagentId?: string;   // Cancel by subagent ID
+  branchId?: string;     // Or cancel by branch ID
+}
+
+export interface CancelSubagentResult {
+  success: boolean;
+  message: string;
+  finalState: 'cancelled' | 'not_found' | 'already_complete';
+}
+
+export class CancelSubagentTool extends BaseTool<CancelSubagentParams, CancelSubagentResult> {
+  constructor(private subagentExecutor: SubagentExecutor) {
+    super(
+      'cancelSubagent',
+      'Cancel Running Subagent',
+      `Cancel a running subagent by its ID or branch ID.
+       Use when a subagent is no longer needed or taking too long.
+       The subagent's state will be set to 'cancelled'.`,
+      '1.0.0'
+    );
+  }
+
+  async execute(params: CancelSubagentParams): Promise<CancelSubagentResult> {
+    const { subagentId, branchId } = params;
+
+    if (!subagentId && !branchId) {
+      return {
+        success: false,
+        message: 'Must provide either subagentId or branchId',
+        finalState: 'not_found'
+      };
+    }
+
+    // Find and cancel
+    const cancelled = subagentId
+      ? this.subagentExecutor.cancelSubagent(subagentId)
+      : this.subagentExecutor.cancelSubagentByBranch(branchId!);
+
+    if (cancelled) {
+      return {
+        success: true,
+        message: `Subagent cancelled successfully`,
+        finalState: 'cancelled'
+      };
+    }
+
+    // Check if already complete
+    const state = await this.subagentExecutor.getSubagentState(subagentId || branchId!);
+    if (state === 'complete' || state === 'max_iterations') {
+      return {
+        success: false,
+        message: 'Subagent already finished',
+        finalState: 'already_complete'
+      };
+    }
+
+    return {
+      success: false,
+      message: 'Subagent not found',
+      finalState: 'not_found'
+    };
+  }
+
+  getParameterSchema() {
+    return this.getMergedSchema({
+      type: 'object',
+      properties: {
+        subagentId: {
+          type: 'string',
+          description: 'The subagent ID returned when spawned'
+        },
+        branchId: {
+          type: 'string',
+          description: 'The branch ID where subagent is running'
+        }
+      }
+    });
+  }
+}
+```
+
+**Add to SubagentExecutor:**
+
+```typescript
+// Cancel by branch ID (for parent convenience)
+cancelSubagentByBranch(branchId: string): boolean {
+  for (const [subagentId, controller] of this.activeSubagents.entries()) {
+    if (this.subagentBranches.get(subagentId) === branchId) {
+      controller.abort();
+      this.activeSubagents.delete(subagentId);
+      return true;
+    }
+  }
+  return false;
+}
+
+// Get state for already-finished subagents
+async getSubagentState(idOrBranchId: string): Promise<string | null> {
+  const branch = await this.branchService.getBranch(idOrBranchId);
+  return branch?.metadata?.state || null;
+}
+```
+
+---
+
+## Agent Status UI
+
+### Component: Agent Status Menu
+
+Location: `/src/ui/chat/components/AgentStatusMenu.ts`
+
+**Placement:** Icon button next to settings icon in chat header. Shows badge with count of running agents.
+
+```
+┌──────────────────────────────────────────────────────┐
+│  Chat Title                        [🤖 2] [⚙️]  │
+└──────────────────────────────────────────────────────┘
+                                       ↑
+                                  Agent Status
+                                  (badge = 2 running)
+```
+
+**Visual States:**
+- No running agents: Icon hidden or grayed out
+- 1+ running: Icon visible with badge count
+- Agent completes: Badge decrements, toast notification
+
+### Component: Agent Status Modal
+
+Clicking the agent status icon opens a modal:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  Running Agents                                    [×]  │
+├─────────────────────────────────────────────────────────┤
+│                                                         │
+│  ┌─────────────────────────────────────────────────┐   │
+│  │ 🔄 "Analyze authentication system"              │   │
+│  │    Iterations: 3/10  •  Started: 2m ago         │   │
+│  │    [View Branch]  [Cancel]                      │   │
+│  └─────────────────────────────────────────────────┘   │
+│                                                         │
+│  ┌─────────────────────────────────────────────────┐   │
+│  │ 🔄 "Search for API patterns"                    │   │
+│  │    Iterations: 7/10  •  Started: 5m ago         │   │
+│  │    [View Branch]  [Cancel]                      │   │
+│  └─────────────────────────────────────────────────┘   │
+│                                                         │
+│  ─────────────── Completed ───────────────             │
+│                                                         │
+│  ┌─────────────────────────────────────────────────┐   │
+│  │ ✓ "Review database schema"                      │   │
+│  │    Completed: 4 iterations  •  1m ago           │   │
+│  │    [View Branch]                                │   │
+│  └─────────────────────────────────────────────────┘   │
+│                                                         │
+└─────────────────────────────────────────────────────────┘
+```
+
+**Data Structure:**
+
+```typescript
+interface AgentStatusItem {
+  subagentId: string;
+  branchId: string;
+  task: string;
+  state: 'running' | 'complete' | 'cancelled' | 'max_iterations';
+  iterations: number;
+  maxIterations: number;
+  startedAt: number;
+  completedAt?: number;
+  parentMessageId: string;  // For navigation back
+}
+
+// In SubagentExecutor - expose for UI
+getAgentStatusList(): AgentStatusItem[] {
+  return Array.from(this.agentStatus.values())
+    .sort((a, b) => {
+      // Running first, then by start time
+      if (a.state === 'running' && b.state !== 'running') return -1;
+      if (b.state === 'running' && a.state !== 'running') return 1;
+      return b.startedAt - a.startedAt;
+    });
+}
+```
+
+### Branch Navigation
+
+**Subagent Branch Header:**
+
+When viewing a subagent branch, show navigation header:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  ◀ Back to Main  │  Subagent: "Analyze auth system"    │
+│                  │  Status: Running (3/10)  [Cancel]   │
+├─────────────────────────────────────────────────────────┤
+│                                                         │
+│  System: You are an autonomous subagent...              │
+│                                                         │
+│  User: Analyze the authentication system                │
+│                                                         │
+│  Assistant: I'll search for auth-related files...       │
+│    └─ 🔧 vaultLibrarian.search [5 files]               │
+│                                                         │
+│  Assistant: Found these patterns...                     │
+│                                                         │
+└─────────────────────────────────────────────────────────┘
+```
+
+**Implementation:**
+
+```typescript
+interface BranchViewContext {
+  conversationId: string;
+  branchId: string;
+  parentMessageId: string;  // For "Back" navigation
+  branchType: 'human' | 'subagent';
+  metadata?: {
+    task?: string;
+    state?: string;
+    iterations?: number;
+    maxIterations?: number;
+    subagentId?: string;
+  };
+}
+
+// ChatView state
+private currentBranchContext: BranchViewContext | null = null;
+
+// Navigation methods
+async navigateToBranch(branchId: string): Promise<void> {
+  const branchInfo = await this.branchService.getBranch(
+    this.conversation.id,
+    branchId
+  );
+
+  this.currentBranchContext = {
+    conversationId: this.conversation.id,
+    branchId,
+    parentMessageId: branchInfo.parentMessageId,
+    branchType: branchInfo.branch.type,
+    metadata: branchInfo.branch.metadata
+  };
+
+  // Re-render with branch messages
+  await this.renderBranchView();
+}
+
+async navigateToParent(): Promise<void> {
+  this.currentBranchContext = null;
+  await this.renderMainConversation();
+}
+```
+
+**"View Branch" in Tool Result:**
+
+```typescript
+// In ToolResultDisplay component
+if (toolCall.name === 'agentManager.subagent' && result.branchId) {
+  // Add clickable link
+  const viewLink = createEl('a', {
+    text: 'View Branch →',
+    cls: 'subagent-view-link'
+  });
+  viewLink.onclick = () => this.chatView.navigateToBranch(result.branchId);
+}
+```
+
+---
+
+## SOLID & DRY Compliance Review
+
+### Single Responsibility Principle ✓
+
+| Component | Single Responsibility |
+|-----------|----------------------|
+| `BranchService` | Branch CRUD + context building |
+| `MessageQueueService` | Async message queuing only |
+| `SubagentExecutor` | Subagent lifecycle management |
+| `SubagentTool` | Tool interface/validation only |
+| `CancelSubagentTool` | Cancellation interface only |
+| `AgentStatusMenu` | UI for agent status display |
+
+### Open/Closed Principle ✓
+
+- `ConversationBranch.type` is extensible (`'human' | 'subagent' | future...`)
+- `inheritContext` flag allows new context strategies without modifying core
+- Tools extend `BaseTool` - new tools don't modify existing code
+
+### Liskov Substitution Principle ✓
+
+- All branches (human/subagent) work uniformly through `BranchService`
+- `buildLLMContext()` handles both types polymorphically via `inheritContext`
+
+### Interface Segregation Principle ✓
+
+- `SubagentExecutorEvents` - small, focused event interface
+- `MessageQueueEvents` - separate from executor events
+- Tools have minimal required params (`task` only required for subagent)
+
+### Dependency Inversion Principle ✓
+
+- `SubagentExecutor` depends on abstractions (`ChatService`, `BranchService`)
+- Services injected via constructor, not instantiated internally
+- Events emitted, not direct UI manipulation
+
+### DRY Violations to Avoid
+
+| Pattern | Reuse |
+|---------|-------|
+| Branch context building | Single `BranchService.buildLLMContext()` |
+| Abort handling | Reuse `AbortController` pattern from `StreamingResponseService` |
+| Tool result display | Extend existing `ToolResultDisplay` component |
+| Message streaming | Reuse `StreamingResponseService` for branches |
+| State persistence | Use existing `ConversationService` patterns |
+
+---
+
+## Janitorial / Cleanup Plan
+
+Since no users have used this yet, we can do a clean implementation without backward compatibility concerns.
+
+### Files to Review for Dead Code
+
+| File | Check For |
+|------|-----------|
+| `src/ui/chat/services/BranchManager.ts` | May have unused alternative-only methods |
+| `src/ui/chat/services/MessageAlternativeService.ts` | Consolidate with BranchService if overlapping |
+| `src/types/chat/ChatTypes.ts` | Remove any deprecated fields |
+
+### Consolidation Opportunities
+
+1. **BranchManager + BranchService**
+   - Current `BranchManager` handles message alternatives
+   - New `BranchService` handles conversation branches
+   - Consider: Should these be one service?
+   - Recommendation: Keep separate - alternatives are message-level, branches are conversation-level
+
+2. **MessageAlternativeService patterns**
+   - Borrow patterns but don't duplicate
+   - `SubagentExecutor` should import and reuse, not copy
+
+### New File Checklist
+
+When creating new files, ensure:
+
+- [ ] No duplicate utility functions (check `src/utils/`)
+- [ ] No duplicate type definitions (check `src/types/`)
+- [ ] Imports from existing services, not reimplementing
+- [ ] Consistent naming with existing patterns
+
+### Post-Implementation Cleanup
+
+After implementation, sweep for:
+
+1. **Unused imports** - Run `eslint --fix` or use IDE tools
+2. **Dead branches** - Remove any `if (false)` or unreachable code
+3. **Console.log statements** - Remove debug logging
+4. **Commented code** - Delete, don't comment
+5. **TODO comments** - Resolve or create issues
+
+### Type Safety
+
+- No `any` types in new code
+- Strict null checks enforced
+- All async functions properly awaited
+- Error types explicitly defined
+
+---
+
 ## Implementation Phases
 
-### Phase 1: Core MVP
+### Phase 1: Foundation
 - [x] Design complete
-- [ ] `SubagentExecutor.ts` - execution loop
+- [ ] `BranchTypes.ts` - type definitions
+- [ ] `ChatTypes.ts` - add branches to message
+- [ ] `BranchService.ts` - branch CRUD + context building
 - [ ] `MessageQueueService.ts` - async queue
-- [ ] `subagent.ts` tool - registration
-- [ ] Basic integration test
 
-### Phase 2: UI Integration
-- [ ] Subagent indicator in ChatView
-- [ ] Queue indicator
-- [ ] [View Branch] link on alternatives
-- [ ] [Cancel] button
+### Phase 2: Core Executor
+- [ ] `SubagentExecutor.ts` - execution loop
+- [ ] `ChatService.ts` - add `generateResponseStreamingForBranch()`
+- [ ] `subagent.ts` tool - spawn subagent
+- [ ] `cancelSubagent.ts` tool - parent cancellation
+- [ ] `agentManager.ts` - register tools
+- [ ] `getTools.ts` - MCP filtering
 
-### Phase 3: Polish
-- [ ] Progress streaming to UI
-- [ ] Cost tracking per subagent
-- [ ] Error recovery
-- [ ] Timeout handling
+### Phase 3: UI Components
+- [ ] `AgentStatusMenu.ts` - icon + badge in header
+- [ ] `AgentStatusModal.ts` - running agents list
+- [ ] `BranchHeader.ts` - navigation header for branch view
+- [ ] `ChatView.ts` - branch navigation methods
+- [ ] `ToolResultDisplay.ts` - [View Branch] link
 
-### Phase 4: Future
-- [ ] Nested subagents
-- [ ] Parallel subagents
-- [ ] Specialized profiles
+### Phase 4: Integration & Wiring
+- [ ] `StreamingResponseService.ts` - queue hooks
+- [ ] `MessageManager.ts` - queue processor
+- [ ] Event subscriptions for UI updates
+
+### Phase 5: Cleanup & Testing
+- [ ] Review for dead code
+- [ ] Type safety audit
+- [ ] Integration tests
+- [ ] Edge case handling
 
 ---
 
