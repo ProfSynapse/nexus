@@ -5841,6 +5841,249 @@ body.is-mobile .chat-loading-overlay {
 }
 
 /* ------------------------------ */
+/* SUBAGENT UI COMPONENTS         */
+/* ------------------------------ */
+
+/* Agent Status Menu Button (header icon + badge) */
+.nexus-agent-status-button {
+    position: relative;
+    padding: 4px 8px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.nexus-agent-status-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.nexus-agent-status-badge {
+    position: absolute;
+    top: -2px;
+    right: 2px;
+    min-width: 14px;
+    height: 14px;
+    padding: 0 4px;
+    border-radius: 7px;
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 14px;
+    text-align: center;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.nexus-badge-hidden {
+    opacity: 0;
+    transform: scale(0.5);
+    pointer-events: none;
+}
+
+.nexus-agents-active .nexus-agent-status-icon {
+    color: var(--interactive-accent);
+}
+
+/* Completion pulse animation */
+.nexus-agent-completion-pulse {
+    animation: nexus-completion-pulse 1s ease-out;
+}
+
+@keyframes nexus-completion-pulse {
+    0% {
+        box-shadow: 0 0 0 0 rgba(var(--interactive-accent-rgb), 0.4);
+    }
+    70% {
+        box-shadow: 0 0 0 10px rgba(var(--interactive-accent-rgb), 0);
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(var(--interactive-accent-rgb), 0);
+    }
+}
+
+/* Branch Header (navigation when viewing branch) */
+.nexus-branch-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px;
+    background: var(--background-secondary);
+    border-bottom: 1px solid var(--background-modifier-border);
+    flex-wrap: wrap;
+}
+
+.nexus-branch-back {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: var(--font-ui-small);
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.nexus-branch-back:hover {
+    background: var(--background-modifier-hover);
+    color: var(--text-normal);
+}
+
+.nexus-branch-back-icon {
+    display: flex;
+    align-items: center;
+}
+
+.nexus-branch-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
+    min-width: 0;
+}
+
+.nexus-branch-task {
+    font-weight: 500;
+    color: var(--text-normal);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 300px;
+}
+
+.nexus-branch-status {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: var(--font-ui-smaller);
+}
+
+.nexus-status-text {
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: 500;
+}
+
+.nexus-status-running {
+    background: rgba(var(--color-blue-rgb), 0.15);
+    color: var(--color-blue);
+}
+
+.nexus-status-complete {
+    background: rgba(var(--color-green-rgb), 0.15);
+    color: var(--color-green);
+}
+
+.nexus-status-cancelled {
+    background: rgba(var(--color-red-rgb), 0.15);
+    color: var(--color-red);
+}
+
+.nexus-status-max_iterations {
+    background: rgba(var(--color-yellow-rgb), 0.15);
+    color: var(--color-yellow);
+}
+
+.nexus-status-abandoned {
+    background: rgba(var(--color-orange-rgb), 0.15);
+    color: var(--color-orange);
+}
+
+/* Branch action buttons */
+.nexus-branch-action-btn {
+    padding: 4px 12px;
+    border-radius: 4px;
+    font-size: var(--font-ui-smaller);
+    cursor: pointer;
+}
+
+.nexus-branch-cancel-btn {
+    color: var(--text-error);
+}
+
+.nexus-branch-continue-btn {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+}
+
+/* View Branch Link (in tool results) */
+.nexus-view-branch-link-container {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--background-modifier-border);
+}
+
+.nexus-view-branch-link {
+    color: var(--interactive-accent);
+    font-size: var(--font-ui-small);
+    text-decoration: none;
+    cursor: pointer;
+    transition: opacity 0.15s ease;
+}
+
+.nexus-view-branch-link:hover {
+    opacity: 0.8;
+    text-decoration: underline;
+}
+
+/* Agent Status Modal */
+.nexus-agent-status-modal {
+    max-width: 500px;
+}
+
+.nexus-agent-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.nexus-agent-item {
+    padding: 12px;
+    background: var(--background-secondary);
+    border-radius: 6px;
+    border: 1px solid var(--background-modifier-border);
+}
+
+.nexus-agent-item-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+
+.nexus-agent-task {
+    font-weight: 500;
+    color: var(--text-normal);
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.nexus-agent-meta {
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+}
+
+.nexus-agent-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.nexus-no-agents {
+    text-align: center;
+    color: var(--text-muted);
+    padding: 24px;
+}
+
+/* ------------------------------ */
 /* EMBEDDING STATUS BAR           */
 /* ------------------------------ */
 
@@ -5974,4 +6217,247 @@ body.is-mobile .chat-loading-overlay {
 /* Visible state */
 .llm-provider-visible {
     display: block;
+}
+
+/* ------------------------------ */
+/* SUBAGENT UI COMPONENTS         */
+/* ------------------------------ */
+
+/* Agent Status Menu Button (header icon + badge) */
+.nexus-agent-status-button {
+    position: relative;
+    padding: 4px 8px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.nexus-agent-status-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.nexus-agent-status-badge {
+    position: absolute;
+    top: -2px;
+    right: 2px;
+    min-width: 14px;
+    height: 14px;
+    padding: 0 4px;
+    border-radius: 7px;
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 14px;
+    text-align: center;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.nexus-badge-hidden {
+    opacity: 0;
+    transform: scale(0.5);
+    pointer-events: none;
+}
+
+.nexus-agents-active .nexus-agent-status-icon {
+    color: var(--interactive-accent);
+}
+
+/* Completion pulse animation */
+.nexus-agent-completion-pulse {
+    animation: nexus-completion-pulse 1s ease-out;
+}
+
+@keyframes nexus-completion-pulse {
+    0% {
+        box-shadow: 0 0 0 0 rgba(var(--interactive-accent-rgb), 0.4);
+    }
+    70% {
+        box-shadow: 0 0 0 10px rgba(var(--interactive-accent-rgb), 0);
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(var(--interactive-accent-rgb), 0);
+    }
+}
+
+/* Branch Header (navigation when viewing branch) */
+.nexus-branch-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px;
+    background: var(--background-secondary);
+    border-bottom: 1px solid var(--background-modifier-border);
+    flex-wrap: wrap;
+}
+
+.nexus-branch-back {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: var(--font-ui-small);
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.nexus-branch-back:hover {
+    background: var(--background-modifier-hover);
+    color: var(--text-normal);
+}
+
+.nexus-branch-back-icon {
+    display: flex;
+    align-items: center;
+}
+
+.nexus-branch-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
+    min-width: 0;
+}
+
+.nexus-branch-task {
+    font-weight: 500;
+    color: var(--text-normal);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 300px;
+}
+
+.nexus-branch-status {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: var(--font-ui-smaller);
+}
+
+.nexus-status-text {
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: 500;
+}
+
+.nexus-status-running {
+    background: rgba(var(--color-blue-rgb), 0.15);
+    color: var(--color-blue);
+}
+
+.nexus-status-complete {
+    background: rgba(var(--color-green-rgb), 0.15);
+    color: var(--color-green);
+}
+
+.nexus-status-cancelled {
+    background: rgba(var(--color-red-rgb), 0.15);
+    color: var(--color-red);
+}
+
+.nexus-status-max_iterations {
+    background: rgba(var(--color-yellow-rgb), 0.15);
+    color: var(--color-yellow);
+}
+
+.nexus-status-abandoned {
+    background: rgba(var(--color-orange-rgb), 0.15);
+    color: var(--color-orange);
+}
+
+/* Branch action buttons */
+.nexus-branch-action-btn {
+    padding: 4px 12px;
+    border-radius: 4px;
+    font-size: var(--font-ui-smaller);
+    cursor: pointer;
+}
+
+.nexus-branch-cancel-btn {
+    color: var(--text-error);
+}
+
+.nexus-branch-continue-btn {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+}
+
+/* View Branch Link (in tool results) */
+.nexus-view-branch-link-container {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--background-modifier-border);
+}
+
+.nexus-view-branch-link {
+    color: var(--interactive-accent);
+    font-size: var(--font-ui-small);
+    text-decoration: none;
+    cursor: pointer;
+    transition: opacity 0.15s ease;
+}
+
+.nexus-view-branch-link:hover {
+    opacity: 0.8;
+    text-decoration: underline;
+}
+
+/* Agent Status Modal */
+.nexus-agent-status-modal {
+    max-width: 500px;
+}
+
+.nexus-agent-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.nexus-agent-item {
+    padding: 12px;
+    background: var(--background-secondary);
+    border-radius: 6px;
+    border: 1px solid var(--background-modifier-border);
+}
+
+.nexus-agent-item-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+
+.nexus-agent-task {
+    font-weight: 500;
+    color: var(--text-normal);
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.nexus-agent-meta {
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+}
+
+.nexus-agent-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.nexus-no-agents {
+    text-align: center;
+    color: var(--text-muted);
+    padding: 24px;
 }
