@@ -383,6 +383,14 @@ export class ChatService {
   }
 
   /**
+   * Get the LLM service for direct streaming access
+   * Used by subagent infrastructure for autonomous LLM calls
+   */
+  getLLMService(): any {
+    return this.dependencies.llmService;
+  }
+
+  /**
    * Cleanup resources
    */
   async dispose(): Promise<void> {

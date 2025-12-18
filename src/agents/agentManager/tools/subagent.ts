@@ -66,12 +66,14 @@ The subagent has access to all tools via getTools (except spawning more subagent
 To continue a subagent that hit max iterations, call with continueBranchId.`,
       '1.0.0'
     );
+    console.log('[SubagentTool] Constructor called');
   }
 
   /**
    * Set the subagent executor (called during agent initialization)
    */
   setSubagentExecutor(executor: SubagentExecutor): void {
+    console.log('[SubagentTool] setSubagentExecutor called, executor:', !!executor);
     this.subagentExecutor = executor;
   }
 
@@ -79,31 +81,46 @@ To continue a subagent that hit max iterations, call with continueBranchId.`,
    * Set the context provider (called during agent initialization)
    */
   setContextProvider(provider: () => SubagentToolContext): void {
+    console.log('[SubagentTool] setContextProvider called');
     this.contextProvider = provider;
   }
 
   async execute(params: SubagentToolParams): Promise<SubagentToolResult> {
+    console.log('[SubagentTool] execute called with params:', {
+      task: params.task,
+      agent: params.agent,
+      hasTools: params.tools ? Object.keys(params.tools).length : 0,
+      contextFilesCount: params.contextFiles?.length || 0,
+      maxIterations: params.maxIterations,
+      continueBranchId: params.continueBranchId,
+    });
+
     // Validate executor is available
     if (!this.subagentExecutor) {
+      console.error('[SubagentTool] ✗ Subagent executor not initialized');
       return createResult<SubagentToolResult>(
         false,
         null,
         'Subagent executor not initialized'
       );
     }
+    console.log('[SubagentTool] ✓ Subagent executor available');
 
     // Get execution context
     const context = this.contextProvider?.();
     if (!context) {
+      console.error('[SubagentTool] ✗ Execution context not available');
       return createResult<SubagentToolResult>(
         false,
         null,
         'Execution context not available'
       );
     }
+    console.log('[SubagentTool] ✓ Execution context:', context);
 
     // Block MCP clients
     if (context.source === 'mcp') {
+      console.warn('[SubagentTool] ✗ Blocked MCP client attempt');
       return createResult<SubagentToolResult>(
         false,
         null,
@@ -113,6 +130,7 @@ To continue a subagent that hit max iterations, call with continueBranchId.`,
 
     // Block subagents from spawning subagents
     if (context.isSubagentBranch) {
+      console.warn('[SubagentTool] ✗ Blocked subagent from spawning another subagent');
       return createResult<SubagentToolResult>(
         false,
         null,
@@ -121,6 +139,7 @@ To continue a subagent that hit max iterations, call with continueBranchId.`,
     }
 
     try {
+      console.log('[SubagentTool] Calling subagentExecutor.executeSubagent...');
       const { subagentId, branchId } = await this.subagentExecutor.executeSubagent({
         task: params.task,
         parentConversationId: context.conversationId,
@@ -137,6 +156,8 @@ To continue a subagent that hit max iterations, call with continueBranchId.`,
 
       const isContinuing = !!params.continueBranchId;
 
+      console.log('[SubagentTool] ✓ Subagent spawned:', { subagentId, branchId, isContinuing });
+
       return createResult<SubagentToolResult>(true, {
         subagentId,
         branchId,
@@ -146,6 +167,7 @@ To continue a subagent that hit max iterations, call with continueBranchId.`,
           : `Subagent started. Working on: "${params.task}". Results will appear when complete.`,
       });
     } catch (error) {
+      console.error('[SubagentTool] ✗ Failed to spawn subagent:', error);
       return createResult<SubagentToolResult>(
         false,
         null,

@@ -56,7 +56,16 @@ export class SubagentExecutor {
   private subagentBranches: Map<string, string> = new Map(); // subagentId -> branchId
   private events: Partial<SubagentExecutorEvents> = {};
 
-  constructor(private dependencies: SubagentExecutorDependencies) {}
+  constructor(private dependencies: SubagentExecutorDependencies) {
+    console.log('[SubagentExecutor] Constructor called');
+    console.log('[SubagentExecutor] Dependencies:', {
+      hasBranchService: !!dependencies.branchService,
+      hasMessageQueueService: !!dependencies.messageQueueService,
+      hasDirectToolExecutor: !!dependencies.directToolExecutor,
+      hasStreamingGenerator: !!dependencies.streamingGenerator,
+      hasGetToolSchemas: !!dependencies.getToolSchemas,
+    });
+  }
 
   /**
    * Set event handlers
@@ -70,18 +79,40 @@ export class SubagentExecutor {
    * Result delivered via events + message queue
    */
   async executeSubagent(params: SubagentParams): Promise<{ subagentId: string; branchId: string }> {
+    console.log('[SubagentExecutor] executeSubagent called with params:', {
+      task: params.task,
+      parentConversationId: params.parentConversationId,
+      parentMessageId: params.parentMessageId,
+      agent: params.agent,
+      maxIterations: params.maxIterations,
+      hasTools: params.tools ? Object.keys(params.tools).length : 0,
+      contextFilesCount: params.contextFiles?.length || 0,
+      continueBranchId: params.continueBranchId,
+    });
+
     const subagentId = `subagent_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    console.log('[SubagentExecutor] Generated subagentId:', subagentId);
+
     const abortController = new AbortController();
     this.activeSubagents.set(subagentId, abortController);
+    console.log('[SubagentExecutor] AbortController created, active subagents:', this.activeSubagents.size);
 
     // Create the branch first to get branchId
-    const branchId = await this.dependencies.branchService.createSubagentBranch(
-      params.parentConversationId,
-      params.parentMessageId,
-      params.task,
-      subagentId,
-      params.maxIterations ?? 10
-    );
+    console.log('[SubagentExecutor] Creating subagent branch...');
+    let branchId: string;
+    try {
+      branchId = await this.dependencies.branchService.createSubagentBranch(
+        params.parentConversationId,
+        params.parentMessageId,
+        params.task,
+        subagentId,
+        params.maxIterations ?? 10
+      );
+      console.log('[SubagentExecutor] ✓ Branch created:', branchId);
+    } catch (error) {
+      console.error('[SubagentExecutor] ✗ Failed to create branch:', error);
+      throw error;
+    }
 
     this.subagentBranches.set(subagentId, branchId);
 
@@ -98,25 +129,31 @@ export class SubagentExecutor {
       startedAt: Date.now(),
     };
     this.agentStatus.set(subagentId, statusItem);
+    console.log('[SubagentExecutor] Status initialized:', statusItem);
 
     // Fire started event
+    console.log('[SubagentExecutor] Firing onSubagentStarted event...');
     this.events.onSubagentStarted?.(subagentId, params.task, branchId);
 
     // Fire and forget - don't await
+    console.log('[SubagentExecutor] Starting runSubagentLoop (fire-and-forget)...');
     this.runSubagentLoop(subagentId, branchId, params, abortController.signal)
       .then(result => {
+        console.log('[SubagentExecutor] runSubagentLoop completed:', { subagentId, success: result.success, iterations: result.iterations });
         this.activeSubagents.delete(subagentId);
         this.updateStatus(subagentId, { state: result.success ? 'complete' : 'max_iterations' });
         this.events.onSubagentComplete?.(subagentId, result);
         this.queueResultToParent(params, result);
       })
       .catch(error => {
+        console.error('[SubagentExecutor] runSubagentLoop failed:', { subagentId, error });
         this.activeSubagents.delete(subagentId);
         const errorMessage = error instanceof Error ? error.message : String(error);
         this.updateStatus(subagentId, { state: 'cancelled' });
         this.events.onSubagentError?.(subagentId, errorMessage);
       });
 
+    console.log('[SubagentExecutor] Returning immediately with IDs:', { subagentId, branchId });
     return { subagentId, branchId };
   }
 
