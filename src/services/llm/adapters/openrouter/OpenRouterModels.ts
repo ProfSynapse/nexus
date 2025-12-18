@@ -128,6 +128,22 @@ export const OPENROUTER_MODELS: ModelSpec[] = [
   },
   {
     provider: 'openrouter',
+    name: 'Gemini 3.0 Flash Preview',
+    apiName: 'google/gemini-3-flash-preview',
+    contextWindow: 1048576,
+    maxTokens: 65536,
+    inputCostPerMillion: 0.50,
+    outputCostPerMillion: 3.00,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    provider: 'openrouter',
     name: 'Gemini 2.5 Pro',
     apiName: 'google/gemini-2.5-pro',
     contextWindow: 1048576,
