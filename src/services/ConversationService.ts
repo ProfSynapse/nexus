@@ -15,6 +15,7 @@ import { IndividualConversation, ConversationMetadata as LegacyConversationMetad
 import { IStorageAdapter } from '../database/interfaces/IStorageAdapter';
 import { ConversationMetadata, MessageData } from '../types/storage/HybridStorageTypes';
 import { PaginationParams, PaginatedResult, calculatePaginationMetadata } from '../types/pagination/PaginationTypes';
+import { branchMigrationService } from './migration/BranchMigrationService';
 
 export class ConversationService {
   constructor(
@@ -119,6 +120,21 @@ export class ConversationService {
         }
         return msg;
       });
+    }
+
+    // Migration: Convert alternatives[] to branches[] structure
+    // This migrates from the old message alternatives system to unified branches
+    const migrationResult = branchMigrationService.migrateConversation(conversation as any);
+    if (migrationResult.migrated) {
+      // Save the migrated conversation to persist the changes
+      // This ensures we don't re-migrate on every load
+      try {
+        await this.fileSystem.writeConversation(id, conversation);
+        console.log(`[ConversationService] Migrated ${migrationResult.messagesUpdated} messages with ${migrationResult.branchesCreated} branches for conversation ${id}`);
+      } catch (error) {
+        // Log but don't fail - migration will be retried on next load
+        console.warn(`[ConversationService] Failed to persist branch migration for ${id}:`, error);
+      }
     }
 
     // If pagination was requested for legacy storage, slice the messages array

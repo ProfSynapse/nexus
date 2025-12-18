@@ -7,6 +7,7 @@ import { WorkspaceContext } from '../../database/types/workspace/WorkspaceTypes'
 import { WorkspaceState } from '../../database/types/session/SessionTypes';
 import { TraceMetadata } from '../../database/types/memory/MemoryTypes';
 import { PaginatedResult } from '../pagination/PaginationTypes';
+import type { ConversationBranch } from '../branch/BranchTypes';
 
 /**
  * Individual conversation file structure (conversations/{id}.json)
@@ -65,9 +66,12 @@ export interface ConversationMessage {
   // Reasoning/thinking content from LLMs (Claude, GPT-5, Gemini)
   reasoning?: string;
 
-  // Message branching support
+  // Message branching support (legacy - being migrated to branches)
   alternatives?: ConversationMessage[];
   activeAlternativeIndex?: number;
+
+  // Unified branch model (replaces alternatives)
+  branches?: ConversationBranch[];
 
   // Cost tracking (primarily for assistant messages)
   usage?: {
