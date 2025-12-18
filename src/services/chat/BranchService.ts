@@ -16,8 +16,6 @@ import type {
   ConversationBranch,
   BranchState,
   SubagentBranchMetadata,
-  createHumanBranch,
-  createSubagentBranch,
 } from '../../types/branch/BranchTypes';
 
 export interface BranchServiceDependencies {

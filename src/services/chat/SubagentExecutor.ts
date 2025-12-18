@@ -20,6 +20,9 @@ import type {
   AgentStatusItem,
   BranchState,
   QueuedMessage,
+  SubagentToolCall,
+  ToolSchemaInfo,
+  ToolExecutionResult,
 } from '../../types/branch/BranchTypes';
 import type { BranchService } from './BranchService';
 import type { MessageQueueService } from './MessageQueueService';
@@ -43,11 +46,11 @@ export interface SubagentExecutorDependencies {
   ) => AsyncGenerator<{
     chunk: string;
     complete: boolean;
-    toolCalls?: any[];
+    toolCalls?: SubagentToolCall[];
     reasoning?: string;
   }, void, unknown>;
   // Tool list service for pre-fetching schemas
-  getToolSchemas?: (agentName: string, toolSlugs: string[]) => Promise<any[]>;
+  getToolSchemas?: (agentName: string, toolSlugs: string[]) => Promise<ToolSchemaInfo[]>;
 }
 
 export class SubagentExecutor {
@@ -320,7 +323,7 @@ export class SubagentExecutor {
 
       // Generate response
       let responseContent = '';
-      let toolCalls: any[] | undefined;
+      let toolCalls: SubagentToolCall[] | undefined;
       let reasoning = '';
 
       const streamMessages = branchInfo.branch.messages;
@@ -486,10 +489,10 @@ Instructions:
   /**
    * Pre-fetch tool schemas based on params.tools
    */
-  private async prefetchToolSchemas(tools: Record<string, string[]>): Promise<any[]> {
+  private async prefetchToolSchemas(tools: Record<string, string[]>): Promise<ToolSchemaInfo[]> {
     if (!this.dependencies.getToolSchemas) return [];
 
-    const schemas: any[] = [];
+    const schemas: ToolSchemaInfo[] = [];
 
     for (const [agentName, toolSlugs] of Object.entries(tools)) {
       try {
@@ -506,7 +509,7 @@ Instructions:
   /**
    * Format tool schemas for inclusion in message
    */
-  private formatToolSchemas(schemas: any[]): string {
+  private formatToolSchemas(schemas: ToolSchemaInfo[]): string {
     return schemas
       .map(schema => {
         const name = schema.name || `${schema.agent}.${schema.slug}`;
@@ -551,7 +554,7 @@ Instructions:
   /**
    * Execute a single tool call
    */
-  private async executeToolCall(toolCall: any): Promise<{ success: boolean; result?: any; error?: string }> {
+  private async executeToolCall(toolCall: SubagentToolCall): Promise<ToolExecutionResult> {
     try {
       const result = await this.dependencies.directToolExecutor.executeToolCall({
         id: toolCall.id,

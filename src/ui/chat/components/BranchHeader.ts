@@ -11,14 +11,15 @@
  */
 
 import { setIcon, Component } from 'obsidian';
-import type { BranchState, SubagentBranchMetadata } from '../../../types/branch/BranchTypes';
+import type { BranchState, SubagentBranchMetadata, HumanBranchMetadata } from '../../../types/branch/BranchTypes';
+import { isSubagentMetadata } from '../../../types/branch/BranchTypes';
 
 export interface BranchViewContext {
   conversationId: string;
   branchId: string;
   parentMessageId: string;
   branchType: 'human' | 'subagent';
-  metadata?: SubagentBranchMetadata;
+  metadata?: SubagentBranchMetadata | HumanBranchMetadata;
 }
 
 export interface BranchHeaderCallbacks {
@@ -114,9 +115,10 @@ export class BranchHeader {
     // Branch info container
     const info = header.createDiv('nexus-branch-info');
 
-    // Branch task/description
-    if (this.context.branchType === 'subagent' && this.context.metadata) {
-      const task = this.context.metadata.task || 'Subagent';
+    // Branch task/description - use type guard to narrow metadata type
+    if (this.context.branchType === 'subagent' && isSubagentMetadata(this.context.metadata)) {
+      const metadata = this.context.metadata; // Now properly typed as SubagentBranchMetadata
+      const task = metadata.task || 'Subagent';
       const taskEl = info.createSpan({
         text: `Subagent: "${this.truncateTask(task)}"`,
         cls: 'nexus-branch-task',
@@ -125,22 +127,22 @@ export class BranchHeader {
 
       // Status badge
       const statusContainer = info.createSpan('nexus-branch-status');
-      const statusText = this.getStatusText(this.context.metadata);
-      const statusIcon = this.getStatusIcon(this.context.metadata.state);
+      const statusText = this.getStatusText(metadata);
+      const statusIcon = this.getStatusIcon(metadata.state);
 
       statusContainer.createSpan({
         text: statusText,
-        cls: `nexus-status-text nexus-status-${this.context.metadata.state || 'running'}`,
+        cls: `nexus-status-text nexus-status-${metadata.state || 'running'}`,
       });
       statusContainer.createSpan({ text: ` ${statusIcon}` });
 
       // Action buttons for running/paused agents
-      if (this.context.metadata.state === 'running' && this.callbacks.onCancel && this.context.metadata.subagentId) {
+      if (metadata.state === 'running' && this.callbacks.onCancel && metadata.subagentId) {
         const cancelBtn = header.createEl('button', {
           cls: 'nexus-branch-action-btn nexus-branch-cancel-btn clickable-icon',
           text: 'Cancel',
         });
-        const subagentId = this.context.metadata.subagentId;
+        const subagentId = metadata.subagentId;
         if (this.component) {
           this.component.registerDomEvent(cancelBtn, 'click', () => {
             this.callbacks.onCancel!(subagentId);
@@ -152,7 +154,7 @@ export class BranchHeader {
         }
       }
 
-      if (this.context.metadata.state === 'max_iterations' && this.callbacks.onContinue) {
+      if (metadata.state === 'max_iterations' && this.callbacks.onContinue) {
         const continueBtn = header.createEl('button', {
           cls: 'nexus-branch-action-btn nexus-branch-continue-btn mod-cta',
           text: 'Continue',

@@ -173,6 +173,38 @@ export interface MessageQueueEvents {
 }
 
 /**
+ * Tool call structure from LLM responses
+ */
+export interface SubagentToolCall {
+  id: string;
+  type?: string;
+  function: {
+    name: string;
+    arguments: string;
+  };
+}
+
+/**
+ * Tool schema for pre-fetched tools
+ */
+export interface ToolSchemaInfo {
+  agent: string;
+  slug?: string;
+  name?: string;
+  description: string;
+  parameters?: Record<string, unknown>;
+}
+
+/**
+ * Tool execution result
+ */
+export interface ToolExecutionResult {
+  success: boolean;
+  result?: unknown;
+  error?: string;
+}
+
+/**
  * Type guard for subagent metadata
  */
 export function isSubagentMetadata(

@@ -33,6 +33,13 @@ export class MessageQueueService extends EventEmitter {
   }
 
   /**
+   * Alias for setMessageProcessor (for compatibility with MessageManager)
+   */
+  setProcessor(fn: (message: QueuedMessage) => Promise<void>): void {
+    this.setMessageProcessor(fn);
+  }
+
+  /**
    * Enqueue a message
    * - If not generating, process immediately
    * - If generating, add to queue (user messages get priority)
