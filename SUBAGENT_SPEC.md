@@ -2043,13 +2043,14 @@ if (toolCall.name === 'agentManager.subagent' && result.branchId) {
 
 ### DRY Violations to Avoid
 
-| Pattern | Reuse |
-|---------|-------|
+| Pattern | Reuse From |
+|---------|------------|
 | Branch context building | Single `BranchService.buildLLMContext()` |
-| Abort handling | Reuse `AbortController` pattern from `StreamingResponseService` |
+| Abort handling | `src/ui/chat/utils/AbortHandler.ts` - already extracted |
 | Tool result display | Extend existing `ToolResultDisplay` component |
-| Message streaming | Reuse `StreamingResponseService` for branches |
-| State persistence | Use existing `ConversationService` patterns |
+| Message streaming | `MessageStreamHandler.ts` - already handles tool calls, reasoning |
+| State transitions | `MessageStateManager.ts` - extend for branch states |
+| System prompt building | `SystemPromptBuilder.ts` - add branch context param |
 
 ---
 
@@ -2057,51 +2058,147 @@ if (toolCall.name === 'agentManager.subagent' && result.branchId) {
 
 Since no users have used this yet, we can do a clean implementation without backward compatibility concerns.
 
-### Files to Review for Dead Code
+### Existing Architecture Audit
 
-| File | Check For |
-|------|-----------|
-| `src/ui/chat/services/BranchManager.ts` | May have unused alternative-only methods |
-| `src/ui/chat/services/MessageAlternativeService.ts` | Consolidate with BranchService if overlapping |
-| `src/types/chat/ChatTypes.ts` | Remove any deprecated fields |
+**Services in `src/ui/chat/services/` (all clean, no TODOs):**
 
-### Consolidation Opportunities
+| File | Purpose | Subagent Relevance |
+|------|---------|-------------------|
+| `BranchManager.ts` | Message alternatives (`message.alternatives[]`) | Extend or replace with unified branching |
+| `MessageAlternativeService.ts` | Create retry alternatives | Reuse streaming patterns |
+| `MessageStreamHandler.ts` | Consolidated streaming logic | **Reuse directly** - no changes needed |
+| `MessageStateManager.ts` | Message state machine | **Extend** for branch states |
+| `ConversationManager.ts` | Conversation CRUD | Add branch-aware methods |
+| `MessageManager.ts` | Message orchestration | Hook in MessageQueueService |
 
-1. **BranchManager + BranchService**
-   - Current `BranchManager` handles message alternatives
-   - New `BranchService` handles conversation branches
-   - Consider: Should these be one service?
-   - Recommendation: Keep separate - alternatives are message-level, branches are conversation-level
+### Migration: `alternatives[]` → `branches[]`
 
-2. **MessageAlternativeService patterns**
-   - Borrow patterns but don't duplicate
-   - `SubagentExecutor` should import and reuse, not copy
+**Current Model (message-level alternatives):**
+```typescript
+interface ConversationMessage {
+  alternatives?: ConversationMessage[];
+  activeAlternativeIndex?: number;  // 0 = original, 1+ = alt
+}
+```
+
+**New Unified Model:**
+```typescript
+interface ConversationMessage {
+  branches?: ConversationBranch[];  // Full conversation branches
+  // Keep alternatives for backward compat during migration? NO - clean break
+}
+```
+
+**Decision: Clean replacement, not migration**
+- Remove `alternatives[]` and `activeAlternativeIndex`
+- Human "alternatives" become `branches[]` with `type: 'human'`, `inheritContext: true`
+- Existing `BranchManager` methods updated to use new model
+- `MessageBranchNavigator.ts` component updated for new structure
+
+### Services to Reuse (No Changes Needed)
+
+| Service | Why Reusable |
+|---------|--------------|
+| `MessageStreamHandler.ts` | Already handles tool calls, reasoning tokens, completion |
+| `AbortHandler.ts` | Unified abort pattern, keeps partial content |
+| `SystemPromptBuilder.ts` | XML prompt building, context injection |
+
+### Services to Extend
+
+| Service | Changes Needed |
+|---------|----------------|
+| `MessageStateManager.ts` | Add branch-specific states: `running`, `cancelled`, `max_iterations` |
+| `BranchManager.ts` | Replace alternatives logic with `ConversationBranch[]` model |
+| `ConversationManager.ts` | Add `getBranch()`, `updateBranch()` methods |
+
+### Files to Delete After Migration
+
+| File | Reason |
+|------|--------|
+| None | Clean architecture - extend, don't delete |
+
+### Code to Remove (Within Files)
+
+| File | Remove |
+|------|--------|
+| `ChatTypes.ts` | `alternatives?: ConversationMessage[]` field |
+| `ChatTypes.ts` | `activeAlternativeIndex?: number` field |
+| `BranchManager.ts` | Old alternative-specific methods (replace with branch methods) |
+| `MessageBranchNavigator.ts` | Rewrite for new branch model |
+
+### Known TODOs in Codebase (Not Blocking)
+
+These exist but are outside subagent scope:
+
+| Location | TODO | Action |
+|----------|------|--------|
+| `src/settings/SettingsView.ts` | "Re-enable when Data tab ready" | Ignore - UI feature |
+| `src/core/ServiceManager.ts:311` | "Track loading state" | Ignore - core infra |
+| `src/database/services/index.ts` | "Add ImportService" | Ignore - DB feature |
+
+### Deprecated Code (Not Blocking)
+
+| Location | Status |
+|----------|--------|
+| `src/utils/parameterHintUtils.ts` | 3 deprecated functions - use ToolHelp |
+| `src/services/chat/ToolCallService.ts` | Deprecated approach |
+| `src/server/services/AgentRegistry.ts` | 3 deprecated methods |
+
+**Action:** Don't use deprecated patterns. Use current patterns from `MessageStreamHandler`.
 
 ### New File Checklist
 
-When creating new files, ensure:
+When creating new files, verify:
 
-- [ ] No duplicate utility functions (check `src/utils/`)
-- [ ] No duplicate type definitions (check `src/types/`)
-- [ ] Imports from existing services, not reimplementing
-- [ ] Consistent naming with existing patterns
+- [ ] Check `src/utils/` for existing helpers before creating new ones
+- [ ] Check `src/types/` for existing type definitions
+- [ ] Import from existing services, don't copy code
+- [ ] Follow naming: `*Service.ts`, `*Manager.ts`, `*Modal.ts`
+- [ ] Use `nexus-` prefix for CSS classes
 
-### Post-Implementation Cleanup
+### Specific Reuse Patterns
 
-After implementation, sweep for:
+**For streaming in SubagentExecutor:**
+```typescript
+// DON'T recreate streaming logic
+// DO import and use MessageStreamHandler patterns:
+import { MessageStreamHandler } from '../ui/chat/services/MessageStreamHandler';
 
-1. **Unused imports** - Run `eslint --fix` or use IDE tools
-2. **Dead branches** - Remove any `if (false)` or unreachable code
-3. **Console.log statements** - Remove debug logging
-4. **Commented code** - Delete, don't comment
-5. **TODO comments** - Resolve or create issues
+// Or follow its pattern for branch-specific streaming
+```
 
-### Type Safety
+**For abort handling:**
+```typescript
+// DON'T create new abort patterns
+// DO use AbortHandler:
+import { AbortHandler } from '../ui/chat/utils/AbortHandler';
+```
+
+**For state management:**
+```typescript
+// DON'T create new state machine
+// DO extend MessageStateManager states or follow its pattern
+```
+
+### Post-Implementation Cleanup Checklist
+
+After implementation:
+
+- [ ] Run `npm run lint` - fix all errors
+- [ ] Search for `console.log` - remove debug statements
+- [ ] Search for `// TODO` - resolve or create issues
+- [ ] Search for `any` type - replace with proper types
+- [ ] Verify no commented-out code blocks
+- [ ] Run `npm run build` - ensure no type errors
+- [ ] Test alternatives → branches migration path
+
+### Type Safety Requirements
 
 - No `any` types in new code
-- Strict null checks enforced
-- All async functions properly awaited
-- Error types explicitly defined
+- Strict null checks: use `?.` and `??` operators
+- All async functions properly `await`ed
+- Error types explicitly defined (not `catch(e)` → `catch(e: unknown)`)
+- Use `satisfies` for type-safe object literals
 
 ---
 
