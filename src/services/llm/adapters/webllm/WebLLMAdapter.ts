@@ -67,6 +67,7 @@ import { ToolCallContentParser } from '../shared/ToolCallContentParser';
 import { WebLLMEngine, GenerationResult } from './WebLLMEngine';
 import { WebLLMModelManager } from './WebLLMModelManager';
 import { WebLLMVRAMDetector } from './WebLLMVRAMDetector';
+import { NexusToolCallConverter } from './NexusToolCallConverter';
 import {
   WebLLMModelSpec,
   WebLLMState,
@@ -88,10 +89,11 @@ export class WebLLMAdapter extends BaseAdapter {
   private state: WebLLMState;
   private vault: Vault;
   private instanceId: number;
+  private toolCallConverter: NexusToolCallConverter;
 
   mcpConnector?: any; // For tool execution support
 
-  constructor(vault: Vault, mcpConnector?: any) {
+  constructor(vault: Vault, mcpConnector?: any, sessionId?: string, workspaceId?: string) {
     // WebLLM doesn't need an API key
     super('', '', '', false);
 
@@ -104,12 +106,23 @@ export class WebLLMAdapter extends BaseAdapter {
     this.engine = WebLLMEngine.getSharedInstance();
     this.modelManager = new WebLLMModelManager(vault);
 
+    // Initialize tool call converter for two-tool architecture
+    // Nexus models are trained on the full toolset - convert to useTool format
+    this.toolCallConverter = new NexusToolCallConverter(sessionId, workspaceId);
+
     this.state = {
       status: 'unavailable',
       loadedModel: null,
     };
 
     this.initializeCache();
+  }
+
+  /**
+   * Update session/workspace context for tool call conversion
+   */
+  updateToolContext(sessionId?: string, workspaceId?: string): void {
+    this.toolCallConverter.updateContext(sessionId, workspaceId);
   }
 
   // ============================================================================
@@ -206,12 +219,14 @@ export class WebLLMAdapter extends BaseAdapter {
       let content = result.content;
       let toolCalls: any[] = [];
 
-      // Check for [TOOL_CALLS] format
+      // Check for [TOOL_CALLS] or <tool_call> format
       if (ToolCallContentParser.hasToolCallsFormat(content)) {
         const parsed = ToolCallContentParser.parse(content);
         if (parsed.hasToolCalls) {
           content = parsed.cleanContent;
-          toolCalls = parsed.toolCalls;
+          // Convert old-style tool calls to useTool format
+          // Nexus models are trained on the full toolset - wrap in useTool
+          toolCalls = this.toolCallConverter.convertToolCalls(parsed.toolCalls);
         }
       }
 
@@ -306,15 +321,19 @@ export class WebLLMAdapter extends BaseAdapter {
             totalTokens: complete.usage.totalTokens,
           };
 
-          // Handle [TOOL_CALLS] format at completion
+          // Handle [TOOL_CALLS] or <tool_call> format at completion
           if (hasToolCallsFormat) {
             const parsed = ToolCallContentParser.parse(accumulatedContent);
 
             if (parsed.hasToolCalls) {
+              // Convert old-style tool calls to useTool format
+              // Nexus models are trained on the full toolset - wrap in useTool
+              const convertedToolCalls = this.toolCallConverter.convertToolCalls(parsed.toolCalls);
+
               yield {
                 content: parsed.cleanContent,
                 complete: true,
-                toolCalls: parsed.toolCalls,
+                toolCalls: convertedToolCalls,
                 toolCallsReady: true,
                 usage: finalUsage,
               };

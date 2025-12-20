@@ -71,6 +71,7 @@ export interface ChatSettingsRendererConfig {
 }
 
 const PROVIDER_NAMES: Record<string, string> = {
+  webllm: 'Nexus (Local)',
   ollama: 'Ollama',
   lmstudio: 'LM Studio',
   openai: 'OpenAI',
@@ -147,6 +148,8 @@ export class ChatSettingsRenderer {
       const config = llmSettings.providers[id];
       if (!config?.enabled) return false;
       if (!isProviderCompatible(id)) return false;
+      // WebLLM doesn't need an API key
+      if (id === 'webllm') return true;
       // Local providers store the server URL in apiKey
       return !!config.apiKey;
     });

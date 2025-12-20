@@ -250,13 +250,27 @@ export class AdapterRegistry implements IAdapterRegistry {
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // NEXUS/WEBLLM DISABLED (Dec 6, 2025)
+    // NEXUS/WEBLLM (Re-enabled Dec 2025)
     // ═══════════════════════════════════════════════════════════════════════════
-    // WebLLM adapter intentionally disabled - WebGPU crashes Electron renderer on
-    // Apple Silicon during second generation in multi-turn conversations.
-    // See: https://github.com/mlc-ai/web-llm/issues/647
-    // To re-enable: uncomment WebLLM registration code in AdapterRegistry.ts (~258)
+    // WebLLM adapter for local LLM inference via WebGPU
+    // Note: Nexus models are fine-tuned on the toolset - they skip getTools and
+    // output tool calls that are converted to useTool format automatically.
     // ═══════════════════════════════════════════════════════════════════════════
+    if (!onMobile) {
+      // WebLLM only works on desktop (requires WebGPU)
+      if (providers.webllm?.enabled) {
+        try {
+          const { WebLLMAdapter } = await import('../adapters/webllm/WebLLMAdapter');
+          const adapter = new WebLLMAdapter(this.vault!);
+          await adapter.initialize();
+          this.webllmAdapter = adapter;
+          this.adapters.set('webllm', adapter);
+        } catch (error) {
+          console.error('AdapterRegistry: Failed to initialize WebLLM adapter:', error);
+          this.logError('webllm', error);
+        }
+      }
+    }
   }
 
   /**

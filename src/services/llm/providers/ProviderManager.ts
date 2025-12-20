@@ -151,6 +151,36 @@ export class LLMProviderManager {
           // LM Studio server not reachable - silently skip (app probably not running)
           // Don't fail the entire method, just skip LM Studio models
         }
+      } else if (provider.id === 'webllm') {
+        // Special handling for WebLLM - load from WEBLLM_MODELS
+        try {
+          const { WEBLLM_MODELS } = await import('../adapters/webllm/WebLLMModels');
+
+          for (const model of WEBLLM_MODELS) {
+            allModels.push({
+              provider: 'webllm',
+              id: model.id,
+              name: model.name,
+              contextWindow: model.contextWindow,
+              maxOutputTokens: model.maxTokens,
+              supportsJSON: model.capabilities.supportsJSON,
+              supportsImages: model.capabilities.supportsImages,
+              supportsFunctions: model.capabilities.supportsFunctions,
+              supportsStreaming: model.capabilities.supportsStreaming,
+              supportsThinking: model.capabilities.supportsThinking ?? false,
+              pricing: {
+                inputPerMillion: 0, // Local models are free
+                outputPerMillion: 0,
+                currency: 'USD',
+                lastUpdated: new Date().toISOString()
+              },
+              isDefault: defaultModel.provider === 'webllm' && defaultModel.model === model.id,
+              userDescription: this.settings.providers.webllm?.userDescription
+            });
+          }
+        } catch (error) {
+          console.error('[ProviderManager] Failed to load WebLLM models:', error);
+        }
       } else {
         // For other providers, use static models
         const providerModels = staticModelsService.getModelsForProvider(provider.id);
@@ -238,6 +268,11 @@ export class LLMProviderManager {
         description: 'Web search-enabled models with real-time information and citations'
       },
       {
+        id: 'webllm',
+        name: 'Nexus (Local)',
+        description: 'Local AI via WebGPU - runs in browser, completely private, no API costs'
+      },
+      {
         id: 'ollama',
         name: 'Ollama (Local)',
         description: 'Local LLM execution with complete privacy and no API costs'
@@ -253,9 +288,11 @@ export class LLMProviderManager {
       const config = this.settings.providers[provider.id];
       const isAvailable = this.llmService.isProviderAvailable(provider.id);
 
-      // For Ollama and LM Studio, check if server URL is configured
+      // For local providers, check if server URL is configured (except webllm which needs nothing)
       let hasApiKey = false;
-      if (provider.id === 'ollama' || provider.id === 'lmstudio') {
+      if (provider.id === 'webllm') {
+        hasApiKey = true; // WebLLM doesn't need an API key
+      } else if (provider.id === 'ollama' || provider.id === 'lmstudio') {
         hasApiKey = !!(config?.apiKey && config.apiKey.trim());
       } else {
         hasApiKey = !!(config?.apiKey && config.apiKey.length > 0);

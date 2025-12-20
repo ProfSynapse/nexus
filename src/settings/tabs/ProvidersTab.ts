@@ -45,16 +45,15 @@ export class ProvidersTab {
     // Provider configurations
     private readonly providerConfigs: Record<string, ProviderDisplayConfig> = {
         // ═══════════════════════════════════════════════════════════════════════
-        // NEXUS/WEBLLM DISABLED (Dec 6, 2025)
-        // WebGPU crashes on second generation - see AdapterRegistry.ts for details
-        // To re-enable: uncomment the webllm entry below
+        // NEXUS/WEBLLM (Re-enabled Dec 2025)
+        // Local LLM inference via WebGPU - Nexus models are fine-tuned on toolset
         // ═══════════════════════════════════════════════════════════════════════
-        // webllm: {
-        //     name: 'Nexus (Local)',
-        //     keyFormat: 'No API key required',
-        //     signupUrl: '',
-        //     category: 'local'
-        // },
+        webllm: {
+            name: 'Nexus (Local)',
+            keyFormat: 'No API key required',
+            signupUrl: '',
+            category: 'local'
+        },
         // Local providers
         ollama: {
             name: 'Ollama',
@@ -191,10 +190,10 @@ export class ProvidersTab {
             return;
         }
 
-        // Desktop: Local providers (require localhost servers)
+        // Desktop: Local providers (require localhost servers or WebGPU)
         if (supportsLocalLLM()) {
             this.container.createDiv('nexus-provider-group-title').setText('LOCAL PROVIDERS');
-            this.renderProviderList(['ollama', 'lmstudio'], settings);
+            this.renderProviderList(['webllm', 'ollama', 'lmstudio'], settings);
         }
 
         // Desktop: Cloud providers (SDK + fetch-based)

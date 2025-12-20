@@ -45,13 +45,9 @@ export const HF_BASE_URL = 'https://huggingface.co';
  * ╚═══════════════════════════════════════════════════════════════════════════╝
  */
 export const MODEL_LIBS = {
-  // Qwen3-8B library with 16K context window - Custom compiled for Nexus
-  // Optimized for lower VRAM usage (~6.4GB total with 4K cache used)
-  QWEN3_8B_16K: 'https://huggingface.co/professorsynapse/Nexus-Electron-Q3-MLC/resolve/main/Nexus-Electron-Q3.0.2-ctx16k-webgpu.wasm',
-
-  // ADD NEW LIBRARIES HERE:
-  // PHI_3_MINI: 'https://raw.githubusercontent.com/.../Phi-3-mini-4k-instruct-q4f16_1-...-webgpu.wasm',
-  // LLAMA3_8B: 'https://raw.githubusercontent.com/.../Llama-3-8B-Instruct-q4f16_1-...-webgpu.wasm',
+  // Qwen3-4B library with 4K context window - Custom compiled for Nexus Quark
+  // Optimized for lower VRAM usage (~2.5GB)
+  QWEN3_4B_4K: 'https://huggingface.co/professorsynapse/Nexus-Quark-Q3.0.1-MLC/resolve/main/Qwen3-4B-q4f16_1-ctx4k_cs1k-webgpu.wasm',
 };
 
 /**
@@ -75,22 +71,22 @@ export const MODEL_LIBS = {
  */
 export const WEBLLM_MODELS: WebLLMModelSpec[] = [
   // ═══════════════════════════════════════════════════════════════════════════
-  // NEXUS ELECTRON - 8B Qwen3-based model fine-tuned for tool calling
+  // NEXUS QUARK - 4B Qwen3-based model fine-tuned for tool calling
   // Uses <tool_call> XML format for function calling (native Qwen3 format)
-  // 16K context - balanced for VRAM efficiency and conversation length
-  // NOTE: Base VRAM ~6GB, KV cache ~2.3GB for full 16K context
+  // 4K context - optimized for lower VRAM usage (~2.5GB)
+  // Fine-tuned on full toolset - skips getTools, uses useTool directly
   // ═══════════════════════════════════════════════════════════════════════════
   {
-    id: 'nexus-electron-q3.0.2',
-    name: 'Nexus Electron',
+    id: 'nexus-quark-q3.0.1',
+    name: 'Nexus Quark',
     provider: 'webllm',
-    apiName: 'nexus-electron-q3.0.2',
-    contextWindow: 16384,
-    maxTokens: 4096, // Larger output for extended context
-    vramRequired: 6, // Base requirement; KV cache scales with context usage
+    apiName: 'nexus-quark-q3.0.1',
+    contextWindow: 4096,
+    maxTokens: 2048,
+    vramRequired: 2.5,
     quantization: 'q4f16',
-    huggingFaceRepo: 'professorsynapse/Nexus-Electron-Q3.0.1-webllm',
-    modelLibUrl: MODEL_LIBS.QWEN3_8B_16K, // Custom compiled WASM with 16K context
+    huggingFaceRepo: 'professorsynapse/Nexus-Quark-Q3.0.1-MLC',
+    modelLibUrl: MODEL_LIBS.QWEN3_4B_4K,
     flatStructure: true,
     capabilities: {
       supportsJSON: true,
@@ -100,31 +96,6 @@ export const WEBLLM_MODELS: WebLLMModelSpec[] = [
       supportsThinking: false,
     },
   },
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // ADD NEW MODELS BELOW - Copy the template and fill in values
-  // ═══════════════════════════════════════════════════════════════════════════
-  //
-  // {
-  //   id: 'nexus-quark-p2.0.1',          // Unique ID
-  //   name: 'Nexus Quark',               // Display name
-  //   provider: 'webllm',
-  //   apiName: 'nexus-quark-p2.0.1',     // Usually same as id
-  //   contextWindow: 4096,               // Context window size
-  //   maxTokens: 2048,                   // Max output tokens
-  //   vramRequired: 2.5,                 // VRAM in GB
-  //   quantization: 'q4f16',             // Quantization type
-  //   huggingFaceRepo: 'professorsynapse/Nexus-Quark-P2.0.1-webllm',
-  //   modelLibUrl: MODEL_LIBS.PHI_3_MINI,  // Reference MODEL_LIBS above
-  //   flatStructure: true,
-  //   capabilities: {
-  //     supportsJSON: true,
-  //     supportsImages: false,
-  //     supportsFunctions: true,
-  //     supportsStreaming: true,
-  //     supportsThinking: false,
-  //   },
-  // },
 ];
 
 /**
