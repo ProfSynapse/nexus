@@ -81,6 +81,8 @@ export class DefaultsTab {
     return {
       provider: llmSettings?.defaultModel?.provider || '',
       model: llmSettings?.defaultModel?.model || '',
+      agentProvider: llmSettings?.agentModel?.provider || undefined,
+      agentModel: llmSettings?.agentModel?.model || undefined,
       thinking: {
         enabled: llmSettings?.defaultThinking?.enabled ?? false,
         effort: llmSettings?.defaultThinking?.effort ?? 'medium'
@@ -105,6 +107,15 @@ export class DefaultsTab {
         provider: settings.provider,
         model: settings.model
       };
+      // Save agent model (for executePrompt when using local chat model)
+      if (settings.agentProvider && settings.agentModel) {
+        llmSettings.agentModel = {
+          provider: settings.agentProvider,
+          model: settings.agentModel
+        };
+      } else {
+        llmSettings.agentModel = undefined;
+      }
       llmSettings.defaultThinking = {
         enabled: settings.thinking.enabled,
         effort: settings.thinking.effort

@@ -319,18 +319,17 @@ export class CommonValidators {
       ));
     }
 
-    // Validate context field lengths
+    // Validate context field lengths (new format: memory, goal, constraints)
     const contextFields = [
-      { key: 'sessionDescription', name: 'Session description' },
-      { key: 'sessionMemory', name: 'Session memory' },
-      { key: 'toolContext', name: 'Tool context' },
-      { key: 'primaryGoal', name: 'Primary goal' },
-      { key: 'subgoal', name: 'Subgoal' }
+      { key: 'memory', name: 'Memory', required: true },
+      { key: 'goal', name: 'Goal', required: true },
+      { key: 'constraints', name: 'Constraints', required: false }
     ];
 
     for (const field of contextFields) {
       const contextObj = params.context as unknown as Record<string, unknown>;
       const value = contextObj[field.key];
+      // Only validate if field is present or required
       if (value !== undefined && (typeof value !== 'string' || value.trim().length < opts.minContextLength)) {
         errors.push(this.createFieldError(
           `context.${field.key}`,

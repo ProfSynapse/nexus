@@ -94,6 +94,7 @@ export class WebLLMAdapter extends BaseAdapter {
   mcpConnector?: any; // For tool execution support
 
   constructor(vault: Vault, mcpConnector?: any, sessionId?: string, workspaceId?: string) {
+    console.log('[WebLLMAdapter] CONSTRUCTOR CALLED');
     // WebLLM doesn't need an API key
     super('', '', '', false);
 
@@ -430,8 +431,14 @@ export class WebLLMAdapter extends BaseAdapter {
 
   /**
    * Check if adapter is available
+   * Performs lazy initialization if not yet initialized
    */
   async isAvailable(): Promise<boolean> {
+    // Lazy initialization: if adapter wasn't initialized during startup,
+    // initialize now to check WebGPU availability
+    if (this.state.status === 'unavailable' && !this.state.vramInfo) {
+      await this.initialize();
+    }
     return this.state.status !== 'unavailable';
   }
 
@@ -498,6 +505,13 @@ export class WebLLMAdapter extends BaseAdapter {
    */
   private async ensureModelLoadedAsync(): Promise<void> {
     const engineLoaded = this.engine?.isModelLoaded();
+
+    // Lazy initialization: if adapter wasn't initialized during startup,
+    // initialize now on first use. This prevents blocking vault startup.
+    if (this.state.status === 'unavailable' && !this.state.vramInfo) {
+      console.log('[WebLLMAdapter] Lazy initialization on first use...');
+      await this.initialize();
+    }
 
     if (this.state.status === 'unavailable') {
       throw new LLMProviderError(

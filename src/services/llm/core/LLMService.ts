@@ -112,6 +112,39 @@ export class LLMService {
     return this.settings.defaultModel;
   }
 
+  /**
+   * Get the model to use for agent operations (executePrompt).
+   * If the default model is a local provider (webllm, ollama, lmstudio),
+   * returns the configured agentModel or falls back to first available API provider.
+   */
+  getAgentModel(): { provider: string; model: string } {
+    const LOCAL_PROVIDERS = ['webllm', 'ollama', 'lmstudio'];
+    const defaultModel = this.settings.defaultModel;
+
+    // If default is not a local provider, use it
+    if (!LOCAL_PROVIDERS.includes(defaultModel.provider)) {
+      return defaultModel;
+    }
+
+    // If agentModel is configured, use it
+    if (this.settings.agentModel?.provider && this.settings.agentModel?.model) {
+      return this.settings.agentModel;
+    }
+
+    // Fall back to first available API provider
+    const availableProviders = this.getAvailableProviders();
+    const apiProviders = availableProviders.filter(p => !LOCAL_PROVIDERS.includes(p));
+
+    if (apiProviders.length > 0) {
+      // Return first API provider with its default model
+      // This is a best-effort fallback - the caller should handle model selection
+      return { provider: apiProviders[0], model: '' };
+    }
+
+    // No API providers available - return default anyway (will likely fail)
+    return defaultModel;
+  }
+
   /** Execute a prompt with the specified or default provider/model */
   async executePrompt(options: LLMExecutionOptions): Promise<LLMExecutionResult> {
     try {

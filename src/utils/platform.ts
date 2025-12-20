@@ -106,11 +106,13 @@ export const supportsMCPBridge = (): boolean => {
 
 /**
  * Check if WebLLM/Nexus local is supported.
- * Currently disabled entirely due to WebGPU crash bugs on Apple Silicon.
+ * Requires desktop + WebGPU support.
+ * Known issue: Multi-turn tool continuations may crash on Apple Silicon.
  */
 export const supportsWebLLM = (): boolean => {
-    // Disabled - see WebLLMEngine.ts for details
-    return false;
+    // Re-enabled Dec 2025 - lazy initialization prevents startup hangs
+    // WebGPU availability is checked on first use, not here
+    return isDesktop();
 };
 
 /**

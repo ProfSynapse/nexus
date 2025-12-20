@@ -19,6 +19,7 @@ import { ProjectWorkspace } from '../../../database/types/workspace/WorkspaceTyp
 
 /**
  * Interface for memory service methods used by this builder
+ * Supports both new format (memory) and legacy format (sessionMemory) for backward compatibility
  */
 interface IMemoryServiceForContext {
   getMemoryTraces(workspaceId: string): Promise<Array<{
@@ -26,8 +27,8 @@ interface IMemoryServiceForContext {
     content?: string;
     metadata?: {
       request?: {
-        normalizedParams?: { context?: { sessionMemory?: string } };
-        originalParams?: { context?: { sessionMemory?: string } };
+        normalizedParams?: { context?: { memory?: string; sessionMemory?: string } };
+        originalParams?: { context?: { memory?: string; sessionMemory?: string } };
       };
     };
   }>>;
@@ -154,7 +155,7 @@ export class WorkspaceContextBuilder {
 
   /**
    * Get recent activity from memory traces
-   * Extracts sessionMemory from trace metadata to show what the LLM was doing
+   * Extracts memory (new format) or sessionMemory (legacy) from trace metadata
    * @param workspaceId The workspace ID
    * @param memoryService The memory service instance
    * @param limit Maximum number of activity items
@@ -176,20 +177,22 @@ export class WorkspaceContextBuilder {
       // Sort by timestamp descending (newest first)
       traces.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 
-      // Extract sessionMemory from trace metadata
+      // Extract memory (new format) or sessionMemory (legacy) from trace metadata
       const activities: string[] = [];
       for (let i = 0; i < Math.min(limit, traces.length); i++) {
         const trace = traces[i];
 
-        // Try to get sessionMemory from metadata (where it actually is stored)
-        const sessionMemory =
+        // Try new format first (memory), then fall back to legacy (sessionMemory)
+        const memoryValue =
+          trace.metadata?.request?.normalizedParams?.context?.memory ||
+          trace.metadata?.request?.originalParams?.context?.memory ||
           trace.metadata?.request?.normalizedParams?.context?.sessionMemory ||
           trace.metadata?.request?.originalParams?.context?.sessionMemory;
 
-        if (sessionMemory && sessionMemory.trim()) {
-          activities.push(sessionMemory);
+        if (memoryValue && memoryValue.trim()) {
+          activities.push(memoryValue);
         } else {
-          // Fallback to trace content if no sessionMemory
+          // Fallback to trace content if no memory field
           activities.push(trace.content || 'Unknown activity');
         }
       }

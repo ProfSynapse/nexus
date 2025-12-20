@@ -61,8 +61,24 @@ function buildContextMetadata(
   rawMetadata: any
 ): TraceContextMetadata {
   const legacyContext = rawMetadata?.params?.context || rawMetadata?.context || {};
-  const additionalContext = legacyContext.additionalContext || rawMetadata?.additionalContext;
 
+  // Check if new format (memory/goal/constraints) is present
+  const hasNewFormat = legacyContext.memory || legacyContext.goal;
+
+  if (hasNewFormat) {
+    // Return new format (TraceContextMetadataV2)
+    return {
+      workspaceId,
+      sessionId,
+      memory: legacyContext.memory || '',
+      goal: legacyContext.goal || '',
+      constraints: legacyContext.constraints,
+      tags: legacyContext.tags
+    };
+  }
+
+  // Return legacy format (LegacyTraceContextMetadata) for backward compatibility
+  const additionalContext = legacyContext.additionalContext || rawMetadata?.additionalContext;
   return {
     workspaceId,
     sessionId,

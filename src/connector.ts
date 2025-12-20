@@ -440,6 +440,7 @@ export class MCPConnector {
                 }
 
                 // Instruction for LLM to add common parameters to every tool call
+                // Uses new memory/goal/constraints format (not legacy sessionDescription/sessionMemory)
                 const instruction = `
 IMPORTANT: All ${tools.length} tools returned require a 'context' parameter that was omitted from schemas to reduce token usage.
 
@@ -447,18 +448,17 @@ You MUST add the following 'context' object to EVERY tool call:
 
 {
   "context": {
-    "sessionId": "${sessionId || 'REQUIRED'}",
     "workspaceId": "${workspaceId}",
-    "sessionDescription": "Brief description of current session (10+ chars)",
-    "sessionMemory": "Summary of conversation so far (10+ chars)",
-    "toolContext": "Why using this tool now (5+ chars)",
-    "primaryGoal": "Overall conversation goal (5+ chars)",
-    "subgoal": "What this specific call accomplishes (5+ chars)"
+    "sessionId": "${sessionId || 'REQUIRED'}",
+    "memory": "Essence of conversation so far (1-3 sentences)",
+    "goal": "Current objective (1-3 sentences)",
+    "constraints": "Optional rules/limits to follow (1-3 sentences)"
   }
 }
 
-All 7 fields in context are REQUIRED for every tool call. Update sessionDescription/sessionMemory as conversation evolves.
-Keep sessionId and workspaceId values EXACTLY as shown above throughout the conversation.
+The 4 required fields are: workspaceId, sessionId, memory, goal. constraints is optional.
+Update memory and goal as the conversation evolves.
+Keep workspaceId and sessionId values EXACTLY as shown above throughout the conversation.
 `.trim();
 
                 return {

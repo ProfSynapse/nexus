@@ -368,44 +368,39 @@ export class SchemaBlocks {
   }
 
   /**
-   * Context field schema for rich session context
-   * 
+   * Context field schema for ToolContext (memory/goal/constraints format)
+   *
    * Provides standardized schema for context fields used in session tracking
-   * and tool operation context.
-   * 
-   * @param fieldType Type of context field
+   * and tool operation context. Uses the new format instead of legacy
+   * sessionDescription/sessionMemory/subgoal fields.
+   *
+   * @param fieldType Type of context field (memory, goal, or constraints)
    * @param options Configuration options
    * @returns JSON Schema for context field
    */
-  static contextField(fieldType: 'description' | 'memory' | 'goal' | 'subgoal', options: {
+  static contextField(fieldType: 'memory' | 'goal' | 'constraints', options: {
     minLength?: number;
     maxLength?: number;
     examples?: string[];
   } = {}): JSONSchema {
     const fieldConfig = {
-      description: {
-        desc: 'Brief description of what this session/operation is about',
-        defaultMin: 10,
-        defaultMax: 500,
-        examples: ['Working on validation system', 'Debugging search functionality', 'Planning new features']
-      },
       memory: {
-        desc: 'Summary of what has happened in the conversation so far',
-        defaultMin: 10,
-        defaultMax: 1000,
-        examples: ['Implemented validation utilities, now working on schema blocks', 'Fixed search bug, testing results']
+        desc: 'Essence of conversation so far (1-3 sentences)',
+        defaultMin: 5,
+        defaultMax: 500,
+        examples: ['Implemented validation utilities, now working on schema blocks', 'Fixed search bug, testing results', 'User wants to organize their notes into workspaces']
       },
       goal: {
-        desc: 'The overarching goal of the current conversation/task',
+        desc: 'Current objective (1-3 sentences)',
         defaultMin: 5,
-        defaultMax: 200,
-        examples: ['Implement validation standardization', 'Fix search performance issues', 'Add new agent features']
+        defaultMax: 300,
+        examples: ['Implement validation standardization', 'Fix search performance issues', 'Create workspace for research project']
       },
-      subgoal: {
-        desc: 'What this specific operation is trying to accomplish',
-        defaultMin: 5,
-        defaultMax: 200,
-        examples: ['Create schema building blocks', 'Test validation integration', 'Document new utilities']
+      constraints: {
+        desc: 'Optional rules/limits to follow (1-3 sentences)',
+        defaultMin: 0,
+        defaultMax: 300,
+        examples: ['Only modify files in the src/ folder', 'Keep response under 500 words', 'Use TypeScript patterns from existing codebase']
       }
     };
 
@@ -413,7 +408,7 @@ export class SchemaBlocks {
 
     return this.validatedString({
       description: config.desc,
-      minLength: options.minLength || config.defaultMin,
+      minLength: options.minLength ?? config.defaultMin,
       maxLength: options.maxLength || config.defaultMax,
       examples: options.examples || config.examples
     });

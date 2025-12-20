@@ -27,6 +27,8 @@ export interface MessageManagerEvents {
   onToolExecutionCompleted: (messageId: string, toolId: string, result: any, success: boolean, error?: string) => void;
   onMessageIdUpdated: (oldId: string, newId: string, updatedMessage: ConversationMessage) => void;
   onGenerationAborted: (messageId: string, partialContent: string) => void;
+  // Token usage for context tracking (optional - for local models)
+  onUsageAvailable?: (usage: { promptTokens: number; completionTokens: number; totalTokens: number }) => void;
 }
 
 export class MessageManager {
@@ -153,7 +155,7 @@ export class MessageManager {
       this.currentStreamingMessageId = aiMessageId;
 
       // Stream AI response
-      await this.streamHandler.streamAndSave(
+      const streamResult = await this.streamHandler.streamAndSave(
         conversation,
         message,
         aiMessageId,
@@ -162,6 +164,11 @@ export class MessageManager {
           abortSignal: this.currentAbortController.signal
         }
       );
+
+      // Report usage for context tracking (e.g., for local models with limited context)
+      if (streamResult.usage && this.events.onUsageAvailable) {
+        this.events.onUsageAvailable(streamResult.usage);
+      }
 
       // Reload conversation from storage to sync
       await this.stateManager.reloadConversation(conversation);
@@ -282,7 +289,7 @@ export class MessageManager {
       this.currentStreamingMessageId = aiMessageId;
 
       // Stream the AI response
-      await this.streamHandler.streamAndSave(
+      const streamResult = await this.streamHandler.streamAndSave(
         conversation,
         userMessage.content,
         aiMessageId,
@@ -291,6 +298,11 @@ export class MessageManager {
           abortSignal: this.currentAbortController.signal
         }
       );
+
+      // Report usage for context tracking
+      if (streamResult.usage && this.events.onUsageAvailable) {
+        this.events.onUsageAvailable(streamResult.usage);
+      }
 
       // Reload conversation from storage
       await this.stateManager.reloadConversation(conversation);

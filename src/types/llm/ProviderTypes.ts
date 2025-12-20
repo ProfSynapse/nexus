@@ -72,6 +72,7 @@ export interface LLMProviderSettings {
     [providerId: string]: LLMProviderConfig;
   };
   defaultModel: DefaultModelSettings;
+  agentModel?: DefaultModelSettings; // Model for executePrompt (API-only, used when chat model is local)
   defaultImageModel?: DefaultImageModelSettings; // Default image generation model
   defaultThinking?: DefaultThinkingSettings; // Default thinking settings for supported models
   monthlyBudget?: number; // Monthly budget in USD for LLM usage

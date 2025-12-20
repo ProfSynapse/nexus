@@ -24,6 +24,9 @@ import { isDesktop, isProviderCompatible } from '../../utils/platform';
 export interface ChatSettings {
   provider: string;
   model: string;
+  // Agent Model - used for executePrompt when chat model is local
+  agentProvider?: string;
+  agentModel?: string;
   thinking: {
     enabled: boolean;
     effort: ThinkingEffort;
@@ -34,6 +37,11 @@ export interface ChatSettings {
   agentId: string | null;
   contextNotes: string[];
 }
+
+/**
+ * Local providers that can't be used for executePrompt
+ */
+const LOCAL_PROVIDERS = ['webllm', 'ollama', 'lmstudio'];
 
 /**
  * Available options for dropdowns
@@ -133,6 +141,7 @@ export class ChatSettingsRenderer {
 
     // Vertical layout
     this.renderModelSection(this.container);
+    this.renderAgentModelSection(this.container);
     this.renderReasoningSection(this.container);
     this.renderImageSection(this.container);
     this.renderContextSection(this.container);
@@ -244,6 +253,90 @@ export class ChatSettingsRenderer {
               this.notifyChange();
               // Re-render to update reasoning visibility
               this.render();
+            });
+          } catch {
+            dropdown.addOption('', 'Error loading models');
+          }
+        });
+    }
+  }
+
+  // ========== AGENT MODEL SECTION ==========
+
+  /**
+   * Render Agent Model section - only shown when chat model is a local provider.
+   * This model is used for executePrompt and other API-dependent operations.
+   */
+  private renderAgentModelSection(parent: HTMLElement): void {
+    // Only show when chat model is a local provider
+    const isLocalProvider = LOCAL_PROVIDERS.includes(this.settings.provider);
+    if (!isLocalProvider) return;
+
+    const section = parent.createDiv('csr-section');
+    section.createDiv('csr-section-header').setText('Agent Model');
+    const desc = section.createDiv('csr-section-desc');
+    desc.setText('Used for executePrompt when chat uses a local model');
+    const content = section.createDiv('csr-section-content');
+
+    // Get only API-based providers (exclude local ones)
+    const apiProviders = this.getEnabledProviders().filter(id => !LOCAL_PROVIDERS.includes(id));
+
+    // Provider dropdown
+    new Setting(content)
+      .setName('Provider')
+      .addDropdown(dropdown => {
+        dropdown.addOption('', 'Auto (first available)');
+
+        if (apiProviders.length === 0) {
+          // No API providers available - show warning
+          dropdown.addOption('', 'No API providers enabled');
+        } else {
+          apiProviders.forEach(id => {
+            dropdown.addOption(id, PROVIDER_NAMES[id] || id);
+          });
+        }
+
+        dropdown.setValue(this.settings.agentProvider || '');
+        dropdown.onChange(async (value) => {
+          this.settings.agentProvider = value || undefined;
+          if (value) {
+            this.settings.agentModel = await this.getDefaultModelForProvider(value);
+          } else {
+            this.settings.agentModel = undefined;
+          }
+          this.notifyChange();
+          this.render();
+        });
+      });
+
+    // Model dropdown - only if a provider is selected
+    if (this.settings.agentProvider && apiProviders.includes(this.settings.agentProvider)) {
+      new Setting(content)
+        .setName('Model')
+        .addDropdown(async dropdown => {
+          try {
+            const models = await this.providerManager.getModelsForProvider(this.settings.agentProvider!);
+
+            if (models.length === 0) {
+              dropdown.addOption('', 'No models available');
+            } else {
+              models.forEach(model => {
+                dropdown.addOption(model.id, model.name);
+              });
+
+              const exists = models.some(m => m.id === this.settings.agentModel);
+              if (exists) {
+                dropdown.setValue(this.settings.agentModel!);
+              } else if (models.length > 0) {
+                this.settings.agentModel = models[0].id;
+                dropdown.setValue(this.settings.agentModel);
+                this.notifyChange();
+              }
+            }
+
+            dropdown.onChange((value) => {
+              this.settings.agentModel = value;
+              this.notifyChange();
             });
           } catch {
             dropdown.addOption('', 'Error loading models');

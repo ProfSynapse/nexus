@@ -33,6 +33,11 @@ export interface StreamResult {
   streamedContent: string;
   toolCalls?: any[];
   reasoning?: string;  // Accumulated reasoning text
+  usage?: {            // Token usage for context tracking
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+  };
 }
 
 /**
@@ -79,6 +84,7 @@ export class MessageStreamHandler {
     let streamedContent = '';
     let toolCalls: any[] | undefined = undefined;
     let hasStartedStreaming = false;
+    let finalUsage: StreamResult['usage'] | undefined = undefined;
 
     // Reasoning accumulation
     let reasoningAccumulator = '';
@@ -145,6 +151,15 @@ export class MessageStreamHandler {
         }
       }
 
+      // Capture usage data when available
+      if (chunk.usage) {
+        finalUsage = {
+          promptTokens: chunk.usage.promptTokens || 0,
+          completionTokens: chunk.usage.completionTokens || 0,
+          totalTokens: chunk.usage.totalTokens || 0
+        };
+      }
+
       // Handle completion
       if (chunk.complete) {
         // Check if this is TRULY the final complete
@@ -180,7 +195,8 @@ export class MessageStreamHandler {
     return {
       streamedContent,
       toolCalls,
-      reasoning: reasoningAccumulator || undefined
+      reasoning: reasoningAccumulator || undefined,
+      usage: finalUsage
     };
   }
 

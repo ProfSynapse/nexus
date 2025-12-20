@@ -45,6 +45,12 @@ export interface StreamingChunk {
   // Reasoning/thinking support (Claude, GPT-5, Gemini, etc.)
   reasoning?: string;           // Incremental reasoning text
   reasoningComplete?: boolean;  // True when reasoning finished
+  // Token usage (available on complete chunk)
+  usage?: {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+  };
 }
 
 export interface StreamingDependencies {
@@ -263,7 +269,9 @@ export class StreamingResponseService {
           toolCalls: toolCalls,
           // Pass through reasoning for UI display
           reasoning: chunk.reasoning,
-          reasoningComplete: chunk.reasoningComplete
+          reasoningComplete: chunk.reasoningComplete,
+          // Pass through usage for context tracking
+          usage: chunk.complete ? finalUsage : undefined
         };
 
         if (chunk.complete) {

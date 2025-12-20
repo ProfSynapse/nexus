@@ -8,7 +8,7 @@
  * and tool event coordination to ToolEventCoordinator.
  */
 
-import { ItemView, WorkspaceLeaf, setIcon, Plugin } from 'obsidian';
+import { ItemView, WorkspaceLeaf, setIcon, Plugin, Notice } from 'obsidian';
 import { ConversationList } from './components/ConversationList';
 import { MessageDisplay } from './components/MessageDisplay';
 import { ChatInput } from './components/ChatInput';
@@ -26,6 +26,8 @@ import { ConversationManager, ConversationManagerEvents } from './services/Conve
 import { MessageManager, MessageManagerEvents } from './services/MessageManager';
 import { ModelAgentManager, ModelAgentManagerEvents } from './services/ModelAgentManager';
 import { BranchManager, BranchManagerEvents } from './services/BranchManager';
+import { ContextCompactionService } from '../../services/chat/ContextCompactionService';
+import { ContextPreservationService } from '../../services/chat/ContextPreservationService';
 
 // Controllers
 import { UIStateController, UIStateControllerEvents } from './controllers/UIStateController';
@@ -77,6 +79,9 @@ export class ChatView extends ItemView {
   private messageManager!: MessageManager;
   private modelAgentManager!: ModelAgentManager;
   private branchManager!: BranchManager;
+  private compactionService: ContextCompactionService;
+  private preservationService: ContextPreservationService | null = null;
+  private directToolExecutor: DirectToolExecutor | null = null;
 
   // Controllers and Coordinators
   private uiStateController!: UIStateController;
@@ -98,6 +103,7 @@ export class ChatView extends ItemView {
 
   constructor(leaf: WorkspaceLeaf, private chatService: ChatService) {
     super(leaf);
+    this.compactionService = new ContextCompactionService();
   }
 
   getViewType(): string {
@@ -150,9 +156,11 @@ export class ChatView extends ItemView {
     });
 
     // Notify Nexus lifecycle manager that ChatView is open
-    // This triggers pre-loading if Nexus is the default provider
-    lifecycleManager.handleChatViewOpened().catch(() => {
-      // Silently handle errors
+    // Pass current provider so it can pre-load if Nexus is selected
+    const currentProvider = (await this.modelAgentManager.getMessageOptions()).provider;
+    console.log('[ChatView] Notifying lifecycle manager with provider:', currentProvider);
+    lifecycleManager.handleChatViewOpened(currentProvider).catch((error) => {
+      console.error('[ChatView] handleChatViewOpened failed:', error);
     });
   }
 
@@ -285,7 +293,9 @@ export class ChatView extends ItemView {
       onToolExecutionCompleted: (messageId, toolId, result, success, error) =>
         this.toolEventCoordinator.handleToolExecutionCompleted(messageId, toolId, result, success, error),
       onMessageIdUpdated: (oldId, newId, updatedMessage) => this.handleMessageIdUpdated(oldId, newId, updatedMessage),
-      onGenerationAborted: (messageId, partialContent) => this.handleGenerationAborted(messageId, partialContent)
+      onGenerationAborted: (messageId, partialContent) => this.handleGenerationAborted(messageId, partialContent),
+      // Token usage tracking for local models with limited context
+      onUsageAvailable: (usage) => this.modelAgentManager.recordTokenUsage(usage.promptTokens, usage.completionTokens)
     };
     this.messageManager = new MessageManager(this.chatService, this.branchManager, messageEvents);
 
@@ -403,6 +413,7 @@ export class ChatView extends ItemView {
         console.warn('[ChatView:Subagent] DirectToolExecutor not available - subagent features disabled');
         return;
       }
+      this.directToolExecutor = directToolExecutor;
       console.log('[ChatView:Subagent] ✓ DirectToolExecutor obtained');
 
       const agentManager = await plugin.getService<AgentManager>('agentManager');
@@ -635,6 +646,16 @@ export class ChatView extends ItemView {
         console.log('[ChatView:Subagent] ✓ AgentStatusMenu created');
       }
 
+      // Initialize ContextPreservationService for LLM-driven saveState at 90% context
+      console.log('[ChatView:Subagent] Creating ContextPreservationService...');
+      this.preservationService = new ContextPreservationService({
+        llmService: llmService,
+        getAgent: (name: string) => agentManager.getAgent(name),
+        executeToolCalls: (toolCalls, context) =>
+          directToolExecutor.executeToolCalls(toolCalls, context),
+      });
+      console.log('[ChatView:Subagent] ✓ ContextPreservationService created');
+
       console.log('[ChatView:Subagent] ✅ Subagent infrastructure initialized successfully!');
       console.log('[ChatView:Subagent] Subagent tools should now be available in the agentManager agent');
 
@@ -805,6 +826,12 @@ export class ChatView extends ItemView {
         this.modelAgentManager.setMessageEnhancement(enhancement);
       }
 
+      // Check if context compaction is needed (local models with limited context)
+      // Triggered at 90% context usage - uses LLM to save state before compacting
+      if (this.modelAgentManager.shouldCompactBeforeSending(message)) {
+        await this.performContextCompaction(currentConversation);
+      }
+
       const messageOptions = await this.modelAgentManager.getMessageOptions();
 
       await this.messageManager.sendMessage(
@@ -816,6 +843,85 @@ export class ChatView extends ItemView {
     } finally {
       this.modelAgentManager.clearMessageEnhancement();
       this.chatInput?.clearMessageEnhancer();
+    }
+  }
+
+  /**
+   * Perform context compaction when approaching token limit (90%)
+   * Shows an auto-save style notice (like a video game) during the process.
+   *
+   * Flow:
+   * 1. Try LLM-driven saveState via preservationService (rich semantic context)
+   * 2. Fall back to programmatic compaction if LLM fails
+   * 3. Compact conversation messages
+   * 4. Update storage and progress bar
+   */
+  private async performContextCompaction(conversation: ConversationData): Promise<void> {
+    let stateContent: string | undefined;
+    let usedLLM = false;
+
+    // Try LLM-driven saveState if preservationService is available
+    if (this.preservationService) {
+      // Show "saving" notice - like a video game auto-save
+      const savingNotice = new Notice('Saving context...', 0); // 0 = don't auto-dismiss
+
+      try {
+        const messageOptions = await this.modelAgentManager.getMessageOptions();
+        const result = await this.preservationService.forceStateSave(
+          conversation.messages,
+          {
+            provider: messageOptions.provider,
+            model: messageOptions.model,
+          },
+          {
+            workspaceId: this.modelAgentManager.getSelectedWorkspaceId() || undefined,
+            sessionId: conversation.metadata?.chatSettings?.sessionId,
+          }
+        );
+
+        if (result.success && result.stateContent) {
+          stateContent = result.stateContent;
+          usedLLM = true;
+        }
+      } catch (error) {
+        // LLM-driven preservation failed, will fall back to programmatic
+        console.error('[ChatView] LLM-driven saveState failed, using programmatic fallback:', error);
+      } finally {
+        // Dismiss the "saving" notice
+        savingNotice.hide();
+      }
+    }
+
+    // Run programmatic compaction (truncates messages)
+    const compactedContext = this.compactionService.compact(conversation, {
+      exchangesToKeep: 2, // Keep last 2 user/assistant exchanges
+      maxSummaryLength: 500,
+      includeFileReferences: true
+    });
+
+    if (compactedContext.messagesRemoved > 0) {
+      // Use LLM-saved state if available, otherwise use programmatic summary
+      if (stateContent) {
+        compactedContext.summary = stateContent;
+      }
+
+      // Set previous context for injection into system prompt
+      this.modelAgentManager.setPreviousContext(compactedContext);
+
+      // Reset token tracker for fresh accounting with compacted conversation
+      this.modelAgentManager.resetTokenTracker();
+
+      // Update conversation in storage with compacted messages
+      await this.chatService.updateConversation(conversation);
+
+      // Update progress bar immediately to reflect new token count
+      this.updateContextProgress();
+
+      // Show completion notice - brief auto-save style feedback
+      const savedMsg = usedLLM
+        ? `Context saved (${compactedContext.messagesRemoved} messages compacted)`
+        : `Context compacted (${compactedContext.messagesRemoved} messages)`;
+      new Notice(savedMsg, 2500);
     }
   }
 

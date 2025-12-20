@@ -13,6 +13,7 @@
 
 import { WorkspaceContext } from '../../../database/types/workspace/WorkspaceTypes';
 import { MessageEnhancement } from '../components/suggesters/base/SuggesterInterfaces';
+import { CompactedContext } from '../../../services/chat/ContextCompactionService';
 
 /**
  * Vault structure for system prompt context
@@ -50,6 +51,17 @@ export interface ToolAgentInfo {
   modes: string[];
 }
 
+/**
+ * Context status for token-limited models (e.g., Nexus 4K context)
+ */
+export interface ContextStatusInfo {
+  usedTokens: number;
+  maxTokens: number;
+  percentUsed: number;
+  status: 'ok' | 'warning' | 'critical';
+  statusMessage: string;
+}
+
 export interface SystemPromptOptions {
   sessionId?: string;
   workspaceId?: string;
@@ -65,6 +77,12 @@ export interface SystemPromptOptions {
   availableAgents?: AgentSummary[];
   // Tool agents with their tools (dynamically loaded from agent registry)
   toolAgents?: ToolAgentInfo[];
+  // Skip the tools section for models that are pre-trained on the toolset (e.g., Nexus)
+  skipToolsSection?: boolean;
+  // Context status for token-limited models (enables context awareness)
+  contextStatus?: ContextStatusInfo | null;
+  // Previous context from compaction (when conversation was truncated)
+  previousContext?: CompactedContext | null;
 }
 
 export class SystemPromptBuilder {
@@ -79,10 +97,30 @@ export class SystemPromptBuilder {
   async build(options: SystemPromptOptions): Promise<string | null> {
     const sections: string[] = [];
 
-    // 1. Session context (CRITICAL - must be first!)
-    const sessionSection = this.buildSessionContext(options.sessionId, options.workspaceId, options.toolAgents);
-    if (sessionSection) {
-      sections.push(sessionSection);
+    // 0. Context status (for token-limited models like Nexus)
+    // This goes FIRST so the model is immediately aware of its constraints
+    if (options.contextStatus) {
+      const contextStatusSection = this.buildContextStatusSection(options.contextStatus);
+      if (contextStatusSection) {
+        sections.push(contextStatusSection);
+      }
+    }
+
+    // 0.5. Previous context (from compaction - truncated conversation summary)
+    // This comes right after status so the model knows what came before
+    if (options.previousContext && options.previousContext.summary) {
+      const previousContextSection = this.buildPreviousContextSection(options.previousContext);
+      if (previousContextSection) {
+        sections.push(previousContextSection);
+      }
+    }
+
+    // 1. Session context with tools overview (skip for pre-trained models like Nexus)
+    if (!options.skipToolsSection) {
+      const sessionSection = this.buildSessionContext(options.sessionId, options.workspaceId, options.toolAgents);
+      if (sessionSection) {
+        sections.push(sessionSection);
+      }
     }
 
     // 2. Vault structure (dynamic - always fresh)
@@ -197,21 +235,23 @@ You have access to the following agents via the get_tools function:
 
 `;
 
-    // Context parameters
+    // Context parameters - uses new memory/goal/constraints format
     prompt += `REQUIRED CONTEXT FOR ALL TOOL CALLS:
 When calling any tool, include this context object:
 {
   "mode": "the_mode_name",
   "context": {
-    "sessionId": "${effectiveSessionId}",
     "workspaceId": "${effectiveWorkspaceId}",
-    "sessionDescription": "Brief description of current task",
-    "sessionMemory": "Summary of conversation progress"
+    "sessionId": "${effectiveSessionId}",
+    "memory": "Essence of conversation so far (1-3 sentences)",
+    "goal": "Current objective (1-3 sentences)",
+    "constraints": "Optional rules/limits to follow (1-3 sentences)"
   },
   ... other parameters ...
 }
 
-Keep sessionId and workspaceId EXACTLY as shown above for the entire conversation.
+Keep workspaceId and sessionId EXACTLY as shown above for the entire conversation.
+Update memory and goal as the conversation evolves.
 `;
 
     prompt += '</tools_and_context>';
@@ -580,5 +620,61 @@ Keep sessionId and workspaceId EXACTLY as shown above for the entire conversatio
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&apos;');
+  }
+
+  /**
+   * Build context status section for token-limited models
+   * Gives the model awareness of its context window usage
+   */
+  private buildContextStatusSection(contextStatus: ContextStatusInfo): string | null {
+    let prompt = '<context_status>\n';
+    prompt += `Tokens: ${contextStatus.usedTokens}/${contextStatus.maxTokens} (${contextStatus.percentUsed}% used)\n`;
+    prompt += `Status: ${contextStatus.status.toUpperCase()}\n`;
+
+    if (contextStatus.status === 'warning') {
+      prompt += '\nIMPORTANT: Context is filling up. Consider:\n';
+      prompt += '- Using saveState to preserve important context\n';
+      prompt += '- Being concise in responses\n';
+      prompt += '- Focusing on the current task\n';
+    } else if (contextStatus.status === 'critical') {
+      prompt += '\nCRITICAL: Context nearly full! Action required:\n';
+      prompt += '- Use saveState NOW to preserve conversation before truncation\n';
+      prompt += '- The system will auto-save state when threshold is reached\n';
+    }
+
+    prompt += '</context_status>';
+    return prompt;
+  }
+
+  /**
+   * Build previous context section from compacted conversation
+   * This provides the model with a summary of what was discussed before truncation
+   */
+  private buildPreviousContextSection(previousContext: CompactedContext): string | null {
+    let prompt = '<previous_context>\n';
+    prompt += 'Note: Earlier conversation was compacted to stay within context limits.\n\n';
+
+    // Main summary
+    prompt += `Summary: ${previousContext.summary}\n`;
+
+    // Files referenced (if any)
+    if (previousContext.filesReferenced && previousContext.filesReferenced.length > 0) {
+      prompt += `\nFiles discussed: ${previousContext.filesReferenced.slice(0, 5).join(', ')}`;
+      if (previousContext.filesReferenced.length > 5) {
+        prompt += ` (+${previousContext.filesReferenced.length - 5} more)`;
+      }
+      prompt += '\n';
+    }
+
+    // Topics (if any)
+    if (previousContext.topics && previousContext.topics.length > 0) {
+      prompt += `\nKey tasks: ${previousContext.topics.join('; ')}\n`;
+    }
+
+    // Stats
+    prompt += `\n(${previousContext.messagesRemoved} messages compacted, ${previousContext.messagesKept} retained)`;
+
+    prompt += '\n</previous_context>';
+    return prompt;
   }
 }

@@ -6,15 +6,25 @@
 import { ModelOption, AgentOption } from '../types/SelectionTypes';
 import { WorkspaceContext } from '../../../database/types/workspace/WorkspaceTypes';
 import { MessageEnhancement } from '../components/suggesters/base/SuggesterInterfaces';
-import { SystemPromptBuilder, AgentSummary, ToolAgentInfo } from './SystemPromptBuilder';
+import { SystemPromptBuilder, AgentSummary, ToolAgentInfo, ContextStatusInfo } from './SystemPromptBuilder';
 import { ContextNotesManager } from './ContextNotesManager';
 import { ModelSelectionUtility } from '../utils/ModelSelectionUtility';
 import { AgentConfigurationUtility } from '../utils/AgentConfigurationUtility';
 import { WorkspaceIntegrationService } from './WorkspaceIntegrationService';
 import { getWebLLMLifecycleManager } from '../../../services/llm/adapters/webllm/WebLLMLifecycleManager';
 import { ThinkingSettings } from '../../../types/llm/ProviderTypes';
+import { ContextTokenTracker, ContextStatus } from '../../../services/chat/ContextTokenTracker';
+import { CompactedContext } from '../../../services/chat/ContextCompactionService';
 import type NexusPlugin from '../../../main';
 import type { App } from 'obsidian';
+
+// Context window sizes for providers that need auto-compaction
+// Only WebLLM/Nexus needs this - it crashes on context overflow (WebGPU hard limit)
+// Ollama/LM Studio handle overflow gracefully and have variable context sizes
+const LOCAL_PROVIDER_CONTEXT_WINDOWS: Record<string, number> = {
+  webllm: 4096,   // Nexus Quark uses 4K context - NEEDS compaction or crashes
+  // ollama and lmstudio omitted - they handle overflow gracefully
+};
 
 /**
  * App type with plugin registry access
@@ -67,6 +77,8 @@ export class ModelAgentManager {
   private systemPromptBuilder: SystemPromptBuilder;
   private workspaceIntegration: WorkspaceIntegrationService;
   private thinkingSettings: ThinkingSettings = { enabled: false, effort: 'medium' };
+  private contextTokenTracker: ContextTokenTracker | null = null; // For token-limited models
+  private previousContext: CompactedContext | null = null; // Context from compacted conversation
 
   constructor(
     private app: any, // Obsidian App
@@ -361,12 +373,36 @@ export class ModelAgentManager {
     this.selectedModel = model;
     this.events.onModelChanged(model);
 
+    // Initialize or clear context token tracker based on provider
+    this.updateContextTokenTracker(newProvider);
+
     // Notify Nexus lifecycle manager of provider changes
     if (previousProvider !== newProvider) {
       const lifecycleManager = getWebLLMLifecycleManager();
       lifecycleManager.handleProviderChanged(previousProvider, newProvider).catch(() => {
         // Lifecycle manager error handling
       });
+    }
+  }
+
+  /**
+   * Update context token tracker based on provider
+   * Only local providers with limited context windows need tracking
+   */
+  private updateContextTokenTracker(provider: string): void {
+    const contextWindow = LOCAL_PROVIDER_CONTEXT_WINDOWS[provider];
+
+    if (contextWindow) {
+      // Initialize or update tracker for local provider
+      if (!this.contextTokenTracker) {
+        this.contextTokenTracker = new ContextTokenTracker(contextWindow);
+      } else {
+        this.contextTokenTracker.setMaxTokens(contextWindow);
+        this.contextTokenTracker.reset();
+      }
+    } else {
+      // Clear tracker for API providers (they handle context internally)
+      this.contextTokenTracker = null;
     }
   }
 
@@ -468,6 +504,84 @@ export class ModelAgentManager {
     this.thinkingSettings = { ...settings };
   }
 
+  // ========== Context Token Tracking (for local providers) ==========
+
+  /**
+   * Record token usage from a generation response
+   * Call this after streaming completes with actual usage data
+   */
+  recordTokenUsage(promptTokens: number, completionTokens: number): void {
+    if (this.contextTokenTracker) {
+      this.contextTokenTracker.recordUsage(promptTokens, completionTokens);
+    }
+  }
+
+  /**
+   * Get current context status (for UI display or compaction checks)
+   */
+  getContextStatus(): ContextStatus | null {
+    return this.contextTokenTracker?.getStatus() || null;
+  }
+
+  /**
+   * Check if message should trigger compaction before sending
+   */
+  shouldCompactBeforeSending(message: string): boolean {
+    return this.contextTokenTracker?.shouldCompactBeforeSending(message) || false;
+  }
+
+  /**
+   * Reset token tracker (after compaction or new conversation)
+   */
+  resetTokenTracker(): void {
+    this.contextTokenTracker?.reset();
+  }
+
+  /**
+   * Check if using a token-limited local model
+   */
+  isUsingLocalModel(): boolean {
+    return this.contextTokenTracker !== null;
+  }
+
+  /**
+   * Get the context token tracker (for direct access if needed)
+   */
+  getContextTokenTracker(): ContextTokenTracker | null {
+    return this.contextTokenTracker;
+  }
+
+  // ========== Previous Context (from compaction) ==========
+
+  /**
+   * Set previous context from compaction
+   * This will be injected into the system prompt as <previous_context>
+   */
+  setPreviousContext(context: CompactedContext): void {
+    this.previousContext = context;
+  }
+
+  /**
+   * Get the current previous context
+   */
+  getPreviousContext(): CompactedContext | null {
+    return this.previousContext;
+  }
+
+  /**
+   * Clear previous context (on new conversation or manual clear)
+   */
+  clearPreviousContext(): void {
+    this.previousContext = null;
+  }
+
+  /**
+   * Check if there is previous context from compaction
+   */
+  hasPreviousContext(): boolean {
+    return this.previousContext !== null && this.previousContext.summary.length > 0;
+  }
+
   /**
    * Set message enhancement from suggesters
    */
@@ -541,6 +655,22 @@ export class ModelAgentManager {
     const availableAgents = await this.getAvailableAgentSummaries();
     const toolAgents = this.getToolAgentInfo();
 
+    // Skip tools section for Nexus/WebLLM - it's pre-trained on the toolset
+    const isNexusModel = this.selectedModel?.providerId === 'webllm';
+
+    // Get context status for token-limited models
+    let contextStatus: ContextStatusInfo | null = null;
+    if (this.contextTokenTracker) {
+      const status = this.contextTokenTracker.getStatus();
+      contextStatus = {
+        usedTokens: status.usedTokens,
+        maxTokens: status.maxTokens,
+        percentUsed: status.percentUsed,
+        status: status.status,
+        statusMessage: this.contextTokenTracker.getStatusForPrompt()
+      };
+    }
+
     return await this.systemPromptBuilder.build({
       sessionId,
       workspaceId: this.selectedWorkspaceId || undefined,
@@ -553,7 +683,13 @@ export class ModelAgentManager {
       vaultStructure,
       availableWorkspaces,
       availableAgents,
-      toolAgents
+      toolAgents,
+      // Nexus models are pre-trained on the toolset - skip tools section
+      skipToolsSection: isNexusModel,
+      // Context status for token-limited models
+      contextStatus,
+      // Previous context from compaction (if any)
+      previousContext: this.previousContext
     });
   }
 

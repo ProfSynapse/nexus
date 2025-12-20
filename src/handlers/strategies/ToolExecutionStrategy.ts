@@ -261,17 +261,20 @@ export class ToolExecutionStrategy implements IRequestStrategy<ToolExecutionRequ
         );
 
         // Session validation is now handled in buildRequestContext() to avoid duplication
-        // Only handle session description updates here if needed
-        if (this.sessionContextManager && 
-            enhancedParams.context?.sessionId && 
-            enhancedParams.context?.sessionDescription) {
+        // Session description updates: support both new format (goal) and legacy (sessionDescription)
+        // Note: In new format, 'goal' is the current objective. We update session description
+        // to keep track of what the session is working on.
+        const sessionGoal = enhancedParams.context?.goal || enhancedParams.context?.sessionDescription;
+        if (this.sessionContextManager &&
+            enhancedParams.context?.sessionId &&
+            sessionGoal) {
             try {
                 // Safety check: ensure sessionId is not undefined
                 const sessionIdToUpdate = enhancedParams.context.sessionId;
                 if (sessionIdToUpdate && sessionIdToUpdate !== 'undefined') {
                     await this.sessionContextManager.updateSessionDescription(
-                        sessionIdToUpdate, 
-                        enhancedParams.context.sessionDescription
+                        sessionIdToUpdate,
+                        sessionGoal
                     );
                 } else {
                     logger.systemWarn(`Skipping session description update - sessionId is undefined or invalid`);

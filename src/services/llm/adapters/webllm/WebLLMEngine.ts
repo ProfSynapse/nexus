@@ -350,6 +350,7 @@ export class WebLLMEngine {
       onProgress?: (progress: EngineProgress) => void;
     }
   ): Promise<{ modelId: string; contextWindow: number; maxTokens: number }> {
+    console.log('[WebLLMEngine] initModel CALLED for:', modelSpec?.apiName || 'undefined');
     // If same model already loaded, skip
     if (this.engine && this.currentModelId === modelSpec.apiName) {
       return {
@@ -375,7 +376,9 @@ export class WebLLMEngine {
       // Pre-fetch model files to cache (handles HuggingFace XetHub redirects)
       // This is critical because WebLLM's Cache.add() fails on redirects
       if (!USE_STOCK_MODEL_FOR_TESTING) {
+        console.log('[WebLLMEngine] Checking if model is prefetched...');
         const alreadyPrefetched = await isModelPrefetched(modelSpec);
+        console.log('[WebLLMEngine] Prefetch check result:', alreadyPrefetched);
         if (!alreadyPrefetched) {
           if (options?.onProgress) {
             options.onProgress({

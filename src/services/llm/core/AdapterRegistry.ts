@@ -255,20 +255,28 @@ export class AdapterRegistry implements IAdapterRegistry {
     // WebLLM adapter for local LLM inference via WebGPU
     // Note: Nexus models are fine-tuned on the toolset - they skip getTools and
     // output tool calls that are converted to useTool format automatically.
+    //
+    // TEMPORARILY DISABLED: WebLLM initialization was causing vault startup hangs.
+    // The prefetcher HTTP requests to HuggingFace may be blocking.
+    // TODO: Fix prefetcher and re-enable
     // ═══════════════════════════════════════════════════════════════════════════
-    if (!onMobile) {
-      // WebLLM only works on desktop (requires WebGPU)
-      if (providers.webllm?.enabled) {
-        try {
-          const { WebLLMAdapter } = await import('../adapters/webllm/WebLLMAdapter');
-          const adapter = new WebLLMAdapter(this.vault!);
-          await adapter.initialize();
-          this.webllmAdapter = adapter;
-          this.adapters.set('webllm', adapter);
-        } catch (error) {
-          console.error('AdapterRegistry: Failed to initialize WebLLM adapter:', error);
-          this.logError('webllm', error);
-        }
+    if (!onMobile && providers.webllm?.enabled) {
+      // Defer WebLLM initialization - don't block startup
+      // Model will be loaded on-demand when user sends first message
+      console.log('[AdapterRegistry] WebLLM enabled - deferring initialization to on-demand loading');
+      // We still need to register a placeholder so the provider shows in UI
+      // but we won't actually load the model until it's used
+      try {
+        const { WebLLMAdapter } = await import('../adapters/webllm/WebLLMAdapter');
+        const adapter = new WebLLMAdapter(this.vault!);
+        // DON'T call adapter.initialize() here - it blocks on WebGPU detection
+        // The adapter will auto-initialize on first generate() call
+        this.webllmAdapter = adapter;
+        this.adapters.set('webllm', adapter);
+        console.log('[AdapterRegistry] WebLLM adapter registered (not initialized)');
+      } catch (error) {
+        console.error('AdapterRegistry: Failed to create WebLLM adapter:', error);
+        this.logError('webllm', error);
       }
     }
   }

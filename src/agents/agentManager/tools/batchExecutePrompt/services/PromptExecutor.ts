@@ -182,11 +182,11 @@ export class PromptExecutor {
 
       // Determine provider
       let selectedProvider = textConfig.provider;
-      
-      // If no provider specified, use the first available one
+
+      // If no provider specified, use the agent model (handles local provider fallback)
       if (!selectedProvider) {
-        const defaultModel = this.llmService.getDefaultModel();
-        selectedProvider = defaultModel.provider;
+        const agentModel = this.llmService.getAgentModel();
+        selectedProvider = agentModel.provider;
         
         // If default provider isn't available, use first available provider
         if (!availableProviders.includes(selectedProvider)) {
@@ -213,14 +213,14 @@ export class PromptExecutor {
 
       // Determine model
       let selectedModel = textConfig.model;
-      
-      // If no model specified, use default or first available for provider
+
+      // If no model specified, use agent model or first available for provider
       if (!selectedModel) {
-        const defaultModel = this.llmService.getDefaultModel();
-        
-        // If default provider matches, use default model
-        if (defaultModel.provider === selectedProvider) {
-          selectedModel = defaultModel.model;
+        const agentModel = this.llmService.getAgentModel();
+
+        // If agent model's provider matches, use agent model's model
+        if (agentModel.provider === selectedProvider && agentModel.model) {
+          selectedModel = agentModel.model;
         } else {
           // Use first available model for the provider
           selectedModel = providerModels[0].id;
