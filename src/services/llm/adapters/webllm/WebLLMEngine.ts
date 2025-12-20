@@ -79,6 +79,7 @@
 
 import { WebLLMModelSpec, WebLLMError } from './types';
 import { WEBLLM_MODELS, HF_BASE_URL } from './WebLLMModels';
+import { prefetchModel, isModelPrefetched } from './WebLLMCachePrefetcher';
 
 // Type imports for TypeScript (these are erased at runtime)
 import type * as WebLLMTypes from '@mlc-ai/web-llm';
@@ -371,6 +372,30 @@ export class WebLLMEngine {
     const modelIdToLoad = USE_STOCK_MODEL_FOR_TESTING ? STOCK_TEST_MODEL_ID : modelSpec.apiName;
 
     try {
+      // Pre-fetch model files to cache (handles HuggingFace XetHub redirects)
+      // This is critical because WebLLM's Cache.add() fails on redirects
+      if (!USE_STOCK_MODEL_FOR_TESTING) {
+        const alreadyPrefetched = await isModelPrefetched(modelSpec);
+        if (!alreadyPrefetched) {
+          if (options?.onProgress) {
+            options.onProgress({
+              progress: 0,
+              stage: 'downloading',
+              message: 'Pre-fetching model files...',
+            });
+          }
+          await prefetchModel(modelSpec, (prefetchProgress) => {
+            if (options?.onProgress) {
+              options.onProgress({
+                progress: prefetchProgress.percentage,
+                stage: 'downloading',
+                message: `Downloading ${prefetchProgress.currentFile} (${prefetchProgress.completedFiles}/${prefetchProgress.totalFiles})`,
+              });
+            }
+          });
+        }
+      }
+
       // Load WebLLM at runtime (not bundled)
       const webllmLib = await loadWebLLM();
 
