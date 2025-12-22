@@ -62,11 +62,8 @@ export function checkForTerminalTool(toolCalls: ChatToolCall[]): TerminalToolRes
           const useToolResult = toolCall.result as {
             success?: boolean;
             data?: { results?: Array<{ success?: boolean; data?: any; agent?: string; tool?: string }> };
-            results?: Array<{ success?: boolean; data?: any }>; // Fallback for old format
           } | undefined;
-
-          // Results can be in data.results (new format) or results (old format)
-          const resultsArray = useToolResult?.data?.results || useToolResult?.results;
+          const resultsArray = useToolResult?.data?.results;
 
           // Find the subagent result by index (matching position in calls array)
           const callIndex = calls.indexOf(call);

@@ -45,18 +45,10 @@ export class MessageQueueService extends EventEmitter {
    * - If generating, add to queue (user messages get priority)
    */
   async enqueue(message: QueuedMessage): Promise<void> {
-    console.log('[MessageQueue] enqueue() called:', {
-      type: message.type,
-      id: message.id,
-      isGenerating: this.isGenerating,
-      queueLength: this.queue.length,
-    });
     if (this.isGenerating) {
       this.addToQueue(message);
-      console.log('[MessageQueue] Message added to queue, new length:', this.queue.length);
       this.emit('message:queued', { count: this.queue.length, message });
     } else {
-      console.log('[MessageQueue] Processing immediately (not generating)');
       await this.processMessage(message);
     }
   }
@@ -124,7 +116,6 @@ export class MessageQueueService extends EventEmitter {
    * Process a single message
    */
   private async processMessage(message: QueuedMessage): Promise<void> {
-    console.log('[MessageQueue] processMessage() called:', { type: message.type, id: message.id });
     if (!this.processMessageFn) {
       console.error('[MessageQueue] No message processor set');
       return;
@@ -133,9 +124,7 @@ export class MessageQueueService extends EventEmitter {
     this.emit('message:processing', { message });
 
     try {
-      console.log('[MessageQueue] Calling processor function...');
       await this.processMessageFn(message);
-      console.log('[MessageQueue] Processor function completed');
     } catch (error) {
       console.error('[MessageQueue] Error processing message:', error);
     }

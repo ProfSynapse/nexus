@@ -277,15 +277,34 @@ export class ToolBubbleFactory {
     // useTool format: { context: {...}, calls: [{ agent, tool, params }] }
     const calls = useToolParams?.calls || [];
 
-    // useTool result format: { success, results: [{ success, data?, error? }] }
+    // useTool result format: { success, data: { results: [...] } }
     const useToolResult = toolCall.result as {
       success?: boolean;
-      results?: Array<{ success?: boolean; data?: any; error?: string }>;
+      data?: { results?: Array<{ success?: boolean; data?: any; error?: string; agent?: string; tool?: string }> };
     } | undefined;
-    const results = useToolResult?.results || [];
+    const results = useToolResult?.data?.results || [];
 
     if (calls.length === 0) {
-      // No inner calls - show the wrapper itself
+      // No calls in parameters - reconstruct from results
+      if (results.length > 0) {
+        return results.map((result: { agent?: string; tool?: string; success?: boolean; data?: any; error?: string }, index: number) => {
+          const innerAgentName = result.agent || 'unknown';
+          const innerToolName = result.tool || 'unknown';
+          const fullName = `${innerAgentName}.${innerToolName}`;
+
+          return {
+            id: `${toolCall.id}_${index}`,
+            displayName: formatToolDisplayName(fullName),
+            technicalName: fullName,
+            parameters: {}, // Parameters not available in results
+            result: result.data,
+            success: result.success,
+            error: result.error
+          };
+        });
+      }
+
+      // No inner calls and no results - show the wrapper itself
       return [{
         id: toolCall.id,
         displayName: 'useTool (empty)',

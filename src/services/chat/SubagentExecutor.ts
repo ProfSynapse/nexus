@@ -594,13 +594,6 @@ BEGIN - Start by calling getTools to discover available tools.`);
    * Queue result back to parent conversation
    */
   private queueResultToParent(params: SubagentParams, result: SubagentResult): void {
-    console.log('[Subagent] Queuing result to parent:', {
-      conversationId: result.conversationId,
-      branchId: result.branchId,
-      success: result.success,
-      contentLength: result.content?.length || 0,
-    });
-
     const message: QueuedMessage = {
       id: `subagent_result_${Date.now()}`,
       type: 'subagent_result',
@@ -622,9 +615,7 @@ BEGIN - Start by calling getTools to discover available tools.`);
       queuedAt: Date.now(),
     };
 
-    console.log('[Subagent] Calling messageQueueService.enqueue()');
     this.dependencies.messageQueueService.enqueue(message);
-    console.log('[Subagent] enqueue() returned, isGenerating:', this.dependencies.messageQueueService.isInGenerationMode());
   }
 
   /**

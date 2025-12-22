@@ -427,19 +427,15 @@ export class ChatView extends ItemView {
       // Create MessageQueueService
       this.messageQueueService = new MessageQueueService();
       this.messageQueueService.setProcessor(async (message) => {
-        console.log('[ChatView] Queue processor received message:', message.type);
         if (message.type === 'subagent_result') {
-          console.log('[ChatView] Processing subagent_result');
           try {
             // Parse the result
             const result = JSON.parse(message.content || '{}');
             const metadata = message.metadata || {};
-            console.log('[ChatView] Parsed result:', { success: result.success, conversationId: metadata.conversationId });
 
             // Get the parent conversation
             const conversationId = metadata.conversationId;
             if (!conversationId) {
-              console.log('[ChatView] No conversationId in metadata, aborting');
               return;
             }
 
@@ -449,7 +445,6 @@ export class ChatView extends ItemView {
               : `Subagent ${result.status === 'max_iterations' ? 'paused (max iterations)' : 'failed'}: ${result.error || 'Unknown error'}`;
 
             // Add tool result message to parent conversation via ChatService
-            console.log('[ChatView] Adding message to conversation:', conversationId);
             await this.chatService.addMessage({
               conversationId,
               role: 'assistant',
@@ -462,7 +457,6 @@ export class ChatView extends ItemView {
                 iterations: result.iterations,
               },
             });
-            console.log('[ChatView] Message added successfully');
 
             // Refresh UI if viewing the parent conversation
             const currentConversation = this.conversationManager.getCurrentConversation();
