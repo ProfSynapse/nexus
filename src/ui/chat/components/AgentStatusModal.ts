@@ -1,21 +1,21 @@
 /**
- * AgentStatusModal - Modal for viewing running and completed subagents
+ * AgentStatusModal - Compact modal for viewing running and completed subagents
  *
- * Shows:
- * - Running agents with task, iterations, and Cancel button
- * - Completed agents with final status
- * - View Branch links to navigate to agent conversations
- * - Continue button for paused (max_iterations) agents
+ * Shows for each agent:
+ * - Task name (truncated) + iterations count (x/y)
+ * - Last tool used (human-readable)
+ * - View link to navigate to agent conversation
+ * - Stop button (when running) or status icon (when complete)
  *
- * Uses Obsidian's Modal and Setting components for consistent UI.
- * Uses shared utilities for status display and time formatting (DRY).
+ * Fixed height (~200px) with scroll for many agents.
  */
 
-import { App, Modal, Setting, setIcon } from 'obsidian';
+import { App, Modal, setIcon, Events } from 'obsidian';
 import type { SubagentExecutor } from '../../../services/chat/SubagentExecutor';
-import type { AgentStatusItem, BranchState } from '../../../types/branch/BranchTypes';
-import { formatTimeAgo } from '../../../utils/timeUtils';
-import { getStateIconName, buildStatusDescription } from '../../../utils/branchStatusUtils';
+import type { AgentStatusItem } from '../../../types/branch/BranchTypes';
+import { getStateIconName } from '../../../utils/branchStatusUtils';
+import { formatToolDisplayName } from '../../../utils/toolNameUtils';
+import { getSubagentEventBus } from './AgentStatusMenu';
 
 export interface AgentStatusModalCallbacks {
   onViewBranch: (branchId: string) => void;
@@ -25,6 +25,7 @@ export interface AgentStatusModalCallbacks {
 export class AgentStatusModal extends Modal {
   private subagentExecutor: SubagentExecutor;
   private callbacks: AgentStatusModalCallbacks;
+  private eventRef: ReturnType<Events['on']> | null = null;
 
   constructor(
     app: App,
@@ -41,7 +42,13 @@ export class AgentStatusModal extends Modal {
     contentEl.empty();
     contentEl.addClass('nexus-agent-status-modal');
 
-    this.titleEl.setText('Running Agents');
+    this.titleEl.setText('Agents');
+
+    // Subscribe to real-time updates
+    const eventBus = getSubagentEventBus();
+    this.eventRef = eventBus.on('status-changed', () => {
+      this.renderContent();
+    });
 
     this.renderContent();
   }
@@ -54,106 +61,92 @@ export class AgentStatusModal extends Modal {
     const running = agents.filter(a => a.state === 'running');
     const completed = agents.filter(a => a.state !== 'running');
 
+    // Scrollable list container
+    const listEl = contentEl.createDiv({ cls: 'nexus-agent-list' });
+
     // Running section
     if (running.length === 0 && completed.length === 0) {
-      contentEl.createEl('p', {
-        text: 'No agents have been spawned yet',
-        cls: 'nexus-agent-empty',
-      });
-    } else if (running.length === 0) {
-      contentEl.createEl('p', {
-        text: 'No agents currently running',
-        cls: 'nexus-agent-empty',
-      });
+      listEl.createDiv({ cls: 'nexus-agent-empty', text: 'No agents spawned' });
     } else {
-      for (const agent of running) {
-        this.renderAgentRow(contentEl, agent);
+      if (running.length > 0) {
+        listEl.createDiv({ cls: 'nexus-agent-section-header', text: 'Running' });
+        for (const agent of running) {
+          this.renderCompactRow(listEl, agent, true);
+        }
+      }
+
+      if (completed.length > 0) {
+        listEl.createDiv({ cls: 'nexus-agent-section-header', text: 'Completed' });
+        for (const agent of completed) {
+          this.renderCompactRow(listEl, agent, false);
+        }
       }
     }
-
-    // Completed section
-    if (completed.length > 0) {
-      contentEl.createEl('h4', { text: 'Completed', cls: 'nexus-agent-section-header' });
-      for (const agent of completed) {
-        this.renderAgentRow(contentEl, agent);
-      }
-    }
-
-    // Close button at bottom
-    new Setting(contentEl).addButton(btn =>
-      btn.setButtonText('Close').onClick(() => this.close())
-    );
-  }
-
-  private renderAgentRow(container: HTMLElement, agent: AgentStatusItem): void {
-    const isRunning = agent.state === 'running';
-    const isPaused = agent.state === 'max_iterations';
-    const iconName = getStateIconName(agent.state);
-
-    const setting = new Setting(container)
-      .setName(agent.task)
-      .setDesc(this.buildDescription(agent))
-      .addButton(btn =>
-        btn.setButtonText('View').onClick(() => {
-          this.close();
-          this.callbacks.onViewBranch(agent.branchId);
-        })
-      );
-
-    // Add status icon to the name
-    const nameEl = setting.nameEl;
-    const iconEl = nameEl.createSpan('nexus-agent-status-icon');
-    iconEl.addClass(`nexus-state-icon-${agent.state}`);
-    setIcon(iconEl, iconName);
-
-    if (isRunning) {
-      setting.addButton(btn =>
-        btn
-          .setButtonText('Cancel')
-          .setWarning()
-          .onClick(() => {
-            this.subagentExecutor.cancelSubagent(agent.subagentId);
-            this.renderContent(); // Refresh modal
-          })
-      );
-    }
-
-    if (isPaused) {
-      setting.addButton(btn =>
-        btn
-          .setButtonText('Continue')
-          .setCta()
-          .onClick(() => {
-            this.close();
-            this.callbacks.onContinueAgent(agent.branchId);
-          })
-      );
-    }
-
-    // Add CSS class based on state
-    setting.settingEl.addClass(`nexus-agent-row-${agent.state}`);
   }
 
   /**
-   * Build description using shared utilities
+   * Render a compact agent row
+   * Layout: [Task description + iterations] | [Tool badge] | [View + Stop/Icon]
    */
-  private buildDescription(agent: AgentStatusItem): string {
-    const timeAgo = formatTimeAgo(agent.startedAt);
+  private renderCompactRow(container: HTMLElement, agent: AgentStatusItem, isRunning: boolean): void {
+    const row = container.createDiv({ cls: 'nexus-agent-row-compact' });
 
-    // Convert AgentStatusItem to SubagentBranchMetadata-compatible object
-    const metadataLike = {
-      state: agent.state,
-      iterations: agent.iterations,
-      maxIterations: agent.maxIterations,
-      task: agent.task,
-      subagentId: agent.subagentId,
-      startedAt: agent.startedAt,
-    };
+    // Left: Task description with iterations inline
+    const info = row.createDiv({ cls: 'nexus-agent-info' });
+    const taskText = `${this.truncateTask(agent.task, 40)} (${agent.iterations}/${agent.maxIterations})`;
+    info.createDiv({ cls: 'nexus-agent-task', text: taskText });
 
-    return buildStatusDescription(metadataLike, timeAgo);
+    // Middle: Tool badge
+    const toolContainer = row.createDiv({ cls: 'nexus-agent-tool-container' });
+    if (agent.lastToolUsed) {
+      toolContainer.createSpan({
+        cls: 'nexus-agent-tool-badge',
+        text: formatToolDisplayName(agent.lastToolUsed),
+      });
+    }
+
+    // Right: View button + Stop/Status icon
+    const actions = row.createDiv({ cls: 'nexus-agent-actions' });
+    const viewBtn = actions.createEl('button', {
+      cls: 'nexus-agent-view-btn clickable-icon',
+      attr: { 'aria-label': 'View agent conversation' },
+    });
+    setIcon(viewBtn, 'eye');
+    viewBtn.addEventListener('click', () => {
+      this.close();
+      this.callbacks.onViewBranch(agent.branchId);
+    });
+
+    if (isRunning) {
+      const stopBtn = actions.createEl('button', {
+        cls: 'nexus-agent-stop-btn clickable-icon',
+        attr: { 'aria-label': 'Stop agent' },
+      });
+      setIcon(stopBtn, 'square');
+      stopBtn.addEventListener('click', () => {
+        this.subagentExecutor.cancelSubagent(agent.subagentId);
+        this.renderContent();
+      });
+    } else {
+      const iconEl = actions.createSpan({ cls: `nexus-state-icon nexus-state-icon-${agent.state}` });
+      setIcon(iconEl, getStateIconName(agent.state));
+    }
+  }
+
+  /**
+   * Truncate task to max length with ellipsis
+   */
+  private truncateTask(task: string, maxLength: number): string {
+    if (task.length <= maxLength) return task;
+    return task.substring(0, maxLength - 1) + '…';
   }
 
   onClose(): void {
+    // Unsubscribe from events
+    if (this.eventRef) {
+      getSubagentEventBus().offref(this.eventRef);
+      this.eventRef = null;
+    }
     this.contentEl.empty();
   }
 }

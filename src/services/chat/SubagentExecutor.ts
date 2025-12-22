@@ -209,6 +209,15 @@ export class SubagentExecutor {
   }
 
   /**
+   * Clear agent status list (call when switching conversations)
+   * Also triggers a status change event for UI updates
+   */
+  clearAgentStatus(): void {
+    this.agentStatus.clear();
+    this.subagentBranches.clear();
+  }
+
+  /**
    * Core execution loop
    */
   private async runSubagentLoop(
@@ -312,6 +321,7 @@ export class SubagentExecutor {
     let toolCalls: SubagentToolCall[] | undefined;
     let reasoning = '';
     let toolIterations = 0;
+    let lastToolUsed: string | undefined;
 
     const streamMessages = branchInfo.branch.messages;
 
@@ -346,6 +356,13 @@ export class SubagentExecutor {
         // They accumulate across all pingpong iterations
         toolCalls = chunk.toolCalls;
         toolIterations = chunk.toolCalls.length; // Approximate iteration count
+
+        // Track the last tool used for UI display
+        const latestTool = chunk.toolCalls[chunk.toolCalls.length - 1];
+        if (latestTool?.function?.name) {
+          lastToolUsed = latestTool.function.name;
+          this.updateStatus(subagentId, { iterations: toolIterations, lastToolUsed });
+        }
       }
       if (chunk.reasoning) {
         reasoning += chunk.reasoning;
@@ -357,7 +374,7 @@ export class SubagentExecutor {
     }
 
     // Update status with final count
-    this.updateStatus(subagentId, { iterations: toolIterations || 1 });
+    this.updateStatus(subagentId, { iterations: toolIterations || 1, lastToolUsed });
 
     // Save the final assistant message with all tool calls (already executed)
     const convertedToolCalls: ToolCall[] | undefined = toolCalls?.map(tc => ({
@@ -594,6 +611,11 @@ BEGIN - Start by calling getTools to discover available tools.`);
    * Queue result back to parent conversation
    */
   private queueResultToParent(params: SubagentParams, result: SubagentResult): void {
+    console.log('[Subagent] queueResultToParent called:', {
+      conversationId: result.conversationId,
+      branchId: result.branchId,
+      success: result.success
+    });
     const message: QueuedMessage = {
       id: `subagent_result_${Date.now()}`,
       type: 'subagent_result',

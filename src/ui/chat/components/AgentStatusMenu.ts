@@ -53,6 +53,10 @@ export function createSubagentEventHandlers(): Partial<SubagentExecutorEvents> {
     onSubagentStarted: () => {
       eventBus.trigger('status-changed');
     },
+    onSubagentProgress: () => {
+      // Trigger on progress updates (tool changes, iteration updates)
+      eventBus.trigger('status-changed');
+    },
     onSubagentComplete: () => {
       eventBus.trigger('status-changed');
     },
@@ -65,14 +69,18 @@ export function createSubagentEventHandlers(): Partial<SubagentExecutorEvents> {
 export class AgentStatusMenu {
   private element: HTMLElement | null = null;
   private badgeEl: HTMLElement | null = null;
+  private iconEl: HTMLElement | null = null;
   private lastCount: number = 0;
   private eventRef: ReturnType<Events['on']> | null = null;
+  private hasShownSuccess: boolean = false; // Track if green state was shown
+  private isShowingSpinner: boolean = false; // Track current icon state
 
   constructor(
     private container: HTMLElement,
     private subagentExecutor: SubagentExecutor | null,
     private callbacks: AgentStatusMenuCallbacks,
-    private component?: Component
+    private component?: Component,
+    private insertBefore?: HTMLElement // Insert before this element (e.g., settings button)
   ) {}
 
   /**
@@ -88,6 +96,7 @@ export class AgentStatusMenu {
     // Icon container
     const iconContainer = button.createDiv('nexus-agent-status-icon');
     setIcon(iconContainer, 'bot');
+    this.iconEl = iconContainer;
 
     // Badge (hidden by default)
     const badge = button.createDiv('nexus-agent-status-badge');
@@ -95,19 +104,27 @@ export class AgentStatusMenu {
     badge.textContent = '0';
     this.badgeEl = badge;
 
-    // Click handler
+    // Click handler - clears success state when modal opens
     if (this.component) {
       this.component.registerDomEvent(button, 'click', () => {
+        this.clearSuccessState();
         this.callbacks.onOpenModal();
       });
     } else {
       button.addEventListener('click', () => {
+        this.clearSuccessState();
         this.callbacks.onOpenModal();
       });
     }
 
     this.element = button;
-    this.container.appendChild(button);
+
+    // Insert before settings button (left side) or append (right side)
+    if (this.insertBefore) {
+      this.container.insertBefore(button, this.insertBefore);
+    } else {
+      this.container.appendChild(button);
+    }
 
     // Subscribe to event bus for status updates (replaces polling)
     this.subscribeToEvents();
@@ -138,40 +155,66 @@ export class AgentStatusMenu {
 
   /**
    * Update the badge display based on running agent count
+   * Handles three states: running (spinner icon), success (green bot), default (bot)
    */
   updateDisplay(): void {
-    if (!this.element || !this.badgeEl) return;
+    if (!this.element || !this.badgeEl || !this.iconEl) return;
 
-    const runningCount = this.getRunningCount();
+    const statusList = this.subagentExecutor?.getAgentStatusList() ?? [];
+    const runningCount = statusList.filter(a => a.state === 'running').length;
+    const completedCount = statusList.filter(a =>
+      ['complete', 'cancelled', 'max_iterations', 'abandoned'].includes(a.state)
+    ).length;
 
-    // Only update DOM if count changed
-    if (runningCount === this.lastCount) return;
-    this.lastCount = runningCount;
+    // Update badge
+    this.badgeEl.textContent = runningCount.toString();
+    this.badgeEl.toggleClass('nexus-badge-hidden', runningCount === 0);
 
+    // State logic: running > success > default
     if (runningCount > 0) {
-      this.badgeEl.textContent = runningCount.toString();
-      this.badgeEl.removeClass('nexus-badge-hidden');
+      // Running state - swap to spinner icon
+      if (!this.isShowingSpinner) {
+        setIcon(this.iconEl, 'loader-2');
+        this.isShowingSpinner = true;
+      }
+      this.element.addClass('nexus-status-running');
+      this.element.removeClass('nexus-status-success');
       this.element.addClass('nexus-agents-active');
       this.element.setAttribute('title', `${runningCount} agent${runningCount > 1 ? 's' : ''} running`);
-    } else {
-      this.badgeEl.addClass('nexus-badge-hidden');
+      this.hasShownSuccess = false; // Reset on new activity
+    } else if (completedCount > 0 && !this.hasShownSuccess) {
+      // Success state - show green bot icon
+      if (this.isShowingSpinner) {
+        setIcon(this.iconEl, 'bot');
+        this.isShowingSpinner = false;
+      }
+      this.element.removeClass('nexus-status-running');
+      this.element.addClass('nexus-status-success');
       this.element.removeClass('nexus-agents-active');
+      this.element.setAttribute('title', 'Agents completed');
+      this.hasShownSuccess = true;
+    } else if (!this.hasShownSuccess) {
+      // Default state - show bot icon
+      if (this.isShowingSpinner) {
+        setIcon(this.iconEl, 'bot');
+        this.isShowingSpinner = false;
+      }
+      this.element.removeClass('nexus-status-running', 'nexus-status-success', 'nexus-agents-active');
       this.element.setAttribute('title', 'Running agents');
     }
+    // If hasShownSuccess is true, keep the green state until clearSuccessState() is called
+
+    this.lastCount = runningCount;
   }
 
   /**
-   * Get count of running agents
+   * Clear the success (green) state - called when modal is opened
    */
-  private getRunningCount(): number {
-    if (!this.subagentExecutor) return 0;
-
-    try {
-      const statusList = this.subagentExecutor.getAgentStatusList();
-      return statusList.filter(a => a.state === 'running').length;
-    } catch {
-      return 0;
-    }
+  clearSuccessState(): void {
+    if (!this.element) return;
+    this.element.removeClass('nexus-status-success');
+    this.hasShownSuccess = false;
+    this.element.setAttribute('title', 'Running agents');
   }
 
   /**
@@ -207,5 +250,7 @@ export class AgentStatusMenu {
     this.element?.remove();
     this.element = null;
     this.badgeEl = null;
+    this.iconEl = null;
+    this.isShowingSpinner = false;
   }
 }

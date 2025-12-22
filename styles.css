@@ -5848,6 +5848,7 @@ body.is-mobile .chat-loading-overlay {
 .nexus-agent-status-button {
     position: relative;
     padding: 4px 8px;
+    margin-right: 4px;
     display: flex;
     align-items: center;
     gap: 4px;
@@ -5886,6 +5887,22 @@ body.is-mobile .chat-loading-overlay {
     color: var(--interactive-accent);
 }
 
+/* Spinner animation for loader-2 icon when agents running */
+.nexus-status-running .nexus-agent-status-icon svg {
+    animation: nexus-spin 1s linear infinite;
+    color: var(--interactive-accent);
+}
+
+@keyframes nexus-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+/* Green icon when all agents complete */
+.nexus-status-success .nexus-agent-status-icon svg {
+    color: var(--color-green);
+}
+
 /* Completion pulse animation */
 .nexus-agent-completion-pulse {
     animation: nexus-completion-pulse 1s ease-out;
@@ -5901,6 +5918,114 @@ body.is-mobile .chat-loading-overlay {
     100% {
         box-shadow: 0 0 0 0 rgba(var(--interactive-accent-rgb), 0);
     }
+}
+
+/* ----------------------------------------
+   Agent Status Modal - Compact Layout
+   ---------------------------------------- */
+.nexus-agent-status-modal .modal-content {
+    padding: 0;
+}
+
+.nexus-agent-list {
+    max-height: 200px;
+    overflow-y: auto;
+    padding: 8px 0;
+}
+
+.nexus-agent-section-header {
+    padding: 4px 12px;
+    font-size: var(--font-ui-smaller);
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.nexus-agent-empty {
+    padding: 16px 12px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
+}
+
+.nexus-agent-row-compact {
+    display: flex;
+    align-items: center;
+    padding: 6px 12px;
+    gap: 12px;
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.nexus-agent-row-compact:last-child {
+    border-bottom: none;
+}
+
+.nexus-agent-info {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.nexus-agent-task {
+    font-weight: 500;
+    font-size: var(--font-ui-small);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--text-normal);
+}
+
+.nexus-agent-meta {
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+}
+
+
+.nexus-agent-tool-badge {
+    font-size: var(--font-ui-smaller);
+    padding: 2px 8px;
+    border-radius: var(--radius-s);
+    background: var(--tool-bubble-background, #7e1dfb);
+    color: var(--text-on-accent);
+    white-space: nowrap;
+    font-weight: 500;
+}
+
+.nexus-agent-tool-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 100px;
+}
+
+.nexus-agent-view-btn {
+    color: var(--text-muted);
+    padding: 4px;
+}
+
+.nexus-agent-view-btn:hover {
+    color: var(--text-normal);
+}
+
+.nexus-agent-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+.nexus-agent-stop-btn {
+    color: var(--text-error);
+    padding: 4px;
+    border-radius: var(--radius-s);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.nexus-agent-stop-btn:hover {
+    background: var(--background-modifier-hover);
 }
 
 /* Branch Header (navigation when viewing branch) */
@@ -6283,6 +6408,7 @@ body.is-mobile .chat-loading-overlay {
 .nexus-agent-status-button {
     position: relative;
     padding: 4px 8px;
+    margin-right: 4px;
     display: flex;
     align-items: center;
     gap: 4px;
@@ -6321,6 +6447,22 @@ body.is-mobile .chat-loading-overlay {
     color: var(--interactive-accent);
 }
 
+/* Spinner animation for loader-2 icon when agents running */
+.nexus-status-running .nexus-agent-status-icon svg {
+    animation: nexus-spin 1s linear infinite;
+    color: var(--interactive-accent);
+}
+
+@keyframes nexus-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+/* Green icon when all agents complete */
+.nexus-status-success .nexus-agent-status-icon svg {
+    color: var(--color-green);
+}
+
 /* Completion pulse animation */
 .nexus-agent-completion-pulse {
     animation: nexus-completion-pulse 1s ease-out;
@@ -6336,6 +6478,114 @@ body.is-mobile .chat-loading-overlay {
     100% {
         box-shadow: 0 0 0 0 rgba(var(--interactive-accent-rgb), 0);
     }
+}
+
+/* ----------------------------------------
+   Agent Status Modal - Compact Layout
+   ---------------------------------------- */
+.nexus-agent-status-modal .modal-content {
+    padding: 0;
+}
+
+.nexus-agent-list {
+    max-height: 200px;
+    overflow-y: auto;
+    padding: 8px 0;
+}
+
+.nexus-agent-section-header {
+    padding: 4px 12px;
+    font-size: var(--font-ui-smaller);
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.nexus-agent-empty {
+    padding: 16px 12px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: var(--font-ui-small);
+}
+
+.nexus-agent-row-compact {
+    display: flex;
+    align-items: center;
+    padding: 6px 12px;
+    gap: 12px;
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.nexus-agent-row-compact:last-child {
+    border-bottom: none;
+}
+
+.nexus-agent-info {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.nexus-agent-task {
+    font-weight: 500;
+    font-size: var(--font-ui-small);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--text-normal);
+}
+
+.nexus-agent-meta {
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+}
+
+
+.nexus-agent-tool-badge {
+    font-size: var(--font-ui-smaller);
+    padding: 2px 8px;
+    border-radius: var(--radius-s);
+    background: var(--tool-bubble-background, #7e1dfb);
+    color: var(--text-on-accent);
+    white-space: nowrap;
+    font-weight: 500;
+}
+
+.nexus-agent-tool-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 100px;
+}
+
+.nexus-agent-view-btn {
+    color: var(--text-muted);
+    padding: 4px;
+}
+
+.nexus-agent-view-btn:hover {
+    color: var(--text-normal);
+}
+
+.nexus-agent-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+.nexus-agent-stop-btn {
+    color: var(--text-error);
+    padding: 4px;
+    border-radius: var(--radius-s);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.nexus-agent-stop-btn:hover {
+    background: var(--background-modifier-hover);
 }
 
 /* Branch Header (navigation when viewing branch) */

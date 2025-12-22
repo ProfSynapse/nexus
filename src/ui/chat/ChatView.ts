@@ -59,7 +59,7 @@ import { isSubagentMetadata } from '../../types/branch/BranchTypes';
 import type { HybridStorageAdapter } from '../../database/adapters/HybridStorageAdapter';
 
 // Subagent UI components
-import { AgentStatusMenu } from './components/AgentStatusMenu';
+import { AgentStatusMenu, createSubagentEventHandlers, getSubagentEventBus } from './components/AgentStatusMenu';
 import { AgentStatusModal } from './components/AgentStatusModal';
 import { BranchHeader, BranchViewContext } from './components/BranchHeader';
 
@@ -427,7 +427,9 @@ export class ChatView extends ItemView {
       // Create MessageQueueService
       this.messageQueueService = new MessageQueueService();
       this.messageQueueService.setProcessor(async (message) => {
+        console.log('[ChatView] Processor received:', message.type);
         if (message.type === 'subagent_result') {
+          console.log('[ChatView] Processing subagent_result');
           try {
             // Parse the result
             const result = JSON.parse(message.content || '{}');
@@ -445,6 +447,7 @@ export class ChatView extends ItemView {
               : `Subagent ${result.status === 'max_iterations' ? 'paused (max iterations)' : 'failed'}: ${result.error || 'Unknown error'}`;
 
             // Add tool result message to parent conversation via ChatService
+            console.log('[ChatView] Adding message to conversation:', conversationId);
             await this.chatService.addMessage({
               conversationId,
               role: 'assistant',
@@ -457,6 +460,7 @@ export class ChatView extends ItemView {
                 iterations: result.iterations,
               },
             });
+            console.log('[ChatView] Message added successfully');
 
             // Refresh UI if viewing the parent conversation
             const currentConversation = this.conversationManager.getCurrentConversation();
@@ -529,19 +533,13 @@ export class ChatView extends ItemView {
         },
       });
 
-      // Set event handlers (minimal logging)
+      // Set event handlers - triggers event bus for UI updates
+      const eventHandlers = createSubagentEventHandlers();
       this.subagentExecutor.setEventHandlers({
-        onSubagentStarted: () => {
-          // AgentStatusMenu will update automatically
-        },
-        onSubagentProgress: () => {
-          // Progress is tracked internally
-        },
-        onSubagentComplete: () => {
-          // Completion handled by queueResultToParent
-        },
+        ...eventHandlers,
         onSubagentError: (subagentId: string, error: string) => {
           console.error('[Subagent] Error:', subagentId, error);
+          eventHandlers.onSubagentError?.(subagentId, error);
         },
       });
 
@@ -592,7 +590,7 @@ export class ChatView extends ItemView {
         };
       });
 
-      // Initialize AgentStatusMenu in the header
+      // Initialize AgentStatusMenu in the header (left of settings button)
       if (this.layoutElements.settingsButton?.parentElement) {
         this.agentStatusMenu = new AgentStatusMenu(
           this.layoutElements.settingsButton.parentElement,
@@ -600,7 +598,8 @@ export class ChatView extends ItemView {
           {
             onOpenModal: () => this.openAgentStatusModal(),
           },
-          this
+          this,
+          this.layoutElements.settingsButton // Insert BEFORE settings button
         );
         this.agentStatusMenu.render();
       }
@@ -685,6 +684,10 @@ export class ChatView extends ItemView {
       this.messageManager.cancelCurrentGeneration();
       this.streamingController.cleanup();
     }
+
+    // Clear agent status when switching conversations (session-scoped)
+    this.subagentExecutor?.clearAgentStatus();
+    getSubagentEventBus().trigger('status-changed');
 
     // Access private property via type assertion - currentConversationId exists but is private
     (this.modelAgentManager as unknown as { currentConversationId: string | null }).currentConversationId = conversation.id;

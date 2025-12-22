@@ -153,6 +153,7 @@ export interface AgentStatusItem {
   maxIterations: number;
   startedAt: number;
   completedAt?: number;
+  lastToolUsed?: string;
 }
 
 /**
