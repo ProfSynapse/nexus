@@ -27,16 +27,10 @@ export interface ChatMessage {
    */
   branches?: ConversationBranch[];
 
-  /**
-   * @deprecated Use branches[] instead. Legacy field for backward compatibility.
-   * Will be migrated to branches[] on load by BranchMigrationService.
-   */
+  /** Inline message alternatives for human regeneration (retry/regenerate) */
   alternatives?: ChatMessage[];
 
-  /**
-   * @deprecated Use branches[] instead. Legacy field for backward compatibility.
-   * Tracks which alternative is active: 0 = original, 1+ = alternative index + 1
-   */
+  /** Which alternative is active: 0 = original, 1+ = alternative index + 1 */
   activeAlternativeIndex?: number;
 }
 

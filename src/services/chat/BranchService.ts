@@ -1,19 +1,12 @@
 /**
- * BranchService - Unified branch management for human and subagent branches
+ * BranchService - Branch management for human and subagent branches
  *
- * UNIFIED MODEL (Dec 2025):
- * - A branch IS a conversation with parent metadata
- * - Uses ConversationService as the storage backend (facade pattern)
- * - branchId IS the conversation ID
+ * A branch IS a conversation with parent metadata:
+ * - metadata.parentConversationId: parent conversation
+ * - metadata.parentMessageId: message the branch is attached to
+ * - metadata.branchType: 'alternative' | 'subagent'
  *
- * Responsibilities:
- * - Create branches on messages (human or subagent)
- * - Add messages to branches (delegates to ConversationService)
- * - Build LLM context based on inheritContext flag
- * - Update branch metadata/state
- * - Query branches
- *
- * Follows Single Responsibility Principle - only handles branch operations.
+ * Uses ConversationService as the storage backend (facade pattern).
  */
 
 import type { Conversation, ChatMessage } from '../../types/chat/ChatTypes';
@@ -222,7 +215,6 @@ export class BranchService {
       return null;
     }
 
-    // Convert to ConversationBranch format for backward compatibility
     const branch = this.conversationToBranch(branchConversation);
 
     return {
@@ -233,7 +225,6 @@ export class BranchService {
 
   /**
    * Convert a branch conversation to ConversationBranch format
-   * For backward compatibility with consumers expecting the old format
    */
   private conversationToBranch(conversation: IndividualConversation): ConversationBranch {
     const branchType = conversation.metadata?.branchType === 'subagent' ? 'subagent' : 'human';
@@ -360,55 +351,4 @@ export class BranchService {
     }));
   }
 
-  // ============================================================================
-  // Legacy Compatibility Methods
-  // ============================================================================
-
-  /**
-   * @deprecated Use buildLLMContext instead
-   * Synchronous version for backward compatibility - returns empty if branch not cached
-   */
-  buildLLMContextSync(
-    conversation: Conversation,
-    branchId: string
-  ): ChatMessage[] {
-    // For backward compatibility, search in embedded branches (legacy format)
-    const branchInfo = this.findBranchInConversation(conversation, branchId);
-    if (!branchInfo) {
-      return [];
-    }
-
-    const { branch, parentMessageIndex } = branchInfo;
-
-    if (branch.inheritContext) {
-      const parentContext = conversation.messages.slice(0, parentMessageIndex + 1);
-      return [...parentContext, ...branch.messages];
-    } else {
-      return [...branch.messages];
-    }
-  }
-
-  /**
-   * @deprecated Legacy helper for finding embedded branches
-   * Only used for backward compatibility with old conversation format
-   */
-  private findBranchInConversation(
-    conversation: Conversation,
-    branchId: string
-  ): (BranchInfo & { parentMessageIndex: number }) | null {
-    for (let i = 0; i < conversation.messages.length; i++) {
-      const message = conversation.messages[i];
-      if (message.branches) {
-        const branch = message.branches.find(b => b.id === branchId);
-        if (branch) {
-          return {
-            branch,
-            parentMessageId: message.id,
-            parentMessageIndex: i,
-          };
-        }
-      }
-    }
-    return null;
-  }
 }
