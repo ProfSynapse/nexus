@@ -274,11 +274,6 @@ export class ToolBubbleFactory {
       toolCall.parameters !== undefined ? toolCall.parameters : fallbackArguments
     );
 
-    // Debug: Log what we're getting
-    console.log('[ToolBubbleFactory] unwrapUseTool - toolCall.parameters:', JSON.stringify(toolCall.parameters)?.substring(0, 500));
-    console.log('[ToolBubbleFactory] unwrapUseTool - fallbackArguments:', JSON.stringify(fallbackArguments)?.substring(0, 500));
-    console.log('[ToolBubbleFactory] unwrapUseTool - useToolParams:', JSON.stringify(useToolParams)?.substring(0, 500));
-
     // useTool format: { context: {...}, calls: [{ agent, tool, params }] }
     const calls = useToolParams?.calls || [];
 

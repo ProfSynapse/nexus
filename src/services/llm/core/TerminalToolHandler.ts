@@ -25,11 +25,8 @@ const TERMINAL_TOOLS = ['subagent', 'agentManager_subagent', 'agentManager.subag
  * @returns Synthetic message to display, or null if no terminal tool found
  */
 export function checkForTerminalTool(toolCalls: ChatToolCall[]): TerminalToolResult | null {
-  console.log('[TerminalTool] Checking', toolCalls.length, 'tool calls for terminal tools');
-
   for (const toolCall of toolCalls) {
     const toolName = toolCall.name || toolCall.function?.name || '';
-    console.log('[TerminalTool] Checking tool:', toolName);
 
     // Check for direct subagent calls
     const isDirectSubagent = TERMINAL_TOOLS.some(t => toolName.includes(t) || toolName.endsWith('subagent'));
@@ -53,20 +50,15 @@ export function checkForTerminalTool(toolCalls: ChatToolCall[]): TerminalToolRes
         }
       }
 
-      console.log('[TerminalTool] useTool params.calls:', JSON.stringify(params?.calls)?.substring(0, 300));
-
       const calls = params?.calls || [];
 
       for (const call of calls) {
-        console.log('[TerminalTool] Inner call:', call.agent, call.tool);
         if (call.tool === 'subagent' || (call.agent === 'agentManager' && call.tool === 'subagent')) {
           isWrappedSubagent = true;
-          console.log('[TerminalTool] ✓ Found wrapped subagent!');
           wrappedParams = call.params;
 
           // Extract result from useTool's results array
           // Structure is: { success, data: { results: [...] } }
-          console.log('[TerminalTool] toolCall.result:', JSON.stringify(toolCall.result)?.substring(0, 500));
           const useToolResult = toolCall.result as {
             success?: boolean;
             data?: { results?: Array<{ success?: boolean; data?: any; agent?: string; tool?: string }> };
@@ -80,13 +72,9 @@ export function checkForTerminalTool(toolCalls: ChatToolCall[]): TerminalToolRes
           const callIndex = calls.indexOf(call);
           if (resultsArray?.[callIndex]) {
             wrappedResult = resultsArray[callIndex];
-            console.log('[TerminalTool] Extracted result at index', callIndex, ':', JSON.stringify(wrappedResult)?.substring(0, 300));
           } else if (resultsArray?.[0]) {
             // Fallback to first result
             wrappedResult = resultsArray[0];
-            console.log('[TerminalTool] Fallback to first result:', JSON.stringify(wrappedResult)?.substring(0, 300));
-          } else {
-            console.log('[TerminalTool] No results array found. useToolResult:', JSON.stringify(useToolResult)?.substring(0, 200));
           }
           break;
         }
@@ -94,8 +82,6 @@ export function checkForTerminalTool(toolCalls: ChatToolCall[]): TerminalToolRes
     }
 
     if (isDirectSubagent || isWrappedSubagent) {
-      console.log('[TerminalTool] ✓ Matched terminal tool:', isWrappedSubagent ? 'subagent (via useTool)' : toolName);
-
       // Get the appropriate result and params
       const result = isWrappedSubagent ? wrappedResult : toolCall.result as {
         success?: boolean;
@@ -109,10 +95,7 @@ export function checkForTerminalTool(toolCalls: ChatToolCall[]): TerminalToolRes
 
       const params = isWrappedSubagent ? wrappedParams : toolCall.parameters as { task?: string; tools?: Record<string, string[]> } | undefined;
 
-      console.log('[TerminalTool] Result:', JSON.stringify(result, null, 2)?.substring(0, 500));
-
       if (result?.success && result?.data) {
-        console.log('[TerminalTool] ✓ Result has success+data, stopping pingpong');
         const { branchId } = result.data;
 
         // Build a clean message with the subagent info
@@ -133,8 +116,6 @@ export function checkForTerminalTool(toolCalls: ChatToolCall[]): TerminalToolRes
         terminalMessage += `- Results will appear here when complete`;
 
         return { message: terminalMessage, branchId };
-      } else {
-        console.log('[TerminalTool] ✗ Result structure mismatch - success:', result?.success, 'data:', !!result?.data);
       }
     }
   }

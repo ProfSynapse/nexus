@@ -151,11 +151,6 @@ export class ToolContinuationService {
       // Build complete tool calls with execution results
       completeToolCallsWithResults = detectedToolCalls.map(originalCall => {
         const result = toolResults.find(r => r.id === originalCall.id);
-        const toolName = originalCall.function?.name || originalCall.name || '';
-        console.log('[ToolContinuation] Tool executed:', toolName, 'success:', result?.success, 'hasResult:', !!result?.result);
-        if (toolName.includes('useTool')) {
-          console.log('[ToolContinuation] useTool result structure:', JSON.stringify(result?.result)?.substring(0, 500));
-        }
         return {
           id: originalCall.id,
           type: originalCall.type || 'function',
@@ -171,7 +166,6 @@ export class ToolContinuationService {
 
       // Step 1.5: Check for terminal tools (like subagent) that should stop the pingpong loop
       const terminalToolResult = checkForTerminalTool(completeToolCallsWithResults);
-      console.log('[ToolContinuation] Terminal tool check result:', terminalToolResult ? 'STOP' : 'continue');
       if (terminalToolResult) {
         yield {
           chunk: terminalToolResult.message,

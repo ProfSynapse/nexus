@@ -217,10 +217,6 @@ export class SubagentExecutor {
     params: SubagentParams,
     abortSignal: AbortSignal
   ): Promise<SubagentResult> {
-    const maxIterations = params.maxIterations ?? 10;
-    let iterations = 0;
-    let lastContent = '';
-
     // 1. Pre-fetch tool schemas FIRST (if parent specified tools to hand off)
     let toolSchemasText = '';
     if (params.tools && Object.keys(params.tools).length > 0 && this.dependencies.getToolSchemas) {
@@ -359,8 +355,6 @@ export class SubagentExecutor {
       this.events.onSubagentProgress?.(subagentId, responseContent, toolIterations);
       this.events.onStreamingUpdate?.(branchId, responseContent, chunk.complete);
     }
-
-    lastContent = responseContent;
 
     // Update status with final count
     this.updateStatus(subagentId, { iterations: toolIterations || 1 });
@@ -600,6 +594,13 @@ BEGIN - Start by calling getTools to discover available tools.`);
    * Queue result back to parent conversation
    */
   private queueResultToParent(params: SubagentParams, result: SubagentResult): void {
+    console.log('[Subagent] Queuing result to parent:', {
+      conversationId: result.conversationId,
+      branchId: result.branchId,
+      success: result.success,
+      contentLength: result.content?.length || 0,
+    });
+
     const message: QueuedMessage = {
       id: `subagent_result_${Date.now()}`,
       type: 'subagent_result',
@@ -621,7 +622,9 @@ BEGIN - Start by calling getTools to discover available tools.`);
       queuedAt: Date.now(),
     };
 
+    console.log('[Subagent] Calling messageQueueService.enqueue()');
     this.dependencies.messageQueueService.enqueue(message);
+    console.log('[Subagent] enqueue() returned, isGenerating:', this.dependencies.messageQueueService.isInGenerationMode());
   }
 
   /**
