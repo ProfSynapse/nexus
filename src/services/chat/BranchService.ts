@@ -144,6 +144,35 @@ export class BranchService {
   }
 
   /**
+   * Update a message in a branch (for streaming updates)
+   */
+  async updateMessageInBranch(
+    conversationId: string,
+    branchId: string,
+    messageId: string,
+    updates: {
+      content?: string;
+      state?: string;
+      toolCalls?: ChatMessage['toolCalls'];
+      reasoning?: string;
+    }
+  ): Promise<void> {
+    await this.repository.updateBranchMessage(conversationId, branchId, messageId, {
+      content: updates.content,
+      state: updates.state,
+      reasoning: updates.reasoning,
+      toolCalls: updates.toolCalls?.map(tc => ({
+        id: tc.id,
+        type: tc.type || 'function',
+        function: tc.function || { name: tc.name || 'unknown', arguments: JSON.stringify(tc.parameters || {}) },
+        result: tc.result,
+        success: tc.success,
+        error: tc.error,
+      })),
+    });
+  }
+
+  /**
    * Build LLM context for a branch
    * This is the key method that handles inheritContext logic
    *

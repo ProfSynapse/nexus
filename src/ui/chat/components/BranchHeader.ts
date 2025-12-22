@@ -44,7 +44,6 @@ export class BranchHeader {
    * Show the branch header with the given context
    */
   show(context: BranchViewContext): void {
-    console.log('[BranchHeader] Show:', context.branchType, context.branchId);
     this.context = context;
     this.render();
   }
@@ -53,7 +52,6 @@ export class BranchHeader {
    * Hide the branch header
    */
   hide(): void {
-    console.log('[BranchHeader] Hide');
     this.context = null;
     if (this.element) {
       this.element.remove();
@@ -107,7 +105,6 @@ export class BranchHeader {
     backBtn.createSpan({ text: ' Back' });
 
     const handleBack = () => {
-      console.log('[BranchHeader] Back button clicked');
       this.callbacks.onNavigateToParent();
     };
 

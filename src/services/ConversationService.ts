@@ -11,11 +11,12 @@
 import { Plugin } from 'obsidian';
 import { FileSystemService } from './storage/FileSystemService';
 import { IndexManager } from './storage/IndexManager';
-import { IndividualConversation, ConversationMetadata as LegacyConversationMetadata } from '../types/storage/StorageTypes';
+import { IndividualConversation, ConversationMetadata as LegacyConversationMetadata, ConversationMessage } from '../types/storage/StorageTypes';
 import { IStorageAdapter } from '../database/interfaces/IStorageAdapter';
 import { ConversationMetadata, MessageData } from '../types/storage/HybridStorageTypes';
 import { PaginationParams, PaginatedResult, calculatePaginationMetadata } from '../types/pagination/PaginationTypes';
 import { branchMigrationService } from './migration/BranchMigrationService';
+import type { ConversationBranch } from '../types/branch/BranchTypes';
 
 export class ConversationService {
   constructor(
@@ -90,6 +91,10 @@ export class ConversationService {
 
       // Convert to legacy format
       const conversation = this.convertToLegacyConversation(metadata, messagesResult.items);
+
+      // Populate message.branches from branch storage
+      // This connects branches (stored separately) to their parent messages for navigation
+      await this.populateMessageBranches(conversation.messages);
 
       // Attach pagination metadata if pagination was requested
       if (paginationOptions) {
@@ -694,6 +699,45 @@ export class ConversationService {
       message_count: metadata.messageCount
     };
   };
+
+  /**
+   * Populate message.branches from branch storage
+   *
+   * This connects branches (stored separately in branches table) to their parent messages.
+   * Required for MessageBranchNavigator to show branch navigation on messages.
+   * Works for both human branches and subagent branches.
+   */
+  private async populateMessageBranches(messages: ConversationMessage[]): Promise<void> {
+    if (!this.storageAdapter) {
+      return;
+    }
+
+    const branchRepository = this.storageAdapter.getBranchRepository();
+
+    // For each message, query its branches and attach them
+    for (const message of messages) {
+      const branchDataList = await branchRepository.getBranchesByMessage(message.id);
+
+      if (branchDataList.length > 0) {
+        // Convert each BranchData to ConversationBranch (includes messages)
+        const branches: ConversationBranch[] = [];
+        for (const branchData of branchDataList) {
+          const fullBranch = await branchRepository.toConversationBranch(branchData.id);
+          if (fullBranch) {
+            branches.push(fullBranch);
+          }
+        }
+
+        if (branches.length > 0) {
+          message.branches = branches;
+          // Initialize activeAlternativeIndex if not set (0 = original message)
+          if (message.activeAlternativeIndex === undefined) {
+            message.activeAlternativeIndex = 0;
+          }
+        }
+      }
+    }
+  }
 
   /**
    * Convert new ConversationMetadata + MessageData[] to legacy IndividualConversation

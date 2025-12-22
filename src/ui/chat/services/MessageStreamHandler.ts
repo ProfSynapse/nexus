@@ -9,7 +9,9 @@
  */
 
 import { ChatService } from '../../../services/chat/ChatService';
-import { ConversationData } from '../../../types/chat/ChatTypes';
+import { ConversationData, ChatMessage } from '../../../types/chat/ChatTypes';
+import type { BranchService } from '../../../services/chat/BranchService';
+import type { BranchOperationContext } from './MessageManager';
 
 export interface StreamHandlerEvents {
   onStreamingUpdate: (messageId: string, content: string, isComplete: boolean, isIncremental?: boolean) => void;
@@ -61,10 +63,28 @@ function createReasoningToolCall(messageId: string, reasoningText: string, isCom
  * Handles streaming of AI responses with unified logic
  */
 export class MessageStreamHandler {
+  // Branch support
+  private branchService: BranchService | null = null;
+  private branchContext: BranchOperationContext | null = null;
+
   constructor(
     private chatService: ChatService,
     private events: StreamHandlerEvents
   ) {}
+
+  /**
+   * Set branch service for branch operations
+   */
+  setBranchService(branchService: BranchService): void {
+    this.branchService = branchService;
+  }
+
+  /**
+   * Set branch context - when set, saves go to the branch
+   */
+  setBranchContext(context: BranchOperationContext | null): void {
+    this.branchContext = context;
+  }
 
   /**
    * Stream AI response with consolidated logic
@@ -187,6 +207,8 @@ export class MessageStreamHandler {
   /**
    * Stream response and save to storage
    * Convenience method that combines streaming and saving
+   *
+   * When branch context is set, saves to branch storage instead of conversation
    */
   async streamAndSave(
     conversation: ConversationData,
@@ -196,8 +218,22 @@ export class MessageStreamHandler {
   ): Promise<StreamResult> {
     const result = await this.streamResponse(conversation, userMessageContent, aiMessageId, options);
 
-    // Save conversation to storage
-    await this.chatService.updateConversation(conversation);
+    // Save to appropriate storage based on mode
+    if (this.branchContext && this.branchService) {
+      // Branch mode: save AI message to branch
+      const aiMessage = conversation.messages.find(msg => msg.id === aiMessageId);
+      if (aiMessage) {
+        await this.branchService.addMessageToBranch(
+          this.branchContext.conversationId,
+          this.branchContext.parentMessageId,
+          this.branchContext.branchId,
+          aiMessage
+        );
+      }
+    } else {
+      // Normal mode: save conversation to storage
+      await this.chatService.updateConversation(conversation);
+    }
 
     return result;
   }

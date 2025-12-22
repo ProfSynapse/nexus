@@ -63,6 +63,10 @@ export class SubagentExecutor {
   private subagentBranches: Map<string, string> = new Map(); // subagentId -> branchId
   private events: Partial<SubagentExecutorEvents> = {};
 
+  // In-memory streaming state for active branches
+  // This allows UI to render directly from memory without storage
+  private streamingBranchMessages: Map<string, ChatMessage[]> = new Map(); // branchId -> messages
+
   constructor(private dependencies: SubagentExecutorDependencies) {
     // Validate critical dependencies
     if (!dependencies.branchService) {
@@ -86,7 +90,6 @@ export class SubagentExecutor {
    */
   async executeSubagent(params: SubagentParams): Promise<{ subagentId: string; branchId: string }> {
     const subagentId = `subagent_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
-    console.log('[Subagent] Starting:', { subagentId, task: params.task.substring(0, 80) + '...' });
 
     const abortController = new AbortController();
     this.activeSubagents.set(subagentId, abortController);
@@ -128,14 +131,12 @@ export class SubagentExecutor {
     // Fire and forget - don't await
     this.runSubagentLoop(subagentId, branchId, params, abortController.signal)
       .then(result => {
-        console.log('[Subagent] Complete:', { subagentId, success: result.success, iterations: result.iterations });
         this.activeSubagents.delete(subagentId);
         this.updateStatus(subagentId, { state: result.success ? 'complete' : 'max_iterations' });
         this.events.onSubagentComplete?.(subagentId, result);
         this.queueResultToParent(params, result);
       })
       .catch(error => {
-        console.error('[Subagent] Failed:', { subagentId, error: error instanceof Error ? error.message : error });
         this.activeSubagents.delete(subagentId);
         const errorMessage = error instanceof Error ? error.message : String(error);
         this.updateStatus(subagentId, { state: 'cancelled' });
@@ -215,6 +216,23 @@ export class SubagentExecutor {
   clearAgentStatus(): void {
     this.agentStatus.clear();
     this.subagentBranches.clear();
+    this.streamingBranchMessages.clear();
+  }
+
+  /**
+   * Get in-memory messages for a streaming branch
+   * Returns null if branch is not actively streaming
+   * UI can use this to render directly from memory without storage read
+   */
+  getStreamingBranchMessages(branchId: string): ChatMessage[] | null {
+    return this.streamingBranchMessages.get(branchId) || null;
+  }
+
+  /**
+   * Check if a branch is actively streaming
+   */
+  isBranchStreaming(branchId: string): boolean {
+    return this.streamingBranchMessages.has(branchId);
   }
 
   /**
@@ -232,7 +250,6 @@ export class SubagentExecutor {
       const schemas = await this.prefetchToolSchemas(params.tools);
       if (schemas.length > 0) {
         toolSchemasText = this.formatToolSchemas(schemas);
-        console.log('[Subagent] Pre-filled tool schemas:', Object.keys(params.tools).join(', '));
       }
     }
 
@@ -241,7 +258,6 @@ export class SubagentExecutor {
     let contextFilesContent = '';
     if (params.contextFiles?.length) {
       contextFilesContent = await this.readContextFiles(params.contextFiles);
-      console.log('[Subagent] Loaded context files:', params.contextFiles.length);
     }
 
     // 3. Build system prompt WITH tool schemas + context files included
@@ -296,6 +312,8 @@ export class SubagentExecutor {
         'cancelled',
         0
       );
+      // Clear from in-memory map if cancelled before streaming started
+      this.streamingBranchMessages.delete(branchId);
       return {
         success: false,
         content: '',
@@ -325,6 +343,35 @@ export class SubagentExecutor {
 
     const streamMessages = branchInfo.branch.messages;
 
+    // Create streaming placeholder assistant message
+    const assistantMessageId = `msg_${Date.now()}_assistant`;
+    const streamingAssistantMessage: ChatMessage = {
+      id: assistantMessageId,
+      role: 'assistant',
+      content: '',
+      timestamp: Date.now(),
+      conversationId: params.parentConversationId,
+      state: 'streaming',
+    };
+
+    // ADD the assistant message to branch storage (like parent chat does)
+    // This allows updateMessageInBranch to work later
+    await this.dependencies.branchService.addMessageToBranch(
+      params.parentConversationId,
+      params.parentMessageId,
+      branchId,
+      streamingAssistantMessage
+    );
+
+    // Build in-memory messages array (system + user from storage, plus streaming assistant)
+    const inMemoryMessages: ChatMessage[] = [
+      ...streamMessages,
+      streamingAssistantMessage,
+    ];
+
+    // Store in map so UI can access when navigating to this branch
+    this.streamingBranchMessages.set(branchId, inMemoryMessages);
+
     for await (const chunk of this.dependencies.streamingGenerator(streamMessages, {
       abortSignal,
       workspaceId: params.workspaceId,
@@ -340,6 +387,8 @@ export class SubagentExecutor {
           'cancelled',
           toolIterations
         );
+        // Clear from in-memory map on cancellation
+        this.streamingBranchMessages.delete(branchId);
         return {
           success: false,
           content: responseContent,
@@ -368,36 +417,49 @@ export class SubagentExecutor {
         reasoning += chunk.reasoning;
       }
 
+      // Update IN-MEMORY message (like parent chat does) - NO storage writes during streaming
+      const convertedToolCalls: ToolCall[] | undefined = toolCalls?.map(tc => ({
+        ...tc,
+        type: tc.type || 'function',
+      }));
+      streamingAssistantMessage.content = responseContent;
+      streamingAssistantMessage.toolCalls = convertedToolCalls;
+      streamingAssistantMessage.reasoning = reasoning || undefined;
+
       // Emit progress
       this.events.onSubagentProgress?.(subagentId, responseContent, toolIterations);
-      this.events.onStreamingUpdate?.(branchId, responseContent, chunk.complete);
+
+      // Emit INCREMENTAL chunk (like parent chat) - chunk.chunk is already the new piece
+      // This allows StreamingController to append efficiently without re-rendering
+      this.events.onStreamingUpdate?.(
+        branchId,
+        assistantMessageId,
+        chunk.chunk,  // Just the NEW chunk, not full content
+        chunk.complete,
+        responseContent  // Full content for finalization
+      );
     }
 
     // Update status with final count
     this.updateStatus(subagentId, { iterations: toolIterations || 1, lastToolUsed });
 
-    // Save the final assistant message with all tool calls (already executed)
-    const convertedToolCalls: ToolCall[] | undefined = toolCalls?.map(tc => ({
+    // Convert tool calls for storage
+    const finalToolCalls: ToolCall[] | undefined = toolCalls?.map(tc => ({
       ...tc,
       type: tc.type || 'function',
     }));
 
-    const assistantMessage: ChatMessage = {
-      id: `msg_${Date.now()}_assistant`,
-      role: 'assistant',
-      content: responseContent,
-      timestamp: Date.now(),
-      conversationId: params.parentConversationId,
-      state: 'complete',
-      toolCalls: convertedToolCalls,
-      reasoning: reasoning || undefined,
-    };
-
-    await this.dependencies.branchService.addMessageToBranch(
+    // Update the placeholder message in storage with final content
+    await this.dependencies.branchService.updateMessageInBranch(
       params.parentConversationId,
-      params.parentMessageId,
       branchId,
-      assistantMessage
+      assistantMessageId,
+      {
+        content: responseContent,
+        state: 'complete',
+        toolCalls: finalToolCalls,
+        reasoning: reasoning || undefined,
+      }
     );
 
     // Streaming completed = LLM is done (all tool calls already handled internally)
@@ -407,6 +469,9 @@ export class SubagentExecutor {
       'complete',
       toolIterations || 1
     );
+
+    // Clear from in-memory map now that streaming is complete and saved
+    this.streamingBranchMessages.delete(branchId);
 
     return {
       success: true,
@@ -611,11 +676,6 @@ BEGIN - Start by calling getTools to discover available tools.`);
    * Queue result back to parent conversation
    */
   private queueResultToParent(params: SubagentParams, result: SubagentResult): void {
-    console.log('[Subagent] queueResultToParent called:', {
-      conversationId: result.conversationId,
-      branchId: result.branchId,
-      success: result.success
-    });
     const message: QueuedMessage = {
       id: `subagent_result_${Date.now()}`,
       type: 'subagent_result',

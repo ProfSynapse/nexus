@@ -60,18 +60,15 @@ export class StreamingController {
    */
   startStreaming(messageId: string): void {
     const messageElement = this.containerEl.querySelector(`[data-message-id="${messageId}"]`);
-    
-    if (messageElement) {
-      const contentElement = messageElement.querySelector('.message-bubble .message-content');
+    const contentElement = messageElement?.querySelector('.message-bubble .message-content');
 
-      if (contentElement) {
-        // Stop loading animation
-        this.stopLoadingAnimation(contentElement);
+    if (messageElement && contentElement) {
+      // Stop loading animation
+      this.stopLoadingAnimation(contentElement);
 
-        // Initialize streaming-markdown parser for this message
-        const streamingState = MarkdownRenderer.initializeStreamingParser(contentElement as HTMLElement);
-        this.streamingStates.set(messageId, streamingState);
-      }
+      // Initialize streaming-markdown parser for this message
+      const streamingState = MarkdownRenderer.initializeStreamingParser(contentElement as HTMLElement);
+      this.streamingStates.set(messageId, streamingState);
     }
   }
 

@@ -12,7 +12,8 @@
 
 import { App, Modal, setIcon, Events } from 'obsidian';
 import type { SubagentExecutor } from '../../../services/chat/SubagentExecutor';
-import type { AgentStatusItem } from '../../../types/branch/BranchTypes';
+import type { BranchService } from '../../../services/chat/BranchService';
+import type { AgentStatusItem, SubagentBranchMetadata } from '../../../types/branch/BranchTypes';
 import { getStateIconName } from '../../../utils/branchStatusUtils';
 import { formatToolDisplayName } from '../../../utils/toolNameUtils';
 import { getSubagentEventBus } from './AgentStatusMenu';
@@ -24,25 +25,35 @@ export interface AgentStatusModalCallbacks {
 
 export class AgentStatusModal extends Modal {
   private subagentExecutor: SubagentExecutor;
+  private branchService: BranchService | null;
+  private conversationId: string | null;
   private callbacks: AgentStatusModalCallbacks;
   private eventRef: ReturnType<Events['on']> | null = null;
+  private cachedCompletedAgents: AgentStatusItem[] = [];
 
   constructor(
     app: App,
     subagentExecutor: SubagentExecutor,
-    callbacks: AgentStatusModalCallbacks
+    callbacks: AgentStatusModalCallbacks,
+    branchService?: BranchService | null,
+    conversationId?: string | null
   ) {
     super(app);
     this.subagentExecutor = subagentExecutor;
+    this.branchService = branchService ?? null;
+    this.conversationId = conversationId ?? null;
     this.callbacks = callbacks;
   }
 
-  onOpen(): void {
+  async onOpen(): Promise<void> {
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass('nexus-agent-status-modal');
 
     this.titleEl.setText('Agents');
+
+    // Load completed agents from branch storage
+    await this.loadCompletedAgentsFromStorage();
 
     // Subscribe to real-time updates
     const eventBus = getSubagentEventBus();
@@ -53,13 +64,66 @@ export class AgentStatusModal extends Modal {
     this.renderContent();
   }
 
+  /**
+   * Load completed agents from branch storage
+   * These persist across conversation switches and app restarts
+   */
+  private async loadCompletedAgentsFromStorage(): Promise<void> {
+    if (!this.branchService || !this.conversationId) {
+      this.cachedCompletedAgents = [];
+      return;
+    }
+
+    try {
+      const subagentBranches = await this.branchService.getSubagentBranches(this.conversationId);
+
+      this.cachedCompletedAgents = subagentBranches
+        .filter(info => {
+          // Only include branches with subagent metadata
+          const metadata = info.branch.metadata;
+          return metadata && 'subagentId' in metadata;
+        })
+        .map(info => {
+          const metadata = info.branch.metadata as SubagentBranchMetadata;
+          return {
+            subagentId: metadata.subagentId,
+            branchId: info.branch.id,
+            conversationId: this.conversationId!,
+            parentMessageId: info.parentMessageId,
+            task: metadata.task,
+            state: metadata.state,
+            iterations: metadata.iterations,
+            maxIterations: metadata.maxIterations,
+            startedAt: metadata.startedAt,
+            completedAt: metadata.completedAt,
+            // lastToolUsed not available for completed agents (not persisted)
+          } satisfies AgentStatusItem;
+        });
+    } catch (error) {
+      console.error('Failed to load completed agents from storage:', error);
+      this.cachedCompletedAgents = [];
+    }
+  }
+
   private renderContent(): void {
     const { contentEl } = this;
     contentEl.empty();
 
-    const agents = this.subagentExecutor.getAgentStatusList();
-    const running = agents.filter(a => a.state === 'running');
-    const completed = agents.filter(a => a.state !== 'running');
+    // Get running agents from executor (in-memory, has lastToolUsed)
+    const executorAgents = this.subagentExecutor.getAgentStatusList();
+
+    // Merge with completed agents from storage (persisted)
+    // Executor agents take priority (they have more real-time data like lastToolUsed)
+    const executorBranchIds = new Set(executorAgents.map(a => a.branchId));
+    const storedCompletedAgents = this.cachedCompletedAgents.filter(
+      a => !executorBranchIds.has(a.branchId)
+    );
+
+    // Combine: executor agents + stored agents not in executor
+    const allAgents = [...executorAgents, ...storedCompletedAgents];
+
+    const running = allAgents.filter(a => a.state === 'running');
+    const completed = allAgents.filter(a => a.state !== 'running');
 
     // Scrollable list container
     const listEl = contentEl.createDiv({ cls: 'nexus-agent-list' });

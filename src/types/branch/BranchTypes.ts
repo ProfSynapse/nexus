@@ -175,7 +175,16 @@ export interface SubagentExecutorEvents {
   onSubagentProgress: (subagentId: string, message: string, iteration: number) => void;
   onSubagentComplete: (subagentId: string, result: SubagentResult) => void;
   onSubagentError: (subagentId: string, error: string) => void;
-  onStreamingUpdate: (branchId: string, content: string, isComplete: boolean) => void;
+  /**
+   * Streaming update with incremental chunks (like parent chat)
+   * Uses same StreamingController infrastructure for smooth updates
+   * @param branchId - The branch being streamed
+   * @param messageId - The assistant message ID being streamed
+   * @param chunk - The NEW content chunk (incremental, not full content)
+   * @param isComplete - Whether streaming is complete
+   * @param fullContent - Full content so far (for finalization)
+   */
+  onStreamingUpdate: (branchId: string, messageId: string, chunk: string, isComplete: boolean, fullContent: string) => void;
 }
 
 /**

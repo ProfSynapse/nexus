@@ -6028,6 +6028,15 @@ body.is-mobile .chat-loading-overlay {
     background: var(--background-modifier-hover);
 }
 
+/* Branch Header Container (separate from message display to prevent clobbering) */
+.nexus-branch-header-container {
+    /* Empty by default, only shows content when branch header is rendered */
+}
+
+.nexus-branch-header-container:empty {
+    display: none;
+}
+
 /* Branch Header (navigation when viewing branch) */
 .nexus-branch-header {
     display: flex;
@@ -6586,6 +6595,15 @@ body.is-mobile .chat-loading-overlay {
 
 .nexus-agent-stop-btn:hover {
     background: var(--background-modifier-hover);
+}
+
+/* Branch Header Container (separate from message display to prevent clobbering) */
+.nexus-branch-header-container {
+    /* Empty by default, only shows content when branch header is rendered */
+}
+
+.nexus-branch-header-container:empty {
+    display: none;
 }
 
 /* Branch Header (navigation when viewing branch) */

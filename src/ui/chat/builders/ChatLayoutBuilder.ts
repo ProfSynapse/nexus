@@ -27,6 +27,7 @@ export interface ChatLayoutElements {
   backdrop: HTMLElement;
   sidebarContainer: HTMLElement;
   loadingOverlay: HTMLElement;
+  branchHeaderContainer: HTMLElement;
 }
 
 export class ChatLayoutBuilder {
@@ -46,6 +47,10 @@ export class ChatLayoutBuilder {
 
     // Header
     const { chatTitle, hamburgerButton, settingsButton } = this.createHeader(mainContainer);
+
+    // Branch header container (above messages, separate from message container)
+    // This ensures BranchHeader isn't clobbered when MessageDisplay.setConversation() empties the message container
+    const branchHeaderContainer = mainContainer.createDiv('nexus-branch-header-container');
 
     // Main content areas
     const messageContainer = mainContainer.createDiv('message-display-container');
@@ -70,7 +75,8 @@ export class ChatLayoutBuilder {
       hamburgerButton,
       backdrop,
       sidebarContainer,
-      loadingOverlay
+      loadingOverlay,
+      branchHeaderContainer
     };
   }
 

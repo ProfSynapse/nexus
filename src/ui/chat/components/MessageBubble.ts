@@ -93,8 +93,9 @@ export class MessageBubble extends Component {
         }
       }
 
-      // Create text bubble if there's content
-      if (activeContent && activeContent.trim()) {
+      // Create text bubble if there's content OR if streaming (need element for StreamingController)
+      const isStreaming = this.message.state === 'streaming';
+      if ((activeContent && activeContent.trim()) || isStreaming) {
         this.textBubbleElement = ToolBubbleFactory.createTextBubble(
           renderMessage,
           (container, content) => this.renderContent(container, content),
