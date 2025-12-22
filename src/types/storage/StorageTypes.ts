@@ -41,6 +41,21 @@ export interface IndividualConversation {
     totalCost?: number;
     totalTokens?: number;
     currency?: string;
+    // Branch support (Dec 2025): when set, this conversation is a branch
+    parentConversationId?: string;  // The parent conversation this branched from
+    parentMessageId?: string;       // The specific message this branched from
+    branchType?: 'subagent' | 'alternative';  // Type of branch
+    subagentTask?: string;          // For subagent branches: the task description
+    inheritContext?: boolean;       // Whether to include parent context (true for human, false for subagent)
+    subagent?: {                    // Subagent-specific metadata
+      task?: string;
+      subagentId?: string;
+      state?: string;
+      iterations?: number;
+      maxIterations?: number;
+      startedAt?: number;
+      completedAt?: number;
+    };
   };
   // Optional pagination metadata when messages are loaded with pagination
   messagePagination?: PaginatedResult<ConversationMessage>;

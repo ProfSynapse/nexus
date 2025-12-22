@@ -36,8 +36,6 @@ import {
   ExportData,
   SyncResult
 } from '../../types/storage/HybridStorageTypes';
-import type { BranchRepository } from '../repositories/BranchRepository';
-
 /**
  * Extended query options for flexible data retrieval
  */
@@ -458,17 +456,6 @@ export interface IStorageAdapter {
   // Repository Access (for advanced operations)
   // ============================================================================
 
-  /**
-   * Get the branch repository for direct branch operations
-   *
-   * Used for:
-   * - Populating message.branches[] when loading conversations
-   * - Querying branches by message or conversation
-   * - AgentStatus reconstruction from branch metadata
-   *
-   * @returns BranchRepository instance
-   */
-  getBranchRepository(): BranchRepository;
 }
 
 /**

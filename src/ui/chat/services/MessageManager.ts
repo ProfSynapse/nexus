@@ -1,6 +1,12 @@
 /**
  * MessageManager - Handles all message operations including sending, editing, retry, and streaming
  * Refactored to use extracted services following SOLID principles
+ *
+ * ARCHITECTURE NOTE (Dec 2025):
+ * A branch IS a conversation with parent metadata. When viewing a branch,
+ * the branch is set as currentConversation in ConversationManager.
+ * All message operations use the passed conversation (which may be a branch).
+ * No special routing is needed - ChatService handles both transparently.
  */
 
 import { ChatService } from '../../../services/chat/ChatService';
@@ -13,14 +19,7 @@ import { MessageStateManager } from './MessageStateManager';
 import { AbortHandler } from '../utils/AbortHandler';
 import { getWebLLMLifecycleManager } from '../../../services/llm/adapters/webllm/WebLLMLifecycleManager';
 import type { MessageQueueService } from '../../../services/chat/MessageQueueService';
-import type { QueuedMessage, BranchViewContext } from '../../../types/branch/BranchTypes';
-import type { BranchService } from '../../../services/chat/BranchService';
-
-/**
- * Context for operating on a branch instead of the main conversation
- * When set, all message operations route to the branch
- */
-export type BranchOperationContext = Pick<BranchViewContext, 'conversationId' | 'branchId' | 'parentMessageId'>;
+import type { QueuedMessage } from '../../../types/branch/BranchTypes';
 
 export interface MessageManagerEvents {
   onMessageAdded: (message: ConversationMessage) => void;
@@ -49,10 +48,6 @@ export class MessageManager {
 
   // Optional queue service for subagent result processing
   private messageQueueService: MessageQueueService | null = null;
-
-  // Branch context - when set, operations target a branch instead of main conversation
-  private branchContext: BranchOperationContext | null = null;
-  private branchService: BranchService | null = null;
 
   constructor(
     private chatService: ChatService,
@@ -97,42 +92,6 @@ export class MessageManager {
    */
   getIsLoading(): boolean {
     return this.isLoading;
-  }
-
-  /**
-   * Set the branch service for branch operations
-   * Required before using setBranchContext
-   */
-  setBranchService(branchService: BranchService): void {
-    this.branchService = branchService;
-    // Pass to sub-services that need it
-    this.streamHandler.setBranchService(branchService);
-    this.stateManager.setBranchService(branchService);
-  }
-
-  /**
-   * Set branch context - routes all operations to the specified branch
-   * @param context Branch context, or null to return to normal conversation mode
-   */
-  setBranchContext(context: BranchOperationContext | null): void {
-    this.branchContext = context;
-    // Pass to sub-services
-    this.streamHandler.setBranchContext(context);
-    this.stateManager.setBranchContext(context);
-  }
-
-  /**
-   * Check if currently operating in branch mode
-   */
-  isInBranchMode(): boolean {
-    return this.branchContext !== null;
-  }
-
-  /**
-   * Get current branch context (for sub-services or external queries)
-   */
-  getBranchContext(): BranchOperationContext | null {
-    return this.branchContext;
   }
 
   /**

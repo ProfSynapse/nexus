@@ -210,6 +210,15 @@ export class ConversationManager {
   }
 
   /**
+   * Set current conversation directly (no events fired)
+   * Used when navigating to branches - the branch IS a conversation
+   * but we don't want to fire selection events that would update the list
+   */
+  setCurrentConversation(conversation: ConversationData | null): void {
+    this.currentConversation = conversation;
+  }
+
+  /**
    * Prompt user for conversation title using Obsidian's Modal
    */
   private async promptForConversationTitle(): Promise<string | null> {

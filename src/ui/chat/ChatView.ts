@@ -8,7 +8,7 @@
  * and tool event coordination to ToolEventCoordinator.
  */
 
-import { ItemView, WorkspaceLeaf, setIcon, Plugin } from 'obsidian';
+import { ItemView, WorkspaceLeaf } from 'obsidian';
 import { ConversationList } from './components/ConversationList';
 import { MessageDisplay } from './components/MessageDisplay';
 import { ChatInput } from './components/ChatInput';
@@ -17,7 +17,6 @@ import { ChatSettingsModal } from './components/ChatSettingsModal';
 import { ChatService } from '../../services/chat/ChatService';
 import { ConversationData, ConversationMessage } from '../../types/chat/ChatTypes';
 import { MessageEnhancement } from './components/suggesters/base/SuggesterInterfaces';
-import type { ServiceManager } from '../../core/ServiceManager';
 import type NexusPlugin from '../../main';
 import type { WorkspaceService } from '../../services/WorkspaceService';
 
@@ -26,10 +25,13 @@ import { ConversationManager, ConversationManagerEvents } from './services/Conve
 import { MessageManager, MessageManagerEvents } from './services/MessageManager';
 import { ModelAgentManager, ModelAgentManagerEvents } from './services/ModelAgentManager';
 import { BranchManager, BranchManagerEvents } from './services/BranchManager';
+import { ContextTracker } from './services/ContextTracker';
 
 // Controllers
 import { UIStateController, UIStateControllerEvents } from './controllers/UIStateController';
 import { StreamingController } from './controllers/StreamingController';
+import { NexusLoadingController } from './controllers/NexusLoadingController';
+import { SubagentController, SubagentContextProvider } from './controllers/SubagentController';
 
 // Coordinators
 import { ToolEventCoordinator } from './coordinators/ToolEventCoordinator';
@@ -39,7 +41,6 @@ import { ChatLayoutBuilder, ChatLayoutElements } from './builders/ChatLayoutBuil
 import { ChatEventBinder } from './utils/ChatEventBinder';
 
 // Utils
-import { TokenCalculator } from './utils/TokenCalculator';
 import { ReferenceMetadata } from './utils/ReferenceExtractor';
 import { CHAT_VIEW_TYPES } from '../../constants/branding';
 import { getNexusPlugin } from '../../utils/pluginLocator';
@@ -47,21 +48,15 @@ import { getNexusPlugin } from '../../utils/pluginLocator';
 // Nexus Lifecycle
 import { getWebLLMLifecycleManager } from '../../services/llm/adapters/webllm/WebLLMLifecycleManager';
 
-// Subagent infrastructure
-import { BranchService } from '../../services/chat/BranchService';
-import { MessageQueueService } from '../../services/chat/MessageQueueService';
-import { SubagentExecutor } from '../../services/chat/SubagentExecutor';
+// Subagent infrastructure (delegated to SubagentController)
 import type { AgentManager } from '../../services/AgentManager';
 import type { DirectToolExecutor } from '../../services/chat/DirectToolExecutor';
 import type { AgentManagerAgent } from '../../agents/agentManager/agentManager';
-import type { ToolSchemaInfo } from '../../types/branch/BranchTypes';
-import { isSubagentMetadata } from '../../types/branch/BranchTypes';
 import type { HybridStorageAdapter } from '../../database/adapters/HybridStorageAdapter';
 
-// Subagent UI components
-import { AgentStatusMenu, createSubagentEventHandlers, getSubagentEventBus } from './components/AgentStatusMenu';
-import { AgentStatusModal } from './components/AgentStatusModal';
+// Branch UI components
 import { BranchHeader, BranchViewContext } from './components/BranchHeader';
+import { isSubagentMetadata } from '../../types/branch/BranchTypes';
 
 export const CHAT_VIEW_TYPE = CHAT_VIEW_TYPES.current;
 
@@ -77,21 +72,24 @@ export class ChatView extends ItemView {
   private messageManager!: MessageManager;
   private modelAgentManager!: ModelAgentManager;
   private branchManager!: BranchManager;
+  private contextTracker!: ContextTracker;
 
   // Controllers and Coordinators
   private uiStateController!: UIStateController;
   private streamingController!: StreamingController;
+  private nexusLoadingController!: NexusLoadingController;
   private toolEventCoordinator!: ToolEventCoordinator;
 
-  // Subagent infrastructure
-  private branchService: BranchService | null = null;
-  private messageQueueService: MessageQueueService | null = null;
-  private subagentExecutor: SubagentExecutor | null = null;
+  // Subagent infrastructure (delegated to SubagentController)
+  private subagentController: SubagentController | null = null;
 
-  // Subagent UI components
-  private agentStatusMenu: AgentStatusMenu | null = null;
+  // Branch UI state
   private branchHeader: BranchHeader | null = null;
   private currentBranchContext: BranchViewContext | null = null;
+
+  // Parent conversation reference when viewing a branch
+  // Used for back navigation - the branch becomes currentConversation when viewing
+  private parentConversationId: string | null = null;
 
   // Layout elements
   private layoutElements!: ChatLayoutElements;
@@ -140,11 +138,11 @@ export class ChatView extends ItemView {
     // Set up Nexus lifecycle callbacks for loading indicator
     const lifecycleManager = getWebLLMLifecycleManager();
     lifecycleManager.setCallbacks({
-      onLoadingStart: () => this.showNexusLoadingOverlay(),
-      onLoadingProgress: (progress, stage) => this.updateNexusLoadingProgress(progress, stage),
-      onLoadingComplete: () => this.hideNexusLoadingOverlay(),
+      onLoadingStart: () => this.nexusLoadingController.showNexusLoadingOverlay(),
+      onLoadingProgress: (progress, stage) => this.nexusLoadingController.updateNexusLoadingProgress(progress, stage),
+      onLoadingComplete: () => this.nexusLoadingController.hideNexusLoadingOverlay(),
       onError: (error) => {
-        this.hideNexusLoadingOverlay();
+        this.nexusLoadingController.hideNexusLoadingOverlay();
         console.error('[ChatView] Nexus loading error:', error);
       }
     });
@@ -163,59 +161,10 @@ export class ChatView extends ItemView {
     const plugin = getNexusPlugin<NexusPlugin>(this.app);
     if (!plugin) return;
 
-    try {
-      const storageAdapter = await plugin.getService<{ isReady?: () => boolean; waitForReady?: () => Promise<boolean> }>('hybridStorageAdapter');
-      if (!storageAdapter) return;
+    const storageAdapter = await plugin.getService<{ isReady?: () => boolean; waitForReady?: () => Promise<boolean> }>('hybridStorageAdapter');
+    if (!storageAdapter) return;
 
-      // If already ready, no need to show overlay
-      if (storageAdapter.isReady?.()) {
-        return;
-      }
-
-      // Show loading overlay while waiting
-      this.showDatabaseLoadingOverlay();
-
-      // Wait for database to be ready
-      const success = await storageAdapter.waitForReady?.();
-
-      // Hide overlay
-      this.hideDatabaseLoadingOverlay();
-    } catch (error) {
-      this.hideDatabaseLoadingOverlay();
-    }
-  }
-
-  /**
-   * Show database loading overlay
-   */
-  private showDatabaseLoadingOverlay(): void {
-    const overlay = this.layoutElements?.loadingOverlay;
-    if (!overlay) return;
-
-    // Update text for database loading
-    const statusEl = overlay.querySelector('[data-status-el]');
-    if (statusEl) statusEl.textContent = 'Loading database...';
-
-    overlay.addClass('chat-loading-overlay-visible');
-    overlay.offsetHeight; // Trigger reflow
-    overlay.addClass('is-visible');
-  }
-
-  /**
-   * Hide database loading overlay
-   */
-  private hideDatabaseLoadingOverlay(): void {
-    const overlay = this.layoutElements?.loadingOverlay;
-    if (!overlay) return;
-
-    overlay.removeClass('is-visible');
-    setTimeout(() => {
-      overlay.removeClass('chat-loading-overlay-visible');
-      overlay.addClass('chat-loading-overlay-hidden');
-      // Reset text for potential Nexus loading later
-      const statusEl = overlay.querySelector('[data-status-el]');
-      if (statusEl) statusEl.textContent = 'Loading Nexus model...';
-    }, 300);
+    await this.nexusLoadingController.waitForDatabaseReady(storageAdapter);
   }
 
   async onClose(): Promise<void> {
@@ -300,6 +249,12 @@ export class ChatView extends ItemView {
       modelAgentEvents,
       this.chatService.getConversationService()
     );
+
+    // Context tracking
+    this.contextTracker = new ContextTracker(
+      this.conversationManager,
+      this.modelAgentManager
+    );
   }
 
   /**
@@ -312,6 +267,7 @@ export class ChatView extends ItemView {
     this.uiStateController = new UIStateController(this.containerEl, uiStateEvents, this);
     this.uiStateController.setOpenSettingsCallback(() => this.openChatSettingsModal());
     this.streamingController = new StreamingController(this.containerEl, this.app, this);
+    this.nexusLoadingController = new NexusLoadingController(this.containerEl);
   }
 
   /**
@@ -383,297 +339,64 @@ export class ChatView extends ItemView {
   }
 
   /**
-   * Initialize subagent infrastructure (SubagentExecutor, BranchService, MessageQueueService)
+   * Initialize subagent infrastructure via SubagentController
    * This is async and non-blocking - subagent features will be available once this completes
    */
   private async initializeSubagentInfrastructure(): Promise<void> {
     try {
       const plugin = getNexusPlugin<NexusPlugin>(this.app);
-      if (!plugin) {
-        return;
-      }
+      if (!plugin) return;
 
       // Get required services
       const directToolExecutor = await plugin.getService<DirectToolExecutor>('directToolExecutor');
-      if (!directToolExecutor) {
-        return;
-      }
+      if (!directToolExecutor) return;
 
       const agentManager = await plugin.getService<AgentManager>('agentManager');
-      if (!agentManager) {
-        return;
-      }
+      if (!agentManager) return;
 
-      // Get the AgentManagerAgent which has the subagent tools
       const agentManagerAgent = agentManager.getAgent('agentManager') as AgentManagerAgent | null;
-      if (!agentManagerAgent) {
-        return;
-      }
+      if (!agentManagerAgent) return;
 
-      // Get HybridStorageAdapter for BranchRepository
       const storageAdapter = await plugin.getService<HybridStorageAdapter>('hybridStorageAdapter');
-      if (!storageAdapter) {
-        return;
-      }
-      const branchRepository = storageAdapter.getBranchRepository();
+      if (!storageAdapter) return;
 
-      // Create BranchService with repository (eliminates race conditions)
-      const conversationService = this.chatService.getConversationService();
-      this.branchService = new BranchService({
-        branchRepository,
-        conversationService,
-      });
-
-      // Pass branchService to messageManager for branch-aware operations
-      this.messageManager.setBranchService(this.branchService);
-
-      // Create MessageQueueService
-      this.messageQueueService = new MessageQueueService();
-      this.messageQueueService.setProcessor(async (message) => {
-        if (message.type === 'subagent_result') {
-          try {
-            // Parse the result
-            const result = JSON.parse(message.content || '{}');
-            const metadata = message.metadata || {};
-
-            // Get the parent conversation
-            const conversationId = metadata.conversationId;
-            if (!conversationId) {
-              return;
-            }
-
-            // Format the result for display - this will be sent as a "user" message
-            // so the parent LLM can process it and continue the conversation
-            const taskLabel = metadata.subagentTask || 'Task';
-            const resultContent = result.success
-              ? `[Subagent "${taskLabel}" completed]\n\nResult:\n${result.result || 'Task completed successfully.'}`
-              : `[Subagent "${taskLabel}" ${result.status === 'max_iterations' ? 'paused (max iterations)' : 'failed'}]\n\n${result.error || 'Unknown error'}`;
-
-            // Check if we're viewing the parent conversation
-            const currentConversation = this.conversationManager.getCurrentConversation();
-            const isViewingParent = currentConversation?.id === conversationId && !this.isViewingBranch();
-
-            // Always add the result as a user message and trigger LLM response
-            // This ensures the parent LLM processes the result regardless of what user is viewing
-
-            // Add user message with the result
-            await this.chatService.addMessage({
-              conversationId,
-              role: 'user',
-              content: resultContent,
-              metadata: {
-                type: 'subagent_result',
-                branchId: metadata.branchId,
-                subagentId: metadata.subagentId,
-                success: result.success,
-                iterations: result.iterations,
-                isAutoGenerated: true, // Flag that this was auto-generated, not typed by user
-              },
-            });
-
-            // Trigger LLM to respond to the subagent result
-            // This happens in the background - UI updates when user returns to parent
-            if (this.chatService) {
-              try {
-                // Get the conversation to pass to generateResponse
-                const parentConversation = await this.chatService.getConversation(conversationId);
-                if (parentConversation) {
-                  // Generate a response - MUST consume the async generator to actually run it
-                  const generator = this.chatService.generateResponseStreaming(
-                    parentConversation.id,
-                    resultContent,
-                    {
-                      // Use default model settings from the conversation
-                    }
-                  );
-
-                  // Consume the generator to completion (this triggers the actual LLM call)
-                  let lastContent = '';
-                  for await (const chunk of generator) {
-                    lastContent = chunk.chunk || lastContent;
-                    if (chunk.complete) break;
-                  }
-
-                  // Refresh the display to show the new messages
-                  if (isViewingParent) {
-                    const updated = await this.chatService.getConversation(conversationId);
-                    if (updated) {
-                      this.messageDisplay.setConversation(updated);
-                    }
-                  }
-                }
-              } catch (llmError) {
-                console.error('[ChatView] Failed to generate LLM response to subagent result:', llmError);
-              }
-            }
-
-          } catch (error) {
-            console.error('[Subagent] Failed to process result:', error);
-          }
-        }
-      });
-
-      // Get LLM service for streaming
       const llmService = this.chatService.getLLMService();
-      if (!llmService) {
-        return;
-      }
+      if (!llmService) return;
 
-      // Create SubagentExecutor with real LLM streaming
-      const self = this;
-      this.subagentExecutor = new SubagentExecutor({
-        branchService: this.branchService,
-        messageQueueService: this.messageQueueService,
-        directToolExecutor: directToolExecutor,
-        streamingGenerator: async function* (messages, options) {
-          try {
-            // Get available tools for the subagent
-            const tools = await directToolExecutor.getAvailableTools();
-
-            // Use the LLMService's generateResponseStream for real streaming
-            const streamOptions = {
-              provider: options?.provider,
-              model: options?.model,
-              systemPrompt: options?.systemPrompt,
-              sessionId: options?.sessionId,
-              workspaceId: options?.workspaceId,
-              tools: tools as any[], // Pass tools so LLM can make tool calls
-            };
-
-            for await (const chunk of llmService.generateResponseStream(messages, streamOptions)) {
-              if (options?.abortSignal?.aborted) {
-                return;
-              }
-
-              yield {
-                chunk: chunk.chunk || '',
-                complete: chunk.complete,
-                toolCalls: chunk.toolCalls,
-                reasoning: chunk.reasoning,
-              };
-            }
-
-          } catch (error) {
-            console.error('[Subagent] Streaming error:', error);
-            throw error;
-          }
-        },
-        getToolSchemas: async (agentName: string, toolSlugs: string[]): Promise<ToolSchemaInfo[]> => {
-          try {
-            const tools = await directToolExecutor.getAvailableTools() as Array<{ name?: string }>;
-            return tools.filter(t => t.name && toolSlugs.includes(t.name)) as ToolSchemaInfo[];
-          } catch {
-            return [];
-          }
-        },
+      // Create SubagentController
+      this.subagentController = new SubagentController(this.app, this, {
+        onStreamingUpdate: () => { /* handled internally */ },
+        onToolCallsDetected: () => { /* handled internally */ },
+        onStatusChanged: () => { /* status menu auto-updates */ },
       });
 
-      // Set event handlers - triggers event bus for UI updates
-      const eventHandlers = createSubagentEventHandlers();
-      this.subagentExecutor.setEventHandlers({
-        ...eventHandlers,
-        onSubagentError: (subagentId: string, error: string) => {
-          console.error('[Subagent] Error:', subagentId, error);
-          eventHandlers.onSubagentError?.(subagentId, error);
+      // Build context provider from ModelAgentManager
+      const contextProvider: SubagentContextProvider = {
+        getCurrentConversation: () => this.conversationManager?.getCurrentConversation() ?? null,
+        getSelectedModel: () => this.modelAgentManager?.getSelectedModel() ?? null,
+        getSelectedAgent: () => this.modelAgentManager?.getSelectedAgent() ?? null,
+        getLoadedWorkspaceData: () => this.modelAgentManager?.getLoadedWorkspaceData(),
+        getContextNotes: () => this.modelAgentManager?.getContextNotes() || [],
+        getThinkingSettings: () => this.modelAgentManager?.getThinkingSettings() ?? null,
+        getSelectedWorkspaceId: () => this.modelAgentManager?.getSelectedWorkspaceId() ?? null,
+      };
+
+      // Initialize with dependencies
+      await this.subagentController.initialize(
+        {
+          app: this.app,
+          chatService: this.chatService,
+          directToolExecutor,
+          agentManagerAgent,
+          storageAdapter,
+          llmService,
         },
-        // Live branch updates when viewing a running subagent
-        // Uses SAME StreamingController infrastructure as parent chat
-        onStreamingUpdate: (() => {
-          // Track if we've initialized streaming for this message
-          let streamingInitialized = false;
-          let currentStreamingMessageId = '';
-
-          return (branchId: string, messageId: string, chunk: string, isComplete: boolean, fullContent: string) => {
-            // Only update if currently viewing this branch
-            if (this.currentBranchContext?.branchId !== branchId) {
-              return;
-            }
-
-            // Reset tracking if message changed
-            if (messageId !== currentStreamingMessageId) {
-              streamingInitialized = false;
-              currentStreamingMessageId = messageId;
-            }
-
-            // Use StreamingController - SAME as parent chat
-            if (!streamingInitialized) {
-              this.streamingController.startStreaming(messageId);
-              streamingInitialized = true;
-            }
-
-            if (chunk) {
-              this.streamingController.updateStreamingChunk(messageId, chunk);
-            }
-
-            if (isComplete) {
-              this.streamingController.finalizeStreaming(messageId, fullContent);
-              streamingInitialized = false;
-              currentStreamingMessageId = '';
-            }
-          };
-        })(),
-      });
-
-      // Wire up the executor to the AgentManagerAgent's subagent tool
-      // Context provider passes ALL parent settings to be inherited by subagent
-      agentManagerAgent.setSubagentExecutor(this.subagentExecutor, () => {
-        const currentConversation = this.conversationManager?.getCurrentConversation();
-        const messages = currentConversation?.messages || [];
-        const lastMessage = messages[messages.length - 1];
-        const workspaceId = this.modelAgentManager?.getSelectedWorkspaceId() || undefined;
-        const sessionId = currentConversation?.metadata?.chatSettings?.sessionId || undefined;
-
-        // Get current model settings to pass to subagent
-        const selectedModel = this.modelAgentManager?.getSelectedModel();
-
-        // Get current agent settings
-        const selectedAgent = this.modelAgentManager?.getSelectedAgent();
-
-        // Get workspace data (full comprehensive data, not just ID)
-        const workspaceData = this.modelAgentManager?.getLoadedWorkspaceData();
-
-        // Get context notes (file paths)
-        const contextNotes = this.modelAgentManager?.getContextNotes() || [];
-
-        // Get thinking settings
-        const thinkingSettings = this.modelAgentManager?.getThinkingSettings();
-
-        return {
-          conversationId: currentConversation?.id || 'unknown',
-          messageId: lastMessage?.id || 'unknown',
-          workspaceId,
-          sessionId,
-          source: 'internal' as const,
-          isSubagentBranch: false,
-          // Inherit parent's model settings
-          provider: selectedModel?.providerId,
-          model: selectedModel?.modelId,
-          // Inherit parent's agent settings
-          agentPrompt: selectedAgent?.systemPrompt,
-          agentName: selectedAgent?.name,
-          // Inherit parent's workspace data (full comprehensive data)
-          workspaceData,
-          // Inherit parent's context notes (file paths to include)
-          contextNotes,
-          // Inherit parent's thinking settings
-          thinkingEnabled: thinkingSettings?.enabled,
-          thinkingEffort: thinkingSettings?.effort,
-        };
-      });
-
-      // Initialize AgentStatusMenu in the header (left of settings button)
-      if (this.layoutElements.settingsButton?.parentElement) {
-        this.agentStatusMenu = new AgentStatusMenu(
-          this.layoutElements.settingsButton.parentElement,
-          this.subagentExecutor,
-          {
-            onOpenModal: () => this.openAgentStatusModal(),
-          },
-          this,
-          this.layoutElements.settingsButton // Insert BEFORE settings button
-        );
-        this.agentStatusMenu.render();
-      }
+        contextProvider,
+        this.streamingController,
+        this.toolEventCoordinator,
+        this.layoutElements.settingsButton?.parentElement ?? undefined,
+        this.layoutElements.settingsButton
+      );
 
     } catch (error) {
       console.error('[ChatView] Failed to initialize subagent infrastructure:', error);
@@ -757,8 +480,7 @@ export class ChatView extends ItemView {
     }
 
     // Clear agent status when switching conversations (session-scoped)
-    this.subagentExecutor?.clearAgentStatus();
-    getSubagentEventBus().trigger('status-changed');
+    this.subagentController?.clearAgentStatus();
 
     // Access private property via type assertion - currentConversationId exists but is private
     (this.modelAgentManager as unknown as { currentConversationId: string | null }).currentConversationId = conversation.id;
@@ -921,45 +643,11 @@ export class ChatView extends ItemView {
   }
 
   private async getContextUsage() {
-    const conversation = this.conversationManager.getCurrentConversation();
-    const selectedModel = await this.modelAgentManager.getSelectedModelOrDefault();
-
-    const usage = await TokenCalculator.getContextUsage(
-      selectedModel,
-      conversation,
-      await this.modelAgentManager.getCurrentSystemPrompt()
-    );
-    return usage;
+    return await this.contextTracker.getContextUsage();
   }
 
   private getConversationCost(): { totalCost: number; currency: string } | null {
-    const conversation = this.conversationManager.getCurrentConversation();
-    if (!conversation) return null;
-
-    // Prefer structured cost field if present
-    if (conversation.cost?.totalCost !== undefined) {
-      return {
-        totalCost: conversation.cost.totalCost,
-        currency: conversation.cost.currency || 'USD'
-      };
-    }
-
-    // Fallback to metadata (legacy)
-    if (conversation.metadata?.cost?.totalCost !== undefined) {
-      return {
-        totalCost: conversation.metadata.cost.totalCost,
-        currency: conversation.metadata.cost.currency || 'USD'
-      };
-    }
-
-    if (conversation.metadata?.totalCost !== undefined) {
-      return {
-        totalCost: conversation.metadata.totalCost,
-        currency: conversation.metadata.currency || 'USD'
-      };
-    }
-
-    return null;
+    return this.contextTracker.getConversationCost();
   }
 
   private async updateContextProgress(): Promise<void> {
@@ -1035,71 +723,6 @@ export class ChatView extends ItemView {
     }
   }
 
-  // Nexus loading overlay methods
-
-  /**
-   * Show the Nexus model loading overlay
-   */
-  private showNexusLoadingOverlay(): void {
-    const overlay = this.layoutElements?.loadingOverlay;
-    if (!overlay) return;
-
-    overlay.addClass('chat-loading-overlay-visible');
-    // Trigger reflow for animation
-    overlay.offsetHeight;
-    overlay.addClass('is-visible');
-  }
-
-  /**
-   * Update Nexus loading progress
-   */
-  private updateNexusLoadingProgress(progress: number, stage: string): void {
-    const overlay = this.layoutElements?.loadingOverlay;
-    if (!overlay) return;
-
-    const statusEl = overlay.querySelector('[data-status-el]');
-    const progressBar = overlay.querySelector('[data-progress-el]') as HTMLElement;
-    const progressText = overlay.querySelector('[data-progress-text-el]');
-
-    const percent = Math.round(progress * 100);
-
-    if (statusEl) {
-      statusEl.textContent = stage || 'Loading Nexus model...';
-    }
-
-    if (progressBar) {
-      progressBar.style.setProperty('width', `${percent}%`);
-    }
-
-    if (progressText) {
-      progressText.textContent = `${percent}%`;
-    }
-  }
-
-  /**
-   * Hide the Nexus model loading overlay
-   */
-  private hideNexusLoadingOverlay(): void {
-    const overlay = this.layoutElements?.loadingOverlay;
-    if (!overlay) return;
-
-    overlay.removeClass('is-visible');
-
-    // Wait for transition then hide
-    setTimeout(() => {
-      overlay.removeClass('chat-loading-overlay-visible');
-      overlay.addClass('chat-loading-overlay-hidden');
-
-      // Reset progress
-      const progressBar = overlay.querySelector('[data-progress-el]') as HTMLElement;
-      const progressText = overlay.querySelector('[data-progress-text-el]');
-      const statusEl = overlay.querySelector('[data-status-el]');
-
-      if (progressBar) progressBar.addClass('chat-progress-bar-reset');
-      if (progressText) progressText.textContent = '0%';
-      if (statusEl) statusEl.textContent = 'Loading Nexus model...';
-    }, 300);
-  }
 
   // Branch navigation methods for subagent viewing
 
@@ -1109,72 +732,77 @@ export class ChatView extends ItemView {
    *
    * For actively streaming branches, uses in-memory messages for flicker-free updates.
    * StreamingController handles live updates via onStreamingUpdate event.
+   *
+   * ARCHITECTURE NOTE (Dec 2025):
+   * A branch IS a conversation with parent metadata. When viewing a branch,
+   * we set the branch as the currentConversation in ConversationManager.
+   * This means all message operations (send, edit, retry) naturally save to
+   * the branch conversation via ChatService - no special routing needed.
    */
   async navigateToBranch(branchId: string): Promise<void> {
-    if (!this.branchService) {
-      return;
-    }
-
     const currentConversation = this.conversationManager.getCurrentConversation();
     if (!currentConversation) {
       return;
     }
 
     try {
-      // Check if this branch is actively streaming - use in-memory messages
-      const inMemoryMessages = this.subagentExecutor?.getStreamingBranchMessages(branchId);
-      const isStreaming = inMemoryMessages !== null;
-
-      // Get branch metadata (needed for header) - this is fast since it's cached in SQLite
-      const branchInfo = await this.branchService.getBranch(currentConversation.id, branchId);
-      if (!branchInfo) {
+      // In the new architecture, branchId IS the conversation ID
+      // Load the branch conversation directly from storage
+      const branchConversation = await this.chatService.getConversation(branchId);
+      if (!branchConversation) {
+        console.error('[ChatView] Branch conversation not found:', branchId);
         return;
       }
 
-      // Build the branch view context
+      // Store parent conversation ID for back navigation
+      // Only set if not already viewing a branch (avoid nested overwrite)
+      if (!this.parentConversationId) {
+        this.parentConversationId = currentConversation.id;
+      }
+
+      // Check if this branch is actively streaming - use in-memory messages
+      const inMemoryMessages = this.subagentController?.getStreamingBranchMessages(branchId);
+      const isStreaming = inMemoryMessages !== null;
+
+      // Build branch context for header display (uses conversation metadata)
+      const branchType = branchConversation.metadata?.branchType || 'human';
+      const parentMessageId = branchConversation.metadata?.parentMessageId || '';
+
       this.currentBranchContext = {
-        conversationId: currentConversation.id,
+        conversationId: branchConversation.metadata?.parentConversationId || currentConversation.id,
         branchId,
-        parentMessageId: branchInfo.parentMessageId,
-        branchType: branchInfo.branch.type,
-        metadata: branchInfo.branch.metadata as any,
+        parentMessageId,
+        branchType: branchType as 'human' | 'subagent',
+        metadata: branchConversation.metadata?.subagent || { description: branchConversation.title },
       };
 
-      // Set branch context on MessageManager for branch-aware operations
-      this.messageManager.setBranchContext({
-        conversationId: currentConversation.id,
-        branchId,
-        parentMessageId: branchInfo.parentMessageId,
-      });
+      // Sync context to SubagentController for event filtering
+      this.subagentController?.setCurrentBranchContext(this.currentBranchContext);
+
+      // Set the branch as the current conversation
+      // All message operations will now naturally save to the branch
+      this.conversationManager.setCurrentConversation(branchConversation);
 
       // Use in-memory messages if streaming, otherwise use stored messages
-      const messagesToDisplay = (isStreaming && inMemoryMessages) ? inMemoryMessages : branchInfo.branch.messages;
-
-      // Create a temporary conversation-like structure for the branch
-      const branchMetadata = branchInfo.branch.metadata;
-      const branchTitle = isSubagentMetadata(branchMetadata)
-        ? branchMetadata.task
-        : 'Alternative';
-      const branchConversation: ConversationData = {
-        id: branchId,
-        title: `Branch: ${branchTitle}`,
-        messages: messagesToDisplay,
-        created: branchInfo.branch.created,
-        updated: branchInfo.branch.updated,
-      };
-
-      this.messageDisplay.setConversation(branchConversation);
+      if (isStreaming && inMemoryMessages) {
+        const streamingView: ConversationData = {
+          ...branchConversation,
+          messages: inMemoryMessages,
+        };
+        this.messageDisplay.setConversation(streamingView);
+      } else {
+        this.messageDisplay.setConversation(branchConversation);
+      }
 
       // If streaming, initialize StreamingController for the active message
       if (isStreaming && inMemoryMessages && inMemoryMessages.length > 0) {
         const lastMessage = inMemoryMessages[inMemoryMessages.length - 1];
         if (lastMessage.state === 'streaming') {
-          // Start streaming mode for this message - onStreamingUpdate will handle updates
           this.streamingController.startStreaming(lastMessage.id);
         }
       }
 
-      // Show branch header in its own container (not affected by setConversation)
+      // Show branch header
       if (!this.branchHeader) {
         this.branchHeader = new BranchHeader(
           this.layoutElements.branchHeaderContainer,
@@ -1195,24 +823,39 @@ export class ChatView extends ItemView {
 
   /**
    * Navigate back to the parent conversation from a branch view
+   *
+   * ARCHITECTURE NOTE (Dec 2025):
+   * When viewing a branch, the branch IS the currentConversation.
+   * To go back, we restore the parent conversation as current.
    */
   async navigateToParent(): Promise<void> {
-
     // Hide branch header
     this.branchHeader?.hide();
     this.currentBranchContext = null;
+    this.subagentController?.setCurrentBranchContext(null);
 
-    // Clear branch context on MessageManager (return to conversation mode)
-    this.messageManager.setBranchContext(null);
+    // Get parent ID (either from stored reference or from branch metadata)
+    const parentId = this.parentConversationId;
+    this.parentConversationId = null; // Clear for next navigation
 
-    // Re-fetch conversation to get any new messages (e.g., subagent results)
+    if (parentId) {
+      // Load parent conversation fresh (may have new messages from subagent results)
+      const parentConversation = await this.chatService.getConversation(parentId);
+      if (parentConversation) {
+        // Set parent as current conversation
+        this.conversationManager.setCurrentConversation(parentConversation);
+        this.messageDisplay.setConversation(parentConversation);
+        return;
+      }
+    }
+
+    // Fallback: reload current conversation (shouldn't happen normally)
     const currentConversation = this.conversationManager.getCurrentConversation();
     if (currentConversation) {
       const updated = await this.chatService.getConversation(currentConversation.id);
       if (updated) {
+        this.conversationManager.setCurrentConversation(updated);
         this.messageDisplay.setConversation(updated);
-      } else {
-        this.messageDisplay.setConversation(currentConversation);
       }
     }
   }
@@ -1221,11 +864,7 @@ export class ChatView extends ItemView {
    * Cancel a running subagent
    */
   private cancelSubagent(subagentId: string): void {
-    if (!this.subagentExecutor) {
-      return;
-    }
-
-    const cancelled = this.subagentExecutor.cancelSubagent(subagentId);
+    const cancelled = this.subagentController?.cancelSubagent(subagentId);
     if (cancelled) {
       // Update the branch header if we're viewing this branch
       const contextMetadata = this.currentBranchContext?.metadata;
@@ -1234,8 +873,6 @@ export class ChatView extends ItemView {
           metadata: { ...contextMetadata, state: 'cancelled' },
         });
       }
-      // Refresh the agent status menu
-      this.agentStatusMenu?.refresh();
     }
   }
 
@@ -1254,22 +891,25 @@ export class ChatView extends ItemView {
    * Open the agent status modal
    */
   private openAgentStatusModal(): void {
-    if (!this.subagentExecutor) {
-      console.warn('[ChatView] SubagentExecutor not available - cannot open modal');
+    if (!this.subagentController?.isInitialized()) {
+      console.warn('[ChatView] SubagentController not initialized - cannot open modal');
       return;
     }
 
-    const modal = new AgentStatusModal(
-      this.app,
-      this.subagentExecutor,
-      {
-        onViewBranch: (branchId) => this.navigateToBranch(branchId),
-        onContinueAgent: (branchId) => this.continueSubagent(branchId),
-      },
-      this.branchService,
-      this.conversationManager?.getCurrentConversation()?.id ?? null
-    );
-    modal.open();
+    const contextProvider: SubagentContextProvider = {
+      getCurrentConversation: () => this.conversationManager?.getCurrentConversation() ?? null,
+      getSelectedModel: () => this.modelAgentManager?.getSelectedModel() ?? null,
+      getSelectedAgent: () => this.modelAgentManager?.getSelectedAgent() ?? null,
+      getLoadedWorkspaceData: () => this.modelAgentManager?.getLoadedWorkspaceData(),
+      getContextNotes: () => this.modelAgentManager?.getContextNotes() || [],
+      getThinkingSettings: () => this.modelAgentManager?.getThinkingSettings() ?? null,
+      getSelectedWorkspaceId: () => this.modelAgentManager?.getSelectedWorkspaceId() ?? null,
+    };
+
+    this.subagentController.openStatusModal(contextProvider, {
+      onViewBranch: (branchId) => this.navigateToBranch(branchId),
+      onContinueAgent: (branchId) => this.continueSubagent(branchId),
+    });
   }
 
   /**
@@ -1293,7 +933,8 @@ export class ChatView extends ItemView {
     this.contextProgressBar?.cleanup();
     this.uiStateController?.cleanup();
     this.streamingController?.cleanup();
-    this.agentStatusMenu?.cleanup();
+    this.nexusLoadingController?.unload();
+    this.subagentController?.cleanup();
     this.branchHeader?.cleanup();
   }
 }

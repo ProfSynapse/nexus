@@ -1,17 +1,17 @@
 /**
  * BranchService - Unified branch management for human and subagent branches
  *
+ * UNIFIED MODEL (Dec 2025):
+ * - A branch IS a conversation with parent metadata
+ * - Uses ConversationService as the storage backend (facade pattern)
+ * - branchId IS the conversation ID
+ *
  * Responsibilities:
  * - Create branches on messages (human or subagent)
- * - Add messages to branches
+ * - Add messages to branches (delegates to ConversationService)
  * - Build LLM context based on inheritContext flag
  * - Update branch metadata/state
  * - Query branches
- *
- * Architecture:
- * - Uses BranchRepository for persistence (JSONL events + SQLite cache)
- * - Append-only writes eliminate race conditions (no retry logic needed)
- * - Branches stored separately from messages for conflict-free sync
  *
  * Follows Single Responsibility Principle - only handles branch operations.
  */
@@ -23,20 +23,16 @@ import type {
   SubagentBranchMetadata,
   HumanBranchMetadata,
 } from '../../types/branch/BranchTypes';
-import type { BranchRepository, BranchData } from '../../database/repositories/BranchRepository';
+import type { ConversationService, IndividualConversation } from '../ConversationService';
 
 /**
  * Dependencies for BranchService
  */
 export interface BranchServiceDependencies {
-  branchRepository: BranchRepository;
   /**
-   * Optional: conversation service for buildLLMContext (needs parent messages)
-   * Only required if using buildLLMContext with inheritContext=true
+   * ConversationService for branch storage (branches are conversations with parent metadata)
    */
-  conversationService?: {
-    getConversation(id: string): Promise<Conversation | null>;
-  };
+  conversationService: ConversationService;
 }
 
 /**
@@ -53,37 +49,40 @@ export interface BranchInfo {
 }
 
 export class BranchService {
-  private repository: BranchRepository;
-  private conversationService?: BranchServiceDependencies['conversationService'];
+  private conversationService: ConversationService;
 
   constructor(dependencies: BranchServiceDependencies) {
-    this.repository = dependencies.branchRepository;
     this.conversationService = dependencies.conversationService;
   }
 
   /**
    * Create a human branch (with inherited context)
+   * Creates a new conversation with parent metadata
    */
   async createHumanBranch(
     conversationId: string,
     messageId: string,
     description?: string
   ): Promise<string> {
-    const metadata: HumanBranchMetadata | undefined = description
-      ? { description }
-      : undefined;
-
-    return this.repository.createBranch({
+    const title = description || 'Alternative response';
+    const branch = await this.conversationService.createBranchConversation(
       conversationId,
-      parentMessageId: messageId,
-      type: 'human',
-      inheritContext: true,
-      metadata,
-    });
+      messageId,
+      'alternative',
+      title
+    );
+
+    // Store inheritContext in metadata for buildLLMContext
+    if (branch.metadata) {
+      branch.metadata.inheritContext = true;
+    }
+
+    return branch.id;
   }
 
   /**
    * Create a subagent branch (fresh context)
+   * Creates a new conversation with parent metadata and subagent task info
    */
   async createSubagentBranch(
     conversationId: string,
@@ -93,61 +92,56 @@ export class BranchService {
     maxIterations: number = 10
   ): Promise<string> {
     const now = Date.now();
-    const metadata: SubagentBranchMetadata = {
-      task,
-      subagentId,
-      state: 'running',
-      iterations: 0,
-      maxIterations,
-      startedAt: now,
-    };
+    const title = `Subagent: ${task.slice(0, 50)}${task.length > 50 ? '...' : ''}`;
 
-    return this.repository.createBranch({
+    const branch = await this.conversationService.createBranchConversation(
       conversationId,
-      parentMessageId: messageId,
-      type: 'subagent',
-      inheritContext: false,
-      metadata,
-    });
+      messageId,
+      'subagent',
+      title,
+      task
+    );
+
+    // Store subagent-specific metadata
+    if (branch.metadata) {
+      const subagentMeta: SubagentBranchMetadata = {
+        task,
+        subagentId,
+        state: 'running',
+        iterations: 0,
+        maxIterations,
+        startedAt: now,
+      };
+      branch.metadata.subagent = subagentMeta;
+      branch.metadata.inheritContext = false;
+    }
+
+    return branch.id;
   }
 
   /**
    * Add a message to a branch
-   * No retry logic needed - append-only events are conflict-free
+   * A branch IS a conversation, so this adds a message to the branch conversation
    */
   async addMessageToBranch(
-    conversationId: string,
-    _parentMessageId: string, // Kept for API compatibility, not used
     branchId: string,
     message: ChatMessage
   ): Promise<void> {
-    await this.repository.addBranchMessage(conversationId, branchId, {
+    await this.conversationService.addMessage({
+      conversationId: branchId,
       id: message.id,
-      role: message.role as 'system' | 'user' | 'assistant' | 'tool',
-      content: message.content || null,
-      timestamp: message.timestamp,
-      state: message.state,
-      toolCalls: message.toolCalls?.map(tc => ({
-        id: tc.id,
-        type: tc.type || 'function',
-        function: tc.function || { name: tc.name || 'unknown', arguments: JSON.stringify(tc.parameters || {}) },
-        name: tc.name,
-        parameters: tc.parameters,
-        result: tc.result,
-        success: tc.success,
-        error: tc.error,
-      })),
-      // toolCallId is in storage format but not in ChatMessage - extract from metadata if needed
-      toolCallId: (message.metadata as { toolCallId?: string } | undefined)?.toolCallId,
-      reasoning: message.reasoning,
+      role: message.role as 'user' | 'assistant' | 'tool',
+      content: message.content || '',
+      toolCalls: message.toolCalls,
+      metadata: message.metadata,
     });
   }
 
   /**
    * Update a message in a branch (for streaming updates)
+   * branchId IS the conversation ID
    */
   async updateMessageInBranch(
-    conversationId: string,
     branchId: string,
     messageId: string,
     updates: {
@@ -157,18 +151,11 @@ export class BranchService {
       reasoning?: string;
     }
   ): Promise<void> {
-    await this.repository.updateBranchMessage(conversationId, branchId, messageId, {
+    await this.conversationService.updateMessage(branchId, messageId, {
       content: updates.content,
-      state: updates.state,
+      state: updates.state as ChatMessage['state'],
+      toolCalls: updates.toolCalls,
       reasoning: updates.reasoning,
-      toolCalls: updates.toolCalls?.map(tc => ({
-        id: tc.id,
-        type: tc.type || 'function',
-        function: tc.function || { name: tc.name || 'unknown', arguments: JSON.stringify(tc.parameters || {}) },
-        result: tc.result,
-        success: tc.success,
-        error: tc.error,
-      })),
     });
   }
 
@@ -176,143 +163,134 @@ export class BranchService {
    * Build LLM context for a branch
    * This is the key method that handles inheritContext logic
    *
-   * @param conversation The full conversation (required for parent context)
-   * @param branchId The branch to build context for
+   * In the new architecture, a branch IS a conversation with parent metadata.
+   * - inheritContext=true: include parent messages up to branch point
+   * - inheritContext=false: only branch messages (fresh context for subagents)
+   *
+   * @param parentConversation The parent conversation (for inherited context)
+   * @param branchId The branch conversation ID
    * @returns Array of messages to send to the LLM
    */
   async buildLLMContext(
-    conversation: Conversation,
+    parentConversation: Conversation,
     branchId: string
   ): Promise<ChatMessage[]> {
-    const branchWithMessages = await this.repository.getBranchWithMessages(branchId);
-    if (!branchWithMessages) {
+    // Get the branch conversation
+    const branchConversation = await this.conversationService.getConversation(branchId);
+    if (!branchConversation) {
       return [];
     }
 
-    const { branch, messages } = branchWithMessages;
+    // Convert branch messages to ChatMessage format (add conversationId)
+    const branchMessages: ChatMessage[] = branchConversation.messages.map(m => ({
+      ...m,
+      conversationId: branchId,
+    })) as ChatMessage[];
 
-    // Convert branch messages to ChatMessage format
-    // Note: BranchMessageData has toolCallId, but ChatMessage doesn't - stored in metadata
-    const branchMessages: ChatMessage[] = messages.map(m => {
-      // Map storage state to ChatMessage state
-      let state: ChatMessage['state'];
-      switch (m.state) {
-        case 'streaming':
-        case 'running':
-          state = 'streaming';
-          break;
-        case 'draft':
-          state = 'draft';
-          break;
-        case 'complete':
-          state = 'complete';
-          break;
-        case 'cancelled':
-        case 'aborted':
-          state = 'aborted';
-          break;
-        case 'error':
-        case 'invalid':
-          state = 'invalid';
-          break;
-        default:
-          state = 'complete';
-      }
+    // Check inheritContext from metadata
+    const inheritContext = branchConversation.metadata?.inheritContext !== false;
+    const parentMessageId = branchConversation.metadata?.parentMessageId;
 
-      return {
-        id: m.id,
-        conversationId: m.conversationId,
-        role: m.role as 'user' | 'assistant' | 'tool',
-        content: m.content ?? '',
-        timestamp: m.timestamp,
-        state,
-        toolCalls: m.toolCalls?.map(tc => ({
-          id: tc.id,
-          type: tc.type || 'function',
-          name: tc.name || tc.function?.name || 'unknown',
-          function: tc.function,
-          parameters: tc.parameters || {},
-          result: tc.result,
-          success: tc.success,
-          error: tc.error,
-        })),
-        reasoning: m.reasoning,
-        // Store toolCallId in metadata for tool role messages
-        metadata: m.toolCallId ? { toolCallId: m.toolCallId } : undefined,
-      };
-    });
-
-    if (branch.inheritContext) {
+    if (inheritContext && parentMessageId) {
       // Human branch: parent context (messages 0 to parent message) + branch messages
-      const parentIndex = conversation.messages.findIndex(m => m.id === branch.parentMessageId);
+      const parentIndex = parentConversation.messages.findIndex(m => m.id === parentMessageId);
       if (parentIndex >= 0) {
-        const parentContext = conversation.messages.slice(0, parentIndex + 1);
+        const parentContext = parentConversation.messages.slice(0, parentIndex + 1);
         return [...parentContext, ...branchMessages];
       }
-      // Fallback: just return branch messages if parent not found
-      return branchMessages;
-    } else {
-      // Subagent branch: only branch messages (fresh context)
-      return branchMessages;
     }
+
+    // Subagent branch or parent not found: only branch messages
+    return branchMessages;
   }
 
   /**
    * Get a branch by ID
-   * No retry logic needed - direct SQLite query
+   * In new architecture, branchId IS the conversation ID
    */
   async getBranch(
-    conversationId: string,
+    parentConversationId: string,
     branchId: string
   ): Promise<BranchInfo | null> {
-    const branch = await this.repository.toConversationBranch(branchId);
-    if (!branch) {
+    const branchConversation = await this.conversationService.getConversation(branchId);
+    if (!branchConversation) {
       return null;
     }
 
-    // Get the parent message ID from the branch data
-    const branchData = await this.repository.getById(branchId);
-    if (!branchData || branchData.conversationId !== conversationId) {
+    // Verify this is a branch of the specified parent
+    if (branchConversation.metadata?.parentConversationId !== parentConversationId) {
       return null;
     }
+
+    // Convert to ConversationBranch format for backward compatibility
+    const branch = this.conversationToBranch(branchConversation);
 
     return {
       branch,
-      parentMessageId: branchData.parentMessageId,
+      parentMessageId: branchConversation.metadata?.parentMessageId || '',
     };
   }
 
   /**
-   * Update branch metadata
-   * No retry logic needed - append-only events are conflict-free
+   * Convert a branch conversation to ConversationBranch format
+   * For backward compatibility with consumers expecting the old format
+   */
+  private conversationToBranch(conversation: IndividualConversation): ConversationBranch {
+    const branchType = conversation.metadata?.branchType === 'subagent' ? 'subagent' : 'human';
+    const inheritContext = conversation.metadata?.inheritContext !== false;
+
+    // Convert ConversationMessage[] to ChatMessage[] (add conversationId)
+    const messages = conversation.messages.map(m => ({
+      ...m,
+      conversationId: conversation.id,
+    })) as ChatMessage[];
+
+    return {
+      id: conversation.id,
+      type: branchType,
+      inheritContext,
+      messages,
+      metadata: branchType === 'subagent'
+        ? conversation.metadata?.subagent as SubagentBranchMetadata
+        : { description: conversation.title } as HumanBranchMetadata,
+      created: conversation.created,
+      updated: conversation.updated,
+    };
+  }
+
+  /**
+   * Update branch metadata (subagent state, iterations, etc.)
+   * branchId IS the conversation ID
    */
   async updateBranchMetadata(
-    conversationId: string,
     branchId: string,
     metadata: Partial<SubagentBranchMetadata>
   ): Promise<void> {
-    // Get current branch to merge metadata
-    const branchData = await this.repository.getById(branchId);
-    if (!branchData) {
+    const branchConversation = await this.conversationService.getConversation(branchId);
+    if (!branchConversation) {
       throw new Error(`Branch not found: ${branchId}`);
     }
-    if (branchData.conversationId !== conversationId) {
-      throw new Error(`Branch ${branchId} does not belong to conversation ${conversationId}`);
-    }
 
-    const updatedMetadata = {
-      ...branchData.metadata,
+    // Merge with existing subagent metadata
+    const existingSubagent = branchConversation.metadata?.subagent || {};
+    const updatedSubagent = {
+      ...existingSubagent,
       ...metadata,
-    } as SubagentBranchMetadata;
+    };
 
-    await this.repository.updateBranch(branchId, updatedMetadata);
+    // Update via ConversationService
+    await this.conversationService.updateConversation(branchId, {
+      metadata: {
+        ...branchConversation.metadata,
+        subagent: updatedSubagent,
+      },
+    });
   }
 
   /**
    * Update branch state (convenience method for subagent state transitions)
    */
   async updateBranchState(
-    conversationId: string,
     branchId: string,
     state: BranchState,
     iterations?: number
@@ -327,50 +305,59 @@ export class BranchService {
       updates.completedAt = Date.now();
     }
 
-    await this.updateBranchMetadata(conversationId, branchId, updates);
+    await this.updateBranchMetadata(branchId, updates);
   }
 
   /**
    * Get all branches for a conversation
+   * Uses ConversationService.getBranchConversations
    */
   async getAllBranches(conversationId: string): Promise<BranchInfo[]> {
-    const branches = await this.repository.getBranchesByConversation(conversationId);
-    return this.convertBranchDataToInfoArray(branches);
+    const branches = await this.conversationService.getBranchConversations(conversationId);
+    return this.convertConversationsToBranchInfoArray(branches);
   }
 
   /**
    * Get all subagent branches (for UI status display)
    */
   async getSubagentBranches(conversationId: string): Promise<BranchInfo[]> {
-    const branches = await this.repository.getSubagentBranches(conversationId);
-    return this.convertBranchDataToInfoArray(branches);
+    const allBranches = await this.conversationService.getBranchConversations(conversationId);
+    const subagentBranches = allBranches.filter(b => b.metadata?.branchType === 'subagent');
+    return this.convertConversationsToBranchInfoArray(subagentBranches);
   }
 
   /**
    * Get branches attached to a specific message
+   * Note: This requires searching by parent message ID - less efficient than message-level queries
    */
   async getBranchesByMessage(parentMessageId: string): Promise<BranchInfo[]> {
-    const branches = await this.repository.getBranchesByMessage(parentMessageId);
-    return this.convertBranchDataToInfoArray(branches);
-  }
+    // Get all conversations and filter for branches from this message
+    // This is less efficient but works with the new architecture
+    const allConversations = await this.conversationService.listConversations(undefined, 200);
+    const branchInfos: BranchInfo[] = [];
 
-  /**
-   * Convert BranchData array to BranchInfo array
-   */
-  private async convertBranchDataToInfoArray(branches: BranchData[]): Promise<BranchInfo[]> {
-    const results: BranchInfo[] = [];
-
-    for (const branchData of branches) {
-      const branch = await this.repository.toConversationBranch(branchData.id);
-      if (branch) {
-        results.push({
-          branch,
-          parentMessageId: branchData.parentMessageId,
+    for (const meta of allConversations) {
+      // Need to load full conversation to check metadata
+      const conversation = await this.conversationService.getConversation(meta.id);
+      if (conversation?.metadata?.parentMessageId === parentMessageId) {
+        branchInfos.push({
+          branch: this.conversationToBranch(conversation),
+          parentMessageId,
         });
       }
     }
 
-    return results;
+    return branchInfos;
+  }
+
+  /**
+   * Convert conversation array to BranchInfo array
+   */
+  private convertConversationsToBranchInfoArray(conversations: IndividualConversation[]): BranchInfo[] {
+    return conversations.map(c => ({
+      branch: this.conversationToBranch(c),
+      parentMessageId: c.metadata?.parentMessageId || '',
+    }));
   }
 
   // ============================================================================

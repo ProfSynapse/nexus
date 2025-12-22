@@ -70,7 +70,7 @@ export interface MigratableDatabase {
 // Alias for backward compatibility
 type Database = MigratableDatabase;
 
-export const CURRENT_SCHEMA_VERSION = 3;
+export const CURRENT_SCHEMA_VERSION = 5;
 
 export interface Migration {
   version: number;
@@ -105,28 +105,27 @@ export const MIGRATIONS: Migration[] = [
     ]
   },
 
+  // Version 3 -> 4: Added branches tables (intermediate version, now superseded by v5)
+  // NOTE: This was only in schema.ts for fresh installs, never migrated.
+  // Skipped in migration since v5 removes these tables anyway.
+
+  // Version 4 -> 5: Remove branches tables (unified model: branches ARE conversations)
+  // In the unified model, branches are stored as regular conversations with:
+  //   - metadata.parentConversationId: parent conversation
+  //   - metadata.parentMessageId: message branch is attached to
+  //   - metadata.branchType: 'alternative' | 'subagent'
+  {
+    version: 5,
+    description: 'Remove branches and branch_messages tables - unified model stores branches as conversations with parent metadata',
+    sql: [
+      // Drop tables if they exist (v4 fresh installs have them, v3 upgrades don't)
+      'DROP TABLE IF EXISTS branch_messages',
+      'DROP TABLE IF EXISTS branches',
+    ]
+  },
+
   // ========================================================================
   // ADD NEW MIGRATIONS BELOW THIS LINE
-  // ========================================================================
-  // Template for new migration:
-  //
-  // {
-  //   version: 4,  // <-- Increment CURRENT_SCHEMA_VERSION to match
-  //   description: 'Brief description of what this migration does',
-  //   sql: [
-  //     // For new columns:
-  //     'ALTER TABLE tableName ADD COLUMN columnName TEXT',
-  //     'ALTER TABLE tableName ADD COLUMN columnName INTEGER DEFAULT 0',
-  //
-  //     // For new tables:
-  //     'CREATE TABLE IF NOT EXISTS newTable (id TEXT PRIMARY KEY, ...)',
-  //
-  //     // For new indexes:
-  //     'CREATE INDEX IF NOT EXISTS idx_table_column ON tableName(column)',
-  //   ]
-  // },
-  //
-  // Remember: Also update SCHEMA_SQL in schema.ts with the same changes!
   // ========================================================================
 ];
 

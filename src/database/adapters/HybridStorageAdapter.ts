@@ -50,8 +50,6 @@ import { StateRepository } from '../repositories/StateRepository';
 import { TraceRepository } from '../repositories/TraceRepository';
 import { ConversationRepository } from '../repositories/ConversationRepository';
 import { MessageRepository } from '../repositories/MessageRepository';
-import { BranchRepository } from '../repositories/BranchRepository';
-
 // Import services
 import { ExportService } from '../services/ExportService';
 
@@ -101,7 +99,6 @@ export class HybridStorageAdapter implements IStorageAdapter {
   private traceRepo!: TraceRepository;
   private conversationRepo!: ConversationRepository;
   private messageRepo!: MessageRepository;
-  private branchRepo!: BranchRepository;
 
   // Services
   private exportService!: ExportService;
@@ -145,7 +142,6 @@ export class HybridStorageAdapter implements IStorageAdapter {
     this.traceRepo = new TraceRepository(deps);
     this.conversationRepo = new ConversationRepository(deps);
     this.messageRepo = new MessageRepository(deps);
-    this.branchRepo = new BranchRepository(deps);
 
     // Initialize services
     this.exportService = new ExportService({
@@ -292,14 +288,6 @@ export class HybridStorageAdapter implements IStorageAdapter {
    */
   get cache(): SQLiteCacheManager {
     return this.sqliteCache;
-  }
-
-  /**
-   * Get the BranchRepository for branch operations
-   * Used by BranchService for conflict-free branch storage
-   */
-  getBranchRepository(): BranchRepository {
-    return this.branchRepo;
   }
 
   async close(): Promise<void> {

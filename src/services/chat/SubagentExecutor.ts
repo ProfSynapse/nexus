@@ -285,19 +285,8 @@ export class SubagentExecutor {
       state: 'complete',
     };
 
-    await this.dependencies.branchService.addMessageToBranch(
-      params.parentConversationId,
-      params.parentMessageId,
-      branchId,
-      systemMessage
-    );
-
-    await this.dependencies.branchService.addMessageToBranch(
-      params.parentConversationId,
-      params.parentMessageId,
-      branchId,
-      userMessage
-    );
+    await this.dependencies.branchService.addMessageToBranch(branchId, systemMessage);
+    await this.dependencies.branchService.addMessageToBranch(branchId, userMessage);
 
     // 6. Stream response - LLMService handles ALL tool pingpong internally
     // The streaming generator (via LLMService → StreamingOrchestrator → ToolContinuationService)
@@ -306,12 +295,7 @@ export class SubagentExecutor {
 
     // Check abort signal FIRST
     if (abortSignal.aborted) {
-      await this.dependencies.branchService.updateBranchState(
-        params.parentConversationId,
-        branchId,
-        'cancelled',
-        0
-      );
+      await this.dependencies.branchService.updateBranchState(branchId, 'cancelled', 0);
       // Clear from in-memory map if cancelled before streaming started
       this.streamingBranchMessages.delete(branchId);
       return {
@@ -356,12 +340,7 @@ export class SubagentExecutor {
 
     // ADD the assistant message to branch storage (like parent chat does)
     // This allows updateMessageInBranch to work later
-    await this.dependencies.branchService.addMessageToBranch(
-      params.parentConversationId,
-      params.parentMessageId,
-      branchId,
-      streamingAssistantMessage
-    );
+    await this.dependencies.branchService.addMessageToBranch(branchId, streamingAssistantMessage);
 
     // Build in-memory messages array (system + user from storage, plus streaming assistant)
     const inMemoryMessages: ChatMessage[] = [
@@ -381,12 +360,7 @@ export class SubagentExecutor {
     })) {
       // Check abort during streaming
       if (abortSignal.aborted) {
-        await this.dependencies.branchService.updateBranchState(
-          params.parentConversationId,
-          branchId,
-          'cancelled',
-          toolIterations
-        );
+        await this.dependencies.branchService.updateBranchState(branchId, 'cancelled', toolIterations);
         // Clear from in-memory map on cancellation
         this.streamingBranchMessages.delete(branchId);
         return {
@@ -426,6 +400,12 @@ export class SubagentExecutor {
       streamingAssistantMessage.toolCalls = convertedToolCalls;
       streamingAssistantMessage.reasoning = reasoning || undefined;
 
+      // Emit tool calls event - SAME as parent chat does
+      // This allows ToolEventCoordinator to dynamically create/update tool bubbles
+      if (convertedToolCalls && convertedToolCalls.length > 0) {
+        this.events.onToolCallsDetected?.(branchId, assistantMessageId, convertedToolCalls);
+      }
+
       // Emit progress
       this.events.onSubagentProgress?.(subagentId, responseContent, toolIterations);
 
@@ -450,25 +430,15 @@ export class SubagentExecutor {
     }));
 
     // Update the placeholder message in storage with final content
-    await this.dependencies.branchService.updateMessageInBranch(
-      params.parentConversationId,
-      branchId,
-      assistantMessageId,
-      {
-        content: responseContent,
-        state: 'complete',
-        toolCalls: finalToolCalls,
-        reasoning: reasoning || undefined,
-      }
-    );
+    await this.dependencies.branchService.updateMessageInBranch(branchId, assistantMessageId, {
+      content: responseContent,
+      state: 'complete',
+      toolCalls: finalToolCalls,
+      reasoning: reasoning || undefined,
+    });
 
     // Streaming completed = LLM is done (all tool calls already handled internally)
-    await this.dependencies.branchService.updateBranchState(
-      params.parentConversationId,
-      branchId,
-      'complete',
-      toolIterations || 1
-    );
+    await this.dependencies.branchService.updateBranchState(branchId, 'complete', toolIterations || 1);
 
     // Clear from in-memory map now that streaming is complete and saved
     this.streamingBranchMessages.delete(branchId);

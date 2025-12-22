@@ -12,11 +12,13 @@ import { Plugin } from 'obsidian';
 import { FileSystemService } from './storage/FileSystemService';
 import { IndexManager } from './storage/IndexManager';
 import { IndividualConversation, ConversationMetadata as LegacyConversationMetadata, ConversationMessage } from '../types/storage/StorageTypes';
+
+// Re-export for consumers
+export type { IndividualConversation, ConversationMessage } from '../types/storage/StorageTypes';
 import { IStorageAdapter } from '../database/interfaces/IStorageAdapter';
 import { ConversationMetadata, MessageData } from '../types/storage/HybridStorageTypes';
 import { PaginationParams, PaginatedResult, calculatePaginationMetadata } from '../types/pagination/PaginationTypes';
-import { branchMigrationService } from './migration/BranchMigrationService';
-import type { ConversationBranch } from '../types/branch/BranchTypes';
+import type { ConversationBranch, SubagentBranchMetadata, HumanBranchMetadata } from '../types/branch/BranchTypes';
 
 export class ConversationService {
   constructor(
@@ -92,9 +94,9 @@ export class ConversationService {
       // Convert to legacy format
       const conversation = this.convertToLegacyConversation(metadata, messagesResult.items);
 
-      // Populate message.branches from branch storage
-      // This connects branches (stored separately) to their parent messages for navigation
-      await this.populateMessageBranches(conversation.messages);
+      // Populate message.branches from branch storage (unified model)
+      // Branch conversations have parentConversationId and parentMessageId in metadata
+      await this.populateMessageBranches(id, conversation.messages);
 
       // Attach pagination metadata if pagination was requested
       if (paginationOptions) {
@@ -127,20 +129,8 @@ export class ConversationService {
       });
     }
 
-    // Migration: Convert alternatives[] to branches[] structure
-    // This migrates from the old message alternatives system to unified branches
-    const migrationResult = branchMigrationService.migrateConversation(conversation as any);
-    if (migrationResult.migrated) {
-      // Save the migrated conversation to persist the changes
-      // This ensures we don't re-migrate on every load
-      try {
-        await this.fileSystem.writeConversation(id, conversation);
-        console.log(`[ConversationService] Migrated ${migrationResult.messagesUpdated} messages with ${migrationResult.branchesCreated} branches for conversation ${id}`);
-      } catch (error) {
-        // Log but don't fail - migration will be retried on next load
-        console.warn(`[ConversationService] Failed to persist branch migration for ${id}:`, error);
-      }
-    }
+    // Note: Old alternatives[] migration removed - unified branch model uses
+    // separate conversations with parent metadata, not embedded branches
 
     // If pagination was requested for legacy storage, slice the messages array
     if (paginationOptions) {
@@ -553,6 +543,56 @@ export class ConversationService {
   }
 
   /**
+   * Update an existing message in a conversation
+   * Used for streaming updates, state changes, and adding tool results
+   */
+  async updateMessage(
+    conversationId: string,
+    messageId: string,
+    updates: {
+      content?: string;
+      state?: 'draft' | 'streaming' | 'complete' | 'aborted' | 'invalid';
+      toolCalls?: any[];
+      reasoning?: string;
+    }
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      if (this.storageAdapter) {
+        await this.storageAdapter.updateMessage(conversationId, messageId, updates);
+        return { success: true };
+      }
+
+      // Fall back to legacy storage
+      const conversation = await this.fileSystem.readConversation(conversationId);
+      if (!conversation) {
+        return { success: false, error: `Conversation ${conversationId} not found` };
+      }
+
+      const messageIndex = conversation.messages.findIndex(m => m.id === messageId);
+      if (messageIndex === -1) {
+        return { success: false, error: `Message ${messageId} not found` };
+      }
+
+      // Apply updates
+      const message = conversation.messages[messageIndex];
+      if (updates.content !== undefined) message.content = updates.content;
+      if (updates.state !== undefined) message.state = updates.state;
+      if (updates.toolCalls !== undefined) message.toolCalls = updates.toolCalls;
+      if (updates.reasoning !== undefined) message.reasoning = updates.reasoning;
+
+      conversation.updated = Date.now();
+
+      await this.fileSystem.writeConversation(conversationId, conversation);
+      return { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error)
+      };
+    }
+  }
+
+  /**
    * Search conversations (uses adapter FTS or legacy index)
    */
   async searchConversations(query: string, limit?: number): Promise<LegacyConversationMetadata[]> {
@@ -701,42 +741,87 @@ export class ConversationService {
   };
 
   /**
-   * Populate message.branches from branch storage
+   * Populate message.branches from unified branch storage
    *
-   * This connects branches (stored separately in branches table) to their parent messages.
+   * With unified model, branches are separate conversations with parentConversationId
+   * and parentMessageId in metadata. This method queries those and converts them
+   * to the embedded ConversationBranch format for UI compatibility.
+   *
    * Required for MessageBranchNavigator to show branch navigation on messages.
    * Works for both human branches and subagent branches.
    */
-  private async populateMessageBranches(messages: ConversationMessage[]): Promise<void> {
-    if (!this.storageAdapter) {
+  private async populateMessageBranches(
+    conversationId: string,
+    messages: ConversationMessage[]
+  ): Promise<void> {
+    // Get all branch conversations for this parent
+    const allBranchConversations = await this.getBranchConversations(conversationId);
+
+    if (allBranchConversations.length === 0) {
       return;
     }
 
-    const branchRepository = this.storageAdapter.getBranchRepository();
+    // Group branches by parent message ID
+    const branchesByMessage = new Map<string, IndividualConversation[]>();
+    for (const branch of allBranchConversations) {
+      const parentMessageId = branch.metadata?.parentMessageId;
+      if (parentMessageId) {
+        const existing = branchesByMessage.get(parentMessageId) || [];
+        existing.push(branch);
+        branchesByMessage.set(parentMessageId, existing);
+      }
+    }
 
-    // For each message, query its branches and attach them
+    // Attach branches to their parent messages
     for (const message of messages) {
-      const branchDataList = await branchRepository.getBranchesByMessage(message.id);
+      const branchConversations = branchesByMessage.get(message.id);
 
-      if (branchDataList.length > 0) {
-        // Convert each BranchData to ConversationBranch (includes messages)
-        const branches: ConversationBranch[] = [];
-        for (const branchData of branchDataList) {
-          const fullBranch = await branchRepository.toConversationBranch(branchData.id);
-          if (fullBranch) {
-            branches.push(fullBranch);
-          }
-        }
+      if (branchConversations && branchConversations.length > 0) {
+        // Convert each branch conversation to embedded ConversationBranch format
+        const branches: ConversationBranch[] = branchConversations.map(bc =>
+          this.convertToConversationBranch(bc)
+        );
 
-        if (branches.length > 0) {
-          message.branches = branches;
-          // Initialize activeAlternativeIndex if not set (0 = original message)
-          if (message.activeAlternativeIndex === undefined) {
-            message.activeAlternativeIndex = 0;
-          }
+        message.branches = branches;
+        // Initialize activeAlternativeIndex if not set (0 = original message)
+        if (message.activeAlternativeIndex === undefined) {
+          message.activeAlternativeIndex = 0;
         }
       }
     }
+  }
+
+  /**
+   * Convert a branch conversation to embedded ConversationBranch format
+   * Used for UI compatibility with message.branches[]
+   */
+  private convertToConversationBranch(branchConversation: IndividualConversation): ConversationBranch {
+    const meta = branchConversation.metadata || {};
+    const branchType = meta.branchType === 'subagent' ? 'subagent' : 'human';
+
+    // Extract subagent-specific metadata if present
+    const subagentMeta = meta.subagent as SubagentBranchMetadata | undefined;
+
+    return {
+      id: branchConversation.id,
+      type: branchType,
+      inheritContext: meta.inheritContext ?? (branchType === 'human'),
+      messages: branchConversation.messages.map(m => ({
+        id: m.id,
+        role: m.role,
+        content: m.content,
+        timestamp: m.timestamp,
+        conversationId: branchConversation.id,
+        state: m.state,
+        toolCalls: m.toolCalls as any, // Type compatibility between storage and chat types
+        reasoning: m.reasoning,
+      })),
+      created: branchConversation.created,
+      updated: branchConversation.updated,
+      metadata: branchType === 'subagent' && subagentMeta
+        ? subagentMeta
+        : { description: branchConversation.title } as HumanBranchMetadata,
+    };
   }
 
   /**
@@ -798,5 +883,115 @@ export class ConversationService {
       },
       cost: resolvedCost
     };
+  }
+
+  // ========================================
+  // Branch Query Methods (Phase 1.2)
+  // Branches are conversations with parentConversationId metadata
+  // ========================================
+
+  /**
+   * Get all branch conversations for a parent conversation
+   * @param parentConversationId - The parent conversation ID
+   * @returns Array of branch conversations
+   */
+  async getBranchConversations(parentConversationId: string): Promise<IndividualConversation[]> {
+    if (this.storageAdapter) {
+      // Query for conversations with this parent
+      const result = await this.storageAdapter.getConversations({
+        pageSize: 100,
+        page: 0,
+        sortBy: 'created',
+        sortOrder: 'asc'
+      });
+
+      // Filter by parent metadata
+      const branches: IndividualConversation[] = [];
+      for (const item of result.items) {
+        if (item.metadata?.parentConversationId === parentConversationId) {
+          const conv = await this.getConversation(item.id);
+          if (conv) branches.push(conv);
+        }
+      }
+      return branches;
+    }
+
+    // Legacy fallback: scan all conversations
+    const allConvs = await this.listConversations();
+    const branches: IndividualConversation[] = [];
+    for (const meta of allConvs) {
+      const conv = await this.getConversation(meta.id);
+      if (conv?.metadata?.parentConversationId === parentConversationId) {
+        branches.push(conv);
+      }
+    }
+    return branches;
+  }
+
+  /**
+   * Get branches for a specific message in a conversation
+   * @param parentConversationId - The parent conversation ID
+   * @param parentMessageId - The message ID that was branched from
+   * @returns Array of branch conversations for that message
+   */
+  async getBranchesForMessage(
+    parentConversationId: string,
+    parentMessageId: string
+  ): Promise<IndividualConversation[]> {
+    const allBranches = await this.getBranchConversations(parentConversationId);
+    return allBranches.filter(b => b.metadata?.parentMessageId === parentMessageId);
+  }
+
+  /**
+   * Get the parent conversation for a branch
+   * @param branchConversationId - The branch conversation ID
+   * @returns Parent conversation or null if not a branch
+   */
+  async getParentConversation(branchConversationId: string): Promise<IndividualConversation | null> {
+    const branch = await this.getConversation(branchConversationId);
+    if (!branch?.metadata?.parentConversationId) {
+      return null;
+    }
+    return this.getConversation(branch.metadata.parentConversationId);
+  }
+
+  /**
+   * Create a branch conversation (subagent or alternative)
+   * @param parentConversationId - Parent conversation ID
+   * @param parentMessageId - Message ID being branched from
+   * @param branchType - Type of branch
+   * @param title - Branch title
+   * @param task - Optional task description for subagent branches
+   * @returns Created branch conversation
+   */
+  async createBranchConversation(
+    parentConversationId: string,
+    parentMessageId: string,
+    branchType: 'subagent' | 'alternative',
+    title: string,
+    task?: string
+  ): Promise<IndividualConversation> {
+    const branchId = `branch_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+    const branch = await this.createConversation({
+      id: branchId,
+      title,
+      messages: [],
+      metadata: {
+        parentConversationId,
+        parentMessageId,
+        branchType,
+        subagentTask: task,
+      }
+    });
+
+    return branch;
+  }
+
+  /**
+   * Check if a conversation is a branch
+   */
+  isBranch(conversation: IndividualConversation): boolean {
+    return !!conversation.metadata?.parentConversationId;
   }
 }

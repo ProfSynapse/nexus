@@ -9,7 +9,8 @@
  * 3. Update CURRENT_SCHEMA_VERSION in SchemaMigrator.ts
  *
  * CHANGELOG:
- * - v4: Added branches and branch_messages tables for conflict-free branch storage
+ * - v5: Removed branches and branch_messages tables - unified model uses conversations with parent metadata
+ * - v4: Added branches and branch_messages tables (now removed in v5)
  * - v3: Added alternativesJson and activeAlternativeIndex to messages table for branching support (deprecated)
  * - v2: Initial schema with all tables
  * - v1: Legacy pre-versioning schema
@@ -138,51 +139,6 @@ CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversationId)
 CREATE INDEX IF NOT EXISTS idx_messages_sequence ON messages(conversationId, sequenceNumber);
 CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(timestamp);
 CREATE INDEX IF NOT EXISTS idx_messages_role ON messages(role);
-
--- ==================== BRANCHES ====================
--- Branches are stored separately from messages for conflict-free append-only writes
-
-CREATE TABLE IF NOT EXISTS branches (
-  id TEXT PRIMARY KEY,
-  conversationId TEXT NOT NULL,
-  parentMessageId TEXT NOT NULL,
-  type TEXT NOT NULL,  -- 'human' | 'subagent'
-  inheritContext INTEGER DEFAULT 1,
-  metadataJson TEXT,
-  created INTEGER NOT NULL,
-  updated INTEGER NOT NULL,
-  FOREIGN KEY(conversationId) REFERENCES conversations(id) ON DELETE CASCADE,
-  FOREIGN KEY(parentMessageId) REFERENCES messages(id) ON DELETE CASCADE
-);
-
-CREATE INDEX IF NOT EXISTS idx_branches_conversation ON branches(conversationId);
-CREATE INDEX IF NOT EXISTS idx_branches_parent ON branches(parentMessageId);
-CREATE INDEX IF NOT EXISTS idx_branches_type ON branches(type);
-CREATE INDEX IF NOT EXISTS idx_branches_created ON branches(created);
-
--- ==================== BRANCH MESSAGES ====================
--- Messages within branches, separate from main conversation messages
-
-CREATE TABLE IF NOT EXISTS branch_messages (
-  id TEXT PRIMARY KEY,
-  branchId TEXT NOT NULL,
-  conversationId TEXT NOT NULL,  -- denormalized for efficient queries
-  role TEXT NOT NULL,
-  content TEXT,
-  timestamp INTEGER NOT NULL,
-  state TEXT,
-  toolCallsJson TEXT,
-  toolCallId TEXT,
-  reasoningContent TEXT,
-  sequenceNumber INTEGER NOT NULL,
-  FOREIGN KEY(branchId) REFERENCES branches(id) ON DELETE CASCADE,
-  FOREIGN KEY(conversationId) REFERENCES conversations(id) ON DELETE CASCADE
-);
-
-CREATE INDEX IF NOT EXISTS idx_branch_messages_branch ON branch_messages(branchId);
-CREATE INDEX IF NOT EXISTS idx_branch_messages_conversation ON branch_messages(conversationId);
-CREATE INDEX IF NOT EXISTS idx_branch_messages_sequence ON branch_messages(branchId, sequenceNumber);
-CREATE INDEX IF NOT EXISTS idx_branch_messages_timestamp ON branch_messages(timestamp);
 
 -- ==================== FULL-TEXT SEARCH (FTS5) ====================
 -- Using FTS5 for full-text search capabilities
@@ -321,5 +277,5 @@ CREATE INDEX IF NOT EXISTS idx_trace_embed_session ON trace_embedding_metadata(s
 
 -- ==================== INITIALIZATION ====================
 
-INSERT OR IGNORE INTO schema_version VALUES (4, strftime('%s', 'now') * 1000);
+INSERT OR IGNORE INTO schema_version VALUES (5, strftime('%s', 'now') * 1000);
 `;

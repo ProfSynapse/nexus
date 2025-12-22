@@ -4,14 +4,17 @@
  * Purpose: Consolidated streaming loop logic for AI responses
  * Extracted from MessageManager.ts to eliminate DRY violations (4+ repeated streaming patterns)
  *
+ * ARCHITECTURE NOTE (Dec 2025):
+ * A branch IS a conversation with parent metadata. When viewing a branch,
+ * the branch is set as currentConversation. This means all streaming saves
+ * go through ChatService.updateConversation() - no special routing needed.
+ *
  * Used by: MessageManager, MessageAlternativeService for streaming AI responses
  * Dependencies: ChatService
  */
 
 import { ChatService } from '../../../services/chat/ChatService';
-import { ConversationData, ChatMessage } from '../../../types/chat/ChatTypes';
-import type { BranchService } from '../../../services/chat/BranchService';
-import type { BranchOperationContext } from './MessageManager';
+import { ConversationData } from '../../../types/chat/ChatTypes';
 
 export interface StreamHandlerEvents {
   onStreamingUpdate: (messageId: string, content: string, isComplete: boolean, isIncremental?: boolean) => void;
@@ -63,28 +66,10 @@ function createReasoningToolCall(messageId: string, reasoningText: string, isCom
  * Handles streaming of AI responses with unified logic
  */
 export class MessageStreamHandler {
-  // Branch support
-  private branchService: BranchService | null = null;
-  private branchContext: BranchOperationContext | null = null;
-
   constructor(
     private chatService: ChatService,
     private events: StreamHandlerEvents
   ) {}
-
-  /**
-   * Set branch service for branch operations
-   */
-  setBranchService(branchService: BranchService): void {
-    this.branchService = branchService;
-  }
-
-  /**
-   * Set branch context - when set, saves go to the branch
-   */
-  setBranchContext(context: BranchOperationContext | null): void {
-    this.branchContext = context;
-  }
 
   /**
    * Stream AI response with consolidated logic
@@ -208,7 +193,10 @@ export class MessageStreamHandler {
    * Stream response and save to storage
    * Convenience method that combines streaming and saving
    *
-   * When branch context is set, saves to branch storage instead of conversation
+   * ARCHITECTURE NOTE (Dec 2025):
+   * The conversation passed here is the currentConversation, which is
+   * either a parent conversation or a branch (branch IS a conversation).
+   * ChatService.updateConversation handles both the same way.
    */
   async streamAndSave(
     conversation: ConversationData,
@@ -218,22 +206,8 @@ export class MessageStreamHandler {
   ): Promise<StreamResult> {
     const result = await this.streamResponse(conversation, userMessageContent, aiMessageId, options);
 
-    // Save to appropriate storage based on mode
-    if (this.branchContext && this.branchService) {
-      // Branch mode: save AI message to branch
-      const aiMessage = conversation.messages.find(msg => msg.id === aiMessageId);
-      if (aiMessage) {
-        await this.branchService.addMessageToBranch(
-          this.branchContext.conversationId,
-          this.branchContext.parentMessageId,
-          this.branchContext.branchId,
-          aiMessage
-        );
-      }
-    } else {
-      // Normal mode: save conversation to storage
-      await this.chatService.updateConversation(conversation);
-    }
+    // Save conversation to storage (works for both parent and branch)
+    await this.chatService.updateConversation(conversation);
 
     return result;
   }

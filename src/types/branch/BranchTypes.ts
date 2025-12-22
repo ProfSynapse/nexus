@@ -185,6 +185,11 @@ export interface SubagentExecutorEvents {
    * @param fullContent - Full content so far (for finalization)
    */
   onStreamingUpdate: (branchId: string, messageId: string, chunk: string, isComplete: boolean, fullContent: string) => void;
+  /**
+   * Tool calls detected - SAME event as parent chat uses
+   * Routes to ToolEventCoordinator.handleToolCallsDetected() for dynamic tool bubble creation
+   */
+  onToolCallsDetected: (branchId: string, messageId: string, toolCalls: any[]) => void;
 }
 
 /**
