@@ -40,6 +40,7 @@ export interface SubagentToolResult extends CommonResult {
 
 /**
  * Context provided by the execution environment
+ * Contains ALL settings that should be inherited by the subagent
  */
 export interface SubagentToolContext {
   conversationId: string;
@@ -48,6 +49,19 @@ export interface SubagentToolContext {
   sessionId?: string;
   source?: 'internal' | 'mcp';
   isSubagentBranch?: boolean;
+  // Inherited model settings
+  provider?: string;
+  model?: string;
+  // Inherited agent settings
+  agentPrompt?: string;  // Custom agent's full system prompt
+  agentName?: string;    // Custom agent name for reference
+  // Inherited workspace settings
+  workspaceData?: any;   // Full comprehensive workspace data (sessions, states, files, etc.)
+  // Inherited context notes (file paths - subagent will read content)
+  contextNotes?: string[];
+  // Inherited thinking settings
+  thinkingEnabled?: boolean;
+  thinkingEffort?: 'low' | 'medium' | 'high';
 }
 
 export class SubagentTool extends BaseTool<SubagentToolParams, SubagentToolResult> {
@@ -137,17 +151,35 @@ To continue a subagent that hit max iterations, provide continueBranchId.`,
     }
 
     try {
+      // Merge context notes: tool params can add more, but inherit parent's too
+      const allContextFiles = [
+        ...(context.contextNotes || []),
+        ...(params.contextFiles || []),
+      ];
+
       const { subagentId, branchId } = await this.subagentExecutor.executeSubagent({
         task: params.task,
         parentConversationId: context.conversationId,
         parentMessageId: context.messageId,
         agent: params.agent,
         tools: params.tools,
-        contextFiles: params.contextFiles,
+        contextFiles: allContextFiles.length > 0 ? allContextFiles : undefined,
         workspaceId: context.workspaceId,
         sessionId: context.sessionId,
         maxIterations: params.maxIterations,
         continueBranchId: params.continueBranchId,
+        // Inherit parent's model settings
+        provider: context.provider,
+        model: context.model,
+        // Inherit parent's agent settings
+        agentPrompt: context.agentPrompt,
+        agentName: context.agentName,
+        // Inherit parent's workspace data
+        workspaceData: context.workspaceData,
+        // Context notes already merged above via contextFiles
+        // Inherit parent's thinking settings
+        thinkingEnabled: context.thinkingEnabled,
+        thinkingEffort: context.thinkingEffort,
       });
 
       const isContinuing = !!params.continueBranchId;
@@ -187,7 +219,7 @@ To continue a subagent that hit max iterations, provide continueBranchId.`,
             type: 'array',
             items: { type: 'string' },
           },
-          description: 'Pre-fetched tools: { agentName: [toolSlug1, toolSlug2] }. Schemas included in initial context.',
+          description: 'Hand off specific tools to the subagent. Format: { "agentName": ["tool1", "tool2"] }. Tool schemas are pre-filled in subagent system prompt so it can use useTool directly without calling getTools first.',
         },
         contextFiles: {
           type: 'array',

@@ -13,6 +13,7 @@
 
 import { WorkspaceContext } from '../../../database/types/workspace/WorkspaceTypes';
 import { MessageEnhancement } from '../components/suggesters/base/SuggesterInterfaces';
+import { formatWorkspaceDataForPrompt, extractWorkspaceData } from '../../../utils/WorkspaceDataFormatter';
 
 /**
  * Vault structure for system prompt context
@@ -348,17 +349,8 @@ Keep sessionId and workspaceId EXACTLY as shown above for the entire conversatio
             const workspaceName = workspaceData.context?.name || workspaceRef.name;
             prompt += `<workspace name="${this.escapeXmlAttribute(workspaceName)}" id="${this.escapeXmlAttribute(workspaceRef.id)}">\n`;
 
-            // Format the comprehensive workspace data
-            prompt += this.escapeXmlContent(JSON.stringify({
-              context: workspaceData.context,
-              workflows: workspaceData.workflows || [],
-              workspaceStructure: workspaceData.workspaceStructure || [],
-              recentFiles: workspaceData.recentFiles || [],
-              keyFiles: workspaceData.keyFiles || {},
-              preferences: workspaceData.preferences || '',
-              sessions: workspaceData.sessions || [],
-              states: workspaceData.states || []
-            }, null, 2));
+            // Use shared utility for formatting
+            prompt += this.escapeXmlContent(formatWorkspaceDataForPrompt(workspaceData));
 
             prompt += `\n</workspace>\n\n`;
           } else {
@@ -415,35 +407,8 @@ Keep sessionId and workspaceId EXACTLY as shown above for the entire conversatio
       let prompt = `<selected_workspace name="${this.escapeXmlAttribute(workspaceName)}" id="${this.escapeXmlAttribute(workspaceId)}">\n`;
       prompt += 'This workspace is currently selected. Use its context for your responses:\n\n';
 
-      // Format comprehensive data similar to buildWorkspaceReferencesSection
-      const formattedData: any = {};
-
-      if (loadedWorkspaceData.context) {
-        formattedData.context = loadedWorkspaceData.context;
-      }
-      if (loadedWorkspaceData.workflows && loadedWorkspaceData.workflows.length > 0) {
-        formattedData.workflows = loadedWorkspaceData.workflows;
-      }
-      if (loadedWorkspaceData.workspaceStructure && loadedWorkspaceData.workspaceStructure.length > 0) {
-        formattedData.workspaceStructure = loadedWorkspaceData.workspaceStructure;
-      }
-      if (loadedWorkspaceData.recentFiles && loadedWorkspaceData.recentFiles.length > 0) {
-        formattedData.recentFiles = loadedWorkspaceData.recentFiles;
-      }
-      if (loadedWorkspaceData.keyFiles && Object.keys(loadedWorkspaceData.keyFiles).length > 0) {
-        formattedData.keyFiles = loadedWorkspaceData.keyFiles;
-      }
-      if (loadedWorkspaceData.preferences) {
-        formattedData.preferences = loadedWorkspaceData.preferences;
-      }
-      if (loadedWorkspaceData.sessions && loadedWorkspaceData.sessions.length > 0) {
-        formattedData.sessions = loadedWorkspaceData.sessions;
-      }
-      if (loadedWorkspaceData.states && loadedWorkspaceData.states.length > 0) {
-        formattedData.states = loadedWorkspaceData.states;
-      }
-
-      prompt += this.escapeXmlContent(JSON.stringify(formattedData, null, 2));
+      // Use shared utility for formatting
+      prompt += this.escapeXmlContent(formatWorkspaceDataForPrompt(loadedWorkspaceData));
       prompt += '\n</selected_workspace>';
 
       return prompt;

@@ -352,6 +352,14 @@ export class ModelAgentManager {
   }
 
   /**
+   * Get full loaded workspace data (sessions, states, files, etc.)
+   * This is the comprehensive data used in system prompts
+   */
+  getLoadedWorkspaceData(): any {
+    return this.loadedWorkspaceData;
+  }
+
+  /**
    * Handle model selection change
    */
   handleModelChange(model: ModelOption | null): void {

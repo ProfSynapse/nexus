@@ -65,30 +65,50 @@ export class OpenAIContextBuilder implements IContextBuilder {
         }
       } else if (msg.role === 'assistant') {
         if (msg.toolCalls && msg.toolCalls.length > 0) {
-          // Flatten tool calls into text for system prompt
-          const toolNames = msg.toolCalls.map((tc: any) => tc.name).join(', ');
-          messages.push({ role: 'assistant', content: `[Calling tools: ${toolNames}]` });
+          // Build proper OpenAI tool_calls format for continuations
+          const toolCallsFormatted = msg.toolCalls.map((tc: any) => ({
+            id: tc.id,
+            type: 'function',
+            function: {
+              name: tc.function?.name || tc.name || '',
+              arguments: tc.function?.arguments || JSON.stringify(tc.parameters || {})
+            }
+          }));
 
-          // Add tool results as text
-          msg.toolCalls.forEach((toolCall: any) => {
-            const resultContent = toolCall.success
-              ? JSON.stringify(toolCall.result || {})
-              : `Error: ${toolCall.error || 'Tool execution failed'}`;
-
-            messages.push({
-              role: 'assistant',
-              content: `Tool Result (${toolCall.name}): ${resultContent}`
-            });
+          // Assistant message with tool_calls array (content can be empty or text)
+          messages.push({
+            role: 'assistant',
+            content: msg.content || '',
+            tool_calls: toolCallsFormatted
           });
 
-          // If there's final content after tool execution, add it
-          if (msg.content && msg.content.trim()) {
-            messages.push({ role: 'assistant', content: msg.content });
-          }
+          // Add tool result messages with proper tool_call_id
+          msg.toolCalls.forEach((toolCall: any) => {
+            const resultContent = toolCall.success !== false
+              ? JSON.stringify(toolCall.result || {})
+              : JSON.stringify({ error: toolCall.error || 'Tool execution failed' });
+
+            messages.push({
+              role: 'tool',
+              tool_call_id: toolCall.id,
+              content: resultContent
+            });
+          });
         } else {
           if (msg.content && msg.content.trim()) {
             messages.push({ role: 'assistant', content: msg.content });
           }
+        }
+      } else if (msg.role === 'tool') {
+        // Handle separately stored tool result messages (from subagent)
+        // These need tool_call_id from metadata
+        const toolCallId = (msg as any).metadata?.toolCallId;
+        if (toolCallId) {
+          messages.push({
+            role: 'tool',
+            tool_call_id: toolCallId,
+            content: msg.content || '{}'
+          });
         }
       }
     });
@@ -98,6 +118,7 @@ export class OpenAIContextBuilder implements IContextBuilder {
 
   /**
    * Build tool continuation for pingpong pattern
+   * IMPORTANT: Filters out system messages - they should be passed separately as systemPrompt
    */
   buildToolContinuation(
     userPrompt: string,
@@ -108,8 +129,10 @@ export class OpenAIContextBuilder implements IContextBuilder {
   ): any[] {
     const messages: any[] = [];
 
+    // Filter out system messages - OpenAI/OpenRouter expect them in a separate systemPrompt param
     if (previousMessages && previousMessages.length > 0) {
-      messages.push(...previousMessages);
+      const nonSystemMessages = previousMessages.filter(msg => msg.role !== 'system');
+      messages.push(...nonSystemMessages);
     }
 
     if (userPrompt) {
@@ -140,13 +163,15 @@ export class OpenAIContextBuilder implements IContextBuilder {
 
   /**
    * Append tool execution to existing history (no user message added)
+   * Filters out system messages to prevent API errors
    */
   appendToolExecution(
     toolCalls: any[],
     toolResults: any[],
     previousMessages: any[]
   ): any[] {
-    const messages = [...previousMessages];
+    // Filter out system messages - they should be handled separately
+    const messages = previousMessages.filter(msg => msg.role !== 'system');
 
     // Build assistant message with reasoning preserved using centralized utility
     const assistantMessage = ReasoningPreserver.buildAssistantMessageWithReasoning(toolCalls, null);

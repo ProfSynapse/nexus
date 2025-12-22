@@ -44,6 +44,7 @@ export class BranchHeader {
    * Show the branch header with the given context
    */
   show(context: BranchViewContext): void {
+    console.log('[BranchHeader] Show:', context.branchType, context.branchId);
     this.context = context;
     this.render();
   }
@@ -52,6 +53,7 @@ export class BranchHeader {
    * Hide the branch header
    */
   hide(): void {
+    console.log('[BranchHeader] Hide');
     this.context = null;
     if (this.element) {
       this.element.remove();
@@ -104,14 +106,15 @@ export class BranchHeader {
     setIcon(backIcon, 'arrow-left');
     backBtn.createSpan({ text: ' Back' });
 
+    const handleBack = () => {
+      console.log('[BranchHeader] Back button clicked');
+      this.callbacks.onNavigateToParent();
+    };
+
     if (this.component) {
-      this.component.registerDomEvent(backBtn, 'click', () => {
-        this.callbacks.onNavigateToParent();
-      });
+      this.component.registerDomEvent(backBtn, 'click', handleBack);
     } else {
-      backBtn.addEventListener('click', () => {
-        this.callbacks.onNavigateToParent();
-      });
+      backBtn.addEventListener('click', handleBack);
     }
 
     // Branch info container

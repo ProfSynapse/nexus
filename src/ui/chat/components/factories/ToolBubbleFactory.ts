@@ -68,41 +68,37 @@ export class ToolBubbleFactory {
       progressiveToolAccordions.set(reasoningId, reasoningAccordion);
     }
 
-    // Create one ProgressiveToolAccordion per tool
+    // Create one ProgressiveToolAccordion per tool (unwrapping useTool calls)
     if (message.toolCalls) {
       message.toolCalls.forEach(toolCall => {
-        const accordion = new ProgressiveToolAccordion(component);
-        const accordionEl = accordion.createElement();
+        // Unwrap useTool calls to show inner tools
+        const unwrappedTools = ToolBubbleFactory.unwrapUseTool(toolCall, parseParameterValue, getToolCallArguments);
 
-        // Initialize accordion with completed state from JSON
-        const rawName = toolCall.technicalName || toolCall.name || toolCall.function?.name || 'Unknown Tool';
-        const displayName = toolCall.displayName || formatToolDisplayName(rawName);
-        const technicalName = toolCall.technicalName || normalizeToolName(rawName) || rawName;
-        const fallbackArguments = getToolCallArguments(toolCall);
-        const parameters = parseParameterValue(
-          toolCall.parameters !== undefined ? toolCall.parameters : fallbackArguments
-        );
+        unwrappedTools.forEach(unwrapped => {
+          const accordion = new ProgressiveToolAccordion(component);
+          const accordionEl = accordion.createElement();
 
-        accordion.detectTool({
-          id: toolCall.id,
-          name: displayName,
-          technicalName: technicalName,
-          parameters,
-          isComplete: true
+          accordion.detectTool({
+            id: unwrapped.id,
+            name: unwrapped.displayName,
+            technicalName: unwrapped.technicalName,
+            parameters: unwrapped.parameters,
+            isComplete: true
+          });
+
+          // If tool has results, mark as completed
+          if (unwrapped.result !== undefined || unwrapped.success !== undefined) {
+            accordion.completeTool(
+              unwrapped.id,
+              unwrapped.result,
+              unwrapped.success !== false,
+              unwrapped.error
+            );
+          }
+
+          content.appendChild(accordionEl);
+          progressiveToolAccordions.set(unwrapped.id, accordion);
         });
-
-        // If tool has results, mark as completed
-        if (toolCall.result !== undefined || toolCall.success !== undefined) {
-          accordion.completeTool(
-            toolCall.id,
-            toolCall.result,
-            toolCall.success !== false,
-            toolCall.error
-          );
-        }
-
-        content.appendChild(accordionEl);
-        progressiveToolAccordions.set(toolCall.id, accordion);
       });
     }
 
@@ -225,5 +221,103 @@ export class ToolBubbleFactory {
 
     // Fallback to original content
     return message.content;
+  }
+
+  /**
+   * Unwrap toolManager_useTool calls to show inner tools
+   * Returns an array of unwrapped tool info for display
+   */
+  private static unwrapUseTool(
+    toolCall: any,
+    parseParameterValue: (value: any) => any,
+    getToolCallArguments: (toolCall: any) => any
+  ): Array<{
+    id: string;
+    displayName: string;
+    technicalName: string;
+    parameters: any;
+    result?: any;
+    success?: boolean;
+    error?: string;
+  }> {
+    const rawName = toolCall.technicalName || toolCall.name || toolCall.function?.name || 'Unknown Tool';
+
+    // Check if this is a useTool wrapper call
+    const isUseTool = rawName === 'toolManager_useTool' ||
+                      rawName === 'toolManager.useTool' ||
+                      rawName.endsWith('_useTool') ||
+                      rawName.endsWith('.useTool');
+
+    if (!isUseTool) {
+      // Not a useTool call - return as-is
+      const displayName = toolCall.displayName || formatToolDisplayName(rawName);
+      const technicalName = toolCall.technicalName || normalizeToolName(rawName) || rawName;
+      const fallbackArguments = getToolCallArguments(toolCall);
+      const parameters = parseParameterValue(
+        toolCall.parameters !== undefined ? toolCall.parameters : fallbackArguments
+      );
+
+      return [{
+        id: toolCall.id,
+        displayName,
+        technicalName,
+        parameters,
+        result: toolCall.result,
+        success: toolCall.success,
+        error: toolCall.error
+      }];
+    }
+
+    // Unwrap useTool - extract inner calls
+    const fallbackArguments = getToolCallArguments(toolCall);
+    const useToolParams = parseParameterValue(
+      toolCall.parameters !== undefined ? toolCall.parameters : fallbackArguments
+    );
+
+    // Debug: Log what we're getting
+    console.log('[ToolBubbleFactory] unwrapUseTool - toolCall.parameters:', JSON.stringify(toolCall.parameters)?.substring(0, 500));
+    console.log('[ToolBubbleFactory] unwrapUseTool - fallbackArguments:', JSON.stringify(fallbackArguments)?.substring(0, 500));
+    console.log('[ToolBubbleFactory] unwrapUseTool - useToolParams:', JSON.stringify(useToolParams)?.substring(0, 500));
+
+    // useTool format: { context: {...}, calls: [{ agent, tool, params }] }
+    const calls = useToolParams?.calls || [];
+
+    // useTool result format: { success, results: [{ success, data?, error? }] }
+    const useToolResult = toolCall.result as {
+      success?: boolean;
+      results?: Array<{ success?: boolean; data?: any; error?: string }>;
+    } | undefined;
+    const results = useToolResult?.results || [];
+
+    if (calls.length === 0) {
+      // No inner calls - show the wrapper itself
+      return [{
+        id: toolCall.id,
+        displayName: 'useTool (empty)',
+        technicalName: rawName,
+        parameters: useToolParams,
+        result: toolCall.result,
+        success: toolCall.success,
+        error: toolCall.error
+      }];
+    }
+
+    // Create an unwrapped entry for each inner call
+    return calls.map((call: { agent?: string; tool?: string; params?: any }, index: number) => {
+      const innerToolName = call.tool || 'unknown';
+      const innerAgentName = call.agent || 'unknown';
+      const fullName = `${innerAgentName}.${innerToolName}`;
+      const innerResult = results[index];
+
+      return {
+        id: `${toolCall.id}_${index}`,
+        displayName: formatToolDisplayName(fullName),
+        technicalName: fullName,
+        parameters: call.params || {},
+        result: innerResult?.data,
+        success: innerResult?.success,
+        error: innerResult?.error
+      };
+    });
   }
 }

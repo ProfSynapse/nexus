@@ -20,7 +20,8 @@ export class MessageDisplay {
     private onRetryMessage?: (messageId: string) => void,
     private onEditMessage?: (messageId: string, newContent: string) => void,
     private onToolEvent?: (messageId: string, event: 'detected' | 'updated' | 'started' | 'completed', data: any) => void,
-    private onMessageAlternativeChanged?: (messageId: string, alternativeIndex: number) => void
+    private onMessageAlternativeChanged?: (messageId: string, alternativeIndex: number) => void,
+    private onViewBranch?: (branchId: string) => void
   ) {
     this.render();
   }
@@ -204,7 +205,8 @@ export class MessageDisplay {
       (messageId: string) => this.handleRetryMessage(messageId),
       (messageId: string, newContent: string) => this.handleEditMessage(messageId, newContent),
       this.onToolEvent,
-      this.onMessageAlternativeChanged ? (messageId: string, alternativeIndex: number) => this.handleMessageAlternativeChanged(messageId, alternativeIndex) : undefined
+      this.onMessageAlternativeChanged ? (messageId: string, alternativeIndex: number) => this.handleMessageAlternativeChanged(messageId, alternativeIndex) : undefined,
+      this.onViewBranch
     );
 
     this.messageBubbles.push(bubble);

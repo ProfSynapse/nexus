@@ -79,6 +79,7 @@ export interface ConversationBranch {
 
 /**
  * Parameters for spawning a subagent
+ * Includes ALL inherited settings from parent conversation
  */
 export interface SubagentParams {
   task: string;
@@ -93,6 +94,19 @@ export interface SubagentParams {
   sessionId?: string;
   maxIterations?: number;
   continueBranchId?: string;
+  // Inherited from parent conversation - Model settings
+  provider?: string;  // LLM provider (inherits parent's model)
+  model?: string;     // LLM model (inherits parent's model)
+  // Inherited from parent conversation - Agent settings
+  agentPrompt?: string;  // Custom agent's full system prompt (merged into subagent prompt)
+  agentName?: string;    // Custom agent name for reference
+  // Inherited from parent conversation - Workspace data
+  workspaceData?: any;   // Full comprehensive workspace data (sessions, states, files, etc.)
+  // Inherited from parent conversation - Context notes (file paths)
+  inheritedContextNotes?: string[];  // Note paths from parent's context notes
+  // Inherited from parent conversation - Thinking settings
+  thinkingEnabled?: boolean;
+  thinkingEffort?: 'low' | 'medium' | 'high';
 }
 
 /**
