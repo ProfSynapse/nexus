@@ -368,6 +368,15 @@ export class ChatView extends ItemView {
         onStreamingUpdate: () => { /* handled internally */ },
         onToolCallsDetected: () => { /* handled internally */ },
         onStatusChanged: () => { /* status menu auto-updates */ },
+        onConversationNeedsRefresh: async (conversationId: string) => {
+          // Reload conversation if viewing the one that was updated
+          const current = this.conversationManager?.getCurrentConversation();
+          if (current?.id === conversationId) {
+            console.log('[SUBAGENT-DEBUG] Refreshing conversation display');
+            // Re-select current conversation to trigger full reload
+            await this.conversationManager?.selectConversation(current);
+          }
+        },
       });
 
       // Build context provider from ModelAgentManager
