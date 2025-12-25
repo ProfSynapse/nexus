@@ -390,7 +390,8 @@ export class WebLLMEngine {
           await prefetchModel(modelSpec, (prefetchProgress) => {
             if (options?.onProgress) {
               options.onProgress({
-                progress: prefetchProgress.percentage,
+                // Normalize to 0-1 range (prefetcher returns 0-100)
+                progress: prefetchProgress.percentage / 100,
                 stage: 'downloading',
                 message: `Downloading ${prefetchProgress.currentFile} (${prefetchProgress.completedFiles}/${prefetchProgress.totalFiles})`,
               });

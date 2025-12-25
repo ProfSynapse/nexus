@@ -264,18 +264,19 @@ export class ChatSettingsRenderer {
   // ========== AGENT MODEL SECTION ==========
 
   /**
-   * Render Agent Model section - only shown when chat model is a local provider.
+   * Render Agent Model section - always shown, excludes local providers.
    * This model is used for executePrompt and other API-dependent operations.
    */
   private renderAgentModelSection(parent: HTMLElement): void {
-    // Only show when chat model is a local provider
-    const isLocalProvider = LOCAL_PROVIDERS.includes(this.settings.provider);
-    if (!isLocalProvider) return;
-
     const section = parent.createDiv('csr-section');
     section.createDiv('csr-section-header').setText('Agent Model');
     const desc = section.createDiv('csr-section-desc');
-    desc.setText('Used for executePrompt when chat uses a local model');
+    const descText = desc.createSpan();
+    descText.setText('Cloud model for AI actions');
+    const infoIcon = desc.createSpan({ cls: 'csr-info-icon' });
+    infoIcon.setText(' ⓘ');
+    infoIcon.setAttribute('aria-label', 'Saved prompts and automations require a cloud API.');
+    infoIcon.addClass('clickable-icon');
     const content = section.createDiv('csr-section-content');
 
     // Get only API-based providers (exclude local ones)
@@ -285,11 +286,21 @@ export class ChatSettingsRenderer {
     new Setting(content)
       .setName('Provider')
       .addDropdown(dropdown => {
-        dropdown.addOption('', 'Auto (first available)');
+        // If the currently-selected agent provider isn't available, fall back to first API provider
+        if (apiProviders.length > 0 && this.settings.agentProvider && !apiProviders.includes(this.settings.agentProvider)) {
+          const nextProvider = apiProviders[0];
+          this.settings.agentProvider = nextProvider;
+          this.settings.agentModel = '';
+          void this.getDefaultModelForProvider(nextProvider).then((modelId) => {
+            if (this.settings.agentProvider !== nextProvider) return;
+            this.settings.agentModel = modelId;
+            this.notifyChange();
+            this.render();
+          });
+        }
 
         if (apiProviders.length === 0) {
-          // No API providers available - show warning
-          dropdown.addOption('', 'No API providers enabled');
+          dropdown.addOption('', 'No cloud providers enabled');
         } else {
           apiProviders.forEach(id => {
             dropdown.addOption(id, PROVIDER_NAMES[id] || id);
@@ -299,50 +310,51 @@ export class ChatSettingsRenderer {
         dropdown.setValue(this.settings.agentProvider || '');
         dropdown.onChange(async (value) => {
           this.settings.agentProvider = value || undefined;
-          if (value) {
-            this.settings.agentModel = await this.getDefaultModelForProvider(value);
-          } else {
-            this.settings.agentModel = undefined;
-          }
+          this.settings.agentModel = value ? await this.getDefaultModelForProvider(value) : undefined;
           this.notifyChange();
           this.render();
         });
       });
 
-    // Model dropdown - only if a provider is selected
-    if (this.settings.agentProvider && apiProviders.includes(this.settings.agentProvider)) {
-      new Setting(content)
-        .setName('Model')
-        .addDropdown(async dropdown => {
-          try {
-            const models = await this.providerManager.getModelsForProvider(this.settings.agentProvider!);
+    // Model dropdown - always shown (mirrors Chat Model pattern)
+    const agentProviderId = this.settings.agentProvider;
 
-            if (models.length === 0) {
-              dropdown.addOption('', 'No models available');
-            } else {
-              models.forEach(model => {
-                dropdown.addOption(model.id, model.name);
-              });
+    new Setting(content)
+      .setName('Model')
+      .addDropdown(async dropdown => {
+        if (!agentProviderId) {
+          dropdown.addOption('', 'Select a provider first');
+          return;
+        }
 
-              const exists = models.some(m => m.id === this.settings.agentModel);
-              if (exists) {
-                dropdown.setValue(this.settings.agentModel!);
-              } else if (models.length > 0) {
-                this.settings.agentModel = models[0].id;
-                dropdown.setValue(this.settings.agentModel);
-                this.notifyChange();
-              }
-            }
+        try {
+          const models = await this.providerManager.getModelsForProvider(agentProviderId);
 
-            dropdown.onChange((value) => {
-              this.settings.agentModel = value;
-              this.notifyChange();
+          if (models.length === 0) {
+            dropdown.addOption('', 'No models available');
+          } else {
+            models.forEach(model => {
+              dropdown.addOption(model.id, model.name);
             });
-          } catch {
-            dropdown.addOption('', 'Error loading models');
+
+            const exists = models.some(m => m.id === this.settings.agentModel);
+            if (exists) {
+              dropdown.setValue(this.settings.agentModel!);
+            } else if (models.length > 0) {
+              this.settings.agentModel = models[0].id;
+              dropdown.setValue(this.settings.agentModel);
+              this.notifyChange();
+            }
           }
-        });
-    }
+
+          dropdown.onChange((value) => {
+            this.settings.agentModel = value;
+            this.notifyChange();
+          });
+        } catch {
+          dropdown.addOption('', 'Error loading models');
+        }
+      });
   }
 
   // ========== REASONING SECTION ==========
@@ -403,7 +415,7 @@ export class ChatSettingsRenderer {
 
   private renderImageSection(parent: HTMLElement): void {
     const section = parent.createDiv('csr-section');
-    section.createDiv('csr-section-header').setText('Image Generation');
+    section.createDiv('csr-section-header').setText('Image Model');
     const content = section.createDiv('csr-section-content');
 
     // Provider

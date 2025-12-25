@@ -4097,6 +4097,25 @@ a:hover {
     color: var(--text-muted);
 }
 
+.csr-section-desc {
+    padding: 4px 12px 0;
+    font-size: 12px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.csr-info-icon {
+    cursor: help;
+    opacity: 0.6;
+    font-size: 11px;
+}
+
+.csr-info-icon:hover {
+    opacity: 1;
+}
+
 .csr-section-content {
     padding: 8px 12px 12px;
 }

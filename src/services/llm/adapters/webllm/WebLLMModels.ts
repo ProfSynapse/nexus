@@ -45,9 +45,9 @@ export const HF_BASE_URL = 'https://huggingface.co';
  * ╚═══════════════════════════════════════════════════════════════════════════╝
  */
 export const MODEL_LIBS = {
-  // Qwen3-4B library with 4K context window - Custom compiled for Nexus Quark
-  // Optimized for lower VRAM usage (~2.5GB)
-  QWEN3_4B_4K: 'https://huggingface.co/professorsynapse/Nexus-Quark-Q3.0.1-MLC/resolve/main/Qwen3-4B-q4f16_1-ctx4k_cs1k-webgpu.wasm',
+  // Qwen3-1.7B library with 4K context window - from MLC-AI prebuilt libs
+  // Optimized for lower VRAM usage (~2GB)
+  QWEN3_1_7B_4K: 'https://raw.githubusercontent.com/mlc-ai/binary-mlc-llm-libs/main/web-llm-models/v0_2_80/Qwen3-1.7B-q4f16_1-ctx4k_cs1k-webgpu.wasm',
 };
 
 /**
@@ -71,22 +71,22 @@ export const MODEL_LIBS = {
  */
 export const WEBLLM_MODELS: WebLLMModelSpec[] = [
   // ═══════════════════════════════════════════════════════════════════════════
-  // NEXUS QUARK - 4B Qwen3-based model fine-tuned for tool calling
+  // NEXUS QUARK - 1.7B Qwen3-based model fine-tuned for tool calling
   // Uses <tool_call> XML format for function calling (native Qwen3 format)
-  // 4K context - optimized for lower VRAM usage (~2.5GB)
+  // 4K context - optimized for lower VRAM usage (~2GB)
   // Fine-tuned on full toolset - skips getTools, uses useTool directly
   // ═══════════════════════════════════════════════════════════════════════════
   {
-    id: 'nexus-quark-q3.0.1',
+    id: 'nexus-quark-q3.0.5',
     name: 'Nexus Quark',
     provider: 'webllm',
-    apiName: 'nexus-quark-q3.0.1',
+    apiName: 'nexus-quark-q3.0.5',
     contextWindow: 4096,
     maxTokens: 2048,
-    vramRequired: 2.5,
+    vramRequired: 2.0,
     quantization: 'q4f16',
-    huggingFaceRepo: 'professorsynapse/Nexus-Quark-Q3.0.1-MLC',
-    modelLibUrl: MODEL_LIBS.QWEN3_4B_4K,
+    huggingFaceRepo: 'professorsynapse/nexus-quark-q3.0.5',
+    modelLibUrl: MODEL_LIBS.QWEN3_1_7B_4K,
     flatStructure: true,
     capabilities: {
       supportsJSON: true,
