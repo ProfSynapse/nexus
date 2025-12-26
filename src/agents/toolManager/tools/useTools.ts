@@ -96,23 +96,43 @@ export class UseToolTool implements ITool<UseToolParams, UseToolResult> {
 
       // Determine overall success
       const allSucceeded = results.every(r => r.success);
-      const anyFailed = results.some(r => !r.success);
 
-      // Build result
-      const result: UseToolResult = {
-        success: allSucceeded,
-        data: {
-          results
+      // Build lean result - strip redundant metadata on success
+      if (allSucceeded) {
+        // Success: LLM knows what it called, just return the data
+        if (results.length === 1) {
+          // Single call: flatten data directly
+          return {
+            success: true,
+            data: results[0].data
+          };
+        } else {
+          // Multiple calls: array of just the data (order matches calls order)
+          return {
+            success: true,
+            data: {
+              results: results.map(r => r.data)
+            }
+          };
         }
-      };
-
-      // Add error message if any failed
-      if (anyFailed) {
-        const failedTools = results.filter(r => !r.success).map(r => `${r.agent}_${r.tool}`);
-        result.error = `Some tools failed: ${failedTools.join(', ')}`;
       }
 
-      return result;
+      // Failure: include agent/tool/error so LLM knows what failed
+      const failedResults = results.filter(r => !r.success);
+      const failedTools = failedResults.map(r => `${r.agent}_${r.tool}`);
+
+      return {
+        success: false,
+        error: `Failed: ${failedTools.join(', ')}`,
+        data: {
+          // Only include failed results with details
+          failures: failedResults.map(r => ({
+            agent: r.agent,
+            tool: r.tool,
+            error: r.error
+          }))
+        }
+      };
     } catch (error) {
       return {
         success: false,

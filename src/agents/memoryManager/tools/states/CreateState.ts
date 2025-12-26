@@ -385,7 +385,7 @@ export class CreateStateTool extends BaseTool<CreateStateParams, StateResult> {
     }
 
     /**
-     * Prepare final result - simplified to just return success with stateId
+     * Prepare final result - simplified to just return success
      */
     private prepareFinalResult(
         stateId: string,
@@ -395,14 +395,8 @@ export class CreateStateTool extends BaseTool<CreateStateParams, StateResult> {
         startTime: number,
         params: CreateStateParams
     ): StateResult {
-        // Simplified response - just success confirmation with essential info
-        const resultData = {
-            stateId: savedState.id,
-            name: savedState.name,
-            message: `State "${savedState.name}" saved successfully`
-        };
-
-        return this.prepareResult(true, resultData);
+        // Success - LLM already knows the state details it passed
+        return this.prepareResult(true);
     }
 
     /**

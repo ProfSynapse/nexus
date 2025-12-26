@@ -3,8 +3,6 @@ import { BaseTool } from '../../baseTool';
 import { MoveNoteParams, MoveNoteResult } from '../types';
 import { FileOperations } from '../utils/FileOperations';
 import { createErrorMessage } from '../../../utils/errorUtils';
-import { addRecommendations, Recommendation } from '../../../utils/recommendationUtils';
-import { NudgeHelpers } from '../../../utils/nudgeHelpers';
 
 /**
  * Tool for moving a note
@@ -38,12 +36,8 @@ export class MoveNoteTool extends BaseTool<MoveNoteParams, MoveNoteResult> {
     try {
       await FileOperations.moveNote(this.app, path, newPath, overwrite);
 
-      const result = this.prepareResult(true, { path, newPath });
-
-      // Generate nudges for move operations
-      const nudges = this.generateMoveNudges();
-
-      return addRecommendations(result, nudges);
+      // Success - LLM already knows the paths it passed
+      return this.prepareResult(true);
     } catch (error) {
       return this.prepareResult(false, undefined, createErrorMessage('Failed to move note: ', error));
     }
@@ -78,15 +72,14 @@ export class MoveNoteTool extends BaseTool<MoveNoteParams, MoveNoteResult> {
     return this.getMergedSchema(toolSchema);
   }
 
-  /**
-   * Generate nudges for move operations
-   */
-  private generateMoveNudges(): Recommendation[] {
-    const nudges: Recommendation[] = [];
-
-    // Always suggest link checking after moving files
-    nudges.push(NudgeHelpers.suggestLinkChecking());
-
-    return nudges;
+  getResultSchema(): Record<string, unknown> {
+    return {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean', description: 'Whether the operation succeeded' },
+        error: { type: 'string', description: 'Error message if failed (includes recovery guidance)' }
+      },
+      required: ['success']
+    };
   }
 }

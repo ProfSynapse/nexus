@@ -32,21 +32,12 @@ export class AppendContentTool extends BaseTool<AppendContentParams, AppendConte
    */
   async execute(params: AppendContentParams): Promise<AppendContentResult> {
     try {
-      const { filePath, content, workspaceContext } = params;
-      
-      const result = await ContentOperations.appendContent(this.app, filePath, content);
-      
-      // File change detection are handled automatically by FileEventManager
-      
-      const resultData = {
-        filePath,
-        appendedLength: result.appendedLength,
-        totalLength: result.totalLength
-      };
+      const { filePath, content } = params;
 
-      const response = this.prepareResult(true, resultData);
+      await ContentOperations.appendContent(this.app, filePath, content);
 
-      return response;
+      // Success - LLM already knows filePath and content it passed
+      return this.prepareResult(true);
     } catch (error) {
       return this.prepareResult(false, undefined, createErrorMessage('Error appending content: ', error));
     }
@@ -90,46 +81,8 @@ export class AppendContentTool extends BaseTool<AppendContentParams, AppendConte
         },
         error: {
           type: 'string',
-          description: 'Error message if success is false'
-        },
-        data: {
-          type: 'object',
-          properties: {
-            filePath: {
-              type: 'string',
-              description: 'Path to the file'
-            },
-            appendedLength: {
-              type: 'number',
-              description: 'Length of the content appended'
-            },
-            totalLength: {
-              type: 'number',
-              description: 'Total length of the file after appending'
-            }
-          },
-          required: ['filePath', 'appendedLength', 'totalLength']
-        },
-        workspaceContext: {
-          type: 'object',
-          properties: {
-            workspaceId: {
-              type: 'string',
-              description: 'ID of the workspace'
-            },
-            workspacePath: {
-              type: 'array',
-              items: {
-                type: 'string'
-              },
-              description: 'Path of the workspace'
-            },
-            activeWorkspace: {
-              type: 'boolean',
-              description: 'Whether this is the active workspace'
-            }
-          }
-        },
+          description: 'Error message if failed (includes recovery guidance)'
+        }
       },
       required: ['success']
     };

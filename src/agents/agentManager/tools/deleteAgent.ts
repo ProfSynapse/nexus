@@ -1,7 +1,6 @@
 import { BaseTool } from '../../baseTool';
 import { DeleteAgentParams, DeleteAgentResult } from '../types';
 import { CustomPromptStorageService } from '../services/CustomPromptStorageService';
-import { getCommonResultSchema, createResult } from '../../../utils/schemaUtils';
 
 /**
  * Tool for deleting a custom prompt
@@ -32,27 +31,25 @@ export class DeleteAgentTool extends BaseTool<DeleteAgentParams, DeleteAgentResu
   async execute(params: DeleteAgentParams): Promise<DeleteAgentResult> {
     try {
       const { id } = params;
-      
+
       // Validate required ID
       if (!id?.trim()) {
-        return createResult<DeleteAgentResult>(false, null, 'ID is required');
+        return this.prepareResult(false, undefined, 'ID is required');
       }
-      
+
       // Check if prompt exists before deletion (unified lookup by ID or name)
       const existingPrompt = this.storageService.getPromptByNameOrId(id.trim());
       if (!existingPrompt) {
-        return createResult<DeleteAgentResult>(false, null, `Prompt "${id}" not found (searched by both name and ID)`);
+        return this.prepareResult(false, undefined, `Agent "${id}" not found. Use listAgents to see available agents.`);
       }
 
       // Delete the prompt using actual ID
-      const deleted = await this.storageService.deletePrompt(existingPrompt.id);
-      
-      return createResult<DeleteAgentResult>(true, {
-        deleted,
-        id: id.trim()
-      }, undefined);
+      await this.storageService.deletePrompt(existingPrompt.id);
+
+      // Success - LLM already knows what it deleted
+      return this.prepareResult(true);
     } catch (error) {
-      return createResult<DeleteAgentResult>(false, null, `Failed to delete prompt: ${error}`);
+      return this.prepareResult(false, undefined, `Failed to delete agent: ${error}`);
     }
   }
   
@@ -76,27 +73,14 @@ export class DeleteAgentTool extends BaseTool<DeleteAgentParams, DeleteAgentResu
     return this.getMergedSchema(toolSchema);
   }
 
-  /**
-   * Get the JSON schema for the tool's result
-   * @returns JSON schema object
-   */
-  getResultSchema(): any {
-    const commonSchema = getCommonResultSchema();
-
-    // Override the data property to define the specific structure for this tool
+  getResultSchema(): Record<string, unknown> {
     return {
-      ...commonSchema,
+      type: 'object',
       properties: {
-        ...commonSchema.properties,
-        data: {
-          type: 'object',
-          properties: {
-            deleted: { type: 'boolean' },
-            id: { type: 'string' }
-          },
-          required: ['deleted', 'id']
-        }
-      }
+        success: { type: 'boolean', description: 'Whether the operation succeeded' },
+        error: { type: 'string', description: 'Error message if failed (includes recovery guidance)' }
+      },
+      required: ['success']
     };
   }
 }

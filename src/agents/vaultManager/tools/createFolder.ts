@@ -31,32 +31,21 @@ export class CreateFolderTool extends BaseTool<CreateFolderParams, CreateFolderR
    */
   async execute(params: CreateFolderParams): Promise<CreateFolderResult> {
     try {
-      // Validate parameters
       if (!params.path) {
         return this.prepareResult(false, undefined, 'Path is required');
       }
 
-      // Create the folder using existing utility if available
-      let result: { path: string; existed: boolean };
-
       if (typeof FileOperations?.createFolder === 'function') {
-        const existed = await FileOperations.createFolder(this.app, params.path);
-        result = { path: params.path, existed };
-      }
-      // Otherwise use default implementation
-      else {
-        // Check if folder already exists
+        await FileOperations.createFolder(this.app, params.path);
+      } else {
         const existingFolder = this.app.vault.getAbstractFileByPath(params.path);
-        if (existingFolder) {
-          result = { path: params.path, existed: true };
-        } else {
-          // Create the folder
+        if (!existingFolder) {
           await this.app.vault.createFolder(params.path);
-          result = { path: params.path, existed: false };
         }
       }
 
-      return this.prepareResult(true, result);
+      // Success - LLM already knows the path it passed
+      return this.prepareResult(true);
     } catch (error) {
       return this.prepareResult(false, undefined, createErrorMessage('Failed to create folder: ', error));
     }
@@ -82,27 +71,14 @@ export class CreateFolderTool extends BaseTool<CreateFolderParams, CreateFolderR
     return this.getMergedSchema(toolSchema);
   }
 
-  /**
-   * Get the result schema
-   */
-  getResultSchema(): Record<string, any> {
-    const baseSchema = super.getResultSchema();
-
-    // Extend the base schema to include our specific data
-    baseSchema.properties.data = {
+  getResultSchema(): Record<string, unknown> {
+    return {
       type: 'object',
       properties: {
-        path: {
-          type: 'string',
-          description: 'Path of the created folder'
-        },
-        existed: {
-          type: 'boolean',
-          description: 'Whether the folder already existed'
-        }
-      }
+        success: { type: 'boolean', description: 'Whether the operation succeeded' },
+        error: { type: 'string', description: 'Error message if failed (includes recovery guidance)' }
+      },
+      required: ['success']
     };
-
-    return baseSchema;
   }
 }

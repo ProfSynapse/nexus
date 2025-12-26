@@ -32,26 +32,18 @@ export class ReplaceContentTool extends BaseTool<ReplaceContentParams, ReplaceCo
    */
   async execute(params: ReplaceContentParams): Promise<ReplaceContentResult> {
     try {
-      const { filePath, oldContent, newContent, similarityThreshold = 0.95, workspaceContext } = params;
-      
-      const replacements = await ContentOperations.replaceContent(
+      const { filePath, oldContent, newContent, similarityThreshold = 0.95 } = params;
+
+      await ContentOperations.replaceContent(
         this.app,
         filePath,
         oldContent,
         newContent,
         similarityThreshold
       );
-      
-      // File change detection are handled automatically by FileEventManager
-      
-      const resultData = {
-        filePath,
-        replacements
-      };
 
-      const response = this.prepareResult(true, resultData);
-
-      return response;
+      // Success - LLM already knows filePath and content it passed
+      return this.prepareResult(true);
     } catch (error) {
       return this.prepareResult(false, undefined, createErrorMessage('Error replacing content: ', error));
     }
@@ -100,48 +92,8 @@ export class ReplaceContentTool extends BaseTool<ReplaceContentParams, ReplaceCo
     return {
       type: 'object',
       properties: {
-        success: {
-          type: 'boolean',
-          description: 'Whether the operation succeeded'
-        },
-        error: {
-          type: 'string',
-          description: 'Error message if success is false'
-        },
-        data: {
-          type: 'object',
-          properties: {
-            filePath: {
-              type: 'string',
-              description: 'Path to the file'
-            },
-            replacements: {
-              type: 'number',
-              description: 'Number of replacements made'
-            }
-          },
-          required: ['filePath', 'replacements']
-        },
-        workspaceContext: {
-          type: 'object',
-          properties: {
-            workspaceId: {
-              type: 'string',
-              description: 'ID of the workspace'
-            },
-            workspacePath: {
-              type: 'array',
-              items: {
-                type: 'string'
-              },
-              description: 'Path of the workspace'
-            },
-            activeWorkspace: {
-              type: 'boolean',
-              description: 'Whether this is the active workspace'
-            }
-          }
-        },
+        success: { type: 'boolean', description: 'Whether the operation succeeded' },
+        error: { type: 'string', description: 'Error message if failed (includes recovery guidance)' }
       },
       required: ['success']
     };

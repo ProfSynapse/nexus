@@ -124,20 +124,14 @@ export class UpdateStateTool extends BaseTool<UpdateStateParams, StateResult> {
         const actualStateId = existingState.id || params.stateId;
         await memoryService.updateState(workspaceId, sessionId, actualStateId, stateWithUpdates);
 
-        // Use updated state for result
+        // Verify update succeeded
         const updatedState = await memoryService.getState(workspaceId, sessionId, actualStateId);
         if (!updatedState) {
             return this.prepareResult(false, undefined, 'Failed to retrieve updated state');
         }
-        
-        return this.prepareResult(true, {
-            stateId: updatedState.id,
-            name: updatedState.name,
-            description: updatedState.description,
-            workspaceId: updatedState.workspaceId,
-            timestamp: updatedState.timestamp || updatedState.created,
-            tags: updatedTags
-        }, undefined, `State "${updatedState.name}" updated successfully`);
+
+        // Success - LLM already knows what it passed
+        return this.prepareResult(true);
     }
 
 

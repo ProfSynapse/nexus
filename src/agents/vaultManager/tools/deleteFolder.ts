@@ -36,7 +36,8 @@ export class DeleteFolderTool extends BaseTool<DeleteFolderParams, DeleteFolderR
     try {
       await FileOperations.deleteFolder(this.app, path, recursive);
 
-      return this.prepareResult(true, { path });
+      // Success - LLM already knows the path it passed
+      return this.prepareResult(true);
     } catch (error) {
       return this.prepareResult(false, undefined, createErrorMessage('Failed to delete folder: ', error));
     }
@@ -65,5 +66,16 @@ export class DeleteFolderTool extends BaseTool<DeleteFolderParams, DeleteFolderR
 
     // Merge with common schema (sessionId and context)
     return this.getMergedSchema(toolSchema);
+  }
+
+  getResultSchema(): Record<string, unknown> {
+    return {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean', description: 'Whether the operation succeeded' },
+        error: { type: 'string', description: 'Error message if failed (includes recovery guidance)' }
+      },
+      required: ['success']
+    };
   }
 }

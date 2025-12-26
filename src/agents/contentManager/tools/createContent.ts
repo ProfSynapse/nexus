@@ -3,8 +3,6 @@ import { BaseTool } from '../../baseTool';
 import { CreateContentParams, CreateContentResult } from '../types';
 import { ContentOperations } from '../utils/ContentOperations';
 import { createErrorMessage } from '../../../utils/errorUtils';
-import { addRecommendations, Recommendation } from '../../../utils/recommendationUtils';
-import { NudgeHelpers } from '../../../utils/nudgeHelpers';
 
 /**
  * Tool for creating a new file with content
@@ -56,21 +54,10 @@ export class CreateContentTool extends BaseTool<CreateContentParams, CreateConte
       }
 
       // Create file
-      const file = await ContentOperations.createContent(this.app, filePath, content);
-      
+      await ContentOperations.createContent(this.app, filePath, content);
 
-      const resultData = {
-        filePath,
-        created: file.stat.ctime
-      };
-
-      const result = this.prepareResult(true, resultData);
-
-      // Generate nudges based on file creation
-      const nudges = this.generateCreateContentNudges(params, resultData);
-      const resultWithNudges = addRecommendations(result, nudges);
-
-      return resultWithNudges;
+      // Success - LLM already knows the filePath it passed
+      return this.prepareResult(true);
     } catch (error) {
       return this.prepareResult(false, undefined, createErrorMessage('Error creating file: ', error));
     }
@@ -114,58 +101,10 @@ export class CreateContentTool extends BaseTool<CreateContentParams, CreateConte
         },
         error: {
           type: 'string',
-          description: 'Error message if success is false'
-        },
-        data: {
-          type: 'object',
-          properties: {
-            filePath: {
-              type: 'string',
-              description: 'Path to the created file'
-            },
-            created: {
-              type: 'number',
-              description: 'Creation timestamp'
-            }
-          },
-          required: ['filePath', 'created']
-        },
-        workspaceContext: {
-          type: 'object',
-          properties: {
-            workspaceId: {
-              type: 'string',
-              description: 'ID of the workspace'
-            },
-            workspacePath: {
-              type: 'array',
-              items: {
-                type: 'string'
-              },
-              description: 'Path of the workspace'
-            },
-            activeWorkspace: {
-              type: 'boolean',
-              description: 'Whether this is the active workspace'
-            }
-          }
-        },
+          description: 'Error message if failed (includes recovery guidance)'
+        }
       },
       required: ['success']
     };
-  }
-
-  /**
-   * Generate nudges for file creation
-   */
-  private generateCreateContentNudges(params: CreateContentParams, resultData: { filePath: string }): Recommendation[] {
-    const nudges: Recommendation[] = [];
-
-    // Always suggest Obsidian features for new files
-    nudges.push(NudgeHelpers.suggestObsidianFeatures());
-
-    // Note: Multiple files nudge removed - session tracking happens at useTool level
-
-    return nudges;
   }
 }

@@ -149,12 +149,22 @@ export interface ToolCallResult {
 }
 
 /**
- * UseTool result
+ * Failure detail for lean error reporting
+ */
+export interface ToolFailure {
+  agent: string;
+  tool: string;
+  error?: string;
+}
+
+/**
+ * UseTool result - lean format
+ * - Success single: { success: true, data: <tool's data directly> }
+ * - Success multiple: { success: true, data: { results: [data1, data2] } }
+ * - Failure: { success: false, error: "...", data: { failures: [...] } }
  */
 export interface UseToolResult extends CommonResult {
   success: boolean;
   error?: string;
-  data?: {
-    results: ToolCallResult[];
-  };
+  data?: unknown; // Flexible: can be tool's data directly, or { results: [] } or { failures: [] }
 }

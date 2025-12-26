@@ -28,11 +28,11 @@ export class ContentOperations {
       const file = app.vault.getAbstractFileByPath(normalizedPath);
       
       if (!file) {
-        throw new Error(`File not found: ${filePath}`);
+        throw new Error(`File not found: "${filePath}". Use searchContent to find files by name, or listDirectory to explore folders.`);
       }
       
       if (!(file instanceof TFile)) {
-        throw new Error(`Not a file: ${filePath}`);
+        throw new Error(`Path is a folder, not a file: "${filePath}". Use listDirectory to see its contents.`);
       }
       
       return await app.vault.read(file);
@@ -117,7 +117,7 @@ export class ContentOperations {
       const file = app.vault.getAbstractFileByPath(normalizedPath);
       
       if (file) {
-        throw new Error(`File already exists: ${filePath}`);
+        throw new Error(`File already exists: "${filePath}". Use readContent to view it, or appendContent/prependContent to add to it.`);
       }
       
       // Ensure parent folders exist
@@ -153,11 +153,11 @@ export class ContentOperations {
       const file = app.vault.getAbstractFileByPath(normalizedPath);
       
       if (!file) {
-        throw new Error(`File not found: ${filePath}`);
+        throw new Error(`File not found: "${filePath}". Use searchContent to find files by name, or listDirectory to explore folders.`);
       }
       
       if (!(file instanceof TFile)) {
-        throw new Error(`Not a file: ${filePath}`);
+        throw new Error(`Path is a folder, not a file: "${filePath}". Use listDirectory to see its contents.`);
       }
       
       const existingContent = await app.vault.read(file);
@@ -192,11 +192,11 @@ export class ContentOperations {
       const file = app.vault.getAbstractFileByPath(normalizedPath);
       
       if (!file) {
-        throw new Error(`File not found: ${filePath}`);
+        throw new Error(`File not found: "${filePath}". Use searchContent to find files by name, or listDirectory to explore folders.`);
       }
       
       if (!(file instanceof TFile)) {
-        throw new Error(`Not a file: ${filePath}`);
+        throw new Error(`Path is a folder, not a file: "${filePath}". Use listDirectory to see its contents.`);
       }
       
       const existingContent = await app.vault.read(file);
@@ -236,11 +236,11 @@ export class ContentOperations {
       const file = app.vault.getAbstractFileByPath(normalizedPath);
       
       if (!file) {
-        throw new Error(`File not found: ${filePath}`);
+        throw new Error(`File not found: "${filePath}". Use searchContent to find files by name, or listDirectory to explore folders.`);
       }
       
       if (!(file instanceof TFile)) {
-        throw new Error(`Not a file: ${filePath}`);
+        throw new Error(`Path is a folder, not a file: "${filePath}". Use listDirectory to see its contents.`);
       }
       
       const existingContent = await app.vault.read(file);
@@ -267,8 +267,8 @@ export class ContentOperations {
       const matchPosition = dmp.match_main(existingContent, oldContent, 0);
       
       if (matchPosition === -1) {
-        // No match found even with fuzzy matching
-        throw new Error(`Content to replace not found in file, even with fuzzy matching at ${similarityThreshold * 100}% threshold`);
+        // No match found even with fuzzy matching - provide recovery guidance
+        throw new Error(`Content to replace not found in "${filePath}" (tried fuzzy matching at ${similarityThreshold * 100}% threshold). Use readContent to view the exact file contents first, then copy the EXACT text you want to replace.`);
       }
       
       // Extract the actual matched text for informational purposes
@@ -313,11 +313,11 @@ export class ContentOperations {
       const file = app.vault.getAbstractFileByPath(normalizedPath);
       
       if (!file) {
-        throw new Error(`File not found: ${filePath}`);
+        throw new Error(`File not found: "${filePath}". Use searchContent to find files by name, or listDirectory to explore folders.`);
       }
       
       if (!(file instanceof TFile)) {
-        throw new Error(`Not a file: ${filePath}`);
+        throw new Error(`Path is a folder, not a file: "${filePath}". Use listDirectory to see its contents.`);
       }
       
       const existingContent = await app.vault.read(file);
@@ -374,11 +374,11 @@ export class ContentOperations {
       const file = app.vault.getAbstractFileByPath(normalizedPath);
       
       if (!file) {
-        throw new Error(`File not found: ${filePath}`);
+        throw new Error(`File not found: "${filePath}". Use searchContent to find files by name, or listDirectory to explore folders.`);
       }
       
       if (!(file instanceof TFile)) {
-        throw new Error(`Not a file: ${filePath}`);
+        throw new Error(`Path is a folder, not a file: "${filePath}". Use listDirectory to see its contents.`);
       }
       
       const existingContent = await app.vault.read(file);
@@ -455,11 +455,11 @@ export class ContentOperations {
       const file = app.vault.getAbstractFileByPath(normalizedPath);
       
       if (!file) {
-        throw new Error(`File not found: ${filePath}`);
+        throw new Error(`File not found: "${filePath}". Use searchContent to find files by name, or listDirectory to explore folders.`);
       }
       
       if (!(file instanceof TFile)) {
-        throw new Error(`Not a file: ${filePath}`);
+        throw new Error(`Path is a folder, not a file: "${filePath}". Use listDirectory to see its contents.`);
       }
       
       const existingContent = await app.vault.read(file);

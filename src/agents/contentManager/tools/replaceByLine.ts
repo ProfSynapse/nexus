@@ -2,7 +2,7 @@ import { App } from 'obsidian';
 import { BaseTool } from '../../baseTool';
 import { ReplaceByLineParams, ReplaceByLineResult } from '../types';
 import { ContentOperations } from '../utils/ContentOperations';
-import { parseWorkspaceContext } from '../../../utils/contextUtils';
+import { createErrorMessage } from '../../../utils/errorUtils';
 
 /**
  * Tool for replacing content by line number in a file
@@ -32,27 +32,20 @@ export class ReplaceByLineTool extends BaseTool<ReplaceByLineParams, ReplaceByLi
    */
   async execute(params: ReplaceByLineParams): Promise<ReplaceByLineResult> {
     try {
-      const { filePath, startLine, endLine, newContent, workspaceContext } = params;
-      
-      const linesReplaced = await ContentOperations.replaceByLine(
+      const { filePath, startLine, endLine, newContent } = params;
+
+      await ContentOperations.replaceByLine(
         this.app,
         filePath,
         startLine,
         endLine,
         newContent
       );
-      
-      // File change detection are handled automatically by FileEventManager
-      
-      const response = this.prepareResult(true, {
-          filePath,
-          linesReplaced
-        });
 
-      return response;
+      // Success - LLM already knows filePath and lines it passed
+      return this.prepareResult(true);
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      return this.prepareResult(false, undefined, errorMessage);
+      return this.prepareResult(false, undefined, createErrorMessage('Error replacing by line: ', error));
     }
   }
   
@@ -92,52 +85,12 @@ export class ReplaceByLineTool extends BaseTool<ReplaceByLineParams, ReplaceByLi
    * Get the JSON schema for the tool's result
    * @returns JSON schema object
    */
-  getResultSchema(): any {
+  getResultSchema(): Record<string, unknown> {
     return {
       type: 'object',
       properties: {
-        success: {
-          type: 'boolean',
-          description: 'Whether the operation succeeded'
-        },
-        error: {
-          type: 'string',
-          description: 'Error message if success is false'
-        },
-        data: {
-          type: 'object',
-          properties: {
-            filePath: {
-              type: 'string',
-              description: 'Path to the file'
-            },
-            linesReplaced: {
-              type: 'number',
-              description: 'Number of lines replaced'
-            }
-          },
-          required: ['filePath', 'linesReplaced']
-        },
-        workspaceContext: {
-          type: 'object',
-          properties: {
-            workspaceId: {
-              type: 'string',
-              description: 'ID of the workspace'
-            },
-            workspacePath: {
-              type: 'array',
-              items: {
-                type: 'string'
-              },
-              description: 'Path of the workspace'
-            },
-            activeWorkspace: {
-              type: 'boolean',
-              description: 'Whether this is the active workspace'
-            }
-          }
-        },
+        success: { type: 'boolean', description: 'Whether the operation succeeded' },
+        error: { type: 'string', description: 'Error message if failed (includes recovery guidance)' }
       },
       required: ['success']
     };

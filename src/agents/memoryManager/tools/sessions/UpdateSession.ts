@@ -130,18 +130,8 @@ export class UpdateSessionTool extends BaseTool<EditSessionParams, SessionResult
         const updatedSession = { ...existingSession, ...updates };
         await memoryService.updateSession(workspaceId, existingSession.id, updatedSession);
 
-        // Phase 6: Prepare result
-        return this.prepareResult(
-            true,
-            {
-                sessionId: updatedSession.id,
-                name: updatedSession.name,
-                description: updatedSession.description,
-                workspaceId: updatedSession.workspaceId
-            },
-            undefined,
-            `Session "${updatedSession.name}" updated successfully`
-        );
+        // Success - LLM already knows what it passed
+        return this.prepareResult(true);
     }
 
 

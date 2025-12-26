@@ -295,27 +295,11 @@ export class CreateSessionTool extends BaseTool<CreateSessionParams, SessionResu
     }
 
     /**
-     * Prepare final result
+     * Prepare final result - simplified to just return success
      */
     private prepareFinalResult(sessionData: any, contextResult: any, instructionResult: any, workspaceData: any): SessionResult {
-        const resultData: any = {
-            sessionId: sessionData.id,
-            name: sessionData.name,
-            description: sessionData.description,
-            workspaceId: workspaceData.workspaceId,
-            sessionContext: contextResult
-        };
-
-        if (instructionResult.shouldIncludeInstructions) {
-            resultData.sessionInstructions = instructionResult.sessionInstructions;
-        }
-
-        return this.prepareResult(
-            true,
-            resultData,
-            undefined,
-            instructionResult.finalContextString
-        );
+        // Success - LLM already knows the session details it passed
+        return this.prepareResult(true);
     }
 
     /**

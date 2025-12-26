@@ -32,18 +32,16 @@ export class FindReplaceContentTool extends BaseTool<FindReplaceContentParams, F
    */
   async execute(params: FindReplaceContentParams): Promise<FindReplaceContentResult> {
     try {
-      const { 
-        filePath, 
-        findText, 
-        replaceText, 
-        replaceAll = false, 
-        caseSensitive = true, 
-        wholeWord = false,
-        workspaceContext
+      const {
+        filePath,
+        findText,
+        replaceText,
+        replaceAll = false,
+        caseSensitive = true,
+        wholeWord = false
       } = params;
-      
-      
-      const replacements = await ContentOperations.findReplaceContent(
+
+      await ContentOperations.findReplaceContent(
         this.app,
         filePath,
         findText,
@@ -52,19 +50,9 @@ export class FindReplaceContentTool extends BaseTool<FindReplaceContentParams, F
         caseSensitive,
         wholeWord
       );
-      
-      // File change detection are handled automatically by FileEventManager
-      
-      const resultData = {
-        filePath,
-        replacements,
-        findText,
-        replaceText
-      };
 
-      const response = this.prepareResult(true, resultData);
-
-      return response;
+      // Success - LLM already knows filePath and text it passed
+      return this.prepareResult(true);
     } catch (error) {
       return this.prepareResult(false, undefined, createErrorMessage('Error in find and replace: ', error));
     }
@@ -120,56 +108,8 @@ export class FindReplaceContentTool extends BaseTool<FindReplaceContentParams, F
     return {
       type: 'object',
       properties: {
-        success: {
-          type: 'boolean',
-          description: 'Whether the operation succeeded'
-        },
-        error: {
-          type: 'string',
-          description: 'Error message if success is false'
-        },
-        data: {
-          type: 'object',
-          properties: {
-            filePath: {
-              type: 'string',
-              description: 'Path to the file'
-            },
-            replacements: {
-              type: 'number',
-              description: 'Number of replacements made'
-            },
-            findText: {
-              type: 'string',
-              description: 'Text that was searched for'
-            },
-            replaceText: {
-              type: 'string',
-              description: 'Text that was used as replacement'
-            }
-          },
-          required: ['filePath', 'replacements', 'findText', 'replaceText']
-        },
-        workspaceContext: {
-          type: 'object',
-          properties: {
-            workspaceId: {
-              type: 'string',
-              description: 'ID of the workspace'
-            },
-            workspacePath: {
-              type: 'array',
-              items: {
-                type: 'string'
-              },
-              description: 'Path of the workspace'
-            },
-            activeWorkspace: {
-              type: 'boolean',
-              description: 'Whether this is the active workspace'
-            }
-          }
-        },
+        success: { type: 'boolean', description: 'Whether the operation succeeded' },
+        error: { type: 'string', description: 'Error message if failed (includes recovery guidance)' }
       },
       required: ['success']
     };

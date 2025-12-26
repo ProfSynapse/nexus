@@ -32,30 +32,19 @@ export class PrependContentTool extends BaseTool<PrependContentParams, PrependCo
    */
   async execute(params: PrependContentParams): Promise<PrependContentResult> {
     try {
-      const { filePath, content, workspaceContext } = params;
-      
-      const result = await ContentOperations.prependContent(this.app, filePath, content);
-      
-      // File change detection are handled automatically by FileEventManager
-      
-      const resultData = {
-        filePath,
-        prependedLength: result.prependedLength,
-        totalLength: result.totalLength
-      };
+      const { filePath, content } = params;
 
-      const response = this.prepareResult(true, resultData);
+      await ContentOperations.prependContent(this.app, filePath, content);
 
-      return response;
+      // Success - LLM already knows filePath and content it passed
+      return this.prepareResult(true);
     } catch (error) {
       return this.prepareResult(false, undefined, createErrorMessage('Error prepending content: ', error));
     }
   }
-  
-  
+
   /**
    * Get the JSON schema for the tool's parameters
-   * @returns JSON schema object
    */
   getParameterSchema(): Record<string, unknown> {
     const customSchema = {
@@ -72,64 +61,19 @@ export class PrependContentTool extends BaseTool<PrependContentParams, PrependCo
       },
       required: ['filePath', 'content']
     };
-    
+
     return this.getMergedSchema(customSchema);
   }
-  
+
   /**
    * Get the JSON schema for the tool's result
-   * @returns JSON schema object
    */
   getResultSchema(): Record<string, unknown> {
     return {
       type: 'object',
       properties: {
-        success: {
-          type: 'boolean',
-          description: 'Whether the operation succeeded'
-        },
-        error: {
-          type: 'string',
-          description: 'Error message if success is false'
-        },
-        data: {
-          type: 'object',
-          properties: {
-            filePath: {
-              type: 'string',
-              description: 'Path to the file'
-            },
-            prependedLength: {
-              type: 'number',
-              description: 'Length of the content prepended'
-            },
-            totalLength: {
-              type: 'number',
-              description: 'Total length of the file after prepending'
-            }
-          },
-          required: ['filePath', 'prependedLength', 'totalLength']
-        },
-        workspaceContext: {
-          type: 'object',
-          properties: {
-            workspaceId: {
-              type: 'string',
-              description: 'ID of the workspace'
-            },
-            workspacePath: {
-              type: 'array',
-              items: {
-                type: 'string'
-              },
-              description: 'Path of the workspace'
-            },
-            activeWorkspace: {
-              type: 'boolean',
-              description: 'Whether this is the active workspace'
-            }
-          }
-        },
+        success: { type: 'boolean', description: 'Whether the operation succeeded' },
+        error: { type: 'string', description: 'Error message if failed (includes recovery guidance)' }
       },
       required: ['success']
     };

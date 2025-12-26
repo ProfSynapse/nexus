@@ -1,9 +1,6 @@
 import { BaseTool } from '../../baseTool';
 import { UpdateAgentParams, UpdateAgentResult } from '../types';
 import { CustomPromptStorageService } from '../services/CustomPromptStorageService';
-import { getCommonResultSchema, createResult } from '../../../utils/schemaUtils';
-import { addRecommendations } from '../../../utils/recommendationUtils';
-import { NudgeHelpers } from '../../../utils/nudgeHelpers';
 
 /**
  * Tool for updating an existing custom agent
@@ -34,52 +31,52 @@ export class UpdateAgentTool extends BaseTool<UpdateAgentParams, UpdateAgentResu
   async execute(params: UpdateAgentParams): Promise<UpdateAgentResult> {
     try {
       const { id, name, description, prompt, isEnabled } = params;
-      
+
       // Validate required ID
       if (!id?.trim()) {
-        return createResult<UpdateAgentResult>(false, null, 'ID is required');
+        return this.prepareResult(false, undefined, 'ID is required');
       }
-      
+
       // Check that at least one field is being updated
       if (name === undefined && description === undefined && prompt === undefined && isEnabled === undefined) {
-        return createResult<UpdateAgentResult>(false, null, 'At least one field must be provided for update');
+        return this.prepareResult(false, undefined, 'At least one field must be provided for update');
       }
-      
+
       // Prepare updates object
-      const updates: any = {};
-      
+      const updates: Record<string, unknown> = {};
+
       if (name !== undefined) {
         if (!name.trim()) {
-          return createResult<UpdateAgentResult>(false, null, 'Name cannot be empty');
+          return this.prepareResult(false, undefined, 'Name cannot be empty');
         }
         updates.name = name.trim();
       }
-      
+
       if (description !== undefined) {
         if (!description.trim()) {
-          return createResult<UpdateAgentResult>(false, null, 'Description cannot be empty');
+          return this.prepareResult(false, undefined, 'Description cannot be empty');
         }
         updates.description = description.trim();
       }
-      
+
       if (prompt !== undefined) {
         if (!prompt.trim()) {
-          return createResult<UpdateAgentResult>(false, null, 'Prompt text cannot be empty');
+          return this.prepareResult(false, undefined, 'Prompt text cannot be empty');
         }
         updates.prompt = prompt.trim();
       }
-      
+
       if (isEnabled !== undefined) {
         updates.isEnabled = isEnabled;
       }
-      
+
       // Update the prompt
-      const updatedPrompt = await this.storageService.updatePrompt(id.trim(), updates);
-      
-      const result = createResult<UpdateAgentResult>(true, updatedPrompt, undefined);
-      return addRecommendations(result, [NudgeHelpers.suggestAgentTesting()]);
+      await this.storageService.updatePrompt(id.trim(), updates);
+
+      // Success - LLM already knows what it passed
+      return this.prepareResult(true);
     } catch (error) {
-      return createResult<UpdateAgentResult>(false, null, `Failed to update prompt: ${error}`);
+      return this.prepareResult(false, undefined, `Failed to update agent: ${error}`);
     }
   }
   
@@ -124,42 +121,14 @@ export class UpdateAgentTool extends BaseTool<UpdateAgentParams, UpdateAgentResu
     return this.getMergedSchema(toolSchema);
   }
 
-  /**
-   * Get the JSON schema for the tool's result
-   * @returns JSON schema object
-   */
-  getResultSchema(): any {
-    const commonSchema = getCommonResultSchema();
-
-    // Override the data property to define the specific structure for this tool
+  getResultSchema(): Record<string, unknown> {
     return {
-      ...commonSchema,
+      type: 'object',
       properties: {
-        ...commonSchema.properties,
-        data: {
-          type: 'object',
-          properties: {
-            id: { type: 'string' },
-            name: { type: 'string' },
-            description: { type: 'string' },
-            prompt: { type: 'string' },
-            isEnabled: { type: 'boolean' }
-          },
-          required: ['id', 'name', 'description', 'prompt', 'isEnabled']
-        },
-        recommendations: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              type: { type: 'string' },
-              message: { type: 'string' }
-            },
-            required: ['type', 'message']
-          },
-          description: 'Workspace-agent optimization recommendations'
-        }
-      }
+        success: { type: 'boolean', description: 'Whether the operation succeeded' },
+        error: { type: 'string', description: 'Error message if failed (includes recovery guidance)' }
+      },
+      required: ['success']
     };
   }
 }

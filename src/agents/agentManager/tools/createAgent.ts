@@ -1,9 +1,6 @@
 import { BaseTool } from '../../baseTool';
 import { CreateAgentParams, CreateAgentResult } from '../types';
 import { CustomPromptStorageService } from '../services/CustomPromptStorageService';
-import { getCommonResultSchema, createResult } from '../../../utils/schemaUtils';
-import { addRecommendations } from '../../../utils/recommendationUtils';
-import { NudgeHelpers } from '../../../utils/nudgeHelpers';
 
 /**
  * Tool for creating a new custom agent
@@ -34,36 +31,32 @@ export class CreateAgentTool extends BaseTool<CreateAgentParams, CreateAgentResu
   async execute(params: CreateAgentParams): Promise<CreateAgentResult> {
     try {
       const { name, description, prompt, isEnabled = true } = params;
-      
+
       // Validate required fields
       if (!name?.trim()) {
-        return createResult<CreateAgentResult>(false, null, 'Name is required');
+        return this.prepareResult(false, undefined, 'Name is required');
       }
-      
+
       if (!description?.trim()) {
-        return createResult<CreateAgentResult>(false, null, 'Description is required');
+        return this.prepareResult(false, undefined, 'Description is required');
       }
-      
+
       if (!prompt?.trim()) {
-        return createResult<CreateAgentResult>(false, null, 'Agent prompt text is required');
+        return this.prepareResult(false, undefined, 'Agent prompt text is required');
       }
-      
+
       // Create the prompt
-      const newPrompt = await this.storageService.createPrompt({
+      await this.storageService.createPrompt({
         name: name.trim(),
         description: description.trim(),
         prompt: prompt.trim(),
         isEnabled
       });
-      
-      const result = createResult<CreateAgentResult>(true, newPrompt, undefined);
-      const nudges = [
-        NudgeHelpers.suggestWorkspaceIntegration(),
-        NudgeHelpers.suggestAgentTesting()
-      ];
-      return addRecommendations(result, nudges);
+
+      // Success - LLM already knows what it passed
+      return this.prepareResult(true);
     } catch (error) {
-      return createResult<CreateAgentResult>(false, null, `Failed to create agent: ${error}`);
+      return this.prepareResult(false, undefined, `Failed to create agent: ${error}`);
     }
   }
   
@@ -104,42 +97,14 @@ export class CreateAgentTool extends BaseTool<CreateAgentParams, CreateAgentResu
     return this.getMergedSchema(toolSchema);
   }
 
-  /**
-   * Get the JSON schema for the tool's result
-   * @returns JSON schema object
-   */
-  getResultSchema(): any {
-    const commonSchema = getCommonResultSchema();
-
-    // Override the data property to define the specific structure for this tool
+  getResultSchema(): Record<string, unknown> {
     return {
-      ...commonSchema,
+      type: 'object',
       properties: {
-        ...commonSchema.properties,
-        data: {
-          type: 'object',
-          properties: {
-            id: { type: 'string' },
-            name: { type: 'string' },
-            description: { type: 'string' },
-            prompt: { type: 'string' },
-            isEnabled: { type: 'boolean' }
-          },
-          required: ['id', 'name', 'description', 'prompt', 'isEnabled']
-        },
-        recommendations: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              type: { type: 'string' },
-              message: { type: 'string' }
-            },
-            required: ['type', 'message']
-          },
-          description: 'Workspace-agent optimization recommendations'
-        }
-      }
+        success: { type: 'boolean', description: 'Whether the operation succeeded' },
+        error: { type: 'string', description: 'Error message if failed (includes recovery guidance)' }
+      },
+      required: ['success']
     };
   }
 }

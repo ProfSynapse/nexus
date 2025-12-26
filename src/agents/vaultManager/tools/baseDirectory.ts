@@ -45,8 +45,8 @@ export abstract class BaseDirectoryTool<T extends CommonParameters, R extends Co
     // Get folder by path - use getAbstractFileByPath for folders
     const folder = this.app.vault.getAbstractFileByPath(normalizedPath);
     if (!folder || !(folder instanceof TFolder)) {
-      // Double check by looking at the exact path without any modifications
-      throw new Error(`Folder not found at path: ${normalizedPath}`);
+      // Provide recovery guidance
+      throw new Error(`Folder not found: "${normalizedPath}". Try listDirectory with path "" (root) to see available folders, or use searchDirectory to find folders by name.`);
     }
 
     return folder;

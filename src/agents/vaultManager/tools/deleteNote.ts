@@ -36,7 +36,8 @@ export class DeleteNoteTool extends BaseTool<DeleteNoteParams, DeleteNoteResult>
     try {
       await FileOperations.deleteNote(this.app, path);
 
-      return this.prepareResult(true, { path });
+      // Success - LLM already knows the path it passed
+      return this.prepareResult(true);
     } catch (error) {
       return this.prepareResult(false, undefined, createErrorMessage('Failed to delete note: ', error));
     }
@@ -61,5 +62,16 @@ export class DeleteNoteTool extends BaseTool<DeleteNoteParams, DeleteNoteResult>
 
     // Merge with common schema (sessionId and context)
     return this.getMergedSchema(toolSchema);
+  }
+
+  getResultSchema(): Record<string, unknown> {
+    return {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean', description: 'Whether the operation succeeded' },
+        error: { type: 'string', description: 'Error message if failed (includes recovery guidance)' }
+      },
+      required: ['success']
+    };
   }
 }

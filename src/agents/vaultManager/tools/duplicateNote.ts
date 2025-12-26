@@ -3,8 +3,6 @@ import { BaseTool } from '../../baseTool';
 import { DuplicateNoteParams, DuplicateNoteResult } from '../types';
 import { FileOperations } from '../utils/FileOperations';
 import { createErrorMessage } from '../../../utils/errorUtils';
-import { addRecommendations, Recommendation } from '../../../utils/recommendationUtils';
-import { NudgeHelpers } from '../../../utils/nudgeHelpers';
 
 /**
  * Tool for duplicating a note
@@ -34,7 +32,6 @@ export class DuplicateNoteTool extends BaseTool<DuplicateNoteParams, DuplicateNo
    */
   async execute(params: DuplicateNoteParams): Promise<DuplicateNoteResult> {
     try {
-      // Validate parameters
       if (!params.sourcePath) {
         return this.prepareResult(false, undefined, 'Source path is required');
       }
@@ -43,8 +40,7 @@ export class DuplicateNoteTool extends BaseTool<DuplicateNoteParams, DuplicateNo
         return this.prepareResult(false, undefined, 'Target path is required');
       }
 
-      // Perform the duplication
-      const result = await FileOperations.duplicateNote(
+      await FileOperations.duplicateNote(
         this.app,
         params.sourcePath,
         params.targetPath,
@@ -52,17 +48,8 @@ export class DuplicateNoteTool extends BaseTool<DuplicateNoteParams, DuplicateNo
         params.autoIncrement || false
       );
 
-      const response = this.prepareResult(true, {
-        sourcePath: result.sourcePath,
-        targetPath: result.targetPath,
-        wasAutoIncremented: result.wasAutoIncremented,
-        wasOverwritten: result.wasOverwritten
-      });
-
-      // Generate nudges for duplicate operations
-      const nudges = this.generateDuplicateNudges();
-
-      return addRecommendations(response, nudges);
+      // Success - LLM already knows the paths it passed
+      return this.prepareResult(true);
     } catch (error) {
       return this.prepareResult(false, undefined, createErrorMessage('Failed to duplicate note: ', error));
     }
@@ -103,47 +90,14 @@ export class DuplicateNoteTool extends BaseTool<DuplicateNoteParams, DuplicateNo
     return this.getMergedSchema(toolSchema);
   }
 
-  /**
-   * Get the result schema
-   */
-  getResultSchema(): Record<string, any> {
-    const baseSchema = super.getResultSchema();
-
-    // Extend the base schema to include our specific data
-    baseSchema.properties.data = {
+  getResultSchema(): Record<string, unknown> {
+    return {
       type: 'object',
       properties: {
-        sourcePath: {
-          type: 'string',
-          description: 'Path of the source note'
-        },
-        targetPath: {
-          type: 'string',
-          description: 'Final path of the duplicated note'
-        },
-        wasAutoIncremented: {
-          type: 'boolean',
-          description: 'Whether the filename was auto-incremented due to conflicts'
-        },
-        wasOverwritten: {
-          type: 'boolean',
-          description: 'Whether an existing file was overwritten'
-        }
-      }
+        success: { type: 'boolean', description: 'Whether the operation succeeded' },
+        error: { type: 'string', description: 'Error message if failed (includes recovery guidance)' }
+      },
+      required: ['success']
     };
-
-    return baseSchema;
-  }
-
-  /**
-   * Generate nudges for duplicate operations
-   */
-  private generateDuplicateNudges(): Recommendation[] {
-    const nudges: Recommendation[] = [];
-
-    // Always suggest customization after duplicating files
-    nudges.push(NudgeHelpers.suggestCustomization());
-
-    return nudges;
   }
 }
