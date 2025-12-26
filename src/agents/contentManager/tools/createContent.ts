@@ -36,17 +36,25 @@ export class CreateContentTool extends BaseTool<CreateContentParams, CreateConte
    */
   async execute(params: CreateContentParams): Promise<CreateContentResult> {
     try {
-      const { filePath, content, workspaceContext } = params;
-      
-      // Validate parameters
-      if (!filePath) {
-        return this.prepareResult(false, undefined, 'File path is required');
+      const { content, workspaceContext } = params;
+      let { filePath } = params;
+
+      // Normalize empty/root paths - generate a filename if only directory is specified
+      if (!filePath || filePath === '/' || filePath === '.') {
+        // Generate a unique filename in root
+        const timestamp = Date.now();
+        filePath = `untitled-${timestamp}.md`;
+      } else if (filePath.endsWith('/') || filePath.endsWith('.')) {
+        // Path is a directory - generate filename in that directory
+        const dir = filePath.endsWith('.') ? '' : filePath.slice(0, -1);
+        const timestamp = Date.now();
+        filePath = dir ? `${dir}/untitled-${timestamp}.md` : `untitled-${timestamp}.md`;
       }
 
       if (content === undefined || content === null) {
         return this.prepareResult(false, undefined, 'Content is required');
       }
-      
+
       // Create file
       const file = await ContentOperations.createContent(this.app, filePath, content);
       

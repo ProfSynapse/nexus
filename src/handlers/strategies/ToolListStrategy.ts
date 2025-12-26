@@ -18,11 +18,11 @@ interface ToolListResponse {
 }
 
 /**
- * Two-Tool Architecture: Returns only toolManager_getTools and toolManager_useTool
+ * Two-Tool Architecture: Returns only toolManager_getTools and toolManager_useTools
  *
  * This replaces the old 50+ tool surface with just 2 tools:
  * - toolManager_getTools: Discovery - returns tool schemas for LLM reference
- * - toolManager_useTool: Execution - single entry point with context-first design
+ * - toolManager_useTools: Execution - single entry point with context-first design
  *
  * Token savings: ~95% reduction in upfront schemas (~15,000 → ~500 tokens)
  */
@@ -48,7 +48,7 @@ export class ToolListStrategy implements IRequestStrategy<ToolListRequest, ToolL
                 return { tools: [] };
             }
 
-            // Get tools from toolManager (getTools and useTool)
+            // Get tools from toolManager (getTools and useTools)
             const toolManagerTools = toolManagerAgent.getTools();
 
             // Convert to MCP tool format

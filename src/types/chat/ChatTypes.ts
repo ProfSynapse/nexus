@@ -34,6 +34,9 @@ export interface ChatMessage {
   activeAlternativeIndex?: number;
 }
 
+/** Format the model used to output tool calls */
+export type ToolCallFormat = 'bracket' | 'xml' | 'native';
+
 export interface ToolCall {
   id: string;
   type: string;
@@ -49,6 +52,8 @@ export interface ToolCall {
   error?: string;
   parameters?: any;
   executionTime?: number;
+  /** Format the model used: 'bracket' = [TOOL_CALLS], 'xml' = <tool_call>, 'native' = OpenAI tool_calls */
+  sourceFormat?: ToolCallFormat;
 }
 
 export interface Conversation {

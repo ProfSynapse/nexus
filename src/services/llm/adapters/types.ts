@@ -131,6 +131,9 @@ export interface Tool {
   };
 }
 
+/** Format the model used to output tool calls */
+export type ToolCallFormat = 'bracket' | 'xml' | 'native';
+
 export interface ToolCall {
   id: string;
   type: string;
@@ -142,6 +145,8 @@ export interface ToolCall {
   reasoning_details?: any[];
   // Google Gemini: thought_signature for thinking models
   thought_signature?: string;
+  /** Format the model used: 'bracket' = [TOOL_CALLS], 'xml' = <tool_call>, 'native' = OpenAI */
+  sourceFormat?: ToolCallFormat;
 }
 
 export interface ProviderConfig {

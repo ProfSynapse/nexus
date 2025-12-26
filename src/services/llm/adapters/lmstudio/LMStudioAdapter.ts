@@ -218,6 +218,17 @@ export class LMStudioAdapter extends BaseAdapter {
         }
       });
 
+      // Debug logging - full request (check console with filter: LLM_DEBUG)
+      console.log('[LLM_DEBUG] ====== LM Studio Request ======');
+      console.log('[LLM_DEBUG] Model:', requestBody.model);
+      console.log('[LLM_DEBUG] Messages:');
+      for (const msg of requestBody.messages) {
+        console.log(`[LLM_DEBUG] [${msg.role}]:`);
+        console.log(msg.content);
+        console.log('[LLM_DEBUG] ---');
+      }
+      console.log('[LLM_DEBUG] ================================');
+
       const response = await fetch(`${this.serverUrl}/v1/chat/completions`, {
         method: 'POST',
         headers: {
@@ -275,6 +286,16 @@ export class LMStudioAdapter extends BaseAdapter {
             // Stream complete - parse [TOOL_CALLS] and yield transformed result
             const parsed = ToolCallContentParser.parse(accumulatedContent);
 
+            // Debug logging - response
+            console.log('[LLM_DEBUG] ====== LM Studio Response ======');
+            console.log('[LLM_DEBUG] Raw accumulated content:');
+            console.log(accumulatedContent);
+            console.log('[LLM_DEBUG] Parsed tool calls:', parsed.hasToolCalls ? parsed.toolCalls.length : 0);
+            if (parsed.hasToolCalls) {
+              console.log('[LLM_DEBUG] Tool calls:', JSON.stringify(parsed.toolCalls, null, 2));
+            }
+            console.log('[LLM_DEBUG] ================================');
+
             if (parsed.hasToolCalls) {
               yield {
                 content: parsed.cleanContent,
@@ -290,6 +311,11 @@ export class LMStudioAdapter extends BaseAdapter {
           }
         } else {
           // Standard response - yield as-is (existing tool call handling applies)
+          if (chunk.complete) {
+            console.log('[LLM_DEBUG] ====== LM Studio Response (standard) ======');
+            console.log('[LLM_DEBUG] Content:', accumulatedContent);
+            console.log('[LLM_DEBUG] ================================');
+          }
           yield chunk;
         }
       }

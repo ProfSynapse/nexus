@@ -25,7 +25,8 @@ import { IAgent } from '../../agents/interfaces/IAgent';
 const TOOL_SUGGESTIONS: Record<string, string> = {
     // toolManager
     getTools: 'toolManager_getTools',
-    useTool: 'toolManager_useTool',
+    useTool: 'toolManager_useTools',
+    useTools: 'toolManager_useTools',
     // agentManager
     listModels: 'agentManager_listModels',
     executePrompts: 'agentManager_executePrompts',
@@ -153,11 +154,11 @@ export class DirectToolExecutor {
 
     /**
      * Get available tools in OpenAI format - Two-Tool Architecture
-     * Returns only toolManager_getTools and toolManager_useTool
+     * Returns only toolManager_getTools and toolManager_useTools
      *
      * This is the new two-tool architecture that replaces the old 50+ tool surface.
      * LLMs discover tools via getTools (which lists all available agents/tools in its description),
-     * then execute tools via useTool with unified context.
+     * then execute tools via useTools with unified context.
      */
     async getAvailableTools(): Promise<unknown[]> {
         // Get toolManager agent from the registry
@@ -168,15 +169,15 @@ export class DirectToolExecutor {
             return [];
         }
 
-        // Get tools from toolManager (getTools and useTool)
+        // Get tools from toolManager (getTools and useTools)
         const tools = toolManagerAgent.getTools();
 
         // Convert to OpenAI format
-        // Use underscore separator (not dots) - OpenAI requires ^[a-zA-Z0-9_-]+$
+        // Tool names are just getTools and useTools (no prefix)
         return tools.map(tool => ({
             type: 'function',
             function: {
-                name: `toolManager_${tool.slug}`,
+                name: tool.slug,
                 description: tool.description,
                 parameters: tool.getParameterSchema()
             }
@@ -252,56 +253,19 @@ export class DirectToolExecutor {
         context?: { sessionId?: string; workspaceId?: string }
     ): Promise<unknown> {
         try {
-            // Handle legacy get_tools meta-tool (backward compatibility)
-            if (toolName === 'get_tools') {
+            // Two-tool architecture: getTools and useTool
+            if (toolName === 'getTools' || toolName === 'get_tools') {
                 return await this.handleGetTools(params, context);
             }
 
-            // Two-tool architecture: "agentName.toolName" format
-            if (toolName.includes('.')) {
-                const [agentName, toolSlug] = toolName.split('.');
-
-                // Get the agent
-                const agent = this.getAgentByName(agentName);
-                if (!agent) {
-                    throw new Error(`Agent "${agentName}" not found`);
-                }
-
-                // Get the tool
-                const tool = agent.getTool(toolSlug);
-                if (!tool) {
-                    throw new Error(`Tool "${toolSlug}" not found in agent "${agentName}"`);
-                }
-
-                // Determine sessionId and workspaceId
-                const paramsWithContext = params as Record<string, unknown> & {
-                    context?: { sessionId?: string; workspaceId?: string };
-                };
-                const effectiveSessionId = context?.sessionId
-                    || paramsWithContext.context?.sessionId
-                    || `session_${Date.now()}`;
-                const effectiveWorkspaceId = context?.workspaceId
-                    || paramsWithContext.context?.workspaceId
-                    || 'default';
-
-                // Build params with context
-                const toolParams = {
-                    ...params,
-                    context: {
-                        ...(paramsWithContext.context || {}),
-                        sessionId: effectiveSessionId,
-                        workspaceId: effectiveWorkspaceId
-                    }
-                };
-
-                // Execute via agent's executeTool method
-                return await agent.executeTool(toolSlug, toolParams);
+            // Accept both singular and plural forms
+            if (toolName === 'useTool' || toolName === 'useTools' || toolName === 'use_tools') {
+                return await this.handleUseTool(params, context);
             }
 
-            // Standard format: "agentName_toolName"
-            // Or: agent name with tool specified in params
+            // Legacy/direct tool calls: "agentName_toolName" format
             let agentName: string;
-            let modeName: string; // Called "mode" for AgentExecutionManager compatibility
+            let modeName: string;
             const paramsTyped = params as Record<string, unknown> & { mode?: string; context?: Record<string, unknown> };
 
             if (paramsTyped.mode) {
@@ -314,19 +278,10 @@ export class DirectToolExecutor {
                 agentName = parts[0];
                 modeName = parts.slice(1).join('_');
             } else {
-                // Bare tool name - not supported, provide helpful suggestion
-                const suggestion = TOOL_SUGGESTIONS[toolName];
-                if (suggestion) {
-                    throw new Error(
-                        `Unknown tool "${toolName}". Did you mean "${suggestion}"? ` +
-                        `Tools must use format: agentName_toolName (e.g., ${suggestion})`
-                    );
-                } else {
-                    throw new Error(
-                        `Unknown tool "${toolName}". Tools must use format: agentName_toolName ` +
-                        `(e.g., contentManager_readContent, vaultManager_listDirectory)`
-                    );
-                }
+                // Unknown tool name
+                throw new Error(
+                    `Unknown tool "${toolName}". Expected "getTools", "useTool", or "agentName_toolName" format.`
+                );
             }
 
             // Determine sessionId and workspaceId with priority:
@@ -405,6 +360,46 @@ export class DirectToolExecutor {
             notFound: notFound.length > 0 ? notFound : undefined,
             reminder: `Use sessionId: "${sessionId}" and workspaceId: "${workspaceId}" in context for all tool calls.`
         };
+    }
+
+    /**
+     * Handle useTool calls (two-tool architecture)
+     * Executes the calls array and returns results
+     */
+    private async handleUseTool(
+        params: Record<string, any>,
+        context?: { sessionId?: string; workspaceId?: string }
+    ): Promise<any> {
+        // Get toolManager agent to use its useTool implementation
+        const toolManagerAgent = this.getAgentByName('toolManager');
+        if (!toolManagerAgent) {
+            return {
+                success: false,
+                error: 'ToolManager agent not found'
+            };
+        }
+
+        const useToolsTool = toolManagerAgent.getTool('useTools');
+        if (!useToolsTool) {
+            return {
+                success: false,
+                error: 'useTools tool not found in ToolManager'
+            };
+        }
+
+        // Merge context from params and external context
+        const paramsContext = params.context || {};
+        const mergedParams = {
+            ...params,
+            context: {
+                ...paramsContext,
+                sessionId: context?.sessionId || paramsContext.sessionId || `session_${Date.now()}`,
+                workspaceId: context?.workspaceId || paramsContext.workspaceId || 'default'
+            }
+        };
+
+        // Execute via toolManager's useTools
+        return await useToolsTool.execute(mergedParams);
     }
 
     /**

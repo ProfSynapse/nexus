@@ -41,8 +41,8 @@ export class UseToolTool implements ITool<UseToolParams, UseToolResult> {
    * @param workspaces Known workspaces for validation by name
    */
   constructor(app: App, agentRegistry: Map<string, IAgent>, workspaces: WorkspaceInfo[] = []) {
-    this.slug = 'useTool';
-    this.name = 'Use Tool';
+    this.slug = 'useTools';
+    this.name = 'Use Tools';
     this.description = 'Execute tools with context. Fill context FIRST (memory→goal→constraints), then specify tools to call. Context ensures memory/goal are captured for each trace.';
     this.version = '1.0.0';
 

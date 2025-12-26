@@ -145,10 +145,12 @@ export class StreamingResponseService {
       const openAITools = isWebLLM ? [] : this.dependencies.toolCallService.getAvailableTools();
 
       // Prepare LLM options with converted tools
+      // NOTE: systemPrompt is already in the messages array from buildLLMMessages()
+      // Do NOT pass it again here - this caused duplicate system prompts
       const llmOptions: any = {
         provider: options?.provider || defaultModel.provider,
         model: options?.model || defaultModel.model,
-        systemPrompt: options?.systemPrompt,
+        // systemPrompt intentionally omitted - already in messages array
         tools: openAITools,
         toolChoice: openAITools.length > 0 ? 'auto' : undefined,
         abortSignal: options?.abortSignal,

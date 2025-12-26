@@ -268,6 +268,16 @@ export class WebLLMAdapter extends BaseAdapter {
       messages = this.buildMessages(prompt, options?.systemPrompt);
     }
 
+    // Debug logging - full request (check console with filter: LLM_DEBUG)
+    console.log('[LLM_DEBUG] ====== WebLLM/Nexus Request ======');
+    console.log('[LLM_DEBUG] Messages:');
+    for (const msg of messages) {
+      console.log(`[LLM_DEBUG] [${msg.role}]:`);
+      console.log(msg.content);
+      console.log('[LLM_DEBUG] ---');
+    }
+    console.log('[LLM_DEBUG] ================================');
+
     // CRITICAL: Reset adapter state to 'ready' before starting new generation
     // This ensures clean state regardless of previous generation's outcome
     // The engine handles the actual locking via generationLock
@@ -324,13 +334,17 @@ export class WebLLMAdapter extends BaseAdapter {
 
           // Handle [TOOL_CALLS] or <tool_call> format at completion
           if (hasToolCallsFormat) {
-            // DEBUG: Log raw content before parsing
-            console.log('[NEXUS_TOOL_DEBUG] Raw accumulated content:', accumulatedContent);
-
             const parsed = ToolCallContentParser.parse(accumulatedContent);
 
-            // DEBUG: Log parsed result
-            console.log('[NEXUS_TOOL_DEBUG] Parsed result:', JSON.stringify(parsed, null, 2));
+            // Debug logging - response
+            console.log('[LLM_DEBUG] ====== WebLLM/Nexus Response ======');
+            console.log('[LLM_DEBUG] Raw accumulated content:');
+            console.log(accumulatedContent);
+            console.log('[LLM_DEBUG] Parsed tool calls:', parsed.hasToolCalls ? parsed.toolCalls.length : 0);
+            if (parsed.hasToolCalls) {
+              console.log('[LLM_DEBUG] Tool calls:', JSON.stringify(parsed.toolCalls, null, 2));
+            }
+            console.log('[LLM_DEBUG] ================================');
 
             if (parsed.hasToolCalls) {
               // DEBUG: Log tool calls before conversion

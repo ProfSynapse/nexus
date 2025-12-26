@@ -23,7 +23,7 @@
  * - OllamaAdapter (Ollama local models)
  */
 
-import { ToolCall } from '../types';
+import { ToolCall, ToolCallFormat } from '../types';
 
 export interface ParsedToolCallResult {
   /** Whether tool calls were found in the content */
@@ -34,6 +34,8 @@ export interface ParsedToolCallResult {
   cleanContent: string;
   /** Any text that appeared before [TOOL_CALLS] */
   prefixContent: string;
+  /** Format detected: 'bracket' = [TOOL_CALLS], 'xml' = <tool_call>, 'native' = OpenAI */
+  detectedFormat?: ToolCallFormat;
 }
 
 export interface RawToolCall {
@@ -117,7 +119,8 @@ export class ToolCallContentParser {
       hasToolCalls: false,
       toolCalls: [],
       cleanContent: content,
-      prefixContent: ''
+      prefixContent: '',
+      detectedFormat: 'bracket'
     };
 
     try {
@@ -148,9 +151,9 @@ export class ToolCallContentParser {
         return result;
       }
 
-      // Convert to standard ToolCall format
+      // Convert to standard ToolCall format with format tracking
       result.toolCalls = rawToolCalls.map((rawCall, index) =>
-        this.convertToToolCall(rawCall, index)
+        this.convertToToolCall(rawCall, index, 'bracket')
       );
 
       result.hasToolCalls = result.toolCalls.length > 0;
@@ -182,7 +185,8 @@ export class ToolCallContentParser {
       hasToolCalls: false,
       toolCalls: [],
       cleanContent: content,
-      prefixContent: ''
+      prefixContent: '',
+      detectedFormat: 'xml'
     };
 
     try {
@@ -223,7 +227,7 @@ export class ToolCallContentParser {
           const toolCallsArray = Array.isArray(parsed) ? parsed : [parsed];
 
           for (const rawCall of toolCallsArray) {
-            result.toolCalls.push(this.convertToToolCall(rawCall, result.toolCalls.length));
+            result.toolCalls.push(this.convertToToolCall(rawCall, result.toolCalls.length, 'xml'));
           }
         } catch (parseError) {
         }
@@ -252,7 +256,7 @@ export class ToolCallContentParser {
   /**
    * Convert a raw tool call to the standard ToolCall format
    */
-  private static convertToToolCall(raw: RawToolCall, index: number): ToolCall {
+  private static convertToToolCall(raw: RawToolCall, index: number, format?: ToolCallFormat): ToolCall {
     // Generate ID if not provided
     const id = raw.id || `toolcall_${Date.now()}_${index}`;
 
@@ -270,7 +274,8 @@ export class ToolCallContentParser {
       function: {
         name: raw.name,
         arguments: argsString
-      }
+      },
+      sourceFormat: format
     };
   }
 

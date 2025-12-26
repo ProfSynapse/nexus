@@ -3,19 +3,46 @@
  *
  * Used by: LM Studio, Ollama, WebLLM
  *
- * Custom format uses:
- * - Text-based [TOOL_CALLS][...][/TOOL_CALLS] format
- * - Strict user/assistant alternation required
- * - Raw JSON tool results to match training data
+ * Preserves the original tool call format the model used:
+ * - [TOOL_CALLS][...][/TOOL_CALLS] (Mistral/bracket format)
+ * - <tool_call>...</tool_call> (Qwen/XML format)
+ *
+ * Strict user/assistant alternation required.
+ * Raw JSON tool results to match training data.
  *
  * Follows Single Responsibility Principle - only handles custom text format.
  */
 
 import { IContextBuilder } from './IContextBuilder';
-import { ConversationData } from '../../../types/chat/ChatTypes';
+import { ConversationData, ToolCallFormat } from '../../../types/chat/ChatTypes';
 
 export class CustomFormatContextBuilder implements IContextBuilder {
   readonly provider = 'custom';
+
+  /**
+   * Format tool calls using the format the model originally used
+   * Preserves bracket format for Mistral-based, XML format for Qwen-based models
+   */
+  private formatToolCalls(toolCalls: any[], format?: ToolCallFormat): string {
+    const toolCallObjs = toolCalls.map((tc: any) => ({
+      name: tc.name,
+      arguments: tc.parameters || {}
+    }));
+
+    // Default to bracket format if not specified (legacy behavior)
+    const effectiveFormat = format || toolCalls[0]?.sourceFormat || 'bracket';
+
+    if (effectiveFormat === 'xml') {
+      // Qwen/XML format: <tool_call>...</tool_call>
+      return toolCallObjs.map(obj =>
+        `<tool_call>\n${JSON.stringify(obj, null, 2)}\n</tool_call>`
+      ).join('\n');
+    }
+
+    // Bracket format: [TOOL_CALLS][...][/TOOL_CALLS]
+    const jsonArray = toolCallObjs.map(obj => JSON.stringify(obj));
+    return `[TOOL_CALLS][${jsonArray.join(',')}][/TOOL_CALLS]`;
+  }
 
   /**
    * Validate if a message should be included in LLM context
@@ -65,13 +92,10 @@ export class CustomFormatContextBuilder implements IContextBuilder {
         }
       } else if (msg.role === 'assistant') {
         if (msg.toolCalls && msg.toolCalls.length > 0) {
-          // Format as [TOOL_CALLS] text
-          const toolCallTexts = msg.toolCalls.map((tc: any) => {
-            return JSON.stringify({ name: tc.name, arguments: tc.parameters || {} });
-          });
+          // Format using the model's original format
           messages.push({
             role: 'assistant',
-            content: `[TOOL_CALLS][${toolCallTexts.join(',')}][/TOOL_CALLS]`
+            content: this.formatToolCalls(msg.toolCalls)
           });
 
           // Add tool results as user message
@@ -152,19 +176,26 @@ export class CustomFormatContextBuilder implements IContextBuilder {
     // Check last message for duplicate detection
     const lastMsg = messages[messages.length - 1];
 
-    // Build the current tool call text
-    const toolCallTexts = toolCalls.map(toolCall => {
+    // Normalize tool calls for formatting
+    const normalizedToolCalls = toolCalls.map(toolCall => {
       const toolName = toolCall.function?.name || toolCall.name || 'unknown';
       const args = toolCall.function?.arguments || toolCall.arguments || '{}';
-      const parsedArgs = typeof args === 'string' ? args : JSON.stringify(args);
-      return JSON.stringify({ name: toolName, arguments: JSON.parse(parsedArgs) });
+      const parsedArgs = typeof args === 'string' ? JSON.parse(args) : args;
+      return {
+        name: toolName,
+        parameters: parsedArgs,
+        sourceFormat: toolCall.sourceFormat
+      };
     });
 
+    // Detect format from first tool call, or check if it's XML-style
+    const format = normalizedToolCalls[0]?.sourceFormat;
+    const assistantToolCallContent = this.formatToolCalls(normalizedToolCalls, format);
+
     // Only add assistant tool call if we don't already end with one
-    const assistantToolCallContent = `[TOOL_CALLS][${toolCallTexts.join(',')}][/TOOL_CALLS]`;
     const lastIsMatchingAssistant = lastMsg &&
       lastMsg.role === 'assistant' &&
-      lastMsg.content?.includes('[TOOL_CALLS]');
+      (lastMsg.content?.includes('[TOOL_CALLS]') || lastMsg.content?.includes('<tool_call>'));
 
     if (!lastIsMatchingAssistant) {
       messages.push({
@@ -199,17 +230,24 @@ export class CustomFormatContextBuilder implements IContextBuilder {
   ): any[] {
     const messages = [...previousMessages];
 
-    // Build tool call text
-    const toolCallTexts = toolCalls.map(toolCall => {
+    // Normalize tool calls for formatting
+    const normalizedToolCalls = toolCalls.map(toolCall => {
       const toolName = toolCall.function?.name || toolCall.name || 'unknown';
       const args = toolCall.function?.arguments || toolCall.arguments || '{}';
-      const parsedArgs = typeof args === 'string' ? args : JSON.stringify(args);
-      return JSON.stringify({ name: toolName, arguments: JSON.parse(parsedArgs) });
+      const parsedArgs = typeof args === 'string' ? JSON.parse(args) : args;
+      return {
+        name: toolName,
+        parameters: parsedArgs,
+        sourceFormat: toolCall.sourceFormat
+      };
     });
+
+    // Detect format from first tool call
+    const format = normalizedToolCalls[0]?.sourceFormat;
 
     messages.push({
       role: 'assistant',
-      content: `[TOOL_CALLS][${toolCallTexts.join(',')}][/TOOL_CALLS]`
+      content: this.formatToolCalls(normalizedToolCalls, format)
     });
 
     // Format tool results - raw JSON to match training format

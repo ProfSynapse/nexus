@@ -199,7 +199,7 @@ export class SystemPromptBuilder {
 
     // Tools overview - dynamically built from registered agents
     prompt += `AVAILABLE AGENTS AND TOOLS:
-You have two meta-tools: toolManager_getTools (discover) and toolManager_useTool (execute).
+You have two meta-tools: getTools (discover) and useTools (execute).
 
 `;
 
@@ -234,26 +234,21 @@ You have two meta-tools: toolManager_getTools (discover) and toolManager_useTool
 
     prompt += `HOW TO USE TOOLS:
 
-1. DISCOVER: Call toolManager_getTools to get parameter schemas:
-   { "context": {...}, "request": [{ "agent": "contentManager", "tools": ["readContent"] }] }
+1. DISCOVER: Call getTools to get parameter schemas for tools you need
+2. EXECUTE: Call useTools with context and calls array
 
-2. EXECUTE: Call toolManager_useTool with context and calls:
-   {
-     "context": {
-       "workspaceId": "${effectiveWorkspaceId}",
-       "sessionId": "${effectiveSessionId}",
-       "memory": "Summary of conversation so far (1-3 sentences)",
-       "goal": "Current objective (1-3 sentences)",
-       "constraints": "Optional rules/limits (1-3 sentences)"
-     },
-     "calls": [
-       { "agent": "contentManager", "tool": "readContent", "params": { "path": "note.md" } }
-     ]
-   }
+Context (REQUIRED in every useTools call):
+- workspaceId: "${effectiveWorkspaceId}"
+- sessionId: "${effectiveSessionId}"
+- memory: 1-3 sentences summarizing conversation so far
+- goal: 1-3 sentences describing current objective
+- constraints: (optional) any rules or limits
+
+Calls array: [{ agent: "agentName", tool: "toolName", params: {...} }]
 
 IMPORTANT:
-- Keep workspaceId and sessionId EXACTLY as shown for the entire conversation
-- Update memory and goal as the conversation evolves
+- Keep workspaceId and sessionId EXACTLY as shown
+- Update memory and goal as conversation evolves
 - Use "params" (not "parameters") for tool-specific arguments
 `;
 
@@ -548,8 +543,6 @@ IMPORTANT:
       prompt += `  ${this.escapeXmlContent(agent.description)}\n\n`;
     }
 
-    prompt += 'Note: These are custom prompt agents created by the user. ';
-    prompt += 'Built-in agents (ContentManager, VaultLibrarian, MemoryManager, etc.) are always available via MCP tools.\n';
     prompt += '</available_agents>';
 
     return prompt;
