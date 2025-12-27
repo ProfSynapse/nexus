@@ -21,9 +21,11 @@ import { addRecommendations, Recommendation } from '../../../utils/recommendatio
 import { NudgeHelpers } from '../../../utils/nudgeHelpers';
 
 /**
- * Memory types available for search (aligned with MemorySearchParams)
+ * Memory types available for search (simplified after MemoryManager refactor)
+ * - 'traces': Tool execution traces (includes tool calls)
+ * - 'states': Workspace states (snapshots of work context)
  */
-export type MemoryType = 'traces' | 'sessions' | 'states' | 'workspaces' | 'toolCalls';
+export type MemoryType = 'traces' | 'states';
 
 /**
  * Session filtering options
@@ -45,22 +47,22 @@ export interface TemporalFilterOptions {
 }
 
 /**
- * Memory search parameters interface (aligned with MemorySearchParams)
+ * Memory search parameters interface (simplified after MemoryManager refactor)
  */
 export interface SearchMemoryParams extends CommonParameters {
   // REQUIRED PARAMETERS
   query: string;
-  workspaceId: string;  // Defaults to global workspace if not provided
+  workspaceId: string;  // Required - states and traces are workspace-scoped
 
   // OPTIONAL PARAMETERS
-  memoryTypes?: MemoryType[];
+  memoryTypes?: MemoryType[];  // 'traces' and/or 'states'
   searchMethod?: 'semantic' | 'exact' | 'mixed';
   sessionFiltering?: SessionFilterOptions;
   temporalFiltering?: TemporalFilterOptions;
   limit?: number;
   includeMetadata?: boolean;
   includeContent?: boolean;
-  
+
   // Additional properties to match MemorySearchParams
   workspace?: string;
   dateRange?: DateRange;
@@ -100,7 +102,7 @@ export class SearchMemoryTool extends BaseTool<SearchMemoryParams, SearchMemoryR
     super(
       'searchMemory',
       'Search Memory',
-      'MEMORY-FOCUSED search with mandatory workspaceId parameter. Search through memory traces, sessions, states, and activities with workspace context and temporal filtering. Requires: query (search terms) and workspaceId (workspace context - defaults to "global-workspace").',
+      'MEMORY-FOCUSED search with mandatory workspaceId parameter. Search through memory traces and states within a workspace context. Traces include tool execution history. States capture workspace snapshots. Requires: query (search terms) and workspaceId (workspace context).',
       '2.0.0'
     );
 
@@ -224,7 +226,7 @@ export class SearchMemoryTool extends BaseTool<SearchMemoryParams, SearchMemoryR
     const toolSchema = {
       type: 'object',
       title: 'Memory Search Params',
-      description: 'MEMORY-FOCUSED search with workspace context. Search through memory traces, sessions, states, and activities with temporal filtering.',
+      description: 'MEMORY-FOCUSED search with workspace context. Search through memory traces (tool execution history) and states (workspace snapshots) with temporal filtering.',
       properties: {
         query: {
           type: 'string',
@@ -234,18 +236,17 @@ export class SearchMemoryTool extends BaseTool<SearchMemoryParams, SearchMemoryR
         },
         workspaceId: {
           type: 'string',
-          description: 'REQUIRED: Workspace context for memory search. IMPORTANT: If not provided or empty, defaults to "global-workspace" which is the default workspace. Specify a proper workspace ID to access workspace-specific memory traces, sessions, and activities.',
-          default: 'global-workspace',
+          description: 'REQUIRED: Workspace context for memory search. States and traces are workspace-scoped. Use listWorkspaces to see available workspaces.',
           examples: ['project-alpha', 'research-workspace', 'global-workspace']
         },
         memoryTypes: {
           type: 'array',
           items: {
             type: 'string',
-            enum: ['traces', 'toolCalls', 'sessions', 'states', 'workspaces']
+            enum: ['traces', 'states']
           },
-          description: 'Types of memory to search (defaults to all)',
-          default: ['traces', 'toolCalls', 'sessions', 'states', 'workspaces']
+          description: 'Types of memory to search. "traces" includes tool execution history. "states" includes workspace snapshots. Defaults to both types.',
+          default: ['traces', 'states']
         },
         dateRange: {
           type: 'object',

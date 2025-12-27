@@ -20,12 +20,6 @@ export interface WorkspaceContext {
   purpose?: string;
 
   /**
-   * What are you trying to accomplish right now?
-   * Example: "Submit 10 applications this week"
-   */
-  currentGoal?: string;
-
-  /**
    * Workflows for different situations
    */
   workflows?: Array<{
@@ -64,6 +58,7 @@ export interface Workspace {
   rootFolder: string;
   created: number;
   lastAccessed: number;
+  isArchived?: boolean;  // Soft delete flag
 }
 
 /**

@@ -71,32 +71,10 @@ export class CreateStateTool extends BaseTool<CreateStateParams, StateResult> {
             const validationErrors = this.validateParameters(params);
             if (validationErrors.length > 0) {
                 const errorMessages = validationErrors.map(e => `${e.field}: ${e.requirement}`).join('\n');
-                const missingFields = validationErrors.map(e => e.field).join(', ');
-                
                 return this.prepareResult(
-                    false, 
-                    {
-                        error: `❌ Validation Failed - Missing or invalid required parameters: ${missingFields}\n\n${errorMessages}`,
-                        validationErrors: validationErrors,
-                        parameterHints: `💡 All Required Parameters:\n- name: string (descriptive name for this state)\n- conversationContext: string (what was happening)\n- activeTask: string (what you were working on)\n- activeFiles: array of file paths\n- nextSteps: array of action items\n- reasoning: string (why saving now)`,
-                        suggestions: [
-                            'Ensure ALL required parameters are provided',
-                            'name is REQUIRED - provide a descriptive name for this state',
-                            'activeFiles must be an array of file paths, e.g., ["file1.md", "file2.md"]',
-                            'nextSteps must be an array of action items, e.g., ["Step 1", "Step 2"]',
-                            'All text fields (name, conversationContext, activeTask, reasoning) must be non-empty strings'
-                        ],
-                        providedParams: params,
-                        expectedParams: {
-                            name: 'string (REQUIRED)',
-                            conversationContext: 'string (REQUIRED)',
-                            activeTask: 'string (REQUIRED)',
-                            activeFiles: 'array of strings (REQUIRED)',
-                            nextSteps: 'array of strings (REQUIRED)',
-                            reasoning: 'string (REQUIRED)'
-                        }
-                    }, 
-                    `Validation failed: ${missingFields} - ${errorMessages}`,
+                    false,
+                    undefined,
+                    `Missing required parameters:\n${errorMessages}`,
                     extractContextFromParams(params)
                 );
             }
@@ -105,6 +83,18 @@ export class CreateStateTool extends BaseTool<CreateStateParams, StateResult> {
             const workspaceResult = await this.resolveWorkspaceContext(params, workspaceService);
             if (!workspaceResult.success) {
                 return this.prepareResult(false, undefined, workspaceResult.error, extractContextFromParams(params));
+            }
+
+            // Phase 3.5: Check state name uniqueness (states are workspace-scoped using '_workspace' as sessionId)
+            const existingStates = await memoryService.getStates(workspaceResult.data.workspaceId, '_workspace');
+            const nameExists = existingStates.items.some(state => state.name === params.name);
+            if (nameExists) {
+                return this.prepareResult(
+                    false,
+                    undefined,
+                    `State "${params.name}" already exists. States are immutable - use a unique name like "${params.name}-v2" or "${params.name}-${new Date().toISOString().split('T')[0]}".`,
+                    extractContextFromParams(params)
+                );
             }
 
             // Phase 4: Build state context (consolidated from StateCreator logic)
@@ -121,15 +111,14 @@ export class CreateStateTool extends BaseTool<CreateStateParams, StateResult> {
                 return this.prepareResult(false, undefined, 'State creation failed - no state ID returned', extractContextFromParams(params));
             }
 
-            // Extract workspaceId and sessionId for verification
+            // Extract workspaceId for verification (use '_workspace' as sessionId)
             const workspaceId = workspaceResult.data.workspaceId;
-            const sessionId = params.targetSessionId || 'current';
 
             // Phase 6: Verify persistence (data integrity check)
-            const verificationResult = await this.verifyStatePersistence(workspaceId, sessionId, persistResult.stateId, memoryService);
+            const verificationResult = await this.verifyStatePersistence(workspaceId, '_workspace', persistResult.stateId, memoryService);
             if (!verificationResult.success) {
                 // Rollback if verification fails
-                await this.rollbackState(workspaceId, sessionId, persistResult.stateId, memoryService);
+                await this.rollbackState(workspaceId, '_workspace', persistResult.stateId, memoryService);
                 return this.prepareResult(false, undefined, `State verification failed: ${verificationResult.error}`, extractContextFromParams(params));
             }
 
@@ -149,7 +138,7 @@ export class CreateStateTool extends BaseTool<CreateStateParams, StateResult> {
                 false, 
                 {
                     error: errorMsg,
-                    parameterHints: '💡 Check that all required parameters are correctly formatted:\n- name: string\n- conversationContext: string (what was happening)\n- activeTask: string (what you were working on)\n- activeFiles: array of file paths\n- nextSteps: array of action items\n- reasoning: string (why saving now)',
+                    parameterHints: '💡 Check that all required parameters are correctly formatted:\n- name: string\n- conversationContext: string (what was happening)\n- activeTask: string (what you were working on)\n- activeFiles: array of file paths\n- nextSteps: array of action items',
                     suggestions: [
                         'Verify all required fields are provided',
                         'Ensure activeFiles is an array: ["file1.md", "file2.md"]',
@@ -193,23 +182,46 @@ export class CreateStateTool extends BaseTool<CreateStateParams, StateResult> {
      * Validate state creation parameters (consolidated validation logic)
      */
     private validateParameters(params: CreateStateParams): ValidationError[] {
-        // Use consolidated validation service
-        const errors = this.serviceIntegration.validateStateCreationParams(params);
-        
-        // Add any additional state-specific validations
-        if (params.maxFiles !== undefined && params.maxFiles < 0) {
+        const errors: ValidationError[] = [];
+
+        // Required fields validation
+        if (!params.name || typeof params.name !== 'string' || params.name.trim() === '') {
             errors.push({
-                field: 'maxFiles',
-                value: params.maxFiles,
-                requirement: 'Maximum files must be a non-negative number'
+                field: 'name',
+                value: params.name,
+                requirement: 'Name is required and must be a non-empty string'
             });
         }
 
-        if (params.maxTraces !== undefined && params.maxTraces < 0) {
+        if (!params.conversationContext || typeof params.conversationContext !== 'string' || params.conversationContext.trim() === '') {
             errors.push({
-                field: 'maxTraces',
-                value: params.maxTraces,
-                requirement: 'Maximum traces must be a non-negative number'
+                field: 'conversationContext',
+                value: params.conversationContext,
+                requirement: 'Conversation context is required and must be a non-empty string'
+            });
+        }
+
+        if (!params.activeTask || typeof params.activeTask !== 'string' || params.activeTask.trim() === '') {
+            errors.push({
+                field: 'activeTask',
+                value: params.activeTask,
+                requirement: 'Active task is required and must be a non-empty string'
+            });
+        }
+
+        if (!Array.isArray(params.activeFiles)) {
+            errors.push({
+                field: 'activeFiles',
+                value: params.activeFiles,
+                requirement: 'Active files is required and must be an array'
+            });
+        }
+
+        if (!Array.isArray(params.nextSteps)) {
+            errors.push({
+                field: 'nextSteps',
+                value: params.nextSteps,
+                requirement: 'Next steps is required and must be an array'
             });
         }
 
@@ -249,7 +261,7 @@ export class CreateStateTool extends BaseTool<CreateStateParams, StateResult> {
      */
     private async buildStateContext(params: CreateStateParams, workspaceData: any, workspaceService: WorkspaceService): Promise<any> {
         const { workspace } = workspaceData;
-        
+
         // Extract or create workspace context
         let currentWorkspaceContext;
         if (workspace.context) {
@@ -258,23 +270,19 @@ export class CreateStateTool extends BaseTool<CreateStateParams, StateResult> {
             // Create basic context for legacy workspace
             currentWorkspaceContext = {
                 purpose: workspace.description || `Work in ${workspace.name}`,
-                currentGoal: 'Continue workspace tasks',
-                status: 'In progress',
                 workflows: [],
                 keyFiles: [],
-                preferences: [],
-                agents: [],
+                preferences: ''
             };
         }
 
-        // Build the state context from LLM input
+        // Build the state context from LLM input (no reasoning field)
         const context = {
             workspaceContext: currentWorkspaceContext,
             conversationContext: params.conversationContext,
             activeTask: params.activeTask,
-            activeFiles: params.activeFiles || [],
-            nextSteps: params.nextSteps || [],
-            reasoning: params.reasoning
+            activeFiles: params.activeFiles,
+            nextSteps: params.nextSteps
         };
 
         return {
@@ -299,6 +307,7 @@ export class CreateStateTool extends BaseTool<CreateStateParams, StateResult> {
 
             // Build WorkspaceState for storage following the architecture design
             // This matches the WorkspaceState interface which extends State
+            // Use '_workspace' as sessionId for workspace-scoped states
             const workspaceState = {
                 // Core State fields (required)
                 id: `state_${now}_${Math.random().toString(36).substring(2, 11)}`,
@@ -308,9 +317,9 @@ export class CreateStateTool extends BaseTool<CreateStateParams, StateResult> {
                 context: context,  // The inner StateContext with activeTask, activeFiles, etc.
 
                 // Additional WorkspaceState fields
-                sessionId: params.targetSessionId || 'current',
+                sessionId: '_workspace',  // All states are workspace-scoped
                 timestamp: now,
-                description: `${params.activeTask} - ${params.reasoning}`,
+                description: params.description || params.activeTask,
                 state: {
                     workspace,
                     recentTraces: [], // Could be populated from current session
@@ -319,21 +328,15 @@ export class CreateStateTool extends BaseTool<CreateStateParams, StateResult> {
                         createdBy: 'CreateStateMode',
                         version: '2.0.0',
                         creationMethod: 'manual',
-                        includeSummary: params.includeSummary || false,
-                        includeFileContents: params.includeFileContents || false,
-                        maxFiles: params.maxFiles,
-                        maxTraces: params.maxTraces,
-                        reason: params.reason,
                         tags: params.tags || []
                     }
                 }
             };
 
-            // Persist to MemoryService - pass the full WorkspaceState
-            const sessionId = params.targetSessionId || 'current';
+            // Persist to MemoryService - use '_workspace' as sessionId
             const stateId = await memoryService.saveState(
                 workspaceId,
-                sessionId,
+                '_workspace',
                 workspaceState,  // Pass the full object
                 workspaceState.name
             );
@@ -451,73 +454,21 @@ export class CreateStateTool extends BaseTool<CreateStateParams, StateResult> {
                         ['Complete literature review', 'Organize findings by theme', 'Start writing methodology section']
                     ]
                 },
-                reasoning: {
-                    type: 'string',
-                    description: '💭 REQUIRED: Why are you saving this state right now? Explain the reason for saving at this point.\n\nExample: "Saving before context limit, about to submit application"',
-                    examples: [
-                        'Saving before context limit, about to submit application',
-                        'Good stopping point before switching to beat sheet work',
-                        'Checkpoint before analysis phase, want to preserve research findings'
-                    ]
-                },
-                
+
                 // Optional fields
-                description: { 
-                    type: 'string', 
-                    description: '📋 Optional: Additional description for the state' 
+                description: {
+                    type: 'string',
+                    description: 'Optional: Additional description for the state'
                 },
-                targetSessionId: { 
-                    type: 'string', 
-                    description: '🔗 Optional: Target session ID (defaults to current session)' 
-                },
-                includeSummary: { 
-                    type: 'boolean', 
-                    description: '📊 Optional: Whether to include a summary (default: false)' 
-                },
-                includeFileContents: { 
-                    type: 'boolean', 
-                    description: '📄 Optional: Whether to include file contents (default: false)' 
-                },
-                maxFiles: { 
-                    type: 'number', 
-                    description: '🔢 Optional: Maximum number of files to include (must be non-negative)',
-                    minimum: 0
-                },
-                maxTraces: { 
-                    type: 'number', 
-                    description: '🔢 Optional: Maximum number of memory traces to include (must be non-negative)',
-                    minimum: 0
-                },
-                tags: { 
-                    type: 'array', 
-                    items: { type: 'string' }, 
-                    description: '🏷️ Optional: Tags to associate with the state (array of strings)',
+                tags: {
+                    type: 'array',
+                    items: { type: 'string' },
+                    description: 'Optional: Tags to associate with the state',
                     examples: [['work', 'cover-letter'], ['screenplay', 'outline'], ['research', 'ai-safety']]
-                },
-                reason: { 
-                    type: 'string', 
-                    description: '📝 Optional: Additional reason for creating this state (NOT the same as "name" or "reasoning")' 
                 }
             },
-            required: ['name', 'conversationContext', 'activeTask', 'activeFiles', 'nextSteps', 'reasoning'],
-            additionalProperties: false,
-            errorHelp: {
-                missingName: '⚠️ CRITICAL: The "name" parameter is REQUIRED and must come first. This is a short title for the state, NOT the same as "reason". Example: { "name": "Google Cover Letter Draft", ... }',
-                missingConversationContext: 'The "conversationContext" parameter is required. Explain what was happening when you decided to save.',
-                missingActiveTask: 'The "activeTask" parameter is required. Describe what specific task you were working on.',
-                missingActiveFiles: 'The "activeFiles" parameter is required. Provide an array of file paths you were working with.',
-                missingNextSteps: 'The "nextSteps" parameter is required. Provide an array of actionable next steps for when you resume.',
-                missingReasoning: 'The "reasoning" parameter is required. Explain why you\'re saving this state right now.',
-                arrayFormat: 'activeFiles and nextSteps must be ARRAYS of strings, not single strings or comma-separated values.',
-                commonMistakes: [
-                    '⚠️ Forgetting the "name" parameter (most common mistake!) - name is REQUIRED',
-                    'Confusing "name" with "reason" - they are different parameters',
-                    'Providing activeFiles as a string instead of an array - wrap in brackets: ["file.md"]',
-                    'Providing nextSteps as a string instead of an array - wrap in brackets: ["Step 1", "Step 2"]',
-                    'Forgetting to include all required fields',
-                    'Using negative numbers for maxFiles or maxTraces'
-                ]
-            }
+            required: ['name', 'conversationContext', 'activeTask', 'activeFiles', 'nextSteps'],
+            additionalProperties: false
         };
         
         return this.getMergedSchema(customSchema);

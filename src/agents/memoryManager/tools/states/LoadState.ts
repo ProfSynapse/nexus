@@ -61,18 +61,22 @@ export class LoadStateTool extends BaseTool<LoadStateParams, StateResult> {
 
             const { memoryService, workspaceService } = servicesResult;
 
-            // Phase 2: Extract workspaceId and sessionId, then load state data
+            // Phase 2: Extract workspaceId and load state data
             if (!memoryService) {
                 return this.prepareResult(false, undefined, 'Memory service not available', extractContextFromParams(params));
             }
 
-            // Extract workspaceId and sessionId from params
+            // Extract workspaceId from params (use '_workspace' as sessionId for workspace-scoped states)
             const parsedContext = params.workspaceContext ?
                 (typeof params.workspaceContext === 'string' ? JSON.parse(params.workspaceContext) : params.workspaceContext) : null;
             const workspaceId = parsedContext?.workspaceId || GLOBAL_WORKSPACE_ID;
-            const sessionId = 'current';
 
-            const stateResult = await this.loadStateData(workspaceId, sessionId, params.stateId, memoryService);
+            // Use name (required) or fall back to deprecated stateId for backward compatibility
+            const stateName = params.name ?? params.stateId;
+            if (!stateName) {
+                return this.prepareResult(false, undefined, 'State name is required. Use listStates to see available states.', extractContextFromParams(params));
+            }
+            const stateResult = await this.loadStateData(workspaceId, '_workspace', stateName, memoryService);
             if (!stateResult.success) {
                 return this.prepareResult(false, undefined, stateResult.error, extractContextFromParams(params));
             }
@@ -83,49 +87,10 @@ export class LoadStateTool extends BaseTool<LoadStateParams, StateResult> {
             }
             const contextResult = await this.processAndRestoreContext(stateResult.data, workspaceService, memoryService);
 
-            // Phase 4: Handle session continuation (consolidated from SessionManager logic)
-            let continuationSessionId: string | undefined;
-            if (params.continueExistingSession !== false) {
-                // Continue with original session ID
-                continuationSessionId = stateResult.data.loadedState.sessionId;
-            } else {
-                // Create new continuation session
-                const continuationResult = await this.createContinuationSession(
-                    params,
-                    stateResult.data,
-                    contextResult,
-                    memoryService
-                );
-                if (continuationResult.success) {
-                    continuationSessionId = continuationResult.sessionId;
-                }
-            }
-
-            // Phase 5: Generate restoration summary (consolidated from RestorationSummaryGenerator logic)
-            const summaryResult = this.generateRestorationSummary(
-                stateResult.data,
-                contextResult,
-                continuationSessionId,
-                params.restorationGoal
-            );
-
-            // Phase 6: Create restoration trace (consolidated from RestorationTracer logic)
-            if (continuationSessionId && memoryService) {
-                await this.createRestorationTrace(
-                    stateResult.data,
-                    contextResult,
-                    continuationSessionId,
-                    params.restorationGoal,
-                    memoryService
-                );
-            }
-
-            // Phase 7: Prepare final result
+            // Phase 4: Prepare simplified result (no session continuation, just return state data)
             return this.prepareFinalResult(
                 stateResult.data,
-                contextResult,
-                summaryResult,
-                continuationSessionId
+                contextResult
             );
 
         } catch (error) {
@@ -159,14 +124,14 @@ export class LoadStateTool extends BaseTool<LoadStateParams, StateResult> {
 
     /**
      * Load state data (consolidated from StateRetriever logic)
-     * Supports lookup by both state ID and state name
+     * Looks up state by name
      */
-    private async loadStateData(workspaceId: string, sessionId: string, stateIdentifier: string, memoryService: MemoryService): Promise<{success: boolean; error?: string; data?: any}> {
+    private async loadStateData(workspaceId: string, sessionId: string, stateName: string, memoryService: MemoryService): Promise<{success: boolean; error?: string; data?: any}> {
         try {
-            // Get state from memory service using unified lookup (ID or name)
-            const loadedState = await memoryService.getStateByNameOrId(workspaceId, sessionId, stateIdentifier);
+            // Get state from memory service by name
+            const loadedState = await memoryService.getStateByNameOrId(workspaceId, sessionId, stateName);
             if (!loadedState) {
-                return { success: false, error: `State '${stateIdentifier}' not found (searched by both name and ID)` };
+                return { success: false, error: `State "${stateName}" not found. Use listStates to see available states.` };
             }
 
             // Get related traces if available using the actual state's session ID
@@ -259,170 +224,27 @@ export class LoadStateTool extends BaseTool<LoadStateParams, StateResult> {
     }
 
     /**
-     * Create continuation session (consolidated from SessionManager logic)
+     * Prepare final result - simplified to return just the structured state data
      */
-    private async createContinuationSession(
-        params: LoadStateParams,
-        stateData: any,
-        contextResult: any,
-        memoryService: MemoryService
-    ): Promise<{success: boolean; error?: string; sessionId?: string}> {
-        try {
-            const loadedState = stateData.loadedState;
-            const stateContext = loadedState.context || {};
-
-            // Create continuation session
-            const continuationData = {
-                workspaceId: loadedState.workspaceId,
-                name: params.sessionName || `Restored from "${loadedState.name}"`,
-                description: params.sessionDescription || `Resuming work from state saved on ${new Date(loadedState.created).toLocaleDateString()}`,
-                sessionGoal: params.restorationGoal || `Resume: ${stateContext.activeTask}`,
-                previousSessionId: loadedState.sessionId !== 'current' ? loadedState.sessionId : undefined,
-                isActive: true,
-                toolCalls: 0,
-                startTime: Date.now()
-            };
-
-            const continuationSession = await memoryService.createSession(continuationData);
-
-            return { success: true, sessionId: continuationSession.id };
-
-        } catch (error) {
-            return { success: false, error: createErrorMessage('Error creating continuation session: ', error) };
-        }
-    }
-
-    /**
-     * Generate restoration summary (consolidated from RestorationSummaryGenerator logic)
-     */
-    private generateRestorationSummary(stateData: any, contextResult: any, continuationSessionId?: string, restorationGoal?: string): any {
+    private prepareFinalResult(stateData: any, contextResult: any): StateResult {
         const loadedState = stateData.loadedState;
         const stateContext = loadedState.context || {};
 
-        const summary = {
-            stateName: loadedState.name,
-            originalCreationTime: new Date(loadedState.created).toLocaleString(),
-            workspaceId: loadedState.workspaceId,
-            workspaceName: contextResult.workspace.name,
-            originalSessionId: loadedState.sessionId,
-            continuationSessionId,
-            restorationTime: new Date().toLocaleString(),
-            restorationGoal,
-            contextSummary: contextResult.summary,
+        const resultData = {
+            name: loadedState.name,
+            conversationContext: stateContext.conversationContext,
             activeTask: stateContext.activeTask,
             activeFiles: stateContext.activeFiles || [],
             nextSteps: stateContext.nextSteps || [],
-            reasoning: stateContext.reasoning,
-            continuationHistory: undefined as Array<{ timestamp: number; description: string }> | undefined
+            description: loadedState.description,
+            tags: loadedState.state?.metadata?.tags || []
         };
-
-        // Add continuation history if applicable
-        const continuationHistory = [];
-        if (loadedState.sessionId !== 'current') {
-            continuationHistory.push({
-                timestamp: loadedState.created,
-                description: `Originally saved from session ${loadedState.sessionId}`
-            });
-        }
-
-        if (continuationSessionId) {
-            continuationHistory.push({
-                timestamp: Date.now(),
-                description: `Restored in continuation session ${continuationSessionId}`
-            });
-        }
-
-        if (continuationHistory.length > 0) {
-            summary['continuationHistory'] = continuationHistory;
-        }
-
-        return summary;
-    }
-
-    /**
-     * Create restoration trace (consolidated from RestorationTracer logic)
-     */
-    private async createRestorationTrace(
-        stateData: any,
-        contextResult: any,
-        continuationSessionId: string,
-        restorationGoal: string | undefined,
-        memoryService: MemoryService
-    ): Promise<void> {
-        try {
-            const loadedState = stateData.loadedState;
-            const stateContext = loadedState.context || {};
-
-            const traceContent = this.buildRestorationTraceContent(
-                loadedState,
-                stateContext,
-                contextResult,
-                continuationSessionId,
-                restorationGoal
-            );
-
-            // Create restoration memory trace
-            await memoryService.createMemoryTrace({
-                sessionId: continuationSessionId,
-                workspaceId: loadedState.workspaceId,
-                content: traceContent,
-                type: 'state_restoration',
-                timestamp: Date.now(),
-                metadata: {
-                    tool: 'LoadStateMode',
-                    params: { stateId: stateData.loadedState.stateId },
-                    result: { continuationSessionId },
-                    relatedFiles: contextResult.associatedNotes || []
-                }
-            });
-
-        } catch (error) {
-            // Don't fail state loading if trace creation fails
-        }
-    }
-
-    /**
-     * Prepare final result
-     *
-     * Result structure explanation:
-     * - summary: Generated by buildContextSummary() from loaded state and workspace data
-     * - associatedNotes: Processed active files (limited to 20) from processActiveFiles()
-     * - continuationHistory: Restoration timeline from generateRestorationSummary()
-     * - activeTask, activeFiles, nextSteps, reasoning: Direct from state.context
-     */
-    private prepareFinalResult(stateData: any, contextResult: any, summaryResult: any, continuationSessionId?: string): StateResult {
-        const loadedState = stateData.loadedState;
-
-        const resultData: any = {
-            stateId: loadedState.id,
-            name: loadedState.name,
-            workspaceId: loadedState.workspaceId,
-            sessionId: loadedState.sessionId,
-            created: loadedState.created,
-            newSessionId: continuationSessionId,
-            restoredContext: {
-                summary: contextResult.summary,                    // From buildContextSummary()
-                associatedNotes: contextResult.associatedNotes,   // From processActiveFiles()
-                stateCreatedAt: contextResult.stateCreatedAt,     // ISO string of state creation
-                originalSessionId: loadedState.sessionId,         // Original session ID
-                continuationHistory: summaryResult.continuationHistory, // From generateRestorationSummary()
-                activeTask: summaryResult.activeTask,            // From state.context.activeTask
-                activeFiles: summaryResult.activeFiles,          // From state.context.activeFiles
-                nextSteps: summaryResult.nextSteps,              // From state.context.nextSteps
-                reasoning: summaryResult.reasoning,              // From state.context.reasoning
-                restorationGoal: summaryResult.restorationGoal  // From input params
-            }
-        };
-
-        const contextString = continuationSessionId
-            ? `Loaded state "${loadedState.name}" and created continuation session ${continuationSessionId}. Ready to resume: ${summaryResult.activeTask}`
-            : `Loaded state "${loadedState.name}". Context restored: ${summaryResult.activeTask}`;
 
         return this.prepareResult(
             true,
             resultData,
             undefined,
-            contextString
+            undefined
         );
     }
 
@@ -489,40 +311,6 @@ export class LoadStateTool extends BaseTool<LoadStateParams, StateResult> {
             }));
     }
 
-    private buildRestorationTraceContent(
-        loadedState: any,
-        stateContext: any,
-        contextResult: any,
-        continuationSessionId: string,
-        restorationGoal?: string
-    ): string {
-        const parts: string[] = [];
-
-        parts.push(`State Restoration: Loaded state "${loadedState.name}"`);
-        parts.push(`Original state created: ${new Date(loadedState.created).toLocaleString()}`);
-        parts.push(`Continuation session created: ${continuationSessionId}`);
-
-        if (restorationGoal) {
-            parts.push(`Restoration goal: ${restorationGoal}`);
-        }
-
-        parts.push(`Active task: ${stateContext.activeTask}`);
-
-        if (stateContext.conversationContext) {
-            parts.push(`Previous context: ${stateContext.conversationContext}`);
-        }
-
-        if (stateContext.nextSteps && stateContext.nextSteps.length > 0) {
-            parts.push(`Next steps: ${stateContext.nextSteps.slice(0, 3).join(', ')}${stateContext.nextSteps.length > 3 ? '...' : ''}`);
-        }
-
-        if (stateContext.activeFiles && stateContext.activeFiles.length > 0) {
-            parts.push(`Active files: ${stateContext.activeFiles.slice(0, 5).join(', ')}`);
-        }
-
-        return parts.join('\n\n');
-    }
-
     /**
      * Schema methods using consolidated logic
      */
@@ -530,28 +318,12 @@ export class LoadStateTool extends BaseTool<LoadStateParams, StateResult> {
         const customSchema = {
             type: 'object',
             properties: {
-                stateId: {
+                name: {
                     type: 'string',
-                    description: 'ID or name of the state to load (REQUIRED). Accepts either the unique state ID or the state name.'
-                },
-                sessionName: {
-                    type: 'string',
-                    description: 'Custom name for the new continuation session (only used when continueExistingSession=false)'
-                },
-                sessionDescription: {
-                    type: 'string',
-                    description: 'Custom description for the new continuation session (only used when continueExistingSession=false)'
-                },
-                restorationGoal: {
-                    type: 'string',
-                    description: 'What do you intend to do after restoring this state? (optional)'
-                },
-                continueExistingSession: {
-                    type: 'boolean',
-                    description: 'Whether to continue with the original session ID (default: true). Set to false to create a new continuation session.'
-                },
+                    description: 'Name of the state to load (REQUIRED). Use listStates to see available states.'
+                }
             },
-            required: ['stateId'],
+            required: ['name'],
             additionalProperties: false
         };
 

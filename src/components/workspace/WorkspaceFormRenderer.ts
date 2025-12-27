@@ -93,7 +93,6 @@ export class WorkspaceFormRenderer {
     if (!this.formData.context) {
       this.formData.context = {
         purpose: '',
-        currentGoal: '',
         workflows: [],
         keyFiles: [],
         preferences: ''
@@ -109,18 +108,6 @@ export class WorkspaceFormRenderer {
     purposeInput.onChange((value) => {
       if (this.formData.context) {
         this.formData.context.purpose = value;
-      }
-    });
-
-    // Current Goal field
-    const goalField = section.createDiv('nexus-form-field');
-    goalField.createEl('label', { text: 'Current Goal', cls: 'nexus-form-label' });
-    const goalInput = new TextComponent(goalField);
-    goalInput.setPlaceholder('What are you working on right now?');
-    goalInput.setValue(this.formData.context?.currentGoal || '');
-    goalInput.onChange((value) => {
-      if (this.formData.context) {
-        this.formData.context.currentGoal = value;
       }
     });
 
@@ -152,7 +139,6 @@ export class WorkspaceFormRenderer {
     if (!this.formData.context) {
       this.formData.context = {
         purpose: '',
-        currentGoal: '',
         workflows: [],
         keyFiles: [],
         preferences: ''
@@ -177,7 +163,7 @@ export class WorkspaceFormRenderer {
     dropdown.onChange((value) => {
       if (!this.formData.context) {
         this.formData.context = {
-          purpose: '', currentGoal: '', workflows: [], keyFiles: [], preferences: ''
+          purpose: '', workflows: [], keyFiles: [], preferences: ''
         };
       }
 
@@ -208,7 +194,7 @@ export class WorkspaceFormRenderer {
     // Ensure workflows array exists
     if (!this.formData.context?.workflows) {
       this.formData.context = this.formData.context || {
-        purpose: '', currentGoal: '', workflows: [], keyFiles: [], preferences: ''
+        purpose: '', workflows: [], keyFiles: [], preferences: ''
       };
       this.formData.context.workflows = [];
     }
@@ -256,7 +242,7 @@ export class WorkspaceFormRenderer {
 
     if (!this.formData.context?.keyFiles) {
       this.formData.context = this.formData.context || {
-        purpose: '', currentGoal: '', workflows: [], keyFiles: [], preferences: ''
+        purpose: '', workflows: [], keyFiles: [], preferences: ''
       };
       this.formData.context.keyFiles = [];
     }

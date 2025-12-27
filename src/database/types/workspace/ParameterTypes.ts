@@ -15,30 +15,30 @@ export interface CreateWorkspaceParameters extends CommonParameters {
    * Workspace name (required)
    */
   name: string;
-  
+
+  /**
+   * Description of what this workspace is for (required)
+   * Example: "Screenplay development project"
+   */
+  description: string;
+
   /**
    * Root folder path (required)
    */
   rootFolder: string;
-  
+
   /**
    * What is this workspace for? (required)
    * Example: "Apply for marketing manager positions"
    */
   purpose: string;
-  
+
   /**
-   * What are you trying to accomplish right now? (required)
-   * Example: "Submit 10 applications this week"
-   */
-  currentGoal: string;
-  
-  /**
-   * Workflows for different situations (required)
+   * Workflows for different situations (optional)
    * Provide an array of workflows with name, when to use, and steps as a single string
    * Example: [{"name": "New Application", "when": "When applying to new position", "steps": "Research company\nCustomize cover letter\nApply\nTrack"}]
    */
-  workflows: Array<{
+  workflows?: Array<{
     name: string;
     when: string;
     steps: string;
@@ -64,10 +64,9 @@ export interface CreateWorkspaceParameters extends CommonParameters {
    * Example: "agent_12345"
    */
   dedicatedAgentId?: string;
-  
-  
+
+
   // Optional legacy fields for backward compatibility
-  description?: string;
   relatedFolders?: string[];
   relatedFiles?: string[];
   keyFileInstructions?: string;
@@ -225,6 +224,7 @@ export interface LoadStateParams extends CommonParameters {
 }
 
 export interface ListWorkspacesParameters extends CommonParameters {
+  includeArchived?: boolean;
   sortBy?: 'name' | 'created' | 'lastAccessed';
   order?: 'asc' | 'desc';
   limit?: number;

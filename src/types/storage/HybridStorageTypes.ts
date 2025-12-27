@@ -77,9 +77,6 @@ export interface WorkspaceContext {
   /** What is this workspace for? */
   purpose?: string;
 
-  /** What are you trying to accomplish right now? */
-  currentGoal?: string;
-
   /** Workflows for different situations */
   workflows?: WorkspaceWorkflow[];
 
@@ -123,6 +120,9 @@ export interface WorkspaceMetadata {
 
   /** Whether this workspace is currently active */
   isActive: boolean;
+
+  /** Whether this workspace is archived */
+  isArchived?: boolean;
 
   /** Optional dedicated agent ID for this workspace */
   dedicatedAgentId?: string;
@@ -192,6 +192,9 @@ export interface StateMetadata {
 
   /** Timestamp when state was created */
   created: number;
+
+  /** Whether this state is archived */
+  isArchived?: boolean;
 
   /** Optional tags for categorization */
   tags?: string[];

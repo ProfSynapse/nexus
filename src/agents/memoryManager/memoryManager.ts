@@ -7,27 +7,23 @@ import { getNexusPlugin } from '../../utils/pluginLocator';
 import { NexusPluginWithServices } from './tools/utils/pluginTypes';
 
 // Import consolidated tools
-import { CreateSessionTool } from './tools/sessions/CreateSession';
-import { ListSessionsTool } from './tools/sessions/ListSessions';
-import { LoadSessionTool } from './tools/sessions/LoadSession';
-import { UpdateSessionTool } from './tools/sessions/UpdateSession';
 import { CreateStateTool } from './tools/states/CreateState';
 import { ListStatesTool } from './tools/states/ListStates';
 import { LoadStateTool } from './tools/states/LoadState';
-import { UpdateStateTool } from './tools/states/UpdateState';
+import { ArchiveStateTool } from './tools/states/ArchiveState';
 import { CreateWorkspaceTool } from './tools/workspaces/CreateWorkspace';
 import { ListWorkspacesTool } from './tools/workspaces/ListWorkspaces';
 import { LoadWorkspaceTool } from './tools/workspaces/LoadWorkspace';
 import { UpdateWorkspaceTool } from './tools/workspaces/UpdateWorkspace';
+import { ArchiveWorkspaceTool } from './tools/workspaces/ArchiveWorkspace';
 
 /**
- * Agent for managing workspace memory, sessions, and states
+ * Agent for managing workspace memory and states
  *
  * CONSOLIDATED ARCHITECTURE:
- * - 15 files total (down from 50+)
- * - 4 session tools: create/list/load/update
- * - 4 state tools: create/list/load/update
- * - 4 workspace tools: create/list/load/update
+ * - Sessions are now implicit (sessionId comes from context, no CRUD needed)
+ * - 4 state tools: create/list/load/archive (states are immutable - no update)
+ * - 5 workspace tools: create/list/load/update/archive
  * - 3 services: ValidationService/ContextBuilder/MemoryTraceService
  */
 export class MemoryManagerAgent extends BaseAgent {
@@ -71,8 +67,8 @@ export class MemoryManagerAgent extends BaseAgent {
   ) {
     super(
       'memoryManager',
-      'Manages workspaces, memory sessions, and states for contextual recall',
-      '1.2.0'
+      'Manages workspaces and states for contextual recall',
+      '1.3.0'
     );
 
     this.app = app;
@@ -81,31 +77,26 @@ export class MemoryManagerAgent extends BaseAgent {
     // Store injected services
     this.memoryService = memoryService;
     this.workspaceService = workspaceService;
-    
-    // Register session tools (4 tools: create, list, load, update)
-    this.registerTool(new CreateSessionTool(this));
-    this.registerTool(new ListSessionsTool(this));
-    this.registerTool(new LoadSessionTool(this));
-    this.registerTool(new UpdateSessionTool(this));
 
-    // Register state tools (4 tools: create, list, load, update)
+    // Register state tools (4 tools: create, list, load, archive)
     this.registerTool(new CreateStateTool(this));
     this.registerTool(new ListStatesTool(this));
     this.registerTool(new LoadStateTool(this));
-    this.registerTool(new UpdateStateTool(this));
+    this.registerTool(new ArchiveStateTool(this));
 
-    // Register workspace tools (4 tools: create, list, load, update)
+    // Register workspace tools (5 tools: create, list, load, update, archive)
     this.registerTool(new CreateWorkspaceTool(this));
     this.registerTool(new ListWorkspacesTool(this));
     this.registerTool(new LoadWorkspaceTool(this));
     this.registerTool(new UpdateWorkspaceTool(this));
+    this.registerTool(new ArchiveWorkspaceTool(this));
   }
 
   /**
    * Dynamic description that includes current workspace information
    */
   get description(): string {
-    const baseDescription = 'Manages workspaces, memory sessions, and states for contextual recall';
+    const baseDescription = 'Manages workspaces and states for contextual recall';
     
     // Prevent infinite recursion
     if (this.isGettingDescription) {

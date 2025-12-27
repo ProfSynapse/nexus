@@ -245,7 +245,6 @@ export class WorkspaceService {
       // Convert context to HybridTypes format if provided
       const hybridContext = data.context ? {
         purpose: data.context.purpose,
-        currentGoal: data.context.currentGoal,
         workflows: data.context.workflows,
         keyFiles: data.context.keyFiles,
         preferences: data.context.preferences,
@@ -320,7 +319,6 @@ export class WorkspaceService {
       if (updates.context !== undefined) {
         hybridUpdates.context = {
           purpose: updates.context.purpose,
-          currentGoal: updates.context.currentGoal,
           workflows: updates.context.workflows,
           keyFiles: updates.context.keyFiles,
           preferences: updates.context.preferences,

@@ -39,31 +39,26 @@ export interface StateContext {
    * Workspace context at save time
    */
   workspaceContext: WorkspaceContext;
-  
+
   /**
    * What was happening when you decided to save this state?
    */
   conversationContext: string;
-  
+
   /**
    * What task were you actively working on?
    */
   activeTask: string;
-  
+
   /**
    * Which files were you working with?
    */
   activeFiles: string[];
-  
+
   /**
    * What are the immediate next steps when you resume?
    */
   nextSteps: string[];
-  
-  /**
-   * Why are you saving this state right now?
-   */
-  reasoning: string;
 }
 
 /**

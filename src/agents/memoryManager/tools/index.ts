@@ -1,14 +1,8 @@
-// Session tools (4 tools following workspace pattern)
-export { CreateSessionTool } from './sessions/CreateSession';
-export { ListSessionsTool } from './sessions/ListSessions';
-export { LoadSessionTool } from './sessions/LoadSession';
-export { UpdateSessionTool } from './sessions/UpdateSession';
-
-// State tools (4 tools following workspace pattern)
+// State tools (4 tools: create, list, load, archive)
 export { CreateStateTool } from './states/CreateState';
 export { ListStatesTool } from './states/ListStates';
 export { LoadStateTool } from './states/LoadState';
-export { UpdateStateTool } from './states/UpdateState';
+export { ArchiveStateTool } from './states/ArchiveState';
 
-// Workspace tools
+// Workspace tools (5 tools: create, list, load, update, archive)
 export * from './workspaces';

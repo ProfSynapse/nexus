@@ -52,15 +52,25 @@ export class ListStatesTool extends BaseTool<ListStatesParams, StateResult> {
         pageSize: pageSize
       };
 
-      // Get states with true DB-level pagination
+      // Get states with true DB-level pagination (use '_workspace' as sessionId)
       const statesResult = await memoryService.getStates(
         workspaceId || GLOBAL_WORKSPACE_ID,
-        'current',
+        '_workspace',
         paginationOptions
       );
 
       // Extract items from PaginatedResult
       let processedStates = statesResult.items;
+
+      // Filter out archived states by default (unless includeArchived is true)
+      if (!params.includeArchived) {
+        processedStates = processedStates.filter(state => {
+          const stateData = state.state as unknown as Record<string, unknown> | undefined;
+          const nestedState = stateData?.state as Record<string, unknown> | undefined;
+          const metadata = nestedState?.metadata as Record<string, unknown> | undefined;
+          return !metadata?.isArchived;
+        });
+      }
 
       // Filter by tags if provided (tags aren't in DB, so must filter in-memory)
       // Note: This happens AFTER pagination, so may return fewer results than pageSize
@@ -77,24 +87,13 @@ export class ListStatesTool extends BaseTool<ListStatesParams, StateResult> {
       // Sort states (in-memory sorting for now - TODO: move to DB level)
       const sortedStates = this.sortStates(processedStates, params.order || 'desc');
 
-      // Enhance state data
-      const enhancedStates = workspaceService
-        ? await this.enhanceStatesWithContext(sortedStates, workspaceService, params.includeContext)
-        : sortedStates.map(state => ({
-            ...state,
-            workspaceName: 'Unknown Workspace',
-            created: state.created || (state as unknown as { timestamp?: number }).timestamp
-          }));
+      // Simplify state data to just name and description
+      const simplifiedStates = sortedStates.map(state => ({
+        name: state.name,
+        description: state.description || state.state?.context?.activeTask || 'No description'
+      }));
 
-      return this.prepareResult(true, {
-        states: enhancedStates,
-        total: statesResult.totalItems,
-        page: statesResult.page,
-        pageSize: statesResult.pageSize,
-        totalPages: statesResult.totalPages,
-        hasNextPage: statesResult.hasNextPage,
-        hasPreviousPage: statesResult.hasPreviousPage
-      });
+      return this.prepareResult(true, simplifiedStates);
 
     } catch (error) {
       return this.prepareResult(false, undefined, createErrorMessage('Error listing states: ', error));
@@ -164,18 +163,14 @@ export class ListStatesTool extends BaseTool<ListStatesParams, StateResult> {
     const customSchema = {
       type: 'object',
       properties: {
-        sessionId: {
-          type: 'string',
-          description: 'Filter by session ID'
+        includeArchived: {
+          type: 'boolean',
+          description: 'Include archived states (default: false)'
         },
         tags: {
           type: 'array',
           items: { type: 'string' },
           description: 'Filter by tags'
-        },
-        limit: {
-          type: 'number',
-          description: 'Maximum number of states to return (deprecated, use pageSize instead)'
         },
         page: {
           type: 'number',
@@ -190,11 +185,7 @@ export class ListStatesTool extends BaseTool<ListStatesParams, StateResult> {
         order: {
           type: 'string',
           enum: ['asc', 'desc'],
-          description: 'Sort order by creation date'
-        },
-        includeContext: {
-          type: 'boolean',
-          description: 'Include context information'
+          description: 'Sort order by creation date (default: desc)'
         }
       },
       additionalProperties: false

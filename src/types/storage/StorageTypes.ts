@@ -162,6 +162,7 @@ export interface IndividualWorkspace {
   created: number;
   lastAccessed: number;
   isActive?: boolean;
+  isArchived?: boolean;
   context?: WorkspaceContext;
   sessions: Record<string, SessionData>;
 }

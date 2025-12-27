@@ -60,17 +60,12 @@ const TOOL_SUGGESTIONS: Record<string, string> = {
     searchDirectory: 'searchManager_searchDirectory',
     searchMemory: 'searchManager_searchMemory',
     // memoryManager
-    createSession: 'memoryManager_createSession',
-    loadSession: 'memoryManager_loadSession',
-    listSessions: 'memoryManager_listSessions',
     createWorkspace: 'memoryManager_createWorkspace',
-    loadWorkspace: 'memoryManager_loadWorkspace',
+    updateWorkspace: 'memoryManager_updateWorkspace',
     listWorkspaces: 'memoryManager_listWorkspaces',
     createState: 'memoryManager_createState',
     loadState: 'memoryManager_loadState',
     listStates: 'memoryManager_listStates',
-    updateState: 'memoryManager_updateState',
-    deleteState: 'memoryManager_deleteState',
 };
 
 export interface DirectToolCall {

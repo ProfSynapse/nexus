@@ -332,7 +332,6 @@ export class WorkspacesTab {
             isActive: true,
             context: {
                 purpose: '',
-                currentGoal: '',
                 workflows: [],
                 keyFiles: [],
                 preferences: ''
