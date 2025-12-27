@@ -160,7 +160,7 @@ export class ListStatesTool extends BaseTool<ListStatesParams, StateResult> {
   }
 
   getParameterSchema(): any {
-    const customSchema = {
+    const toolSchema = {
       type: 'object',
       properties: {
         includeArchived: {
@@ -191,7 +191,7 @@ export class ListStatesTool extends BaseTool<ListStatesParams, StateResult> {
       additionalProperties: false
     };
 
-    return this.getMergedSchema(customSchema);
+    return this.getMergedSchema(toolSchema);
   }
 
   getResultSchema(): any {

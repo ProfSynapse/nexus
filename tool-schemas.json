@@ -1,0 +1,1048 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Claudesidian Tool Schemas",
+  "description": "JSON Schema definitions for all Claudesidian MCP tools (auto-generated)",
+  "version": "2.0.0",
+  "generated": "2025-12-27T16:42:04.019Z",
+  "context": {
+    "type": "object",
+    "description": "Context for session tracking (required in every useTools call)",
+    "properties": {
+      "workspaceId": {
+        "type": "string",
+        "description": "Scope identifier (use \"default\" for global)"
+      },
+      "sessionId": {
+        "type": "string",
+        "description": "Session name (system assigns ID)"
+      },
+      "memory": {
+        "type": "string",
+        "description": "Conversation essence (1-3 sentences)"
+      },
+      "goal": {
+        "type": "string",
+        "description": "Current objective (1-3 sentences)"
+      },
+      "constraints": {
+        "type": "string",
+        "description": "Rules/limits (optional, 1-3 sentences)"
+      }
+    },
+    "required": [
+      "workspaceId",
+      "sessionId",
+      "memory",
+      "goal"
+    ],
+    "additionalProperties": false
+  },
+  "tools": {
+    "agentManager_archiveAgent": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "agentManager_archiveAgent",
+      "description": "Archive Agent",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name or ID of the agent to archive. Agent will be disabled but configuration preserved for restoration via updateAgent."
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "agentManager_createAgent": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "agentManager_createAgent",
+      "description": "Create Agent",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name of the agent (must be unique)"
+        },
+        "description": {
+          "type": "string",
+          "description": "Description of what this agent does"
+        },
+        "prompt": {
+          "type": "string",
+          "description": "The actual agent prompt text/persona"
+        },
+        "isEnabled": {
+          "type": "boolean",
+          "description": "Whether the agent is enabled",
+          "default": true
+        }
+      },
+      "required": [
+        "name",
+        "description",
+        "prompt"
+      ],
+      "additionalProperties": false
+    },
+    "agentManager_executePrompts": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "agentManager_executePrompts",
+      "description": "Execute LLM Prompts",
+      "type": "object",
+      "properties": {
+        "prompts": {
+          "type": "array",
+          "description": "Array of text and/or image generation requests to execute in batch",
+          "enum": [
+            "text",
+            "image"
+          ],
+          "default": "defaultModel?.provider",
+          "minimum": 0
+        },
+        "mergeResponses": {
+          "type": "boolean",
+          "description": "Whether to merge all responses into a single result",
+          "default": false
+        }
+      },
+      "required": [
+        "type",
+        "targetPath"
+      ],
+      "additionalProperties": false
+    },
+    "agentManager_generateImage": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "agentManager_generateImage",
+      "description": "Generate Image",
+      "type": "object",
+      "properties": {
+        "prompt": {
+          "type": "string",
+          "description": "Text prompt describing the image to generate"
+        },
+        "provider": {
+          "type": "string",
+          "description": "AI provider (default: google)",
+          "enum": [
+            "google",
+            "openrouter"
+          ],
+          "default": "google"
+        },
+        "model": {
+          "type": "string",
+          "description": "Model (default: gemini-2.5-flash-image). FLUX models only via OpenRouter.",
+          "enum": [
+            "gemini-2.5-flash-image",
+            "gemini-3-pro-image-preview",
+            "flux-2-pro",
+            "flux-2-flex"
+          ],
+          "default": "gemini-2.5-flash-image"
+        },
+        "aspectRatio": {
+          "type": "string",
+          "description": "Aspect ratio for the generated image",
+          "enum": [
+            "1:1",
+            "2:3",
+            "3:2",
+            "3:4",
+            "4:3",
+            "4:5",
+            "5:4",
+            "9:16",
+            "16:9",
+            "21:9"
+          ]
+        },
+        "numberOfImages": {
+          "type": "number",
+          "description": "Number of images to generate (1-4)",
+          "minimum": 1,
+          "maximum": 4
+        },
+        "imageSize": {
+          "type": "string",
+          "description": "Image resolution. 4K only available for gemini-3-pro-image-preview",
+          "enum": [
+            "1K",
+            "2K",
+            "4K"
+          ]
+        },
+        "referenceImages": {
+          "type": "array",
+          "description": "Reference images for style/composition. Max 3 for 2.5-flash, max 14 for 3-pro"
+        },
+        "savePath": {
+          "type": "string",
+          "description": "Vault-relative path where the image should be saved (e.g., "
+        },
+        "format": {
+          "type": "string",
+          "description": "Image format (optional, inferred from savePath extension or provider default)",
+          "enum": [
+            "png",
+            "jpeg",
+            "webp"
+          ]
+        }
+      },
+      "required": [
+        "prompt",
+        "savePath"
+      ],
+      "additionalProperties": false
+    },
+    "agentManager_getAgent": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "agentManager_getAgent",
+      "description": "Get Agent",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique ID or name of the agent to retrieve for persona adoption (will try ID first, then name)"
+        },
+        "name": {
+          "type": "string",
+          "description": "Name of the agent to retrieve for persona adoption"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "agentManager_listAgents": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "agentManager_listAgents",
+      "description": "List Agents",
+      "type": "object",
+      "properties": {
+        "enabledOnly": {
+          "type": "boolean",
+          "description": "If true, only return enabled prompts",
+          "default": false
+        },
+        "includeArchived": {
+          "type": "boolean",
+          "description": "If true, include archived (disabled) agents in results. Default false filters out archived agents.",
+          "default": false
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "agentManager_subagent": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "agentManager_subagent",
+      "description": "Spawn Subagent",
+      "type": "object",
+      "properties": {
+        "task": {
+          "type": "string",
+          "description": "Clear description of what the subagent should accomplish"
+        },
+        "agent": {
+          "type": "string",
+          "description": "Optional custom agent/persona name to use"
+        },
+        "tools": {
+          "type": "object",
+          "description": "Hand off specific tools to the subagent. Format: { "
+        },
+        "contextFiles": {
+          "type": "array",
+          "description": "File paths to read - content will be included in the subagent context"
+        },
+        "maxIterations": {
+          "type": "number",
+          "description": "Maximum iterations before pausing (default: 10)",
+          "default": "10)"
+        },
+        "continueBranchId": {
+          "type": "string",
+          "description": "Branch ID to continue from max_iterations state"
+        }
+      },
+      "required": [
+        "task"
+      ],
+      "additionalProperties": false
+    },
+    "agentManager_updateAgent": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "agentManager_updateAgent",
+      "description": "Update Agent",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique ID of the prompt to update"
+        },
+        "name": {
+          "type": "string",
+          "description": "New name for the prompt (must be unique)"
+        },
+        "description": {
+          "type": "string",
+          "description": "New description for the prompt"
+        },
+        "prompt": {
+          "type": "string",
+          "description": "New prompt text/persona"
+        },
+        "isEnabled": {
+          "type": "boolean",
+          "description": "Whether the prompt is enabled"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "contentManager_read": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "contentManager_read",
+      "description": "Read",
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Path to the file to read"
+        },
+        "startLine": {
+          "type": "number",
+          "description": "Start line (1-based), REQUIRED - forces intentional positioning. Use 1 to read from beginning."
+        },
+        "endLine": {
+          "type": "number",
+          "description": "End line (1-based, inclusive). If omitted, reads to end of file."
+        }
+      },
+      "required": [
+        "path",
+        "startLine"
+      ],
+      "additionalProperties": false
+    },
+    "contentManager_update": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "contentManager_update",
+      "description": "Update",
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Path to the file to modify"
+        },
+        "content": {
+          "type": "string",
+          "description": "Content to insert/replace (empty string to delete lines)"
+        },
+        "startLine": {
+          "type": "number",
+          "description": "Start line (1-based). Use -1 to append to end of file. Use 1 to prepend to start."
+        },
+        "endLine": {
+          "type": "number",
+          "description": "End line (1-based, inclusive). Omit to INSERT at startLine. Provide to REPLACE range."
+        }
+      },
+      "required": [
+        "path",
+        "content",
+        "startLine"
+      ],
+      "additionalProperties": false
+    },
+    "contentManager_write": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "contentManager_write",
+      "description": "Write",
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Path to the file to create or overwrite"
+        },
+        "content": {
+          "type": "string",
+          "description": "Content to write to the file"
+        },
+        "overwrite": {
+          "type": "boolean",
+          "description": "Overwrite if file exists (default: false)",
+          "default": "false)"
+        }
+      },
+      "required": [
+        "path",
+        "content"
+      ],
+      "additionalProperties": false
+    },
+    "memoryManager_archiveState": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "memoryManager_archiveState",
+      "description": "Archive State",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name of the state to archive or restore (REQUIRED). Use listStates({ includeArchived: true }) to see all states."
+        },
+        "restore": {
+          "type": "boolean",
+          "description": "If true, restores the state from archive. If false/omitted, archives the state."
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "memoryManager_createState": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "memoryManager_createState",
+      "description": "Create State",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "📝 ⚠️ REQUIRED (FIRST PARAMETER): State name - a short descriptive title for this save point. This is DIFFERENT from "
+        },
+        "conversationContext": {
+          "type": "string",
+          "description": "💬 REQUIRED: What was happening when you decided to save this state? Provide a summary of the conversation and what you were working on.\\n\\nExample: "
+        },
+        "activeTask": {
+          "type": "string",
+          "description": "🎯 REQUIRED: What task were you actively working on? Be specific about the current task.\\n\\nExample: "
+        },
+        "activeFiles": {
+          "type": "array",
+          "description": "📄 REQUIRED: Which files were you working with? Provide an ARRAY of file paths that were being edited or referenced.\\n\\nExample: ["
+        },
+        "nextSteps": {
+          "type": "array",
+          "description": "✅ REQUIRED: What are the immediate next steps when you resume? Provide an ARRAY of specific actionable next steps.\\n\\nExample: ["
+        },
+        "description": {
+          "type": "string",
+          "description": "Optional: Additional description for the state"
+        },
+        "tags": {
+          "type": "array",
+          "description": "Optional: Tags to associate with the state"
+        }
+      },
+      "required": [
+        "name",
+        "conversationContext",
+        "activeTask",
+        "activeFiles",
+        "nextSteps"
+      ],
+      "additionalProperties": false
+    },
+    "memoryManager_listStates": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "memoryManager_listStates",
+      "description": "List States",
+      "type": "object",
+      "properties": {
+        "includeArchived": {
+          "type": "boolean",
+          "description": "Include archived states (default: false)",
+          "default": "false)"
+        },
+        "tags": {
+          "type": "array",
+          "description": "Filter by tags"
+        },
+        "page": {
+          "type": "number",
+          "description": "Page number for pagination (0-indexed, default: 0)",
+          "default": "0)",
+          "minimum": 0
+        },
+        "pageSize": {
+          "type": "number",
+          "description": "Number of items per page (default: all items if not specified)",
+          "default": "all items if not specified)",
+          "minimum": 1
+        },
+        "order": {
+          "type": "string",
+          "description": "Sort order by creation date (default: desc)",
+          "enum": [
+            "asc",
+            "desc"
+          ],
+          "default": "desc)"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "memoryManager_loadState": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "memoryManager_loadState",
+      "description": "Load State",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name of the state to load (REQUIRED). Use listStates to see available states."
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "memoryManager_archiveWorkspace": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "memoryManager_archiveWorkspace",
+      "description": "Archive Workspace",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name of the workspace to archive or restore (REQUIRED)"
+        },
+        "restore": {
+          "type": "boolean",
+          "description": "If true, restores the workspace from archive. If false/omitted, archives the workspace."
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "memoryManager_createWorkspace": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "memoryManager_createWorkspace",
+      "description": "Create Workspace",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "📝 REQUIRED: Workspace name (e.g., "
+        },
+        "description": {
+          "type": "string",
+          "description": "📝 REQUIRED: What this workspace is for (brief description)"
+        },
+        "rootFolder": {
+          "type": "string",
+          "description": "📁 REQUIRED: Root folder path for this workspace (e.g., "
+        },
+        "purpose": {
+          "type": "string",
+          "description": "🎯 REQUIRED: What is this workspace for? Describe the overall purpose."
+        },
+        "workflows": {
+          "type": "array",
+          "description": "⚙️ REQUIRED: Workflows for different situations. IMPORTANT: "
+        },
+        "keyFiles": {
+          "type": "array",
+          "description": "📄 Optional: Array of key file paths for quick reference (e.g., ["
+        },
+        "preferences": {
+          "type": "string",
+          "description": "⚙️ Optional: User preferences or workspace settings as text"
+        },
+        "dedicatedAgentId": {
+          "type": "string",
+          "description": "🤖 Optional: ID of dedicated AI agent for this workspace (e.g., "
+        },
+        "relatedFolders": {
+          "type": "array",
+          "description": "📁 Optional: Related folder paths"
+        },
+        "relatedFiles": {
+          "type": "array",
+          "description": "📄 Optional: Related file paths"
+        },
+        "keyFileInstructions": {
+          "type": "string",
+          "description": "📋 Optional: Instructions for working with key files"
+        }
+      },
+      "required": [
+        "name",
+        "when",
+        "steps"
+      ],
+      "additionalProperties": false
+    },
+    "memoryManager_listWorkspaces": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "memoryManager_listWorkspaces",
+      "description": "List Workspaces",
+      "type": "object",
+      "properties": {
+        "includeArchived": {
+          "type": "boolean",
+          "description": "Include archived workspaces (default: false)",
+          "default": "false)"
+        },
+        "sortBy": {
+          "type": "string",
+          "description": "Field to sort workspaces by",
+          "enum": [
+            "name",
+            "created",
+            "lastAccessed"
+          ]
+        },
+        "order": {
+          "type": "string",
+          "description": "Sort order (ascending or descending)",
+          "enum": [
+            "asc",
+            "desc"
+          ]
+        },
+        "limit": {
+          "type": "number",
+          "description": "Maximum number of workspaces to return"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "memoryManager_loadWorkspace": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "memoryManager_loadWorkspace",
+      "description": "Load Workspace",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Workspace ID or name to load (REQUIRED). Accepts either the unique workspace ID or the workspace name."
+        },
+        "limit": {
+          "type": "number",
+          "description": "Optional limit for sessions, states, and recentActivity returned (default: 3)",
+          "default": "3)",
+          "minimum": 1,
+          "maximum": 20
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "memoryManager_updateWorkspace": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "memoryManager_updateWorkspace",
+      "description": "Update Workspace",
+      "type": "object",
+      "properties": {
+        "workspaceId": {
+          "type": "string",
+          "description": "ID or name of the workspace to update (REQUIRED)"
+        },
+        "name": {
+          "type": "string",
+          "description": "New workspace name (optional)"
+        },
+        "description": {
+          "type": "string",
+          "description": "New workspace description (optional)"
+        },
+        "rootFolder": {
+          "type": "string",
+          "description": "New root folder path (optional, will create if needed)"
+        },
+        "purpose": {
+          "type": "string",
+          "description": "New workspace purpose (optional, updates context.purpose)"
+        },
+        "workflows": {
+          "type": "array",
+          "description": "New workflows array (optional, replaces context.workflows)"
+        },
+        "keyFiles": {
+          "type": "array",
+          "description": "New key files array (optional, replaces context.keyFiles)"
+        },
+        "preferences": {
+          "type": "string",
+          "description": "New preferences text (optional, updates context.preferences)"
+        }
+      },
+      "required": [
+        "name",
+        "when",
+        "steps"
+      ],
+      "additionalProperties": false
+    },
+    "searchManager_searchContent": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "searchManager_searchContent",
+      "description": "Content Search",
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "Search query to find files and content."
+        },
+        "semantic": {
+          "type": "boolean",
+          "description": "true = AI-powered conceptual search (desktop only, best for concepts/related ideas). false = keyword/fuzzy search (default, best for exact matches).",
+          "default": false
+        },
+        "limit": {
+          "type": "number",
+          "description": "Maximum number of results to return (default: 10)",
+          "default": "10)",
+          "minimum": 1,
+          "maximum": 50
+        },
+        "includeContent": {
+          "type": "boolean",
+          "description": "For keyword search only: include content snippets (default: true). Ignored for semantic search.",
+          "default": "true). Ignored for semantic search."
+        },
+        "snippetLength": {
+          "type": "number",
+          "description": "For keyword search only: length of content snippets (default: 200). Ignored for semantic search.",
+          "default": "200). Ignored for semantic search.",
+          "minimum": 50,
+          "maximum": 1000
+        },
+        "paths": {
+          "type": "array",
+          "description": "Restrict search to specific folder paths. Supports glob patterns."
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "additionalProperties": false
+    },
+    "searchManager_searchDirectory": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "searchManager_searchDirectory",
+      "description": "Search Directory",
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "🔍 REQUIRED: The search term to find in file/folder names and paths. Use simple text without wildcards (fuzzy matching is automatic). Examples: "
+        },
+        "paths": {
+          "type": "array",
+          "description": "📁 REQUIRED: Array of directory paths to search within. Supports glob patterns (e.g., "
+        },
+        "searchType": {
+          "type": "string",
+          "description": "🎯 What to search for: ",
+          "enum": [
+            "files",
+            "folders",
+            "both"
+          ],
+          "default": "both"
+        },
+        "fileTypes": {
+          "type": "array",
+          "description": "📄 Optional: Filter by file extensions without dots. Examples: ["
+        },
+        "depth": {
+          "type": "number",
+          "description": "🔢 Optional: Maximum directory depth to search (1-10). Limits how deep into subdirectories to look.",
+          "minimum": 1,
+          "maximum": 10
+        },
+        "pattern": {
+          "type": "string",
+          "description": "🔎 Optional: Regular expression pattern to filter paths. Advanced users only. Examples: "
+        },
+        "dateRange": {
+          "type": "object",
+          "description": "📅 Start date in ISO format (YYYY-MM-DD)"
+        },
+        "limit": {
+          "type": "number",
+          "description": "🔢 Optional: Maximum number of results to return (1-100). Default: 20",
+          "default": 20,
+          "minimum": 1,
+          "maximum": 100
+        },
+        "includeContent": {
+          "type": "boolean",
+          "description": "📝 Optional: Include content snippets from files in results. Default: true",
+          "default": true
+        }
+      },
+      "required": [
+        "query",
+        "paths"
+      ],
+      "additionalProperties": false
+    },
+    "searchManager_searchMemory": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "searchManager_searchMemory",
+      "description": "Search Memory",
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "REQUIRED: Search query to find in memory content"
+        },
+        "workspaceId": {
+          "type": "string",
+          "description": "REQUIRED: Workspace context for memory search. States and traces are workspace-scoped. Use listWorkspaces to see available workspaces."
+        },
+        "memoryTypes": {
+          "type": "array",
+          "description": "Types of memory to search. ",
+          "enum": [
+            "traces",
+            "states"
+          ],
+          "default": "[traces"
+        },
+        "dateRange": {
+          "type": "object",
+          "description": "Start date for filtering results (ISO format)"
+        },
+        "limit": {
+          "type": "number",
+          "description": "Maximum number of results to return",
+          "default": 20,
+          "minimum": 1,
+          "maximum": 100
+        },
+        "toolCallFilters": {
+          "type": "object",
+          "description": "Filter by agent name (e.g., contentManager, vaultLibrarian)"
+        },
+        "searchMethod": {
+          "type": "string",
+          "description": "Search method to use",
+          "enum": [
+            "semantic",
+            "exact",
+            "mixed"
+          ],
+          "default": "mixed"
+        },
+        "filterBySession": {
+          "type": "boolean",
+          "description": "If true, only return traces from the current sessionId. If false or omitted, search across all sessions.",
+          "default": false
+        }
+      },
+      "required": [
+        "query",
+        "workspaceId"
+      ],
+      "additionalProperties": false
+    },
+    "storageManager_archive": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "storageManager_archive",
+      "description": "Archive",
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Path to file or folder to archive"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "additionalProperties": false
+    },
+    "storageManager_copy": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "storageManager_copy",
+      "description": "Copy",
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Source file path"
+        },
+        "newPath": {
+          "type": "string",
+          "description": "Destination path for the copy"
+        },
+        "overwrite": {
+          "type": "boolean",
+          "description": "Overwrite if destination exists (default: false)",
+          "default": "false)"
+        }
+      },
+      "required": [
+        "path",
+        "newPath"
+      ],
+      "additionalProperties": false
+    },
+    "storageManager_createFolder": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "storageManager_createFolder",
+      "description": "Create Folder",
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Path of the folder to create (REQUIRED)"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "additionalProperties": false
+    },
+    "storageManager_list": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "storageManager_list",
+      "description": "List",
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Directory path (optional). Use empty string (",
+          "default": ""
+        },
+        "filter": {
+          "type": "string"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "storageManager_move": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "storageManager_move",
+      "description": "Move",
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Source path (file or folder)"
+        },
+        "newPath": {
+          "type": "string",
+          "description": "Destination path"
+        },
+        "overwrite": {
+          "type": "boolean",
+          "description": "Overwrite if destination exists (default: false)",
+          "default": "false)"
+        }
+      },
+      "required": [
+        "path",
+        "newPath"
+      ],
+      "additionalProperties": false
+    },
+    "storageManager_open": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "storageManager_open",
+      "description": "Open",
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Path to the file to open"
+        },
+        "mode": {
+          "type": "string",
+          "description": "Where to open the file (tab, split, window, or current)",
+          "enum": [
+            "tab",
+            "split",
+            "window",
+            "current"
+          ],
+          "default": "current"
+        },
+        "focus": {
+          "type": "boolean",
+          "description": "Whether to focus the opened file",
+          "default": true
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "agents": {
+    "agentManager": {
+      "toolCount": 8,
+      "tools": [
+        "archiveAgent",
+        "createAgent",
+        "executePrompts",
+        "generateImage",
+        "getAgent",
+        "listAgents",
+        "subagent",
+        "updateAgent"
+      ]
+    },
+    "contentManager": {
+      "toolCount": 3,
+      "tools": [
+        "read",
+        "update",
+        "write"
+      ]
+    },
+    "memoryManager": {
+      "toolCount": 9,
+      "tools": [
+        "archiveState",
+        "archiveWorkspace",
+        "createState",
+        "createWorkspace",
+        "listStates",
+        "listWorkspaces",
+        "loadState",
+        "loadWorkspace",
+        "updateWorkspace"
+      ]
+    },
+    "searchManager": {
+      "toolCount": 3,
+      "tools": [
+        "searchContent",
+        "searchDirectory",
+        "searchMemory"
+      ]
+    },
+    "storageManager": {
+      "toolCount": 6,
+      "tools": [
+        "archive",
+        "copy",
+        "createFolder",
+        "list",
+        "move",
+        "open"
+      ]
+    }
+  }
+}

@@ -1,8 +1,8 @@
 // State tools (4 tools: create, list, load, archive)
-export { CreateStateTool } from './states/CreateState';
-export { ListStatesTool } from './states/ListStates';
-export { LoadStateTool } from './states/LoadState';
-export { ArchiveStateTool } from './states/ArchiveState';
+export { CreateStateTool } from './states/createState';
+export { ListStatesTool } from './states/listStates';
+export { LoadStateTool } from './states/loadState';
+export { ArchiveStateTool } from './states/archiveState';
 
 // Workspace tools (5 tools: create, list, load, update, archive)
 export * from './workspaces';

@@ -81,7 +81,7 @@ export class ListCommandsTool extends BaseTool<ListCommandsParams, ListCommandsR
    * @returns JSON schema object
    */
   getParameterSchema(): any {
-    const customSchema = {
+    const toolSchema = {
       type: 'object',
       properties: {
         filter: {
@@ -91,7 +91,7 @@ export class ListCommandsTool extends BaseTool<ListCommandsParams, ListCommandsR
       }
     };
 
-    return this.getMergedSchema(customSchema);
+    return this.getMergedSchema(toolSchema);
   }
 
   /**

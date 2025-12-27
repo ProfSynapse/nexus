@@ -315,7 +315,7 @@ export class LoadStateTool extends BaseTool<LoadStateParams, StateResult> {
      * Schema methods using consolidated logic
      */
     getParameterSchema(): any {
-        const customSchema = {
+        const toolSchema = {
             type: 'object',
             properties: {
                 name: {
@@ -327,7 +327,7 @@ export class LoadStateTool extends BaseTool<LoadStateParams, StateResult> {
             additionalProperties: false
         };
 
-        return this.getMergedSchema(customSchema);
+        return this.getMergedSchema(toolSchema);
     }
 
     getResultSchema(): any {

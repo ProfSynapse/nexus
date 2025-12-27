@@ -5,7 +5,7 @@ export { CreateAgentTool } from './createAgent';
 export { UpdateAgentTool } from './updateAgent';
 export { ArchiveAgentTool } from './archiveAgent';
 export { ListModelsTool } from './listModels';
-export { ExecutePromptsTool } from './batchExecutePrompt';
+export { ExecutePromptsTool } from './executePrompts';
 export { GenerateImageTool } from './generateImage';
 
 // Subagent tool (internal chat only - supports spawn and cancel actions)

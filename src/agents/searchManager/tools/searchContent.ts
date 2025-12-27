@@ -458,7 +458,7 @@ export class SearchContentTool extends BaseTool<ContentSearchParams, ContentSear
    * Get parameter schema for MCP tool definition
    */
   getParameterSchema() {
-    const schema = {
+    const toolSchema = {
       type: 'object',
       title: 'Content Search Params',
       description: 'Search vault files. REQUIRED: Set "semantic" parameter to choose search mode.',
@@ -501,7 +501,7 @@ export class SearchContentTool extends BaseTool<ContentSearchParams, ContentSear
       additionalProperties: false
     };
 
-    return this.getMergedSchema(schema);
+    return this.getMergedSchema(toolSchema);
   }
 
   /**

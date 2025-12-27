@@ -159,7 +159,7 @@ export class UpdateTool extends BaseTool<UpdateParams, UpdateResult> {
    * @returns JSON schema object
    */
   getParameterSchema(): Record<string, unknown> {
-    const customSchema = {
+    const toolSchema = {
       type: 'object',
       properties: {
         path: {
@@ -182,7 +182,7 @@ export class UpdateTool extends BaseTool<UpdateParams, UpdateResult> {
       required: ['path', 'content', 'startLine']
     };
 
-    return this.getMergedSchema(customSchema);
+    return this.getMergedSchema(toolSchema);
   }
 
   /**

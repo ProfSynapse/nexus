@@ -153,7 +153,7 @@ export class ArchiveStateTool extends BaseTool<ArchiveStateParams, StateResult> 
     }
 
     getParameterSchema(): any {
-        const customSchema = {
+        const toolSchema = {
             type: 'object',
             properties: {
                 name: {
@@ -169,7 +169,7 @@ export class ArchiveStateTool extends BaseTool<ArchiveStateParams, StateResult> 
             additionalProperties: false
         };
 
-        return this.getMergedSchema(customSchema);
+        return this.getMergedSchema(toolSchema);
     }
 
     getResultSchema(): any {

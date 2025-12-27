@@ -7,15 +7,15 @@ import { getNexusPlugin } from '../../utils/pluginLocator';
 import { NexusPluginWithServices } from './tools/utils/pluginTypes';
 
 // Import consolidated tools
-import { CreateStateTool } from './tools/states/CreateState';
-import { ListStatesTool } from './tools/states/ListStates';
-import { LoadStateTool } from './tools/states/LoadState';
-import { ArchiveStateTool } from './tools/states/ArchiveState';
-import { CreateWorkspaceTool } from './tools/workspaces/CreateWorkspace';
-import { ListWorkspacesTool } from './tools/workspaces/ListWorkspaces';
-import { LoadWorkspaceTool } from './tools/workspaces/LoadWorkspace';
-import { UpdateWorkspaceTool } from './tools/workspaces/UpdateWorkspace';
-import { ArchiveWorkspaceTool } from './tools/workspaces/ArchiveWorkspace';
+import { CreateStateTool } from './tools/states/createState';
+import { ListStatesTool } from './tools/states/listStates';
+import { LoadStateTool } from './tools/states/loadState';
+import { ArchiveStateTool } from './tools/states/archiveState';
+import { CreateWorkspaceTool } from './tools/workspaces/createWorkspace';
+import { ListWorkspacesTool } from './tools/workspaces/listWorkspaces';
+import { LoadWorkspaceTool } from './tools/workspaces/loadWorkspace';
+import { UpdateWorkspaceTool } from './tools/workspaces/updateWorkspace';
+import { ArchiveWorkspaceTool } from './tools/workspaces/archiveWorkspace';
 
 /**
  * Agent for managing workspace memory and states

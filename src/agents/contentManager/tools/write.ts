@@ -98,7 +98,7 @@ export class WriteTool extends BaseTool<WriteParams, WriteResult> {
    * @returns JSON schema object
    */
   getParameterSchema(): Record<string, unknown> {
-    const customSchema = {
+    const toolSchema = {
       type: 'object',
       properties: {
         path: {
@@ -118,7 +118,7 @@ export class WriteTool extends BaseTool<WriteParams, WriteResult> {
       required: ['path', 'content']
     };
 
-    return this.getMergedSchema(customSchema);
+    return this.getMergedSchema(toolSchema);
   }
 
   /**

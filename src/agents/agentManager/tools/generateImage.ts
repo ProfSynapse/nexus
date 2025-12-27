@@ -184,7 +184,7 @@ export class GenerateImageTool extends BaseTool<GenerateImageParams, GenerateIma
    * Get parameter schema for MCP
    */
   getParameterSchema(): any {
-    const modeSchema = {
+    const toolSchema = {
       type: 'object',
       properties: {
         prompt: {
@@ -241,7 +241,7 @@ export class GenerateImageTool extends BaseTool<GenerateImageParams, GenerateIma
       required: ['prompt', 'savePath']
     };
 
-    return this.getMergedSchema(modeSchema);
+    return this.getMergedSchema(toolSchema);
   }
 
   /**

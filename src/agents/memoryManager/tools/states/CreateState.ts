@@ -406,7 +406,7 @@ export class CreateStateTool extends BaseTool<CreateStateParams, StateResult> {
      * Schema methods using consolidated logic
      */
     getParameterSchema(): any {
-        const customSchema = {
+        const toolSchema = {
             type: 'object',
             title: 'Create State - Save Work Context for Resumption',
             description: '⚠️ CRITICAL: "name" is the FIRST required parameter - provide a short descriptive title. Create a state to save your current work context for later resumption.',
@@ -471,7 +471,7 @@ export class CreateStateTool extends BaseTool<CreateStateParams, StateResult> {
             additionalProperties: false
         };
         
-        return this.getMergedSchema(customSchema);
+        return this.getMergedSchema(toolSchema);
     }
 
     getResultSchema(): any {

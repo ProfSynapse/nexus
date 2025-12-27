@@ -1,4 +1,4 @@
-import { PromptExecutionResult } from './BatchExecuteTypes';
+import { PromptExecutionResult } from './executeTypes';
 
 /**
  * Result from batch LLM prompt execution (lean for context efficiency)

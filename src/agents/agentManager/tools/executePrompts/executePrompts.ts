@@ -332,7 +332,7 @@ export class ExecutePromptsTool extends BaseTool<BatchExecutePromptParams, Batch
     // Get default from data.json settings
     const defaultModel = this.providerManager?.getSettings()?.defaultModel;
     
-    const customSchema = {
+    const toolSchema = {
       properties: {
         prompts: {
           type: 'array',
@@ -451,7 +451,7 @@ export class ExecutePromptsTool extends BaseTool<BatchExecutePromptParams, Batch
       required: ['prompts']
     };
     
-    return this.getMergedSchema(customSchema);
+    return this.getMergedSchema(toolSchema);
   }
 
   /**

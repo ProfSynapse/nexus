@@ -15,9 +15,9 @@ Nexus turns your Obsidian vault into an MCP-enabled workspace. It exposes safe, 
 
 ## Highlights
 
-- **Two-Tool Architecture** – Just 2 MCP tools (`getTools` + `useTool`) replace 40+ individual tools, reducing upfront token cost by ~95%.
+- **Two-Tool Architecture** – Just 2 MCP tools (`getTools` + `useTools`) replace 40+ individual tools, reducing upfront token cost by ~95%.
 - **Native Chat View** – Stream tool calls, branch conversations, and manage models directly inside Obsidian.
-- **Workspace Memory** – Sessions, traces, and state snapshots in `.nexus/` (sync-friendly JSONL + local SQLite cache).
+- **Workspace Memory** – Workspaces, states, and traces in `.nexus/` (sync-friendly JSONL + local SQLite cache).
 - **Local Semantic Search** – Desktop-only embeddings via sqlite-vec vector search—no external API calls.
 - **Full Vault Operations** – Create, read, update, delete notes, folders, frontmatter, and batch edits.
 - **Multi-Provider Support** – Anthropic, OpenAI, Google, Groq, Mistral, OpenRouter, Perplexity, Requesty, plus local servers (Ollama, LM Studio).
@@ -41,7 +41,7 @@ Nexus exposes exactly **2 tools** to MCP clients like Claude Desktop:
 | Tool | Purpose |
 |------|---------|
 | `toolManager_getTools` | **Discovery** – Returns schemas for requested agents/tools |
-| `toolManager_useTool` | **Execution** – Runs tools with unified context |
+| `toolManager_useTools` | **Execution** – Runs tools with unified context |
 
 ### Why This Matters
 
@@ -51,7 +51,7 @@ Nexus exposes exactly **2 tools** to MCP clients like Claude Desktop:
 
 ### Context Schema
 
-Every `useTool` call includes context that helps maintain continuity:
+Every `useTools` call includes context that helps maintain continuity:
 
 ```typescript
 {
@@ -63,16 +63,15 @@ Every `useTool` call includes context that helps maintain continuity:
 }
 ```
 
-### Available Agents & Tools
+### Available Agents & Tools (29 total)
 
-| Agent | Purpose | Key Tools |
-|-------|---------|-----------|
-| **ContentManager** | Note reading/editing | readContent, createContent, appendContent, replaceContent, batchContent |
-| **VaultManager** | File/folder management | listDirectory, createFolder, moveNote, duplicateNote |
-| **VaultLibrarian** | Search operations | searchContent, searchDirectory, searchMemory |
-| **MemoryManager** | Session/workspace/state | createSession, loadSession, createWorkspace, createState |
-| **AgentManager** | Custom AI prompts | listModels, executePrompt, createAgent |
-| **CommandManager** | Command palette | listCommands, executeCommand |
+| Agent | Purpose | Tools |
+|-------|---------|-------|
+| **contentManager** | Note reading/editing | read, write, update |
+| **storageManager** | File/folder management | list, createFolder, move, copy, archive, open |
+| **searchManager** | Search operations | searchContent, searchDirectory, searchMemory |
+| **memoryManager** | Workspace/state management | createWorkspace, listWorkspaces, loadWorkspace, updateWorkspace, archiveWorkspace, createState, listStates, loadState, archiveState |
+| **agentManager** | Custom AI prompts & LLM | listModels, executePrompts, listAgents, getAgent, createAgent, updateAgent, archiveAgent, generateImage, subagent |
 
 ---
 
@@ -128,18 +127,20 @@ All data lives in `.nexus/` inside your vault:
 └── cache.db               # SQLite cache (auto-rebuilt, not synced)
 ```
 
-- Each tool call is tagged to a workspace and session automatically
-- Create/load workspaces via tools or the chat UI
+- Each tool call is tagged to a workspace automatically via context
+- Create/load workspaces and save immutable state snapshots via tools or chat UI
+- Archive workspaces and states for cold storage (restorable)
 - No external database required
 
 ---
 
 ## Semantic Search
 
-Use `vaultLibrarian.searchContent` with `semantic: true` for meaning-based search:
+Use `searchManager.searchContent` with `semantic: true` for meaning-based search:
 
 - **Desktop only** – Embeddings run locally via iframe-sandboxed transformers.js
-- **Model**: `Xenova/all-MiniLM-L6-v2` (384 dimensions, ~23MB, cached in IndexedDB)
+- **Model**: `Xenova/all-MiniLM-L6-v2` (384 dimensions, ~23MB, cached in browser IndexedDB)
+- **Vectors**: Stored in `.nexus/cache.db` via sqlite-vec for fast similarity search
 - **First run** downloads the model (requires internet); subsequent runs are fully offline
 - Watch the status bar for indexing progress; click to pause/resume
 
