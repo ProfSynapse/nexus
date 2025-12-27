@@ -59,13 +59,16 @@ const TOOL_SUGGESTIONS: Record<string, string> = {
     searchContent: 'searchManager_searchContent',
     searchDirectory: 'searchManager_searchDirectory',
     searchMemory: 'searchManager_searchMemory',
-    // memoryManager
+    // memoryManager (9 tools: 5 workspace + 4 state)
     createWorkspace: 'memoryManager_createWorkspace',
-    updateWorkspace: 'memoryManager_updateWorkspace',
     listWorkspaces: 'memoryManager_listWorkspaces',
+    loadWorkspace: 'memoryManager_loadWorkspace',
+    updateWorkspace: 'memoryManager_updateWorkspace',
+    archiveWorkspace: 'memoryManager_archiveWorkspace',
     createState: 'memoryManager_createState',
-    loadState: 'memoryManager_loadState',
     listStates: 'memoryManager_listStates',
+    loadState: 'memoryManager_loadState',
+    archiveState: 'memoryManager_archiveState',
 };
 
 export interface DirectToolCall {

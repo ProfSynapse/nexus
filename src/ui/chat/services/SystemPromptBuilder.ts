@@ -204,32 +204,14 @@ You have two meta-tools: getTools (discover) and useTools (execute).
 `;
 
     if (toolAgents && toolAgents.length > 0) {
-      // Dynamic list from agent registry
+      // Dynamic list from agent registry - always use live tool manifest
       for (const agent of toolAgents) {
         prompt += `- ${agent.name}: ${agent.description}\n`;
         prompt += `  Tools: ${agent.tools.join(', ')}\n\n`;
       }
     } else {
-      // Fallback to static list if agents not available
-      prompt += `- agentManager: Custom AI agents and prompts
-  Tools: executePrompts, createAgent, deleteAgent, listAgents, getAgent, listModels, generateImage
-
-- commandManager: Execute Obsidian commands
-  Tools: executeCommand, listCommands
-
-- contentManager: Read, create, edit, and manage note content
-  Tools: readContent, createContent, appendContent, prependContent, replaceContent, replaceByLine, deleteContent, findReplaceContent
-
-- memoryManager: Workspace and session management
-  Tools: createSession, loadSession, listSessions, createWorkspace, loadWorkspace, listWorkspaces, createState, loadState, listStates, updateState
-
-- vaultLibrarian: Advanced search capabilities
-  Tools: searchContent, searchDirectory, searchMemory
-
-- vaultManager: File and folder operations
-  Tools: listDirectory, createFolder, moveNote, duplicateNote, deleteNote, openNote
-
-`;
+      // No static fallback - use getTools to discover available tools
+      prompt += `Use getTools to discover available agents and their tools.\n\n`;
     }
 
     prompt += `HOW TO USE TOOLS:

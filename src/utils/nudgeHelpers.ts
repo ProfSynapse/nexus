@@ -207,7 +207,7 @@ export class NudgeHelpers {
     if (hasSessions) {
       return {
         type: "session_continuation",
-        message: "Related workspace sessions found. Consider MemoryManager loadSession and/or load state to continue previous work."
+        message: "Related workspace data found. Consider memoryManager loadState to continue previous work."
       };
     }
     return null;
