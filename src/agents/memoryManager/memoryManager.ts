@@ -10,7 +10,6 @@ import { NexusPluginWithServices } from './tools/utils/pluginTypes';
 import { CreateStateTool } from './tools/states/createState';
 import { ListStatesTool } from './tools/states/listStates';
 import { LoadStateTool } from './tools/states/loadState';
-import { ArchiveStateTool } from './tools/states/archiveState';
 import { CreateWorkspaceTool } from './tools/workspaces/createWorkspace';
 import { ListWorkspacesTool } from './tools/workspaces/listWorkspaces';
 import { LoadWorkspaceTool } from './tools/workspaces/loadWorkspace';
@@ -22,7 +21,7 @@ import { ArchiveWorkspaceTool } from './tools/workspaces/archiveWorkspace';
  *
  * CONSOLIDATED ARCHITECTURE:
  * - Sessions are now implicit (sessionId comes from context, no CRUD needed)
- * - 4 state tools: create/list/load/archive (states are immutable - no update)
+ * - 3 state tools: create/list/load (states are immutable - no update/archive)
  * - 5 workspace tools: create/list/load/update/archive
  * - 3 services: ValidationService/ContextBuilder/MemoryTraceService
  */
@@ -78,11 +77,10 @@ export class MemoryManagerAgent extends BaseAgent {
     this.memoryService = memoryService;
     this.workspaceService = workspaceService;
 
-    // Register state tools (4 tools: create, list, load, archive)
+    // Register state tools (3 tools: create, list, load)
     this.registerTool(new CreateStateTool(this));
     this.registerTool(new ListStatesTool(this));
     this.registerTool(new LoadStateTool(this));
-    this.registerTool(new ArchiveStateTool(this));
 
     // Register workspace tools (5 tools: create, list, load, update, archive)
     this.registerTool(new CreateWorkspaceTool(this));

@@ -1,32 +1,32 @@
 import { BaseTool } from '../../baseTool';
-import { ArchiveAgentParams, ArchiveAgentResult } from '../types';
+import { ArchivePromptParams, ArchivePromptResult } from '../types';
 import { CustomPromptStorageService } from '../services/CustomPromptStorageService';
 
 /**
- * Tool for archiving a custom agent
+ * Tool for archiving a custom prompt
  *
- * Location: src/agents/agentManager/tools/archiveAgent.ts
+ * Location: src/agents/promptManager/tools/archivePrompt.ts
  *
- * Functionality: Sets isEnabled flag to false on an agent, making it disappear from
+ * Functionality: Sets isEnabled flag to false on a prompt, making it disappear from
  * active listings while preserving its configuration for potential restoration.
  *
  * Relationships:
- * - Uses CustomPromptStorageService to update agent enabled status
- * - Agent can be restored via updateAgent tool with isEnabled: true
- * - Integrates with listAgents tool which filters archived agents by default
+ * - Uses CustomPromptStorageService to update prompt enabled status
+ * - Prompt can be restored via updatePrompt tool with isEnabled: true
+ * - Integrates with listPrompts tool which filters archived prompts by default
  */
-export class ArchiveAgentTool extends BaseTool<ArchiveAgentParams, ArchiveAgentResult> {
+export class ArchivePromptTool extends BaseTool<ArchivePromptParams, ArchivePromptResult> {
   private storageService: CustomPromptStorageService;
 
   /**
-   * Create a new ArchiveAgentTool
+   * Create a new ArchivePromptTool
    * @param storageService Custom prompt storage service
    */
   constructor(storageService: CustomPromptStorageService) {
     super(
-      'archiveAgent',
-      'Archive Agent',
-      'Archive a custom agent by disabling it (preserves configuration for restoration)',
+      'archivePrompt',
+      'Archive Prompt',
+      'Archive a custom prompt by disabling it (preserves configuration for restoration)',
       '1.0.0'
     );
 
@@ -38,28 +38,28 @@ export class ArchiveAgentTool extends BaseTool<ArchiveAgentParams, ArchiveAgentR
    * @param params Tool parameters
    * @returns Promise that resolves with archive result
    */
-  async execute(params: ArchiveAgentParams): Promise<ArchiveAgentResult> {
+  async execute(params: ArchivePromptParams): Promise<ArchivePromptResult> {
     try {
       const { name } = params;
 
       // Validate required name
       if (!name?.trim()) {
-        return this.prepareResult(false, undefined, 'Agent name is required');
+        return this.prepareResult(false, undefined, 'Prompt name is required');
       }
 
-      // Check if agent exists (unified lookup by ID or name)
-      const existingAgent = this.storageService.getPromptByNameOrId(name.trim());
-      if (!existingAgent) {
-        return this.prepareResult(false, undefined, `Agent "${name}" not found. Use listAgents to see available agents.`);
+      // Check if prompt exists (unified lookup by ID or name)
+      const existingPrompt = this.storageService.getPromptByNameOrId(name.trim());
+      if (!existingPrompt) {
+        return this.prepareResult(false, undefined, `Prompt "${name}" not found. Use listPrompts to see available prompts.`);
       }
 
-      // Archive the agent by setting isEnabled to false
-      await this.storageService.updatePrompt(existingAgent.id, { isEnabled: false });
+      // Archive the prompt by setting isEnabled to false
+      await this.storageService.updatePrompt(existingPrompt.id, { isEnabled: false });
 
       // Success - LLM already knows what it archived
       return this.prepareResult(true);
     } catch (error) {
-      return this.prepareResult(false, undefined, `Failed to archive agent: ${error}`);
+      return this.prepareResult(false, undefined, `Failed to archive prompt: ${error}`);
     }
   }
 
@@ -73,7 +73,7 @@ export class ArchiveAgentTool extends BaseTool<ArchiveAgentParams, ArchiveAgentR
       properties: {
         name: {
           type: 'string',
-          description: 'Name or ID of the agent to archive. Agent will be disabled but configuration preserved for restoration via updateAgent.',
+          description: 'Name or ID of the prompt to archive. Prompt will be disabled but configuration preserved for restoration via updatePrompt.',
           minLength: 1
         }
       },

@@ -36,7 +36,7 @@ export class ReferenceBadgeRenderer {
       .map(ref => {
         if (!ref) return null;
         const type = ref.type;
-        if (type !== 'tool' && type !== 'agent' && type !== 'note') {
+        if (type !== 'tool' && type !== 'prompt' && type !== 'note' && type !== 'workspace') {
           return null;
         }
         const position = typeof ref.position === 'number' ? ref.position : Number(ref.position);

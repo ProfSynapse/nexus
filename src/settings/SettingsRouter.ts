@@ -3,13 +3,13 @@
  * Handles tab switching and list/detail view navigation
  */
 
-export type SettingsTab = 'defaults' | 'workspaces' | 'agents' | 'providers' | 'data' | 'getstarted';
+export type SettingsTab = 'defaults' | 'workspaces' | 'prompts' | 'providers' | 'data' | 'getstarted';
 export type SettingsView = 'list' | 'detail';
 
 export interface RouterState {
     tab: SettingsTab;
     view: SettingsView;
-    detailId?: string;  // workspace/agent/provider ID when in detail view
+    detailId?: string;  // workspace/prompt/provider ID when in detail view
 }
 
 export class SettingsRouter {

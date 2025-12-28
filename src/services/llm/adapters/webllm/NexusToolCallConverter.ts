@@ -55,7 +55,7 @@ interface UseToolParams {
  */
 const KNOWN_AGENTS = [
   'toolManager',
-  'agentManager',
+  'promptManager',
   'contentManager',
   'commandManager',
   'vaultManager',

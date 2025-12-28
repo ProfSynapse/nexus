@@ -1,34 +1,34 @@
 import { BaseTool } from '../../baseTool';
-import { CreateAgentParams, CreateAgentResult } from '../types';
+import { CreatePromptParams, CreatePromptResult } from '../types';
 import { CustomPromptStorageService } from '../services/CustomPromptStorageService';
 
 /**
- * Tool for creating a new custom agent
+ * Tool for creating a new custom prompt
  */
-export class CreateAgentTool extends BaseTool<CreateAgentParams, CreateAgentResult> {
+export class CreatePromptTool extends BaseTool<CreatePromptParams, CreatePromptResult> {
   private storageService: CustomPromptStorageService;
 
   /**
-   * Create a new CreateAgentTool
+   * Create a new CreatePromptTool
    * @param storageService Custom prompt storage service
    */
   constructor(storageService: CustomPromptStorageService) {
     super(
-      'createAgent',
-      'Create Agent',
-      'Create a new custom agent',
+      'createPrompt',
+      'Create Prompt',
+      'Create a new custom prompt',
       '1.0.0'
     );
-    
+
     this.storageService = storageService;
   }
-  
+
   /**
    * Execute the tool
    * @param params Tool parameters
    * @returns Promise that resolves with the created prompt
    */
-  async execute(params: CreateAgentParams): Promise<CreateAgentResult> {
+  async execute(params: CreatePromptParams): Promise<CreatePromptResult> {
     try {
       const { name, description, prompt, isEnabled = true } = params;
 
@@ -42,7 +42,7 @@ export class CreateAgentTool extends BaseTool<CreateAgentParams, CreateAgentResu
       }
 
       if (!prompt?.trim()) {
-        return this.prepareResult(false, undefined, 'Agent prompt text is required');
+        return this.prepareResult(false, undefined, 'Prompt text is required');
       }
 
       // Create the prompt
@@ -56,10 +56,10 @@ export class CreateAgentTool extends BaseTool<CreateAgentParams, CreateAgentResu
       // Success - LLM already knows what it passed
       return this.prepareResult(true);
     } catch (error) {
-      return this.prepareResult(false, undefined, `Failed to create agent: ${error}`);
+      return this.prepareResult(false, undefined, `Failed to create prompt: ${error}`);
     }
   }
-  
+
   /**
    * Get the JSON schema for the tool's parameters
    * @returns JSON schema object
@@ -70,24 +70,24 @@ export class CreateAgentTool extends BaseTool<CreateAgentParams, CreateAgentResu
       properties: {
         name: {
           type: 'string',
-          description: 'Name of the agent (must be unique)',
+          description: 'Name of the prompt (must be unique)',
           minLength: 1,
           maxLength: 100
         },
         description: {
           type: 'string',
-          description: 'Description of what this agent does',
+          description: 'Description of what this prompt does',
           minLength: 1,
           maxLength: 500
         },
         prompt: {
           type: 'string',
-          description: 'The actual agent prompt text/persona',
+          description: 'The actual prompt text/persona',
           minLength: 1
         },
         isEnabled: {
           type: 'boolean',
-          description: 'Whether the agent is enabled',
+          description: 'Whether the prompt is enabled',
           default: true
         }
       },

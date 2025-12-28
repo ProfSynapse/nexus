@@ -232,6 +232,50 @@ function findToolFiles(dir, results = []) {
 const EXCLUDED_AGENTS = ['commandManager', 'toolManager'];
 
 /**
+ * Name migration mapping (old -> new)
+ * Used for migrating conversation datasets
+ */
+const NAME_MIGRATIONS = {
+  // Agent renames
+  agents: {
+    'agentManager': 'promptManager',
+    'vaultManager': 'storageManager',
+    'vaultLibrarian': 'searchManager'
+  },
+  // Tool renames (old_tool -> new_tool)
+  tools: {
+    // agentManager -> promptManager
+    'agentManager_createAgent': 'promptManager_createPrompt',
+    'agentManager_updateAgent': 'promptManager_updatePrompt',
+    'agentManager_deleteAgent': 'promptManager_deletePrompt',
+    'agentManager_listAgents': 'promptManager_listPrompts',
+    'agentManager_getAgent': 'promptManager_getPrompt',
+    'agentManager_archiveAgent': 'promptManager_archivePrompt',
+    'agentManager_executePrompts': 'promptManager_executePrompts',
+    'agentManager_generateImage': 'promptManager_generateImage',
+    'agentManager_listModels': 'promptManager_listModels',
+    // vaultManager -> storageManager
+    'vaultManager_listDirectory': 'storageManager_list',
+    'vaultManager_createFolder': 'storageManager_createFolder',
+    'vaultManager_moveNote': 'storageManager_move',
+    'vaultManager_deleteNote': 'storageManager_archive',
+    'vaultManager_duplicateNote': 'storageManager_copy',
+    'vaultManager_deleteFolder': 'storageManager_archive',
+    'vaultManager_openNote': 'storageManager_open',
+    // vaultLibrarian -> searchManager
+    'vaultLibrarian_searchContent': 'searchManager_searchContent',
+    'vaultLibrarian_searchDirectory': 'searchManager_searchDirectory',
+    'vaultLibrarian_searchMemory': 'searchManager_searchMemory'
+  },
+  // Parameter renames within tools
+  params: {
+    'promptManager_executePrompts': {
+      'agent': 'customPrompt'
+    }
+  }
+};
+
+/**
  * Main function
  */
 async function main() {
@@ -261,6 +305,7 @@ async function main() {
     description: 'JSON Schema definitions for all Claudesidian MCP tools (auto-generated)',
     version: '2.0.0',
     generated: new Date().toISOString(),
+    migrations: NAME_MIGRATIONS,
     context: contextSchema,
     tools: {},
     agents: {}

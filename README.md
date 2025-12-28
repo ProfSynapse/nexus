@@ -63,14 +63,14 @@ Every `useTools` call includes context that helps maintain continuity:
 }
 ```
 
-### Available Agents & Tools (29 total)
+### Available Agents & Tools (30 total)
 
 | Agent | Purpose | Tools |
 |-------|---------|-------|
 | **contentManager** | Note reading/editing | read, write, update |
 | **storageManager** | File/folder management | list, createFolder, move, copy, archive, open |
 | **searchManager** | Search operations | searchContent, searchDirectory, searchMemory |
-| **memoryManager** | Workspace/state management | createWorkspace, listWorkspaces, loadWorkspace, updateWorkspace, archiveWorkspace, createState, listStates, loadState, archiveState |
+| **memoryManager** | Workspace/state management | createWorkspace, listWorkspaces, loadWorkspace, updateWorkspace, archiveWorkspace, createState, listStates, loadState |
 | **agentManager** | Custom AI prompts & LLM | listModels, executePrompts, listAgents, getAgent, createAgent, updateAgent, archiveAgent, generateImage, subagent |
 
 ---

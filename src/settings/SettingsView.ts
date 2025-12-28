@@ -13,7 +13,7 @@ type UpdateManagerWithFetchRelease = {
 // Services
 import { WorkspaceService } from '../services/WorkspaceService';
 import { MemoryService } from '../agents/memoryManager/services/MemoryService';
-import { CustomPromptStorageService } from '../agents/agentManager/services/CustomPromptStorageService';
+import { CustomPromptStorageService } from '../agents/promptManager/services/CustomPromptStorageService';
 import type { ServiceManager } from '../core/ServiceManager';
 
 // Agents
@@ -23,7 +23,7 @@ import { MemoryManagerAgent } from '../agents/memoryManager/memoryManager';
 // Tab implementations
 import { DefaultsTab } from './tabs/DefaultsTab';
 import { WorkspacesTab } from './tabs/WorkspacesTab';
-import { AgentsTab } from './tabs/AgentsTab';
+import { PromptsTab } from './tabs/PromptsTab';
 import { ProvidersTab } from './tabs/ProvidersTab';
 // GetStartedTab is dynamically imported (desktop-only, requires Node.js)
 type GetStartedTabType = import('./tabs/GetStartedTab').GetStartedTab;
@@ -58,7 +58,7 @@ export class SettingsView extends PluginSettingTab {
     // Tab instances
     private defaultsTab: DefaultsTab | undefined;
     private workspacesTab: WorkspacesTab | undefined;
-    private agentsTab: AgentsTab | undefined;
+    private promptsTab: PromptsTab | undefined;
     private providersTab: ProvidersTab | undefined;
     private getStartedTab: GetStartedTabType | undefined;
     // private dataTab: DataTab | undefined; // TODO: Re-enable when Data tab is ready
@@ -130,7 +130,7 @@ export class SettingsView extends PluginSettingTab {
         // Cleanup tab instances
         this.defaultsTab?.destroy();
         this.workspacesTab?.destroy();
-        this.agentsTab?.destroy();
+        this.promptsTab?.destroy();
         this.providersTab?.destroy();
         this.getStartedTab?.destroy();
         // Clear prefetch cache
@@ -180,7 +180,7 @@ export class SettingsView extends PluginSettingTab {
         const tabConfigs: UnifiedTabConfig[] = [
             { key: 'defaults', label: 'Defaults' },
             { key: 'workspaces', label: 'Workspaces' },
-            { key: 'agents', label: 'Agents' },
+            { key: 'prompts', label: 'Prompts' },
             { key: 'providers', label: 'Providers' },
             // { key: 'data', label: 'Data' }, // TODO: Re-enable when Data tab is ready
         ];
@@ -306,8 +306,8 @@ export class SettingsView extends PluginSettingTab {
             case 'workspaces':
                 this.renderWorkspacesTab(pane, state, services);
                 break;
-            case 'agents':
-                this.renderAgentsTab(pane, state, services);
+            case 'prompts':
+                this.renderPromptsTab(pane, state, services);
                 break;
             case 'providers':
                 this.renderProvidersTab(pane, state, services);
@@ -403,18 +403,18 @@ export class SettingsView extends PluginSettingTab {
     }
 
     /**
-     * Render Agents tab content
+     * Render Prompts tab content
      */
-    private renderAgentsTab(
+    private renderPromptsTab(
         container: HTMLElement,
         state: RouterState,
         services: { customPromptStorage?: CustomPromptStorageService }
     ): void {
         // Destroy previous tab instance if exists
-        this.agentsTab?.destroy();
+        this.promptsTab?.destroy();
 
-        // Create new AgentsTab
-        this.agentsTab = new AgentsTab(
+        // Create new PromptsTab
+        this.promptsTab = new PromptsTab(
             container,
             this.router,
             {

@@ -24,7 +24,7 @@ import {
     StorageManagerAgent,
     SearchManagerAgent,
     MemoryManagerAgent,
-    AgentManagerAgent
+    PromptManagerAgent
 } from '../agents';
 import { LLMProviderManager } from '../services/llm/providers/ProviderManager';
 import { AgentManager } from '../services/AgentManager';
@@ -165,18 +165,18 @@ export class MemoryManagerAgentFactory extends BaseAgentFactory<MemoryManagerAge
 }
 
 /**
- * AgentManager agent factory with LLM provider dependencies
+ * PromptManager agent factory with LLM provider dependencies
  */
-export class AgentManagerAgentFactory extends BaseAgentFactory<AgentManagerAgent> {
+export class PromptManagerAgentFactory extends BaseAgentFactory<PromptManagerAgent> {
     constructor() {
-        super('agentManager', [
+        super('promptManager', [
             'llmProviderManager',
             'agentManager',
             'usageTracker'
         ]);
     }
 
-    async create(dependencies: Map<string, any>, app: App, plugin: Plugin): Promise<AgentManagerAgent> {
+    async create(dependencies: Map<string, any>, app: App, plugin: Plugin): Promise<PromptManagerAgent> {
         // Get required dependencies
         const providerManager = this.getDependency<LLMProviderManager>(dependencies, 'llmProviderManager');
         const parentAgentManager = this.getDependency<AgentManager>(dependencies, 'agentManager');
@@ -184,11 +184,11 @@ export class AgentManagerAgentFactory extends BaseAgentFactory<AgentManagerAgent
 
         // Get plugin settings using type guard
         if (!hasSettings(plugin)) {
-            throw new Error('Plugin settings required for AgentManagerAgent');
+            throw new Error('Plugin settings required for PromptManagerAgent');
         }
 
         // Create agent with all dependencies injected via constructor
-        return new AgentManagerAgent(
+        return new PromptManagerAgent(
             plugin.settings,
             providerManager,
             parentAgentManager,
@@ -211,7 +211,7 @@ export class AgentFactoryRegistry {
         this.registerFactory(new StorageManagerAgentFactory());
         this.registerFactory(new SearchManagerAgentFactory());
         this.registerFactory(new MemoryManagerAgentFactory());
-        this.registerFactory(new AgentManagerAgentFactory());
+        this.registerFactory(new PromptManagerAgentFactory());
     }
 
     private registerFactory(factory: IAgentFactory): void {

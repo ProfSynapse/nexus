@@ -19,7 +19,7 @@ import { AgentStatusMenu, createSubagentEventHandlers, getSubagentEventBus } fro
 import { AgentStatusModal } from '../components/AgentStatusModal';
 import type { ChatService } from '../../../services/chat/ChatService';
 import type { DirectToolExecutor } from '../../../services/chat/DirectToolExecutor';
-import type { AgentManagerAgent } from '../../../agents/agentManager/agentManager';
+import type { PromptManagerAgent } from '../../../agents/promptManager/promptManager';
 import type { HybridStorageAdapter } from '../../../database/adapters/HybridStorageAdapter';
 import type { LLMService } from '../../../services/llm/core/LLMService';
 import type { ToolSchemaInfo, AgentStatusItem, BranchViewContext } from '../../../types/branch/BranchTypes';
@@ -35,7 +35,7 @@ export interface SubagentControllerDependencies {
   app: App;
   chatService: ChatService;
   directToolExecutor: DirectToolExecutor;
-  agentManagerAgent: AgentManagerAgent;
+  promptManagerAgent: PromptManagerAgent;
   storageAdapter: HybridStorageAdapter;
   llmService: LLMService;
 }
@@ -47,7 +47,7 @@ export interface SubagentControllerDependencies {
 export interface SubagentContextProvider {
   getCurrentConversation: () => ConversationData | null;
   getSelectedModel: () => { providerId?: string; modelId?: string } | null;
-  getSelectedAgent: () => { name?: string; systemPrompt?: string } | null;
+  getSelectedPrompt: () => { name?: string; systemPrompt?: string } | null;
   getLoadedWorkspaceData: () => any;
   getContextNotes: () => string[];
   getThinkingSettings: () => { enabled?: boolean; effort?: 'low' | 'medium' | 'high' } | null;
@@ -131,8 +131,8 @@ export class SubagentController {
       // Set event handlers
       this.setupEventHandlers(streamingController, toolEventCoordinator);
 
-      // Wire up to AgentManagerAgent
-      deps.agentManagerAgent.setSubagentExecutor(
+      // Wire up to PromptManagerAgent
+      deps.promptManagerAgent.setSubagentExecutor(
         this.subagentExecutor,
         () => this.buildSubagentContext(contextProvider)
       );
@@ -368,7 +368,7 @@ export class SubagentController {
     const workspaceId = contextProvider.getSelectedWorkspaceId() || undefined;
     const sessionId = currentConversation?.metadata?.chatSettings?.sessionId || undefined;
     const selectedModel = contextProvider.getSelectedModel();
-    const selectedAgent = contextProvider.getSelectedAgent();
+    const selectedPrompt = contextProvider.getSelectedPrompt();
     const workspaceData = contextProvider.getLoadedWorkspaceData();
     const contextNotes = contextProvider.getContextNotes() || [];
     const thinkingSettings = contextProvider.getThinkingSettings();
@@ -382,8 +382,8 @@ export class SubagentController {
       isSubagentBranch: false,
       provider: selectedModel?.providerId,
       model: selectedModel?.modelId,
-      agentPrompt: selectedAgent?.systemPrompt,
-      agentName: selectedAgent?.name,
+      agentPrompt: selectedPrompt?.systemPrompt,
+      agentName: selectedPrompt?.name,
       workspaceData,
       contextNotes,
       thinkingEnabled: thinkingSettings?.enabled,

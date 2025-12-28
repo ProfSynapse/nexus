@@ -3,13 +3,13 @@
  * Refactored to use extracted utilities following SOLID principles
  */
 
-import { ModelOption, AgentOption } from '../types/SelectionTypes';
+import { ModelOption, PromptOption } from '../types/SelectionTypes';
 import { WorkspaceContext } from '../../../database/types/workspace/WorkspaceTypes';
 import { MessageEnhancement } from '../components/suggesters/base/SuggesterInterfaces';
-import { SystemPromptBuilder, AgentSummary, ToolAgentInfo, ContextStatusInfo } from './SystemPromptBuilder';
+import { SystemPromptBuilder, PromptSummary, ToolAgentInfo, ContextStatusInfo } from './SystemPromptBuilder';
 import { ContextNotesManager } from './ContextNotesManager';
 import { ModelSelectionUtility } from '../utils/ModelSelectionUtility';
-import { AgentConfigurationUtility } from '../utils/AgentConfigurationUtility';
+import { PromptConfigurationUtility } from '../utils/PromptConfigurationUtility';
 import { WorkspaceIntegrationService } from './WorkspaceIntegrationService';
 import { getWebLLMLifecycleManager } from '../../../services/llm/adapters/webllm/WebLLMLifecycleManager';
 import { ThinkingSettings } from '../../../types/llm/ProviderTypes';
@@ -45,7 +45,7 @@ interface PluginWithSettings {
         defaultThinking?: ThinkingSettings;
       };
       defaultWorkspaceId?: string;
-      defaultAgentId?: string;
+      defaultPromptId?: string;
     };
   };
   serviceManager?: {
@@ -60,13 +60,13 @@ interface PluginWithSettings {
 
 export interface ModelAgentManagerEvents {
   onModelChanged: (model: ModelOption | null) => void;
-  onAgentChanged: (agent: AgentOption | null) => void;
+  onPromptChanged: (prompt: PromptOption | null) => void;
   onSystemPromptChanged: (systemPrompt: string | null) => void;
 }
 
 export class ModelAgentManager {
   private selectedModel: ModelOption | null = null;
-  private selectedAgent: AgentOption | null = null;
+  private selectedPrompt: PromptOption | null = null;
   private currentSystemPrompt: string | null = null;
   private selectedWorkspaceId: string | null = null;
   private workspaceContext: WorkspaceContext | null = null;
@@ -120,7 +120,7 @@ export class ModelAgentManager {
         const hasMeaningfulSettings = chatSettings && (
           chatSettings.providerId ||
           chatSettings.modelId ||
-          chatSettings.agentId ||
+          chatSettings.promptId ||
           chatSettings.workspaceId
         );
 
@@ -142,7 +142,7 @@ export class ModelAgentManager {
    */
   private async restoreFromConversationMetadata(settings: any): Promise<void> {
     const availableModels = await this.getAvailableModels();
-    const availableAgents = await this.getAvailableAgents();
+    const availablePrompts = await this.getAvailablePrompts();
 
     // Restore model
     if (settings.providerId && settings.modelId) {
@@ -158,13 +158,13 @@ export class ModelAgentManager {
       }
     }
 
-    // Restore agent
-    if (settings.agentId) {
-      const agent = availableAgents.find(a => a.id === settings.agentId);
-      if (agent) {
-        this.selectedAgent = agent;
-        this.currentSystemPrompt = agent.systemPrompt || null;
-        this.events.onAgentChanged(agent);
+    // Restore prompt
+    if (settings.promptId) {
+      const prompt = availablePrompts.find(p => p.id === settings.promptId);
+      if (prompt) {
+        this.selectedPrompt = prompt;
+        this.currentSystemPrompt = prompt.systemPrompt || null;
+        this.events.onPromptChanged(prompt);
       }
     }
 
@@ -219,7 +219,7 @@ export class ModelAgentManager {
   }
 
   /**
-   * Initialize from plugin settings defaults (model, workspace, agent, thinking)
+   * Initialize from plugin settings defaults (model, workspace, prompt, thinking)
    */
   private async initializeDefaultModel(): Promise<void> {
     try {
@@ -233,7 +233,7 @@ export class ModelAgentManager {
       }
 
       // Clear state first
-      this.selectedAgent = null;
+      this.selectedPrompt = null;
       this.currentSystemPrompt = null;
       this.selectedWorkspaceId = null;
       this.workspaceContext = null;
@@ -263,25 +263,25 @@ export class ModelAgentManager {
         }
       }
 
-      // Load default agent if set
-      if (settings?.defaultAgentId) {
+      // Load default prompt if set
+      if (settings?.defaultPromptId) {
         try {
-          const availableAgents = await this.getAvailableAgents();
-          const defaultAgent = availableAgents.find(a => a.id === settings.defaultAgentId || a.name === settings.defaultAgentId);
-          if (defaultAgent) {
-            this.selectedAgent = defaultAgent;
-            this.currentSystemPrompt = defaultAgent.systemPrompt || null;
-            this.events.onAgentChanged(defaultAgent);
+          const availablePrompts = await this.getAvailablePrompts();
+          const defaultPrompt = availablePrompts.find(p => p.id === settings.defaultPromptId || p.name === settings.defaultPromptId);
+          if (defaultPrompt) {
+            this.selectedPrompt = defaultPrompt;
+            this.currentSystemPrompt = defaultPrompt.systemPrompt || null;
+            this.events.onPromptChanged(defaultPrompt);
             this.events.onSystemPromptChanged(this.currentSystemPrompt);
-            return; // Agent was set, don't reset
+            return; // Prompt was set, don't reset
           }
         } catch (error) {
-          // Failed to load default agent
+          // Failed to load default prompt
         }
       }
 
-      // Notify listeners about the state (no agent selected)
-      this.events.onAgentChanged(null);
+      // Notify listeners about the state (no prompt selected)
+      this.events.onPromptChanged(null);
       this.events.onSystemPromptChanged(null);
     } catch (error) {
       // Failed to initialize defaults
@@ -305,7 +305,7 @@ export class ModelAgentManager {
         chatSettings: {
           providerId: this.selectedModel?.providerId,
           modelId: this.selectedModel?.modelId,
-          agentId: this.selectedAgent?.id,
+          promptId: this.selectedPrompt?.id,
           workspaceId: this.selectedWorkspaceId,
           contextNotes: this.contextNotesManager.getNotes(),
           sessionId: existingSessionId, // Preserve the session ID
@@ -343,10 +343,10 @@ export class ModelAgentManager {
   }
 
   /**
-   * Get current selected agent
+   * Get current selected prompt
    */
-  getSelectedAgent(): AgentOption | null {
-    return this.selectedAgent;
+  getSelectedPrompt(): PromptOption | null {
+    return this.selectedPrompt;
   }
 
   /**
@@ -422,13 +422,13 @@ export class ModelAgentManager {
   }
 
   /**
-   * Handle agent selection change
+   * Handle prompt selection change
    */
-  async handleAgentChange(agent: AgentOption | null): Promise<void> {
-    this.selectedAgent = agent;
-    this.currentSystemPrompt = agent?.systemPrompt || null;
+  async handlePromptChange(prompt: PromptOption | null): Promise<void> {
+    this.selectedPrompt = prompt;
+    this.currentSystemPrompt = prompt?.systemPrompt || null;
 
-    this.events.onAgentChanged(agent);
+    this.events.onPromptChanged(prompt);
     this.events.onSystemPromptChanged(await this.buildSystemPromptWithWorkspace());
   }
 
@@ -640,10 +640,10 @@ export class ModelAgentManager {
   }
 
   /**
-   * Get available agents from agent manager
+   * Get available prompts from prompt manager
    */
-  async getAvailableAgents(): Promise<AgentOption[]> {
-    return await AgentConfigurationUtility.getAvailableAgents(this.app);
+  async getAvailablePrompts(): Promise<PromptOption[]> {
+    return await PromptConfigurationUtility.getAvailablePrompts(this.app);
   }
 
   /**
@@ -683,7 +683,7 @@ export class ModelAgentManager {
     // Fetch dynamic context (always fresh)
     const vaultStructure = this.workspaceIntegration.getVaultStructure();
     const availableWorkspaces = await this.workspaceIntegration.listAvailableWorkspaces();
-    const availableAgents = await this.getAvailableAgentSummaries();
+    const availablePrompts = await this.getAvailablePromptSummaries();
     const toolAgents = this.getToolAgentInfo();
 
     // Skip tools section for Nexus/WebLLM - it's pre-trained on the toolset
@@ -707,13 +707,13 @@ export class ModelAgentManager {
       workspaceId: this.selectedWorkspaceId || undefined,
       contextNotes: this.contextNotesManager.getNotes(),
       messageEnhancement: this.messageEnhancement,
-      agentPrompt: this.currentSystemPrompt,
+      customPrompt: this.currentSystemPrompt,
       workspaceContext: this.workspaceContext,
       loadedWorkspaceData: this.loadedWorkspaceData, // Full comprehensive workspace data
       // Dynamic context (always loaded fresh)
       vaultStructure,
       availableWorkspaces,
-      availableAgents,
+      availablePrompts,
       toolAgents,
       // Nexus models are pre-trained on the toolset - skip tools section
       skipToolsSection: isNexusModel,
@@ -725,14 +725,15 @@ export class ModelAgentManager {
   }
 
   /**
-   * Get available agents as AgentSummary for system prompt
+   * Get available prompts as summaries for system prompt
+   * Note: These are user-created prompts, displayed in system prompt for LLM awareness
    */
-  private async getAvailableAgentSummaries(): Promise<AgentSummary[]> {
-    const agents = await this.getAvailableAgents();
-    return agents.map(agent => ({
-      id: agent.id,
-      name: agent.name,
-      description: agent.description || 'Custom agent'
+  private async getAvailablePromptSummaries(): Promise<PromptSummary[]> {
+    const prompts = await this.getAvailablePrompts();
+    return prompts.map(prompt => ({
+      id: prompt.id,
+      name: prompt.name,
+      description: prompt.description || 'Custom prompt'
     }));
   }
 

@@ -6,7 +6,7 @@
 import {
   MessageEnhancement,
   ToolHint,
-  AgentReference,
+  PromptReference,
   NoteReference,
   WorkspaceReference,
   EnhancementType,
@@ -20,7 +20,7 @@ import { TokenCalculator } from '../utils/TokenCalculator';
 export class MessageEnhancer {
 
   private tools: ToolHint[] = [];
-  private agents: AgentReference[] = [];
+  private prompts: PromptReference[] = [];
   private notes: NoteReference[] = [];
   private workspaces: WorkspaceReference[] = [];
 
@@ -44,13 +44,13 @@ export class MessageEnhancer {
   }
 
   /**
-   * Add an agent reference from agent suggester
-   * @param agent - Agent reference data
+   * Add a prompt reference from prompt suggester
+   * @param prompt - Prompt reference data
    */
-  addAgent(agent: AgentReference): void {
+  addPrompt(prompt: PromptReference): void {
     // Avoid duplicates
-    if (!this.agents.find(a => a.id === agent.id)) {
-      this.agents.push(agent);
+    if (!this.prompts.find(p => p.id === prompt.id)) {
+      this.prompts.push(prompt);
     }
   }
 
@@ -85,8 +85,8 @@ export class MessageEnhancer {
       case EnhancementType.TOOL:
         this.addTool(enhancement.data as ToolHint);
         break;
-      case EnhancementType.AGENT:
-        this.addAgent(enhancement.data as AgentReference);
+      case EnhancementType.PROMPT:
+        this.addPrompt(enhancement.data as PromptReference);
         break;
       case EnhancementType.NOTE:
         this.addNote(enhancement.data as NoteReference);
@@ -114,7 +114,7 @@ export class MessageEnhancer {
       originalMessage,
       cleanedMessage,
       tools: [...this.tools],
-      agents: [...this.agents],
+      prompts: [...this.prompts],
       notes: [...this.notes],
       workspaces: [...this.workspaces],
       totalTokens
@@ -141,8 +141,8 @@ export class MessageEnhancer {
     // Tool schemas (estimated)
     total += this.tools.length * 150; // ~150 tokens per tool schema
 
-    // Agent prompts
-    total += this.agents.reduce((sum, agent) => sum + agent.tokens, 0);
+    // Prompt content
+    total += this.prompts.reduce((sum, prompt) => sum + prompt.tokens, 0);
 
     // Note content
     total += this.notes.reduce((sum, note) => sum + note.tokens, 0);
@@ -163,11 +163,11 @@ export class MessageEnhancer {
   }
 
   /**
-   * Get all current agent references
-   * @returns Array of agent references
+   * Get all current prompt references
+   * @returns Array of prompt references
    */
-  getAgents(): AgentReference[] {
-    return [...this.agents];
+  getPrompts(): PromptReference[] {
+    return [...this.prompts];
   }
 
   /**
@@ -199,7 +199,7 @@ export class MessageEnhancer {
    * @returns True if enhancements exist
    */
   hasEnhancements(): boolean {
-    return this.tools.length > 0 || this.agents.length > 0 || this.notes.length > 0 || this.workspaces.length > 0;
+    return this.tools.length > 0 || this.prompts.length > 0 || this.notes.length > 0 || this.workspaces.length > 0;
   }
 
   // ==========================================================================
@@ -211,7 +211,7 @@ export class MessageEnhancer {
    */
   clearEnhancements(): void {
     this.tools = [];
-    this.agents = [];
+    this.prompts = [];
     this.notes = [];
     this.workspaces = [];
   }
@@ -225,11 +225,11 @@ export class MessageEnhancer {
   }
 
   /**
-   * Remove a specific agent reference
-   * @param agentId - ID of agent to remove
+   * Remove a specific prompt reference
+   * @param promptId - ID of prompt to remove
    */
-  removeAgent(agentId: string): void {
-    this.agents = this.agents.filter(a => a.id !== agentId);
+  removePrompt(promptId: string): void {
+    this.prompts = this.prompts.filter(p => p.id !== promptId);
   }
 
   /**

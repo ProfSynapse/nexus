@@ -10,7 +10,7 @@ import { SettingsRouter } from '../SettingsRouter';
 import { LLMProviderSettings } from '../../types/llm/ProviderTypes';
 import { Settings } from '../../settings';
 import { WorkspaceService } from '../../services/WorkspaceService';
-import { CustomPromptStorageService } from '../../agents/agentManager/services/CustomPromptStorageService';
+import { CustomPromptStorageService } from '../../agents/promptManager/services/CustomPromptStorageService';
 import { ChatSettingsRenderer, ChatSettings } from '../../components/shared/ChatSettingsRenderer';
 
 export interface DefaultsTabServices {
@@ -40,13 +40,13 @@ export class DefaultsTab {
   }
 
   /**
-   * Load workspaces and agents, then render
+   * Load workspaces and prompts, then render
    */
   private async loadDataAndRender(): Promise<void> {
     const workspaces = await this.loadWorkspaces();
-    const agents = this.loadAgents();
+    const prompts = this.loadPrompts();
 
-    this.render(workspaces, agents);
+    this.render(workspaces, prompts);
   }
 
   private async loadWorkspaces(): Promise<Array<{ id: string; name: string }>> {
@@ -60,7 +60,7 @@ export class DefaultsTab {
     }
   }
 
-  private loadAgents(): Array<{ id: string; name: string }> {
+  private loadPrompts(): Array<{ id: string; name: string }> {
     if (!this.services.customPromptStorage) return [];
 
     try {
@@ -91,7 +91,7 @@ export class DefaultsTab {
       imageProvider: llmSettings?.defaultImageModel?.provider || 'google',
       imageModel: llmSettings?.defaultImageModel?.model || 'gemini-2.5-flash-image',
       workspaceId: pluginSettings.defaultWorkspaceId || null,
-      agentId: pluginSettings.defaultAgentId || null,
+      promptId: pluginSettings.defaultPromptId || null,
       contextNotes: pluginSettings.defaultContextNotes || []
     };
   }
@@ -130,7 +130,7 @@ export class DefaultsTab {
     }
 
     pluginSettings.defaultWorkspaceId = settings.workspaceId || undefined;
-    pluginSettings.defaultAgentId = settings.agentId || undefined;
+    pluginSettings.defaultPromptId = settings.promptId || undefined;
     pluginSettings.defaultContextNotes = settings.contextNotes;
 
     await this.services.settings.saveSettings();
@@ -141,7 +141,7 @@ export class DefaultsTab {
    */
   private render(
     workspaces: Array<{ id: string; name: string }>,
-    agents: Array<{ id: string; name: string }>
+    prompts: Array<{ id: string; name: string }>
   ): void {
     this.container.empty();
 
@@ -164,7 +164,7 @@ export class DefaultsTab {
       app: this.services.app,
       llmProviderSettings: this.services.llmProviderSettings,
       initialSettings: this.getCurrentSettings(),
-      options: { workspaces, agents },
+      options: { workspaces, prompts },
       callbacks: {
         onSettingsChange: (settings) => this.saveSettings(settings)
       }

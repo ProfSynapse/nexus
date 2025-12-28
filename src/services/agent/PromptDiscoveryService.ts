@@ -1,16 +1,16 @@
 /**
- * AgentDiscoveryService - Shared service for agent discovery and querying
+ * PromptDiscoveryService - Shared service for custom prompt discovery and querying
  *
  * Responsibilities:
- * - Load custom agents from CustomPromptStorageService
- * - Filter agents by enabled status
- * - Provide agent lookup by ID
- * - Shared by ModelAgentManager (chat UI) and ListAgentsMode (MCP)
+ * - Load custom prompts from CustomPromptStorageService
+ * - Filter prompts by enabled status
+ * - Provide prompt lookup by ID
+ * - Shared by ModelAgentManager (chat UI) and ListPromptsMode (MCP)
  *
- * Follows Single Responsibility Principle - only handles agent discovery.
+ * Follows Single Responsibility Principle - only handles prompt discovery.
  */
 
-export interface AgentInfo {
+export interface PromptInfo {
   id: string;
   name: string;
   description: string;
@@ -20,65 +20,65 @@ export interface AgentInfo {
   updatedAt?: number;
 }
 
-export class AgentDiscoveryService {
+export class PromptDiscoveryService {
   constructor(
     private customPromptStorageService: any
   ) {}
 
   /**
-   * Get all available agents
-   * @param enabledOnly - If true, only return enabled agents
+   * Get all available prompts
+   * @param enabledOnly - If true, only return enabled prompts
    */
-  async getAvailableAgents(enabledOnly: boolean = false): Promise<AgentInfo[]> {
+  async getAvailablePrompts(enabledOnly: boolean = false): Promise<PromptInfo[]> {
     try {
       // Get all prompts from storage
       const allPrompts = await this.customPromptStorageService.getAllPrompts();
 
       // Filter by enabled status if requested
-      const agents = enabledOnly
+      const prompts = enabledOnly
         ? allPrompts.filter((prompt: any) => prompt.isEnabled)
         : allPrompts;
 
-      // Map to AgentInfo format
-      return agents.map((prompt: any) => this.mapToAgentInfo(prompt));
+      // Map to PromptInfo format
+      return prompts.map((prompt: any) => this.mapToPromptInfo(prompt));
     } catch (error) {
-      console.error('[AgentDiscoveryService] Failed to get agents:', error);
+      console.error('[PromptDiscoveryService] Failed to get prompts:', error);
       return [];
     }
   }
 
   /**
-   * Find a specific agent by ID
+   * Find a specific prompt by ID
    */
-  async findAgent(agentId: string): Promise<AgentInfo | null> {
+  async findPrompt(promptId: string): Promise<PromptInfo | null> {
     try {
-      const allAgents = await this.getAvailableAgents(false);
-      return allAgents.find(agent => agent.id === agentId) || null;
+      const allPrompts = await this.getAvailablePrompts(false);
+      return allPrompts.find(prompt => prompt.id === promptId) || null;
     } catch (error) {
-      console.error('[AgentDiscoveryService] Failed to find agent:', error);
+      console.error('[PromptDiscoveryService] Failed to find prompt:', error);
       return null;
     }
   }
 
   /**
-   * Get enabled agents only
+   * Get enabled prompts only
    */
-  async getEnabledAgents(): Promise<AgentInfo[]> {
-    return this.getAvailableAgents(true);
+  async getEnabledPrompts(): Promise<PromptInfo[]> {
+    return this.getAvailablePrompts(true);
   }
 
   /**
-   * Map custom prompt to AgentInfo format
+   * Map custom prompt to PromptInfo format
    */
-  private mapToAgentInfo(prompt: any): AgentInfo {
+  private mapToPromptInfo(promptData: any): PromptInfo {
     return {
-      id: prompt.id,
-      name: prompt.name,
-      description: prompt.description || '',
-      prompt: prompt.prompt || '',
-      isEnabled: prompt.isEnabled !== false, // Default to true if not specified
-      createdAt: prompt.createdAt,
-      updatedAt: prompt.updatedAt
+      id: promptData.id,
+      name: promptData.name,
+      description: promptData.description || '',
+      prompt: promptData.prompt || '',
+      isEnabled: promptData.isEnabled !== false, // Default to true if not specified
+      createdAt: promptData.createdAt,
+      updatedAt: promptData.updatedAt
     };
   }
 }

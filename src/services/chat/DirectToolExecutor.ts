@@ -27,15 +27,15 @@ const TOOL_SUGGESTIONS: Record<string, string> = {
     getTools: 'toolManager_getTools',
     useTool: 'toolManager_useTools',
     useTools: 'toolManager_useTools',
-    // agentManager
-    listModels: 'agentManager_listModels',
-    executePrompts: 'agentManager_executePrompts',
-    createAgent: 'agentManager_createAgent',
-    updateAgent: 'agentManager_updateAgent',
-    deleteAgent: 'agentManager_deleteAgent',
-    listAgents: 'agentManager_listAgents',
-    getAgent: 'agentManager_getAgent',
-    generateImage: 'agentManager_generateImage',
+    // promptManager
+    listModels: 'promptManager_listModels',
+    executePrompts: 'promptManager_executePrompts',
+    createPrompt: 'promptManager_createPrompt',
+    updatePrompt: 'promptManager_updatePrompt',
+    archivePrompt: 'promptManager_archivePrompt',
+    listPrompts: 'promptManager_listPrompts',
+    getPrompt: 'promptManager_getPrompt',
+    generateImage: 'promptManager_generateImage',
     // contentManager
     readContent: 'contentManager_readContent',
     createContent: 'contentManager_createContent',
@@ -68,7 +68,6 @@ const TOOL_SUGGESTIONS: Record<string, string> = {
     createState: 'memoryManager_createState',
     listStates: 'memoryManager_listStates',
     loadState: 'memoryManager_loadState',
-    archiveState: 'memoryManager_archiveState',
 };
 
 export interface DirectToolCall {
@@ -333,7 +332,7 @@ export class DirectToolExecutor {
             return {
                 success: false,
                 error: 'Please specify which agent tools you need. Example: get_tools({ tools: ["contentManager", "searchManager"] })',
-                availableAgents: ['contentManager', 'storageManager', 'searchManager', 'memoryManager', 'commandManager', 'agentManager']
+                availableAgents: ['contentManager', 'storageManager', 'searchManager', 'memoryManager', 'commandManager', 'promptManager']
             };
         }
 

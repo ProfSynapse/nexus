@@ -270,27 +270,27 @@ export class NudgeHelpers {
   }
 
   /**
-   * Check if agent list shows opportunity for workspace binding
-   * @param agentCount Number of agents available
+   * Check if prompt list shows opportunity for workspace binding
+   * @param promptCount Number of prompts available
    * @param hasWorkspace Whether user is in a workspace context
    */
-  static checkAgentBindingOpportunity(agentCount: number, hasWorkspace: boolean): Recommendation | null {
-    if (agentCount > 0 && hasWorkspace) {
+  static checkPromptBindingOpportunity(promptCount: number, hasWorkspace: boolean): Recommendation | null {
+    if (promptCount > 0 && hasWorkspace) {
       return {
         type: "workspace_binding",
-        message: "Bind frequently used agents to your workspace for automatic availability."
+        message: "Bind frequently used prompts to your workspace for automatic availability."
       };
     }
     return null;
   }
 
   /**
-   * Suggest testing after agent creation/update
+   * Suggest testing after prompt creation/update
    */
-  static suggestAgentTesting(): Recommendation {
+  static suggestPromptTesting(): Recommendation {
     return {
       type: "testing",
-      message: "Test your agent with executePrompt to verify it works as expected."
+      message: "Test your prompt with executePrompts to verify it works as expected."
     };
   }
 }

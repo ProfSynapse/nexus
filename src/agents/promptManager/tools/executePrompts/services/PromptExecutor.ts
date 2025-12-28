@@ -69,15 +69,15 @@ export class PromptExecutor {
           error: validationError,
           provider: textConfig.provider,
           model: textConfig.model,
-          agent: textConfig.agent || 'default',
+          promptName: textConfig.customPrompt || 'default',
           executionTime,
           sequence: currentSequence,
           parallelGroup: textConfig.parallelGroup
         };
       }
 
-      // Resolve custom agent/prompt if specified
-      const { systemPrompt, agentUsed } = await this.resolveCustomPrompt(textConfig.agent);
+      // Resolve custom prompt if specified
+      const { systemPrompt, promptUsed } = await this.resolveCustomPrompt(textConfig.customPrompt);
       
       // Build user prompt with context from previous results
       const userPrompt = this.contextBuilder.buildUserPromptWithContext(
@@ -121,7 +121,7 @@ export class PromptExecutor {
         response: response.response,
         provider: response.provider,
         model: response.model,
-        agent: agentUsed,
+        promptName: promptUsed,
         usage: response.usage,
         cost: response.cost,
         executionTime,
@@ -139,7 +139,7 @@ export class PromptExecutor {
         error: getErrorMessage(error),
         provider: promptConfig.provider,
         model: promptConfig.model,
-        agent: promptConfig.type === 'text' ? (promptConfig as TextPromptConfig).agent || 'default' : 'default',
+        promptName: promptConfig.type === 'text' ? (promptConfig as TextPromptConfig).customPrompt || 'default' : 'default',
         executionTime: 0,
         sequence: currentSequence,
         parallelGroup: promptConfig.parallelGroup
@@ -249,24 +249,24 @@ export class PromptExecutor {
   }
 
   /**
-   * Resolve custom agent/prompt configuration
+   * Resolve custom prompt configuration
    */
-  private async resolveCustomPrompt(agentIdentifier?: string): Promise<{ systemPrompt: string; agentUsed: string }> {
+  private async resolveCustomPrompt(promptIdentifier?: string): Promise<{ systemPrompt: string; promptUsed: string }> {
     let systemPrompt = '';
-    let agentUsed = 'default';
+    let promptUsed = 'default';
 
-    if (agentIdentifier && this.promptStorage) {
+    if (promptIdentifier && this.promptStorage) {
       try {
         // Use unified lookup (tries ID first, then name)
-        const customPrompt = await this.promptStorage.getPromptByNameOrId(agentIdentifier);
+        const customPrompt = await this.promptStorage.getPromptByNameOrId(promptIdentifier);
         if (customPrompt && customPrompt.isEnabled) {
           systemPrompt = customPrompt.prompt;
-          agentUsed = customPrompt.name;
+          promptUsed = customPrompt.name;
         }
       } catch (error) {
       }
     }
 
-    return { systemPrompt, agentUsed };
+    return { systemPrompt, promptUsed };
   }
 }

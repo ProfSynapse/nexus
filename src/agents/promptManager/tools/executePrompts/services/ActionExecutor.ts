@@ -203,7 +203,7 @@ export class ActionExecutor {
         context: context || ''
       };
 
-      const imageResult = await this.agentManager.executeAgentTool('agentManager', 'generateImage', imageParams);
+      const imageResult = await this.agentManager.executeAgentTool('promptManager', 'generateImage', imageParams);
 
       if (!isCommonResult(imageResult)) {
         return { success: false, error: 'Invalid response from generateImage tool' };

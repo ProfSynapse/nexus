@@ -1,15 +1,15 @@
 /**
  * Location: src/handlers/services/providers/AgentSchemaProvider.ts
- * 
- * Schema provider for dynamic agent and prompt ID injection into AgentManager tool schemas.
- * Extends BaseSchemaProvider to enhance AgentManager tool schemas with available agent names,
+ *
+ * Schema provider for dynamic domain agent and prompt ID injection into PromptManager tool schemas.
+ * Extends BaseSchemaProvider to enhance PromptManager tool schemas with available domain agent names,
  * custom prompt IDs, and contextual descriptions. Used by SchemaEnhancementService to
  * provide dynamic agent and prompt context for better AI assistant understanding.
  */
 
 import { BaseSchemaProvider } from '../BaseSchemaProvider';
 import { IAgent } from '../../../agents/interfaces/IAgent';
-import { CustomPromptStorageService } from '../../../agents/agentManager/services/CustomPromptStorageService';
+import { CustomPromptStorageService } from '../../../agents/promptManager/services/CustomPromptStorageService';
 import { CustomPrompt } from '../../../types';
 import { logger } from '../../../utils/logger';
 
@@ -33,12 +33,12 @@ interface CachedData {
 }
 
 /**
- * Schema provider that injects available agent names and custom prompt IDs
- * into AgentManager tool schemas for dynamic context enhancement
+ * Schema provider that injects available domain agent names and custom prompt IDs
+ * into PromptManager tool schemas for dynamic context enhancement
  */
 export class AgentSchemaProvider extends BaseSchemaProvider {
     readonly name = 'AgentSchemaProvider';
-    readonly description = 'Injects available agent names and custom prompt IDs into AgentManager tool schemas';
+    readonly description = 'Injects available domain agent names and custom prompt IDs into PromptManager tool schemas';
     
     private cache: CachedData | null = null;
     private readonly CACHE_DURATION_MS = 30000; // 30 seconds
@@ -73,14 +73,14 @@ export class AgentSchemaProvider extends BaseSchemaProvider {
 
     /**
      * Check if this provider should enhance the given tool schema
-     * Only enhances AgentManager tool schemas
+     * Only enhances PromptManager tool schemas
      */
     protected shouldEnhanceToolName(toolName: string): boolean {
-        return toolName.startsWith('agentManager-');
+        return toolName.startsWith('promptManager-');
     }
 
     /**
-     * Enhance AgentManager tool schemas with agent names and prompt IDs
+     * Enhance PromptManager tool schemas with domain agent names and prompt IDs
      */
     async enhanceSchema(toolName: string, baseSchema: any): Promise<any> {
         return await this.safeEnhance(
@@ -96,12 +96,12 @@ export class AgentSchemaProvider extends BaseSchemaProvider {
     private async performEnhancement(toolName: string, baseSchema: any): Promise<any> {
         // Get cached or fresh data
         const data = await this.getCachedData();
-        
+
         // Clone the base schema
         const enhanced = this.cloneSchema(baseSchema);
-        
-        // Extract the mode from tool name (e.g., 'agentManager-executePrompt' -> 'executePrompt')
-        const mode = toolName.replace('agentManager-', '');
+
+        // Extract the mode from tool name (e.g., 'promptManager-executePrompt' -> 'executePrompt')
+        const mode = toolName.replace('promptManager-', '');
         
         // Enhance based on the mode
         switch (mode) {
@@ -312,8 +312,8 @@ export class AgentSchemaProvider extends BaseSchemaProvider {
             const agents: AgentInfo[] = [];
             
             for (const [name, agent] of this.agentsMap.entries()) {
-                // Skip the AgentManager agent itself to avoid confusion
-                if (name === 'agentManager') {
+                // Skip the PromptManager agent itself to avoid confusion
+                if (name === 'promptManager') {
                     continue;
                 }
                 

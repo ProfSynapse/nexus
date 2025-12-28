@@ -18,11 +18,11 @@ import {
   StorageManagerAgent,
   SearchManagerAgent,
   MemoryManagerAgent,
-  AgentManagerAgent,
+  PromptManagerAgent,
   ToolManagerAgent
 } from '../../agents';
 import { logger } from '../../utils/logger';
-import { CustomPromptStorageService } from "../../agents/agentManager/services/CustomPromptStorageService";
+import { CustomPromptStorageService } from "../../agents/promptManager/services/CustomPromptStorageService";
 import { LLMProviderManager } from '../llm/providers/ProviderManager';
 import { DEFAULT_LLM_PROVIDER_SETTINGS, MCPSettings, MemorySettings } from '../../types';
 import { Settings } from '../../settings';
@@ -90,9 +90,9 @@ export class AgentInitializationService {
   }
 
   /**
-   * Initialize AgentManager agent
+   * Initialize PromptManager agent
    */
-  async initializeAgentManager(enableLLMModes: boolean): Promise<void> {
+  async initializePromptManager(enableLLMModes: boolean): Promise<void> {
     if (!this.customPromptStorage) {
       // Try to create custom prompt storage directly if settings are available
       if (hasSettings(this.plugin)) {
@@ -144,9 +144,9 @@ export class AgentInitializationService {
       logger.systemLog('LLM modes disabled - AgentManager will function with prompt management only');
     }
 
-    // Create AgentManagerAgent with constructor injection
+    // Create PromptManagerAgent with constructor injection
     if (llmProviderManager && usageTracker && hasSettings(this.plugin)) {
-      const agentManagerAgent = new AgentManagerAgent(
+      const promptManagerAgent = new PromptManagerAgent(
         this.plugin.settings,
         llmProviderManager,
         this.agentManager,
@@ -154,10 +154,10 @@ export class AgentInitializationService {
         this.app.vault
       );
 
-      this.agentManager.registerAgent(agentManagerAgent);
-      logger.systemLog(`AgentManager agent created with full LLM support - LLM modes enabled: ${enableLLMModes}`);
+      this.agentManager.registerAgent(promptManagerAgent);
+      logger.systemLog(`PromptManager agent created with full LLM support - LLM modes enabled: ${enableLLMModes}`);
     } else {
-      // Create basic AgentManager with minimal dependencies for prompt management
+      // Create basic PromptManager with minimal dependencies for prompt management
       try {
         // Create minimal LLM provider manager and usage tracker for basic functionality
         const pluginSettings = hasSettings(this.plugin) ? this.plugin.settings.settings : undefined;
@@ -167,11 +167,11 @@ export class AgentInitializationService {
         const minimalUsageTracker = new UsageTracker('llm', pluginSettings);
 
         if (!hasSettings(this.plugin)) {
-          logger.systemError(new Error('Plugin settings not available for basic AgentManager'), 'Basic AgentManager Creation');
+          logger.systemError(new Error('Plugin settings not available for basic PromptManager'), 'Basic PromptManager Creation');
           return;
         }
 
-        const agentManagerAgent = new AgentManagerAgent(
+        const promptManagerAgent = new PromptManagerAgent(
           this.plugin.settings,
           minimalProviderManager,
           this.agentManager,
@@ -179,11 +179,11 @@ export class AgentInitializationService {
           this.app.vault
         );
 
-        this.agentManager.registerAgent(agentManagerAgent);
-        logger.systemLog('AgentManager agent created with basic support - LLM features may be limited');
+        this.agentManager.registerAgent(promptManagerAgent);
+        logger.systemLog('PromptManager agent created with basic support - LLM features may be limited');
       } catch (basicError) {
-        logger.systemError(basicError as Error, 'Basic AgentManager Creation');
-        logger.systemLog('AgentManager agent creation failed - prompt management features unavailable');
+        logger.systemError(basicError as Error, 'Basic PromptManager Creation');
+        logger.systemLog('PromptManager agent creation failed - prompt management features unavailable');
       }
     }
   }

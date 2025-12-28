@@ -1,10 +1,10 @@
 /**
- * AgentsTab - Custom agents list and detail view
+ * PromptsTab - Custom prompts list and detail view
  *
  * Features:
- * - List view showing all custom agents with status badges
- * - Detail view for editing agent configuration
- * - Create/Edit/Delete agents
+ * - List view showing all custom prompts with status badges
+ * - Detail view for editing prompt configuration
+ * - Create/Edit/Delete prompts
  * - Auto-save on all changes
  */
 
@@ -12,23 +12,23 @@ import { Notice, TextComponent, TextAreaComponent, ButtonComponent } from 'obsid
 import { SettingsRouter } from '../SettingsRouter';
 import { BackButton } from '../components/BackButton';
 import { CustomPrompt } from '../../types/mcp/CustomPromptTypes';
-import { CustomPromptStorageService } from '../../agents/agentManager/services/CustomPromptStorageService';
+import { CustomPromptStorageService } from '../../agents/promptManager/services/CustomPromptStorageService';
 import { CardManager, CardItem } from '../../components/CardManager';
 
-export interface AgentsTabServices {
+export interface PromptsTabServices {
     customPromptStorage?: CustomPromptStorageService;
 }
 
-type AgentsView = 'list' | 'detail';
+type PromptsView = 'list' | 'detail';
 
-export class AgentsTab {
+export class PromptsTab {
     private container: HTMLElement;
     private router: SettingsRouter;
-    private services: AgentsTabServices;
-    private agents: CustomPrompt[] = [];
-    private currentAgent: Partial<CustomPrompt> | null = null;
-    private currentView: AgentsView = 'list';
-    private isNewAgent: boolean = false;
+    private services: PromptsTabServices;
+    private prompts: CustomPrompt[] = [];
+    private currentPrompt: Partial<CustomPrompt> | null = null;
+    private currentView: PromptsView = 'list';
+    private isNewPrompt: boolean = false;
 
     // Auto-save debounce
     private saveTimeout?: ReturnType<typeof setTimeout>;
@@ -39,22 +39,22 @@ export class AgentsTab {
     constructor(
         container: HTMLElement,
         router: SettingsRouter,
-        services: AgentsTabServices
+        services: PromptsTabServices
     ) {
         this.container = container;
         this.router = router;
         this.services = services;
 
-        this.loadAgents();
+        this.loadPrompts();
         this.render();
     }
 
     /**
-     * Load agents from storage service
+     * Load prompts from storage service
      */
-    private loadAgents(): void {
+    private loadPrompts(): void {
         if (!this.services.customPromptStorage) return;
-        this.agents = this.services.customPromptStorage.getAllPrompts();
+        this.prompts = this.services.customPromptStorage.getAllPrompts();
     }
 
     /**
@@ -68,10 +68,10 @@ export class AgentsTab {
         // Check router state for navigation
         if (state.view === 'detail' && state.detailId) {
             this.currentView = 'detail';
-            const agent = this.agents.find(a => a.id === state.detailId);
-            if (agent) {
-                this.currentAgent = { ...agent };
-                this.isNewAgent = false;
+            const prompt = this.prompts.find(p => p.id === state.detailId);
+            if (prompt) {
+                this.currentPrompt = { ...prompt };
+                this.isNewPrompt = false;
                 this.renderDetail();
                 return;
             }
@@ -89,67 +89,67 @@ export class AgentsTab {
         this.container.empty();
 
         // Header
-        this.container.createEl('h3', { text: 'Custom Agents' });
+        this.container.createEl('h3', { text: 'Custom Prompts' });
         this.container.createEl('p', {
-            text: 'Create specialized AI assistants with custom prompts',
+            text: 'Create specialized prompts with custom system instructions',
             cls: 'setting-item-description'
         });
 
         // Check if service is available
         if (!this.services.customPromptStorage) {
             this.container.createEl('p', {
-                text: 'Agent service is initializing...',
+                text: 'Prompt service is initializing...',
                 cls: 'nexus-loading-message'
             });
             return;
         }
 
-        // Convert agents to CardItem format
-        const cardItems: CardItem[] = this.agents.map(agent => ({
-            id: agent.id,
-            name: agent.name,
-            description: agent.description || 'No description',
-            isEnabled: agent.isEnabled
+        // Convert prompts to CardItem format
+        const cardItems: CardItem[] = this.prompts.map(prompt => ({
+            id: prompt.id,
+            name: prompt.name,
+            description: prompt.description || 'No description',
+            isEnabled: prompt.isEnabled
         }));
 
         // Create card manager
         this.cardManager = new CardManager({
             containerEl: this.container,
-            title: 'Custom Agents',
-            addButtonText: '+ New Agent',
-            emptyStateText: 'No custom agents yet. Create one to get started.',
+            title: 'Custom Prompts',
+            addButtonText: '+ New Prompt',
+            emptyStateText: 'No custom prompts yet. Create one to get started.',
             items: cardItems,
             showToggle: true,
-            onAdd: () => this.createNewAgent(),
+            onAdd: () => this.createNewPrompt(),
             onToggle: async (item, enabled) => {
-                const agent = this.agents.find(a => a.id === item.id);
-                if (agent && this.services.customPromptStorage) {
+                const prompt = this.prompts.find(p => p.id === item.id);
+                if (prompt && this.services.customPromptStorage) {
                     await this.services.customPromptStorage.updatePrompt(item.id, { isEnabled: enabled });
-                    agent.isEnabled = enabled;
+                    prompt.isEnabled = enabled;
                 }
             },
             onEdit: (item) => {
                 this.router.showDetail(item.id);
             },
             onDelete: async (item) => {
-                const confirmed = confirm(`Delete agent "${item.name}"? This cannot be undone.`);
+                const confirmed = confirm(`Delete prompt "${item.name}"? This cannot be undone.`);
                 if (!confirmed) return;
 
                 try {
                     if (this.services.customPromptStorage) {
                         await this.services.customPromptStorage.deletePrompt(item.id);
-                        this.agents = this.agents.filter(a => a.id !== item.id);
-                        this.cardManager?.updateItems(this.agents.map(a => ({
-                            id: a.id,
-                            name: a.name,
-                            description: a.description || 'No description',
-                            isEnabled: a.isEnabled
+                        this.prompts = this.prompts.filter(p => p.id !== item.id);
+                        this.cardManager?.updateItems(this.prompts.map(p => ({
+                            id: p.id,
+                            name: p.name,
+                            description: p.description || 'No description',
+                            isEnabled: p.isEnabled
                         })));
-                        new Notice('Agent deleted');
+                        new Notice('Prompt deleted');
                     }
                 } catch (error) {
-                    console.error('[AgentsTab] Failed to delete agent:', error);
-                    new Notice('Failed to delete agent');
+                    console.error('[PromptsTab] Failed to delete prompt:', error);
+                    new Notice('Failed to delete prompt');
                 }
             }
         });
@@ -161,15 +161,15 @@ export class AgentsTab {
     private renderDetail(): void {
         this.container.empty();
 
-        const agent = this.currentAgent;
-        if (!agent) {
+        const prompt = this.currentPrompt;
+        if (!prompt) {
             this.router.back();
             return;
         }
 
         // Back button
-        new BackButton(this.container, 'Back to Agents', () => {
-            this.saveCurrentAgent();
+        new BackButton(this.container, 'Back to Prompts', () => {
+            this.saveCurrentPrompt();
             this.router.back();
         });
 
@@ -181,9 +181,9 @@ export class AgentsTab {
         nameField.createEl('label', { text: 'Name', cls: 'nexus-form-label' });
         const nameInput = new TextComponent(nameField);
         nameInput.setPlaceholder('e.g., Code Reviewer');
-        nameInput.setValue(agent.name || '');
+        nameInput.setValue(prompt.name || '');
         nameInput.onChange((value) => {
-            agent.name = value;
+            prompt.name = value;
             this.debouncedSave();
         });
 
@@ -191,14 +191,14 @@ export class AgentsTab {
         const descField = form.createDiv('nexus-form-field');
         descField.createEl('label', { text: 'Description', cls: 'nexus-form-label' });
         descField.createEl('span', {
-            text: 'A brief description of what this agent does',
+            text: 'A brief description of what this prompt does',
             cls: 'nexus-form-hint'
         });
         const descInput = new TextAreaComponent(descField);
         descInput.setPlaceholder('e.g., Reviews code for best practices and potential issues');
-        descInput.setValue(agent.description || '');
+        descInput.setValue(prompt.description || '');
         descInput.onChange((value) => {
-            agent.description = value;
+            prompt.description = value;
             this.debouncedSave();
         });
 
@@ -206,14 +206,14 @@ export class AgentsTab {
         const promptField = form.createDiv('nexus-form-field');
         promptField.createEl('label', { text: 'System Prompt', cls: 'nexus-form-label' });
         promptField.createEl('span', {
-            text: 'Instructions that define this agent\'s behavior and expertise',
+            text: 'Instructions that define this prompt\'s behavior and expertise',
             cls: 'nexus-form-hint'
         });
         const promptInput = new TextAreaComponent(promptField);
         promptInput.setPlaceholder('You are an expert code reviewer. When reviewing code, focus on...');
-        promptInput.setValue(agent.prompt || '');
+        promptInput.setValue(prompt.prompt || '');
         promptInput.onChange((value) => {
-            agent.prompt = value;
+            prompt.prompt = value;
             this.debouncedSave();
         });
         // Make the system prompt textarea larger
@@ -232,99 +232,99 @@ export class AgentsTab {
                     clearTimeout(this.saveTimeout);
                     this.saveTimeout = undefined;
                 }
-                await this.saveCurrentAgent();
-                new Notice('Agent saved');
+                await this.saveCurrentPrompt();
+                new Notice('Prompt saved');
                 this.router.back();
             });
 
-        if (!this.isNewAgent && agent.id) {
+        if (!this.isNewPrompt && prompt.id) {
             new ButtonComponent(actions)
                 .setButtonText('Delete')
                 .setWarning()
-                .onClick(() => this.deleteCurrentAgent());
+                .onClick(() => this.deleteCurrentPrompt());
         }
     }
 
     /**
-     * Create a new agent
+     * Create a new prompt
      */
-    private createNewAgent(): void {
-        this.currentAgent = {
+    private createNewPrompt(): void {
+        this.currentPrompt = {
             name: '',
             description: '',
             prompt: '',
             isEnabled: true
         };
-        this.isNewAgent = true;
+        this.isNewPrompt = true;
         this.currentView = 'detail';
         this.renderDetail();
     }
 
     /**
-     * Save the current agent
+     * Save the current prompt
      */
-    private async saveCurrentAgent(): Promise<void> {
-        if (!this.currentAgent || !this.services.customPromptStorage) return;
+    private async saveCurrentPrompt(): Promise<void> {
+        if (!this.currentPrompt || !this.services.customPromptStorage) return;
 
         // Validate required fields
-        if (!this.currentAgent.name?.trim()) {
-            new Notice('Agent name is required');
+        if (!this.currentPrompt.name?.trim()) {
+            new Notice('Prompt name is required');
             return;
         }
 
         try {
-            if (this.isNewAgent) {
-                // Create new agent
+            if (this.isNewPrompt) {
+                // Create new prompt
                 const created = await this.services.customPromptStorage.createPrompt({
-                    name: this.currentAgent.name,
-                    description: this.currentAgent.description || '',
-                    prompt: this.currentAgent.prompt || '',
-                    isEnabled: this.currentAgent.isEnabled ?? true
+                    name: this.currentPrompt.name,
+                    description: this.currentPrompt.description || '',
+                    prompt: this.currentPrompt.prompt || '',
+                    isEnabled: this.currentPrompt.isEnabled ?? true
                 });
-                this.agents.push(created);
-                this.currentAgent = created;
-                this.isNewAgent = false;
-            } else if (this.currentAgent.id) {
-                // Update existing agent
+                this.prompts.push(created);
+                this.currentPrompt = created;
+                this.isNewPrompt = false;
+            } else if (this.currentPrompt.id) {
+                // Update existing prompt
                 await this.services.customPromptStorage.updatePrompt(
-                    this.currentAgent.id,
+                    this.currentPrompt.id,
                     {
-                        name: this.currentAgent.name,
-                        description: this.currentAgent.description,
-                        prompt: this.currentAgent.prompt,
-                        isEnabled: this.currentAgent.isEnabled
+                        name: this.currentPrompt.name,
+                        description: this.currentPrompt.description,
+                        prompt: this.currentPrompt.prompt,
+                        isEnabled: this.currentPrompt.isEnabled
                     }
                 );
                 // Update local cache
-                const index = this.agents.findIndex(a => a.id === this.currentAgent?.id);
+                const index = this.prompts.findIndex(p => p.id === this.currentPrompt?.id);
                 if (index >= 0) {
-                    this.agents[index] = this.currentAgent as CustomPrompt;
+                    this.prompts[index] = this.currentPrompt as CustomPrompt;
                 }
             }
         } catch (error) {
-            console.error('[AgentsTab] Failed to save agent:', error);
-            new Notice(`Failed to save agent: ${(error as Error).message}`);
+            console.error('[PromptsTab] Failed to save prompt:', error);
+            new Notice(`Failed to save prompt: ${(error as Error).message}`);
         }
     }
 
     /**
-     * Delete the current agent
+     * Delete the current prompt
      */
-    private async deleteCurrentAgent(): Promise<void> {
-        if (!this.currentAgent?.id || !this.services.customPromptStorage) return;
+    private async deleteCurrentPrompt(): Promise<void> {
+        if (!this.currentPrompt?.id || !this.services.customPromptStorage) return;
 
-        const confirmed = confirm(`Delete agent "${this.currentAgent.name}"? This cannot be undone.`);
+        const confirmed = confirm(`Delete prompt "${this.currentPrompt.name}"? This cannot be undone.`);
         if (!confirmed) return;
 
         try {
-            await this.services.customPromptStorage.deletePrompt(this.currentAgent.id);
-            this.agents = this.agents.filter(a => a.id !== this.currentAgent?.id);
-            this.currentAgent = null;
+            await this.services.customPromptStorage.deletePrompt(this.currentPrompt.id);
+            this.prompts = this.prompts.filter(p => p.id !== this.currentPrompt?.id);
+            this.currentPrompt = null;
             this.router.back();
-            new Notice('Agent deleted');
+            new Notice('Prompt deleted');
         } catch (error) {
-            console.error('[AgentsTab] Failed to delete agent:', error);
-            new Notice('Failed to delete agent');
+            console.error('[PromptsTab] Failed to delete prompt:', error);
+            new Notice('Failed to delete prompt');
         }
     }
 
@@ -337,7 +337,7 @@ export class AgentsTab {
         }
 
         this.saveTimeout = setTimeout(() => {
-            this.saveCurrentAgent();
+            this.saveCurrentPrompt();
         }, 500);
     }
 

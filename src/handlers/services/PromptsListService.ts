@@ -1,7 +1,7 @@
 import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import { IPromptsListService } from '../interfaces/IRequestHandlerServices';
 import { logger } from '../../utils/logger';
-import { CustomPromptStorageService } from "../../agents/agentManager/services/CustomPromptStorageService";
+import { CustomPromptStorageService } from "../../agents/promptManager/services/CustomPromptStorageService";
 
 /**
  * Prompt interface for MCP prompt listing

@@ -4,6 +4,6 @@ export * from './commandManager/commandManager';
 export * from './storageManager/storageManager';
 export * from './searchManager/searchManager';
 export * from './memoryManager/memoryManager';
-export * from './agentManager/agentManager';
+export * from './promptManager/promptManager';
 export * from './toolManager/toolManager';
 // Chat agent removed - using native chatbot UI instead

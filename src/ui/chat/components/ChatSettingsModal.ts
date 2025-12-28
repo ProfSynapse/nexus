@@ -71,9 +71,9 @@ export class ChatSettingsModal extends Modal {
       return;
     }
 
-    // Load workspaces and agents
+    // Load workspaces and prompts
     const workspaces = await this.loadWorkspaces();
-    const agents = await this.loadAgents();
+    const prompts = await this.loadPrompts();
 
     // Get current settings from ModelAgentManager
     const initialSettings = this.getCurrentSettings();
@@ -85,7 +85,7 @@ export class ChatSettingsModal extends Modal {
       app: this.app,
       llmProviderSettings,
       initialSettings,
-      options: { workspaces, agents },
+      options: { workspaces, prompts },
       callbacks: {
         onSettingsChange: (settings) => {
           this.pendingSettings = settings;
@@ -105,10 +105,10 @@ export class ChatSettingsModal extends Modal {
     }
   }
 
-  private async loadAgents(): Promise<Array<{ id: string; name: string }>> {
+  private async loadPrompts(): Promise<Array<{ id: string; name: string }>> {
     try {
-      const agents = await this.modelAgentManager.getAvailableAgents();
-      return agents.map(a => ({ id: a.id || a.name, name: a.name }));
+      const prompts = await this.modelAgentManager.getAvailablePrompts();
+      return prompts.map(p => ({ id: p.id || p.name, name: p.name }));
     } catch {
       return [];
     }
@@ -116,7 +116,7 @@ export class ChatSettingsModal extends Modal {
 
   private getCurrentSettings(): ChatSettings {
     const model = this.modelAgentManager.getSelectedModel();
-    const agent = this.modelAgentManager.getSelectedAgent();
+    const prompt = this.modelAgentManager.getSelectedPrompt();
     const thinking = this.modelAgentManager.getThinkingSettings();
     const contextNotes = this.modelAgentManager.getContextNotes();
     const temperature = this.modelAgentManager.getTemperature();
@@ -136,7 +136,7 @@ export class ChatSettingsModal extends Modal {
       imageProvider: llmSettings?.defaultImageModel?.provider || 'google',
       imageModel: llmSettings?.defaultImageModel?.model || 'gemini-2.5-flash-image',
       workspaceId: this.modelAgentManager.getSelectedWorkspaceId(),
-      agentId: agent?.id || agent?.name || null,
+      promptId: prompt?.id || prompt?.name || null,
       contextNotes: [...contextNotes]
     };
   }
@@ -163,13 +163,13 @@ export class ChatSettingsModal extends Modal {
         this.modelAgentManager.handleModelChange(model);
       }
 
-      // Update agent
-      if (settings.agentId) {
-        const availableAgents = await this.modelAgentManager.getAvailableAgents();
-        const agent = availableAgents.find(a => a.id === settings.agentId || a.name === settings.agentId);
-        await this.modelAgentManager.handleAgentChange(agent || null);
+      // Update prompt
+      if (settings.promptId) {
+        const availablePrompts = await this.modelAgentManager.getAvailablePrompts();
+        const prompt = availablePrompts.find(p => p.id === settings.promptId || p.name === settings.promptId);
+        await this.modelAgentManager.handlePromptChange(prompt || null);
       } else {
-        await this.modelAgentManager.handleAgentChange(null);
+        await this.modelAgentManager.handlePromptChange(null);
       }
 
       // Update workspace

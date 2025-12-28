@@ -46,8 +46,8 @@ export interface TextPromptRequest extends BaseBatchRequest {
   workspace?: string;
   /** Optional action to perform with the LLM response */
   action?: ContentAction;
-  /** Optional custom agent/prompt to use */
-  agent?: string;
+  /** Optional custom prompt to use (by name or ID) */
+  customPrompt?: string;
 }
 
 /**
@@ -94,7 +94,7 @@ export interface TextPromptConfig {
   includePreviousResults?: boolean;
   contextFromSteps?: string[];
   action?: ContentAction;
-  agent?: string;
+  customPrompt?: string;
 }
 
 /**
@@ -178,7 +178,8 @@ export interface InternalExecutionResult {
   imagePath?: string;
   provider?: string;
   model?: string;
-  agent?: string;
+  /** Name of the custom prompt used (if any) */
+  promptName?: string;
   error?: string;
   executionTime?: number;
   sequence?: number;

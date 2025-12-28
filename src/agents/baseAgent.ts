@@ -187,7 +187,7 @@ export abstract class BaseAgent implements IAgent {
     }
 
     // Search known agent names for exact tool match
-    const agentNames = ['vaultManager', 'contentManager', 'vaultLibrarian', 'memoryManager', 'commandManager', 'agentManager'];
+    const agentNames = ['vaultManager', 'contentManager', 'vaultLibrarian', 'memoryManager', 'commandManager', 'promptManager'];
 
     for (const agentName of agentNames) {
       if (agentName === this.name) continue;

@@ -53,7 +53,7 @@ export function checkForTerminalTool(toolCalls: ChatToolCall[]): TerminalToolRes
       const calls = params?.calls || [];
 
       for (const call of calls) {
-        if (call.tool === 'subagent' || (call.agent === 'agentManager' && call.tool === 'subagent')) {
+        if (call.tool === 'subagent' || (call.agent === 'promptManager' && call.tool === 'subagent')) {
           isWrappedSubagent = true;
           wrappedParams = call.params;
 

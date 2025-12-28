@@ -1,7 +1,7 @@
 import { App, Plugin, Events } from 'obsidian';
 import { MCPServer } from '../../server';
 import { SessionContextManager } from '../SessionContextManager';
-import { CustomPromptStorageService } from "../../agents/agentManager/services/CustomPromptStorageService";
+import { CustomPromptStorageService } from "../../agents/promptManager/services/CustomPromptStorageService";
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { logger } from '../../utils/logger';
 

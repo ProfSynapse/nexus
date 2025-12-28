@@ -1,31 +1,31 @@
 /**
- * Location: /src/agents/memoryManager/services/WorkspaceAgentResolver.ts
- * Purpose: Resolves agent information from workspaces
+ * Location: /src/agents/memoryManager/services/WorkspacePromptResolver.ts
+ * Purpose: Resolves custom prompt information from workspaces
  *
- * This service handles looking up agent data associated with workspaces,
+ * This service handles looking up custom prompt data associated with workspaces,
  * supporting both ID-based and unified name/ID lookup with backward
  * compatibility for legacy workspace structures.
  *
- * Used by: LoadWorkspaceMode for resolving workspace agents
+ * Used by: LoadWorkspaceMode for resolving workspace prompts
  * Integrates with: CustomPromptStorageService via AgentManager
  *
  * Responsibilities:
- * - Resolve workspace agent from dedicatedAgent or legacy agents array
- * - Fetch agent data by ID (for when ID is known)
- * - Fetch agent data by name or ID (unified lookup)
+ * - Resolve workspace prompt from dedicatedAgent or legacy agents array
+ * - Fetch prompt data by ID (for when ID is known)
+ * - Fetch prompt data by name or ID (unified lookup)
  */
 
 import type { App } from 'obsidian';
 import { ProjectWorkspace, WorkspaceContext } from '../../../database/types/workspace/WorkspaceTypes';
 import { getNexusPlugin } from '../../../utils/pluginLocator';
 import type { AgentManager } from '../../../services/AgentManager';
-import type { AgentManagerAgent } from '../../agentManager/agentManager';
-import type { CustomPromptStorageService } from '../../agentManager/services/CustomPromptStorageService';
+import type { PromptManagerAgent } from '../../promptManager/promptManager';
+import type { CustomPromptStorageService } from '../../promptManager/services/CustomPromptStorageService';
 
 /**
- * Agent information returned from resolution operations
+ * Prompt information returned from resolution operations
  */
-export interface AgentInfo {
+export interface WorkspacePromptInfo {
   id: string;
   name: string;
   systemPrompt: string;
@@ -50,46 +50,46 @@ interface NexusPluginWithAgentManager {
 }
 
 /**
- * AgentManager agent interface with storage service
+ * PromptManager agent interface with storage service
  */
-interface AgentManagerWithStorage {
+interface PromptManagerWithStorage {
   storageService: CustomPromptStorageService;
 }
 
 /**
- * Service for resolving workspace agents
- * Implements Single Responsibility Principle - only handles agent resolution
+ * Service for resolving workspace prompts (custom prompts associated with workspaces)
+ * Implements Single Responsibility Principle - only handles prompt resolution
  */
-export class WorkspaceAgentResolver {
+export class WorkspacePromptResolver {
   /**
-   * Fetch workspace agent data if available
+   * Fetch workspace prompt data if available
    * Handles both new dedicatedAgent structure and legacy agents array
-   * @param workspace The workspace to fetch agent from
+   * @param workspace The workspace to fetch prompt from
    * @param app The Obsidian app instance
-   * @returns Agent info or null if not available
+   * @returns Prompt info or null if not available
    */
-  async fetchWorkspaceAgent(
+  async fetchWorkspacePrompt(
     workspace: ProjectWorkspace,
     app: App
-  ): Promise<AgentInfo | null> {
+  ): Promise<WorkspacePromptInfo | null> {
     try {
-      // Check if workspace has a dedicated agent
+      // Check if workspace has a dedicated prompt (stored as dedicatedAgent for backward compat)
       if (!workspace.context?.dedicatedAgent) {
         // Fall back to legacy agents array for backward compatibility
         const legacyContext = workspace.context as LegacyWorkspaceContext | undefined;
         const legacyAgents = legacyContext?.agents;
         if (legacyAgents && Array.isArray(legacyAgents) && legacyAgents.length > 0) {
-          const legacyAgentRef = legacyAgents[0];
-          if (legacyAgentRef && legacyAgentRef.name) {
-            return await this.fetchAgentByNameOrId(legacyAgentRef.name, app);
+          const legacyPromptRef = legacyAgents[0];
+          if (legacyPromptRef && legacyPromptRef.name) {
+            return await this.fetchPromptByNameOrId(legacyPromptRef.name, app);
           }
         }
         return null;
       }
 
-      // Use the new dedicated agent structure - use unified lookup
+      // Use the dedicated prompt structure - use unified lookup
       const { agentId } = workspace.context.dedicatedAgent;
-      return await this.fetchAgentByNameOrId(agentId, app);
+      return await this.fetchPromptByNameOrId(agentId, app);
 
     } catch (error) {
       return null;
@@ -97,16 +97,16 @@ export class WorkspaceAgentResolver {
   }
 
   /**
-   * Fetch agent by name or ID (unified lookup)
+   * Fetch prompt by name or ID (unified lookup)
    * Tries ID first (more specific), then falls back to name
-   * @param identifier The agent name or ID
+   * @param identifier The prompt name or ID
    * @param app The Obsidian app instance
-   * @returns Agent info or null if not found
+   * @returns Prompt info or null if not found
    */
-  async fetchAgentByNameOrId(
+  async fetchPromptByNameOrId(
     identifier: string,
     app: App
-  ): Promise<AgentInfo | null> {
+  ): Promise<WorkspacePromptInfo | null> {
     try {
       // Get CustomPromptStorageService through plugin's agentManager
       const plugin = getNexusPlugin(app);
@@ -114,21 +114,21 @@ export class WorkspaceAgentResolver {
         return null;
       }
 
-      const agentManagerAgent = plugin.agentManager.getAgent('agentManager');
-      if (!this.isAgentManagerAgent(agentManagerAgent)) {
+      const promptManagerAgent = plugin.agentManager.getAgent('promptManager');
+      if (!this.isPromptManagerAgent(promptManagerAgent)) {
         return null;
       }
 
       // Use unified lookup that tries ID first, then name
-      const agent = agentManagerAgent.storageService.getPromptByNameOrId(identifier);
-      if (!agent) {
+      const prompt = promptManagerAgent.storageService.getPromptByNameOrId(identifier);
+      if (!prompt) {
         return null;
       }
 
       return {
-        id: agent.id,
-        name: agent.name,
-        systemPrompt: agent.prompt
+        id: prompt.id,
+        name: prompt.name,
+        systemPrompt: prompt.prompt
       };
 
     } catch (error) {
@@ -144,9 +144,9 @@ export class WorkspaceAgentResolver {
   }
 
   /**
-   * Type guard to check if agent is AgentManagerAgent with storageService
+   * Type guard to check if agent is PromptManagerAgent with storageService
    */
-  private isAgentManagerAgent(agent: unknown): agent is AgentManagerWithStorage {
+  private isPromptManagerAgent(agent: unknown): agent is PromptManagerWithStorage {
     return typeof agent === 'object' && agent !== null && 'storageService' in agent;
   }
 }

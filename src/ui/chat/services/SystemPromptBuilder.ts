@@ -4,8 +4,8 @@
  * Responsibilities:
  * - Build multi-section XML system prompts
  * - Inject session/workspace context for tool calls
- * - Add enhancement data from suggesters (tools, agents, notes)
- * - Include agent prompts and workspace context
+ * - Add enhancement data from suggesters (tools, prompts, notes)
+ * - Include custom prompts and workspace context
  * - Delegate file content reading to FileContentService
  *
  * Follows Single Responsibility Principle - only handles prompt composition.
@@ -35,9 +35,9 @@ export interface WorkspaceSummary {
 }
 
 /**
- * Available agent summary for system prompt
+ * Available prompt summary for system prompt (user-created prompts)
  */
-export interface AgentSummary {
+export interface PromptSummary {
   id: string;
   name: string;
   description: string;
@@ -68,14 +68,14 @@ export interface SystemPromptOptions {
   workspaceId?: string;
   contextNotes?: string[];
   messageEnhancement?: MessageEnhancement | null;
-  agentPrompt?: string | null;
+  customPrompt?: string | null;
   workspaceContext?: WorkspaceContext | null;
   // Full comprehensive workspace data from LoadWorkspaceTool (when workspace selected in settings)
   loadedWorkspaceData?: any | null;
   // Dynamic context (always loaded fresh)
   vaultStructure?: VaultStructure | null;
   availableWorkspaces?: WorkspaceSummary[];
-  availableAgents?: AgentSummary[];
+  availablePrompts?: PromptSummary[];
   // Tool agents with their tools (dynamically loaded from agent registry)
   toolAgents?: ToolAgentInfo[];
   // Skip the tools section for models that are pre-trained on the toolset (e.g., Nexus)
@@ -136,10 +136,10 @@ export class SystemPromptBuilder {
       sections.push(availableWorkspacesSection);
     }
 
-    // 4. Available agents (dynamic - always fresh)
-    const availableAgentsSection = this.buildAvailableAgentsSection(options.availableAgents);
-    if (availableAgentsSection) {
-      sections.push(availableAgentsSection);
+    // 4. Available prompts (dynamic - always fresh)
+    const availablePromptsSection = this.buildAvailablePromptsSection(options.availablePrompts);
+    if (availablePromptsSection) {
+      sections.push(availablePromptsSection);
     }
 
     // 5. Context files section
@@ -157,10 +157,10 @@ export class SystemPromptBuilder {
       sections.push(toolHintsSection);
     }
 
-    // 7. Custom agents from @suggester
-    const customAgentsSection = this.buildCustomAgentsSection(options.messageEnhancement);
-    if (customAgentsSection) {
-      sections.push(customAgentsSection);
+    // 7. Custom prompts from @suggester
+    const customPromptsSection = this.buildCustomPromptsSection(options.messageEnhancement);
+    if (customPromptsSection) {
+      sections.push(customPromptsSection);
     }
 
     // 8. Workspace references from #suggester
@@ -169,10 +169,10 @@ export class SystemPromptBuilder {
       sections.push(workspaceReferencesSection);
     }
 
-    // 9. Agent prompt (if agent selected)
-    const agentSection = this.buildAgentSection(options.agentPrompt);
-    if (agentSection) {
-      sections.push(agentSection);
+    // 9. Custom prompt (if prompt selected)
+    const customPromptSection = this.buildSelectedPromptSection(options.customPrompt);
+    if (customPromptSection) {
+      sections.push(customPromptSection);
     }
 
     // 10. Selected workspace context (comprehensive data from settings selection)
@@ -305,23 +305,23 @@ IMPORTANT:
   }
 
   /**
-   * Build custom agents section from @suggester
+   * Build custom prompts section from @suggester
    */
-  private buildCustomAgentsSection(messageEnhancement?: MessageEnhancement | null): string | null {
-    if (!messageEnhancement || messageEnhancement.agents.length === 0) {
+  private buildCustomPromptsSection(messageEnhancement?: MessageEnhancement | null): string | null {
+    if (!messageEnhancement || messageEnhancement.prompts.length === 0) {
       return null;
     }
 
-    let prompt = '<custom_agents>\n';
-    prompt += 'The user has mentioned the following custom agents. Apply their personalities and instructions:\n\n';
+    let prompt = '<custom_prompts>\n';
+    prompt += 'The user has mentioned the following custom prompts. Apply their instructions:\n\n';
 
-    for (const agent of messageEnhancement.agents) {
-      prompt += `<agent name="${this.escapeXmlAttribute(agent.name)}">\n`;
-      prompt += this.escapeXmlContent(agent.prompt);
-      prompt += `\n</agent>\n\n`;
+    for (const customPrompt of messageEnhancement.prompts) {
+      prompt += `<prompt name="${this.escapeXmlAttribute(customPrompt.name)}">\n`;
+      prompt += this.escapeXmlContent(customPrompt.prompt);
+      prompt += `\n</prompt>\n\n`;
     }
 
-    prompt += '</custom_agents>';
+    prompt += '</custom_prompts>';
 
     return prompt;
   }
@@ -397,14 +397,14 @@ IMPORTANT:
   }
 
   /**
-   * Build agent section (if agent selected)
+   * Build selected prompt section (if prompt selected)
    */
-  private buildAgentSection(agentPrompt?: string | null): string | null {
-    if (!agentPrompt) {
+  private buildSelectedPromptSection(customPrompt?: string | null): string | null {
+    if (!customPrompt) {
       return null;
     }
 
-    return `<agent>\n${agentPrompt}\n</agent>`;
+    return `<selected_prompt>\n${customPrompt}\n</selected_prompt>`;
   }
 
   /**
@@ -509,23 +509,23 @@ IMPORTANT:
   }
 
   /**
-   * Build available agents section (dynamic - lists custom agents)
-   * Informs the LLM about custom agents that can be used
+   * Build available prompts section (dynamic - lists custom prompts)
+   * Informs the LLM about custom prompts that can be used
    */
-  private buildAvailableAgentsSection(agents?: AgentSummary[]): string | null {
-    if (!agents || agents.length === 0) {
+  private buildAvailablePromptsSection(prompts?: PromptSummary[]): string | null {
+    if (!prompts || prompts.length === 0) {
       return null;
     }
 
-    let prompt = '<available_agents>\n';
-    prompt += 'The following custom agents are available in this workspace:\n\n';
+    let prompt = '<available_prompts>\n';
+    prompt += 'The following custom prompts are available:\n\n';
 
-    for (const agent of agents) {
-      prompt += `- ${this.escapeXmlContent(agent.name)} (id: "${agent.id}")\n`;
-      prompt += `  ${this.escapeXmlContent(agent.description)}\n\n`;
+    for (const customPrompt of prompts) {
+      prompt += `- ${this.escapeXmlContent(customPrompt.name)} (id: "${customPrompt.id}")\n`;
+      prompt += `  ${this.escapeXmlContent(customPrompt.description)}\n\n`;
     }
 
-    prompt += '</available_agents>';
+    prompt += '</available_prompts>';
 
     return prompt;
   }

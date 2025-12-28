@@ -7,7 +7,7 @@ import { App, Plugin, Events } from 'obsidian';
 import { IMCPServer, ServerStatus } from '../types';
 import { IAgent } from '../agents/interfaces/IAgent';
 import { SessionContextManager } from '../services/SessionContextManager';
-import { CustomPromptStorageService } from "../agents/agentManager/services/CustomPromptStorageService";
+import { CustomPromptStorageService } from "../agents/promptManager/services/CustomPromptStorageService";
 import { Server as MCPSDKServer } from '@modelcontextprotocol/sdk/server/index.js';
 import { RequestRouter } from '../handlers/RequestRouter';
 import { logger } from '../utils/logger';

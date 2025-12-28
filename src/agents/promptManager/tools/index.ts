@@ -1,9 +1,9 @@
-// Export all AgentManager tools
-export { ListAgentsTool } from './listAgents';
-export { GetAgentTool } from './getAgent';
-export { CreateAgentTool } from './createAgent';
-export { UpdateAgentTool } from './updateAgent';
-export { ArchiveAgentTool } from './archiveAgent';
+// Export all PromptManager tools
+export { ListPromptsTool } from './listPrompts';
+export { GetPromptTool } from './getPrompt';
+export { CreatePromptTool } from './createPrompt';
+export { UpdatePromptTool } from './updatePrompt';
+export { ArchivePromptTool } from './archivePrompt';
 export { ListModelsTool } from './listModels';
 export { ExecutePromptsTool } from './executePrompts';
 export { GenerateImageTool } from './generateImage';

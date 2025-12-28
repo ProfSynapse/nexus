@@ -84,7 +84,7 @@ export class ChatInput {
         const anySuggesterActive =
           this.suggesters?.noteSuggester?.getIsActive() ||
           this.suggesters?.toolSuggester?.getIsActive() ||
-          this.suggesters?.agentSuggester?.getIsActive();
+          this.suggesters?.promptSuggester?.getIsActive();
 
         if (!anySuggesterActive) {
           e.preventDefault();

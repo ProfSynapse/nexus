@@ -5,10 +5,10 @@
 import { App, Plugin, Component } from 'obsidian';
 import { TextAreaNoteSuggester } from './TextAreaNoteSuggester';
 import { TextAreaToolSuggester } from './TextAreaToolSuggester';
-import { TextAreaAgentSuggester } from './TextAreaAgentSuggester';
+import { TextAreaPromptSuggester } from './TextAreaPromptSuggester';
 import { TextAreaWorkspaceSuggester } from './TextAreaWorkspaceSuggester';
 import { MessageEnhancer } from '../../services/MessageEnhancer';
-import { CustomPromptStorageService } from '../../../../agents/agentManager/services/CustomPromptStorageService';
+import { CustomPromptStorageService } from '../../../../agents/promptManager/services/CustomPromptStorageService';
 import { WorkspaceService } from '../../../../services/WorkspaceService';
 import { getNexusPlugin } from '../../../../utils/pluginLocator';
 import type { Settings } from '../../../../settings';
@@ -25,7 +25,7 @@ interface NexusPluginWithServices extends Plugin {
 export interface SuggesterInstances {
   noteSuggester: TextAreaNoteSuggester;
   toolSuggester: TextAreaToolSuggester;
-  agentSuggester?: TextAreaAgentSuggester;
+  promptSuggester?: TextAreaPromptSuggester;
   workspaceSuggester?: TextAreaWorkspaceSuggester;
   messageEnhancer: MessageEnhancer;
   cleanup: () => void;
@@ -42,14 +42,14 @@ export function initializeSuggesters(
   const noteSuggester = new TextAreaNoteSuggester(app, element, messageEnhancer, component);
   const toolSuggester = new TextAreaToolSuggester(app, element, messageEnhancer, component);
 
-  // Try to get CustomPromptStorageService for agent suggester
-  let agentSuggester: TextAreaAgentSuggester | undefined;
+  // Try to get CustomPromptStorageService for prompt suggester
+  let promptSuggester: TextAreaPromptSuggester | undefined;
   let workspaceSuggester: TextAreaWorkspaceSuggester | undefined;
   try {
     const plugin = getNexusPlugin<NexusPluginWithServices>(app);
     if (plugin?.settings) {
       const promptStorage = new CustomPromptStorageService(plugin.settings);
-      agentSuggester = new TextAreaAgentSuggester(app, element, messageEnhancer, promptStorage, component);
+      promptSuggester = new TextAreaPromptSuggester(app, element, messageEnhancer, promptStorage, component);
     }
 
     // Initialize workspace suggester
@@ -61,19 +61,19 @@ export function initializeSuggesters(
       }
     }
   } catch (error) {
-    // Agent/workspace suggester initialization failed - will be undefined
+    // Prompt/workspace suggester initialization failed - will be undefined
   }
 
   return {
     noteSuggester,
     toolSuggester,
-    agentSuggester,
+    promptSuggester,
     workspaceSuggester,
     messageEnhancer,
     cleanup: () => {
       noteSuggester.destroy();
       toolSuggester.destroy();
-      agentSuggester?.destroy();
+      promptSuggester?.destroy();
       workspaceSuggester?.destroy();
       messageEnhancer.clearEnhancements();
     }

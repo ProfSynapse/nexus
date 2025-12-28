@@ -53,7 +53,7 @@ import { getWebLLMLifecycleManager } from '../../services/llm/adapters/webllm/We
 // Subagent infrastructure (delegated to SubagentController)
 import type { AgentManager } from '../../services/AgentManager';
 import type { DirectToolExecutor } from '../../services/chat/DirectToolExecutor';
-import type { AgentManagerAgent } from '../../agents/agentManager/agentManager';
+import type { PromptManagerAgent } from '../../agents/promptManager/promptManager';
 import type { HybridStorageAdapter } from '../../database/adapters/HybridStorageAdapter';
 
 // Branch UI components
@@ -252,7 +252,7 @@ export class ChatView extends ItemView {
     // Model and agent management
     const modelAgentEvents: ModelAgentManagerEvents = {
       onModelChanged: (model) => this.handleModelChanged(model),
-      onAgentChanged: (agent) => this.handleAgentChanged(agent),
+      onPromptChanged: (prompt) => this.handlePromptChanged(prompt),
       onSystemPromptChanged: () => this.updateContextProgress()
     };
     this.modelAgentManager = new ModelAgentManager(
@@ -365,8 +365,8 @@ export class ChatView extends ItemView {
       const agentManager = await plugin.getService<AgentManager>('agentManager');
       if (!agentManager) return;
 
-      const agentManagerAgent = agentManager.getAgent('agentManager') as AgentManagerAgent | null;
-      if (!agentManagerAgent) return;
+      const promptManagerAgent = agentManager.getAgent('promptManager') as PromptManagerAgent | null;
+      if (!promptManagerAgent) return;
 
       const storageAdapter = await plugin.getService<HybridStorageAdapter>('hybridStorageAdapter');
       if (!storageAdapter) return;
@@ -394,7 +394,7 @@ export class ChatView extends ItemView {
       const contextProvider: SubagentContextProvider = {
         getCurrentConversation: () => this.conversationManager?.getCurrentConversation() ?? null,
         getSelectedModel: () => this.modelAgentManager?.getSelectedModel() ?? null,
-        getSelectedAgent: () => this.modelAgentManager?.getSelectedAgent() ?? null,
+        getSelectedPrompt: () => this.modelAgentManager?.getSelectedPrompt() ?? null,
         getLoadedWorkspaceData: () => this.modelAgentManager?.getLoadedWorkspaceData(),
         getContextNotes: () => this.modelAgentManager?.getContextNotes() || [],
         getThinkingSettings: () => this.modelAgentManager?.getThinkingSettings() ?? null,
@@ -407,7 +407,7 @@ export class ChatView extends ItemView {
           app: this.app,
           chatService: this.chatService,
           directToolExecutor,
-          agentManagerAgent,
+          promptManagerAgent,
           storageAdapter,
           llmService,
         },
@@ -767,8 +767,8 @@ export class ChatView extends ItemView {
     this.updateContextProgress();
   }
 
-  private handleAgentChanged(agent: any | null): void {
-    // Agent changed
+  private handlePromptChanged(prompt: any | null): void {
+    // Prompt changed
   }
 
   private async getContextUsage() {
@@ -1041,7 +1041,7 @@ export class ChatView extends ItemView {
     const contextProvider: SubagentContextProvider = {
       getCurrentConversation: () => this.conversationManager?.getCurrentConversation() ?? null,
       getSelectedModel: () => this.modelAgentManager?.getSelectedModel() ?? null,
-      getSelectedAgent: () => this.modelAgentManager?.getSelectedAgent() ?? null,
+      getSelectedPrompt: () => this.modelAgentManager?.getSelectedPrompt() ?? null,
       getLoadedWorkspaceData: () => this.modelAgentManager?.getLoadedWorkspaceData(),
       getContextNotes: () => this.modelAgentManager?.getContextNotes() || [],
       getThinkingSettings: () => this.modelAgentManager?.getThinkingSettings() ?? null,

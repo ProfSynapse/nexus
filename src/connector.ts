@@ -4,7 +4,7 @@ import { SessionContextManager, WorkspaceContext } from './services/SessionConte
 import type { ServiceManager } from './core/ServiceManager';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { logger } from './utils/logger';
-import { CustomPromptStorageService } from "./agents/agentManager/services/CustomPromptStorageService";
+import { CustomPromptStorageService } from "./agents/promptManager/services/CustomPromptStorageService";
 import { generateSessionId, formatSessionInstructions, isStandardSessionId } from './utils/sessionUtils';
 import { getContextSchema } from './utils/schemaUtils';
 // ToolCallCaptureService removed in simplified architecture

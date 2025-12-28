@@ -40,7 +40,7 @@ export interface MCPSettings {
   llmProviders?: LLMProviderSettings;
   // Default selections for chat
   defaultWorkspaceId?: string;
-  defaultAgentId?: string;
+  defaultPromptId?: string;
   defaultContextNotes?: string[];
   // Update tracking
   lastUpdateVersion?: string;

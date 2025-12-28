@@ -1,31 +1,31 @@
 /**
- * Location: /src/ui/chat/utils/AgentConfigurationUtility.ts
+ * Location: /src/ui/chat/utils/PromptConfigurationUtility.ts
  *
- * Purpose: Utility for agent discovery and configuration
+ * Purpose: Utility for custom prompt discovery and configuration
  * Extracted from ModelAgentManager.ts to follow Single Responsibility Principle
  *
- * Used by: ModelAgentManager for agent-related operations
- * Dependencies: AgentDiscoveryService
+ * Used by: ModelAgentManager for prompt-related operations
+ * Dependencies: PromptDiscoveryService
  */
 
-import { AgentOption } from '../types/SelectionTypes';
-import { AgentDiscoveryService, AgentInfo } from '../../../services/agent/AgentDiscoveryService';
+import { PromptOption } from '../types/SelectionTypes';
+import { PromptDiscoveryService, PromptInfo } from '../../../services/agent/PromptDiscoveryService';
 import { getNexusPlugin } from '../../../utils/pluginLocator';
 import type { App } from 'obsidian';
 import type NexusPlugin from '../../../main';
 
 /**
- * Utility class for agent configuration and discovery
+ * Utility class for prompt configuration and discovery
  */
-export class AgentConfigurationUtility {
-  private static agentDiscoveryService: AgentDiscoveryService | null = null;
+export class PromptConfigurationUtility {
+  private static promptDiscoveryService: PromptDiscoveryService | null = null;
 
   /**
-   * Initialize agent discovery service
+   * Initialize prompt discovery service
    */
-  static async initializeDiscoveryService(app: App): Promise<AgentDiscoveryService | null> {
-    if (AgentConfigurationUtility.agentDiscoveryService) {
-      return AgentConfigurationUtility.agentDiscoveryService;
+  static async initializeDiscoveryService(app: App): Promise<PromptDiscoveryService | null> {
+    if (PromptConfigurationUtility.promptDiscoveryService) {
+      return PromptConfigurationUtility.promptDiscoveryService;
     }
 
     try {
@@ -39,45 +39,45 @@ export class AgentConfigurationUtility {
         return null;
       }
 
-      AgentConfigurationUtility.agentDiscoveryService = new AgentDiscoveryService(customPromptStorageService);
-      return AgentConfigurationUtility.agentDiscoveryService;
+      PromptConfigurationUtility.promptDiscoveryService = new PromptDiscoveryService(customPromptStorageService);
+      return PromptConfigurationUtility.promptDiscoveryService;
     } catch (error) {
-      console.error('[AgentConfigurationUtility] Failed to initialize discovery service:', error);
+      console.error('[PromptConfigurationUtility] Failed to initialize discovery service:', error);
       return null;
     }
   }
 
   /**
-   * Get available agents from agent manager
+   * Get available prompts from prompt manager
    */
-  static async getAvailableAgents(app: App): Promise<AgentOption[]> {
+  static async getAvailablePrompts(app: App): Promise<PromptOption[]> {
     try {
-      // Initialize AgentDiscoveryService if needed
-      const discoveryService = await AgentConfigurationUtility.initializeDiscoveryService(app);
+      // Initialize PromptDiscoveryService if needed
+      const discoveryService = await PromptConfigurationUtility.initializeDiscoveryService(app);
       if (!discoveryService) {
         return [];
       }
 
-      // Get enabled agents from discovery service
-      const agents = await discoveryService.getEnabledAgents();
+      // Get enabled prompts from discovery service
+      const prompts = await discoveryService.getEnabledPrompts();
 
-      // Convert to AgentOption format
-      return agents.map(agent => AgentConfigurationUtility.mapToAgentOption(agent));
+      // Convert to PromptOption format
+      return prompts.map(prompt => PromptConfigurationUtility.mapToPromptOption(prompt));
     } catch (error) {
-      console.error('[AgentConfigurationUtility] Failed to get available agents:', error);
+      console.error('[PromptConfigurationUtility] Failed to get available prompts:', error);
       return [];
     }
   }
 
   /**
-   * Convert AgentInfo to AgentOption format
+   * Convert PromptInfo to PromptOption format
    */
-  static mapToAgentOption(agent: AgentInfo): AgentOption {
+  static mapToPromptOption(promptData: PromptInfo): PromptOption {
     return {
-      id: agent.id,
-      name: agent.name || 'Unnamed Agent',
-      description: agent.description || 'Custom agent prompt',
-      systemPrompt: agent.prompt
+      id: promptData.id,
+      name: promptData.name || 'Unnamed Prompt',
+      description: promptData.description || 'Custom prompt',
+      systemPrompt: promptData.prompt
     };
   }
 
@@ -85,6 +85,6 @@ export class AgentConfigurationUtility {
    * Reset discovery service (for testing or reinitialization)
    */
   static resetDiscoveryService(): void {
-    AgentConfigurationUtility.agentDiscoveryService = null;
+    PromptConfigurationUtility.promptDiscoveryService = null;
   }
 }

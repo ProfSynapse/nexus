@@ -14,7 +14,7 @@ import { ToolListService } from './services/ToolListService';
 import { ResourceListService } from './services/ResourceListService';
 import { ResourceReadService } from './services/ResourceReadService';
 import { PromptsListService } from './services/PromptsListService';
-import { CustomPromptStorageService } from "../agents/agentManager/services/CustomPromptStorageService";
+import { CustomPromptStorageService } from "../agents/promptManager/services/CustomPromptStorageService";
 import { ToolHelpService } from './services/ToolHelpService';
 import { SchemaEnhancementService } from './services/SchemaEnhancementService';
 import { VaultSchemaProvider } from './services/providers/VaultSchemaProvider';

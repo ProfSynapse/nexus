@@ -107,34 +107,34 @@ export interface ToolHint {
 }
 
 // ============================================================================
-// Agent Suggester Types
+// Prompt Suggester Types
 // ============================================================================
 
 /**
- * Agent suggestion data
+ * Prompt suggestion data
  */
-export interface AgentSuggestionItem {
-  /** Agent unique ID */
+export interface PromptSuggestionItem {
+  /** Prompt unique ID */
   id: string;
-  /** Agent display name */
+  /** Prompt display name */
   name: string;
-  /** Agent description */
+  /** Prompt description */
   description: string;
-  /** Agent prompt/instructions */
+  /** Prompt instructions */
   prompt: string;
   /** Estimated prompt token count */
   promptTokens: number;
 }
 
 /**
- * Agent reference for injection
+ * Prompt reference for injection
  */
-export interface AgentReference {
-  /** Agent ID */
+export interface PromptReference {
+  /** Prompt ID */
   id: string;
-  /** Agent name */
+  /** Prompt name */
   name: string;
-  /** Agent prompt */
+  /** Prompt content */
   prompt: string;
   /** Token count */
   tokens: number;
@@ -217,7 +217,7 @@ export interface WorkspaceReference {
  */
 export enum EnhancementType {
   TOOL = 'tool',
-  AGENT = 'agent',
+  PROMPT = 'prompt',
   NOTE = 'note',
   WORKSPACE = 'workspace'
 }
@@ -232,8 +232,8 @@ export interface MessageEnhancement {
   cleanedMessage: string;
   /** Tool hints */
   tools: ToolHint[];
-  /** Agent references */
-  agents: AgentReference[];
+  /** Prompt references */
+  prompts: PromptReference[];
   /** Note references */
   notes: NoteReference[];
   /** Workspace references */
@@ -247,7 +247,7 @@ export interface MessageEnhancement {
  */
 export interface EnhancementData {
   type: EnhancementType;
-  data: ToolHint | AgentReference | NoteReference | WorkspaceReference;
+  data: ToolHint | PromptReference | NoteReference | WorkspaceReference;
 }
 
 // ============================================================================
@@ -259,7 +259,7 @@ export interface EnhancementData {
  */
 export enum SuggesterType {
   TOOL = 'tool',
-  AGENT = 'agent',
+  PROMPT = 'prompt',
   NOTE = 'note',
   WORKSPACE = 'workspace'
 }

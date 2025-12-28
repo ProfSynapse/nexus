@@ -1,34 +1,34 @@
 import { BaseTool } from '../../baseTool';
-import { UpdateAgentParams, UpdateAgentResult } from '../types';
+import { UpdatePromptParams, UpdatePromptResult } from '../types';
 import { CustomPromptStorageService } from '../services/CustomPromptStorageService';
 
 /**
- * Tool for updating an existing custom agent
+ * Tool for updating an existing custom prompt
  */
-export class UpdateAgentTool extends BaseTool<UpdateAgentParams, UpdateAgentResult> {
+export class UpdatePromptTool extends BaseTool<UpdatePromptParams, UpdatePromptResult> {
   private storageService: CustomPromptStorageService;
 
   /**
-   * Create a new UpdateAgentTool
+   * Create a new UpdatePromptTool
    * @param storageService Custom prompt storage service
    */
   constructor(storageService: CustomPromptStorageService) {
     super(
-      'updateAgent',
-      'Update Agent',
-      'Update an existing custom agent',
+      'updatePrompt',
+      'Update Prompt',
+      'Update an existing custom prompt',
       '1.0.0'
     );
-    
+
     this.storageService = storageService;
   }
-  
+
   /**
    * Execute the tool
    * @param params Tool parameters
    * @returns Promise that resolves with the updated prompt
    */
-  async execute(params: UpdateAgentParams): Promise<UpdateAgentResult> {
+  async execute(params: UpdatePromptParams): Promise<UpdatePromptResult> {
     try {
       const { id, name, description, prompt, isEnabled } = params;
 
@@ -76,10 +76,10 @@ export class UpdateAgentTool extends BaseTool<UpdateAgentParams, UpdateAgentResu
       // Success - LLM already knows what it passed
       return this.prepareResult(true);
     } catch (error) {
-      return this.prepareResult(false, undefined, `Failed to update agent: ${error}`);
+      return this.prepareResult(false, undefined, `Failed to update prompt: ${error}`);
     }
   }
-  
+
   /**
    * Get the JSON schema for the tool's parameters
    * @returns JSON schema object

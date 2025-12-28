@@ -1,5 +1,5 @@
 /**
- * TextAreaAgentSuggester - Agent suggester for textarea
+ * TextAreaPromptSuggester - Prompt suggester for textarea
  */
 
 import { App, prepareFuzzySearch, setIcon, Component } from 'obsidian';
@@ -7,17 +7,17 @@ import { ContentEditableSuggester } from './ContentEditableSuggester';
 import { ContentEditableHelper } from '../../utils/ContentEditableHelper';
 import {
   SuggestionItem,
-  AgentSuggestionItem,
-  AgentReference
+  PromptSuggestionItem,
+  PromptReference
 } from './base/SuggesterInterfaces';
 import { MessageEnhancer } from '../../services/MessageEnhancer';
-import { CustomPromptStorageService } from '../../../../agents/agentManager/services/CustomPromptStorageService';
+import { CustomPromptStorageService } from '../../../../agents/promptManager/services/CustomPromptStorageService';
 import { TokenCalculator } from '../../utils/TokenCalculator';
 
-export class TextAreaAgentSuggester extends ContentEditableSuggester<AgentSuggestionItem> {
+export class TextAreaPromptSuggester extends ContentEditableSuggester<PromptSuggestionItem> {
   private messageEnhancer: MessageEnhancer;
   private promptStorage: CustomPromptStorageService;
-  private maxTokensPerAgent = 5000;
+  private maxTokensPerPrompt = 5000;
 
   constructor(
     app: App,
@@ -37,33 +37,33 @@ export class TextAreaAgentSuggester extends ContentEditableSuggester<AgentSugges
     this.promptStorage = promptStorage;
   }
 
-  async getSuggestions(query: string): Promise<SuggestionItem<AgentSuggestionItem>[]> {
-    const agents = this.promptStorage.getEnabledPrompts();
+  async getSuggestions(query: string): Promise<SuggestionItem<PromptSuggestionItem>[]> {
+    const prompts = this.promptStorage.getEnabledPrompts();
 
-    if (agents.length === 0) {
+    if (prompts.length === 0) {
       return [];
     }
 
     if (!query || query.trim().length === 0) {
-      return agents
+      return prompts
         .sort((a, b) => a.name.localeCompare(b.name))
         .slice(0, this.config.maxSuggestions)
-        .map(agent => this.createSuggestion(agent, 1.0));
+        .map(prompt => this.createSuggestion(prompt, 1.0));
     }
 
     const fuzzySearch = prepareFuzzySearch(query.toLowerCase());
-    const suggestions: SuggestionItem<AgentSuggestionItem>[] = [];
+    const suggestions: SuggestionItem<PromptSuggestionItem>[] = [];
 
-    for (const agent of agents) {
-      const nameMatch = fuzzySearch(agent.name);
+    for (const prompt of prompts) {
+      const nameMatch = fuzzySearch(prompt.name);
       if (nameMatch) {
-        suggestions.push(this.createSuggestion(agent, nameMatch.score));
+        suggestions.push(this.createSuggestion(prompt, nameMatch.score));
         continue;
       }
 
-      const descMatch = fuzzySearch(agent.description);
+      const descMatch = fuzzySearch(prompt.description);
       if (descMatch) {
-        suggestions.push(this.createSuggestion(agent, descMatch.score * 0.7));
+        suggestions.push(this.createSuggestion(prompt, descMatch.score * 0.7));
       }
     }
 
@@ -72,8 +72,8 @@ export class TextAreaAgentSuggester extends ContentEditableSuggester<AgentSugges
       .slice(0, this.config.maxSuggestions);
   }
 
-  renderSuggestion(item: SuggestionItem<AgentSuggestionItem>, el: HTMLElement): void {
-    el.addClass('agent-suggester-item');
+  renderSuggestion(item: SuggestionItem<PromptSuggestionItem>, el: HTMLElement): void {
+    el.addClass('prompt-suggester-item');
 
     const icon = el.createDiv({ cls: 'suggester-icon' });
     setIcon(icon, 'bot');
@@ -87,15 +87,15 @@ export class TextAreaAgentSuggester extends ContentEditableSuggester<AgentSugges
     tokenBadge.textContent = `~${item.data.promptTokens.toLocaleString()} tokens`;
   }
 
-  selectSuggestion(item: SuggestionItem<AgentSuggestionItem>): void {
+  selectSuggestion(item: SuggestionItem<PromptSuggestionItem>): void {
     // Add to message enhancer
-    const agentRef: AgentReference = {
+    const promptRef: PromptReference = {
       id: item.data.id,
       name: item.data.name,
       prompt: item.data.prompt,
       tokens: item.data.promptTokens
     };
-    this.messageEnhancer.addAgent(agentRef);
+    this.messageEnhancer.addPrompt(promptRef);
 
     // Replace @ with styled reference badge
     const cursorPos = ContentEditableHelper.getCursorPosition(this.element);
@@ -112,7 +112,7 @@ export class TextAreaAgentSuggester extends ContentEditableSuggester<AgentSugges
       // Insert styled reference
       ContentEditableHelper.insertReferenceNode(
         this.element,
-        'agent',
+        'prompt',
         `@${item.data.name.replace(/\s+/g, '_')}`,
         item.data.id
       );
@@ -120,22 +120,22 @@ export class TextAreaAgentSuggester extends ContentEditableSuggester<AgentSugges
   }
 
   private createSuggestion(
-    agent: { id: string; name: string; description: string; prompt: string },
+    promptData: { id: string; name: string; description: string; prompt: string },
     score: number
-  ): SuggestionItem<AgentSuggestionItem> {
-    const promptTokens = TokenCalculator.estimateTextTokens(agent.prompt);
+  ): SuggestionItem<PromptSuggestionItem> {
+    const promptTokens = TokenCalculator.estimateTextTokens(promptData.prompt);
 
     return {
       data: {
-        id: agent.id,
-        name: agent.name,
-        description: agent.description,
-        prompt: agent.prompt,
+        id: promptData.id,
+        name: promptData.name,
+        description: promptData.description,
+        prompt: promptData.prompt,
         promptTokens: promptTokens
       },
       score: score,
-      displayText: agent.name,
-      description: agent.description,
+      displayText: promptData.name,
+      description: promptData.description,
       tokens: promptTokens
     };
   }

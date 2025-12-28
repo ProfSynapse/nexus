@@ -35,7 +35,7 @@ export interface ChatSettings {
   imageProvider: 'google' | 'openrouter';
   imageModel: string;
   workspaceId: string | null;
-  agentId: string | null;
+  promptId: string | null;
   contextNotes: string[];
 }
 
@@ -58,7 +58,7 @@ export interface ChatSettingsOptions {
       };
     };
   }>;
-  agents: Array<{ id: string; name: string }>;
+  prompts: Array<{ id: string; name: string }>;
 }
 
 /**
@@ -528,23 +528,23 @@ export class ChatSettingsRenderer {
         dropdown.onChange((value) => {
           this.settings.workspaceId = value || null;
           this.notifyChange();
-          this.syncWorkspaceAgent(value);
+          this.syncWorkspacePrompt(value);
         });
       });
 
-    // Agent
+    // Prompt
     new Setting(content)
-      .setName('Agent')
+      .setName('Prompt')
       .addDropdown(dropdown => {
         dropdown.addOption('', 'None');
 
-        this.config.options.agents.forEach(a => {
-          dropdown.addOption(a.name, a.name);
+        this.config.options.prompts.forEach(p => {
+          dropdown.addOption(p.name, p.name);
         });
 
-        dropdown.setValue(this.settings.agentId || '');
+        dropdown.setValue(this.settings.promptId || '');
         dropdown.onChange((value) => {
-          this.settings.agentId = value || null;
+          this.settings.promptId = value || null;
           this.notifyChange();
         });
       });
@@ -560,15 +560,16 @@ export class ChatSettingsRenderer {
     this.renderContextNotesList();
   }
 
-  private async syncWorkspaceAgent(workspaceId: string | null): Promise<void> {
+  private async syncWorkspacePrompt(workspaceId: string | null): Promise<void> {
     if (!workspaceId) return;
 
     const workspace = this.config.options.workspaces.find(w => w.id === workspaceId);
+    // dedicatedAgent field stored for backward compat, but contains prompt info
     if (workspace?.context?.dedicatedAgent?.agentId) {
-      const agentId = workspace.context.dedicatedAgent.agentId;
-      const agent = this.config.options.agents.find(a => a.id === agentId || a.name === agentId);
-      if (agent) {
-        this.settings.agentId = agent.name;
+      const promptId = workspace.context.dedicatedAgent.agentId;
+      const prompt = this.config.options.prompts.find(p => p.id === promptId || p.name === promptId);
+      if (prompt) {
+        this.settings.promptId = prompt.name;
         this.notifyChange();
         this.render();
       }

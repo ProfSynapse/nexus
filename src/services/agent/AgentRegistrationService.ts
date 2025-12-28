@@ -15,7 +15,7 @@ import type { ServiceManager } from '../../core/ServiceManager';
 import { AgentFactoryRegistry } from '../../core/ServiceFactory';
 import { NexusError, NexusErrorCode } from '../../utils/errors';
 import { logger } from '../../utils/logger';
-import { CustomPromptStorageService } from "../../agents/agentManager/services/CustomPromptStorageService";
+import { CustomPromptStorageService } from "../../agents/promptManager/services/CustomPromptStorageService";
 import { AgentInitializationService } from './AgentInitializationService';
 import { AgentValidationService } from './AgentValidationService';
 
@@ -109,7 +109,7 @@ export class AgentRegistrationService implements AgentRegistrationServiceInterfa
     try {
       logger.systemLog('Initializing agents with ServiceManager dependency injection...');
 
-      const agentNames = ['contentManager', 'commandManager', 'storageManager', 'searchManager', 'memoryManager', 'agentManager'];
+      const agentNames = ['contentManager', 'commandManager', 'storageManager', 'searchManager', 'memoryManager', 'promptManager'];
       const initializedAgents = new Map<string, any>();
 
       for (const agentName of agentNames) {
@@ -207,7 +207,7 @@ export class AgentRegistrationService implements AgentRegistrationServiceInterfa
       await this.safeInitialize('contentManager', () => this.initializationService.initializeContentManager());
       await this.safeInitialize('commandManager', () => this.initializationService.initializeCommandManager());
       await this.safeInitialize('storageManager', () => this.initializationService.initializeStorageManager());
-      await this.safeInitialize('agentManager', () => this.initializationService.initializeAgentManager(enableLLMModes));
+      await this.safeInitialize('promptManager', () => this.initializationService.initializePromptManager(enableLLMModes));
       await this.safeInitialize('searchManager', () => this.initializationService.initializeSearchManager(enableSearchModes, memorySettings ?? { enabled: false }));
       await this.safeInitialize('memoryManager', () => this.initializationService.initializeMemoryManager());
 

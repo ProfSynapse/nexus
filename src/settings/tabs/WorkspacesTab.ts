@@ -16,7 +16,7 @@ import { WorkflowEditorRenderer, Workflow } from '../../components/workspace/Wor
 import { FilePickerRenderer } from '../../components/workspace/FilePickerRenderer';
 import { ProjectWorkspace } from '../../database/workspace-types';
 import { WorkspaceService } from '../../services/WorkspaceService';
-import { CustomPromptStorageService } from '../../agents/agentManager/services/CustomPromptStorageService';
+import { CustomPromptStorageService } from '../../agents/promptManager/services/CustomPromptStorageService';
 import { CustomPrompt } from '../../types/mcp/CustomPromptTypes';
 import { CardManager, CardItem } from '../../components/CardManager';
 import { v4 as uuidv4 } from '../../utils/uuid';

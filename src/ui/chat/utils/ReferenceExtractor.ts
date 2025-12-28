@@ -6,7 +6,7 @@
 
 import {
   ToolHint,
-  AgentReference,
+  PromptReference,
   NoteReference,
   WorkspaceReference
 } from '../components/suggesters/base/SuggesterInterfaces';
@@ -16,8 +16,8 @@ export interface ExtractedContent {
   plainText: string;
   /** Tool references found */
   tools: ToolHint[];
-  /** Agent references found */
-  agents: AgentReference[];
+  /** Prompt references found */
+  prompts: PromptReference[];
   /** Note references found */
   notes: NoteReference[];
   /** Workspace references found */
@@ -27,7 +27,7 @@ export interface ExtractedContent {
 }
 
 export interface ExtractedReference {
-  type: 'tool' | 'agent' | 'note' | 'workspace';
+  type: 'tool' | 'prompt' | 'note' | 'workspace';
   displayText: string;
   technicalName: string;
   position: number;
@@ -50,7 +50,7 @@ export class ReferenceExtractor {
    */
   static extractContent(element: HTMLElement): ExtractedContent {
     const tools: ToolHint[] = [];
-    const agents: AgentReference[] = [];
+    const prompts: PromptReference[] = [];
     const notes: NoteReference[] = [];
     const workspaces: WorkspaceReference[] = [];
     const textParts: string[] = [];
@@ -73,7 +73,7 @@ export class ReferenceExtractor {
           const name = element.getAttribute('data-name');
           const displayText = element.textContent || '';
 
-          if (type && name && (type === 'tool' || type === 'agent' || type === 'note' || type === 'workspace')) {
+          if (type && name && (type === 'tool' || type === 'prompt' || type === 'note' || type === 'workspace')) {
             references.push({
               type,
               displayText,
@@ -115,7 +115,7 @@ export class ReferenceExtractor {
     return {
       plainText,
       tools,
-      agents,
+      prompts,
       notes,
       workspaces,
       references: normalizedReferences
@@ -142,7 +142,7 @@ export class ReferenceExtractor {
    */
   static extractReferencesByType(
     element: HTMLElement,
-    type: 'tool' | 'agent' | 'note' | 'workspace'
+    type: 'tool' | 'prompt' | 'note' | 'workspace'
   ): Array<{ displayText: string; technicalName: string }> {
     const references: Array<{ displayText: string; technicalName: string }> = [];
 
@@ -177,22 +177,22 @@ export class ReferenceExtractor {
    */
   static countReferences(element: HTMLElement): {
     tools: number;
-    agents: number;
+    prompts: number;
     notes: number;
     workspaces: number;
     total: number;
   } {
     const tools = this.extractReferencesByType(element, 'tool').length;
-    const agents = this.extractReferencesByType(element, 'agent').length;
+    const prompts = this.extractReferencesByType(element, 'prompt').length;
     const notes = this.extractReferencesByType(element, 'note').length;
     const workspaces = this.extractReferencesByType(element, 'workspace').length;
 
     return {
       tools,
-      agents,
+      prompts,
       notes,
       workspaces,
-      total: tools + agents + notes + workspaces
+      total: tools + prompts + notes + workspaces
     };
   }
 

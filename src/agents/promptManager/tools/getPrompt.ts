@@ -1,43 +1,43 @@
 import { BaseTool } from '../../baseTool';
-import { GetAgentParams, GetAgentResult } from '../types';
+import { GetPromptParams, GetPromptResult } from '../types';
 import { CustomPromptStorageService } from '../services/CustomPromptStorageService';
 import { getCommonResultSchema, createResult } from '../../../utils/schemaUtils';
 
 /**
- * Tool for getting a specific custom agent for persona adoption
+ * Tool for getting a specific custom prompt for persona adoption
  */
-export class GetAgentTool extends BaseTool<GetAgentParams, GetAgentResult> {
+export class GetPromptTool extends BaseTool<GetPromptParams, GetPromptResult> {
   private storageService: CustomPromptStorageService;
 
   /**
-   * Create a new GetAgentTool
+   * Create a new GetPromptTool
    * @param storageService Custom prompt storage service
    */
   constructor(storageService: CustomPromptStorageService) {
     super(
-      'getAgent',
-      'Get Agent',
-      'Get a custom agent for persona adoption - does NOT execute tasks automatically',
+      'getPrompt',
+      'Get Prompt',
+      'Get a custom prompt for persona adoption - does NOT execute tasks automatically',
       '1.0.0'
     );
-    
+
     this.storageService = storageService;
   }
-  
+
   /**
    * Execute the tool
    * @param params Tool parameters
    * @returns Promise that resolves with the prompt data
    */
-  async execute(params: GetAgentParams): Promise<GetAgentResult> {
+  async execute(params: GetPromptParams): Promise<GetPromptResult> {
     try {
       const { id, name } = params;
-      
+
       // Must provide either id or name
       if (!id && !name) {
-        return createResult<GetAgentResult>(false, null, 'Either id or name must be provided');
+        return createResult<GetPromptResult>(false, null, 'Either id or name must be provided');
       }
-      
+
       // Get prompt by id or name
       let prompt = null;
       if (id) {
@@ -46,35 +46,35 @@ export class GetAgentTool extends BaseTool<GetAgentParams, GetAgentResult> {
       } else if (name) {
         prompt = this.storageService.getPromptByNameOrId(name);
       }
-      
+
       if (!prompt) {
         const identifier = id ? `ID "${id}"` : `name "${name}"`;
-        return createResult<GetAgentResult>(false, null, `Agent with ${identifier} not found`);
+        return createResult<GetPromptResult>(false, null, `Prompt with ${identifier} not found. Use listPrompts to see available prompts.`);
       }
 
       // Create message with persona instruction and warning (prompt content is already in the prompt field)
-      const message = `🎭 AGENT PERSONA RETRIEVED: "${prompt.name}"
+      const message = `PROMPT PERSONA RETRIEVED: "${prompt.name}"
 
-⚠️  IMPORTANT EXECUTION BOUNDARY:
-❌ This is PERSONA ADOPTION only - no tasks will be executed
-❌ Do NOT automatically use executePrompt unless explicitly requested
-❌ Do NOT run actions, create files, or modify content
-✅ You may adopt this persona for conversation
-✅ Ask permission before switching to execution mode
+IMPORTANT EXECUTION BOUNDARY:
+- This is PERSONA ADOPTION only - no tasks will be executed
+- Do NOT automatically use executePrompts unless explicitly requested
+- Do NOT run actions, create files, or modify content
+- You may adopt this persona for conversation
+- Ask permission before switching to execution mode
 
-To execute tasks: User must explicitly request agentManager_executePrompt`;
-      
+To execute tasks: User must explicitly request promptManager_executePrompts`;
+
       const resultWithMessage = {
         ...prompt,
         message: message
       };
-      
-      return createResult<GetAgentResult>(true, resultWithMessage, undefined);
+
+      return createResult<GetPromptResult>(true, resultWithMessage, undefined);
     } catch (error) {
-      return createResult<GetAgentResult>(false, null, `Failed to get agent: ${error}`);
+      return createResult<GetPromptResult>(false, null, `Failed to get prompt: ${error}`);
     }
   }
-  
+
   /**
    * Get the JSON schema for the tool's parameters
    * @returns JSON schema object
@@ -85,11 +85,11 @@ To execute tasks: User must explicitly request agentManager_executePrompt`;
       properties: {
         id: {
           type: 'string',
-          description: 'Unique ID or name of the agent to retrieve for persona adoption (will try ID first, then name)'
+          description: 'Unique ID or name of the prompt to retrieve for persona adoption (will try ID first, then name)'
         },
         name: {
           type: 'string',
-          description: 'Name of the agent to retrieve for persona adoption'
+          description: 'Name of the prompt to retrieve for persona adoption'
         }
       },
       required: [],

@@ -1,5 +1,5 @@
 /**
- * Selection Types - Interfaces for model and agent selection
+ * Selection Types - Interfaces for model and prompt selection
  *
  * Used by: ModelSelectionUtility, TokenCalculator, ModelAgentManager
  */
@@ -13,7 +13,7 @@ export interface ModelOption {
   supportsThinking?: boolean;
 }
 
-export interface AgentOption {
+export interface PromptOption {
   id: string;
   name: string;
   description?: string;

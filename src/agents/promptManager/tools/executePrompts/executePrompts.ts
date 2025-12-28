@@ -411,9 +411,9 @@ export class ExecutePromptsTool extends BaseTool<BatchExecutePromptParams, Batch
                 },
                 required: ['type', 'targetPath']
               },
-              agent: {
+              customPrompt: {
                 type: 'string',
-                description: 'Custom agent/prompt name to use (text requests only)'
+                description: 'Custom prompt name or ID to use (text requests only). Use listPrompts to see available prompts.'
               },
               // Image-specific properties
               savePath: {

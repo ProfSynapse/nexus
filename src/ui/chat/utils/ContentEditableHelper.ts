@@ -88,7 +88,7 @@ export class ContentEditableHelper {
    */
   static insertReferenceNode(
     element: HTMLElement,
-    type: 'tool' | 'agent' | 'note' | 'workspace',
+    type: 'tool' | 'prompt' | 'note' | 'workspace',
     displayText: string,
     technicalName: string
   ): void {

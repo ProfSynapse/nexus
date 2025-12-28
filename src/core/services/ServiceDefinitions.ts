@@ -226,7 +226,7 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
     {
         name: 'customPromptStorageService',
         create: async (context) => {
-            const { CustomPromptStorageService } = await import('../../agents/agentManager/services/CustomPromptStorageService');
+            const { CustomPromptStorageService } = await import('../../agents/promptManager/services/CustomPromptStorageService');
             return new CustomPromptStorageService(context.settings);
         }
     },

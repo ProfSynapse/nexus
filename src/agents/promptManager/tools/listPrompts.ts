@@ -1,5 +1,5 @@
 import { BaseTool } from '../../baseTool';
-import { ListAgentsParams, ListAgentsResult } from '../types';
+import { ListPromptsParams, ListPromptsResult } from '../types';
 import { CustomPromptStorageService } from '../services/CustomPromptStorageService';
 import { getCommonResultSchema, createResult } from '../../../utils/schemaUtils';
 import { addRecommendations, Recommendation } from '../../../utils/recommendationUtils';
@@ -9,30 +9,30 @@ import { parseWorkspaceContext } from '../../../utils/contextUtils';
 /**
  * Tool for listing custom prompts
  */
-export class ListAgentsTool extends BaseTool<ListAgentsParams, ListAgentsResult> {
+export class ListPromptsTool extends BaseTool<ListPromptsParams, ListPromptsResult> {
   private storageService: CustomPromptStorageService;
 
   /**
-   * Create a new ListAgentsTool
+   * Create a new ListPromptsTool
    * @param storageService Custom prompt storage service
    */
   constructor(storageService: CustomPromptStorageService) {
     super(
-      'listAgents',
-      'List Agents',
-      'List all custom agents',
+      'listPrompts',
+      'List Prompts',
+      'List all custom prompts',
       '1.0.0'
     );
-    
+
     this.storageService = storageService;
   }
-  
+
   /**
    * Execute the tool
    * @param params Tool parameters
    * @returns Promise that resolves with the list of prompts
    */
-  async execute(params: ListAgentsParams): Promise<ListAgentsResult> {
+  async execute(params: ListPromptsParams): Promise<ListPromptsResult> {
     try {
       const { enabledOnly = false, includeArchived = false } = params;
 
@@ -42,11 +42,11 @@ export class ListAgentsTool extends BaseTool<ListAgentsParams, ListAgentsResult>
 
       let prompts = enabledOnly ? enabledPrompts : allPrompts;
 
-      // Filter out archived (disabled) agents unless explicitly requested
+      // Filter out archived (disabled) prompts unless explicitly requested
       if (!includeArchived) {
         prompts = prompts.filter(prompt => prompt.isEnabled !== false);
       }
-      
+
       // Map to return only name and description for listing
       const promptList = prompts.map(prompt => ({
         id: prompt.id,
@@ -56,9 +56,9 @@ export class ListAgentsTool extends BaseTool<ListAgentsParams, ListAgentsResult>
       }));
 
       // Add warning message about execute tool
-      const warningMessage = "IMPORTANT: Do not use the executePrompt tool or run any tasks automatically when working with these agents. Only take on their persona and respond in character. If the user wants you to actually execute tasks or use the executePrompt functionality, they must explicitly ask you to do so.";
-      
-      const result = createResult<ListAgentsResult>(true, {
+      const warningMessage = "IMPORTANT: Do not use the executePrompts tool or run any tasks automatically when working with these prompts. Only take on their persona and respond in character. If the user wants you to actually execute tasks or use the executePrompts functionality, they must explicitly ask you to do so.";
+
+      const result = createResult<ListPromptsResult>(true, {
         prompts: promptList,
         totalCount: allPrompts.length,
         enabledCount: enabledPrompts.length,
@@ -68,15 +68,15 @@ export class ListAgentsTool extends BaseTool<ListAgentsParams, ListAgentsResult>
       // Dynamic nudge based on context
       const hasWorkspace = !!parseWorkspaceContext(params.workspaceContext)?.workspaceId;
       const nudges: Recommendation[] = [];
-      const bindingNudge = NudgeHelpers.checkAgentBindingOpportunity(promptList.length, hasWorkspace);
+      const bindingNudge = NudgeHelpers.checkPromptBindingOpportunity(promptList.length, hasWorkspace);
       if (bindingNudge) nudges.push(bindingNudge);
 
       return nudges.length > 0 ? addRecommendations(result, nudges) : result;
     } catch (error) {
-      return createResult<ListAgentsResult>(false, null, `Failed to list prompts: ${error}`);
+      return createResult<ListPromptsResult>(false, null, `Failed to list prompts: ${error}`);
     }
   }
-  
+
   /**
    * Get the JSON schema for the tool's parameters
    * @returns JSON schema object
@@ -92,7 +92,7 @@ export class ListAgentsTool extends BaseTool<ListAgentsParams, ListAgentsResult>
         },
         includeArchived: {
           type: 'boolean',
-          description: 'If true, include archived (disabled) agents in results. Default false filters out archived agents.',
+          description: 'If true, include archived (disabled) prompts in results. Default false filters out archived prompts.',
           default: false
         }
       },

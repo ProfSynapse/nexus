@@ -135,19 +135,6 @@ export interface LoadStateParams extends MemoryParams {
   stateId?: string;
 }
 
-// Params for archiving a state
-export interface ArchiveStateParams extends MemoryParams {
-  /**
-   * Name of the state to archive or restore
-   */
-  name: string;
-
-  /**
-   * If true, restores the state from archive. If false/omitted, archives the state.
-   */
-  restore?: boolean;
-}
-
 // Result for state operations
 export interface StateResult extends MemoryResult {
   data?: {

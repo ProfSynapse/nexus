@@ -1,12 +1,12 @@
 import { CommonParameters, CommonResult, CustomPrompt } from '../../types';
 
-// List Agents Tool
-export interface ListAgentsParams extends CommonParameters {
+// List Prompts Tool
+export interface ListPromptsParams extends CommonParameters {
   enabledOnly?: boolean;
   includeArchived?: boolean;
 }
 
-export interface ListAgentsResult extends CommonResult {
+export interface ListPromptsResult extends CommonResult {
   data: {
     prompts: Array<Pick<CustomPrompt, 'id' | 'name' | 'description' | 'isEnabled'>>;
     totalCount: number;
@@ -15,30 +15,30 @@ export interface ListAgentsResult extends CommonResult {
   };
 }
 
-// Get Agent Tool
-export interface GetAgentParams extends CommonParameters {
+// Get Prompt Tool
+export interface GetPromptParams extends CommonParameters {
   id?: string;
   name?: string;
 }
 
-export interface GetAgentResult extends CommonResult {
+export interface GetPromptResult extends CommonResult {
   data: (CustomPrompt & { message: string }) | null;
 }
 
-// Create Agent Tool
-export interface CreateAgentParams extends CommonParameters {
+// Create Prompt Tool
+export interface CreatePromptParams extends CommonParameters {
   name: string;
   description: string;
   prompt: string;
   isEnabled?: boolean;
 }
 
-export interface CreateAgentResult extends CommonResult {
+export interface CreatePromptResult extends CommonResult {
   data: CustomPrompt;
 }
 
-// Update Agent Tool
-export interface UpdateAgentParams extends CommonParameters {
+// Update Prompt Tool
+export interface UpdatePromptParams extends CommonParameters {
   id: string;
   name?: string;
   description?: string;
@@ -46,25 +46,25 @@ export interface UpdateAgentParams extends CommonParameters {
   isEnabled?: boolean;
 }
 
-export interface UpdateAgentResult extends CommonResult {
+export interface UpdatePromptResult extends CommonResult {
   data: CustomPrompt;
 }
 
-// Archive Agent Tool
-export interface ArchiveAgentParams extends CommonParameters {
+// Archive Prompt Tool
+export interface ArchivePromptParams extends CommonParameters {
   name: string;
 }
 
-export interface ArchiveAgentResult extends CommonResult {
+export interface ArchivePromptResult extends CommonResult {
   // Lean result - no data needed, LLM knows what it archived
 }
 
-// Delete Agent Tool (deprecated - replaced by archiveAgent)
-export interface DeleteAgentParams extends CommonParameters {
+// Delete Prompt Tool (deprecated - replaced by archivePrompt)
+export interface DeletePromptParams extends CommonParameters {
   id: string;
 }
 
-export interface DeleteAgentResult extends CommonResult {
+export interface DeletePromptResult extends CommonResult {
   data: {
     deleted: boolean;
     id: string;

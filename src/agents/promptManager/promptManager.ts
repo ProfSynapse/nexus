@@ -1,10 +1,10 @@
 import { BaseAgent } from '../baseAgent';
 import {
-  ListAgentsTool,
-  GetAgentTool,
-  CreateAgentTool,
-  UpdateAgentTool,
-  ArchiveAgentTool,
+  ListPromptsTool,
+  GetPromptTool,
+  CreatePromptTool,
+  UpdatePromptTool,
+  ArchivePromptTool,
   ListModelsTool,
   ExecutePromptsTool,
   GenerateImageTool,
@@ -23,9 +23,9 @@ import { LLMSettingsNotifier } from '../../services/llm/LLMSettingsNotifier';
 import { LLMProviderSettings } from '../../types';
 
 /**
- * AgentManager Agent for custom prompt operations
+ * PromptManager Agent for custom prompt operations
  */
-export class AgentManagerAgent extends BaseAgent {
+export class PromptManagerAgent extends BaseAgent {
   /**
    * Custom prompt storage service
    */
@@ -72,7 +72,7 @@ export class AgentManagerAgent extends BaseAgent {
   private subagentTool: SubagentTool;
 
   /**
-   * Create a new AgentManagerAgent with dependency injection
+   * Create a new PromptManagerAgent with dependency injection
    * @param settings Settings instance for prompt storage
    * @param providerManager LLM Provider Manager for model operations
    * @param parentAgentManager Agent Manager for inter-agent communication
@@ -87,8 +87,8 @@ export class AgentManagerAgent extends BaseAgent {
     vault: Vault
   ) {
     super(
-      'agentManager',
-      'Manage custom prompt agents for personalized AI interactions',
+      'promptManager',
+      'Manage custom prompts for personalized AI interactions',
       '1.0.0'
     );
 
@@ -102,11 +102,11 @@ export class AgentManagerAgent extends BaseAgent {
     this.vaultName = sanitizeVaultName(vault.getName());
 
     // Register prompt management tools
-    this.registerTool(new ListAgentsTool(this.storageService));
-    this.registerTool(new GetAgentTool(this.storageService));
-    this.registerTool(new CreateAgentTool(this.storageService));
-    this.registerTool(new UpdateAgentTool(this.storageService));
-    this.registerTool(new ArchiveAgentTool(this.storageService));
+    this.registerTool(new ListPromptsTool(this.storageService));
+    this.registerTool(new GetPromptTool(this.storageService));
+    this.registerTool(new CreatePromptTool(this.storageService));
+    this.registerTool(new UpdatePromptTool(this.storageService));
+    this.registerTool(new ArchivePromptTool(this.storageService));
 
     // Register LLM tools with dependencies already available
     this.registerTool(new ListModelsTool(this.providerManager));
@@ -184,20 +184,20 @@ export class AgentManagerAgent extends BaseAgent {
   }
 
   /**
-   * Dynamic description that includes information about custom prompt agents
+   * Dynamic description that includes information about custom prompts
    */
   get description(): string {
-    const baseDescription = 'Manage custom prompt agents for personalized AI interactions';
-    
+    const baseDescription = 'Manage custom prompts for personalized AI interactions';
+
     // Prevent infinite recursion
     if (this.isGettingDescription) {
       return `[${this.vaultName}] ${baseDescription}`;
     }
-    
+
     this.isGettingDescription = true;
     try {
-      const customAgentsContext = this.getAgentsSummary();
-      return `[${this.vaultName}] ${baseDescription}\n\n${customAgentsContext}`;
+      const customPromptsContext = this.getPromptsSummary();
+      return `[${this.vaultName}] ${baseDescription}\n\n${customPromptsContext}`;
     } finally {
       this.isGettingDescription = false;
     }
@@ -266,41 +266,41 @@ export class AgentManagerAgent extends BaseAgent {
   }
 
   /**
-   * Get a summary of all available custom prompt agents
-   * @returns Formatted string with custom prompt agent information
+   * Get a summary of all available custom prompts
+   * @returns Formatted string with custom prompt information
    * @private
    */
-  private getAgentsSummary(): string {
+  private getPromptsSummary(): string {
     try {
       // Check if storage service is available
       if (!this.storageService) {
-        return `🤖 Custom Agents: Storage service not available`;
+        return `Custom Prompts: Storage service not available`;
       }
 
       // Check if custom prompts feature is enabled
       if (!this.storageService.isEnabled()) {
-        return `🤖 Custom Agents: Custom prompts feature is disabled`;
+        return `Custom Prompts: Custom prompts feature is disabled`;
       }
 
-      // Get all custom prompt agents
+      // Get all custom prompts
       const customPrompts = this.storageService.getAllPrompts();
-      
+
       if (!customPrompts || customPrompts.length === 0) {
-        return `🤖 Custom Agents: No custom prompt agents created yet`;
+        return `Custom Prompts: No custom prompts created yet`;
       }
 
       const enabledCount = customPrompts.filter(prompt => prompt.isEnabled).length;
-      const agentSummary = [`🤖 Custom Agents (${customPrompts.length} total, ${enabledCount} enabled):`];
-      
+      const promptSummary = [`Custom Prompts (${customPrompts.length} total, ${enabledCount} enabled):`];
+
       for (const prompt of customPrompts) {
         const status = prompt.isEnabled ? '✅' : '❌';
         const description = prompt.description || 'No description provided';
-        agentSummary.push(`   ${status} ${prompt.name}: ${description}`);
+        promptSummary.push(`   ${status} ${prompt.name}: ${description}`);
       }
 
-      return agentSummary.join('\n');
+      return promptSummary.join('\n');
     } catch (error) {
-      return `🤖 Custom Agents: Error loading custom prompt agents (${error})`;
+      return `Custom Prompts: Error loading custom prompts (${error})`;
     }
   }
 }
