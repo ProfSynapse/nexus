@@ -1,5 +1,5 @@
 /**
- * Location: /src/agents/vaultLibrarian/services/FuzzySearchEngine.ts
+ * Location: /src/agents/searchManager/services/FuzzySearchEngine.ts
  * Purpose: Performs fuzzy search operations on files and folders
  *
  * This service handles fuzzy matching logic for file and folder searches,

@@ -1,5 +1,5 @@
 /**
- * Location: /src/agents/vaultLibrarian/services/SearchResultFormatter.ts
+ * Location: /src/agents/searchManager/services/SearchResultFormatter.ts
  * Purpose: Formats search results for directory search operations
  *
  * This service handles transforming search matches into enhanced result objects

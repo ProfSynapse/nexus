@@ -1,6 +1,6 @@
 /**
  * ToolCallResultFormatter - Specialized formatter for tool call results
- * Location: /src/agents/vaultLibrarian/services/formatters/ToolCallResultFormatter.ts
+ * Location: /src/agents/searchManager/services/formatters/ToolCallResultFormatter.ts
  *
  * Handles formatting of tool call memory results with execution details,
  * success/failure status, and timing information.

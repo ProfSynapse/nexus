@@ -1,6 +1,6 @@
 /**
  * Result Formatters Index
- * Location: /src/agents/vaultLibrarian/services/formatters/index.ts
+ * Location: /src/agents/searchManager/services/formatters/index.ts
  *
  * Centralized exports for all result formatter implementations and helpers.
  * Re-exports all formatter classes and helper utilities for clean imports.

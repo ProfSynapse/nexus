@@ -71,7 +71,7 @@ Every `useTools` call includes context that helps maintain continuity:
 | **storageManager** | File/folder management | list, createFolder, move, copy, archive, open |
 | **searchManager** | Search operations | searchContent, searchDirectory, searchMemory |
 | **memoryManager** | Workspace/state management | createWorkspace, listWorkspaces, loadWorkspace, updateWorkspace, archiveWorkspace, createState, listStates, loadState |
-| **agentManager** | Custom AI prompts & LLM | listModels, executePrompts, listAgents, getAgent, createAgent, updateAgent, archiveAgent, generateImage, subagent |
+| **promptManager** | Custom prompts & LLM | listModels, executePrompts, listPrompts, getPrompt, createPrompt, updatePrompt, archivePrompt, generateImage, subagent |
 
 ---
 

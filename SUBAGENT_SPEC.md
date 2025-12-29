@@ -137,7 +137,7 @@ Main Conversation
 │ Message 0 - User: "Help me with the auth system"            │
 │                                                             │
 │ Message 1 - Assistant: "I'll spawn a subagent..."           │
-│   └─ toolCalls: [{ name: "agentManager.subagent", ... }]   │
+│   └─ toolCalls: [{ name: "promptManager.subagent", ... }]  │
 │   │                                                         │
 │   └─ branches[0]: SUBAGENT BRANCH (inheritContext: false)  │
 │       │                                                     │
@@ -183,7 +183,7 @@ BRANCH VIEWING:
 │ User: "Analyze the auth system"                             │
 │                                                             │
 │ Assistant: "I'll search for auth files..."                  │
-│   └─ 🔧 vaultLibrarian.search: [5 files found]             │
+│   └─ 🔧 searchManager.searchContent: [5 files found]       │
 │                                                             │
 │ Assistant: "Found 5 files. Let me read them..."             │
 │   └─ 🔧 contentManager.readContent: [contents]             │
@@ -736,7 +736,7 @@ export class SubagentExecutor {
 
   /**
    * Build system prompt - use custom agent if specified
-   * Pattern: ExecutePromptsTool from agentManager
+   * Pattern: ExecutePromptsTool from promptManager
    */
   private async buildSystemPrompt(params: SubagentParams): Promise<string> {
     let basePrompt = `You are an autonomous subagent working on a specific task.
@@ -922,7 +922,7 @@ Instructions:
   private async loadCustomAgentPrompt(agentName: string): Promise<string | null> {
     try {
       const result = await this.directToolExecutor.executeTool(
-        'agentManager.getAgent',
+        'promptManager.getPrompt',
         { name: agentName }
       );
       return result.data?.prompt || null;
@@ -958,7 +958,7 @@ getAvailableTools(context: ToolContext): ToolSchema[] {
   return tools;
 }
 
-// src/agents/agentManager/tools/subagent.ts
+// src/agents/promptManager/tools/subagent.ts
 // Block execution if somehow called from MCP
 async execute(params: SubagentToolParams): Promise<SubagentToolResult> {
   const context = this.getParentContext();
@@ -978,7 +978,7 @@ async execute(params: SubagentToolParams): Promise<SubagentToolResult> {
 
 ## New Component: `SubagentTool`
 
-Location: `/src/agents/agentManager/tools/subagent.ts`
+Location: `/src/agents/promptManager/tools/subagent.ts`
 
 ```typescript
 import { BaseTool } from '../../baseTool';
@@ -991,7 +991,7 @@ export interface SubagentToolParams {
 
   // Pre-fetched tools - schemas included in subagent's initial context
   // Format: { agentName: [toolSlug1, toolSlug2] }
-  // e.g., { contentManager: ['readContent', 'createContent'], vaultLibrarian: ['search'] }
+  // e.g., { contentManager: ['readContent', 'createContent'], searchManager: ['searchContent'] }
   // Subagent can still call getTools for additional tools if needed
   tools?: Record<string, string[]>;
 
@@ -1104,7 +1104,7 @@ export class SubagentTool extends BaseTool<SubagentToolParams, SubagentToolResul
         },
         agent: {
           type: 'string',
-          description: 'Optional custom agent/persona name to use (from agentManager)'
+          description: 'Optional custom prompt/persona name to use (from promptManager)'
         },
         tools: {
           type: 'object',
@@ -1262,7 +1262,7 @@ export class MessageQueueService extends EventEmitter {
 
 ### 1. Register SubagentTool in AgentManager
 
-Location: `/src/agents/agentManager/agentManager.ts`
+Location: `/src/agents/promptManager/promptManager.ts`
 
 ```typescript
 // In constructor, add:
@@ -1376,8 +1376,8 @@ async switchAlternative(messageId: string, index: number): Promise<void> {
 | `src/services/chat/BranchService.ts` | Unified branch management (human + subagent) |
 | `src/services/chat/MessageQueueService.ts` | Async message queue with priority |
 | `src/services/chat/SubagentExecutor.ts` | Core subagent execution loop |
-| `src/agents/agentManager/tools/subagent.ts` | Spawn subagent tool |
-| `src/agents/agentManager/tools/cancelSubagent.ts` | Cancel running subagent tool |
+| `src/agents/promptManager/tools/subagent.ts` | Spawn subagent tool |
+| `src/agents/promptManager/tools/cancelSubagent.ts` | Cancel running subagent tool |
 | `src/ui/chat/components/AgentStatusMenu.ts` | Header icon + badge |
 | `src/ui/chat/components/AgentStatusModal.ts` | Running agents modal |
 | `src/ui/chat/components/BranchHeader.ts` | Branch navigation header |
@@ -1387,7 +1387,7 @@ async switchAlternative(messageId: string, index: number): Promise<void> {
 | Path | Changes |
 |------|---------|
 | `src/types/chat/ChatTypes.ts` | Add `branches[]` to ConversationMessage |
-| `src/agents/agentManager/agentManager.ts` | Register SubagentTool + CancelSubagentTool |
+| `src/agents/promptManager/promptManager.ts` | Register SubagentTool + CancelSubagentTool |
 | `src/services/chat/ChatService.ts` | Add `generateResponseStreamingForBranch()` |
 | `src/services/chat/StreamingResponseService.ts` | Branch context building, queue hooks |
 | `src/ui/chat/services/MessageManager.ts` | Route through queue, set processor |
@@ -1493,7 +1493,7 @@ if (message.type === 'subagent_result') {
 
 ## Parent Cancellation: `cancelSubagent` Tool
 
-Location: `/src/agents/agentManager/tools/cancelSubagent.ts`
+Location: `/src/agents/promptManager/tools/cancelSubagent.ts`
 
 Parent agent can cancel running subagents programmatically:
 
@@ -1991,7 +1991,7 @@ async navigateToParent(): Promise<void> {
 
 ```typescript
 // When rendering subagent tool result, add View link
-if (toolCall.name === 'agentManager.subagent' && result.branchId) {
+if (toolCall.name === 'promptManager.subagent' && result.branchId) {
   const viewLink = container.createEl('a', {
     text: 'View Branch →',
     cls: 'nexus-subagent-view-link clickable-icon'
@@ -2216,7 +2216,7 @@ After implementation:
 - [ ] `ChatService.ts` - add `generateResponseStreamingForBranch()`
 - [ ] `subagent.ts` tool - spawn subagent
 - [ ] `cancelSubagent.ts` tool - parent cancellation
-- [ ] `agentManager.ts` - register tools
+- [ ] `promptManager.ts` - register tools
 - [ ] `getTools.ts` - MCP filtering
 
 ### Phase 3: UI Components

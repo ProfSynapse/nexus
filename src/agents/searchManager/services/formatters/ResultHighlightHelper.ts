@@ -1,6 +1,6 @@
 /**
  * ResultHighlightHelper - Handles result highlighting operations
- * Location: /src/agents/vaultLibrarian/services/formatters/ResultHighlightHelper.ts
+ * Location: /src/agents/searchManager/services/formatters/ResultHighlightHelper.ts
  *
  * Provides highlighting functionality for search results including
  * multi-field search and context extraction.

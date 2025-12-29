@@ -1,8 +1,8 @@
 /**
- * Vault Librarian Services Barrel Export
- * 
- * Location: src/agents/vaultLibrarian/services/index.ts  
- * Purpose: Centralizes all vault librarian service exports
+ * Search Manager Services Barrel Export
+ *
+ * Location: src/agents/searchManager/services/index.ts
+ * Purpose: Centralizes all search manager service exports
  */
 
 export { MemorySearchProcessor } from './MemorySearchProcessor';

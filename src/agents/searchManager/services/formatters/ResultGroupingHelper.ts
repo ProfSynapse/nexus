@@ -1,6 +1,6 @@
 /**
  * ResultGroupingHelper - Handles result grouping operations
- * Location: /src/agents/vaultLibrarian/services/formatters/ResultGroupingHelper.ts
+ * Location: /src/agents/searchManager/services/formatters/ResultGroupingHelper.ts
  *
  * Provides grouping functionality for search results including primary grouping,
  * sub-grouping, and group statistics calculation.

@@ -1,7 +1,7 @@
 /**
  * Memory Search Processor
  * 
- * Location: src/agents/vaultLibrarian/services/MemorySearchProcessor.ts
+ * Location: src/agents/searchManager/services/MemorySearchProcessor.ts
  * Purpose: Core search logic across multiple memory types (traces, sessions, workspaces, etc.)
  * Used by: SearchMemoryMode for processing search requests and enriching results
  */

@@ -1,6 +1,6 @@
 /**
  * WorkspaceResultFormatter - Specialized formatter for workspace results
- * Location: /src/agents/vaultLibrarian/services/formatters/WorkspaceResultFormatter.ts
+ * Location: /src/agents/searchManager/services/formatters/WorkspaceResultFormatter.ts
  *
  * Handles formatting of workspace memory results with workspace identification
  * and path information.

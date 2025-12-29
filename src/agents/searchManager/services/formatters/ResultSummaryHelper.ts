@@ -1,6 +1,6 @@
 /**
  * ResultSummaryHelper - Handles result summary generation
- * Location: /src/agents/vaultLibrarian/services/formatters/ResultSummaryHelper.ts
+ * Location: /src/agents/searchManager/services/formatters/ResultSummaryHelper.ts
  *
  * Provides summary building functionality including statistics calculation,
  * type distribution, and date range analysis.

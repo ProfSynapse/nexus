@@ -18,7 +18,7 @@ This folder contains Nexus’s local embedding system used for semantic search a
 
 ## Integration Points
 
-- `vaultLibrarian.searchContent` uses `EmbeddingService.semanticSearch()` when `semantic: true`
+- `searchManager.searchContent` uses `EmbeddingService.semanticSearch()` when `semantic: true`
 - `ChatTraceService` can embed newly-created traces when given an `EmbeddingService` via `setEmbeddingService()`
 
 ## Troubleshooting

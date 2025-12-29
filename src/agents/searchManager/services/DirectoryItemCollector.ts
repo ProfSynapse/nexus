@@ -1,5 +1,5 @@
 /**
- * Location: /src/agents/vaultLibrarian/services/DirectoryItemCollector.ts
+ * Location: /src/agents/searchManager/services/DirectoryItemCollector.ts
  * Purpose: Collects files and folders from directories
  *
  * This service handles recursive collection of files and folders from

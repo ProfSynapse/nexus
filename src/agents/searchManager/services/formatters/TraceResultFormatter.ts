@@ -1,6 +1,6 @@
 /**
  * TraceResultFormatter - Specialized formatter for trace results
- * Location: /src/agents/vaultLibrarian/services/formatters/TraceResultFormatter.ts
+ * Location: /src/agents/searchManager/services/formatters/TraceResultFormatter.ts
  *
  * Handles formatting of trace memory results (default/fallback formatter).
  *

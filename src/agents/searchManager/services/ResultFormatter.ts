@@ -1,7 +1,7 @@
 /**
  * Result Formatter
  *
- * Location: src/agents/vaultLibrarian/services/ResultFormatter.ts
+ * Location: src/agents/searchManager/services/ResultFormatter.ts
  * Purpose: Result highlighting, metadata processing, response formatting
  * Used by: SearchMemoryMode for formatting search results and building summaries
  *

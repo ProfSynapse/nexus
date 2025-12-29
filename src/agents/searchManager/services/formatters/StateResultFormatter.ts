@@ -1,6 +1,6 @@
 /**
  * StateResultFormatter - Specialized formatter for state results
- * Location: /src/agents/vaultLibrarian/services/formatters/StateResultFormatter.ts
+ * Location: /src/agents/searchManager/services/formatters/StateResultFormatter.ts
  *
  * Handles formatting of state memory results with state identification
  * and context information.

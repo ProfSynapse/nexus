@@ -276,11 +276,11 @@ export class SearchMemoryTool extends BaseTool<SearchMemoryParams, SearchMemoryR
           properties: {
             agent: {
               type: 'string',
-              description: 'Filter by agent name (e.g., contentManager, vaultLibrarian)'
+              description: 'Filter by agent name (e.g., contentManager, searchManager)'
             },
-            mode: {
+            tool: {
               type: 'string',
-              description: 'Filter by mode name (e.g., createNote, searchMode)'
+              description: 'Filter by tool name (e.g., createContent, searchContent)'
             },
             success: {
               type: 'boolean',

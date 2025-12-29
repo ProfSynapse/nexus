@@ -1,6 +1,6 @@
 /**
  * BaseResultFormatter - Base class for result formatting operations
- * Location: /src/agents/vaultLibrarian/services/formatters/BaseResultFormatter.ts
+ * Location: /src/agents/searchManager/services/formatters/BaseResultFormatter.ts
  *
  * Provides common formatting functionality shared across all result types.
  * Implements template methods for result formatting with extensibility points.

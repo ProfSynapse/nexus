@@ -1,5 +1,5 @@
 /**
- * Location: /src/agents/vaultLibrarian/tools/searchDirectoryTool.ts
+ * Location: /src/agents/searchManager/tools/searchDirectory.ts
  * Purpose: Unified search tool for files and folders using fuzzy matching
  *
  * This file handles directory search operations with fuzzy matching,

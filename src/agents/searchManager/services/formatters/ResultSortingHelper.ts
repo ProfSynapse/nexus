@@ -1,6 +1,6 @@
 /**
  * ResultSortingHelper - Handles result sorting operations
- * Location: /src/agents/vaultLibrarian/services/formatters/ResultSortingHelper.ts
+ * Location: /src/agents/searchManager/services/formatters/ResultSortingHelper.ts
  *
  * Provides sorting functionality for search results including score-based,
  * timestamp-based, and relevance-based sorting.

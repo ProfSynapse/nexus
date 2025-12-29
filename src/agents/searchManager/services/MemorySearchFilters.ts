@@ -1,7 +1,7 @@
 /**
  * Memory Search Filters
  * 
- * Location: src/agents/vaultLibrarian/services/MemorySearchFilters.ts
+ * Location: src/agents/searchManager/services/MemorySearchFilters.ts
  * Purpose: Tool call filtering, date ranges, session filtering logic
  * Used by: SearchMemoryMode for applying various filters to search results
  */

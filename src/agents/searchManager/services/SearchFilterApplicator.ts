@@ -1,5 +1,5 @@
 /**
- * Location: /src/agents/vaultLibrarian/services/SearchFilterApplicator.ts
+ * Location: /src/agents/searchManager/services/SearchFilterApplicator.ts
  * Purpose: Applies filters to search results
  *
  * This service handles applying various filters to search candidates
