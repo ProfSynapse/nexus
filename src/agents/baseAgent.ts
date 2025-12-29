@@ -165,27 +165,6 @@ export abstract class BaseAgent implements IAgent {
   private findToolInOtherAgents(toolSlug: string): { agentName: string; toolName: string } | null {
     if (!this.agentManager) return null;
 
-    // Common LLM mistakes - maps FAKE tool names to correct agent/tool
-    // Only include tools that DON'T exist anywhere
-    const toolAliases: Record<string, { agent: string; tool: string }> = {
-      // LLMs often use "Note" instead of "Content" for content ops
-      // Note: deleteNote EXISTS on vaultManager, so not included here
-      'createNote': { agent: 'contentManager', tool: 'createContent' },
-      'readNote': { agent: 'contentManager', tool: 'readContent' },
-      'appendNote': { agent: 'contentManager', tool: 'appendContent' },
-      'writeNote': { agent: 'contentManager', tool: 'createContent' },
-      'editNote': { agent: 'contentManager', tool: 'replaceContent' },
-
-      // LLMs might call generic "search" on wrong agent
-      'search': { agent: 'searchManager', tool: 'searchContent' },
-    };
-
-    // Check aliases first
-    const alias = toolAliases[toolSlug];
-    if (alias && alias.agent !== this.name) {
-      return { agentName: alias.agent, toolName: alias.tool };
-    }
-
     // Search known agent names for exact tool match
     const agentNames = ['storageManager', 'contentManager', 'searchManager', 'memoryManager', 'commandManager', 'promptManager'];
 

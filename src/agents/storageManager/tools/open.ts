@@ -5,7 +5,7 @@ import { createErrorMessage } from '../../../utils/errorUtils';
 import { smartNormalizePath } from '../../../utils/pathUtils';
 
 /**
- * Location: src/agents/vaultManager/tools/open.ts
+ * Location: src/agents/storageManager/tools/open.ts
  * Purpose: Open a file in the Obsidian editor
  * Relationships: Uses Obsidian workspace API for file opening
  */

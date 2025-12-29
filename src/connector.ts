@@ -238,7 +238,7 @@ export class MCPConnector {
      *
      * What get_tools Does:
      * Allows LLMs to discover and load tool schemas on-demand by requesting
-     * specific agents (e.g., vaultManager, contentManager). Instead of
+     * specific agents (e.g., storageManager, contentManager). Instead of
      * overwhelming the LLM with all 46 tools upfront, get_tools provides
      * just-in-time access to the tools needed for the current task.
      *

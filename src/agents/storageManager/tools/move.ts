@@ -6,7 +6,7 @@ import { createErrorMessage } from '../../../utils/errorUtils';
 import { normalizePath } from '../../../utils/pathUtils';
 
 /**
- * Location: src/agents/vaultManager/tools/move.ts
+ * Location: src/agents/storageManager/tools/move.ts
  * Purpose: Move or rename files and folders (auto-detects type)
  * Relationships: Uses FileOperations for move logic
  */

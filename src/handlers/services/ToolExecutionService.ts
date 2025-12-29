@@ -24,8 +24,8 @@ export class ToolExecutionService implements IToolExecutionService {
             case 'memoryManager':
                 this.validateMemoryManagerParams(tool, params);
                 break;
-            case 'vaultManager':
-                this.validateVaultManagerParams(tool, params);
+            case 'storageManager':
+                this.validateStorageManagerParams(tool, params);
                 break;
             case 'contentManager':
                 this.validateContentManagerParams(tool, params);
@@ -42,8 +42,8 @@ export class ToolExecutionService implements IToolExecutionService {
         }
     }
 
-    private validateVaultManagerParams(tool: string, params: Record<string, unknown>): void {
-        if (['listFolders', 'createFolder', 'listFiles'].includes(tool) &&
+    private validateStorageManagerParams(tool: string, params: Record<string, unknown>): void {
+        if (['list', 'createFolder'].includes(tool) &&
             params.path === undefined) {
             throw new McpError(
                 ErrorCode.InvalidParams,

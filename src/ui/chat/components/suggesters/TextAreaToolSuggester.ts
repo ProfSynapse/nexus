@@ -76,7 +76,7 @@ export class TextAreaToolSuggester extends ContentEditableSuggester<ToolSuggesti
           const toolName = `${agent.name}.${tool.slug}`;
 
           this.cachedTools.push({
-            name: toolName, // Technical name: "vaultManager.readFile"
+            name: toolName, // Technical name: "storageManager.list"
             displayName: formatToolDisplayName(toolName), // "Read File"
             description: tool.description || `Execute ${tool.slug} on ${agent.name}`,
             category: agent.name,

@@ -6,7 +6,7 @@ import { createErrorMessage } from '../../../utils/errorUtils';
 import { normalizePath } from '../../../utils/pathUtils';
 
 /**
- * Location: src/agents/vaultManager/tools/archive.ts
+ * Location: src/agents/storageManager/tools/archive.ts
  * Purpose: Safely archive files and folders with timestamp preservation
  * Relationships: Uses FileOperations for move logic
  */

@@ -5,7 +5,7 @@ import { createErrorMessage } from '../../../utils/errorUtils';
 import { filterByName, FILTER_DESCRIPTION } from '../../../utils/filterUtils';
 
 /**
- * Location: src/agents/vaultManager/tools/list.ts
+ * Location: src/agents/storageManager/tools/list.ts
  * Purpose: List files and folders in a directory with optional filtering
  * Relationships: Uses BaseDirectoryTool for common directory operations
  */

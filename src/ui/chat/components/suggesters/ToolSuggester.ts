@@ -214,7 +214,7 @@ export class ToolSuggester extends BaseSuggester<ToolSuggestionItem> {
    * @returns ToolSuggestionItem
    */
   private convertToToolItem(tool: any): ToolSuggestionItem {
-    // Extract category from tool name (e.g., "vaultManager.readFile" -> "vaultManager")
+    // Extract category from tool name (e.g., "storageManager.list" -> "storageManager")
     const parts = tool.name.split('.');
     const category = parts.length > 1 ? parts[0] : 'general';
 

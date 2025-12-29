@@ -5,7 +5,7 @@ import { FileOperations } from '../utils/FileOperations';
 import { createErrorMessage } from '../../../utils/errorUtils';
 
 /**
- * Location: src/agents/vaultManager/tools/copy.ts
+ * Location: src/agents/storageManager/tools/copy.ts
  * Purpose: Duplicate a file to a new location
  * Relationships: Uses FileOperations for copy logic
  */

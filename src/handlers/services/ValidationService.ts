@@ -114,14 +114,12 @@ export class ValidationService implements IValidationService {
 
         // Directory operations - never need .md extension
         const directoryOperations = [
-            'listFiles', 'listFolders', 'createFolder', 
-            'deleteFolder', 'moveFolder', 'editFolder'
+            'list', 'createFolder', 'archive', 'move', 'copy'
         ];
 
         // Note operations - need .md extension when no extension present
         const noteOperations = [
-            'openNote', 'readNote', 'editNote', 'deleteNote',
-            'readContent', 'createContent', 'appendContent', 
+            'open', 'readContent', 'createContent', 'appendContent',
             'prependContent', 'replaceContent', 'deleteContent'
         ];
 

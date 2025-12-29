@@ -46,7 +46,7 @@ export abstract class BaseDirectoryTool<T extends CommonParameters, R extends Co
     const folder = this.app.vault.getAbstractFileByPath(normalizedPath);
     if (!folder || !(folder instanceof TFolder)) {
       // Provide recovery guidance
-      throw new Error(`Folder not found: "${normalizedPath}". Try listDirectory with path "" (root) to see available folders, or use searchDirectory to find folders by name.`);
+      throw new Error(`Folder not found: "${normalizedPath}". Try storageManager.list with path "" (root) to see available folders, or use searchManager.searchDirectory to find folders by name.`);
     }
 
     return folder;
@@ -72,7 +72,7 @@ export abstract class BaseDirectoryTool<T extends CommonParameters, R extends Co
    */
   protected getRootDirectoryMessage(normalizedPath: string, operationType: string): string | undefined {
     if (normalizedPath === '') {
-      return `${operationType} in root directory only. This may not include all items in the vault - many may be organized in subfolders. Use listFolders tool to explore the full vault structure.`;
+      return `${operationType} in root directory only. This may not include all items in the vault - many may be organized in subfolders. Use storageManager.list with depth to explore the full vault structure.`;
     }
     return undefined;
   }

@@ -76,7 +76,7 @@ export class WriteTool extends BaseTool<WriteParams, WriteResult> {
         // Overwrite existing file
         if (!(existingFile instanceof TFile)) {
           return this.prepareResult(false, undefined,
-            `Path is a folder, not a file: "${path}". Use listDirectory to see its contents.`
+            `Path is a folder, not a file: "${path}". Use storageManager.list to see its contents.`
           );
         }
 
