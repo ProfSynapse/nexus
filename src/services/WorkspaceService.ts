@@ -314,6 +314,7 @@ export class WorkspaceService {
       if (updates.description !== undefined) hybridUpdates.description = updates.description;
       if (updates.rootFolder !== undefined) hybridUpdates.rootFolder = updates.rootFolder;
       if (updates.isActive !== undefined) hybridUpdates.isActive = updates.isActive;
+      if (updates.isArchived !== undefined) hybridUpdates.isArchived = updates.isArchived;
 
       // Handle context update
       if (updates.context !== undefined) {

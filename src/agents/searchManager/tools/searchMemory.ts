@@ -6,8 +6,6 @@ import {
   MemorySearchResult,
   EnrichedMemorySearchResult,
   SearchMemoryModeResult,
-  MemoryFilterOptions,
-  FormatOptions,
   DateRange
 } from '../../../types/memory/MemorySearchTypes';
 import { MemorySearchProcessor, MemorySearchProcessorInterface } from '../services/MemorySearchProcessor';
@@ -67,7 +65,6 @@ export interface SearchMemoryParams extends CommonParameters {
   workspace?: string;
   dateRange?: DateRange;
   toolCallFilters?: any;
-  filterBySession?: boolean;
 }
 
 // SearchMemoryResult extends the base type
@@ -302,11 +299,6 @@ export class SearchMemoryTool extends BaseTool<SearchMemoryParams, SearchMemoryR
           enum: ['semantic', 'exact', 'mixed'],
           description: 'Search method to use',
           default: 'mixed'
-        },
-        filterBySession: {
-          type: 'boolean',
-          description: 'If true, only return traces from the current sessionId. If false or omitted, search across all sessions.',
-          default: false
         }
       },
       required: ['query', 'workspaceId']
@@ -352,42 +344,6 @@ export class SearchMemoryTool extends BaseTool<SearchMemoryParams, SearchMemoryR
         }
       },
       required: ['success', 'results']
-    };
-  }
-
-  // Private helper methods for the refactored implementation
-  
-  /**
-   * Determine if filters should be applied
-   */
-  private shouldApplyFilters(params: SearchMemoryParams): boolean {
-    return !!(params.dateRange || 
-              params.toolCallFilters || 
-              params.filterBySession || 
-              params.workspace || params.workspaceId);
-  }
-  
-  /**
-   * Build filter options from parameters
-   */
-  private buildFilterOptions(params: SearchMemoryParams): MemoryFilterOptions {
-    return {
-      dateRange: params.dateRange,
-      toolCallFilters: params.toolCallFilters,
-      sessionId: 'default',
-      workspaceId: params.workspace || params.workspaceId,
-      filterBySession: params.filterBySession
-    };
-  }
-  
-  /**
-   * Build format options from parameters
-   */
-  private buildFormatOptions(params: SearchMemoryParams): FormatOptions {
-    return {
-      maxHighlightLength: 200,
-      contextLength: 50,
-      enhanceToolCallContext: true
     };
   }
 

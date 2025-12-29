@@ -77,7 +77,9 @@ export class UpdateTool extends BaseTool<UpdateParams, UpdateResult> {
 
       // Special case: startLine === -1 means APPEND to end of file
       if (startLine === -1) {
-        newContent = existingContent + content;
+        // Add newline before appending if file doesn't end with one
+        const needsNewline = existingContent.length > 0 && !existingContent.endsWith('\n');
+        newContent = existingContent + (needsNewline ? '\n' : '') + content;
         await this.app.vault.modify(file, newContent);
         return this.prepareResult(true);
       }

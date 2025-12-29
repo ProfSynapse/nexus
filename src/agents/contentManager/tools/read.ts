@@ -42,44 +42,32 @@ export class ReadTool extends BaseTool<ReadParams, ReadResult> {
   /**
    * Execute the tool
    * @param params Tool parameters
-   * @returns Promise that resolves with the file content
+   * @returns Promise that resolves with the file content (always with line numbers)
    */
   async execute(params: ReadParams): Promise<ReadResult> {
     try {
       const { path, startLine, endLine } = params;
 
-      let content: string;
-      let actualStartLine: number;
-      let actualEndLine: number | undefined;
+      // Read full content first
+      const fullContent = await ContentOperations.readContent(this.app, path);
+      const allLines = fullContent.split('\n');
+      const totalLines = allLines.length;
 
-      // If endLine is specified, read specific line range
-      if (endLine !== undefined) {
-        actualStartLine = startLine;
-        actualEndLine = endLine;
-        const lines = await ContentOperations.readLines(
-          this.app,
-          path,
-          startLine,
-          endLine,
-          false // Don't include line numbers in content
-        );
-        content = lines.join('\n');
-      } else if (startLine === 1) {
-        // Read entire file from start
-        content = await ContentOperations.readContent(this.app, path);
-        actualStartLine = 1;
-      } else {
-        // Read from startLine to end of file
-        const fullContent = await ContentOperations.readContent(this.app, path);
-        const lines = fullContent.split('\n');
-        const totalLines = lines.length;
+      // Determine actual range
+      const actualStartLine = startLine;
+      const actualEndLine = endLine !== undefined ? Math.min(endLine, totalLines) : totalLines;
 
-        // Adjust for 1-based line numbers
-        const startIdx = Math.max(0, startLine - 1);
-        content = lines.slice(startIdx).join('\n');
-        actualStartLine = startLine;
-        actualEndLine = totalLines;
-      }
+      // Extract requested lines (1-based to 0-based)
+      const startIdx = Math.max(0, actualStartLine - 1);
+      const endIdx = actualEndLine;
+      const requestedLines = allLines.slice(startIdx, endIdx);
+
+      // Always add line numbers to content
+      const numberedLines = requestedLines.map((line, idx) => {
+        const lineNum = actualStartLine + idx;
+        return `${lineNum}: ${line}`;
+      });
+      const content = numberedLines.join('\n');
 
       const resultData = {
         content,
@@ -139,7 +127,7 @@ export class ReadTool extends BaseTool<ReadParams, ReadResult> {
       properties: {
         content: {
           type: 'string',
-          description: 'Content of the file'
+          description: 'Content with line numbers (format: "N: line content")'
         },
         path: {
           type: 'string',

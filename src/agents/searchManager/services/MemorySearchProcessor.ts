@@ -238,7 +238,8 @@ export class MemorySearchProcessor implements MemorySearchProcessorInterface {
   private buildSearchOptions(params: MemorySearchParameters): MemorySearchExecutionOptions {
     return {
       workspaceId: params.workspaceId || params.workspace,
-      sessionId: params.filterBySession ? params.context.sessionId : undefined,
+      // Session filtering removed - memory is workspace-scoped, not session-scoped
+      sessionId: undefined,
       limit: params.limit || this.configuration.defaultLimit,
       toolCallFilters: params.toolCallFilters
     };

@@ -13,19 +13,11 @@ import { getErrorMessage } from '../../../utils/errorUtils';
 import { SchemaData } from '../toolManager';
 
 /**
- * Internal-only tools that should be hidden from external MCP clients (Claude Desktop)
- *
- * TODO: Currently both internal chat and MCP share the same ToolManager instance,
- * so filtering here affects both. To properly separate:
- * - Option 1: Pass an `isInternal` flag via SchemaData when instantiating GetToolsTool
- * - Option 2: Filter in connector.ts before returning tools to MCP
- * - Option 3: Add source tracking in ToolContext to filter at execution time
- *
- * For now, subagent is visible to all clients. MCP users could technically
- * discover and call it, but it requires internal chat context to function properly.
+ * Internal-only tools hidden from external MCP clients (Claude Desktop)
+ * These tools require internal chat context and won't work via MCP.
  */
 const INTERNAL_ONLY_TOOLS = new Set<string>([
-  // No tools are currently hidden - subagent is visible for internal chat discovery
+  'subagent'  // Internal chat UI only - requires conversation context
 ]);
 
 /**
@@ -147,8 +139,12 @@ export class GetToolsTool implements ITool<GetToolsParams, GetToolsResult> {
           continue;
         }
 
-        // Get specific tools
+        // Get specific tools (skip internal-only tools)
         for (const toolSlug of toolNames) {
+          if (INTERNAL_ONLY_TOOLS.has(toolSlug)) {
+            notFound.push(`Tool "${toolSlug}" not found in agent "${agentName}"`);
+            continue;
+          }
           const tool = agent.getTool(toolSlug);
           if (!tool) {
             notFound.push(`Tool "${toolSlug}" not found in agent "${agentName}"`);

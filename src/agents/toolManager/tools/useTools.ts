@@ -97,53 +97,39 @@ export class UseToolTool implements ITool<UseToolParams, UseToolResult> {
       // Determine overall success
       const allSucceeded = results.every(r => r.success);
 
-      // Build lean result - strip redundant metadata on success
-      if (allSucceeded) {
-        // Success: LLM knows what it called, just return the data
-        if (results.length === 1) {
-          // Single call: flatten data directly
-          return {
-            success: true,
-            data: results[0].data
-          };
-        } else {
-          // Multiple calls: array of just the data (order matches calls order)
-          return {
-            success: true,
-            data: {
-              results: results.map(r => r.data)
-            }
-          };
-        }
-      }
-
-      // Failure: include helpful error message at top level
-      const failedResults = results.filter(r => !r.success);
-
-      // For single failure, surface the full error message directly
-      if (failedResults.length === 1) {
-        const failed = failedResults[0];
-        return {
-          success: false,
-          error: failed.error || `${failed.agent}_${failed.tool} failed`,
-          data: {
-            agent: failed.agent,
-            tool: failed.tool
+      // Format each result with its own success/error status
+      const formatResult = (r: ToolCallResult): Record<string, unknown> => {
+        if (r.success) {
+          // Success: spread object data, nest primitives/arrays
+          if (r.data !== undefined && typeof r.data === 'object' && r.data !== null && !Array.isArray(r.data)) {
+            return { success: true, ...(r.data as Record<string, unknown>) };
+          } else if (r.data !== undefined) {
+            return { success: true, data: r.data };
           }
+          return { success: true };
+        }
+        // Failure: include error
+        return { success: false, error: r.error || 'Unknown error' };
+      };
+
+      // Single call: flatten directly
+      if (results.length === 1) {
+        const formatted = formatResult(results[0]);
+        return {
+          success: results[0].success,
+          ...(results[0].success ? {} : { error: (formatted as { error?: string }).error }),
+          data: formatted
         };
       }
 
-      // Multiple failures: list all with their errors
+      // Multiple calls: each result has its own success/error
+      const formattedResults = results.map(formatResult);
+      const failCount = results.filter(r => !r.success).length;
+
       return {
-        success: false,
-        error: `${failedResults.length} tools failed`,
-        data: {
-          failures: failedResults.map(r => ({
-            agent: r.agent,
-            tool: r.tool,
-            error: r.error
-          }))
-        }
+        success: allSucceeded,
+        ...(allSucceeded ? {} : { error: `${failCount} of ${results.length} failed` }),
+        data: { results: formattedResults }
       };
     } catch (error) {
       return {
