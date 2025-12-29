@@ -754,14 +754,14 @@ export class ModelAgentManager {
       const agentService = plugin.serviceManager?.getServiceIfReady?.('agentRegistrationService');
       if (agentService) {
         const agents = agentService.getAllAgents();
-        const agentMap = agents instanceof Map ? agents : new Map(agents.map((a: any) => [a.name, a]));
+        const agentMap = agents instanceof Map ? agents : new Map(agents.map((a: { name: string }) => [a.name, a]));
 
         return Array.from(agentMap.entries()).map(([name, agent]: [string, any]) => {
           const agentTools = agent.getTools?.() || [];
           return {
             name,
             description: agent.description || '',
-            tools: agentTools.map((t: any) => t.slug || t.name || 'unknown')
+            tools: agentTools.map((t: { slug?: string; name?: string }) => t.slug || t.name || 'unknown')
           };
         });
       }
@@ -777,7 +777,7 @@ export class ModelAgentManager {
           result.push({
             name,
             description: agent.description || '',
-            tools: agentTools.map((t: any) => t.slug || t.name || 'unknown')
+            tools: agentTools.map((t: { slug?: string; name?: string }) => t.slug || t.name || 'unknown')
           });
         }
 

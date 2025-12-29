@@ -9,7 +9,7 @@
  * Integrates with: WorkspaceService to query current workspace information
  */
 
-import { ISchemaProvider } from '../../interfaces/ISchemaProvider';
+import { ISchemaProvider, EnhancedJSONSchema } from '../../interfaces/ISchemaProvider';
 import { WorkspaceService, GLOBAL_WORKSPACE_ID } from '../../../services/WorkspaceService';
 import { logger } from '../../../utils/logger';
 
@@ -65,7 +65,7 @@ export class WorkspaceSchemaProvider implements ISchemaProvider {
    * @param baseSchema Base schema to potentially enhance
    * @returns Promise<boolean> true if this provider can enhance the schema
    */
-  async canEnhance(toolName: string, baseSchema: any): Promise<boolean> {
+  async canEnhance(toolName: string, baseSchema: EnhancedJSONSchema): Promise<boolean> {
     try {
       // Extract agent name from tool name (handle both "memoryManager" and "memoryManager_vaultName" formats)
       const agentName = toolName.split('_')[0];
@@ -97,9 +97,9 @@ export class WorkspaceSchemaProvider implements ISchemaProvider {
    * Enhance the given schema with workspace information
    * @param toolName Tool name
    * @param baseSchema Base schema to enhance
-   * @returns Promise<any> The enhanced schema
+   * @returns Promise<EnhancedJSONSchema> The enhanced schema
    */
-  async enhanceSchema(toolName: string, baseSchema: any): Promise<any> {
+  async enhanceSchema(toolName: string, baseSchema: EnhancedJSONSchema): Promise<EnhancedJSONSchema> {
     try {
       // Get workspace data
       const workspaceData = await this.fetchEnhancementData();
@@ -203,7 +203,7 @@ export class WorkspaceSchemaProvider implements ISchemaProvider {
    * @param enhancementData Workspace enhancement data
    * @returns Enhanced schema
    */
-  private applyEnhancement(originalSchema: any, enhancementData: WorkspaceEnhancementData): any {
+  private applyEnhancement(originalSchema: EnhancedJSONSchema, enhancementData: WorkspaceEnhancementData): EnhancedJSONSchema {
     // Deep clone the original schema
     const enhancedSchema = JSON.parse(JSON.stringify(originalSchema));
 
@@ -233,27 +233,28 @@ export class WorkspaceSchemaProvider implements ISchemaProvider {
    * @param schema Schema to enhance
    * @param data Enhancement data
    */
-  private enhanceLoadWorkspaceSchema(schema: any, data: WorkspaceEnhancementData): void {
-    if (!schema.properties.id) {
+  private enhanceLoadWorkspaceSchema(schema: EnhancedJSONSchema, data: WorkspaceEnhancementData): void {
+    if (!schema.properties || !schema.properties.id) {
       return; // Skip if 'id' parameter doesn't exist
     }
 
+    const idProp = schema.properties.id as EnhancedJSONSchema;
     // Add enum with available workspace IDs
-    schema.properties.id.enum = data.workspaceIds;
+    idProp.enum = data.workspaceIds;
 
     // Enhance description with available workspaces
     const workspaceList = data.workspaces
       .map(ws => `"${ws.id}": ${ws.name}${ws.description ? ` - ${ws.description}` : ''}`)
       .join(', ');
 
-    schema.properties.id.description = 
+    idProp.description =
       `Workspace ID to load (REQUIRED). Available workspaces (${data.stats.totalCount} total): ${workspaceList}`;
 
     // Add workspace count information to schema description
     if (!schema.description) {
       schema.description = 'Load a workspace by ID and restore context and state';
     }
-    
+
     schema.description += ` | ${data.stats.totalCount} workspaces available`;
 
     logger.systemLog(`Enhanced loadWorkspace schema with ${data.workspaceIds.length} workspace options`, 'WorkspaceSchemaProvider');
@@ -264,7 +265,7 @@ export class WorkspaceSchemaProvider implements ISchemaProvider {
    * @param schema Schema to enhance
    * @param data Enhancement data
    */
-  private enhanceListWorkspacesSchema(schema: any, data: WorkspaceEnhancementData): void {
+  private enhanceListWorkspacesSchema(schema: EnhancedJSONSchema, data: WorkspaceEnhancementData): void {
     // Enhance schema description with current workspace counts
     if (!schema.description) {
       schema.description = 'List available workspaces with filters and sorting';

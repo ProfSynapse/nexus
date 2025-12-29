@@ -1,12 +1,90 @@
 import { IAgent } from '../../agents/interfaces/IAgent';
 import { SessionContextManager } from '../../services/SessionContextManager';
-import { ISchemaProvider } from './ISchemaProvider';
+import { ISchemaProvider, EnhancedJSONSchema } from './ISchemaProvider';
+import { JSONSchema } from '../../types/schema/JSONSchemaTypes';
+
+/**
+ * Session information returned from session processing
+ */
+export interface SessionInfo {
+    sessionId: string;
+    isNewSession: boolean;
+    isNonStandardId: boolean;
+    originalSessionId?: string;
+    shouldInjectInstructions?: boolean;
+}
+
+/**
+ * MCP content response format
+ */
+export interface MCPContentResponse {
+    content: Array<{
+        type: string;
+        text: string;
+    }>;
+}
+
+/**
+ * Tool execution result from agents
+ */
+export interface ToolExecutionResult {
+    success: boolean;
+    data?: unknown;
+    error?: string;
+    [key: string]: unknown;
+}
+
+/**
+ * Prompt argument definition
+ */
+export interface PromptArgument {
+    name: string;
+    description?: string;
+    required?: boolean;
+    type?: string;
+}
+
+/**
+ * Tool definition for tool list
+ */
+export interface ToolDefinition {
+    name: string;
+    description?: string;
+    inputSchema: JSONSchema | EnhancedJSONSchema;
+}
+
+/**
+ * Agent schema for tool list
+ */
+export interface AgentSchema {
+    name: string;
+    description?: string;
+    inputSchema: EnhancedJSONSchema;
+    [key: string]: unknown;
+}
+
+/**
+ * Prompt definition for prompts list
+ */
+export interface PromptDefinition {
+    name: string;
+    description?: string;
+    arguments?: PromptArgument[];
+}
+
+/**
+ * Batch operation structure
+ */
+export interface BatchOperation {
+    type: string;
+    params: Record<string, unknown>;
+}
 
 export interface IValidationService {
-    validateToolParams(params: any, schema?: any, toolName?: string): Promise<any>;
+    validateToolParams(params: Record<string, unknown>, schema?: JSONSchema | EnhancedJSONSchema, toolName?: string): Promise<Record<string, unknown>>;
     validateSessionId(sessionId: string): Promise<string>;
-    validateBatchOperations(operations: any[]): Promise<void>;
-    validateBatchPaths(paths: any[]): Promise<void>;
+    validateBatchOperations(operations: BatchOperation[]): Promise<void>;
+    validateBatchPaths(paths: string[]): Promise<void>;
 }
 
 export interface ISessionService {
@@ -25,20 +103,15 @@ export interface IToolExecutionService {
     executeAgent(
         agent: IAgent,
         tool: string,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        params: any
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ): Promise<any>;
+        params: Record<string, unknown>
+    ): Promise<ToolExecutionResult>;
 }
 
 
 export interface IResponseFormatter {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    formatToolExecutionResponse(result: any, sessionInfo?: any, context?: { tool?: string }): any;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    formatSessionInstructions(sessionId: string, result: any): any;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    formatErrorResponse(error: Error): any;
+    formatToolExecutionResponse(result: ToolExecutionResult, sessionInfo?: SessionInfo, context?: { tool?: string }): MCPContentResponse;
+    formatSessionInstructions(sessionId: string, result: ToolExecutionResult): ToolExecutionResult;
+    formatErrorResponse(error: Error): MCPContentResponse;
 }
 
 export interface IToolListService {
@@ -46,12 +119,9 @@ export interface IToolListService {
         agents: Map<string, IAgent>,
         isVaultEnabled: boolean,
         vaultName?: string
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ): Promise<{ tools: any[] }>;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    buildAgentSchema(agent: IAgent): any;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    mergeToolSchemasIntoAgent(agent: IAgent, agentSchema: any): any;
+    ): Promise<{ tools: ToolDefinition[] }>;
+    buildAgentSchema(agent: IAgent): AgentSchema;
+    mergeToolSchemasIntoAgent(agent: IAgent, agentSchema: AgentSchema): AgentSchema;
     setSchemaEnhancementService(service: ISchemaEnhancementService): void;
 }
 
@@ -67,8 +137,8 @@ export interface IResourceReadService {
 }
 
 export interface IPromptsListService {
-    listPrompts(): Promise<{ prompts: Array<{ name: string; description?: string; arguments?: any[] }> }>;
-    listPromptsByCategory(category?: string): Promise<{ prompts: Array<{ name: string; description?: string; arguments?: any[] }> }>;
+    listPrompts(): Promise<{ prompts: PromptDefinition[] }>;
+    listPromptsByCategory(category?: string): Promise<{ prompts: PromptDefinition[] }>;
     promptExists(name: string): Promise<boolean>;
     getPrompt(name: string): Promise<string | null>;
 }
@@ -100,7 +170,7 @@ export interface IRequestContext {
 }
 
 export interface ISchemaEnhancementService {
-    enhanceToolSchema(toolName: string, baseSchema: any): Promise<any>;
+    enhanceToolSchema(toolName: string, baseSchema: EnhancedJSONSchema): Promise<EnhancedJSONSchema>;
     getAvailableEnhancements(): Promise<string[]>;
     registerProvider(provider: ISchemaProvider): void;
     unregisterProvider(providerName: string): boolean;

@@ -30,7 +30,7 @@
  * - Service cleanup during plugin unload
  */
 
-export type ServiceFactory<T> = (dependencies: Record<string, any>) => T | Promise<T>;
+export type ServiceFactory<T> = (dependencies: Record<string, unknown>) => T | Promise<T>;
 export type LazyFactory<T> = () => Promise<T>;
 
 export interface ServiceRegistration<T> {
@@ -226,7 +226,7 @@ export class ServiceContainer implements IServiceContainer {
         this.services.set(name, instance);
       } else if (registration) {
         // Handle regular factory pattern
-        const resolvedDependencies: Record<string, any> = {};
+        const resolvedDependencies: Record<string, unknown> = {};
         const dependencies = registration.dependencies || [];
         
         // Resolve dependencies

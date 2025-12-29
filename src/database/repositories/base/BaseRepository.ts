@@ -121,7 +121,7 @@ export abstract class BaseRepository<T> implements IRepository<T> {
   /**
    * Count entities
    */
-  abstract count(criteria?: Record<string, any>): Promise<number>;
+  abstract count(criteria?: Record<string, unknown>): Promise<number>;
 
   // ============================================================================
   // Shared Helper Methods

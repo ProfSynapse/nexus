@@ -13,6 +13,7 @@
  */
 
 import { CostCalculator } from '../llm/adapters/CostCalculator';
+import type { ConversationData, ChatMessage } from '../../types/chat/ChatTypes';
 
 export interface UsageData {
   promptTokens: number;
@@ -26,9 +27,27 @@ export interface CostData {
   currency: string;
 }
 
+/** Raw usage object from LLM response (various formats) */
+interface RawUsageObject {
+  promptTokens?: number;
+  prompt_tokens?: number;
+  inputTokens?: number;
+  completionTokens?: number;
+  completion_tokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+  total_tokens?: number;
+}
+
+/** Conversation service interface for cost tracking */
+interface ConversationServiceLike {
+  getConversation: (id: string) => Promise<ConversationData | null>;
+  updateConversation: (id: string, updates: Partial<ConversationData>) => Promise<void>;
+}
+
 export class CostTrackingService {
   constructor(
-    private conversationService: any
+    private conversationService: ConversationServiceLike
   ) {}
 
   /**
@@ -63,8 +82,8 @@ export class CostTrackingService {
   async updateMessageCost(
     conversationId: string,
     messageId: string,
-    usage: any,
-    cost: any
+    usage: UsageData,
+    cost: CostData | null
   ): Promise<void> {
     try {
       // Load conversation, find message, update it, save back
@@ -75,7 +94,7 @@ export class CostTrackingService {
       }
 
       // Find the message by ID
-      const message = conversation.messages.find((m: any) => m.id === messageId);
+      const message = conversation.messages.find((m: ChatMessage) => m.id === messageId);
       if (!message) {
         console.error('[CostTrackingService] Message not found for async usage update:', messageId);
         return;
@@ -138,8 +157,8 @@ export class CostTrackingService {
    * Create async usage callback for streaming
    * Returns a callback function that can be passed to LLM streaming options
    */
-  createUsageCallback(conversationId: string, messageId: string): (usage: any, cost: any) => Promise<void> {
-    return async (usage: any, cost: any) => {
+  createUsageCallback(conversationId: string, messageId: string): (usage: UsageData, cost: CostData | null) => Promise<void> {
+    return async (usage: UsageData, cost: CostData | null) => {
       await this.updateMessageCost(conversationId, messageId, usage, cost);
     };
   }
@@ -170,7 +189,7 @@ export class CostTrackingService {
   /**
    * Extract usage data from streaming chunk or final usage object
    */
-  extractUsage(usageObject: any): UsageData | null {
+  extractUsage(usageObject: RawUsageObject | null | undefined): UsageData | null {
     if (!usageObject) return null;
 
     // Handle different usage formats

@@ -10,11 +10,15 @@ import {
     ListToolsRequestSchema,
     CallToolRequestSchema,
     ListPromptsRequestSchema,
-    GetPromptRequestSchema
+    GetPromptRequestSchema,
+    ServerResult
 } from '@modelcontextprotocol/sdk/types.js';
 import { RequestRouter } from '../../handlers/RequestRouter';
 import { parseJsonArrays } from '../../utils/jsonUtils';
 import { logger } from '../../utils/logger';
+
+// MCP SDK result types for handler return values
+type MCPResult = ServerResult | Record<string, unknown>;
 
 /**
  * Service responsible for creating and configuring request handlers
@@ -42,12 +46,12 @@ export class RequestHandlerFactory {
     private setupResourceHandlers(): void {
         // Handle resource listing
         this.server.setRequestHandler(ListResourcesRequestSchema, async (request) => {
-            return await this.requestRouter.handleRequest('resources/list', request);
+            return await this.requestRouter.handleRequest('resources/list', request) as MCPResult;
         });
 
         // Handle resource reading
         this.server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
-            return await this.requestRouter.handleRequest('resources/read', request);
+            return await this.requestRouter.handleRequest('resources/read', request) as MCPResult;
         });
     }
 
@@ -57,12 +61,12 @@ export class RequestHandlerFactory {
     private setupPromptHandlers(): void {
         // Handle prompts listing
         this.server.setRequestHandler(ListPromptsRequestSchema, async (request) => {
-            return await this.requestRouter.handleRequest('prompts/list', request);
+            return await this.requestRouter.handleRequest('prompts/list', request) as MCPResult;
         });
 
         // Handle prompts get
         this.server.setRequestHandler(GetPromptRequestSchema, async (request) => {
-            return await this.requestRouter.handleRequest('prompts/get', request);
+            return await this.requestRouter.handleRequest('prompts/get', request) as MCPResult;
         });
     }
 
@@ -73,7 +77,7 @@ export class RequestHandlerFactory {
         // Handle tool listing
         this.server.setRequestHandler(ListToolsRequestSchema, async (request) => {
             try {
-                return await this.requestRouter.handleRequest('tools/list', request);
+                return await this.requestRouter.handleRequest('tools/list', request) as MCPResult;
             } catch (error) {
                 console.error("Error in tool list handler:", error);
                 logger.systemError(error as Error, 'Tool List Handler');
@@ -84,7 +88,7 @@ export class RequestHandlerFactory {
 
         // Handle tool execution
         this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
-            return await this.handleToolCall(request);
+            return await this.handleToolCall(request) as MCPResult;
         });
     }
 

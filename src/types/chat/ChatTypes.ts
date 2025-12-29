@@ -5,6 +5,19 @@
 
 import type { ConversationBranch } from '../branch/BranchTypes';
 
+/** Token usage data for a message */
+export interface MessageUsage {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+}
+
+/** Cost data for a message */
+export interface MessageCost {
+  totalCost: number;
+  currency: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant' | 'system' | 'tool';
@@ -15,9 +28,17 @@ export interface ChatMessage {
   toolCalls?: ToolCall[];
   tokens?: number;
   isLoading?: boolean;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
   // Reasoning/thinking content from LLMs that support it (Claude, GPT-5, Gemini)
   reasoning?: string;
+
+  // Provider/model that generated this message
+  provider?: string;
+  model?: string;
+
+  // Token usage and cost tracking
+  usage?: MessageUsage;
+  cost?: MessageCost;
 
   /**
    * Conversation branches from this message point.
@@ -39,7 +60,7 @@ export type ToolCallFormat = 'bracket' | 'xml' | 'native';
 
 export interface ToolCall {
   id: string;
-  type: string;
+  type: 'function';
   name?: string;
   displayName?: string;
   technicalName?: string;
@@ -47,10 +68,10 @@ export interface ToolCall {
     name: string;
     arguments: string;
   };
-  result?: any;
+  result?: unknown;
   success?: boolean;
   error?: string;
-  parameters?: any;
+  parameters?: Record<string, unknown>;
   executionTime?: number;
   /** Format the model used: 'bracket' = [TOOL_CALLS], 'xml' = <tool_call>, 'native' = OpenAI tool_calls */
   sourceFormat?: ToolCallFormat;
@@ -68,6 +89,7 @@ export interface Conversation {
   };
   metadata?: {
     previousResponseId?: string; // OpenAI Responses API: Track last response ID for continuations
+    responsesApiId?: string; // Alternative name for OpenAI Responses API
     cost?: {
       totalCost: number;
       currency: string;
@@ -79,7 +101,15 @@ export interface Conversation {
     parentMessageId?: string;       // The specific message this branched from
     branchType?: 'subagent' | 'alternative';  // Type of branch
     subagentTask?: string;          // For subagent branches: the task description
-    [key: string]: any;
+    // Chat settings
+    chatSettings?: {
+      providerId?: string;
+      modelId?: string;
+      systemPrompt?: string;
+      workspaceId?: string;
+      sessionId?: string;
+    };
+    [key: string]: unknown;
   };
 }
 
@@ -144,13 +174,13 @@ export interface AddMessageParams {
   role: 'user' | 'assistant' | 'system' | 'tool';
   content: string;
   toolCalls?: ToolCall[];
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 export interface UpdateConversationParams {
   id: string;
   title?: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 export function documentToConversationData(doc: ConversationDocument): Conversation {

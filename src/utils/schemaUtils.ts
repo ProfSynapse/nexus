@@ -249,7 +249,7 @@ export function createResult<T extends CommonResult>(
   workspaceContext?: CommonResult['workspaceContext'],
   sessionId?: string,
   context?: CommonResult['context'] | string,
-  additionalProps?: Record<string, any>
+  additionalProps?: Record<string, unknown>
 ): T {
   const result: any = {
     success,

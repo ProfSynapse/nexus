@@ -226,7 +226,7 @@ export class WorkspaceRepository
     }
   }
 
-  async count(criteria?: Record<string, any>): Promise<number> {
+  async count(criteria?: Record<string, unknown>): Promise<number> {
     let sql = 'SELECT COUNT(*) as count FROM workspaces';
     const params: any[] = [];
 

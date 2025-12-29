@@ -142,10 +142,11 @@ export class EntityCache extends Events {
             const associatedFiles = new Set<string>();
             // Note: WorkspaceSession doesn't have activeNote property
             tracesResult.items.forEach(trace => {
+                const metadata = trace.metadata as { input?: { files?: string[] }; legacy?: { relatedFiles?: string[] } } | undefined;
                 const files =
-                  (trace.metadata?.input?.files && Array.isArray(trace.metadata.input.files)
-                    ? trace.metadata.input.files
-                    : trace.metadata?.legacy?.relatedFiles) || [];
+                  (metadata?.input?.files && Array.isArray(metadata.input.files)
+                    ? metadata.input.files
+                    : metadata?.legacy?.relatedFiles) || [];
                 files.forEach((f: string) => associatedFiles.add(f));
             });
 

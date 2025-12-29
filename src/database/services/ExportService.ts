@@ -109,7 +109,8 @@ export class ExportService {
       const formattedMessages = filteredMessages.map(m => this.formatMessageForExport(m));
 
       // Inject system prompt from metadata if available and not already present
-      const systemPrompt = conv.metadata?.chatSettings?.systemPrompt;
+      const chatSettings = conv.metadata?.chatSettings as { systemPrompt?: string } | undefined;
+      const systemPrompt = chatSettings?.systemPrompt;
       if (systemPrompt && filter?.includeSystem !== false) {
         const hasSystemMessage = formattedMessages.length > 0 && formattedMessages[0].role === 'system';
         if (!hasSystemMessage) {
@@ -226,7 +227,7 @@ export class ExportService {
     });
 
     return Promise.all(
-      workspacesResult.items.map(async (ws: any) => {
+      workspacesResult.items.map(async (ws: { id: string }) => {
         // Get sessions
         const sessions = this.deps.sessionRepo
           ? (await this.deps.sessionRepo.getByWorkspaceId(ws.id, { pageSize: 10000 })).items

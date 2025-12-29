@@ -175,8 +175,8 @@ export class ChatTraceService {
   async traceToolCall(
     conversationId: string,
     toolName: string,
-    args: Record<string, any>,
-    result?: any
+    args: Record<string, unknown>,
+    result?: unknown
   ): Promise<void> {
     const context = this.conversationSessions.get(conversationId);
     if (!context) {
@@ -255,7 +255,7 @@ export class ChatTraceService {
     traceData: {
       type: string;
       content: string;
-      metadata?: Record<string, any>;
+      metadata?: Record<string, unknown>;
     }
   ): Promise<void> {
     try {

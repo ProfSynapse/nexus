@@ -209,7 +209,7 @@ export function generateHintsForErrors(errors: ValidationError[], schema: any): 
                 
             case 'ENUM_ERROR':
                 if (paramSchema.enum && Array.isArray(paramSchema.enum)) {
-                    hint = `Must be one of: ${paramSchema.enum.map((v: any) => JSON.stringify(v)).join(', ')}`;
+                    hint = `Must be one of: ${paramSchema.enum.map((v: unknown) => JSON.stringify(v)).join(', ')}`;
                 }
                 break;
                 
@@ -259,7 +259,7 @@ function getTypeFromSchema(schema: any): string {
     if (!schema) return 'any';
     
     if (schema.enum && Array.isArray(schema.enum)) {
-        return `enum (${schema.enum.map((v: any) => JSON.stringify(v)).join(', ')})`;
+        return `enum (${schema.enum.map((v: unknown) => JSON.stringify(v)).join(', ')})`;
     }
     
     if (schema.type) {

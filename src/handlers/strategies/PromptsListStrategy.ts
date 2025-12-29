@@ -1,6 +1,6 @@
 import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import { IRequestStrategy } from './IRequestStrategy';
-import { IRequestHandlerDependencies } from '../interfaces/IRequestHandlerServices';
+import { IRequestHandlerDependencies, PromptDefinition } from '../interfaces/IRequestHandlerServices';
 import { logger } from '../../utils/logger';
 
 interface PromptsListRequest {
@@ -11,11 +11,7 @@ interface PromptsListRequest {
 }
 
 interface PromptsListResponse {
-    prompts: Array<{
-        name: string;
-        description?: string;
-        arguments?: any[];
-    }>;
+    prompts: PromptDefinition[];
 }
 
 /**

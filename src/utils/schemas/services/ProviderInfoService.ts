@@ -66,7 +66,7 @@ export class ProviderInfoService {
       enabledProviders.forEach(providerId => {
         try {
           const providerModels = staticModelsService.getModelsForProvider(providerId);
-          models.push(...providerModels.map((m: any) => m.id));
+          models.push(...providerModels.map((m) => m.id));
         } catch (error) {
         }
       });

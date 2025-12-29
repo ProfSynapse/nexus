@@ -76,5 +76,5 @@ export interface IConversationRepository {
   /**
    * Count conversations matching filter
    */
-  count(filter?: Record<string, any>): Promise<number>;
+  count(filter?: Record<string, unknown>): Promise<number>;
 }

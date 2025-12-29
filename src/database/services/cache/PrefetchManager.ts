@@ -76,10 +76,11 @@ export class PrefetchManager extends Events {
             const relatedFiles = new Set<string>();
 
             for (const trace of tracesResult.items) {
+                const metadata = trace.metadata as { input?: { files?: string[] }; legacy?: { relatedFiles?: string[] } } | undefined;
                 const files =
-                  (trace.metadata?.input?.files && Array.isArray(trace.metadata.input.files)
-                    ? trace.metadata.input.files
-                    : trace.metadata?.legacy?.relatedFiles) || [];
+                  (metadata?.input?.files && Array.isArray(metadata.input.files)
+                    ? metadata.input.files
+                    : metadata?.legacy?.relatedFiles) || [];
                 files.forEach((f: string) => relatedFiles.add(f));
             }
 

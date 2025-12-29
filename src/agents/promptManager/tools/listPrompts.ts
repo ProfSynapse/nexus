@@ -1,3 +1,4 @@
+import { JSONSchema } from '../../../types/schema/JSONSchemaTypes';
 import { BaseTool } from '../../baseTool';
 import { ListPromptsParams, ListPromptsResult } from '../types';
 import { CustomPromptStorageService } from '../services/CustomPromptStorageService';
@@ -81,7 +82,7 @@ export class ListPromptsTool extends BaseTool<ListPromptsParams, ListPromptsResu
    * Get the JSON schema for the tool's parameters
    * @returns JSON schema object
    */
-  getParameterSchema(): any {
+  getParameterSchema(): JSONSchema {
     const toolSchema = {
       type: 'object',
       properties: {
@@ -106,7 +107,7 @@ export class ListPromptsTool extends BaseTool<ListPromptsParams, ListPromptsResu
    * Get the JSON schema for the tool's result
    * @returns JSON schema object
    */
-  getResultSchema(): any {
+  getResultSchema(): JSONSchema {
     const commonSchema = getCommonResultSchema();
 
     // Override the data property to define the specific structure for this tool

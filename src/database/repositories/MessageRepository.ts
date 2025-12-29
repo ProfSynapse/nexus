@@ -84,8 +84,8 @@ export class MessageRepository
     this.invalidateCache();
   }
 
-  async count(criteria?: Record<string, any>): Promise<number> {
-    if (criteria?.conversationId) {
+  async count(criteria?: Record<string, unknown>): Promise<number> {
+    if (criteria?.conversationId && typeof criteria.conversationId === 'string') {
       return this.countMessages(criteria.conversationId);
     }
     const result = await this.sqliteCache.queryOne<{ count: number }>(
@@ -125,7 +125,7 @@ export class MessageRepository
     );
 
     return {
-      items: rows.map((r: any) => this.rowToMessage(r)),
+      items: rows.map((r) => this.rowToMessage(r)),
       page,
       pageSize,
       totalItems,

@@ -1,13 +1,13 @@
 /**
  * Location: src/handlers/services/BaseSchemaProvider.ts
- * 
+ *
  * Base abstract class for schema enhancement providers. Implements common
  * functionality for schema enhancement and provides DRY foundation for
  * specific enhancement providers.
  * Extends this class to create specific enhancement providers.
  */
 
-import { ISchemaProvider } from '../interfaces/ISchemaProvider';
+import { ISchemaProvider, EnhancedJSONSchema } from '../interfaces/ISchemaProvider';
 import { logger } from '../../utils/logger';
 import { getErrorMessage } from '../../utils/errorUtils';
 
@@ -26,7 +26,7 @@ export abstract class BaseSchemaProvider implements ISchemaProvider {
      * Default implementation - checks tool name patterns.
      * Override for more sophisticated logic.
      */
-    async canEnhance(toolName: string, baseSchema: any): Promise<boolean> {
+    async canEnhance(toolName: string, baseSchema: EnhancedJSONSchema): Promise<boolean> {
         try {
             return this.shouldEnhanceToolName(toolName) && this.hasValidSchema(baseSchema);
         } catch (error) {
@@ -35,7 +35,7 @@ export abstract class BaseSchemaProvider implements ISchemaProvider {
         }
     }
 
-    abstract enhanceSchema(toolName: string, baseSchema: any): Promise<any>;
+    abstract enhanceSchema(toolName: string, baseSchema: EnhancedJSONSchema): Promise<EnhancedJSONSchema>;
 
     /**
      * Common utility: Check if tool name should be enhanced by this provider
@@ -49,16 +49,16 @@ export abstract class BaseSchemaProvider implements ISchemaProvider {
     /**
      * Common utility: Validate that base schema is valid for enhancement
      */
-    protected hasValidSchema(baseSchema: any): boolean {
-        return baseSchema && typeof baseSchema === 'object' && baseSchema.properties;
+    protected hasValidSchema(baseSchema: EnhancedJSONSchema): boolean {
+        return baseSchema && typeof baseSchema === 'object' && baseSchema.properties !== undefined;
     }
 
     /**
      * Common utility: Deep clone schema to avoid mutations
      */
-    protected cloneSchema(schema: any): any {
+    protected cloneSchema(schema: EnhancedJSONSchema): EnhancedJSONSchema {
         try {
-            return JSON.parse(JSON.stringify(schema));
+            return JSON.parse(JSON.stringify(schema)) as EnhancedJSONSchema;
         } catch (error) {
             logger.systemError(error as Error, `${this.name} - Error cloning schema`);
             return { ...schema }; // Shallow clone fallback
@@ -68,41 +68,41 @@ export abstract class BaseSchemaProvider implements ISchemaProvider {
     /**
      * Common utility: Merge enhanced properties into base schema
      */
-    protected mergeProperties(baseSchema: any, enhancedProperties: any): any {
+    protected mergeProperties(baseSchema: EnhancedJSONSchema, enhancedProperties: EnhancedJSONSchema['properties']): EnhancedJSONSchema {
         const enhanced = this.cloneSchema(baseSchema);
-        
+
         if (enhancedProperties) {
             enhanced.properties = {
                 ...enhanced.properties,
                 ...enhancedProperties
             };
         }
-        
+
         return enhanced;
     }
 
     /**
      * Common utility: Add conditional validation rules to schema
      */
-    protected addConditionalValidation(schema: any, condition: any, validation: any): any {
+    protected addConditionalValidation(schema: EnhancedJSONSchema, condition: Record<string, unknown>, validation: Record<string, unknown>): EnhancedJSONSchema {
         const enhanced = this.cloneSchema(schema);
-        
+
         if (!enhanced.allOf) {
             enhanced.allOf = [];
         }
-        
+
         enhanced.allOf.push({
             if: condition,
             then: validation
         });
-        
+
         return enhanced;
     }
 
     /**
      * Common utility: Add required fields conditionally
      */
-    protected addConditionalRequired(schema: any, condition: any, requiredFields: string[]): any {
+    protected addConditionalRequired(schema: EnhancedJSONSchema, condition: Record<string, unknown>, requiredFields: string[]): EnhancedJSONSchema {
         return this.addConditionalValidation(schema, condition, {
             required: requiredFields
         });
@@ -111,8 +111,12 @@ export abstract class BaseSchemaProvider implements ISchemaProvider {
     /**
      * Common utility: Log enhancement activity for debugging
      */
-    protected logEnhancement(toolName: string, action: string, details?: any): void {
-        logger.systemLog(`[${this.name}] Enhanced ${toolName}: ${action}`, details);
+    protected logEnhancement(toolName: string, action: string, details?: Record<string, unknown>): void {
+        if (details) {
+            logger.systemLog(`[${this.name}] Enhanced ${toolName}: ${action}`, JSON.stringify(details));
+        } else {
+            logger.systemLog(`[${this.name}] Enhanced ${toolName}: ${action}`);
+        }
     }
 
     /**

@@ -9,8 +9,8 @@
  * Follows Single Responsibility Principle - only handles Anthropic format.
  */
 
-import { IContextBuilder } from './IContextBuilder';
-import { ConversationData } from '../../../types/chat/ChatTypes';
+import { IContextBuilder, LLMMessage, LLMToolCall, ToolExecutionResult, AnthropicMessage, LLMContentBlock } from './IContextBuilder';
+import { ConversationData, ChatMessage, ToolCall } from '../../../types/chat/ChatTypes';
 
 export class AnthropicContextBuilder implements IContextBuilder {
   readonly provider = 'anthropic';
@@ -18,7 +18,7 @@ export class AnthropicContextBuilder implements IContextBuilder {
   /**
    * Validate if a message should be included in LLM context
    */
-  private isValidForContext(msg: any, isLastMessage: boolean): boolean {
+  private isValidForContext(msg: ChatMessage, isLastMessage: boolean): boolean {
     if (msg.state === 'invalid' || msg.state === 'streaming') return false;
     if (msg.role === 'user' && (!msg.content || !msg.content.trim())) return false;
 
@@ -28,8 +28,8 @@ export class AnthropicContextBuilder implements IContextBuilder {
 
       if (!hasContent && !hasToolCalls && !isLastMessage) return false;
 
-      if (hasToolCalls) {
-        const allHaveResults = msg.toolCalls.every((tc: any) =>
+      if (hasToolCalls && msg.toolCalls) {
+        const allHaveResults = msg.toolCalls.every((tc: ToolCall) =>
           tc.result !== undefined || tc.error !== undefined
         );
         if (!allHaveResults) return false;
@@ -42,8 +42,8 @@ export class AnthropicContextBuilder implements IContextBuilder {
   /**
    * Build context from stored conversation
    */
-  buildContext(conversation: ConversationData, systemPrompt?: string): any[] {
-    const messages: any[] = [];
+  buildContext(conversation: ConversationData, systemPrompt?: string): LLMMessage[] {
+    const messages: AnthropicMessage[] = [];
 
     if (systemPrompt) {
       messages.push({ role: 'system', content: systemPrompt });
@@ -63,27 +63,27 @@ export class AnthropicContextBuilder implements IContextBuilder {
       } else if (msg.role === 'assistant') {
         if (msg.toolCalls && msg.toolCalls.length > 0) {
           // Assistant message contains both text AND tool_use blocks
-          const content: any[] = [];
+          const content: LLMContentBlock[] = [];
 
           if (msg.content && msg.content.trim()) {
             content.push({ type: 'text', text: msg.content });
           }
 
           // Add tool_use blocks
-          msg.toolCalls.forEach((toolCall: any) => {
+          msg.toolCalls.forEach((toolCall: ToolCall) => {
             content.push({
               type: 'tool_use',
               id: toolCall.id,
               name: toolCall.name,
-              input: toolCall.parameters || {}
+              input: (toolCall.parameters || {}) as Record<string, unknown>
             });
           });
 
           messages.push({ role: 'assistant', content });
 
           // Add tool results as user message with tool_result blocks
-          const toolResultContent: any[] = msg.toolCalls.map((toolCall: any) => ({
-            type: 'tool_result',
+          const toolResultContent: LLMContentBlock[] = msg.toolCalls.map((toolCall: ToolCall) => ({
+            type: 'tool_result' as const,
             tool_use_id: toolCall.id,
             content: toolCall.success
               ? JSON.stringify(toolCall.result || {})
@@ -101,8 +101,8 @@ export class AnthropicContextBuilder implements IContextBuilder {
       } else if (msg.role === 'tool') {
         // Handle stored tool messages - convert to tool_result blocks
         if (msg.toolCalls && msg.toolCalls.length > 0) {
-          const toolResultContent: any[] = msg.toolCalls.map((toolCall: any) => ({
-            type: 'tool_result',
+          const toolResultContent: LLMContentBlock[] = msg.toolCalls.map((toolCall: ToolCall) => ({
+            type: 'tool_result' as const,
             tool_use_id: toolCall.id,
             content: toolCall.success
               ? JSON.stringify(toolCall.result || {})
@@ -124,15 +124,15 @@ export class AnthropicContextBuilder implements IContextBuilder {
    */
   buildToolContinuation(
     userPrompt: string,
-    toolCalls: any[],
-    toolResults: any[],
-    previousMessages?: any[],
+    toolCalls: LLMToolCall[],
+    toolResults: ToolExecutionResult[],
+    previousMessages?: LLMMessage[],
     _systemPrompt?: string
-  ): any[] {
-    const messages: any[] = [];
+  ): LLMMessage[] {
+    const messages: AnthropicMessage[] = [];
 
     if (previousMessages && previousMessages.length > 0) {
-      messages.push(...previousMessages);
+      messages.push(...(previousMessages as AnthropicMessage[]));
     }
 
     if (userPrompt) {
@@ -140,18 +140,18 @@ export class AnthropicContextBuilder implements IContextBuilder {
     }
 
     // Add assistant message with tool_use blocks
-    const toolUseBlocks = toolCalls.map(tc => ({
-      type: 'tool_use',
+    const toolUseBlocks: LLMContentBlock[] = toolCalls.map(tc => ({
+      type: 'tool_use' as const,
       id: tc.id,
-      name: tc.function?.name || tc.name,
-      input: JSON.parse(tc.function?.arguments || '{}')
+      name: tc.function?.name || '',
+      input: JSON.parse(tc.function?.arguments || '{}') as Record<string, unknown>
     }));
 
     messages.push({ role: 'assistant', content: toolUseBlocks });
 
     // Add user message with tool_result blocks
-    const toolResultBlocks = toolResults.map(result => ({
-      type: 'tool_result',
+    const toolResultBlocks: LLMContentBlock[] = toolResults.map(result => ({
+      type: 'tool_result' as const,
       tool_use_id: result.id,
       content: result.success
         ? JSON.stringify(result.result || {})
@@ -167,25 +167,25 @@ export class AnthropicContextBuilder implements IContextBuilder {
    * Append tool execution to existing history (no user message added)
    */
   appendToolExecution(
-    toolCalls: any[],
-    toolResults: any[],
-    previousMessages: any[]
-  ): any[] {
-    const messages = [...previousMessages];
+    toolCalls: LLMToolCall[],
+    toolResults: ToolExecutionResult[],
+    previousMessages: LLMMessage[]
+  ): LLMMessage[] {
+    const messages: AnthropicMessage[] = [...(previousMessages as AnthropicMessage[])];
 
     // Add assistant message with tool_use blocks
-    const toolUseBlocks = toolCalls.map(tc => ({
-      type: 'tool_use',
+    const toolUseBlocks: LLMContentBlock[] = toolCalls.map(tc => ({
+      type: 'tool_use' as const,
       id: tc.id,
-      name: tc.function?.name || tc.name,
-      input: JSON.parse(tc.function?.arguments || '{}')
+      name: tc.function?.name || '',
+      input: JSON.parse(tc.function?.arguments || '{}') as Record<string, unknown>
     }));
 
     messages.push({ role: 'assistant', content: toolUseBlocks });
 
     // Add user message with tool_result blocks
-    const toolResultBlocks = toolResults.map(result => ({
-      type: 'tool_result',
+    const toolResultBlocks: LLMContentBlock[] = toolResults.map(result => ({
+      type: 'tool_result' as const,
       tool_use_id: result.id,
       content: result.success
         ? JSON.stringify(result.result || {})

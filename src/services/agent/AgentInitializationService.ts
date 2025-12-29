@@ -14,7 +14,6 @@ import { AgentManager } from '../AgentManager';
 import { ServiceManager } from '../../core/ServiceManager';
 import {
   ContentManagerAgent,
-  CommandManagerAgent,
   StorageManagerAgent,
   SearchManagerAgent,
   MemoryManagerAgent,
@@ -68,15 +67,6 @@ export class AgentInitializationService {
 
     this.agentManager.registerAgent(contentManagerAgent);
     logger.systemLog('ContentManager agent initialized successfully');
-  }
-
-  /**
-   * Initialize CommandManager agent
-   */
-  async initializeCommandManager(): Promise<void> {
-    const commandManagerAgent = new CommandManagerAgent(this.app);
-    this.agentManager.registerAgent(commandManagerAgent);
-    logger.systemLog('CommandManager agent initialized successfully');
   }
 
   /**

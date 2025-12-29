@@ -18,7 +18,8 @@ import {
   ProviderCapabilities,
   TokenUsage,
   CostDetails,
-  ModelPricing
+  ModelPricing,
+  SearchResult
 } from './types';
 import { BaseCache, CacheManager } from '../utils/CacheManager';
 import { LLMCostCalculator } from '../utils/LLMCostCalculator';
@@ -446,7 +447,7 @@ export abstract class BaseAdapter {
     content: string,
     model: string,
     usage?: TokenUsage,
-    metadata?: Record<string, any>,
+    metadata?: Record<string, unknown>,
     finishReason?: 'stop' | 'length' | 'tool_calls' | 'content_filter',
     toolCalls?: any[]
   ): Promise<LLMResponse> {
@@ -461,8 +462,8 @@ export abstract class BaseAdapter {
     };
 
     // Extract webSearchResults from metadata if present
-    if (metadata?.webSearchResults) {
-      response.webSearchResults = metadata.webSearchResults;
+    if (metadata?.webSearchResults && Array.isArray(metadata.webSearchResults)) {
+      response.webSearchResults = metadata.webSearchResults as SearchResult[];
     }
 
     // Calculate cost if usage is available

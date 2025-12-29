@@ -1,8 +1,10 @@
+import { JSONSchema } from '../../types/schema/JSONSchemaTypes';
+
 /**
  * Interface for tools in the MCP plugin
  * Each tool provides a specific functionality within an agent's domain
  */
-export interface ITool<T = any, R = any> {
+export interface ITool<T = unknown, R = unknown> {
   /**
    * Slug of the tool (used for identification)
    */
@@ -34,11 +36,11 @@ export interface ITool<T = any, R = any> {
    * Get the JSON schema for the tool's parameters
    * @returns JSON schema object
    */
-  getParameterSchema(): any;
+  getParameterSchema(): JSONSchema;
 
   /**
    * Get the JSON schema for the tool's result
    * @returns JSON schema object
    */
-  getResultSchema(): any;
+  getResultSchema(): JSONSchema;
 }

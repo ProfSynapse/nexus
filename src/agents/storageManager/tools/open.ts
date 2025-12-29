@@ -1,3 +1,4 @@
+import { JSONSchema } from '../../../types/schema/JSONSchemaTypes';
 import { App, TFile, WorkspaceLeaf } from 'obsidian';
 import { BaseTool } from '../../baseTool';
 import { OpenParams, OpenResult } from '../types';
@@ -97,7 +98,7 @@ export class OpenTool extends BaseTool<OpenParams, OpenResult> {
   /**
    * Get the parameter schema
    */
-  getParameterSchema(): any {
+  getParameterSchema(): JSONSchema {
     const toolSchema = {
       type: 'object',
       properties: {
@@ -126,8 +127,8 @@ export class OpenTool extends BaseTool<OpenParams, OpenResult> {
   /**
    * Get the result schema
    */
-  getResultSchema(): any {
-    const baseSchema = super.getResultSchema();
+  getResultSchema(): JSONSchema {
+    const baseSchema = super.getResultSchema() as { properties: Record<string, unknown> };
 
     // Extend the base schema to include our specific data
     baseSchema.properties.data = {

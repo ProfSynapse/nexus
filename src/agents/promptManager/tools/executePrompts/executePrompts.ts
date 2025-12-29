@@ -1,3 +1,4 @@
+import { JSONSchema } from '../../../../types/schema/JSONSchemaTypes';
 import { Plugin } from 'obsidian';
 import { BaseTool } from '../../../baseTool';
 import { getErrorMessage } from '../../../../utils/errorUtils';
@@ -328,7 +329,7 @@ export class ExecutePromptsTool extends BaseTool<BatchExecutePromptParams, Batch
   /**
    * Get parameter schema for MCP tool definition
    */
-  getParameterSchema(): any {
+  getParameterSchema(): JSONSchema {
     // Get default from data.json settings
     const defaultModel = this.providerManager?.getSettings()?.defaultModel;
     

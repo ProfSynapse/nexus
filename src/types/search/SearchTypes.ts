@@ -14,7 +14,7 @@ export interface MemoryQueryParams {
   filters?: {            
     tags?: string[];     
     paths?: string[];    
-    properties?: Record<string, any>;
+    properties?: Record<string, unknown>;
     dateRange?: {        
       start?: string;
       end?: string;
@@ -36,7 +36,7 @@ export interface MemoryQueryResult {
     lineStart: number;
     lineEnd: number;
     metadata: {
-      frontmatter: Record<string, any>;
+      frontmatter: Record<string, unknown>;
       tags: string[];
       links: {
         outgoing: Array<{

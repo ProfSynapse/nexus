@@ -1,3 +1,4 @@
+import { JSONSchema } from '../../../../types/schema/JSONSchemaTypes';
 /**
  * Location: /src/agents/memoryManager/modes/states/LoadStateMode.ts
  * Purpose: Consolidated state loading mode combining all load functionality from original state files
@@ -314,7 +315,7 @@ export class LoadStateTool extends BaseTool<LoadStateParams, StateResult> {
     /**
      * Schema methods using consolidated logic
      */
-    getParameterSchema(): any {
+    getParameterSchema(): JSONSchema {
         const toolSchema = {
             type: 'object',
             properties: {
@@ -330,7 +331,7 @@ export class LoadStateTool extends BaseTool<LoadStateParams, StateResult> {
         return this.getMergedSchema(toolSchema);
     }
 
-    getResultSchema(): any {
+    getResultSchema(): JSONSchema {
         return this.schemaBuilder.buildResultSchema(SchemaType.State, {
             mode: 'loadState'
         });

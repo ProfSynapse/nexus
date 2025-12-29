@@ -318,7 +318,11 @@ export class ConversationService {
     if (this.storageAdapter) {
       // Merge existing metadata so we don't lose chat settings when only cost is updated
       const existing = await this.storageAdapter.getConversation(id);
-      const existingMetadata = existing?.metadata || {};
+      // Type assertion for metadata structure
+      type ChatSettingsType = NonNullable<IndividualConversation['metadata']>['chatSettings'];
+      const existingMetadata = (existing?.metadata ?? {}) as IndividualConversation['metadata'];
+      const existingChatSettings = (existingMetadata?.chatSettings ?? {}) as ChatSettingsType;
+      const updatesChatSettings = (updates.metadata?.chatSettings ?? {}) as ChatSettingsType;
 
       // IMPORTANT: Preserve ALL existing metadata fields (parentConversationId, parentMessageId, branchType, etc.)
       // Then apply updates on top, with special handling for nested chatSettings
@@ -326,12 +330,12 @@ export class ConversationService {
         ...existingMetadata,
         ...updates.metadata,
         chatSettings: {
-          ...(existingMetadata.chatSettings || {}),
-          ...(updates.metadata?.chatSettings || {}),
-          workspaceId: updates.metadata?.chatSettings?.workspaceId ?? existingMetadata.chatSettings?.workspaceId,
-          sessionId: updates.metadata?.chatSettings?.sessionId ?? existingMetadata.chatSettings?.sessionId
+          ...existingChatSettings,
+          ...updatesChatSettings,
+          workspaceId: updatesChatSettings?.workspaceId ?? existingChatSettings?.workspaceId,
+          sessionId: updatesChatSettings?.sessionId ?? existingChatSettings?.sessionId
         },
-        cost: updates.cost || updates.metadata?.cost || existingMetadata.cost
+        cost: updates.cost || updates.metadata?.cost || existingMetadata?.cost
       };
 
       // If messages are provided, persist message-level updates through the adapter
@@ -835,8 +839,12 @@ export class ConversationService {
     metadata: ConversationMetadata,
     messages: MessageData[]
   ): IndividualConversation {
-    const meta = metadata.metadata || {};
-    const resolvedCost = meta.cost || (meta.totalCost !== undefined ? { totalCost: meta.totalCost, currency: meta.currency || 'USD' } : undefined);
+    // Type assertion for metadata - structure matches IndividualConversation.metadata
+    const meta = (metadata.metadata || {}) as IndividualConversation['metadata'] & Record<string, unknown>;
+    const metaCost = meta?.cost;
+    const metaTotalCost = meta?.totalCost;
+    const metaCurrency = meta?.currency;
+    const resolvedCost = metaCost || (metaTotalCost !== undefined ? { totalCost: metaTotalCost, currency: metaCurrency || 'USD' } : undefined);
     return {
       id: metadata.id,
       title: metadata.title,
@@ -980,7 +988,7 @@ export class ConversationService {
     branchType: 'subagent' | 'alternative',
     title: string,
     task?: string,
-    subagentMetadata?: Record<string, any>
+    subagentMetadata?: Record<string, unknown>
   ): Promise<IndividualConversation> {
     const branchId = `branch_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 

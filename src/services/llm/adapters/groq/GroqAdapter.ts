@@ -174,7 +174,7 @@ export class GroqAdapter extends BaseAdapter {
       top_p?: number;
       stop?: string[];
       response_format?: { type: 'json_object' };
-      tools?: Array<{ type: 'function'; function: { name: string; description: string; parameters: Record<string, any> } }>;
+      tools?: Array<{ type: 'function'; function: { name: string; description: string; parameters: Record<string, unknown> } }>;
     }
 
     const chatParams: ChatCompletionParams = {
@@ -220,7 +220,7 @@ export class GroqAdapter extends BaseAdapter {
   }
 
   // Private methods
-  private convertTools(tools: Tool[]): Array<{ type: 'function'; function: { name: string; description: string; parameters: Record<string, any> } }> {
+  private convertTools(tools: Tool[]): Array<{ type: 'function'; function: { name: string; description: string; parameters: Record<string, unknown> } }> {
     return tools.map(tool => {
       if (tool.type === 'function' && tool.function) {
         return {

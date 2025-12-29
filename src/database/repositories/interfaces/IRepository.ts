@@ -70,5 +70,5 @@ export interface IRepository<T> {
    * @param criteria - Optional filter criteria
    * @returns Number of entities matching criteria
    */
-  count(criteria?: Record<string, any>): Promise<number>;
+  count(criteria?: Record<string, unknown>): Promise<number>;
 }

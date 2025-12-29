@@ -38,6 +38,8 @@ export interface SubagentBranchMetadata {
   error?: string;
   // Tool schemas that were pre-fetched for this subagent
   prefetchedTools?: Record<string, string[]>;
+  /** Index signature for Record<string, unknown> compatibility */
+  [key: string]: unknown;
 }
 
 /**

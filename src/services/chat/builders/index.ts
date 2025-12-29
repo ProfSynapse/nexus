@@ -4,8 +4,18 @@
  * This module exports all context builder related types and utilities.
  */
 
-// Interface
-export type { IContextBuilder, MessageValidationContext } from './IContextBuilder';
+// Interface and types
+export type {
+  IContextBuilder,
+  MessageValidationContext,
+  LLMMessage,
+  LLMToolCall,
+  ToolExecutionResult,
+  LLMContentBlock,
+  OpenAIMessage,
+  AnthropicMessage,
+  GoogleMessage
+} from './IContextBuilder';
 
 // Concrete builders
 export { OpenAIContextBuilder } from './OpenAIContextBuilder';

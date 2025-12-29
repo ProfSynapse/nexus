@@ -15,7 +15,7 @@
  */
 export interface JSONSchema {
   type?: string;
-  properties?: Record<string, any>;
+  properties?: Record<string, unknown>;
   required?: string[];
   description?: string;
   minLength?: number;
@@ -51,8 +51,8 @@ export interface SchemaBlockOptions {
   description: string;
   required?: boolean;
   examples?: string[];
-  constraints?: Record<string, any>;
-  metadata?: Record<string, any>;
+  constraints?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
 }
 
 /**

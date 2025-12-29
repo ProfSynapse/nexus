@@ -1,15 +1,47 @@
 import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import { IRequestStrategy } from './IRequestStrategy';
-import { IRequestHandlerDependencies, IRequestContext } from '../interfaces/IRequestHandlerServices';
+import { IRequestHandlerDependencies, IRequestContext, SessionInfo, ToolExecutionResult } from '../interfaces/IRequestHandlerServices';
 import { IAgent } from '../../agents/interfaces/IAgent';
 import { SessionContextManager } from '../../services/SessionContextManager';
 import { logger } from '../../utils/logger';
 import { getErrorMessage } from '../../utils/errorUtils';
 
+/** Callback type for tool response handling */
+type ToolResponseCallback = (
+    toolName: string,
+    params: Record<string, unknown>,
+    response: ToolExecutionResult,
+    success: boolean,
+    executionTime: number
+) => Promise<void>;
+
+/** Context structure within tool parameters */
+interface ToolContext {
+    sessionId?: string;
+    workspaceId?: string;
+    goal?: string;
+    sessionDescription?: string;
+    [key: string]: unknown;
+}
+
+/** Workspace context structure */
+interface WorkspaceContext {
+    workspaceId: string;
+    workspacePath?: string[];
+    contextDepth?: string;
+}
+
+/** Enhanced tool params with known properties */
+interface EnhancedToolParams extends Record<string, unknown> {
+    context?: ToolContext;
+    sessionId?: string;
+    workspaceContext?: WorkspaceContext;
+}
+
 interface ToolExecutionRequest {
     params: {
         name: string;
-        arguments: any;
+        arguments: Record<string, unknown>;
     };
 }
 
@@ -23,12 +55,12 @@ interface ToolExecutionResponse {
 export class ToolExecutionStrategy implements IRequestStrategy<ToolExecutionRequest, ToolExecutionResponse> {
     private readonly instanceId = `TES_V2_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     private readonly buildVersion = 'BUILD_20250803_1755'; // Force new instances
-    
+
     constructor(
         private dependencies: IRequestHandlerDependencies,
         private getAgent: (name: string) => IAgent,
         private sessionContextManager?: SessionContextManager,
-        private onToolResponse?: (toolName: string, params: any, response: any, success: boolean, executionTime: number) => Promise<void>
+        private onToolResponse?: ToolResponseCallback
     ) {
         // ToolExecutionStrategy initialized with callback support
     }
@@ -41,9 +73,9 @@ export class ToolExecutionStrategy implements IRequestStrategy<ToolExecutionRequ
 
     async handle(request: ToolExecutionRequest): Promise<ToolExecutionResponse> {
         const startTime = Date.now();
-        let context: any;
+        let context: (IRequestContext & { sessionInfo: SessionInfo }) | undefined;
         let success = false;
-        let result: any;
+        let result: ToolExecutionResult;
         
         try {
             context = await this.buildRequestContext(request);
@@ -77,10 +109,11 @@ export class ToolExecutionStrategy implements IRequestStrategy<ToolExecutionRequ
             if (this.onToolResponse && context) {
                 try {
                     const executionTime = Date.now() - startTime;
+                    const errorResult: ToolExecutionResult = { success: false, error: (error as Error).message };
                     await this.onToolResponse(
                         request.params.name,
                         context.params,
-                        { error: (error as Error).message },
+                        errorResult,
                         false,
                         executionTime
                     );
@@ -94,21 +127,21 @@ export class ToolExecutionStrategy implements IRequestStrategy<ToolExecutionRequ
             // Build detailed error result object
             const errorMsg = (error as Error).message || 'Unknown error';
             let enhancedMessage = errorMsg;
-            let parameterSchema: any = null;
-            
+            let parameterSchema: { required?: string[] } | null = null;
+
             // Add helpful hints for common parameter errors
-            if (errorMsg.toLowerCase().includes('parameter') || 
+            if (errorMsg.toLowerCase().includes('parameter') ||
                 errorMsg.toLowerCase().includes('required') ||
                 errorMsg.toLowerCase().includes('missing')) {
                 enhancedMessage += '\n\n💡 Parameter Help: Check the tool schema for required parameters and their correct format.';
-                
+
                 // Try to get parameter schema for additional context
                 if (context && context.agentName && context.tool) {
                     try {
                         const agent = this.getAgent(context.agentName);
                         const toolInstance = agent.getTool(context.tool);
                         if (toolInstance && typeof toolInstance.getParameterSchema === 'function') {
-                            parameterSchema = toolInstance.getParameterSchema();
+                            parameterSchema = toolInstance.getParameterSchema() as { required?: string[] };
                             if (parameterSchema && parameterSchema.required) {
                                 enhancedMessage += `\n\n📋 Required Parameters: ${parameterSchema.required.join(', ')}`;
                             }
@@ -141,7 +174,7 @@ export class ToolExecutionStrategy implements IRequestStrategy<ToolExecutionRequ
         }
     }
 
-    private async buildRequestContext(request: ToolExecutionRequest): Promise<IRequestContext & { sessionInfo: any }> {
+    private async buildRequestContext(request: ToolExecutionRequest): Promise<IRequestContext & { sessionInfo: SessionInfo }> {
         const { name: fullToolName, arguments: parsedArgs } = request.params;
 
         if (!parsedArgs) {
@@ -184,8 +217,8 @@ export class ToolExecutionStrategy implements IRequestStrategy<ToolExecutionRequ
 
         // Use SessionContextManager for unified session handling instead of separate SessionService
         const sessionId = params.context?.sessionId || params.sessionId;
-        
-        let sessionInfo: any;
+
+        let sessionInfo: SessionInfo;
         if (this.sessionContextManager && sessionId) {
             try {
                 const validationResult = await this.sessionContextManager.validateSessionId(sessionId);
@@ -241,7 +274,7 @@ export class ToolExecutionStrategy implements IRequestStrategy<ToolExecutionRequ
         };
     }
 
-    private async processParameters(context: IRequestContext): Promise<any> {
+    private async processParameters(context: IRequestContext): Promise<EnhancedToolParams> {
         const agent = this.getAgent(context.agentName);
         const toolInstance = agent.getTool(context.tool);
 
@@ -254,11 +287,12 @@ export class ToolExecutionStrategy implements IRequestStrategy<ToolExecutionRequ
             logger.systemWarn(`Failed to get parameter schema for tool ${context.tool}: ${getErrorMessage(error)}`);
         }
 
-        const enhancedParams = await this.dependencies.validationService.validateToolParams(
-            context.params, 
+        const validatedParams = await this.dependencies.validationService.validateToolParams(
+            context.params,
             paramSchema,
             context.fullToolName
         );
+        const enhancedParams = validatedParams as EnhancedToolParams;
 
         // Session validation is now handled in buildRequestContext() to avoid duplication
         // Session description updates: support both new format (goal) and legacy (sessionDescription)
@@ -311,7 +345,7 @@ export class ToolExecutionStrategy implements IRequestStrategy<ToolExecutionRequ
         return processedParams;
     }
 
-    private async executeTool(context: IRequestContext, processedParams: any): Promise<any> {
+    private async executeTool(context: IRequestContext, processedParams: EnhancedToolParams): Promise<ToolExecutionResult> {
         const agent = this.getAgent(context.agentName);
         const result = await this.dependencies.toolExecutionService.executeAgent(
             agent,

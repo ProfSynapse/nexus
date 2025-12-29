@@ -1,9 +1,10 @@
 import { NexusError, NexusErrorCode } from '../../utils/errors';
-import { IToolListService, ISchemaEnhancementService } from '../interfaces/IRequestHandlerServices';
+import { IToolListService, ISchemaEnhancementService, ToolDefinition, AgentSchema } from '../interfaces/IRequestHandlerServices';
+import { EnhancedJSONSchema } from '../interfaces/ISchemaProvider';
 import { IAgent } from '../../agents/interfaces/IAgent';
 import { logger } from '../../utils/logger';
 
-interface AgentSchema {
+interface InternalAgentSchema {
     type: string;
     properties: {
         tool: {
@@ -23,13 +24,13 @@ export class ToolListService implements IToolListService {
         agents: Map<string, IAgent>,
         isVaultEnabled: boolean,
         vaultName?: string
-    ): Promise<{ tools: any[] }> {
+    ): Promise<{ tools: ToolDefinition[] }> {
         try {
             if (!isVaultEnabled) {
                 return { tools: [] };
             }
-            
-            const tools: any[] = [];
+
+            const tools: ToolDefinition[] = [];
             
             for (const agent of agents.values()) {
                 const agentSchema = this.buildAgentSchema(agent);
@@ -40,18 +41,18 @@ export class ToolListService implements IToolListService {
                 const toolName = agent.name;
                 
                 // Enhance the schema and description if enhancement service is available
-                let finalSchema = agentSchema;
+                let finalInputSchema = agentSchema.inputSchema as EnhancedJSONSchema;
                 let finalDescription = agent.description;
-                
+
                 if (this.schemaEnhancementService) {
                     try {
                         // Cast to our enhanced interface if available
                         const enhancedService = this.schemaEnhancementService as ISchemaEnhancementService & { enhanceAgentDescription?: (agent: IAgent, vaultName?: string) => Promise<string> };
 
-                        // Enhance schema with agent context
-                        finalSchema = await this.schemaEnhancementService.enhanceToolSchema(
+                        // Enhance schema with agent context - pass the inputSchema
+                        finalInputSchema = await this.schemaEnhancementService.enhanceToolSchema(
                             toolName,
-                            agentSchema
+                            agentSchema.inputSchema as EnhancedJSONSchema
                         );
 
                         // Enhance description if the service supports it
@@ -61,14 +62,14 @@ export class ToolListService implements IToolListService {
                     } catch (error) {
                         logger.systemError(error as Error, `Error enhancing schema for ${toolName}`);
                         // Use original schema and description on enhancement failure
-                        finalSchema = agentSchema;
+                        finalInputSchema = agentSchema.inputSchema as EnhancedJSONSchema;
                         finalDescription = agent.description;
                     }
                 }
-                
+
                 // Clean up the schema - remove empty allOf arrays
                 // Claude API doesn't support allOf/oneOf/anyOf at top level
-                const cleanedSchema = this.cleanSchema(finalSchema);
+                const cleanedSchema = this.cleanSchema(finalInputSchema);
 
                 tools.push({
                     name: toolName,
@@ -85,29 +86,38 @@ export class ToolListService implements IToolListService {
     }
 
     buildAgentSchema(agent: IAgent): AgentSchema {
+        // Returns AgentSchema which has inputSchema that conforms to EnhancedJSONSchema
         return {
-            type: 'object',
-            properties: {
-                tool: {
-                    type: 'string',
-                    enum: [] as string[],
-                    description: 'The tool to execute on this agent'
+            name: agent.name,
+            description: agent.description,
+            inputSchema: {
+                type: 'object',
+                properties: {
+                    tool: {
+                        type: 'string',
+                        enum: [] as unknown[],
+                        description: 'The tool to execute on this agent'
+                    },
+                    sessionId: {
+                        type: 'string',
+                        description: 'Session identifier to track related tool calls'
+                    }
                 },
-                sessionId: {
-                    type: 'string',
-                    description: 'Session identifier to track related tool calls'
-                }
-            },
-            required: ['tool', 'sessionId'],
-            allOf: []
+                required: ['tool', 'sessionId'],
+                allOf: []
+            }
         };
     }
 
     mergeToolSchemasIntoAgent(agent: IAgent, agentSchema: AgentSchema): AgentSchema {
         const agentTools = agent.getTools();
+        const inputSchema = agentSchema.inputSchema as EnhancedJSONSchema & {
+            properties: { tool: { enum: unknown[] }; [key: string]: unknown };
+            allOf: Array<{ if?: Record<string, unknown>; then?: Record<string, unknown> }>;
+        };
 
         for (const tool of agentTools) {
-            agentSchema.properties.tool.enum.push(tool.slug);
+            inputSchema.properties.tool.enum.push(tool.slug);
 
             try {
                 const toolSchema = tool.getParameterSchema();
@@ -128,7 +138,7 @@ export class ToolListService implements IToolListService {
                         );
 
                         if (conditionalRequired.length > 0) {
-                            agentSchema.allOf.push({
+                            inputSchema.allOf.push({
                                 if: {
                                     properties: {
                                         tool: { enum: [tool.slug] }
@@ -145,14 +155,14 @@ export class ToolListService implements IToolListService {
                         const props = toolSchemaCopy.properties as Record<string, unknown>;
                         for (const [propName, propSchema] of Object.entries(props)) {
                             if (propName !== 'tool' && propName !== 'sessionId') {
-                                agentSchema.properties[propName] = propSchema;
+                                inputSchema.properties[propName] = propSchema as EnhancedJSONSchema;
                             }
                         }
                     }
 
                     ['allOf', 'anyOf', 'oneOf', 'not'].forEach(validationType => {
                         if (toolSchemaCopy[validationType]) {
-                            agentSchema.allOf.push({
+                            inputSchema.allOf.push({
                                 if: {
                                     properties: {
                                         tool: { enum: [tool.slug] }
@@ -188,8 +198,9 @@ export class ToolListService implements IToolListService {
      * Clean schema to be compatible with Claude's API
      * Remove allOf/oneOf/anyOf at top level if empty or move conditionals to description
      */
-    private cleanSchema(schema: any): any {
-        const cleaned = { ...schema };
+    private cleanSchema(schema: EnhancedJSONSchema): EnhancedJSONSchema {
+        // Deep clone to avoid mutations
+        const cleaned = JSON.parse(JSON.stringify(schema)) as EnhancedJSONSchema;
 
         // Remove allOf if it's empty
         if (cleaned.allOf && Array.isArray(cleaned.allOf) && cleaned.allOf.length === 0) {

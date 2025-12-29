@@ -223,10 +223,10 @@ export class OllamaProviderModal implements IProviderModal {
       // Check if model is available
       const serverData = serverResponse.json;
       const availableModels = serverData.models || [];
-      const modelExists = availableModels.some((model: any) => model.name === modelName);
+      const modelExists = availableModels.some((model: { name: string }) => model.name === modelName);
 
       if (!modelExists) {
-        const modelList = availableModels.map((m: any) => m.name).join(', ') || 'none';
+        const modelList = availableModels.map((m: { name: string }) => m.name).join(', ') || 'none';
         new Notice(`Model '${modelName}' not found. Available: ${modelList}`);
         return;
       }

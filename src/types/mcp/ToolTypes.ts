@@ -11,7 +11,7 @@
 export interface MCPToolCallRequest {
     params: {
         name: string;
-        arguments: Record<string, any>;
+        arguments: Record<string, unknown>;
     };
     meta?: {
         requestId?: string;
@@ -127,5 +127,5 @@ export interface ToolExecutionContext {
     userId?: string;
     timestamp: Date;
     source: 'mcp-client' | 'internal' | 'api';
-    metadata?: Record<string, any>;
+    metadata?: Record<string, unknown>;
 }

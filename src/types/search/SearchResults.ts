@@ -117,7 +117,7 @@ export interface SearchResultSet {
   method: string;
   
   /** Additional metadata */
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 export interface SearchOptions {
@@ -171,13 +171,13 @@ export interface SearchContext {
   sessionId?: string;
   
   /** User preferences */
-  preferences?: Record<string, any>;
+  preferences?: Record<string, unknown>;
   
   /** Search filters */
-  filters?: Record<string, any>;
+  filters?: Record<string, unknown>;
   
   /** Additional context data */
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 export interface RerankItem {
@@ -216,5 +216,5 @@ export interface RankingStrategy {
   algorithm: 'rrf' | 'weighted' | 'linear';
   
   /** Algorithm parameters */
-  parameters: Record<string, any>;
+  parameters: Record<string, unknown>;
 }

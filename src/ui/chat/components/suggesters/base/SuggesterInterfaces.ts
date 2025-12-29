@@ -89,11 +89,7 @@ export interface ToolSuggestionItem {
 export interface ToolSchema {
   name: string;
   description: string;
-  inputSchema: {
-    type: string;
-    properties: Record<string, any>;
-    required?: string[];
-  };
+  inputSchema: Record<string, unknown>;
 }
 
 /**

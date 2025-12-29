@@ -82,7 +82,7 @@ export interface ProjectWorkspace extends Workspace {
     duration?: number;
     context?: string;
   }>;
-  preferences?: Record<string, any>;
+  preferences?: Record<string, unknown>;
   projectPlan?: string;
   checkpoints?: Array<{
     id: string;

@@ -115,7 +115,8 @@ export abstract class BaseAgent implements IAgent {
     // Context/session validation happens at useTool level, not here
     const result = await tool.execute(params);
 
-    return result;
+    // All tools extend BaseTool which returns CommonResult
+    return result as CommonResult;
   }
   
   

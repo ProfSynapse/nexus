@@ -38,7 +38,7 @@ export interface ImageGenerationResponse {
   imageData: Buffer;
   format: 'png' | 'jpeg' | 'webp';
   dimensions: { width: number; height: number };
-  metadata: Record<string, any>;
+  metadata: Record<string, unknown>;
   usage?: ImageUsage;
   revisedPrompt?: string; // Some providers may revise the prompt
 }
@@ -103,7 +103,7 @@ export interface ImageGenerationResult {
     format: string;
     cost?: ImageCostDetails;
     usage?: ImageUsage;
-    metadata?: Record<string, any>;
+    metadata?: Record<string, unknown>;
   };
   error?: string;
   validationErrors?: string[];
@@ -135,7 +135,7 @@ export interface ImageBuffer {
     provider: string;
     generatedAt: string;
     fileSize: number;
-    originalResponse?: Record<string, any>;
+    originalResponse?: Record<string, unknown>;
   };
 }
 

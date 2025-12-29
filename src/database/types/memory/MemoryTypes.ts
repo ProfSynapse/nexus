@@ -84,7 +84,7 @@ export function isLegacyTraceContextFormat(context: TraceContextMetadata): conte
  * Tool input parameters that should be preserved for future reference.
  */
 export interface TraceInputMetadata {
-  arguments?: any;
+  arguments?: unknown;
   files?: string[];
   notes?: string;
 }
@@ -106,8 +106,8 @@ export interface TraceOutcomeMetadata {
  * Legacy blobs that we keep during migration for backward compatibility.
  */
 export interface TraceLegacyMetadata {
-  params?: any;
-  result?: any;
+  params?: unknown;
+  result?: unknown;
   relatedFiles?: string[];
 }
 
@@ -116,13 +116,13 @@ export interface TraceLegacyMetadata {
  */
 export interface LegacyWorkspaceTraceMetadata {
   tool?: string;
-  params?: any;
-  result?: any;
+  params?: unknown;
+  result?: unknown;
   relatedFiles?: string[];
-  request?: Record<string, any>;
-  response?: Record<string, any>;
-  execution?: Record<string, any>;
-  [key: string]: any;
+  request?: Record<string, unknown>;
+  response?: Record<string, unknown>;
+  execution?: Record<string, unknown>;
+  [key: string]: unknown;
 }
 
 /**
@@ -135,6 +135,8 @@ export interface TraceMetadata {
   input?: TraceInputMetadata;
   outcome: TraceOutcomeMetadata;
   legacy?: TraceLegacyMetadata;
+  /** Index signature for Record<string, unknown> compatibility */
+  [key: string]: unknown;
 }
 
 /**

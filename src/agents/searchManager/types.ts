@@ -96,7 +96,7 @@ export interface UniversalSearchParams extends CommonParameters, GraphBoostOptio
     /**
      * Properties to filter by (field: value pairs)
      */
-    properties?: Record<string, any>;
+    properties?: Record<string, unknown>;
     
     /**
      * Logic operator for combining filters ('AND' | 'OR')
@@ -137,14 +137,14 @@ export interface UniversalSearchResultItem {
   /**
    * Category-specific metadata
    */
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
   
   /**
    * File metadata (tags, properties) if applicable
    */
   fileMetadata?: {
     tags?: string[];
-    properties?: Record<string, any>;
+    properties?: Record<string, unknown>;
     aliases?: string[];
   };
   
@@ -228,7 +228,7 @@ export interface UniversalSearchResult extends CommonResult {
     fallbacksUsed: CategoryType[];
     metadataFiltersApplied?: {
       tags?: string[];
-      properties?: Record<string, any>;
+      properties?: Record<string, unknown>;
       operator?: 'AND' | 'OR';
       filesFilteredByMetadata?: number;
     };

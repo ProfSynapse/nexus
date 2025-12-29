@@ -1,3 +1,4 @@
+import { JSONSchema } from '../../../types/schema/JSONSchemaTypes';
 import { App, TFile, TFolder } from 'obsidian';
 import { BaseDirectoryTool } from './baseDirectory';
 import { ListParams, ListResult } from '../types';
@@ -155,7 +156,7 @@ export class ListTool extends BaseDirectoryTool<ListParams, ListResult> {
   /**
    * Get the parameter schema
    */
-  getParameterSchema(): any {
+  getParameterSchema(): JSONSchema {
     const toolSchema = {
       type: 'object',
       properties: {
@@ -178,8 +179,8 @@ export class ListTool extends BaseDirectoryTool<ListParams, ListResult> {
   /**
    * Get the result schema
    */
-  getResultSchema(): any {
-    const baseSchema = super.getResultSchema();
+  getResultSchema(): JSONSchema {
+    const baseSchema = super.getResultSchema() as { properties: Record<string, unknown> };
 
     // Extend the base schema to include our specific data
     baseSchema.properties.data = {

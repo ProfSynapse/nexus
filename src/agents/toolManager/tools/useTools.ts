@@ -13,6 +13,7 @@ import { IAgent } from '../../interfaces/IAgent';
 import { getErrorMessage } from '../../../utils/errorUtils';
 import { getNexusPlugin } from '../../../utils/pluginLocator';
 import { WorkspaceService } from '../../../services/WorkspaceService';
+import { CommonResult } from '../../../types';
 
 /** Workspace info for validation */
 interface WorkspaceInfo {
@@ -307,7 +308,7 @@ export class UseToolTool implements ITool<UseToolParams, UseToolResult> {
     try {
       // Execute tool with ONLY its specific params
       // Context is handled at useTool level - individual tools don't need it
-      const toolResult = await toolInstance.execute(params || {});
+      const toolResult = await toolInstance.execute(params || {}) as CommonResult;
 
       // Build minimal result
       const result: ToolCallResult = {

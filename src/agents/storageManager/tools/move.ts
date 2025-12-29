@@ -1,3 +1,4 @@
+import { JSONSchema } from '../../../types/schema/JSONSchemaTypes';
 import { App, TFile, TFolder } from 'obsidian';
 import { BaseTool } from '../../baseTool';
 import { MoveParams, MoveResult } from '../types';
@@ -74,7 +75,7 @@ export class MoveTool extends BaseTool<MoveParams, MoveResult> {
    * Get the JSON schema for the tool's parameters
    * @returns JSON schema object
    */
-  getParameterSchema(): any {
+  getParameterSchema(): JSONSchema {
     const toolSchema = {
       type: 'object',
       properties: {

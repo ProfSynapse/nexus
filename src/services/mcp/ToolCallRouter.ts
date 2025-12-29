@@ -23,7 +23,7 @@ export interface AgentToolParams {
 export interface ToolCallRequest {
     params: {
         name: string;
-        arguments: Record<string, any>;
+        arguments: Record<string, unknown>;
     };
     meta?: {
         requestId?: string;
@@ -77,7 +77,7 @@ export interface ToolCallRouterInterface {
      * @param params Parameters that may contain batch operations
      * @throws ValidationError when batch operations are invalid
      */
-    validateBatchOperations(params: Record<string, any>): void;
+    validateBatchOperations(params: Record<string, unknown>): void;
 
     /**
      * Sets the server reference for agent tool execution
@@ -113,12 +113,12 @@ export class ToolCallRouter implements ToolCallRouterInterface {
             // Parse tool name to get agent (strip vault suffix)
             const { agentName } = this.parseToolName(request.params.name);
 
-            // Get tool from arguments
+            // Get tool from arguments (with type guard for unknown)
             const toolName = request.params.arguments.tool;
-            if (!toolName) {
+            if (!toolName || typeof toolName !== 'string') {
                 throw new McpError(
                     ErrorCode.InvalidParams,
-                    'Tool parameter is required in tool arguments'
+                    'Tool parameter is required in tool arguments and must be a string'
                 );
             }
 
@@ -196,7 +196,7 @@ export class ToolCallRouter implements ToolCallRouterInterface {
     /**
      * Validates batch operations if present in parameters
      */
-    validateBatchOperations(params: Record<string, any>): void {
+    validateBatchOperations(params: Record<string, unknown>): void {
         // Validate batch operations if they exist
         if (params && params.operations && Array.isArray(params.operations)) {
             params.operations.forEach((operation: any, index: number) => {

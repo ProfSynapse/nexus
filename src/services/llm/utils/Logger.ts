@@ -18,7 +18,7 @@ export interface LogEntry {
   level: LogLevel;
   message: string;
   component?: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
   executionId?: string;
   testId?: string;
 }
@@ -81,28 +81,28 @@ export class Logger {
   /**
    * Debug level logging
    */
-  debug(message: string, metadata?: Record<string, any>): void {
+  debug(message: string, metadata?: Record<string, unknown>): void {
     this.log('debug', message, metadata);
   }
 
   /**
    * Info level logging
    */
-  info(message: string, metadata?: Record<string, any>): void {
+  info(message: string, metadata?: Record<string, unknown>): void {
     this.log('info', message, metadata);
   }
 
   /**
    * Warning level logging
    */
-  warn(message: string, metadata?: Record<string, any>): void {
+  warn(message: string, metadata?: Record<string, unknown>): void {
     this.log('warn', message, metadata);
   }
 
   /**
    * Error level logging
    */
-  error(message: string, error?: Error | Record<string, any>): void {
+  error(message: string, error?: Error | Record<string, unknown>): void {
     const metadata = error instanceof Error ? {
       error: error.message,
       stack: error.stack
@@ -114,7 +114,7 @@ export class Logger {
   /**
    * Log test execution events
    */
-  testEvent(event: string, testId: string, metadata?: Record<string, any>): void {
+  testEvent(event: string, testId: string, metadata?: Record<string, unknown>): void {
     this.log('info', `Test Event: ${event}`, {
       testId,
       eventType: 'test',
@@ -125,7 +125,7 @@ export class Logger {
   /**
    * Log optimization events
    */
-  optimizationEvent(event: string, generation: number, metadata?: Record<string, any>): void {
+  optimizationEvent(event: string, generation: number, metadata?: Record<string, unknown>): void {
     this.log('info', `Optimization: ${event}`, {
       generation,
       eventType: 'optimization',
@@ -150,7 +150,7 @@ export class Logger {
   /**
    * Log performance metrics
    */
-  performance(operation: string, duration: number, metadata?: Record<string, any>): void {
+  performance(operation: string, duration: number, metadata?: Record<string, unknown>): void {
     this.log('info', `Performance: ${operation}`, {
       operation,
       duration,
@@ -162,7 +162,7 @@ export class Logger {
   /**
    * Main logging method
    */
-  log(level: LogLevel, message: string, metadata?: Record<string, any>, component?: string): void {
+  log(level: LogLevel, message: string, metadata?: Record<string, unknown>, component?: string): void {
     if (!this.shouldLog(level)) {
       return;
     }
@@ -330,19 +330,19 @@ export class ComponentLogger {
     private component: string
   ) {}
 
-  debug(message: string, metadata?: Record<string, any>): void {
+  debug(message: string, metadata?: Record<string, unknown>): void {
     this.parent.log('debug', message, metadata, this.component);
   }
 
-  info(message: string, metadata?: Record<string, any>): void {
+  info(message: string, metadata?: Record<string, unknown>): void {
     this.parent.log('info', message, metadata, this.component);
   }
 
-  warn(message: string, metadata?: Record<string, any>): void {
+  warn(message: string, metadata?: Record<string, unknown>): void {
     this.parent.log('warn', message, metadata, this.component);
   }
 
-  error(message: string, error?: Error | Record<string, any>): void {
+  error(message: string, error?: Error | Record<string, unknown>): void {
     const metadata = error instanceof Error ? {
       error: error.message,
       stack: error.stack
@@ -351,7 +351,7 @@ export class ComponentLogger {
     this.parent.log('error', message, metadata, this.component);
   }
 
-  testEvent(event: string, testId: string, metadata?: Record<string, any>): void {
+  testEvent(event: string, testId: string, metadata?: Record<string, unknown>): void {
     this.parent.testEvent(event, testId, { component: this.component, ...metadata });
   }
 
@@ -359,7 +359,7 @@ export class ComponentLogger {
     this.parent.apiCall(provider, method, latency, tokens, cost);
   }
 
-  performance(operation: string, duration: number, metadata?: Record<string, any>): void {
+  performance(operation: string, duration: number, metadata?: Record<string, unknown>): void {
     this.parent.performance(operation, duration, { component: this.component, ...metadata });
   }
 }

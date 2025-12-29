@@ -234,7 +234,7 @@ export class ContextCompactionService {
       // Extract task-like statements (simplified heuristic)
       if (msg.toolCalls && msg.toolCalls.length > 0) {
         const toolNames = msg.toolCalls
-          .map((tc: any) => tc.function?.name || tc.name || 'tool')
+          .map((tc) => tc.function?.name || tc.name || 'tool')
           .slice(0, 3);
         tasks.push(`Used tools: ${toolNames.join(', ')}`);
       }

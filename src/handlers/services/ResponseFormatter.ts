@@ -1,9 +1,9 @@
-import { IResponseFormatter } from '../interfaces/IRequestHandlerServices';
+import { IResponseFormatter, ToolExecutionResult, SessionInfo, MCPContentResponse } from '../interfaces/IRequestHandlerServices';
 import { safeStringify } from '../../utils/jsonUtils';
 
 export class ResponseFormatter implements IResponseFormatter {
 
-    formatToolExecutionResponse(result: any, sessionInfo?: any, _context?: { tool?: string }): any {
+    formatToolExecutionResponse(result: ToolExecutionResult, sessionInfo?: SessionInfo, _context?: { tool?: string }): MCPContentResponse {
         // Check if result contains an error and format it appropriately
         if (result && !result.success && result.error) {
             return this.formatDetailedError(result, sessionInfo);
@@ -23,12 +23,12 @@ export class ResponseFormatter implements IResponseFormatter {
         };
     }
 
-    formatSessionInstructions(sessionId: string, result: any): any {
-        result.sessionId = sessionId;
+    formatSessionInstructions(sessionId: string, result: ToolExecutionResult): ToolExecutionResult {
+        (result as ToolExecutionResult & { sessionId: string }).sessionId = sessionId;
         return result;
     }
 
-    formatErrorResponse(error: Error): any {
+    formatErrorResponse(error: Error): MCPContentResponse {
         return {
             content: [{
                 type: "text",
@@ -41,7 +41,7 @@ export class ResponseFormatter implements IResponseFormatter {
      * Format detailed error with helpful context
      * Shows the actual error message and any additional context that can help the AI fix the issue
      */
-    private formatDetailedError(result: any, sessionInfo?: any): any {
+    private formatDetailedError(result: ToolExecutionResult, sessionInfo?: SessionInfo): MCPContentResponse {
         let errorText = "";
         
         // Compact session ID notice when replaced
@@ -66,10 +66,10 @@ export class ResponseFormatter implements IResponseFormatter {
         }
         
         // Add suggestions for common mistakes
-        if (result.suggestions) {
+        if (result.suggestions && Array.isArray(result.suggestions)) {
             errorText += `💭 Suggestions:\n`;
-            for (const suggestion of result.suggestions) {
-                errorText += `  • ${suggestion}\n`;
+            for (const suggestion of result.suggestions as unknown[]) {
+                errorText += `  • ${String(suggestion)}\n`;
             }
             errorText += '\n';
         }
@@ -85,7 +85,7 @@ export class ResponseFormatter implements IResponseFormatter {
         };
     }
 
-    private formatWithSessionInstructions(result: any, sessionInfo: any): any {
+    private formatWithSessionInstructions(result: ToolExecutionResult, sessionInfo: SessionInfo): MCPContentResponse {
         this.formatSessionInstructions(sessionInfo.sessionId, result);
 
         let responseText = "";

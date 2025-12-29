@@ -70,7 +70,7 @@ export class TokenCalculator {
 
         // Add tokens for tool calls if present (estimated)
         if (message.toolCalls) {
-          message.toolCalls.forEach((toolCall: any) => {
+          message.toolCalls.forEach((toolCall: { function?: { name?: string; arguments?: string }; parameters?: unknown; result?: unknown }) => {
             if (toolCall.parameters) {
               const paramTokens = this.estimateTextTokens(JSON.stringify(toolCall.parameters));
               totalTokens += paramTokens;

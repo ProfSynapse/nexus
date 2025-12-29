@@ -1,5 +1,5 @@
 import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
-import { IToolExecutionService } from '../interfaces/IRequestHandlerServices';
+import { IToolExecutionService, ToolExecutionResult } from '../interfaces/IRequestHandlerServices';
 import { IAgent } from '../../agents/interfaces/IAgent';
 import { logger } from '../../utils/logger';
 import { getErrorMessage } from '../../utils/errorUtils';
@@ -9,10 +9,16 @@ export class ToolExecutionService implements IToolExecutionService {
         agent: IAgent,
         tool: string,
         params: Record<string, unknown>
-    ): Promise<unknown> {
+    ): Promise<ToolExecutionResult> {
         try {
             this.validateToolSpecificParams(agent.name, tool, params);
-            return await agent.executeTool(tool, params);
+            const result = await agent.executeTool(tool, params);
+            // Ensure result conforms to ToolExecutionResult
+            if (result && typeof result === 'object' && 'success' in result) {
+                return result as ToolExecutionResult;
+            }
+            // Wrap non-conforming results
+            return { success: true, data: result };
         } catch (error) {
             logger.systemError(error as Error, `Tool Execution - ${agent.name}:${tool}`);
             throw error;

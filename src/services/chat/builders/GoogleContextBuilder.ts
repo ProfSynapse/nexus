@@ -9,8 +9,8 @@
  * Follows Single Responsibility Principle - only handles Google format.
  */
 
-import { IContextBuilder } from './IContextBuilder';
-import { ConversationData } from '../../../types/chat/ChatTypes';
+import { IContextBuilder, LLMMessage, LLMToolCall, ToolExecutionResult, GoogleMessage, GooglePart } from './IContextBuilder';
+import { ConversationData, ChatMessage, ToolCall } from '../../../types/chat/ChatTypes';
 import { ReasoningPreserver } from '../../llm/adapters/shared/ReasoningPreserver';
 
 export class GoogleContextBuilder implements IContextBuilder {
@@ -19,7 +19,7 @@ export class GoogleContextBuilder implements IContextBuilder {
   /**
    * Validate if a message should be included in LLM context
    */
-  private isValidForContext(msg: any, isLastMessage: boolean): boolean {
+  private isValidForContext(msg: ChatMessage, isLastMessage: boolean): boolean {
     if (msg.state === 'invalid' || msg.state === 'streaming') return false;
     if (msg.role === 'user' && (!msg.content || !msg.content.trim())) return false;
 
@@ -29,8 +29,8 @@ export class GoogleContextBuilder implements IContextBuilder {
 
       if (!hasContent && !hasToolCalls && !isLastMessage) return false;
 
-      if (hasToolCalls) {
-        const allHaveResults = msg.toolCalls.every((tc: any) =>
+      if (hasToolCalls && msg.toolCalls) {
+        const allHaveResults = msg.toolCalls.every((tc: ToolCall) =>
           tc.result !== undefined || tc.error !== undefined
         );
         if (!allHaveResults) return false;
@@ -43,13 +43,13 @@ export class GoogleContextBuilder implements IContextBuilder {
   /**
    * Build context from stored conversation
    */
-  buildContext(conversation: ConversationData, systemPrompt?: string): any[] {
-    const messages: any[] = [];
+  buildContext(conversation: ConversationData, systemPrompt?: string): LLMMessage[] {
+    const messages: GoogleMessage[] = [];
 
     // Note: Google uses systemInstruction separately, not in messages
     // But we include it here for compatibility with the interface
     if (systemPrompt) {
-      messages.push({ role: 'system', content: systemPrompt });
+      messages.push({ role: 'system', parts: [{ text: systemPrompt }] });
     }
 
     // Filter valid messages
@@ -70,17 +70,17 @@ export class GoogleContextBuilder implements IContextBuilder {
         if (msg.toolCalls && msg.toolCalls.length > 0) {
           // Build model message with thought signatures preserved
           const modelMessage = ReasoningPreserver.buildGoogleModelMessageWithThinking(
-            msg.toolCalls.map((tc: any) => ({
+            msg.toolCalls.map((tc: ToolCall) => ({
               ...tc,
-              function: { name: tc.name, arguments: JSON.stringify(tc.parameters || {}) }
+              function: { name: tc.name || '', arguments: JSON.stringify(tc.parameters || {}) }
             }))
           );
-          messages.push(modelMessage);
+          messages.push(modelMessage as GoogleMessage);
 
           // Function response parts
-          const functionResponseParts = msg.toolCalls.map((tc: any) => ({
+          const functionResponseParts: GooglePart[] = msg.toolCalls.map((tc: ToolCall) => ({
             functionResponse: {
-              name: tc.name,
+              name: tc.name || '',
               response: tc.success
                 ? (tc.result || {})
                 : { error: tc.error || 'Tool execution failed' }
@@ -115,32 +115,34 @@ export class GoogleContextBuilder implements IContextBuilder {
    */
   buildToolContinuation(
     userPrompt: string,
-    toolCalls: any[],
-    toolResults: any[],
-    previousMessages?: any[],
+    toolCalls: LLMToolCall[],
+    toolResults: ToolExecutionResult[],
+    previousMessages?: LLMMessage[],
     _systemPrompt?: string
-  ): any[] {
-    const messages: any[] = [];
+  ): LLMMessage[] {
+    const messages: GoogleMessage[] = [];
 
     // Add previous conversation history (convert to Google format if needed)
     if (previousMessages && previousMessages.length > 0) {
       for (const msg of previousMessages) {
         // Skip messages that are already in Google format
-        if (msg.parts) {
-          messages.push(msg);
+        const googleMsg = msg as GoogleMessage;
+        if (googleMsg.parts) {
+          messages.push(googleMsg);
           continue;
         }
 
         // Convert from simple message format
-        if (msg.role === 'user' && msg.content) {
+        const simpleMsg = msg as { role: string; content?: string };
+        if (simpleMsg.role === 'user' && simpleMsg.content) {
           messages.push({
             role: 'user',
-            parts: [{ text: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content) }]
+            parts: [{ text: typeof simpleMsg.content === 'string' ? simpleMsg.content : JSON.stringify(simpleMsg.content) }]
           });
-        } else if (msg.role === 'assistant' && msg.content) {
+        } else if (simpleMsg.role === 'assistant' && simpleMsg.content) {
           messages.push({
             role: 'model',
-            parts: [{ text: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content) }]
+            parts: [{ text: typeof simpleMsg.content === 'string' ? simpleMsg.content : JSON.stringify(simpleMsg.content) }]
           });
         }
       }
@@ -156,12 +158,12 @@ export class GoogleContextBuilder implements IContextBuilder {
 
     // Build model message with thought signatures preserved
     const modelMessage = ReasoningPreserver.buildGoogleModelMessageWithThinking(toolCalls);
-    messages.push(modelMessage);
+    messages.push(modelMessage as GoogleMessage);
 
     // Add function response parts
-    const functionResponseParts = toolResults.map(result => ({
+    const functionResponseParts: GooglePart[] = toolResults.map(result => ({
       functionResponse: {
-        name: result.name || result.function?.name,
+        name: result.name || result.function?.name || '',
         response: result.success
           ? (result.result || {})
           : { error: result.error || 'Tool execution failed' }
@@ -180,20 +182,20 @@ export class GoogleContextBuilder implements IContextBuilder {
    * Append tool execution to existing history (no user message added)
    */
   appendToolExecution(
-    toolCalls: any[],
-    toolResults: any[],
-    previousMessages: any[]
-  ): any[] {
-    const messages = [...previousMessages];
+    toolCalls: LLMToolCall[],
+    toolResults: ToolExecutionResult[],
+    previousMessages: LLMMessage[]
+  ): LLMMessage[] {
+    const messages: GoogleMessage[] = [...(previousMessages as GoogleMessage[])];
 
     // Build model message with thought signatures preserved
     const modelMessage = ReasoningPreserver.buildGoogleModelMessageWithThinking(toolCalls);
-    messages.push(modelMessage);
+    messages.push(modelMessage as GoogleMessage);
 
     // Add function response parts
-    const functionResponseParts = toolResults.map(result => ({
+    const functionResponseParts: GooglePart[] = toolResults.map(result => ({
       functionResponse: {
-        name: result.name || result.function?.name,
+        name: result.name || result.function?.name || '',
         response: result.success
           ? (result.result || {})
           : { error: result.error || 'Tool execution failed' }

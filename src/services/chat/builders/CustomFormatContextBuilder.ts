@@ -13,8 +13,8 @@
  * Follows Single Responsibility Principle - only handles custom text format.
  */
 
-import { IContextBuilder } from './IContextBuilder';
-import { ConversationData, ToolCallFormat } from '../../../types/chat/ChatTypes';
+import { IContextBuilder, LLMMessage, LLMToolCall, ToolExecutionResult, OpenAIMessage } from './IContextBuilder';
+import { ConversationData, ChatMessage, ToolCall, ToolCallFormat } from '../../../types/chat/ChatTypes';
 
 export class CustomFormatContextBuilder implements IContextBuilder {
   readonly provider = 'custom';
@@ -23,8 +23,8 @@ export class CustomFormatContextBuilder implements IContextBuilder {
    * Format tool calls using the format the model originally used
    * Preserves bracket format for Mistral-based, XML format for Qwen-based models
    */
-  private formatToolCalls(toolCalls: any[], format?: ToolCallFormat): string {
-    const toolCallObjs = toolCalls.map((tc: any) => ({
+  private formatToolCalls(toolCalls: Array<{ name?: string; parameters?: Record<string, unknown>; sourceFormat?: ToolCallFormat }>, format?: ToolCallFormat): string {
+    const toolCallObjs = toolCalls.map((tc) => ({
       name: tc.name,
       arguments: tc.parameters || {}
     }));
@@ -47,7 +47,7 @@ export class CustomFormatContextBuilder implements IContextBuilder {
   /**
    * Validate if a message should be included in LLM context
    */
-  private isValidForContext(msg: any, isLastMessage: boolean): boolean {
+  private isValidForContext(msg: ChatMessage, isLastMessage: boolean): boolean {
     if (msg.state === 'invalid' || msg.state === 'streaming') return false;
     if (msg.role === 'user' && (!msg.content || !msg.content.trim())) return false;
 
@@ -57,8 +57,8 @@ export class CustomFormatContextBuilder implements IContextBuilder {
 
       if (!hasContent && !hasToolCalls && !isLastMessage) return false;
 
-      if (hasToolCalls) {
-        const allHaveResults = msg.toolCalls.every((tc: any) =>
+      if (hasToolCalls && msg.toolCalls) {
+        const allHaveResults = msg.toolCalls.every((tc: ToolCall) =>
           tc.result !== undefined || tc.error !== undefined
         );
         if (!allHaveResults) return false;
@@ -72,8 +72,8 @@ export class CustomFormatContextBuilder implements IContextBuilder {
    * Build context from stored conversation
    * Uses OpenAI-like format for context loading (simpler)
    */
-  buildContext(conversation: ConversationData, systemPrompt?: string): any[] {
-    const messages: any[] = [];
+  buildContext(conversation: ConversationData, systemPrompt?: string): LLMMessage[] {
+    const messages: OpenAIMessage[] = [];
 
     if (systemPrompt) {
       messages.push({ role: 'system', content: systemPrompt });
@@ -102,7 +102,7 @@ export class CustomFormatContextBuilder implements IContextBuilder {
           });
 
           // Add tool results with appropriate format wrapper
-          const toolResults = msg.toolCalls.map((tc: any) => ({
+          const toolResults = msg.toolCalls.map((tc: ToolCall) => ({
             success: tc.success !== false,
             result: tc.result,
             error: tc.error
@@ -131,7 +131,7 @@ export class CustomFormatContextBuilder implements IContextBuilder {
    * Format tool results with appropriate wrapper based on tool call format
    * XML format uses <tool_result> tags, bracket format uses raw JSON
    */
-  private formatToolResults(toolResults: any[], format?: ToolCallFormat): string {
+  private formatToolResults(toolResults: Array<{ success?: boolean; result?: unknown; error?: string }>, format?: ToolCallFormat): string {
     const toolResultObjects = toolResults.map(result => {
       return result.success
         ? (result.result || {})
@@ -159,23 +159,24 @@ export class CustomFormatContextBuilder implements IContextBuilder {
    */
   buildToolContinuation(
     userPrompt: string,
-    toolCalls: any[],
-    toolResults: any[],
-    previousMessages?: any[],
+    toolCalls: LLMToolCall[],
+    toolResults: ToolExecutionResult[],
+    previousMessages?: LLMMessage[],
     _systemPrompt?: string
-  ): any[] {
-    const messages: any[] = [];
+  ): LLMMessage[] {
+    const messages: OpenAIMessage[] = [];
 
     // Separate system messages from conversation messages
-    const systemMessages: any[] = [];
-    const conversationMessages: any[] = [];
+    const systemMessages: OpenAIMessage[] = [];
+    const conversationMessages: OpenAIMessage[] = [];
 
     if (previousMessages && previousMessages.length > 0) {
       for (const msg of previousMessages) {
-        if (msg.role === 'system') {
-          systemMessages.push(msg);
+        const openAIMsg = msg as OpenAIMessage;
+        if (openAIMsg.role === 'system') {
+          systemMessages.push(openAIMsg);
         } else {
-          conversationMessages.push(msg);
+          conversationMessages.push(openAIMsg);
         }
       }
     }
@@ -207,12 +208,12 @@ export class CustomFormatContextBuilder implements IContextBuilder {
 
     // Normalize tool calls for formatting
     const normalizedToolCalls = toolCalls.map(toolCall => {
-      const toolName = toolCall.function?.name || toolCall.name || 'unknown';
-      const args = toolCall.function?.arguments || toolCall.arguments || '{}';
+      const toolName = toolCall.function?.name || 'unknown';
+      const args = toolCall.function?.arguments || '{}';
       const parsedArgs = typeof args === 'string' ? JSON.parse(args) : args;
       return {
         name: toolName,
-        parameters: parsedArgs,
+        parameters: parsedArgs as Record<string, unknown>,
         sourceFormat: toolCall.sourceFormat
       };
     });
@@ -222,9 +223,10 @@ export class CustomFormatContextBuilder implements IContextBuilder {
     const assistantToolCallContent = this.formatToolCalls(normalizedToolCalls, format);
 
     // Only add assistant tool call if we don't already end with one
+    const lastContent = typeof lastMsg?.content === 'string' ? lastMsg.content : '';
     const lastIsMatchingAssistant = lastMsg &&
       lastMsg.role === 'assistant' &&
-      (lastMsg.content?.includes('[TOOL_CALLS]') || lastMsg.content?.includes('<tool_call>'));
+      (lastContent.includes('[TOOL_CALLS]') || lastContent.includes('<tool_call>'));
 
     if (!lastIsMatchingAssistant) {
       messages.push({
@@ -246,20 +248,20 @@ export class CustomFormatContextBuilder implements IContextBuilder {
    * Append tool execution to existing history (no user message added)
    */
   appendToolExecution(
-    toolCalls: any[],
-    toolResults: any[],
-    previousMessages: any[]
-  ): any[] {
-    const messages = [...previousMessages];
+    toolCalls: LLMToolCall[],
+    toolResults: ToolExecutionResult[],
+    previousMessages: LLMMessage[]
+  ): LLMMessage[] {
+    const messages: OpenAIMessage[] = [...(previousMessages as OpenAIMessage[])];
 
     // Normalize tool calls for formatting
     const normalizedToolCalls = toolCalls.map(toolCall => {
-      const toolName = toolCall.function?.name || toolCall.name || 'unknown';
-      const args = toolCall.function?.arguments || toolCall.arguments || '{}';
+      const toolName = toolCall.function?.name || 'unknown';
+      const args = toolCall.function?.arguments || '{}';
       const parsedArgs = typeof args === 'string' ? JSON.parse(args) : args;
       return {
         name: toolName,
-        parameters: parsedArgs,
+        parameters: parsedArgs as Record<string, unknown>,
         sourceFormat: toolCall.sourceFormat
       };
     });

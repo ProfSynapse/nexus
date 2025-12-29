@@ -50,7 +50,7 @@ export class SettingsTabManager {
             const memoryManager = this.config.connector?.getMemoryManager();
             
             // Get services from container
-            const services: Record<string, any> = {};
+            const services: Record<string, unknown> = {};
             for (const serviceName of this.config.serviceManager.getReadyServices()) {
                 services[serviceName] = this.config.serviceManager.getServiceIfReady(serviceName);
             }

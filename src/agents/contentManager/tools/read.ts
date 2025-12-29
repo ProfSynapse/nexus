@@ -5,6 +5,7 @@ import { ContentOperations } from '../utils/ContentOperations';
 import { createErrorMessage } from '../../../utils/errorUtils';
 import { addRecommendations, Recommendation } from '../../../utils/recommendationUtils';
 import { NudgeHelpers } from '../../../utils/nudgeHelpers';
+import { JSONSchema } from '../../../types/schema/JSONSchemaTypes';
 
 /**
  * Location: src/agents/contentManager/tools/read.ts
@@ -119,8 +120,8 @@ export class ReadTool extends BaseTool<ReadParams, ReadResult> {
    * Get the JSON schema for the tool's result
    * @returns JSON schema object
    */
-  getResultSchema(): Record<string, unknown> {
-    const baseSchema = super.getResultSchema();
+  getResultSchema(): JSONSchema {
+    const baseSchema = super.getResultSchema() as { properties: Record<string, unknown> };
 
     baseSchema.properties.data = {
       type: 'object',

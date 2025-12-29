@@ -203,8 +203,8 @@ export class OpenAIImageAdapter extends BaseImageAdapter {
   ): Promise<ImageGenerationResponse> {
     // Extract image data from Responses API format
     const imageData = response.output
-      .filter((output: any) => output.type === "image_generation_call")
-      .map((output: any) => output.result);
+      .filter((output: { type: string; result?: string }) => output.type === "image_generation_call")
+      .map((output: { result?: string }) => output.result);
 
     if (!imageData || imageData.length === 0) {
       throw new Error('No image data received from OpenAI Responses API');
@@ -225,7 +225,7 @@ export class OpenAIImageAdapter extends BaseImageAdapter {
     const usage: ImageUsage = this.buildImageUsage(1, size, this.imageModel);
 
     // Extract revised prompt from image generation call
-    const imageGenerationCall = response.output.find((output: any) => output.type === "image_generation_call");
+    const imageGenerationCall = response.output.find((output: { type: string; result?: string }) => output.type === "image_generation_call");
     const revisedPrompt = imageGenerationCall?.revised_prompt;
 
     return {

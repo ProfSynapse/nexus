@@ -119,7 +119,7 @@ export class BackgroundProcessor {
      */
     updateSettingsTabServices(): void {
         if (this.config.settingsTab) {
-            const services: Record<string, any> = {};
+            const services: Record<string, unknown> = {};
             for (const serviceName of this.config.serviceManager.getReadyServices()) {
                 services[serviceName] = this.config.serviceManager.getServiceIfReady(serviceName);
             }

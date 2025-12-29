@@ -10,12 +10,32 @@
  * Follows Single Responsibility Principle - only handles read operations.
  */
 
-import { ConversationData } from '../../types/chat/ChatTypes';
+import { ConversationData, ChatMessage } from '../../types/chat/ChatTypes';
 import { PaginationParams, PaginatedResult } from '../../types/pagination/PaginationTypes';
+
+/** Conversation metadata from list operations */
+interface ConversationMetadata {
+  id: string;
+  title: string;
+  created: number;
+  updated: number;
+  vault_name?: string;
+  message_count?: number;
+}
+
+/** Conversation service interface for queries */
+interface ConversationServiceLike {
+  getConversation: (id: string, pagination?: PaginationParams) => Promise<ConversationData | null>;
+  listConversations: (vaultName?: string, limit?: number) => Promise<ConversationMetadata[]>;
+  searchConversations: (query: string, limit?: number) => Promise<ConversationMetadata[]>;
+  getMessages?: (conversationId: string, options?: PaginationParams) => Promise<PaginatedResult<ChatMessage>>;
+  getRepository?: () => unknown;
+  count?: () => Promise<number>;
+}
 
 export class ConversationQueryService {
   constructor(
-    private conversationService: any
+    private conversationService: ConversationServiceLike
   ) {}
 
   /**
@@ -50,8 +70,19 @@ export class ConversationQueryService {
   async getMessages(
     conversationId: string,
     options?: PaginationParams
-  ): Promise<PaginatedResult<any>> {
+  ): Promise<PaginatedResult<ChatMessage>> {
     try {
+      if (!this.conversationService.getMessages) {
+        return {
+          items: [],
+          page: 0,
+          pageSize: options?.pageSize ?? 50,
+          totalItems: 0,
+          totalPages: 0,
+          hasNextPage: false,
+          hasPreviousPage: false
+        };
+      }
       return await this.conversationService.getMessages(conversationId, options);
     } catch (error) {
       console.error('Failed to get messages:', error);
@@ -83,7 +114,7 @@ export class ConversationQueryService {
 
       // Convert ConversationMetadata to ConversationData format
       // Note: messages array is empty since we're only using the index (lightweight)
-      return metadataList.map((metadata: any) => ({
+      return metadataList.map((metadata: ConversationMetadata) => ({
         id: metadata.id,
         title: metadata.title,
         messages: [], // Empty for list view - messages loaded when conversation is selected
@@ -111,7 +142,7 @@ export class ConversationQueryService {
       const metadataList = await this.conversationService.searchConversations(query, options?.limit);
 
       // Convert ConversationMetadata to ConversationData format
-      return metadataList.map((metadata: any) => ({
+      return metadataList.map((metadata: ConversationMetadata) => ({
         id: metadata.id,
         title: metadata.title,
         messages: [], // Empty for search results - messages loaded when conversation is selected
@@ -131,14 +162,14 @@ export class ConversationQueryService {
   /**
    * Get conversation repository for advanced queries
    */
-  getConversationRepository(): any {
+  getConversationRepository(): unknown {
     return this.conversationService.getRepository?.() || this.conversationService;
   }
 
   /**
    * Get underlying conversation service
    */
-  getConversationService(): any {
+  getConversationService(): ConversationServiceLike {
     return this.conversationService;
   }
 

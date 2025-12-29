@@ -237,7 +237,7 @@ export interface EditWorkspaceParameters extends CommonParameters {
   rootFolder?: string;
   relatedFolders?: string[];
   relatedFiles?: string[];
-  preferences?: Record<string, any>;
+  preferences?: Record<string, unknown>;
   keyFileInstructions?: string;
 }
 

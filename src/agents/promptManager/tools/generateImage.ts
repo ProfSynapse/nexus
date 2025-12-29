@@ -1,3 +1,4 @@
+import { JSONSchema } from '../../../types/schema/JSONSchemaTypes';
 /**
  * Generate Image Tool - Image generation workflow for AgentManager
  * Integrates with ImageGenerationService and follows AgentManager patterns
@@ -183,7 +184,7 @@ export class GenerateImageTool extends BaseTool<GenerateImageParams, GenerateIma
   /**
    * Get parameter schema for MCP
    */
-  getParameterSchema(): any {
+  getParameterSchema(): JSONSchema {
     const toolSchema = {
       type: 'object',
       properties: {

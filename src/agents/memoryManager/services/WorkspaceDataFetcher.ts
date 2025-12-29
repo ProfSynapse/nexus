@@ -72,7 +72,7 @@ export class WorkspaceDataFetcher {
       const sessions = sessionsResult.items || [];
 
       // Defensive validation: ensure all sessions belong to workspace
-      const validSessions = sessions.filter((session: any) =>
+      const validSessions = sessions.filter((session: { isActive?: boolean; workspaceId?: string }) =>
         session.workspaceId === workspaceId
       );
 
@@ -84,7 +84,7 @@ export class WorkspaceDataFetcher {
       }
 
       // Map to session summaries
-      const sessionSummaries = validSessions.map((session: any) => ({
+      const sessionSummaries = validSessions.map((session: { id: string; name?: string; description?: string; isActive?: boolean; startTime?: number; workspaceId?: string }) => ({
         id: session.id,
         name: session.name,
         description: session.description,
@@ -145,7 +145,7 @@ export class WorkspaceDataFetcher {
       const states = statesResult.items;
 
       // Defensive validation: ensure all states belong to workspace
-      const validStates = states.filter((state: any) =>
+      const validStates = states.filter((state: { isArchived?: boolean; workspaceId?: string; state?: { workspaceId?: string } }) =>
         state.state?.workspaceId === workspaceId || state.workspaceId === workspaceId
       );
 
@@ -157,7 +157,22 @@ export class WorkspaceDataFetcher {
       }
 
       // Map to state summaries
-      const stateSummaries = validStates.map((state: any) => ({
+      const stateSummaries = validStates.map((state: {
+        id: string;
+        name?: string;
+        description?: string;
+        sessionId?: string;
+        isArchived?: boolean;
+        created?: number;
+        timestamp?: number;
+        workspaceId?: string;
+        state?: {
+          description?: string;
+          sessionId?: string;
+          workspaceId?: string;
+          metadata?: { tags?: string[] }
+        }
+      }) => ({
         id: state.id,
         name: state.name,
         description: state.description || state.state?.description,

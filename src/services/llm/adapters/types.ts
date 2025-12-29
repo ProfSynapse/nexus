@@ -47,7 +47,7 @@ export interface StreamChunk {
   usage?: TokenUsage;
   toolCalls?: ToolCall[];
   toolCallsReady?: boolean; // True when tool calls are complete and safe to execute
-  metadata?: Record<string, any>; // For provider-specific metadata (e.g., OpenAI response ID)
+  metadata?: Record<string, unknown>; // For provider-specific metadata (e.g., OpenAI response ID)
   // Reasoning/thinking support (Claude, GPT-5, Gemini, etc.)
   reasoning?: string;           // Incremental reasoning text
   reasoningComplete?: boolean;  // True when reasoning finished
@@ -67,7 +67,7 @@ export interface LLMResponse {
   provider?: string;
   usage?: TokenUsage;
   cost?: CostDetails;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
   finishReason?: 'stop' | 'length' | 'tool_calls' | 'content_filter';
   toolCalls?: ToolCall[];
   webSearchResults?: SearchResult[];
@@ -127,7 +127,7 @@ export interface Tool {
   function?: {
     name: string;
     description: string;
-    parameters: Record<string, any>;
+    parameters: Record<string, unknown>;
   };
 }
 
@@ -136,8 +136,8 @@ export type ToolCallFormat = 'bracket' | 'xml' | 'native';
 
 export interface ToolCall {
   id: string;
-  type: string;
-  function?: {
+  type: 'function';
+  function: {
     name: string;
     arguments: string;
   };

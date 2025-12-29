@@ -49,7 +49,7 @@ export interface FuzzyDocument {
   title: string;
   content: string;
   filePath: string;
-  metadata: Record<string, any>;
+  metadata: Record<string, unknown>;
 }
 
 export interface FuzzyMatchResult {

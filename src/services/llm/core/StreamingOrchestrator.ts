@@ -145,8 +145,9 @@ export class StreamingOrchestrator {
 
         if (chunk.complete) {
           // Store response ID for future continuations (OpenAI uses Responses API)
-          if (provider === 'openai' && chunk.metadata?.responseId) {
-            const responseId = chunk.metadata.responseId;
+          const rawResponseId = chunk.metadata?.responseId;
+          if (provider === 'openai' && rawResponseId && typeof rawResponseId === 'string') {
+            const responseId = rawResponseId;
 
             // Only capture if we don't already have one (from options or memory)
             const existingId = options?.responsesApiId ||

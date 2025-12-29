@@ -6,6 +6,28 @@
 import { CustomPromptsSettings } from '../mcp/CustomPromptTypes';
 import { LLMProviderSettings } from '../llm/ProviderTypes';
 
+// Forward declarations for service types to avoid circular imports
+// Actual types are imported where needed
+type MemoryServiceType = import('../../agents/memoryManager/services/MemoryService').MemoryService;
+type WorkspaceServiceType = import('../../services/WorkspaceService').WorkspaceService;
+type SessionServiceType = import('../../services/session/SessionService').SessionService;
+type ConversationServiceType = import('../../services/ConversationService').ConversationService;
+type CustomPromptStorageServiceType = import('../../agents/promptManager/services/CustomPromptStorageService').CustomPromptStorageService;
+
+/**
+ * Plugin services registry type
+ * Provides typed access to plugin services
+ */
+export interface PluginServices {
+  memoryService?: MemoryServiceType;
+  workspaceService?: WorkspaceServiceType;
+  sessionService?: SessionServiceType;
+  conversationService?: ConversationServiceType;
+  customPromptStorageService?: CustomPromptStorageServiceType;
+  /** Allow additional services via index signature */
+  [key: string]: unknown;
+}
+
 // Memory management settings
 interface MemorySettings {
   // Workspace management interface

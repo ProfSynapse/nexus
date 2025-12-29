@@ -248,6 +248,12 @@ export interface IStorageBackend {
 /**
  * Database statistics
  */
+/**
+ * Valid types for SQL parameters
+ * Note: Methods still use any[] for compatibility with various SQLite implementations
+ */
+export type SqlParam = string | number | boolean | null | Uint8Array;
+
 export interface DatabaseStats {
   /** Database file size in bytes (0 for in-memory) */
   fileSize: number;

@@ -219,7 +219,7 @@ export class LMStudioProviderModal implements IProviderModal {
       }
 
       // Extract model IDs
-      this.discoveredModels = modelsData.data.map((model: any) => model.id);
+      this.discoveredModels = modelsData.data.map((model: { id: string }) => model.id);
 
       if (this.discoveredModels.length === 0) {
         new Notice('No models loaded in LM Studio. Please load a model first.');

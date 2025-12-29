@@ -2,7 +2,7 @@ import { App } from 'obsidian';
 import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import { IAgent } from '../agents/interfaces/IAgent';
 import { SessionContextManager } from '../services/SessionContextManager';
-import { IRequestHandlerDependencies } from './interfaces/IRequestHandlerServices';
+import { IRequestHandlerDependencies, ToolExecutionResult } from './interfaces/IRequestHandlerServices';
 import { IRequestStrategy } from './strategies/IRequestStrategy';
 
 // Import services
@@ -32,6 +32,21 @@ import { ToolHelpStrategy } from './strategies/ToolHelpStrategy';
 
 // All requests now handled through modern strategy pattern
 
+/** Callback type for tool response handling */
+type ToolResponseCallback = (
+    toolName: string,
+    params: Record<string, unknown>,
+    response: ToolExecutionResult,
+    success: boolean,
+    executionTime: number
+) => Promise<void>;
+
+/** Generic request type for routing */
+interface RouterRequest {
+    method?: string;
+    [key: string]: unknown;
+}
+
 export class RequestRouter {
     private dependencies!: IRequestHandlerDependencies;
     private strategies: IRequestStrategy[] = [];
@@ -43,7 +58,7 @@ export class RequestRouter {
         private vaultName?: string,
         private sessionContextManager?: SessionContextManager,
         private customPromptStorage?: CustomPromptStorageService,
-        private onToolResponse?: (toolName: string, params: any, response: any, success: boolean, executionTime: number) => Promise<void>
+        private onToolResponse?: ToolResponseCallback
     ) {
         this.initializeDependencies();
         this.initializeStrategies();
@@ -119,19 +134,19 @@ export class RequestRouter {
         ];
     }
 
-    async handleRequest(method: string, request: any): Promise<any> {
+    async handleRequest(method: string, request: Record<string, unknown>): Promise<unknown> {
         // All requests now handled through strategy pattern
-        const requestWithMethod = { method, ...request };
+        const requestWithMethod: RouterRequest = { method, ...request };
         return await this.handleWithStrategy(requestWithMethod);
     }
 
-    private async handleWithStrategy(request: any): Promise<any> {
+    private async handleWithStrategy(request: RouterRequest): Promise<unknown> {
         for (const strategy of this.strategies) {
             if (strategy.canHandle(request)) {
                 return await strategy.handle(request);
             }
         }
-        
+
         throw new McpError(
             ErrorCode.MethodNotFound,
             `No strategy found for request: ${request.method || 'unknown'}`

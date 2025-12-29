@@ -64,7 +64,7 @@ export interface ValidationError {
   /**
    * Additional context information
    */
-  context?: Record<string, any>;
+  context?: Record<string, unknown>;
 }
 
 /**
@@ -171,7 +171,7 @@ export class ValidationResultHelper {
     tool: ToolInterface,
     error: string | Error | ValidationError[],
     params?: CommonParameters,
-    additionalContext?: Record<string, any>
+    additionalContext?: Record<string, unknown>
   ): TResult {
     const startTime = performance.now();
 
@@ -268,7 +268,7 @@ export class ValidationResultHelper {
     tool: ToolInterface,
     data: any,
     params?: CommonParameters,
-    additionalData?: Record<string, any>
+    additionalData?: Record<string, unknown>
   ): TResult {
     const startTime = performance.now();
 
@@ -412,7 +412,7 @@ export class ValidationResultHelper {
     operation: string,
     startTime: number,
     success: boolean,
-    metadata?: Record<string, any>
+    metadata?: Record<string, unknown>
   ): void {
     const duration = performance.now() - startTime;
 

@@ -20,9 +20,54 @@
 import { ToolCall } from '../../types/chat/ChatTypes';
 import { getToolNameMetadata } from '../../utils/toolNameUtils';
 import { DirectToolExecutor } from './DirectToolExecutor';
+import type { JSONSchema } from '../../types/schema/JSONSchemaTypes';
+
+/** Tool event data passed to callbacks */
+export interface ToolEventData {
+  conversationId?: string;
+  toolCall?: ToolCall | RawToolCall;
+  isComplete?: boolean;
+  displayName?: string;
+  technicalName?: string;
+  agentName?: string;
+  actionName?: string;
+  sessionId?: string;
+  workspaceId?: string;
+  result?: unknown;
+  success?: boolean;
+  error?: string;
+}
 
 export interface ToolEventCallback {
-  (messageId: string, event: 'detected' | 'updated' | 'started' | 'completed', data: any): void;
+  (messageId: string, event: 'detected' | 'updated' | 'started' | 'completed', data: ToolEventData): void;
+}
+
+/** Raw tool call from LLM before processing */
+interface RawToolCall {
+  id: string;
+  function?: {
+    name: string;
+    arguments: string;
+  };
+  name?: string;
+  arguments?: string;
+}
+
+/** OpenAI-format tool definition */
+interface OpenAITool {
+  type: 'function';
+  function: {
+    name: string;
+    description?: string;
+    parameters?: JSONSchema;
+  };
+}
+
+/** MCP-format tool definition */
+interface MCPTool {
+  name: string;
+  description?: string;
+  inputSchema?: JSONSchema;
 }
 
 export interface ToolExecutionContext {
@@ -30,15 +75,21 @@ export interface ToolExecutionContext {
   workspaceId?: string;
 }
 
+/** MCP connector interface for legacy tool execution */
+interface MCPConnectorLike {
+  getAvailableTools?: () => (MCPTool | OpenAITool)[];
+  executeTool: (name: string, args: Record<string, unknown>) => Promise<unknown>;
+}
+
 export class ToolCallService {
-  private availableTools: any[] = [];
+  private availableTools: (MCPTool | OpenAITool)[] = [];
   private toolCallHistory = new Map<string, ToolCall[]>();
   private toolEventCallback?: ToolEventCallback;
   private detectedToolIds = new Set<string>(); // Track which tools have been detected already
   private directToolExecutor?: DirectToolExecutor;
 
   constructor(
-    private mcpConnector?: any // Now optional - only for legacy/Claude Desktop
+    private mcpConnector?: MCPConnectorLike // Now optional - only for legacy/Claude Desktop
   ) {}
 
   /**
@@ -66,13 +117,15 @@ export class ToolCallService {
     try {
       // Prefer DirectToolExecutor - works on ALL platforms
       if (this.directToolExecutor) {
-        this.availableTools = await this.directToolExecutor.getAvailableTools();
+        this.availableTools = await this.directToolExecutor.getAvailableTools() as (MCPTool | OpenAITool)[];
         return;
       }
 
       // Fallback to MCPConnector (legacy - only works on desktop)
       if (this.mcpConnector && typeof this.mcpConnector.getAvailableTools === 'function') {
-        this.availableTools = this.mcpConnector.getAvailableTools();
+        // MCP connector returns tools in MCP or OpenAI format
+        const tools = this.mcpConnector.getAvailableTools();
+        this.availableTools = (tools || []) as (MCPTool | OpenAITool)[];
         return;
       }
 
@@ -86,7 +139,7 @@ export class ToolCallService {
   /**
    * Get available tools in OpenAI format
    */
-  getAvailableTools(): any[] {
+  getAvailableTools(): OpenAITool[] {
     return this.convertMCPToolsToOpenAIFormat(this.availableTools);
   }
 
@@ -94,20 +147,21 @@ export class ToolCallService {
    * Convert MCP tools (with inputSchema) to OpenAI format (with parameters)
    * Handles both MCP format and already-converted OpenAI format
    */
-  private convertMCPToolsToOpenAIFormat(mcpTools: any[]): any[] {
+  private convertMCPToolsToOpenAIFormat(mcpTools: (MCPTool | OpenAITool)[]): OpenAITool[] {
     return mcpTools.map(tool => {
       // Check if already in OpenAI format (has type: 'function' and function object)
-      if (tool.type === 'function' && tool.function) {
-        return tool; // Already converted, return as-is
+      if ('type' in tool && tool.type === 'function' && 'function' in tool) {
+        return tool as OpenAITool; // Already converted, return as-is
       }
 
       // Convert from MCP format (name, description, inputSchema) to OpenAI format
+      const mcpTool = tool as MCPTool;
       return {
-        type: 'function',
+        type: 'function' as const,
         function: {
-          name: tool.name,
-          description: tool.description,
-          parameters: tool.inputSchema // MCP's inputSchema maps to OpenAI's parameters
+          name: mcpTool.name,
+          description: mcpTool.description,
+          parameters: mcpTool.inputSchema // MCP's inputSchema maps to OpenAI's parameters
         }
       };
     });
@@ -123,7 +177,7 @@ export class ToolCallService {
   /**
    * Fire tool event callback if registered
    */
-  fireToolEvent(messageId: string, event: 'detected' | 'updated' | 'started' | 'completed', data: any): void {
+  fireToolEvent(messageId: string, event: 'detected' | 'updated' | 'started' | 'completed', data: ToolEventData): void {
     try {
       this.toolEventCallback?.(messageId, event, data);
     } catch (error) {
@@ -137,7 +191,7 @@ export class ToolCallService {
    */
   handleToolCallDetection(
     messageId: string,
-    toolCalls: any[],
+    toolCalls: RawToolCall[],
     isComplete: boolean,
     conversationId: string
   ): void {
@@ -188,9 +242,12 @@ export class ToolCallService {
    * @deprecated Use LLMService streaming with tool execution instead
    */
   async executeToolCalls(
-    toolCalls: any[],
+    toolCalls: RawToolCall[],
     context?: ToolExecutionContext
   ): Promise<ToolCall[]> {
+    if (!this.mcpConnector) {
+      throw new Error('MCPConnector not available. Use DirectToolExecutor instead.');
+    }
     const executedCalls: ToolCall[] = [];
 
     for (const toolCall of toolCalls) {
@@ -218,22 +275,25 @@ export class ToolCallService {
           : (toolCall.function?.arguments || {});
 
         // Enrich with context
-        const enrichedArgs = this.enrichWithContext(args, context);
+        const enrichedArgs = this.enrichWithContext(args as Record<string, unknown>, context);
+
+        // Get the tool name (ensure it's defined)
+        const toolName = toolCall.function?.name || toolCall.name || 'unknown';
 
         // Execute via MCP
         const result = await this.mcpConnector.executeTool(
-          toolCall.function?.name || toolCall.name,
+          toolName,
           enrichedArgs
         );
 
         const executed: ToolCall = {
           id: toolCall.id,
           type: 'function',
-          name: nameMetadata.displayName || toolCall.function?.name || toolCall.name,
+          name: nameMetadata.displayName || toolName,
           displayName: nameMetadata.displayName,
           technicalName: nameMetadata.technicalName,
           function: {
-            name: toolCall.function?.name || toolCall.name,
+            name: toolName,
             arguments: JSON.stringify(enrichedArgs)
           },
           parameters: enrichedArgs,
@@ -256,16 +316,17 @@ export class ToolCallService {
         }
 
       } catch (error) {
-        console.error(`Tool execution failed for ${toolCall.function?.name || toolCall.name}:`, error);
+        const toolName = toolCall.function?.name || toolCall.name || 'unknown';
+        console.error(`Tool execution failed for ${toolName}:`, error);
 
         const failed: ToolCall = {
           id: toolCall.id,
           type: 'function',
-          name: nameMetadata.displayName || toolCall.function?.name || toolCall.name,
+          name: nameMetadata.displayName || toolName,
           displayName: nameMetadata.displayName,
           technicalName: nameMetadata.technicalName,
           function: {
-            name: toolCall.function?.name || toolCall.name,
+            name: toolName,
             arguments: toolCall.function?.arguments || JSON.stringify({})
           },
           parameters: typeof toolCall.function?.arguments === 'string'
@@ -298,7 +359,7 @@ export class ToolCallService {
   /**
    * Enrich tool parameters with session and workspace context
    */
-  private enrichWithContext(params: any, context?: ToolExecutionContext): any {
+  private enrichWithContext(params: Record<string, unknown>, context?: ToolExecutionContext): Record<string, unknown> {
     if (!context) return params;
 
     const enriched = { ...params };

@@ -132,10 +132,10 @@ export class ServiceManager implements IServiceManager {
         // Register with ServiceContainer using factory pattern
         this.container.register<T>(
             descriptor.name,
-            async (dependencies: Record<string, any>) => {
+            async (dependencies: Record<string, unknown>) => {
                 // Resolve dependencies if needed
                 if (descriptor.dependencies && descriptor.dependencies.length > 0) {
-                    const resolvedDeps: Record<string, any> = {};
+                    const resolvedDeps: Record<string, unknown> = {};
                     for (const depName of descriptor.dependencies) {
                         resolvedDeps[depName] = await this.getService(depName);
                     }
@@ -415,8 +415,8 @@ export class ServiceManager implements IServiceManager {
     /**
      * Compatibility method for getting all initialized services
      */
-    getAllInitialized(): Record<string, any> {
-        const services: Record<string, any> = {};
+    getAllInitialized(): Record<string, unknown> {
+        const services: Record<string, unknown> = {};
         
         for (const serviceName of this.container.getReadyServices()) {
             const service = this.container.getIfReady(serviceName);

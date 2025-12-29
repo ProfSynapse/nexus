@@ -45,7 +45,7 @@ export interface ServiceIntegrationConfig {
 }
 
 export interface NexusPluginBridge extends Plugin {
-  services?: Record<string, any>;
+  services?: Record<string, unknown>;
   serviceContainer?: {
     getIfReady<T>(serviceName: string): T | null;
   };

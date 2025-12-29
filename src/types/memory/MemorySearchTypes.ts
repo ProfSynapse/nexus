@@ -190,7 +190,7 @@ export interface MemoryResultGroup {
   count: number;
   totalScore: number;
   averageScore: number;
-  metadata: Record<string, any>;
+  metadata: Record<string, unknown>;
 }
 
 // Group statistics

@@ -230,7 +230,7 @@ export class LMStudioAdapter extends BaseAdapter {
    * Convert tools to Responses API format
    */
   private convertToolsForResponsesApi(tools: any[]): any[] {
-    return tools.map((tool: any) => {
+    return tools.map((tool) => {
       if (tool.function) {
         return {
           type: 'function',
@@ -326,7 +326,7 @@ export class LMStudioAdapter extends BaseAdapter {
         return [];
       }
 
-      return data.data.map((model: any) => {
+      return data.data.map((model: { id: string; context_length?: number; max_tokens?: number }) => {
         const modelId = model.id;
         const isVisionModel = this.detectVisionSupport(modelId);
         const supportsTools = this.detectToolSupport(modelId);
@@ -395,7 +395,7 @@ export class LMStudioAdapter extends BaseAdapter {
    * Handles both flat and nested tool formats
    */
   private convertTools(tools: any[]): any[] {
-    return tools.map((tool: any) => {
+    return tools.map((tool) => {
       // If already in flat format {type, name, description, parameters}, return as-is
       if (tool.name && !tool.function) {
         return tool;

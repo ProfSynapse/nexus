@@ -411,7 +411,7 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
 export interface AdditionalServiceFactory {
     name: string;
     dependencies: string[];
-    factory: (deps: Record<string, any>) => Promise<any>;
+    factory: (deps: Record<string, unknown>) => Promise<any>;
 }
 
 /**

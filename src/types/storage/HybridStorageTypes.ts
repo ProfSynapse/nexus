@@ -246,7 +246,7 @@ export interface ConversationMetadata {
   sessionId?: string;
 
   /** Optional additional metadata (stored as JSON) */
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 /**
@@ -314,7 +314,7 @@ export interface MessageData {
   reasoning?: string;
 
   /** Optional metadata */
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 
   /** Alternative responses for branching (retry/regenerate creates alternatives) */
   alternatives?: AlternativeMessage[];
@@ -391,7 +391,7 @@ export interface MemoryTraceData {
   content: string;
 
   /** Optional metadata for additional context */
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 // ============================================================================
@@ -547,7 +547,7 @@ export interface StorageEvent {
   payload: any;
 
   /** Optional metadata */
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 /**

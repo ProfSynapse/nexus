@@ -67,9 +67,9 @@ interface ToolCall {
     arguments: string;
   };
   name?: string;
-  params?: any;
-  parameters?: any;
-  input?: any;
+  params?: Record<string, unknown>;
+  parameters?: Record<string, unknown>;
+  input?: Record<string, unknown>;
 }
 
 /**
@@ -81,6 +81,16 @@ interface DirectToolCall {
   function: {
     name: string;
     arguments: string;
+  };
+}
+
+/** OpenAI-format tool schema */
+interface OpenAIToolSchema {
+  type: 'function';
+  function: {
+    name: string;
+    description?: string;
+    parameters?: unknown;
   };
 }
 
@@ -96,7 +106,7 @@ export interface PreservationDependencies {
         provider?: string;
         model?: string;
         systemPrompt?: string;
-        tools?: any[];
+        tools?: OpenAIToolSchema[];
       }
     ) => AsyncGenerator<{
       chunk: string;
@@ -110,7 +120,7 @@ export interface PreservationDependencies {
   executeToolCalls: (
     toolCalls: DirectToolCall[],
     context?: { sessionId?: string; workspaceId?: string }
-  ) => Promise<Array<{ success: boolean; result?: any; error?: string }>>;
+  ) => Promise<Array<{ success: boolean; result?: unknown; error?: string }>>;
 }
 
 export class ContextPreservationService {
@@ -128,7 +138,7 @@ export class ContextPreservationService {
   /**
    * Get createState tool schema in OpenAI format
    */
-  private getCreateStateToolSchema(): any | null {
+  private getCreateStateToolSchema(): OpenAIToolSchema | null {
     const memoryManager = this.deps.getAgent('memoryManager');
     if (!memoryManager) {
       return null;
@@ -245,7 +255,7 @@ export class ContextPreservationService {
       workspaceId?: string;
       sessionId?: string;
     },
-    createStateSchema: any
+    createStateSchema: OpenAIToolSchema
   ): Promise<Omit<PreservationResult, 'attempts'>> {
     // Stream response from LLM with save state prompt
     let toolCalls: ToolCall[] = [];
@@ -342,7 +352,11 @@ export class ContextPreservationService {
           typeof toolCall.function.arguments === 'string'
             ? JSON.parse(toolCall.function.arguments)
             : toolCall.function.arguments;
-        return { id: args.id, content: args.content };
+        const argsObj = args as Record<string, unknown>;
+        return {
+          id: typeof argsObj.id === 'string' ? argsObj.id : undefined,
+          content: typeof argsObj.content === 'string' ? argsObj.content : undefined
+        };
       } catch {
         // Fall through
       }
@@ -350,6 +364,9 @@ export class ContextPreservationService {
 
     // Try direct params/parameters/input format
     const params = toolCall.params || toolCall.parameters || toolCall.input || {};
-    return { id: params.id, content: params.content };
+    return {
+      id: typeof params.id === 'string' ? params.id : undefined,
+      content: typeof params.content === 'string' ? params.content : undefined
+    };
   }
 }

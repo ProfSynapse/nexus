@@ -47,7 +47,7 @@ export interface QueryOptions extends PaginationParams {
   sortOrder?: 'asc' | 'desc';
 
   /** Filters to apply (key-value pairs) */
-  filter?: Record<string, any>;
+  filter?: Record<string, unknown>;
 
   /** Full-text search query */
   search?: string;

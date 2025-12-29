@@ -17,6 +17,28 @@ import { AgentRegistry } from '../../server/services/AgentRegistry';
 import { SessionContextManager } from '../SessionContextManager';
 import { ToolListService } from '../../handlers/services/ToolListService';
 import { IAgent } from '../../agents/interfaces/IAgent';
+import type { JSONSchema } from '../../types/schema/JSONSchemaTypes';
+
+/** OpenAI-format tool definition */
+interface OpenAITool {
+    type: 'function';
+    function: {
+        name: string;
+        description?: string;
+        parameters?: JSONSchema;
+    };
+}
+
+/** Tool event data for callbacks */
+interface ToolEventData {
+    id: string;
+    name: string;
+    parameters?: Record<string, unknown>;
+    toolId?: string;
+    result?: unknown;
+    success?: boolean;
+    error?: string;
+}
 
 /**
  * Map of bare tool names to their correct full format
@@ -82,7 +104,7 @@ export interface DirectToolResult {
     id: string;
     name?: string;
     success: boolean;
-    result?: any;
+    result?: unknown;
     error?: string;
     executionTime?: number;
 }
@@ -112,7 +134,7 @@ export class DirectToolExecutor {
     private toolListService: ToolListService;
     private agentProvider: AgentProvider;
     private internalRegistry: AgentRegistry;
-    private cachedTools: any[] | null = null;
+    private cachedTools: OpenAITool[] | null = null;
 
     constructor(config: DirectToolExecutorConfig) {
         this.agentProvider = config.agentProvider;
@@ -195,7 +217,7 @@ export class DirectToolExecutor {
     /**
      * Get all tool schemas (internal - used when get_tools is called)
      */
-    private async getAllToolSchemas(): Promise<any[]> {
+    private async getAllToolSchemas(): Promise<OpenAITool[]> {
         // Use cached tools if available
         if (this.cachedTools) {
             return this.cachedTools;
@@ -218,11 +240,11 @@ export class DirectToolExecutor {
 
             // Convert to OpenAI format
             this.cachedTools = tools.map(tool => ({
-                type: 'function',
+                type: 'function' as const,
                 function: {
                     name: tool.name,
                     description: tool.description,
-                    parameters: tool.inputSchema
+                    parameters: tool.inputSchema as JSONSchema | undefined
                 }
             }));
 
@@ -320,9 +342,17 @@ export class DirectToolExecutor {
      * Returns tool schemas for requested agents
      */
     private async handleGetTools(
-        params: Record<string, any>,
+        params: Record<string, unknown>,
         context?: { sessionId?: string; workspaceId?: string }
-    ): Promise<any> {
+    ): Promise<{
+        success: boolean;
+        tools?: OpenAITool[];
+        count?: number;
+        notFound?: string[];
+        reminder?: string;
+        error?: string;
+        availableAgents?: string[];
+    }> {
         const requestedTools = params.tools as string[] | undefined;
         const sessionId = context?.sessionId || 'session_' + Date.now();
         const workspaceId = context?.workspaceId || 'default';
@@ -332,13 +362,13 @@ export class DirectToolExecutor {
             return {
                 success: false,
                 error: 'Please specify which agent tools you need. Example: get_tools({ tools: ["contentManager", "searchManager"] })',
-                availableAgents: ['contentManager', 'storageManager', 'searchManager', 'memoryManager', 'commandManager', 'promptManager']
+                availableAgents: ['contentManager', 'storageManager', 'searchManager', 'memoryManager', 'promptManager']
             };
         }
 
         // Get schemas for requested tools
         const allTools = await this.getAllToolSchemas();
-        const matchedTools: any[] = [];
+        const matchedTools: OpenAITool[] = [];
         const notFound: string[] = [];
 
         for (const toolName of requestedTools) {
@@ -364,9 +394,9 @@ export class DirectToolExecutor {
      * Executes the calls array and returns results
      */
     private async handleUseTool(
-        params: Record<string, any>,
+        params: Record<string, unknown>,
         context?: { sessionId?: string; workspaceId?: string }
-    ): Promise<any> {
+    ): Promise<unknown> {
         // Get toolManager agent to use its useTool implementation
         const toolManagerAgent = this.getAgentByName('toolManager');
         if (!toolManagerAgent) {
@@ -385,7 +415,7 @@ export class DirectToolExecutor {
         }
 
         // Merge context from params and external context
-        const paramsContext = params.context || {};
+        const paramsContext = (params.context || {}) as Record<string, unknown>;
         const mergedParams = {
             ...params,
             context: {
@@ -406,7 +436,7 @@ export class DirectToolExecutor {
     async executeToolCalls(
         toolCalls: DirectToolCall[],
         context?: { sessionId?: string; workspaceId?: string },
-        onToolEvent?: (event: 'started' | 'completed', data: any) => void
+        onToolEvent?: (event: 'started' | 'completed', data: ToolEventData) => void
     ): Promise<DirectToolResult[]> {
         const results: DirectToolResult[] = [];
 
@@ -415,7 +445,7 @@ export class DirectToolExecutor {
 
             try {
                 // Parse arguments
-                let parameters: any = {};
+                let parameters: Record<string, unknown> = {};
                 const argumentsStr = toolCall.function.arguments || '{}';
 
                 try {
@@ -456,6 +486,8 @@ export class DirectToolExecutor {
 
                 // Notify tool completed
                 onToolEvent?.('completed', {
+                    id: toolCall.id,
+                    name: toolCall.function.name,
                     toolId: toolCall.id,
                     result: isSuccess ? rawResult : undefined,
                     success: isSuccess,
@@ -475,6 +507,8 @@ export class DirectToolExecutor {
 
                 // Notify tool completed (with error)
                 onToolEvent?.('completed', {
+                    id: toolCall.id,
+                    name: toolCall.function.name,
                     toolId: toolCall.id,
                     result: undefined,
                     success: false,

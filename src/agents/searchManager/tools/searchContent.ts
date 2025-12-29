@@ -20,7 +20,7 @@ interface PluginWithEmbeddings extends Plugin {
  */
 interface ScoredSearchResult {
   filePath: string;
-  frontmatter?: Record<string, any>;
+  frontmatter?: Record<string, unknown>;
   content?: string;
   _score: number; // Internal property for sorting
 }
@@ -38,7 +38,7 @@ export interface ContentSearchResult {
   success: boolean;
   results: Array<{
     filePath: string;
-    frontmatter?: Record<string, any>;
+    frontmatter?: Record<string, unknown>;
     content?: string;  // Keyword search only
   }>;
   error?: string;
@@ -183,19 +183,19 @@ export class SearchContentTool extends BaseTool<ContentSearchParams, ContentSear
       }
 
       // Convert to lean result format (just filePath + frontmatter)
-      const results: Array<{ filePath: string; frontmatter?: Record<string, any> }> = [];
+      const results: Array<{ filePath: string; frontmatter?: Record<string, unknown> }> = [];
       for (const result of filteredResults.slice(0, searchParams.limit)) {
         const file = this.plugin.app.vault.getAbstractFileByPath(result.notePath);
         if (file instanceof TFile) {
           // Get frontmatter only
-          let frontmatter: Record<string, any> | undefined;
+          let frontmatter: Record<string, unknown> | undefined;
           const fileCache = this.plugin.app.metadataCache.getFileCache(file);
           if (fileCache?.frontmatter) {
             frontmatter = { ...fileCache.frontmatter };
             delete frontmatter.position;
           }
 
-          const entry: { filePath: string; frontmatter?: Record<string, any> } = {
+          const entry: { filePath: string; frontmatter?: Record<string, unknown> } = {
             filePath: result.notePath
           };
           if (frontmatter && Object.keys(frontmatter).length > 0) {
@@ -328,7 +328,7 @@ export class SearchContentTool extends BaseTool<ContentSearchParams, ContentSear
 
     // 2. Keyword search in file content and extract frontmatter
     let keywordScore = 0;
-    let frontmatter: Record<string, any> | undefined = undefined;
+    let frontmatter: Record<string, unknown> | undefined = undefined;
 
     if (includeContent) {
       try {

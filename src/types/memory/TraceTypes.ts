@@ -45,8 +45,8 @@ export interface ToolCallMemoryTrace extends WorkspaceMemoryTrace {
   metadata: TraceMetadata & {
     // Tool call request data (complete JSON preservation)
     request?: {
-      originalParams: Record<string, any>;
-      normalizedParams: Record<string, any>;
+      originalParams: Record<string, unknown>;
+      normalizedParams: Record<string, unknown>;
       workspaceContext?: {
         workspaceId: string;
         sessionId?: string;
@@ -57,7 +57,7 @@ export interface ToolCallMemoryTrace extends WorkspaceMemoryTrace {
     
     // Tool call response data (complete JSON preservation)
     response?: {
-      result: Record<string, any> | null;
+      result: Record<string, unknown> | null;
       success: boolean;
       error?: {
         type: string;

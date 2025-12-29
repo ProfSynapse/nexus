@@ -5,6 +5,7 @@ import { PluginLifecycleManager, type PluginLifecycleConfig } from './core/Plugi
 import { BRAND_NAME } from './constants/branding';
 import { supportsMCPBridge } from './utils/platform';
 import { WasmEnsurer } from './utils/WasmEnsurer';
+import type { PluginServices } from './types/plugin/PluginTypes';
 
 // MCPConnector type for desktop-only dynamic import
 type MCPConnectorType = import('./connector').MCPConnector;
@@ -39,8 +40,8 @@ export default class NexusPlugin extends Plugin {
     }
 
     // Service registry - for backward compatibility
-    public get services(): Record<string, any> {
-        const services: Record<string, any> = {};
+    public get services(): PluginServices {
+        const services: PluginServices = {};
         if (!this.serviceManager) {
             return services;
         }

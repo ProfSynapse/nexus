@@ -1,3 +1,4 @@
+import { JSONSchema } from '../../../../types/schema/JSONSchemaTypes';
 /**
  * ListStatesMode - Lists states with filtering and sorting capabilities
  * Following the same pattern as ListWorkspacesMode for consistency
@@ -159,7 +160,7 @@ export class ListStatesTool extends BaseTool<ListStatesParams, StateResult> {
     return extractContextFromParams(params);
   }
 
-  getParameterSchema(): any {
+  getParameterSchema(): JSONSchema {
     const toolSchema = {
       type: 'object',
       properties: {
@@ -194,7 +195,7 @@ export class ListStatesTool extends BaseTool<ListStatesParams, StateResult> {
     return this.getMergedSchema(toolSchema);
   }
 
-  getResultSchema(): any {
+  getResultSchema(): JSONSchema {
     return {
       type: 'object',
       properties: {

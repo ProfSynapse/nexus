@@ -634,7 +634,7 @@ export class WorkspaceService {
         timestamp: hybridTrace.timestamp,
         type: hybridTrace.type || 'generic',
         content: hybridTrace.content,
-        // Safe conversion: HybridTypes.MemoryTraceData.metadata (Record<string, any>)
+        // Safe conversion: HybridTypes.MemoryTraceData.metadata (Record<string, unknown>)
         // is cast to TraceMetadata which is the expected type for MemoryTrace.metadata
         // Note: This metadata may be either TraceMetadata or LegacyWorkspaceTraceMetadata at runtime
         metadata: hybridTrace.metadata as TraceMetadata | undefined
@@ -688,7 +688,7 @@ export class WorkspaceService {
         timestamp: t.timestamp,
         type: t.type || 'generic',
         content: t.content,
-        // Safe conversion: HybridTypes.MemoryTraceData.metadata (Record<string, any>)
+        // Safe conversion: HybridTypes.MemoryTraceData.metadata (Record<string, unknown>)
         // is cast to TraceMetadata which is the expected type for MemoryTrace.metadata
         // Note: This metadata may be either TraceMetadata or LegacyWorkspaceTraceMetadata at runtime
         metadata: t.metadata as TraceMetadata | undefined

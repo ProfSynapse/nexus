@@ -8,6 +8,7 @@
  */
 
 import { BaseSchemaProvider } from '../BaseSchemaProvider';
+import { EnhancedJSONSchema } from '../../interfaces/ISchemaProvider';
 import { IAgent } from '../../../agents/interfaces/IAgent';
 import { CustomPromptStorageService } from '../../../agents/promptManager/services/CustomPromptStorageService';
 import { CustomPrompt } from '../../../types';
@@ -82,7 +83,7 @@ export class AgentSchemaProvider extends BaseSchemaProvider {
     /**
      * Enhance PromptManager tool schemas with domain agent names and prompt IDs
      */
-    async enhanceSchema(toolName: string, baseSchema: any): Promise<any> {
+    async enhanceSchema(toolName: string, baseSchema: EnhancedJSONSchema): Promise<EnhancedJSONSchema> {
         return await this.safeEnhance(
             async () => this.performEnhancement(toolName, baseSchema),
             baseSchema,
@@ -93,7 +94,7 @@ export class AgentSchemaProvider extends BaseSchemaProvider {
     /**
      * Perform the actual schema enhancement
      */
-    private async performEnhancement(toolName: string, baseSchema: any): Promise<any> {
+    private async performEnhancement(toolName: string, baseSchema: EnhancedJSONSchema): Promise<EnhancedJSONSchema> {
         // Get cached or fresh data
         const data = await this.getCachedData();
 
@@ -136,25 +137,26 @@ export class AgentSchemaProvider extends BaseSchemaProvider {
     /**
      * Enhance executePrompt and batchExecutePrompt schemas
      */
-    private enhanceExecutePromptSchema(schema: any, data: CachedData): void {
+    private enhanceExecutePromptSchema(schema: EnhancedJSONSchema, data: CachedData): void {
         // Enhance agent parameter with available agent names
         if (schema.properties?.agent) {
-            schema.properties.agent.enum = data.agents
+            const agentProp = schema.properties.agent as EnhancedJSONSchema;
+            agentProp.enum = data.agents
                 .filter(agent => agent.enabled)
                 .slice(0, this.MAX_AGENTS_TO_SHOW)
                 .map(agent => agent.name);
-            
-            schema.properties.agent.description = this.buildAgentDescription(data.agents);
-            
+
+            agentProp.description = this.buildAgentDescription(data.agents);
+
             // Add examples
             const enabledAgents = data.agents.filter(agent => agent.enabled);
             if (enabledAgents.length > 0) {
-                schema.properties.agent.examples = enabledAgents.slice(0, 3).map(agent => agent.name);
+                agentProp.examples = enabledAgents.slice(0, 3).map(agent => agent.name);
             }
         }
 
         // Add prompt ID parameter if not present
-        if (!schema.properties?.promptId && data.prompts.length > 0) {
+        if (schema.properties && !schema.properties.promptId && data.prompts.length > 0) {
             schema.properties.promptId = {
                 type: 'string',
                 description: this.buildPromptIdDescription(data.prompts),
@@ -178,26 +180,28 @@ export class AgentSchemaProvider extends BaseSchemaProvider {
     /**
      * Enhance prompt management schemas (create, update, get, delete, toggle)
      */
-    private enhancePromptManagementSchema(schema: any, data: CachedData): void {
+    private enhancePromptManagementSchema(schema: EnhancedJSONSchema, data: CachedData): void {
         // For ID-based operations, enhance with available prompt IDs
         if (schema.properties?.id && data.prompts.length > 0) {
-            schema.properties.id.enum = data.prompts.map(prompt => prompt.id);
-            schema.properties.id.description = `${schema.properties.id.description || 'Prompt ID'}\n\nAvailable prompt IDs:\n${
+            const idProp = schema.properties.id as EnhancedJSONSchema;
+            idProp.enum = data.prompts.map(prompt => prompt.id);
+            idProp.description = `${idProp.description || 'Prompt ID'}\n\nAvailable prompt IDs:\n${
                 data.prompts.map(prompt => `• ${prompt.id}: ${prompt.name} ${prompt.enabled ? '✅' : '❌'}`).join('\n')
             }`;
         }
 
         // For name-based operations, enhance with available prompt names
         if (schema.properties?.name && data.prompts.length > 0) {
-            schema.properties.name.enum = data.prompts.map(prompt => prompt.name);
-            schema.properties.name.examples = data.prompts.slice(0, 3).map(prompt => prompt.name);
+            const nameProp = schema.properties.name as EnhancedJSONSchema;
+            nameProp.enum = data.prompts.map(prompt => prompt.name);
+            nameProp.examples = data.prompts.slice(0, 3).map(prompt => prompt.name);
         }
     }
 
     /**
      * Enhance listPrompts schema
      */
-    private enhanceListPromptsSchema(schema: any, data: CachedData): void {
+    private enhanceListPromptsSchema(schema: EnhancedJSONSchema, data: CachedData): void {
         if (data.prompts.length > 0) {
             schema.description = `${schema.description}\n\nCurrent prompts: ${data.prompts.length} total (${
                 data.prompts.filter(p => p.enabled).length
@@ -208,7 +212,7 @@ export class AgentSchemaProvider extends BaseSchemaProvider {
     /**
      * Enhance general schemas with basic context
      */
-    private enhanceGeneralSchema(schema: any, data: CachedData): void {
+    private enhanceGeneralSchema(schema: EnhancedJSONSchema, data: CachedData): void {
         if (data.agents.length > 0 || data.prompts.length > 0) {
             schema.description = `${schema.description}\n\n${this.buildContextSummary(data)}`;
         }

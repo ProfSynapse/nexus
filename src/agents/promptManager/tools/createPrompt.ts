@@ -1,3 +1,4 @@
+import { JSONSchema } from '../../../types/schema/JSONSchemaTypes';
 import { BaseTool } from '../../baseTool';
 import { CreatePromptParams, CreatePromptResult } from '../types';
 import { CustomPromptStorageService } from '../services/CustomPromptStorageService';
@@ -64,7 +65,7 @@ export class CreatePromptTool extends BaseTool<CreatePromptParams, CreatePromptR
    * Get the JSON schema for the tool's parameters
    * @returns JSON schema object
    */
-  getParameterSchema(): any {
+  getParameterSchema(): JSONSchema {
     const toolSchema = {
       type: 'object',
       properties: {

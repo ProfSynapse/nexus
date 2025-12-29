@@ -127,7 +127,7 @@ export class SchemaValidator {
     if (sanitized.items) {
       if (Array.isArray(sanitized.items)) {
         // Convert array of schemas to prefixItems (tuple validation)
-        sanitized.prefixItems = sanitized.items.map((itemSchema: any) =>
+        sanitized.prefixItems = sanitized.items.map((itemSchema: Record<string, unknown>) =>
           this.sanitizeSchemaForGoogle(itemSchema)
         );
         delete sanitized.items;
@@ -138,7 +138,7 @@ export class SchemaValidator {
 
     // Recursively sanitize prefixItems (tuple schemas)
     if (sanitized.prefixItems && Array.isArray(sanitized.prefixItems)) {
-      sanitized.prefixItems = sanitized.prefixItems.map((itemSchema: any) =>
+      sanitized.prefixItems = sanitized.prefixItems.map((itemSchema: Record<string, unknown>) =>
         this.sanitizeSchemaForGoogle(itemSchema)
       );
     }

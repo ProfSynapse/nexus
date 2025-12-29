@@ -340,9 +340,9 @@ export class OpenRouterAdapter extends BaseAdapter {
 
           if (reasoningDetails && Array.isArray(reasoningDetails)) {
             // Find reasoning.text entries (these contain the actual reasoning text)
-            const textEntries = reasoningDetails.filter((r: any) => r.type === 'reasoning.text');
+            const textEntries = reasoningDetails.filter((r) => r.type === 'reasoning.text');
             if (textEntries.length > 0) {
-              const reasoningText = textEntries.map((r: any) => r.text || '').join('');
+              const reasoningText = textEntries.map((r) => r.text || '').join('');
               if (reasoningText) {
                 return {
                   text: reasoningText,
@@ -352,9 +352,9 @@ export class OpenRouterAdapter extends BaseAdapter {
             }
 
             // Also check for reasoning.summary entries
-            const summaryEntries = reasoningDetails.filter((r: any) => r.type === 'reasoning.summary');
+            const summaryEntries = reasoningDetails.filter((r) => r.type === 'reasoning.summary');
             if (summaryEntries.length > 0) {
-              const summaryText = summaryEntries.map((r: any) => r.text || r.summary || '').join('');
+              const summaryText = summaryEntries.map((r) => r.text || r.summary || '').join('');
               if (summaryText) {
                 return {
                   text: summaryText,
@@ -532,7 +532,7 @@ export class OpenRouterAdapter extends BaseAdapter {
 
     try {
       // Convert to MCP format
-      const mcpToolCalls: any[] = detectedToolCalls.map((tc: any) => ({
+      const mcpToolCalls: any[] = detectedToolCalls.map((tc) => ({
         id: tc.id,
         function: {
           name: tc.function?.name || tc.name,
@@ -639,8 +639,8 @@ export class OpenRouterAdapter extends BaseAdapter {
     try {
       const annotations = response.choices?.[0]?.message?.annotations || [];
       const sources = annotations
-        .filter((ann: any) => ann.type === 'url_citation')
-        .map((ann: any) => {
+        .filter((ann: { type: string }) => ann.type === 'url_citation')
+        .map((ann: { type: string; url?: string; title?: string; url_citation?: { title?: string; text?: string; url?: string; date?: string; timestamp?: string } }) => {
           const citation = ann.url_citation;
           return WebSearchUtils.validateSearchResult({
             title: citation?.title || citation?.text || 'Unknown Source',

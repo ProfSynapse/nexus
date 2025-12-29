@@ -149,8 +149,8 @@ export class ResultGroupingHelper {
   /**
    * Build metadata for a group
    */
-  private buildGroupMetadata(results: MemorySearchResult[], key: string): Record<string, any> {
-    const metadata: Record<string, any> = {};
+  private buildGroupMetadata(results: MemorySearchResult[], key: string): Record<string, unknown> {
+    const metadata: Record<string, unknown> = {};
 
     // Calculate group-specific statistics
     const scores = results.map(r => r.score);

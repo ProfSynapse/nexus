@@ -21,7 +21,7 @@ import { PaginatedResult, PaginationParams } from '../../../types/pagination/Pag
 export interface AddTraceData {
   content: string;
   type?: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
   timestamp?: number;
 }
 

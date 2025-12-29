@@ -74,7 +74,7 @@ export function validateParams(params: any, schema: any): ValidationError[] {
  */
 function validateObjectProperties(
     obj: any, 
-    propSchemas: Record<string, any>, 
+    propSchemas: Record<string, unknown>, 
     path: string[], 
     errors: ValidationError[]
 ): void {
@@ -454,7 +454,7 @@ function getTypeInfo(schema: any): string {
     if (!schema) return '';
     
     if (schema.enum && Array.isArray(schema.enum)) {
-        return `One of: [${schema.enum.map((v: any) => JSON.stringify(v)).join(', ')}]`;
+        return `One of: [${schema.enum.map((v: unknown) => JSON.stringify(v)).join(', ')}]`;
     }
     
     if (schema.type) {

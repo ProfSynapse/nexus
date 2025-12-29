@@ -401,7 +401,7 @@ export class SubagentExecutor {
       // Update IN-MEMORY message (like parent chat does) - NO storage writes during streaming
       const convertedToolCalls: ToolCall[] | undefined = toolCalls?.map(tc => ({
         ...tc,
-        type: tc.type || 'function',
+        type: 'function' as const,
       }));
       streamingAssistantMessage.content = responseContent;
       streamingAssistantMessage.toolCalls = convertedToolCalls;
@@ -433,7 +433,7 @@ export class SubagentExecutor {
     // Convert tool calls for storage
     const finalToolCalls: ToolCall[] | undefined = toolCalls?.map(tc => ({
       ...tc,
-      type: tc.type || 'function',
+      type: 'function' as const,
     }));
 
     // Update the placeholder message in storage with final content
@@ -563,7 +563,7 @@ BEGIN - Start by calling getTools to discover available tools.`);
    * Format workspace data for inclusion in system prompt
    * Uses shared utility for consistency with SystemPromptBuilder
    */
-  private formatWorkspaceData(workspaceData: any): string {
+  private formatWorkspaceData(workspaceData: Record<string, unknown>): string {
     // Import dynamically to avoid circular dependencies
     const { formatWorkspaceDataForPrompt } = require('../../utils/WorkspaceDataFormatter');
     return formatWorkspaceDataForPrompt(workspaceData, { maxStates: 3 });

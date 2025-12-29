@@ -28,7 +28,8 @@
       "emitDecoratorMetadata": true,
       "experimentalDecorators": true,
       "paths": {
-        "@/*": ["src/*"]
+        "@/*": ["src/*"],
+        "@dao-xyz/sqlite3-vec/wasm": ["node_modules/@dao-xyz/sqlite3-vec/index.d.ts"]
       }
     },
     "include": [

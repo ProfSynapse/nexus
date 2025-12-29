@@ -122,7 +122,7 @@ export class ConversationRepository
     );
 
     return {
-      items: rows.map((r: any) => this.rowToConversation(r)),
+      items: rows.map((r) => this.rowToConversation(r)),
       page,
       pageSize,
       totalItems,
@@ -137,13 +137,13 @@ export class ConversationRepository
    */
   async search(query: string): Promise<ConversationMetadata[]> {
     const rows = await this.sqliteCache.searchConversations(query);
-    return rows.map((r: any) => this.rowToConversation(r));
+    return rows.map((r) => this.rowToConversation(r));
   }
 
   /**
    * Count conversations matching filter
    */
-  async count(filter?: Record<string, any>): Promise<number> {
+  async count(filter?: Record<string, unknown>): Promise<number> {
     let whereClause = '';
     const params: any[] = [];
 

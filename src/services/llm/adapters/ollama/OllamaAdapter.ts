@@ -309,7 +309,7 @@ export class OllamaAdapter extends BaseAdapter {
         totalTokens: 0
       };
       let finishReason: 'stop' | 'length' = 'stop';
-      let metadata: Record<string, any> = {};
+      let metadata: Record<string, unknown> = {};
 
       try {
         const decoder = new TextDecoder();

@@ -1,6 +1,6 @@
 /**
  * Location: src/handlers/services/SchemaEnhancementService.ts
- * 
+ *
  * Central service for enhancing tool schemas with additional properties,
  * validation rules, and improvements through registered schema providers.
  * Used by ToolListService to enhance schemas before returning to clients.
@@ -8,7 +8,7 @@
 
 import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import { ISchemaEnhancementService } from '../interfaces/IRequestHandlerServices';
-import { ISchemaProvider } from '../interfaces/ISchemaProvider';
+import { ISchemaProvider, EnhancedJSONSchema } from '../interfaces/ISchemaProvider';
 import { logger } from '../../utils/logger';
 import { getErrorMessage } from '../../utils/errorUtils';
 
@@ -60,7 +60,7 @@ export class SchemaEnhancementService implements ISchemaEnhancementService {
     /**
      * Enhance a tool schema using all applicable registered providers
      */
-    async enhanceToolSchema(toolName: string, baseSchema: any): Promise<any> {
+    async enhanceToolSchema(toolName: string, baseSchema: EnhancedJSONSchema): Promise<EnhancedJSONSchema> {
         try {
             // Validate input
             if (!toolName || typeof toolName !== 'string') {

@@ -3,7 +3,7 @@
 // Used by: DataMigrationService to convert legacy data to split-file architecture
 // Dependencies: ChromaDataLoader for source data, StorageTypes for target structure
 
-import { IndividualConversation, IndividualWorkspace } from '../../types/storage/StorageTypes';
+import { IndividualConversation, IndividualWorkspace, MemoryTrace, StateData } from '../../types/storage/StorageTypes';
 import { ChromaCollectionData } from './ChromaDataLoader';
 import { normalizeLegacyTraceMetadata } from '../memory/LegacyTraceMetadataNormalizer';
 
@@ -132,8 +132,8 @@ export class DataTransformer {
     return result;
   }
 
-  private transformTraces(traces: any[], workspaceId: string, sessionId: string): Record<string, any> {
-    const result: Record<string, any> = {};
+  private transformTraces(traces: any[], workspaceId: string, sessionId: string): Record<string, MemoryTrace> {
+    const result: Record<string, MemoryTrace> = {};
 
     for (const trace of traces) {
       try {
@@ -171,8 +171,8 @@ export class DataTransformer {
     return result;
   }
 
-  private transformStates(states: any[]): Record<string, any> {
-    const result: Record<string, any> = {};
+  private transformStates(states: any[]): Record<string, StateData> {
+    const result: Record<string, StateData> = {};
 
     for (const state of states) {
       try {
@@ -180,7 +180,7 @@ export class DataTransformer {
           id: state.id,
           name: state.metadata?.name || 'Unnamed State',
           created: state.metadata?.created || Date.now(),
-          snapshot: state.metadata?.snapshot || state.snapshot || {}
+          state: state.metadata?.snapshot || state.snapshot || {}
         };
       } catch (error) {
         console.error(`[DataTransformer] Error transforming state ${state.id}:`, error);

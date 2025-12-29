@@ -11,16 +11,44 @@
  * Follows Single Responsibility Principle - only handles conversation write operations.
  */
 
-import { ConversationData, CreateConversationParams } from '../../types/chat/ChatTypes';
+import { ConversationData, CreateConversationParams, ToolCall } from '../../types/chat/ChatTypes';
 import { generateSessionId } from '../../utils/sessionUtils';
 
+/** Streaming options for message generation */
+interface StreamingOptions {
+  provider?: string;
+  model?: string;
+  systemPrompt?: string;
+  workspaceId?: string;
+  sessionId?: string;
+  messageId?: string;
+  abortSignal?: AbortSignal;
+}
+
+/** Streaming chunk result */
+interface StreamingChunk {
+  chunk: string;
+  complete: boolean;
+  messageId: string;
+  toolCalls?: ToolCall[];
+}
+
+/** Conversation service interface */
+interface ConversationServiceLike {
+  getConversation: (id: string) => Promise<ConversationData | null>;
+  addMessage: (params: { conversationId: string; role: string; content: string; id?: string }) => Promise<void>;
+  updateConversation: (id: string, updates: Partial<ConversationData>) => Promise<void>;
+  createConversation: (data: unknown) => Promise<ConversationData>;
+  deleteConversation: (id: string) => Promise<void>;
+}
+
 export interface ConversationManagerDependencies {
-  conversationService: any;
+  conversationService: ConversationServiceLike;
   streamingGenerator: (
     conversationId: string,
     userMessage: string,
-    options?: any
-  ) => AsyncGenerator<any, void, unknown>;
+    options?: StreamingOptions
+  ) => AsyncGenerator<StreamingChunk, void, unknown>;
 }
 
 export class ConversationManager {
@@ -68,16 +96,8 @@ export class ConversationManager {
   async* sendMessage(
     conversationId: string,
     message: string,
-    options?: {
-      provider?: string;
-      model?: string;
-      systemPrompt?: string;
-      workspaceId?: string;
-      sessionId?: string;
-      messageId?: string;
-      abortSignal?: AbortSignal;
-    }
-  ): AsyncGenerator<{ chunk: string; complete: boolean; messageId: string; toolCalls?: any[] }, void, unknown> {
+    options?: StreamingOptions
+  ): AsyncGenerator<StreamingChunk, void, unknown> {
     // Save user message first
     await this.dependencies.conversationService.addMessage({
       conversationId,
@@ -97,8 +117,8 @@ export class ConversationManager {
     role: 'user' | 'assistant' | 'system';
     content: string;
     id?: string;
-    toolCalls?: any[];
-    metadata?: any;
+    toolCalls?: ToolCall[];
+    metadata?: Record<string, unknown>;
   }): Promise<void> {
     await this.dependencies.conversationService.addMessage(params);
   }

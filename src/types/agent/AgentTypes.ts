@@ -58,7 +58,7 @@ export interface ToolCallRequest {
     toolCallId: string;
     agent: string;
     mode: string;
-    params: Record<string, any>;
+    params: Record<string, unknown>;
     timestamp: number;
     source: 'mcp-client' | 'internal' | 'api';
     workspaceContext?: WorkspaceContext | null;
@@ -99,7 +99,7 @@ export type AgentConstructor = new (...args: any[]) => any;
 export interface AgentConfig {
     enabled?: boolean;
     modes?: string[];
-    settings?: Record<string, any>;
+    settings?: Record<string, unknown>;
     dependencies?: string[];
 }
 

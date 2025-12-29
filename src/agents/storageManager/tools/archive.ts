@@ -1,3 +1,4 @@
+import { JSONSchema } from '../../../types/schema/JSONSchemaTypes';
 import { App, TFile, TFolder } from 'obsidian';
 import { BaseTool } from '../../baseTool';
 import { ArchiveParams, ArchiveResult } from '../types';
@@ -100,7 +101,7 @@ export class ArchiveTool extends BaseTool<ArchiveParams, ArchiveResult> {
    * Get the JSON schema for the tool's parameters
    * @returns JSON schema object
    */
-  getParameterSchema(): any {
+  getParameterSchema(): JSONSchema {
     const toolSchema = {
       type: 'object',
       properties: {

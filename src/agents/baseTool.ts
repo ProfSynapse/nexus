@@ -9,6 +9,7 @@ import {
 import { parseWorkspaceContext } from '../utils/contextUtils';
 import { getErrorMessage } from '../utils/errorUtils';
 import { enhanceSchemaDocumentation } from '../utils/validationUtils';
+import { JSONSchema } from '../types/schema/JSONSchemaTypes';
 
 // Import new validation utilities
 import {
@@ -63,14 +64,14 @@ export abstract class BaseTool<T extends CommonParameters = CommonParameters, R 
    * Get the JSON schema for the tool's parameters
    * @returns JSON schema object
    */
-  abstract getParameterSchema(): any;
+  abstract getParameterSchema(): JSONSchema;
 
   /**
    * Get common parameter schema elements for workspace context
    * This is now a proxy to the central utility for DRY implementation
    * @returns JSON schema for common parameters
    */
-  protected getCommonParameterSchema(): any {
+  protected getCommonParameterSchema(): JSONSchema {
     return getCommonParameterSchema();
   }
 
@@ -78,7 +79,7 @@ export abstract class BaseTool<T extends CommonParameters = CommonParameters, R 
    * Get the JSON schema for the tool's result
    * @returns JSON schema object
    */
-  getResultSchema(): any {
+  getResultSchema(): JSONSchema {
     // Default implementation returns the common result schema
     return getCommonResultSchema();
   }
@@ -91,7 +92,7 @@ export abstract class BaseTool<T extends CommonParameters = CommonParameters, R 
    * @param customSchema The tool-specific schema
    * @returns Merged and enhanced schema with common parameters and improved documentation
    */
-  protected getMergedSchema(customSchema: any): any {
+  protected getMergedSchema(customSchema: JSONSchema): JSONSchema {
     // Get the merged schema with common parameters
     const mergedSchema = mergeWithCommonSchema(customSchema);
 

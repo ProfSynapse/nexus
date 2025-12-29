@@ -141,7 +141,9 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
       };
 
       try {
-        this.sqlite3 = await sqlite3InitModule({
+        // External library types are incomplete - instantiateWasm is a valid option but not in InitOptions type
+        // Cast to unknown first to bypass strict type checking for the extended options
+        const initOptions = {
           instantiateWasm: (imports: WebAssembly.Imports, successCallback: (instance: WebAssembly.Instance) => void) => {
             WebAssembly.instantiate(wasmBinary, imports)
               .then(result => {
@@ -154,7 +156,8 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
           },
           print: () => {},
           printErr: (msg: string) => console.error('[SQLite]', msg)
-        });
+        } as unknown as Parameters<typeof sqlite3InitModule>[0];
+        this.sqlite3 = await sqlite3InitModule(initOptions);
       } finally {
         console.warn = originalWarn;
         console.log = originalLog;

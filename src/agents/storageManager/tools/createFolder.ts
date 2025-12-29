@@ -54,7 +54,7 @@ export class CreateFolderTool extends BaseTool<CreateFolderParams, CreateFolderR
   /**
    * Get the parameter schema
    */
-  getParameterSchema(): Record<string, any> {
+  getParameterSchema(): Record<string, unknown> {
     // Create the tool-specific schema
     const toolSchema = {
       type: 'object',

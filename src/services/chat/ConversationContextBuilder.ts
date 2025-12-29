@@ -10,12 +10,17 @@
  * Follows Facade Pattern - simple interface to complex subsystem.
  */
 
-import { ConversationData } from '../../types/chat/ChatTypes';
+import { ConversationData, ToolCall } from '../../types/chat/ChatTypes';
 import {
   getContextBuilder,
   getProviderCategory as getProviderCategoryFromFactory,
   ProviderCategory
 } from './builders';
+import type {
+  LLMMessage,
+  LLMToolCall,
+  ToolExecutionResult
+} from './builders/IContextBuilder';
 
 export class ConversationContextBuilder {
 
@@ -33,7 +38,7 @@ export class ConversationContextBuilder {
     provider: string,
     systemPrompt?: string,
     model?: string
-  ): any[] {
+  ): LLMMessage[] {
     const builder = getContextBuilder(provider, model);
     return builder.buildContext(conversation, systemPrompt);
   }
@@ -56,12 +61,12 @@ export class ConversationContextBuilder {
   static buildToolContinuation(
     provider: string,
     userPrompt: string,
-    toolCalls: any[],
-    toolResults: any[],
-    previousMessages?: any[],
+    toolCalls: LLMToolCall[],
+    toolResults: ToolExecutionResult[],
+    previousMessages?: LLMMessage[],
     systemPrompt?: string,
     model?: string
-  ): any[] {
+  ): LLMMessage[] {
     // Special case: OpenAI uses Responses API
     if (provider.toLowerCase() === 'openai') {
       throw new Error('OpenAI tool continuation should use buildResponsesAPIToolInput directly via StreamingOrchestrator');
@@ -80,14 +85,14 @@ export class ConversationContextBuilder {
    * @returns Array of FunctionCallOutput items for Responses API input
    */
   static buildResponsesAPIToolInput(
-    toolCalls: any[],
-    toolResults: any[]
-  ): any[] {
+    toolCalls: LLMToolCall[],
+    toolResults: ToolExecutionResult[]
+  ): Array<{ type: 'function_call_output'; call_id: string; output: string }> {
     const items = toolResults.map((result, index) => {
       const toolCall = toolCalls[index];
 
       return {
-        type: 'function_call_output',
+        type: 'function_call_output' as const,
         call_id: toolCall.id,
         output: result.success
           ? JSON.stringify(result.result || {})
@@ -99,7 +104,7 @@ export class ConversationContextBuilder {
     console.log('[LLM_DEBUG] buildResponsesAPIToolInput:');
     console.log('[LLM_DEBUG]   Tool calls received:', toolCalls.length);
     toolCalls.forEach((tc, i) => {
-      console.log(`[LLM_DEBUG]   [${i}] call_id=${tc.id}, name=${tc.function?.name || tc.name}`);
+      console.log(`[LLM_DEBUG]   [${i}] call_id=${tc.id}, name=${tc.function?.name}`);
     });
     console.log('[LLM_DEBUG]   Output items:', JSON.stringify(items, null, 2));
 
@@ -123,11 +128,11 @@ export class ConversationContextBuilder {
    */
   static appendToolExecution(
     provider: string,
-    toolCalls: any[],
-    toolResults: any[],
-    previousMessages: any[],
+    toolCalls: LLMToolCall[],
+    toolResults: ToolExecutionResult[],
+    previousMessages: LLMMessage[],
     model?: string
-  ): any[] {
+  ): LLMMessage[] {
     const builder = getContextBuilder(provider, model);
     return builder.appendToolExecution(toolCalls, toolResults, previousMessages);
   }

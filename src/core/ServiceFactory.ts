@@ -20,7 +20,6 @@ import { App, Plugin } from 'obsidian';
 import type { ServiceManager } from './ServiceManager';
 import {
     ContentManagerAgent,
-    CommandManagerAgent,
     StorageManagerAgent,
     SearchManagerAgent,
     MemoryManagerAgent,
@@ -93,19 +92,6 @@ export class ContentManagerAgentFactory extends BaseAgentFactory<ContentManagerA
         // ContentManagerAgent accepts NexusPlugin which extends Plugin
         const nexusPlugin = plugin as unknown as NexusPlugin;
         return new ContentManagerAgent(app, nexusPlugin, memoryService, workspaceService);
-    }
-}
-
-/**
- * CommandManager agent factory - no external dependencies
- */
-export class CommandManagerAgentFactory extends BaseAgentFactory<CommandManagerAgent> {
-    constructor() {
-        super('commandManager', []);
-    }
-
-    async create(dependencies: Map<string, any>, app: App, plugin: Plugin): Promise<CommandManagerAgent> {
-        return new CommandManagerAgent(app);
     }
 }
 
@@ -207,7 +193,6 @@ export class AgentFactoryRegistry {
     constructor() {
         // Register all agent factories
         this.registerFactory(new ContentManagerAgentFactory());
-        this.registerFactory(new CommandManagerAgentFactory());
         this.registerFactory(new StorageManagerAgentFactory());
         this.registerFactory(new SearchManagerAgentFactory());
         this.registerFactory(new MemoryManagerAgentFactory());

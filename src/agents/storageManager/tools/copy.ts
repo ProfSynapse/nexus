@@ -1,3 +1,4 @@
+import { JSONSchema } from '../../../types/schema/JSONSchemaTypes';
 import { App } from 'obsidian';
 import { BaseTool } from '../../baseTool';
 import { CopyParams, CopyResult } from '../types';
@@ -65,7 +66,7 @@ export class CopyTool extends BaseTool<CopyParams, CopyResult> {
    * Get the JSON schema for the tool's parameters
    * @returns JSON schema object
    */
-  getParameterSchema(): any {
+  getParameterSchema(): JSONSchema {
     const toolSchema = {
       type: 'object',
       properties: {

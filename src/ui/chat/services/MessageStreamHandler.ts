@@ -174,7 +174,7 @@ export class MessageStreamHandler {
       if (chunk.complete) {
         // Check if this is TRULY the final complete
         const hasToolCalls = toolCalls && toolCalls.length > 0;
-        const toolCallsHaveResults = hasToolCalls && toolCalls!.some((tc: any) =>
+        const toolCallsHaveResults = hasToolCalls && toolCalls!.some((tc) =>
           tc.result !== undefined || tc.success !== undefined
         );
         const isFinalComplete = !hasToolCalls || toolCallsHaveResults;

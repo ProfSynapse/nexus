@@ -68,7 +68,7 @@ export class ToolContinuationService {
 
       // Check if this was a get_tools call
       if (toolCall.function?.name === 'get_tools' && result?.success && result?.result?.tools) {
-        const returnedTools = result.result.tools as Array<Tool | { name: string; description?: string; inputSchema?: Record<string, any> }>;
+        const returnedTools = result.result.tools as Array<Tool | { name: string; description?: string; inputSchema?: Record<string, unknown> }>;
 
         // Handle both MCP format and OpenAI format tools
         for (const tool of returnedTools) {

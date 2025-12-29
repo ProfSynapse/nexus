@@ -8,7 +8,7 @@
  * with contextual vault information for better Claude understanding.
  */
 
-import { ISchemaProvider } from '../../interfaces/ISchemaProvider';
+import { ISchemaProvider, EnhancedJSONSchema } from '../../interfaces/ISchemaProvider';
 import { BaseSchemaProvider } from '../BaseSchemaProvider';
 import { App, TFile, TFolder } from 'obsidian';
 import { logger } from '../../../utils/logger';
@@ -78,7 +78,7 @@ export class VaultSchemaProvider extends BaseSchemaProvider {
    * Enhance the schema with vault structure information
    * Adds vault context to relevant parameters and descriptions
    */
-  async enhanceSchema(toolName: string, baseSchema: any): Promise<any> {
+  async enhanceSchema(toolName: string, baseSchema: EnhancedJSONSchema): Promise<EnhancedJSONSchema> {
     return this.safeEnhance(async () => {
       const vaultInfo = await this.getVaultStructure();
       if (!vaultInfo) {
@@ -176,7 +176,7 @@ export class VaultSchemaProvider extends BaseSchemaProvider {
    * Enhance schema with vault structure context
    * Adds contextual information to relevant parameters
    */
-  private enhanceSchemaWithVaultContext(schema: any, vaultInfo: VaultStructureInfo): void {
+  private enhanceSchemaWithVaultContext(schema: EnhancedJSONSchema, vaultInfo: VaultStructureInfo): void {
     try {
       // Add vault structure information to the schema description
       if (schema.description) {
@@ -191,9 +191,12 @@ export class VaultSchemaProvider extends BaseSchemaProvider {
 
       // Enhance conditional schemas in allOf array (used by ToolListService)
       if (schema.allOf && Array.isArray(schema.allOf)) {
-        schema.allOf.forEach((condition: any) => {
-          if (condition.then && condition.then.properties) {
-            this.enhancePropertiesWithVaultContext(condition.then.properties, vaultInfo);
+        schema.allOf.forEach((condition) => {
+          if (condition.then && typeof condition.then === 'object' && 'properties' in condition.then) {
+            const thenSchema = condition.then as { properties: EnhancedJSONSchema['properties'] };
+            if (thenSchema.properties) {
+              this.enhancePropertiesWithVaultContext(thenSchema.properties, vaultInfo);
+            }
           }
         });
       }
@@ -205,15 +208,16 @@ export class VaultSchemaProvider extends BaseSchemaProvider {
   /**
    * Enhance individual properties with vault context
    */
-  private enhancePropertiesWithVaultContext(properties: any, vaultInfo: VaultStructureInfo): void {
+  private enhancePropertiesWithVaultContext(properties: EnhancedJSONSchema['properties'], vaultInfo: VaultStructureInfo): void {
+    if (!properties) return;
     Object.keys(properties).forEach(propName => {
-      const prop = properties[propName];
-      
+      const prop = properties[propName] as EnhancedJSONSchema;
+
       // Enhance path-related properties
       if (this.isPathProperty(propName) && prop.type === 'string') {
         this.enhancePathProperty(prop, propName, vaultInfo);
       }
-      
+
       // Enhance mode enum with contextual information
       if (propName === 'mode' && prop.enum && Array.isArray(prop.enum)) {
         this.enhanceModeProperty(prop, vaultInfo);
@@ -232,7 +236,7 @@ export class VaultSchemaProvider extends BaseSchemaProvider {
   /**
    * Enhance path properties with vault examples and context
    */
-  private enhancePathProperty(prop: any, propName: string, vaultInfo: VaultStructureInfo): void {
+  private enhancePathProperty(prop: EnhancedJSONSchema, propName: string, vaultInfo: VaultStructureInfo): void {
     // Add vault-specific examples based on property type
     if (propName.toLowerCase().includes('folder') || propName.toLowerCase().includes('directory')) {
       // Folder-related properties
@@ -270,7 +274,7 @@ export class VaultSchemaProvider extends BaseSchemaProvider {
   /**
    * Enhance mode property with contextual descriptions
    */
-  private enhanceModeProperty(prop: any, vaultInfo: VaultStructureInfo): void {
+  private enhanceModeProperty(prop: EnhancedJSONSchema, vaultInfo: VaultStructureInfo): void {
     // Add vault context to mode description
     prop.description = prop.description + 
       `\n\nCurrent vault has ${vaultInfo.totalFiles} files in ${vaultInfo.totalFolders} folders.`;

@@ -8,7 +8,112 @@
  * Follows Interface Segregation Principle - focused contract for context building.
  */
 
-import { ConversationData } from '../../../types/chat/ChatTypes';
+import { ConversationData, ChatMessage, ToolCall } from '../../../types/chat/ChatTypes';
+
+/**
+ * OpenAI-format tool call (for streaming/continuation)
+ */
+export interface LLMToolCall {
+  id: string;
+  type: 'function';
+  function: {
+    name: string;
+    arguments: string;
+  };
+  /** Reasoning content from thinking models */
+  reasoning?: string;
+  /** Thought signature for Google models */
+  thoughtSignature?: string;
+  /** Source format for custom models */
+  sourceFormat?: 'bracket' | 'xml' | 'native';
+}
+
+/**
+ * Tool execution result
+ */
+export interface ToolExecutionResult {
+  id: string;
+  name?: string;
+  success: boolean;
+  result?: unknown;
+  error?: string;
+  /** The function details from the original call */
+  function?: {
+    name: string;
+    arguments?: string;
+  };
+}
+
+/**
+ * Content block for Anthropic-style messages
+ */
+export interface LLMContentBlock {
+  type: 'text' | 'tool_use' | 'tool_result';
+  text?: string;
+  id?: string;
+  name?: string;
+  input?: Record<string, unknown>;
+  tool_use_id?: string;
+  content?: string;
+}
+
+/**
+ * Google-specific part types
+ */
+export interface GoogleTextPart {
+  text: string;
+}
+
+export interface GoogleFunctionCallPart {
+  functionCall: {
+    name: string;
+    args: Record<string, unknown>;
+  };
+}
+
+export interface GoogleFunctionResponsePart {
+  functionResponse: {
+    name: string;
+    response: unknown;
+  };
+}
+
+export type GooglePart = GoogleTextPart | GoogleFunctionCallPart | GoogleFunctionResponsePart;
+
+/**
+ * Google-format message
+ */
+export interface GoogleMessage {
+  role: 'user' | 'model' | 'function' | 'system';
+  parts: GooglePart[];
+}
+
+/**
+ * OpenAI-format message
+ */
+export interface OpenAIMessage {
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content: string | LLMContentBlock[] | null;
+  tool_calls?: LLMToolCall[];
+  tool_call_id?: string;
+  name?: string;
+}
+
+/**
+ * Anthropic-format message
+ */
+export interface AnthropicMessage {
+  role: 'system' | 'user' | 'assistant';
+  content: string | LLMContentBlock[];
+}
+
+/**
+ * Union type for all LLM message formats
+ */
+export type LLMMessage = OpenAIMessage | AnthropicMessage | GoogleMessage;
+
+// Re-export for convenience
+export type { ChatMessage, ToolCall, ConversationData };
 
 export interface IContextBuilder {
   /**
@@ -24,7 +129,7 @@ export interface IContextBuilder {
    * @param systemPrompt - Optional system prompt to prepend
    * @returns Properly formatted message array for the provider
    */
-  buildContext(conversation: ConversationData, systemPrompt?: string): any[];
+  buildContext(conversation: ConversationData, systemPrompt?: string): LLMMessage[];
 
   /**
    * Build tool continuation context for streaming pingpong pattern
@@ -40,11 +145,11 @@ export interface IContextBuilder {
    */
   buildToolContinuation(
     userPrompt: string,
-    toolCalls: any[],
-    toolResults: any[],
-    previousMessages?: any[],
+    toolCalls: LLMToolCall[],
+    toolResults: ToolExecutionResult[],
+    previousMessages?: LLMMessage[],
     systemPrompt?: string
-  ): any[];
+  ): LLMMessage[];
 
   /**
    * Append tool execution to existing conversation history
@@ -57,16 +162,16 @@ export interface IContextBuilder {
    * @returns Updated message array with tool execution appended
    */
   appendToolExecution(
-    toolCalls: any[],
-    toolResults: any[],
-    previousMessages: any[]
-  ): any[];
+    toolCalls: LLMToolCall[],
+    toolResults: ToolExecutionResult[],
+    previousMessages: LLMMessage[]
+  ): LLMMessage[];
 }
 
 /**
  * Helper type for message validation
  */
 export interface MessageValidationContext {
-  msg: any;
+  msg: ChatMessage;
   isLastMessage: boolean;
 }

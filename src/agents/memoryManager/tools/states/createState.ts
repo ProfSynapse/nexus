@@ -1,3 +1,4 @@
+import { JSONSchema } from '../../../../types/schema/JSONSchemaTypes';
 /**
  * Location: /src/agents/memoryManager/modes/states/CreateStateMode.ts
  * Purpose: Consolidated state creation mode combining all create functionality from original state files
@@ -404,7 +405,7 @@ export class CreateStateTool extends BaseTool<CreateStateParams, StateResult> {
     /**
      * Schema methods using consolidated logic
      */
-    getParameterSchema(): any {
+    getParameterSchema(): JSONSchema {
         const toolSchema = {
             type: 'object',
             title: 'Create State',
@@ -445,7 +446,7 @@ export class CreateStateTool extends BaseTool<CreateStateParams, StateResult> {
         return this.getMergedSchema(toolSchema);
     }
 
-    getResultSchema(): any {
+    getResultSchema(): JSONSchema {
         return this.schemaBuilder.buildResultSchema(SchemaType.State, {
             mode: 'createState'
         });

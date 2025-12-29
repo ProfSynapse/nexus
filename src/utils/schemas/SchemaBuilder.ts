@@ -22,6 +22,7 @@ import {
   SchemaValidationResult,
   SchemaStatistics
 } from './SchemaTypes';
+import { JSONSchema } from '../../types/schema/JSONSchemaTypes';
 
 // Re-export SchemaType for consumers
 export { SchemaType } from './SchemaTypes';
@@ -82,7 +83,7 @@ export class SchemaBuilder {
    * Backward-compatible method for getting parameter schema (ContentBatch type)
    * Used by BatchContentMode
    */
-  getParameterSchema(): any {
+  getParameterSchema(): JSONSchema {
     const context: SchemaContext = {
       mode: 'batchContent',
       providerManager: this.providerManager
@@ -94,7 +95,7 @@ export class SchemaBuilder {
    * Backward-compatible method for getting result schema (ContentBatch type)
    * Used by BatchContentMode
    */
-  getResultSchema(): any {
+  getResultSchema(): JSONSchema {
     const context: SchemaContext = {
       mode: 'batchContent',
       providerManager: this.providerManager

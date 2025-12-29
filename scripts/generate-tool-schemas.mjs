@@ -229,7 +229,7 @@ function findToolFiles(dir, results = []) {
 /**
  * Agents to exclude from schema generation
  */
-const EXCLUDED_AGENTS = ['commandManager', 'toolManager'];
+const EXCLUDED_AGENTS = ['toolManager'];
 
 /**
  * Name migration mapping (old -> new)

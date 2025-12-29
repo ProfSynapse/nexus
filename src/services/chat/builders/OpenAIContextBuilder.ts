@@ -11,8 +11,8 @@
  * Follows Single Responsibility Principle - only handles OpenAI format.
  */
 
-import { IContextBuilder } from './IContextBuilder';
-import { ConversationData } from '../../../types/chat/ChatTypes';
+import { IContextBuilder, LLMMessage, LLMToolCall, ToolExecutionResult, OpenAIMessage } from './IContextBuilder';
+import { ConversationData, ChatMessage, ToolCall } from '../../../types/chat/ChatTypes';
 import { ReasoningPreserver } from '../../llm/adapters/shared/ReasoningPreserver';
 
 export class OpenAIContextBuilder implements IContextBuilder {
@@ -21,7 +21,7 @@ export class OpenAIContextBuilder implements IContextBuilder {
   /**
    * Validate if a message should be included in LLM context
    */
-  private isValidForContext(msg: any, isLastMessage: boolean): boolean {
+  private isValidForContext(msg: ChatMessage, isLastMessage: boolean): boolean {
     if (msg.state === 'invalid' || msg.state === 'streaming') return false;
     if (msg.role === 'user' && (!msg.content || !msg.content.trim())) return false;
 
@@ -31,8 +31,8 @@ export class OpenAIContextBuilder implements IContextBuilder {
 
       if (!hasContent && !hasToolCalls && !isLastMessage) return false;
 
-      if (hasToolCalls) {
-        const allHaveResults = msg.toolCalls.every((tc: any) =>
+      if (hasToolCalls && msg.toolCalls) {
+        const allHaveResults = msg.toolCalls.every((tc: ToolCall) =>
           tc.result !== undefined || tc.error !== undefined
         );
         if (!allHaveResults) return false;
@@ -45,8 +45,8 @@ export class OpenAIContextBuilder implements IContextBuilder {
   /**
    * Build context from stored conversation
    */
-  buildContext(conversation: ConversationData, systemPrompt?: string): any[] {
-    const messages: any[] = [];
+  buildContext(conversation: ConversationData, systemPrompt?: string): LLMMessage[] {
+    const messages: OpenAIMessage[] = [];
 
     if (systemPrompt) {
       messages.push({ role: 'system', content: systemPrompt });
@@ -66,9 +66,9 @@ export class OpenAIContextBuilder implements IContextBuilder {
       } else if (msg.role === 'assistant') {
         if (msg.toolCalls && msg.toolCalls.length > 0) {
           // Build proper OpenAI tool_calls format for continuations
-          const toolCallsFormatted = msg.toolCalls.map((tc: any) => ({
+          const toolCallsFormatted: LLMToolCall[] = msg.toolCalls.map((tc: ToolCall) => ({
             id: tc.id,
-            type: 'function',
+            type: 'function' as const,
             function: {
               name: tc.function?.name || tc.name || '',
               arguments: tc.function?.arguments || JSON.stringify(tc.parameters || {})
@@ -83,7 +83,7 @@ export class OpenAIContextBuilder implements IContextBuilder {
           });
 
           // Add tool result messages with proper tool_call_id
-          msg.toolCalls.forEach((toolCall: any) => {
+          msg.toolCalls.forEach((toolCall: ToolCall) => {
             const resultContent = toolCall.success !== false
               ? JSON.stringify(toolCall.result || {})
               : JSON.stringify({ error: toolCall.error || 'Tool execution failed' });
@@ -102,7 +102,7 @@ export class OpenAIContextBuilder implements IContextBuilder {
       } else if (msg.role === 'tool') {
         // Handle separately stored tool result messages (from subagent)
         // These need tool_call_id from metadata
-        const toolCallId = (msg as any).metadata?.toolCallId;
+        const toolCallId = msg.metadata?.toolCallId as string | undefined;
         if (toolCallId) {
           messages.push({
             role: 'tool',
@@ -122,17 +122,17 @@ export class OpenAIContextBuilder implements IContextBuilder {
    */
   buildToolContinuation(
     userPrompt: string,
-    toolCalls: any[],
-    toolResults: any[],
-    previousMessages?: any[],
-    systemPrompt?: string
-  ): any[] {
-    const messages: any[] = [];
+    toolCalls: LLMToolCall[],
+    toolResults: ToolExecutionResult[],
+    previousMessages?: LLMMessage[],
+    _systemPrompt?: string
+  ): LLMMessage[] {
+    const messages: OpenAIMessage[] = [];
 
     // Filter out system messages - OpenAI/OpenRouter expect them in a separate systemPrompt param
     if (previousMessages && previousMessages.length > 0) {
-      const nonSystemMessages = previousMessages.filter(msg => msg.role !== 'system');
-      messages.push(...nonSystemMessages);
+      const nonSystemMessages = previousMessages.filter(msg => (msg as OpenAIMessage).role !== 'system');
+      messages.push(...(nonSystemMessages as OpenAIMessage[]));
     }
 
     if (userPrompt) {
@@ -142,7 +142,7 @@ export class OpenAIContextBuilder implements IContextBuilder {
     // Build assistant message with reasoning preserved using centralized utility
     const assistantMessage = ReasoningPreserver.buildAssistantMessageWithReasoning(toolCalls, null);
 
-    messages.push(assistantMessage);
+    messages.push(assistantMessage as OpenAIMessage);
 
     // Add tool result messages
     toolResults.forEach((result, index) => {
@@ -166,17 +166,17 @@ export class OpenAIContextBuilder implements IContextBuilder {
    * Filters out system messages to prevent API errors
    */
   appendToolExecution(
-    toolCalls: any[],
-    toolResults: any[],
-    previousMessages: any[]
-  ): any[] {
+    toolCalls: LLMToolCall[],
+    toolResults: ToolExecutionResult[],
+    previousMessages: LLMMessage[]
+  ): LLMMessage[] {
     // Filter out system messages - they should be handled separately
-    const messages = previousMessages.filter(msg => msg.role !== 'system');
+    const messages: OpenAIMessage[] = (previousMessages as OpenAIMessage[]).filter(msg => msg.role !== 'system');
 
     // Build assistant message with reasoning preserved using centralized utility
     const assistantMessage = ReasoningPreserver.buildAssistantMessageWithReasoning(toolCalls, null);
 
-    messages.push(assistantMessage);
+    messages.push(assistantMessage as OpenAIMessage);
 
     // Add tool result messages
     toolResults.forEach((result, index) => {

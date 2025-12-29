@@ -413,9 +413,9 @@ export class AnthropicAdapter extends BaseAdapter {
 
   private extractThinking(response: any): string | undefined {
     // Extract thinking process from response if available
-    const thinkingBlocks = response.content?.filter((block: any) => block.type === 'thinking') || [];
+    const thinkingBlocks = response.content?.filter((block: { type: string; thinking?: string }) => block.type === 'thinking') || [];
     if (thinkingBlocks.length > 0) {
-      return thinkingBlocks.map((block: any) => block.thinking).join('\n');
+      return thinkingBlocks.map((block: { thinking?: string }) => block.thinking).join('\n');
     }
     return undefined;
   }
