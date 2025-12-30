@@ -75,11 +75,12 @@ export class ListModelsTool extends BaseTool<ListModelsParams, ListModelsResult>
   }
 
   getParameterSchema(): Record<string, unknown> {
-    return this.getMergedSchema({
+    const toolSchema = {
       type: 'object',
       properties: {},
       required: []
-    });
+    };
+    return this.getMergedSchema(toolSchema);
   }
 
   getResultSchema(): Record<string, unknown> {

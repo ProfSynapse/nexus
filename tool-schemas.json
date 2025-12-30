@@ -3,7 +3,7 @@
   "title": "Claudesidian Tool Schemas",
   "description": "JSON Schema definitions for all Claudesidian MCP tools (auto-generated)",
   "version": "2.0.0",
-  "generated": "2025-12-28T21:51:00.394Z",
+  "generated": "2025-12-30T19:16:02.560Z",
   "migrations": {
     "agents": {
       "agentManager": "promptManager",
@@ -160,31 +160,27 @@
       "properties": {
         "name": {
           "type": "string",
-          "description": "📝 ⚠️ REQUIRED (FIRST PARAMETER): State name - a short descriptive title for this save point. This is DIFFERENT from "
+          "description": "Short descriptive title for this save point"
         },
         "conversationContext": {
           "type": "string",
-          "description": "💬 REQUIRED: What was happening when you decided to save this state? Provide a summary of the conversation and what you were working on.\\n\\nExample: "
+          "description": "Detailed markdown summary enabling seamless resumption. Structure with headings:\\n\\n## Original Request\\nWhat the user asked for and their goal\\n\\n## Key Decisions Made\\n- Decision and reasoning\\n- Decision and reasoning\\n\\n## Important Context\\nBackground info, constraints, or discoveries from the conversation\\n\\n## Current Status\\nWhat is complete, what is in progress, any blockers"
         },
         "activeTask": {
           "type": "string",
-          "description": "🎯 REQUIRED: What task were you actively working on? Be specific about the current task.\\n\\nExample: "
+          "description": "The specific task in progress when saving"
         },
         "activeFiles": {
           "type": "array",
-          "description": "📄 REQUIRED: Which files were you working with? Provide an ARRAY of file paths that were being edited or referenced.\\n\\nExample: ["
+          "description": "File paths being edited or referenced"
         },
         "nextSteps": {
           "type": "array",
-          "description": "✅ REQUIRED: What are the immediate next steps when you resume? Provide an ARRAY of specific actionable next steps.\\n\\nExample: ["
-        },
-        "description": {
-          "type": "string",
-          "description": "Optional: Additional description for the state"
+          "description": "Specific action items to resume work, in priority order"
         },
         "tags": {
           "type": "array",
-          "description": "Optional: Tags to associate with the state"
+          "description": "Optional tags for categorization"
         }
       },
       "required": [
@@ -280,47 +276,47 @@
       "properties": {
         "name": {
           "type": "string",
-          "description": "📝 REQUIRED: Workspace name (e.g., "
+          "description": "Workspace name"
         },
         "description": {
           "type": "string",
-          "description": "📝 REQUIRED: What this workspace is for (brief description)"
+          "description": "Brief description of the workspace purpose"
         },
         "rootFolder": {
           "type": "string",
-          "description": "📁 REQUIRED: Root folder path for this workspace (e.g., "
+          "description": "Root folder path for this workspace"
         },
         "purpose": {
           "type": "string",
-          "description": "🎯 REQUIRED: What is this workspace for? Describe the overall purpose."
+          "description": "Overall purpose and goals for this workspace"
         },
         "workflows": {
           "type": "array",
-          "description": "⚙️ REQUIRED: Workflows for different situations. IMPORTANT: "
+          "description": "Workflows for different situations. Each workflow has name, when (trigger), and steps (newline-separated string)."
         },
         "keyFiles": {
           "type": "array",
-          "description": "📄 Optional: Array of key file paths for quick reference (e.g., ["
+          "description": "Key file paths for quick reference"
         },
         "preferences": {
           "type": "string",
-          "description": "⚙️ Optional: User preferences or workspace settings as text"
+          "description": "User preferences or workspace settings"
         },
         "dedicatedAgentId": {
           "type": "string",
-          "description": "🤖 Optional: ID of dedicated AI agent for this workspace (e.g., "
+          "description": "ID of dedicated prompt for this workspace"
         },
         "relatedFolders": {
           "type": "array",
-          "description": "📁 Optional: Related folder paths"
+          "description": "Related folder paths"
         },
         "relatedFiles": {
           "type": "array",
-          "description": "📄 Optional: Related file paths"
+          "description": "Related file paths"
         },
         "keyFileInstructions": {
           "type": "string",
-          "description": "📋 Optional: Instructions for working with key files"
+          "description": "Instructions for working with key files"
         }
       },
       "required": [
@@ -577,16 +573,7 @@
         },
         "savePath": {
           "type": "string",
-          "description": "Vault-relative path where the image should be saved (e.g., "
-        },
-        "format": {
-          "type": "string",
-          "description": "Image format (optional, inferred from savePath extension or provider default)",
-          "enum": [
-            "png",
-            "jpeg",
-            "webp"
-          ]
+          "description": "Vault-relative path for the image. Extension may change based on API response format."
         }
       },
       "required": [
@@ -610,6 +597,15 @@
           "description": "Name of the prompt to retrieve for persona adoption"
         }
       },
+      "required": [],
+      "additionalProperties": false
+    },
+    "promptManager_listModels": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "promptManager_listModels",
+      "description": "List Available Models",
+      "type": "object",
+      "properties": {},
       "required": [],
       "additionalProperties": false
     },
@@ -754,15 +750,15 @@
       "properties": {
         "query": {
           "type": "string",
-          "description": "🔍 REQUIRED: The search term to find in file/folder names and paths. Use simple text without wildcards (fuzzy matching is automatic). Examples: "
+          "description": "Search term to find in file/folder names and paths. Fuzzy matching is automatic."
         },
         "paths": {
           "type": "array",
-          "description": "📁 REQUIRED: Array of directory paths to search within. Supports glob patterns (e.g., "
+          "description": "Directory paths to search within. Supports glob patterns. Use ["
         },
         "searchType": {
           "type": "string",
-          "description": "🎯 What to search for: ",
+          "description": "What to search for: ",
           "enum": [
             "files",
             "folders",
@@ -772,32 +768,32 @@
         },
         "fileTypes": {
           "type": "array",
-          "description": "📄 Optional: Filter by file extensions without dots. Examples: ["
+          "description": "Filter by file extensions without dots"
         },
         "depth": {
           "type": "number",
-          "description": "🔢 Optional: Maximum directory depth to search (1-10). Limits how deep into subdirectories to look.",
+          "description": "Maximum directory depth to search (1-10)",
           "minimum": 1,
           "maximum": 10
         },
         "pattern": {
           "type": "string",
-          "description": "🔎 Optional: Regular expression pattern to filter paths. Advanced users only. Examples: "
+          "description": "Regular expression pattern to filter paths"
         },
         "dateRange": {
           "type": "object",
-          "description": "📅 Start date in ISO format (YYYY-MM-DD)"
+          "description": "Start date (YYYY-MM-DD)"
         },
         "limit": {
           "type": "number",
-          "description": "🔢 Optional: Maximum number of results to return (1-100). Default: 20",
+          "description": "Maximum number of results (1-100)",
           "default": 20,
           "minimum": 1,
           "maximum": 100
         },
         "includeContent": {
           "type": "boolean",
-          "description": "📝 Optional: Include content snippets from files in results. Default: true",
+          "description": "Include content snippets from files",
           "default": true
         }
       },
@@ -815,11 +811,11 @@
       "properties": {
         "query": {
           "type": "string",
-          "description": "REQUIRED: Search query to find in memory content"
+          "description": "Search query to find in memory content"
         },
         "workspaceId": {
           "type": "string",
-          "description": "REQUIRED: Workspace context for memory search. States and traces are workspace-scoped. Use listWorkspaces to see available workspaces."
+          "description": "Workspace context for memory search. Use listWorkspaces to see available workspaces."
         },
         "memoryTypes": {
           "type": "array",
@@ -843,7 +839,7 @@
         },
         "toolCallFilters": {
           "type": "object",
-          "description": "Filter by agent name (e.g., contentManager, vaultLibrarian)"
+          "description": "Filter by agent name"
         },
         "searchMethod": {
           "type": "string",
@@ -854,11 +850,6 @@
             "mixed"
           ],
           "default": "mixed"
-        },
-        "filterBySession": {
-          "type": "boolean",
-          "description": "If true, only return traces from the current sessionId. If false or omitted, search across all sessions.",
-          "default": false
         }
       },
       "required": [
@@ -1025,13 +1016,14 @@
       ]
     },
     "promptManager": {
-      "toolCount": 8,
+      "toolCount": 9,
       "tools": [
         "archivePrompt",
         "createPrompt",
         "executePrompts",
         "generateImage",
         "getPrompt",
+        "listModels",
         "listPrompts",
         "subagent",
         "updatePrompt"

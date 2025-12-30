@@ -79,7 +79,8 @@ function extractToolFromFile(filePath) {
 
   const schema = extractPropertiesFromSchema(schemaStr);
 
-  if (!schema || Object.keys(schema.properties).length === 0) {
+  // Only skip if schema parsing failed - empty properties is valid (e.g., listModels)
+  if (!schema) {
     return null;
   }
 
