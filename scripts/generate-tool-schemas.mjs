@@ -102,9 +102,12 @@ function extractPropertiesFromSchema(schemaStr) {
 
   // Find properties: { and extract with balanced braces
   const propsStartMatch = schemaStr.match(/properties\s*:\s*\{/);
+  let propsEndIdx = 0;
+
   if (propsStartMatch) {
     const startIdx = schemaStr.indexOf(propsStartMatch[0]) + propsStartMatch[0].length - 1;
     const propsBlock = extractBalancedBraces(schemaStr, startIdx);
+    propsEndIdx = startIdx + propsBlock.length;
 
     // Remove outer braces
     const propsContent = propsBlock.substring(1, propsBlock.length - 1);
@@ -158,8 +161,9 @@ function extractPropertiesFromSchema(schemaStr) {
     }
   }
 
-  // Extract required array
-  const reqMatch = schemaStr.match(/required\s*:\s*\[([^\]]*)\]/);
+  // Extract TOP-LEVEL required array (after properties block ends, not nested ones)
+  const afterProps = schemaStr.substring(propsEndIdx);
+  const reqMatch = afterProps.match(/required\s*:\s*\[([^\]]*)\]/);
   if (reqMatch) {
     result.required = reqMatch[1]
       .split(',')

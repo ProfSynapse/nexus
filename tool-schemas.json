@@ -3,7 +3,7 @@
   "title": "Claudesidian Tool Schemas",
   "description": "JSON Schema definitions for all Claudesidian MCP tools (auto-generated)",
   "version": "2.0.0",
-  "generated": "2025-12-30T19:16:02.560Z",
+  "generated": "2025-12-30T19:26:24.636Z",
   "migrations": {
     "agents": {
       "agentManager": "promptManager",
@@ -321,8 +321,9 @@
       },
       "required": [
         "name",
-        "when",
-        "steps"
+        "description",
+        "rootFolder",
+        "purpose"
       ],
       "additionalProperties": false
     },
@@ -425,9 +426,7 @@
         }
       },
       "required": [
-        "name",
-        "when",
-        "steps"
+        "workspaceId"
       ],
       "additionalProperties": false
     },
@@ -501,8 +500,7 @@
         }
       },
       "required": [
-        "type",
-        "targetPath"
+        "prompts"
       ],
       "additionalProperties": false
     },
