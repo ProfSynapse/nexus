@@ -53,7 +53,10 @@ export class GetToolsTool implements ITool<GetToolsParams, GetToolsResult> {
    */
   private buildDescription(schemaData: SchemaData): string {
     const lines = [
-      'Get parameter schemas for specific tools.',
+      'REQUIRED FIRST STEP: You MUST call getTools BEFORE calling useTools.',
+      'This returns the exact parameter schemas for tools. Without calling getTools first, you will not know the correct parameters and your useTools call will fail.',
+      '',
+      'Workflow: 1) Call getTools to get schemas → 2) Call useTools with correct params',
       ''
     ];
 
