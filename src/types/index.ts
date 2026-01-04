@@ -30,10 +30,8 @@ export const DEFAULT_MEMORY_SETTINGS: MemorySettings = {
 // MCP protocol types
 export {
   type ToolContext,
-  type ModeCall,
   type CommonParameters,
   type CommonResult,
-  type ModeCallResult,
   type CustomPrompt,
   type CustomPromptsSettings,
   type ServerStatus,

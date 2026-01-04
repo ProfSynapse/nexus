@@ -112,18 +112,6 @@ export function generateToolHelp(
 }
 
 /**
- * @deprecated Use generateToolHelp instead
- */
-export function generateModeHelp(
-    modeName: string,
-    description: string,
-    schema: Record<string, unknown>,
-    examples?: { description: string; parameters: Record<string, unknown> }[]
-): ToolHelp {
-    return generateToolHelp(modeName, description, schema, examples);
-}
-
-/**
  * Format tool help into a user-friendly string
  *
  * @param help Structured tool help object

@@ -76,14 +76,6 @@ export class AgentManager {
   }
 
   /**
-   * @deprecated Use executeAgentTool instead
-   */
-  async executeAgentMode(agentName: string, mode: string, params: Record<string, unknown>): Promise<unknown> {
-    return this.executeAgentTool(agentName, mode, params);
-  }
-  
-  
-  /**
    * Initialize all registered agents
    * @returns Promise that resolves when all agents are initialized
    */

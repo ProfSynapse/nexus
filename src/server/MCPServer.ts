@@ -174,20 +174,6 @@ export class MCPServer implements IMCPServer {
     }
 
     /**
-     * Get detailed help for a specific mode
-     */
-    getModeHelp(agentName: string, modeName: string): string {
-        return this.executionManager.getModeHelp(agentName, modeName);
-    }
-
-    /**
-     * Execute a mode on an agent
-     */
-    async executeAgentMode(agentName: string, mode: string, params: any): Promise<any> {
-        return await this.executionManager.executeAgentModeWithValidation(agentName, mode, params);
-    }
-
-    /**
      * Get server configuration summary
      */
     getConfigurationSummary(): any {
@@ -282,13 +268,6 @@ export class MCPServer implements IMCPServer {
      */
     getExecutionContextInfo(sessionId?: string): any {
         return this.executionManager.getExecutionContextInfo(sessionId);
-    }
-
-    /**
-     * Get agent mode schema
-     */
-    getAgentModeSchema(agentName: string, modeName: string): any {
-        return this.executionManager.getAgentModeSchema(agentName, modeName);
     }
 
     /**

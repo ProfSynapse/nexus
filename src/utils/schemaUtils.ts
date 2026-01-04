@@ -42,59 +42,6 @@ export function getWorkspaceContextSchema(): any {
     }
   });
 }
-
-/**
- * Get schema for a single mode call
- * @returns JSON schema for a mode call
- */
-export function getModeCallSchema(): any {
-  return enhanceSchemaDocumentation({
-    type: 'object',
-    properties: {
-      tool: { 
-        type: 'string',
-        description: 'Agent name to execute mode on' 
-      },
-      mode: { 
-        type: 'string',
-        description: 'Mode to execute' 
-      },
-      parameters: { 
-        type: 'object',
-        description: 'Parameters to pass to the mode'
-      },
-      returnHere: { 
-        type: 'boolean',
-        description: 'Whether to return results to original agent'
-      },
-      continueOnFailure: {
-        type: 'boolean',
-        description: 'Whether to continue execution if this mode fails'
-      },
-      strategy: {
-        type: 'string',
-        enum: ['serial', 'parallel'],
-        description: 'Execution strategy for this mode call'
-      },
-      callName: {
-        type: 'string',
-        description: 'Optional name to identify this mode call in the results'
-      }
-    },
-    required: ['tool', 'mode', 'parameters'],
-    description: 'Mode call definition'
-  });
-}
-
-
-/**
- * Get schema for session parameters (now part of context - kept for backward compatibility)
- * @returns Empty schema since session fields are now in context
- */
-export function getSessionSchema(): any {
-  return {};
-}
-
 /**
  * Get schema for context parameter - NEW ToolContext format
  * Uses memory → goal → constraints flow (1-3 sentences each)
@@ -138,7 +85,6 @@ export function getContextSchema(): any {
 
 export function getCommonParameterSchema(): any {
   return {
-    ...getSessionSchema(),
     ...getWorkspaceContextSchema(),
     ...getContextSchema()
   };

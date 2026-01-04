@@ -49,11 +49,6 @@ export interface ToolCall {
 }
 
 /**
- * @deprecated Use ToolCall instead
- */
-export type ModeCall = ToolCall;
-
-/**
  * New context schema for Two-Tool Architecture
  * Uses memory → goal → constraints flow instead of verbose legacy fields
  *
@@ -171,8 +166,3 @@ export interface ToolCallResult extends CommonResult {
    */
   duration?: number;
 }
-
-/**
- * @deprecated Use ToolCallResult instead
- */
-export type ModeCallResult = ToolCallResult;

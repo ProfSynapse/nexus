@@ -1,4 +1,4 @@
-import { CommonParameters, CommonResult, ModeCallResult, ModeCall } from '../types';
+import { CommonParameters, CommonResult } from '../types';
 
 /**
  * Interface for workspace context
@@ -131,70 +131,6 @@ export function mergeWorkspaceContexts(
         secondary.activeWorkspace : 
         true
   };
-}
-
-/**
- * Track and merge workspace contexts from multiple mode calls
- * This function processes an array of mode call results and returns the best workspace context
- * 
- * @param results Array of mode call results
- * @param originalContext Original workspace context (optional baseline)
- * @returns The most appropriate workspace context to use
- */
-export function trackWorkspaceContexts(
-  results: ModeCallResult[],
-  originalContext?: WorkspaceContext | null
-): WorkspaceContext | null {
-  if (!results || results.length === 0) {
-    return originalContext || null;
-  }
-  
-  // Filter only successful results with workspace context
-  const successfulResults = results.filter(r => r.success && r.workspaceContext);
-  
-  if (successfulResults.length === 0) {
-    return originalContext || null;
-  }
-  
-  // Start with the original context
-  let currentContext = originalContext || null;
-  
-  // Process each result in sequence, merging contexts as we go
-  for (const result of successfulResults) {
-    currentContext = mergeWorkspaceContexts(currentContext, result.workspaceContext, 'second');
-  }
-  
-  return currentContext;
-}
-
-/**
- * Prepare mode call parameters with appropriate context
- * This helps maintain consistent session and workspace context
- * 
- * @param modeCall Mode call definition
- * @param sessionId Current session ID
- * @param currentContext Current workspace context
- * @returns Prepared parameters with context
- */
-export function prepareModeCallParams(
-  modeCall: ModeCall,
-  sessionId: string | undefined,
-  currentContext: WorkspaceContext | null | undefined
-): any {
-  // Start with a copy of the original parameters
-  const params = { ...modeCall.parameters };
-  
-  // Apply session ID if not already present
-  if (sessionId && !params.sessionId) {
-    params.sessionId = sessionId;
-  }
-  
-  // Apply workspace context if not already present
-  if (currentContext && (!params.workspaceContext || !parseWorkspaceContext(params.workspaceContext)?.workspaceId)) {
-    params.workspaceContext = currentContext;
-  }
-  
-  return params;
 }
 
 /**

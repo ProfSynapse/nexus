@@ -273,7 +273,7 @@ export class DirectToolExecutor {
             };
 
             // Execute via AgentExecutionManager
-            const result = await this.executionManager.executeAgentModeWithValidation(
+            const result = await this.executionManager.executeAgentToolWithValidation(
                 agentName,
                 modeName,
                 paramsWithContext

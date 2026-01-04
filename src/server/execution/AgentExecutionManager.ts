@@ -74,13 +74,6 @@ export class AgentExecutionManager {
     }
 
     /**
-     * @deprecated Use executeAgentTool instead
-     */
-    async executeAgentMode(agentName: string, mode: string, params: Record<string, unknown>): Promise<unknown> {
-        return this.executeAgentTool(agentName, mode, params);
-    }
-
-    /**
      * Get detailed help for a specific tool
      */
     getToolHelp(agentName: string, toolName: string): string {
@@ -120,13 +113,6 @@ export class AgentExecutionManager {
                 error
             );
         }
-    }
-
-    /**
-     * @deprecated Use getToolHelp instead
-     */
-    getModeHelp(agentName: string, modeName: string): string {
-        return this.getToolHelp(agentName, modeName);
     }
 
     /**
@@ -323,13 +309,6 @@ export class AgentExecutionManager {
     }
 
     /**
-     * @deprecated Use executeAgentToolWithValidation instead
-     */
-    async executeAgentModeWithValidation(agentName: string, mode: string, params: Record<string, unknown>): Promise<unknown> {
-        return this.executeAgentToolWithValidation(agentName, mode, params);
-    }
-
-    /**
      * Get agent tool schema
      */
     getAgentToolSchema(agentName: string, toolName: string): Record<string, unknown> {
@@ -344,13 +323,6 @@ export class AgentExecutionManager {
         }
 
         return tool.getParameterSchema();
-    }
-
-    /**
-     * @deprecated Use getAgentToolSchema instead
-     */
-    getAgentModeSchema(agentName: string, modeName: string): Record<string, unknown> {
-        return this.getAgentToolSchema(agentName, modeName);
     }
 
     /**
