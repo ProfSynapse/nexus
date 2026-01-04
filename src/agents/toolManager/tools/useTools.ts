@@ -113,14 +113,9 @@ export class UseToolTool implements ITool<UseToolParams, UseToolResult> {
         return { success: false, error: r.error || 'Unknown error' };
       };
 
-      // Single call: flatten directly
+      // Single call: return formatted result directly (no data wrapper needed)
       if (results.length === 1) {
-        const formatted = formatResult(results[0]);
-        return {
-          success: results[0].success,
-          ...(results[0].success ? {} : { error: (formatted as { error?: string }).error }),
-          data: formatted
-        };
+        return formatResult(results[0]) as unknown as UseToolResult;
       }
 
       // Multiple calls: each result has its own success/error
