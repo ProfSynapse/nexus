@@ -3,7 +3,7 @@
   "title": "Claudesidian Tool Schemas",
   "description": "JSON Schema definitions for all Claudesidian MCP tools (auto-generated)",
   "version": "2.0.0",
-  "generated": "2025-12-30T19:26:24.636Z",
+  "generated": "2026-01-04T12:54:21.977Z",
   "migrations": {
     "agents": {
       "agentManager": "promptManager",
@@ -71,6 +71,116 @@
     "additionalProperties": false
   },
   "tools": {
+    "canvasManager_list": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "canvasManager_list",
+      "description": "List Canvases",
+      "type": "object",
+      "properties": {
+        "folder": {
+          "type": "string",
+          "description": "Folder to search (default: vault root). Example: ",
+          "default": "vault root). Example: projects/diagrams"
+        },
+        "recursive": {
+          "type": "boolean",
+          "description": "Search subfolders (default: true)",
+          "default": "true)"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "canvasManager_read": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "canvasManager_read",
+      "description": "Read Canvas",
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Path to the canvas file (with or without .canvas extension)"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "additionalProperties": false
+    },
+    "canvasManager_update": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "canvasManager_update",
+      "description": "Update Canvas",
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Path to the existing canvas file (with or without .canvas extension)"
+        },
+        "nodes": {
+          "type": "array",
+          "description": "Full nodes array (replaces existing nodes). Omit to keep existing nodes.",
+          "enum": [
+            "text",
+            "file",
+            "link",
+            "group"
+          ]
+        },
+        "edges": {
+          "type": "array",
+          "description": "Full edges array (replaces existing edges). Omit to keep existing edges.",
+          "enum": [
+            "top",
+            "right",
+            "bottom",
+            "left"
+          ],
+          "default": "none)"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "additionalProperties": false
+    },
+    "canvasManager_write": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "canvasManager_write",
+      "description": "Write Canvas",
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Path for the new canvas file (with or without .canvas extension)"
+        },
+        "nodes": {
+          "type": "array",
+          "description": "Initial nodes. Each node needs: type (text/file/link/group), x, y, width, height. IDs auto-generated if missing.",
+          "enum": [
+            "text",
+            "file",
+            "link",
+            "group"
+          ]
+        },
+        "edges": {
+          "type": "array",
+          "description": "Initial edges connecting nodes",
+          "enum": [
+            "top",
+            "right",
+            "bottom",
+            "left"
+          ],
+          "default": "none)"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "additionalProperties": false
+    },
     "contentManager_read": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "title": "contentManager_read",
@@ -992,6 +1102,15 @@
     }
   },
   "agents": {
+    "canvasManager": {
+      "toolCount": 4,
+      "tools": [
+        "list",
+        "read",
+        "update",
+        "write"
+      ]
+    },
     "contentManager": {
       "toolCount": 3,
       "tools": [

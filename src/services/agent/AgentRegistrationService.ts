@@ -206,6 +206,7 @@ export class AgentRegistrationService implements AgentRegistrationServiceInterfa
       // Initialize agents in order using AgentInitializationService
       await this.safeInitialize('contentManager', () => this.initializationService.initializeContentManager());
       await this.safeInitialize('storageManager', () => this.initializationService.initializeStorageManager());
+      await this.safeInitialize('canvasManager', () => this.initializationService.initializeCanvasManager());
       await this.safeInitialize('promptManager', () => this.initializationService.initializePromptManager(enableLLMModes));
       await this.safeInitialize('searchManager', () => this.initializationService.initializeSearchManager(enableSearchModes, memorySettings ?? { enabled: false }));
       await this.safeInitialize('memoryManager', () => this.initializationService.initializeMemoryManager());

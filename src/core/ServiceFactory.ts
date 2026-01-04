@@ -23,7 +23,8 @@ import {
     StorageManagerAgent,
     SearchManagerAgent,
     MemoryManagerAgent,
-    PromptManagerAgent
+    PromptManagerAgent,
+    CanvasManagerAgent
 } from '../agents';
 import { LLMProviderManager } from '../services/llm/providers/ProviderManager';
 import { AgentManager } from '../services/AgentManager';
@@ -105,6 +106,19 @@ export class StorageManagerAgentFactory extends BaseAgentFactory<StorageManagerA
 
     async create(dependencies: Map<string, any>, app: App, plugin: Plugin): Promise<StorageManagerAgent> {
         return new StorageManagerAgent(app);
+    }
+}
+
+/**
+ * CanvasManager agent factory - no external dependencies
+ */
+export class CanvasManagerAgentFactory extends BaseAgentFactory<CanvasManagerAgent> {
+    constructor() {
+        super('canvasManager', []); // No external dependencies
+    }
+
+    async create(dependencies: Map<string, any>, app: App, plugin: Plugin): Promise<CanvasManagerAgent> {
+        return new CanvasManagerAgent(app);
     }
 }
 
@@ -194,6 +208,7 @@ export class AgentFactoryRegistry {
         // Register all agent factories
         this.registerFactory(new ContentManagerAgentFactory());
         this.registerFactory(new StorageManagerAgentFactory());
+        this.registerFactory(new CanvasManagerAgentFactory());
         this.registerFactory(new SearchManagerAgentFactory());
         this.registerFactory(new MemoryManagerAgentFactory());
         this.registerFactory(new PromptManagerAgentFactory());

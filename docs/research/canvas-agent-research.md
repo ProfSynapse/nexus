@@ -160,6 +160,15 @@ if (file.extension === 'md' || file.extension === 'canvas') {
 
 ## Proposed Canvas Agent Architecture
 
+### Design Philosophy
+
+**Simplified 4-Tool Design**: Instead of separate tools for add/update/remove operations on nodes and edges, we use a lean approach where the LLM:
+1. Reads the canvas with `read`
+2. Modifies the data in context (add nodes, remove edges, etc.)
+3. Writes back with `write` (new) or `update` (existing)
+
+This matches the existing Nexus patterns and reduces tool count while maintaining full functionality.
+
 ### Directory Structure
 
 ```
@@ -169,13 +178,8 @@ src/agents/canvasManager/
 ├── tools/
 │   ├── index.ts               # Tool exports
 │   ├── read.ts                # Read canvas structure
-│   ├── write.ts               # Create/overwrite canvas
-│   ├── addNode.ts             # Add node to canvas
-│   ├── updateNode.ts          # Update node properties
-│   ├── removeNode.ts          # Remove node from canvas
-│   ├── addEdge.ts             # Add edge between nodes
-│   ├── updateEdge.ts          # Update edge properties
-│   ├── removeEdge.ts          # Remove edge from canvas
+│   ├── write.ts               # Create NEW canvas
+│   ├── update.ts              # Modify EXISTING canvas
 │   └── list.ts                # List canvas files
 └── utils/
     └── CanvasOperations.ts    # Shared canvas utilities
@@ -252,12 +256,12 @@ export interface CanvasData {
 }
 
 // ============================================================================
-// TOOL PARAMETERS & RESULTS
+// TOOL PARAMETERS & RESULTS (4 Tools)
 // ============================================================================
 
-// Read Canvas
+// 1. Read Canvas - Get canvas structure
 export interface ReadCanvasParams extends CommonParameters {
-  path: string;
+  path: string;  // Path to canvas file
 }
 
 export interface ReadCanvasResult extends CommonResult {
@@ -270,107 +274,32 @@ export interface ReadCanvasResult extends CommonResult {
   };
 }
 
-// Write Canvas
+// 2. Write Canvas - Create NEW canvas (fails if exists)
 export interface WriteCanvasParams extends CommonParameters {
-  path: string;
-  nodes?: CanvasNode[];
-  edges?: CanvasEdge[];
-  overwrite?: boolean;
+  path: string;           // Path for new canvas
+  nodes?: CanvasNode[];   // Initial nodes (IDs auto-generated if missing)
+  edges?: CanvasEdge[];   // Initial edges (IDs auto-generated if missing)
 }
 
 export interface WriteCanvasResult extends CommonResult {
-  data?: {
-    path: string;
-    created: boolean;
-  };
+  // Lean result - just success: true
 }
 
-// Add Node
-export interface AddNodeParams extends CommonParameters {
-  path: string;
-  node: Omit<CanvasNode, 'id'> & { id?: string };
+// 3. Update Canvas - Modify EXISTING canvas (fails if doesn't exist)
+export interface UpdateCanvasParams extends CommonParameters {
+  path: string;           // Path to existing canvas
+  nodes?: CanvasNode[];   // Full nodes array (replaces existing)
+  edges?: CanvasEdge[];   // Full edges array (replaces existing)
 }
 
-export interface AddNodeResult extends CommonResult {
-  data?: {
-    nodeId: string;
-    path: string;
-  };
+export interface UpdateCanvasResult extends CommonResult {
+  // Lean result - just success: true
 }
 
-// Update Node
-export interface UpdateNodeParams extends CommonParameters {
-  path: string;
-  nodeId: string;
-  updates: Partial<Omit<CanvasNode, 'id' | 'type'>>;
-}
-
-export interface UpdateNodeResult extends CommonResult {
-  data?: {
-    nodeId: string;
-    path: string;
-  };
-}
-
-// Remove Node
-export interface RemoveNodeParams extends CommonParameters {
-  path: string;
-  nodeId: string;
-  removeConnectedEdges?: boolean; // default: true
-}
-
-export interface RemoveNodeResult extends CommonResult {
-  data?: {
-    removedNodeId: string;
-    removedEdgeIds: string[];
-    path: string;
-  };
-}
-
-// Add Edge
-export interface AddEdgeParams extends CommonParameters {
-  path: string;
-  edge: Omit<CanvasEdge, 'id'> & { id?: string };
-}
-
-export interface AddEdgeResult extends CommonResult {
-  data?: {
-    edgeId: string;
-    path: string;
-  };
-}
-
-// Update Edge
-export interface UpdateEdgeParams extends CommonParameters {
-  path: string;
-  edgeId: string;
-  updates: Partial<Omit<CanvasEdge, 'id'>>;
-}
-
-export interface UpdateEdgeResult extends CommonResult {
-  data?: {
-    edgeId: string;
-    path: string;
-  };
-}
-
-// Remove Edge
-export interface RemoveEdgeParams extends CommonParameters {
-  path: string;
-  edgeId: string;
-}
-
-export interface RemoveEdgeResult extends CommonResult {
-  data?: {
-    removedEdgeId: string;
-    path: string;
-  };
-}
-
-// List Canvases
+// 4. List Canvases - Find canvas files in vault
 export interface ListCanvasParams extends CommonParameters {
-  folder?: string;
-  recursive?: boolean;
+  folder?: string;        // Folder to search (default: vault root)
+  recursive?: boolean;    // Search subfolders (default: true)
 }
 
 export interface ListCanvasResult extends CommonResult {
@@ -397,12 +326,7 @@ import { BaseAgent } from '../baseAgent';
 import {
   ReadCanvasTool,
   WriteCanvasTool,
-  AddNodeTool,
-  UpdateNodeTool,
-  RemoveNodeTool,
-  AddEdgeTool,
-  UpdateEdgeTool,
-  RemoveEdgeTool,
+  UpdateCanvasTool,
   ListCanvasTool
 } from './tools';
 import NexusPlugin from '../../main';
@@ -410,16 +334,13 @@ import NexusPlugin from '../../main';
 /**
  * Agent for canvas operations in the vault
  *
- * Tools:
+ * Tools (4 total):
  * - read: Read canvas structure (nodes and edges)
- * - write: Create or overwrite a canvas file
- * - addNode: Add a new node to a canvas
- * - updateNode: Update node properties
- * - removeNode: Remove a node (and optionally connected edges)
- * - addEdge: Add an edge between nodes
- * - updateEdge: Update edge properties
- * - removeEdge: Remove an edge
+ * - write: Create a NEW canvas file
+ * - update: Modify an EXISTING canvas file
  * - list: List canvas files in the vault
+ *
+ * Workflow: LLM reads → modifies in context → writes/updates back
  */
 export class CanvasManagerAgent extends BaseAgent {
   protected app: App;
@@ -435,15 +356,10 @@ export class CanvasManagerAgent extends BaseAgent {
     this.app = app;
     this.plugin = plugin || null;
 
-    // Register tools
+    // Register 4 tools
     this.registerTool(new ReadCanvasTool(app));
     this.registerTool(new WriteCanvasTool(app));
-    this.registerTool(new AddNodeTool(app));
-    this.registerTool(new UpdateNodeTool(app));
-    this.registerTool(new RemoveNodeTool(app));
-    this.registerTool(new AddEdgeTool(app));
-    this.registerTool(new UpdateEdgeTool(app));
-    this.registerTool(new RemoveEdgeTool(app));
+    this.registerTool(new UpdateCanvasTool(app));
     this.registerTool(new ListCanvasTool(app));
   }
 }
@@ -550,47 +466,72 @@ import { CanvasData, CanvasNode, CanvasEdge } from '../types';
 
 export class CanvasOperations {
   /**
-   * Generate a unique ID for nodes/edges
+   * Generate a unique ID for nodes/edges (matches Obsidian's format)
    */
   static generateId(): string {
     return Math.random().toString(36).substring(2, 18);
   }
 
   /**
+   * Normalize path to ensure .canvas extension
+   */
+  static normalizePath(path: string): string {
+    return path.endsWith('.canvas') ? path : `${path}.canvas`;
+  }
+
+  /**
    * Read canvas data from a file
    */
   static async readCanvas(app: App, path: string): Promise<CanvasData> {
-    const file = app.vault.getAbstractFileByPath(path);
+    const normalizedPath = this.normalizePath(path);
+    const file = app.vault.getAbstractFileByPath(normalizedPath);
     if (!file || !(file instanceof TFile)) {
-      throw new Error(`Canvas not found: ${path}`);
+      throw new Error(`Canvas not found: ${normalizedPath}. Use canvasManager.list to find canvases.`);
     }
     const content = await app.vault.read(file);
     return JSON.parse(content);
   }
 
   /**
-   * Write canvas data to a file
+   * Write canvas data to a NEW file (fails if exists)
    */
-  static async writeCanvas(app: App, path: string, data: CanvasData, overwrite = false): Promise<boolean> {
-    const existingFile = app.vault.getAbstractFileByPath(path);
-    const content = JSON.stringify(data, null, 2);
+  static async writeCanvas(app: App, path: string, data: CanvasData): Promise<void> {
+    const normalizedPath = this.normalizePath(path);
+    const existingFile = app.vault.getAbstractFileByPath(normalizedPath);
 
     if (existingFile instanceof TFile) {
-      if (!overwrite) {
-        throw new Error(`Canvas already exists: ${path}`);
-      }
-      await app.vault.modify(existingFile, content);
-      return false; // not created, modified
+      throw new Error(`Canvas already exists: ${normalizedPath}. Use canvasManager.update to modify.`);
     }
 
+    // Ensure IDs on all nodes and edges
+    const processedData = this.ensureIds(data);
+    const content = JSON.stringify(processedData, null, 2);
+
     // Create parent folders if needed
-    const folderPath = path.substring(0, path.lastIndexOf('/'));
+    const folderPath = normalizedPath.substring(0, normalizedPath.lastIndexOf('/'));
     if (folderPath) {
       await this.ensureFolder(app, folderPath);
     }
 
-    await app.vault.create(path, content);
-    return true; // created
+    await app.vault.create(normalizedPath, content);
+  }
+
+  /**
+   * Update an EXISTING canvas (fails if doesn't exist)
+   */
+  static async updateCanvas(app: App, path: string, data: CanvasData): Promise<void> {
+    const normalizedPath = this.normalizePath(path);
+    const file = app.vault.getAbstractFileByPath(normalizedPath);
+
+    if (!file || !(file instanceof TFile)) {
+      throw new Error(`Canvas not found: ${normalizedPath}. Use canvasManager.write to create.`);
+    }
+
+    // Ensure IDs on all nodes and edges
+    const processedData = this.ensureIds(data);
+    const content = JSON.stringify(processedData, null, 2);
+
+    await app.vault.modify(file, content);
   }
 
   /**
@@ -604,152 +545,39 @@ export class CanvasOperations {
   }
 
   /**
-   * Add a node to canvas data
+   * Ensure all nodes and edges have IDs
    */
-  static addNode(data: CanvasData, node: CanvasNode): CanvasData {
-    const nodes = [...(data.nodes || [])];
+  static ensureIds(data: CanvasData): CanvasData {
+    const nodes = (data.nodes || []).map(node => ({
+      ...node,
+      id: node.id || this.generateId()
+    }));
 
-    // Generate ID if not provided
-    if (!node.id) {
-      node.id = this.generateId();
-    }
+    const edges = (data.edges || []).map(edge => ({
+      ...edge,
+      id: edge.id || this.generateId()
+    }));
 
-    // Check for duplicate ID
-    if (nodes.some(n => n.id === node.id)) {
-      throw new Error(`Node with ID "${node.id}" already exists`);
-    }
-
-    nodes.push(node);
-    return { ...data, nodes };
+    return { ...data, nodes, edges };
   }
 
   /**
-   * Update a node in canvas data
+   * Validate edge references (all fromNode/toNode must exist)
    */
-  static updateNode(data: CanvasData, nodeId: string, updates: Partial<CanvasNode>): CanvasData {
-    const nodes = (data.nodes || []).map(node => {
-      if (node.id === nodeId) {
-        return { ...node, ...updates, id: nodeId }; // Preserve ID
+  static validateEdges(data: CanvasData): { valid: boolean; errors: string[] } {
+    const nodeIds = new Set((data.nodes || []).map(n => n.id));
+    const errors: string[] = [];
+
+    for (const edge of data.edges || []) {
+      if (!nodeIds.has(edge.fromNode)) {
+        errors.push(`Edge "${edge.id}" references missing source node: ${edge.fromNode}`);
       }
-      return node;
-    });
-
-    if (!nodes.some(n => n.id === nodeId)) {
-      throw new Error(`Node not found: ${nodeId}`);
-    }
-
-    return { ...data, nodes };
-  }
-
-  /**
-   * Remove a node from canvas data
-   */
-  static removeNode(data: CanvasData, nodeId: string, removeConnectedEdges = true): {
-    data: CanvasData;
-    removedEdgeIds: string[]
-  } {
-    const nodes = (data.nodes || []).filter(n => n.id !== nodeId);
-    let edges = data.edges || [];
-    let removedEdgeIds: string[] = [];
-
-    if (removeConnectedEdges) {
-      removedEdgeIds = edges
-        .filter(e => e.fromNode === nodeId || e.toNode === nodeId)
-        .map(e => e.id);
-      edges = edges.filter(e => e.fromNode !== nodeId && e.toNode !== nodeId);
-    }
-
-    return {
-      data: { ...data, nodes, edges },
-      removedEdgeIds
-    };
-  }
-
-  /**
-   * Add an edge to canvas data
-   */
-  static addEdge(data: CanvasData, edge: CanvasEdge): CanvasData {
-    const edges = [...(data.edges || [])];
-    const nodes = data.nodes || [];
-
-    // Generate ID if not provided
-    if (!edge.id) {
-      edge.id = this.generateId();
-    }
-
-    // Validate nodes exist
-    if (!nodes.some(n => n.id === edge.fromNode)) {
-      throw new Error(`Source node not found: ${edge.fromNode}`);
-    }
-    if (!nodes.some(n => n.id === edge.toNode)) {
-      throw new Error(`Target node not found: ${edge.toNode}`);
-    }
-
-    // Check for duplicate ID
-    if (edges.some(e => e.id === edge.id)) {
-      throw new Error(`Edge with ID "${edge.id}" already exists`);
-    }
-
-    edges.push(edge);
-    return { ...data, edges };
-  }
-
-  /**
-   * Update an edge in canvas data
-   */
-  static updateEdge(data: CanvasData, edgeId: string, updates: Partial<CanvasEdge>): CanvasData {
-    const edges = (data.edges || []).map(edge => {
-      if (edge.id === edgeId) {
-        return { ...edge, ...updates, id: edgeId }; // Preserve ID
+      if (!nodeIds.has(edge.toNode)) {
+        errors.push(`Edge "${edge.id}" references missing target node: ${edge.toNode}`);
       }
-      return edge;
-    });
-
-    if (!edges.some(e => e.id === edgeId)) {
-      throw new Error(`Edge not found: ${edgeId}`);
     }
 
-    return { ...data, edges };
-  }
-
-  /**
-   * Remove an edge from canvas data
-   */
-  static removeEdge(data: CanvasData, edgeId: string): CanvasData {
-    const edges = (data.edges || []).filter(e => e.id !== edgeId);
-    return { ...data, edges };
-  }
-
-  /**
-   * Calculate auto-layout positions for nodes
-   */
-  static autoLayout(nodes: CanvasNode[], options?: {
-    startX?: number;
-    startY?: number;
-    gapX?: number;
-    gapY?: number;
-    columns?: number;
-  }): CanvasNode[] {
-    const {
-      startX = 0,
-      startY = 0,
-      gapX = 50,
-      gapY = 50,
-      columns = 3
-    } = options || {};
-
-    return nodes.map((node, index) => {
-      const col = index % columns;
-      const row = Math.floor(index / columns);
-      const width = node.width || 250;
-      const height = node.height || 150;
-
-      return {
-        ...node,
-        x: startX + col * (width + gapX),
-        y: startY + row * (height + gapY)
-      };
-    });
+    return { valid: errors.length === 0, errors };
   }
 }
 ```
@@ -787,75 +615,85 @@ this.agents.set('canvasManager', new CanvasManagerAgent(app, plugin));
 
 ## Example Use Cases
 
-### 1. Create a Project Structure Canvas
+### 1. Create a New Canvas
 
 ```typescript
-// Create canvas with project folders as nodes
-{
-  "nodes": [
+// Use write to create a new canvas with initial structure
+await canvasManager.write({
+  path: "project-overview.canvas",
+  nodes: [
     {
-      "id": "src",
-      "type": "file",
-      "x": 0,
-      "y": 0,
-      "width": 200,
-      "height": 100,
-      "file": "src/index.ts",
-      "color": "4"
+      id: "src",
+      type: "file",
+      x: 0,
+      y: 0,
+      width: 200,
+      height: 100,
+      file: "src/index.ts",
+      color: "4"
     },
     {
-      "id": "components",
-      "type": "group",
-      "x": 300,
-      "y": 0,
-      "width": 400,
-      "height": 300,
-      "label": "Components"
+      id: "components",
+      type: "group",
+      x: 300,
+      y: 0,
+      width: 400,
+      height: 300,
+      label: "Components"
     }
   ],
-  "edges": [
+  edges: [
     {
-      "id": "e1",
-      "fromNode": "src",
-      "toNode": "components",
-      "toEnd": "arrow"
+      id: "e1",
+      fromNode: "src",
+      toNode: "components",
+      toEnd: "arrow"
     }
   ]
-}
+});
 ```
 
-### 2. Visualize Note Relationships
+### 2. Modify an Existing Canvas
 
 ```typescript
-// Add file nodes for each note
-await canvasManager.addNode({
-  path: "relationships.canvas",
-  node: {
-    type: "file",
-    x: 100,
-    y: 100,
-    width: 250,
-    height: 150,
-    file: "notes/Topic A.md"
-  }
+// Step 1: Read current canvas
+const { nodes, edges } = await canvasManager.read({
+  path: "relationships.canvas"
 });
 
-// Connect related notes
-await canvasManager.addEdge({
+// Step 2: Modify in context (add new node)
+const newNodes = [...nodes, {
+  id: "newTopic",
+  type: "file",
+  x: 400,
+  y: 200,
+  width: 250,
+  height: 150,
+  file: "notes/New Topic.md"
+}];
+
+// Step 3: Add edge to new node
+const newEdges = [...edges, {
+  id: "e-new",
+  fromNode: "existingTopic",
+  toNode: "newTopic",
+  label: "relates to"
+}];
+
+// Step 4: Update canvas with modified data
+await canvasManager.update({
   path: "relationships.canvas",
-  edge: {
-    fromNode: "topicA",
-    toNode: "topicB",
-    label: "relates to"
-  }
+  nodes: newNodes,
+  edges: newEdges
 });
 ```
 
 ### 3. Create a Mind Map
 
 ```typescript
-// Central topic
+// Build node structure in memory
 const centerNode = {
+  id: "center",
   type: "text",
   x: 500,
   y: 300,
@@ -865,12 +703,14 @@ const centerNode = {
   color: "1"
 };
 
-// Branch topics positioned around center
 const branches = [
   { angle: 0, text: "Branch 1" },
   { angle: 72, text: "Branch 2" },
-  // ...
+  { angle: 144, text: "Branch 3" },
+  { angle: 216, text: "Branch 4" },
+  { angle: 288, text: "Branch 5" }
 ].map((b, i) => ({
+  id: `branch-${i}`,
   type: "text",
   x: 500 + Math.cos(b.angle * Math.PI / 180) * 300,
   y: 300 + Math.sin(b.angle * Math.PI / 180) * 200,
@@ -878,30 +718,39 @@ const branches = [
   height: 80,
   text: b.text
 }));
+
+// Create edges from center to all branches
+const edges = branches.map((_, i) => ({
+  id: `edge-${i}`,
+  fromNode: "center",
+  toNode: `branch-${i}`,
+  toEnd: "arrow"
+}));
+
+// Write complete canvas in one call
+await canvasManager.write({
+  path: "mindmap.canvas",
+  nodes: [centerNode, ...branches],
+  edges
+});
 ```
 
 ---
 
 ## Implementation Priority
 
-### Phase 1: Core Operations (MVP)
+### Phase 1: Core Operations (Complete Implementation)
+All 4 tools implemented together:
 1. `read` - Read canvas structure
-2. `write` - Create/overwrite canvas
-3. `addNode` - Add single node
-4. `addEdge` - Add single edge
-5. `list` - List canvas files
+2. `write` - Create NEW canvas
+3. `update` - Modify EXISTING canvas
+4. `list` - List canvas files
 
-### Phase 2: Modification Operations
-6. `updateNode` - Update node properties
-7. `removeNode` - Remove node with edge cleanup
-8. `updateEdge` - Update edge properties
-9. `removeEdge` - Remove edge
-
-### Phase 3: Advanced Features
-10. Batch operations (add multiple nodes/edges)
-11. Auto-layout algorithms
-12. Canvas templates
-13. Import from other formats (Mermaid, DOT, etc.)
+### Phase 2: Advanced Features (Future)
+- Auto-layout algorithms (grid, radial, tree)
+- Canvas templates
+- Import from other formats (Mermaid, DOT, etc.)
+- Batch operations with validation
 
 ---
 
@@ -921,4 +770,10 @@ Implementing a Canvas Agent for Nexus is straightforward given:
 2. Existing patterns in Nexus for agents/tools
 3. Canvas files already being indexed as key files
 
-The proposed architecture follows existing Nexus patterns (BaseAgent, BaseTool) and provides a comprehensive set of tools for canvas manipulation while maintaining forward compatibility with future JSON Canvas spec versions.
+**Simplified 4-Tool Design Benefits**:
+- **Fewer tools** (4 vs 9) = simpler for LLMs to understand
+- **Read-modify-write pattern** matches how LLMs naturally work
+- **Full array replacement** avoids complex partial update logic
+- **Matches existing patterns** in contentManager (read → modify → replace)
+
+The architecture follows Nexus patterns (BaseAgent, BaseTool) and maintains forward compatibility with future JSON Canvas spec versions.

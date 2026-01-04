@@ -70,6 +70,10 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
   private autoSaveInterval: number;
   private autoSaveTimer: NodeJS.Timeout | null = null;
 
+  // Transaction management - prevent nested transactions
+  private transactionDepth: number = 0;
+  private transactionLock: Promise<void> = Promise.resolve();
+
   constructor(options: SQLiteCacheManagerOptions) {
     this.app = options.app;
     this.dbPath = options.dbPath;
@@ -458,16 +462,39 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
 
   /**
    * Execute a function within a transaction
+   * Handles concurrent access via lock and nested transactions via depth tracking
    */
   async transaction<T>(fn: () => Promise<T>): Promise<T> {
-    await this.beginTransaction();
+    // If already in a transaction, just run the function (no nesting)
+    if (this.transactionDepth > 0) {
+      return fn();
+    }
+
+    // Queue this transaction after any pending ones
+    let resolve: () => void;
+    const previousLock = this.transactionLock;
+    this.transactionLock = new Promise<void>((r) => { resolve = r; });
+
     try {
-      const result = await fn();
-      await this.commit();
-      return result;
-    } catch (error) {
-      await this.rollback();
-      throw error;
+      // Wait for any pending transaction to complete
+      await previousLock;
+
+      this.transactionDepth++;
+      await this.beginTransaction();
+
+      try {
+        const result = await fn();
+        await this.commit();
+        return result;
+      } catch (error) {
+        await this.rollback();
+        throw error;
+      } finally {
+        this.transactionDepth--;
+      }
+    } finally {
+      // Release the lock for the next transaction
+      resolve!();
     }
   }
 

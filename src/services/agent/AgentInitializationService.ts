@@ -18,7 +18,8 @@ import {
   SearchManagerAgent,
   MemoryManagerAgent,
   PromptManagerAgent,
-  ToolManagerAgent
+  ToolManagerAgent,
+  CanvasManagerAgent
 } from '../../agents';
 import { logger } from '../../utils/logger';
 import { CustomPromptStorageService } from "../../agents/promptManager/services/CustomPromptStorageService";
@@ -77,6 +78,16 @@ export class AgentInitializationService {
 
     this.agentManager.registerAgent(storageManagerAgent);
     logger.systemLog('StorageManager agent initialized successfully');
+  }
+
+  /**
+   * Initialize CanvasManager agent
+   */
+  async initializeCanvasManager(): Promise<void> {
+    const canvasManagerAgent = new CanvasManagerAgent(this.app);
+
+    this.agentManager.registerAgent(canvasManagerAgent);
+    logger.systemLog('CanvasManager agent initialized successfully');
   }
 
   /**
