@@ -2480,6 +2480,17 @@ a:hover {
     background-color: var(--background-modifier-border);
 }
 
+/* Coming Soon Provider Card */
+.provider-coming-soon {
+    opacity: 0.6;
+    pointer-events: none;
+}
+
+.provider-coming-soon .agent-management-card-description {
+    color: var(--text-accent);
+    font-style: italic;
+}
+
 /* Agent Management Modal Styles */
 .modal-button-container {
     display: flex;
