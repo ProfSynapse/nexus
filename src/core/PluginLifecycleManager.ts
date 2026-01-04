@@ -195,10 +195,13 @@ export class PluginLifecycleManager {
 	                                }
 
 	                                if (storageAdapter && storageAdapter.cache) {
+	                                    // Check user setting for embeddings (defaults to true)
+	                                    const enableEmbeddings = this.config.settings.settings.enableEmbeddings ?? true;
 	                                    this.embeddingManager = new EmbeddingManager(
 	                                        this.config.app,
 	                                        this.config.plugin,
-	                                        storageAdapter.cache
+	                                        storageAdapter.cache,
+	                                        enableEmbeddings
 	                                    );
 	                                    await this.embeddingManager.initialize();
 	                                    // Expose on plugin for lazy access by agents

@@ -224,12 +224,6 @@ export class ProviderMessageBuilder {
         generateOptions.model // Pass model to determine correct format
       ) as ConversationMessage[];
 
-      console.log('[LLM_DEBUG] LM Studio tool continuation - sending full history:');
-      console.log('[LLM_DEBUG]   Model:', generateOptions.model);
-      console.log('[LLM_DEBUG]   Previous messages:', previousMessages.length);
-      console.log('[LLM_DEBUG]   Tool calls:', toolCalls.length);
-      console.log('[LLM_DEBUG]   Built conversation:', conversationHistory.length, 'messages');
-
       return {
         ...generateOptions,
         conversationHistory,

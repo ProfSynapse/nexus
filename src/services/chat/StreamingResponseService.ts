@@ -181,7 +181,6 @@ export class StreamingResponseService {
             await this.dependencies.conversationService.updateConversation(conversationId, {
               metadata: { ...conv.metadata, responsesApiId: id }
             });
-            console.log('[LLM_DEBUG] Persisted responsesApiId to conversation metadata:', id);
           }
         } catch (err) {
           console.error('[StreamingResponseService] Failed to persist responsesApiId:', err);

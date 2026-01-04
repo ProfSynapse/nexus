@@ -210,22 +210,6 @@ export const OPENROUTER_MODELS: ModelSpec[] = [
   },
   {
     provider: 'openrouter',
-    name: 'Claude 4 Sonnet',
-    apiName: 'anthropic/claude-sonnet-4',
-    contextWindow: 200000,
-    maxTokens: 64000,
-    inputCostPerMillion: 3.00,
-    outputCostPerMillion: 15.00,
-    capabilities: {
-      supportsJSON: true,
-      supportsImages: true,
-      supportsFunctions: true,
-      supportsStreaming: true,
-      supportsThinking: false
-    }
-  },
-  {
-    provider: 'openrouter',
     name: 'Claude 4.5 Sonnet',
     apiName: 'anthropic/claude-sonnet-4.5',
     contextWindow: 1000000,
@@ -237,7 +221,7 @@ export const OPENROUTER_MODELS: ModelSpec[] = [
       supportsImages: true,
       supportsFunctions: true,
       supportsStreaming: true,
-      supportsThinking: false
+      supportsThinking: true
     }
   },
 ];

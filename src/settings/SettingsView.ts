@@ -1,4 +1,4 @@
-import { App, Plugin, PluginSettingTab, Setting, Notice, ButtonComponent, FileSystemAdapter } from 'obsidian';
+import { App, Plugin, PluginSettingTab, Notice, ButtonComponent, FileSystemAdapter } from 'obsidian';
 import { Settings } from '../settings';
 import { UnifiedTabs, UnifiedTabConfig } from '../components/UnifiedTabs';
 import { SettingsRouter, RouterState, SettingsTab } from './SettingsRouter';

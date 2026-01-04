@@ -12,7 +12,7 @@
  * - Registered with Obsidian vault events
  */
 
-import { App, TFile } from 'obsidian';
+import { App, TFile, EventRef } from 'obsidian';
 import { EmbeddingService } from './EmbeddingService';
 
 /**
@@ -26,6 +26,7 @@ export class EmbeddingWatcher {
   private app: App;
   private embeddingService: EmbeddingService;
   private debounceTimers = new Map<string, NodeJS.Timeout>();
+  private eventRefs: EventRef[] = [];
 
   // 10-second debounce: prevents re-embedding on every keystroke
   // but short enough to not lose changes if vault closes unexpectedly
@@ -44,54 +45,68 @@ export class EmbeddingWatcher {
    */
   start(): void {
     // File modified
-    this.app.vault.on('modify', (file) => {
-      if (file instanceof TFile && file.extension === 'md') {
-        this.scheduleReembedding(file.path);
-      }
-    });
+    this.eventRefs.push(
+      this.app.vault.on('modify', (file) => {
+        if (file instanceof TFile && file.extension === 'md') {
+          this.scheduleReembedding(file.path);
+        }
+      })
+    );
 
     // File created
-    this.app.vault.on('create', (file) => {
-      if (file instanceof TFile && file.extension === 'md') {
-        this.scheduleReembedding(file.path);
-      }
-    });
+    this.eventRefs.push(
+      this.app.vault.on('create', (file) => {
+        if (file instanceof TFile && file.extension === 'md') {
+          this.scheduleReembedding(file.path);
+        }
+      })
+    );
 
     // File deleted
-    this.app.vault.on('delete', (file) => {
-      if (file instanceof TFile && file.extension === 'md') {
-        // Cancel any pending re-embedding
-        const existing = this.debounceTimers.get(file.path);
-        if (existing) {
-          clearTimeout(existing);
-          this.debounceTimers.delete(file.path);
-        }
+    this.eventRefs.push(
+      this.app.vault.on('delete', (file) => {
+        if (file instanceof TFile && file.extension === 'md') {
+          // Cancel any pending re-embedding
+          const existing = this.debounceTimers.get(file.path);
+          if (existing) {
+            clearTimeout(existing);
+            this.debounceTimers.delete(file.path);
+          }
 
-        // Remove embedding immediately
-        this.embeddingService.removeEmbedding(file.path);
-      }
-    });
+          // Remove embedding immediately
+          this.embeddingService.removeEmbedding(file.path);
+        }
+      })
+    );
 
     // File renamed
-    this.app.vault.on('rename', (file, oldPath) => {
-      if (file instanceof TFile && file.extension === 'md') {
-        // Cancel any pending re-embedding for old path
-        const existing = this.debounceTimers.get(oldPath);
-        if (existing) {
-          clearTimeout(existing);
-          this.debounceTimers.delete(oldPath);
-        }
+    this.eventRefs.push(
+      this.app.vault.on('rename', (file, oldPath) => {
+        if (file instanceof TFile && file.extension === 'md') {
+          // Cancel any pending re-embedding for old path
+          const existing = this.debounceTimers.get(oldPath);
+          if (existing) {
+            clearTimeout(existing);
+            this.debounceTimers.delete(oldPath);
+          }
 
-        // Update path in metadata
-        this.embeddingService.updatePath(oldPath, file.path);
-      }
-    });
+          // Update path in metadata
+          this.embeddingService.updatePath(oldPath, file.path);
+        }
+      })
+    );
   }
 
   /**
    * Stop watching vault events
    */
   stop(): void {
+    // Unregister all vault event listeners
+    for (const ref of this.eventRefs) {
+      this.app.vault.offref(ref);
+    }
+    this.eventRefs = [];
+
     // Clear all pending timers
     for (const timer of this.debounceTimers.values()) {
       clearTimeout(timer);

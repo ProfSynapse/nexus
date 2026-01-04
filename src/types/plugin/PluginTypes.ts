@@ -56,6 +56,7 @@ export interface ProcessedFilesData {
  */
 export interface MCPSettings {
   enabledVault: boolean;
+  enableEmbeddings?: boolean; // Enable/disable local embeddings for semantic search (desktop only)
   configFilePath?: string;
   memory?: MemorySettings;
   customPrompts?: CustomPromptsSettings;

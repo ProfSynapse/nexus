@@ -43,14 +43,15 @@ export class EmbeddingManager {
   constructor(
     app: App,
     plugin: Plugin,
-    db: SQLiteCacheManager
+    db: SQLiteCacheManager,
+    enableEmbeddings: boolean = true
   ) {
     this.app = app;
     this.plugin = plugin;
     this.db = db;
 
-    // Disable on mobile entirely
-    this.isEnabled = !Platform.isMobile;
+    // Disable on mobile or if user disabled embeddings
+    this.isEnabled = !Platform.isMobile && enableEmbeddings;
   }
 
   /**
@@ -106,9 +107,9 @@ export class EmbeddingManager {
     }
 
     try {
-      // Cancel any ongoing indexing
+      // Cancel indexing and remove all listeners
       if (this.queue) {
-        this.queue.cancel();
+        this.queue.destroy();
       }
 
       // Stop watching vault events
@@ -116,12 +117,12 @@ export class EmbeddingManager {
         this.watcher.stop();
       }
 
-      // Clean up status bar
+      // Clean up status bar (removes progress listener)
       if (this.statusBar) {
         this.statusBar.destroy();
       }
 
-      // Dispose of embedding engine
+      // Dispose of embedding engine (revokes blob URL, removes iframe)
       if (this.engine) {
         await this.engine.dispose();
       }

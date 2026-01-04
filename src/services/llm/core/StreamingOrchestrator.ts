@@ -162,9 +162,6 @@ export class StreamingOrchestrator {
               if (options?.onResponsesApiId) {
                 options.onResponsesApiId(responseId);
               }
-              console.log('[LLM_DEBUG] Captured responsesApiId:', responseId);
-            } else {
-              console.log('[LLM_DEBUG] Using existing responsesApiId:', existingId);
             }
           }
           break;

@@ -292,6 +292,14 @@ export class IndexingQueue extends EventEmitter {
   }
 
   /**
+   * Clean up all resources (called on plugin unload)
+   */
+  destroy(): void {
+    this.cancel();
+    this.removeAllListeners();
+  }
+
+  /**
    * Wait for resume signal
    */
   private async waitForResume(): Promise<void> {

@@ -5,7 +5,7 @@
  * Saves to plugin settings (defaults for all new chats).
  */
 
-import { App } from 'obsidian';
+import { App, Setting, Notice, Platform } from 'obsidian';
 import { SettingsRouter } from '../SettingsRouter';
 import { LLMProviderSettings } from '../../types/llm/ProviderTypes';
 import { Settings } from '../../settings';
@@ -87,6 +87,10 @@ export class DefaultsTab {
         enabled: llmSettings?.defaultThinking?.enabled ?? false,
         effort: llmSettings?.defaultThinking?.effort ?? 'medium'
       },
+      agentThinking: llmSettings?.agentThinking ? {
+        enabled: llmSettings.agentThinking.enabled ?? false,
+        effort: llmSettings.agentThinking.effort ?? 'medium'
+      } : undefined,
       temperature: llmSettings?.defaultTemperature ?? 0.5,
       imageProvider: llmSettings?.defaultImageModel?.provider || 'google',
       imageModel: llmSettings?.defaultImageModel?.model || 'gemini-2.5-flash-image',
@@ -121,6 +125,15 @@ export class DefaultsTab {
         enabled: settings.thinking.enabled,
         effort: settings.thinking.effort
       };
+      // Save agent thinking settings
+      if (settings.agentThinking) {
+        llmSettings.agentThinking = {
+          enabled: settings.agentThinking.enabled,
+          effort: settings.agentThinking.effort
+        };
+      } else {
+        llmSettings.agentThinking = undefined;
+      }
       llmSettings.defaultTemperature = settings.temperature;
       llmSettings.defaultImageModel = {
         provider: settings.imageProvider,
@@ -171,6 +184,44 @@ export class DefaultsTab {
     });
 
     this.renderer.render();
+
+    // Embeddings section (desktop only) - insert before Temperature
+    if (!Platform.isMobile) {
+      // Find Temperature section to insert before it
+      const headers = rendererContainer.querySelectorAll('.csr-section-header');
+      let temperatureSection: Element | null = null;
+      for (const header of Array.from(headers)) {
+        if (header.textContent === 'Temperature') {
+          temperatureSection = header.parentElement;
+          break;
+        }
+      }
+
+      const embeddingsSection = createDiv({ cls: 'csr-section' });
+      const embeddingsHeader = embeddingsSection.createDiv({ cls: 'csr-section-header' });
+      embeddingsHeader.setText('Embeddings');
+      const embeddingsContent = embeddingsSection.createDiv({ cls: 'csr-section-content' });
+
+      new Setting(embeddingsContent)
+        .setName('Enable')
+        .setDesc('Local AI for semantic search (~23MB download). Restart to apply.')
+        .addToggle(toggle => {
+          toggle
+            .setValue(this.services.settings.settings.enableEmbeddings ?? true)
+            .onChange(async (value) => {
+              this.services.settings.settings.enableEmbeddings = value;
+              await this.services.settings.saveSettings();
+              new Notice(`Embeddings ${value ? 'enabled' : 'disabled'}. Restart Obsidian to apply.`);
+            });
+        });
+
+      // Insert before Temperature, or append if not found
+      if (temperatureSection) {
+        rendererContainer.insertBefore(embeddingsSection, temperatureSection);
+      } else {
+        rendererContainer.appendChild(embeddingsSection);
+      }
+    }
   }
 
   /**

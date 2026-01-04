@@ -45,13 +45,10 @@ export class MessageQueueService extends EventEmitter {
    * - If generating, add to queue (user messages get priority)
    */
   async enqueue(message: QueuedMessage): Promise<void> {
-    console.log('[MessageQueue] enqueue:', { type: message.type, isGenerating: this.isGenerating });
     if (this.isGenerating) {
       this.addToQueue(message);
-      console.log('[MessageQueue] Queued for later, length:', this.queue.length);
       this.emit('message:queued', { count: this.queue.length, message });
     } else {
-      console.log('[MessageQueue] Processing immediately');
       await this.processMessage(message);
     }
   }
@@ -185,5 +182,14 @@ export class MessageQueueService extends EventEmitter {
    */
   getQueuePosition(messageId: string): number {
     return this.queue.findIndex(m => m.id === messageId);
+  }
+
+  /**
+   * Clean up all resources (called on plugin unload)
+   */
+  destroy(): void {
+    this.clearQueue();
+    this.processMessageFn = null;
+    this.removeAllListeners();
   }
 }

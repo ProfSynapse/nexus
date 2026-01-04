@@ -100,14 +100,6 @@ export class ConversationContextBuilder {
       };
     });
 
-    // Debug: Show what tool continuation we're building
-    console.log('[LLM_DEBUG] buildResponsesAPIToolInput:');
-    console.log('[LLM_DEBUG]   Tool calls received:', toolCalls.length);
-    toolCalls.forEach((tc, i) => {
-      console.log(`[LLM_DEBUG]   [${i}] call_id=${tc.id}, name=${tc.function?.name}`);
-    });
-    console.log('[LLM_DEBUG]   Output items:', JSON.stringify(items, null, 2));
-
     return items;
   }
 

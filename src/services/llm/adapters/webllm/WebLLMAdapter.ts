@@ -267,16 +267,6 @@ export class WebLLMAdapter extends BaseAdapter {
       messages = this.buildMessages(prompt, options?.systemPrompt);
     }
 
-    // Debug logging - full request (check console with filter: LLM_DEBUG)
-    console.log('[LLM_DEBUG] ====== WebLLM/Nexus Request ======');
-    console.log('[LLM_DEBUG] Messages:');
-    for (const msg of messages) {
-      console.log(`[LLM_DEBUG] [${msg.role}]:`);
-      console.log(msg.content);
-      console.log('[LLM_DEBUG] ---');
-    }
-    console.log('[LLM_DEBUG] ================================');
-
     // CRITICAL: Reset adapter state to 'ready' before starting new generation
     // This ensures clean state regardless of previous generation's outcome
     // The engine handles the actual locking via generationLock
@@ -335,26 +325,10 @@ export class WebLLMAdapter extends BaseAdapter {
           if (hasToolCallsFormat) {
             const parsed = ToolCallContentParser.parse(accumulatedContent);
 
-            // Debug logging - response
-            console.log('[LLM_DEBUG] ====== WebLLM/Nexus Response ======');
-            console.log('[LLM_DEBUG] Raw accumulated content:');
-            console.log(accumulatedContent);
-            console.log('[LLM_DEBUG] Parsed tool calls:', parsed.hasToolCalls ? parsed.toolCalls.length : 0);
             if (parsed.hasToolCalls) {
-              console.log('[LLM_DEBUG] Tool calls:', JSON.stringify(parsed.toolCalls, null, 2));
-            }
-            console.log('[LLM_DEBUG] ================================');
-
-            if (parsed.hasToolCalls) {
-              // DEBUG: Log tool calls before conversion
-              console.log('[NEXUS_TOOL_DEBUG] Tool calls before conversion:', JSON.stringify(parsed.toolCalls, null, 2));
-
               // Convert old-style tool calls to useTool format
               // Nexus models are trained on the full toolset - wrap in useTool
               const convertedToolCalls = this.toolCallConverter.convertToolCalls(parsed.toolCalls);
-
-              // DEBUG: Log converted tool calls
-              console.log('[NEXUS_TOOL_DEBUG] Converted tool calls:', JSON.stringify(convertedToolCalls, null, 2));
 
               yield {
                 content: parsed.cleanContent,
@@ -365,7 +339,6 @@ export class WebLLMAdapter extends BaseAdapter {
               };
             } else {
               // Parsing failed - yield raw content
-              console.log('[NEXUS_TOOL_DEBUG] Parsing failed - no tool calls found');
               yield {
                 content: accumulatedContent,
                 complete: true,

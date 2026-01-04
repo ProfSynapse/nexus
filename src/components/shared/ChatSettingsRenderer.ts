@@ -31,6 +31,11 @@ export interface ChatSettings {
     enabled: boolean;
     effort: ThinkingEffort;
   };
+  // Agent Model thinking settings (separate from chat model)
+  agentThinking?: {
+    enabled: boolean;
+    effort: ThinkingEffort;
+  };
   temperature: number; // 0.0-1.0, controls randomness
   imageProvider: 'google' | 'openrouter';
   imageModel: string;
@@ -122,6 +127,7 @@ export class ChatSettingsRenderer {
 
   // UI references
   private effortSection?: HTMLElement;
+  private agentEffortSection?: HTMLElement;
   private contextNotesListEl?: HTMLElement;
 
   constructor(container: HTMLElement, config: ChatSettingsRendererConfig) {
@@ -140,12 +146,11 @@ export class ChatSettingsRenderer {
     this.container.empty();
     this.container.addClass('chat-settings-renderer');
 
-    // Vertical layout
+    // Vertical layout - order: Chat (with Reasoning), Agent, Image, Temp, Context
     this.renderModelSection(this.container);
     this.renderAgentModelSection(this.container);
-    this.renderTemperatureSection(this.container);
-    this.renderReasoningSection(this.container);
     this.renderImageSection(this.container);
+    this.renderTemperatureSection(this.container);
     this.renderContextSection(this.container);
   }
 
@@ -261,6 +266,53 @@ export class ChatSettingsRenderer {
           }
         });
     }
+
+    // Reasoning controls (only if model supports thinking)
+    this.renderReasoningControls(content);
+  }
+
+  /**
+   * Render reasoning controls inside a section (not as separate section)
+   */
+  private renderReasoningControls(content: HTMLElement): void {
+    const supportsThinking = this.checkModelSupportsThinking();
+    if (!supportsThinking) return;
+
+    // Reasoning toggle
+    new Setting(content)
+      .setName('Reasoning')
+      .setDesc('Think step-by-step')
+      .addToggle(toggle => toggle
+        .setValue(this.settings.thinking.enabled)
+        .onChange(value => {
+          this.settings.thinking.enabled = value;
+          this.notifyChange();
+          this.updateEffortVisibility();
+        }));
+
+    // Effort slider
+    this.effortSection = content.createDiv('csr-effort-row');
+    if (!this.settings.thinking.enabled) {
+      this.effortSection.addClass('is-hidden');
+    }
+
+    const effortSetting = new Setting(this.effortSection)
+      .setName('Effort');
+
+    const valueDisplay = effortSetting.controlEl.createSpan({ cls: 'csr-effort-value' });
+    valueDisplay.setText(EFFORT_LABELS[this.settings.thinking.effort]);
+
+    effortSetting.addSlider(slider => {
+      slider
+        .setLimits(0, 2, 1)
+        .setValue(EFFORT_LEVELS.indexOf(this.settings.thinking.effort))
+        .onChange((value: number) => {
+          this.settings.thinking.effort = EFFORT_LEVELS[value];
+          valueDisplay.setText(EFFORT_LABELS[this.settings.thinking.effort]);
+          this.notifyChange();
+        });
+      return slider;
+    });
   }
 
   // ========== AGENT MODEL SECTION ==========
@@ -352,11 +404,94 @@ export class ChatSettingsRenderer {
           dropdown.onChange((value) => {
             this.settings.agentModel = value;
             this.notifyChange();
+            // Re-render to update reasoning visibility
+            this.render();
           });
         } catch {
           dropdown.addOption('', 'Error loading models');
         }
       });
+
+    // Agent Reasoning controls (only if agent model supports thinking)
+    this.renderAgentReasoningControls(content);
+  }
+
+  /**
+   * Render agent reasoning controls inside Agent Model section
+   */
+  private renderAgentReasoningControls(content: HTMLElement): void {
+    const supportsThinking = this.checkAgentModelSupportsThinking();
+    if (!supportsThinking) return;
+
+    // Initialize agent thinking if not set
+    if (!this.settings.agentThinking) {
+      this.settings.agentThinking = { enabled: false, effort: 'medium' };
+    }
+
+    // Reasoning toggle
+    new Setting(content)
+      .setName('Reasoning')
+      .setDesc('Think step-by-step')
+      .addToggle(toggle => toggle
+        .setValue(this.settings.agentThinking?.enabled ?? false)
+        .onChange(value => {
+          if (!this.settings.agentThinking) {
+            this.settings.agentThinking = { enabled: false, effort: 'medium' };
+          }
+          this.settings.agentThinking.enabled = value;
+          this.notifyChange();
+          this.updateAgentEffortVisibility();
+        }));
+
+    // Effort slider
+    this.agentEffortSection = content.createDiv('csr-effort-row');
+    if (!this.settings.agentThinking?.enabled) {
+      this.agentEffortSection.addClass('is-hidden');
+    }
+
+    const effortSetting = new Setting(this.agentEffortSection)
+      .setName('Effort');
+
+    const valueDisplay = effortSetting.controlEl.createSpan({ cls: 'csr-effort-value' });
+    valueDisplay.setText(EFFORT_LABELS[this.settings.agentThinking?.effort ?? 'medium']);
+
+    effortSetting.addSlider(slider => {
+      slider
+        .setLimits(0, 2, 1)
+        .setValue(EFFORT_LEVELS.indexOf(this.settings.agentThinking?.effort ?? 'medium'))
+        .onChange((value: number) => {
+          if (!this.settings.agentThinking) {
+            this.settings.agentThinking = { enabled: false, effort: 'medium' };
+          }
+          this.settings.agentThinking.effort = EFFORT_LEVELS[value];
+          valueDisplay.setText(EFFORT_LABELS[this.settings.agentThinking.effort]);
+          this.notifyChange();
+        });
+      return slider;
+    });
+  }
+
+  /**
+   * Check if agent model supports thinking
+   */
+  private checkAgentModelSupportsThinking(): boolean {
+    if (!this.settings.agentProvider || !this.settings.agentModel) return false;
+
+    const model = this.staticModelsService.findModel(this.settings.agentProvider, this.settings.agentModel);
+    return model?.capabilities?.supportsThinking ?? false;
+  }
+
+  /**
+   * Update agent effort slider visibility
+   */
+  private updateAgentEffortVisibility(): void {
+    if (!this.agentEffortSection) return;
+
+    if (this.settings.agentThinking?.enabled) {
+      this.agentEffortSection.removeClass('is-hidden');
+    } else {
+      this.agentEffortSection.addClass('is-hidden');
+    }
   }
 
   // ========== TEMPERATURE SECTION ==========
@@ -384,53 +519,6 @@ export class ChatSettingsRenderer {
         .onChange((value: number) => {
           this.settings.temperature = value;
           valueDisplay.setText(value.toFixed(1));
-          this.notifyChange();
-        });
-      return slider;
-    });
-  }
-
-  // ========== REASONING SECTION ==========
-
-  private renderReasoningSection(parent: HTMLElement): void {
-    const supportsThinking = this.checkModelSupportsThinking();
-    if (!supportsThinking) return;
-
-    const section = parent.createDiv('csr-section');
-    section.createDiv('csr-section-header').setText('Reasoning');
-    const content = section.createDiv('csr-section-content');
-
-    // Reasoning toggle
-    new Setting(content)
-      .setName('Enable')
-      .setDesc('Think step-by-step')
-      .addToggle(toggle => toggle
-        .setValue(this.settings.thinking.enabled)
-        .onChange(value => {
-          this.settings.thinking.enabled = value;
-          this.notifyChange();
-          this.updateEffortVisibility();
-        }));
-
-    // Effort slider
-    this.effortSection = content.createDiv('csr-effort-row');
-    if (!this.settings.thinking.enabled) {
-      this.effortSection.addClass('is-hidden');
-    }
-
-    const effortSetting = new Setting(this.effortSection)
-      .setName('Effort');
-
-    const valueDisplay = effortSetting.controlEl.createSpan({ cls: 'csr-effort-value' });
-    valueDisplay.setText(EFFORT_LABELS[this.settings.thinking.effort]);
-
-    effortSetting.addSlider(slider => {
-      slider
-        .setLimits(0, 2, 1)
-        .setValue(EFFORT_LEVELS.indexOf(this.settings.thinking.effort))
-        .onChange((value: number) => {
-          this.settings.thinking.effort = EFFORT_LEVELS[value];
-          valueDisplay.setText(EFFORT_LABELS[this.settings.thinking.effort]);
           this.notifyChange();
         });
       return slider;

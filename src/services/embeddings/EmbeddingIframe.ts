@@ -40,13 +40,15 @@ interface EmbeddingResponse {
 export class EmbeddingIframe {
   private iframe: HTMLIFrameElement | null = null;
   private isReady: boolean = false;
+  // Init requests (id=-1) resolve with void, regular requests resolve with EmbeddingResponse
   private pendingRequests: Map<number, {
-    resolve: (value: any) => void;
+    resolve: (value: EmbeddingResponse | void) => void;
     reject: (error: Error) => void;
   }> = new Map();
   private requestId: number = 0;
   private initPromise: Promise<void> | null = null;
   private messageHandler: ((event: MessageEvent) => void) | null = null;
+  private blobUrl: string | null = null;
 
   private readonly MODEL_ID = 'Xenova/all-MiniLM-L6-v2';
   private readonly DIMENSIONS = 384;
@@ -70,9 +72,9 @@ export class EmbeddingIframe {
     // Create the iframe HTML that will load transformers.js
     const iframeHtml = this.createIframeHtml();
 
-    // Create blob URL for the iframe
+    // Create blob URL for the iframe (stored for cleanup)
     const blob = new Blob([iframeHtml], { type: 'text/html' });
-    const blobUrl = URL.createObjectURL(blob);
+    this.blobUrl = URL.createObjectURL(blob);
 
     // Create and configure iframe
     this.iframe = document.createElement('iframe');
@@ -98,13 +100,13 @@ export class EmbeddingIframe {
           clearTimeout(timeout);
           resolve();
         },
-        reject: (err) => {
+        reject: (err: Error) => {
           clearTimeout(timeout);
           reject(err);
         }
       });
 
-      this.iframe!.src = blobUrl;
+      this.iframe!.src = this.blobUrl!;
       document.body.appendChild(this.iframe!);
     });
   }
@@ -239,7 +241,8 @@ export class EmbeddingIframe {
     const id = ++this.requestId;
 
     return new Promise((resolve, reject) => {
-      this.pendingRequests.set(id, { resolve, reject });
+      // Cast resolve to accept void for Map compatibility (init uses void, regular requests use EmbeddingResponse)
+      this.pendingRequests.set(id, { resolve: resolve as (value: EmbeddingResponse | void) => void, reject });
       this.iframe!.contentWindow!.postMessage({ id, ...request }, '*');
 
       // Timeout after 30 seconds
@@ -295,6 +298,13 @@ export class EmbeddingIframe {
       this.iframe.remove();
       this.iframe = null;
     }
+
+    // Revoke blob URL to free memory
+    if (this.blobUrl) {
+      URL.revokeObjectURL(this.blobUrl);
+      this.blobUrl = null;
+    }
+
     this.isReady = false;
     this.pendingRequests.clear();
   }
