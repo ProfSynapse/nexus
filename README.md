@@ -63,7 +63,7 @@ Every `useTools` call includes context that helps maintain continuity:
 }
 ```
 
-### Available Agents & Tools (30 total)
+### Available Agents & Tools (34 total)
 
 | Agent | Purpose | Tools |
 |-------|---------|-------|
@@ -72,6 +72,7 @@ Every `useTools` call includes context that helps maintain continuity:
 | **searchManager** | Search operations | searchContent, searchDirectory, searchMemory |
 | **memoryManager** | Workspace/state management | createWorkspace, listWorkspaces, loadWorkspace, updateWorkspace, archiveWorkspace, createState, listStates, loadState |
 | **promptManager** | Custom prompts & LLM | listModels, executePrompts, listPrompts, getPrompt, createPrompt, updatePrompt, archivePrompt, generateImage, subagent |
+| **canvasManager** | Canvas operations | read, write, update, list |
 
 ---
 

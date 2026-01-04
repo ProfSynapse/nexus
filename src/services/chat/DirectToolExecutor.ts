@@ -40,57 +40,6 @@ interface ToolEventData {
     error?: string;
 }
 
-/**
- * Map of bare tool names to their correct full format
- * Used for helpful "did you mean X?" error messages
- */
-const TOOL_SUGGESTIONS: Record<string, string> = {
-    // toolManager
-    getTools: 'toolManager_getTools',
-    useTool: 'toolManager_useTools',
-    useTools: 'toolManager_useTools',
-    // promptManager
-    listModels: 'promptManager_listModels',
-    executePrompts: 'promptManager_executePrompts',
-    createPrompt: 'promptManager_createPrompt',
-    updatePrompt: 'promptManager_updatePrompt',
-    archivePrompt: 'promptManager_archivePrompt',
-    listPrompts: 'promptManager_listPrompts',
-    getPrompt: 'promptManager_getPrompt',
-    generateImage: 'promptManager_generateImage',
-    // contentManager
-    readContent: 'contentManager_readContent',
-    createContent: 'contentManager_createContent',
-    appendContent: 'contentManager_appendContent',
-    prependContent: 'contentManager_prependContent',
-    replaceContent: 'contentManager_replaceContent',
-    replaceByLine: 'contentManager_replaceByLine',
-    deleteContent: 'contentManager_deleteContent',
-    findReplaceContent: 'contentManager_findReplaceContent',
-    // commandManager
-    listCommands: 'commandManager_listCommands',
-    executeCommand: 'commandManager_executeCommand',
-    // storageManager
-    list: 'storageManager_list',
-    createFolder: 'storageManager_createFolder',
-    move: 'storageManager_move',
-    copy: 'storageManager_copy',
-    archive: 'storageManager_archive',
-    open: 'storageManager_open',
-    // searchManager
-    searchContent: 'searchManager_searchContent',
-    searchDirectory: 'searchManager_searchDirectory',
-    searchMemory: 'searchManager_searchMemory',
-    // memoryManager (9 tools: 5 workspace + 4 state)
-    createWorkspace: 'memoryManager_createWorkspace',
-    listWorkspaces: 'memoryManager_listWorkspaces',
-    loadWorkspace: 'memoryManager_loadWorkspace',
-    updateWorkspace: 'memoryManager_updateWorkspace',
-    archiveWorkspace: 'memoryManager_archiveWorkspace',
-    createState: 'memoryManager_createState',
-    listStates: 'memoryManager_listStates',
-    loadState: 'memoryManager_loadState',
-};
 
 export interface DirectToolCall {
     id: string;
@@ -359,10 +308,17 @@ export class DirectToolExecutor {
 
         // No tools requested - remind to specify which tools
         if (!requestedTools || requestedTools.length === 0) {
+            // Get agent names dynamically from registry
+            const agents = this.getAgentsAsArray();
+            const agentNames = agents
+                .map(a => a.name)
+                .filter(n => n !== 'toolManager')
+                .sort();
+
             return {
                 success: false,
                 error: 'Please specify which agent tools you need. Example: get_tools({ tools: ["contentManager", "searchManager"] })',
-                availableAgents: ['contentManager', 'storageManager', 'searchManager', 'memoryManager', 'promptManager']
+                availableAgents: agentNames
             };
         }
 

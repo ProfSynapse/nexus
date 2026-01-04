@@ -19,7 +19,6 @@ import { ToolCallTraceService } from './services/trace/ToolCallTraceService';
 import { AgentToolParams } from './types/agent/AgentTypes';
 import { SearchManagerAgent } from './agents';
 import { MemoryManagerAgent } from './agents';
-import { AGENTS } from './config/agentConfigs';
 import { IAgent } from './agents/interfaces/IAgent';
 import { ITool } from './agents/interfaces/ITool';
 

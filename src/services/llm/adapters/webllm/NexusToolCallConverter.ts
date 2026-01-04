@@ -49,19 +49,6 @@ interface UseToolParams {
   strategy?: 'serial' | 'parallel';
 }
 
-/**
- * Known agents in the system - used to parse tool names
- * Format: agentName_toolName
- */
-const KNOWN_AGENTS = [
-  'toolManager',
-  'promptManager',
-  'contentManager',
-  'commandManager',
-  'storageManager',
-  'searchManager',
-  'memoryManager',
-];
 
 export class NexusToolCallConverter {
   private defaultContext: NexusDefaultContext;
@@ -125,27 +112,30 @@ export class NexusToolCallConverter {
    * 1. agentName_toolName (underscore)
    * 2. agentName.toolName (dot)
    *
+   * Agent names must end with "Manager" (e.g., contentManager, canvasManager).
    * Bare tool names (e.g., "createContent") are NOT auto-converted.
    * They will fail with a helpful "did you mean?" error from DirectToolExecutor.
    */
   private parseToolName(name: string): { agent: string; tool: string } | null {
-    // Try underscore format first: agentName_toolName
-    for (const agent of KNOWN_AGENTS) {
-      if (name.startsWith(agent + '_')) {
-        const tool = name.slice(agent.length + 1);
-        if (tool) {
-          return { agent, tool };
-        }
+    // Try underscore format: agentName_toolName
+    const underscoreIdx = name.indexOf('_');
+    if (underscoreIdx > 0) {
+      const agent = name.slice(0, underscoreIdx);
+      const tool = name.slice(underscoreIdx + 1);
+      // Valid if agent ends with "Manager" and tool exists
+      if (agent.endsWith('Manager') && tool) {
+        return { agent, tool };
       }
     }
 
     // Try dot format: agentName.toolName
-    for (const agent of KNOWN_AGENTS) {
-      if (name.startsWith(agent + '.')) {
-        const tool = name.slice(agent.length + 1);
-        if (tool) {
-          return { agent, tool };
-        }
+    const dotIdx = name.indexOf('.');
+    if (dotIdx > 0) {
+      const agent = name.slice(0, dotIdx);
+      const tool = name.slice(dotIdx + 1);
+      // Valid if agent ends with "Manager" and tool exists
+      if (agent.endsWith('Manager') && tool) {
+        return { agent, tool };
       }
     }
 
