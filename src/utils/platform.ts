@@ -184,9 +184,29 @@ export const DESKTOP_ONLY_PROVIDERS = [
 ] as const;
 
 /**
+ * Providers that are displayed but not yet available ("Coming Soon")
+ * These show in the UI but cannot be enabled or configured.
+ */
+export const COMING_SOON_PROVIDERS = [
+    'webllm',       // Nexus local - Coming soon
+] as const;
+
+/**
+ * Check if a provider is marked as "Coming Soon" (visible but not usable)
+ */
+export const isProviderComingSoon = (providerId: string): boolean => {
+    return (COMING_SOON_PROVIDERS as readonly string[]).includes(providerId);
+};
+
+/**
  * Check if a provider is compatible with the current platform
  */
 export const isProviderCompatible = (providerId: string): boolean => {
+    // Coming soon providers are not available anywhere
+    if (isProviderComingSoon(providerId)) {
+        return false;
+    }
+
     // Explicit feature gating for special providers
     if (providerId === 'webllm') {
         return supportsWebLLM();

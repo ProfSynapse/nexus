@@ -18,7 +18,7 @@ import { LLMProviderManager } from '../../services/llm/providers/ProviderManager
 import { Settings } from '../../settings';
 import { Card, CardConfig } from '../../components/Card';
 import { LLMSettingsNotifier } from '../../services/llm/LLMSettingsNotifier';
-import { isDesktop, supportsLocalLLM, MOBILE_COMPATIBLE_PROVIDERS } from '../../utils/platform';
+import { isDesktop, supportsLocalLLM, MOBILE_COMPATIBLE_PROVIDERS, isProviderComingSoon } from '../../utils/platform';
 
 /**
  * Provider display configuration
@@ -219,28 +219,44 @@ export class ProvidersTab {
                 enabled: false
             };
 
-            const isConfigured = this.isProviderConfigured(providerId, providerConfig);
+            // Check if this provider is coming soon
+            const comingSoon = isProviderComingSoon(providerId);
 
-            // Create card for this provider
-            const cardConfig: CardConfig = {
-                title: displayConfig.name,
-                description: isConfigured ? 'Configured' : 'Not configured',
-                isEnabled: providerConfig.enabled,
-                showToggle: true,
-                onToggle: async (enabled: boolean) => {
-                    settings.providers[providerId] = {
-                        ...providerConfig,
-                        enabled
-                    };
-                    await this.saveSettings();
-                    this.render(); // Re-render to update defaults dropdown
-                },
-                onEdit: () => {
-                    this.openProviderModal(providerId, displayConfig, providerConfig);
-                }
-            };
+            if (comingSoon) {
+                // Coming Soon card - no toggle, no edit
+                const cardConfig: CardConfig = {
+                    title: displayConfig.name,
+                    description: 'Coming Soon',
+                    isEnabled: false,
+                    showToggle: false
+                    // No onEdit - prevents edit button from appearing
+                };
+                const card = new Card(grid, cardConfig);
+                card.getElement().addClass('provider-coming-soon');
+            } else {
+                const isConfigured = this.isProviderConfigured(providerId, providerConfig);
 
-            new Card(grid, cardConfig);
+                // Create card for this provider
+                const cardConfig: CardConfig = {
+                    title: displayConfig.name,
+                    description: isConfigured ? 'Configured' : 'Not configured',
+                    isEnabled: providerConfig.enabled,
+                    showToggle: true,
+                    onToggle: async (enabled: boolean) => {
+                        settings.providers[providerId] = {
+                            ...providerConfig,
+                            enabled
+                        };
+                        await this.saveSettings();
+                        this.render(); // Re-render to update defaults dropdown
+                    },
+                    onEdit: () => {
+                        this.openProviderModal(providerId, displayConfig, providerConfig);
+                    }
+                };
+
+                new Card(grid, cardConfig);
+            }
         });
     }
 
