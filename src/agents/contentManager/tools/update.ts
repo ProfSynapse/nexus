@@ -3,6 +3,8 @@ import { BaseTool } from '../../baseTool';
 import { UpdateParams, UpdateResult } from '../types';
 import { ContentOperations } from '../utils/ContentOperations';
 import { createErrorMessage } from '../../../utils/errorUtils';
+import { addRecommendations, Recommendation } from '../../../utils/recommendationUtils';
+import { NudgeHelpers } from '../../../utils/nudgeHelpers';
 
 /**
  * Location: src/agents/contentManager/tools/update.ts
@@ -84,6 +86,7 @@ export class UpdateTool extends BaseTool<UpdateParams, UpdateResult> {
 
         // Calculate linesDelta: number of lines added
         const linesAdded = content.split('\n').length;
+        // Append doesn't shift existing lines, so no hint needed
         return { success: true, linesDelta: linesAdded };
       }
 
@@ -116,7 +119,12 @@ export class UpdateTool extends BaseTool<UpdateParams, UpdateResult> {
         await this.app.vault.modify(file, newContent);
 
         // Calculate linesDelta: number of lines inserted
-        return { success: true, linesDelta: insertLines.length };
+        const delta = insertLines.length;
+        const result = { success: true, linesDelta: delta };
+
+        // Add nudge if lines shifted
+        const nudge = NudgeHelpers.checkLineShift(delta, startLine);
+        return nudge ? addRecommendations(result, [nudge]) : result;
       }
 
       // Validate endLine
@@ -148,7 +156,12 @@ export class UpdateTool extends BaseTool<UpdateParams, UpdateResult> {
         await this.app.vault.modify(file, newContent);
 
         // Calculate linesDelta: negative (lines removed)
-        return { success: true, linesDelta: -linesRemoved };
+        const delta = -linesRemoved;
+        const result = { success: true, linesDelta: delta };
+
+        // Add nudge for line shift
+        const nudge = NudgeHelpers.checkLineShift(delta, endLine);
+        return nudge ? addRecommendations(result, [nudge]) : result;
       } else {
         // REPLACE: Remove lines and insert new content
         const replacementLines = content.split('\n');
@@ -161,7 +174,12 @@ export class UpdateTool extends BaseTool<UpdateParams, UpdateResult> {
         await this.app.vault.modify(file, newContent);
 
         // Calculate linesDelta: new lines minus removed lines
-        return { success: true, linesDelta: replacementLines.length - linesRemoved };
+        const delta = replacementLines.length - linesRemoved;
+        const result = { success: true, linesDelta: delta };
+
+        // Add nudge if lines shifted
+        const nudge = NudgeHelpers.checkLineShift(delta, endLine);
+        return nudge ? addRecommendations(result, [nudge]) : result;
       }
 
     } catch (error) {
@@ -215,6 +233,17 @@ export class UpdateTool extends BaseTool<UpdateParams, UpdateResult> {
         linesDelta: {
           type: 'number',
           description: 'Net change in line count. Positive = lines added, negative = lines removed. Use this to adjust subsequent line numbers in multi-operation workflows.'
+        },
+        recommendations: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              type: { type: 'string' },
+              message: { type: 'string' }
+            }
+          },
+          description: 'Recommendations for follow-up actions when line numbers have shifted.'
         },
         error: {
           type: 'string',

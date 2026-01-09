@@ -293,4 +293,25 @@ export class NudgeHelpers {
       message: "Test your prompt with executePrompts to verify it works as expected."
     };
   }
+
+  // ===================
+  // ContentManager Nudges
+  // ===================
+
+  /**
+   * Suggest re-reading lines after content update shifted line numbers
+   * @param linesDelta Net change in line count (positive = added, negative = removed)
+   * @param affectedAfterLine The line number after which lines shifted
+   */
+  static checkLineShift(linesDelta: number, affectedAfterLine: number): Recommendation | null {
+    if (linesDelta === 0) return null;
+
+    const direction = linesDelta > 0 ? 'added' : 'removed';
+    const count = Math.abs(linesDelta);
+
+    return {
+      type: "line_shift_warning",
+      message: `${count} line(s) ${direction} after line ${affectedAfterLine}. Re-read target lines with contentManager.read before further updates to ensure correct positioning.`
+    };
+  }
 }

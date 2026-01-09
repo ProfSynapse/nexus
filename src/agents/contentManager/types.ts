@@ -113,6 +113,11 @@ export interface UpdateResult extends CommonResult {
    * Use this to adjust subsequent line numbers in multi-operation workflows.
    */
   linesDelta?: number;
+
+  /**
+   * Recommendations for follow-up actions (uses standard nudge system)
+   */
+  recommendations?: Array<{ type: string; message: string }>;
 }
 
 // ============================================================================
