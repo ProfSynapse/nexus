@@ -37,7 +37,7 @@ export class UpdateTool extends BaseTool<UpdateParams, UpdateResult> {
     super(
       'update',
       'Update',
-      'Insert, replace, or delete content at specific line positions',
+      'Insert, replace, or delete content at specific line positions. Returns linesDelta showing net line change - use this to adjust subsequent line numbers in multi-operation workflows.',
       '1.0.0'
     );
 
@@ -81,7 +81,10 @@ export class UpdateTool extends BaseTool<UpdateParams, UpdateResult> {
         const needsNewline = existingContent.length > 0 && !existingContent.endsWith('\n');
         newContent = existingContent + (needsNewline ? '\n' : '') + content;
         await this.app.vault.modify(file, newContent);
-        return this.prepareResult(true);
+
+        // Calculate linesDelta: number of lines added
+        const linesAdded = content.split('\n').length;
+        return { success: true, linesDelta: linesAdded };
       }
 
       // Validate line numbers
@@ -111,7 +114,9 @@ export class UpdateTool extends BaseTool<UpdateParams, UpdateResult> {
         ].join('\n');
 
         await this.app.vault.modify(file, newContent);
-        return this.prepareResult(true);
+
+        // Calculate linesDelta: number of lines inserted
+        return { success: true, linesDelta: insertLines.length };
       }
 
       // Validate endLine
@@ -131,6 +136,7 @@ export class UpdateTool extends BaseTool<UpdateParams, UpdateResult> {
       // Case 3: DELETE (startLine + endLine with empty content)
       const beforeLines = lines.slice(0, startLine - 1);
       const afterLines = lines.slice(endLine);
+      const linesRemoved = endLine - startLine + 1;
 
       if (content === '') {
         // DELETE: Remove lines, don't insert anything
@@ -138,6 +144,11 @@ export class UpdateTool extends BaseTool<UpdateParams, UpdateResult> {
           ...beforeLines,
           ...afterLines
         ].join('\n');
+
+        await this.app.vault.modify(file, newContent);
+
+        // Calculate linesDelta: negative (lines removed)
+        return { success: true, linesDelta: -linesRemoved };
       } else {
         // REPLACE: Remove lines and insert new content
         const replacementLines = content.split('\n');
@@ -146,10 +157,12 @@ export class UpdateTool extends BaseTool<UpdateParams, UpdateResult> {
           ...replacementLines,
           ...afterLines
         ].join('\n');
-      }
 
-      await this.app.vault.modify(file, newContent);
-      return this.prepareResult(true);
+        await this.app.vault.modify(file, newContent);
+
+        // Calculate linesDelta: new lines minus removed lines
+        return { success: true, linesDelta: replacementLines.length - linesRemoved };
+      }
 
     } catch (error) {
       return this.prepareResult(false, undefined, createErrorMessage('Error updating file: ', error));
@@ -198,6 +211,10 @@ export class UpdateTool extends BaseTool<UpdateParams, UpdateResult> {
         success: {
           type: 'boolean',
           description: 'Whether the operation succeeded'
+        },
+        linesDelta: {
+          type: 'number',
+          description: 'Net change in line count. Positive = lines added, negative = lines removed. Use this to adjust subsequent line numbers in multi-operation workflows.'
         },
         error: {
           type: 'string',

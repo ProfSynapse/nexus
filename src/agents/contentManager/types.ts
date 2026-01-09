@@ -107,7 +107,12 @@ export interface UpdateParams extends CommonParameters {
  * Result of updating content in a file
  */
 export interface UpdateResult extends CommonResult {
-  // No data returned - LLM already knows the path, content, and lines it passed
+  /**
+   * Net change in line count after the operation.
+   * Positive = lines added, Negative = lines removed, Zero = no change.
+   * Use this to adjust subsequent line numbers in multi-operation workflows.
+   */
+  linesDelta?: number;
 }
 
 // ============================================================================
