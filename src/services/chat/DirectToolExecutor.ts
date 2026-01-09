@@ -288,61 +288,42 @@ export class DirectToolExecutor {
 
     /**
      * Handle the get_tools meta-tool call
-     * Returns tool schemas for requested agents
+     * Delegates to GetToolsTool for consistent schema/execution
      */
     private async handleGetTools(
         params: Record<string, unknown>,
         context?: { sessionId?: string; workspaceId?: string }
-    ): Promise<{
-        success: boolean;
-        tools?: OpenAITool[];
-        count?: number;
-        notFound?: string[];
-        reminder?: string;
-        error?: string;
-        availableAgents?: string[];
-    }> {
-        const requestedTools = params.tools as string[] | undefined;
-        const sessionId = context?.sessionId || 'session_' + Date.now();
-        const workspaceId = context?.workspaceId || 'default';
-
-        // No tools requested - remind to specify which tools
-        if (!requestedTools || requestedTools.length === 0) {
-            // Get agent names dynamically from registry
-            const agents = this.getAgentsAsArray();
-            const agentNames = agents
-                .map(a => a.name)
-                .filter(n => n !== 'toolManager')
-                .sort();
-
+    ): Promise<unknown> {
+        // Get toolManager agent to use its getTools implementation
+        const toolManagerAgent = this.getAgentByName('toolManager');
+        if (!toolManagerAgent) {
             return {
                 success: false,
-                error: 'Please specify which agent tools you need. Example: get_tools({ tools: ["contentManager", "searchManager"] })',
-                availableAgents: agentNames
+                error: 'ToolManager agent not found'
             };
         }
 
-        // Get schemas for requested tools
-        const allTools = await this.getAllToolSchemas();
-        const matchedTools: OpenAITool[] = [];
-        const notFound: string[] = [];
-
-        for (const toolName of requestedTools) {
-            const tool = allTools.find(t => t.function.name === toolName);
-            if (tool) {
-                matchedTools.push(tool);
-            } else {
-                notFound.push(toolName);
-            }
+        const getToolsTool = toolManagerAgent.getTool('getTools');
+        if (!getToolsTool) {
+            return {
+                success: false,
+                error: 'getTools tool not found in ToolManager'
+            };
         }
 
-        return {
-            success: true,
-            tools: matchedTools,
-            count: matchedTools.length,
-            notFound: notFound.length > 0 ? notFound : undefined,
-            reminder: `Use sessionId: "${sessionId}" and workspaceId: "${workspaceId}" in context for all tool calls.`
+        // Merge context from params and external context
+        const paramsContext = (params.context || {}) as Record<string, unknown>;
+        const mergedParams = {
+            ...params,
+            context: {
+                ...paramsContext,
+                sessionId: context?.sessionId || paramsContext.sessionId || `session_${Date.now()}`,
+                workspaceId: context?.workspaceId || paramsContext.workspaceId || 'default'
+            }
         };
+
+        // Execute via toolManager's getTools
+        return await getToolsTool.execute(mergedParams);
     }
 
     /**

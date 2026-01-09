@@ -886,6 +886,27 @@
     color: var(--text-normal);
     font-size: 0.8rem;
     margin-bottom: 0.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.tool-copy-button {
+    opacity: 0.5;
+    cursor: pointer;
+    padding: 2px 4px;
+    border-radius: 4px;
+    transition: opacity 0.2s, background 0.2s;
+}
+
+.tool-copy-button:hover {
+    opacity: 1;
+    background: var(--background-modifier-hover);
+}
+
+.tool-copy-button.tool-copy-success {
+    color: var(--text-success);
+    opacity: 1;
 }
 
 .tool-code {

@@ -18,21 +18,28 @@ export class ConversationTitleModal extends Modal {
   onOpen() {
     const { contentEl } = this;
     contentEl.addClass('chat-conversation-title-modal');
+    
+    // Simulate a click on the modal to ensure Obsidian's keyboard scope is activated.
+    // This is necessary when the modal opens after a native confirm() dialog,
+    // which can leave the scope in an uninitialized state.
+    setTimeout(() => {
+      this.modalEl.click();
+    }, 10);
 
     contentEl.createEl('h2', { text: 'New Conversation' });
     contentEl.createEl('p', { text: 'Enter a title for your new conversation:' });
 
-    // Create input using Obsidian's Setting component for consistency
     new Setting(contentEl)
       .setName('Conversation Title')
       .addText((text) => {
         this.inputEl = text.inputEl;
+        
         text
           .setPlaceholder('e.g., "Help with React project"')
           .onChange((value) => {
             this.result = value;
           });
-        // Modal cleanup handles this automatically
+          
         text.inputEl.addEventListener('keydown', (e: KeyboardEvent) => {
           if (e.key === 'Enter') {
             e.preventDefault();
@@ -40,11 +47,16 @@ export class ConversationTitleModal extends Modal {
           }
         });
 
-        // Focus the input after a small delay to ensure modal is fully rendered
-        setTimeout(() => {
-          text.inputEl.focus();
-          text.inputEl.select();
-        }, 10);
+        // Focus the input after modal activation click
+        requestAnimationFrame(() => {
+          setTimeout(() => {
+            if (this.inputEl) {
+              this.inputEl.click();
+              this.inputEl.focus();
+              this.inputEl.select();
+            }
+          }, 50);
+        });
       });
 
     // Action buttons

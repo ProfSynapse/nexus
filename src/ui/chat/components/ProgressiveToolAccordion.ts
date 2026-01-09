@@ -302,8 +302,9 @@ export class ProgressiveToolAccordion {
     if (tool.parameters && Object.keys(tool.parameters).length > 0) {
       const paramsSection = item.createDiv('tool-section');
       const paramsHeader = paramsSection.createDiv('tool-section-header');
-      paramsHeader.textContent = 'Parameters:';
-      
+      paramsHeader.createSpan({ text: 'Parameters:' });
+      this.addCopyButton(paramsHeader, () => JSON.stringify(tool.parameters, null, 2));
+
       const paramsContent = paramsSection.createEl('pre', { cls: 'tool-code' });
       paramsContent.textContent = JSON.stringify(tool.parameters, null, 2);
     }
@@ -446,7 +447,13 @@ export class ProgressiveToolAccordion {
       resultSection.addClass('progressive-accordion-section-visible');
 
       const resultHeader = resultSection.createDiv('tool-section-header');
-      resultHeader.textContent = 'Result:';
+      resultHeader.createSpan({ text: 'Result:' });
+      this.addCopyButton(resultHeader, () => {
+        if (typeof tool.result === 'string') {
+          return tool.result;
+        }
+        return JSON.stringify(tool.result, null, 2);
+      });
 
       const resultContent = resultSection.createEl('pre', { cls: 'tool-code' });
       if (typeof tool.result === 'string') {
@@ -629,6 +636,33 @@ export class ProgressiveToolAccordion {
       e.preventDefault();
       e.stopPropagation();
       this.callbacks.onViewBranch?.(branchId!);
+    });
+  }
+
+  /**
+   * Add a copy button to a container element
+   */
+  private addCopyButton(container: HTMLElement, getContent: () => string): void {
+    const copyBtn = container.createSpan({ cls: 'tool-copy-button clickable-icon' });
+    setIcon(copyBtn, 'copy');
+    copyBtn.setAttribute('aria-label', 'Copy to clipboard');
+
+    copyBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      try {
+        await navigator.clipboard.writeText(getContent());
+        // Show success feedback
+        copyBtn.empty();
+        setIcon(copyBtn, 'check');
+        copyBtn.addClass('tool-copy-success');
+        setTimeout(() => {
+          copyBtn.empty();
+          setIcon(copyBtn, 'copy');
+          copyBtn.removeClass('tool-copy-success');
+        }, 1500);
+      } catch (err) {
+        console.error('Failed to copy:', err);
+      }
     });
   }
 
