@@ -22,9 +22,9 @@ interface TraceItem {
   timestamp?: number;
   content?: string;
   metadata?: {
-    request?: {
-      normalizedParams?: { context?: { memory?: string; sessionMemory?: string } };
-      originalParams?: { context?: { memory?: string; sessionMemory?: string } };
+    context?: {
+      memory?: string;
+      goal?: string;
     };
   };
 }
@@ -181,17 +181,13 @@ export class WorkspaceContextBuilder {
       // Sort by timestamp descending (newest first)
       traces.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 
-      // Extract memory (new format) or sessionMemory (legacy) from trace metadata
+      // Extract memory from trace metadata
       const activities: string[] = [];
       for (let i = 0; i < Math.min(limit, traces.length); i++) {
         const trace = traces[i];
 
-        // Try new format first (memory), then fall back to legacy (sessionMemory)
-        const memoryValue =
-          trace.metadata?.request?.normalizedParams?.context?.memory ||
-          trace.metadata?.request?.originalParams?.context?.memory ||
-          trace.metadata?.request?.normalizedParams?.context?.sessionMemory ||
-          trace.metadata?.request?.originalParams?.context?.sessionMemory;
+        // Get memory from V2 canonical format
+        const memoryValue = trace.metadata?.context?.memory;
 
         if (memoryValue && memoryValue.trim()) {
           activities.push(memoryValue);

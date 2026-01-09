@@ -284,8 +284,8 @@ export class ToolCallTraceService {
       files.push(...response.modifiedFiles);
     }
 
-    // Deduplicate and filter empty strings
-    return [...new Set(files.filter(f => f && f.trim()))];
+    // Deduplicate and filter empty strings (ensure strings only)
+    return [...new Set(files.filter(f => typeof f === 'string' && f.trim()))];
   }
 
 }

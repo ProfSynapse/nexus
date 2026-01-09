@@ -54,8 +54,10 @@ export class ReadTool extends BaseTool<ReadParams, ReadResult> {
       const allLines = fullContent.split('\n');
       const totalLines = allLines.length;
 
-      // Determine actual range
-      const actualStartLine = startLine;
+      // Determine actual range - default to 1 if startLine is not provided or invalid
+      const parsedStartLine = typeof startLine === 'number' && !isNaN(startLine) ? startLine :
+                              typeof startLine === 'string' ? parseInt(startLine, 10) : NaN;
+      const actualStartLine = !isNaN(parsedStartLine) && parsedStartLine >= 1 ? parsedStartLine : 1;
       const actualEndLine = endLine !== undefined ? Math.min(endLine, totalLines) : totalLines;
 
       // Extract requested lines (1-based to 0-based)
