@@ -317,9 +317,19 @@ export class UseToolTool implements ITool<UseToolParams, UseToolResult> {
         result.error = toolResult.error;
       }
 
-      // Only include data if present (for tools that return data)
-      if (toolResult.success && toolResult.data !== undefined && toolResult.data !== null) {
-        result.data = toolResult.data;
+      // Include data if present (for tools that return data)
+      // Also pass through any extra properties (e.g., linesDelta from update tool)
+      if (toolResult.success) {
+        const { success: _s, error: _e, data, workspaceContext: _w, context: _c, sessionId: _sid, ...extra } = toolResult as unknown as Record<string, unknown>;
+
+        // If tool returned explicit data property, use it
+        if (data !== undefined && data !== null) {
+          result.data = data;
+        }
+        // If tool returned extra properties (like linesDelta), include them in data
+        else if (Object.keys(extra).length > 0) {
+          result.data = extra;
+        }
       }
 
       return result;
