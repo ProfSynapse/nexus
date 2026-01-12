@@ -108,8 +108,8 @@ export class LoadWorkspaceTool extends BaseTool<LoadWorkspaceParameters, LoadWor
         // Continue - this is not critical
       }
 
-      // Get limit from params (default to 3)
-      const limit = params.limit ?? 3;
+      // Get limit from params (default to 5)
+      const limit = params.limit ?? 5;
 
       // Get memory service for data operations
       const memoryService = this.agent.getMemoryService();
@@ -155,9 +155,12 @@ export class LoadWorkspaceTool extends BaseTool<LoadWorkspaceParameters, LoadWor
       const recentFiles = await this.fileCollector.getRecentFilesInWorkspace(workspace, cacheManager);
 
       // Build workspace structure using file collector
+      // recursive defaults to false (top-level only)
+      const recursive = params.recursive ?? false;
       const workspacePathResult = await this.fileCollector.buildWorkspacePath(
         workspace.rootFolder,
-        app
+        app,
+        recursive
       );
       const workspaceStructure = workspacePathResult.path?.files || [];
       const workspaceContext = {
@@ -263,10 +266,15 @@ export class LoadWorkspaceTool extends BaseTool<LoadWorkspaceParameters, LoadWor
         },
         limit: {
           type: 'number',
-          description: 'Optional limit for sessions, states, and recentActivity returned (default: 3)',
-          default: 3,
+          description: 'Optional limit for sessions, states, and recentActivity returned (default: 5)',
+          default: 5,
           minimum: 1,
           maximum: 20
+        },
+        recursive: {
+          type: 'boolean',
+          description: 'Show full recursive file structure (true) or top-level folders only (false). Default: false (top-level only, folders marked with trailing /)',
+          default: false
         }
       },
       required: ['id']
@@ -306,7 +314,7 @@ export class LoadWorkspaceTool extends BaseTool<LoadWorkspaceParameters, LoadWor
             workspaceStructure: {
               type: 'array',
               items: { type: 'string' },
-              description: 'File structure paths'
+              description: 'Workspace structure paths. By default shows top-level items only (folders marked with trailing /). Set recursive=true for full file tree.'
             },
             recentFiles: {
               type: 'array',

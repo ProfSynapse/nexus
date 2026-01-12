@@ -24,6 +24,7 @@ interface TraceItem {
   metadata?: {
     context?: {
       memory?: string;
+      sessionMemory?: string;  // Legacy field
       goal?: string;
     };
   };
@@ -181,24 +182,16 @@ export class WorkspaceContextBuilder {
       // Sort by timestamp descending (newest first)
       traces.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 
-      // Extract memory from trace metadata
+      // Use trace content directly - it contains the activity description
       const activities: string[] = [];
       for (let i = 0; i < Math.min(limit, traces.length); i++) {
         const trace = traces[i];
-
-        // Get memory from V2 canonical format
-        const memoryValue = trace.metadata?.context?.memory;
-
-        if (memoryValue && memoryValue.trim()) {
-          activities.push(memoryValue);
-        } else {
-          // Fallback to trace content if no memory field
-          activities.push(trace.content || 'Unknown activity');
-        }
+        activities.push(trace.content || 'Unknown activity');
       }
 
       return activities.length > 0 ? activities : ['No recent activity'];
     } catch (error) {
+      console.error('[WorkspaceContextBuilder] getRecentActivity error:', error);
       return ['Recent activity unavailable'];
     }
   }

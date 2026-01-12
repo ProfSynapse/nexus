@@ -212,6 +212,7 @@ export interface LoadStateResult extends CommonResult {
 export interface LoadWorkspaceParameters extends CommonParameters {
   id: string;
   limit?: number; // Optional limit for sessions, states, and recentActivity (default: 3)
+  recursive?: boolean; // Show full recursive structure (true) or top-level folders only (false, default)
 }
 
 export interface LoadStateParams extends CommonParameters {

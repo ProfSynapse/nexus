@@ -9,6 +9,7 @@ import { SessionContextManager } from '../SessionContextManager';
 import { WorkspaceService } from '../WorkspaceService';
 import { TraceMetadataBuilder } from '../memory/TraceMetadataBuilder';
 import { TraceContextMetadata, TraceOutcomeMetadata } from '../../database/workspace-types';
+import { formatTraceContent } from './TraceContentFormatter';
 
 export interface ToolCallCaptureData {
   toolName: string;
@@ -73,7 +74,7 @@ export class ToolCallTraceService {
       }
 
       // 4. Build trace content (human-readable description)
-      const traceContent = this.buildTraceContent(agent, mode, params, response, success);
+      const traceContent = formatTraceContent({ agent, mode, params, success });
 
       // 5. Build trace metadata (structured data)
       const relatedFiles = this.extractRelatedFiles(response, params);
@@ -107,9 +108,19 @@ export class ToolCallTraceService {
 
   /**
    * Parse tool name into agent and mode components
-   * Format: "agentName_modeName" -> { agent: "agentName", mode: "modeName" }
+   * Format: "agentName_modeName" or "agentName.modeName" -> { agent: "agentName", mode: "modeName" }
    */
   private parseToolName(toolName: string): { agent: string; mode: string } {
+    // Try dot separator first (e.g., "contentManager.createContent")
+    const dotIndex = toolName.indexOf('.');
+    if (dotIndex !== -1) {
+      return {
+        agent: toolName.substring(0, dotIndex),
+        mode: toolName.substring(dotIndex + 1)
+      };
+    }
+
+    // Fall back to underscore separator (e.g., "contentManager_createContent")
     const lastUnderscore = toolName.lastIndexOf('_');
     if (lastUnderscore === -1) {
       return { agent: toolName, mode: 'unknown' };
@@ -131,33 +142,6 @@ export class ToolCallTraceService {
     if (params?.params?.sessionId) return params.params.sessionId;
 
     return null;
-  }
-
-  /**
-   * Build human-readable trace content
-   */
-  private buildTraceContent(
-    agent: string,
-    mode: string,
-    params: any,
-    response: any,
-    success: boolean
-  ): string {
-    const status = success ? 'Successfully executed' : 'Failed to execute';
-    let description = `${status} ${agent}_${mode}`;
-
-    // Add context-specific details
-    if (params?.filePath) {
-      description += ` on file: ${params.filePath}`;
-    } else if (params?.params?.filePath) {
-      description += ` on file: ${params.params.filePath}`;
-    } else if (params?.query) {
-      description += ` with query: "${params.query}"`;
-    } else if (params?.params?.query) {
-      description += ` with query: "${params.params.query}"`;
-    }
-
-    return description;
   }
 
   private buildCanonicalMetadata(options: {

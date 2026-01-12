@@ -63,11 +63,13 @@ export class WorkspaceFileCollector {
    * Build workspace path with folder path and flat files list
    * @param rootFolder The workspace root folder path
    * @param app The Obsidian app instance
+   * @param recursive Whether to collect files recursively (true) or top-level only (false, default)
    * @returns Workspace path result with files list
    */
   async buildWorkspacePath(
     rootFolder: string,
-    app: App
+    app: App,
+    recursive: boolean = false
   ): Promise<WorkspacePathResult> {
     try {
       const folder = app.vault.getAbstractFileByPath(rootFolder);
@@ -76,8 +78,10 @@ export class WorkspaceFileCollector {
         return { path: { folder: rootFolder, files: [] }, failed: true };
       }
 
-      // Collect all files recursively with relative paths
-      const files = this.collectAllFiles(folder, rootFolder);
+      // Collect files based on recursive flag
+      const files = recursive
+        ? this.collectAllFiles(folder, rootFolder)
+        : this.collectTopLevel(folder);
 
       return {
         path: {
@@ -118,6 +122,31 @@ export class WorkspaceFileCollector {
     }
 
     return files.sort();
+  }
+
+  /**
+   * Collect top-level items only (folders marked with trailing /, files as-is)
+   * @param folder The folder to collect from
+   * @returns Array of top-level item names (folders have trailing /)
+   */
+  collectTopLevel(folder: TFolder): string[] {
+    const items: string[] = [];
+
+    if (!folder.children) {
+      return items;
+    }
+
+    for (const child of folder.children) {
+      if (child instanceof TFolder) {
+        // Mark folders with trailing /
+        items.push(child.name + '/');
+      } else {
+        // Files just use their name
+        items.push(child.name);
+      }
+    }
+
+    return items.sort();
   }
 
   /**
