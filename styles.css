@@ -4641,6 +4641,50 @@ a:hover {
     margin: 8px 0 0 0;
 }
 
+/* Manual Config Section */
+.nexus-manual-config {
+    margin-top: 16px;
+}
+
+.nexus-manual-config h4 {
+    margin: 0 0 8px 0;
+    font-size: 1em;
+    color: var(--text-normal);
+}
+
+.nexus-config-code {
+    background: var(--background-primary-alt);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s);
+    padding: 12px;
+    margin: 8px 0;
+    overflow-x: auto;
+    font-size: 0.85em;
+}
+
+.nexus-config-code code {
+    font-family: var(--font-monospace);
+    white-space: pre;
+}
+
+.nexus-manual-config .nexus-config-path {
+    margin-top: 12px;
+    background: transparent;
+    padding: 0;
+    border-radius: 0;
+}
+
+.nexus-manual-config .nexus-config-path a {
+    color: var(--text-accent);
+    text-decoration: none;
+    font-family: var(--font-monospace);
+    font-size: 0.85em;
+}
+
+.nexus-manual-config .nexus-config-path a:hover {
+    text-decoration: underline;
+}
+
 /* Reasoning - Compact Inline */
 .nexus-thinking-section {
     margin-top: 12px;

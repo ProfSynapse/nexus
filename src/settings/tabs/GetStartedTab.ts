@@ -16,6 +16,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 
 type GetStartedView = 'paths' | 'internal-chat' | 'mcp-setup';
+type ConfigStatus = 'no-claude-folder' | 'no-config-file' | 'nexus-configured' | 'config-exists' | 'invalid-config';
 
 export interface GetStartedTabServices {
     app: App;
@@ -238,6 +239,27 @@ export class GetStartedTab {
                 text: 'Restart Claude Desktop if you haven\'t already.',
                 cls: 'nexus-mcp-help'
             });
+        } else if (configStatus === 'invalid-config') {
+            // Config file exists but is invalid/empty
+            const row = this.container.createDiv('nexus-mcp-row');
+            row.createEl('span', {
+                text: '⚠️ Config file is invalid or empty',
+                cls: 'nexus-mcp-status nexus-mcp-warning'
+            });
+
+            const actions = row.createDiv('nexus-mcp-actions');
+            const fixBtn = actions.createEl('button', { text: 'Fix Config', cls: 'mod-cta' });
+            const fixHandler = () => this.autoConfigureNexus(configPath);
+            this.services.component!.registerDomEvent(fixBtn, 'click', fixHandler);
+
+            const openBtn = actions.createEl('button', { text: 'Open Config' });
+            const openHandler = () => this.openConfigFile(configPath);
+            this.services.component!.registerDomEvent(openBtn, 'click', openHandler);
+
+            this.container.createEl('p', {
+                text: 'The config file exists but has invalid JSON. Click "Fix Config" to overwrite it, or manually edit.',
+                cls: 'nexus-mcp-help'
+            });
         } else {
             // Ready to configure
             const row = this.container.createDiv('nexus-mcp-row');
@@ -251,25 +273,97 @@ export class GetStartedTab {
             const configHandler = () => this.autoConfigureNexus(configPath);
             this.services.component!.registerDomEvent(configBtn, 'click', configHandler);
         }
+
+        // Always show manual copy-paste section as fallback
+        this.renderManualConfigSection(configPath);
+    }
+
+    /**
+     * Render manual copy-paste configuration section
+     */
+    private renderManualConfigSection(configPath: string): void {
+        this.container.createEl('hr', { cls: 'nexus-divider' });
+
+        const manualSection = this.container.createDiv('nexus-manual-config');
+        manualSection.createEl('h4', { text: 'Manual Configuration' });
+        manualSection.createEl('p', {
+            text: 'If auto-configuration doesn\'t work, copy this JSON into your Claude Desktop config:',
+            cls: 'setting-item-description'
+        });
+
+        // Generate the config JSON
+        const configJson = this.getConfigJson();
+
+        // Code block
+        const codeBlock = manualSection.createEl('pre', { cls: 'nexus-config-code' });
+        codeBlock.createEl('code', { text: configJson });
+
+        // Copy button
+        const copyBtn = manualSection.createEl('button', { text: 'Copy Configuration', cls: 'mod-cta' });
+        const copyHandler = async () => {
+            try {
+                await navigator.clipboard.writeText(configJson);
+                copyBtn.textContent = 'Copied!';
+                setTimeout(() => {
+                    copyBtn.textContent = 'Copy Configuration';
+                }, 2000);
+            } catch (error) {
+                new Notice('Failed to copy to clipboard');
+            }
+        };
+        this.services.component!.registerDomEvent(copyBtn, 'click', copyHandler);
+
+        // Config file path info
+        const pathInfo = manualSection.createDiv('nexus-config-path');
+        pathInfo.createEl('span', { text: 'Config file location: ', cls: 'setting-item-description' });
+        const pathLink = pathInfo.createEl('a', { text: configPath, href: '#' });
+        const pathHandler = () => this.revealInFolder(configPath);
+        this.services.component!.registerDomEvent(pathLink, 'click', pathHandler);
+    }
+
+    /**
+     * Generate the configuration JSON string
+     */
+    private getConfigJson(): string {
+        const vaultName = this.services.app.vault.getName();
+        const serverKey = getPrimaryServerKey(vaultName);
+        const connectorPath = path.normalize(path.join(this.services.pluginPath, 'connector.js'));
+
+        const config = {
+            mcpServers: {
+                [serverKey]: {
+                    command: 'node',
+                    args: [connectorPath]
+                }
+            }
+        };
+
+        return JSON.stringify(config, null, 2);
     }
 
     /**
      * Check the status of the Claude config
      */
-    private checkConfigStatus(configPath: string, configDir: string): 'no-claude-folder' | 'no-config-file' | 'nexus-configured' | 'config-exists' {
+    private checkConfigStatus(configPath: string, configDir: string): ConfigStatus {
+        // Check if Claude folder exists
+        if (!fs.existsSync(configDir)) {
+            return 'no-claude-folder';
+        }
+
+        // Check if config file exists
+        if (!fs.existsSync(configPath)) {
+            return 'no-config-file';
+        }
+
+        // Try to read and parse the config
         try {
-            // Check if Claude folder exists
-            if (!fs.existsSync(configDir)) {
-                return 'no-claude-folder';
-            }
-
-            // Check if config file exists
-            if (!fs.existsSync(configPath)) {
-                return 'no-config-file';
-            }
-
-            // Check if Nexus is already configured
             const content = fs.readFileSync(configPath, 'utf-8');
+
+            // Handle empty file
+            if (!content.trim()) {
+                return 'invalid-config';
+            }
+
             const config = JSON.parse(content);
             const vaultName = this.services.app.vault.getName();
             const serverKey = getPrimaryServerKey(vaultName);
@@ -280,8 +374,9 @@ export class GetStartedTab {
 
             return 'config-exists';
         } catch (error) {
-            console.error('[GetStartedTab] Error checking config status:', error);
-            return 'no-claude-folder';
+            // JSON parse error - config file exists but is invalid
+            console.error('[GetStartedTab] Error parsing config:', error);
+            return 'invalid-config';
         }
     }
 
