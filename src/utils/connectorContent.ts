@@ -5,7 +5,7 @@
  * DO NOT EDIT MANUALLY - This file is regenerated during the build process.
  * To update, modify connector.ts and rebuild.
  *
- * Generated: 2026-01-12T16:54:42.078Z
+ * Generated: 2026-01-23T11:50:26.126Z
  */
 
 export const CONNECTOR_JS_CONTENT = `"use strict";
@@ -60,35 +60,23 @@ var extractVaultName = function () {
         // Get the script path from process.argv
         var scriptPath = process.argv[1];
         if (!scriptPath) {
-            process.stderr.write('DEBUG: Script path is undefined or empty\\n');
             return '';
         }
-        process.stderr.write("DEBUG: Script path: ".concat(scriptPath, "\\n"));
         // Go up 4 levels in the directory hierarchy to reach the vault name
         // 1. nexus plugin directory
         var pluginDir = (0, path_1.dirname)(scriptPath);
-        process.stderr.write("DEBUG: Plugin directory: ".concat(pluginDir, "\\n"));
         // 2. plugins directory
         var pluginsDir = (0, path_1.dirname)(pluginDir);
-        process.stderr.write("DEBUG: Plugins directory: ".concat(pluginsDir, "\\n"));
         // 3. .obsidian directory
         var obsidianDir = (0, path_1.dirname)(pluginsDir);
-        process.stderr.write("DEBUG: Obsidian directory: ".concat(obsidianDir, "\\n"));
         // 4. vault directory (parent of .obsidian)
         var vaultDir = (0, path_1.dirname)(obsidianDir);
-        process.stderr.write("DEBUG: Vault directory: ".concat(vaultDir, "\\n"));
         // The vault name is the basename of the vault directory
         var vaultName = (0, path_1.basename)(vaultDir);
-        process.stderr.write("DEBUG: Extracted vault name: ".concat(vaultName, "\\n"));
-        if (!vaultName) {
-            process.stderr.write('WARNING: Extracted vault name is empty\\n');
-            return '';
-        }
-        return vaultName;
+        return vaultName || '';
     }
     catch (error) {
-        process.stderr.write("ERROR: Failed to extract vault name: ".concat(error, "\\n"));
-        process.stderr.write("ERROR: Stack trace: ".concat(error.stack, "\\n"));
+        // Silent failure - will use empty vault name
         return '';
     }
 };
@@ -109,64 +97,74 @@ var getIPCPath = function () {
         ? "\\\\\\\\.\\\\pipe\\\\nexus_mcp_".concat(sanitizedVaultName)
         : "/tmp/nexus_mcp_".concat(sanitizedVaultName, ".sock");
 };
-// Maximum number of connection attempts
-var MAX_RETRIES = 3;
+// Retry configuration
+var MAX_BACKOFF_MS = 30000; // Cap backoff at 30 seconds
 var retryCount = 0;
 /**
- * Attempts to connect to the MCP server with retry logic
+ * Calculates the backoff delay using exponential backoff with a cap
+ *
+ * @param attempt - The current retry attempt number (0-indexed)
+ * @returns The delay in milliseconds (capped at MAX_BACKOFF_MS)
+ */
+function calculateBackoff(attempt) {
+    // Exponential backoff: 1s, 2s, 4s, 8s, 16s, 30s, 30s, ...
+    var exponentialDelay = 1000 * Math.pow(2, attempt);
+    return Math.min(MAX_BACKOFF_MS, exponentialDelay);
+}
+/**
+ * Attempts to connect to the MCP server with infinite retry logic
  *
  * This function:
  * 1. Creates a connection to the IPC path
- * 2. Sets up error handling with detailed diagnostics
- * 3. Implements retry logic with backoff
- * 4. Provides helpful error messages for troubleshooting
+ * 2. Sets up error handling (silent for normal "waiting" errors)
+ * 3. Implements infinite retry with capped exponential backoff (max 30s)
+ * 4. Automatically connects when Obsidian becomes available
  */
 function connectWithRetry() {
     var ipcPath = getIPCPath();
-    process.stderr.write("Attempting to connect to MCP server (attempt ".concat(retryCount + 1, "/").concat(MAX_RETRIES, ")...\\n"));
-    process.stderr.write("Using IPC path: ".concat(ipcPath, "\\n"));
+    var isFirstAttempt = retryCount === 0;
+    // Track whether this socket ever successfully connected
+    var hasConnected = false;
+    // Only log on the very first attempt
+    if (isFirstAttempt) {
+        process.stderr.write("Connecting to MCP server at: ".concat(ipcPath, "\\n"));
+    }
     try {
         var socket = (0, net_1.createConnection)(ipcPath);
         // Pipe stdin/stdout to/from the socket
         process.stdin.pipe(socket);
         socket.pipe(process.stdout);
-        // Enhanced error handling with detailed diagnostics
+        // Error handling - silent for normal "waiting" errors, verbose for unexpected errors
         socket.on('error', function (err) {
-            var errorMessage = "IPC connection error: ".concat(err);
-            process.stderr.write("ERROR: ".concat(errorMessage, "\\n"));
-            // Provide specific guidance based on error type
             // Cast error to NodeJS.ErrnoException to access the code property
             var nodeErr = err;
-            if (nodeErr.code === 'ENOENT') {
-                process.stderr.write("The IPC path does not exist. This may indicate:\\n");
-                process.stderr.write("1. Obsidian is not running\\n");
-                process.stderr.write("2. The Nexus plugin is not enabled\\n");
-                process.stderr.write("3. The vault name extraction failed (extracted: \\"".concat(sanitizeVaultName(extractVaultName()), "\\")\\n"));
+            var isWaitingError = nodeErr.code === 'ENOENT' || nodeErr.code === 'ECONNREFUSED';
+            // Only log unexpected errors (not normal "Obsidian not running" cases)
+            if (!isWaitingError) {
+                process.stderr.write("ERROR: IPC connection error: ".concat(err, "\\n"));
             }
-            else if (nodeErr.code === 'ECONNREFUSED') {
-                process.stderr.write("Connection refused. The server may have stopped or is not listening.\\n");
+            else if (isFirstAttempt) {
+                // On first attempt only, note that we're waiting
+                process.stderr.write("Obsidian not available yet, waiting silently...\\n");
             }
-            if (retryCount < MAX_RETRIES - 1) {
-                retryCount++;
-                var retryDelay = 1000 * retryCount; // Increasing backoff
-                process.stderr.write("Retrying connection in ".concat(retryDelay / 1000, " second(s)...\\n"));
-                setTimeout(connectWithRetry, retryDelay);
-            }
-            else {
-                process.stderr.write("Maximum retry attempts reached. Please ensure:\\n");
-                process.stderr.write("1. Obsidian is running\\n");
-                process.stderr.write("2. The Nexus plugin is enabled\\n");
-                process.stderr.write("3. The plugin settings are correctly configured\\n");
-                process.stderr.write("4. Check the extracted vault name: \\"".concat(extractVaultName(), "\\"\\n"));
-                process.exit(1);
-            }
+            // Always retry with exponential backoff (capped at 30s)
+            retryCount++;
+            var retryDelay = calculateBackoff(retryCount);
+            setTimeout(connectWithRetry, retryDelay);
         });
         socket.on('connect', function () {
+            hasConnected = true;
             process.stderr.write('Connected to MCP server successfully\\n');
+            // Reset retry count on successful connection
+            retryCount = 0;
         });
         socket.on('close', function () {
-            process.stderr.write('Connection to MCP server closed\\n');
-            process.exit(0);
+            if (hasConnected) {
+                // Only log and exit if we actually had a connection
+                process.stderr.write('Connection to MCP server closed\\n');
+                process.exit(0);
+            }
+            // If we never connected, the error handler will schedule a retry
         });
     }
     catch (error) {

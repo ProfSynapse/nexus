@@ -50,44 +50,27 @@ const extractVaultName = () => {
     try {
         // Get the script path from process.argv
         const scriptPath = process.argv[1];
-        
+
         if (!scriptPath) {
-            process.stderr.write('DEBUG: Script path is undefined or empty\n');
             return '';
         }
-        
-        process.stderr.write(`DEBUG: Script path: ${scriptPath}\n`);
-        
+
         // Go up 4 levels in the directory hierarchy to reach the vault name
         // 1. nexus plugin directory
         const pluginDir = dirname(scriptPath);
-        process.stderr.write(`DEBUG: Plugin directory: ${pluginDir}\n`);
-        
         // 2. plugins directory
         const pluginsDir = dirname(pluginDir);
-        process.stderr.write(`DEBUG: Plugins directory: ${pluginsDir}\n`);
-        
         // 3. .obsidian directory
         const obsidianDir = dirname(pluginsDir);
-        process.stderr.write(`DEBUG: Obsidian directory: ${obsidianDir}\n`);
-        
         // 4. vault directory (parent of .obsidian)
         const vaultDir = dirname(obsidianDir);
-        process.stderr.write(`DEBUG: Vault directory: ${vaultDir}\n`);
-        
+
         // The vault name is the basename of the vault directory
         const vaultName = basename(vaultDir);
-        process.stderr.write(`DEBUG: Extracted vault name: ${vaultName}\n`);
-        
-        if (!vaultName) {
-            process.stderr.write('WARNING: Extracted vault name is empty\n');
-            return '';
-        }
-        
-        return vaultName;
+
+        return vaultName || '';
     } catch (error) {
-        process.stderr.write(`ERROR: Failed to extract vault name: ${error}\n`);
-        process.stderr.write(`ERROR: Stack trace: ${error.stack}\n`);
+        // Silent failure - will use empty vault name
         return '';
     }
 };
@@ -111,24 +94,42 @@ const getIPCPath = () => {
         : `/tmp/nexus_mcp_${sanitizedVaultName}.sock`;
 };
 
-// Maximum number of connection attempts
-const MAX_RETRIES = 3;
+// Retry configuration
+const MAX_BACKOFF_MS = 30000; // Cap backoff at 30 seconds
 let retryCount = 0;
 
 /**
- * Attempts to connect to the MCP server with retry logic
+ * Calculates the backoff delay using exponential backoff with a cap
+ *
+ * @param attempt - The current retry attempt number (0-indexed)
+ * @returns The delay in milliseconds (capped at MAX_BACKOFF_MS)
+ */
+function calculateBackoff(attempt: number): number {
+    // Exponential backoff: 1s, 2s, 4s, 8s, 16s, 30s, 30s, ...
+    const exponentialDelay = 1000 * Math.pow(2, attempt);
+    return Math.min(MAX_BACKOFF_MS, exponentialDelay);
+}
+
+/**
+ * Attempts to connect to the MCP server with infinite retry logic
  *
  * This function:
  * 1. Creates a connection to the IPC path
- * 2. Sets up error handling with detailed diagnostics
- * 3. Implements retry logic with backoff
- * 4. Provides helpful error messages for troubleshooting
+ * 2. Sets up error handling (silent for normal "waiting" errors)
+ * 3. Implements infinite retry with capped exponential backoff (max 30s)
+ * 4. Automatically connects when Obsidian becomes available
  */
 function connectWithRetry() {
     const ipcPath = getIPCPath();
-    process.stderr.write(`Attempting to connect to MCP server (attempt ${retryCount + 1}/${MAX_RETRIES})...\n`);
-    process.stderr.write(`Using IPC path: ${ipcPath}\n`);
-    
+    const isFirstAttempt = retryCount === 0;
+    // Track whether this socket ever successfully connected
+    let hasConnected = false;
+
+    // Only log on the very first attempt
+    if (isFirstAttempt) {
+        process.stderr.write(`Connecting to MCP server at: ${ipcPath}\n`);
+    }
+
     try {
         const socket = createConnection(ipcPath);
 
@@ -136,45 +137,40 @@ function connectWithRetry() {
         process.stdin.pipe(socket);
         socket.pipe(process.stdout);
 
-        // Enhanced error handling with detailed diagnostics
+        // Error handling - silent for normal "waiting" errors, verbose for unexpected errors
         socket.on('error', (err) => {
-            const errorMessage = `IPC connection error: ${err}`;
-            process.stderr.write(`ERROR: ${errorMessage}\n`);
-            
-            // Provide specific guidance based on error type
             // Cast error to NodeJS.ErrnoException to access the code property
             const nodeErr = err as NodeJS.ErrnoException;
-            if (nodeErr.code === 'ENOENT') {
-                process.stderr.write(`The IPC path does not exist. This may indicate:\n`);
-                process.stderr.write(`1. Obsidian is not running\n`);
-                process.stderr.write(`2. The Nexus plugin is not enabled\n`);
-                process.stderr.write(`3. The vault name extraction failed (extracted: "${sanitizeVaultName(extractVaultName())}")\n`);
-            } else if (nodeErr.code === 'ECONNREFUSED') {
-                process.stderr.write(`Connection refused. The server may have stopped or is not listening.\n`);
+            const isWaitingError = nodeErr.code === 'ENOENT' || nodeErr.code === 'ECONNREFUSED';
+
+            // Only log unexpected errors (not normal "Obsidian not running" cases)
+            if (!isWaitingError) {
+                process.stderr.write(`ERROR: IPC connection error: ${err}\n`);
+            } else if (isFirstAttempt) {
+                // On first attempt only, note that we're waiting
+                process.stderr.write(`Obsidian not available yet, waiting silently...\n`);
             }
-            
-            if (retryCount < MAX_RETRIES - 1) {
-                retryCount++;
-                const retryDelay = 1000 * retryCount; // Increasing backoff
-                process.stderr.write(`Retrying connection in ${retryDelay/1000} second(s)...\n`);
-                setTimeout(connectWithRetry, retryDelay);
-            } else {
-                process.stderr.write(`Maximum retry attempts reached. Please ensure:\n`);
-                process.stderr.write(`1. Obsidian is running\n`);
-                process.stderr.write(`2. The Nexus plugin is enabled\n`);
-                process.stderr.write(`3. The plugin settings are correctly configured\n`);
-                process.stderr.write(`4. Check the extracted vault name: "${extractVaultName()}"\n`);
-                process.exit(1);
-            }
+
+            // Always retry with exponential backoff (capped at 30s)
+            retryCount++;
+            const retryDelay = calculateBackoff(retryCount);
+            setTimeout(connectWithRetry, retryDelay);
         });
 
         socket.on('connect', () => {
+            hasConnected = true;
             process.stderr.write('Connected to MCP server successfully\n');
+            // Reset retry count on successful connection
+            retryCount = 0;
         });
 
         socket.on('close', () => {
-            process.stderr.write('Connection to MCP server closed\n');
-            process.exit(0);
+            if (hasConnected) {
+                // Only log and exit if we actually had a connection
+                process.stderr.write('Connection to MCP server closed\n');
+                process.exit(0);
+            }
+            // If we never connected, the error handler will schedule a retry
         });
     } catch (error) {
         // Provide more detailed error information
