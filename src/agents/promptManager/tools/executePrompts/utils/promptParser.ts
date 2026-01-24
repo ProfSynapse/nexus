@@ -62,12 +62,12 @@ export class PromptParser {
         errors.push(`${prefix}: savePath must be relative to vault root`);
       }
 
-      if (!imageConfig.provider || imageConfig.provider !== 'google') {
+      if (imageConfig.provider && imageConfig.provider !== 'google') {
         errors.push(`${prefix}: only 'google' provider is currently supported for image generation`);
       }
 
-      if (imageConfig.model && !['imagen-4', 'imagen-4-ultra'].includes(imageConfig.model)) {
-        errors.push(`${prefix}: invalid model for image generation. Supported: imagen-4, imagen-4-ultra`);
+      if (imageConfig.model && !['gemini-2.5-flash-image', 'gemini-3-pro-image-preview', 'flux-2-pro', 'flux-2-flex'].includes(imageConfig.model)) {
+        errors.push(`${prefix}: invalid model for image generation. Supported: gemini-2.5-flash-image, gemini-3-pro-image-preview, flux-2-pro, flux-2-flex`);
       }
 
     }
@@ -143,14 +143,15 @@ export class PromptParser {
           type: 'image',
           ...baseConfig,
           provider: request.provider || 'google',
-          model: request.model || 'imagen-4',
+          model: request.model || 'gemini-2.5-flash-image',
           aspectRatio: request.aspectRatio,
           size: request.size,
           quality: request.quality,
           safety: request.safety,
           savePath: request.savePath,
           format: request.format,
-          background: request.background
+          background: request.background,
+          referenceImages: request.referenceImages
         } as PromptConfig;
       } else {
         return {

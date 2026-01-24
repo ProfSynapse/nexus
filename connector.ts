@@ -166,9 +166,10 @@ function connectWithRetry() {
 
         socket.on('close', () => {
             if (hasConnected) {
-                // Only log and exit if we actually had a connection
-                process.stderr.write('Connection to MCP server closed\n');
-                process.exit(0);
+                // Connection was lost - go back to waiting mode
+                process.stderr.write('Connection lost, waiting for Obsidian...\n');
+                retryCount = 0;  // Reset backoff
+                setTimeout(connectWithRetry, 1000);  // Start retry loop
             }
             // If we never connected, the error handler will schedule a retry
         });

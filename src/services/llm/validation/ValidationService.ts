@@ -320,9 +320,9 @@ export class LLMValidationService {
   private static async validateOpenRouter(apiKey: string): Promise<{ success: boolean; error?: string }> {
     try {
       const requestBody = {
-        model: 'openai/gpt-5-nano',
+        model: 'liquid/lfm-2.5-1.2b-thinking:free',  // Free model for validation
         messages: [{ role: 'user', content: 'Hi' }],
-        max_tokens: 5
+        max_tokens: 1
       };
       
       const response = await this.requestWithTimeout({

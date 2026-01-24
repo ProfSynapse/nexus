@@ -5,7 +5,7 @@
  * DO NOT EDIT MANUALLY - This file is regenerated during the build process.
  * To update, modify connector.ts and rebuild.
  *
- * Generated: 2026-01-23T11:50:26.126Z
+ * Generated: 2026-01-24T19:58:05.377Z
  */
 
 export const CONNECTOR_JS_CONTENT = `"use strict";
@@ -160,9 +160,10 @@ function connectWithRetry() {
         });
         socket.on('close', function () {
             if (hasConnected) {
-                // Only log and exit if we actually had a connection
-                process.stderr.write('Connection to MCP server closed\\n');
-                process.exit(0);
+                // Connection was lost - go back to waiting mode
+                process.stderr.write('Connection lost, waiting for Obsidian...\\n');
+                retryCount = 0; // Reset backoff
+                setTimeout(connectWithRetry, 1000); // Start retry loop
             }
             // If we never connected, the error handler will schedule a retry
         });

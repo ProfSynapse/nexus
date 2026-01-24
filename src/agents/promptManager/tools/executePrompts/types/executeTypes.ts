@@ -66,6 +66,8 @@ export interface ImageGenerationRequest extends BaseBatchRequest {
   aspectRatio?: AspectRatio;
   /** Vault-relative path where the image should be saved */
   savePath: string;
+  /** Reference images for style/composition guidance (vault-relative paths). Max 3 for gemini-2.5-flash-image, max 14 for gemini-3-pro-image-preview */
+  referenceImages?: string[];
 }
 
 /**
@@ -107,6 +109,8 @@ export interface ImagePromptConfig {
   model?: 'imagen-4' | 'imagen-4-ultra';
   aspectRatio?: AspectRatio;
   savePath: string;
+  /** Reference images for style/composition guidance (vault-relative paths) */
+  referenceImages?: string[];
   id?: string;
   sequence?: number;
   parallelGroup?: string;

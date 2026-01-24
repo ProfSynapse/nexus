@@ -379,12 +379,12 @@ export class ExecutePromptsTool extends BaseTool<BatchExecutePromptParams, Batch
               // Text-specific properties
               provider: {
                 type: 'string',
-                description: `LLM provider (defaults to: ${defaultModel?.provider || 'not configured'}). For images, use "google". Use listModels to see available providers.`,
+                description: `Optional. LLM provider to use. Defaults to configured agent model (${defaultModel?.provider || 'not set'}). For image generation, defaults to "google" if not specified. Use listModels to see available providers.`,
                 default: defaultModel?.provider
               },
               model: {
                 type: 'string',
-                description: `Model name (defaults to: ${defaultModel?.model || 'not configured'}). Use listModels to see available models.`,
+                description: `Optional. Model name to use. Defaults to configured agent model (${defaultModel?.model || 'not set'}). For image generation, defaults to "gemini-2.5-flash-image" if not specified. Use listModels to see available models.`,
                 default: defaultModel?.model
               },
               contextFiles: {
@@ -427,17 +427,20 @@ export class ExecutePromptsTool extends BaseTool<BatchExecutePromptParams, Batch
                 description: 'Image aspect ratio (image requests only)',
                 enum: ['1:1', '3:4', '4:3', '9:16', '16:9'],
                 default: '1:1'
+              },
+              referenceImages: {
+                type: 'array',
+                items: { type: 'string' },
+                maxItems: 14,
+                description: 'Reference images for style/composition (vault-relative paths, image requests only). Max 3 for gemini-2.5-flash-image, max 14 for gemini-3-pro-image-preview'
               }
             },
-            required: ['type', 'prompt', 'provider', 'model'],
+            required: ['type', 'prompt'],
             allOf: [
               {
                 if: { properties: { type: { const: 'image' } } },
                 then: {
-                  required: ['savePath'],
-                  properties: {
-                    provider: { const: 'google' }
-                  }
+                  required: ['savePath']
                 }
               }
             ]

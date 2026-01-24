@@ -109,7 +109,7 @@ export class AgentRegistrationService implements AgentRegistrationServiceInterfa
     try {
       logger.systemLog('Initializing agents with ServiceManager dependency injection...');
 
-      const agentNames = ['contentManager', 'commandManager', 'storageManager', 'searchManager', 'memoryManager', 'promptManager'];
+      const agentNames = ['contentManager', 'storageManager', 'searchManager', 'memoryManager', 'promptManager', 'canvasManager'];
       const initializedAgents = new Map<string, any>();
 
       for (const agentName of agentNames) {

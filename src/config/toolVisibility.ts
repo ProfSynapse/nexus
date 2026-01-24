@@ -26,10 +26,8 @@ export interface AgentVisibilityConfig {
 export const TOOL_VISIBILITY: {
     [agentName: string]: AgentVisibilityConfig;
 } = {
-    commandManager: {
-        hidden: true,
-        reason: 'Causing issues and not providing enough value currently (2025-11-06)'
-    }
+    // commandManager was removed from codebase (2026-01-24)
+    // Add agent visibility configs here as needed
 };
 
 /**

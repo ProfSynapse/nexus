@@ -186,7 +186,9 @@ export class RequestExecutor {
         return { valid: false, error: 'Save path must be relative to vault root' };
       }
 
-      if (imageConfig.provider !== 'google') {
+      // If provider is explicitly specified and it's not 'google', error
+      // If provider is not specified, that's OK - it will default to 'google' in the image generation tool
+      if (imageConfig.provider && imageConfig.provider !== 'google') {
         return { valid: false, error: 'Only Google provider is currently supported for image generation' };
       }
     }

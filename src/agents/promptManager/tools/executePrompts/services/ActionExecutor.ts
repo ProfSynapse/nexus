@@ -199,6 +199,7 @@ export class ActionExecutor {
         model: imageConfig.model,
         aspectRatio: imageConfig.aspectRatio,
         savePath: imageConfig.savePath,
+        referenceImages: imageConfig.referenceImages,
         sessionId: sessionId || '',
         context: context || ''
       };
