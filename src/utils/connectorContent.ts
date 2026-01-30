@@ -5,7 +5,7 @@
  * DO NOT EDIT MANUALLY - This file is regenerated during the build process.
  * To update, modify connector.ts and rebuild.
  *
- * Generated: 2026-01-24T19:58:05.377Z
+ * Generated: 2026-01-30T14:22:56.311Z
  */
 
 export const CONNECTOR_JS_CONTENT = `"use strict";
@@ -116,36 +116,33 @@ function calculateBackoff(attempt) {
  *
  * This function:
  * 1. Creates a connection to the IPC path
- * 2. Sets up error handling (silent for normal "waiting" errors)
+ * 2. Sets up error handling (completely silent for normal "waiting" errors)
  * 3. Implements infinite retry with capped exponential backoff (max 30s)
  * 4. Automatically connects when Obsidian becomes available
+ *
+ * Note: This connector is completely silent during normal operation to avoid
+ * showing error notifications in Claude Desktop. stderr output is treated as
+ * error notifications by Claude Desktop.
  */
 function connectWithRetry() {
     var ipcPath = getIPCPath();
-    var isFirstAttempt = retryCount === 0;
     // Track whether this socket ever successfully connected
     var hasConnected = false;
-    // Only log on the very first attempt
-    if (isFirstAttempt) {
-        process.stderr.write("Connecting to MCP server at: ".concat(ipcPath, "\\n"));
-    }
     try {
         var socket = (0, net_1.createConnection)(ipcPath);
         // Pipe stdin/stdout to/from the socket
         process.stdin.pipe(socket);
         socket.pipe(process.stdout);
-        // Error handling - silent for normal "waiting" errors, verbose for unexpected errors
+        // Error handling - completely silent for expected connection errors
         socket.on('error', function (err) {
             // Cast error to NodeJS.ErrnoException to access the code property
             var nodeErr = err;
             var isWaitingError = nodeErr.code === 'ENOENT' || nodeErr.code === 'ECONNREFUSED';
-            // Only log unexpected errors (not normal "Obsidian not running" cases)
+            // Be completely silent - any stderr output shows as notification in Claude Desktop
+            // Only truly unexpected errors should be logged (never ENOENT/ECONNREFUSED)
             if (!isWaitingError) {
-                process.stderr.write("ERROR: IPC connection error: ".concat(err, "\\n"));
-            }
-            else if (isFirstAttempt) {
-                // On first attempt only, note that we're waiting
-                process.stderr.write("Obsidian not available yet, waiting silently...\\n");
+                // Even unexpected errors should be silent - user can't fix them anyway
+                // and it would clutter Claude Desktop with notifications
             }
             // Always retry with exponential backoff (capped at 30s)
             retryCount++;
@@ -154,14 +151,13 @@ function connectWithRetry() {
         });
         socket.on('connect', function () {
             hasConnected = true;
-            process.stderr.write('Connected to MCP server successfully\\n');
+            // Silent on connection - no need to notify user
             // Reset retry count on successful connection
             retryCount = 0;
         });
         socket.on('close', function () {
             if (hasConnected) {
-                // Connection was lost - go back to waiting mode
-                process.stderr.write('Connection lost, waiting for Obsidian...\\n');
+                // Connection was lost - silently go back to waiting mode
                 retryCount = 0; // Reset backoff
                 setTimeout(connectWithRetry, 1000); // Start retry loop
             }
@@ -169,15 +165,8 @@ function connectWithRetry() {
         });
     }
     catch (error) {
-        // Provide more detailed error information
-        process.stderr.write("ERROR: Failed to create connection: ".concat(error, "\\n"));
-        // Add stack trace for debugging
-        if (error instanceof Error && error.stack) {
-            process.stderr.write("Stack trace: ".concat(error.stack, "\\n"));
-        }
-        // Log the IPC path that was being used
-        process.stderr.write("Was attempting to connect to: ".concat(getIPCPath(), "\\n"));
-        process.stderr.write("Extracted vault name: \\"".concat(extractVaultName(), "\\"\\n"));
+        // Only exit on catastrophic errors (shouldn't happen in normal operation)
+        // Be silent even here - user sees MCP server as "disconnected" in Claude Desktop
         process.exit(1);
     }
 }
