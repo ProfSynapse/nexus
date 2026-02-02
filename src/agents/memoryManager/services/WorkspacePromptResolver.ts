@@ -67,9 +67,6 @@ export class WorkspacePromptResolver {
       const workspaceWithId = workspace as ProjectWorkspace & { dedicatedAgentId?: string };
       const dedicatedAgentId = workspaceWithId.dedicatedAgentId;
 
-      console.error('[WorkspacePromptResolver] fetchWorkspacePrompt called with dedicatedAgentId:', dedicatedAgentId);
-      console.error('[WorkspacePromptResolver] workspace.context.dedicatedAgent:', JSON.stringify(workspace.context?.dedicatedAgent));
-
       if (dedicatedAgentId) {
         // Use top-level dedicatedAgentId (name or ID)
         return await this.fetchPromptByNameOrId(dedicatedAgentId, app);
@@ -116,7 +113,6 @@ export class WorkspacePromptResolver {
     try {
       // Access customPrompts directly from plugin settings
       const prompts = this.plugin?.settings?.settings?.customPrompts?.prompts || [];
-      console.error('[WorkspacePromptResolver] Found', prompts.length, 'prompts in settings');
 
       // Try ID lookup first (more specific)
       let prompt = prompts.find((p: any) => p.id === identifier);
@@ -126,10 +122,7 @@ export class WorkspacePromptResolver {
         prompt = prompts.find((p: any) => p.name === identifier);
       }
 
-      console.error('[WorkspacePromptResolver] getPromptByNameOrId returned:', prompt ? JSON.stringify({ id: prompt.id, name: prompt.name }) : 'null');
-
       if (!prompt) {
-        console.error('[WorkspacePromptResolver] Prompt not found for identifier:', identifier);
         return null;
       }
 

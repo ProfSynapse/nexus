@@ -101,8 +101,6 @@ export class LoadWorkspaceTool extends BaseTool<LoadWorkspaceParameters, LoadWor
         return this.createErrorResult(`Workspace '${params.id}' not found (searched by both name and ID)`, params);
       }
 
-      console.error('[LoadWorkspace] Loaded workspace.context.dedicatedAgent:', JSON.stringify(workspace.context?.dedicatedAgent));
-
       // Update last accessed timestamp (use actual workspace ID, not the identifier)
       try {
         await workspaceService.updateLastAccessed(workspace.id);
@@ -151,8 +149,6 @@ export class LoadWorkspaceTool extends BaseTool<LoadWorkspaceParameters, LoadWor
       // Fetch prompt data using prompt resolver
       const app = this.agent.getApp();
       const workspacePrompt = await this.promptResolver.fetchWorkspacePrompt(workspace, app);
-
-      console.error('[LoadWorkspace] Resolved workspacePrompt:', workspacePrompt ? JSON.stringify(workspacePrompt) : 'null');
 
       // Collect files using file collector
       const cacheManager = this.agent.getCacheManager();

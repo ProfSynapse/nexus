@@ -212,9 +212,10 @@ export class WorkspaceService {
         created: w.created,
         lastAccessed: w.lastAccessed,
         isActive: w.isActive,
+        dedicatedAgentId: w.dedicatedAgentId, // Include dedicatedAgentId field
         context: w.context,
         sessions: {} // Sessions must be loaded separately
-      }));
+      } as any)); // Type cast needed since IndividualWorkspace doesn't have dedicatedAgentId in type definition
     }
 
     // Fall back to legacy implementation
@@ -317,6 +318,12 @@ export class WorkspaceService {
       if (updates.rootFolder !== undefined) hybridUpdates.rootFolder = updates.rootFolder;
       if (updates.isActive !== undefined) hybridUpdates.isActive = updates.isActive;
       if (updates.isArchived !== undefined) hybridUpdates.isArchived = updates.isArchived;
+
+      // Handle dedicatedAgentId (top-level field from migration v6)
+      const updatesWithId = updates as IndividualWorkspace & { dedicatedAgentId?: string };
+      if (updatesWithId.dedicatedAgentId !== undefined) {
+        hybridUpdates.dedicatedAgentId = updatesWithId.dedicatedAgentId;
+      }
 
       // Handle context update
       if (updates.context !== undefined) {
