@@ -70,7 +70,7 @@ export interface MigratableDatabase {
 // Alias for backward compatibility
 type Database = MigratableDatabase;
 
-export const CURRENT_SCHEMA_VERSION = 5;
+export const CURRENT_SCHEMA_VERSION = 6;
 
 export interface Migration {
   version: number;
@@ -121,6 +121,16 @@ export const MIGRATIONS: Migration[] = [
       // Drop tables if they exist (v4 fresh installs have them, v3 upgrades don't)
       'DROP TABLE IF EXISTS branch_messages',
       'DROP TABLE IF EXISTS branches',
+    ]
+  },
+
+  // Version 5 -> 6: Add dedicatedAgentId to workspaces table
+  {
+    version: 6,
+    description: 'Add dedicatedAgentId column to workspaces table for workspace-agent association',
+    sql: [
+      // Add dedicatedAgentId column (stores either agent name or ID)
+      `ALTER TABLE workspaces ADD COLUMN dedicatedAgentId TEXT`,
     ]
   },
 
