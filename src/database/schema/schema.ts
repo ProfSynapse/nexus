@@ -268,7 +268,22 @@ CREATE INDEX IF NOT EXISTS idx_trace_embed_id ON trace_embedding_metadata(traceI
 CREATE INDEX IF NOT EXISTS idx_trace_embed_workspace ON trace_embedding_metadata(workspaceId);
 CREATE INDEX IF NOT EXISTS idx_trace_embed_session ON trace_embedding_metadata(sessionId);
 
+-- ==================== CUSTOM PROMPTS ====================
+
+CREATE TABLE IF NOT EXISTS custom_prompts (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE,
+  description TEXT,
+  prompt TEXT NOT NULL,
+  isEnabled INTEGER NOT NULL DEFAULT 1,
+  created INTEGER NOT NULL,
+  modified INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_custom_prompts_name ON custom_prompts(name);
+CREATE INDEX IF NOT EXISTS idx_custom_prompts_enabled ON custom_prompts(isEnabled);
+
 -- ==================== INITIALIZATION ====================
 
-INSERT OR IGNORE INTO schema_version VALUES (5, strftime('%s', 'now') * 1000);
+INSERT OR IGNORE INTO schema_version VALUES (6, strftime('%s', 'now') * 1000);
 `;

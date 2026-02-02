@@ -98,7 +98,8 @@ export class AgentInitializationService {
       // Try to create custom prompt storage directly if settings are available
       if (hasSettings(this.plugin)) {
         try {
-          this.customPromptStorage = new CustomPromptStorageService(this.plugin.settings);
+          // Pass null for db - will be set when PromptManagerAgent is created below
+          this.customPromptStorage = new CustomPromptStorageService(null, this.plugin.settings);
           logger.systemLog('AgentManager - created custom prompt storage during initialization');
         } catch (error) {
           logger.systemError(error as Error, 'AgentManager - Failed to create custom prompt storage');
@@ -145,6 +146,22 @@ export class AgentInitializationService {
       logger.systemLog('LLM modes disabled - AgentManager will function with prompt management only');
     }
 
+    // Get database for SQLite-based prompt storage
+    let db = null;
+    if (this.serviceManager) {
+      try {
+        const storageAdapter = await this.serviceManager.getService('hybridStorageAdapter');
+        if (storageAdapter && typeof storageAdapter === 'object' && storageAdapter !== null && 'cache' in storageAdapter) {
+          const cache = (storageAdapter as any).cache;
+          if (cache && typeof cache.exec === 'function' && typeof cache.run === 'function') {
+            db = cache;
+          }
+        }
+      } catch (error) {
+        // Database not available, will use data.json fallback
+      }
+    }
+
     // Create PromptManagerAgent with constructor injection
     if (llmProviderManager && usageTracker && hasSettings(this.plugin)) {
       const promptManagerAgent = new PromptManagerAgent(
@@ -152,7 +169,8 @@ export class AgentInitializationService {
         llmProviderManager,
         this.agentManager,
         usageTracker,
-        this.app.vault
+        this.app.vault,
+        db
       );
 
       this.agentManager.registerAgent(promptManagerAgent);
@@ -177,7 +195,8 @@ export class AgentInitializationService {
           minimalProviderManager,
           this.agentManager,
           minimalUsageTracker,
-          this.app.vault
+          this.app.vault,
+          db
         );
 
         this.agentManager.registerAgent(promptManagerAgent);

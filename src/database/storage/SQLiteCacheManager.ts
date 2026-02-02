@@ -49,6 +49,33 @@ export interface QueryResult<T> {
 }
 
 /**
+ * Database adapter that wraps raw WASM SQLite database to provide
+ * exec() and run() methods for MigratableDatabase interface.
+ */
+class DatabaseAdapter {
+  constructor(private rawDb: any) {}
+
+  exec(sql: string): { values: any[][] }[] {
+    const stmt = this.rawDb.prepare(sql);
+    const results: any[][] = [];
+    while (stmt.step()) {
+      results.push(stmt.get([]));
+    }
+    stmt.finalize();
+    return results.length > 0 ? [{ values: results }] : [];
+  }
+
+  run(sql: string, params?: any[]): void {
+    const stmt = this.rawDb.prepare(sql);
+    if (params?.length) {
+      stmt.bind(params);
+    }
+    stmt.step();
+    stmt.finalize();
+  }
+}
+
+/**
  * SQLite cache manager using @dao-xyz/sqlite3-vec WASM
  *
  * Features:
@@ -187,7 +214,9 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
       }
 
       // Run schema migrations for existing databases
-      const migrator = new SchemaMigrator(this.db);
+      // Wrap raw database in adapter to provide exec() and run() methods
+      const dbAdapter = new DatabaseAdapter(this.db);
+      const migrator = new SchemaMigrator(dbAdapter);
       const migrationResult = await migrator.migrate();
       if (migrationResult.applied > 0) {
         console.log(`[SQLiteCacheManager] Applied ${migrationResult.applied} migration(s) from v${migrationResult.fromVersion} to v${migrationResult.toVersion}`);

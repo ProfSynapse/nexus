@@ -225,9 +225,24 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
     // Custom prompt storage service for AgentManager
     {
         name: 'customPromptStorageService',
+        dependencies: ['hybridStorageAdapter'],
         create: async (context) => {
             const { CustomPromptStorageService } = await import('../../agents/promptManager/services/CustomPromptStorageService');
-            return new CustomPromptStorageService(context.settings);
+
+            // Get storage adapter if available (may be null if initialization failed)
+            const storageAdapter = await context.serviceManager.getService<IStorageAdapter | null>('hybridStorageAdapter');
+
+            // Access underlying SQLite database via adapter's cache property
+            let db = null;
+            if (storageAdapter && 'cache' in storageAdapter) {
+                const cache = (storageAdapter as any).cache;
+                // Check if cache has the necessary methods
+                if (cache && typeof cache.exec === 'function' && typeof cache.run === 'function') {
+                    db = cache;
+                }
+            }
+
+            return new CustomPromptStorageService(db, context.settings);
         }
     },
 

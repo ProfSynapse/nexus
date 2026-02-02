@@ -342,7 +342,8 @@ export class SettingsView extends PluginSettingTab {
 
         // Initialize custom prompt storage if needed
         if (!this.customPromptStorage) {
-            this.customPromptStorage = new CustomPromptStorageService(this.settingsManager);
+            // Pass null for db - SettingsView doesn't have access to database
+            this.customPromptStorage = new CustomPromptStorageService(null, this.settingsManager);
         }
 
         return {

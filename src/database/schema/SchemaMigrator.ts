@@ -59,11 +59,14 @@
 /**
  * Minimal interface for SQLite database operations needed by SchemaMigrator.
  * Works with both sql.js and @dao-xyz/sqlite3-vec WASM databases.
+ *
+ * Note: The raw WASM database only has prepare(), but this interface expects
+ * exec() and run() to be provided by a wrapper/adapter class.
  */
 export interface MigratableDatabase {
   /** Execute SQL and return results */
   exec(sql: string): { values: any[][] }[];
-  /** Run a statement (INSERT/UPDATE/DELETE) */
+  /** Run a statement (INSERT/UPDATE/DELETE) with optional parameters */
   run(sql: string, params?: any[]): void;
 }
 
@@ -124,13 +127,28 @@ export const MIGRATIONS: Migration[] = [
     ]
   },
 
-  // Version 5 -> 6: Add dedicatedAgentId to workspaces table
+  // Version 5 -> 6: Add dedicatedAgentId to workspaces table + custom_prompts table
   {
     version: 6,
-    description: 'Add dedicatedAgentId column to workspaces table for workspace-agent association',
+    description: 'Add dedicatedAgentId column to workspaces table and custom_prompts table for SQLite-based prompt storage',
     sql: [
       // Add dedicatedAgentId column (stores either agent name or ID)
       `ALTER TABLE workspaces ADD COLUMN dedicatedAgentId TEXT`,
+
+      // Create custom_prompts table for SQLite-based prompt storage
+      `CREATE TABLE IF NOT EXISTS custom_prompts (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL UNIQUE,
+        description TEXT,
+        prompt TEXT NOT NULL,
+        isEnabled INTEGER NOT NULL DEFAULT 1,
+        created INTEGER NOT NULL,
+        modified INTEGER NOT NULL
+      )`,
+
+      // Create indexes for custom_prompts
+      `CREATE INDEX IF NOT EXISTS idx_custom_prompts_name ON custom_prompts(name)`,
+      `CREATE INDEX IF NOT EXISTS idx_custom_prompts_enabled ON custom_prompts(isEnabled)`
     ]
   },
 
