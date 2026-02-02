@@ -187,13 +187,28 @@ export class PromptManagerAgentFactory extends BaseAgentFactory<PromptManagerAge
             throw new Error('Plugin settings required for PromptManagerAgent');
         }
 
+        // Get database for SQLite-based prompt storage (optional)
+        let db = null;
+        try {
+            const storageAdapter = dependencies.get('hybridStorageAdapter');
+            if (storageAdapter && 'cache' in storageAdapter) {
+                const cache = (storageAdapter as any).cache;
+                if (cache && typeof cache.exec === 'function' && typeof cache.run === 'function') {
+                    db = cache;
+                }
+            }
+        } catch (error) {
+            // Database not available, will use data.json fallback
+        }
+
         // Create agent with all dependencies injected via constructor
         return new PromptManagerAgent(
             plugin.settings,
             providerManager,
             parentAgentManager,
             usageTracker,
-            app.vault
+            app.vault,
+            db
         );
     }
 }

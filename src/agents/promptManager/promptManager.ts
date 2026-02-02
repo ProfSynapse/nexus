@@ -21,6 +21,7 @@ import { UsageTracker } from '../../services/UsageTracker';
 import { Vault, EventRef } from 'obsidian';
 import { LLMSettingsNotifier } from '../../services/llm/LLMSettingsNotifier';
 import { LLMProviderSettings } from '../../types';
+import type { MigratableDatabase } from '../../database/schema/SchemaMigrator';
 
 /**
  * PromptManager Agent for custom prompt operations
@@ -78,13 +79,15 @@ export class PromptManagerAgent extends BaseAgent {
    * @param parentAgentManager Agent Manager for inter-agent communication
    * @param usageTracker Usage Tracker for LLM cost tracking
    * @param vault Vault instance for image generation
+   * @param db Database instance for SQLite-based prompt storage (optional)
    */
   constructor(
     settings: Settings,
     providerManager: LLMProviderManager,
     parentAgentManager: AgentManager,
     usageTracker: UsageTracker,
-    vault: Vault
+    vault: Vault,
+    db?: MigratableDatabase | null
   ) {
     super(
       'promptManager',
@@ -98,7 +101,7 @@ export class PromptManagerAgent extends BaseAgent {
     this.usageTracker = usageTracker;
     this.vault = vault;
 
-    this.storageService = new CustomPromptStorageService(settings);
+    this.storageService = new CustomPromptStorageService(db || null, settings);
     this.vaultName = sanitizeVaultName(vault.getName());
 
     // Register prompt management tools

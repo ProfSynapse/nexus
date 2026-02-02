@@ -27,6 +27,7 @@ export interface UpdateWorkspaceParameters extends CommonParameters {
     workflows?: Array<{ name: string; when: string; steps: string }>;
     keyFiles?: string[];
     preferences?: string;
+    dedicatedAgentId?: string;
 }
 
 export interface UpdateWorkspaceResult extends CommonResult {
@@ -81,11 +82,16 @@ export class UpdateWorkspaceTool extends BaseTool<UpdateWorkspaceParameters, Upd
             const hasContextUpdates = params.purpose !== undefined ||
                                       params.workflows !== undefined ||
                                       params.keyFiles !== undefined ||
-                                      params.preferences !== undefined;
+                                      params.preferences !== undefined ||
+                                      params.dedicatedAgentId !== undefined;
 
             if (!hasTopLevelUpdates && !hasContextUpdates) {
-                return this.prepareResult(false, undefined, 'No updates provided. Pass at least one field to update (name, description, rootFolder, purpose, workflows, keyFiles, or preferences).');
+                return this.prepareResult(false, undefined, 'No updates provided. Pass at least one field to update (name, description, rootFolder, purpose, workflows, keyFiles, preferences, or dedicatedAgentId).');
             }
+
+            // Store dedicatedAgentId as-is (name or ID)
+            // Lookup will happen in WorkspacePromptResolver when loading
+            console.error('[UpdateWorkspace] Updating dedicatedAgentId to:', params.dedicatedAgentId);
 
             // Create a deep copy for updating
             const workspaceCopy = JSON.parse(JSON.stringify(existingWorkspace));
@@ -129,9 +135,20 @@ export class UpdateWorkspaceTool extends BaseTool<UpdateWorkspaceParameters, Upd
             if (params.preferences !== undefined) {
                 workspaceCopy.context.preferences = params.preferences;
             }
+            if (params.dedicatedAgentId !== undefined) {
+                if (params.dedicatedAgentId === '') {
+                    // Empty string means remove dedicated agent
+                    (workspaceCopy as any).dedicatedAgentId = undefined;
+                } else {
+                    // Store ID or name as-is (lookup happens on load)
+                    (workspaceCopy as any).dedicatedAgentId = params.dedicatedAgentId;
+                }
+            }
 
             // Update timestamp
             workspaceCopy.lastAccessed = now;
+
+            console.error('[UpdateWorkspace] Updated dedicatedAgentId:', (workspaceCopy as any).dedicatedAgentId);
 
             // Perform the update
             await workspaceService.updateWorkspace(existingWorkspace.id, workspaceCopy);
@@ -191,6 +208,10 @@ export class UpdateWorkspaceTool extends BaseTool<UpdateWorkspaceParameters, Upd
                 preferences: {
                     type: 'string',
                     description: 'New preferences text (optional, updates context.preferences)'
+                },
+                dedicatedAgentId: {
+                    type: 'string',
+                    description: 'ID of custom agent to set as workspace dedicated agent (optional, updates context.dedicatedAgent). Pass empty string to remove dedicated agent.'
                 }
             },
             required: ['workspaceId']

@@ -63,7 +63,8 @@ export class MCPConnector {
         const pluginSettings = this.plugin && isNexusPlugin(this.plugin) ? this.plugin.settings : null;
         if (pluginSettings) {
             try {
-                this.customPromptStorage = new CustomPromptStorageService(pluginSettings);
+                // Pass null for db - connector doesn't have access to database
+                this.customPromptStorage = new CustomPromptStorageService(null, pluginSettings);
                 logger.systemLog('CustomPromptStorageService initialized successfully');
             } catch (error) {
                 logger.systemError(error as Error, 'CustomPromptStorageService Initialization');
@@ -166,7 +167,8 @@ export class MCPConnector {
                 const pluginSettings = this.plugin && isNexusPlugin(this.plugin) ? this.plugin.settings : null;
                 if (pluginSettings) {
                     try {
-                        this.customPromptStorage = new CustomPromptStorageService(pluginSettings);
+                        // Pass null for db - connector doesn't have access to database
+                        this.customPromptStorage = new CustomPromptStorageService(null, pluginSettings);
 
                         // Update the agent registry with the new storage service
                         this.agentRegistry = new AgentRegistrationService(

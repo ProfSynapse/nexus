@@ -48,7 +48,8 @@ export function initializeSuggesters(
   try {
     const plugin = getNexusPlugin<NexusPluginWithServices>(app);
     if (plugin?.settings) {
-      const promptStorage = new CustomPromptStorageService(plugin.settings);
+      // Pass null for db - suggester doesn't have access to database
+      const promptStorage = new CustomPromptStorageService(null, plugin.settings);
       promptSuggester = new TextAreaPromptSuggester(app, element, messageEnhancer, promptStorage, component);
     }
 

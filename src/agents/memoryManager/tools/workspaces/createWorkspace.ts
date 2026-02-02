@@ -79,56 +79,35 @@ export class CreateWorkspaceTool extends BaseTool<CreateWorkspaceParameters, Cre
                 // Ignore folder creation errors
             }
             
-            // Handle dedicated agent setup
-            let dedicatedAgent: { agentId: string; agentName: string } | undefined = undefined;
-            if (params.dedicatedAgentId) {
-                try {
-                    // Get the agent name from CustomPromptStorageService
-                    const plugin = this.app.plugins.getPlugin('claudesidian-mcp') as unknown as Record<string, unknown> | null;
-                    const agentManager = plugin?.agentManager as Record<string, unknown> | undefined;
-                    if (agentManager?.getAgent) {
-                        const getAgent = agentManager.getAgent as (name: string) => Record<string, unknown> | undefined;
-                        const agentManagerAgent = getAgent('agentManager');
-                        const storageService = agentManagerAgent?.storageService as Record<string, unknown> | undefined;
-                        if (storageService?.getPromptById) {
-                            const getPromptById = storageService.getPromptById as (id: string) => { id: string; name: string } | undefined;
-                            const agent = getPromptById(params.dedicatedAgentId);
-                            if (agent) {
-                                dedicatedAgent = {
-                                    agentId: agent.id,
-                                    agentName: agent.name
-                                };
-                            }
-                        }
-                    }
-                } catch (error) {
-                    // Ignore agent name retrieval errors
-                }
-            }
+            // Store dedicatedAgentId as-is (name or ID)
+            // Lookup will happen in WorkspacePromptResolver when loading (which runs in plugin context)
+            console.error('[CreateWorkspace] Storing dedicatedAgentId:', params.dedicatedAgentId);
 
             // Combine provided key files with auto-detected ones
             const providedKeyFiles = params.keyFiles || [];
             const autoDetectedKeyFiles = await this.detectSimpleKeyFiles(params.rootFolder);
             const allKeyFiles = [...new Set([...providedKeyFiles, ...autoDetectedKeyFiles])]; // Remove duplicates
 
-            // Build workspace context
+            // Build workspace context (don't include dedicatedAgent object yet - will be resolved on load)
             const context: WorkspaceContext = {
                 purpose: params.purpose,
                 workflows: params.workflows,
                 keyFiles: allKeyFiles,
-                preferences: params.preferences || '',
-                ...(dedicatedAgent && { dedicatedAgent })
+                preferences: params.preferences || ''
             };
-            
+
+            console.error('[CreateWorkspace] Creating workspace with dedicatedAgentId:', params.dedicatedAgentId);
+
             // Create workspace data
             const now = Date.now();
-            const workspaceData: Omit<ProjectWorkspace, 'id'> = {
+            const workspaceData: Omit<ProjectWorkspace, 'id'> & { dedicatedAgentId?: string } = {
                 name: params.name,
                 context: context,
                 rootFolder: params.rootFolder,
                 created: now,
                 lastAccessed: now,
                 description: params.description,
+                dedicatedAgentId: params.dedicatedAgentId, // Store ID or name as-is
                 relatedFolders: params.relatedFolders || [],
                 relatedFiles: params.relatedFiles || [],
                 associatedNotes: [],
