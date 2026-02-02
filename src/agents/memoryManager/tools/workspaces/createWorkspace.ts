@@ -90,18 +90,21 @@ export class CreateWorkspaceTool extends BaseTool<CreateWorkspaceParameters, Cre
                         const getAgent = agentManager.getAgent as (name: string) => Record<string, unknown> | undefined;
                         const promptManagerAgent = getAgent('promptManager');
                         const storageService = promptManagerAgent?.storageService as Record<string, unknown> | undefined;
-                        if (storageService?.getPromptById) {
-                            const getPromptById = storageService.getPromptById as (id: string) => { id: string; name: string } | undefined;
-                            const agent = getPromptById(params.dedicatedAgentId);
+                        if (storageService?.getPromptByNameOrId) {
+                            const getPromptByNameOrId = storageService.getPromptByNameOrId as (identifier: string) => { id: string; name: string } | undefined;
+                            const agent = getPromptByNameOrId(params.dedicatedAgentId);
                             if (agent) {
                                 dedicatedAgent = {
                                     agentId: agent.id,
                                     agentName: agent.name
                                 };
+                            } else {
+                                console.error('[CreateWorkspace] Dedicated agent not found:', params.dedicatedAgentId);
                             }
                         }
                     }
                 } catch (error) {
+                    console.error('[CreateWorkspace] Failed to resolve dedicated agent:', params.dedicatedAgentId, error);
                     // Ignore agent name retrieval errors
                 }
             }
