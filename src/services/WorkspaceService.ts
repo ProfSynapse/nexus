@@ -259,6 +259,7 @@ export class WorkspaceService {
         created: data.created || Date.now(),
         lastAccessed: data.lastAccessed || Date.now(),
         isActive: data.isActive ?? true,
+        dedicatedAgentId: (data as any).dedicatedAgentId, // Pass through dedicatedAgentId
         context: hybridContext
       };
 
