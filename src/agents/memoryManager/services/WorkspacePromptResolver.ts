@@ -75,13 +75,15 @@ export class WorkspacePromptResolver {
         return await this.fetchPromptByNameOrId(dedicatedAgentId, app);
       }
 
-      // Fall back to context.dedicatedAgent for backward compatibility
+      // DEPRECATED: Fall back to context.dedicatedAgent for backward compatibility
+      // TODO(v5.0.0): Remove this fallback - migration v6 moves data to top-level dedicatedAgentId
       if (workspace.context?.dedicatedAgent) {
         const { agentId } = workspace.context.dedicatedAgent;
         return await this.fetchPromptByNameOrId(agentId, app);
       }
 
-      // Fall back to legacy agents array for backward compatibility
+      // DEPRECATED: Fall back to legacy agents array for backward compatibility
+      // TODO(v5.0.0): Remove this fallback - very old data structure from pre-v4
       const legacyContext = workspace.context as LegacyWorkspaceContext | undefined;
       const legacyAgents = legacyContext?.agents;
       if (legacyAgents && Array.isArray(legacyAgents) && legacyAgents.length > 0) {
