@@ -89,37 +89,9 @@ export class UpdateWorkspaceTool extends BaseTool<UpdateWorkspaceParameters, Upd
                 return this.prepareResult(false, undefined, 'No updates provided. Pass at least one field to update (name, description, rootFolder, purpose, workflows, keyFiles, preferences, or dedicatedAgentId).');
             }
 
-            // Handle dedicated agent setup
-            let dedicatedAgent: { agentId: string; agentName: string } | undefined = undefined;
-            if (params.dedicatedAgentId) {
-                try {
-                    // Get the agent name from CustomPromptStorageService
-                    const plugin = this.app.plugins.getPlugin('claudesidian-mcp') as unknown as Record<string, unknown> | null;
-                    const agentManager = plugin?.agentManager as Record<string, unknown> | undefined;
-                    if (agentManager?.getAgent) {
-                        const getAgent = agentManager.getAgent as (name: string) => Record<string, unknown> | undefined;
-                        const promptManagerAgent = getAgent('promptManager');
-                        const storageService = promptManagerAgent?.storageService as Record<string, unknown> | undefined;
-                        if (storageService?.getPromptByNameOrId) {
-                            const getPromptByNameOrId = storageService.getPromptByNameOrId as (identifier: string) => { id: string; name: string } | undefined;
-                            const agent = getPromptByNameOrId(params.dedicatedAgentId);
-                            if (agent) {
-                                dedicatedAgent = {
-                                    agentId: agent.id,
-                                    agentName: agent.name
-                                };
-                            } else {
-                                console.error('[UpdateWorkspace] Dedicated agent not found:', params.dedicatedAgentId);
-                            }
-                        }
-                    }
-                } catch (error) {
-                    console.error('[UpdateWorkspace] Failed to resolve dedicated agent:', params.dedicatedAgentId, error);
-                    // Ignore agent name retrieval errors
-                }
-            }
-
-            console.error('[UpdateWorkspace] DedicatedAgent resolved:', JSON.stringify(dedicatedAgent));
+            // Store dedicatedAgentId as-is (name or ID)
+            // Lookup will happen in WorkspacePromptResolver when loading
+            console.error('[UpdateWorkspace] Updating dedicatedAgentId to:', params.dedicatedAgentId);
 
             // Create a deep copy for updating
             const workspaceCopy = JSON.parse(JSON.stringify(existingWorkspace));
@@ -166,19 +138,17 @@ export class UpdateWorkspaceTool extends BaseTool<UpdateWorkspaceParameters, Upd
             if (params.dedicatedAgentId !== undefined) {
                 if (params.dedicatedAgentId === '') {
                     // Empty string means remove dedicated agent
-                    delete workspaceCopy.context.dedicatedAgent;
-                    (workspaceCopy as any).dedicatedAgentId = undefined; // Also clear top-level field
-                } else if (dedicatedAgent) {
-                    // Set dedicated agent if lookup succeeded
-                    workspaceCopy.context.dedicatedAgent = dedicatedAgent;
-                    (workspaceCopy as any).dedicatedAgentId = dedicatedAgent.agentId; // Also set top-level field
+                    (workspaceCopy as any).dedicatedAgentId = undefined;
+                } else {
+                    // Store ID or name as-is (lookup happens on load)
+                    (workspaceCopy as any).dedicatedAgentId = params.dedicatedAgentId;
                 }
             }
 
             // Update timestamp
             workspaceCopy.lastAccessed = now;
 
-            console.error('[UpdateWorkspace] Updating with context.dedicatedAgent:', JSON.stringify(workspaceCopy.context?.dedicatedAgent));
+            console.error('[UpdateWorkspace] Updated dedicatedAgentId:', (workspaceCopy as any).dedicatedAgentId);
 
             // Perform the update
             await workspaceService.updateWorkspace(existingWorkspace.id, workspaceCopy);

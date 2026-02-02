@@ -73,27 +73,38 @@ export class WorkspacePromptResolver {
     app: App
   ): Promise<WorkspacePromptInfo | null> {
     try {
-      console.error('[WorkspacePromptResolver] fetchWorkspacePrompt called with dedicatedAgent:', JSON.stringify(workspace.context?.dedicatedAgent));
+      // Check top-level dedicatedAgentId field first (new storage location)
+      const workspaceWithId = workspace as ProjectWorkspace & { dedicatedAgentId?: string };
+      const dedicatedAgentId = workspaceWithId.dedicatedAgentId;
 
-      // Check if workspace has a dedicated prompt (stored as dedicatedAgent for backward compat)
-      if (!workspace.context?.dedicatedAgent) {
-        // Fall back to legacy agents array for backward compatibility
-        const legacyContext = workspace.context as LegacyWorkspaceContext | undefined;
-        const legacyAgents = legacyContext?.agents;
-        if (legacyAgents && Array.isArray(legacyAgents) && legacyAgents.length > 0) {
-          const legacyPromptRef = legacyAgents[0];
-          if (legacyPromptRef && legacyPromptRef.name) {
-            return await this.fetchPromptByNameOrId(legacyPromptRef.name, app);
-          }
-        }
-        return null;
+      console.error('[WorkspacePromptResolver] fetchWorkspacePrompt called with dedicatedAgentId:', dedicatedAgentId);
+      console.error('[WorkspacePromptResolver] workspace.context.dedicatedAgent:', JSON.stringify(workspace.context?.dedicatedAgent));
+
+      if (dedicatedAgentId) {
+        // Use top-level dedicatedAgentId (name or ID)
+        return await this.fetchPromptByNameOrId(dedicatedAgentId, app);
       }
 
-      // Use the dedicated prompt structure - use unified lookup
-      const { agentId } = workspace.context.dedicatedAgent;
-      return await this.fetchPromptByNameOrId(agentId, app);
+      // Fall back to context.dedicatedAgent for backward compatibility
+      if (workspace.context?.dedicatedAgent) {
+        const { agentId } = workspace.context.dedicatedAgent;
+        return await this.fetchPromptByNameOrId(agentId, app);
+      }
+
+      // Fall back to legacy agents array for backward compatibility
+      const legacyContext = workspace.context as LegacyWorkspaceContext | undefined;
+      const legacyAgents = legacyContext?.agents;
+      if (legacyAgents && Array.isArray(legacyAgents) && legacyAgents.length > 0) {
+        const legacyPromptRef = legacyAgents[0];
+        if (legacyPromptRef && legacyPromptRef.name) {
+          return await this.fetchPromptByNameOrId(legacyPromptRef.name, app);
+        }
+      }
+
+      return null;
 
     } catch (error) {
+      console.error('[WorkspacePromptResolver] Error fetching prompt:', error);
       return null;
     }
   }

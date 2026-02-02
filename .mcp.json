@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "nexus-code": {
+      "command": "node",
+      "args": [
+        "/Users/jrosenbaum/Documents/Code/.obsidian/plugins/claudesidian-mcp/connector.js"
+      ]
+    }
+  }
+}
