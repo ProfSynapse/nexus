@@ -82,17 +82,24 @@ export class CreateWorkspaceTool extends BaseTool<CreateWorkspaceParameters, Cre
             // Handle dedicated agent setup
             let dedicatedAgent: { agentId: string; agentName: string } | undefined = undefined;
             if (params.dedicatedAgentId) {
+                console.error('[CreateWorkspace] Looking up dedicatedAgentId:', params.dedicatedAgentId);
                 try {
                     // Get the agent name from CustomPromptStorageService
                     const plugin = this.app.plugins.getPlugin('claudesidian-mcp') as unknown as Record<string, unknown> | null;
+                    console.error('[CreateWorkspace] Plugin found:', !!plugin);
                     const agentManager = plugin?.agentManager as Record<string, unknown> | undefined;
+                    console.error('[CreateWorkspace] AgentManager found:', !!agentManager);
                     if (agentManager?.getAgent) {
                         const getAgent = agentManager.getAgent as (name: string) => Record<string, unknown> | undefined;
                         const promptManagerAgent = getAgent('promptManager');
+                        console.error('[CreateWorkspace] PromptManager agent found:', !!promptManagerAgent);
                         const storageService = promptManagerAgent?.storageService as Record<string, unknown> | undefined;
+                        console.error('[CreateWorkspace] StorageService found:', !!storageService);
+                        console.error('[CreateWorkspace] getPromptByNameOrId exists:', !!(storageService?.getPromptByNameOrId));
                         if (storageService?.getPromptByNameOrId) {
                             const getPromptByNameOrId = storageService.getPromptByNameOrId as (identifier: string) => { id: string; name: string } | undefined;
                             const agent = getPromptByNameOrId(params.dedicatedAgentId);
+                            console.error('[CreateWorkspace] getPromptByNameOrId returned:', agent ? JSON.stringify({id: agent.id, name: agent.name}) : 'null');
                             if (agent) {
                                 dedicatedAgent = {
                                     agentId: agent.id,
@@ -101,13 +108,19 @@ export class CreateWorkspaceTool extends BaseTool<CreateWorkspaceParameters, Cre
                             } else {
                                 console.error('[CreateWorkspace] Dedicated agent not found:', params.dedicatedAgentId);
                             }
+                        } else {
+                            console.error('[CreateWorkspace] getPromptByNameOrId method does not exist on storageService');
                         }
+                    } else {
+                        console.error('[CreateWorkspace] agentManager.getAgent does not exist');
                     }
                 } catch (error) {
                     console.error('[CreateWorkspace] Failed to resolve dedicated agent:', params.dedicatedAgentId, error);
                     // Ignore agent name retrieval errors
                 }
             }
+
+            console.error('[CreateWorkspace] DedicatedAgent resolved:', JSON.stringify(dedicatedAgent));
 
             // Combine provided key files with auto-detected ones
             const providedKeyFiles = params.keyFiles || [];
@@ -122,16 +135,19 @@ export class CreateWorkspaceTool extends BaseTool<CreateWorkspaceParameters, Cre
                 preferences: params.preferences || '',
                 ...(dedicatedAgent && { dedicatedAgent })
             };
+
+            console.error('[CreateWorkspace] Creating workspace with context.dedicatedAgent:', JSON.stringify(context.dedicatedAgent));
             
             // Create workspace data
             const now = Date.now();
-            const workspaceData: Omit<ProjectWorkspace, 'id'> = {
+            const workspaceData: Omit<ProjectWorkspace, 'id'> & { dedicatedAgentId?: string } = {
                 name: params.name,
                 context: context,
                 rootFolder: params.rootFolder,
                 created: now,
                 lastAccessed: now,
                 description: params.description,
+                dedicatedAgentId: dedicatedAgent?.agentId, // Top-level field for database queries
                 relatedFolders: params.relatedFolders || [],
                 relatedFiles: params.relatedFiles || [],
                 associatedNotes: [],

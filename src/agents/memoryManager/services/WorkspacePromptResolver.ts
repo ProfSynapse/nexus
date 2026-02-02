@@ -73,6 +73,8 @@ export class WorkspacePromptResolver {
     app: App
   ): Promise<WorkspacePromptInfo | null> {
     try {
+      console.error('[WorkspacePromptResolver] fetchWorkspacePrompt called with dedicatedAgent:', JSON.stringify(workspace.context?.dedicatedAgent));
+
       // Check if workspace has a dedicated prompt (stored as dedicatedAgent for backward compat)
       if (!workspace.context?.dedicatedAgent) {
         // Fall back to legacy agents array for backward compatibility
@@ -121,6 +123,8 @@ export class WorkspacePromptResolver {
 
       // Use unified lookup that tries ID first, then name
       const prompt = promptManagerAgent.storageService.getPromptByNameOrId(identifier);
+      console.error('[WorkspacePromptResolver] getPromptByNameOrId returned:', prompt ? JSON.stringify({ id: prompt.id, name: prompt.name }) : 'null');
+
       if (!prompt) {
         return null;
       }

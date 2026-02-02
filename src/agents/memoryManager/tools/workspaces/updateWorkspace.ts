@@ -119,6 +119,8 @@ export class UpdateWorkspaceTool extends BaseTool<UpdateWorkspaceParameters, Upd
                 }
             }
 
+            console.error('[UpdateWorkspace] DedicatedAgent resolved:', JSON.stringify(dedicatedAgent));
+
             // Create a deep copy for updating
             const workspaceCopy = JSON.parse(JSON.stringify(existingWorkspace));
             const now = Date.now();
@@ -165,14 +167,18 @@ export class UpdateWorkspaceTool extends BaseTool<UpdateWorkspaceParameters, Upd
                 if (params.dedicatedAgentId === '') {
                     // Empty string means remove dedicated agent
                     delete workspaceCopy.context.dedicatedAgent;
+                    (workspaceCopy as any).dedicatedAgentId = undefined; // Also clear top-level field
                 } else if (dedicatedAgent) {
                     // Set dedicated agent if lookup succeeded
                     workspaceCopy.context.dedicatedAgent = dedicatedAgent;
+                    (workspaceCopy as any).dedicatedAgentId = dedicatedAgent.agentId; // Also set top-level field
                 }
             }
 
             // Update timestamp
             workspaceCopy.lastAccessed = now;
+
+            console.error('[UpdateWorkspace] Updating with context.dedicatedAgent:', JSON.stringify(workspaceCopy.context?.dedicatedAgent));
 
             // Perform the update
             await workspaceService.updateWorkspace(existingWorkspace.id, workspaceCopy);
