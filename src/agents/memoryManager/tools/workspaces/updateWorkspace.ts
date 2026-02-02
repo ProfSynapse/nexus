@@ -27,6 +27,7 @@ export interface UpdateWorkspaceParameters extends CommonParameters {
     workflows?: Array<{ name: string; when: string; steps: string }>;
     keyFiles?: string[];
     preferences?: string;
+    dedicatedAgentId?: string;
 }
 
 export interface UpdateWorkspaceResult extends CommonResult {
@@ -81,10 +82,38 @@ export class UpdateWorkspaceTool extends BaseTool<UpdateWorkspaceParameters, Upd
             const hasContextUpdates = params.purpose !== undefined ||
                                       params.workflows !== undefined ||
                                       params.keyFiles !== undefined ||
-                                      params.preferences !== undefined;
+                                      params.preferences !== undefined ||
+                                      params.dedicatedAgentId !== undefined;
 
             if (!hasTopLevelUpdates && !hasContextUpdates) {
-                return this.prepareResult(false, undefined, 'No updates provided. Pass at least one field to update (name, description, rootFolder, purpose, workflows, keyFiles, or preferences).');
+                return this.prepareResult(false, undefined, 'No updates provided. Pass at least one field to update (name, description, rootFolder, purpose, workflows, keyFiles, preferences, or dedicatedAgentId).');
+            }
+
+            // Handle dedicated agent setup
+            let dedicatedAgent: { agentId: string; agentName: string } | undefined = undefined;
+            if (params.dedicatedAgentId) {
+                try {
+                    // Get the agent name from CustomPromptStorageService
+                    const plugin = this.app.plugins.getPlugin('claudesidian-mcp') as unknown as Record<string, unknown> | null;
+                    const agentManager = plugin?.agentManager as Record<string, unknown> | undefined;
+                    if (agentManager?.getAgent) {
+                        const getAgent = agentManager.getAgent as (name: string) => Record<string, unknown> | undefined;
+                        const promptManagerAgent = getAgent('promptManager');
+                        const storageService = promptManagerAgent?.storageService as Record<string, unknown> | undefined;
+                        if (storageService?.getPromptById) {
+                            const getPromptById = storageService.getPromptById as (id: string) => { id: string; name: string } | undefined;
+                            const agent = getPromptById(params.dedicatedAgentId);
+                            if (agent) {
+                                dedicatedAgent = {
+                                    agentId: agent.id,
+                                    agentName: agent.name
+                                };
+                            }
+                        }
+                    }
+                } catch (error) {
+                    // Ignore agent name retrieval errors
+                }
             }
 
             // Create a deep copy for updating
@@ -128,6 +157,15 @@ export class UpdateWorkspaceTool extends BaseTool<UpdateWorkspaceParameters, Upd
             }
             if (params.preferences !== undefined) {
                 workspaceCopy.context.preferences = params.preferences;
+            }
+            if (params.dedicatedAgentId !== undefined) {
+                if (params.dedicatedAgentId === '') {
+                    // Empty string means remove dedicated agent
+                    delete workspaceCopy.context.dedicatedAgent;
+                } else if (dedicatedAgent) {
+                    // Set dedicated agent if lookup succeeded
+                    workspaceCopy.context.dedicatedAgent = dedicatedAgent;
+                }
             }
 
             // Update timestamp
@@ -191,6 +229,10 @@ export class UpdateWorkspaceTool extends BaseTool<UpdateWorkspaceParameters, Upd
                 preferences: {
                     type: 'string',
                     description: 'New preferences text (optional, updates context.preferences)'
+                },
+                dedicatedAgentId: {
+                    type: 'string',
+                    description: 'ID of custom agent to set as workspace dedicated agent (optional, updates context.dedicatedAgent). Pass empty string to remove dedicated agent.'
                 }
             },
             required: ['workspaceId']
