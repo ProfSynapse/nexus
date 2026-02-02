@@ -186,6 +186,14 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
         await this.saveToFile();
       }
 
+      // Run schema migrations for existing databases
+      const migrator = new SchemaMigrator(this.db);
+      const migrationResult = await migrator.migrate();
+      if (migrationResult.applied > 0) {
+        console.log(`[SQLiteCacheManager] Applied ${migrationResult.applied} migration(s) from v${migrationResult.fromVersion} to v${migrationResult.toVersion}`);
+        await this.saveToFile(); // Save after migrations
+      }
+
       // Start auto-save timer
       if (this.autoSaveInterval > 0) {
         this.autoSaveTimer = setInterval(() => {
