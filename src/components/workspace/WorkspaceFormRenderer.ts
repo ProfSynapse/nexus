@@ -155,28 +155,21 @@ export class WorkspaceFormRenderer {
     dropdown.addOption('', 'None');
     this.availableAgents.forEach(agent => {
       dropdown.addOption(agent.id, agent.name);
+      dropdown.addOption(agent.name, agent.name); // Support both ID and name
     });
 
-    const currentAgentId = this.formData.context?.dedicatedAgent?.agentId || '';
+    // Use top-level dedicatedAgentId field (matches backend MCP implementation)
+    const workspaceWithId = this.formData as ProjectWorkspace & { dedicatedAgentId?: string };
+    const currentAgentId = workspaceWithId.dedicatedAgentId || '';
     dropdown.setValue(currentAgentId);
 
     dropdown.onChange((value) => {
-      if (!this.formData.context) {
-        this.formData.context = {
-          purpose: '', workflows: [], keyFiles: [], preferences: ''
-        };
-      }
-
+      // Set top-level dedicatedAgentId field (string: ID or name)
+      const workspaceWithId = this.formData as ProjectWorkspace & { dedicatedAgentId?: string };
       if (value) {
-        const selectedAgent = this.availableAgents.find(agent => agent.id === value);
-        if (selectedAgent) {
-          this.formData.context.dedicatedAgent = {
-            agentId: selectedAgent.id,
-            agentName: selectedAgent.name
-          };
-        }
+        workspaceWithId.dedicatedAgentId = value;
       } else {
-        delete this.formData.context.dedicatedAgent;
+        delete workspaceWithId.dedicatedAgentId;
       }
     });
 
