@@ -169,9 +169,10 @@ export class WorkspaceService {
         created: metadata.created,
         lastAccessed: metadata.lastAccessed,
         isActive: metadata.isActive,
+        dedicatedAgentId: metadata.dedicatedAgentId, // Pass through dedicatedAgentId
         context: metadata.context,
         sessions: {} // Sessions must be loaded separately with getSessions
-      };
+      } as any; // Type cast needed since IndividualWorkspace doesn't have dedicatedAgentId in its type definition
     }
 
     // Fall back to legacy implementation
