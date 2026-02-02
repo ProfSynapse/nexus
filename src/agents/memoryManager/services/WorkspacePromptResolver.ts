@@ -7,7 +7,7 @@
  * compatibility for legacy workspace structures.
  *
  * Used by: LoadWorkspaceMode for resolving workspace prompts
- * Integrates with: CustomPromptStorageService via AgentManager
+ * Integrates with: Plugin settings (data.json customPrompts)
  *
  * Responsibilities:
  * - Resolve workspace prompt from dedicatedAgent or legacy agents array
@@ -17,10 +17,6 @@
 
 import type { App } from 'obsidian';
 import { ProjectWorkspace, WorkspaceContext } from '../../../database/types/workspace/WorkspaceTypes';
-import { getNexusPlugin } from '../../../utils/pluginLocator';
-import type { AgentManager } from '../../../services/AgentManager';
-import type { PromptManagerAgent } from '../../promptManager/promptManager';
-import type { CustomPromptStorageService } from '../../promptManager/services/CustomPromptStorageService';
 
 /**
  * Prompt information returned from resolution operations
@@ -43,24 +39,18 @@ interface LegacyWorkspaceContext extends WorkspaceContext {
 }
 
 /**
- * Plugin interface with agentManager property
- */
-interface NexusPluginWithAgentManager {
-  agentManager: AgentManager;
-}
-
-/**
- * PromptManager agent interface with storage service
- */
-interface PromptManagerWithStorage {
-  storageService: CustomPromptStorageService;
-}
-
-/**
  * Service for resolving workspace prompts (custom prompts associated with workspaces)
  * Implements Single Responsibility Principle - only handles prompt resolution
  */
 export class WorkspacePromptResolver {
+  private app: App;
+  private plugin: any;
+
+  constructor(app: App, plugin: any) {
+    this.app = app;
+    this.plugin = plugin;
+  }
+
   /**
    * Fetch workspace prompt data if available
    * Handles both new dedicatedAgent structure and legacy agents array
@@ -112,8 +102,9 @@ export class WorkspacePromptResolver {
   /**
    * Fetch prompt by name or ID (unified lookup)
    * Tries ID first (more specific), then falls back to name
+   * Accesses prompts directly from plugin settings (data.json)
    * @param identifier The prompt name or ID
-   * @param app The Obsidian app instance
+   * @param app The Obsidian app instance (unused, kept for compatibility)
    * @returns Prompt info or null if not found
    */
   async fetchPromptByNameOrId(
@@ -121,22 +112,22 @@ export class WorkspacePromptResolver {
     app: App
   ): Promise<WorkspacePromptInfo | null> {
     try {
-      // Get CustomPromptStorageService through plugin's agentManager
-      const plugin = getNexusPlugin(app);
-      if (!plugin || !this.hasAgentManager(plugin)) {
-        return null;
+      // Access customPrompts directly from plugin settings
+      const prompts = this.plugin?.settings?.settings?.customPrompts?.prompts || [];
+      console.error('[WorkspacePromptResolver] Found', prompts.length, 'prompts in settings');
+
+      // Try ID lookup first (more specific)
+      let prompt = prompts.find((p: any) => p.id === identifier);
+
+      // Fall back to name lookup
+      if (!prompt) {
+        prompt = prompts.find((p: any) => p.name === identifier);
       }
 
-      const promptManagerAgent = plugin.agentManager.getAgent('promptManager');
-      if (!this.isPromptManagerAgent(promptManagerAgent)) {
-        return null;
-      }
-
-      // Use unified lookup that tries ID first, then name
-      const prompt = promptManagerAgent.storageService.getPromptByNameOrId(identifier);
       console.error('[WorkspacePromptResolver] getPromptByNameOrId returned:', prompt ? JSON.stringify({ id: prompt.id, name: prompt.name }) : 'null');
 
       if (!prompt) {
+        console.error('[WorkspacePromptResolver] Prompt not found for identifier:', identifier);
         return null;
       }
 
@@ -147,21 +138,8 @@ export class WorkspacePromptResolver {
       };
 
     } catch (error) {
+      console.error('[WorkspacePromptResolver] Exception in fetchPromptByNameOrId:', error);
       return null;
     }
-  }
-
-  /**
-   * Type guard to check if plugin has agentManager property
-   */
-  private hasAgentManager(plugin: unknown): plugin is NexusPluginWithAgentManager {
-    return typeof plugin === 'object' && plugin !== null && 'agentManager' in plugin;
-  }
-
-  /**
-   * Type guard to check if agent is PromptManagerAgent with storageService
-   */
-  private isPromptManagerAgent(agent: unknown): agent is PromptManagerWithStorage {
-    return typeof agent === 'object' && agent !== null && 'storageService' in agent;
   }
 }

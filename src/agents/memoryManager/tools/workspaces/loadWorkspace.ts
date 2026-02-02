@@ -63,7 +63,7 @@ export class LoadWorkspaceTool extends BaseTool<LoadWorkspaceParameters, LoadWor
 
     // Initialize composed services
     this.dataFetcher = new WorkspaceDataFetcher();
-    this.promptResolver = new WorkspacePromptResolver();
+    this.promptResolver = new WorkspacePromptResolver(agent.app, agent.plugin);
     this.contextBuilder = new WorkspaceContextBuilder();
     this.fileCollector = new WorkspaceFileCollector();
   }
