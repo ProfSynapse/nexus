@@ -155,13 +155,17 @@ export class WorkspaceFormRenderer {
     dropdown.addOption('', 'None');
     this.availableAgents.forEach(agent => {
       dropdown.addOption(agent.id, agent.name);
-      dropdown.addOption(agent.name, agent.name); // Support both ID and name
     });
 
     // Use top-level dedicatedAgentId field (matches backend MCP implementation)
+    // Field can contain either ID or name - find matching agent by either
     const workspaceWithId = this.formData as ProjectWorkspace & { dedicatedAgentId?: string };
-    const currentAgentId = workspaceWithId.dedicatedAgentId || '';
-    dropdown.setValue(currentAgentId);
+    const dedicatedId = workspaceWithId.dedicatedAgentId || '';
+
+    // Try to find agent by ID first, then by name
+    const matchingAgent = this.availableAgents.find(a => a.id === dedicatedId || a.name === dedicatedId);
+    const dropdownValue = matchingAgent?.id || '';
+    dropdown.setValue(dropdownValue);
 
     dropdown.onChange((value) => {
       // Set top-level dedicatedAgentId field (string: ID or name)
