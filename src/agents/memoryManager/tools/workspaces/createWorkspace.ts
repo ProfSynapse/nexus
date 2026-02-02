@@ -88,8 +88,8 @@ export class CreateWorkspaceTool extends BaseTool<CreateWorkspaceParameters, Cre
                     const agentManager = plugin?.agentManager as Record<string, unknown> | undefined;
                     if (agentManager?.getAgent) {
                         const getAgent = agentManager.getAgent as (name: string) => Record<string, unknown> | undefined;
-                        const agentManagerAgent = getAgent('agentManager');
-                        const storageService = agentManagerAgent?.storageService as Record<string, unknown> | undefined;
+                        const promptManagerAgent = getAgent('promptManager');
+                        const storageService = promptManagerAgent?.storageService as Record<string, unknown> | undefined;
                         if (storageService?.getPromptById) {
                             const getPromptById = storageService.getPromptById as (id: string) => { id: string; name: string } | undefined;
                             const agent = getPromptById(params.dedicatedAgentId);
