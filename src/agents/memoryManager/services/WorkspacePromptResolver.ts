@@ -101,7 +101,8 @@ export class WorkspacePromptResolver {
 
   /**
    * Fetch prompt by name or ID (unified lookup)
-   * Uses CustomPromptStorageService for SQLite/data.json lookup
+   * Tries ID first (more specific), then falls back to name
+   * Accesses prompts directly from plugin settings (data.json)
    * @param identifier The prompt name or ID
    * @param app The Obsidian app instance (unused, kept for compatibility)
    * @returns Prompt info or null if not found
@@ -111,21 +112,17 @@ export class WorkspacePromptResolver {
     app: App
   ): Promise<WorkspacePromptInfo | null> {
     try {
-      // Access CustomPromptStorageService from PromptManagerAgent
-      const agentManager = (this.plugin as any).agentManager;
-      if (!agentManager) {
-        console.error('[WorkspacePromptResolver] AgentManager not available');
-        return null;
-      }
+      // Access customPrompts directly from plugin settings
+      const prompts = this.plugin?.settings?.settings?.customPrompts?.prompts || [];
+      console.error('[WorkspacePromptResolver] Found', prompts.length, 'prompts in settings');
 
-      const promptManagerAgent = agentManager.getAgent('promptManager');
-      if (!promptManagerAgent) {
-        console.error('[WorkspacePromptResolver] PromptManager agent not found');
-        return null;
-      }
+      // Try ID lookup first (more specific)
+      let prompt = prompts.find((p: any) => p.id === identifier);
 
-      const storageService = promptManagerAgent.getStorageService();
-      const prompt = storageService.getPromptByNameOrId(identifier);
+      // Fall back to name lookup
+      if (!prompt) {
+        prompt = prompts.find((p: any) => p.name === identifier);
+      }
 
       console.error('[WorkspacePromptResolver] getPromptByNameOrId returned:', prompt ? JSON.stringify({ id: prompt.id, name: prompt.name }) : 'null');
 
