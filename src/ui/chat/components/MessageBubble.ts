@@ -684,8 +684,11 @@ export class MessageBubble extends Component {
   }
 
   /**
-   * Cleanup resources
+   * Cleanup resources.
+   * Calls Component.unload() to auto-clean registerDomEvent/registerInterval handlers.
    */
+  private isUnloaded = false;
+
   cleanup(): void {
     this.stopLoadingAnimation();
     this.cleanupProgressiveAccordions();
@@ -696,5 +699,12 @@ export class MessageBubble extends Component {
     }
 
     this.element = null;
+
+    // Call Component.unload() to release registerDomEvent and registerInterval handlers.
+    // Guard against double-unload since unload() is not idempotent.
+    if (!this.isUnloaded) {
+      this.isUnloaded = true;
+      this.unload();
+    }
   }
 }
