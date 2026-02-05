@@ -17,6 +17,7 @@ Nexus turns your Obsidian vault into an MCP-enabled workspace. It exposes safe, 
 
 - **Two-Tool Architecture** – Just 2 MCP tools (`getTools` + `useTools`) replace 40+ individual tools, reducing upfront token cost by ~95%.
 - **Native Chat View** – Stream tool calls, branch conversations, and manage models directly inside Obsidian.
+- **Inline AI Editing** – Select text, right-click or use hotkey, and transform it with AI instructions.
 - **Workspace Memory** – Workspaces, states, and traces in `.nexus/` (sync-friendly JSONL + local SQLite cache).
 - **Local Semantic Search** – Desktop-only embeddings via sqlite-vec vector search—no external API calls.
 - **Full Vault Operations** – Create, read, update, delete notes, folders, frontmatter, and batch edits.
@@ -27,6 +28,7 @@ Nexus turns your Obsidian vault into an MCP-enabled workspace. It exposes safe, 
 | Feature | Desktop | Mobile |
 |---------|---------|--------|
 | Native Chat | ✅ | ✅ |
+| Inline AI Editing | ✅ | ✅ (command palette only) |
 | MCP Bridge (Claude Desktop) | ✅ | — |
 | Local Providers (Ollama/LM Studio) | ✅ | — |
 | Semantic Embeddings | ✅ | — |
@@ -114,6 +116,29 @@ After adding, fully quit and relaunch Claude Desktop.
 2. Open chat via ribbon icon or command palette (**Nexus: Open Nexus Chat**)
 3. Type `/` for tools, `@` for custom agents, `[[` to link notes
 4. Tool calls stream live with collapsible result panels
+
+---
+
+## Inline AI Editing
+
+Edit selected text directly in your notes using AI:
+
+1. **Select text** in any note
+2. **Trigger** via:
+   - Right-click → **Edit with AI** (requires "Native menus" disabled in Obsidian settings)
+   - Command palette → **Edit selection with AI**
+3. **Enter instruction** (e.g., "Make this more concise", "Translate to French")
+4. **Generate** – Watch streaming preview with cancel option
+5. **Review & Apply** – Edit the result, retry, or apply to replace original text
+
+| Feature | Description |
+|---------|-------------|
+| Model Selection | Dropdown to choose from configured providers |
+| Streaming Preview | See AI output as it generates |
+| Cancel Support | Stop generation mid-stream |
+| Editable Result | Modify AI output before applying |
+| Retry | Regenerate with same or new instruction |
+| Undo | Standard Ctrl/Cmd+Z after applying |
 
 ---
 
