@@ -192,11 +192,13 @@ export class MessageBranchNavigator {
   }
 
   /**
-   * Clean up resources
+   * Clean up resources.
+   * Note: Event listeners registered via component.registerDomEvent() are
+   * automatically cleaned up when the Obsidian Component unloads, so no
+   * manual removeEventListener calls are needed here.
    */
   destroy(): void {
-    this.prevButton.removeEventListener('click', () => this.handlePreviousAlternative());
-    this.nextButton.removeEventListener('click', () => this.handleNextAlternative());
     this.container.empty();
+    this.currentMessage = null;
   }
 }

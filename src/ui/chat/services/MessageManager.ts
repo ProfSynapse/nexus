@@ -381,6 +381,9 @@ export class MessageManager {
       this.currentAbortController = null;
     }
 
+    // Also cancel any in-progress alternative/retry generation
+    this.alternativeService.cancel();
+
     // Always reset streaming message ID
     this.currentStreamingMessageId = null;
 

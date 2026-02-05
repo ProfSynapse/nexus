@@ -10,6 +10,7 @@
 
 import { ConversationData, ConversationMessage } from '../../../types/chat/ChatTypes';
 import { ChatService } from '../../../services/chat/ChatService';
+import { filterCompletedToolCalls } from './toolCallUtils';
 
 export interface AbortHandlerEvents {
   onStreamingUpdate: (messageId: string, content: string, isComplete: boolean, isIncremental?: boolean) => void;
@@ -55,7 +56,7 @@ export class AbortHandler {
     // Default abort handling
     if (hasContent) {
       // Keep partial response - clean up incomplete tool calls
-      aiMessage.toolCalls = undefined; // Remove incomplete tool calls
+      aiMessage.toolCalls = filterCompletedToolCalls(aiMessage.toolCalls);
       aiMessage.isLoading = false;
       aiMessage.state = 'aborted'; // Mark as aborted (will be included in context)
 

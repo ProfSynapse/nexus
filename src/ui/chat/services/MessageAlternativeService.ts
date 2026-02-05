@@ -4,6 +4,15 @@
  * Purpose: Handles creation of alternative AI responses for message branching
  * Extracted from MessageManager.ts to follow Single Responsibility Principle
  *
+ * Flow:
+ * 1. Save the original content as a branch (preserving old response)
+ * 2. Clear the current message content and set loading state
+ * 3. Fire UI update so the user sees a cleared message with loading indicator
+ * 4. Stream the new response directly into the live conversation message
+ * 5. On complete: update message, fire final events
+ * 6. On abort: keep partial content (original is safe in the branch)
+ * 7. Branch arrows allow navigation between original (branch) and new (current)
+ *
  * Used by: MessageManager for retry and alternative response generation
  * Dependencies: ChatService, BranchManager, MessageStreamHandler
  */
@@ -13,6 +22,7 @@ import { ConversationData, ConversationMessage } from '../../../types/chat/ChatT
 import { BranchManager } from './BranchManager';
 import { MessageStreamHandler } from './MessageStreamHandler';
 import { AbortHandler } from '../utils/AbortHandler';
+import { filterCompletedToolCalls } from '../utils/toolCallUtils';
 
 export interface MessageAlternativeServiceEvents {
   onStreamingUpdate: (messageId: string, content: string, isComplete: boolean, isIncremental?: boolean) => void;
@@ -23,11 +33,21 @@ export interface MessageAlternativeServiceEvents {
 }
 
 /**
- * Service for creating alternative AI responses when retrying messages
+ * Service for creating alternative AI responses when retrying messages.
+ *
+ * Clear-and-restream flow:
+ * 1. Save original content into a branch (preserves old response)
+ * 2. Clear message content and stream new response fresh
+ * 3. On success: message has new content, branch has old content
+ * 4. On abort: keep partial new content (original safe in branch)
+ * 5. Branch arrows navigate between new (current) and old (branch)
  */
 export class MessageAlternativeService {
   private currentAbortController: AbortController | null = null;
   private currentStreamingMessageId: string | null = null;
+
+  /** Guard against concurrent retries on the same message */
+  private retryInProgress: Set<string> = new Set();
 
   constructor(
     private chatService: ChatService,
@@ -38,7 +58,10 @@ export class MessageAlternativeService {
   ) {}
 
   /**
-   * Create an alternative response for an AI message
+   * Create an alternative response for an AI message.
+   *
+   * Saves the original content as a branch, clears the message,
+   * and streams a fresh response directly into the conversation.
    */
   async createAlternativeResponse(
     conversation: ConversationData,
@@ -51,121 +74,137 @@ export class MessageAlternativeService {
       sessionId?: string;
     }
   ): Promise<void> {
-    const aiMessage = conversation.messages.find(msg => msg.id === aiMessageId);
+    // Concurrent retry guard: if a retry is already in progress for this message, bail
+    if (this.retryInProgress.has(aiMessageId)) {
+      return;
+    }
+
+    const aiMessageIndex = conversation.messages.findIndex(msg => msg.id === aiMessageId);
+    if (aiMessageIndex === -1) return;
+
+    const aiMessage = conversation.messages[aiMessageIndex];
     if (!aiMessage || aiMessage.role !== 'assistant') return;
 
-    // Find the user message that prompted this AI response
-    const aiMessageIndex = conversation.messages.findIndex(msg => msg.id === aiMessageId);
-    if (aiMessageIndex === 0) return; // No previous message
-
+    // Must have a preceding user message to retry against
+    if (aiMessageIndex === 0) return;
     const userMessage = conversation.messages[aiMessageIndex - 1];
     if (!userMessage || userMessage.role !== 'user') return;
 
-    // Store the original content, tool calls, and state before retry
-    const originalContent = aiMessage.content;
-    const originalToolCalls = aiMessage.toolCalls;
-    const originalState = aiMessage.state;
+    // Mark retry as in progress
+    this.retryInProgress.add(aiMessageId);
 
     try {
       this.events.onLoadingStateChanged(true);
 
-      // Clear the AI message and show loading state
-      const messageIndex = conversation.messages.findIndex(msg => msg.id === aiMessageId);
-      if (messageIndex >= 0) {
-        conversation.messages[messageIndex].content = '';
-        conversation.messages[messageIndex].toolCalls = undefined;
-        conversation.messages[messageIndex].isLoading = true;
-        conversation.messages[messageIndex].state = 'draft';
+      // 1. Save original content as a branch FIRST (preserves old response)
+      const originalContent = aiMessage.content;
+      const originalToolCalls = aiMessage.toolCalls ? [...aiMessage.toolCalls] : undefined;
+      const originalReasoning = aiMessage.reasoning;
 
-        // Clear the bubble immediately and show thinking animation
-        this.events.onStreamingUpdate(aiMessageId, '', false, false);
-        this.events.onConversationUpdated(conversation);
+      const branchMessage: ConversationMessage = {
+        id: `alt_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`,
+        role: 'assistant',
+        content: originalContent,
+        timestamp: aiMessage.timestamp,
+        conversationId: conversation.id,
+        state: aiMessage.state || 'complete',
+        toolCalls: originalToolCalls,
+        reasoning: originalReasoning
+      };
+
+      const branchId = await this.branchManager.createHumanBranch(
+        conversation,
+        aiMessageId,
+        branchMessage
+      );
+
+      // 1b. Collect and move continuation messages (e.g. tool-call follow-ups)
+      //     that follow the retried AI message into the branch so they don't
+      //     linger as stale content after the new response streams in.
+      const continuationMessages = conversation.messages.splice(aiMessageIndex + 1);
+      if (continuationMessages.length > 0 && branchId) {
+        const targetBranch = aiMessage.branches?.find(b => b.id === branchId);
+        if (targetBranch) {
+          targetBranch.messages.push(...continuationMessages);
+          targetBranch.updated = Date.now();
+          // Persist the branch with its continuation messages
+          await this.chatService.updateConversation(conversation);
+        }
       }
 
-      // Create abort controller for this request
+      // 2. Clear the current message for fresh streaming
+      aiMessage.content = '';
+      aiMessage.toolCalls = undefined;
+      aiMessage.reasoning = undefined;
+      aiMessage.isLoading = true;
+      aiMessage.state = 'draft';
+
+      // Set activeAlternativeIndex to 0 so the UI shows the current message
+      // (the original content is now in the branch, navigable via branch arrows)
+      aiMessage.activeAlternativeIndex = 0;
+
+      // 3. Fire UI update so the user sees the cleared message with loading state
+      this.events.onConversationUpdated(conversation);
+
+      // 4. Create abort controller for this retry
       this.currentAbortController = new AbortController();
       this.currentStreamingMessageId = aiMessageId;
 
-      console.log('[Retry] Calling streamHandler.streamResponse');
-      // Stream new AI response
-      const { streamedContent, toolCalls } = await this.streamHandler.streamResponse(
+      // 5. Get user message content for the LLM request
+      const userMessageContent = userMessage.content;
+
+      // 6. Stream new response directly into the live conversation
+      // The stream handler mutates conversation.messages[aiMessageIndex] in-place,
+      // fires onStreamingUpdate events for live UI updates, and handles tool calls.
+      await this.streamHandler.streamResponse(
         conversation,
-        userMessage.content,
+        userMessageContent,
         aiMessageId,
         {
           ...options,
-          excludeFromMessageId: aiMessageId, // Exclude AI message being retried from context
+          excludeFromMessageId: aiMessageId,
           abortSignal: this.currentAbortController.signal
         }
       );
-      console.log('[Retry] streamResponse completed', { contentLength: streamedContent?.length, hasToolCalls: !!toolCalls });
 
-      // Restore the original content before creating alternative
-      const restoreIndex = conversation.messages.findIndex(msg => msg.id === aiMessageId);
-      if (restoreIndex >= 0) {
-        conversation.messages[restoreIndex].content = originalContent;
-        conversation.messages[restoreIndex].toolCalls = originalToolCalls;
-        conversation.messages[restoreIndex].state = originalState || 'complete';
-        conversation.messages[restoreIndex].isLoading = false;
-      }
+      // 7. After streaming completes, save the updated conversation
+      await this.chatService.updateConversation(conversation);
 
-      // Create alternative response with the new content
-      const alternativeResponse: ConversationMessage = {
-        id: `alt_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`,
-        role: 'assistant',
-        content: streamedContent,
-        timestamp: Date.now(),
-        conversationId: conversation.id,
-        state: 'complete',
-        toolCalls: toolCalls
-      };
-
-      // Add alternative using BranchManager
-      await this.branchManager.createHumanBranch(
-        conversation,
-        aiMessageId,
-        alternativeResponse
-      );
-
-      // Reload conversation from storage
-      const freshConversation = await this.chatService.getConversation(conversation.id);
-      if (freshConversation) {
-        Object.assign(conversation, freshConversation);
-      }
-
-      // Notify UI to refresh and show the branching controls
+      // 8. Fire final UI update
       this.events.onConversationUpdated(conversation);
 
     } catch (error) {
-      // Handle abort scenario
       if (error instanceof Error && error.name === 'AbortError') {
-        await this.abortHandler.handleAbort(
-          conversation,
-          aiMessageId,
-          async (hasContent, aiMsg) => {
-            if (hasContent) {
-              // Keep partial content
-              aiMsg.toolCalls = undefined;
-              aiMsg.isLoading = false;
-              aiMsg.state = 'aborted';
-              await this.chatService.updateConversation(conversation);
-              this.events.onStreamingUpdate(aiMessageId, aiMsg.content, true, false);
-              this.events.onConversationUpdated(conversation);
-            } else {
-              // Restore original content if aborted before any new content
-              aiMsg.content = originalContent;
-              aiMsg.toolCalls = originalToolCalls;
-              aiMsg.state = originalState || 'complete';
-              aiMsg.isLoading = false;
-              await this.chatService.updateConversation(conversation);
-              this.events.onConversationUpdated(conversation);
-            }
+        // On abort: keep whatever partial content was streamed.
+        // The original response is safe in the branch.
+        const abortedMessage = conversation.messages[aiMessageIndex];
+        if (abortedMessage) {
+          const hasContent = abortedMessage.content && abortedMessage.content.trim();
+
+          if (hasContent) {
+            // Keep partial content, clean up incomplete tool calls
+            abortedMessage.toolCalls = filterCompletedToolCalls(abortedMessage.toolCalls);
+            abortedMessage.isLoading = false;
+            abortedMessage.state = 'aborted';
+
+            await this.chatService.updateConversation(conversation);
+            this.events.onStreamingUpdate(aiMessageId, abortedMessage.content, true, false);
+          } else {
+            // No content streamed yet - mark as aborted with empty content
+            abortedMessage.isLoading = false;
+            abortedMessage.state = 'aborted';
+            abortedMessage.content = '';
+
+            await this.chatService.updateConversation(conversation);
           }
-        );
+        }
+
+        this.events.onConversationUpdated(conversation);
       } else {
         this.events.onError('Failed to generate alternative response');
       }
     } finally {
+      this.retryInProgress.delete(aiMessageId);
       this.currentAbortController = null;
       this.currentStreamingMessageId = null;
       this.events.onLoadingStateChanged(false);

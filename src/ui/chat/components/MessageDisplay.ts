@@ -11,7 +11,8 @@ import { App, setIcon, ButtonComponent } from 'obsidian';
 
 export class MessageDisplay {
   private conversation: ConversationData | null = null;
-  private messageBubbles: MessageBubble[] = [];
+  private currentConversationId: string | null = null;
+  private messageBubbles: Map<string, MessageBubble> = new Map();
 
   constructor(
     private container: HTMLElement,
@@ -27,15 +28,91 @@ export class MessageDisplay {
   }
 
   /**
-   * Set conversation to display
+   * Set conversation to display.
+   * Uses incremental reconciliation when updating the same conversation (preserves
+   * live progressive tool accordions, branch navigator state, and avoids flicker).
+   * Falls back to full render when switching to a different conversation.
    */
   setConversation(conversation: ConversationData): void {
-    // Always re-render from the stored conversation data (single source of truth)
-    // ProgressiveToolAccordions show both streaming AND final state
-    // Tool bubbles are created from toolCalls in the conversation JSON
+    const previousConversationId = this.currentConversationId;
     this.conversation = conversation;
-    this.render();
+    this.currentConversationId = conversation.id;
+
+    // Full render for conversation switches or first load
+    if (previousConversationId !== conversation.id) {
+      this.render();
+      this.scrollToBottom();
+      return;
+    }
+
+    // Incremental reconciliation for same conversation updates
+    this.reconcile(conversation);
     this.scrollToBottom();
+  }
+
+  /**
+   * Incrementally reconcile the displayed messages with the new conversation data.
+   * Reuses existing MessageBubble instances for messages that still exist,
+   * removes stale ones, and creates new ones -- preserving live UI state.
+   */
+  private reconcile(conversation: ConversationData): void {
+    const messagesContainer = this.container.querySelector('.messages-container');
+    if (!messagesContainer) {
+      // No messages container yet (e.g., was showing welcome) -- fall back to full render
+      this.render();
+      return;
+    }
+
+    const newMessages = conversation.messages;
+    const newMessageIds = new Set(newMessages.map(m => m.id));
+
+    // 1. Remove stale bubbles (messages no longer in conversation)
+    for (const [id, bubble] of this.messageBubbles) {
+      if (!newMessageIds.has(id)) {
+        const element = bubble.getElement();
+        if (element) {
+          element.remove();
+        }
+        bubble.cleanup();
+        this.messageBubbles.delete(id);
+      }
+    }
+
+    // 2. Walk new messages in order: update existing, create new, ensure DOM order
+    let previousElement: Element | null = null;
+    for (const message of newMessages) {
+      const existingBubble = this.messageBubbles.get(message.id);
+
+      if (existingBubble) {
+        // Update the existing bubble in place
+        existingBubble.updateWithNewMessage(message);
+        const element = existingBubble.getElement();
+
+        // Ensure DOM order: element should follow previousElement
+        if (element) {
+          const expectedNext: Element | null = previousElement ? previousElement.nextElementSibling : messagesContainer.firstElementChild;
+          if (element !== expectedNext) {
+            if (previousElement) {
+              previousElement.after(element);
+            } else {
+              messagesContainer.prepend(element);
+            }
+          }
+          previousElement = element;
+        }
+      } else {
+        // Create a new bubble for this message
+        const bubbleEl = this.createMessageBubble(message);
+
+        // Insert at the correct position
+        if (previousElement) {
+          previousElement.after(bubbleEl);
+        } else {
+          messagesContainer.prepend(bubbleEl);
+        }
+        previousElement = bubbleEl;
+      }
+    }
   }
 
   /**
@@ -80,14 +157,8 @@ export class MessageDisplay {
    * Update a specific message content for final display (streaming handled by StreamingController)
    */
   updateMessageContent(messageId: string, content: string): void {
-    // Find the MessageBubble instance for this message ID
-    const messageBubble = this.messageBubbles.find(bubble => {
-      const element = bubble.getElement();
-      return element?.getAttribute('data-message-id') === messageId;
-    });
-
+    const messageBubble = this.messageBubbles.get(messageId);
     if (messageBubble) {
-      // Use the MessageBubble's updateContent method for final content only
       messageBubble.updateContent(content);
     }
   }
@@ -96,34 +167,20 @@ export class MessageDisplay {
    * Update a specific message with new data (including tool calls) without full re-render
    */
   updateMessage(messageId: string, updatedMessage: ConversationMessage): void {
-    // Update message with new data
-
     if (!this.conversation) {
       return;
     }
 
-    // Find and update the message in conversation data
+    // Update the message in conversation data
     const messageIndex = this.conversation.messages.findIndex(msg => msg.id === messageId);
-    // Update conversation data
-    
     if (messageIndex !== -1) {
       this.conversation.messages[messageIndex] = updatedMessage;
-      // Message updated in conversation
     }
 
-    // Find the MessageBubble instance
-    const messageBubble = this.messageBubbles.find(bubble => {
-      const element = bubble.getElement();
-      return element?.getAttribute('data-message-id') === messageId;
-    });
-
-    // Find message bubble for update
-
+    // Update the bubble in place
+    const messageBubble = this.messageBubbles.get(messageId);
     if (messageBubble) {
-      // Tell the MessageBubble to re-render with updated message data
-      // Update message bubble
       messageBubble.updateWithNewMessage(updatedMessage);
-      // Message bubble updated
     }
   }
 
@@ -158,10 +215,16 @@ export class MessageDisplay {
   }
 
   /**
-   * Render the message display
+   * Full render - destroys all existing bubbles and rebuilds from scratch.
+   * Used for conversation switches and initial load.
    */
   private render(): void {
-    // Full render - clears existing progressive accordions
+    // Cleanup all existing bubbles before clearing the DOM
+    for (const bubble of this.messageBubbles.values()) {
+      bubble.cleanup();
+    }
+    this.messageBubbles.clear();
+
     this.container.empty();
     this.container.addClass('message-display');
 
@@ -173,11 +236,8 @@ export class MessageDisplay {
     // Create scrollable messages container
     const messagesContainer = this.container.createDiv('messages-container');
 
-    // Clear previous message bubbles
-    this.messageBubbles = [];
-
     // Render all messages (no branch filtering needed for message-level alternatives)
-    this.conversation.messages.forEach((message, index) => {
+    this.conversation.messages.forEach((message) => {
       const messageEl = this.createMessageBubble(message);
       messagesContainer.appendChild(messageEl);
     });
@@ -209,8 +269,8 @@ export class MessageDisplay {
       this.onViewBranch
     );
 
-    this.messageBubbles.push(bubble);
-    
+    this.messageBubbles.set(message.id, bubble);
+
     const bubbleEl = bubble.createElement();
 
     // Tool accordion is now rendered inside MessageBubble's content area
@@ -270,30 +330,22 @@ export class MessageDisplay {
    * Find MessageBubble by messageId for tool events
    */
   findMessageBubble(messageId: string): MessageBubble | undefined {
-    if (!this.conversation) return undefined;
-    
-    const messageIndex = this.conversation.messages.findIndex(msg => msg.id === messageId);
-    if (messageIndex === -1) return undefined;
-    
-    // MessageBubbles are created in same order as messages
-    return this.messageBubbles[messageIndex];
+    return this.messageBubbles.get(messageId);
   }
 
   /**
    * Update MessageBubble with new message ID (for handling temporary -> real ID updates)
    */
   updateMessageId(oldId: string, newId: string, updatedMessage: ConversationMessage): void {
-    // Find the MessageBubble that was created with the old (temporary) ID
-    const messageBubble = this.messageBubbles.find(bubble => {
-      const element = bubble.getElement();
-      return element?.getAttribute('data-message-id') === oldId;
-    });
-
+    const messageBubble = this.messageBubbles.get(oldId);
     if (messageBubble) {
+      // Re-key the bubble in the Map under the new ID
+      this.messageBubbles.delete(oldId);
+      this.messageBubbles.set(newId, messageBubble);
+
       // Update the MessageBubble's message reference and DOM attribute
       messageBubble.updateWithNewMessage(updatedMessage);
 
-      // Update the DOM attribute to reflect the new ID
       const element = messageBubble.getElement();
       if (element) {
         element.setAttribute('data-message-id', newId);
@@ -305,9 +357,12 @@ export class MessageDisplay {
    * Check if any message bubbles have progressive tool accordions
    */
   hasProgressiveToolAccordions(): boolean {
-    return this.messageBubbles.some(bubble => 
-      bubble.getProgressiveToolAccordions().size > 0
-    );
+    for (const bubble of this.messageBubbles.values()) {
+      if (bubble.getProgressiveToolAccordions().size > 0) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /**
@@ -342,7 +397,10 @@ export class MessageDisplay {
    * Cleanup resources
    */
   cleanup(): void {
-    this.messageBubbles.forEach(bubble => bubble.cleanup());
-    this.messageBubbles = [];
+    for (const bubble of this.messageBubbles.values()) {
+      bubble.cleanup();
+    }
+    this.messageBubbles.clear();
+    this.currentConversationId = null;
   }
 }

@@ -282,11 +282,18 @@ export interface AlternativeMessageEvent {
   content: string | null;
   /** Timestamp when alternative was created */
   timestamp: number;
-  /** Tool calls made in this alternative */
+  /** Tool calls made in this alternative (extended properties for tool bubble reconstruction) */
   tool_calls?: Array<{
     id: string;
-    type: 'function';
+    type: 'function' | string;
     function: { name: string; arguments: string };
+    // Extended properties for tool bubbles reconstruction after reload
+    name?: string;
+    parameters?: Record<string, unknown>;
+    result?: unknown;
+    success?: boolean;
+    error?: string;
+    executionTime?: number;
   }>;
   /** Reasoning/thinking content for this alternative */
   reasoning?: string;

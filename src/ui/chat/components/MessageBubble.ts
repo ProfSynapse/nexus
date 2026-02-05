@@ -361,8 +361,40 @@ export class MessageBubble extends Component {
 
     this.message = newMessage;
 
+    // Clear tool accordions and tool bubble when new message has no tool calls (e.g., retry clear)
+    if (!activeToolCalls || activeToolCalls.length === 0) {
+      this.cleanupProgressiveAccordions();
+
+      if (this.toolBubbleElement) {
+        this.toolBubbleElement.remove();
+        this.toolBubbleElement = null;
+      }
+
+      if (this.imageBubbleElement) {
+        this.imageBubbleElement.remove();
+        this.imageBubbleElement = null;
+      }
+    }
+
     if (this.messageBranchNavigator) {
       this.messageBranchNavigator.updateMessage(newMessage);
+    } else if (newMessage.branches && newMessage.branches.length > 0 && this.element) {
+      // Branch navigator doesn't exist yet but message now has branches (e.g. after retry).
+      // Create the navigator dynamically so the user can switch between alternatives.
+      const actions = this.element.querySelector('.message-actions-external');
+      if (actions instanceof HTMLElement) {
+        const navigatorEvents: MessageBranchNavigatorEvents = {
+          onAlternativeChanged: (messageId, alternativeIndex) => {
+            if (this.onMessageAlternativeChanged) {
+              this.onMessageAlternativeChanged(messageId, alternativeIndex);
+            }
+          },
+          onError: (message) => console.error('[MessageBubble] Branch navigation error:', message)
+        };
+
+        this.messageBranchNavigator = new MessageBranchNavigator(actions, navigatorEvents, this);
+        this.messageBranchNavigator.updateMessage(newMessage);
+      }
     }
 
     if (!this.element) return;
@@ -684,8 +716,11 @@ export class MessageBubble extends Component {
   }
 
   /**
-   * Cleanup resources
+   * Cleanup resources.
+   * Calls Component.unload() to auto-clean registerDomEvent/registerInterval handlers.
    */
+  private isUnloaded = false;
+
   cleanup(): void {
     this.stopLoadingAnimation();
     this.cleanupProgressiveAccordions();
@@ -696,5 +731,12 @@ export class MessageBubble extends Component {
     }
 
     this.element = null;
+
+    // Call Component.unload() to release registerDomEvent and registerInterval handlers.
+    // Guard against double-unload since unload() is not idempotent.
+    if (!this.isUnloaded) {
+      this.isUnloaded = true;
+      this.unload();
+    }
   }
 }
