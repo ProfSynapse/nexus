@@ -7,6 +7,7 @@
 
 import { Notice, MarkdownView, MarkdownFileInfo, Plugin, Menu, Editor, App, Events } from 'obsidian';
 import { InlineEditModal } from '../../ui/inline-edit/InlineEditModal';
+import { InlineEditService } from '../../services/InlineEditService';
 import type { SelectionContext } from '../../ui/inline-edit/types';
 import type { LLMService } from '../../services/llm/core/LLMService';
 import type { Settings } from '../../settings';
@@ -140,12 +141,15 @@ export class InlineEditCommandManager {
       return;
     }
 
-    // Open modal with captured context
+    // Create InlineEditService for this editing session
+    const inlineEditService = new InlineEditService(llmService);
+
+    // Open modal with captured context and injected service
     const modal = new InlineEditModal(
       this.config.app,
       this.config.plugin,
       selectionContext,
-      llmService
+      inlineEditService
     );
     modal.open();
   }

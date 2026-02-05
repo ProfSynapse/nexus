@@ -32,11 +32,26 @@ import type { LLMService } from '../../services/llm/core/LLMService';
 import type { Settings } from '../../settings';
 
 /**
- * Plugin interface with settings property
+ * Plugin interface with settings property and registerDomEvent method
  */
 interface PluginWithSettings extends Plugin {
   settings?: Settings;
   getService<T>(name: string, timeoutMs?: number): Promise<T | null>;
+  registerDomEvent<K extends keyof WindowEventMap>(
+    el: Window,
+    type: K,
+    callback: (this: HTMLElement, ev: WindowEventMap[K]) => unknown
+  ): void;
+  registerDomEvent<K extends keyof DocumentEventMap>(
+    el: Document,
+    type: K,
+    callback: (this: HTMLElement, ev: DocumentEventMap[K]) => unknown
+  ): void;
+  registerDomEvent<K extends keyof HTMLElementEventMap>(
+    el: HTMLElement,
+    type: K,
+    callback: (this: HTMLElement, ev: HTMLElementEventMap[K]) => unknown
+  ): void;
 }
 
 export class InlineEditModal extends Modal {
@@ -61,12 +76,12 @@ export class InlineEditModal extends Modal {
     app: App,
     plugin: PluginWithSettings,
     selectionContext: SelectionContext,
-    llmService: LLMService
+    service: InlineEditService
   ) {
     super(app);
     this.plugin = plugin;
     this.selectionContext = selectionContext;
-    this.service = new InlineEditService(llmService);
+    this.service = service;
 
     // Set up callbacks
     this.service.setCallbacks({
@@ -194,7 +209,7 @@ export class InlineEditModal extends Modal {
         textarea.inputEl.addClass('claudesidian-inline-edit-instruction-input');
 
         // Handle Enter to submit (Shift+Enter for newline)
-        textarea.inputEl.addEventListener('keydown', (e) => {
+        this.plugin.registerDomEvent(textarea.inputEl, 'keydown', (e) => {
           if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             this.handleGenerate();
@@ -289,6 +304,10 @@ export class InlineEditModal extends Modal {
     // Original text (read-only, collapsed)
     const originalSection = container.createDiv('claudesidian-inline-edit-section claudesidian-inline-edit-original-section');
     const originalHeader = originalSection.createDiv('claudesidian-inline-edit-collapsible-header');
+    originalHeader.setAttribute('aria-label', 'Toggle original text visibility');
+    originalHeader.setAttribute('aria-expanded', 'false');
+    originalHeader.setAttribute('role', 'button');
+    originalHeader.setAttribute('tabindex', '0');
     const collapseIcon = originalHeader.createSpan('claudesidian-inline-edit-collapse-icon');
     setIcon(collapseIcon, 'chevron-right');
     originalHeader.createEl('label', { text: 'Original Text', cls: 'claudesidian-inline-edit-label' });
@@ -301,14 +320,16 @@ export class InlineEditModal extends Modal {
     originalPre.textContent = original;
 
     // Toggle collapse
-    originalHeader.addEventListener('click', () => {
+    this.plugin.registerDomEvent(originalHeader, 'click', () => {
       const isCollapsed = originalContent.hasClass('claudesidian-inline-edit-collapsed');
       if (isCollapsed) {
         originalContent.removeClass('claudesidian-inline-edit-collapsed');
         setIcon(collapseIcon, 'chevron-down');
+        originalHeader.setAttribute('aria-expanded', 'true');
       } else {
         originalContent.addClass('claudesidian-inline-edit-collapsed');
         setIcon(collapseIcon, 'chevron-right');
+        originalHeader.setAttribute('aria-expanded', 'false');
       }
     });
 
@@ -324,7 +345,7 @@ export class InlineEditModal extends Modal {
     this.resultTextarea.rows = Math.min(15, edited.split('\n').length + 2);
 
     // Track edits
-    this.resultTextarea.addEventListener('input', () => {
+    this.plugin.registerDomEvent(this.resultTextarea, 'input', () => {
       if (this.resultTextarea) {
         this.service.updateEditedText(this.resultTextarea.value);
       }
