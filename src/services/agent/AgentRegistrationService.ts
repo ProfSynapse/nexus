@@ -62,6 +62,8 @@ export class AgentRegistrationService implements AgentRegistrationServiceInterfa
   private factoryRegistry: AgentFactoryRegistry;
   private initializationService: AgentInitializationService;
   private validationService: AgentValidationService;
+  private isInitialized: boolean = false;
+  private initializationPromise: Promise<Map<string, any>> | null = null;
 
   constructor(
     private app: App,
@@ -181,20 +183,35 @@ export class AgentRegistrationService implements AgentRegistrationServiceInterfa
 
   /**
    * Initializes all configured agents (legacy method - maintain backward compatibility)
+   * Supports lazy initialization - can be called multiple times safely.
    */
   async initializeAllAgents(): Promise<Map<string, any>> {
+    // Return cached result if already initialized
+    if (this.isInitialized) {
+      return this.getAllAgents();
+    }
+
+    // Return existing promise if initialization is in progress (prevents double-init)
+    if (this.initializationPromise) {
+      return this.initializationPromise;
+    }
+
+    // Start initialization and cache the promise
+    this.initializationPromise = this.doInitializeAllAgents();
+    return this.initializationPromise;
+  }
+
+  /**
+   * Internal method that performs the actual agent initialization
+   */
+  private async doInitializeAllAgents(): Promise<Map<string, any>> {
     const startTime = Date.now();
     this.registrationStatus.registrationTime = new Date();
     this.initializationErrors = {};
 
     try {
-      // Get memory settings to determine what to enable
-      const pluginWithSettings = this.plugin as Plugin & { settings?: { settings?: { memory?: { enabled?: boolean } } } };
-      const memorySettings = pluginWithSettings?.settings?.settings?.memory;
-      const isMemoryEnabled = memorySettings?.enabled;
-
-      // Get capability status
       const { hasValidLLMKeys, enableSearchModes, enableLLMModes } = await this.validationService.getCapabilityStatus();
+      const memorySettings = this.getMemorySettings();
 
       logger.systemLog(`Agent initialization started - Search modes: ${enableSearchModes}, LLM modes: ${enableLLMModes}`);
 
@@ -203,15 +220,22 @@ export class AgentRegistrationService implements AgentRegistrationServiceInterfa
         logger.systemLog('LLM validation failed - AgentManager features may be limited');
       }
 
-      // Initialize agents in order using AgentInitializationService
-      await this.safeInitialize('contentManager', () => this.initializationService.initializeContentManager());
-      await this.safeInitialize('storageManager', () => this.initializationService.initializeStorageManager());
-      await this.safeInitialize('canvasManager', () => this.initializationService.initializeCanvasManager());
-      await this.safeInitialize('promptManager', () => this.initializationService.initializePromptManager(enableLLMModes));
-      await this.safeInitialize('searchManager', () => this.initializationService.initializeSearchManager(enableSearchModes, memorySettings ?? { enabled: false }));
-      await this.safeInitialize('memoryManager', () => this.initializationService.initializeMemoryManager());
+      // PHASE 1: Initialize independent agents IN PARALLEL
+      // These agents have no dependencies on each other
+      await Promise.all([
+        this.safeInitialize('contentManager', () => this.initializationService.initializeContentManager()),
+        this.safeInitialize('storageManager', () => this.initializationService.initializeStorageManager()),
+        this.safeInitialize('canvasManager', () => this.initializationService.initializeCanvasManager()),
+      ]);
 
-      // ToolManager MUST be initialized LAST - it needs all other agents to be registered
+      // PHASE 2: Initialize dependent agents IN PARALLEL (where possible)
+      await Promise.all([
+        this.safeInitialize('promptManager', () => this.initializationService.initializePromptManager(enableLLMModes)),
+        this.safeInitialize('searchManager', () => this.initializationService.initializeSearchManager(enableSearchModes, memorySettings)),
+        this.safeInitialize('memoryManager', () => this.initializationService.initializeMemoryManager()),
+      ]);
+
+      // PHASE 3: ToolManager MUST be last (needs all other agents)
       await this.safeInitialize('toolManager', () => this.initializationService.initializeToolManager());
 
       logger.systemLog('Using native chatbot UI instead of ChatAgent');
@@ -241,10 +265,15 @@ export class AgentRegistrationService implements AgentRegistrationServiceInterfa
 
       logger.systemLog(`Agent initialization completed - ${this.registrationStatus.initializedAgents}/${this.registrationStatus.totalAgents} agents initialized`);
 
+      // Mark as initialized so subsequent calls return immediately
+      this.isInitialized = true;
+
       return new Map(agents.map(agent => [agent.name, agent]));
 
     } catch (error) {
       this.registrationStatus.registrationDuration = Date.now() - startTime;
+      // Clear the promise so initialization can be retried
+      this.initializationPromise = null;
 
       logger.systemError(error as Error, 'Agent Registration');
       throw new NexusError(
@@ -253,6 +282,14 @@ export class AgentRegistrationService implements AgentRegistrationServiceInterfa
         error
       );
     }
+  }
+
+  /**
+   * Helper to get memory settings from plugin
+   */
+  private getMemorySettings(): { enabled?: boolean } {
+    const pluginWithSettings = this.plugin as Plugin & { settings?: { settings?: { memory?: { enabled?: boolean } } } };
+    return pluginWithSettings?.settings?.settings?.memory ?? { enabled: false };
   }
 
   /**
@@ -268,9 +305,18 @@ export class AgentRegistrationService implements AgentRegistrationServiceInterfa
   }
 
   /**
-   * Gets registered agent by name
+   * Gets registered agent by name.
+   * Triggers lazy initialization if agents haven't been initialized yet.
    */
   getAgent(name: string): any | null {
+    // Trigger lazy initialization if not yet initialized
+    if (!this.isInitialized && !this.initializationPromise) {
+      // Start initialization in background - caller may need to retry
+      this.initializeAllAgents().catch(err => {
+        logger.systemError(err as Error, 'Lazy Agent Initialization');
+      });
+    }
+
     try {
       return this.agentManager.getAgent(name);
     } catch (error) {
@@ -279,11 +325,58 @@ export class AgentRegistrationService implements AgentRegistrationServiceInterfa
   }
 
   /**
-   * Gets all registered agents
+   * Gets all registered agents.
+   * Triggers lazy initialization if agents haven't been initialized yet.
    */
   getAllAgents(): Map<string, any> {
+    // Trigger lazy initialization if not yet initialized
+    if (!this.isInitialized && !this.initializationPromise) {
+      // Start initialization in background - caller may need to retry
+      this.initializeAllAgents().catch(err => {
+        logger.systemError(err as Error, 'Lazy Agent Initialization');
+      });
+    }
+
     const agents = this.agentManager.getAgents();
     return new Map(agents.map(agent => [agent.name, agent]));
+  }
+
+  /**
+   * Async version of getAgent that waits for initialization to complete.
+   * Use this when you need guaranteed agent availability.
+   */
+  async getAgentAsync(name: string): Promise<any | null> {
+    // Ensure agents are initialized
+    if (!this.isInitialized) {
+      await this.initializeAllAgents();
+    }
+
+    try {
+      return this.agentManager.getAgent(name);
+    } catch (error) {
+      return null;
+    }
+  }
+
+  /**
+   * Async version of getAllAgents that waits for initialization to complete.
+   * Use this when you need guaranteed agent availability.
+   */
+  async getAllAgentsAsync(): Promise<Map<string, any>> {
+    // Ensure agents are initialized
+    if (!this.isInitialized) {
+      await this.initializeAllAgents();
+    }
+
+    const agents = this.agentManager.getAgents();
+    return new Map(agents.map(agent => [agent.name, agent]));
+  }
+
+  /**
+   * Check if agents have been initialized
+   */
+  isAgentsInitialized(): boolean {
+    return this.isInitialized;
   }
 
   /**

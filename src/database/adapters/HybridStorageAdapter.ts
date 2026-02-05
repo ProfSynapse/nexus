@@ -203,8 +203,6 @@ export class HybridStorageAdapter implements IStorageAdapter {
    * Perform the actual initialization work
    */
   private async performInitialization(): Promise<void> {
-    const startTime = Date.now();
-
     try {
       // 1. Initialize SQLite cache
       await this.sqliteCache.initialize();
@@ -215,14 +213,19 @@ export class HybridStorageAdapter implements IStorageAdapter {
 
       const migrator = new LegacyMigrator(this.app);
       const migrationNeeded = await migrator.isMigrationNeeded();
+      let actuallyMigrated = false;
 
       if (migrationNeeded) {
-        await migrator.migrate();
+        const migrationResult = await migrator.migrate();
+        // Only count as "actually migrated" if something was migrated
+        actuallyMigrated = migrationResult.needed &&
+          (migrationResult.stats.workspacesMigrated > 0 || migrationResult.stats.conversationsMigrated > 0);
       }
 
       // 4. Perform initial sync (rebuild cache from JSONL)
+      // Only full rebuild if no sync state OR if we actually migrated new data
       const syncState = await this.sqliteCache.getSyncState(this.jsonlWriter.getDeviceId());
-      if (!syncState || migrationNeeded) {
+      if (!syncState || actuallyMigrated) {
         try {
           await this.syncCoordinator.fullRebuild();
         } catch (rebuildError) {

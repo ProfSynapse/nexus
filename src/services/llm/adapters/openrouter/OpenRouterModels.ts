@@ -1,7 +1,7 @@
 /**
  * OpenRouter Model Specifications
  * OpenRouter provides access to multiple providers through a unified API
- * Updated August 10, 2025 with GPT-5 models
+ * Updated February 5, 2026 with Claude Opus 4.6
  */
 
 import { ModelSpec } from '../modelTypes';
@@ -176,6 +176,38 @@ export const OPENROUTER_MODELS: ModelSpec[] = [
   },
 
   // Anthropic models via OpenRouter
+  {
+    provider: 'openrouter',
+    name: 'Claude Opus 4.6',
+    apiName: 'anthropic/claude-opus-4.6',
+    contextWindow: 200000,
+    maxTokens: 128000,
+    inputCostPerMillion: 5.00,
+    outputCostPerMillion: 25.00,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    provider: 'openrouter',
+    name: 'Claude Opus 4.6 (1M)',
+    apiName: 'anthropic/claude-opus-4.6',
+    contextWindow: 1000000,
+    maxTokens: 128000,
+    inputCostPerMillion: 5.00,
+    outputCostPerMillion: 25.00,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
   {
     provider: 'openrouter',
     name: 'Claude 4.5 Opus',

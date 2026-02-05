@@ -6724,6 +6724,53 @@ body.is-mobile .chat-loading-overlay {
     display: none !important;
 }
 
+/* Chat Service Loading State */
+.chat-service-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    gap: 16px;
+    color: var(--text-muted);
+}
+
+.chat-service-loading-spinner {
+    width: 32px;
+    height: 32px;
+    border: 3px solid var(--background-modifier-border);
+    border-top-color: var(--interactive-accent);
+    border-radius: 50%;
+    animation: chat-service-spin 1s linear infinite;
+}
+
+@keyframes chat-service-spin {
+    to { transform: rotate(360deg); }
+}
+
+.chat-service-loading-text {
+    font-size: 14px;
+}
+
+/* Chat Service Error State */
+.chat-service-error {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    gap: 12px;
+    color: var(--text-muted);
+}
+
+.chat-service-error-icon {
+    font-size: 32px;
+}
+
+.chat-service-error-text {
+    font-size: 14px;
+}
+
 /* Progress Bar Styles */
 .chat-progress-bar-reset {
     width: 0%;

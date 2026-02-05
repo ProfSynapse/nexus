@@ -18,6 +18,7 @@ import { SessionContextManager } from '../SessionContextManager';
 import { ToolListService } from '../../handlers/services/ToolListService';
 import { IAgent } from '../../agents/interfaces/IAgent';
 import type { JSONSchema } from '../../types/schema/JSONSchemaTypes';
+import type { AgentProvider } from '../agent/LazyAgentProvider';
 
 /** OpenAI-format tool definition */
 interface OpenAITool {
@@ -58,16 +59,6 @@ export interface DirectToolResult {
     executionTime?: number;
 }
 
-/**
- * Interface for agent providers - both AgentRegistry and AgentRegistrationService can fulfill this
- */
-export interface AgentProvider {
-    getAllAgents(): Map<string, IAgent> | IAgent[];
-    getAgent?(name: string): IAgent | null;
-    hasAgent?(name: string): boolean;
-    agentSupportsMode?(agentName: string, modeName: string): boolean;
-}
-
 export interface DirectToolExecutorConfig {
     /** Agent provider - can be AgentRegistry, AgentRegistrationService, or any compatible provider */
     agentProvider: AgentProvider;
@@ -92,21 +83,41 @@ export class DirectToolExecutor {
         // (AgentExecutionManager requires the specific AgentRegistry type)
         this.internalRegistry = new AgentRegistry();
 
-        // Populate internal registry from provider
-        const agents = this.getAgentsAsArray();
-        for (const agent of agents) {
-            try {
-                this.internalRegistry.registerAgent(agent);
-            } catch {
-                // Agent may already be registered (e.g., if provider is an AgentRegistry)
-            }
-        }
+        // DO NOT populate registry here - agents will register lazily on first use
+        // This enables fast startup by deferring agent initialization
+        // Agents are registered via ensureAgentRegistered() when tools are executed
 
         this.executionManager = new AgentExecutionManager(
             this.internalRegistry,
             config.sessionContextManager
         );
         this.toolListService = new ToolListService();
+    }
+
+    /**
+     * Ensure agent is registered before executing its tools.
+     * Triggers lazy initialization if agent hasn't been loaded yet.
+     */
+    private async ensureAgentRegistered(agentName: string): Promise<IAgent | null> {
+        // Check if already registered in internal registry
+        if (this.internalRegistry.hasAgent(agentName)) {
+            return this.internalRegistry.getAgent(agentName);
+        }
+
+        // Get agent from provider (triggers lazy initialization if needed)
+        const agent = await this.agentProvider.getAgentAsync?.(agentName)
+            ?? this.agentProvider.getAgent?.(agentName)
+            ?? null;
+
+        if (agent) {
+            try {
+                this.internalRegistry.registerAgent(agent);
+            } catch {
+                // Agent may already be registered by another concurrent call
+            }
+        }
+
+        return agent;
     }
 
     /**
@@ -129,8 +140,8 @@ export class DirectToolExecutor {
      * then execute tools via useTools with unified context.
      */
     async getAvailableTools(): Promise<unknown[]> {
-        // Get toolManager agent from the registry
-        const toolManagerAgent = this.getAgentByName('toolManager');
+        // Get toolManager agent - triggers lazy initialization if needed
+        const toolManagerAgent = await this.getAgentByNameAsync('toolManager');
 
         if (!toolManagerAgent) {
             console.error('[DirectToolExecutor] ToolManager agent not found - returning empty tools list');
@@ -153,14 +164,28 @@ export class DirectToolExecutor {
     }
 
     /**
-     * Get an agent by name from the registry
+     * Get an agent by name from the registry (sync - may return null if not initialized)
      */
     private getAgentByName(name: string): IAgent | null {
+        // Check internal registry first
+        if (this.internalRegistry.hasAgent(name)) {
+            return this.internalRegistry.getAgent(name);
+        }
+
+        // Fall back to provider
         const result = this.agentProvider.getAllAgents();
         if (result instanceof Map) {
             return result.get(name) || null;
         }
         return result.find(a => a.name === name) || null;
+    }
+
+    /**
+     * Get an agent by name with lazy initialization (async)
+     * Ensures the agent is initialized and registered before returning.
+     */
+    private async getAgentByNameAsync(name: string): Promise<IAgent | null> {
+        return this.ensureAgentRegistered(name);
     }
 
     /**
@@ -272,6 +297,12 @@ export class DirectToolExecutor {
                 }
             };
 
+            // Ensure the agent is registered before execution (lazy initialization)
+            const agent = await this.ensureAgentRegistered(agentName);
+            if (!agent) {
+                throw new Error(`Agent "${agentName}" not found`);
+            }
+
             // Execute via AgentExecutionManager
             const result = await this.executionManager.executeAgentToolWithValidation(
                 agentName,
@@ -294,8 +325,8 @@ export class DirectToolExecutor {
         params: Record<string, unknown>,
         context?: { sessionId?: string; workspaceId?: string }
     ): Promise<unknown> {
-        // Get toolManager agent to use its getTools implementation
-        const toolManagerAgent = this.getAgentByName('toolManager');
+        // Get toolManager agent to use its getTools implementation (with lazy init)
+        const toolManagerAgent = await this.getAgentByNameAsync('toolManager');
         if (!toolManagerAgent) {
             return {
                 success: false,
@@ -334,8 +365,8 @@ export class DirectToolExecutor {
         params: Record<string, unknown>,
         context?: { sessionId?: string; workspaceId?: string }
     ): Promise<unknown> {
-        // Get toolManager agent to use its useTool implementation
-        const toolManagerAgent = this.getAgentByName('toolManager');
+        // Get toolManager agent to use its useTool implementation (with lazy init)
+        const toolManagerAgent = await this.getAgentByNameAsync('toolManager');
         if (!toolManagerAgent) {
             return {
                 success: false,

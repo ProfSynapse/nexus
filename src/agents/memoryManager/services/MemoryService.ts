@@ -21,12 +21,46 @@ import { normalizeLegacyTraceMetadata } from '../../../services/memory/LegacyTra
  * - IStorageAdapter (new hybrid JSONL+SQLite backend with pagination)
  * - WorkspaceService (legacy JSON file backend)
  */
+/**
+ * Type for the storage adapter parameter: either a direct adapter instance
+ * or a getter function that lazily resolves the adapter.
+ * The getter pattern ensures services pick up the adapter after SQLite
+ * finishes initializing in the background, rather than capturing a
+ * one-time null reference at construction time.
+ */
+type StorageAdapterOrGetter = IStorageAdapter | (() => IStorageAdapter | undefined) | undefined;
+
 export class MemoryService {
+  private storageAdapterOrGetter: StorageAdapterOrGetter;
+
   constructor(
     private plugin: Plugin,
     private workspaceService: WorkspaceService,
-    private storageAdapter?: IStorageAdapter
-  ) {}
+    storageAdapter?: StorageAdapterOrGetter
+  ) {
+    this.storageAdapterOrGetter = storageAdapter;
+  }
+
+  /**
+   * Resolve the storage adapter, supporting both direct references and getter functions.
+   * Returns the adapter only if it is ready (SQLite initialized). Falls back to undefined
+   * so callers use legacy WorkspaceService path.
+   */
+  private getReadyAdapter(): IStorageAdapter | undefined {
+    let adapter: IStorageAdapter | undefined;
+
+    if (typeof this.storageAdapterOrGetter === 'function') {
+      adapter = this.storageAdapterOrGetter();
+    } else {
+      adapter = this.storageAdapterOrGetter;
+    }
+
+    if (adapter && adapter.isReady()) {
+      return adapter;
+    }
+
+    return undefined;
+  }
 
   /**
    * Get memory traces from a workspace/session
@@ -40,9 +74,10 @@ export class MemoryService {
     sessionId?: string,
     options?: PaginationParams
   ): Promise<PaginatedResult<WorkspaceMemoryTrace>> {
-    // Use new storage adapter if available
-    if (this.storageAdapter) {
-      const result = await this.storageAdapter.getTraces(workspaceId, sessionId, options);
+    // Use new storage adapter if available and ready (avoids blocking on SQLite initialization)
+    const adapterForTraces = this.getReadyAdapter();
+    if (adapterForTraces) {
+      const result = await adapterForTraces.getTraces(workspaceId, sessionId, options);
 
       // Convert MemoryTraceData to WorkspaceMemoryTrace format
       const convertedItems = result.items.map(trace => this.convertToLegacyTrace(trace));
@@ -140,10 +175,11 @@ export class MemoryService {
     const workspaceId = trace.workspaceId;
     let sessionId = trace.sessionId || 'default-session';
 
-    // Use new storage adapter if available
-    if (this.storageAdapter) {
+    // Use new storage adapter if available and ready (avoids blocking on SQLite initialization)
+    const adapterForRecord = this.getReadyAdapter();
+    if (adapterForRecord) {
       try {
-        const traceId = await this.storageAdapter.addTrace(workspaceId, sessionId, {
+        const traceId = await adapterForRecord.addTrace(workspaceId, sessionId, {
           timestamp: trace.timestamp || Date.now(),
           type: trace.type || 'generic',
           content: trace.content || '',
@@ -158,14 +194,14 @@ export class MemoryService {
       } catch (error) {
         // If session doesn't exist, try to create it first
         if ((error as Error).message?.includes('session')) {
-          await this.storageAdapter.createSession(workspaceId, {
+          await adapterForRecord.createSession(workspaceId, {
             name: 'Default Session',
             description: 'Auto-created session',
             startTime: Date.now(),
             isActive: true
           });
           // Retry adding trace
-          return await this.storageAdapter.addTrace(workspaceId, sessionId, {
+          return await adapterForRecord.addTrace(workspaceId, sessionId, {
             timestamp: trace.timestamp || Date.now(),
             type: trace.type || 'generic',
             content: trace.content || '',
@@ -250,9 +286,10 @@ export class MemoryService {
     workspaceId: string,
     options?: PaginationParams
   ): Promise<PaginatedResult<WorkspaceSession>> {
-    // Use new storage adapter if available
-    if (this.storageAdapter) {
-      const result = await this.storageAdapter.getSessions(workspaceId, options);
+    // Use new storage adapter if available and ready (avoids blocking on SQLite initialization)
+    const adapterForSessions = this.getReadyAdapter();
+    if (adapterForSessions) {
+      const result = await adapterForSessions.getSessions(workspaceId, options);
 
       // Convert SessionMetadata to WorkspaceSession format
       const convertedItems = result.items.map(session => this.convertSessionMetadataToWorkspaceSession(session));
@@ -451,9 +488,10 @@ export class MemoryService {
   }>> {
     type StateItem = { id: string; name: string; created: number; state: WorkspaceState };
 
-    // Use new storage adapter if available
-    if (this.storageAdapter) {
-      const result = await this.storageAdapter.getStates(workspaceId, sessionId, options);
+    // Use new storage adapter if available and ready (avoids blocking on SQLite initialization)
+    const adapterForStates = this.getReadyAdapter();
+    if (adapterForStates) {
+      const result = await adapterForStates.getStates(workspaceId, sessionId, options);
 
       // Convert StateMetadata to legacy format
       const convertedItems: StateItem[] = result.items.map(stateMeta => ({

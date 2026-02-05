@@ -146,15 +146,21 @@ export class AgentInitializationService {
       logger.systemLog('LLM modes disabled - AgentManager will function with prompt management only');
     }
 
-    // Get database for SQLite-based prompt storage
+    // Get database for SQLite-based prompt storage (non-blocking - uses data.json fallback if not ready)
     let db = null;
     if (this.serviceManager) {
       try {
-        const storageAdapter = await this.serviceManager.getService('hybridStorageAdapter');
-        if (storageAdapter && typeof storageAdapter === 'object' && storageAdapter !== null && 'cache' in storageAdapter) {
-          const cache = (storageAdapter as any).cache;
-          if (cache && typeof cache.exec === 'function' && typeof cache.run === 'function') {
-            db = cache;
+        // Use getServiceIfReady to avoid blocking on SQLite WASM loading during startup
+        const storageAdapter = this.serviceManager.getServiceIfReady('hybridStorageAdapter');
+        // Only use SQLite if adapter exists AND is fully ready (WASM loaded)
+        if (storageAdapter && typeof storageAdapter === 'object' && storageAdapter !== null) {
+          const adapterAny = storageAdapter as any;
+          // Check isReady() to ensure SQLite WASM is loaded before accessing cache
+          if (typeof adapterAny.isReady === 'function' && adapterAny.isReady() && 'cache' in adapterAny) {
+            const cache = adapterAny.cache;
+            if (cache && typeof cache.exec === 'function' && typeof cache.run === 'function') {
+              db = cache;
+            }
           }
         }
       } catch (error) {
@@ -298,8 +304,23 @@ export class AgentInitializationService {
   }
 
   /**
+   * Check if SQLite storage is ready for queries.
+   * Returns true only when HybridStorageAdapter exists AND its WASM is fully loaded.
+   */
+  private isSQLiteReady(): boolean {
+    if (!this.serviceManager) return false;
+    const storageAdapter = this.serviceManager.getServiceIfReady('hybridStorageAdapter');
+    if (storageAdapter && typeof storageAdapter === 'object' && storageAdapter !== null) {
+      const adapterAny = storageAdapter as any;
+      return typeof adapterAny.isReady === 'function' && adapterAny.isReady();
+    }
+    return false;
+  }
+
+  /**
    * Build schema data for ToolManager
    * Fetches workspaces, custom agents, and vault root structure
+   * Non-blocking: uses JSONL/data.json fallback if SQLite isn't ready
    */
   private async buildSchemaData(): Promise<{
     workspaces: { name: string; description?: string }[];
@@ -316,7 +337,7 @@ export class AgentInitializationService {
       vaultRoot: []
     };
 
-    // Fetch workspaces
+    // Fetch workspaces - NON-BLOCKING: only fetch if SQLite is ready to avoid blocking on ensureInitialized()
     try {
       let workspaceService: WorkspaceService | null = null;
 
@@ -326,31 +347,37 @@ export class AgentInitializationService {
         workspaceService = this.plugin.services.workspaceService as WorkspaceService | undefined || null;
       }
 
-      if (workspaceService) {
+      // CRITICAL: Check if SQLite is ready BEFORE calling any service methods
+      // WorkspaceService.listWorkspaces() calls adapter methods that block on ensureInitialized()
+      if (workspaceService && this.isSQLiteReady()) {
         const workspaces = await workspaceService.listWorkspaces();
         schemaData.workspaces = workspaces.map(w => ({
           name: w.name,
           description: w.description
         }));
       }
+      // If SQLite not ready, return empty - schema data will be populated on subsequent calls
     } catch (error) {
       logger.systemWarn('Failed to fetch workspaces for schema data');
     }
 
-    // Fetch custom agents
+    // Fetch custom agents - NON-BLOCKING: only fetch if SQLite is ready
     try {
-      if (this.customPromptStorage) {
-        const prompts = await this.customPromptStorage.getAllPrompts();
+      // Check if SQLite is ready before fetching prompts
+      if (this.customPromptStorage && this.isSQLiteReady()) {
+        // getAllPrompts is synchronous and uses data.json fallback if db is null
+        const prompts = this.customPromptStorage.getAllPrompts();
         schemaData.customAgents = prompts.map(p => ({
           name: p.name,
           description: p.description
         }));
       }
+      // If SQLite not ready, return empty - schema data will be populated on subsequent calls
     } catch (error) {
       logger.systemWarn('Failed to fetch custom agents for schema data');
     }
 
-    // Get vault root structure (top-level files and folders)
+    // Get vault root structure (top-level files and folders) - synchronous, no SQLite dependency
     try {
       const root = this.app.vault.getRoot();
       const children = root.children || [];

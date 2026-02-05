@@ -22,6 +22,7 @@ export class DefaultWorkspaceManager {
   private defaultWorkspaceId = 'default';
   private defaultConfig: DefaultWorkspaceConfig;
   private initialized = false;
+  private initializationPromise: Promise<void> | null = null;
   private workspaceService?: WorkspaceService;
 
   constructor(private app: App, workspaceService?: WorkspaceService) {
@@ -42,20 +43,28 @@ export class DefaultWorkspaceManager {
   }
 
   /**
-   * Initialize the default workspace manager
+   * Initialize the default workspace manager.
+   * Reuses the same promise if called concurrently to prevent double-init races.
    */
   async initialize(): Promise<void> {
     if (this.initialized) return;
-    
-    try {
-      // Ensure default workspace exists
-      await this.ensureDefaultWorkspace();
-      this.initialized = true;
-    } catch (error) {
-      console.error('[DefaultWorkspaceManager] Failed to initialize:', error);
-      // Continue with basic functionality even if workspace creation fails
-      this.initialized = true;
-    }
+    if (this.initializationPromise) return this.initializationPromise;
+
+    this.initializationPromise = (async () => {
+      try {
+        // Ensure default workspace exists
+        await this.ensureDefaultWorkspace();
+        this.initialized = true;
+      } catch (error) {
+        console.error('[DefaultWorkspaceManager] Failed to initialize:', error);
+        // Continue with basic functionality even if workspace creation fails
+        this.initialized = true;
+      } finally {
+        this.initializationPromise = null;
+      }
+    })();
+
+    return this.initializationPromise;
   }
 
   /**
@@ -90,6 +99,11 @@ export class DefaultWorkspaceManager {
   async validateWorkspaceId(workspaceId: string | undefined): Promise<string> {
     // If no workspace ID provided, use default
     if (!workspaceId || workspaceId.trim() === '') {
+      // Ensure default workspace exists (lazy initialization)
+      // Reuse initialization promise to avoid racing with concurrent initialize() calls
+      if (!this.initialized && this.workspaceService) {
+        await this.initialize();
+      }
       return this.defaultWorkspaceId;
     }
 
@@ -99,7 +113,6 @@ export class DefaultWorkspaceManager {
     }
 
     // For now, return the provided workspace ID
-    // In the future, we could validate against actual workspace storage
     return workspaceId.trim();
   }
 

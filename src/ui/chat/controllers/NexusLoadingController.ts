@@ -23,7 +23,8 @@ export class NexusLoadingController extends Component {
    * Find the loading overlay element in the container
    */
   private findOverlayElement(): void {
-    this.overlayEl = this.containerEl.querySelector('.chat-loading-overlay') as HTMLElement;
+    // The overlay is created with class 'nexus-loading-overlay' in ChatLayoutBuilder
+    this.overlayEl = this.containerEl.querySelector('.nexus-loading-overlay') as HTMLElement;
   }
 
   /**
@@ -32,6 +33,8 @@ export class NexusLoadingController extends Component {
   showNexusLoadingOverlay(): void {
     if (!this.overlayEl) return;
 
+    // Remove hidden class first (it has display:none !important which overrides visible)
+    this.overlayEl.removeClass('chat-loading-overlay-hidden');
     this.overlayEl.addClass('chat-loading-overlay-visible');
     // Trigger reflow for animation
     this.overlayEl.offsetHeight;
@@ -97,6 +100,8 @@ export class NexusLoadingController extends Component {
     const statusEl = this.overlayEl.querySelector('[data-status-el]');
     if (statusEl) statusEl.textContent = 'Loading database...';
 
+    // Remove hidden class first (it has display:none !important which overrides visible)
+    this.overlayEl.removeClass('chat-loading-overlay-hidden');
     this.overlayEl.addClass('chat-loading-overlay-visible');
     this.overlayEl.offsetHeight; // Trigger reflow
     this.overlayEl.addClass('is-visible');

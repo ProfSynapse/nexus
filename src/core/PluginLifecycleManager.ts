@@ -72,6 +72,9 @@ export class PluginLifecycleManager {
     private inlineEditCommandManager: InlineEditCommandManager;
     private embeddingManager: EmbeddingManager | null = null;
 
+    // Pending timer handles for cleanup on shutdown
+    private pendingTimers: ReturnType<typeof setTimeout>[] = [];
+
     constructor(config: PluginLifecycleConfig) {
         this.config = config;
 
@@ -139,24 +142,26 @@ export class PluginLifecycleManager {
      * Initialize plugin - called from onload()
      */
     async initialize(): Promise<void> {
-        const startTime = Date.now();
-
         try {
             // PHASE 1: Foundation - Service container and settings already created by main.ts
 
             // PHASE 2: Register core services (no initialization yet)
             await this.serviceRegistrar.registerCoreServices();
 
-            // PHASE 3: Initialize essential services only
-            await this.serviceRegistrar.initializeEssentialServices();
+            // PHASE 3: Register ChatView EARLY so Obsidian can restore it during layout restoration
+            // The view will show a loading state until chatService becomes available
+            await this.chatUIManager.registerViewEarly();
 
-            // Plugin is now "loaded" - defer full initialization to background
-            // PHASE 4: Start background initialization after onload completes
-            setTimeout(() => {
+            // PHASE 4: Start background initialization immediately via setTimeout(0)
+            // This yields back to Obsidian's event loop so onload() returns quickly,
+            // but does NOT wait for onLayoutReady (which can take 13+ seconds).
+            // ChatView handles null chatService gracefully with a loading spinner.
+            const bgInitTimer = setTimeout(() => {
                 this.startBackgroundInitialization().catch(error => {
                     console.error('[PluginLifecycleManager] Background initialization failed:', error);
                 });
             }, 0);
+            this.pendingTimers.push(bgInitTimer);
 
         } catch (error) {
             console.error('[PluginLifecycleManager] Critical initialization failure:', error);
@@ -168,8 +173,6 @@ export class PluginLifecycleManager {
      * Background initialization - runs after onload() completes
      */
     private async startBackgroundInitialization(): Promise<void> {
-        const bgStartTime = Date.now();
-
         try {
             // Load settings first
             await this.config.settings.loadSettings();
@@ -177,81 +180,58 @@ export class PluginLifecycleManager {
             // Initialize data directories
             await this.serviceRegistrar.initializeDataDirectories();
 
-            // Now initialize heavy services in background (non-blocking)
-            setTimeout(async () => {
+            // Initialize services directly - no delay needed since they only take ~10ms
+            // Previously gated behind setTimeout(1000) but diagnostics showed services are fast
+
+            // Initialize core services in proper dependency order
+            await this.serviceRegistrar.initializeBusinessServices();
+
+            // Pre-initialize UI-critical services to avoid long loading times
+            await this.serviceRegistrar.preInitializeUICriticalServices();
+
+            // Validate search functionality
+            await this.backgroundProcessor.validateSearchFunctionality();
+
+            // Start MCP server AFTER services are ready (registers agents)
+            // Only on desktop - connector is undefined on mobile
+            if (this.config.connector) {
                 try {
-                    // Initialize core services in proper dependency order
-                    await this.serviceRegistrar.initializeBusinessServices();
-
-                    // Pre-initialize UI-critical services to avoid long loading times
-                    await this.serviceRegistrar.preInitializeUICriticalServices();
-
-                    // Validate search functionality
-                    await this.backgroundProcessor.validateSearchFunctionality();
-
-                    // Start MCP server AFTER services are ready (registers agents)
-                    // Only on desktop - connector is undefined on mobile
-                    if (this.config.connector) {
-                        try {
-                            await this.config.connector.start();
-                        } catch (error) {
-                        }
-                    }
-
-                    // Initialize ChatService AFTER agents are registered (so tools are available)
-                    try {
-                        await this.serviceRegistrar.initializeChatService();
-                    } catch (error) {
-                    }
-
-	                    // Register chat UI components AFTER ChatService is initialized
-	                    await this.chatUIManager.registerChatUI();
-
-	                    // Initialize embedding system (desktop only) after 3-second delay
-	                    if (!Platform.isMobile) {
-	                        setTimeout(async () => {
-	                            try {
-	                                const storageAdapter = await this.serviceRegistrar.getService<HybridStorageAdapter>('hybridStorageAdapter');
-	                                if (storageAdapter && typeof storageAdapter.waitForReady === 'function') {
-	                                    const ready = await storageAdapter.waitForReady();
-	                                    if (!ready) {
-	                                        return;
-	                                    }
-	                                }
-
-	                                if (storageAdapter && storageAdapter.cache) {
-	                                    // Check user setting for embeddings (defaults to true)
-	                                    const enableEmbeddings = this.config.settings.settings.enableEmbeddings ?? true;
-	                                    this.embeddingManager = new EmbeddingManager(
-	                                        this.config.app,
-	                                        this.config.plugin,
-	                                        storageAdapter.cache,
-	                                        enableEmbeddings
-	                                    );
-	                                    await this.embeddingManager.initialize();
-	                                    // Expose on plugin for lazy access by agents
-	                                    (this.config.plugin as PluginWithServices).embeddingManager = this.embeddingManager;
-
-	                                    // Wire embedding service into ChatTraceService so new traces get embedded
-	                                    const embeddingService = this.embeddingManager.getService();
-	                                    if (embeddingService) {
-	                                        const chatTraceService = await this.serviceRegistrar.getService<ChatTraceService>('chatTraceService');
-	                                        if (chatTraceService && typeof chatTraceService.setEmbeddingService === 'function') {
-	                                            chatTraceService.setEmbeddingService(embeddingService);
-	                                        }
-	                                    }
-	                                }
-	                            } catch (error) {
-	                            }
-	                        }, 3000);
-	                    }
+                    await this.config.connector.start();
                 } catch (error) {
-                    console.error('[PluginLifecycleManager] Background service initialization failed:', error);
+                    // MCP connector start failed - non-fatal
                 }
-            }, 100);
+            }
 
-            // Create settings tab
+            // Initialize ChatService AFTER agents are registered (so tools are available)
+            try {
+                await this.serviceRegistrar.initializeChatService();
+            } catch (error) {
+                console.error('[PluginLifecycleManager] ChatService init failed:', error);
+            }
+
+            // Register chat UI components AFTER ChatService is initialized
+            await this.chatUIManager.registerChatUI();
+
+            // Initialize settings tab AFTER business services are ready
+            // This prevents race condition where settings tab tries to access agents before services are initialized
             await this.settingsTabManager.initializeSettingsTab();
+
+            // Defer SQLite/embedding initialization - WASM loading is CPU-intensive (~2s)
+            // Uses a fixed timeout from onload rather than onLayoutReady (which is unreliable, can take 13+s)
+            // 3 second delay gives Obsidian enough time to finish loading screen
+            if (!Platform.isMobile) {
+                const sqliteTimer = setTimeout(async () => {
+                    try {
+                        const adapter = await this.config.serviceManager?.getService<HybridStorageAdapter>('hybridStorageAdapter');
+                        if (adapter) {
+                            await this.initializeEmbeddingsWhenReady(adapter);
+                        }
+                    } catch (err) {
+                        console.error('[PluginLifecycleManager] Background SQLite initialization failed:', err);
+                    }
+                }, 3000); // 3s from background init start - Obsidian loading screen is gone by then
+                this.pendingTimers.push(sqliteTimer);
+            }
 
             // Register all maintenance commands
             this.commandManager.registerMaintenanceCommands();
@@ -321,10 +301,49 @@ export class PluginLifecycleManager {
     }
 
     /**
+     * Initialize embeddings when storage adapter becomes ready (called from background).
+     * The storageAdapter.cache getter always returns the constructor-created sqliteCache,
+     * so no waitForReady guard is needed here.
+     */
+    private async initializeEmbeddingsWhenReady(storageAdapter: HybridStorageAdapter): Promise<void> {
+        try {
+            const enableEmbeddings = this.config.settings.settings.enableEmbeddings ?? true;
+            this.embeddingManager = new EmbeddingManager(
+                this.config.app,
+                this.config.plugin,
+                storageAdapter.cache,
+                enableEmbeddings
+            );
+            await this.embeddingManager.initialize();
+            (this.config.plugin as PluginWithServices).embeddingManager = this.embeddingManager;
+
+            // Wire embedding service into ChatTraceService
+            const embeddingService = this.embeddingManager.getService();
+            if (embeddingService) {
+                const chatTraceService = await this.serviceRegistrar.getService<ChatTraceService>('chatTraceService');
+                if (chatTraceService && typeof chatTraceService.setEmbeddingService === 'function') {
+                    chatTraceService.setEmbeddingService(embeddingService);
+                }
+            }
+        } catch (error) {
+            console.error('[PluginLifecycleManager] Background embedding initialization failed:', error);
+        }
+    }
+
+    /**
      * Shutdown and cleanup
      */
     async shutdown(): Promise<void> {
         try {
+            // Cancel any pending timers that haven't fired yet
+            for (const timer of this.pendingTimers) {
+                clearTimeout(timer);
+            }
+            this.pendingTimers = [];
+
+            // Clean up ServiceRegistrar's pending timers
+            this.serviceRegistrar.shutdown();
+
             // Shutdown embedding system first (before database closes)
             if (this.embeddingManager) {
                 try {
