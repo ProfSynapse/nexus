@@ -67,8 +67,8 @@ export class WorkspaceService {
    * List workspaces (uses index only - lightweight and fast)
    */
   async listWorkspaces(limit?: number): Promise<WorkspaceMetadata[]> {
-    // Use new adapter if available
-    if (this.storageAdapter) {
+    // Use new adapter if available and ready (avoids blocking on SQLite initialization)
+    if (this.storageAdapter && (this.storageAdapter as any).isReady?.()) {
       const result = await this.storageAdapter.getWorkspaces({
         pageSize: limit,
         sortBy: 'lastAccessed',
@@ -101,8 +101,8 @@ export class WorkspaceService {
     sortOrder?: 'asc' | 'desc',
     limit?: number
   }): Promise<WorkspaceMetadata[]> {
-    // Use new adapter if available
-    if (this.storageAdapter) {
+    // Use new adapter if available and ready (avoids blocking on SQLite initialization)
+    if (this.storageAdapter && (this.storageAdapter as any).isReady?.()) {
       const result = await this.storageAdapter.getWorkspaces({
         pageSize: options?.limit,
         sortBy: options?.sortBy || 'lastAccessed',
@@ -153,8 +153,8 @@ export class WorkspaceService {
    * Use getSessions/getTraces methods separately for full data.
    */
   async getWorkspace(id: string): Promise<IndividualWorkspace | null> {
-    // Use new adapter if available
-    if (this.storageAdapter) {
+    // Use new adapter if available and ready (avoids blocking on SQLite initialization)
+    if (this.storageAdapter && (this.storageAdapter as any).isReady?.()) {
       const metadata = await this.storageAdapter.getWorkspace(id);
       if (!metadata) {
         return null;
@@ -196,8 +196,8 @@ export class WorkspaceService {
    * Get all workspaces with full data (expensive - avoid if possible)
    */
   async getAllWorkspaces(): Promise<IndividualWorkspace[]> {
-    // Use new adapter if available
-    if (this.storageAdapter) {
+    // Use new adapter if available and ready (avoids blocking on SQLite initialization)
+    if (this.storageAdapter && (this.storageAdapter as any).isReady?.()) {
       const result = await this.storageAdapter.getWorkspaces({
         pageSize: 1000, // Get all workspaces
         sortBy: 'lastAccessed',
@@ -242,8 +242,8 @@ export class WorkspaceService {
    * Create new workspace (writes file + updates index)
    */
   async createWorkspace(data: Partial<IndividualWorkspace>): Promise<IndividualWorkspace> {
-    // Use new adapter if available
-    if (this.storageAdapter) {
+    // Use new adapter if available and ready (avoids blocking on SQLite initialization)
+    if (this.storageAdapter && (this.storageAdapter as any).isReady?.()) {
       // Convert context to HybridTypes format if provided
       const hybridContext = data.context ? {
         purpose: data.context.purpose,
@@ -308,8 +308,8 @@ export class WorkspaceService {
    * Update workspace (updates file + index metadata)
    */
   async updateWorkspace(id: string, updates: Partial<IndividualWorkspace>): Promise<void> {
-    // Use new adapter if available
-    if (this.storageAdapter) {
+    // Use new adapter if available and ready (avoids blocking on SQLite initialization)
+    if (this.storageAdapter && (this.storageAdapter as any).isReady?.()) {
       // Only update metadata fields that exist in HybridTypes
       const hybridUpdates: Partial<HybridTypes.WorkspaceMetadata> = {};
 
@@ -371,8 +371,8 @@ export class WorkspaceService {
    * Lightweight operation that only updates the timestamp in both file and index
    */
   async updateLastAccessed(id: string): Promise<void> {
-    // Use new adapter if available
-    if (this.storageAdapter) {
+    // Use new adapter if available and ready (avoids blocking on SQLite initialization)
+    if (this.storageAdapter && (this.storageAdapter as any).isReady?.()) {
       await this.storageAdapter.updateWorkspace(id, { lastAccessed: Date.now() });
       return;
     }
@@ -399,8 +399,8 @@ export class WorkspaceService {
    * Delete workspace (deletes file + removes from index)
    */
   async deleteWorkspace(id: string): Promise<void> {
-    // Use new adapter if available
-    if (this.storageAdapter) {
+    // Use new adapter if available and ready (avoids blocking on SQLite initialization)
+    if (this.storageAdapter && (this.storageAdapter as any).isReady?.()) {
       await this.storageAdapter.deleteWorkspace(id);
       return;
     }
@@ -418,8 +418,8 @@ export class WorkspaceService {
    * Ensures the workspace exists before creating session
    */
   async addSession(workspaceId: string, sessionData: Partial<SessionData>): Promise<SessionData> {
-    // Use new adapter if available
-    if (this.storageAdapter) {
+    // Use new adapter if available and ready (avoids blocking on SQLite initialization)
+    if (this.storageAdapter && (this.storageAdapter as any).isReady?.()) {
       // Ensure workspace exists before creating session (referential integrity)
       const existingWorkspace = await this.getWorkspace(workspaceId);
       if (!existingWorkspace) {
@@ -499,8 +499,8 @@ export class WorkspaceService {
    * Update session in workspace
    */
   async updateSession(workspaceId: string, sessionId: string, updates: Partial<SessionData>): Promise<void> {
-    // Use new adapter if available
-    if (this.storageAdapter) {
+    // Use new adapter if available and ready (avoids blocking on SQLite initialization)
+    if (this.storageAdapter && (this.storageAdapter as any).isReady?.()) {
       const hybridUpdates: Partial<HybridTypes.SessionMetadata> = {};
       if (updates.name !== undefined) hybridUpdates.name = updates.name;
       if (updates.description !== undefined) hybridUpdates.description = updates.description;
@@ -544,8 +544,8 @@ export class WorkspaceService {
    * Delete session from workspace
    */
   async deleteSession(workspaceId: string, sessionId: string): Promise<void> {
-    // Use new adapter if available
-    if (this.storageAdapter) {
+    // Use new adapter if available and ready (avoids blocking on SQLite initialization)
+    if (this.storageAdapter && (this.storageAdapter as any).isReady?.()) {
       await this.storageAdapter.deleteSession(sessionId);
       await this.storageAdapter.updateWorkspace(workspaceId, { lastAccessed: Date.now() });
       return;
@@ -574,8 +574,8 @@ export class WorkspaceService {
    * Get session from workspace
    */
   async getSession(workspaceId: string, sessionId: string): Promise<SessionData | null> {
-    // Use new adapter if available
-    if (this.storageAdapter) {
+    // Use new adapter if available and ready (avoids blocking on SQLite initialization)
+    if (this.storageAdapter && (this.storageAdapter as any).isReady?.()) {
       const session = await this.storageAdapter.getSession(sessionId);
       if (!session) {
         return null;
@@ -614,8 +614,8 @@ export class WorkspaceService {
    * Ensures the session exists before saving (creates it if needed)
    */
   async addMemoryTrace(workspaceId: string, sessionId: string, traceData: Partial<MemoryTrace>): Promise<MemoryTrace> {
-    // Use new adapter if available
-    if (this.storageAdapter) {
+    // Use new adapter if available and ready (avoids blocking on SQLite initialization)
+    if (this.storageAdapter && (this.storageAdapter as any).isReady?.()) {
       // Ensure session exists before saving trace (referential integrity)
       const existingSession = await this.getSession(workspaceId, sessionId);
       if (!existingSession) {
@@ -689,8 +689,8 @@ export class WorkspaceService {
    * Get memory traces from session
    */
   async getMemoryTraces(workspaceId: string, sessionId: string): Promise<MemoryTrace[]> {
-    // Use new adapter if available
-    if (this.storageAdapter) {
+    // Use new adapter if available and ready (avoids blocking on SQLite initialization)
+    if (this.storageAdapter && (this.storageAdapter as any).isReady?.()) {
       const result = await this.storageAdapter.getTraces(workspaceId, sessionId);
       return result.items.map(t => ({
         id: t.id,
@@ -719,8 +719,8 @@ export class WorkspaceService {
    * Ensures the session exists before saving (creates it if needed)
    */
   async addState(workspaceId: string, sessionId: string, stateData: Partial<StateData>): Promise<StateData> {
-    // Use new adapter if available
-    if (this.storageAdapter) {
+    // Use new adapter if available and ready (avoids blocking on SQLite initialization)
+    if (this.storageAdapter && (this.storageAdapter as any).isReady?.()) {
       // Ensure session exists before saving state (referential integrity)
       const existingSession = await this.getSession(workspaceId, sessionId);
       if (!existingSession) {
@@ -801,8 +801,8 @@ export class WorkspaceService {
    * Get state from session
    */
   async getState(workspaceId: string, sessionId: string, stateId: string): Promise<StateData | null> {
-    // Use new adapter if available
-    if (this.storageAdapter) {
+    // Use new adapter if available and ready (avoids blocking on SQLite initialization)
+    if (this.storageAdapter && (this.storageAdapter as any).isReady?.()) {
       const state = await this.storageAdapter.getState(stateId);
       if (!state) {
         return null;
@@ -831,8 +831,8 @@ export class WorkspaceService {
    * Search workspaces (uses index search data)
    */
   async searchWorkspaces(query: string, limit?: number): Promise<WorkspaceMetadata[]> {
-    // Use new adapter if available
-    if (this.storageAdapter) {
+    // Use new adapter if available and ready (avoids blocking on SQLite initialization)
+    if (this.storageAdapter && (this.storageAdapter as any).isReady?.()) {
       if (!query) {
         return this.listWorkspaces(limit);
       }
@@ -881,8 +881,8 @@ export class WorkspaceService {
    * Get workspace by folder (uses index)
    */
   async getWorkspaceByFolder(folder: string): Promise<WorkspaceMetadata | null> {
-    // Use new adapter if available
-    if (this.storageAdapter) {
+    // Use new adapter if available and ready (avoids blocking on SQLite initialization)
+    if (this.storageAdapter && (this.storageAdapter as any).isReady?.()) {
       const result = await this.storageAdapter.getWorkspaces({
         filter: { rootFolder: folder },
         pageSize: 1
@@ -910,8 +910,8 @@ export class WorkspaceService {
    * Get active workspace (uses index)
    */
   async getActiveWorkspace(): Promise<WorkspaceMetadata | null> {
-    // Use new adapter if available
-    if (this.storageAdapter) {
+    // Use new adapter if available and ready (avoids blocking on SQLite initialization)
+    if (this.storageAdapter && (this.storageAdapter as any).isReady?.()) {
       const result = await this.storageAdapter.getWorkspaces({
         filter: { isActive: true },
         pageSize: 1
@@ -945,8 +945,8 @@ export class WorkspaceService {
       return byId;
     }
 
-    // Use new adapter if available for name lookup
-    if (this.storageAdapter) {
+    // Use new adapter if available and ready for name lookup (avoids blocking on SQLite initialization)
+    if (this.storageAdapter && (this.storageAdapter as any).isReady?.()) {
       const result = await this.storageAdapter.getWorkspaces({
         search: identifier,
         pageSize: 100
@@ -991,8 +991,8 @@ export class WorkspaceService {
       return byId;
     }
 
-    // Use new adapter if available for name lookup
-    if (this.storageAdapter) {
+    // Use new adapter if available and ready for name lookup (avoids blocking on SQLite initialization)
+    if (this.storageAdapter && (this.storageAdapter as any).isReady?.()) {
       const result = await this.storageAdapter.getSessions(workspaceId, { pageSize: 100 });
       const match = result.items.find(
         session => session.name?.toLowerCase() === identifier.toLowerCase()
@@ -1032,8 +1032,8 @@ export class WorkspaceService {
       return byId;
     }
 
-    // Use new adapter if available for name lookup
-    if (this.storageAdapter) {
+    // Use new adapter if available and ready for name lookup (avoids blocking on SQLite initialization)
+    if (this.storageAdapter && (this.storageAdapter as any).isReady?.()) {
       const result = await this.storageAdapter.getStates(workspaceId, sessionId, { pageSize: 100 });
       const match = result.items.find(
         state => state.name?.toLowerCase() === identifier.toLowerCase()

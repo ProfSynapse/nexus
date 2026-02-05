@@ -40,8 +40,8 @@ export class MemoryService {
     sessionId?: string,
     options?: PaginationParams
   ): Promise<PaginatedResult<WorkspaceMemoryTrace>> {
-    // Use new storage adapter if available
-    if (this.storageAdapter) {
+    // Use new storage adapter if available and ready (avoids blocking on SQLite initialization)
+    if (this.storageAdapter && (this.storageAdapter as any).isReady?.()) {
       const result = await this.storageAdapter.getTraces(workspaceId, sessionId, options);
 
       // Convert MemoryTraceData to WorkspaceMemoryTrace format
@@ -140,8 +140,8 @@ export class MemoryService {
     const workspaceId = trace.workspaceId;
     let sessionId = trace.sessionId || 'default-session';
 
-    // Use new storage adapter if available
-    if (this.storageAdapter) {
+    // Use new storage adapter if available and ready (avoids blocking on SQLite initialization)
+    if (this.storageAdapter && (this.storageAdapter as any).isReady?.()) {
       try {
         const traceId = await this.storageAdapter.addTrace(workspaceId, sessionId, {
           timestamp: trace.timestamp || Date.now(),
@@ -250,8 +250,8 @@ export class MemoryService {
     workspaceId: string,
     options?: PaginationParams
   ): Promise<PaginatedResult<WorkspaceSession>> {
-    // Use new storage adapter if available
-    if (this.storageAdapter) {
+    // Use new storage adapter if available and ready (avoids blocking on SQLite initialization)
+    if (this.storageAdapter && (this.storageAdapter as any).isReady?.()) {
       const result = await this.storageAdapter.getSessions(workspaceId, options);
 
       // Convert SessionMetadata to WorkspaceSession format
@@ -451,8 +451,8 @@ export class MemoryService {
   }>> {
     type StateItem = { id: string; name: string; created: number; state: WorkspaceState };
 
-    // Use new storage adapter if available
-    if (this.storageAdapter) {
+    // Use new storage adapter if available and ready (avoids blocking on SQLite initialization)
+    if (this.storageAdapter && (this.storageAdapter as any).isReady?.()) {
       const result = await this.storageAdapter.getStates(workspaceId, sessionId, options);
 
       // Convert StateMetadata to legacy format

@@ -99,6 +99,8 @@ export class ServiceRegistrar {
 
     /**
      * Initialize data directories and run migration if needed
+     *
+     * Heavy migration work is deferred to background to avoid blocking startup.
      */
     async initializeDataDirectories(): Promise<void> {
         try {
@@ -107,47 +109,11 @@ export class ServiceRegistrar {
             // Get vaultOperations service with proper typing
             const vaultOperations = await serviceManager.getService<VaultOperations>('vaultOperations');
 
-            // Initialize storage services
+            // Initialize storage services (needed for directory creation)
             const fileSystem = new FileSystemService(plugin, vaultOperations);
             const indexManager = new IndexManager(fileSystem);
 
-            // Check migration status BEFORE creating directories
-            const migrationService = new DataMigrationService(plugin, fileSystem, indexManager);
-            const status = await migrationService.checkMigrationStatus();
-
-            if (status.isRequired) {
-                // Migrate from legacy ChromaDB data
-                const result = await migrationService.performMigration();
-
-                if (result.success) {
-                    // Migration completed successfully
-                } else {
-                    console.error('[ServiceRegistrar] Migration failed:', result.errors);
-                }
-            } else if (!status.migrationComplete) {
-                // No legacy data and directories don't exist - initialize fresh structure
-                await migrationService.initializeFreshDirectories();
-            }
-
-            // Ensure all conversations have metadata field (idempotent)
-            try {
-                const metadataResult = await migrationService.ensureConversationMetadata();
-                if (metadataResult.errors.length > 0) {
-                    console.error('[ServiceRegistrar] Metadata migration errors:', metadataResult.errors);
-                }
-            } catch (error) {
-                console.error('[ServiceRegistrar] Metadata migration failed:', error);
-            }
-
-            // Normalize memory trace schema across all workspaces (idempotent)
-            try {
-                const traceMigrationService = new TraceSchemaMigrationService(plugin, fileSystem, vaultOperations);
-                await traceMigrationService.migrateIfNeeded();
-            } catch (error) {
-                console.error('[ServiceRegistrar] Trace schema migration failed:', error);
-            }
-
-            // Legacy data directory handling (can be removed after migration)
+            // Legacy data directory handling - quick directory creation
             const pluginDir = `.obsidian/plugins/${manifest.id}`;
             const dataDir = `${pluginDir}/data`;
             const storageDir = `${dataDir}/storage`;
@@ -168,6 +134,53 @@ export class ServiceRegistrar {
             settings.saveSettings().catch(error => {
             });
 
+            // DEFER heavy migration work to background (2 second delay)
+            // This allows the UI to appear immediately while migrations run later
+            setTimeout(async () => {
+                try {
+                    // Re-get vaultOperations in case it changed
+                    const vaultOps = await serviceManager.getService<VaultOperations>('vaultOperations');
+                    const fs = new FileSystemService(plugin, vaultOps);
+                    const idx = new IndexManager(fs);
+
+                    // Check migration status BEFORE creating directories
+                    const migrationService = new DataMigrationService(plugin, fs, idx);
+                    const status = await migrationService.checkMigrationStatus();
+
+                    if (status.isRequired) {
+                        // Migrate from legacy ChromaDB data
+                        const result = await migrationService.performMigration();
+
+                        if (!result.success) {
+                            console.error('[ServiceRegistrar] Migration failed:', result.errors);
+                        }
+                    } else if (!status.migrationComplete) {
+                        // No legacy data and directories don't exist - initialize fresh structure
+                        await migrationService.initializeFreshDirectories();
+                    }
+
+                    // Ensure all conversations have metadata field (idempotent)
+                    try {
+                        const metadataResult = await migrationService.ensureConversationMetadata();
+                        if (metadataResult.errors.length > 0) {
+                            console.error('[ServiceRegistrar] Metadata migration errors:', metadataResult.errors);
+                        }
+                    } catch (error) {
+                        console.error('[ServiceRegistrar] Metadata migration failed:', error);
+                    }
+
+                    // Normalize memory trace schema across all workspaces (idempotent)
+                    try {
+                        const traceMigrationService = new TraceSchemaMigrationService(plugin, fs, vaultOps);
+                        await traceMigrationService.migrateIfNeeded();
+                    } catch (error) {
+                        console.error('[ServiceRegistrar] Trace schema migration failed:', error);
+                    }
+                } catch (error) {
+                    console.error('[ServiceRegistrar] Background migration failed:', error);
+                }
+            }, 2000);
+
         } catch (error) {
             console.error('[ServiceRegistrar] Failed to initialize data directories:', error);
             // Don't throw - plugin should function without directories for now
@@ -176,20 +189,14 @@ export class ServiceRegistrar {
 
     /**
      * Initialize essential services that must be ready immediately
-     * Includes the full chain needed for tool call tracing:
-     * workspaceService -> memoryService -> sessionService -> sessionContextManager
+     *
+     * NOTE: This method is now a no-op for fast startup. Services are initialized
+     * lazily when first requested via getService(). The UI shows immediately and
+     * services spin up on-demand when chat/tools are actually used.
      */
     async initializeEssentialServices(): Promise<void> {
-        try {
-            await this.context.serviceManager.getService('workspaceService');
-            await this.context.serviceManager.getService('memoryService');
-            await this.context.serviceManager.getService('cacheManager');
-            await this.context.serviceManager.getService('sessionService');
-            await this.context.serviceManager.getService('sessionContextManager');
-        } catch (error) {
-            console.error('[ServiceRegistrar] Essential service initialization failed:', error);
-            throw error;
-        }
+        // No-op for fast startup - services initialize lazily on first access
+        return;
     }
 
     /**
@@ -198,13 +205,18 @@ export class ServiceRegistrar {
      */
     async initializeBusinessServices(): Promise<void> {
         try {
-            // Core services already initialized in essential services:
-            // - workspaceService, memoryService, sessionService, sessionContextManager
+            // Initialize core services that agents depend on FIRST
+            // These must be ready before agent initialization
+            await this.context.serviceManager.getService('workspaceService');
+            await this.context.serviceManager.getService('memoryService');
+            await this.context.serviceManager.getService('sessionService');
+            await this.context.serviceManager.getService('sessionContextManager');
 
-            await this.context.serviceManager.getService('defaultWorkspaceManager'); // Initialize default workspace
+            // Now initialize business services
+            await this.context.serviceManager.getService('defaultWorkspaceManager');
             await this.context.serviceManager.getService('agentManager');
             await this.context.serviceManager.getService('llmService');
-            await this.context.serviceManager.getService('toolCallTraceService'); // Initialize trace service
+            await this.context.serviceManager.getService('toolCallTraceService');
             await this.context.serviceManager.getService('conversationService');
 
             // ChatService initialization deferred - will be called after agents are registered

@@ -32,8 +32,8 @@ export class ConversationService {
    * List conversations (uses index only - lightweight and fast)
    */
   async listConversations(vaultName?: string, limit?: number): Promise<LegacyConversationMetadata[]> {
-    // Use adapter if available
-    if (this.storageAdapter) {
+    // Use adapter if available and ready (avoids blocking on SQLite initialization)
+    if (this.storageAdapter && (this.storageAdapter as any).isReady?.()) {
       const result = await this.storageAdapter.getConversations({
         filter: vaultName ? { vaultName } : undefined,
         pageSize: limit ?? 100,
@@ -78,8 +78,8 @@ export class ConversationService {
     id: string,
     paginationOptions?: PaginationParams
   ): Promise<IndividualConversation | null> {
-    // Use adapter if available
-    if (this.storageAdapter) {
+    // Use adapter if available and ready (avoids blocking on SQLite initialization)
+    if (this.storageAdapter && (this.storageAdapter as any).isReady?.()) {
       const metadata = await this.storageAdapter.getConversation(id);
       if (!metadata) {
         return null;
@@ -168,8 +168,8 @@ export class ConversationService {
     conversationId: string,
     options?: PaginationParams
   ): Promise<PaginatedResult<any>> {
-    // Use adapter if available
-    if (this.storageAdapter) {
+    // Use adapter if available and ready (avoids blocking on SQLite initialization)
+    if (this.storageAdapter && (this.storageAdapter as any).isReady?.()) {
       const messagesResult = await this.storageAdapter.getMessages(conversationId, {
         page: options?.page ?? 0,
         pageSize: options?.pageSize ?? 50
@@ -267,8 +267,8 @@ export class ConversationService {
   async createConversation(data: Partial<IndividualConversation>): Promise<IndividualConversation> {
     const id = data.id || `conv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-    // Use adapter if available
-    if (this.storageAdapter) {
+    // Use adapter if available and ready (avoids blocking on SQLite initialization)
+    if (this.storageAdapter && (this.storageAdapter as any).isReady?.()) {
       const conversationId = await this.storageAdapter.createConversation({
         title: data.title || 'Untitled Conversation',
         created: data.created ?? Date.now(),
@@ -314,8 +314,8 @@ export class ConversationService {
    * Update conversation (updates adapter or legacy storage)
    */
   async updateConversation(id: string, updates: Partial<IndividualConversation>): Promise<void> {
-    // Use adapter if available
-    if (this.storageAdapter) {
+    // Use adapter if available and ready (avoids blocking on SQLite initialization)
+    if (this.storageAdapter && (this.storageAdapter as any).isReady?.()) {
       // Merge existing metadata so we don't lose chat settings when only cost is updated
       const existing = await this.storageAdapter.getConversation(id);
       // Type assertion for metadata structure
@@ -416,8 +416,8 @@ export class ConversationService {
    * Delete conversation (deletes from adapter or legacy storage)
    */
   async deleteConversation(id: string): Promise<void> {
-    // Use adapter if available
-    if (this.storageAdapter) {
+    // Use adapter if available and ready (avoids blocking on SQLite initialization)
+    if (this.storageAdapter && (this.storageAdapter as any).isReady?.()) {
       await this.storageAdapter.deleteConversation(id);
       return;
     }
@@ -455,8 +455,8 @@ export class ConversationService {
     metadata?: any;
   }): Promise<{ success: boolean; messageId?: string; error?: string }> {
     try {
-      // Use adapter if available
-      if (this.storageAdapter) {
+      // Use adapter if available and ready (avoids blocking on SQLite initialization)
+      if (this.storageAdapter && (this.storageAdapter as any).isReady?.()) {
         // Determine initial state based on role and content
         let initialState: 'draft' | 'complete' = 'complete';
         if (params.role === 'assistant' && (!params.content || params.content.trim() === '')) {
@@ -565,7 +565,8 @@ export class ConversationService {
     }
   ): Promise<{ success: boolean; error?: string }> {
     try {
-      if (this.storageAdapter) {
+      // Use adapter if available and ready (avoids blocking on SQLite initialization)
+      if (this.storageAdapter && (this.storageAdapter as any).isReady?.()) {
         await this.storageAdapter.updateMessage(conversationId, messageId, updates);
         return { success: true };
       }
@@ -608,8 +609,8 @@ export class ConversationService {
       return this.listConversations(undefined, limit);
     }
 
-    // Use adapter if available
-    if (this.storageAdapter) {
+    // Use adapter if available and ready (avoids blocking on SQLite initialization)
+    if (this.storageAdapter && (this.storageAdapter as any).isReady?.()) {
       const results = await this.storageAdapter.searchConversations(query);
       // Convert and apply limit
       const converted = results.map(this.convertToLegacyMetadata);
@@ -912,7 +913,8 @@ export class ConversationService {
    * @returns Array of branch conversations
    */
   async getBranchConversations(parentConversationId: string): Promise<IndividualConversation[]> {
-    if (this.storageAdapter) {
+    // Use adapter if available and ready (avoids blocking on SQLite initialization)
+    if (this.storageAdapter && (this.storageAdapter as any).isReady?.()) {
       // Query for conversations with this parent (must include branches!)
       const result = await this.storageAdapter.getConversations({
         pageSize: 100,

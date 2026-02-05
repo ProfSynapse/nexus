@@ -119,10 +119,117 @@ export class ChatView extends ItemView {
   }
 
   async onOpen(): Promise<void> {
-    if (!this.chatService) {
+    if (this.chatService) {
+      // ChatService already available - initialize immediately
+      await this.performFullInitialization();
+    } else {
+      // ChatService not ready yet - show loading UI and poll in background.
+      // CRITICAL: Do NOT await here. onOpen() must return promptly so Obsidian's
+      // layout restoration completes, which fires onLayoutReady, which starts
+      // service initialization. Awaiting here would cause a deadlock.
+      this.waitForChatServiceAndInitialize();
+    }
+  }
+
+  /**
+   * Wait for database to be ready, showing loading overlay if needed
+   * Uses getServiceIfReady to avoid blocking startup with SQLite WASM loading
+   */
+  private async waitForDatabaseReady(): Promise<void> {
+    const plugin = getNexusPlugin<NexusPlugin>(this.app);
+    if (!plugin) return;
+
+    // Use getServiceIfReady to avoid triggering SQLite WASM loading during startup
+    let storageAdapter = plugin.getServiceIfReady<{ isReady?: () => boolean; waitForReady?: () => Promise<boolean> }>('hybridStorageAdapter');
+
+    // If adapter doesn't exist yet or isn't ready, show loading overlay and poll
+    if (!storageAdapter || !storageAdapter.isReady?.()) {
+      this.nexusLoadingController.showDatabaseLoadingOverlay();
+
+      // Poll for adapter to be created and ready (max 60 seconds)
+      const maxWaitMs = 60000;
+      const pollIntervalMs = 500;
+      const startTime = Date.now();
+
+      while (Date.now() - startTime < maxWaitMs) {
+        await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
+
+        storageAdapter = plugin.getServiceIfReady<{ isReady?: () => boolean; waitForReady?: () => Promise<boolean> }>('hybridStorageAdapter');
+        if (storageAdapter?.isReady?.()) {
+          break;
+        }
+      }
+
+      this.nexusLoadingController.hideDatabaseLoadingOverlay();
       return;
     }
 
+    // Adapter exists and is ready - delegate to controller for any remaining checks
+    await this.nexusLoadingController.waitForDatabaseReady(storageAdapter);
+  }
+
+  /**
+   * Fire-and-forget: show loading UI, poll for chatService, then run full initialization.
+   * This method is intentionally NOT awaited in onOpen() to prevent deadlock.
+   * onOpen() must return promptly so Obsidian finishes layout restoration, which
+   * triggers onLayoutReady, which starts the service initialization that creates chatService.
+   */
+  private waitForChatServiceAndInitialize(): void {
+    const plugin = getNexusPlugin<NexusPlugin>(this.app);
+    if (!plugin || !plugin.getServiceIfReady) {
+      this.showServiceUnavailableMessage();
+      return;
+    }
+
+    // Show loading UI while polling
+    const container = this.containerEl.children[1] as HTMLElement;
+    container.empty();
+    container.addClass('chat-view-container');
+
+    const loadingDiv = container.createDiv('chat-service-loading');
+    loadingDiv.createDiv({ cls: 'chat-service-loading-spinner' });
+    loadingDiv.createDiv({ cls: 'chat-service-loading-text', text: 'Loading chat service...' });
+
+    // Poll for chatService in background (max 60 seconds)
+    const maxWaitMs = 60000;
+    const pollIntervalMs = 500;
+    const startTime = Date.now();
+
+    const poll = async (): Promise<void> => {
+      while (Date.now() - startTime < maxWaitMs) {
+        await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
+
+        const chatService = plugin.getServiceIfReady<ChatService>('chatService');
+        if (chatService) {
+          this.chatService = chatService;
+          container.empty();
+          try {
+            await this.performFullInitialization();
+          } catch (error) {
+            console.error('[ChatView] Deferred initialization failed:', error);
+            this.showServiceUnavailableMessage();
+          }
+          return;
+        }
+      }
+
+      // Timed out - show error state
+      this.showServiceUnavailableMessage();
+    };
+
+    // Fire and forget - do NOT await
+    poll().catch(error => {
+      console.error('[ChatView] Background chatService polling failed:', error);
+      this.showServiceUnavailableMessage();
+    });
+  }
+
+  /**
+   * Perform the full ChatView initialization sequence.
+   * Called either directly from onOpen() when chatService is already available,
+   * or from waitForChatServiceAndInitialize() after chatService appears.
+   */
+  private async performFullInitialization(): Promise<void> {
     try {
       await this.chatService.initialize();
 
@@ -130,9 +237,8 @@ export class ChatView extends ItemView {
       this.chatService.setToolEventCallback((messageId, event, data) => {
         this.handleToolEvent(messageId, event, data);
       });
-
     } catch (error) {
-      // ChatService initialization failed
+      // ChatService initialization failed - continue with UI setup anyway
     }
 
     this.initializeArchitecture();
@@ -163,16 +269,16 @@ export class ChatView extends ItemView {
   }
 
   /**
-   * Wait for database to be ready, showing loading overlay if needed
+   * Show a message when the chat service is unavailable
    */
-  private async waitForDatabaseReady(): Promise<void> {
-    const plugin = getNexusPlugin<NexusPlugin>(this.app);
-    if (!plugin) return;
+  private showServiceUnavailableMessage(): void {
+    const container = this.containerEl.children[1] as HTMLElement;
+    container.empty();
+    container.addClass('chat-view-container');
 
-    const storageAdapter = await plugin.getService<{ isReady?: () => boolean; waitForReady?: () => Promise<boolean> }>('hybridStorageAdapter');
-    if (!storageAdapter) return;
-
-    await this.nexusLoadingController.waitForDatabaseReady(storageAdapter);
+    const errorDiv = container.createDiv('chat-service-error');
+    errorDiv.createDiv({ cls: 'chat-service-error-icon', text: '⚠️' });
+    errorDiv.createDiv({ cls: 'chat-service-error-text', text: 'Chat service unavailable. Please reload Obsidian.' });
   }
 
   async onClose(): Promise<void> {
@@ -367,8 +473,11 @@ export class ChatView extends ItemView {
       const promptManagerAgent = agentManager.getAgent('promptManager') as PromptManagerAgent | null;
       if (!promptManagerAgent) return;
 
-      const storageAdapter = await plugin.getService<HybridStorageAdapter>('hybridStorageAdapter');
-      if (!storageAdapter) return;
+      // Use getServiceIfReady to avoid triggering SQLite WASM loading during startup
+      const storageAdapter = plugin.getServiceIfReady<HybridStorageAdapter>('hybridStorageAdapter');
+      if (!storageAdapter) {
+        return;
+      }
 
       const llmService = this.chatService.getLLMService();
       if (!llmService) return;

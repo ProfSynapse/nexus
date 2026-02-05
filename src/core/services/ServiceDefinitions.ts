@@ -58,7 +58,7 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
     // Workspace service (centralized storage service)
     {
         name: 'workspaceService',
-        dependencies: ['hybridStorageAdapter', 'vaultOperations'],
+        dependencies: ['vaultOperations'],
         create: async (context) => {
             const { WorkspaceService } = await import('../../services/WorkspaceService');
             const { FileSystemService } = await import('../../services/storage/FileSystemService');
@@ -69,8 +69,9 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
             const fileSystem = new FileSystemService(context.plugin, vaultOperations);
             const indexManager = new IndexManager(fileSystem);
 
-            // Get storage adapter if available (may be null if initialization failed)
-            const storageAdapter = await context.serviceManager.getService<IStorageAdapter | null>('hybridStorageAdapter');
+            // Get storage adapter NON-BLOCKING (may be null if still initializing)
+            // Service will use JSONL fallback until SQLite is ready
+            const storageAdapter = context.serviceManager.getServiceIfReady<IStorageAdapter | null>('hybridStorageAdapter');
 
             return new WorkspaceService(context.plugin, fileSystem, indexManager, storageAdapter || undefined);
         }
@@ -86,7 +87,13 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
             const workspaceService = await context.serviceManager.getService('workspaceService') as InstanceType<typeof WorkspaceService>;
 
             const manager = new DefaultWorkspaceManager(context.app, workspaceService);
-            await manager.initialize();
+
+            // Initialize in background - don't block service creation
+            // Default workspace will be created lazily on first access if needed
+            manager.initialize().catch(error => {
+                console.error('[DefaultWorkspaceManager] Background init failed:', error);
+            });
+
             return manager;
         }
     },
@@ -94,14 +101,15 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
     // Memory service (agent-specific, delegates to WorkspaceService or SQLite via storageAdapter)
     {
         name: 'memoryService',
-        dependencies: ['workspaceService', 'hybridStorageAdapter'],
+        dependencies: ['workspaceService'],
         create: async (context) => {
             const { MemoryService } = await import('../../agents/memoryManager/services/MemoryService');
             const WorkspaceService = (await import('../../services/WorkspaceService')).WorkspaceService;
             const workspaceService = await context.serviceManager.getService('workspaceService') as InstanceType<typeof WorkspaceService>;
 
-            // Get storage adapter if available (may be null if initialization failed)
-            const storageAdapter = await context.serviceManager.getService<IStorageAdapter | null>('hybridStorageAdapter');
+            // Get storage adapter NON-BLOCKING (may be null if still initializing)
+            // Service will use JSONL fallback until SQLite is ready
+            const storageAdapter = context.serviceManager.getServiceIfReady<IStorageAdapter | null>('hybridStorageAdapter');
 
             return new MemoryService(context.plugin, workspaceService, storageAdapter || undefined);
         }
@@ -225,12 +233,13 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
     // Custom prompt storage service for AgentManager
     {
         name: 'customPromptStorageService',
-        dependencies: ['hybridStorageAdapter'],
+        dependencies: [],
         create: async (context) => {
             const { CustomPromptStorageService } = await import('../../agents/promptManager/services/CustomPromptStorageService');
 
-            // Get storage adapter if available (may be null if initialization failed)
-            const storageAdapter = await context.serviceManager.getService<IStorageAdapter | null>('hybridStorageAdapter');
+            // Get storage adapter NON-BLOCKING (may be null if still initializing)
+            // Service will use settings-based storage until SQLite is ready
+            const storageAdapter = context.serviceManager.getServiceIfReady<IStorageAdapter | null>('hybridStorageAdapter');
 
             // Access underlying SQLite database via adapter's cache property
             let db = null;
@@ -290,7 +299,7 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
     // Conversation service for chat storage
     {
         name: 'conversationService',
-        dependencies: ['hybridStorageAdapter', 'vaultOperations'],
+        dependencies: ['vaultOperations'],
         create: async (context) => {
             const { ConversationService } = await import('../../services/ConversationService');
             const { FileSystemService } = await import('../../services/storage/FileSystemService');
@@ -301,15 +310,16 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
             const fileSystem = new FileSystemService(context.plugin, vaultOperations);
             const indexManager = new IndexManager(fileSystem);
 
-            // Get storage adapter if available (may be null if initialization failed)
-            const storageAdapter = await context.serviceManager.getService<IStorageAdapter | null>('hybridStorageAdapter');
+            // Get storage adapter NON-BLOCKING (may be null if still initializing)
+            // Service will use JSONL fallback until SQLite is ready
+            const storageAdapter = context.serviceManager.getServiceIfReady<IStorageAdapter | null>('hybridStorageAdapter');
 
             return new ConversationService(context.plugin, fileSystem, indexManager, storageAdapter || undefined);
         }
     },
 
     // Agent registration service - independent of MCP, works on ALL platforms
-    // This initializes agents without requiring the MCP connector
+    // Agents are initialized lazily on first access for fast startup
     {
         name: 'agentRegistrationService',
         dependencies: ['memoryService', 'workspaceService', 'agentManager'],
@@ -323,6 +333,8 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
             const agentManager = await context.serviceManager.getService('agentManager') as InstanceType<typeof AgentManager>;
 
             // Create agent registration service with the shared AgentManager
+            // NOTE: Agents are NOT initialized here - they initialize lazily on first access
+            // via getAgent() or getAllAgents() for fast startup
             const agentService = new AgentRegistrationService(
                 context.app,
                 plugin,
@@ -332,31 +344,26 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
                 agentManager // pass the shared AgentManager
             );
 
-            // Initialize all agents
-            await agentService.initializeAllAgents();
-
             return agentService;
         }
     },
 
     // Direct tool executor - enables tool execution on ALL platforms (desktop + mobile)
     // Bypasses MCP protocol for native chat, uses agents directly
+    // Uses LazyAgentProvider to avoid triggering agent initialization at construction
     {
         name: 'directToolExecutor',
         dependencies: ['agentRegistrationService', 'sessionContextManager'],
         create: async (context) => {
             const { DirectToolExecutor } = await import('../../services/chat/DirectToolExecutor');
+            const { LazyAgentProvider } = await import('../../services/agent/LazyAgentProvider');
 
             const agentService = await context.serviceManager.getService<AgentRegistrationService>('agentRegistrationService');
             const sessionContextManager = context.serviceManager.getServiceIfReady<SessionContextManager>('sessionContextManager') ?? undefined;
 
-            // Wrap agentService to match AgentProvider interface
-            const agentProvider = {
-                getAllAgents: () => agentService.getAllAgents(),
-                getAgent: (name: string) => agentService.getAgent(name),
-                hasAgent: (name: string) => agentService.getAgent(name) !== null,
-                agentSupportsMode: () => true // Let execution fail if tool not supported
-            };
+            // Use LazyAgentProvider to avoid triggering agent initialization at construction
+            // Agents will be initialized on first tool access, not at startup
+            const agentProvider = new LazyAgentProvider(agentService);
 
             const executor = new DirectToolExecutor({
                 agentProvider,

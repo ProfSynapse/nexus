@@ -90,6 +90,11 @@ export class DefaultWorkspaceManager {
   async validateWorkspaceId(workspaceId: string | undefined): Promise<string> {
     // If no workspace ID provided, use default
     if (!workspaceId || workspaceId.trim() === '') {
+      // Ensure default workspace exists (lazy initialization)
+      if (!this.initialized && this.workspaceService) {
+        await this.ensureDefaultWorkspace();
+        this.initialized = true;
+      }
       return this.defaultWorkspaceId;
     }
 
@@ -99,7 +104,6 @@ export class DefaultWorkspaceManager {
     }
 
     // For now, return the provided workspace ID
-    // In the future, we could validate against actual workspace storage
     return workspaceId.trim();
   }
 
