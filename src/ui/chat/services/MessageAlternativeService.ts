@@ -4,10 +4,14 @@
  * Purpose: Handles creation of alternative AI responses for message branching
  * Extracted from MessageManager.ts to follow Single Responsibility Principle
  *
- * Uses a staging pattern: the original message is never mutated during retry.
- * A CSS overlay is shown on the existing message, streaming happens into a
- * local variable, and only on success does the conversation state change
- * (via branch creation).
+ * Flow:
+ * 1. Save the original content as a branch (preserving old response)
+ * 2. Clear the current message content and set loading state
+ * 3. Fire UI update so the user sees a cleared message with loading indicator
+ * 4. Stream the new response directly into the live conversation message
+ * 5. On complete: update message, fire final events
+ * 6. On abort: keep partial content (original is safe in the branch)
+ * 7. Branch arrows allow navigation between original (branch) and new (current)
  *
  * Used by: MessageManager for retry and alternative response generation
  * Dependencies: ChatService, BranchManager, MessageStreamHandler
@@ -18,6 +22,7 @@ import { ConversationData, ConversationMessage } from '../../../types/chat/ChatT
 import { BranchManager } from './BranchManager';
 import { MessageStreamHandler } from './MessageStreamHandler';
 import { AbortHandler } from '../utils/AbortHandler';
+import { filterCompletedToolCalls } from '../utils/toolCallUtils';
 
 export interface MessageAlternativeServiceEvents {
   onStreamingUpdate: (messageId: string, content: string, isComplete: boolean, isIncremental?: boolean) => void;
@@ -30,11 +35,12 @@ export interface MessageAlternativeServiceEvents {
 /**
  * Service for creating alternative AI responses when retrying messages.
  *
- * Staging pattern flow:
- * 1. Show CSS overlay on existing message (original content visible underneath)
- * 2. Stream new response into a staging conversation clone (not the live object)
- * 3. On success: create branch with staged content, activeAlternativeIndex set by BranchManager
- * 4. On error/abort: remove overlay, original content untouched
+ * Clear-and-restream flow:
+ * 1. Save original content into a branch (preserves old response)
+ * 2. Clear message content and stream new response fresh
+ * 3. On success: message has new content, branch has old content
+ * 4. On abort: keep partial new content (original safe in branch)
+ * 5. Branch arrows navigate between new (current) and old (branch)
  */
 export class MessageAlternativeService {
   private currentAbortController: AbortController | null = null;
@@ -54,8 +60,8 @@ export class MessageAlternativeService {
   /**
    * Create an alternative response for an AI message.
    *
-   * Uses the staging pattern to avoid mutating the live conversation object
-   * during streaming. The original message content is never cleared or modified.
+   * Saves the original content as a branch, clears the message,
+   * and streams a fresh response directly into the conversation.
    */
   async createAlternativeResponse(
     conversation: ConversationData,
@@ -73,13 +79,14 @@ export class MessageAlternativeService {
       return;
     }
 
-    const aiMessage = conversation.messages.find(msg => msg.id === aiMessageId);
+    const aiMessageIndex = conversation.messages.findIndex(msg => msg.id === aiMessageId);
+    if (aiMessageIndex === -1) return;
+
+    const aiMessage = conversation.messages[aiMessageIndex];
     if (!aiMessage || aiMessage.role !== 'assistant') return;
 
-    // Find the user message that prompted this AI response
-    const aiMessageIndex = conversation.messages.findIndex(msg => msg.id === aiMessageId);
-    if (aiMessageIndex === 0) return; // No previous message
-
+    // Must have a preceding user message to retry against
+    if (aiMessageIndex === 0) return;
     const userMessage = conversation.messages[aiMessageIndex - 1];
     if (!userMessage || userMessage.role !== 'user') return;
 
@@ -89,22 +96,55 @@ export class MessageAlternativeService {
     try {
       this.events.onLoadingStateChanged(true);
 
-      // Show CSS overlay on the existing message bubble (do NOT clear content)
-      this.setRetryOverlay(aiMessageId, true);
+      // 1. Save original content as a branch FIRST (preserves old response)
+      const originalContent = aiMessage.content;
+      const originalToolCalls = aiMessage.toolCalls ? [...aiMessage.toolCalls] : undefined;
+      const originalReasoning = aiMessage.reasoning;
 
-      // Create abort controller for this request
+      const branchMessage: ConversationMessage = {
+        id: `alt_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`,
+        role: 'assistant',
+        content: originalContent,
+        timestamp: aiMessage.timestamp,
+        conversationId: conversation.id,
+        state: aiMessage.state || 'complete',
+        toolCalls: originalToolCalls,
+        reasoning: originalReasoning
+      };
+
+      await this.branchManager.createHumanBranch(
+        conversation,
+        aiMessageId,
+        branchMessage
+      );
+
+      // 2. Clear the current message for fresh streaming
+      aiMessage.content = '';
+      aiMessage.toolCalls = undefined;
+      aiMessage.reasoning = undefined;
+      aiMessage.isLoading = true;
+      aiMessage.state = 'draft';
+
+      // Set activeAlternativeIndex to 0 so the UI shows the current message
+      // (the original content is now in the branch, navigable via branch arrows)
+      aiMessage.activeAlternativeIndex = 0;
+
+      // 3. Fire UI update so the user sees the cleared message with loading state
+      this.events.onConversationUpdated(conversation);
+
+      // 4. Create abort controller for this retry
       this.currentAbortController = new AbortController();
       this.currentStreamingMessageId = aiMessageId;
 
-      // Create a staging conversation clone for the stream handler.
-      // The stream handler mutates conversation.messages[index].content during streaming,
-      // so we clone the messages array and the target AI message to isolate mutations.
-      const stagingConversation = this.createStagingConversation(conversation, aiMessageIndex);
+      // 5. Get user message content for the LLM request
+      const userMessageContent = userMessage.content;
 
-      // Stream new AI response into the staging conversation
-      const { streamedContent, toolCalls } = await this.streamHandler.streamResponse(
-        stagingConversation,
-        userMessage.content,
+      // 6. Stream new response directly into the live conversation
+      // The stream handler mutates conversation.messages[aiMessageIndex] in-place,
+      // fires onStreamingUpdate events for live UI updates, and handles tool calls.
+      await this.streamHandler.streamResponse(
+        conversation,
+        userMessageContent,
         aiMessageId,
         {
           ...options,
@@ -113,49 +153,38 @@ export class MessageAlternativeService {
         }
       );
 
-      // Remove the overlay now that streaming is complete
-      this.setRetryOverlay(aiMessageId, false);
+      // 7. After streaming completes, save the updated conversation
+      await this.chatService.updateConversation(conversation);
 
-      // Build the alternative response from staged content
-      const alternativeResponse: ConversationMessage = {
-        id: `alt_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`,
-        role: 'assistant',
-        content: streamedContent,
-        timestamp: Date.now(),
-        conversationId: conversation.id,
-        state: 'complete',
-        toolCalls: toolCalls
-      };
-
-      // Create branch via BranchManager.
-      // BranchManager.createHumanBranch() pushes the branch onto message.branches,
-      // sets activeAlternativeIndex to the new branch, and saves to storage.
-      // This mutates the live conversation object directly — which is correct,
-      // as the branch creation is the single atomic state change.
-      await this.branchManager.createHumanBranch(
-        conversation,
-        aiMessageId,
-        alternativeResponse
-      );
-
-      // Do NOT reload from storage with Object.assign — BranchManager already
-      // updated the conversation object in-place and saved to storage.
-      // The old Object.assign(conversation, freshConversation) was overwriting
-      // the activeAlternativeIndex that BranchManager just set (Bug #3).
-
-      // Fire a single conversation update for the UI.
-      // Phase 2's incremental reconciliation in MessageDisplay will handle
-      // re-rendering only the changed message bubble.
+      // 8. Fire final UI update
       this.events.onConversationUpdated(conversation);
 
     } catch (error) {
-      // Remove overlay on any error
-      this.setRetryOverlay(aiMessageId, false);
-
       if (error instanceof Error && error.name === 'AbortError') {
-        // With the staging pattern, the original message was never modified.
-        // On abort, we simply remove the overlay and restore the loading state.
-        // No content restoration needed — the original is still intact.
+        // On abort: keep whatever partial content was streamed.
+        // The original response is safe in the branch.
+        const abortedMessage = conversation.messages[aiMessageIndex];
+        if (abortedMessage) {
+          const hasContent = abortedMessage.content && abortedMessage.content.trim();
+
+          if (hasContent) {
+            // Keep partial content, clean up incomplete tool calls
+            abortedMessage.toolCalls = filterCompletedToolCalls(abortedMessage.toolCalls);
+            abortedMessage.isLoading = false;
+            abortedMessage.state = 'aborted';
+
+            await this.chatService.updateConversation(conversation);
+            this.events.onStreamingUpdate(aiMessageId, abortedMessage.content, true, false);
+          } else {
+            // No content streamed yet - mark as aborted with empty content
+            abortedMessage.isLoading = false;
+            abortedMessage.state = 'aborted';
+            abortedMessage.content = '';
+
+            await this.chatService.updateConversation(conversation);
+          }
+        }
+
         this.events.onConversationUpdated(conversation);
       } else {
         this.events.onError('Failed to generate alternative response');
@@ -184,52 +213,5 @@ export class MessageAlternativeService {
    */
   isGenerating(): boolean {
     return this.currentAbortController !== null;
-  }
-
-  /**
-   * Create a staging copy of the conversation for isolated streaming.
-   *
-   * Clones the messages array and the target AI message so the stream handler
-   * can mutate the clone without affecting the live conversation. All other
-   * messages are shared references (read-only during streaming).
-   */
-  private createStagingConversation(
-    conversation: ConversationData,
-    aiMessageIndex: number
-  ): ConversationData {
-    // Shallow clone messages array
-    const clonedMessages = [...conversation.messages];
-
-    // Deep-enough clone of the AI message being retried:
-    // reset content and state so streaming starts fresh in the clone
-    clonedMessages[aiMessageIndex] = {
-      ...clonedMessages[aiMessageIndex],
-      content: '',
-      state: 'draft',
-      isLoading: true,
-      toolCalls: undefined
-    };
-
-    return {
-      ...conversation,
-      messages: clonedMessages
-    };
-  }
-
-  /**
-   * Toggle the retry overlay CSS class on the message bubble DOM element.
-   *
-   * Uses data-message-id attribute selector to find the element, matching the
-   * pattern used by StreamingController and ChatView.
-   */
-  private setRetryOverlay(messageId: string, show: boolean): void {
-    const messageElement = document.querySelector(`[data-message-id="${messageId}"]`);
-    if (!messageElement) return;
-
-    if (show) {
-      messageElement.classList.add('message-retrying');
-    } else {
-      messageElement.classList.remove('message-retrying');
-    }
   }
 }

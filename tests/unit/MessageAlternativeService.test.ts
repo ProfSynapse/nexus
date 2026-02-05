@@ -2,17 +2,15 @@
  * MessageAlternativeService Unit Tests
  *
  * Tests for the retry/alternative response generation service.
- * Bug #2: Retry was clearing toolCalls at start, losing original data.
- * Bug #3: After retry, activeAlternativeIndex was wrong (Object.assign overwrite).
- * Bug #8: No concurrent retry guard.
- * Bug #9: Retry cleared content instead of showing overlay.
  *
  * Key behaviors verified:
- * - Retry does NOT clear original tool calls
+ * - Original content is saved to a branch BEFORE clearing the message
+ * - Message content is cleared and set to loading state before streaming
+ * - Streaming happens directly into the live conversation (not a staging clone)
+ * - On success, message has new content, branch has old content
+ * - On abort, partial content is kept (original safe in branch)
  * - Concurrent retry guard blocks second attempt
- * - Staging pattern does not mutate original conversation
- * - On success, branch is created via BranchManager
- * - On abort, original content is untouched
+ * - Branch arrows allow navigation between new (current) and old (branch)
  */
 
 import { MessageAlternativeService } from '../../src/ui/chat/services/MessageAlternativeService';
@@ -29,23 +27,6 @@ import {
   createMockStreamHandler,
   createMockAbortHandler
 } from '../mocks/chatService';
-
-// Mock document.querySelector for setRetryOverlay
-const mockClassList = {
-  add: jest.fn(),
-  remove: jest.fn()
-};
-
-// Minimal global document mock for overlay tests
-Object.defineProperty(global, 'document', {
-  value: {
-    querySelector: jest.fn(() => ({
-      classList: mockClassList
-    }))
-  },
-  writable: true,
-  configurable: true
-});
 
 describe('MessageAlternativeService', () => {
   let service: MessageAlternativeService;
@@ -86,11 +67,12 @@ describe('MessageAlternativeService', () => {
   });
 
   // ==========================================================================
-  // Bug #2: Retry does NOT clear toolCalls
+  // Branch creation: original content preserved in branch
   // ==========================================================================
 
-  describe('retry preserves original tool calls (Bug #2)', () => {
-    it('should not mutate original message toolCalls during retry', async () => {
+  describe('branch creation preserves original content', () => {
+    it('should create a branch with original content BEFORE clearing message', async () => {
+      const originalContent = 'Original AI response';
       const originalToolCalls = [
         createCompletedToolCall({ id: 'tc_orig_1' }),
         createCompletedToolCall({ id: 'tc_orig_2' })
@@ -100,33 +82,191 @@ describe('MessageAlternativeService', () => {
           createUserMessage({ id: 'msg_user' }),
           createAssistantMessage({
             id: 'msg_ai',
-            toolCalls: originalToolCalls
+            content: originalContent,
+            toolCalls: originalToolCalls,
+            reasoning: 'Some reasoning'
           })
         ]
       });
 
-      // Keep a reference to check it was not mutated
-      const messageBeforeRetry = conversation.messages[1];
-      const toolCallsBefore = [...messageBeforeRetry.toolCalls!];
+      await service.createAlternativeResponse(conversation, 'msg_ai');
+
+      // Branch should be created with original content
+      expect(mockBranchManager.createHumanBranch).toHaveBeenCalledWith(
+        conversation,
+        'msg_ai',
+        expect.objectContaining({
+          role: 'assistant',
+          content: originalContent,
+          toolCalls: expect.arrayContaining([
+            expect.objectContaining({ id: 'tc_orig_1' }),
+            expect.objectContaining({ id: 'tc_orig_2' })
+          ]),
+          reasoning: 'Some reasoning'
+        })
+      );
+    });
+
+    it('should create branch before calling streamResponse', async () => {
+      const callOrder: string[] = [];
+
+      mockBranchManager.createHumanBranch = jest.fn(async () => {
+        callOrder.push('createBranch');
+        return 'branch_new';
+      });
+
+      mockStreamHandler.streamResponse = jest.fn(async () => {
+        callOrder.push('streamResponse');
+        return { streamedContent: 'New content', toolCalls: undefined };
+      });
+
+      const conversation = createConversation({
+        messages: [
+          createUserMessage({ id: 'msg_user' }),
+          createAssistantMessage({ id: 'msg_ai' })
+        ]
+      });
 
       await service.createAlternativeResponse(conversation, 'msg_ai');
 
-      // Original message tool calls should be untouched
-      expect(messageBeforeRetry.toolCalls).toBeDefined();
-      expect(messageBeforeRetry.toolCalls!.length).toBe(toolCallsBefore.length);
-      expect(messageBeforeRetry.toolCalls!.map(tc => tc.id)).toEqual(
-        toolCallsBefore.map(tc => tc.id)
-      );
+      expect(callOrder).toEqual(['createBranch', 'streamResponse']);
     });
   });
 
   // ==========================================================================
-  // Bug #8: Concurrent retry guard
+  // Message clearing: content cleared for fresh streaming
   // ==========================================================================
 
-  describe('concurrent retry guard (Bug #8)', () => {
+  describe('message clearing before streaming', () => {
+    it('should clear message content and set loading state before streaming', async () => {
+      let capturedMessageState: any = null;
+
+      mockStreamHandler.streamResponse = jest.fn(async (conv) => {
+        // Capture the message state when streaming starts
+        const aiMsg = conv.messages.find((m: any) => m.id === 'msg_ai');
+        capturedMessageState = {
+          content: aiMsg?.content,
+          toolCalls: aiMsg?.toolCalls,
+          reasoning: aiMsg?.reasoning,
+          isLoading: aiMsg?.isLoading,
+          state: aiMsg?.state
+        };
+        return { streamedContent: 'New content', toolCalls: undefined };
+      });
+
+      const conversation = createConversation({
+        messages: [
+          createUserMessage({ id: 'msg_user' }),
+          createAssistantMessage({
+            id: 'msg_ai',
+            content: 'Original content',
+            toolCalls: TOOL_CALLS.allCompleted,
+            reasoning: 'Original reasoning'
+          })
+        ]
+      });
+
+      await service.createAlternativeResponse(conversation, 'msg_ai');
+
+      // At the time of streaming, message should be cleared
+      expect(capturedMessageState).toEqual({
+        content: '',
+        toolCalls: undefined,
+        reasoning: undefined,
+        isLoading: true,
+        state: 'draft'
+      });
+    });
+
+    it('should fire onConversationUpdated before streaming starts', async () => {
+      let conversationUpdateCount = 0;
+
+      mockEvents.onConversationUpdated = jest.fn(() => {
+        conversationUpdateCount++;
+      });
+
+      mockStreamHandler.streamResponse = jest.fn(async () => {
+        // At this point, one update should have fired (cleared state)
+        expect(conversationUpdateCount).toBe(1);
+        return { streamedContent: 'New content', toolCalls: undefined };
+      });
+
+      const conversation = createConversation({
+        messages: [
+          createUserMessage({ id: 'msg_user' }),
+          createAssistantMessage({ id: 'msg_ai' })
+        ]
+      });
+
+      await service.createAlternativeResponse(conversation, 'msg_ai');
+
+      // Total: 1 before streaming + 1 after completion
+      expect(mockEvents.onConversationUpdated).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  // ==========================================================================
+  // Streaming: streams into live conversation (not a staging clone)
+  // ==========================================================================
+
+  describe('live streaming (no staging clone)', () => {
+    it('should pass the live conversation to streamResponse', async () => {
+      const conversation = createConversation({
+        messages: [
+          createUserMessage({ id: 'msg_user' }),
+          createAssistantMessage({ id: 'msg_ai' })
+        ]
+      });
+
+      await service.createAlternativeResponse(conversation, 'msg_ai');
+
+      const streamCall = mockStreamHandler.streamResponse.mock.calls[0];
+      const passedConversation = streamCall[0];
+
+      // Should be the same object reference (not a clone)
+      expect(passedConversation).toBe(conversation);
+    });
+
+    it('should pass user message content to streamResponse', async () => {
+      const conversation = createConversation({
+        messages: [
+          createUserMessage({ id: 'msg_user', content: 'Tell me about testing' }),
+          createAssistantMessage({ id: 'msg_ai' })
+        ]
+      });
+
+      await service.createAlternativeResponse(conversation, 'msg_ai');
+
+      const streamCall = mockStreamHandler.streamResponse.mock.calls[0];
+      const passedUserContent = streamCall[1];
+
+      expect(passedUserContent).toBe('Tell me about testing');
+    });
+
+    it('should pass abort signal to streamResponse', async () => {
+      const conversation = createConversation({
+        messages: [
+          createUserMessage({ id: 'msg_user' }),
+          createAssistantMessage({ id: 'msg_ai' })
+        ]
+      });
+
+      await service.createAlternativeResponse(conversation, 'msg_ai');
+
+      const streamCall = mockStreamHandler.streamResponse.mock.calls[0];
+      const streamOptions = streamCall[3];
+
+      expect(streamOptions.abortSignal).toBeDefined();
+      expect(streamOptions.abortSignal).toBeInstanceOf(AbortSignal);
+    });
+  });
+
+  // ==========================================================================
+  // Concurrent retry guard
+  // ==========================================================================
+
+  describe('concurrent retry guard', () => {
     it('should block second concurrent retry on the same message', async () => {
-      // First retry takes time (streaming is async)
       let resolveStream: (value: any) => void;
       mockStreamHandler.streamResponse = jest.fn(
         () => new Promise(resolve => { resolveStream = resolve; })
@@ -175,74 +315,11 @@ describe('MessageAlternativeService', () => {
   });
 
   // ==========================================================================
-  // Staging pattern: no mutation of original conversation
-  // ==========================================================================
-
-  describe('staging pattern (Bug #3, #9)', () => {
-    it('should create staging conversation clone for streaming', async () => {
-      const originalContent = 'Original AI response with tool calls';
-      const conversation = createConversation({
-        messages: [
-          createUserMessage({ id: 'msg_user' }),
-          createAssistantMessage({
-            id: 'msg_ai',
-            content: originalContent,
-            toolCalls: TOOL_CALLS.allCompleted
-          })
-        ]
-      });
-
-      await service.createAlternativeResponse(conversation, 'msg_ai');
-
-      // Verify streamResponse was called with a staging conversation
-      const streamCall = mockStreamHandler.streamResponse.mock.calls[0];
-      const stagingConversation = streamCall[0];
-
-      // Staging should have the same number of messages
-      expect(stagingConversation.messages.length).toBe(conversation.messages.length);
-
-      // The staging AI message should have empty content (for fresh streaming)
-      const stagingAiMsg = stagingConversation.messages[1];
-      expect(stagingAiMsg.content).toBe('');
-      expect(stagingAiMsg.state).toBe('draft');
-      expect(stagingAiMsg.isLoading).toBe(true);
-      expect(stagingAiMsg.toolCalls).toBeUndefined();
-    });
-
-    it('should not mutate original conversation messages during streaming', async () => {
-      const conversation = createConversation({
-        messages: [
-          createUserMessage({ id: 'msg_user' }),
-          createAssistantMessage({
-            id: 'msg_ai',
-            content: 'Original content',
-            state: 'complete'
-          })
-        ]
-      });
-
-      const originalContent = conversation.messages[1].content;
-      const originalState = conversation.messages[1].state;
-
-      await service.createAlternativeResponse(conversation, 'msg_ai');
-
-      // Original message should be unchanged
-      expect(conversation.messages[1].content).toBe(originalContent);
-      expect(conversation.messages[1].state).toBe(originalState);
-    });
-  });
-
-  // ==========================================================================
-  // Success path: branch creation
+  // Success path
   // ==========================================================================
 
   describe('success path', () => {
-    it('should create branch via BranchManager on successful stream', async () => {
-      mockStreamHandler.streamResponse.mockResolvedValue({
-        streamedContent: 'New alternative content',
-        toolCalls: [createCompletedToolCall({ id: 'tc_new' })]
-      });
-
+    it('should save conversation after streaming completes', async () => {
       const conversation = createConversation({
         messages: [
           createUserMessage({ id: 'msg_user' }),
@@ -252,21 +329,10 @@ describe('MessageAlternativeService', () => {
 
       await service.createAlternativeResponse(conversation, 'msg_ai');
 
-      expect(mockBranchManager.createHumanBranch).toHaveBeenCalledWith(
-        conversation,
-        'msg_ai',
-        expect.objectContaining({
-          role: 'assistant',
-          content: 'New alternative content',
-          state: 'complete',
-          toolCalls: expect.arrayContaining([
-            expect.objectContaining({ id: 'tc_new' })
-          ])
-        })
-      );
+      expect(mockChatService.updateConversation).toHaveBeenCalledWith(conversation);
     });
 
-    it('should fire onConversationUpdated after branch creation', async () => {
+    it('should fire onConversationUpdated after streaming completes', async () => {
       const conversation = createConversation({
         messages: [
           createUserMessage({ id: 'msg_user' }),
@@ -293,10 +359,25 @@ describe('MessageAlternativeService', () => {
       expect(mockEvents.onLoadingStateChanged).toHaveBeenCalledWith(true);
       expect(mockEvents.onLoadingStateChanged).toHaveBeenCalledWith(false);
     });
+
+    it('should set activeAlternativeIndex to 0 (show current/new content)', async () => {
+      const conversation = createConversation({
+        messages: [
+          createUserMessage({ id: 'msg_user' }),
+          createAssistantMessage({ id: 'msg_ai' })
+        ]
+      });
+
+      await service.createAlternativeResponse(conversation, 'msg_ai');
+
+      // After retry, the message itself has new content (index 0)
+      // The old content is in the branch (index 1+)
+      expect(conversation.messages[1].activeAlternativeIndex).toBe(0);
+    });
   });
 
   // ==========================================================================
-  // Error path
+  // Error handling
   // ==========================================================================
 
   describe('error handling', () => {
@@ -329,7 +410,41 @@ describe('MessageAlternativeService', () => {
       await service.createAlternativeResponse(conversation, 'msg_ai');
 
       expect(mockEvents.onError).not.toHaveBeenCalled();
-      // Should fire conversation update (original untouched)
+    });
+
+    it('should keep partial content on abort and save conversation', async () => {
+      const abortError = Object.assign(new Error('Aborted'), { name: 'AbortError' });
+
+      // Simulate: streamResponse clears message (our code does this),
+      // then starts streaming and writes partial content before aborting
+      mockStreamHandler.streamResponse = jest.fn(async (conv) => {
+        // Simulate partial content written during streaming
+        const aiMsg = conv.messages.find((m: any) => m.id === 'msg_ai');
+        if (aiMsg) {
+          aiMsg.content = 'Partial streamed content';
+          aiMsg.state = 'streaming';
+        }
+        throw abortError;
+      });
+
+      const conversation = createConversation({
+        messages: [
+          createUserMessage({ id: 'msg_user' }),
+          createAssistantMessage({ id: 'msg_ai', content: 'Original content' })
+        ]
+      });
+
+      await service.createAlternativeResponse(conversation, 'msg_ai');
+
+      // Message should have partial content preserved
+      const aiMsg = conversation.messages[1];
+      expect(aiMsg.state).toBe('aborted');
+      expect(aiMsg.isLoading).toBe(false);
+
+      // Conversation should be saved
+      expect(mockChatService.updateConversation).toHaveBeenCalledWith(conversation);
+
+      // UI should be updated
       expect(mockEvents.onConversationUpdated).toHaveBeenCalledWith(conversation);
     });
 
