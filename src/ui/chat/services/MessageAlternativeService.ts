@@ -73,7 +73,6 @@ export class MessageAlternativeService {
       const messageIndex = conversation.messages.findIndex(msg => msg.id === aiMessageId);
       if (messageIndex >= 0) {
         conversation.messages[messageIndex].content = '';
-        conversation.messages[messageIndex].toolCalls = undefined;
         conversation.messages[messageIndex].isLoading = true;
         conversation.messages[messageIndex].state = 'draft';
 

@@ -387,8 +387,15 @@ export class MessageRepository
       timestamp: alt.timestamp,
       tool_calls: alt.toolCalls?.map(tc => ({
         id: tc.id,
-        type: 'function' as const,
-        function: tc.function
+        type: tc.type || 'function',
+        function: tc.function,
+        // Persist extras so tool bubbles can be reconstructed after reload
+        name: tc.name,
+        parameters: tc.parameters,
+        result: tc.result,
+        success: tc.success,
+        error: tc.error,
+        executionTime: tc.executionTime
       })),
       reasoning: alt.reasoning,
       state: alt.state
