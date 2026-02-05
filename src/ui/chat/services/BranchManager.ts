@@ -215,9 +215,14 @@ export class BranchManager {
    */
   getActiveMessageContent(message: ConversationMessage): string {
     const branch = this.getActiveBranch(message);
-    if (branch && branch.messages.length > 0) {
-      // Return the last message content from the branch
-      return branch.messages[branch.messages.length - 1].content;
+    if (branch) {
+      if (branch.messages.length > 0) {
+        return branch.messages[branch.messages.length - 1].content;
+      }
+      // Active branch exists but has no messages yet (e.g. still loading).
+      // Return empty string rather than falling through to the original message
+      // content, which would be misleading since the user selected this branch.
+      return '';
     }
     return message.content;
   }
@@ -227,8 +232,14 @@ export class BranchManager {
    */
   getActiveMessageToolCalls(message: ConversationMessage): any[] | undefined {
     const branch = this.getActiveBranch(message);
-    if (branch && branch.messages.length > 0) {
-      return branch.messages[branch.messages.length - 1].toolCalls;
+    if (branch) {
+      if (branch.messages.length > 0) {
+        return branch.messages[branch.messages.length - 1].toolCalls;
+      }
+      // Active branch exists but has no messages -- return undefined (no data)
+      // rather than the original message's tool calls which belong to a
+      // different alternative.
+      return undefined;
     }
     return message.toolCalls;
   }
@@ -238,8 +249,12 @@ export class BranchManager {
    */
   getActiveMessageReasoning(message: ConversationMessage): string | undefined {
     const branch = this.getActiveBranch(message);
-    if (branch && branch.messages.length > 0) {
-      return branch.messages[branch.messages.length - 1].reasoning;
+    if (branch) {
+      if (branch.messages.length > 0) {
+        return branch.messages[branch.messages.length - 1].reasoning;
+      }
+      // Active branch exists but has no messages -- return undefined
+      return undefined;
     }
     return message.reasoning;
   }

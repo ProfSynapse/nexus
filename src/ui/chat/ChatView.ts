@@ -1004,9 +1004,14 @@ export class ChatView extends ItemView {
     }
 
     try {
-      // In the new architecture, branchId IS the conversation ID
-      // Load the branch conversation directly from storage
-      const branchConversation = await this.chatService.getConversation(branchId);
+      // In the new architecture, branchId IS the conversation ID.
+      // Prefer the in-memory version if this branch is the currently active
+      // conversation (avoids stale reads when streaming recently updated it
+      // but storage hasn't been flushed yet).
+      const inMemoryCurrent = this.conversationManager.getCurrentConversation();
+      const branchConversation = (inMemoryCurrent && inMemoryCurrent.id === branchId)
+        ? inMemoryCurrent
+        : await this.chatService.getConversation(branchId);
       if (!branchConversation) {
         console.error('[ChatView] Branch conversation not found:', branchId);
         return;

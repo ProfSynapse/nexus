@@ -363,6 +363,23 @@ export class MessageBubble extends Component {
 
     if (this.messageBranchNavigator) {
       this.messageBranchNavigator.updateMessage(newMessage);
+    } else if (newMessage.branches && newMessage.branches.length > 0 && this.element) {
+      // Branch navigator doesn't exist yet but message now has branches (e.g. after retry).
+      // Create the navigator dynamically so the user can switch between alternatives.
+      const actions = this.element.querySelector('.message-actions-external');
+      if (actions instanceof HTMLElement) {
+        const navigatorEvents: MessageBranchNavigatorEvents = {
+          onAlternativeChanged: (messageId, alternativeIndex) => {
+            if (this.onMessageAlternativeChanged) {
+              this.onMessageAlternativeChanged(messageId, alternativeIndex);
+            }
+          },
+          onError: (message) => console.error('[MessageBubble] Branch navigation error:', message)
+        };
+
+        this.messageBranchNavigator = new MessageBranchNavigator(actions, navigatorEvents, this);
+        this.messageBranchNavigator.updateMessage(newMessage);
+      }
     }
 
     if (!this.element) return;
