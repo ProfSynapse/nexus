@@ -21,6 +21,9 @@ import type { ChatService } from '../../services/chat/ChatService';
 export class ServiceRegistrar {
     private context: ServiceCreationContext;
 
+    // Pending timer handle for deferred migration work
+    private migrationTimer: ReturnType<typeof setTimeout> | null = null;
+
     constructor(context: ServiceCreationContext) {
         this.context = context;
     }
@@ -136,7 +139,7 @@ export class ServiceRegistrar {
 
             // DEFER heavy migration work to background (2 second delay)
             // This allows the UI to appear immediately while migrations run later
-            setTimeout(async () => {
+            this.migrationTimer = setTimeout(async () => {
                 try {
                     // Re-get vaultOperations in case it changed
                     const vaultOps = await serviceManager.getService<VaultOperations>('vaultOperations');
@@ -280,7 +283,7 @@ export class ServiceRegistrar {
     async waitForService<T>(serviceName: string, timeoutMs: number = 30000): Promise<T | null> {
         const startTime = Date.now();
         const retryInterval = 1000; // Check every 1 second
-        
+
         while (Date.now() - startTime < timeoutMs) {
             try {
                 const service = await this.getService<T>(serviceName, 2000);
@@ -290,11 +293,23 @@ export class ServiceRegistrar {
             } catch (error) {
                 // Service not ready yet, continue waiting
             }
-            
+
             // Wait before retrying
             await new Promise(resolve => setTimeout(resolve, retryInterval));
         }
 
         return null;
+    }
+
+    /**
+     * Cancel any pending deferred timers.
+     * Called by PluginLifecycleManager during plugin shutdown to prevent
+     * migration callbacks from firing after the plugin has been unloaded.
+     */
+    shutdown(): void {
+        if (this.migrationTimer !== null) {
+            clearTimeout(this.migrationTimer);
+            this.migrationTimer = null;
+        }
     }
 }

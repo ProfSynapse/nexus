@@ -37,6 +37,7 @@ export interface AgentProvider {
 export class LazyAgentProvider implements AgentProvider {
     private agentRegistrationService: AgentRegistrationService;
     private initializedAgents = new Map<string, IAgent>();
+    private initTriggered = new Set<string>();
 
     constructor(agentRegistrationService: AgentRegistrationService) {
         this.agentRegistrationService = agentRegistrationService;
@@ -107,9 +108,14 @@ export class LazyAgentProvider implements AgentProvider {
 
         // Trigger async initialization but return null for now
         // Caller should retry or use getAgentAsync() for guaranteed access
-        this.getAgentAsync(name).catch(() => {
-            // Silently ignore - initialization will be retried on next access
-        });
+        // Only fire once per agent name to avoid redundant promise creation
+        if (!this.initTriggered.has(name)) {
+            this.initTriggered.add(name);
+            this.getAgentAsync(name).catch(() => {
+                // Reset so next access can retry if initialization failed
+                this.initTriggered.delete(name);
+            });
+        }
         return null;
     }
 

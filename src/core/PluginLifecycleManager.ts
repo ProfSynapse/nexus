@@ -72,6 +72,9 @@ export class PluginLifecycleManager {
     private inlineEditCommandManager: InlineEditCommandManager;
     private embeddingManager: EmbeddingManager | null = null;
 
+    // Pending timer handles for cleanup on shutdown
+    private pendingTimers: ReturnType<typeof setTimeout>[] = [];
+
     constructor(config: PluginLifecycleConfig) {
         this.config = config;
 
@@ -153,11 +156,12 @@ export class PluginLifecycleManager {
             // This yields back to Obsidian's event loop so onload() returns quickly,
             // but does NOT wait for onLayoutReady (which can take 13+ seconds).
             // ChatView handles null chatService gracefully with a loading spinner.
-            setTimeout(() => {
+            const bgInitTimer = setTimeout(() => {
                 this.startBackgroundInitialization().catch(error => {
                     console.error('[PluginLifecycleManager] Background initialization failed:', error);
                 });
             }, 0);
+            this.pendingTimers.push(bgInitTimer);
 
         } catch (error) {
             console.error('[PluginLifecycleManager] Critical initialization failure:', error);
@@ -216,7 +220,7 @@ export class PluginLifecycleManager {
             // Uses a fixed timeout from onload rather than onLayoutReady (which is unreliable, can take 13+s)
             // 3 second delay gives Obsidian enough time to finish loading screen
             if (!Platform.isMobile) {
-                setTimeout(async () => {
+                const sqliteTimer = setTimeout(async () => {
                     try {
                         const adapter = await this.config.serviceManager?.getService<HybridStorageAdapter>('hybridStorageAdapter');
                         if (adapter) {
@@ -226,6 +230,7 @@ export class PluginLifecycleManager {
                         console.error('[PluginLifecycleManager] Background SQLite initialization failed:', err);
                     }
                 }, 3000); // 3s from background init start - Obsidian loading screen is gone by then
+                this.pendingTimers.push(sqliteTimer);
             }
 
             // Register all maintenance commands
@@ -296,34 +301,28 @@ export class PluginLifecycleManager {
     }
 
     /**
-     * Initialize embeddings when storage adapter becomes ready (called from background)
+     * Initialize embeddings when storage adapter becomes ready (called from background).
+     * The storageAdapter.cache getter always returns the constructor-created sqliteCache,
+     * so no waitForReady guard is needed here.
      */
     private async initializeEmbeddingsWhenReady(storageAdapter: HybridStorageAdapter): Promise<void> {
         try {
-            if (!storageAdapter.cache) {
-                if (typeof storageAdapter.waitForReady === 'function') {
-                    await storageAdapter.waitForReady();
-                }
-            }
+            const enableEmbeddings = this.config.settings.settings.enableEmbeddings ?? true;
+            this.embeddingManager = new EmbeddingManager(
+                this.config.app,
+                this.config.plugin,
+                storageAdapter.cache,
+                enableEmbeddings
+            );
+            await this.embeddingManager.initialize();
+            (this.config.plugin as PluginWithServices).embeddingManager = this.embeddingManager;
 
-            if (storageAdapter.cache) {
-                const enableEmbeddings = this.config.settings.settings.enableEmbeddings ?? true;
-                this.embeddingManager = new EmbeddingManager(
-                    this.config.app,
-                    this.config.plugin,
-                    storageAdapter.cache,
-                    enableEmbeddings
-                );
-                await this.embeddingManager.initialize();
-                (this.config.plugin as PluginWithServices).embeddingManager = this.embeddingManager;
-
-                // Wire embedding service into ChatTraceService
-                const embeddingService = this.embeddingManager.getService();
-                if (embeddingService) {
-                    const chatTraceService = await this.serviceRegistrar.getService<ChatTraceService>('chatTraceService');
-                    if (chatTraceService && typeof chatTraceService.setEmbeddingService === 'function') {
-                        chatTraceService.setEmbeddingService(embeddingService);
-                    }
+            // Wire embedding service into ChatTraceService
+            const embeddingService = this.embeddingManager.getService();
+            if (embeddingService) {
+                const chatTraceService = await this.serviceRegistrar.getService<ChatTraceService>('chatTraceService');
+                if (chatTraceService && typeof chatTraceService.setEmbeddingService === 'function') {
+                    chatTraceService.setEmbeddingService(embeddingService);
                 }
             }
         } catch (error) {
@@ -336,6 +335,15 @@ export class PluginLifecycleManager {
      */
     async shutdown(): Promise<void> {
         try {
+            // Cancel any pending timers that haven't fired yet
+            for (const timer of this.pendingTimers) {
+                clearTimeout(timer);
+            }
+            this.pendingTimers = [];
+
+            // Clean up ServiceRegistrar's pending timers
+            this.serviceRegistrar.shutdown();
+
             // Shutdown embedding system first (before database closes)
             if (this.embeddingManager) {
                 try {

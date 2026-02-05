@@ -69,11 +69,12 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
             const fileSystem = new FileSystemService(context.plugin, vaultOperations);
             const indexManager = new IndexManager(fileSystem);
 
-            // Get storage adapter NON-BLOCKING (may be null if still initializing)
-            // Service will use JSONL fallback until SQLite is ready
-            const storageAdapter = context.serviceManager.getServiceIfReady<IStorageAdapter | null>('hybridStorageAdapter');
+            // Pass a lazy getter so the service re-resolves the adapter on each access.
+            // This is critical because the adapter may be null at service creation time
+            // (SQLite initializes in background) but becomes available later.
+            const adapterGetter = () => context.serviceManager.getServiceIfReady<IStorageAdapter>('hybridStorageAdapter') ?? undefined;
 
-            return new WorkspaceService(context.plugin, fileSystem, indexManager, storageAdapter || undefined);
+            return new WorkspaceService(context.plugin, fileSystem, indexManager, adapterGetter);
         }
     },
 
@@ -107,11 +108,12 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
             const WorkspaceService = (await import('../../services/WorkspaceService')).WorkspaceService;
             const workspaceService = await context.serviceManager.getService('workspaceService') as InstanceType<typeof WorkspaceService>;
 
-            // Get storage adapter NON-BLOCKING (may be null if still initializing)
-            // Service will use JSONL fallback until SQLite is ready
-            const storageAdapter = context.serviceManager.getServiceIfReady<IStorageAdapter | null>('hybridStorageAdapter');
+            // Pass a lazy getter so the service re-resolves the adapter on each access.
+            // This is critical because the adapter may be null at service creation time
+            // (SQLite initializes in background) but becomes available later.
+            const adapterGetter = () => context.serviceManager.getServiceIfReady<IStorageAdapter>('hybridStorageAdapter') ?? undefined;
 
-            return new MemoryService(context.plugin, workspaceService, storageAdapter || undefined);
+            return new MemoryService(context.plugin, workspaceService, adapterGetter);
         }
     },
 
@@ -310,11 +312,12 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
             const fileSystem = new FileSystemService(context.plugin, vaultOperations);
             const indexManager = new IndexManager(fileSystem);
 
-            // Get storage adapter NON-BLOCKING (may be null if still initializing)
-            // Service will use JSONL fallback until SQLite is ready
-            const storageAdapter = context.serviceManager.getServiceIfReady<IStorageAdapter | null>('hybridStorageAdapter');
+            // Pass a lazy getter so the service re-resolves the adapter on each access.
+            // This is critical because the adapter may be null at service creation time
+            // (SQLite initializes in background) but becomes available later.
+            const adapterGetter = () => context.serviceManager.getServiceIfReady<IStorageAdapter>('hybridStorageAdapter') ?? undefined;
 
-            return new ConversationService(context.plugin, fileSystem, indexManager, storageAdapter || undefined);
+            return new ConversationService(context.plugin, fileSystem, indexManager, adapterGetter);
         }
     },
 

@@ -63,6 +63,11 @@ import { isSubagentMetadata } from '../../types/branch/BranchTypes';
 export const CHAT_VIEW_TYPE = CHAT_VIEW_TYPES.current;
 
 export class ChatView extends ItemView {
+  /** Maximum time (ms) to wait for services to become available */
+  private static readonly SERVICE_POLL_TIMEOUT_MS = 60000;
+  /** Interval (ms) between service availability checks */
+  private static readonly SERVICE_POLL_INTERVAL_MS = 500;
+
   // Core components
   private conversationList!: ConversationList;
   private messageDisplay!: MessageDisplay;
@@ -86,6 +91,9 @@ export class ChatView extends ItemView {
 
   // Subagent infrastructure (delegated to SubagentController)
   private subagentController: SubagentController | null = null;
+
+  // Disposal guard - prevents polling loops from operating on detached DOM
+  private isClosing: boolean = false;
 
   // Branch UI state
   private branchHeader: BranchHeader | null = null;
@@ -119,6 +127,9 @@ export class ChatView extends ItemView {
   }
 
   async onOpen(): Promise<void> {
+    // Reset disposal flag in case the view is being reopened
+    this.isClosing = false;
+
     if (this.chatService) {
       // ChatService already available - initialize immediately
       await this.performFullInitialization();
@@ -146,19 +157,23 @@ export class ChatView extends ItemView {
     if (!storageAdapter || !storageAdapter.isReady?.()) {
       this.nexusLoadingController.showDatabaseLoadingOverlay();
 
-      // Poll for adapter to be created and ready (max 60 seconds)
-      const maxWaitMs = 60000;
-      const pollIntervalMs = 500;
+      // Poll for adapter to be created and ready
       const startTime = Date.now();
 
-      while (Date.now() - startTime < maxWaitMs) {
-        await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
+      while (Date.now() - startTime < ChatView.SERVICE_POLL_TIMEOUT_MS) {
+        await new Promise(resolve => setTimeout(resolve, ChatView.SERVICE_POLL_INTERVAL_MS));
+
+        // Stop polling if view was closed during the wait
+        if (this.isClosing) return;
 
         storageAdapter = plugin.getServiceIfReady<{ isReady?: () => boolean; waitForReady?: () => Promise<boolean> }>('hybridStorageAdapter');
         if (storageAdapter?.isReady?.()) {
           break;
         }
       }
+
+      // View may have closed while we were polling - skip DOM operations
+      if (this.isClosing) return;
 
       this.nexusLoadingController.hideDatabaseLoadingOverlay();
       return;
@@ -190,14 +205,15 @@ export class ChatView extends ItemView {
     loadingDiv.createDiv({ cls: 'chat-service-loading-spinner' });
     loadingDiv.createDiv({ cls: 'chat-service-loading-text', text: 'Loading chat service...' });
 
-    // Poll for chatService in background (max 60 seconds)
-    const maxWaitMs = 60000;
-    const pollIntervalMs = 500;
+    // Poll for chatService in background
     const startTime = Date.now();
 
     const poll = async (): Promise<void> => {
-      while (Date.now() - startTime < maxWaitMs) {
-        await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
+      while (Date.now() - startTime < ChatView.SERVICE_POLL_TIMEOUT_MS) {
+        await new Promise(resolve => setTimeout(resolve, ChatView.SERVICE_POLL_INTERVAL_MS));
+
+        // Stop polling if view was closed during the wait
+        if (this.isClosing) return;
 
         const chatService = plugin.getServiceIfReady<ChatService>('chatService');
         if (chatService) {
@@ -212,6 +228,9 @@ export class ChatView extends ItemView {
           return;
         }
       }
+
+      // View may have closed while we were polling - skip DOM operations
+      if (this.isClosing) return;
 
       // Timed out - show error state
       this.showServiceUnavailableMessage();
@@ -282,6 +301,9 @@ export class ChatView extends ItemView {
   }
 
   async onClose(): Promise<void> {
+    // Signal polling loops to stop before any cleanup runs
+    this.isClosing = true;
+
     // Notify Nexus lifecycle manager that ChatView is closing
     // This starts the idle timer for potential model unloading
     const lifecycleManager = getWebLLMLifecycleManager();

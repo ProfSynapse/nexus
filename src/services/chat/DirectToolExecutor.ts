@@ -18,6 +18,7 @@ import { SessionContextManager } from '../SessionContextManager';
 import { ToolListService } from '../../handlers/services/ToolListService';
 import { IAgent } from '../../agents/interfaces/IAgent';
 import type { JSONSchema } from '../../types/schema/JSONSchemaTypes';
+import type { AgentProvider } from '../agent/LazyAgentProvider';
 
 /** OpenAI-format tool definition */
 interface OpenAITool {
@@ -56,18 +57,6 @@ export interface DirectToolResult {
     result?: unknown;
     error?: string;
     executionTime?: number;
-}
-
-/**
- * Interface for agent providers - both AgentRegistry and LazyAgentProvider can fulfill this
- */
-export interface AgentProvider {
-    getAllAgents(): Map<string, IAgent> | IAgent[];
-    getAgent?(name: string): IAgent | null;
-    hasAgent?(name: string): boolean;
-    agentSupportsMode?(agentName: string, modeName: string): boolean;
-    /** Async agent access - waits for initialization if needed */
-    getAgentAsync?(name: string): Promise<IAgent | null>;
 }
 
 export interface DirectToolExecutorConfig {

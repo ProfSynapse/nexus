@@ -304,6 +304,20 @@ export class AgentInitializationService {
   }
 
   /**
+   * Check if SQLite storage is ready for queries.
+   * Returns true only when HybridStorageAdapter exists AND its WASM is fully loaded.
+   */
+  private isSQLiteReady(): boolean {
+    if (!this.serviceManager) return false;
+    const storageAdapter = this.serviceManager.getServiceIfReady('hybridStorageAdapter');
+    if (storageAdapter && typeof storageAdapter === 'object' && storageAdapter !== null) {
+      const adapterAny = storageAdapter as any;
+      return typeof adapterAny.isReady === 'function' && adapterAny.isReady();
+    }
+    return false;
+  }
+
+  /**
    * Build schema data for ToolManager
    * Fetches workspaces, custom agents, and vault root structure
    * Non-blocking: uses JSONL/data.json fallback if SQLite isn't ready
@@ -335,16 +349,7 @@ export class AgentInitializationService {
 
       // CRITICAL: Check if SQLite is ready BEFORE calling any service methods
       // WorkspaceService.listWorkspaces() calls adapter methods that block on ensureInitialized()
-      let sqliteReady = false;
-      if (this.serviceManager) {
-        const storageAdapter = this.serviceManager.getServiceIfReady('hybridStorageAdapter');
-        if (storageAdapter && typeof storageAdapter === 'object' && storageAdapter !== null) {
-          const adapterAny = storageAdapter as any;
-          sqliteReady = typeof adapterAny.isReady === 'function' && adapterAny.isReady();
-        }
-      }
-
-      if (workspaceService && sqliteReady) {
+      if (workspaceService && this.isSQLiteReady()) {
         const workspaces = await workspaceService.listWorkspaces();
         schemaData.workspaces = workspaces.map(w => ({
           name: w.name,
@@ -359,16 +364,7 @@ export class AgentInitializationService {
     // Fetch custom agents - NON-BLOCKING: only fetch if SQLite is ready
     try {
       // Check if SQLite is ready before fetching prompts
-      let sqliteReady = false;
-      if (this.serviceManager) {
-        const storageAdapter = this.serviceManager.getServiceIfReady('hybridStorageAdapter');
-        if (storageAdapter && typeof storageAdapter === 'object' && storageAdapter !== null) {
-          const adapterAny = storageAdapter as any;
-          sqliteReady = typeof adapterAny.isReady === 'function' && adapterAny.isReady();
-        }
-      }
-
-      if (this.customPromptStorage && sqliteReady) {
+      if (this.customPromptStorage && this.isSQLiteReady()) {
         // getAllPrompts is synchronous and uses data.json fallback if db is null
         const prompts = this.customPromptStorage.getAllPrompts();
         schemaData.customAgents = prompts.map(p => ({

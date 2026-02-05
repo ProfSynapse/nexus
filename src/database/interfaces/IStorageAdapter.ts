@@ -69,6 +69,17 @@ export interface IStorageAdapter {
   // ============================================================================
 
   /**
+   * Check if the adapter is fully initialized and ready for use.
+   *
+   * Services use this to determine whether to route operations through
+   * the adapter (SQLite cache) or fall back to JSONL-only storage.
+   * This avoids blocking on SQLite initialization during startup.
+   *
+   * @returns true if the adapter is initialized and has no errors
+   */
+  isReady(): boolean;
+
+  /**
    * Initialize the storage adapter
    *
    * This should:
