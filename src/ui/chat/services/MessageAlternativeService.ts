@@ -112,11 +112,25 @@ export class MessageAlternativeService {
         reasoning: originalReasoning
       };
 
-      await this.branchManager.createHumanBranch(
+      const branchId = await this.branchManager.createHumanBranch(
         conversation,
         aiMessageId,
         branchMessage
       );
+
+      // 1b. Collect and move continuation messages (e.g. tool-call follow-ups)
+      //     that follow the retried AI message into the branch so they don't
+      //     linger as stale content after the new response streams in.
+      const continuationMessages = conversation.messages.splice(aiMessageIndex + 1);
+      if (continuationMessages.length > 0 && branchId) {
+        const targetBranch = aiMessage.branches?.find(b => b.id === branchId);
+        if (targetBranch) {
+          targetBranch.messages.push(...continuationMessages);
+          targetBranch.updated = Date.now();
+          // Persist the branch with its continuation messages
+          await this.chatService.updateConversation(conversation);
+        }
+      }
 
       // 2. Clear the current message for fresh streaming
       aiMessage.content = '';
