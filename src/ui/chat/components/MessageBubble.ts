@@ -361,6 +361,21 @@ export class MessageBubble extends Component {
 
     this.message = newMessage;
 
+    // Clear tool accordions and tool bubble when new message has no tool calls (e.g., retry clear)
+    if (!activeToolCalls || activeToolCalls.length === 0) {
+      this.cleanupProgressiveAccordions();
+
+      if (this.toolBubbleElement) {
+        this.toolBubbleElement.remove();
+        this.toolBubbleElement = null;
+      }
+
+      if (this.imageBubbleElement) {
+        this.imageBubbleElement.remove();
+        this.imageBubbleElement = null;
+      }
+    }
+
     if (this.messageBranchNavigator) {
       this.messageBranchNavigator.updateMessage(newMessage);
     } else if (newMessage.branches && newMessage.branches.length > 0 && this.element) {
