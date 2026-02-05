@@ -281,6 +281,13 @@ Special characters: "quotes" & 'apostrophes' and unicode: 中文 émoji 🚀
 
 **Expected Result**: Single undo restores original text
 
+**Implementation Note**: The `editor.replaceRange()` Obsidian API is used to apply changes. This API automatically integrates with Obsidian's native undo stack. Undo functionality is expected to work without additional implementation because `replaceRange` is the standard Obsidian editor API that preserves undo history.
+
+**Verification Criteria**:
+- After clicking "Apply" and confirming the change is visible in the editor
+- Pressing Ctrl/Cmd+Z once should restore the exact original text
+- The undo operation should be atomic (single step, not character-by-character)
+
 ---
 
 ### TC-012: Code Block Transformation

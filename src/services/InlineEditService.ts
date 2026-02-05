@@ -225,7 +225,7 @@ export class InlineEditService {
   /**
    * Reset to input state (for retry from result)
    */
-  reset(selectedText: string, preserveInstruction?: string): void {
+  reset(selectedText: string): void {
     this.cancel();
     this.isActive = false;
     this.state = { phase: 'input', selectedText };

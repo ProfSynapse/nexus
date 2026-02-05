@@ -580,6 +580,39 @@ describe('InlineEditService', () => {
       expect(result.editedText).toBe('');
     });
 
+    it('should handle stream failure after partial content', async () => {
+      // Create a mock that streams some content then fails mid-stream
+      // The mock needs multiple chunks configured, with error thrown after first chunk
+      mockLLMService = createMockLLMService({
+        chunks: [
+          { chunk: 'Partial ' },
+          { chunk: 'content ' },  // This chunk won't be reached
+          { complete: true }       // This won't be reached either
+        ],
+        error: new Error('Connection lost mid-stream'),
+        errorAfterChunks: 1  // Throw after yielding first chunk (index 0)
+      });
+      service = new InlineEditService(mockLLMService);
+      service.setCallbacks(callbacks);
+      service.initialize(SELECTIONS.short);
+
+      const result = await service.generate(REQUESTS.basic);
+
+      // Verify error state is set - partial content should NOT be saved as result
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Connection lost mid-stream');
+
+      // Verify transitioned to error state (not result state with partial content)
+      const state = service.getState();
+      expect(state.phase).toBe('error');
+
+      // Verify onError callback was called
+      expect(callbacks.onError).toHaveBeenCalled();
+
+      // Verify service is not stuck in generating state
+      expect(service.isGenerating()).toBe(false);
+    });
+
     it('should handle very long text input', async () => {
       mockLLMService = createSuccessMock('Shortened version');
       service = new InlineEditService(mockLLMService);
