@@ -8,6 +8,7 @@
         "build": "tsc --noEmit --skipLibCheck && node esbuild.config.mjs production && tsc connector.ts --outDir . --esModuleInterop true --module commonjs --skipLibCheck && node scripts/generate-connector-content.mjs",
         "version": "node version-bump.mjs && git add manifest.json versions.json",
         "test": "jest",
+        "test:coverage": "jest --coverage --coverageThreshold='{\"global\":{\"branches\":80,\"functions\":80,\"lines\":80,\"statements\":80}}'",
         "lint": "eslint . --ext .ts",
         "deploy": "npm run build && powershell.exe -ExecutionPolicy Bypass -File .\\postbuild.ps1"
     },

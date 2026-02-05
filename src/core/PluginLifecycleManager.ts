@@ -14,6 +14,7 @@ import { Settings } from '../settings';
 import { UpdateManager } from '../utils/UpdateManager';
 import { ServiceRegistrar } from './services/ServiceRegistrar';
 import { MaintenanceCommandManager } from './commands/MaintenanceCommandManager';
+import { InlineEditCommandManager } from './commands/InlineEditCommandManager';
 import { ChatUIManager } from './ui/ChatUIManager';
 import { BackgroundProcessor } from './background/BackgroundProcessor';
 import { SettingsTabManager } from './settings/SettingsTabManager';
@@ -30,9 +31,21 @@ interface StateManager {
     saveState(): Promise<void>;
 }
 
-// Extended Plugin interface with optional embeddingManager property
-interface PluginWithEmbedding extends Plugin {
+/**
+ * Extended Plugin interface with required service methods
+ * Used for proper typing when passing plugin to child managers
+ */
+interface PluginWithServices extends Plugin {
+    settings?: Settings;
+    getService<T>(name: string, timeoutMs?: number): Promise<T | null>;
     embeddingManager?: EmbeddingManager;
+}
+
+/**
+ * Type guard to check if a Plugin has the required service methods
+ */
+function isPluginWithServices(plugin: Plugin): plugin is PluginWithServices {
+    return typeof (plugin as PluginWithServices).getService === 'function';
 }
 
 export interface PluginLifecycleConfig {
@@ -56,6 +69,7 @@ export class PluginLifecycleManager {
     private chatUIManager: ChatUIManager;
     private backgroundProcessor: BackgroundProcessor;
     private settingsTabManager: SettingsTabManager;
+    private inlineEditCommandManager: InlineEditCommandManager;
     private embeddingManager: EmbeddingManager | null = null;
 
     constructor(config: PluginLifecycleConfig) {
@@ -107,6 +121,17 @@ export class PluginLifecycleManager {
             connector: config.connector,
             lifecycleManager: this,
             backgroundProcessor: this.backgroundProcessor
+        });
+
+        // Create inline edit command manager
+        // The plugin is guaranteed to have getService method by main.ts initialization
+        if (!isPluginWithServices(config.plugin)) {
+            throw new Error('Plugin must implement getService method for InlineEditCommandManager');
+        }
+        this.inlineEditCommandManager = new InlineEditCommandManager({
+            plugin: config.plugin,
+            app: config.app,
+            getService: (name, timeoutMs) => this.serviceRegistrar.getService(name, timeoutMs)
         });
     }
 
@@ -205,7 +230,7 @@ export class PluginLifecycleManager {
 	                                    );
 	                                    await this.embeddingManager.initialize();
 	                                    // Expose on plugin for lazy access by agents
-	                                    (this.config.plugin as PluginWithEmbedding).embeddingManager = this.embeddingManager;
+	                                    (this.config.plugin as PluginWithServices).embeddingManager = this.embeddingManager;
 
 	                                    // Wire embedding service into ChatTraceService so new traces get embedded
 	                                    const embeddingService = this.embeddingManager.getService();
@@ -230,6 +255,9 @@ export class PluginLifecycleManager {
 
             // Register all maintenance commands
             this.commandManager.registerMaintenanceCommands();
+
+            // Register inline edit commands and context menu
+            this.inlineEditCommandManager.registerCommands();
 
             // Check for updates
             this.backgroundProcessor.checkForUpdatesOnStartup();
