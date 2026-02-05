@@ -6425,8 +6425,14 @@ body.is-mobile .chat-loading-overlay {
 /* =========================== */
 
 .claudesidian-inline-edit-modal {
-    width: 600px;
-    max-width: 90vw;
+    width: 500px;
+    max-width: 85vw;
+    box-sizing: border-box;
+}
+
+.claudesidian-inline-edit-modal .modal-container {
+    max-width: 100%;
+    overflow: hidden;
 }
 
 .claudesidian-inline-edit-modal .modal-content {
@@ -6512,6 +6518,7 @@ body.is-mobile .chat-loading-overlay {
 .claudesidian-inline-edit-buttons {
     display: flex;
     justify-content: flex-end;
+    flex-wrap: wrap;
     gap: 8px;
     margin-top: 20px;
     padding-top: 16px;
