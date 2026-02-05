@@ -14,6 +14,7 @@ import { Settings } from '../settings';
 import { UpdateManager } from '../utils/UpdateManager';
 import { ServiceRegistrar } from './services/ServiceRegistrar';
 import { MaintenanceCommandManager } from './commands/MaintenanceCommandManager';
+import { InlineEditCommandManager } from './commands/InlineEditCommandManager';
 import { ChatUIManager } from './ui/ChatUIManager';
 import { BackgroundProcessor } from './background/BackgroundProcessor';
 import { SettingsTabManager } from './settings/SettingsTabManager';
@@ -56,6 +57,7 @@ export class PluginLifecycleManager {
     private chatUIManager: ChatUIManager;
     private backgroundProcessor: BackgroundProcessor;
     private settingsTabManager: SettingsTabManager;
+    private inlineEditCommandManager: InlineEditCommandManager;
     private embeddingManager: EmbeddingManager | null = null;
 
     constructor(config: PluginLifecycleConfig) {
@@ -107,6 +109,13 @@ export class PluginLifecycleManager {
             connector: config.connector,
             lifecycleManager: this,
             backgroundProcessor: this.backgroundProcessor
+        });
+
+        // Create inline edit command manager
+        this.inlineEditCommandManager = new InlineEditCommandManager({
+            plugin: config.plugin as any,
+            app: config.app,
+            getService: (name, timeoutMs) => this.serviceRegistrar.getService(name, timeoutMs)
         });
     }
 
@@ -230,6 +239,9 @@ export class PluginLifecycleManager {
 
             // Register all maintenance commands
             this.commandManager.registerMaintenanceCommands();
+
+            // Register inline edit commands and context menu
+            this.inlineEditCommandManager.registerCommands();
 
             // Check for updates
             this.backgroundProcessor.checkForUpdatesOnStartup();
