@@ -9,16 +9,20 @@
  * - Pause/resume/cancel controls
  * - Resumable via content hash comparison
  * - Saves DB every 10 notes
+ * - Backfill indexing for existing conversations (resume-on-interrupt)
  *
  * Relationships:
- * - Uses EmbeddingService for embedding notes
- * - Uses SQLiteCacheManager for periodic saves
+ * - Uses EmbeddingService for embedding notes and conversation turns
+ * - Uses QAPairBuilder for converting messages into QA pairs
+ * - Uses SQLiteCacheManager for periodic saves and direct conversation queries
  * - Emits progress events for UI updates
  */
 
 import { App, TFile } from 'obsidian';
 import { EventEmitter } from 'events';
 import { EmbeddingService } from './EmbeddingService';
+import { buildQAPairs } from './QAPairBuilder';
+import type { MessageData } from '../../types/storage/HybridStorageTypes';
 import type { SQLiteCacheManager } from '../../database/storage/SQLiteCacheManager';
 
 export interface IndexingProgress {
@@ -29,6 +33,24 @@ export interface IndexingProgress {
   estimatedTimeRemaining: number | null;  // seconds
   error?: string;
 }
+
+/**
+ * Row shape for the embedding_backfill_state table.
+ * Tracks progress of conversation backfill for resume-on-interrupt support.
+ */
+interface BackfillStateRow {
+  id: string;
+  lastProcessedConversationId: string | null;
+  totalConversations: number;
+  processedConversations: number;
+  status: string;
+  startedAt: number | null;
+  completedAt: number | null;
+  errorMessage: string | null;
+}
+
+/** Primary key used in the embedding_backfill_state table */
+const CONVERSATION_BACKFILL_ID = 'conversation_backfill';
 
 /**
  * Background indexing queue for notes
@@ -50,6 +72,7 @@ export class IndexingQueue extends EventEmitter {
   private readonly BATCH_SIZE = 1;           // Process one at a time for memory
   private readonly YIELD_INTERVAL_MS = 50;   // Yield to UI between notes
   private readonly SAVE_INTERVAL = 10;       // Save DB every N notes
+  private readonly CONVERSATION_YIELD_INTERVAL = 5;  // Yield every N conversations during backfill
 
   private processedCount = 0;
   private totalCount = 0;
@@ -485,6 +508,315 @@ export class IndexingQueue extends EventEmitter {
         currentNote: null,
         estimatedTimeRemaining: null
       });
+    }
+  }
+
+  // ==================== CONVERSATION BACKFILL ====================
+
+  /**
+   * Backfill embeddings for all existing conversations.
+   *
+   * Processes conversations newest-first for immediate value from recent chats.
+   * Supports resume-on-interrupt: tracks progress in embedding_backfill_state
+   * table and skips already-processed conversations on restart. Individual
+   * QA pair embedding is also idempotent via contentHash checks.
+   *
+   * Branch conversations (those with parentConversationId in metadata) are
+   * skipped since they are variants of their parent conversation.
+   *
+   * Yields to the main thread every CONVERSATION_YIELD_INTERVAL conversations
+   * to keep Obsidian responsive during backfill.
+   */
+  async startConversationIndex(): Promise<void> {
+    if (this.isRunning) {
+      return;
+    }
+
+    if (!this.embeddingService.isServiceEnabled()) {
+      return;
+    }
+
+    try {
+      // Check existing backfill state for resume support
+      const existingState = await this.db.queryOne<BackfillStateRow>(
+        'SELECT * FROM embedding_backfill_state WHERE id = ?',
+        [CONVERSATION_BACKFILL_ID]
+      );
+
+      // If already completed, nothing to do
+      if (existingState && existingState.status === 'completed') {
+        return;
+      }
+
+      // Get all non-branch conversations, newest first
+      const allConversations = await this.db.query<{
+        id: string;
+        metadataJson: string | null;
+        workspaceId: string | null;
+        sessionId: string | null;
+      }>(
+        'SELECT id, metadataJson, workspaceId, sessionId FROM conversations ORDER BY created DESC'
+      );
+
+      // Filter out branch conversations (those with parentConversationId)
+      const nonBranchConversations = allConversations.filter(conv => {
+        if (!conv.metadataJson) return true;
+        try {
+          const metadata = JSON.parse(conv.metadataJson) as Record<string, unknown>;
+          return !metadata.parentConversationId;
+        } catch {
+          return true; // If metadata can't be parsed, include the conversation
+        }
+      });
+
+      if (nonBranchConversations.length === 0) {
+        await this.updateBackfillState({
+          status: 'completed',
+          totalConversations: 0,
+          processedConversations: 0,
+          lastProcessedConversationId: null,
+        });
+        return;
+      }
+
+      // Determine resume point if we were interrupted mid-backfill
+      let startIndex = 0;
+      let processedSoFar = 0;
+
+      if (existingState && existingState.lastProcessedConversationId) {
+        const resumeIndex = nonBranchConversations.findIndex(
+          c => c.id === existingState.lastProcessedConversationId
+        );
+        if (resumeIndex >= 0) {
+          // Start after the last successfully processed conversation
+          startIndex = resumeIndex + 1;
+          processedSoFar = existingState.processedConversations;
+        }
+      }
+
+      const totalCount = nonBranchConversations.length;
+
+      // Nothing remaining to process
+      if (startIndex >= totalCount) {
+        await this.updateBackfillState({
+          status: 'completed',
+          totalConversations: totalCount,
+          processedConversations: totalCount,
+          lastProcessedConversationId: existingState?.lastProcessedConversationId ?? null,
+        });
+        return;
+      }
+
+      // Mark as running
+      this.isRunning = true;
+      let lastProcessedId = existingState?.lastProcessedConversationId ?? null;
+
+      await this.updateBackfillState({
+        status: 'running',
+        totalConversations: totalCount,
+        processedConversations: processedSoFar,
+        lastProcessedConversationId: lastProcessedId,
+      });
+
+      // Process each conversation from the resume point
+      for (let i = startIndex; i < totalCount; i++) {
+        // Check for abort
+        if (this.abortController?.signal.aborted) {
+          break;
+        }
+
+        const conv = nonBranchConversations[i];
+
+        try {
+          await this.backfillConversation(
+            conv.id,
+            conv.workspaceId ?? undefined,
+            conv.sessionId ?? undefined
+          );
+        } catch (error) {
+          // Log and continue -- one bad conversation should not abort the batch
+          console.error(
+            `[IndexingQueue] Failed to backfill conversation ${conv.id}:`,
+            error
+          );
+        }
+
+        processedSoFar++;
+        lastProcessedId = conv.id;
+
+        // Update progress in backfill state table
+        if (processedSoFar % this.SAVE_INTERVAL === 0) {
+          await this.updateBackfillState({
+            status: 'running',
+            totalConversations: totalCount,
+            processedConversations: processedSoFar,
+            lastProcessedConversationId: lastProcessedId,
+          });
+          await this.db.save();
+        }
+
+        // Yield to main thread periodically to keep Obsidian responsive
+        if (i > startIndex && (i - startIndex) % this.CONVERSATION_YIELD_INTERVAL === 0) {
+          await new Promise(r => setTimeout(r, 0));
+        }
+      }
+
+      // Final state update
+      await this.updateBackfillState({
+        status: 'completed',
+        totalConversations: totalCount,
+        processedConversations: processedSoFar,
+        lastProcessedConversationId: lastProcessedId,
+      });
+      await this.db.save();
+
+    } catch (error: any) {
+      console.error('[IndexingQueue] Conversation backfill failed:', error);
+      await this.updateBackfillState({
+        status: 'error',
+        totalConversations: 0,
+        processedConversations: 0,
+        lastProcessedConversationId: null,
+        errorMessage: error.message,
+      });
+    } finally {
+      this.isRunning = false;
+    }
+  }
+
+  /**
+   * Backfill a single conversation by fetching its messages, building QA pairs,
+   * and embedding each pair. The EmbeddingService.embedConversationTurn method
+   * is idempotent (checks contentHash), so re-processing a conversation that
+   * was partially embedded is safe.
+   *
+   * @param conversationId - The conversation to backfill
+   * @param workspaceId - Optional workspace context
+   * @param sessionId - Optional session context
+   */
+  private async backfillConversation(
+    conversationId: string,
+    workspaceId?: string,
+    sessionId?: string
+  ): Promise<void> {
+    // Fetch all messages for this conversation from SQLite cache
+    const messageRows = await this.db.query<{
+      id: string;
+      conversationId: string;
+      role: string;
+      content: string | null;
+      timestamp: number;
+      state: string | null;
+      toolCallsJson: string | null;
+      toolCallId: string | null;
+      sequenceNumber: number;
+      reasoningContent: string | null;
+      alternativesJson: string | null;
+      activeAlternativeIndex: number;
+    }>(
+      `SELECT id, conversationId, role, content, timestamp, state,
+              toolCallsJson, toolCallId, sequenceNumber, reasoningContent,
+              alternativesJson, activeAlternativeIndex
+       FROM messages
+       WHERE conversationId = ?
+       ORDER BY sequenceNumber ASC`,
+      [conversationId]
+    );
+
+    if (messageRows.length === 0) {
+      return;
+    }
+
+    // Convert rows to MessageData (match field types exactly)
+    const messages: MessageData[] = messageRows.map(row => ({
+      id: row.id,
+      conversationId: row.conversationId,
+      role: row.role as MessageData['role'],
+      content: row.content ?? null,
+      timestamp: row.timestamp,
+      state: (row.state ?? 'complete') as MessageData['state'],
+      sequenceNumber: row.sequenceNumber,
+      toolCalls: row.toolCallsJson ? JSON.parse(row.toolCallsJson) : undefined,
+      toolCallId: row.toolCallId ?? undefined,
+      reasoning: row.reasoningContent ?? undefined,
+      alternatives: row.alternativesJson ? JSON.parse(row.alternativesJson) : undefined,
+      activeAlternativeIndex: row.activeAlternativeIndex ?? 0,
+    }));
+
+    // Build QA pairs from messages
+    const qaPairs = buildQAPairs(messages, conversationId, workspaceId, sessionId);
+
+    // Embed each pair (idempotent -- contentHash prevents re-embedding)
+    for (const qaPair of qaPairs) {
+      await this.embeddingService.embedConversationTurn(qaPair);
+    }
+  }
+
+  /**
+   * Insert or update the backfill progress state in the database.
+   * Used to track progress for resume-on-interrupt support.
+   *
+   * Uses INSERT for the first write and UPDATE for subsequent writes so that
+   * startedAt is preserved across progress updates (INSERT OR REPLACE would
+   * overwrite the original start timestamp).
+   *
+   * @param state - Partial backfill state to persist
+   */
+  private async updateBackfillState(state: {
+    status: string;
+    totalConversations: number;
+    processedConversations: number;
+    lastProcessedConversationId: string | null;
+    errorMessage?: string;
+  }): Promise<void> {
+    const now = Date.now();
+
+    // Check if a row already exists
+    const existing = await this.db.queryOne<{ id: string }>(
+      'SELECT id FROM embedding_backfill_state WHERE id = ?',
+      [CONVERSATION_BACKFILL_ID]
+    );
+
+    if (existing) {
+      // Update existing row -- preserve startedAt, only set completedAt on completion
+      const completedAt = state.status === 'completed' ? now : null;
+      await this.db.run(
+        `UPDATE embedding_backfill_state
+         SET lastProcessedConversationId = ?,
+             totalConversations = ?,
+             processedConversations = ?,
+             status = ?,
+             completedAt = ?,
+             errorMessage = ?
+         WHERE id = ?`,
+        [
+          state.lastProcessedConversationId,
+          state.totalConversations,
+          state.processedConversations,
+          state.status,
+          completedAt,
+          state.errorMessage ?? null,
+          CONVERSATION_BACKFILL_ID,
+        ]
+      );
+    } else {
+      // First write -- set startedAt
+      await this.db.run(
+        `INSERT INTO embedding_backfill_state
+          (id, lastProcessedConversationId, totalConversations, processedConversations,
+           status, startedAt, completedAt, errorMessage)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          CONVERSATION_BACKFILL_ID,
+          state.lastProcessedConversationId,
+          state.totalConversations,
+          state.processedConversations,
+          state.status,
+          now,
+          state.status === 'completed' ? now : null,
+          state.errorMessage ?? null,
+        ]
+      );
     }
   }
 }
