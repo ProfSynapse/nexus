@@ -73,13 +73,15 @@ export interface MigratableDatabase {
 // Alias for backward compatibility
 type Database = MigratableDatabase;
 
-export const CURRENT_SCHEMA_VERSION = 6;
+export const CURRENT_SCHEMA_VERSION = 7;
 
 export interface Migration {
   version: number;
   description: string;
   /** SQL statements to run. Each is executed separately. */
   sql: string[];
+  /** Optional JavaScript migration function for logic that cannot be expressed in SQL alone (e.g., JSON parsing). */
+  migrationFn?: (db: MigratableDatabase) => void;
 }
 
 /**
@@ -155,6 +157,105 @@ export const MIGRATIONS: Migration[] = [
   // ========================================================================
   // ADD NEW MIGRATIONS BELOW THIS LINE
   // ========================================================================
+
+  // Version 6 -> 7: Add conversation embeddings, backfill state, and denormalized workspace/session columns
+  {
+    version: 7,
+    description: 'Add conversation embedding tables, embedding backfill state, and denormalized workspaceId/sessionId on conversations',
+    sql: [
+      // Denormalized columns on conversations table
+      `ALTER TABLE conversations ADD COLUMN workspaceId TEXT`,
+      `ALTER TABLE conversations ADD COLUMN sessionId TEXT`,
+      `CREATE INDEX IF NOT EXISTS idx_conversations_workspaceId ON conversations(workspaceId)`,
+      `CREATE INDEX IF NOT EXISTS idx_conversations_sessionId ON conversations(sessionId)`,
+
+      // Conversation embeddings vec0 virtual table
+      `CREATE VIRTUAL TABLE IF NOT EXISTS conversation_embeddings USING vec0(
+        embedding float[384]
+      )`,
+
+      // Conversation embedding metadata
+      `CREATE TABLE IF NOT EXISTS conversation_embedding_metadata (
+        rowid INTEGER PRIMARY KEY,
+        pairId TEXT NOT NULL,
+        side TEXT NOT NULL,
+        chunkIndex INTEGER NOT NULL,
+        conversationId TEXT NOT NULL,
+        startSequenceNumber INTEGER NOT NULL,
+        endSequenceNumber INTEGER NOT NULL,
+        pairType TEXT NOT NULL,
+        sourceId TEXT,
+        sessionId TEXT,
+        workspaceId TEXT,
+        model TEXT NOT NULL,
+        contentHash TEXT NOT NULL,
+        contentPreview TEXT,
+        created INTEGER NOT NULL
+      )`,
+
+      // Indexes for conversation embedding metadata
+      `CREATE INDEX IF NOT EXISTS idx_conv_embed_meta_pairId ON conversation_embedding_metadata(pairId)`,
+      `CREATE INDEX IF NOT EXISTS idx_conv_embed_meta_conversationId ON conversation_embedding_metadata(conversationId)`,
+      `CREATE INDEX IF NOT EXISTS idx_conv_embed_meta_workspaceId ON conversation_embedding_metadata(workspaceId)`,
+      `CREATE INDEX IF NOT EXISTS idx_conv_embed_meta_sessionId ON conversation_embedding_metadata(sessionId)`,
+
+      // Embedding backfill state table
+      `CREATE TABLE IF NOT EXISTS embedding_backfill_state (
+        id TEXT PRIMARY KEY DEFAULT 'conversation_backfill',
+        lastProcessedConversationId TEXT,
+        totalConversations INTEGER DEFAULT 0,
+        processedConversations INTEGER DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'pending',
+        startedAt INTEGER,
+        completedAt INTEGER,
+        errorMessage TEXT
+      )`,
+    ],
+    migrationFn: (db: MigratableDatabase) => {
+      // Backfill denormalized workspaceId/sessionId from metadataJson
+      // Cannot use json_extract() — may not be available in WASM SQLite
+      const rows = db.exec('SELECT id, metadataJson FROM conversations WHERE metadataJson IS NOT NULL');
+      if (rows.length === 0) return;
+
+      for (const row of rows[0].values) {
+        const id = row[0] as string;
+        const metadataJson = row[1] as string;
+
+        let workspaceId: string | null = null;
+        let sessionId: string | null = null;
+
+        try {
+          const metadata = JSON.parse(metadataJson);
+
+          // Try chatSettings path first (ConversationManager-created conversations)
+          if (metadata?.chatSettings?.workspaceId) {
+            workspaceId = metadata.chatSettings.workspaceId;
+          }
+          if (metadata?.chatSettings?.sessionId) {
+            sessionId = metadata.chatSettings.sessionId;
+          }
+
+          // Fall back to top-level path (directly-created conversations)
+          if (!workspaceId && metadata?.workspaceId) {
+            workspaceId = metadata.workspaceId;
+          }
+          if (!sessionId && metadata?.sessionId) {
+            sessionId = metadata.sessionId;
+          }
+        } catch {
+          // Skip conversations with unparseable metadataJson
+          continue;
+        }
+
+        if (workspaceId || sessionId) {
+          db.run(
+            'UPDATE conversations SET workspaceId = ?, sessionId = ? WHERE id = ?',
+            [workspaceId, sessionId, id]
+          );
+        }
+      }
+    },
+  },
 ];
 
 /**
@@ -276,6 +377,11 @@ export class SchemaMigrator {
           }
 
           this.db.run(sql);
+        }
+
+        // Run optional JavaScript migration function (e.g., JSON-based backfills)
+        if (migration.migrationFn) {
+          migration.migrationFn(this.db);
         }
 
         this.setVersion(migration.version);
