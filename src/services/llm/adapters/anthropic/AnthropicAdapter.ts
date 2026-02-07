@@ -91,10 +91,15 @@ export class AnthropicAdapter extends BaseAdapter {
       if (options?.enableThinking && this.supportsThinking(options?.model || this.currentModel)) {
         const effort = options?.thinkingEffort || 'medium';
         const thinkingParams = ThinkingEffortMapper.getAnthropicParams({ enabled: true, effort });
+        const budgetTokens = thinkingParams?.budget_tokens || 16000;
         requestParams.thinking = {
           type: 'enabled',
-          budget_tokens: thinkingParams?.budget_tokens || 16000
+          budget_tokens: budgetTokens
         };
+        // Ensure max_tokens > budget_tokens (Anthropic API requirement)
+        if (requestParams.max_tokens <= budgetTokens) {
+          requestParams.max_tokens = budgetTokens + 1024;
+        }
       }
 
       // Add tools if provided
@@ -313,10 +318,15 @@ export class AnthropicAdapter extends BaseAdapter {
     if (options?.enableThinking && this.supportsThinking(options?.model || this.currentModel)) {
       const effort = options?.thinkingEffort || 'medium';
       const thinkingParams = ThinkingEffortMapper.getAnthropicParams({ enabled: true, effort });
+      const budgetTokens = thinkingParams?.budget_tokens || 16000;
       requestParams.thinking = {
         type: 'enabled',
-        budget_tokens: thinkingParams?.budget_tokens || 16000
+        budget_tokens: budgetTokens
       };
+      // Ensure max_tokens > budget_tokens (Anthropic API requirement)
+      if (requestParams.max_tokens <= budgetTokens) {
+        requestParams.max_tokens = budgetTokens + 1024;
+      }
     }
 
     // Add tools if provided

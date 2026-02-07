@@ -113,10 +113,10 @@ export class DefaultsTab {
         model: settings.model
       };
       // Save agent model (for executePrompt when using local chat model)
-      if (settings.agentProvider && settings.agentModel) {
+      if (settings.agentProvider) {
         llmSettings.agentModel = {
           provider: settings.agentProvider,
-          model: settings.agentModel
+          model: settings.agentModel || ''
         };
       } else {
         llmSettings.agentModel = undefined;
