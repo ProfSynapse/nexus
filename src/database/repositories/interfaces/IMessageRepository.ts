@@ -75,4 +75,23 @@ export interface IMessageRepository {
    * Count messages in a conversation
    */
   countMessages(conversationId: string): Promise<number>;
+
+  /**
+   * Get messages within a sequence number range for a conversation.
+   * Returns messages ordered by sequenceNumber ASC where
+   * sequenceNumber >= startSeq AND sequenceNumber <= endSeq.
+   *
+   * Used by ConversationWindowRetriever to fetch windowed context
+   * around a matched QA pair.
+   *
+   * @param conversationId - The conversation to query
+   * @param startSeq - Inclusive lower bound of the sequence number range
+   * @param endSeq - Inclusive upper bound of the sequence number range
+   * @returns Messages within the range, ordered by sequence number
+   */
+  getMessagesBySequenceRange(
+    conversationId: string,
+    startSeq: number,
+    endSeq: number
+  ): Promise<MessageData[]>;
 }

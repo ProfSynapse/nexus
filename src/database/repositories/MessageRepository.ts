@@ -157,6 +157,32 @@ export class MessageRepository
     return (result?.maxSeq ?? -1) + 1;
   }
 
+  /**
+   * Get messages within a sequence number range for a conversation.
+   * Leverages the idx_messages_sequence index on (conversationId, sequenceNumber).
+   *
+   * @param conversationId - The conversation to query
+   * @param startSeq - Inclusive lower bound of the sequence number range
+   * @param endSeq - Inclusive upper bound of the sequence number range
+   * @returns Messages within the range, ordered by sequence number ascending
+   */
+  async getMessagesBySequenceRange(
+    conversationId: string,
+    startSeq: number,
+    endSeq: number
+  ): Promise<MessageData[]> {
+    const rows = await this.sqliteCache.query<any>(
+      `SELECT * FROM ${this.tableName}
+       WHERE conversationId = ?
+         AND sequenceNumber >= ?
+         AND sequenceNumber <= ?
+       ORDER BY sequenceNumber ASC`,
+      [conversationId, startSeq, endSeq]
+    );
+
+    return rows.map((r) => this.rowToMessage(r));
+  }
+
   // ============================================================================
   // Write Operations
   // ============================================================================
