@@ -91,10 +91,10 @@ module.exports = {
       statements: 90
     },
     './src/services/embeddings/ConversationEmbeddingWatcher.ts': {
-      branches: 70,
-      functions: 80,
-      lines: 75,
-      statements: 75
+      branches: 90,
+      functions: 90,
+      lines: 90,
+      statements: 90
     }
   },
   coverageDirectory: 'coverage',

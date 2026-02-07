@@ -6,6 +6,9 @@
  */
 
 import { ConversationEmbeddingWatcher } from '../../src/services/embeddings/ConversationEmbeddingWatcher';
+import type { EmbeddingService } from '../../src/services/embeddings/EmbeddingService';
+import type { MessageRepository } from '../../src/database/repositories/MessageRepository';
+import type { SQLiteCacheManager } from '../../src/database/storage/SQLiteCacheManager';
 import type { MessageData } from '../../src/types/storage/HybridStorageTypes';
 import { createMessage, resetMessageIdCounter } from '../fixtures/conversationSearch';
 
@@ -61,9 +64,9 @@ describe('ConversationEmbeddingWatcher', () => {
     resetMessageIdCounter();
     mocks = createMockDependencies();
     watcher = new ConversationEmbeddingWatcher(
-      mocks.mockEmbeddingService as any,
-      mocks.mockMessageRepository as any,
-      mocks.mockDb as any
+      mocks.mockEmbeddingService as jest.Mocked<EmbeddingService>,
+      mocks.mockMessageRepository as jest.Mocked<MessageRepository>,
+      mocks.mockDb as jest.Mocked<SQLiteCacheManager>
     );
   });
 
