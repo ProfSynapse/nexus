@@ -293,6 +293,14 @@ export class HybridStorageAdapter implements IStorageAdapter {
     return this.sqliteCache;
   }
 
+  /**
+   * Get the message repository instance.
+   * Used by ConversationEmbeddingWatcher to register completion callbacks.
+   */
+  get messages(): MessageRepository {
+    return this.messageRepo;
+  }
+
   async close(): Promise<void> {
     if (!this.initialized) {
       return;

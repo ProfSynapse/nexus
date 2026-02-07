@@ -1,6 +1,9 @@
 /**
  * Location: src/services/embeddings/IndexingQueue.ts
- * Purpose: Background initial indexing queue with progress tracking
+ * Purpose: Top-level coordinator for background embedding indexing with progress
+ *          tracking. Manages the shared queue state (pause/resume/cancel) and
+ *          delegates domain-specific indexing to TraceIndexer and
+ *          ConversationIndexer.
  *
  * Features:
  * - Processes one note at a time (memory conscious)
@@ -9,16 +12,23 @@
  * - Pause/resume/cancel controls
  * - Resumable via content hash comparison
  * - Saves DB every 10 notes
+ * - Delegates conversation backfill to ConversationIndexer
+ * - Delegates trace backfill to TraceIndexer
  *
  * Relationships:
  * - Uses EmbeddingService for embedding notes
- * - Uses SQLiteCacheManager for periodic saves
- * - Emits progress events for UI updates
+ * - Uses SQLiteCacheManager for periodic saves and note hash lookups
+ * - Uses TraceIndexer for trace backfill
+ * - Uses ConversationIndexer for conversation backfill
+ * - Emits progress events for UI updates (consumed by EmbeddingStatusBar)
  */
 
 import { App, TFile } from 'obsidian';
 import { EventEmitter } from 'events';
 import { EmbeddingService } from './EmbeddingService';
+import { preprocessContent, hashContent } from './EmbeddingUtils';
+import { TraceIndexer } from './TraceIndexer';
+import { ConversationIndexer } from './ConversationIndexer';
 import type { SQLiteCacheManager } from '../../database/storage/SQLiteCacheManager';
 
 export interface IndexingProgress {
@@ -31,7 +41,7 @@ export interface IndexingProgress {
 }
 
 /**
- * Background indexing queue for notes
+ * Background indexing queue for notes, traces, and conversations.
  *
  * Processes notes one at a time with UI yielding to keep Obsidian responsive.
  * Emits 'progress' events that can be consumed by UI components.
@@ -50,11 +60,16 @@ export class IndexingQueue extends EventEmitter {
   private readonly BATCH_SIZE = 1;           // Process one at a time for memory
   private readonly YIELD_INTERVAL_MS = 50;   // Yield to UI between notes
   private readonly SAVE_INTERVAL = 10;       // Save DB every N notes
+  private readonly CONVERSATION_YIELD_INTERVAL = 5;  // Yield every N conversations during backfill
 
   private processedCount = 0;
   private totalCount = 0;
   private startTime = 0;
   private processingTimes: number[] = [];    // Rolling average for ETA
+
+  // Domain indexers (created lazily in their start methods)
+  private traceIndexer: TraceIndexer | null = null;
+  private conversationIndexer: ConversationIndexer | null = null;
 
   constructor(
     app: App,
@@ -113,150 +128,130 @@ export class IndexingQueue extends EventEmitter {
   }
 
   /**
-   * Filter to only notes that need (re)indexing
+   * Start indexing of all memory traces (backfill existing traces)
+   * Delegates to TraceIndexer for the actual work.
    */
-  private async filterUnindexedNotes(notes: TFile[]): Promise<TFile[]> {
-    const needsIndexing: TFile[] = [];
-
-    for (const note of notes) {
-      try {
-        const content = await this.app.vault.cachedRead(note);
-        const contentHash = this.hashContent(this.preprocessContent(content));
-
-        const existing = await this.db.queryOne<{ contentHash: string }>(
-          'SELECT contentHash FROM embedding_metadata WHERE notePath = ?',
-          [note.path]
-        );
-
-        // Needs indexing if: no embedding OR content changed
-        if (!existing || existing.contentHash !== contentHash) {
-          needsIndexing.push(note);
-        }
-      } catch {
-        // Include in indexing queue anyway
-        needsIndexing.push(note);
-      }
+  async startTraceIndex(): Promise<void> {
+    if (this.isRunning) {
+      return;
     }
 
-    return needsIndexing;
-  }
+    if (!this.embeddingService.isServiceEnabled()) {
+      return;
+    }
 
-  /**
-   * Process the queue with memory-conscious batching
-   */
-  private async processQueue(): Promise<void> {
     this.isRunning = true;
+    this.abortController = new AbortController();
+
+    this.traceIndexer = new TraceIndexer(
+      this.db,
+      this.embeddingService,
+      (progress) => {
+        this.totalCount = progress.totalTraces;
+        this.processedCount = progress.processedTraces;
+        this.emitProgress({
+          phase: 'indexing',
+          totalNotes: progress.totalTraces,
+          processedNotes: progress.processedTraces,
+          currentNote: 'traces',
+          estimatedTimeRemaining: null
+        });
+      },
+      this.SAVE_INTERVAL,
+      this.YIELD_INTERVAL_MS
+    );
+
     this.emitProgress({
-      phase: 'loading_model',
-      totalNotes: this.totalCount,
+      phase: 'indexing',
+      totalNotes: 0,
       processedNotes: 0,
-      currentNote: null,
+      currentNote: 'traces',
       estimatedTimeRemaining: null
     });
 
     try {
-      // Load model (one-time, ~50-100MB)
-      await this.embeddingService.initialize();
-
-      this.emitProgress({
-        phase: 'indexing',
-        totalNotes: this.totalCount,
-        processedNotes: 0,
-        currentNote: null,
-        estimatedTimeRemaining: null
-      });
-
-      while (this.queue.length > 0) {
-        // Check for abort/pause
-        if (this.abortController?.signal.aborted) {
-          this.emitProgress({
-            phase: 'paused',
-            totalNotes: this.totalCount,
-            processedNotes: this.processedCount,
-            currentNote: null,
-            estimatedTimeRemaining: null
-          });
-          break;
-        }
-
-        if (this.isPaused) {
-          await this.waitForResume();
-          continue;
-        }
-
-        const notePath = this.queue.shift()!;
-        const noteStart = Date.now();
-
-        try {
-          this.emitProgress({
-            phase: 'indexing',
-            totalNotes: this.totalCount,
-            processedNotes: this.processedCount,
-            currentNote: notePath,
-            estimatedTimeRemaining: this.calculateETA()
-          });
-
-          // Process single note - memory released after each
-          await this.embeddingService.embedNote(notePath);
-          this.processedCount++;
-
-          // Track timing for ETA
-          const elapsed = Date.now() - noteStart;
-          this.processingTimes.push(elapsed);
-          if (this.processingTimes.length > 20) {
-            this.processingTimes.shift(); // Keep rolling window
-          }
-
-          // Periodic DB save (embeddings are already in DB, this ensures WAL flush)
-          if (this.processedCount % this.SAVE_INTERVAL === 0) {
-            await this.db.save();
-          }
-
-        } catch (error) {
-          console.error(`[IndexingQueue] Failed to embed ${notePath}:`, error);
-          // Continue with next note, don't fail entire queue
-        }
-
-        // Yield to UI - critical for responsiveness
-        await new Promise(r => setTimeout(r, this.YIELD_INTERVAL_MS));
-      }
-
-      // Final save
-      await this.db.save();
+      const result = await this.traceIndexer.start(
+        this.abortController.signal,
+        () => this.isPaused,
+        () => this.waitForResume()
+      );
 
       this.emitProgress({
         phase: 'complete',
-        totalNotes: this.totalCount,
-        processedNotes: this.processedCount,
+        totalNotes: result.total,
+        processedNotes: result.processed,
         currentNote: null,
         estimatedTimeRemaining: null
       });
-
-    } catch (error: any) {
-      console.error('[IndexingQueue] Processing failed:', error);
-      this.emitProgress({
-        phase: 'error',
-        totalNotes: this.totalCount,
-        processedNotes: this.processedCount,
-        currentNote: null,
-        estimatedTimeRemaining: null,
-        error: error.message
-      });
     } finally {
       this.isRunning = false;
+      this.traceIndexer = null;
     }
   }
 
   /**
-   * Calculate estimated time remaining
+   * Backfill embeddings for all existing conversations.
+   * Delegates to ConversationIndexer for the actual work.
    */
-  private calculateETA(): number | null {
-    if (this.processingTimes.length < 3) return null;
+  async startConversationIndex(): Promise<void> {
+    if (this.isRunning) {
+      return;
+    }
 
-    const avgTime = this.processingTimes.reduce((a, b) => a + b, 0) / this.processingTimes.length;
-    const remaining = this.totalCount - this.processedCount;
-    return Math.round((remaining * avgTime) / 1000); // seconds
+    if (!this.embeddingService.isServiceEnabled()) {
+      return;
+    }
+
+    this.isRunning = true;
+    this.abortController = new AbortController();
+
+    this.conversationIndexer = new ConversationIndexer(
+      this.db,
+      this.embeddingService,
+      (progress) => {
+        this.totalCount = progress.totalConversations;
+        this.processedCount = progress.processedConversations;
+        this.emitProgress({
+          phase: 'indexing',
+          totalNotes: progress.totalConversations,
+          processedNotes: progress.processedConversations,
+          currentNote: 'conversations',
+          estimatedTimeRemaining: null
+        });
+      },
+      this.SAVE_INTERVAL
+    );
+
+    this.emitProgress({
+      phase: 'indexing',
+      totalNotes: 0,
+      processedNotes: 0,
+      currentNote: 'conversations',
+      estimatedTimeRemaining: null
+    });
+
+    try {
+      const result = await this.conversationIndexer.start(
+        this.abortController.signal,
+        this.CONVERSATION_YIELD_INTERVAL
+      );
+
+      this.emitProgress({
+        phase: 'complete',
+        totalNotes: result.total,
+        processedNotes: result.processed,
+        currentNote: null,
+        estimatedTimeRemaining: null
+      });
+    } finally {
+      this.isRunning = false;
+      this.conversationIndexer = null;
+    }
   }
+
+  // ---------------------------------------------------------------------------
+  // Queue controls
+  // ---------------------------------------------------------------------------
 
   /**
    * Pause indexing (can resume later)
@@ -299,52 +294,9 @@ export class IndexingQueue extends EventEmitter {
     this.removeAllListeners();
   }
 
-  /**
-   * Wait for resume signal
-   */
-  private async waitForResume(): Promise<void> {
-    while (this.isPaused && !this.abortController?.signal.aborted) {
-      await new Promise(r => setTimeout(r, 100));
-    }
-  }
-
-  /**
-   * Emit progress event
-   */
-  private emitProgress(progress: IndexingProgress): void {
-    this.emit('progress', progress);
-  }
-
-  /**
-   * Preprocess content (same as EmbeddingService)
-   */
-  private preprocessContent(content: string): string {
-    // Strip frontmatter
-    let processed = content.replace(/^---[\s\S]*?---\n?/, '');
-
-    // Strip image embeds, keep link text
-    processed = processed
-      .replace(/!\[\[.*?\]\]/g, '')
-      .replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, '$2')
-      .replace(/\[\[([^\]]+)\]\]/g, '$1');
-
-    // Normalize whitespace
-    processed = processed.replace(/\s+/g, ' ').trim();
-
-    return processed;
-  }
-
-  /**
-   * Hash content (same as EmbeddingService)
-   */
-  private hashContent(content: string): string {
-    let hash = 0;
-    for (let i = 0; i < content.length; i++) {
-      hash = ((hash << 5) - hash) + content.charCodeAt(i);
-      hash = hash & hash;
-    }
-    return hash.toString(36);
-  }
+  // ---------------------------------------------------------------------------
+  // Status queries
+  // ---------------------------------------------------------------------------
 
   /**
    * Check if indexing is currently running
@@ -383,64 +335,70 @@ export class IndexingQueue extends EventEmitter {
     };
   }
 
-  // ==================== TRACE INDEXING ====================
+  // ---------------------------------------------------------------------------
+  // Private: note indexing
+  // ---------------------------------------------------------------------------
 
   /**
-   * Start indexing of all memory traces (backfill existing traces)
-   * This is separate from note indexing and processes workspace traces
+   * Filter to only notes that need (re)indexing
    */
-  async startTraceIndex(): Promise<void> {
-    if (this.isRunning) {
-      return;
-    }
+  private async filterUnindexedNotes(notes: TFile[]): Promise<TFile[]> {
+    const needsIndexing: TFile[] = [];
 
-    if (!this.embeddingService.isServiceEnabled()) {
-      return;
-    }
+    for (const note of notes) {
+      try {
+        const content = await this.app.vault.cachedRead(note);
+        const contentHash = hashContent(preprocessContent(content) ?? '');
 
-    // Query all traces from the database
-    const allTraces = await this.db.query<{
-      id: string;
-      workspaceId: string;
-      sessionId: string | null;
-      content: string;
-    }>('SELECT id, workspaceId, sessionId, content FROM memory_traces');
+        const existing = await this.db.queryOne<{ contentHash: string }>(
+          'SELECT contentHash FROM embedding_metadata WHERE notePath = ?',
+          [note.path]
+        );
 
-    // Filter to traces not already embedded
-    const needsIndexing: typeof allTraces = [];
-
-    for (const trace of allTraces) {
-      const existing = await this.db.queryOne<{ traceId: string }>(
-        'SELECT traceId FROM trace_embedding_metadata WHERE traceId = ?',
-        [trace.id]
-      );
-      if (!existing) {
-        needsIndexing.push(trace);
+        if (!existing || existing.contentHash !== contentHash) {
+          needsIndexing.push(note);
+        }
+      } catch {
+        needsIndexing.push(note);
       }
     }
 
-    if (needsIndexing.length === 0) {
-      return;
-    }
+    return needsIndexing;
+  }
 
+  /**
+   * Process the note queue with memory-conscious batching
+   */
+  private async processQueue(): Promise<void> {
     this.isRunning = true;
-    this.totalCount = needsIndexing.length;
-    this.processedCount = 0;
-    this.startTime = Date.now();
-    this.processingTimes = [];
-    this.abortController = new AbortController();
-
     this.emitProgress({
-      phase: 'indexing',
+      phase: 'loading_model',
       totalNotes: this.totalCount,
       processedNotes: 0,
-      currentNote: 'traces',
+      currentNote: null,
       estimatedTimeRemaining: null
     });
 
     try {
-      for (const trace of needsIndexing) {
+      await this.embeddingService.initialize();
+
+      this.emitProgress({
+        phase: 'indexing',
+        totalNotes: this.totalCount,
+        processedNotes: 0,
+        currentNote: null,
+        estimatedTimeRemaining: null
+      });
+
+      while (this.queue.length > 0) {
         if (this.abortController?.signal.aborted) {
+          this.emitProgress({
+            phase: 'paused',
+            totalNotes: this.totalCount,
+            processedNotes: this.processedCount,
+            currentNote: null,
+            estimatedTimeRemaining: null
+          });
           break;
         }
 
@@ -449,35 +407,40 @@ export class IndexingQueue extends EventEmitter {
           continue;
         }
 
+        const notePath = this.queue.shift()!;
+        const noteStart = Date.now();
+
         try {
-          await this.embeddingService.embedTrace(
-            trace.id,
-            trace.workspaceId,
-            trace.sessionId ?? undefined,
-            trace.content
-          );
+          this.emitProgress({
+            phase: 'indexing',
+            totalNotes: this.totalCount,
+            processedNotes: this.processedCount,
+            currentNote: notePath,
+            estimatedTimeRemaining: this.calculateETA()
+          });
+
+          await this.embeddingService.embedNote(notePath);
           this.processedCount++;
 
-          // Periodic DB save
+          const elapsed = Date.now() - noteStart;
+          this.processingTimes.push(elapsed);
+          if (this.processingTimes.length > 20) {
+            this.processingTimes.shift();
+          }
+
           if (this.processedCount % this.SAVE_INTERVAL === 0) {
             await this.db.save();
           }
 
         } catch (error) {
-          console.error(`[IndexingQueue] Failed to embed trace ${trace.id}:`, error);
+          console.error(`[IndexingQueue] Failed to embed ${notePath}:`, error);
         }
 
-        // Yield to UI
         await new Promise(r => setTimeout(r, this.YIELD_INTERVAL_MS));
       }
 
-      // Final save
       await this.db.save();
 
-    } catch (error: any) {
-      console.error('[IndexingQueue] Trace processing failed:', error);
-    } finally {
-      this.isRunning = false;
       this.emitProgress({
         phase: 'complete',
         totalNotes: this.totalCount,
@@ -485,6 +448,50 @@ export class IndexingQueue extends EventEmitter {
         currentNote: null,
         estimatedTimeRemaining: null
       });
+
+    } catch (error: unknown) {
+      console.error('[IndexingQueue] Processing failed:', error);
+      this.emitProgress({
+        phase: 'error',
+        totalNotes: this.totalCount,
+        processedNotes: this.processedCount,
+        currentNote: null,
+        estimatedTimeRemaining: null,
+        error: error instanceof Error ? error.message : String(error)
+      });
+    } finally {
+      this.isRunning = false;
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Private: shared helpers
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Calculate estimated time remaining
+   */
+  private calculateETA(): number | null {
+    if (this.processingTimes.length < 3) return null;
+
+    const avgTime = this.processingTimes.reduce((a, b) => a + b, 0) / this.processingTimes.length;
+    const remaining = this.totalCount - this.processedCount;
+    return Math.round((remaining * avgTime) / 1000);
+  }
+
+  /**
+   * Wait for resume signal
+   */
+  private async waitForResume(): Promise<void> {
+    while (this.isPaused && !this.abortController?.signal.aborted) {
+      await new Promise(r => setTimeout(r, 100));
+    }
+  }
+
+  /**
+   * Emit progress event
+   */
+  private emitProgress(progress: IndexingProgress): void {
+    this.emit('progress', progress);
   }
 }

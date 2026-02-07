@@ -24,6 +24,15 @@ import { MessageEvent, MessageUpdatedEvent, AlternativeMessageEvent } from '../i
 import { PaginatedResult, PaginationParams } from '../../types/pagination/PaginationTypes';
 
 /**
+ * Callback signature for message completion observers.
+ *
+ * Fired when a message reaches state='complete', either via addMessage
+ * (created with complete state) or update (transitioned to complete).
+ * Used by ConversationEmbeddingWatcher for real-time embedding indexing.
+ */
+export type MessageCompleteCallback = (message: MessageData) => void;
+
+/**
  * Message repository implementation
  *
  * Messages are appended to conversation JSONL files in OpenAI format.
@@ -36,12 +45,55 @@ export class MessageRepository
   protected readonly tableName = 'messages';
   protected readonly entityType = 'message';
 
+  /** Registered observers for message completion events */
+  private messageCompleteCallbacks: MessageCompleteCallback[] = [];
+
   protected jsonlPath(conversationId: string): string {
     return `conversations/conv_${conversationId}.jsonl`;
   }
 
   constructor(deps: RepositoryDependencies) {
     super(deps);
+  }
+
+  // ============================================================================
+  // Observer Registration
+  // ============================================================================
+
+  /**
+   * Register a callback that fires when a message reaches state='complete'.
+   *
+   * The callback receives the full MessageData of the completed message.
+   * Multiple callbacks can be registered; they fire in registration order.
+   * Callbacks are invoked asynchronously (fire-and-forget) so they do not
+   * block the write path.
+   *
+   * @param callback - Function to call when a message completes
+   * @returns Unsubscribe function that removes the callback
+   */
+  onMessageComplete(callback: MessageCompleteCallback): () => void {
+    this.messageCompleteCallbacks.push(callback);
+    return () => {
+      const index = this.messageCompleteCallbacks.indexOf(callback);
+      if (index >= 0) {
+        this.messageCompleteCallbacks.splice(index, 1);
+      }
+    };
+  }
+
+  /**
+   * Notify all registered observers that a message has completed.
+   * Invoked asynchronously to avoid blocking the write path.
+   * Errors in callbacks are caught and logged to prevent cascading failures.
+   */
+  private notifyMessageComplete(message: MessageData): void {
+    for (const callback of this.messageCompleteCallbacks) {
+      try {
+        callback(message);
+      } catch (error) {
+        console.error('[MessageRepository] Message complete callback error:', error);
+      }
+    }
   }
 
   // ============================================================================
@@ -157,6 +209,32 @@ export class MessageRepository
     return (result?.maxSeq ?? -1) + 1;
   }
 
+  /**
+   * Get messages within a sequence number range for a conversation.
+   * Leverages the idx_messages_sequence index on (conversationId, sequenceNumber).
+   *
+   * @param conversationId - The conversation to query
+   * @param startSeq - Inclusive lower bound of the sequence number range
+   * @param endSeq - Inclusive upper bound of the sequence number range
+   * @returns Messages within the range, ordered by sequence number ascending
+   */
+  async getMessagesBySequenceRange(
+    conversationId: string,
+    startSeq: number,
+    endSeq: number
+  ): Promise<MessageData[]> {
+    const rows = await this.sqliteCache.query<any>(
+      `SELECT * FROM ${this.tableName}
+       WHERE conversationId = ?
+         AND sequenceNumber >= ?
+         AND sequenceNumber <= ?
+       ORDER BY sequenceNumber ASC`,
+      [conversationId, startSeq, endSeq]
+    );
+
+    return rows.map((r) => this.rowToMessage(r));
+  }
+
   // ============================================================================
   // Write Operations
   // ============================================================================
@@ -227,6 +305,25 @@ export class MessageRepository
 
       // 3. Invalidate cache
       this.invalidateCache();
+
+      // 4. Notify observers if message is complete
+      const effectiveState = data.state ?? 'complete';
+      if (effectiveState === 'complete') {
+        this.notifyMessageComplete({
+          id,
+          conversationId,
+          role: data.role,
+          content: data.content,
+          timestamp: data.timestamp,
+          state: 'complete',
+          sequenceNumber,
+          toolCalls: data.toolCalls,
+          toolCallId: data.toolCallId,
+          reasoning: data.reasoning,
+          alternatives: data.alternatives,
+          activeAlternativeIndex: data.activeAlternativeIndex ?? 0,
+        });
+      }
 
       return id;
 
@@ -325,6 +422,14 @@ export class MessageRepository
 
       // 3. Invalidate cache
       this.invalidateCache();
+
+      // 4. Notify observers if message transitioned to 'complete'
+      if (data.state === 'complete') {
+        const fullMessage = await this.getById(messageId);
+        if (fullMessage) {
+          this.notifyMessageComplete(fullMessage);
+        }
+      }
 
     } catch (error) {
       console.error('[MessageRepository] Failed to update message:', error);

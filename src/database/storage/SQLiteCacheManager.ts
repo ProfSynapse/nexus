@@ -651,6 +651,13 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
         DELETE FROM applied_events;
         DELETE FROM sync_state;
       `);
+
+      // Drop and recreate vec0 virtual tables (cannot DELETE from vec0)
+      // Conversation embeddings
+      this.db.exec(`DROP TABLE IF EXISTS conversation_embeddings`);
+      this.db.exec(`CREATE VIRTUAL TABLE IF NOT EXISTS conversation_embeddings USING vec0(embedding float[384])`);
+      this.db.exec(`DELETE FROM conversation_embedding_metadata`);
+      this.db.exec(`DELETE FROM embedding_backfill_state`);
     });
   }
 
@@ -735,6 +742,7 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
     conversations: number;
     messages: number;
     appliedEvents: number;
+    conversationEmbeddings: number;
     dbSizeBytes: number;
   }> {
     const stats = await Promise.all([
@@ -745,6 +753,7 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
       this.queryOne<{ count: number }>('SELECT COUNT(*) as count FROM conversations'),
       this.queryOne<{ count: number }>('SELECT COUNT(*) as count FROM messages'),
       this.queryOne<{ count: number }>('SELECT COUNT(*) as count FROM applied_events'),
+      this.queryOne<{ count: number }>('SELECT COUNT(*) as count FROM conversation_embedding_metadata'),
     ]);
 
     // Get file size from filesystem
@@ -766,6 +775,7 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
       conversations: stats[4]?.count ?? 0,
       messages: stats[5]?.count ?? 0,
       appliedEvents: stats[6]?.count ?? 0,
+      conversationEmbeddings: stats[7]?.count ?? 0,
       dbSizeBytes
     };
   }
@@ -840,7 +850,8 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
         memory_traces: stats.traces,
         conversations: stats.conversations,
         messages: stats.messages,
-        applied_events: stats.appliedEvents
+        applied_events: stats.appliedEvents,
+        conversation_embedding_metadata: stats.conversationEmbeddings
       },
       walMode: false  // WASM doesn't use WAL mode
     };

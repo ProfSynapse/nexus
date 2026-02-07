@@ -2,7 +2,7 @@
  * SQLite Schema for Hybrid Storage System
  * Location: src/database/schema/schema.ts
  * Purpose: Complete database schema with indexes and FTS
- * Current Version: 5
+ * Current Version: 7
  *
  * IMPORTANT: When updating the schema:
  * 1. Update SCHEMA_SQL below for new installs
@@ -103,8 +103,13 @@ CREATE TABLE IF NOT EXISTS conversations (
   updated INTEGER NOT NULL,
   vaultName TEXT NOT NULL,
   messageCount INTEGER DEFAULT 0,
-  metadataJson TEXT
+  metadataJson TEXT,
+  workspaceId TEXT,
+  sessionId TEXT
 );
+
+CREATE INDEX IF NOT EXISTS idx_conversations_workspaceId ON conversations(workspaceId);
+CREATE INDEX IF NOT EXISTS idx_conversations_sessionId ON conversations(sessionId);
 
 CREATE INDEX IF NOT EXISTS idx_conversations_vault ON conversations(vaultName);
 CREATE INDEX IF NOT EXISTS idx_conversations_updated ON conversations(updated);
@@ -283,7 +288,52 @@ CREATE TABLE IF NOT EXISTS custom_prompts (
 CREATE INDEX IF NOT EXISTS idx_custom_prompts_name ON custom_prompts(name);
 CREATE INDEX IF NOT EXISTS idx_custom_prompts_enabled ON custom_prompts(isEnabled);
 
+-- ==================== CONVERSATION EMBEDDINGS ====================
+
+-- Vector storage for conversation QA pair chunks
+CREATE VIRTUAL TABLE IF NOT EXISTS conversation_embeddings USING vec0(
+  embedding float[384]
+);
+
+-- Metadata linked to vec0 by rowid
+CREATE TABLE IF NOT EXISTS conversation_embedding_metadata (
+  rowid INTEGER PRIMARY KEY,
+  pairId TEXT NOT NULL,
+  side TEXT NOT NULL,
+  chunkIndex INTEGER NOT NULL,
+  conversationId TEXT NOT NULL,
+  startSequenceNumber INTEGER NOT NULL,
+  endSequenceNumber INTEGER NOT NULL,
+  pairType TEXT NOT NULL,
+  sourceId TEXT,
+  sessionId TEXT,
+  workspaceId TEXT,
+  model TEXT NOT NULL,
+  contentHash TEXT NOT NULL,
+  contentPreview TEXT,
+  referencedNotes TEXT,
+  created INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_conv_embed_meta_pairId ON conversation_embedding_metadata(pairId);
+CREATE INDEX IF NOT EXISTS idx_conv_embed_meta_conversationId ON conversation_embedding_metadata(conversationId);
+CREATE INDEX IF NOT EXISTS idx_conv_embed_meta_workspaceId ON conversation_embedding_metadata(workspaceId);
+CREATE INDEX IF NOT EXISTS idx_conv_embed_meta_sessionId ON conversation_embedding_metadata(sessionId);
+
+-- ==================== EMBEDDING BACKFILL STATE ====================
+
+CREATE TABLE IF NOT EXISTS embedding_backfill_state (
+  id TEXT PRIMARY KEY DEFAULT 'conversation_backfill',
+  lastProcessedConversationId TEXT,
+  totalConversations INTEGER DEFAULT 0,
+  processedConversations INTEGER DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'pending',
+  startedAt INTEGER,
+  completedAt INTEGER,
+  errorMessage TEXT
+);
+
 -- ==================== INITIALIZATION ====================
 
-INSERT OR IGNORE INTO schema_version VALUES (6, strftime('%s', 'now') * 1000);
+INSERT OR IGNORE INTO schema_version VALUES (8, strftime('%s', 'now') * 1000);
 `;

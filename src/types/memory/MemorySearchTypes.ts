@@ -11,7 +11,7 @@ import { CommonParameters } from '../mcp/AgentTypes';
 // Core search parameters interface
 export interface MemorySearchParameters extends CommonParameters {
   query: string;
-  memoryTypes?: ('traces' | 'toolCalls' | 'sessions' | 'states' | 'workspaces')[];
+  memoryTypes?: ('traces' | 'toolCalls' | 'sessions' | 'states' | 'workspaces' | 'conversations')[];
   workspace?: string;
   workspaceId?: string;
   dateRange?: DateRange;
@@ -19,6 +19,10 @@ export interface MemorySearchParameters extends CommonParameters {
   toolCallFilters?: ToolCallFilter;
   searchMethod?: 'semantic' | 'exact' | 'mixed';
   filterBySession?: boolean;
+  /** Optional session ID for scoped conversation search */
+  sessionId?: string;
+  /** Number of conversation turns before/after each match (default 3, scoped mode only) */
+  windowSize?: number;
 }
 
 // Date range filter
@@ -42,7 +46,9 @@ export interface MemorySearchExecutionOptions {
   sessionId?: string;
   limit?: number;
   toolCallFilters?: ToolCallFilter;
-  memoryTypes?: ('traces' | 'toolCalls' | 'sessions' | 'states' | 'workspaces')[];
+  memoryTypes?: ('traces' | 'toolCalls' | 'sessions' | 'states' | 'workspaces' | 'conversations')[];
+  /** Number of conversation turns before/after each match (default 3, scoped mode only) */
+  windowSize?: number;
 }
 
 // Memory search context
@@ -59,7 +65,7 @@ export interface RawMemoryResult {
 
 // Processed memory search result
 export interface MemorySearchResult {
-  type: 'trace' | 'toolCall' | 'session' | 'state' | 'workspace';
+  type: 'trace' | 'toolCall' | 'session' | 'state' | 'workspace' | 'conversation';
   id: string;
   highlight: string;
   metadata: MemoryResultMetadata;
@@ -258,7 +264,8 @@ export enum MemoryType {
   TOOL_CALL = 'toolCall',
   SESSION = 'session',
   STATE = 'state',
-  WORKSPACE = 'workspace'
+  WORKSPACE = 'workspace',
+  CONVERSATION = 'conversation'
 }
 
 // Search method enum
