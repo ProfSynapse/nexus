@@ -363,7 +363,7 @@ export class ChatSettingsRenderer {
 
         dropdown.setValue(this.settings.agentProvider || '');
         dropdown.onChange(async (value) => {
-          this.settings.agentProvider = value || undefined;
+          this.settings.agentProvider = value === '' ? undefined : value;
           this.settings.agentModel = value ? await this.getDefaultModelForProvider(value) : undefined;
           this.notifyChange();
           this.render();
