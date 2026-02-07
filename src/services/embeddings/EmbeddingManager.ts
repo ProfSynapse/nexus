@@ -5,7 +5,8 @@
  * Features:
  * - Desktop-only (disabled on mobile)
  * - Lazy initialization (3-second delay on startup)
- * - Coordinates EmbeddingEngine, EmbeddingService, EmbeddingWatcher, IndexingQueue, and StatusBar
+ * - Coordinates EmbeddingEngine, EmbeddingService, EmbeddingWatcher,
+ *   ConversationEmbeddingWatcher, IndexingQueue, and StatusBar
  * - Graceful shutdown with cleanup
  *
  * Relationships:
@@ -17,9 +18,11 @@ import { App, Plugin, Platform } from 'obsidian';
 import { EmbeddingEngine } from './EmbeddingEngine';
 import { EmbeddingService } from './EmbeddingService';
 import { EmbeddingWatcher } from './EmbeddingWatcher';
+import { ConversationEmbeddingWatcher } from './ConversationEmbeddingWatcher';
 import { IndexingQueue } from './IndexingQueue';
 import { EmbeddingStatusBar } from './EmbeddingStatusBar';
 import type { SQLiteCacheManager } from '../../database/storage/SQLiteCacheManager';
+import type { MessageRepository } from '../../database/repositories/MessageRepository';
 
 /**
  * Embedding system manager
@@ -30,10 +33,12 @@ export class EmbeddingManager {
   private app: App;
   private plugin: Plugin;
   private db: SQLiteCacheManager;
+  private messageRepository: MessageRepository | null;
 
   private engine: EmbeddingEngine | null = null;
   private service: EmbeddingService | null = null;
   private watcher: EmbeddingWatcher | null = null;
+  private conversationWatcher: ConversationEmbeddingWatcher | null = null;
   private queue: IndexingQueue | null = null;
   private statusBar: EmbeddingStatusBar | null = null;
 
@@ -44,11 +49,13 @@ export class EmbeddingManager {
     app: App,
     plugin: Plugin,
     db: SQLiteCacheManager,
-    enableEmbeddings: boolean = true
+    enableEmbeddings: boolean = true,
+    messageRepository?: MessageRepository
   ) {
     this.app = app;
     this.plugin = plugin;
     this.db = db;
+    this.messageRepository = messageRepository ?? null;
 
     // Disable on mobile or if user disabled embeddings
     this.isEnabled = !Platform.isMobile && enableEmbeddings;
@@ -74,8 +81,18 @@ export class EmbeddingManager {
       // Initialize status bar (desktop only)
       this.statusBar.init();
 
-      // Start watching vault events
+      // Start watching vault events (note changes)
       this.watcher.start();
+
+      // Start watching conversation events (assistant message completions)
+      if (this.messageRepository) {
+        this.conversationWatcher = new ConversationEmbeddingWatcher(
+          this.service,
+          this.messageRepository,
+          this.db
+        );
+        this.conversationWatcher.start();
+      }
 
       // Start background indexing after a brief delay
       // This ensures the plugin is fully loaded before we start heavy processing
@@ -115,6 +132,11 @@ export class EmbeddingManager {
       // Stop watching vault events
       if (this.watcher) {
         this.watcher.stop();
+      }
+
+      // Stop watching conversation events
+      if (this.conversationWatcher) {
+        this.conversationWatcher.stop();
       }
 
       // Clean up status bar (removes progress listener)
@@ -163,6 +185,7 @@ export class EmbeddingManager {
     initialized: boolean;
     noteCount: number;
     traceCount: number;
+    conversationChunkCount: number;
     indexingInProgress: boolean;
   }> {
     if (!this.isEnabled || !this.service) {
@@ -171,6 +194,7 @@ export class EmbeddingManager {
         initialized: false,
         noteCount: 0,
         traceCount: 0,
+        conversationChunkCount: 0,
         indexingInProgress: false
       };
     }
@@ -182,6 +206,7 @@ export class EmbeddingManager {
       initialized: this.isInitialized,
       noteCount: stats.noteCount,
       traceCount: stats.traceCount,
+      conversationChunkCount: stats.conversationChunkCount,
       indexingInProgress: this.queue?.isIndexing() ?? false
     };
   }
