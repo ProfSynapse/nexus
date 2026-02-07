@@ -172,7 +172,7 @@ export class ResultFormatter implements ResultFormatterInterface {
   /**
    * Get formatter for specific memory type
    */
-  private getFormatter(type: 'trace' | 'toolCall' | 'session' | 'state' | 'workspace'): BaseResultFormatter {
+  private getFormatter(type: 'trace' | 'toolCall' | 'session' | 'state' | 'workspace' | 'conversation'): BaseResultFormatter {
     const formatter = this.formatters.get(type as MemoryType);
     if (formatter) {
       return formatter;

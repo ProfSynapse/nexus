@@ -22,8 +22,9 @@ import { NudgeHelpers } from '../../../utils/nudgeHelpers';
  * Memory types available for search (simplified after MemoryManager refactor)
  * - 'traces': Tool execution traces (includes tool calls)
  * - 'states': Workspace states (snapshots of work context)
+ * - 'conversations': Conversation QA pairs via semantic embedding search
  */
-export type MemoryType = 'traces' | 'states';
+export type MemoryType = 'traces' | 'states' | 'conversations';
 
 /**
  * Session filtering options
@@ -53,13 +54,17 @@ export interface SearchMemoryParams extends CommonParameters {
   workspaceId: string;  // Required - states and traces are workspace-scoped
 
   // OPTIONAL PARAMETERS
-  memoryTypes?: MemoryType[];  // 'traces' and/or 'states'
+  memoryTypes?: MemoryType[];  // 'traces', 'states', and/or 'conversations'
   searchMethod?: 'semantic' | 'exact' | 'mixed';
   sessionFiltering?: SessionFilterOptions;
   temporalFiltering?: TemporalFilterOptions;
   limit?: number;
   includeMetadata?: boolean;
   includeContent?: boolean;
+  /** Optional session ID for scoped conversation search. When provided, search returns N-turn windows around matches. */
+  sessionId?: string;
+  /** Number of conversation turns before/after each match to include. Default 3. Only used in scoped mode. */
+  windowSize?: number;
 
   // Additional properties to match MemorySearchParams
   workspace?: string;
@@ -99,8 +104,8 @@ export class SearchMemoryTool extends BaseTool<SearchMemoryParams, SearchMemoryR
     super(
       'searchMemory',
       'Search Memory',
-      'MEMORY-FOCUSED search with mandatory workspaceId parameter. Search through memory traces and states within a workspace context. Traces include tool execution history. States capture workspace snapshots. Requires: query (search terms) and workspaceId (workspace context).',
-      '2.0.0'
+      'MEMORY-FOCUSED search with mandatory workspaceId parameter. Search through memory traces, states, and conversations within a workspace context. Traces include tool execution history. States capture workspace snapshots. Conversations search QA pairs via semantic embeddings. Provide sessionId for scoped mode with N-turn context windows. Requires: query (search terms) and workspaceId (workspace context).',
+      '2.1.0'
     );
 
     this.plugin = plugin;
@@ -145,7 +150,7 @@ export class SearchMemoryTool extends BaseTool<SearchMemoryParams, SearchMemoryR
       
       // Skip filters - return results directly
       
-      // Transform results to simple format with just content, tool, and context
+      // Transform results to simple format
       // Use the raw trace data attached during enrichment
       const simplifiedResults = results.map((result: EnrichedMemorySearchResult) => {
         try {
@@ -155,46 +160,13 @@ export class SearchMemoryTool extends BaseTool<SearchMemoryParams, SearchMemoryR
             return null;
           }
 
-          // Target canonical metadata context first, then legacy fallbacks
-          let context = trace.metadata?.context;
-          let source = 'metadata.context';
-
-          const legacyParamsContext = trace.metadata?.legacy?.params?.context;
-          const legacyResultContext = trace.metadata?.legacy?.result?.context;
-
-          if (this.isThinContext(context) && legacyParamsContext) {
-            context = legacyParamsContext;
-            source = 'legacy.params';
+          // Conversation results have a different structure than trace/state results
+          if (trace.type === 'conversation') {
+            return this.formatConversationResult(trace);
           }
 
-          if (this.isThinContext(context) && legacyResultContext) {
-            context = legacyResultContext;
-            source = 'legacy.result';
-          }
-
-          // Safety check: Ensure it's actually an object before trying to clean it
-          if (context && typeof context === 'object' && !Array.isArray(context)) {
-            // Clone it so we don't mutate the original data
-            context = { ...context };
-
-            // Remove the technical IDs we don't want
-            delete context.sessionId;
-            delete context.workspaceId;
-          } else {
-            // Fallback to empty if it's not a valid object
-            context = {};
-          }
-          
-          const entry: any = {
-            content: trace.content || ''
-          };
-          if (trace.metadata?.tool) {
-            entry.tool = trace.metadata.tool;
-          }
-          if (context && Object.keys(context).length > 0) {
-            entry.context = context;
-          }
-          return entry;
+          // Standard trace/state result formatting
+          return this.formatTraceResult(trace);
         } catch (error) {
           return null;
         }
@@ -223,7 +195,7 @@ export class SearchMemoryTool extends BaseTool<SearchMemoryParams, SearchMemoryR
     const toolSchema = {
       type: 'object',
       title: 'Memory Search Params',
-      description: 'MEMORY-FOCUSED search with workspace context. Search through memory traces (tool execution history) and states (workspace snapshots) with temporal filtering.',
+      description: 'MEMORY-FOCUSED search with workspace context. Search through memory traces (tool execution history), states (workspace snapshots), and conversations (QA pairs via semantic embeddings). Use sessionId for scoped mode with N-turn context windows.',
       properties: {
         query: {
           type: 'string',
@@ -238,10 +210,21 @@ export class SearchMemoryTool extends BaseTool<SearchMemoryParams, SearchMemoryR
           type: 'array',
           items: {
             type: 'string',
-            enum: ['traces', 'states']
+            enum: ['traces', 'states', 'conversations']
           },
-          description: 'Types of memory to search. "traces" includes tool execution history. "states" includes workspace snapshots. Defaults to both types.',
-          default: ['traces', 'states']
+          description: 'Types of memory to search. "traces" includes tool execution history. "states" includes workspace snapshots. "conversations" searches conversation QA pairs via semantic embeddings. Defaults to all types.',
+          default: ['traces', 'states', 'conversations']
+        },
+        sessionId: {
+          type: 'string',
+          description: 'Optional session ID for scoped search. When provided, conversation search is limited to this session and returns N-turn windows around matches.'
+        },
+        windowSize: {
+          type: 'number',
+          description: 'Number of conversation turns before/after each match to include. Default 3. Only used in scoped mode (when sessionId is provided).',
+          default: 3,
+          minimum: 1,
+          maximum: 20
         },
         dateRange: {
           type: 'object',
@@ -316,13 +299,14 @@ export class SearchMemoryTool extends BaseTool<SearchMemoryParams, SearchMemoryR
         },
         results: {
           type: 'array',
-          description: 'Memory traces ranked by relevance',
+          description: 'Memory results ranked by relevance. Includes trace/state results and conversation QA pair results.',
           items: {
             type: 'object',
             properties: {
+              // Trace/state result fields
               content: {
                 type: 'string',
-                description: 'The trace content'
+                description: 'The trace content (trace/state results)'
               },
               tool: {
                 type: 'string',
@@ -331,9 +315,51 @@ export class SearchMemoryTool extends BaseTool<SearchMemoryParams, SearchMemoryR
               context: {
                 type: 'object',
                 description: 'Additional context from the trace'
+              },
+              // Conversation result fields
+              type: {
+                type: 'string',
+                description: 'Result type. "conversation" for conversation QA pair results.'
+              },
+              conversationTitle: {
+                type: 'string',
+                description: 'Title of the matched conversation'
+              },
+              conversationId: {
+                type: 'string',
+                description: 'ID of the matched conversation'
+              },
+              question: {
+                type: 'string',
+                description: 'The user message in the matched QA pair'
+              },
+              answer: {
+                type: 'string',
+                description: 'The assistant response in the matched QA pair'
+              },
+              matchedSide: {
+                type: 'string',
+                enum: ['question', 'answer'],
+                description: 'Which side of the QA pair matched the query'
+              },
+              pairType: {
+                type: 'string',
+                enum: ['conversation_turn', 'trace_pair'],
+                description: 'Whether this is a conversation turn or tool trace pair'
+              },
+              windowMessages: {
+                type: 'array',
+                description: 'Surrounding messages for context (scoped mode only). N turns before and after the match.',
+                items: {
+                  type: 'object',
+                  properties: {
+                    role: { type: 'string' },
+                    content: { type: 'string' },
+                    sequenceNumber: { type: 'number' }
+                  }
+                }
               }
-            },
-            required: ['content']
+            }
           }
         },
         error: {
@@ -343,6 +369,80 @@ export class SearchMemoryTool extends BaseTool<SearchMemoryParams, SearchMemoryR
       },
       required: ['success', 'results']
     };
+  }
+
+  /**
+   * Format a conversation QA pair result for the tool response.
+   * Returns a structured object with type 'conversation', the matched Q/A pair,
+   * conversation metadata, and optional windowed messages for scoped search.
+   */
+  private formatConversationResult(trace: Record<string, unknown>): Record<string, unknown> {
+    const entry: Record<string, unknown> = {
+      type: 'conversation',
+      conversationTitle: trace.conversationTitle || 'Untitled',
+      conversationId: trace.conversationId,
+      question: trace.question || '',
+      answer: trace.answer || '',
+      matchedSide: trace.matchedSide,
+      pairType: trace.pairType
+    };
+
+    // Include windowed messages when available (scoped mode)
+    if (Array.isArray(trace.windowMessages) && trace.windowMessages.length > 0) {
+      entry.windowMessages = (trace.windowMessages as Array<Record<string, unknown>>).map((msg) => ({
+        role: msg.role,
+        content: typeof msg.content === 'string' ? msg.content : '',
+        sequenceNumber: msg.sequenceNumber
+      }));
+    }
+
+    return entry;
+  }
+
+  /**
+   * Format a standard trace/state result for the tool response.
+   * Extracts content, tool name, and context from the raw trace metadata.
+   */
+  private formatTraceResult(trace: Record<string, unknown>): Record<string, unknown> | null {
+    // Target canonical metadata context first, then legacy fallbacks
+    const metadata = trace.metadata as Record<string, unknown> | undefined;
+    let context = metadata?.context as Record<string, unknown> | undefined;
+
+    const legacy = metadata?.legacy as Record<string, unknown> | undefined;
+    const legacyParamsContext = (legacy?.params as Record<string, unknown> | undefined)?.context as Record<string, unknown> | undefined;
+    const legacyResultContext = (legacy?.result as Record<string, unknown> | undefined)?.context as Record<string, unknown> | undefined;
+
+    if (this.isThinContext(context) && legacyParamsContext) {
+      context = legacyParamsContext;
+    }
+
+    if (this.isThinContext(context) && legacyResultContext) {
+      context = legacyResultContext;
+    }
+
+    // Safety check: Ensure it's actually an object before trying to clean it
+    if (context && typeof context === 'object' && !Array.isArray(context)) {
+      // Clone it so we don't mutate the original data
+      context = { ...context };
+
+      // Remove the technical IDs we don't want
+      delete context.sessionId;
+      delete context.workspaceId;
+    } else {
+      // Fallback to empty if it's not a valid object
+      context = {};
+    }
+
+    const entry: Record<string, unknown> = {
+      content: (trace.content as string) || ''
+    };
+    if (metadata?.tool) {
+      entry.tool = metadata.tool;
+    }
+    if (context && Object.keys(context).length > 0) {
+      entry.context = context;
+    }
+    return entry;
   }
 
   /**

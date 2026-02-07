@@ -26,6 +26,9 @@ import { IStorageAdapter } from '../../../database/interfaces/IStorageAdapter';
 import { MemoryTraceData, StateMetadata } from '../../../types/storage/HybridStorageTypes';
 import { getNexusPlugin } from '../../../utils/pluginLocator';
 import type NexusPlugin from '../../../main';
+import type { EmbeddingService, ConversationSearchResult } from '../../../services/embeddings/EmbeddingService';
+import { ConversationWindowRetriever } from '../../../services/embeddings/ConversationWindowRetriever';
+import type { IMessageRepository } from '../../../database/repositories/interfaces/IMessageRepository';
 
 export interface MemorySearchProcessorInterface {
   process(params: MemorySearchParameters): Promise<EnrichedMemorySearchResult[]>;
@@ -155,7 +158,7 @@ export class MemorySearchProcessor implements MemorySearchProcessorInterface {
     const searchPromises: Promise<RawMemoryResult[]>[] = [];
 
     // Get default memory types if not specified
-    const memoryTypes = options.memoryTypes || ['traces', 'toolCalls', 'sessions', 'states', 'workspaces'];
+    const memoryTypes = options.memoryTypes || ['traces', 'toolCalls', 'sessions', 'states', 'workspaces', 'conversations'];
     const limit = options.limit || this.configuration.defaultLimit;
 
     // Search legacy traces
@@ -181,6 +184,11 @@ export class MemorySearchProcessor implements MemorySearchProcessorInterface {
     // Search workspaces
     if (memoryTypes.includes('workspaces')) {
       searchPromises.push(this.searchWorkspaces(query, options));
+    }
+
+    // Search conversations via semantic embedding search
+    if (memoryTypes.includes('conversations')) {
+      searchPromises.push(this.searchConversationEmbeddings(query, options));
     }
 
     // Execute all searches in parallel
@@ -238,10 +246,12 @@ export class MemorySearchProcessor implements MemorySearchProcessorInterface {
   private buildSearchOptions(params: MemorySearchParameters): MemorySearchExecutionOptions {
     return {
       workspaceId: params.workspaceId || params.workspace,
-      // Session filtering removed - memory is workspace-scoped, not session-scoped
-      sessionId: undefined,
+      // sessionId used for scoped conversation search mode
+      sessionId: params.sessionId,
       limit: params.limit || this.configuration.defaultLimit,
-      toolCallFilters: params.toolCallFilters
+      toolCallFilters: params.toolCallFilters,
+      memoryTypes: params.memoryTypes,
+      windowSize: params.windowSize
     };
   }
 
@@ -521,6 +531,8 @@ export class MemorySearchProcessor implements MemorySearchProcessorInterface {
   }
 
   private determineResultType(trace: any): MemoryType {
+    // Check for conversation QA pair results
+    if (trace.type === 'conversation' && 'conversationId' in trace) return MemoryType.CONVERSATION;
     // Check for tool call specific properties
     if ('toolCallId' in trace && trace.toolCallId) return MemoryType.TOOL_CALL;
     // Check for session specific properties
@@ -672,6 +684,91 @@ export class MemorySearchProcessor implements MemorySearchProcessorInterface {
     return [];
   }
 
+  /**
+   * Search conversation embeddings using semantic vector search.
+   *
+   * Discovery mode (no sessionId): Returns conversation QA pair matches ranked by score.
+   * Scoped mode (with sessionId): Additionally retrieves N-turn message windows
+   * around each match via ConversationWindowRetriever.
+   *
+   * Gracefully returns empty results when EmbeddingService is unavailable (e.g.,
+   * embeddings disabled or mobile platform).
+   */
+  private async searchConversationEmbeddings(
+    query: string,
+    options: MemorySearchExecutionOptions
+  ): Promise<RawMemoryResult[]> {
+    const embeddingService = this.getEmbeddingService();
+    if (!embeddingService) {
+      return [];
+    }
+
+    const workspaceId = options.workspaceId || GLOBAL_WORKSPACE_ID;
+    const limit = options.limit || this.configuration.defaultLimit;
+
+    try {
+      // Semantic search via EmbeddingService (handles reranking internally)
+      const conversationResults = await embeddingService.semanticConversationSearch(
+        query,
+        workspaceId,
+        options.sessionId,
+        limit
+      );
+
+      if (conversationResults.length === 0) {
+        return [];
+      }
+
+      // Scoped mode: populate windowMessages when sessionId is provided
+      if (options.sessionId) {
+        const messageRepository = this.getMessageRepository();
+        if (messageRepository) {
+          const retriever = new ConversationWindowRetriever(messageRepository);
+          const windowSize = options.windowSize ?? 3;
+
+          await Promise.all(
+            conversationResults.map(async (result) => {
+              try {
+                const window = await retriever.getWindow(
+                  result.conversationId,
+                  result.matchedSequenceRange[0],
+                  result.matchedSequenceRange[1],
+                  { windowSize }
+                );
+                result.windowMessages = window.messages;
+              } catch (error) {
+                // Non-fatal: leave windowMessages undefined for this result
+              }
+            })
+          );
+        }
+      }
+
+      // Convert ConversationSearchResult[] to RawMemoryResult[] for unified processing
+      return conversationResults.map((result) => ({
+        trace: {
+          id: result.pairId,
+          type: 'conversation',
+          conversationId: result.conversationId,
+          conversationTitle: result.conversationTitle,
+          sessionId: result.sessionId,
+          workspaceId: result.workspaceId,
+          question: result.question,
+          answer: result.answer,
+          matchedSide: result.matchedSide,
+          pairType: result.pairType,
+          matchedSequenceRange: result.matchedSequenceRange,
+          windowMessages: result.windowMessages,
+          content: result.matchedSide === 'question' ? result.question : result.answer
+        },
+        similarity: 1 - result.score // Convert distance-based score (lower=better) to similarity (higher=better)
+      }));
+    } catch (error) {
+      console.error('[MemorySearchProcessor] Error searching conversation embeddings:', error);
+      return [];
+    }
+  }
+
   // Service access methods
   private getMemoryService(): MemoryService | undefined {
     try {
@@ -698,5 +795,30 @@ export class MemorySearchProcessor implements MemorySearchProcessorInterface {
     } catch (error) {
       return undefined;
     }
+  }
+
+  private getEmbeddingService(): EmbeddingService | undefined {
+    try {
+      const app: App = this.plugin.app;
+      const plugin = getNexusPlugin(app) as NexusPlugin | null;
+      if (plugin) {
+        return plugin.getServiceIfReady<EmbeddingService>('embeddingService') || undefined;
+      }
+      return undefined;
+    } catch (error) {
+      return undefined;
+    }
+  }
+
+  /**
+   * Get MessageRepository from the HybridStorageAdapter.
+   * The storageAdapter passed to the constructor is typed as IStorageAdapter,
+   * but at runtime it is a HybridStorageAdapter which exposes a `messages` getter.
+   */
+  private getMessageRepository(): IMessageRepository | undefined {
+    if (this.storageAdapter && 'messages' in this.storageAdapter) {
+      return (this.storageAdapter as unknown as { messages: IMessageRepository }).messages;
+    }
+    return undefined;
   }
 }
