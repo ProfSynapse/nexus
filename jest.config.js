@@ -21,6 +21,10 @@ module.exports = {
     'src/services/embeddings/QAPairBuilder.ts',
     'src/services/embeddings/ConversationWindowRetriever.ts',
     'src/services/embeddings/ConversationEmbeddingWatcher.ts',
+    'src/services/embeddings/ConversationEmbeddingService.ts',
+    'src/services/embeddings/ConversationIndexer.ts',
+    'src/services/embeddings/TraceIndexer.ts',
+    'src/agents/searchManager/services/ConversationSearchStrategy.ts',
     '!src/**/*.d.ts'
   ],
   coverageThreshold: {
@@ -95,6 +99,31 @@ module.exports = {
       functions: 90,
       lines: 90,
       statements: 90
+    },
+    // Refactored embedding/search modules (F3-F4 review findings)
+    './src/services/embeddings/ConversationEmbeddingService.ts': {
+      branches: 75,
+      functions: 85,
+      lines: 80,
+      statements: 80
+    },
+    './src/services/embeddings/ConversationIndexer.ts': {
+      branches: 70,
+      functions: 80,
+      lines: 75,
+      statements: 75
+    },
+    './src/services/embeddings/TraceIndexer.ts': {
+      branches: 70,
+      functions: 80,
+      lines: 75,
+      statements: 75
+    },
+    './src/agents/searchManager/services/ConversationSearchStrategy.ts': {
+      branches: 80,
+      functions: 85,
+      lines: 85,
+      statements: 85
     }
   },
   coverageDirectory: 'coverage',
