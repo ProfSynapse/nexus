@@ -17,6 +17,10 @@ module.exports = {
     'src/ui/chat/services/BranchManager.ts',
     'src/ui/chat/components/MessageBranchNavigator.ts',
     'src/ui/chat/components/MessageDisplay.ts',
+    'src/services/embeddings/ContentChunker.ts',
+    'src/services/embeddings/QAPairBuilder.ts',
+    'src/services/embeddings/ConversationWindowRetriever.ts',
+    'src/services/embeddings/ConversationEmbeddingWatcher.ts',
     '!src/**/*.d.ts'
   ],
   coverageThreshold: {
@@ -63,6 +67,34 @@ module.exports = {
       functions: 25,
       lines: 40,
       statements: 40
+    },
+    // Conversation memory search: pure functions (high bar)
+    // ContentChunker: lines 114-115 are unreachable defensive code (line 128
+    // preemptively catches the same case). Thresholds set below 100% accordingly.
+    './src/services/embeddings/ContentChunker.ts': {
+      branches: 85,
+      functions: 100,
+      lines: 93,
+      statements: 93
+    },
+    './src/services/embeddings/QAPairBuilder.ts': {
+      branches: 85,
+      functions: 90,
+      lines: 90,
+      statements: 90
+    },
+    // Conversation memory search: classes with mocked dependencies
+    './src/services/embeddings/ConversationWindowRetriever.ts': {
+      branches: 85,
+      functions: 100,
+      lines: 90,
+      statements: 90
+    },
+    './src/services/embeddings/ConversationEmbeddingWatcher.ts': {
+      branches: 70,
+      functions: 80,
+      lines: 75,
+      statements: 75
     }
   },
   coverageDirectory: 'coverage',
