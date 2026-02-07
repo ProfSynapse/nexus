@@ -36,6 +36,7 @@ import {
   ExportData,
   SyncResult
 } from '../../types/storage/HybridStorageTypes';
+import type { IMessageRepository } from '../repositories/interfaces/IMessageRepository';
 /**
  * Extended query options for flexible data retrieval
  */
@@ -470,6 +471,15 @@ export interface IStorageAdapter {
   // Repository Access (for advanced operations)
   // ============================================================================
 
+  /**
+   * Optional access to the message repository for advanced operations.
+   *
+   * Used by MemorySearchProcessor to obtain a ConversationWindowRetriever
+   * and by ConversationEmbeddingWatcher for message completion callbacks.
+   * Not all IStorageAdapter implementations expose this -- callers must
+   * check for undefined.
+   */
+  readonly messages?: IMessageRepository;
 }
 
 /**

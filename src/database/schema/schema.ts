@@ -311,6 +311,7 @@ CREATE TABLE IF NOT EXISTS conversation_embedding_metadata (
   model TEXT NOT NULL,
   contentHash TEXT NOT NULL,
   contentPreview TEXT,
+  referencedNotes TEXT,
   created INTEGER NOT NULL
 );
 
@@ -334,5 +335,5 @@ CREATE TABLE IF NOT EXISTS embedding_backfill_state (
 
 -- ==================== INITIALIZATION ====================
 
-INSERT OR IGNORE INTO schema_version VALUES (7, strftime('%s', 'now') * 1000);
+INSERT OR IGNORE INTO schema_version VALUES (8, strftime('%s', 'now') * 1000);
 `;

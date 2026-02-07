@@ -14,6 +14,7 @@ export { EmbeddingManager } from './EmbeddingManager';
 
 export { chunkContent } from './ContentChunker';
 export { buildQAPairs, hashContent } from './QAPairBuilder';
+export { preprocessContent, extractWikiLinks } from './EmbeddingUtils';
 
 export type { SimilarNote, TraceSearchResult, ConversationSearchResult } from './EmbeddingService';
 export type { IndexingProgress } from './IndexingQueue';

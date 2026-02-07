@@ -22,6 +22,10 @@
  */
 
 import type { MessageData, ToolCall } from '../../types/storage/HybridStorageTypes';
+import { hashContent } from './EmbeddingUtils';
+
+// Re-export hashContent so existing callers that import from QAPairBuilder continue to work
+export { hashContent };
 
 /**
  * A question-answer pair extracted from a conversation.
@@ -52,26 +56,6 @@ export interface QAPair {
   workspaceId?: string;
   /** Session this conversation belongs to (if known) */
   sessionId?: string;
-}
-
-/**
- * DJB2 hash function for string content.
- *
- * A fast, deterministic, non-cryptographic hash suitable for change detection.
- * Produces a hex string from the hash value. Collisions are acceptable since
- * this is only used to detect when content has changed, not for security.
- *
- * @param input - The string to hash
- * @returns Hex string representation of the hash
- */
-export function hashContent(input: string): string {
-  let hash = 5381;
-  for (let i = 0; i < input.length; i++) {
-    // hash * 33 + charCode (using bit shift for multiplication)
-    hash = ((hash << 5) + hash + input.charCodeAt(i)) | 0;
-  }
-  // Convert to unsigned 32-bit integer, then to hex string
-  return (hash >>> 0).toString(16);
 }
 
 /**

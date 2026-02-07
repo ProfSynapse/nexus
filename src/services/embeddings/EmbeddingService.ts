@@ -21,6 +21,7 @@
 import { App, TFile, Notice, Platform } from 'obsidian';
 import { EmbeddingEngine } from './EmbeddingEngine';
 import { chunkContent } from './ContentChunker';
+import { preprocessContent, hashContent, extractWikiLinks } from './EmbeddingUtils';
 import type { QAPair } from './QAPairBuilder';
 import type { MessageData } from '../../types/storage/HybridStorageTypes';
 import type { SQLiteCacheManager } from '../../database/storage/SQLiteCacheManager';
@@ -139,14 +140,14 @@ export class EmbeddingService {
       }
 
       const content = await this.app.vault.read(file);
-      const processedContent = this.preprocessContent(content);
+      const processedContent = preprocessContent(content);
 
       // Skip empty notes
       if (!processedContent) {
         return;
       }
 
-      const contentHash = this.hashContent(processedContent);
+      const contentHash = hashContent(processedContent);
 
       // Check if already up to date
       const existing = await this.db.queryOne<{ rowid: number; contentHash: string }>(
@@ -381,12 +382,12 @@ export class EmbeddingService {
     if (!this.isEnabled) return;
 
     try {
-      const processedContent = this.preprocessContent(content);
+      const processedContent = preprocessContent(content);
       if (!processedContent) {
         return;
       }
 
-      const contentHash = this.hashContent(processedContent);
+      const contentHash = hashContent(processedContent);
 
       // Check if already exists
       const existing = await this.db.queryOne<{ rowid: number; contentHash: string }>(
@@ -630,6 +631,10 @@ export class EmbeddingService {
           );
           const rowid = result?.id ?? 0;
 
+          // Extract wiki-links from the full chunk text for reference boosting
+          const wikiLinks = extractWikiLinks(chunk.text);
+          const referencedNotes = wikiLinks.length > 0 ? JSON.stringify(wikiLinks) : null;
+
           // Insert metadata
           const contentPreview = chunk.text.slice(0, 200);
           await this.db.run(
@@ -637,8 +642,8 @@ export class EmbeddingService {
               rowid, pairId, side, chunkIndex, conversationId,
               startSequenceNumber, endSequenceNumber, pairType,
               sourceId, sessionId, workspaceId, model,
-              contentHash, contentPreview, created
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              contentHash, contentPreview, referencedNotes, created
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
               rowid,
               qaPair.pairId,
@@ -654,6 +659,7 @@ export class EmbeddingService {
               modelInfo.id,
               qaPair.contentHash,
               contentPreview,
+              referencedNotes,
               now,
             ]
           );
@@ -713,6 +719,7 @@ export class EmbeddingService {
         sessionId: string | null;
         workspaceId: string | null;
         contentPreview: string | null;
+        referencedNotes: string | null;
         distance: number;
         created: number;
       }>(`
@@ -726,11 +733,12 @@ export class EmbeddingService {
           cem.sessionId,
           cem.workspaceId,
           cem.contentPreview,
+          cem.referencedNotes,
           cem.created,
           vec_distance_l2(ce.embedding, ?) as distance
         FROM conversation_embeddings ce
         JOIN conversation_embedding_metadata cem ON cem.rowid = ce.rowid
-        WHERE cem.workspaceId = ?
+        WHERE (cem.workspaceId = ? OR cem.workspaceId IS NULL)
         ORDER BY distance
         LIMIT ?
       `, [queryBuffer, workspaceId, candidateLimit]);
@@ -769,16 +777,17 @@ export class EmbeddingService {
         }
       }
 
-      // Look up conversation timestamps for recency scoring
+      // Batch look up conversation timestamps for recency scoring (avoids N+1 queries)
       const conversationIds = [...new Set(deduplicated.map(d => d.conversationId))];
       const conversationCreatedMap = new Map<string, number>();
-      for (const convId of conversationIds) {
-        const conv = await this.db.queryOne<{ created: number }>(
-          'SELECT created FROM conversations WHERE id = ?',
-          [convId]
+      if (conversationIds.length > 0) {
+        const placeholders = conversationIds.map(() => '?').join(',');
+        const convRows = await this.db.query<{ id: string; created: number }>(
+          `SELECT id, created FROM conversations WHERE id IN (${placeholders})`,
+          conversationIds
         );
-        if (conv) {
-          conversationCreatedMap.set(convId, conv.created);
+        for (const row of convRows) {
+          conversationCreatedMap.set(row.id, row.created);
         }
       }
 
@@ -801,23 +810,19 @@ export class EmbeddingService {
         }
 
         // --- C. Note Reference Boost (10%) ---
-        // Check if content preview contains [[wiki-links]] matching query terms
-        if (item.contentPreview && queryTerms.length > 0) {
-          const wikiLinkPattern = /\[\[([^\]]+)\]\]/g;
-          const previewLower = item.contentPreview.toLowerCase();
-          let match: RegExpExecArray | null;
-          let hasMatchingRef = false;
+        // Use pre-extracted referencedNotes from metadata instead of regex scanning
+        if (item.referencedNotes && queryTerms.length > 0) {
+          try {
+            const refs = JSON.parse(item.referencedNotes) as string[];
+            const hasMatchingRef = refs.some(ref =>
+              queryTerms.some(term => ref.includes(term))
+            );
 
-          while ((match = wikiLinkPattern.exec(previewLower)) !== null) {
-            const linkText = match[1];
-            if (queryTerms.some(term => linkText.includes(term))) {
-              hasMatchingRef = true;
-              break;
+            if (hasMatchingRef) {
+              score = score * 0.9; // 10% boost
             }
-          }
-
-          if (hasMatchingRef) {
-            score = score * 0.9; // 10% boost
+          } catch {
+            // Malformed JSON in referencedNotes -- skip boost
           }
         }
 
@@ -836,13 +841,22 @@ export class EmbeddingService {
       // Use sequence range to find original user + assistant messages
       const results: ConversationSearchResult[] = [];
 
-      for (const item of topResults) {
-        // Fetch conversation title
-        const conv = await this.db.queryOne<{ title: string }>(
-          'SELECT title FROM conversations WHERE id = ?',
-          [item.conversationId]
+      // Batch fetch conversation titles (avoids N+1 queries)
+      const topConvIds = [...new Set(topResults.map(r => r.conversationId))];
+      const conversationTitleMap = new Map<string, string>();
+      if (topConvIds.length > 0) {
+        const titlePlaceholders = topConvIds.map(() => '?').join(',');
+        const titleRows = await this.db.query<{ id: string; title: string }>(
+          `SELECT id, title FROM conversations WHERE id IN (${titlePlaceholders})`,
+          topConvIds
         );
-        const conversationTitle = conv?.title ?? 'Untitled';
+        for (const row of titleRows) {
+          conversationTitleMap.set(row.id, row.title);
+        }
+      }
+
+      for (const item of topResults) {
+        const conversationTitle = conversationTitleMap.get(item.conversationId) ?? 'Untitled';
 
         // Fetch messages in the sequence range to get full Q and A
         const messages = await this.db.query<{
@@ -939,57 +953,23 @@ export class EmbeddingService {
     }
   }
 
+  // ==================== CONVERSATION LIFECYCLE ====================
+
+  /**
+   * Clean up all embeddings for a deleted conversation.
+   *
+   * This is a public entry point intended to be called when a conversation
+   * is deleted. Currently not wired to an event bus (no conversation deletion
+   * event exists in the codebase). Callers should invoke this manually when
+   * deleting a conversation to prevent orphaned embedding data.
+   *
+   * @param conversationId - The conversation being deleted
+   */
+  async onConversationDeleted(conversationId: string): Promise<void> {
+    await this.removeConversationEmbeddings(conversationId);
+  }
+
   // ==================== UTILITIES ====================
-
-  /**
-   * Preprocess content before embedding
-   * - Strips frontmatter
-   * - Removes image embeds
-   * - Normalizes whitespace
-   * - Truncates if too long
-   *
-   * @param content - Raw content
-   * @returns Processed content or null if empty
-   */
-  private preprocessContent(content: string): string | null {
-    // Strip frontmatter
-    let processed = content.replace(/^---[\s\S]*?---\n?/, '');
-
-    // Strip image embeds, keep link text
-    processed = processed
-      .replace(/!\[\[.*?\]\]/g, '')                           // Obsidian image embeds
-      .replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, '$2')          // [[path|alias]] → alias
-      .replace(/\[\[([^\]]+)\]\]/g, '$1');                    // [[path]] → path
-
-    // Normalize whitespace
-    processed = processed.replace(/\s+/g, ' ').trim();
-
-    // Skip if too short
-    if (processed.length < 10) {
-      return null;
-    }
-
-    // Truncate if too long (model context limit)
-    const MAX_CHARS = 2000;
-    return processed.length > MAX_CHARS
-      ? processed.slice(0, MAX_CHARS)
-      : processed;
-  }
-
-  /**
-   * Hash content for change detection
-   *
-   * @param content - Content to hash
-   * @returns Hash string
-   */
-  private hashContent(content: string): string {
-    let hash = 0;
-    for (let i = 0; i < content.length; i++) {
-      hash = ((hash << 5) - hash) + content.charCodeAt(i);
-      hash = hash & hash; // Convert to 32bit integer
-    }
-    return hash.toString(36);
-  }
 
   /**
    * Check if service is enabled

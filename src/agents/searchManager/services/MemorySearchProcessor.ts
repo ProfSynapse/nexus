@@ -221,6 +221,7 @@ export class MemorySearchProcessor implements MemorySearchProcessorInterface {
           enrichedResults.push(enriched);
         }
       } catch (error) {
+        console.error('[MemorySearchProcessor] Error enriching results:', error);
       }
     }
 
@@ -811,14 +812,10 @@ export class MemorySearchProcessor implements MemorySearchProcessorInterface {
   }
 
   /**
-   * Get MessageRepository from the HybridStorageAdapter.
-   * The storageAdapter passed to the constructor is typed as IStorageAdapter,
-   * but at runtime it is a HybridStorageAdapter which exposes a `messages` getter.
+   * Get MessageRepository from the storage adapter.
+   * Uses the optional `messages` getter defined on IStorageAdapter.
    */
   private getMessageRepository(): IMessageRepository | undefined {
-    if (this.storageAdapter && 'messages' in this.storageAdapter) {
-      return (this.storageAdapter as unknown as { messages: IMessageRepository }).messages;
-    }
-    return undefined;
+    return this.storageAdapter?.messages;
   }
 }

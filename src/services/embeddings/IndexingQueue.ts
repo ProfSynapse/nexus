@@ -21,6 +21,7 @@
 import { App, TFile } from 'obsidian';
 import { EventEmitter } from 'events';
 import { EmbeddingService } from './EmbeddingService';
+import { preprocessContent, hashContent } from './EmbeddingUtils';
 import { buildQAPairs } from './QAPairBuilder';
 import type { MessageData } from '../../types/storage/HybridStorageTypes';
 import type { SQLiteCacheManager } from '../../database/storage/SQLiteCacheManager';
@@ -144,7 +145,7 @@ export class IndexingQueue extends EventEmitter {
     for (const note of notes) {
       try {
         const content = await this.app.vault.cachedRead(note);
-        const contentHash = this.hashContent(this.preprocessContent(content));
+        const contentHash = hashContent(preprocessContent(content) ?? '');
 
         const existing = await this.db.queryOne<{ contentHash: string }>(
           'SELECT contentHash FROM embedding_metadata WHERE notePath = ?',
@@ -255,7 +256,7 @@ export class IndexingQueue extends EventEmitter {
         estimatedTimeRemaining: null
       });
 
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('[IndexingQueue] Processing failed:', error);
       this.emitProgress({
         phase: 'error',
@@ -263,7 +264,7 @@ export class IndexingQueue extends EventEmitter {
         processedNotes: this.processedCount,
         currentNote: null,
         estimatedTimeRemaining: null,
-        error: error.message
+        error: error instanceof Error ? error.message : String(error)
       });
     } finally {
       this.isRunning = false;
@@ -336,37 +337,6 @@ export class IndexingQueue extends EventEmitter {
    */
   private emitProgress(progress: IndexingProgress): void {
     this.emit('progress', progress);
-  }
-
-  /**
-   * Preprocess content (same as EmbeddingService)
-   */
-  private preprocessContent(content: string): string {
-    // Strip frontmatter
-    let processed = content.replace(/^---[\s\S]*?---\n?/, '');
-
-    // Strip image embeds, keep link text
-    processed = processed
-      .replace(/!\[\[.*?\]\]/g, '')
-      .replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, '$2')
-      .replace(/\[\[([^\]]+)\]\]/g, '$1');
-
-    // Normalize whitespace
-    processed = processed.replace(/\s+/g, ' ').trim();
-
-    return processed;
-  }
-
-  /**
-   * Hash content (same as EmbeddingService)
-   */
-  private hashContent(content: string): string {
-    let hash = 0;
-    for (let i = 0; i < content.length; i++) {
-      hash = ((hash << 5) - hash) + content.charCodeAt(i);
-      hash = hash & hash;
-    }
-    return hash.toString(36);
   }
 
   /**
@@ -497,7 +467,7 @@ export class IndexingQueue extends EventEmitter {
       // Final save
       await this.db.save();
 
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('[IndexingQueue] Trace processing failed:', error);
     } finally {
       this.isRunning = false;
@@ -609,6 +579,8 @@ export class IndexingQueue extends EventEmitter {
 
       // Mark as running
       this.isRunning = true;
+      this.totalCount = totalCount;
+      this.processedCount = processedSoFar;
       let lastProcessedId = existingState?.lastProcessedConversationId ?? null;
 
       await this.updateBackfillState({
@@ -616,6 +588,14 @@ export class IndexingQueue extends EventEmitter {
         totalConversations: totalCount,
         processedConversations: processedSoFar,
         lastProcessedConversationId: lastProcessedId,
+      });
+
+      this.emitProgress({
+        phase: 'indexing',
+        totalNotes: totalCount,
+        processedNotes: processedSoFar,
+        currentNote: 'conversations',
+        estimatedTimeRemaining: null,
       });
 
       // Process each conversation from the resume point
@@ -642,7 +622,17 @@ export class IndexingQueue extends EventEmitter {
         }
 
         processedSoFar++;
+        this.processedCount = processedSoFar;
         lastProcessedId = conv.id;
+
+        // Emit progress after each conversation (mirrors startFullIndex and startTraceIndex)
+        this.emitProgress({
+          phase: 'indexing',
+          totalNotes: totalCount,
+          processedNotes: processedSoFar,
+          currentNote: 'conversations',
+          estimatedTimeRemaining: null,
+        });
 
         // Update progress in backfill state table
         if (processedSoFar % this.SAVE_INTERVAL === 0) {
@@ -670,14 +660,22 @@ export class IndexingQueue extends EventEmitter {
       });
       await this.db.save();
 
-    } catch (error: any) {
+      this.emitProgress({
+        phase: 'complete',
+        totalNotes: totalCount,
+        processedNotes: processedSoFar,
+        currentNote: null,
+        estimatedTimeRemaining: null,
+      });
+
+    } catch (error: unknown) {
       console.error('[IndexingQueue] Conversation backfill failed:', error);
       await this.updateBackfillState({
         status: 'error',
         totalConversations: 0,
         processedConversations: 0,
         lastProcessedConversationId: null,
-        errorMessage: error.message,
+        errorMessage: error instanceof Error ? error.message : String(error),
       });
     } finally {
       this.isRunning = false;

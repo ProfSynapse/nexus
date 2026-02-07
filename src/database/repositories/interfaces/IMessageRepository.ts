@@ -94,4 +94,15 @@ export interface IMessageRepository {
     startSeq: number,
     endSeq: number
   ): Promise<MessageData[]>;
+
+  /**
+   * Register a callback that fires when a message reaches state='complete'.
+   *
+   * Used by ConversationEmbeddingWatcher for real-time embedding indexing.
+   * The callback runs asynchronously and should not block the write path.
+   *
+   * @param callback - Function to call when a message completes
+   * @returns Unsubscribe function that removes the callback
+   */
+  onMessageComplete(callback: (message: MessageData) => void): () => void;
 }

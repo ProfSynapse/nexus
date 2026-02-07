@@ -73,7 +73,7 @@ export interface MigratableDatabase {
 // Alias for backward compatibility
 type Database = MigratableDatabase;
 
-export const CURRENT_SCHEMA_VERSION = 7;
+export const CURRENT_SCHEMA_VERSION = 8;
 
 export interface Migration {
   version: number;
@@ -255,6 +255,15 @@ export const MIGRATIONS: Migration[] = [
         }
       }
     },
+  },
+
+  // Version 7 -> 8: Add referencedNotes column to conversation_embedding_metadata
+  {
+    version: 8,
+    description: 'Add referencedNotes column to conversation_embedding_metadata for pre-extracted wiki-link references',
+    sql: [
+      `ALTER TABLE conversation_embedding_metadata ADD COLUMN referencedNotes TEXT`,
+    ]
   },
 ];
 

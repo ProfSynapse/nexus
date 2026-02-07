@@ -28,6 +28,7 @@ import { SessionResultFormatter } from './formatters/SessionResultFormatter';
 import { StateResultFormatter } from './formatters/StateResultFormatter';
 import { WorkspaceResultFormatter } from './formatters/WorkspaceResultFormatter';
 import { TraceResultFormatter } from './formatters/TraceResultFormatter';
+import { ConversationResultFormatter } from './formatters/ConversationResultFormatter';
 import { ResultGroupingHelper } from './formatters/ResultGroupingHelper';
 import { ResultSortingHelper } from './formatters/ResultSortingHelper';
 import { ResultHighlightHelper } from './formatters/ResultHighlightHelper';
@@ -69,6 +70,7 @@ export class ResultFormatter implements ResultFormatterInterface {
     this.formatters.set(MemoryType.STATE, new StateResultFormatter(this.configuration));
     this.formatters.set(MemoryType.WORKSPACE, new WorkspaceResultFormatter(this.configuration));
     this.formatters.set(MemoryType.TRACE, new TraceResultFormatter(this.configuration));
+    this.formatters.set(MemoryType.CONVERSATION, new ConversationResultFormatter(this.configuration));
 
     // Initialize helpers
     this.groupingHelper = new ResultGroupingHelper();
