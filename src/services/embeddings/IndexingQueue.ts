@@ -1,6 +1,9 @@
 /**
  * Location: src/services/embeddings/IndexingQueue.ts
- * Purpose: Background initial indexing queue with progress tracking
+ * Purpose: Top-level coordinator for background embedding indexing with progress
+ *          tracking. Manages the shared queue state (pause/resume/cancel) and
+ *          delegates domain-specific indexing to TraceIndexer and
+ *          ConversationIndexer.
  *
  * Features:
  * - Processes one note at a time (memory conscious)
@@ -9,21 +12,23 @@
  * - Pause/resume/cancel controls
  * - Resumable via content hash comparison
  * - Saves DB every 10 notes
- * - Backfill indexing for existing conversations (resume-on-interrupt)
+ * - Delegates conversation backfill to ConversationIndexer
+ * - Delegates trace backfill to TraceIndexer
  *
  * Relationships:
- * - Uses EmbeddingService for embedding notes and conversation turns
- * - Uses QAPairBuilder for converting messages into QA pairs
- * - Uses SQLiteCacheManager for periodic saves and direct conversation queries
- * - Emits progress events for UI updates
+ * - Uses EmbeddingService for embedding notes
+ * - Uses SQLiteCacheManager for periodic saves and note hash lookups
+ * - Uses TraceIndexer for trace backfill
+ * - Uses ConversationIndexer for conversation backfill
+ * - Emits progress events for UI updates (consumed by EmbeddingStatusBar)
  */
 
 import { App, TFile } from 'obsidian';
 import { EventEmitter } from 'events';
 import { EmbeddingService } from './EmbeddingService';
 import { preprocessContent, hashContent } from './EmbeddingUtils';
-import { buildQAPairs } from './QAPairBuilder';
-import type { MessageData } from '../../types/storage/HybridStorageTypes';
+import { TraceIndexer } from './TraceIndexer';
+import { ConversationIndexer } from './ConversationIndexer';
 import type { SQLiteCacheManager } from '../../database/storage/SQLiteCacheManager';
 
 export interface IndexingProgress {
@@ -36,25 +41,7 @@ export interface IndexingProgress {
 }
 
 /**
- * Row shape for the embedding_backfill_state table.
- * Tracks progress of conversation backfill for resume-on-interrupt support.
- */
-interface BackfillStateRow {
-  id: string;
-  lastProcessedConversationId: string | null;
-  totalConversations: number;
-  processedConversations: number;
-  status: string;
-  startedAt: number | null;
-  completedAt: number | null;
-  errorMessage: string | null;
-}
-
-/** Primary key used in the embedding_backfill_state table */
-const CONVERSATION_BACKFILL_ID = 'conversation_backfill';
-
-/**
- * Background indexing queue for notes
+ * Background indexing queue for notes, traces, and conversations.
  *
  * Processes notes one at a time with UI yielding to keep Obsidian responsive.
  * Emits 'progress' events that can be consumed by UI components.
@@ -79,6 +66,10 @@ export class IndexingQueue extends EventEmitter {
   private totalCount = 0;
   private startTime = 0;
   private processingTimes: number[] = [];    // Rolling average for ETA
+
+  // Domain indexers (created lazily in their start methods)
+  private traceIndexer: TraceIndexer | null = null;
+  private conversationIndexer: ConversationIndexer | null = null;
 
   constructor(
     app: App,
@@ -137,150 +128,130 @@ export class IndexingQueue extends EventEmitter {
   }
 
   /**
-   * Filter to only notes that need (re)indexing
+   * Start indexing of all memory traces (backfill existing traces)
+   * Delegates to TraceIndexer for the actual work.
    */
-  private async filterUnindexedNotes(notes: TFile[]): Promise<TFile[]> {
-    const needsIndexing: TFile[] = [];
-
-    for (const note of notes) {
-      try {
-        const content = await this.app.vault.cachedRead(note);
-        const contentHash = hashContent(preprocessContent(content) ?? '');
-
-        const existing = await this.db.queryOne<{ contentHash: string }>(
-          'SELECT contentHash FROM embedding_metadata WHERE notePath = ?',
-          [note.path]
-        );
-
-        // Needs indexing if: no embedding OR content changed
-        if (!existing || existing.contentHash !== contentHash) {
-          needsIndexing.push(note);
-        }
-      } catch {
-        // Include in indexing queue anyway
-        needsIndexing.push(note);
-      }
+  async startTraceIndex(): Promise<void> {
+    if (this.isRunning) {
+      return;
     }
 
-    return needsIndexing;
-  }
+    if (!this.embeddingService.isServiceEnabled()) {
+      return;
+    }
 
-  /**
-   * Process the queue with memory-conscious batching
-   */
-  private async processQueue(): Promise<void> {
     this.isRunning = true;
+    this.abortController = new AbortController();
+
+    this.traceIndexer = new TraceIndexer(
+      this.db,
+      this.embeddingService,
+      (progress) => {
+        this.totalCount = progress.totalTraces;
+        this.processedCount = progress.processedTraces;
+        this.emitProgress({
+          phase: 'indexing',
+          totalNotes: progress.totalTraces,
+          processedNotes: progress.processedTraces,
+          currentNote: 'traces',
+          estimatedTimeRemaining: null
+        });
+      },
+      this.SAVE_INTERVAL,
+      this.YIELD_INTERVAL_MS
+    );
+
     this.emitProgress({
-      phase: 'loading_model',
-      totalNotes: this.totalCount,
+      phase: 'indexing',
+      totalNotes: 0,
       processedNotes: 0,
-      currentNote: null,
+      currentNote: 'traces',
       estimatedTimeRemaining: null
     });
 
     try {
-      // Load model (one-time, ~50-100MB)
-      await this.embeddingService.initialize();
-
-      this.emitProgress({
-        phase: 'indexing',
-        totalNotes: this.totalCount,
-        processedNotes: 0,
-        currentNote: null,
-        estimatedTimeRemaining: null
-      });
-
-      while (this.queue.length > 0) {
-        // Check for abort/pause
-        if (this.abortController?.signal.aborted) {
-          this.emitProgress({
-            phase: 'paused',
-            totalNotes: this.totalCount,
-            processedNotes: this.processedCount,
-            currentNote: null,
-            estimatedTimeRemaining: null
-          });
-          break;
-        }
-
-        if (this.isPaused) {
-          await this.waitForResume();
-          continue;
-        }
-
-        const notePath = this.queue.shift()!;
-        const noteStart = Date.now();
-
-        try {
-          this.emitProgress({
-            phase: 'indexing',
-            totalNotes: this.totalCount,
-            processedNotes: this.processedCount,
-            currentNote: notePath,
-            estimatedTimeRemaining: this.calculateETA()
-          });
-
-          // Process single note - memory released after each
-          await this.embeddingService.embedNote(notePath);
-          this.processedCount++;
-
-          // Track timing for ETA
-          const elapsed = Date.now() - noteStart;
-          this.processingTimes.push(elapsed);
-          if (this.processingTimes.length > 20) {
-            this.processingTimes.shift(); // Keep rolling window
-          }
-
-          // Periodic DB save (embeddings are already in DB, this ensures WAL flush)
-          if (this.processedCount % this.SAVE_INTERVAL === 0) {
-            await this.db.save();
-          }
-
-        } catch (error) {
-          console.error(`[IndexingQueue] Failed to embed ${notePath}:`, error);
-          // Continue with next note, don't fail entire queue
-        }
-
-        // Yield to UI - critical for responsiveness
-        await new Promise(r => setTimeout(r, this.YIELD_INTERVAL_MS));
-      }
-
-      // Final save
-      await this.db.save();
+      const result = await this.traceIndexer.start(
+        this.abortController.signal,
+        () => this.isPaused,
+        () => this.waitForResume()
+      );
 
       this.emitProgress({
         phase: 'complete',
-        totalNotes: this.totalCount,
-        processedNotes: this.processedCount,
+        totalNotes: result.total,
+        processedNotes: result.processed,
         currentNote: null,
         estimatedTimeRemaining: null
       });
-
-    } catch (error: unknown) {
-      console.error('[IndexingQueue] Processing failed:', error);
-      this.emitProgress({
-        phase: 'error',
-        totalNotes: this.totalCount,
-        processedNotes: this.processedCount,
-        currentNote: null,
-        estimatedTimeRemaining: null,
-        error: error instanceof Error ? error.message : String(error)
-      });
     } finally {
       this.isRunning = false;
+      this.traceIndexer = null;
     }
   }
 
   /**
-   * Calculate estimated time remaining
+   * Backfill embeddings for all existing conversations.
+   * Delegates to ConversationIndexer for the actual work.
    */
-  private calculateETA(): number | null {
-    if (this.processingTimes.length < 3) return null;
+  async startConversationIndex(): Promise<void> {
+    if (this.isRunning) {
+      return;
+    }
 
-    const avgTime = this.processingTimes.reduce((a, b) => a + b, 0) / this.processingTimes.length;
-    const remaining = this.totalCount - this.processedCount;
-    return Math.round((remaining * avgTime) / 1000); // seconds
+    if (!this.embeddingService.isServiceEnabled()) {
+      return;
+    }
+
+    this.isRunning = true;
+    this.abortController = new AbortController();
+
+    this.conversationIndexer = new ConversationIndexer(
+      this.db,
+      this.embeddingService,
+      (progress) => {
+        this.totalCount = progress.totalConversations;
+        this.processedCount = progress.processedConversations;
+        this.emitProgress({
+          phase: 'indexing',
+          totalNotes: progress.totalConversations,
+          processedNotes: progress.processedConversations,
+          currentNote: 'conversations',
+          estimatedTimeRemaining: null
+        });
+      },
+      this.SAVE_INTERVAL
+    );
+
+    this.emitProgress({
+      phase: 'indexing',
+      totalNotes: 0,
+      processedNotes: 0,
+      currentNote: 'conversations',
+      estimatedTimeRemaining: null
+    });
+
+    try {
+      const result = await this.conversationIndexer.start(
+        this.abortController.signal,
+        this.CONVERSATION_YIELD_INTERVAL
+      );
+
+      this.emitProgress({
+        phase: 'complete',
+        totalNotes: result.total,
+        processedNotes: result.processed,
+        currentNote: null,
+        estimatedTimeRemaining: null
+      });
+    } finally {
+      this.isRunning = false;
+      this.conversationIndexer = null;
+    }
   }
+
+  // ---------------------------------------------------------------------------
+  // Queue controls
+  // ---------------------------------------------------------------------------
 
   /**
    * Pause indexing (can resume later)
@@ -323,21 +294,9 @@ export class IndexingQueue extends EventEmitter {
     this.removeAllListeners();
   }
 
-  /**
-   * Wait for resume signal
-   */
-  private async waitForResume(): Promise<void> {
-    while (this.isPaused && !this.abortController?.signal.aborted) {
-      await new Promise(r => setTimeout(r, 100));
-    }
-  }
-
-  /**
-   * Emit progress event
-   */
-  private emitProgress(progress: IndexingProgress): void {
-    this.emit('progress', progress);
-  }
+  // ---------------------------------------------------------------------------
+  // Status queries
+  // ---------------------------------------------------------------------------
 
   /**
    * Check if indexing is currently running
@@ -376,64 +335,70 @@ export class IndexingQueue extends EventEmitter {
     };
   }
 
-  // ==================== TRACE INDEXING ====================
+  // ---------------------------------------------------------------------------
+  // Private: note indexing
+  // ---------------------------------------------------------------------------
 
   /**
-   * Start indexing of all memory traces (backfill existing traces)
-   * This is separate from note indexing and processes workspace traces
+   * Filter to only notes that need (re)indexing
    */
-  async startTraceIndex(): Promise<void> {
-    if (this.isRunning) {
-      return;
-    }
+  private async filterUnindexedNotes(notes: TFile[]): Promise<TFile[]> {
+    const needsIndexing: TFile[] = [];
 
-    if (!this.embeddingService.isServiceEnabled()) {
-      return;
-    }
+    for (const note of notes) {
+      try {
+        const content = await this.app.vault.cachedRead(note);
+        const contentHash = hashContent(preprocessContent(content) ?? '');
 
-    // Query all traces from the database
-    const allTraces = await this.db.query<{
-      id: string;
-      workspaceId: string;
-      sessionId: string | null;
-      content: string;
-    }>('SELECT id, workspaceId, sessionId, content FROM memory_traces');
+        const existing = await this.db.queryOne<{ contentHash: string }>(
+          'SELECT contentHash FROM embedding_metadata WHERE notePath = ?',
+          [note.path]
+        );
 
-    // Filter to traces not already embedded
-    const needsIndexing: typeof allTraces = [];
-
-    for (const trace of allTraces) {
-      const existing = await this.db.queryOne<{ traceId: string }>(
-        'SELECT traceId FROM trace_embedding_metadata WHERE traceId = ?',
-        [trace.id]
-      );
-      if (!existing) {
-        needsIndexing.push(trace);
+        if (!existing || existing.contentHash !== contentHash) {
+          needsIndexing.push(note);
+        }
+      } catch {
+        needsIndexing.push(note);
       }
     }
 
-    if (needsIndexing.length === 0) {
-      return;
-    }
+    return needsIndexing;
+  }
 
+  /**
+   * Process the note queue with memory-conscious batching
+   */
+  private async processQueue(): Promise<void> {
     this.isRunning = true;
-    this.totalCount = needsIndexing.length;
-    this.processedCount = 0;
-    this.startTime = Date.now();
-    this.processingTimes = [];
-    this.abortController = new AbortController();
-
     this.emitProgress({
-      phase: 'indexing',
+      phase: 'loading_model',
       totalNotes: this.totalCount,
       processedNotes: 0,
-      currentNote: 'traces',
+      currentNote: null,
       estimatedTimeRemaining: null
     });
 
     try {
-      for (const trace of needsIndexing) {
+      await this.embeddingService.initialize();
+
+      this.emitProgress({
+        phase: 'indexing',
+        totalNotes: this.totalCount,
+        processedNotes: 0,
+        currentNote: null,
+        estimatedTimeRemaining: null
+      });
+
+      while (this.queue.length > 0) {
         if (this.abortController?.signal.aborted) {
+          this.emitProgress({
+            phase: 'paused',
+            totalNotes: this.totalCount,
+            processedNotes: this.processedCount,
+            currentNote: null,
+            estimatedTimeRemaining: null
+          });
           break;
         }
 
@@ -442,35 +407,40 @@ export class IndexingQueue extends EventEmitter {
           continue;
         }
 
+        const notePath = this.queue.shift()!;
+        const noteStart = Date.now();
+
         try {
-          await this.embeddingService.embedTrace(
-            trace.id,
-            trace.workspaceId,
-            trace.sessionId ?? undefined,
-            trace.content
-          );
+          this.emitProgress({
+            phase: 'indexing',
+            totalNotes: this.totalCount,
+            processedNotes: this.processedCount,
+            currentNote: notePath,
+            estimatedTimeRemaining: this.calculateETA()
+          });
+
+          await this.embeddingService.embedNote(notePath);
           this.processedCount++;
 
-          // Periodic DB save
+          const elapsed = Date.now() - noteStart;
+          this.processingTimes.push(elapsed);
+          if (this.processingTimes.length > 20) {
+            this.processingTimes.shift();
+          }
+
           if (this.processedCount % this.SAVE_INTERVAL === 0) {
             await this.db.save();
           }
 
         } catch (error) {
-          console.error(`[IndexingQueue] Failed to embed trace ${trace.id}:`, error);
+          console.error(`[IndexingQueue] Failed to embed ${notePath}:`, error);
         }
 
-        // Yield to UI
         await new Promise(r => setTimeout(r, this.YIELD_INTERVAL_MS));
       }
 
-      // Final save
       await this.db.save();
 
-    } catch (error: unknown) {
-      console.error('[IndexingQueue] Trace processing failed:', error);
-    } finally {
-      this.isRunning = false;
       this.emitProgress({
         phase: 'complete',
         totalNotes: this.totalCount,
@@ -478,343 +448,50 @@ export class IndexingQueue extends EventEmitter {
         currentNote: null,
         estimatedTimeRemaining: null
       });
-    }
-  }
-
-  // ==================== CONVERSATION BACKFILL ====================
-
-  /**
-   * Backfill embeddings for all existing conversations.
-   *
-   * Processes conversations newest-first for immediate value from recent chats.
-   * Supports resume-on-interrupt: tracks progress in embedding_backfill_state
-   * table and skips already-processed conversations on restart. Individual
-   * QA pair embedding is also idempotent via contentHash checks.
-   *
-   * Branch conversations (those with parentConversationId in metadata) are
-   * skipped since they are variants of their parent conversation.
-   *
-   * Yields to the main thread every CONVERSATION_YIELD_INTERVAL conversations
-   * to keep Obsidian responsive during backfill.
-   */
-  async startConversationIndex(): Promise<void> {
-    if (this.isRunning) {
-      return;
-    }
-
-    if (!this.embeddingService.isServiceEnabled()) {
-      return;
-    }
-
-    try {
-      // Check existing backfill state for resume support
-      const existingState = await this.db.queryOne<BackfillStateRow>(
-        'SELECT * FROM embedding_backfill_state WHERE id = ?',
-        [CONVERSATION_BACKFILL_ID]
-      );
-
-      // If already completed, nothing to do
-      if (existingState && existingState.status === 'completed') {
-        return;
-      }
-
-      // Get all non-branch conversations, newest first
-      const allConversations = await this.db.query<{
-        id: string;
-        metadataJson: string | null;
-        workspaceId: string | null;
-        sessionId: string | null;
-      }>(
-        'SELECT id, metadataJson, workspaceId, sessionId FROM conversations ORDER BY created DESC'
-      );
-
-      // Filter out branch conversations (those with parentConversationId)
-      const nonBranchConversations = allConversations.filter(conv => {
-        if (!conv.metadataJson) return true;
-        try {
-          const metadata = JSON.parse(conv.metadataJson) as Record<string, unknown>;
-          return !metadata.parentConversationId;
-        } catch {
-          return true; // If metadata can't be parsed, include the conversation
-        }
-      });
-
-      if (nonBranchConversations.length === 0) {
-        await this.updateBackfillState({
-          status: 'completed',
-          totalConversations: 0,
-          processedConversations: 0,
-          lastProcessedConversationId: null,
-        });
-        return;
-      }
-
-      // Determine resume point if we were interrupted mid-backfill
-      let startIndex = 0;
-      let processedSoFar = 0;
-
-      if (existingState && existingState.lastProcessedConversationId) {
-        const resumeIndex = nonBranchConversations.findIndex(
-          c => c.id === existingState.lastProcessedConversationId
-        );
-        if (resumeIndex >= 0) {
-          // Start after the last successfully processed conversation
-          startIndex = resumeIndex + 1;
-          processedSoFar = existingState.processedConversations;
-        }
-      }
-
-      const totalCount = nonBranchConversations.length;
-
-      // Nothing remaining to process
-      if (startIndex >= totalCount) {
-        await this.updateBackfillState({
-          status: 'completed',
-          totalConversations: totalCount,
-          processedConversations: totalCount,
-          lastProcessedConversationId: existingState?.lastProcessedConversationId ?? null,
-        });
-        return;
-      }
-
-      // Mark as running
-      this.isRunning = true;
-      this.totalCount = totalCount;
-      this.processedCount = processedSoFar;
-      let lastProcessedId = existingState?.lastProcessedConversationId ?? null;
-
-      await this.updateBackfillState({
-        status: 'running',
-        totalConversations: totalCount,
-        processedConversations: processedSoFar,
-        lastProcessedConversationId: lastProcessedId,
-      });
-
-      this.emitProgress({
-        phase: 'indexing',
-        totalNotes: totalCount,
-        processedNotes: processedSoFar,
-        currentNote: 'conversations',
-        estimatedTimeRemaining: null,
-      });
-
-      // Process each conversation from the resume point
-      for (let i = startIndex; i < totalCount; i++) {
-        // Check for abort
-        if (this.abortController?.signal.aborted) {
-          break;
-        }
-
-        const conv = nonBranchConversations[i];
-
-        try {
-          await this.backfillConversation(
-            conv.id,
-            conv.workspaceId ?? undefined,
-            conv.sessionId ?? undefined
-          );
-        } catch (error) {
-          // Log and continue -- one bad conversation should not abort the batch
-          console.error(
-            `[IndexingQueue] Failed to backfill conversation ${conv.id}:`,
-            error
-          );
-        }
-
-        processedSoFar++;
-        this.processedCount = processedSoFar;
-        lastProcessedId = conv.id;
-
-        // Emit progress after each conversation (mirrors startFullIndex and startTraceIndex)
-        this.emitProgress({
-          phase: 'indexing',
-          totalNotes: totalCount,
-          processedNotes: processedSoFar,
-          currentNote: 'conversations',
-          estimatedTimeRemaining: null,
-        });
-
-        // Update progress in backfill state table
-        if (processedSoFar % this.SAVE_INTERVAL === 0) {
-          await this.updateBackfillState({
-            status: 'running',
-            totalConversations: totalCount,
-            processedConversations: processedSoFar,
-            lastProcessedConversationId: lastProcessedId,
-          });
-          await this.db.save();
-        }
-
-        // Yield to main thread periodically to keep Obsidian responsive
-        if (i > startIndex && (i - startIndex) % this.CONVERSATION_YIELD_INTERVAL === 0) {
-          await new Promise(r => setTimeout(r, 0));
-        }
-      }
-
-      // Final state update
-      await this.updateBackfillState({
-        status: 'completed',
-        totalConversations: totalCount,
-        processedConversations: processedSoFar,
-        lastProcessedConversationId: lastProcessedId,
-      });
-      await this.db.save();
-
-      this.emitProgress({
-        phase: 'complete',
-        totalNotes: totalCount,
-        processedNotes: processedSoFar,
-        currentNote: null,
-        estimatedTimeRemaining: null,
-      });
 
     } catch (error: unknown) {
-      console.error('[IndexingQueue] Conversation backfill failed:', error);
-      await this.updateBackfillState({
-        status: 'error',
-        totalConversations: 0,
-        processedConversations: 0,
-        lastProcessedConversationId: null,
-        errorMessage: error instanceof Error ? error.message : String(error),
+      console.error('[IndexingQueue] Processing failed:', error);
+      this.emitProgress({
+        phase: 'error',
+        totalNotes: this.totalCount,
+        processedNotes: this.processedCount,
+        currentNote: null,
+        estimatedTimeRemaining: null,
+        error: error instanceof Error ? error.message : String(error)
       });
     } finally {
       this.isRunning = false;
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // Private: shared helpers
+  // ---------------------------------------------------------------------------
+
   /**
-   * Backfill a single conversation by fetching its messages, building QA pairs,
-   * and embedding each pair. The EmbeddingService.embedConversationTurn method
-   * is idempotent (checks contentHash), so re-processing a conversation that
-   * was partially embedded is safe.
-   *
-   * @param conversationId - The conversation to backfill
-   * @param workspaceId - Optional workspace context
-   * @param sessionId - Optional session context
+   * Calculate estimated time remaining
    */
-  private async backfillConversation(
-    conversationId: string,
-    workspaceId?: string,
-    sessionId?: string
-  ): Promise<void> {
-    // Fetch all messages for this conversation from SQLite cache
-    const messageRows = await this.db.query<{
-      id: string;
-      conversationId: string;
-      role: string;
-      content: string | null;
-      timestamp: number;
-      state: string | null;
-      toolCallsJson: string | null;
-      toolCallId: string | null;
-      sequenceNumber: number;
-      reasoningContent: string | null;
-      alternativesJson: string | null;
-      activeAlternativeIndex: number;
-    }>(
-      `SELECT id, conversationId, role, content, timestamp, state,
-              toolCallsJson, toolCallId, sequenceNumber, reasoningContent,
-              alternativesJson, activeAlternativeIndex
-       FROM messages
-       WHERE conversationId = ?
-       ORDER BY sequenceNumber ASC`,
-      [conversationId]
-    );
+  private calculateETA(): number | null {
+    if (this.processingTimes.length < 3) return null;
 
-    if (messageRows.length === 0) {
-      return;
-    }
+    const avgTime = this.processingTimes.reduce((a, b) => a + b, 0) / this.processingTimes.length;
+    const remaining = this.totalCount - this.processedCount;
+    return Math.round((remaining * avgTime) / 1000);
+  }
 
-    // Convert rows to MessageData (match field types exactly)
-    const messages: MessageData[] = messageRows.map(row => ({
-      id: row.id,
-      conversationId: row.conversationId,
-      role: row.role as MessageData['role'],
-      content: row.content ?? null,
-      timestamp: row.timestamp,
-      state: (row.state ?? 'complete') as MessageData['state'],
-      sequenceNumber: row.sequenceNumber,
-      toolCalls: row.toolCallsJson ? JSON.parse(row.toolCallsJson) : undefined,
-      toolCallId: row.toolCallId ?? undefined,
-      reasoning: row.reasoningContent ?? undefined,
-      alternatives: row.alternativesJson ? JSON.parse(row.alternativesJson) : undefined,
-      activeAlternativeIndex: row.activeAlternativeIndex ?? 0,
-    }));
-
-    // Build QA pairs from messages
-    const qaPairs = buildQAPairs(messages, conversationId, workspaceId, sessionId);
-
-    // Embed each pair (idempotent -- contentHash prevents re-embedding)
-    for (const qaPair of qaPairs) {
-      await this.embeddingService.embedConversationTurn(qaPair);
+  /**
+   * Wait for resume signal
+   */
+  private async waitForResume(): Promise<void> {
+    while (this.isPaused && !this.abortController?.signal.aborted) {
+      await new Promise(r => setTimeout(r, 100));
     }
   }
 
   /**
-   * Insert or update the backfill progress state in the database.
-   * Used to track progress for resume-on-interrupt support.
-   *
-   * Uses INSERT for the first write and UPDATE for subsequent writes so that
-   * startedAt is preserved across progress updates (INSERT OR REPLACE would
-   * overwrite the original start timestamp).
-   *
-   * @param state - Partial backfill state to persist
+   * Emit progress event
    */
-  private async updateBackfillState(state: {
-    status: string;
-    totalConversations: number;
-    processedConversations: number;
-    lastProcessedConversationId: string | null;
-    errorMessage?: string;
-  }): Promise<void> {
-    const now = Date.now();
-
-    // Check if a row already exists
-    const existing = await this.db.queryOne<{ id: string }>(
-      'SELECT id FROM embedding_backfill_state WHERE id = ?',
-      [CONVERSATION_BACKFILL_ID]
-    );
-
-    if (existing) {
-      // Update existing row -- preserve startedAt, only set completedAt on completion
-      const completedAt = state.status === 'completed' ? now : null;
-      await this.db.run(
-        `UPDATE embedding_backfill_state
-         SET lastProcessedConversationId = ?,
-             totalConversations = ?,
-             processedConversations = ?,
-             status = ?,
-             completedAt = ?,
-             errorMessage = ?
-         WHERE id = ?`,
-        [
-          state.lastProcessedConversationId,
-          state.totalConversations,
-          state.processedConversations,
-          state.status,
-          completedAt,
-          state.errorMessage ?? null,
-          CONVERSATION_BACKFILL_ID,
-        ]
-      );
-    } else {
-      // First write -- set startedAt
-      await this.db.run(
-        `INSERT INTO embedding_backfill_state
-          (id, lastProcessedConversationId, totalConversations, processedConversations,
-           status, startedAt, completedAt, errorMessage)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          CONVERSATION_BACKFILL_ID,
-          state.lastProcessedConversationId,
-          state.totalConversations,
-          state.processedConversations,
-          state.status,
-          now,
-          state.status === 'completed' ? now : null,
-          state.errorMessage ?? null,
-        ]
-      );
-    }
+  private emitProgress(progress: IndexingProgress): void {
+    this.emit('progress', progress);
   }
 }
