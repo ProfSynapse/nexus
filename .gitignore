@@ -62,6 +62,9 @@ claude-flow.bat
 claude-flow.ps1
 hive-mind-prompt-*.txt
 
+# Test coverage reports
+coverage/
+
 # MLC/WebLLM model compilation
 mlc-venv/
 local-models/
