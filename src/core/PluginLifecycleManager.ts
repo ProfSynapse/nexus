@@ -312,7 +312,8 @@ export class PluginLifecycleManager {
                 this.config.app,
                 this.config.plugin,
                 storageAdapter.cache,
-                enableEmbeddings
+                enableEmbeddings,
+                storageAdapter.messages
             );
             await this.embeddingManager.initialize();
             (this.config.plugin as PluginWithServices).embeddingManager = this.embeddingManager;
