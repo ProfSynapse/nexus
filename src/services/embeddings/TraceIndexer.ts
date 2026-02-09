@@ -88,18 +88,14 @@ export class TraceIndexer {
       content: string;
     }>('SELECT id, workspaceId, sessionId, content FROM memory_traces');
 
-    // Filter to traces not already embedded
-    const needsIndexing: typeof allTraces = [];
+    // Get all already-embedded trace IDs in a single query (avoids N+1)
+    const embeddedRows = await this.db.query<{ traceId: string }>(
+      'SELECT DISTINCT traceId FROM trace_embedding_metadata'
+    );
+    const embeddedIds = new Set(embeddedRows.map(r => r.traceId));
 
-    for (const trace of allTraces) {
-      const existing = await this.db.queryOne<{ traceId: string }>(
-        'SELECT traceId FROM trace_embedding_metadata WHERE traceId = ?',
-        [trace.id]
-      );
-      if (!existing) {
-        needsIndexing.push(trace);
-      }
-    }
+    // Filter to traces not already embedded
+    const needsIndexing = allTraces.filter(t => !embeddedIds.has(t.id));
 
     if (needsIndexing.length === 0) {
       return { total: 0, processed: 0 };

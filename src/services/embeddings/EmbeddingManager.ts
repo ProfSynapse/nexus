@@ -66,9 +66,7 @@ export class EmbeddingManager {
    * Should be called after a delay from plugin startup (e.g., 3 seconds)
    */
   async initialize(): Promise<void> {
-    console.log('[DEBUG] EmbeddingManager.initialize() entered: isEnabled =', this.isEnabled, ', isInitialized =', this.isInitialized);
     if (!this.isEnabled || this.isInitialized) {
-      console.log('[DEBUG] EmbeddingManager.initialize() early return: isEnabled =', this.isEnabled, ', isInitialized =', this.isInitialized);
       return;
     }
 
@@ -87,7 +85,6 @@ export class EmbeddingManager {
       this.watcher.start();
 
       // Start watching conversation events (assistant message completions)
-      console.log('[DEBUG] EmbeddingManager.initialize(): messageRepository truthy =', !!this.messageRepository);
       if (this.messageRepository) {
         this.conversationWatcher = new ConversationEmbeddingWatcher(
           this.service,
@@ -95,44 +92,32 @@ export class EmbeddingManager {
           this.db
         );
         this.conversationWatcher.start();
-        console.log('[DEBUG] EmbeddingManager.initialize(): ConversationEmbeddingWatcher started');
-      } else {
-        console.log('[DEBUG] EmbeddingManager.initialize(): Skipping ConversationEmbeddingWatcher (no messageRepository)');
       }
 
       // Start background indexing after a brief delay
       // This ensures the plugin is fully loaded before we start heavy processing
-      console.log('[DEBUG] EmbeddingManager.initialize(): Scheduling background indexing setTimeout(3000)');
       setTimeout(async () => {
-        console.log('[DEBUG] EmbeddingManager background indexing setTimeout fired. queue truthy =', !!this.queue);
         if (this.queue) {
           try {
             // Phase 1: Index all notes
-            console.log('[DEBUG] Starting note index...');
             await this.queue.startFullIndex();
-            console.log('[DEBUG] Note index complete. Starting trace index...');
 
             // Phase 2: Backfill existing traces (from migration)
             await this.queue.startTraceIndex();
-            console.log('[DEBUG] Trace index complete. Starting conversation index...');
 
             // Phase 3: Backfill existing conversations
             // Runs after notes and traces; idempotent and resumable on interrupt
             await this.queue.startConversationIndex();
-            console.log('[DEBUG] Conversation index complete.');
           } catch (error) {
             console.error('[EmbeddingManager] Background indexing failed:', error);
-            console.log('[DEBUG] EmbeddingManager background indexing error:', error);
           }
         }
       }, 3000); // 3-second delay
 
       this.isInitialized = true;
-      console.log('[DEBUG] EmbeddingManager.initialize() completed successfully');
 
     } catch (error) {
       console.error('[EmbeddingManager] Initialization failed:', error);
-      console.log('[DEBUG] EmbeddingManager.initialize() caught error:', error);
       // Don't throw - embeddings are optional functionality
     }
   }

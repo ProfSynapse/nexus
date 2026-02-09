@@ -102,8 +102,9 @@ describe('TraceIndexer', () => {
 
     it('should return early if no traces need indexing', async () => {
       // All traces already embedded
-      mocks.mockDb.query.mockResolvedValueOnce([createTraceRow('trace-1')]);
-      mocks.mockDb.queryOne.mockResolvedValueOnce({ traceId: 'trace-1' }); // already embedded
+      mocks.mockDb.query
+        .mockResolvedValueOnce([createTraceRow('trace-1')])  // all traces
+        .mockResolvedValueOnce([{ traceId: 'trace-1' }]);    // already embedded
 
       const result = await indexer.start(null, () => false, async () => {});
 
@@ -120,11 +121,9 @@ describe('TraceIndexer', () => {
     it('should embed traces that are not yet indexed', async () => {
       const traces = [createTraceRow('trace-1'), createTraceRow('trace-2')];
 
-      mocks.mockDb.query.mockResolvedValueOnce(traces);
-      // Neither trace is already embedded
-      mocks.mockDb.queryOne
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce(null);
+      mocks.mockDb.query
+        .mockResolvedValueOnce(traces)    // all traces
+        .mockResolvedValueOnce([]);       // no embedded IDs
 
       const result = await indexer.start(null, () => false, async () => {});
 
@@ -142,10 +141,9 @@ describe('TraceIndexer', () => {
         createTraceRow('trace-new'),
       ];
 
-      mocks.mockDb.query.mockResolvedValueOnce(traces);
-      mocks.mockDb.queryOne
-        .mockResolvedValueOnce({ traceId: 'trace-already' }) // already embedded
-        .mockResolvedValueOnce(null); // not yet embedded
+      mocks.mockDb.query
+        .mockResolvedValueOnce(traces)                          // all traces
+        .mockResolvedValueOnce([{ traceId: 'trace-already' }]); // already embedded
 
       const result = await indexer.start(null, () => false, async () => {});
 
@@ -160,8 +158,9 @@ describe('TraceIndexer', () => {
     it('should pass undefined for null sessionId', async () => {
       const traces = [createTraceRow('trace-1', { sessionId: null })];
 
-      mocks.mockDb.query.mockResolvedValueOnce(traces);
-      mocks.mockDb.queryOne.mockResolvedValueOnce(null);
+      mocks.mockDb.query
+        .mockResolvedValueOnce(traces)    // all traces
+        .mockResolvedValueOnce([]);       // no embedded IDs
 
       await indexer.start(null, () => false, async () => {});
 
@@ -184,11 +183,9 @@ describe('TraceIndexer', () => {
         createTraceRow('trace-3'),
       ];
 
-      mocks.mockDb.query.mockResolvedValueOnce(traces);
-      mocks.mockDb.queryOne
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce(null);
+      mocks.mockDb.query
+        .mockResolvedValueOnce(traces)    // all traces
+        .mockResolvedValueOnce([]);       // no embedded IDs
 
       // Abort after first embed
       mocks.mockEmbeddingService.embedTrace.mockImplementationOnce(async () => {
@@ -204,8 +201,9 @@ describe('TraceIndexer', () => {
       const abortController = new AbortController();
       abortController.abort(); // Pre-abort
 
-      mocks.mockDb.query.mockResolvedValueOnce([createTraceRow('trace-1')]);
-      mocks.mockDb.queryOne.mockResolvedValueOnce(null);
+      mocks.mockDb.query
+        .mockResolvedValueOnce([createTraceRow('trace-1')])  // all traces
+        .mockResolvedValueOnce([]);                          // no embedded IDs
 
       await indexer.start(abortController.signal, () => false, async () => {});
 
@@ -227,10 +225,9 @@ describe('TraceIndexer', () => {
       const waitForResume = jest.fn().mockResolvedValue(undefined);
 
       const traces = [createTraceRow('trace-1'), createTraceRow('trace-2')];
-      mocks.mockDb.query.mockResolvedValueOnce(traces);
-      mocks.mockDb.queryOne
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce(null);
+      mocks.mockDb.query
+        .mockResolvedValueOnce(traces)    // all traces
+        .mockResolvedValueOnce([]);       // no embedded IDs
 
       await indexer.start(null, isPaused, waitForResume);
 
@@ -245,8 +242,9 @@ describe('TraceIndexer', () => {
   describe('progress reporting', () => {
     it('should emit initial and final progress', async () => {
       const traces = [createTraceRow('trace-1')];
-      mocks.mockDb.query.mockResolvedValueOnce(traces);
-      mocks.mockDb.queryOne.mockResolvedValueOnce(null);
+      mocks.mockDb.query
+        .mockResolvedValueOnce(traces)    // all traces
+        .mockResolvedValueOnce([]);       // no embedded IDs
 
       await indexer.start(null, () => false, async () => {});
 
@@ -268,11 +266,9 @@ describe('TraceIndexer', () => {
       const traces = [
         createTraceRow('t-1'), createTraceRow('t-2'), createTraceRow('t-3'),
       ];
-      mocks.mockDb.query.mockResolvedValueOnce(traces);
-      mocks.mockDb.queryOne
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce(null);
+      mocks.mockDb.query
+        .mockResolvedValueOnce(traces)    // all traces
+        .mockResolvedValueOnce([]);       // no embedded IDs
 
       await indexer.start(null, () => false, async () => {});
 
@@ -288,10 +284,9 @@ describe('TraceIndexer', () => {
   describe('error resilience', () => {
     it('should continue when individual trace embedding fails', async () => {
       const traces = [createTraceRow('trace-fail'), createTraceRow('trace-ok')];
-      mocks.mockDb.query.mockResolvedValueOnce(traces);
-      mocks.mockDb.queryOne
-        .mockResolvedValueOnce(null)
-        .mockResolvedValueOnce(null);
+      mocks.mockDb.query
+        .mockResolvedValueOnce(traces)    // all traces
+        .mockResolvedValueOnce([]);       // no embedded IDs
 
       mocks.mockEmbeddingService.embedTrace
         .mockRejectedValueOnce(new Error('Embed failed'))

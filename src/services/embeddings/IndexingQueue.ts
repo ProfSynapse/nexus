@@ -194,14 +194,11 @@ export class IndexingQueue extends EventEmitter {
    * Delegates to ConversationIndexer for the actual work.
    */
   async startConversationIndex(): Promise<void> {
-    console.log('[DEBUG] IndexingQueue.startConversationIndex() entered: isRunning =', this.isRunning, ', isServiceEnabled =', this.embeddingService.isServiceEnabled());
     if (this.isRunning) {
-      console.log('[DEBUG] IndexingQueue.startConversationIndex() early return: isRunning = true');
       return;
     }
 
     if (!this.embeddingService.isServiceEnabled()) {
-      console.log('[DEBUG] IndexingQueue.startConversationIndex() early return: service not enabled');
       return;
     }
 
@@ -234,12 +231,10 @@ export class IndexingQueue extends EventEmitter {
     });
 
     try {
-      console.log('[DEBUG] IndexingQueue.startConversationIndex(): calling conversationIndexer.start()');
       const result = await this.conversationIndexer.start(
         this.abortController.signal,
         this.CONVERSATION_YIELD_INTERVAL
       );
-      console.log('[DEBUG] IndexingQueue.startConversationIndex(): conversationIndexer.start() returned: total =', result.total, ', processed =', result.processed);
 
       this.emitProgress({
         phase: 'complete',
@@ -249,7 +244,6 @@ export class IndexingQueue extends EventEmitter {
         estimatedTimeRemaining: null
       });
     } finally {
-      console.log('[DEBUG] IndexingQueue.startConversationIndex() finally block: cleaning up');
       this.isRunning = false;
       this.conversationIndexer = null;
     }

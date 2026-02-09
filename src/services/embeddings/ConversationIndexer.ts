@@ -93,14 +93,11 @@ export class ConversationIndexer {
     abortSignal: AbortSignal | null,
     yieldInterval: number = 5
   ): Promise<{ total: number; processed: number }> {
-    console.log('[DEBUG] ConversationIndexer.start() entered: isRunning =', this.isRunning, ', isServiceEnabled =', this.embeddingService.isServiceEnabled());
     if (this.isRunning) {
-      console.log('[DEBUG] ConversationIndexer.start() early return: already running');
       return { total: 0, processed: 0 };
     }
 
     if (!this.embeddingService.isServiceEnabled()) {
-      console.log('[DEBUG] ConversationIndexer.start() early return: service not enabled');
       return { total: 0, processed: 0 };
     }
 
@@ -112,11 +109,9 @@ export class ConversationIndexer {
         'SELECT * FROM embedding_backfill_state WHERE id = ?',
         [CONVERSATION_BACKFILL_ID]
       );
-      console.log('[DEBUG] ConversationIndexer.start(): existingState =', existingState ? JSON.stringify(existingState) : 'null');
 
       // If already completed, nothing to do
       if (existingState && existingState.status === 'completed') {
-        console.log('[DEBUG] ConversationIndexer.start(): backfill already completed, returning early');
         return { total: 0, processed: 0 };
       }
 
@@ -129,7 +124,6 @@ export class ConversationIndexer {
       }>(
         'SELECT id, metadataJson, workspaceId, sessionId FROM conversations ORDER BY created DESC'
       );
-      console.log('[DEBUG] ConversationIndexer.start(): allConversations count =', allConversations.length);
 
       // Filter out branch conversations (those with parentConversationId)
       const nonBranchConversations = allConversations.filter(conv => {
@@ -141,7 +135,6 @@ export class ConversationIndexer {
           return true;
         }
       });
-      console.log('[DEBUG] ConversationIndexer.start(): nonBranchConversations count =', nonBranchConversations.length);
 
       if (nonBranchConversations.length === 0) {
         await this.updateBackfillState({
@@ -193,17 +186,13 @@ export class ConversationIndexer {
 
       this.onProgress({ totalConversations: totalCount, processedConversations: processedSoFar });
 
-      console.log('[DEBUG] ConversationIndexer.start(): processing from startIndex =', startIndex, ', totalCount =', totalCount, ', processedSoFar =', processedSoFar);
-
       // Process each conversation from the resume point
       for (let i = startIndex; i < totalCount; i++) {
         if (this.abortSignal?.aborted) {
-          console.log('[DEBUG] ConversationIndexer.start(): abort signal received at index', i);
           break;
         }
 
         const conv = nonBranchConversations[i];
-        console.log('[DEBUG] ConversationIndexer.start(): processing conversation', conv.id, '(', (i + 1), '/', totalCount, ')');
 
         try {
           await this.backfillConversation(
@@ -249,12 +238,10 @@ export class ConversationIndexer {
       });
       await this.db.save();
 
-      console.log('[DEBUG] ConversationIndexer.start(): completed. total =', totalCount, ', processed =', processedSoFar);
       return { total: totalCount, processed: processedSoFar };
 
     } catch (error: unknown) {
       console.error('[ConversationIndexer] Conversation backfill failed:', error);
-      console.log('[DEBUG] ConversationIndexer.start(): caught error:', error);
       await this.updateBackfillState({
         status: 'error',
         totalConversations: 0,
@@ -264,7 +251,6 @@ export class ConversationIndexer {
       });
       return { total: 0, processed: 0 };
     } finally {
-      console.log('[DEBUG] ConversationIndexer.start() finally block: setting isRunning = false');
       this.isRunning = false;
     }
   }
