@@ -354,8 +354,10 @@ export class SchemaMigrator {
   }> {
     const currentVersion = this.getCurrentVersion();
     const targetVersion = CURRENT_SCHEMA_VERSION;
+    console.log('[DEBUG] SchemaMigrator.migrate(): currentVersion =', currentVersion, ', targetVersion =', targetVersion);
 
     if (currentVersion >= targetVersion) {
+      console.log('[DEBUG] SchemaMigrator.migrate(): already at target version, no migrations needed');
       return { applied: 0, fromVersion: currentVersion, toVersion: currentVersion, needsRebuild: false };
     }
 
@@ -364,6 +366,7 @@ export class SchemaMigrator {
 
     // Get migrations to apply (versions > currentVersion)
     const pendingMigrations = MIGRATIONS.filter(m => m.version > currentVersion);
+    console.log('[DEBUG] SchemaMigrator.migrate(): pendingMigrations count =', pendingMigrations.length, ', versions =', pendingMigrations.map(m => m.version));
 
     if (pendingMigrations.length === 0) {
       this.setVersion(targetVersion);
@@ -373,6 +376,7 @@ export class SchemaMigrator {
     let appliedCount = 0;
 
     for (const migration of pendingMigrations) {
+      console.log('[DEBUG] SchemaMigrator.migrate(): applying migration v' + migration.version + ' - ' + migration.description);
       try {
         for (const sql of migration.sql) {
           const alterMatch = sql.match(/ALTER TABLE (\w+) ADD COLUMN (\w+)/i);
@@ -401,6 +405,7 @@ export class SchemaMigrator {
       }
     }
 
+    console.log('[DEBUG] SchemaMigrator.migrate(): all migrations complete. applied =', appliedCount, ', fromVersion =', currentVersion, ', toVersion =', targetVersion);
     return {
       applied: appliedCount,
       fromVersion: currentVersion,

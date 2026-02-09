@@ -68,14 +68,18 @@ export class EmbeddingService {
    * Initialize the service (loads embedding model)
    */
   async initialize(): Promise<void> {
+    console.log('[DEBUG] EmbeddingService.initialize() entered: isEnabled =', this.isEnabled);
     if (!this.isEnabled) {
+      console.log('[DEBUG] EmbeddingService.initialize() early return: not enabled');
       return;
     }
 
     try {
       await this.engine.initialize();
+      console.log('[DEBUG] EmbeddingService.initialize(): engine.initialize() succeeded');
     } catch (error) {
       console.error('[EmbeddingService] Initialization failed:', error);
+      console.log('[DEBUG] EmbeddingService.initialize(): engine.initialize() FAILED:', error);
       new Notice('Failed to load embedding model. Vector search will be unavailable.');
       this.isEnabled = false;
     }

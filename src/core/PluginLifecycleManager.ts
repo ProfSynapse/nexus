@@ -306,8 +306,10 @@ export class PluginLifecycleManager {
      * so no waitForReady guard is needed here.
      */
     private async initializeEmbeddingsWhenReady(storageAdapter: HybridStorageAdapter): Promise<void> {
+        console.log('[DEBUG] initializeEmbeddingsWhenReady() entered');
         try {
             const enableEmbeddings = this.config.settings.settings.enableEmbeddings ?? true;
+            console.log('[DEBUG] initializeEmbeddingsWhenReady: enableEmbeddings =', enableEmbeddings, ', storageAdapter.messages truthy =', !!storageAdapter.messages);
             this.embeddingManager = new EmbeddingManager(
                 this.config.app,
                 this.config.plugin,
@@ -316,6 +318,7 @@ export class PluginLifecycleManager {
                 storageAdapter.messages
             );
             await this.embeddingManager.initialize();
+            console.log('[DEBUG] initializeEmbeddingsWhenReady: embeddingManager.initialize() completed');
             (this.config.plugin as PluginWithServices).embeddingManager = this.embeddingManager;
 
             // Wire embedding service into ChatTraceService
