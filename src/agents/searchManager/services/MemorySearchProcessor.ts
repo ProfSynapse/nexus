@@ -32,8 +32,27 @@ import { MemoryTraceData } from '../../../types/storage/HybridStorageTypes';
 import { ServiceAccessors } from './ServiceAccessors';
 import { ConversationSearchStrategy } from './ConversationSearchStrategy';
 
+/**
+ * Metadata about which memory types were actually searched, unavailable, or failed.
+ * Used by the SearchMemoryTool to provide actionable feedback when results are
+ * empty or incomplete.
+ */
+export interface SearchMetadata {
+  typesSearched: string[];
+  typesUnavailable: string[];
+  typesFailed: string[];
+}
+
+/**
+ * Return type from process() that bundles enriched results with search metadata.
+ */
+export interface SearchProcessResult {
+  results: EnrichedMemorySearchResult[];
+  metadata: SearchMetadata;
+}
+
 export interface MemorySearchProcessorInterface {
-  process(params: MemorySearchParameters): Promise<EnrichedMemorySearchResult[]>;
+  process(params: MemorySearchParameters): Promise<SearchProcessResult>;
   validateParameters(params: MemorySearchParameters): ValidationResult;
   executeSearch(query: string, options: MemorySearchExecutionOptions): Promise<RawMemoryResult[]>;
   enrichResults(results: RawMemoryResult[], context: MemorySearchContext): Promise<EnrichedMemorySearchResult[]>;
@@ -73,9 +92,11 @@ export class MemorySearchProcessor implements MemorySearchProcessorInterface {
   }
 
   /**
-   * Main processing entry point
+   * Main processing entry point.
+   * Returns enriched results bundled with metadata about which memory types
+   * were searched, unavailable, or failed during execution.
    */
-  async process(params: MemorySearchParameters): Promise<EnrichedMemorySearchResult[]> {
+  async process(params: MemorySearchParameters): Promise<SearchProcessResult> {
     const validation = this.validateParameters(params);
     if (!validation.isValid) {
       throw new Error(`Invalid parameters: ${validation.errors.join(', ')}`);
@@ -87,9 +108,10 @@ export class MemorySearchProcessor implements MemorySearchProcessorInterface {
     };
 
     const searchOptions = this.buildSearchOptions(params);
-    const rawResults = await this.executeSearch(params.query, searchOptions);
+    const { rawResults, metadata } = await this.executeSearchWithMetadata(params.query, searchOptions);
+    const results = await this.enrichResults(rawResults, context);
 
-    return this.enrichResults(rawResults, context);
+    return { results, metadata };
   }
 
   /**
@@ -238,6 +260,87 @@ export class MemorySearchProcessor implements MemorySearchProcessorInterface {
       memoryTypes: params.memoryTypes,
       windowSize: params.windowSize
     };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Private: metadata-aware search execution
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Wraps executeSearch logic with metadata tracking for which types were
+   * searched, unavailable, or failed. Used by process() to provide actionable
+   * feedback alongside results.
+   */
+  private async executeSearchWithMetadata(query: string, options: MemorySearchExecutionOptions): Promise<{ rawResults: RawMemoryResult[], metadata: SearchMetadata }> {
+    const metadata: SearchMetadata = {
+      typesSearched: [],
+      typesUnavailable: [],
+      typesFailed: []
+    };
+
+    const results: RawMemoryResult[] = [];
+    const searchPromises: Promise<RawMemoryResult[]>[] = [];
+    const typeNames: string[] = [];
+
+    const memoryTypes = options.memoryTypes || ['traces', 'toolCalls', 'sessions', 'states', 'workspaces', 'conversations'];
+    const limit = options.limit || this.configuration.defaultLimit;
+
+    if (memoryTypes.includes('traces')) {
+      searchPromises.push(this.searchLegacyTraces(query, options));
+      typeNames.push('traces');
+      metadata.typesSearched.push('traces');
+    }
+
+    if (memoryTypes.includes('toolCalls')) {
+      searchPromises.push(this.searchToolCallTraces());
+      typeNames.push('toolCalls');
+      metadata.typesSearched.push('toolCalls');
+    }
+
+    if (memoryTypes.includes('sessions')) {
+      searchPromises.push(this.searchSessions(query, options));
+      typeNames.push('sessions');
+      metadata.typesSearched.push('sessions');
+    }
+
+    if (memoryTypes.includes('states')) {
+      searchPromises.push(this.searchStates(query, options));
+      typeNames.push('states');
+      metadata.typesSearched.push('states');
+    }
+
+    if (memoryTypes.includes('workspaces')) {
+      searchPromises.push(this.searchWorkspaces(query, options));
+      typeNames.push('workspaces');
+      metadata.typesSearched.push('workspaces');
+    }
+
+    if (memoryTypes.includes('conversations')) {
+      if (this.conversationSearch.isAvailable()) {
+        searchPromises.push(this.conversationSearch.search(query, options, this.configuration));
+        typeNames.push('conversations');
+        metadata.typesSearched.push('conversations');
+      } else {
+        metadata.typesUnavailable.push('conversations');
+      }
+    }
+
+    const searchResults = await Promise.allSettled(searchPromises);
+
+    for (let i = 0; i < searchResults.length; i++) {
+      if (searchResults[i].status === 'fulfilled') {
+        results.push(...(searchResults[i] as PromiseFulfilledResult<RawMemoryResult[]>).value);
+      } else {
+        console.error('[MemorySearchProcessor] Search error:', (searchResults[i] as PromiseRejectedResult).reason);
+        const failedType = typeNames[i];
+        metadata.typesFailed.push(failedType);
+        const idx = metadata.typesSearched.indexOf(failedType);
+        if (idx !== -1) metadata.typesSearched.splice(idx, 1);
+      }
+    }
+
+    results.sort((a, b) => (b.similarity || 0) - (a.similarity || 0));
+    return { rawResults: results.slice(0, limit), metadata };
   }
 
   // ---------------------------------------------------------------------------

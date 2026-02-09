@@ -45,6 +45,15 @@ export class ConversationSearchStrategy {
   }
 
   /**
+   * Check whether the conversation search strategy can execute searches.
+   * Returns false when EmbeddingService is unavailable (e.g., embeddings
+   * disabled, mobile platform, or service not yet initialized).
+   */
+  isAvailable(): boolean {
+    return !!this.deps.getEmbeddingService();
+  }
+
+  /**
    * Execute a semantic search over conversation embeddings.
    *
    * @param query - Natural language query string

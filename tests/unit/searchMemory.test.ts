@@ -68,9 +68,9 @@ describe('SearchMemory Tool', () => {
       expect(required).toContain('query');
     });
 
-    it('should require workspaceId parameter', () => {
+    it('should not require workspaceId parameter (defaults to global workspace)', () => {
       const required = schema.required || [];
-      expect(required).toContain('workspaceId');
+      expect(required).not.toContain('workspaceId');
     });
   });
 
