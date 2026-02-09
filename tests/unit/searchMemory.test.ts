@@ -1,16 +1,17 @@
 /**
  * SearchMemory Tool Unit Tests
  *
- * Tests the parameter schema and type definitions for the searchMemory tool.
- * Validates that the 'conversations' memory type and related parameters
- * (sessionId, windowSize) are properly defined in the schema.
+ * Tests the parameter schema, type definitions, and execute() behavior
+ * for the searchMemory tool.
  *
- * This tests the schema definition, not the execution logic (which requires
- * full plugin context). Schema testing verifies the tool's contract with
- * external callers (e.g., Claude Desktop via MCP).
+ * Schema tests verify the tool's contract with external callers (e.g., Claude Desktop via MCP).
+ * Execute tests verify actionable guidance on empty results, degraded search nudges,
+ * and normal result formatting via an injected mock processor.
  */
 
 import { SearchMemoryTool, MemoryType, SearchMemoryParams } from '../../src/agents/searchManager/tools/searchMemory';
+import { MemorySearchProcessorInterface, SearchProcessResult, SearchMetadata } from '../../src/agents/searchManager/services/MemorySearchProcessor';
+import { GLOBAL_WORKSPACE_ID } from '../../src/services/WorkspaceService';
 
 describe('SearchMemory Tool', () => {
   let tool: SearchMemoryTool;
@@ -187,6 +188,255 @@ describe('SearchMemory Tool', () => {
       expect(params.sessionId).toBe('sess-001');
       expect(params.windowSize).toBe(5);
       expect(params.memoryTypes).toContain('conversations');
+    });
+  });
+
+  // ==========================================================================
+  // Execute Behavior (mock processor injection)
+  // ==========================================================================
+
+  describe('execute() behavior', () => {
+    let execTool: SearchMemoryTool;
+    let mockProcessor: MemorySearchProcessorInterface;
+
+    // Reusable mock enriched result for tests that need non-empty results
+    const mockConversationResult = {
+      type: 'conversation' as const,
+      id: 'pair-1',
+      highlight: 'auth implementation',
+      metadata: {},
+      context: { before: '', match: 'auth', after: '' },
+      score: 0.9,
+      _rawTrace: {
+        type: 'conversation',
+        conversationId: 'conv-1',
+        conversationTitle: 'Test Conv',
+        question: 'How do we do auth?',
+        answer: 'We use JWT tokens.',
+        matchedSide: 'question',
+        pairType: 'conversation_turn'
+      }
+    };
+
+    beforeEach(() => {
+      mockProcessor = {
+        process: jest.fn(),
+        validateParameters: jest.fn(),
+        executeSearch: jest.fn(),
+        enrichResults: jest.fn(),
+        getConfiguration: jest.fn(),
+        updateConfiguration: jest.fn()
+      };
+
+      // Inject mock processor via constructor's 5th parameter
+      execTool = new SearchMemoryTool(
+        {} as any,        // plugin
+        undefined,         // memoryService
+        undefined,         // workspaceService
+        undefined,         // storageAdapter
+        mockProcessor      // processor
+      );
+    });
+
+    // Helper to build standard params
+    function makeParams(overrides: Partial<SearchMemoryParams> = {}): SearchMemoryParams {
+      return {
+        query: 'test query',
+        workspaceId: 'ws-1',
+        context: { workspaceId: 'ws-1', sessionId: '', memory: '', goal: '' },
+        ...overrides
+      };
+    }
+
+    it('should return actionable guidance when no results are found', async () => {
+      (mockProcessor.process as jest.Mock).mockResolvedValue({
+        results: [],
+        metadata: { typesSearched: ['traces', 'states', 'conversations'], typesUnavailable: [], typesFailed: [] }
+      });
+
+      const result = await execTool.execute(makeParams());
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('No results found');
+      expect(result.error).toContain('broader or rephrased search terms');
+    });
+
+    it('should mention unavailable types in guidance when conversations search was unavailable', async () => {
+      (mockProcessor.process as jest.Mock).mockResolvedValue({
+        results: [],
+        metadata: { typesSearched: ['traces', 'states'], typesUnavailable: ['conversations'], typesFailed: [] }
+      });
+
+      const result = await execTool.execute(makeParams());
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('conversations search was unavailable');
+      expect(result.error).toContain('only traces, states were searched');
+    });
+
+    it('should suggest removing sessionId when scoped search returns empty', async () => {
+      (mockProcessor.process as jest.Mock).mockResolvedValue({
+        results: [],
+        metadata: { typesSearched: ['conversations'], typesUnavailable: [], typesFailed: [] }
+      });
+
+      const result = await execTool.execute(makeParams({
+        sessionId: 'sess-1',
+        context: { workspaceId: 'ws-1', sessionId: 'sess-1', memory: '', goal: '' }
+      }));
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Remove sessionId');
+    });
+
+    it('should warn about failed types in guidance', async () => {
+      (mockProcessor.process as jest.Mock).mockResolvedValue({
+        results: [],
+        metadata: { typesSearched: ['traces'], typesUnavailable: [], typesFailed: ['conversations'] }
+      });
+
+      const result = await execTool.execute(makeParams());
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('search failed for conversations');
+    });
+
+    it('should include partial_search nudge when results exist but some types were unavailable', async () => {
+      (mockProcessor.process as jest.Mock).mockResolvedValue({
+        results: [mockConversationResult],
+        metadata: { typesSearched: ['traces'], typesUnavailable: ['conversations'], typesFailed: [] }
+      });
+
+      const result = await execTool.execute(makeParams({ query: 'auth' }));
+
+      expect(result.success).toBe(true);
+      expect(result.recommendations).toBeDefined();
+      const partialNudge = (result as any).recommendations?.find((r: any) => r.type === 'partial_search');
+      expect(partialNudge).toBeDefined();
+      expect(partialNudge.message).toContain('conversations search was unavailable');
+    });
+
+    it('should include search_error nudge when results exist but some types failed', async () => {
+      (mockProcessor.process as jest.Mock).mockResolvedValue({
+        results: [mockConversationResult],
+        metadata: { typesSearched: ['traces'], typesUnavailable: [], typesFailed: ['states'] }
+      });
+
+      const result = await execTool.execute(makeParams({ query: 'auth' }));
+
+      expect(result.success).toBe(true);
+      const errorNudge = (result as any).recommendations?.find((r: any) => r.type === 'search_error');
+      expect(errorNudge).toBeDefined();
+      expect(errorNudge.message).toContain('Search failed for states');
+    });
+
+    it('should return clean results with no degraded nudges when all types searched successfully', async () => {
+      (mockProcessor.process as jest.Mock).mockResolvedValue({
+        results: [mockConversationResult],
+        metadata: { typesSearched: ['traces', 'states', 'conversations'], typesUnavailable: [], typesFailed: [] }
+      });
+
+      const result = await execTool.execute(makeParams({ query: 'auth' }));
+
+      expect(result.success).toBe(true);
+      expect((result as any).data?.results).toHaveLength(1);
+      expect((result as any).data?.results[0]).toHaveProperty('type', 'conversation');
+      expect((result as any).data?.results[0]).toHaveProperty('question', 'How do we do auth?');
+      expect((result as any).data?.results[0]).toHaveProperty('answer', 'We use JWT tokens.');
+
+      // No partial_search or search_error nudges
+      const partialNudge = (result as any).recommendations?.find((r: any) => r.type === 'partial_search');
+      expect(partialNudge).toBeUndefined();
+      const errorNudge = (result as any).recommendations?.find((r: any) => r.type === 'search_error');
+      expect(errorNudge).toBeUndefined();
+    });
+
+    it('should default workspaceId to GLOBAL_WORKSPACE_ID when omitted', async () => {
+      (mockProcessor.process as jest.Mock).mockResolvedValue({
+        results: [],
+        metadata: { typesSearched: ['traces', 'states', 'conversations'], typesUnavailable: [], typesFailed: [] }
+      });
+
+      await execTool.execute({
+        query: 'test',
+        context: { workspaceId: '', sessionId: '', memory: '', goal: '' }
+      } as any);
+
+      expect(mockProcessor.process).toHaveBeenCalledWith(
+        expect.objectContaining({ workspaceId: GLOBAL_WORKSPACE_ID })
+      );
+    });
+
+    it('should return error for empty query', async () => {
+      const result = await execTool.execute(makeParams({ query: '' }));
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Query parameter is required');
+      expect(mockProcessor.process).not.toHaveBeenCalled();
+    });
+
+    it('should format conversation results with windowed messages in scoped mode', async () => {
+      const scopedResult = {
+        ...mockConversationResult,
+        _rawTrace: {
+          ...mockConversationResult._rawTrace,
+          windowMessages: [
+            { role: 'user', content: 'Previous question', sequenceNumber: 1 },
+            { role: 'assistant', content: 'Previous answer', sequenceNumber: 2 },
+            { role: 'user', content: 'How do we do auth?', sequenceNumber: 3 }
+          ]
+        }
+      };
+
+      (mockProcessor.process as jest.Mock).mockResolvedValue({
+        results: [scopedResult],
+        metadata: { typesSearched: ['conversations'], typesUnavailable: [], typesFailed: [] }
+      });
+
+      const result = await execTool.execute(makeParams({ sessionId: 'sess-1' }));
+
+      expect(result.success).toBe(true);
+      const firstResult = (result as any).data?.results[0];
+      expect(firstResult.windowMessages).toHaveLength(3);
+      expect(firstResult.windowMessages[0]).toEqual({
+        role: 'user',
+        content: 'Previous question',
+        sequenceNumber: 1
+      });
+    });
+
+    it('should handle processor errors gracefully', async () => {
+      (mockProcessor.process as jest.Mock).mockRejectedValue(new Error('Database connection lost'));
+
+      const result = await execTool.execute(makeParams());
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Memory search failed');
+      expect(result.error).toContain('Database connection lost');
+    });
+
+    it('should filter out null results from malformed traces', async () => {
+      const resultWithNoTrace = {
+        type: 'conversation' as const,
+        id: 'pair-2',
+        highlight: 'test',
+        metadata: {},
+        context: { before: '', match: 'test', after: '' },
+        score: 0.5,
+        // Missing _rawTrace -- will produce null during formatting
+      };
+
+      (mockProcessor.process as jest.Mock).mockResolvedValue({
+        results: [mockConversationResult, resultWithNoTrace],
+        metadata: { typesSearched: ['conversations'], typesUnavailable: [], typesFailed: [] }
+      });
+
+      const result = await execTool.execute(makeParams());
+
+      expect(result.success).toBe(true);
+      // Only the valid result should survive null filtering
+      expect((result as any).data?.results).toHaveLength(1);
+      expect((result as any).data?.results[0]).toHaveProperty('type', 'conversation');
     });
   });
 });
