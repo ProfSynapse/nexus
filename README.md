@@ -19,7 +19,7 @@ Nexus turns your Obsidian vault into an MCP-enabled workspace. It exposes safe, 
 - **Native Chat View** – Stream tool calls, branch conversations, and manage models directly inside Obsidian.
 - **Inline AI Editing** – Select text, right-click or use hotkey, and transform it with AI instructions.
 - **Workspace Memory** – Workspaces, states, and traces in `.nexus/` (sync-friendly JSONL + local SQLite cache).
-- **Local Semantic Search** – Desktop-only embeddings via sqlite-vec vector search—no external API calls.
+- **Local Semantic Search** – Desktop-only embeddings via sqlite-vec vector search—no external API calls. Search notes and conversation history.
 - **Full Vault Operations** – Create, read, update, delete notes, folders, frontmatter, and batch edits.
 - **Multi-Provider Support** – Anthropic, OpenAI, Google, Groq, Mistral, OpenRouter, Perplexity, Requesty, plus local servers (Ollama, LM Studio).
 - **Multi-Vault Ready** – Independent MCP instances per vault.
@@ -169,6 +169,20 @@ Use `searchManager.searchContent` with `semantic: true` for meaning-based search
 - **Vectors**: Stored in `.nexus/cache.db` via sqlite-vec for fast similarity search
 - **First run** downloads the model (requires internet); subsequent runs are fully offline
 - Watch the status bar for indexing progress; click to pause/resume
+
+### Conversation Memory Search
+
+Use `searchManager.searchMemory` to search across past conversation turns and tool call traces:
+
+| Mode | Scope | Use Case |
+|------|-------|----------|
+| **Discovery** | Workspace-wide | "What have I discussed about authentication?" |
+| **Scoped** | Session + N-turn window | "What did I just ask about this file?" |
+
+- Conversations are chunked into Q&A pairs and embedded in real-time as you chat
+- Multi-signal reranking: semantic similarity + recency + session density + note references
+- Background backfill indexes existing conversations automatically
+- Works with the same local embedding model—no external API calls
 
 ---
 
