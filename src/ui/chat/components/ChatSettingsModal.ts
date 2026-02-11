@@ -118,19 +118,26 @@ export class ChatSettingsModal extends Modal {
     const model = this.modelAgentManager.getSelectedModel();
     const prompt = this.modelAgentManager.getSelectedPrompt();
     const thinking = this.modelAgentManager.getThinkingSettings();
+    const agentThinking = this.modelAgentManager.getAgentThinkingSettings();
     const contextNotes = this.modelAgentManager.getContextNotes();
     const temperature = this.modelAgentManager.getTemperature();
 
-    // Get plugin defaults for image settings
+    // Get plugin defaults for image and agent model fallback
     const plugin = getNexusPlugin<NexusPluginWithSettings>(this.app);
     const llmSettings = plugin?.settings?.settings?.llmProviders;
 
     return {
       provider: model?.providerId || llmSettings?.defaultModel?.provider || '',
       model: model?.modelId || llmSettings?.defaultModel?.model || '',
+      agentProvider: this.modelAgentManager.getAgentProvider() || llmSettings?.agentModel?.provider || undefined,
+      agentModel: this.modelAgentManager.getAgentModel() || llmSettings?.agentModel?.model || undefined,
       thinking: {
         enabled: thinking?.enabled ?? false,
         effort: thinking?.effort ?? 'medium'
+      },
+      agentThinking: {
+        enabled: agentThinking?.enabled ?? false,
+        effort: agentThinking?.effort ?? 'medium'
       },
       temperature: temperature,
       imageProvider: llmSettings?.defaultImageModel?.provider || 'google',
@@ -184,6 +191,17 @@ export class ChatSettingsModal extends Modal {
 
       // Update thinking
       this.modelAgentManager.setThinkingSettings(settings.thinking);
+
+      // Update agent model
+      this.modelAgentManager.setAgentModel(
+        settings.agentProvider || null,
+        settings.agentModel || null
+      );
+
+      // Update agent thinking
+      if (settings.agentThinking) {
+        this.modelAgentManager.setAgentThinkingSettings(settings.agentThinking);
+      }
 
       // Update temperature
       this.modelAgentManager.setTemperature(settings.temperature);

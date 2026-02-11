@@ -43,9 +43,12 @@ interface PluginWithSettings {
     settings?: {
       llmProviders?: {
         defaultThinking?: ThinkingSettings;
+        agentModel?: { provider: string; model: string };
+        agentThinking?: ThinkingSettings;
       };
       defaultWorkspaceId?: string;
       defaultPromptId?: string;
+      defaultContextNotes?: string[];
     };
   };
   serviceManager?: {
@@ -76,6 +79,9 @@ export class ModelAgentManager {
   private messageEnhancement: MessageEnhancement | null = null;
   private systemPromptBuilder: SystemPromptBuilder;
   private workspaceIntegration: WorkspaceIntegrationService;
+  private agentProvider: string | null = null;
+  private agentModel: string | null = null;
+  private agentThinkingSettings: ThinkingSettings = { enabled: false, effort: 'medium' };
   private thinkingSettings: ThinkingSettings = { enabled: false, effort: 'medium' };
   private temperature: number = 0.5;
   private contextTokenTracker: ContextTokenTracker | null = null; // For token-limited models
@@ -178,6 +184,20 @@ export class ModelAgentManager {
       this.contextNotesManager.setNotes(settings.contextNotes);
     }
 
+    // Restore agent model
+    if (settings.agentProvider) {
+      this.agentProvider = settings.agentProvider;
+      this.agentModel = settings.agentModel || null;
+    }
+
+    // Restore agent thinking settings
+    if (settings.agentThinking) {
+      this.agentThinkingSettings = {
+        enabled: settings.agentThinking.enabled ?? false,
+        effort: settings.agentThinking.effort ?? 'medium'
+      };
+    }
+
     // Restore thinking settings
     if (settings.thinking) {
       this.thinkingSettings = {
@@ -239,6 +259,9 @@ export class ModelAgentManager {
       this.workspaceContext = null;
       this.loadedWorkspaceData = null;
       this.contextNotesManager.clear();
+      this.agentProvider = null;
+      this.agentModel = null;
+      this.agentThinkingSettings = { enabled: false, effort: 'medium' };
 
       // Get plugin settings for defaults
       const { getNexusPlugin } = await import('../../../utils/pluginLocator');
@@ -252,6 +275,25 @@ export class ModelAgentManager {
           enabled: llmProviders.defaultThinking.enabled ?? false,
           effort: llmProviders.defaultThinking.effort ?? 'medium'
         };
+      }
+
+      // Load default agent model if set
+      if (llmProviders?.agentModel) {
+        this.agentProvider = llmProviders.agentModel.provider || null;
+        this.agentModel = llmProviders.agentModel.model || null;
+      }
+
+      // Load default agent thinking settings if set
+      if (llmProviders?.agentThinking) {
+        this.agentThinkingSettings = {
+          enabled: llmProviders.agentThinking.enabled ?? false,
+          effort: llmProviders.agentThinking.effort ?? 'medium'
+        };
+      }
+
+      // Load default context notes if set
+      if (settings?.defaultContextNotes && Array.isArray(settings.defaultContextNotes)) {
+        this.contextNotesManager.setNotes(settings.defaultContextNotes);
       }
 
       // Load default workspace if set
@@ -310,7 +352,10 @@ export class ModelAgentManager {
           contextNotes: this.contextNotesManager.getNotes(),
           sessionId: existingSessionId, // Preserve the session ID
           thinking: this.thinkingSettings,
-          temperature: this.temperature
+          temperature: this.temperature,
+          agentProvider: this.agentProvider,
+          agentModel: this.agentModel,
+          agentThinking: this.agentThinkingSettings
         }
       };
 
@@ -517,6 +562,42 @@ export class ModelAgentManager {
    */
   setThinkingSettings(settings: ThinkingSettings): void {
     this.thinkingSettings = { ...settings };
+  }
+
+  /**
+   * Get agent provider
+   */
+  getAgentProvider(): string | null {
+    return this.agentProvider;
+  }
+
+  /**
+   * Get agent model
+   */
+  getAgentModel(): string | null {
+    return this.agentModel;
+  }
+
+  /**
+   * Set agent model (provider and model)
+   */
+  setAgentModel(provider: string | null, model: string | null): void {
+    this.agentProvider = provider;
+    this.agentModel = model;
+  }
+
+  /**
+   * Get agent thinking settings
+   */
+  getAgentThinkingSettings(): ThinkingSettings {
+    return { ...this.agentThinkingSettings };
+  }
+
+  /**
+   * Set agent thinking settings
+   */
+  setAgentThinkingSettings(settings: ThinkingSettings): void {
+    this.agentThinkingSettings = { ...settings };
   }
 
   /**
