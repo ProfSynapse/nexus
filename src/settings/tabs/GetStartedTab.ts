@@ -14,6 +14,7 @@ import { BackButton } from '../components/BackButton';
 import { BRAND_NAME, getPrimaryServerKey } from '../../constants/branding';
 import * as path from 'path';
 import * as fs from 'fs';
+import { execSync } from 'child_process';
 
 type GetStartedView = 'paths' | 'internal-chat' | 'mcp-setup';
 type ConfigStatus = 'no-claude-folder' | 'no-config-file' | 'nexus-configured' | 'config-exists' | 'invalid-config';
@@ -30,6 +31,7 @@ export class GetStartedTab {
     private container: HTMLElement;
     private services: GetStartedTabServices;
     private currentView: GetStartedView = 'paths';
+    private cachedNodePath: string | null = null;
 
     constructor(
         container: HTMLElement,
@@ -45,6 +47,7 @@ export class GetStartedTab {
      * Main render method
      */
     render(): void {
+        this.cachedNodePath = null;
         this.container.empty();
 
         switch (this.currentView) {
@@ -191,6 +194,27 @@ export class GetStartedTab {
 
         this.container.createEl('h3', { text: 'Claude Desktop Setup' });
 
+        // Check for Node.js availability
+        const nodePath = this.resolveNodePath();
+        if (!nodePath) {
+            const nodeWarning = this.container.createDiv('nexus-mcp-row nexus-mcp-node-warning');
+            nodeWarning.createEl('span', {
+                text: 'Node.js not found',
+                cls: 'nexus-mcp-status nexus-mcp-warning'
+            });
+            const actions = nodeWarning.createDiv('nexus-mcp-actions');
+            const downloadBtn = actions.createEl('button', { text: 'Install Node.js', cls: 'mod-cta' });
+            const downloadHandler = () => window.open('https://nodejs.org', '_blank');
+            this.services.component!.registerDomEvent(downloadBtn, 'click', downloadHandler);
+            const refreshBtn = actions.createEl('button', { text: 'Refresh' });
+            const refreshHandler = () => this.render();
+            this.services.component!.registerDomEvent(refreshBtn, 'click', refreshHandler);
+            this.container.createEl('p', {
+                text: 'Node.js is required to run the MCP connector. Install it, then click Refresh.',
+                cls: 'nexus-mcp-help'
+            });
+        }
+
         const configPath = this.getClaudeDesktopConfigPath();
         const configDir = path.dirname(configPath);
         const configStatus = this.checkConfigStatus(configPath, configDir);
@@ -322,17 +346,43 @@ export class GetStartedTab {
     }
 
     /**
+     * Resolve the absolute path to the Node.js binary.
+     * Uses `which` (macOS/Linux) or `where` (Windows) to find node.
+     * Result is cached per render cycle (cleared on re-render).
+     */
+    private resolveNodePath(): string {
+        if (this.cachedNodePath !== null) {
+            return this.cachedNodePath;
+        }
+        try {
+            const cmd = Platform.isWin ? 'where node' : 'which node';
+            const result = execSync(cmd, { encoding: 'utf-8', timeout: 5000 }).trim();
+            // `where` on Windows may return multiple lines; take the first
+            const firstLine = result.split('\n')[0].trim();
+            if (firstLine && fs.existsSync(firstLine)) {
+                this.cachedNodePath = firstLine;
+                return firstLine;
+            }
+        } catch {
+            // Node not found in PATH
+        }
+        this.cachedNodePath = '';
+        return '';
+    }
+
+    /**
      * Generate the configuration JSON string
      */
     private getConfigJson(): string {
         const vaultName = this.services.app.vault.getName();
         const serverKey = getPrimaryServerKey(vaultName);
         const connectorPath = path.normalize(path.join(this.services.pluginPath, 'connector.js'));
+        const nodePath = this.resolveNodePath() || 'node';
 
         const config = {
             mcpServers: {
                 [serverKey]: {
-                    command: 'node',
+                    command: nodePath,
                     args: [connectorPath]
                 }
             }
@@ -406,9 +456,15 @@ export class GetStartedTab {
             const vaultName = this.services.app.vault.getName();
             const serverKey = getPrimaryServerKey(vaultName);
             const connectorPath = path.normalize(path.join(this.services.pluginPath, 'connector.js'));
+            const nodePath = this.resolveNodePath();
+
+            if (!nodePath) {
+                new Notice('Node.js not found. Please install Node.js and try again.');
+                return;
+            }
 
             config.mcpServers[serverKey] = {
-                command: 'node',
+                command: nodePath,
                 args: [connectorPath]
             };
 

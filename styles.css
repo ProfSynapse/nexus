@@ -4641,6 +4641,11 @@ a:hover {
     margin: 8px 0 0 0;
 }
 
+.nexus-mcp-node-warning {
+    border: 1px solid var(--background-modifier-error);
+    margin-bottom: 4px;
+}
+
 /* Manual Config Section */
 .nexus-manual-config {
     margin-top: 16px;
