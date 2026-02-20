@@ -33,6 +33,7 @@ export interface BranchHeaderCallbacks {
 export class BranchHeader {
   private element: HTMLElement | null = null;
   private context: BranchViewContext | null = null;
+  private clickListeners: Array<{ element: HTMLElement; handler: () => void }> = []; // Track fallback listeners
 
   constructor(
     private container: HTMLElement,
@@ -100,6 +101,7 @@ export class BranchHeader {
     const backBtn = header.createEl('button', {
       cls: 'nexus-branch-back clickable-icon',
     });
+    backBtn.setAttribute('aria-label', 'Go back to parent conversation');
     const backIcon = backBtn.createSpan('nexus-branch-back-icon');
     setIcon(backIcon, 'arrow-left');
     backBtn.createSpan({ text: ' Back' });
@@ -112,6 +114,7 @@ export class BranchHeader {
       this.component.registerDomEvent(backBtn, 'click', handleBack);
     } else {
       backBtn.addEventListener('click', handleBack);
+      this.clickListeners.push({ element: backBtn, handler: handleBack });
     }
 
     // Branch info container
@@ -147,14 +150,14 @@ export class BranchHeader {
           text: 'Cancel',
         });
         const subagentId = metadata.subagentId;
+        const handleCancel = () => {
+          this.callbacks.onCancel!(subagentId);
+        };
         if (this.component) {
-          this.component.registerDomEvent(cancelBtn, 'click', () => {
-            this.callbacks.onCancel!(subagentId);
-          });
+          this.component.registerDomEvent(cancelBtn, 'click', handleCancel);
         } else {
-          cancelBtn.addEventListener('click', () => {
-            this.callbacks.onCancel!(subagentId);
-          });
+          cancelBtn.addEventListener('click', handleCancel);
+          this.clickListeners.push({ element: cancelBtn, handler: handleCancel });
         }
       }
 
@@ -164,14 +167,14 @@ export class BranchHeader {
           text: 'Continue',
         });
         const branchId = this.context.branchId;
+        const handleContinue = () => {
+          this.callbacks.onContinue!(branchId);
+        };
         if (this.component) {
-          this.component.registerDomEvent(continueBtn, 'click', () => {
-            this.callbacks.onContinue!(branchId);
-          });
+          this.component.registerDomEvent(continueBtn, 'click', handleContinue);
         } else {
-          continueBtn.addEventListener('click', () => {
-            this.callbacks.onContinue!(branchId);
-          });
+          continueBtn.addEventListener('click', handleContinue);
+          this.clickListeners.push({ element: continueBtn, handler: handleContinue });
         }
       }
     } else {
@@ -198,6 +201,12 @@ export class BranchHeader {
    * Cleanup
    */
   cleanup(): void {
+    // Remove fallback click listeners
+    for (const { element, handler } of this.clickListeners) {
+      element.removeEventListener('click', handler);
+    }
+    this.clickListeners = [];
+
     this.hide();
   }
 }

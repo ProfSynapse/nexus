@@ -74,6 +74,9 @@ export class AgentStatusMenu {
   private eventRef: ReturnType<Events['on']> | null = null;
   private hasShownSuccess: boolean = false; // Track if green state was shown
   private isShowingSpinner: boolean = false; // Track current icon state
+  private runningStartTime: number = 0; // Timestamp when running state began
+  private pendingTransitionTimer: ReturnType<typeof setTimeout> | null = null; // Timer for delayed transition
+  private clickListeners: Array<{ element: HTMLElement; handler: () => void }> = []; // Track fallback listeners
 
   constructor(
     private container: HTMLElement,
@@ -105,16 +108,15 @@ export class AgentStatusMenu {
     this.badgeEl = badge;
 
     // Click handler - clears success state when modal opens
+    const clickHandler = () => {
+      this.clearSuccessState();
+      this.callbacks.onOpenModal();
+    };
     if (this.component) {
-      this.component.registerDomEvent(button, 'click', () => {
-        this.clearSuccessState();
-        this.callbacks.onOpenModal();
-      });
+      this.component.registerDomEvent(button, 'click', clickHandler);
     } else {
-      button.addEventListener('click', () => {
-        this.clearSuccessState();
-        this.callbacks.onOpenModal();
-      });
+      button.addEventListener('click', clickHandler);
+      this.clickListeners.push({ element: button, handler: clickHandler });
     }
 
     this.element = button;
@@ -171,22 +173,58 @@ export class AgentStatusMenu {
 
     // State logic: running > success > default
     if (runningCount > 0) {
+      // Cancel any pending transition away from running state
+      if (this.pendingTransitionTimer !== null) {
+        clearTimeout(this.pendingTransitionTimer);
+        this.pendingTransitionTimer = null;
+      }
       // Running state - swap to spinner icon
       if (!this.isShowingSpinner) {
         setIcon(this.iconEl, 'loader-2');
         this.isShowingSpinner = true;
+        this.runningStartTime = Date.now();
       }
       this.element.addClass('nexus-status-running');
       this.element.removeClass('nexus-status-success');
       this.element.addClass('nexus-agents-active');
       this.element.setAttribute('title', `${runningCount} agent${runningCount > 1 ? 's' : ''} running`);
       this.hasShownSuccess = false; // Reset on new activity
-    } else if (completedCount > 0 && !this.hasShownSuccess) {
-      // Success state - show green bot icon
-      if (this.isShowingSpinner) {
-        setIcon(this.iconEl, 'bot');
-        this.isShowingSpinner = false;
+    } else if (this.isShowingSpinner) {
+      // Transitioning away from running state - enforce minimum display duration
+      const MIN_RUNNING_DISPLAY_MS = 500;
+      const elapsed = Date.now() - this.runningStartTime;
+      const remaining = MIN_RUNNING_DISPLAY_MS - elapsed;
+
+      if (remaining > 0 && this.pendingTransitionTimer === null) {
+        // Delay the transition so the spinner is visible for at least 500ms
+        this.pendingTransitionTimer = setTimeout(() => {
+          this.pendingTransitionTimer = null;
+          this.updateDisplay();
+        }, remaining);
+        return;
       }
+      // Minimum duration met - apply the non-running state
+      this.applyNonRunningState(completedCount);
+    } else {
+      this.applyNonRunningState(completedCount);
+    }
+
+    this.lastCount = runningCount;
+  }
+
+  /**
+   * Apply the visual state when no agents are running (success or default)
+   */
+  private applyNonRunningState(completedCount: number): void {
+    if (!this.element || !this.iconEl) return;
+
+    if (this.isShowingSpinner) {
+      setIcon(this.iconEl, 'bot');
+      this.isShowingSpinner = false;
+    }
+
+    if (completedCount > 0 && !this.hasShownSuccess) {
+      // Success state - show green bot icon
       this.element.removeClass('nexus-status-running');
       this.element.addClass('nexus-status-success');
       this.element.removeClass('nexus-agents-active');
@@ -194,16 +232,10 @@ export class AgentStatusMenu {
       this.hasShownSuccess = true;
     } else if (!this.hasShownSuccess) {
       // Default state - show bot icon
-      if (this.isShowingSpinner) {
-        setIcon(this.iconEl, 'bot');
-        this.isShowingSpinner = false;
-      }
       this.element.removeClass('nexus-status-running', 'nexus-status-success', 'nexus-agents-active');
       this.element.setAttribute('title', 'Running agents');
     }
     // If hasShownSuccess is true, keep the green state until clearSuccessState() is called
-
-    this.lastCount = runningCount;
   }
 
   /**
@@ -240,6 +272,18 @@ export class AgentStatusMenu {
    * Cleanup
    */
   cleanup(): void {
+    // Clear pending transition timer
+    if (this.pendingTransitionTimer !== null) {
+      clearTimeout(this.pendingTransitionTimer);
+      this.pendingTransitionTimer = null;
+    }
+
+    // Remove fallback click listeners
+    for (const { element, handler } of this.clickListeners) {
+      element.removeEventListener('click', handler);
+    }
+    this.clickListeners = [];
+
     // Unsubscribe from events
     if (this.eventRef) {
       getSubagentEventBus().offref(this.eventRef);

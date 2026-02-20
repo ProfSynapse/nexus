@@ -76,13 +76,15 @@ export class NexusLoadingController extends Component {
 
     // Wait for transition then hide
     setTimeout(() => {
-      this.overlayEl!.removeClass('chat-loading-overlay-visible');
-      this.overlayEl!.addClass('chat-loading-overlay-hidden');
+      if (!this.overlayEl) return;
+
+      this.overlayEl.removeClass('chat-loading-overlay-visible');
+      this.overlayEl.addClass('chat-loading-overlay-hidden');
 
       // Reset progress
-      const progressBar = this.overlayEl!.querySelector('[data-progress-el]') as HTMLElement;
-      const progressText = this.overlayEl!.querySelector('[data-progress-text-el]');
-      const statusEl = this.overlayEl!.querySelector('[data-status-el]');
+      const progressBar = this.overlayEl.querySelector('[data-progress-el]') as HTMLElement;
+      const progressText = this.overlayEl.querySelector('[data-progress-text-el]');
+      const statusEl = this.overlayEl.querySelector('[data-status-el]');
 
       if (progressBar) progressBar.addClass('chat-progress-bar-reset');
       if (progressText) progressText.textContent = '0%';
@@ -115,10 +117,12 @@ export class NexusLoadingController extends Component {
 
     this.overlayEl.removeClass('is-visible');
     setTimeout(() => {
-      this.overlayEl!.removeClass('chat-loading-overlay-visible');
-      this.overlayEl!.addClass('chat-loading-overlay-hidden');
+      if (!this.overlayEl) return;
+
+      this.overlayEl.removeClass('chat-loading-overlay-visible');
+      this.overlayEl.addClass('chat-loading-overlay-hidden');
       // Reset text for potential Nexus loading later
-      const statusEl = this.overlayEl!.querySelector('[data-status-el]');
+      const statusEl = this.overlayEl.querySelector('[data-status-el]');
       if (statusEl) statusEl.textContent = 'Loading Nexus model...';
     }, 300);
   }
