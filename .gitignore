@@ -70,4 +70,4 @@ mlc-venv/
 local-models/
 *.wasm
 agentic-flow-main/
-local-models/
+local-models/.worktrees/
