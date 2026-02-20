@@ -15,6 +15,7 @@ const STATE_ICONS: Record<BranchState, string> = {
   cancelled: 'x',           // X mark
   max_iterations: 'pause',  // Pause icon
   abandoned: 'alert-triangle', // Warning triangle
+  error: 'x-circle',        // Error circle
 };
 
 /**
@@ -76,6 +77,8 @@ export function getStatusText(metadata: SubagentBranchMetadata): string {
       return `Paused ${iterations || 0}/${maxIterations || 10}`;
     case 'abandoned':
       return 'Abandoned';
+    case 'error':
+      return `Error: ${metadata.error || 'Unknown error'}`;
     default:
       return '';
   }
@@ -104,6 +107,8 @@ export function buildStatusDescription(
       return `Paused at max iterations (${iterations}/${maxIterations}) · ${timeAgo}`;
     case 'abandoned':
       return `Abandoned after ${iterations} iterations · ${timeAgo}`;
+    case 'error':
+      return `Failed after ${iterations} iterations · ${timeAgo}`;
     default:
       return `${iterations} iterations · ${timeAgo}`;
   }

@@ -133,9 +133,14 @@ export class StreamingResponseService {
         messages.unshift({ role: 'system', content: options.systemPrompt });
       }
 
-      // Only add user message if it's NOT already in the filtered conversation
-      // (happens on first message when conversation is empty, or during retry)
-      if (!filteredConversation || !filteredConversation.messages.some((m: any) => m.content === userMessage && m.role === 'user')) {
+      // Only add user message if it's NOT already the last message in the filtered conversation.
+      // M13 fix: Check by position (is the last message a matching user message?) rather than
+      // scanning all messages by content, which breaks when a user intentionally sends
+      // the same message twice.
+      const lastMsg = filteredConversation?.messages[filteredConversation.messages.length - 1];
+      const isAlreadyLast = lastMsg?.role === 'user' && lastMsg?.content === userMessage;
+
+      if (!filteredConversation || !isAlreadyLast) {
         messages.push({ role: 'user', content: userMessage });
       }
 

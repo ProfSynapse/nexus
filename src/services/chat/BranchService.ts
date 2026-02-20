@@ -65,9 +65,14 @@ export class BranchService {
       title
     );
 
-    // Store inheritContext in metadata for buildLLMContext
+    // F7 fix: Persist inheritContext=true to storage (not just in-memory).
+    // createBranchConversation defaults inheritContext to false.
+    // Human branches need context inheritance for LLM continuity.
     if (branch.metadata) {
       branch.metadata.inheritContext = true;
+      await this.conversationService.updateConversation(branch.id, {
+        metadata: branch.metadata,
+      });
     }
 
     return branch.id;
@@ -316,26 +321,18 @@ export class BranchService {
 
   /**
    * Get branches attached to a specific message
-   * Note: This requires searching by parent message ID - less efficient than message-level queries
+   * Uses ConversationService.getBranchesForMessage for targeted lookup
+   * instead of scanning all conversations.
+   *
+   * @param parentConversationId - The parent conversation ID (required for efficient lookup)
+   * @param parentMessageId - The message ID to find branches for
    */
-  async getBranchesByMessage(parentMessageId: string): Promise<BranchInfo[]> {
-    // Get all conversations and filter for branches from this message
-    // This is less efficient but works with the new architecture
-    const allConversations = await this.conversationService.listConversations(undefined, 200);
-    const branchInfos: BranchInfo[] = [];
-
-    for (const meta of allConversations) {
-      // Need to load full conversation to check metadata
-      const conversation = await this.conversationService.getConversation(meta.id);
-      if (conversation?.metadata?.parentMessageId === parentMessageId) {
-        branchInfos.push({
-          branch: this.conversationToBranch(conversation),
-          parentMessageId,
-        });
-      }
-    }
-
-    return branchInfos;
+  async getBranchesByMessage(parentConversationId: string, parentMessageId: string): Promise<BranchInfo[]> {
+    const branches = await this.conversationService.getBranchesForMessage(
+      parentConversationId,
+      parentMessageId
+    );
+    return this.convertConversationsToBranchInfoArray(branches);
   }
 
   /**

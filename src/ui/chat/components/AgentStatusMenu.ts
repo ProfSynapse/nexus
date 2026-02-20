@@ -20,26 +20,70 @@ export interface AgentStatusMenuCallbacks {
 
 /**
  * Event emitter for subagent status updates
- * Allows UI components to subscribe to status changes without polling
+ * Allows UI components to subscribe to status changes without polling.
+ *
+ * Instance-scoped: each ChatView creates its own SubagentEventBus to avoid
+ * cross-pane status leakage in split-pane layouts. The owning controller
+ * should call destroy() on plugin unload to prevent hot-reload listener leaks.
+ *
+ * API for Wave 2 agents:
+ * - Create: `new SubagentEventBus()`
+ * - Listen: `const ref = bus.on('status-changed', callback)`
+ * - Emit: `bus.trigger('status-changed')`
+ * - Unlisten: `bus.offref(ref)`
+ * - Cleanup: `bus.destroy()` — removes all listeners
  */
 export class SubagentEventBus extends Events {
+  private destroyed = false;
+
   trigger(name: 'status-changed'): void {
+    if (this.destroyed) return;
     super.trigger(name);
   }
 
   on(name: 'status-changed', callback: () => void): ReturnType<Events['on']> {
     return super.on(name, callback);
   }
+
+  /**
+   * Remove all listeners and mark as destroyed.
+   * Call on plugin unload or ChatView cleanup to prevent hot-reload leaks.
+   */
+  destroy(): void {
+    this.destroyed = true;
+    // Events base class stores listeners internally; we clear all by
+    // resetting the internal _events property (Obsidian's Events uses this pattern)
+    (this as any)._events = {};
+  }
 }
 
-// Singleton event bus for subagent status updates
+/**
+ * @deprecated Use instance-scoped SubagentEventBus instead.
+ * Retained temporarily for backward compatibility during migration.
+ * Wave 2 agents should receive the bus instance via dependency injection.
+ */
 let globalEventBus: SubagentEventBus | null = null;
 
+/**
+ * @deprecated Use instance-scoped SubagentEventBus instead.
+ * Creates or returns the legacy global singleton.
+ */
 export function getSubagentEventBus(): SubagentEventBus {
   if (!globalEventBus) {
     globalEventBus = new SubagentEventBus();
   }
   return globalEventBus;
+}
+
+/**
+ * Reset the global event bus. Call on plugin unload to prevent hot-reload leaks.
+ * @deprecated Will be removed once all consumers use instance-scoped bus.
+ */
+export function resetGlobalEventBus(): void {
+  if (globalEventBus) {
+    globalEventBus.destroy();
+    globalEventBus = null;
+  }
 }
 
 /**
@@ -165,7 +209,7 @@ export class AgentStatusMenu {
     const statusList = this.subagentExecutor?.getAgentStatusList() ?? [];
     const runningCount = statusList.filter(a => a.state === 'running').length;
     const completedCount = statusList.filter(a =>
-      ['complete', 'cancelled', 'max_iterations', 'abandoned'].includes(a.state)
+      ['complete', 'cancelled', 'max_iterations', 'abandoned', 'error'].includes(a.state)
     ).length;
     // Update badge
     this.badgeEl.textContent = runningCount.toString();

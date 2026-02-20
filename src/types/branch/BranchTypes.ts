@@ -17,7 +17,8 @@ export type BranchState =
   | 'complete'       // Finished successfully (no tool calls in final response)
   | 'cancelled'      // User or parent cancelled
   | 'abandoned'      // Parent conversation closed while running
-  | 'max_iterations'; // Hit iteration limit, can be continued
+  | 'max_iterations' // Hit iteration limit, can be continued
+  | 'error';         // Failed with an error
 
 /**
  * Branch type discriminator

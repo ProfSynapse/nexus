@@ -5,24 +5,21 @@
  * - Queue messages during active generation
  * - Process queue when generation completes
  * - User messages get priority over subagent results
- * - Emit events for UI updates
+ *
+ * F4 fix: Uses Obsidian's Events class instead of Node.js EventEmitter
+ * for mobile compatibility.
+ * M15 fix: Removed dead event emissions (message:queued, message:processing,
+ * queue:empty) that had no subscribers.
  *
  * Follows Single Responsibility Principle - only handles message queuing.
  */
 
-import { EventEmitter } from 'events';
-import type { QueuedMessage, MessageQueueEvents } from '../../types/branch/BranchTypes';
+import type { QueuedMessage } from '../../types/branch/BranchTypes';
 
-export interface MessageQueueServiceEvents extends MessageQueueEvents {}
-
-export class MessageQueueService extends EventEmitter {
+export class MessageQueueService {
   private queue: QueuedMessage[] = [];
   private isGenerating: boolean = false;
   private processMessageFn: ((message: QueuedMessage) => Promise<void>) | null = null;
-
-  constructor() {
-    super();
-  }
 
   /**
    * Set the message processor function
@@ -33,7 +30,7 @@ export class MessageQueueService extends EventEmitter {
   }
 
   /**
-   * Alias for setMessageProcessor (for compatibility with MessageManager)
+   * Alias for setMessageProcessor (used by SubagentController)
    */
   setProcessor(fn: (message: QueuedMessage) => Promise<void>): void {
     this.setMessageProcessor(fn);
@@ -47,7 +44,6 @@ export class MessageQueueService extends EventEmitter {
   async enqueue(message: QueuedMessage): Promise<void> {
     if (this.isGenerating) {
       this.addToQueue(message);
-      this.emit('message:queued', { count: this.queue.length, message });
     } else {
       await this.processMessage(message);
     }
@@ -106,10 +102,6 @@ export class MessageQueueService extends EventEmitter {
       const message = this.queue.shift()!;
       await this.processMessage(message);
     }
-
-    if (this.queue.length === 0) {
-      this.emit('queue:empty');
-    }
   }
 
   /**
@@ -119,8 +111,6 @@ export class MessageQueueService extends EventEmitter {
     if (!this.processMessageFn) {
       return;
     }
-
-    this.emit('message:processing', { message });
 
     try {
       await this.processMessageFn(message);
@@ -155,7 +145,6 @@ export class MessageQueueService extends EventEmitter {
    */
   clearQueue(): void {
     this.queue = [];
-    this.emit('queue:empty');
   }
 
   /**
@@ -190,6 +179,5 @@ export class MessageQueueService extends EventEmitter {
   destroy(): void {
     this.clearQueue();
     this.processMessageFn = null;
-    this.removeAllListeners();
   }
 }

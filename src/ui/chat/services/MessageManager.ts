@@ -18,8 +18,6 @@ import { MessageStreamHandler } from './MessageStreamHandler';
 import { MessageStateManager } from './MessageStateManager';
 import { AbortHandler } from '../utils/AbortHandler';
 import { getWebLLMLifecycleManager } from '../../../services/llm/adapters/webllm/WebLLMLifecycleManager';
-import type { MessageQueueService } from '../../../services/chat/MessageQueueService';
-import type { QueuedMessage } from '../../../types/branch/BranchTypes';
 
 export interface MessageManagerEvents {
   onMessageAdded: (message: ConversationMessage) => void;
@@ -47,9 +45,6 @@ export class MessageManager {
   private abortHandler: AbortHandler;
   private stateManager: MessageStateManager;
   private alternativeService: MessageAlternativeService;
-
-  // Optional queue service for subagent result processing
-  private messageQueueService: MessageQueueService | null = null;
 
   constructor(
     private chatService: ChatService,
@@ -94,24 +89,6 @@ export class MessageManager {
    */
   getIsLoading(): boolean {
     return this.isLoading;
-  }
-
-  /**
-   * Set the message queue service for subagent result processing
-   * This enables queued delivery of subagent results
-   */
-  setMessageQueueService(queueService: MessageQueueService): void {
-    this.messageQueueService = queueService;
-
-    // Set up the message processor to handle queued messages
-    queueService.setProcessor(async (message: QueuedMessage) => {
-      if (message.type === 'subagent_result') {
-        // The subagent result is already stored in the branch
-        // We just need to trigger a UI update
-        // This will be handled by ChatView's event system
-        this.events.onConversationUpdated?.(null); // Force UI refresh
-      }
-    });
   }
 
   /**

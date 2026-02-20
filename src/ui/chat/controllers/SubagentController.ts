@@ -249,6 +249,8 @@ export class SubagentController {
         abortSignal?: AbortSignal;
         workspaceId?: string;
         sessionId?: string;
+        enableThinking?: boolean;
+        thinkingEffort?: 'low' | 'medium' | 'high';
       }
     ) {
       try {
@@ -260,10 +262,16 @@ export class SubagentController {
           sessionId: options?.sessionId,
           workspaceId: options?.workspaceId,
           tools: tools as Tool[],
+          enableThinking: options?.enableThinking,
+          thinkingEffort: options?.thinkingEffort,
         };
 
         for await (const chunk of llmService.generateResponseStream(messages, streamOptions)) {
-          if (options?.abortSignal?.aborted) return;
+          if (options?.abortSignal?.aborted) {
+            // M6 fix: throw AbortError instead of silently returning
+            // so SubagentExecutor can distinguish cancellation from completion
+            throw new DOMException('Subagent streaming aborted', 'AbortError');
+          }
 
           yield {
             chunk: chunk.chunk || '',

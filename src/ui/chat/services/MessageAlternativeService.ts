@@ -201,6 +201,18 @@ export class MessageAlternativeService {
 
         this.events.onConversationUpdated(conversation);
       } else {
+        // B2 fix: Reset loading state on the message so it doesn't stay in "thinking"
+        const failedMessage = conversation.messages[aiMessageIndex];
+        if (failedMessage) {
+          failedMessage.isLoading = false;
+          failedMessage.state = 'error';
+          try {
+            await this.chatService.updateConversation(conversation);
+          } catch {
+            // Best-effort persist — don't mask the original error
+          }
+        }
+        this.events.onConversationUpdated(conversation);
         this.events.onError('Failed to generate alternative response');
       }
     } finally {
