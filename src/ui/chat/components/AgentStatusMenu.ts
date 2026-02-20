@@ -127,7 +127,8 @@ export class AgentStatusMenu {
     private subagentExecutor: SubagentExecutor | null,
     private callbacks: AgentStatusMenuCallbacks,
     private component?: Component,
-    private insertBefore?: HTMLElement // Insert before this element (e.g., settings button)
+    private insertBefore?: HTMLElement, // Insert before this element (e.g., settings button)
+    private eventBusInstance?: SubagentEventBus // Instance-scoped bus (preferred over global)
   ) {}
 
   /**
@@ -191,9 +192,10 @@ export class AgentStatusMenu {
 
   /**
    * Subscribe to subagent status events
+   * Uses instance-scoped bus if provided, falls back to deprecated global
    */
   private subscribeToEvents(): void {
-    const eventBus = getSubagentEventBus();
+    const eventBus = this.eventBusInstance ?? getSubagentEventBus();
     this.eventRef = eventBus.on('status-changed', () => {
       this.updateDisplay();
     });
@@ -328,9 +330,10 @@ export class AgentStatusMenu {
     }
     this.clickListeners = [];
 
-    // Unsubscribe from events
+    // Unsubscribe from events (use instance bus if available)
     if (this.eventRef) {
-      getSubagentEventBus().offref(this.eventRef);
+      const eventBus = this.eventBusInstance ?? getSubagentEventBus();
+      eventBus.offref(this.eventRef);
       this.eventRef = null;
     }
 

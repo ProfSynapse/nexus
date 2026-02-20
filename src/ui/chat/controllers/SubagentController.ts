@@ -11,11 +11,11 @@
  * branch conversations for subagents and coordinates their execution.
  */
 
-import { App, Component } from 'obsidian';
+import { App, Component, Notice } from 'obsidian';
 import { BranchService } from '../../../services/chat/BranchService';
 import { MessageQueueService } from '../../../services/chat/MessageQueueService';
 import { SubagentExecutor } from '../../../services/chat/SubagentExecutor';
-import { AgentStatusMenu, createSubagentEventHandlers, getSubagentEventBus } from '../components/AgentStatusMenu';
+import { AgentStatusMenu, SubagentEventBus } from '../components/AgentStatusMenu';
 import { AgentStatusModal } from '../components/AgentStatusModal';
 import type { ChatService } from '../../../services/chat/ChatService';
 import type { DirectToolExecutor } from '../../../services/chat/DirectToolExecutor';
@@ -70,17 +70,34 @@ export class SubagentController {
   private messageQueueService: MessageQueueService | null = null;
   private subagentExecutor: SubagentExecutor | null = null;
   private agentStatusMenu: AgentStatusMenu | null = null;
+  private eventBus: SubagentEventBus;
 
   private currentBranchContext: BranchViewContext | null = null;
   private initialized = false;
   private navigationCallback: ((branchId: string) => void) | null = null;
   private continueCallback: ((branchId: string) => void) | null = null;
 
+  // M7: Generation guard to prevent concurrent parent LLM responses
+  private isGeneratingParentResponse = false;
+  private pendingSubagentResults: Array<{
+    chatService: ChatService;
+    contextProvider: SubagentContextProvider;
+    message: { content: string; metadata: Record<string, unknown>; conversationId: string };
+  }> = [];
+
+  // F5: Track active streaming branches for navigation resilience
+  private activeStreamingBranches: Map<string, {
+    messageId: string;
+    streamingInitialized: boolean;
+  }> = new Map();
+
   constructor(
     private app: App,
     private component: Component,
     private events: SubagentControllerEvents
-  ) {}
+  ) {
+    this.eventBus = new SubagentEventBus();
+  }
 
   /**
    * Set navigation callbacks (called by ChatView after initialization)
@@ -119,13 +136,14 @@ export class SubagentController {
       this.messageQueueService = new MessageQueueService();
       this.setupMessageQueueProcessor(deps.chatService, contextProvider);
 
-      // Create SubagentExecutor
+      // Create SubagentExecutor with instance-scoped EventBus
       this.subagentExecutor = new SubagentExecutor({
         branchService: this.branchService,
         messageQueueService: this.messageQueueService,
         directToolExecutor: deps.directToolExecutor,
         streamingGenerator: this.createStreamingGenerator(deps.llmService, deps.directToolExecutor),
         getToolSchemas: this.createToolSchemaFetcher(deps.directToolExecutor),
+        eventBus: this.eventBus,
       });
 
       // Set event handlers
@@ -137,14 +155,15 @@ export class SubagentController {
         () => this.buildSubagentContext(contextProvider)
       );
 
-      // Initialize status menu if container provided
+      // Initialize status menu if container provided (pass instance-scoped eventBus)
       if (settingsButtonContainer && settingsButton) {
         this.agentStatusMenu = new AgentStatusMenu(
           settingsButtonContainer,
           this.subagentExecutor,
           { onOpenModal: () => this.openAgentStatusModal(contextProvider) },
           this.component,
-          settingsButton
+          settingsButton,
+          this.eventBus
         );
         this.agentStatusMenu.render();
       }
@@ -174,63 +193,117 @@ export class SubagentController {
         const result = JSON.parse(message.content || '{}');
         const metadata = message.metadata || {};
 
-        const conversationId = metadata.conversationId;
+        const conversationId = metadata.conversationId as string | undefined;
         if (!conversationId) {
           console.error('[SubagentController] No conversationId in metadata');
           return;
         }
 
         // Format result for display
-        const taskLabel = metadata.subagentTask || 'Task';
+        const taskLabel = (metadata.subagentTask as string) || 'Task';
         const resultContent = result.success
           ? `[Subagent "${taskLabel}" completed]\n\nResult:\n${result.result || 'Task completed successfully.'}`
           : `[Subagent "${taskLabel}" ${result.status === 'max_iterations' ? 'paused (max iterations)' : 'failed'}]\n\n${result.error || 'Unknown error'}`;
 
-        // Check if viewing parent conversation
-        const currentConversation = contextProvider.getCurrentConversation();
-        const isViewingParent = currentConversation?.id === conversationId && !this.currentBranchContext;
-
-        // Add result as user message
-        await chatService.addMessage({
-          conversationId,
-          role: 'user',
-          content: resultContent,
-          metadata: {
-            type: 'subagent_result',
-            branchId: metadata.branchId,
-            subagentId: metadata.subagentId,
-            success: result.success,
-            iterations: result.iterations,
-            isAutoGenerated: true,
-          },
-        });
-
-        // Trigger LLM response in background
-        const parentConversation = await chatService.getConversation(conversationId);
-        if (parentConversation) {
-          try {
-            const generator = chatService.generateResponseStreaming(
-              parentConversation.id,
-              resultContent,
-              {}
-            );
-            for await (const chunk of generator) {
-              if (chunk.complete) {
-                break;
-              }
-            }
-            // Notify UI to refresh conversation display
-            this.events.onConversationNeedsRefresh?.(conversationId);
-          } catch (llmError) {
-            console.error('[SubagentController] LLM response failed:', llmError);
-          }
-        } else {
-          console.error('[SubagentController] Could not load parent conversation');
+        // M7: Check generation guard — queue if parent LLM is already generating
+        if (this.isGeneratingParentResponse) {
+          this.pendingSubagentResults.push({
+            chatService,
+            contextProvider,
+            message: { content: resultContent, metadata: metadata as Record<string, unknown>, conversationId },
+          });
+          return;
         }
+
+        await this.processSubagentResult(chatService, contextProvider, resultContent, metadata as Record<string, unknown>, conversationId);
       } catch (error) {
+        // M9: Show error to user instead of silent console log
+        const taskLabel = (message.metadata?.subagentTask as string) || 'subagent';
+        new Notice(`Subagent "${taskLabel}" result processing failed. Check console for details.`);
         console.error('[SubagentController] Processor error:', error);
       }
     });
+  }
+
+  /**
+   * Process a single subagent result: add message and trigger parent LLM response
+   * Extracted to support M7 generation guard queue draining.
+   */
+  private async processSubagentResult(
+    chatService: ChatService,
+    contextProvider: SubagentContextProvider,
+    resultContent: string,
+    metadata: Record<string, unknown>,
+    conversationId: string
+  ): Promise<void> {
+    // Add result as user message
+    await chatService.addMessage({
+      conversationId,
+      role: 'user',
+      content: resultContent,
+      metadata: {
+        type: 'subagent_result',
+        branchId: metadata.branchId,
+        subagentId: metadata.subagentId,
+        success: metadata.success ?? (metadata as Record<string, unknown>).success,
+        iterations: metadata.iterations,
+        isAutoGenerated: true,
+      },
+    });
+
+    // Trigger LLM response with generation guard (M7) and lifecycle tracking (F8)
+    const parentConversation = await chatService.getConversation(conversationId);
+    if (parentConversation) {
+      this.isGeneratingParentResponse = true;
+      this.messageQueueService?.onGenerationStart();
+      try {
+        const generator = chatService.generateResponseStreaming(
+          parentConversation.id,
+          resultContent,
+          {}
+        );
+        for await (const chunk of generator) {
+          if (chunk.complete) {
+            break;
+          }
+        }
+        // Notify UI to refresh conversation display
+        this.events.onConversationNeedsRefresh?.(conversationId);
+      } catch (llmError) {
+        // M9: Show error to user
+        new Notice('Failed to generate response for subagent result. Check console for details.');
+        console.error('[SubagentController] LLM response failed:', llmError);
+      } finally {
+        this.isGeneratingParentResponse = false;
+        // F8: Signal generation complete so queued messages can process
+        this.messageQueueService?.onGenerationComplete();
+        // M7: Drain pending results sequentially
+        await this.drainPendingResults(chatService, contextProvider);
+      }
+    } else {
+      // M9: Show error to user
+      new Notice('Could not load parent conversation for subagent result.');
+      console.error('[SubagentController] Could not load parent conversation');
+    }
+  }
+
+  /**
+   * M7: Drain queued subagent results one at a time (sequential generation)
+   */
+  private async drainPendingResults(
+    chatService: ChatService,
+    contextProvider: SubagentContextProvider
+  ): Promise<void> {
+    while (this.pendingSubagentResults.length > 0 && !this.isGeneratingParentResponse) {
+      const pending = this.pendingSubagentResults.shift()!;
+      await this.processSubagentResult(
+        pending.chatService,
+        pending.contextProvider,
+        pending.message.content,
+        pending.message.metadata,
+        pending.message.conversationId
+      );
+    }
   }
 
   /**
@@ -310,41 +383,47 @@ export class SubagentController {
   ): void {
     if (!this.subagentExecutor) return;
 
-    const eventHandlers = createSubagentEventHandlers();
-
-    // Track streaming state per message
-    let streamingInitialized = false;
-    let currentStreamingMessageId = '';
-
     this.subagentExecutor.setEventHandlers({
-      ...eventHandlers,
+      // Use instance-scoped eventBus instead of deprecated global
+      onSubagentStarted: () => {
+        this.eventBus.trigger('status-changed');
+      },
+      onSubagentProgress: () => {
+        this.eventBus.trigger('status-changed');
+      },
+      onSubagentComplete: () => {
+        this.eventBus.trigger('status-changed');
+      },
       onSubagentError: (subagentId: string, error: string) => {
         console.error('[SubagentController] Error:', subagentId, error);
-        eventHandlers.onSubagentError?.(subagentId, error);
+        this.eventBus.trigger('status-changed');
       },
       onStreamingUpdate: (branchId: string, messageId: string, chunk: string, isComplete: boolean, fullContent: string) => {
-        // Only update if viewing this branch
-        if (this.currentBranchContext?.branchId !== branchId) return;
-
-        // Reset tracking if message changed
-        if (messageId !== currentStreamingMessageId) {
-          streamingInitialized = false;
-          currentStreamingMessageId = messageId;
+        // F5: Track streaming state per branch (not just current view)
+        let branchState = this.activeStreamingBranches.get(branchId);
+        if (!branchState || branchState.messageId !== messageId) {
+          branchState = { messageId, streamingInitialized: false };
+          this.activeStreamingBranches.set(branchId, branchState);
         }
 
-        if (!streamingInitialized) {
-          streamingController.startStreaming(messageId);
-          streamingInitialized = true;
-        }
+        // Only update streaming controller if viewing this branch
+        if (this.currentBranchContext?.branchId === branchId) {
+          if (!branchState.streamingInitialized) {
+            streamingController.startStreaming(messageId);
+            branchState.streamingInitialized = true;
+          }
 
-        if (chunk) {
-          streamingController.updateStreamingChunk(messageId, chunk);
+          if (chunk) {
+            streamingController.updateStreamingChunk(messageId, chunk);
+          }
+
+          if (isComplete) {
+            streamingController.finalizeStreaming(messageId, fullContent);
+          }
         }
 
         if (isComplete) {
-          streamingController.finalizeStreaming(messageId, fullContent);
-          streamingInitialized = false;
-          currentStreamingMessageId = '';
+          this.activeStreamingBranches.delete(branchId);
         }
 
         this.events.onStreamingUpdate(branchId, messageId, chunk, isComplete, fullContent);
@@ -421,11 +500,16 @@ export class SubagentController {
    */
   clearAgentStatus(): void {
     this.subagentExecutor?.clearAgentStatus();
-    getSubagentEventBus().trigger('status-changed');
+    this.eventBus.trigger('status-changed');
   }
 
   /**
    * Set current branch context (for event filtering)
+   * F5: When navigating to a branch that is actively streaming,
+   * the streaming events will automatically render because the
+   * onStreamingUpdate handler checks currentBranchContext on each chunk.
+   * No duplicate bubble is created because activeStreamingBranches tracks
+   * per-branch streaming state independently of navigation.
    */
   setCurrentBranchContext(context: BranchViewContext | null): void {
     this.currentBranchContext = context;
@@ -440,11 +524,28 @@ export class SubagentController {
 
   /**
    * Update branch header context metadata
+   * M10: Use spread instead of Object.assign to avoid mutating shared object
+   * M3: Persist metadata updates to storage via BranchService
    */
-  updateBranchHeaderMetadata(subagentId: string, updates: Partial<any>): void {
-    const contextMetadata = this.currentBranchContext?.metadata;
+  updateBranchHeaderMetadata(subagentId: string, updates: Partial<Record<string, unknown>>): void {
+    if (!this.currentBranchContext) return;
+    const contextMetadata = this.currentBranchContext.metadata;
     if (isSubagentMetadata(contextMetadata) && contextMetadata.subagentId === subagentId) {
-      Object.assign(contextMetadata, updates);
+      // M10: Create new object instead of mutating shared reference
+      this.currentBranchContext = {
+        ...this.currentBranchContext,
+        metadata: { ...contextMetadata, ...updates },
+      };
+
+      // M3: Persist to storage so metadata survives reload
+      if (this.branchService && this.currentBranchContext.branchId) {
+        this.branchService.updateBranchMetadata(
+          this.currentBranchContext.branchId,
+          updates
+        ).catch(error => {
+          console.error('[SubagentController] Failed to persist branch metadata:', error);
+        });
+      }
     }
   }
 
@@ -529,9 +630,13 @@ export class SubagentController {
    */
   cleanup(): void {
     this.agentStatusMenu?.cleanup();
+    this.eventBus.destroy();
     this.subagentExecutor = null;
     this.branchService = null;
     this.messageQueueService = null;
     this.initialized = false;
+    this.isGeneratingParentResponse = false;
+    this.pendingSubagentResults = [];
+    this.activeStreamingBranches.clear();
   }
 }
