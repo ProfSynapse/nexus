@@ -25,7 +25,7 @@ export interface MessageManagerEvents {
   onMessageAdded: (message: ConversationMessage) => void;
   onAIMessageStarted: (message: ConversationMessage) => void;
   onStreamingUpdate: (messageId: string, content: string, isComplete: boolean, isIncremental?: boolean) => void;
-  onConversationUpdated: (conversation: ConversationData) => void;
+  onConversationUpdated: (conversation: ConversationData | null) => void;
   onLoadingStateChanged: (isLoading: boolean) => void;
   onError: (message: string) => void;
   onToolCallsDetected: (messageId: string, toolCalls: any[]) => void;
@@ -101,25 +101,15 @@ export class MessageManager {
    * This enables queued delivery of subagent results
    */
   setMessageQueueService(queueService: MessageQueueService): void {
-    console.log('[MessageManager] Setting message queue service');
     this.messageQueueService = queueService;
 
     // Set up the message processor to handle queued messages
     queueService.setProcessor(async (message: QueuedMessage) => {
-      console.log('[MessageManager] Processing queued message:', message.type, message.id);
-
       if (message.type === 'subagent_result') {
-        // Subagent completed - notify UI to refresh/display results
-        console.log('[MessageManager] Subagent result:', {
-          subagentId: message.metadata?.subagentId,
-          branchId: message.metadata?.branchId,
-          error: message.metadata?.error,
-        });
-
         // The subagent result is already stored in the branch
         // We just need to trigger a UI update
         // This will be handled by ChatView's event system
-        this.events.onConversationUpdated?.(null as any); // Force UI refresh
+        this.events.onConversationUpdated?.(null); // Force UI refresh
       }
     });
   }

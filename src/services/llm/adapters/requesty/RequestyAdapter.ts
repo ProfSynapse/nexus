@@ -4,6 +4,7 @@
  * Based on Requesty streaming documentation
  */
 
+import { requestUrl } from 'obsidian';
 import { BaseAdapter } from '../BaseAdapter';
 import {
   GenerateOptions,
@@ -65,6 +66,8 @@ export class RequestyAdapter extends BaseAdapter {
    */
   async* generateStreamAsync(prompt: string, options?: GenerateOptions): AsyncGenerator<StreamChunk, void, unknown> {
     try {
+      // Note: Using fetch() instead of requestUrl() because Obsidian's requestUrl()
+      // does not support streaming responses (ReadableStream) needed for LLM streaming.
       const response = await fetch(`${this.baseUrl}/chat/completions`, {
         method: 'POST',
         headers: {
@@ -175,7 +178,8 @@ export class RequestyAdapter extends BaseAdapter {
       requestBody.tools = options.tools;
     }
 
-    const response = await fetch(`${this.baseUrl}/chat/completions`, {
+    const response = await requestUrl({
+      url: `${this.baseUrl}/chat/completions`,
       method: 'POST',
       headers: {
         ...this.buildHeaders(),
@@ -187,12 +191,7 @@ export class RequestyAdapter extends BaseAdapter {
       body: JSON.stringify(requestBody)
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`HTTP ${response.status}: ${errorText}`);
-    }
-
-    const data = await response.json() as RequestyChatCompletionResponse;
+    const data = response.json as RequestyChatCompletionResponse;
     const choice = data.choices[0];
     
     if (!choice) {

@@ -21,7 +21,6 @@ import { UsageTracker } from '../../services/UsageTracker';
 import { Vault, EventRef } from 'obsidian';
 import { LLMSettingsNotifier } from '../../services/llm/LLMSettingsNotifier';
 import { LLMProviderSettings } from '../../types';
-import type { MigratableDatabase } from '../../database/schema/SchemaMigrator';
 
 /**
  * PromptManager Agent for custom prompt operations
@@ -87,7 +86,7 @@ export class PromptManagerAgent extends BaseAgent {
     parentAgentManager: AgentManager,
     usageTracker: UsageTracker,
     vault: Vault,
-    db?: MigratableDatabase | null
+    db?: unknown
   ) {
     super(
       'promptManager',

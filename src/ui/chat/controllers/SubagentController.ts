@@ -24,6 +24,7 @@ import type { HybridStorageAdapter } from '../../../database/adapters/HybridStor
 import type { LLMService } from '../../../services/llm/core/LLMService';
 import type { ToolSchemaInfo, AgentStatusItem, BranchViewContext } from '../../../types/branch/BranchTypes';
 import type { ConversationData } from '../../../types/chat/ChatTypes';
+import type { Tool } from '../../../services/llm/adapters/types';
 import type { StreamingController } from './StreamingController';
 import type { ToolEventCoordinator } from '../coordinators/ToolEventCoordinator';
 import { isSubagentMetadata } from '../../../types/branch/BranchTypes';
@@ -258,7 +259,7 @@ export class SubagentController {
           systemPrompt: options?.systemPrompt,
           sessionId: options?.sessionId,
           workspaceId: options?.workspaceId,
-          tools: tools as any[],
+          tools: tools as Tool[],
         };
 
         for await (const chunk of llmService.generateResponseStream(messages, streamOptions)) {
@@ -458,7 +459,6 @@ export class SubagentController {
    */
   private openAgentStatusModal(contextProvider: SubagentContextProvider): void {
     if (!this.subagentExecutor) {
-      console.warn('[SubagentController] SubagentExecutor not available');
       return;
     }
 
@@ -468,15 +468,11 @@ export class SubagentController {
       this.subagentExecutor,
       {
         onViewBranch: (branchId) => {
-          console.log('[SubagentController] View branch:', branchId);
           if (this.navigationCallback) {
             this.navigationCallback(branchId);
-          } else {
-            console.warn('[SubagentController] No navigation callback set');
           }
         },
         onContinueAgent: (branchId) => {
-          console.log('[SubagentController] Continue agent:', branchId);
           if (this.continueCallback) {
             this.continueCallback(branchId);
           }
@@ -499,7 +495,6 @@ export class SubagentController {
     }
   ): void {
     if (!this.subagentExecutor) {
-      console.warn('[SubagentController] SubagentExecutor not available');
       return;
     }
 

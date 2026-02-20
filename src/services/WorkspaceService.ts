@@ -209,7 +209,7 @@ export class WorkspaceService {
         dedicatedAgentId: metadata.dedicatedAgentId, // Pass through dedicatedAgentId
         context: metadata.context,
         sessions: {} // Sessions must be loaded separately with getSessions
-      } as any; // Type cast needed since IndividualWorkspace doesn't have dedicatedAgentId in its type definition
+      };
     }
 
     // Fall back to legacy implementation
@@ -253,7 +253,7 @@ export class WorkspaceService {
         dedicatedAgentId: w.dedicatedAgentId, // Include dedicatedAgentId field
         context: w.context,
         sessions: {} // Sessions must be loaded separately
-      } as any)); // Type cast needed since IndividualWorkspace doesn't have dedicatedAgentId in type definition
+      }));
     }
 
     // Fall back to legacy implementation
@@ -300,7 +300,7 @@ export class WorkspaceService {
         created: data.created || Date.now(),
         lastAccessed: data.lastAccessed || Date.now(),
         isActive: data.isActive ?? true,
-        dedicatedAgentId: (data as any).dedicatedAgentId, // Pass through dedicatedAgentId
+        dedicatedAgentId: data.dedicatedAgentId, // Pass through dedicatedAgentId
         context: hybridContext
       };
 

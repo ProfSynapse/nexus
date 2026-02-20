@@ -23,7 +23,8 @@ import {
   RequestExecutor,
   SequenceManager,
   ResultProcessor,
-  ActionExecutor
+  ActionExecutor,
+  ExecutionErrorService
 } from './services';
 import { PromptParser } from './utils';
 import { addRecommendations, Recommendation } from '../../../../utils/recommendationUtils';
@@ -55,6 +56,7 @@ export class ExecutePromptsTool extends BaseTool<BatchExecutePromptParams, Batch
   private sequenceManager!: SequenceManager;
   private resultProcessor!: ResultProcessor;
   private actionExecutor!: ActionExecutor;
+  private executionErrorService!: ExecutionErrorService;
   
   // Utilities
   private promptParser!: PromptParser;
@@ -123,19 +125,25 @@ export class ExecutePromptsTool extends BaseTool<BatchExecutePromptParams, Batch
    * Ensure request executor is initialized with all dependencies
    */
   private ensureRequestExecutor(): void {
+    if (!this.executionErrorService && this.llmService) {
+      this.executionErrorService = new ExecutionErrorService(this.llmService);
+    }
+
     if (!this.promptExecutor && this.llmService) {
       this.promptExecutor = new PromptExecutor(
         this.llmService,
         this.budgetValidator,
         this.contextBuilder,
+        this.executionErrorService,
         this.promptStorage || undefined
       );
     }
 
-    if (!this.requestExecutor && this.promptExecutor && this.actionExecutor) {
+    if (!this.requestExecutor && this.promptExecutor && this.actionExecutor && this.executionErrorService) {
       this.requestExecutor = new RequestExecutor(
         this.promptExecutor,
-        this.actionExecutor
+        this.actionExecutor,
+        this.executionErrorService
       );
 
       this.sequenceManager = new SequenceManager(
@@ -230,6 +238,12 @@ export class ExecutePromptsTool extends BaseTool<BatchExecutePromptParams, Batch
       const nudges: Recommendation[] = [NudgeHelpers.suggestCaptureProgress()];
       const batchNudge = NudgeHelpers.checkBatchAgentOpportunity(processedResults.results?.length || 0);
       if (batchNudge) nudges.push(batchNudge);
+      if (results.some(result => !result.success && result.error && this.executionErrorService.isApiKeyIssue(result.error))) {
+        nudges.push({
+          type: 'llm_configuration',
+          message: 'Some prompts failed authentication. Update provider API keys in Settings > LLM Providers, then retry.'
+        });
+      }
 
       return addRecommendations(result, nudges);
 

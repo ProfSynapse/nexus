@@ -632,7 +632,7 @@ export class ProgressiveToolAccordion {
       href: '#',
     });
 
-    viewLink.addEventListener('click', (e) => {
+    this.component!.registerDomEvent(viewLink, 'click', (e) => {
       e.preventDefault();
       e.stopPropagation();
       this.callbacks.onViewBranch?.(branchId!);
@@ -647,7 +647,7 @@ export class ProgressiveToolAccordion {
     setIcon(copyBtn, 'copy');
     copyBtn.setAttribute('aria-label', 'Copy to clipboard');
 
-    copyBtn.addEventListener('click', async (e) => {
+    this.component!.registerDomEvent(copyBtn, 'click', async (e) => {
       e.stopPropagation();
       try {
         await navigator.clipboard.writeText(getContent());

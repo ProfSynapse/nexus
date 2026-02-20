@@ -61,7 +61,8 @@ export class OllamaAdapter extends BaseAdapter {
         }
       });
 
-      // Use /api/chat endpoint (supports messages array and tool calling)
+      // Note: Using fetch() instead of requestUrl() because Obsidian's requestUrl()
+      // does not support streaming responses (ReadableStream) needed for LLM streaming.
       const response = await fetch(`${this.ollamaUrl}/api/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -174,7 +175,8 @@ export class OllamaAdapter extends BaseAdapter {
       });
 
       // Use /api/chat endpoint (supports messages array and tool calling)
-      const response = await fetch(`${this.ollamaUrl}/api/chat`, {
+      const response = await requestUrl({
+        url: `${this.ollamaUrl}/api/chat`,
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -187,16 +189,7 @@ export class OllamaAdapter extends BaseAdapter {
         })
       });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new LLMProviderError(
-          `Ollama API error: ${response.status} ${response.statusText} - ${errorText}`,
-          'generation',
-          'API_ERROR'
-        );
-      }
-
-      const data = await response.json();
+      const data = response.json;
 
       // /api/chat returns message.content instead of response
       if (!data.message?.content) {
@@ -270,7 +263,8 @@ export class OllamaAdapter extends BaseAdapter {
         }
       });
 
-      // Use /api/chat endpoint (supports messages array and tool calling)
+      // Note: Using fetch() instead of requestUrl() because Obsidian's requestUrl()
+      // does not support streaming responses (ReadableStream) needed for LLM streaming.
       const response = await fetch(`${this.ollamaUrl}/api/chat`, {
         method: 'POST',
         headers: {

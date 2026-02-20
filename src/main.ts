@@ -64,7 +64,7 @@ export default class NexusPlugin extends Plugin {
                 const wasmEnsurer = new WasmEnsurer(this);
                 const wasmReady = await wasmEnsurer.ensureWasmExists();
                 if (!wasmReady) {
-                    console.warn(`[${BRAND_NAME}] SQLite WASM not available - some features may be limited`);
+                    console.error(`[${BRAND_NAME}] SQLite WASM not available - some features may be limited`);
                 }
             }
 

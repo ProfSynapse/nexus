@@ -175,6 +175,8 @@ export class LMStudioAdapter extends BaseAdapter {
       }
     });
 
+    // Note: Using fetch() instead of requestUrl() because Obsidian's requestUrl()
+    // does not support streaming responses (ReadableStream) needed for LLM streaming.
     const response = await fetch(`${this.serverUrl}/v1/chat/completions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

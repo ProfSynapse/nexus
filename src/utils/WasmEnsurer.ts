@@ -52,7 +52,7 @@ export class WasmEnsurer {
                 if (stat && stat.size >= WasmEnsurer.MIN_WASM_SIZE) {
                     return true;
                 }
-                console.warn('[WasmEnsurer] sqlite3.wasm exists but is too small, re-downloading...');
+                console.error('[WasmEnsurer] sqlite3.wasm exists but is too small, re-downloading...');
             }
 
             // File doesn't exist or is corrupted - download it
@@ -73,8 +73,6 @@ export class WasmEnsurer {
         try {
             for (const url of WasmEnsurer.WASM_URLS) {
                 try {
-                    console.log(`[WasmEnsurer] Attempting download from: ${url}`);
-
                     const response = await requestUrl({
                         url,
                         method: 'GET',
@@ -82,7 +80,7 @@ export class WasmEnsurer {
                     });
 
                     if (response.status !== 200) {
-                        console.warn(`[WasmEnsurer] HTTP ${response.status} from ${url}`);
+                        console.error(`[WasmEnsurer] HTTP ${response.status} from ${url}`);
                         continue;
                     }
 
@@ -90,7 +88,7 @@ export class WasmEnsurer {
 
                     // Validate size
                     if (wasmData.byteLength < WasmEnsurer.MIN_WASM_SIZE) {
-                        console.warn(`[WasmEnsurer] Downloaded file too small (${wasmData.byteLength} bytes) from ${url}`);
+                        console.error(`[WasmEnsurer] Downloaded file too small (${wasmData.byteLength} bytes) from ${url}`);
                         continue;
                     }
 
@@ -99,11 +97,10 @@ export class WasmEnsurer {
 
                     notice.hide();
                     new Notice('SQLite WASM file downloaded successfully!', 3000);
-                    console.log(`[WasmEnsurer] Successfully downloaded sqlite3.wasm (${wasmData.byteLength} bytes)`);
                     return true;
 
                 } catch (error) {
-                    console.warn(`[WasmEnsurer] Failed to download from ${url}:`, error);
+                    console.error(`[WasmEnsurer] Failed to download from ${url}:`, error);
                     // Try next URL
                 }
             }

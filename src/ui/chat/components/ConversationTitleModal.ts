@@ -4,12 +4,13 @@
  * Properly extends Obsidian's Modal class for proper focus management
  */
 
-import { App, Modal, Setting } from 'obsidian';
+import { App, Component, Modal, Setting } from 'obsidian';
 
 export class ConversationTitleModal extends Modal {
   private result: string | null = null;
   private submitted = false;
   private inputEl: HTMLInputElement | null = null;
+  private component = new Component();
 
   constructor(app: App, private onSubmit: (title: string | null) => void) {
     super(app);
@@ -17,6 +18,7 @@ export class ConversationTitleModal extends Modal {
 
   onOpen() {
     const { contentEl } = this;
+    this.component.load();
     contentEl.addClass('chat-conversation-title-modal');
     
     // Simulate a click on the modal to ensure Obsidian's keyboard scope is activated.
@@ -40,7 +42,7 @@ export class ConversationTitleModal extends Modal {
             this.result = value;
           });
           
-        text.inputEl.addEventListener('keydown', (e: KeyboardEvent) => {
+        this.component.registerDomEvent(text.inputEl, 'keydown', (e: KeyboardEvent) => {
           if (e.key === 'Enter') {
             e.preventDefault();
             this.submit();
@@ -67,13 +69,13 @@ export class ConversationTitleModal extends Modal {
       text: 'Cancel',
       cls: 'mod-cancel'
     });
-    cancelBtn.addEventListener('click', () => this.close());
+    this.component.registerDomEvent(cancelBtn, 'click', () => this.close());
 
     const createBtn = buttonContainer.createEl('button', {
       text: 'Create Chat',
       cls: 'mod-cta'
     });
-    createBtn.addEventListener('click', () => this.submit());
+    this.component.registerDomEvent(createBtn, 'click', () => this.submit());
   }
 
   private submit() {
@@ -95,6 +97,7 @@ export class ConversationTitleModal extends Modal {
   }
 
   onClose() {
+    this.component.unload();
     const { contentEl } = this;
     contentEl.empty();
 

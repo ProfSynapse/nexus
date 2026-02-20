@@ -1,4 +1,4 @@
-import { App, FileSystemAdapter, Modal, Platform, Setting, normalizePath } from 'obsidian';
+import { App, Component, FileSystemAdapter, Modal, Platform, Setting, normalizePath } from 'obsidian';
 import * as path from 'path';
 import { getAllPluginIds, getPrimaryServerKey, BRAND_NAME } from '../constants/branding';
 
@@ -11,6 +11,7 @@ export class ConfigModal extends Modal {
     private tabButtons: Record<string, HTMLElement> = {};
     private tabContents: Record<string, HTMLElement> = {};
     private isFirstTimeSetup = true;
+    private component = new Component();
     
     /**
      * Create a new configuration modal
@@ -27,6 +28,7 @@ export class ConfigModal extends Modal {
     onOpen() {
         const { contentEl } = this;
         contentEl.empty();
+        this.component.load();
         
         contentEl.createEl('h2', { text: 'MCP Configuration' });
 
@@ -84,7 +86,7 @@ export class ConfigModal extends Modal {
             text: 'Windows',
             cls: 'mcp-tab-button'
         });
-        windowsButton.addEventListener('click', () => this.showTab('windows'));
+        this.component.registerDomEvent(windowsButton, 'click', () => this.showTab('windows'));
         this.tabButtons['windows'] = windowsButton;
 
         // Mac tab button
@@ -92,7 +94,7 @@ export class ConfigModal extends Modal {
             text: 'Mac',
             cls: 'mcp-tab-button'
         });
-        macButton.addEventListener('click', () => this.showTab('mac'));
+        this.component.registerDomEvent(macButton, 'click', () => this.showTab('mac'));
         this.tabButtons['mac'] = macButton;
 
         // Linux tab button
@@ -100,7 +102,7 @@ export class ConfigModal extends Modal {
             text: 'Linux',
             cls: 'mcp-tab-button'
         });
-        linuxButton.addEventListener('click', () => this.showTab('linux'));
+        this.component.registerDomEvent(linuxButton, 'click', () => this.showTab('linux'));
         this.tabButtons['linux'] = linuxButton;
         
         // Auto-select current platform
@@ -144,7 +146,7 @@ export class ConfigModal extends Modal {
             href: '#'
         });
 
-        configLink.addEventListener('click', async (e) => {
+        this.component.registerDomEvent(configLink, 'click', async (e) => {
             e.preventDefault();
             // Try to open the file with system's default program
             const actualPath = this.getWindowsConfigPath();
@@ -208,7 +210,7 @@ export class ConfigModal extends Modal {
             href: '#'
         });
 
-        configLink.addEventListener('click', async (e) => {
+        this.component.registerDomEvent(configLink, 'click', async (e) => {
             e.preventDefault();
             // Try to open the file with system's default program
             const actualPath = this.getMacConfigPath();
@@ -272,7 +274,7 @@ export class ConfigModal extends Modal {
             href: '#'
         });
 
-        configLink.addEventListener('click', async (e) => {
+        this.component.registerDomEvent(configLink, 'click', async (e) => {
             e.preventDefault();
             // Try to open the file with system's default program
             const actualPath = this.getLinuxConfigPath();
@@ -497,6 +499,7 @@ export class ConfigModal extends Modal {
      * Called when the modal is closed
      */
     onClose() {
+        this.component.unload();
         const { contentEl } = this;
         contentEl.empty();
     }

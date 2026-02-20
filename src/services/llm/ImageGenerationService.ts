@@ -52,7 +52,6 @@ export class ImageGenerationService {
           apiKey: openaiConfig.apiKey
         });
         this.adapters.set('openai', openaiAdapter);
-        console.log('OpenAI image adapter initialized with plugin settings');
       }
       */
 

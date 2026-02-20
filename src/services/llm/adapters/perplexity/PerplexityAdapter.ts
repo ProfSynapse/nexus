@@ -4,6 +4,7 @@
  * Based on official Perplexity streaming documentation with SSE parsing
  */
 
+import { requestUrl } from 'obsidian';
 import { BaseAdapter } from '../BaseAdapter';
 import {
   GenerateOptions,
@@ -99,6 +100,8 @@ export class PerplexityAdapter extends BaseAdapter {
         }
       };
 
+      // Note: Using fetch() instead of requestUrl() because Obsidian's requestUrl()
+      // does not support streaming responses (ReadableStream) needed for LLM streaming.
       const response = await fetch(`${this.baseUrl}/chat/completions`, {
         method: 'POST',
         headers: {
@@ -205,7 +208,8 @@ export class PerplexityAdapter extends BaseAdapter {
       requestBody.tools = this.convertTools(options.tools);
     }
 
-    const response = await fetch(`${this.baseUrl}/chat/completions`, {
+    const response = await requestUrl({
+      url: `${this.baseUrl}/chat/completions`,
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${this.apiKey}`,
@@ -214,12 +218,7 @@ export class PerplexityAdapter extends BaseAdapter {
       body: JSON.stringify(requestBody)
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`HTTP ${response.status}: ${errorText}`);
-    }
-
-    const data = await response.json() as PerplexityChatResponse;
+    const data = response.json as PerplexityChatResponse;
     const choice = data.choices[0];
     
     if (!choice) {

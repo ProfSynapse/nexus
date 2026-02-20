@@ -32,12 +32,9 @@ const CACHE_NAME = 'webllm-prefetch-cache';
  * Get list of files to prefetch for a model
  */
 async function getModelFileList(modelSpec: WebLLMModelSpec): Promise<Array<{ name: string; url: string; size: number }>> {
-  console.log('[WebLLMCachePrefetcher] getModelFileList START');
-  console.log('[WebLLMCachePrefetcher] Getting file list for:', modelSpec.huggingFaceRepo);
   const basePath = modelSpec.flatStructure
     ? `${HF_BASE_URL}/${modelSpec.huggingFaceRepo}/resolve/main`
     : `${HF_BASE_URL}/${modelSpec.huggingFaceRepo}/resolve/main/${modelSpec.quantization}`;
-  console.log('[WebLLMCachePrefetcher] Base path:', basePath);
 
   const files: Array<{ name: string; url: string; size: number }> = [];
 
@@ -49,18 +46,15 @@ async function getModelFileList(modelSpec: WebLLMModelSpec): Promise<Array<{ nam
   });
 
   // Fetch tensor-cache.json to get shard list
-  console.log('[WebLLMCachePrefetcher] Fetching tensor-cache.json...');
   try {
     const tensorCacheUrl = `${basePath}/tensor-cache.json`;
     const resp = await requestUrl({ url: tensorCacheUrl, method: 'GET' });
-    console.log('[WebLLMCachePrefetcher] tensor-cache.json status:', resp.status);
     if (resp.status === 200) {
       const tensorConfig = resp.json;
       files.push({ name: 'tensor-cache.json', url: tensorCacheUrl, size: 0 });
 
       // Add all shards from tensor-cache
       if (tensorConfig.records && Array.isArray(tensorConfig.records)) {
-        console.log('[WebLLMCachePrefetcher] Found', tensorConfig.records.length, 'records in tensor-cache');
         for (const record of tensorConfig.records) {
           if (record.dataPath) {
             files.push({
@@ -73,7 +67,7 @@ async function getModelFileList(modelSpec: WebLLMModelSpec): Promise<Array<{ nam
       }
     }
   } catch (err) {
-    console.log('[WebLLMCachePrefetcher] tensor-cache.json fetch failed, probing for shards...', err);
+    // tensor-cache.json not available, probe for shards
     // Fall back to probing for shards
     for (let i = 0; i < 200; i++) {
       const shardName = `params_shard_${i}.bin`;
@@ -93,7 +87,6 @@ async function getModelFileList(modelSpec: WebLLMModelSpec): Promise<Array<{ nam
   }
 
   // Add tokenizer files
-  console.log('[WebLLMCachePrefetcher] Checking tokenizer files...');
   const tokenizerFiles = ['tokenizer.json', 'tokenizer_config.json', 'vocab.json', 'merges.txt', 'added_tokens.json'];
   for (const tokenFile of tokenizerFiles) {
     const url = `${basePath}/${tokenFile}`;
@@ -107,7 +100,6 @@ async function getModelFileList(modelSpec: WebLLMModelSpec): Promise<Array<{ nam
       // Skip missing files
     }
   }
-  console.log('[WebLLMCachePrefetcher] Tokenizer files checked');
 
   // Add WASM library
   if (modelSpec.modelLibUrl) {
@@ -118,7 +110,6 @@ async function getModelFileList(modelSpec: WebLLMModelSpec): Promise<Array<{ nam
     });
   }
 
-  console.log('[WebLLMCachePrefetcher] getModelFileList END - found', files.length, 'files');
   return files;
 }
 
@@ -148,11 +139,9 @@ async function prefetchFile(url: string, cache: Cache): Promise<number> {
   if (cached) {
     // Already cached, skip
     const blob = await cached.blob();
-    console.log('[WebLLMCachePrefetcher] Already cached:', fileName, '(' + blob.size + ' bytes)');
     return blob.size;
   }
 
-  console.log('[WebLLMCachePrefetcher] Downloading:', fileName);
   // Fetch the file using Obsidian's requestUrl (handles CORS, follows redirects)
   const response = await requestUrl({ url, method: 'GET' });
   if (response.status !== 200) {
@@ -179,7 +168,6 @@ async function prefetchFile(url: string, cache: Cache): Promise<number> {
   // Store in cache with ORIGINAL URL (not redirect URL)
   // This is the key - WebLLM will look for the original HuggingFace URL
   await cache.put(url, cacheResponse);
-  console.log('[WebLLMCachePrefetcher] Cached:', fileName, '(' + size + ' bytes)');
 
   return size;
 }
@@ -191,9 +179,7 @@ export async function prefetchModel(
   modelSpec: WebLLMModelSpec,
   onProgress?: (progress: PrefetchProgress) => void
 ): Promise<void> {
-  console.log('[WebLLMCachePrefetcher] Starting prefetch for model:', modelSpec.id);
   const files = await getModelFileList(modelSpec);
-  console.log('[WebLLMCachePrefetcher] Found', files.length, 'files to prefetch');
   const cache = await caches.open(CACHE_NAME);
 
   let completedFiles = 0;
@@ -243,25 +229,19 @@ export async function prefetchModel(
  * Check if a model is fully prefetched
  */
 export async function isModelPrefetched(modelSpec: WebLLMModelSpec): Promise<boolean> {
-  console.log('[WebLLMCachePrefetcher] isModelPrefetched CALLED for:', modelSpec?.id || 'undefined');
   if (!modelSpec) {
     console.error('[WebLLMCachePrefetcher] modelSpec is undefined!');
     return false;
   }
   try {
-    console.log('[WebLLMCachePrefetcher] About to get file list...');
     const files = await getModelFileList(modelSpec);
-    console.log('[WebLLMCachePrefetcher] Got file list, checking cache...');
-    console.log('[WebLLMCachePrefetcher] Checking', files.length, 'files in cache');
 
     for (const file of files) {
       if (!(await isFileCached(file.url))) {
-        console.log('[WebLLMCachePrefetcher] File not cached:', file.name);
         return false;
       }
     }
 
-    console.log('[WebLLMCachePrefetcher] All files cached');
     return true;
   } catch (error) {
     console.error('[WebLLMCachePrefetcher] Error checking cache:', error);
