@@ -171,7 +171,11 @@ export class SubagentExecutor {
       .then(result => {
         this.activeSubagents.delete(subagentId);
         this.streamingBranchMessages.delete(branchId);
-        this.updateStatus(subagentId, { state: result.success ? 'complete' : 'max_iterations' });
+        // Determine final state: cancelled takes precedence over max_iterations
+        const finalState = result.error === 'Cancelled by user'
+          ? 'cancelled'
+          : result.success ? 'complete' : 'max_iterations';
+        this.updateStatus(subagentId, { state: finalState });
         this.events.onSubagentComplete?.(subagentId, result);
         this.queueResultToParent(params, result);
       })

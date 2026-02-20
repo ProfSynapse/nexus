@@ -205,7 +205,7 @@ export class MessageAlternativeService {
         const failedMessage = conversation.messages[aiMessageIndex];
         if (failedMessage) {
           failedMessage.isLoading = false;
-          failedMessage.state = 'error';
+          failedMessage.state = 'aborted';
           try {
             await this.chatService.updateConversation(conversation);
           } catch {
