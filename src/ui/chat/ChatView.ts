@@ -1153,14 +1153,51 @@ export class ChatView extends ItemView {
   }
 
   /**
-   * Continue a paused subagent (hit max_iterations)
+   * B1 fix: Continue a paused subagent (hit max_iterations)
+   * Resumes execution on the existing branch without creating a new one.
    */
   private async continueSubagent(branchId: string): Promise<void> {
-    // Navigate back to parent first
+    // Capture branch context before navigating away (navigateToParent clears it)
+    const branchContext = this.currentBranchContext;
+    if (!branchContext || !isSubagentMetadata(branchContext.metadata)) {
+      console.error('[ChatView] Cannot continue: no subagent branch context');
+      return;
+    }
+
+    const executor = this.subagentController?.getSubagentExecutor();
+    if (!executor) {
+      console.error('[ChatView] Cannot continue: SubagentExecutor not available');
+      return;
+    }
+
+    const metadata = branchContext.metadata;
+    const parentConversationId = branchContext.conversationId;
+    const parentMessageId = branchContext.parentMessageId;
+
+    // Navigate back to parent so the user sees the parent conversation
     await this.navigateToParent();
 
-    // TODO: Implement subagent continuation
-    // This would call the subagent tool with continueBranchId parameter
+    // Get current model/provider settings for the continuation
+    const messageOptions = await this.modelAgentManager.getMessageOptions();
+
+    try {
+      await executor.executeSubagent({
+        task: metadata.task,
+        parentConversationId,
+        parentMessageId,
+        continueBranchId: branchId,
+        maxIterations: metadata.maxIterations,
+        provider: messageOptions.provider,
+        model: messageOptions.model,
+        workspaceId: messageOptions.workspaceId,
+        sessionId: messageOptions.sessionId,
+        thinkingEnabled: messageOptions.enableThinking,
+        thinkingEffort: messageOptions.thinkingEffort,
+      });
+    } catch (error) {
+      console.error('[ChatView] Failed to continue subagent:', error);
+      new Notice('Failed to continue subagent. Check console for details.');
+    }
   }
 
   /**

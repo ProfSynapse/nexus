@@ -99,19 +99,38 @@ export class SubagentExecutor {
     const abortController = new AbortController();
     this.activeSubagents.set(subagentId, abortController);
 
-    // Create the branch
+    // B1 fix: If continueBranchId is provided, reuse existing branch instead of creating new
     let branchId: string;
-    try {
-      branchId = await this.dependencies.branchService.createSubagentBranch(
+    let isContinuation = false;
+    if (params.continueBranchId) {
+      // Verify the branch exists before attempting to continue
+      const existingBranch = await this.dependencies.branchService.getBranch(
         params.parentConversationId,
-        params.parentMessageId,
-        params.task,
-        subagentId,
-        params.maxIterations ?? 10
+        params.continueBranchId
       );
-    } catch (error) {
-      console.error('[SubagentExecutor] Failed to create branch:', error);
-      throw error;
+      if (!existingBranch) {
+        this.activeSubagents.delete(subagentId);
+        throw new Error(`Branch not found for continuation: ${params.continueBranchId}`);
+      }
+      branchId = params.continueBranchId;
+      isContinuation = true;
+
+      // Update branch state from max_iterations back to running
+      await this.dependencies.branchService.updateBranchState(branchId, 'running');
+    } else {
+      // Create the branch (normal new subagent flow)
+      try {
+        branchId = await this.dependencies.branchService.createSubagentBranch(
+          params.parentConversationId,
+          params.parentMessageId,
+          params.task,
+          subagentId,
+          params.maxIterations ?? 10
+        );
+      } catch (error) {
+        console.error('[SubagentExecutor] Failed to create branch:', error);
+        throw error;
+      }
     }
 
     this.subagentBranches.set(subagentId, branchId);
@@ -142,7 +161,13 @@ export class SubagentExecutor {
     }
 
     // Fire and forget - don't await
-    this.runSubagentLoop(subagentId, branchId, params, abortController.signal)
+    // B1 fix: for continuations, run the loop directly on the existing branch
+    // (runSubagentLoop will read existing messages from the branch)
+    const loopPromise = isContinuation
+      ? this.runContinuationLoop(subagentId, branchId, params, abortController.signal)
+      : this.runSubagentLoop(subagentId, branchId, params, abortController.signal);
+
+    loopPromise
       .then(result => {
         this.activeSubagents.delete(subagentId);
         this.streamingBranchMessages.delete(branchId);
@@ -313,12 +338,56 @@ export class SubagentExecutor {
     await this.dependencies.branchService.addMessageToBranch(branchId, systemMessage);
     await this.dependencies.branchService.addMessageToBranch(branchId, userMessage);
 
-    // 6. Stream response with iteration loop (F1 fix)
-    // Each iteration is a full streaming pass. The streaming generator internally handles
-    // tool pingpong (LLMService → StreamingOrchestrator → ToolContinuationService).
-    // If the final response contains tool calls, the subagent wants to continue,
-    // so we loop up to maxIterations times.
+    // 6. Run the shared iteration loop
+    return this.runIterationLoop(subagentId, branchId, params, abortSignal, systemPrompt);
+  }
 
+  /**
+   * B1 fix: Continuation loop for resuming a paused subagent on its existing branch.
+   * Skips initial setup (system prompt, user message) since the branch already has its
+   * full message history. Adds a continuation prompt and resumes the iteration loop.
+   */
+  private async runContinuationLoop(
+    subagentId: string,
+    branchId: string,
+    params: SubagentParams,
+    abortSignal: AbortSignal
+  ): Promise<SubagentResult> {
+    // Add a continuation user message to nudge the subagent to keep going
+    const continuationMessage: ChatMessage = {
+      id: `msg_${Date.now()}_continue`,
+      role: 'user',
+      content: 'Continue working on the task. You hit the iteration limit previously. Pick up where you left off and complete the remaining work.',
+      timestamp: Date.now(),
+      conversationId: branchId,
+      state: 'complete',
+    };
+    await this.dependencies.branchService.addMessageToBranch(branchId, continuationMessage);
+
+    // Extract system prompt from existing branch messages for M5 compliance
+    const existingBranch = await this.dependencies.branchService.getBranch(
+      params.parentConversationId,
+      branchId
+    );
+    const existingSystemPrompt = existingBranch?.branch.messages.find(m => m.role === 'system')?.content;
+
+    return this.runIterationLoop(subagentId, branchId, params, abortSignal, existingSystemPrompt);
+  }
+
+  /**
+   * Shared iteration loop used by both new subagent runs and continuations.
+   * Each iteration is a full streaming pass. The streaming generator internally handles
+   * tool pingpong (LLMService -> StreamingOrchestrator -> ToolContinuationService).
+   * If the final response contains tool calls, the subagent wants to continue,
+   * so we loop up to maxIterations times.
+   */
+  private async runIterationLoop(
+    subagentId: string,
+    branchId: string,
+    params: SubagentParams,
+    abortSignal: AbortSignal,
+    systemPrompt?: string
+  ): Promise<SubagentResult> {
     const maxIterations = params.maxIterations ?? 10;
     let totalToolCalls = 0;
     let lastResponseContent = '';
@@ -381,6 +450,8 @@ export class SubagentExecutor {
         let reasoning = '';
 
         for await (const chunk of this.dependencies.streamingGenerator(streamMessages, {
+          // M5 fix: pass systemPrompt as proper LLM option (not just as a message in the array)
+          systemPrompt,
           abortSignal,
           workspaceId: params.workspaceId,
           sessionId: params.sessionId,
