@@ -1,6 +1,6 @@
 /**
  * Anthropic Model Specifications
- * Updated February 5, 2026 with Claude Opus 4.6
+ * Updated February 19, 2026 with Claude Sonnet 4.6
  */
 
 import { ModelSpec } from '../modelTypes';
@@ -112,6 +112,43 @@ export const ANTHROPIC_MODELS: ModelSpec[] = [
       supportsThinking: true
     }
   },
+  // Claude Sonnet 4.6
+  {
+    provider: 'anthropic',
+    name: 'Claude Sonnet 4.6',
+    apiName: 'claude-sonnet-4-6',
+    contextWindow: 200000,
+    maxTokens: 64000,
+    inputCostPerMillion: 3.00,
+    outputCostPerMillion: 15.00,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+
+  // Claude Sonnet 4.6 (1M context)
+  {
+    provider: 'anthropic',
+    name: 'Claude Sonnet 4.6 (1M)',
+    apiName: 'claude-sonnet-4-6',
+    contextWindow: 1000000,
+    maxTokens: 64000,
+    inputCostPerMillion: 3.00,
+    outputCostPerMillion: 15.00,
+    betaHeaders: ['context-1m-2025-08-07'],
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+
   {
     provider: 'anthropic',
     name: 'Claude 4.5 Sonnet',

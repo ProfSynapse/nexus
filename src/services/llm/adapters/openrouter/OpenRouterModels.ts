@@ -1,7 +1,7 @@
 /**
  * OpenRouter Model Specifications
  * OpenRouter provides access to multiple providers through a unified API
- * Updated February 5, 2026 with Claude Opus 4.6
+ * Updated February 19, 2026 with Claude Sonnet 4.6 and Gemini 3.1 Pro Preview
  */
 
 import { ModelSpec } from '../modelTypes';
@@ -112,6 +112,22 @@ export const OPENROUTER_MODELS: ModelSpec[] = [
   // Google models via OpenRouter
   {
     provider: 'openrouter',
+    name: 'Gemini 3.1 Pro Preview',
+    apiName: 'google/gemini-3.1-pro-preview',
+    contextWindow: 1048576,
+    maxTokens: 65536,
+    inputCostPerMillion: 2.00,
+    outputCostPerMillion: 12.00,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    provider: 'openrouter',
     name: 'Gemini 3.0 Pro Preview',
     apiName: 'google/gemini-3-pro-preview',
     contextWindow: 1048576,
@@ -200,6 +216,38 @@ export const OPENROUTER_MODELS: ModelSpec[] = [
     maxTokens: 128000,
     inputCostPerMillion: 5.00,
     outputCostPerMillion: 25.00,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    provider: 'openrouter',
+    name: 'Claude Sonnet 4.6',
+    apiName: 'anthropic/claude-sonnet-4.6',
+    contextWindow: 200000,
+    maxTokens: 64000,
+    inputCostPerMillion: 3.00,
+    outputCostPerMillion: 15.00,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    provider: 'openrouter',
+    name: 'Claude Sonnet 4.6 (1M)',
+    apiName: 'anthropic/claude-sonnet-4.6',
+    contextWindow: 1000000,
+    maxTokens: 64000,
+    inputCostPerMillion: 3.00,
+    outputCostPerMillion: 15.00,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
