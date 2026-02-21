@@ -108,6 +108,53 @@ Or use the **one-click setup**: Settings → Nexus → Get Started → MCP Integ
 
 After adding, fully quit and relaunch Claude Desktop.
 
+### Multiplexer (optional)
+
+The plugin's IPC socket supports only one connected transport at a time. If you run multiple MCP clients (Claude Code, Claude Desktop, Claudian) simultaneously, each will compete for the single connection. `nexus-mux.js` solves this by sitting between your clients and Obsidian:
+
+```
+Claude Code  ──┐
+Claude Desktop ─┼──▶  nexus-mux (proxy socket)  ──▶  Obsidian (IPC socket)
+Claudian  ──────┘
+```
+
+The mux holds one persistent MCP session with Obsidian and fans out requests from any number of clients. It handles ID rewriting so responses route back to the correct caller, intercepts session-lifecycle messages (initialize, shutdown) per-client without disturbing the shared Obsidian session, and shuts itself down after 5 minutes with no connected clients.
+
+**Setup:**
+
+Point your MCP client config at `nexus-mux.js` instead of `connector.js`:
+
+```json
+{
+  "mcpServers": {
+    "nexus-your-vault": {
+      "command": "node",
+      "args": [
+        "/path/to/Vault/.obsidian/plugins/nexus/nexus-mux.js"
+      ]
+    }
+  }
+}
+```
+
+The first client to connect auto-starts a background daemon; subsequent clients reuse it. No manual daemon management needed.
+
+**Debugging:**
+
+```bash
+# Check if the daemon is running
+ps aux | grep nexus-mux | grep -v grep
+
+# Start with debug logging (stderr)
+NEXUS_MUX_DEBUG=1 node /path/to/nexus-mux.js --daemon
+
+# Check socket state
+lsof /tmp/nexus_mcp_core.sock    # Obsidian's IPC socket
+lsof /tmp/nexus_mcp_proxy.sock   # Mux proxy socket
+```
+
+> **Note:** If you only ever use one MCP client at a time, the mux is unnecessary. The plugin now self-heals on client disconnect (the transport slot is released when a connector dies), so direct `connector.js` connections work fine for single-client use.
+
 ---
 
 ## Using Native Chat
