@@ -3,7 +3,7 @@
  * Follows Single Responsibility Principle by focusing only on IPC transport
  */
 
-import { Server as NetServer, createServer } from 'net';
+import { Server as NetServer, Socket, createServer } from 'net';
 import { promises as fs } from 'fs';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { Server as MCPSDKServer } from '@modelcontextprotocol/sdk/server/index.js';
@@ -56,20 +56,47 @@ export class IPCTransportManager {
 
     /**
      * Handle new socket connections
+     *
+     * Wires the raw socket's lifecycle events to the MCP transport so that
+     * Protocol._transport is cleared when a client disconnects.  Without this,
+     * a dropped connector permanently wedges the single-transport Protocol and
+     * all subsequent connections are silently black-holed.
      */
     private handleSocketConnection(socket: NodeJS.ReadWriteStream): void {
         try {
             const transport = this.stdioTransportManager.createSocketTransport(socket, socket);
-            
+
+            // The underlying socket emits 'close'/'end' when the connector
+            // process dies — forward that into transport.close() so the SDK's
+            // Protocol._onclose() fires and resets _transport to undefined.
+            const netSocket = socket as Socket;
+            let closed = false;
+            const onSocketGone = () => {
+                if (closed) return;
+                closed = true;
+                logger.systemLog('IPC socket disconnected — releasing transport');
+                transport.close().catch((err: Error) => {
+                    logger.systemError(err, 'IPC Transport Close on Disconnect');
+                });
+            };
+            netSocket.on('close', onSocketGone);
+            netSocket.on('end', onSocketGone);
+
             this.stdioTransportManager.connectSocketTransport(transport)
                 .then(() => {
                     logger.systemLog('IPC socket connected successfully');
                 })
                 .catch(error => {
                     logger.systemError(error as Error, 'IPC Socket Connection');
+                    // server.connect() rejected (e.g. "Already connected to a
+                    // transport") — destroy the raw socket so we don't leak FDs.
+                    if (!netSocket.destroyed) netSocket.destroy();
                 });
         } catch (error) {
             logger.systemError(error as Error, 'IPC Socket Handling');
+            // Destroy on synchronous failure too
+            const netSocket = socket as Socket;
+            if (!netSocket.destroyed) netSocket.destroy();
         }
     }
 
