@@ -29,7 +29,8 @@ import {
   ModelInfo,
   ProviderCapabilities,
   ModelPricing,
-  LLMProviderError
+  LLMProviderError,
+  ToolCall
 } from '../types';
 import { ModelRegistry } from '../ModelRegistry';
 import { BRAND_NAME } from '../../../../constants/branding';
@@ -204,20 +205,26 @@ export class OpenAICodexAdapter extends BaseAdapter {
 
       const model = options?.model || this.currentModel;
       let fullText = '';
+      let collectedToolCalls: ToolCall[] = [];
 
       // Codex requires streaming; collect all chunks
       for await (const chunk of this.generateStreamAsync(prompt, options)) {
         if (chunk.content) {
           fullText += chunk.content;
         }
+        if (chunk.toolCalls && chunk.toolCalls.length > 0) {
+          collectedToolCalls = chunk.toolCalls;
+        }
       }
 
+      const hasToolCalls = collectedToolCalls.length > 0;
       return this.buildLLMResponse(
         fullText,
         model,
         { promptTokens: 0, completionTokens: 0, totalTokens: 0 }, // Codex doesn't report usage
         {},
-        'stop'
+        hasToolCalls ? 'tool_calls' : 'stop',
+        hasToolCalls ? collectedToolCalls : undefined
       );
     } catch (error) {
       throw this.handleError(error, 'generation');
@@ -259,6 +266,24 @@ export class OpenAICodexAdapter extends BaseAdapter {
       }
       if (options?.maxTokens !== undefined) {
         requestBody.max_output_tokens = options.maxTokens;
+      }
+
+      // Convert tools from Chat Completions format to Responses API flat format
+      if (options?.tools && options.tools.length > 0) {
+        requestBody.tools = options.tools.map((tool: Record<string, unknown>) => {
+          const fn = tool.function as Record<string, unknown> | undefined;
+          if (fn) {
+            return {
+              type: 'function',
+              name: fn.name,
+              description: fn.description || null,
+              parameters: fn.parameters || null,
+              strict: fn.strict || null
+            };
+          }
+          // Already in Responses API format
+          return tool;
+        });
       }
 
       const response = await fetch(CODEX_API_ENDPOINT, {
@@ -321,6 +346,7 @@ export class OpenAICodexAdapter extends BaseAdapter {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
+    const toolCallsMap = new Map<number, ToolCall>();
 
     try {
       while (true) {
@@ -349,7 +375,13 @@ export class OpenAICodexAdapter extends BaseAdapter {
           const jsonStr = trimmed.slice(6).trim();
 
           if (jsonStr === '[DONE]') {
-            yield { content: '', complete: true };
+            const finalToolCalls = toolCallsMap.size > 0 ? Array.from(toolCallsMap.values()) : undefined;
+            yield {
+              content: '',
+              complete: true,
+              toolCalls: finalToolCalls,
+              toolCallsReady: finalToolCalls ? true : undefined
+            };
             return;
           }
 
@@ -361,6 +393,29 @@ export class OpenAICodexAdapter extends BaseAdapter {
             continue;
           }
 
+          const eventType = event.type as string | undefined;
+
+          // Accumulate completed function calls
+          if (eventType === 'response.output_item.done') {
+            const item = event.item as Record<string, unknown> | undefined;
+            if (item && item.type === 'function_call') {
+              const index = (event.output_index as number) || 0;
+              toolCallsMap.set(index, {
+                id: (item.call_id as string) || (item.id as string) || '',
+                type: 'function',
+                function: {
+                  name: (item.name as string) || '',
+                  arguments: (item.arguments as string) || '{}'
+                }
+              });
+            }
+          }
+
+          // Arguments are streamed incrementally; we capture the complete call in output_item.done
+          if (eventType === 'response.function_call_arguments.delta') {
+            continue;
+          }
+
           // Extract text delta from various event shapes
           const delta = this.extractDeltaText(event);
           if (delta) {
@@ -368,16 +423,27 @@ export class OpenAICodexAdapter extends BaseAdapter {
           }
 
           // Detect completion event
-          const eventType = event.type as string | undefined;
           if (eventType === 'response.completed' || eventType === 'response.done') {
-            yield { content: '', complete: true };
+            const finalToolCalls = toolCallsMap.size > 0 ? Array.from(toolCallsMap.values()) : undefined;
+            yield {
+              content: '',
+              complete: true,
+              toolCalls: finalToolCalls,
+              toolCallsReady: finalToolCalls ? true : undefined
+            };
             return;
           }
         }
       }
 
       // If we exit the read loop without [DONE], emit completion
-      yield { content: '', complete: true };
+      const finalToolCalls = toolCallsMap.size > 0 ? Array.from(toolCallsMap.values()) : undefined;
+      yield {
+        content: '',
+        complete: true,
+        toolCalls: finalToolCalls,
+        toolCallsReady: finalToolCalls ? true : undefined
+      };
 
     } finally {
       reader.releaseLock();
@@ -427,13 +493,14 @@ export class OpenAICodexAdapter extends BaseAdapter {
       supportsStreaming: true,
       supportsJSON: true,
       supportsImages: true,
-      supportsFunctions: false, // Codex doesn't expose tool calling
+      supportsFunctions: true,
       supportsThinking: false,
       maxContextWindow: 400000,
       supportedFeatures: [
         'streaming',
         'json_mode',
         'image_input',
+        'tool_calling',
         'subscription_based',
         'oauth_required'
       ]

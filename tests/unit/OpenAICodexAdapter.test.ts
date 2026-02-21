@@ -600,9 +600,14 @@ describe('OpenAICodexAdapter', () => {
       expect(caps.supportsStreaming).toBe(true);
     });
 
-    it('should report no function calling support', () => {
+    it('should report function calling support', () => {
       const caps = adapter.getCapabilities();
-      expect(caps.supportsFunctions).toBe(false);
+      expect(caps.supportsFunctions).toBe(true);
+    });
+
+    it('should include tool_calling in supported features', () => {
+      const caps = adapter.getCapabilities();
+      expect(caps.supportedFeatures).toContain('tool_calling');
     });
 
     it('should include oauth_required in supported features', () => {
@@ -633,6 +638,162 @@ describe('OpenAICodexAdapter', () => {
     });
   });
 
+  describe('tool call support', () => {
+    it('should convert tools from Chat Completions format to Responses API format in request body', async () => {
+      mockFetch.mockResolvedValueOnce(
+        createSSEResponse(['data: [DONE]\n\n'])
+      );
+
+      const tools = [
+        {
+          type: 'function',
+          function: {
+            name: 'get_weather',
+            description: 'Get current weather',
+            parameters: { type: 'object', properties: { city: { type: 'string' } } },
+          },
+        },
+      ];
+
+      for await (const _ of adapter.generateStreamAsync('What is the weather?', { tools })) { /* no-op */ }
+
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(body.tools).toEqual([
+        {
+          type: 'function',
+          name: 'get_weather',
+          description: 'Get current weather',
+          parameters: { type: 'object', properties: { city: { type: 'string' } } },
+          strict: null,
+        },
+      ]);
+    });
+
+    it('should pass through tools already in Responses API format', async () => {
+      mockFetch.mockResolvedValueOnce(
+        createSSEResponse(['data: [DONE]\n\n'])
+      );
+
+      const tools = [
+        {
+          type: 'function',
+          name: 'search',
+          description: 'Search the web',
+          parameters: { type: 'object', properties: { q: { type: 'string' } } },
+        },
+      ];
+
+      for await (const _ of adapter.generateStreamAsync('Search for cats', { tools })) { /* no-op */ }
+
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+      // Already flat format — passed through unchanged
+      expect(body.tools[0].name).toBe('search');
+    });
+
+    it('should accumulate tool calls from response.output_item.done events', async () => {
+      mockFetch.mockResolvedValueOnce(
+        createSSEResponse([
+          'data: {"type":"response.function_call_arguments.delta","delta":"{\\"city\\":"}\n\n',
+          'data: {"type":"response.function_call_arguments.delta","delta":"\\"NYC\\"}"}\n\n',
+          'data: {"type":"response.output_item.done","output_index":0,"item":{"type":"function_call","call_id":"call_abc","name":"get_weather","arguments":"{\\"city\\":\\"NYC\\"}"}}\n\n',
+          'data: [DONE]\n\n',
+        ])
+      );
+
+      const chunks: Array<{ toolCalls?: any[]; toolCallsReady?: boolean }> = [];
+      for await (const chunk of adapter.generateStreamAsync('weather in NYC')) {
+        chunks.push({ toolCalls: chunk.toolCalls, toolCallsReady: chunk.toolCallsReady });
+      }
+
+      // The final chunk (complete=true) should contain the tool call
+      const finalChunk = chunks[chunks.length - 1];
+      expect(finalChunk.toolCallsReady).toBe(true);
+      expect(finalChunk.toolCalls).toHaveLength(1);
+      expect(finalChunk.toolCalls![0]).toEqual({
+        id: 'call_abc',
+        type: 'function',
+        function: {
+          name: 'get_weather',
+          arguments: '{"city":"NYC"}',
+        },
+      });
+    });
+
+    it('should accumulate multiple tool calls', async () => {
+      mockFetch.mockResolvedValueOnce(
+        createSSEResponse([
+          'data: {"type":"response.output_item.done","output_index":0,"item":{"type":"function_call","call_id":"call_1","name":"get_weather","arguments":"{\\"city\\":\\"NYC\\"}"}}\n\n',
+          'data: {"type":"response.output_item.done","output_index":1,"item":{"type":"function_call","call_id":"call_2","name":"get_time","arguments":"{\\"tz\\":\\"EST\\"}"}}\n\n',
+          'data: [DONE]\n\n',
+        ])
+      );
+
+      const chunks: Array<{ toolCalls?: any[] }> = [];
+      for await (const chunk of adapter.generateStreamAsync('weather and time')) {
+        chunks.push({ toolCalls: chunk.toolCalls });
+      }
+
+      const finalChunk = chunks[chunks.length - 1];
+      expect(finalChunk.toolCalls).toHaveLength(2);
+      expect(finalChunk.toolCalls![0].function.name).toBe('get_weather');
+      expect(finalChunk.toolCalls![1].function.name).toBe('get_time');
+    });
+
+    it('should include tool calls in completion event from response.completed', async () => {
+      mockFetch.mockResolvedValueOnce(
+        createSSEResponse([
+          'data: {"type":"response.output_item.done","output_index":0,"item":{"type":"function_call","call_id":"call_x","name":"search","arguments":"{\\"q\\":\\"cats\\"}"}}\n\n',
+          'data: {"type":"response.completed","id":"resp-456"}\n\n',
+        ])
+      );
+
+      const chunks: Array<{ toolCalls?: any[]; complete: boolean }> = [];
+      for await (const chunk of adapter.generateStreamAsync('search cats')) {
+        chunks.push({ toolCalls: chunk.toolCalls, complete: chunk.complete });
+      }
+
+      const finalChunk = chunks[chunks.length - 1];
+      expect(finalChunk.complete).toBe(true);
+      expect(finalChunk.toolCalls).toHaveLength(1);
+      expect(finalChunk.toolCalls![0].id).toBe('call_x');
+    });
+
+    it('should not include toolCalls in final chunk when no function calls were made', async () => {
+      mockFetch.mockResolvedValueOnce(
+        createSSEResponse([
+          'data: {"type":"response.output_text.delta","delta":{"text":"Hello"}}\n\n',
+          'data: [DONE]\n\n',
+        ])
+      );
+
+      const chunks: Array<{ toolCalls?: any[]; toolCallsReady?: boolean }> = [];
+      for await (const chunk of adapter.generateStreamAsync('hello')) {
+        chunks.push({ toolCalls: chunk.toolCalls, toolCallsReady: chunk.toolCallsReady });
+      }
+
+      const finalChunk = chunks[chunks.length - 1];
+      expect(finalChunk.toolCalls).toBeUndefined();
+      expect(finalChunk.toolCallsReady).toBeUndefined();
+    });
+
+    it('should use item.id as fallback when call_id is not present', async () => {
+      mockFetch.mockResolvedValueOnce(
+        createSSEResponse([
+          'data: {"type":"response.output_item.done","output_index":0,"item":{"type":"function_call","id":"item_123","name":"test_fn","arguments":"{}"}}\n\n',
+          'data: [DONE]\n\n',
+        ])
+      );
+
+      const chunks: Array<{ toolCalls?: any[] }> = [];
+      for await (const chunk of adapter.generateStreamAsync('test')) {
+        chunks.push({ toolCalls: chunk.toolCalls });
+      }
+
+      const finalChunk = chunks[chunks.length - 1];
+      expect(finalChunk.toolCalls![0].id).toBe('item_123');
+    });
+  });
+
   describe('generateUncached', () => {
     it('should collect all stream chunks and return assembled response', async () => {
       mockFetch.mockResolvedValueOnce(
@@ -647,6 +808,29 @@ describe('OpenAICodexAdapter', () => {
 
       expect(response.text).toBe('Hello World!');
       expect(response.usage.totalTokens).toBe(0); // Codex doesn't report usage
+      expect(response.finishReason).toBe('stop');
+    });
+
+    it('should return tool_calls finishReason and toolCalls when function calls are present', async () => {
+      mockFetch.mockResolvedValueOnce(
+        createSSEResponse([
+          'data: {"type":"response.output_item.done","output_index":0,"item":{"type":"function_call","call_id":"call_uc1","name":"get_weather","arguments":"{\\"city\\":\\"SF\\"}"}}\n\n',
+          'data: [DONE]\n\n',
+        ])
+      );
+
+      const response = await adapter.generateUncached('weather in SF');
+
+      expect(response.finishReason).toBe('tool_calls');
+      expect(response.toolCalls).toHaveLength(1);
+      expect(response.toolCalls![0]).toEqual({
+        id: 'call_uc1',
+        type: 'function',
+        function: {
+          name: 'get_weather',
+          arguments: '{"city":"SF"}',
+        },
+      });
     });
   });
 });
