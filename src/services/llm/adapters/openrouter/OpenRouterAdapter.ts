@@ -4,6 +4,7 @@
  * Uses BaseAdapter's processSSEStream for reliable streaming
  */
 
+import { requestUrl } from 'obsidian';
 import { BaseAdapter } from '../BaseAdapter';
 import {
   GenerateOptions,
@@ -76,7 +77,8 @@ export class OpenRouterAdapter extends BaseAdapter {
         usage: { include: true } // Enable token usage and cost tracking
       };
 
-      const response = await fetch(`${this.baseUrl}/chat/completions`, {
+      const response = await requestUrl({
+        url: `${this.baseUrl}/chat/completions`,
         method: 'POST',
         headers: {
           ...this.buildHeaders(),
@@ -87,11 +89,7 @@ export class OpenRouterAdapter extends BaseAdapter {
         body: JSON.stringify(requestBody)
       });
 
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const data = await response.json();
+      const data = response.json;
 
       const text = data.choices[0]?.message?.content || '';
       const usage = this.extractUsage(data);
@@ -152,6 +150,8 @@ export class OpenRouterAdapter extends BaseAdapter {
         ...ReasoningPreserver.getReasoningRequestParams(baseModel, 'openrouter', hasTools || false)
       };
 
+      // Note: Using fetch() instead of requestUrl() because Obsidian's requestUrl()
+      // does not support streaming responses (ReadableStream) needed for LLM streaming.
       const response = await fetch(`${this.baseUrl}/chat/completions`, {
         method: 'POST',
         headers: {
@@ -437,13 +437,15 @@ export class OpenRouterAdapter extends BaseAdapter {
           await new Promise(resolve => setTimeout(resolve, delay));
         }
 
-        const response = await fetch(`${this.baseUrl}/generation?id=${generationId}`, {
+        const response = await requestUrl({
+          url: `${this.baseUrl}/generation?id=${generationId}`,
           method: 'GET',
           headers: {
             'Authorization': `Bearer ${this.apiKey}`,
             'HTTP-Referer': this.httpReferer,
             'X-Title': this.xTitle
-          }
+          },
+          throw: false
         });
 
         lastStatus = response.status;
@@ -453,11 +455,11 @@ export class OpenRouterAdapter extends BaseAdapter {
           continue;
         }
 
-        if (!response.ok) {
+        if (response.status < 200 || response.status >= 300) {
           return null;
         }
 
-        const data = await response.json();
+        const data = response.json;
 
         // Extract token counts from response
         // OpenRouter returns: tokens_prompt, tokens_completion, native_tokens_prompt, native_tokens_completion
@@ -581,7 +583,8 @@ export class OpenRouterAdapter extends BaseAdapter {
         usage: { include: true } // Enable token usage and cost tracking
       };
       
-      const response = await fetch(`${this.baseUrl}/chat/completions`, {
+      const response = await requestUrl({
+        url: `${this.baseUrl}/chat/completions`,
         method: 'POST',
         headers: {
           ...this.buildHeaders(),
@@ -592,11 +595,7 @@ export class OpenRouterAdapter extends BaseAdapter {
         body: JSON.stringify(requestBody)
       });
 
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const data = await response.json();
+      const data = response.json;
       const choice = data.choices[0];
       const finalContent = choice?.message?.content || 'No response from AI after tool execution';
       const usage = this.extractUsage(data);

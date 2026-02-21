@@ -19,6 +19,7 @@ import { IStorageAdapter } from '../database/interfaces/IStorageAdapter';
 import { ConversationMetadata, MessageData } from '../types/storage/HybridStorageTypes';
 import { PaginationParams, PaginatedResult, calculatePaginationMetadata } from '../types/pagination/PaginationTypes';
 import type { ConversationBranch, SubagentBranchMetadata, HumanBranchMetadata } from '../types/branch/BranchTypes';
+import type { ToolCall as ChatToolCall } from '../types/chat/ChatTypes';
 
 /**
  * Type for the storage adapter parameter: either a direct adapter instance
@@ -865,7 +866,7 @@ export class ConversationService {
         timestamp: m.timestamp,
         conversationId: branchConversation.id,
         state: m.state,
-        toolCalls: m.toolCalls as any, // Type compatibility between storage and chat types
+        toolCalls: m.toolCalls as ChatToolCall[] | undefined, // StorageTypes.ToolCall[] is structurally compatible
         reasoning: m.reasoning,
       })),
       created: branchConversation.created,

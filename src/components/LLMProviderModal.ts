@@ -12,7 +12,7 @@
  * - GenericProviderModal (API-key providers)
  */
 
-import { Modal, App, Notice } from 'obsidian';
+import { Modal, App, Component, Notice } from 'obsidian';
 import { LLMProviderConfig } from '../types';
 import { LLMProviderManager } from '../services/llm/providers/ProviderManager';
 import { StaticModelsService } from '../services/StaticModelsService';
@@ -54,6 +54,7 @@ export class LLMProviderModal extends Modal {
   // Auto-save state
   private autoSaveTimeout: ReturnType<typeof setTimeout> | null = null;
   private saveStatusEl: HTMLElement | null = null;
+  private component = new Component();
 
   constructor(app: App, config: LLMProviderModalConfig, providerManager: LLMProviderManager) {
     super(app);
@@ -65,6 +66,7 @@ export class LLMProviderModal extends Modal {
   onOpen(): void {
     const { contentEl } = this;
     contentEl.empty();
+    this.component.load();
     contentEl.addClass('llm-provider-modal');
 
     // Modal title
@@ -82,6 +84,7 @@ export class LLMProviderModal extends Modal {
   }
 
   onClose(): void {
+    this.component.unload();
     const { contentEl } = this;
 
     // Clean up provider modal
@@ -198,7 +201,7 @@ export class LLMProviderModal extends Modal {
     // Close button
     const buttonContainer = footer.createDiv('modal-button-container');
     const closeBtn = buttonContainer.createEl('button', { text: 'Close', cls: 'mod-cta' });
-    closeBtn.addEventListener('click', () => this.close());
+    this.component.registerDomEvent(closeBtn, 'click', () => this.close());
   }
 
   /**

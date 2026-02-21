@@ -32,6 +32,7 @@ import { UsageTracker } from '../services/UsageTracker';
 import { MemoryService } from '../agents/memoryManager/services/MemoryService';
 import { Settings } from '../settings';
 import type NexusPlugin from '../main';
+import { HybridStorageAdapter } from '../database/adapters/HybridStorageAdapter';
 
 /**
  * Type guard to check if a plugin has settings property
@@ -188,11 +189,12 @@ export class PromptManagerAgentFactory extends BaseAgentFactory<PromptManagerAge
         }
 
         // Get database for SQLite-based prompt storage (optional)
-        let db = null;
+        // Cast to HybridStorageAdapter which exposes the cache getter
+        let db: unknown = null;
         try {
             const storageAdapter = dependencies.get('hybridStorageAdapter');
-            if (storageAdapter && 'cache' in storageAdapter) {
-                const cache = (storageAdapter as any).cache;
+            if (storageAdapter && storageAdapter instanceof HybridStorageAdapter) {
+                const cache = storageAdapter.cache;
                 if (cache && typeof cache.exec === 'function' && typeof cache.run === 'function') {
                     db = cache;
                 }

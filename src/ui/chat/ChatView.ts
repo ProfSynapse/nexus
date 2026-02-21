@@ -708,7 +708,13 @@ export class ChatView extends ItemView {
     }
   }
 
-  private handleConversationUpdated(conversation: ConversationData): void {
+  private handleConversationUpdated(conversation: ConversationData | null): void {
+    if (!conversation) {
+      // null signals a force-refresh; reload from current state
+      this.updateChatTitle();
+      this.updateContextProgress();
+      return;
+    }
     this.conversationManager.updateCurrentConversation(conversation);
     this.messageDisplay.setConversation(conversation);
     this.updateChatTitle();
@@ -1162,7 +1168,7 @@ export class ChatView extends ItemView {
    */
   private openAgentStatusModal(): void {
     if (!this.subagentController?.isInitialized()) {
-      console.warn('[ChatView] SubagentController not initialized - cannot open modal');
+      // SubagentController not initialized - cannot open modal
       return;
     }
 

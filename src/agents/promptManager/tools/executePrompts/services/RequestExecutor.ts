@@ -6,6 +6,7 @@ import {
 } from '../types';
 import { PromptExecutor } from './PromptExecutor';
 import { ActionExecutor } from './ActionExecutor';
+import { ExecutionErrorService } from './ExecutionErrorService';
 
 /**
  * Service responsible for executing different types of requests (text and image)
@@ -14,7 +15,8 @@ import { ActionExecutor } from './ActionExecutor';
 export class RequestExecutor {
   constructor(
     private promptExecutor: PromptExecutor,
-    private actionExecutor: ActionExecutor
+    private actionExecutor: ActionExecutor,
+    private executionErrorService: ExecutionErrorService
   ) {}
 
   /**
@@ -53,7 +55,10 @@ export class RequestExecutor {
         id: config.id,
         prompt: config.prompt,
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown execution error',
+        error: this.executionErrorService.normalizeExecutionError(error, {
+          provider: config.provider,
+          model: config.model
+        }),
         executionTime,
         sequence: config.sequence,
         parallelGroup: config.parallelGroup
@@ -89,7 +94,10 @@ export class RequestExecutor {
         id: config.id,
         prompt: config.prompt,
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown text execution error',
+        error: this.executionErrorService.normalizeExecutionError(error, {
+          provider: config.provider,
+          model: config.model
+        }),
         executionTime,
         sequence: config.sequence,
         parallelGroup: config.parallelGroup
@@ -138,7 +146,10 @@ export class RequestExecutor {
         id: config.id,
         prompt: config.prompt,
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown image execution error',
+        error: this.executionErrorService.normalizeExecutionError(error, {
+          provider: config.provider,
+          model: config.model
+        }),
         provider: config.provider,
         model: config.model || 'imagen-4',
         executionTime,

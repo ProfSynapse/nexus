@@ -244,12 +244,15 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
             const storageAdapter = context.serviceManager.getServiceIfReady<IStorageAdapter | null>('hybridStorageAdapter');
 
             // Access underlying SQLite database via adapter's cache property
+            // Cast to HybridStorageAdapter which exposes the cache getter
             let db = null;
             if (storageAdapter && 'cache' in storageAdapter) {
-                const cache = (storageAdapter as any).cache;
-                // Check if cache has the necessary methods
-                if (cache && typeof cache.exec === 'function' && typeof cache.run === 'function') {
-                    db = cache;
+                const { HybridStorageAdapter } = await import('../../database/adapters/HybridStorageAdapter');
+                if (storageAdapter instanceof HybridStorageAdapter) {
+                    const cache = storageAdapter.cache;
+                    if (cache && typeof cache.exec === 'function' && typeof cache.run === 'function') {
+                        db = cache;
+                    }
                 }
             }
 

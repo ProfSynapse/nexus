@@ -10,6 +10,7 @@ import {
   ExecutionContext
 } from '../types';
 import { getErrorMessage } from '../../../../../utils/errorUtils';
+import { ExecutionErrorService } from './ExecutionErrorService';
 
 /**
  * Service responsible for executing individual LLM prompts
@@ -20,6 +21,7 @@ export class PromptExecutor {
     private llmService: LLMService,
     private budgetValidator: BudgetValidator,
     private contextBuilder: ContextBuilder,
+    private executionErrorService: ExecutionErrorService,
     private promptStorage?: CustomPromptStorageService
   ) {}
 
@@ -102,6 +104,28 @@ export class PromptExecutor {
       
       // Execute the prompt
       const response = await this.llmService.executePrompt(executeParams);
+
+      if (!response.success) {
+        const executionTime = performance.now() - startTime;
+        const normalizedError = this.executionErrorService.normalizeExecutionError(
+          response.error || 'Unknown provider execution failure',
+          { provider, model }
+        );
+
+        return {
+          type: 'text',
+          id: textConfig.id,
+          prompt: textConfig.prompt,
+          success: false,
+          error: normalizedError,
+          provider,
+          model,
+          promptName: promptUsed,
+          executionTime,
+          sequence: currentSequence,
+          parallelGroup: textConfig.parallelGroup
+        };
+      }
       
       // Track usage
       if (response.cost && response.provider) {
@@ -136,7 +160,10 @@ export class PromptExecutor {
         id: promptConfig.id,
         prompt: promptConfig.prompt,
         success: false,
-        error: getErrorMessage(error),
+        error: this.executionErrorService.normalizeExecutionError(
+          getErrorMessage(error),
+          { provider: promptConfig.provider, model: promptConfig.model }
+        ),
         provider: promptConfig.provider,
         model: promptConfig.model,
         promptName: promptConfig.type === 'text' ? (promptConfig as TextPromptConfig).customPrompt || 'default' : 'default',
@@ -176,7 +203,7 @@ export class PromptExecutor {
       
       if (availableProviders.length === 0) {
         return {
-          validationError: 'No LLM providers available. Please configure at least one provider with valid API keys in settings.'
+          validationError: this.executionErrorService.buildNoAvailableProvidersError()
         };
       }
 
@@ -197,7 +224,10 @@ export class PromptExecutor {
       // Validate that selected provider is available
       if (!availableProviders.includes(selectedProvider)) {
         return {
-          validationError: `Provider '${selectedProvider}' is not available. Available providers: ${availableProviders.join(', ')}. Please check your API key configuration.`
+          validationError: this.executionErrorService.buildProviderUnavailableError(
+            selectedProvider,
+            availableProviders
+          )
         };
       }
 
@@ -232,7 +262,12 @@ export class PromptExecutor {
       if (!modelExists) {
         const availableModelNames = providerModels.map(m => m.id);
         return {
-          validationError: `Model '${selectedModel}' is not available for provider '${selectedProvider}'. Available models: ${availableModelNames.join(', ')}`
+          validationError: this.executionErrorService.buildModelUnavailableError(
+            selectedModel,
+            selectedProvider,
+            availableModelNames,
+            availableProviders
+          )
         };
       }
 

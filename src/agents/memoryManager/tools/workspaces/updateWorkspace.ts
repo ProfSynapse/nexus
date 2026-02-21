@@ -138,17 +138,17 @@ export class UpdateWorkspaceTool extends BaseTool<UpdateWorkspaceParameters, Upd
             if (params.dedicatedAgentId !== undefined) {
                 if (params.dedicatedAgentId === '') {
                     // Empty string means remove dedicated agent
-                    (workspaceCopy as any).dedicatedAgentId = undefined;
+                    workspaceCopy.dedicatedAgentId = undefined;
                 } else {
                     // Store ID or name as-is (lookup happens on load)
-                    (workspaceCopy as any).dedicatedAgentId = params.dedicatedAgentId;
+                    workspaceCopy.dedicatedAgentId = params.dedicatedAgentId;
                 }
             }
 
             // Update timestamp
             workspaceCopy.lastAccessed = now;
 
-            console.error('[UpdateWorkspace] Updated dedicatedAgentId:', (workspaceCopy as any).dedicatedAgentId);
+            console.error('[UpdateWorkspace] Updated dedicatedAgentId:', workspaceCopy.dedicatedAgentId);
 
             // Perform the update
             await workspaceService.updateWorkspace(existingWorkspace.id, workspaceCopy);

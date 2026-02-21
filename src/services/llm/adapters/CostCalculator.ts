@@ -11,6 +11,7 @@
  * - Usage analytics and reporting
  */
 
+import { requestUrl } from 'obsidian';
 import { ModelRegistry } from './ModelRegistry';
 
 /**
@@ -141,7 +142,8 @@ export class TokenCounter {
   static async countTokensOpenAI(text: string, model: string): Promise<number> {
     try {
       // Use OpenAI's token counting endpoint if available
-      const response = await fetch('https://api.openai.com/v1/tokenize', {
+      const response = await requestUrl({
+        url: 'https://api.openai.com/v1/tokenize',
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
@@ -153,8 +155,8 @@ export class TokenCounter {
         })
       });
 
-      if (response.ok) {
-        const data = await response.json() as OpenAITokenizeResponse;
+      if (response.status === 200) {
+        const data = response.json as OpenAITokenizeResponse;
         return data.token_count || 0;
       }
     } catch (error) {
@@ -169,7 +171,8 @@ export class TokenCounter {
   static async countTokensGoogle(text: string, model: string): Promise<number> {
     try {
       // Google's countTokens API
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:countTokens?key=${process.env.GOOGLE_API_KEY}`, {
+      const response = await requestUrl({
+        url: `https://generativelanguage.googleapis.com/v1beta/models/${model}:countTokens?key=${process.env.GOOGLE_API_KEY}`,
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -181,8 +184,8 @@ export class TokenCounter {
         })
       });
 
-      if (response.ok) {
-        const data = await response.json() as GoogleCountTokensResponse;
+      if (response.status === 200) {
+        const data = response.json as GoogleCountTokensResponse;
         return data.totalTokens || 0;
       }
     } catch (error) {
@@ -197,7 +200,8 @@ export class TokenCounter {
   static async countTokensAnthropic(text: string, model: string): Promise<number> {
     try {
       // Anthropic's count tokens endpoint
-      const response = await fetch('https://api.anthropic.com/v1/messages/count_tokens', {
+      const response = await requestUrl({
+        url: 'https://api.anthropic.com/v1/messages/count_tokens',
         method: 'POST',
         headers: {
           'x-api-key': process.env.ANTHROPIC_API_KEY!,
@@ -210,8 +214,8 @@ export class TokenCounter {
         })
       });
 
-      if (response.ok) {
-        const data = await response.json() as AnthropicCountTokensResponse;
+      if (response.status === 200) {
+        const data = response.json as AnthropicCountTokensResponse;
         return data.input_tokens || 0;
       }
     } catch (error) {

@@ -10,7 +10,7 @@
  * Fixed height (~200px) with scroll for many agents.
  */
 
-import { App, Modal, setIcon, Events } from 'obsidian';
+import { App, Component, Modal, setIcon, Events } from 'obsidian';
 import type { SubagentExecutor } from '../../../services/chat/SubagentExecutor';
 import type { BranchService } from '../../../services/chat/BranchService';
 import type { AgentStatusItem, SubagentBranchMetadata } from '../../../types/branch/BranchTypes';
@@ -30,6 +30,7 @@ export class AgentStatusModal extends Modal {
   private callbacks: AgentStatusModalCallbacks;
   private eventRef: ReturnType<Events['on']> | null = null;
   private cachedCompletedAgents: AgentStatusItem[] = [];
+  private component = new Component();
 
   constructor(
     app: App,
@@ -48,6 +49,7 @@ export class AgentStatusModal extends Modal {
   async onOpen(): Promise<void> {
     const { contentEl } = this;
     contentEl.empty();
+    this.component.load();
     contentEl.addClass('nexus-agent-status-modal');
 
     this.titleEl.setText('Agents');
@@ -176,7 +178,7 @@ export class AgentStatusModal extends Modal {
       attr: { 'aria-label': 'View agent conversation' },
     });
     setIcon(viewBtn, 'eye');
-    viewBtn.addEventListener('click', () => {
+    this.component.registerDomEvent(viewBtn, 'click', () => {
       this.close();
       this.callbacks.onViewBranch(agent.branchId);
     });
@@ -187,7 +189,7 @@ export class AgentStatusModal extends Modal {
         attr: { 'aria-label': 'Stop agent' },
       });
       setIcon(stopBtn, 'square');
-      stopBtn.addEventListener('click', () => {
+      this.component.registerDomEvent(stopBtn, 'click', () => {
         this.subagentExecutor.cancelSubagent(agent.subagentId);
         this.renderContent();
       });
@@ -206,6 +208,7 @@ export class AgentStatusModal extends Modal {
   }
 
   onClose(): void {
+    this.component.unload();
     // Unsubscribe from events
     if (this.eventRef) {
       getSubagentEventBus().offref(this.eventRef);

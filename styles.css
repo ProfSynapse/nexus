@@ -49,7 +49,7 @@
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(0, 0, 0, 0.3);
+    background: var(--background-modifier-cover);
     opacity: 0;
     visibility: hidden;
     transition: all 0.3s ease;
@@ -358,7 +358,7 @@
 }
 
 .chat-welcome-hotkeys-container {
-    background: #8b5cf6;
+    background: var(--interactive-accent);
     border-radius: 8px;
     padding: 0.75rem 1rem;
     margin-bottom: 1rem;
@@ -676,7 +676,7 @@
 
 .message-action-btn.copy-success {
     background: var(--text-success);
-    color: white;
+    color: var(--text-on-accent);
     transform: scale(1.1);
 }
 
@@ -998,12 +998,12 @@
 
 /* Success state - green checkmark */
 .tool-icon.tool-success {
-    color: #22c55e;
+    color: var(--color-green);
 }
 
 /* Failure state - orange hazard */
 .tool-icon.tool-failed {
-    color: #f59e0b;
+    color: var(--color-orange);
 }
 
 @keyframes toolSpin {
@@ -1305,39 +1305,23 @@
 
 /* Tool reference (green) */
 .chat-reference-tool {
-    background: rgba(76, 175, 80, 0.15);
-    color: rgb(76, 175, 80);
-    border: 1px solid rgba(76, 175, 80, 0.3);
+    background: rgba(var(--color-green-rgb), 0.15);
+    color: var(--color-green);
+    border: 1px solid rgba(var(--color-green-rgb), 0.3);
 }
 
 /* Agent reference (purple) */
 .chat-reference-agent {
-    background: rgba(156, 39, 176, 0.15);
-    color: rgb(156, 39, 176);
-    border: 1px solid rgba(156, 39, 176, 0.3);
+    background: rgba(var(--color-purple-rgb), 0.15);
+    color: var(--color-purple);
+    border: 1px solid rgba(var(--color-purple-rgb), 0.3);
 }
 
 /* Note reference (blue) */
 .chat-reference-note {
-    background: rgba(33, 150, 243, 0.15);
-    color: rgb(33, 150, 243);
-    border: 1px solid rgba(33, 150, 243, 0.3);
-}
-
-/* Dark mode adjustments */
-.theme-dark .chat-reference-tool {
-    background: rgba(76, 175, 80, 0.25);
-    color: rgb(129, 199, 132);
-}
-
-.theme-dark .chat-reference-agent {
-    background: rgba(156, 39, 176, 0.25);
-    color: rgb(186, 104, 200);
-}
-
-.theme-dark .chat-reference-note {
-    background: rgba(33, 150, 243, 0.25);
-    color: rgb(100, 181, 246);
+    background: rgba(var(--color-blue-rgb), 0.15);
+    color: var(--color-blue);
+    border: 1px solid rgba(var(--color-blue-rgb), 0.3);
 }
 
 /* Send button - circular, embedded and vertically centered in input */
@@ -1388,7 +1372,7 @@
 /* Stop button mode - red circular button */
 .chat-send-button.stop-mode {
     background: var(--text-error);
-    color: white;
+    color: var(--text-on-accent);
     animation: pulse-stop 1.5s ease-in-out infinite;
 }
 
@@ -2467,7 +2451,7 @@ a:hover {
 
 .agent-management-delete-btn:hover {
     background-color: var(--text-error);
-    color: white;
+    color: var(--text-on-accent);
     border-color: var(--text-error);
 }
 
@@ -2803,20 +2787,20 @@ a:hover {
 }
 
 .llm-provider-input.validating {
-    border-color: #fbbf24 !important;
-    background-color: rgba(251, 191, 36, 0.2) !important;
+    border-color: var(--color-yellow) !important;
+    background-color: rgba(var(--color-yellow-rgb), 0.2) !important;
     border-width: 2px !important;
 }
 
 .llm-provider-input.success {
-    border-color: #22c55e !important;
-    background-color: rgba(34, 197, 94, 0.1) !important;
+    border-color: var(--color-green) !important;
+    background-color: rgba(var(--color-green-rgb), 0.1) !important;
     border-width: 2px !important;
 }
 
 .llm-provider-input.error {
-    border-color: #ef4444 !important;
-    background-color: rgba(239, 68, 68, 0.1) !important;
+    border-color: var(--color-red) !important;
+    background-color: rgba(var(--color-red-rgb), 0.1) !important;
     border-width: 2px !important;
 }
 
@@ -2883,11 +2867,11 @@ a:hover {
 
 /* Diff styles for main.js compiled code */
 .diff-insert {
-    background: #e6ffe6;
+    background: rgba(var(--color-green-rgb), 0.15);
 }
 
 .diff-delete {
-    background: #ffe6e6;
+    background: rgba(var(--color-red-rgb), 0.15);
 }
 
 /* =============================================================================
@@ -3111,7 +3095,7 @@ a:hover {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.6);
+  background: var(--background-modifier-cover);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3871,7 +3855,7 @@ a:hover {
 
 .token-badge-info {
     background-color: var(--color-cyan);
-    color: white;
+    color: var(--text-on-accent);
 }
 
 .token-badge-warning {
@@ -3881,7 +3865,7 @@ a:hover {
 
 .token-badge-error {
     background-color: var(--color-red);
-    color: white;
+    color: var(--text-on-accent);
 }
 
 /* Specific suggester type styles */

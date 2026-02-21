@@ -163,6 +163,8 @@ export interface IndividualWorkspace {
   lastAccessed: number;
   isActive?: boolean;
   isArchived?: boolean;
+  /** Optional dedicated agent ID for this workspace */
+  dedicatedAgentId?: string;
   context?: WorkspaceContext;
   sessions: Record<string, SessionData>;
 }

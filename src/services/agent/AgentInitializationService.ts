@@ -30,6 +30,7 @@ import { MemoryService } from '../../agents/memoryManager/services/MemoryService
 import { WorkspaceService } from '../WorkspaceService';
 import { VaultOperations } from '../../core/VaultOperations';
 import { UsageTracker } from '../UsageTracker';
+import { HybridStorageAdapter } from '../../database/adapters/HybridStorageAdapter';
 
 /**
  * Type guard to check if plugin has Settings
@@ -151,14 +152,14 @@ export class AgentInitializationService {
     if (this.serviceManager) {
       try {
         // Use getServiceIfReady to avoid blocking on SQLite WASM loading during startup
+        // Cast to HybridStorageAdapter which exposes the cache getter
         const storageAdapter = this.serviceManager.getServiceIfReady('hybridStorageAdapter');
         // Only use SQLite if adapter exists AND is fully ready (WASM loaded)
-        if (storageAdapter && typeof storageAdapter === 'object' && storageAdapter !== null) {
-          const adapterAny = storageAdapter as any;
+        if (storageAdapter instanceof HybridStorageAdapter) {
           // Check isReady() to ensure SQLite WASM is loaded before accessing cache
-          if (typeof adapterAny.isReady === 'function' && adapterAny.isReady() && 'cache' in adapterAny) {
-            const cache = adapterAny.cache;
-            if (cache && typeof cache.exec === 'function' && typeof cache.run === 'function') {
+          if (storageAdapter.isReady()) {
+            const cache = storageAdapter.cache;
+            if (typeof cache.exec === 'function' && typeof cache.run === 'function') {
               db = cache;
             }
           }
@@ -310,9 +311,8 @@ export class AgentInitializationService {
   private isSQLiteReady(): boolean {
     if (!this.serviceManager) return false;
     const storageAdapter = this.serviceManager.getServiceIfReady('hybridStorageAdapter');
-    if (storageAdapter && typeof storageAdapter === 'object' && storageAdapter !== null) {
-      const adapterAny = storageAdapter as any;
-      return typeof adapterAny.isReady === 'function' && adapterAny.isReady();
+    if (storageAdapter instanceof HybridStorageAdapter) {
+      return storageAdapter.isReady();
     }
     return false;
   }

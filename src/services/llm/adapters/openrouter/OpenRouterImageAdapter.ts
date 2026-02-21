@@ -6,7 +6,7 @@
  * API: POST /api/v1/chat/completions with modalities: ['image', 'text']
  */
 
-import { Vault } from 'obsidian';
+import { Vault, requestUrl } from 'obsidian';
 import { BaseImageAdapter } from '../BaseImageAdapter';
 import {
   ImageGenerationParams,
@@ -121,7 +121,8 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
           };
         }
 
-        const result = await fetch(`${this.baseUrl}/chat/completions`, {
+        const result = await requestUrl({
+          url: `${this.baseUrl}/chat/completions`,
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -132,12 +133,7 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
           body: JSON.stringify(requestBody)
         });
 
-        if (!result.ok) {
-          const errorBody = await result.text();
-          throw new Error(`HTTP ${result.status}: ${result.statusText} - ${errorBody}`);
-        }
-
-        return await result.json();
+        return result.json;
       }, 2);
 
       return this.buildImageResponse(response, params);
