@@ -2,7 +2,7 @@
  * GenericProviderModal
  *
  * Provider modal for API-key based providers (OpenAI, Anthropic, Google, etc.).
- * Handles API key input, validation, and model toggles.
+ * Handles API key input, validation, model toggles, and optional OAuth connect.
  */
 
 import { Setting, Notice } from 'obsidian';
@@ -10,9 +10,11 @@ import {
   IProviderModal,
   ProviderModalConfig,
   ProviderModalDependencies,
+  OAuthModalConfig,
 } from '../types';
 import { LLMValidationService } from '../../../services/llm/validation/ValidationService';
 import { ModelWithProvider } from '../../../services/StaticModelsService';
+import { OAuthConsentModal, OAuthPreAuthModal } from './OAuthModals';
 
 export class GenericProviderModal implements IProviderModal {
   private config: ProviderModalConfig;
@@ -22,11 +24,14 @@ export class GenericProviderModal implements IProviderModal {
   private container: HTMLElement | null = null;
   private apiKeyInput: HTMLInputElement | null = null;
   private modelsContainer: HTMLElement | null = null;
+  private oauthBannerContainer: HTMLElement | null = null;
+  private connectButton: HTMLButtonElement | null = null;
 
   // State
   private apiKey: string = '';
   private models: ModelWithProvider[] = [];
   private isValidated: boolean = false;
+  private isOAuthConnecting: boolean = false;
   private validationTimeout: ReturnType<typeof setTimeout> | null = null;
 
   constructor(config: ProviderModalConfig, deps: ProviderModalDependencies) {
@@ -49,12 +54,16 @@ export class GenericProviderModal implements IProviderModal {
   }
 
   /**
-   * Render API key input section
+   * Render API key input section, with optional OAuth connect button and connected banner
    */
   private renderApiKeySection(container: HTMLElement): void {
-    container.createEl('h2', { text: 'API Key' });
+    container.createEl('h2', { text: 'API key' });
 
-    new Setting(container)
+    // OAuth connected banner (shown above the key input when connected)
+    this.oauthBannerContainer = container.createDiv('oauth-banner-container');
+    this.renderOAuthBanner();
+
+    const setting = new Setting(container)
       .setDesc(`Enter your ${this.config.providerName} API key (format: ${this.config.keyFormat})`)
       .addText(text => {
         this.apiKeyInput = text.inputEl;
@@ -71,12 +80,172 @@ export class GenericProviderModal implements IProviderModal {
       })
       .addButton(button => {
         button
-          .setButtonText('Get Key')
+          .setButtonText('Get key')
           .setTooltip(`Open ${this.config.providerName} API key page`)
           .onClick(() => {
             window.open(this.config.signupUrl, '_blank');
           });
       });
+
+    // Add OAuth connect button if oauthConfig is present
+    if (this.config.oauthConfig) {
+      setting.addButton(button => {
+        this.connectButton = button.buttonEl;
+        const label = this.config.oauthConfig!.providerLabel;
+        button
+          .setButtonText(`Connect with ${label}`)
+          .setCta()
+          .onClick(() => this.handleOAuthConnect());
+
+        this.connectButton.setAttribute('aria-label', `Connect with ${label} via OAuth`);
+      });
+    }
+  }
+
+  /**
+   * Render the OAuth connected banner if currently connected
+   */
+  private renderOAuthBanner(): void {
+    if (!this.oauthBannerContainer) return;
+    this.oauthBannerContainer.empty();
+
+    const oauthState = this.config.config.oauth;
+    if (!oauthState?.connected || !this.config.oauthConfig) return;
+
+    const banner = this.oauthBannerContainer.createDiv('oauth-connected-banner');
+
+    const statusText = banner.createSpan('oauth-connected-status');
+    statusText.textContent = `Connected via ${this.config.oauthConfig.providerLabel}`;
+
+    const disconnectBtn = banner.createEl('button', {
+      text: 'Disconnect',
+      cls: 'oauth-disconnect-btn',
+    });
+    disconnectBtn.setAttribute('aria-label', `Disconnect ${this.config.oauthConfig.providerLabel} OAuth`);
+    disconnectBtn.addEventListener('click', () => this.handleOAuthDisconnect());
+  }
+
+  /**
+   * Handle the OAuth connect button click
+   */
+  private async handleOAuthConnect(): Promise<void> {
+    const oauthConfig = this.config.oauthConfig;
+    if (!oauthConfig || this.isOAuthConnecting) return;
+
+    const hasPreAuthFields = oauthConfig.preAuthFields && oauthConfig.preAuthFields.length > 0;
+
+    // Experimental provider: always show consent modal (includes pre-auth fields)
+    if (oauthConfig.experimental) {
+      new OAuthConsentModal(
+        this.deps.app,
+        oauthConfig,
+        (params) => this.executeOAuthFlow(oauthConfig, params),
+        () => { /* cancelled */ },
+      ).open();
+      return;
+    }
+
+    // Non-experimental with pre-auth fields: show pre-auth modal
+    if (hasPreAuthFields) {
+      new OAuthPreAuthModal(
+        this.deps.app,
+        oauthConfig,
+        (params) => this.executeOAuthFlow(oauthConfig, params),
+        () => { /* cancelled */ },
+      ).open();
+      return;
+    }
+
+    // No consent or pre-auth needed: start flow directly
+    await this.executeOAuthFlow(oauthConfig, {});
+  }
+
+  /**
+   * Execute the OAuth flow and handle the result
+   */
+  private async executeOAuthFlow(
+    oauthConfig: OAuthModalConfig,
+    params: Record<string, string>,
+  ): Promise<void> {
+    this.setOAuthConnecting(true);
+
+    try {
+      const result = await oauthConfig.startFlow(params);
+
+      if (result.success && result.apiKey) {
+        // Update API key
+        this.apiKey = result.apiKey;
+        this.config.config.apiKey = result.apiKey;
+
+        if (this.apiKeyInput) {
+          this.apiKeyInput.value = result.apiKey;
+        }
+
+        // Set OAuth state
+        this.config.config.oauth = {
+          connected: true,
+          providerId: this.config.providerId,
+          connectedAt: Date.now(),
+          refreshToken: result.refreshToken,
+          expiresAt: result.expiresAt,
+          metadata: result.metadata,
+        };
+
+        // Auto-enable the provider
+        this.config.config.enabled = true;
+        this.saveConfig();
+
+        // Refresh the banner
+        this.renderOAuthBanner();
+
+        new Notice(`Connected to ${oauthConfig.providerLabel} successfully`);
+      } else {
+        const errorMsg = result.error || 'OAuth flow failed';
+        new Notice(`${oauthConfig.providerLabel} connection failed: ${errorMsg}`);
+      }
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      new Notice(`${oauthConfig.providerLabel} connection failed: ${errorMsg}`);
+    } finally {
+      this.setOAuthConnecting(false);
+    }
+  }
+
+  /**
+   * Handle OAuth disconnect
+   */
+  private handleOAuthDisconnect(): void {
+    this.apiKey = '';
+    this.config.config.apiKey = '';
+    this.config.config.oauth = undefined;
+
+    if (this.apiKeyInput) {
+      this.apiKeyInput.value = '';
+    }
+
+    this.saveConfig();
+    this.renderOAuthBanner();
+
+    new Notice(`Disconnected from ${this.config.oauthConfig?.providerLabel || 'provider'}`);
+  }
+
+  /**
+   * Update the connect button state during OAuth flow
+   */
+  private setOAuthConnecting(connecting: boolean): void {
+    this.isOAuthConnecting = connecting;
+    if (!this.connectButton || !this.config.oauthConfig) return;
+
+    if (connecting) {
+      this.connectButton.textContent = 'Connecting...';
+      this.connectButton.disabled = true;
+      this.connectButton.addClass('oauth-connecting');
+    } else {
+      const label = this.config.oauthConfig.providerLabel;
+      this.connectButton.textContent = `Connect with ${label}`;
+      this.connectButton.disabled = false;
+      this.connectButton.removeClass('oauth-connecting');
+    }
   }
 
   /**
@@ -93,6 +262,12 @@ export class GenericProviderModal implements IProviderModal {
     // Clear validation cache
     this.config.config.lastValidated = undefined;
     this.config.config.validationHash = undefined;
+
+    // Clear OAuth badge if user manually types a key
+    if (this.config.config.oauth?.connected) {
+      this.config.config.oauth = undefined;
+      this.renderOAuthBanner();
+    }
 
     // Clear existing timeout
     if (this.validationTimeout) {
@@ -122,7 +297,7 @@ export class GenericProviderModal implements IProviderModal {
    * Render models section
    */
   private renderModelsSection(container: HTMLElement): void {
-    container.createEl('h2', { text: 'Available Models' });
+    container.createEl('h2', { text: 'Available models' });
     this.modelsContainer = container.createDiv('models-container');
 
     this.loadModels();
@@ -282,5 +457,7 @@ export class GenericProviderModal implements IProviderModal {
     this.container = null;
     this.apiKeyInput = null;
     this.modelsContainer = null;
+    this.oauthBannerContainer = null;
+    this.connectButton = null;
   }
 }

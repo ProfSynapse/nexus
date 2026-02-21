@@ -20,6 +20,7 @@ import {
   IProviderModal,
   ProviderModalConfig,
   ProviderModalDependencies,
+  OAuthModalConfig,
 } from './llm-provider/types';
 import { NexusProviderModal } from './llm-provider/providers/NexusProviderModal';
 import { OllamaProviderModal } from './llm-provider/providers/OllamaProviderModal';
@@ -36,6 +37,7 @@ export interface LLMProviderModalConfig {
   keyFormat: string;
   signupUrl: string;
   config: LLMProviderConfig;
+  oauthConfig?: OAuthModalConfig;
   onSave: (config: LLMProviderConfig) => void;
 }
 
@@ -144,6 +146,7 @@ export class LLMProviderModal extends Modal {
       signupUrl: this.config.signupUrl,
       config: { ...this.config.config },
       onConfigChange: (config: LLMProviderConfig) => this.handleConfigChange(config),
+      oauthConfig: this.config.oauthConfig,
     };
   }
 

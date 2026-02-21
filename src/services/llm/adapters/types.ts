@@ -6,7 +6,7 @@
 /**
  * Supported LLM providers
  */
-export type SupportedProvider = 'openai' | 'openrouter' | 'anthropic' | 'google' | 'groq' | 'mistral' | 'perplexity' | 'requesty';
+export type SupportedProvider = 'openai' | 'openai-codex' | 'openrouter' | 'anthropic' | 'google' | 'groq' | 'mistral' | 'perplexity' | 'requesty';
 
 export interface GenerateOptions {
   model?: string;

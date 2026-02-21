@@ -19,6 +19,8 @@ import { Settings } from '../../settings';
 import { Card, CardConfig } from '../../components/Card';
 import { LLMSettingsNotifier } from '../../services/llm/LLMSettingsNotifier';
 import { isDesktop, supportsLocalLLM, MOBILE_COMPATIBLE_PROVIDERS, isProviderComingSoon } from '../../utils/platform';
+import type { OAuthModalConfig } from '../../components/llm-provider/types';
+import { OAuthService } from '../../services/oauth/OAuthService';
 
 /**
  * Provider display configuration
@@ -28,6 +30,7 @@ interface ProviderDisplayConfig {
     keyFormat: string;
     signupUrl: string;
     category: 'local' | 'cloud';
+    oauthConfig?: OAuthModalConfig;
 }
 
 export interface ProvidersTabServices {
@@ -137,7 +140,84 @@ export class ProvidersTab {
             }, this.services.app.vault);
         }
 
+        // Attach OAuth configs to providers that support it (desktop only)
+        if (isDesktop()) {
+            this.attachOAuthConfigs();
+        }
+
         this.render();
+    }
+
+    /**
+     * Attach OAuth configurations to providers that support OAuth connect.
+     * Only called on desktop where the OAuth callback server can run.
+     */
+    private attachOAuthConfigs(): void {
+        const oauthService = OAuthService.getInstance();
+
+        // OpenRouter OAuth
+        if (oauthService.hasProvider('openrouter')) {
+            this.providerConfigs.openrouter.oauthConfig = {
+                providerLabel: 'OpenRouter',
+                preAuthFields: [
+                    {
+                        key: 'key_name',
+                        label: 'Key label',
+                        defaultValue: 'Claudesidian MCP',
+                        required: false,
+                    },
+                    {
+                        key: 'limit',
+                        label: 'Credit limit (optional)',
+                        placeholder: 'Leave blank for unlimited',
+                        required: false,
+                    },
+                ],
+                startFlow: (params) => this.startOAuthFlow('openrouter', params),
+            };
+        }
+
+        // OpenAI Codex OAuth (experimental)
+        if (oauthService.hasProvider('openai-codex')) {
+            this.providerConfigs.openai = {
+                ...this.providerConfigs.openai,
+                oauthConfig: {
+                    providerLabel: 'ChatGPT (Experimental)',
+                    experimental: true,
+                    experimentalWarning:
+                        'This connects to OpenAI via their ChatGPT OAuth flow. ' +
+                        'This is an experimental feature that uses an undocumented API. ' +
+                        'It may stop working at any time if OpenAI changes their authentication. ' +
+                        'Your ChatGPT account credentials are never stored by this plugin.',
+                    startFlow: (params) => this.startOAuthFlow('openai-codex', params),
+                },
+            };
+        }
+    }
+
+    /**
+     * Start an OAuth flow for a given provider via OAuthService
+     */
+    private async startOAuthFlow(
+        providerId: string,
+        params: Record<string, string>,
+    ): Promise<{ success: boolean; apiKey?: string; refreshToken?: string; expiresAt?: number; metadata?: Record<string, string>; error?: string }> {
+        try {
+            const oauthService = OAuthService.getInstance();
+            const result = await oauthService.startFlow(providerId, params);
+            return {
+                success: true,
+                apiKey: result.apiKey,
+                refreshToken: result.refreshToken,
+                expiresAt: result.expiresAt,
+                metadata: result.metadata,
+            };
+        } catch (error) {
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : 'OAuth flow failed',
+            };
+        }
     }
 
     /**
@@ -287,6 +367,7 @@ export class ProvidersTab {
             keyFormat: displayConfig.keyFormat,
             signupUrl: displayConfig.signupUrl,
             config: { ...providerConfig },
+            oauthConfig: displayConfig.oauthConfig,
             onSave: async (updatedConfig: LLMProviderConfig) => {
                 settings.providers[providerId] = updatedConfig;
 

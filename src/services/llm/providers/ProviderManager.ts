@@ -271,6 +271,11 @@ export class LLMProviderManager {
         description: 'Web search-enabled models with real-time information and citations'
       },
       {
+        id: 'openai-codex',
+        name: 'ChatGPT (Codex)',
+        description: 'GPT models via ChatGPT subscription — free inference, requires OAuth sign-in'
+      },
+      {
         id: 'webllm',
         name: 'Nexus (Local)',
         description: 'Local AI via WebGPU - runs in browser, completely private, no API costs'
@@ -295,6 +300,10 @@ export class LLMProviderManager {
       let hasApiKey = false;
       if (provider.id === 'webllm') {
         hasApiKey = true; // WebLLM doesn't need an API key
+      } else if (provider.id === 'openai-codex') {
+        // Codex uses OAuth — check for connected OAuth state with access token
+        const oauth = (config as any)?.oauth;
+        hasApiKey = !!(oauth?.connected && config?.apiKey);
       } else if (provider.id === 'ollama' || provider.id === 'lmstudio') {
         hasApiKey = !!(config?.apiKey && config.apiKey.trim());
       } else {

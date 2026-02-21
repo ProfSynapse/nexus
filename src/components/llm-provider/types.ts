@@ -58,6 +58,31 @@ export interface ProviderModalConfig {
 
   /** Callback when configuration changes (for auto-save) */
   onConfigChange: (config: LLMProviderConfig) => void;
+
+  /** Optional OAuth configuration for providers that support OAuth connect */
+  oauthConfig?: OAuthModalConfig;
+}
+
+/**
+ * OAuth configuration for the provider modal connect button
+ */
+export interface OAuthModalConfig {
+  /** Display label (e.g., "OpenRouter", "ChatGPT (Experimental)") */
+  providerLabel: string;
+  /** If true, show a consent dialog before starting the flow */
+  experimental?: boolean;
+  /** Warning text for experimental providers */
+  experimentalWarning?: string;
+  /** Fields to collect before opening the browser (e.g., key_name, credit limit) */
+  preAuthFields?: Array<{
+    key: string;
+    label: string;
+    placeholder?: string;
+    required: boolean;
+    defaultValue?: string;
+  }>;
+  /** Start the OAuth flow with collected params, returns the API key on success */
+  startFlow(params: Record<string, string>): Promise<{ success: boolean; apiKey?: string; refreshToken?: string; expiresAt?: number; metadata?: Record<string, string>; error?: string }>;
 }
 
 /**
