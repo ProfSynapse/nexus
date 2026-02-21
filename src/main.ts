@@ -139,6 +139,16 @@ export default class NexusPlugin extends Plugin {
             await this.connector.stop();
         }
 
+        // Clean up OAuth singleton (cancels any in-flight flow, releases callback server)
+        if (Platform.isDesktop) {
+            try {
+                const { OAuthService } = await import('./services/oauth/OAuthService');
+                OAuthService.resetInstance();
+            } catch {
+                // OAuth may not have been loaded; ignore
+            }
+        }
+
         // Service manager cleanup handled by lifecycle manager
     }
 

@@ -117,15 +117,9 @@ function tokenResponseToResult(tokens: TokenResponse): OAuthResult {
     expiresAt: Date.now() + expiresIn * 1000,
   };
 
-  const metadata: Record<string, string> = {};
+  // Store account ID in metadata; do NOT persist id_token (contains email PII)
   if (accountId) {
-    metadata.accountId = accountId;
-  }
-  if (tokens.id_token) {
-    metadata.idToken = tokens.id_token;
-  }
-  if (Object.keys(metadata).length > 0) {
-    result.metadata = metadata;
+    result.metadata = { accountId };
   }
 
   return result;

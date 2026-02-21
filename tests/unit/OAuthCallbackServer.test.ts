@@ -2,16 +2,20 @@
  * OAuthCallbackServer Unit Tests
  *
  * Tests the ephemeral localhost HTTP server that receives OAuth callbacks.
- * Uses high ports (49xxx range) for tests to avoid conflicts.
+ * Uses randomized ephemeral ports (49152-65535) to avoid conflicts.
+ *
+ * NOTE: Ideally these tests would use port 0 (OS-assigned) but the source
+ * OAuthCallbackServer returns the input port in the handle, not the actual
+ * bound port. Until the source is updated to use server.address().port,
+ * we use randomized high ports from the IANA ephemeral range.
  */
 
 import http from 'node:http';
 import { startCallbackServer } from '../../src/services/oauth/OAuthCallbackServer';
 
-// Base port for tests -- each test increments from here
-let testPort = 49300;
+// Use randomized ports from the IANA ephemeral range to avoid cross-run conflicts
 function nextPort(): number {
-  return testPort++;
+  return 49152 + Math.floor(Math.random() * 16383);
 }
 
 /** Helper: make a GET request to a URL */

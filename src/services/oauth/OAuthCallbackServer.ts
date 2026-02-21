@@ -13,6 +13,13 @@
 
 import { createServer, IncomingMessage, ServerResponse, Server } from 'node:http';
 import { URL } from 'node:url';
+import { timingSafeEqual } from 'node:crypto';
+
+/** Common no-cache headers for all callback responses (prevents browser caching auth codes) */
+const NO_CACHE_HEADERS: Record<string, string> = {
+  'Cache-Control': 'no-store, no-cache',
+  'Pragma': 'no-cache',
+};
 
 /** Result from a successful OAuth callback */
 export interface CallbackResult {
@@ -34,12 +41,21 @@ export interface CallbackServerHandle {
   shutdown(): void;
 }
 
+/** Shared CSS for callback pages — respects system light/dark preference */
+const CALLBACK_STYLE = `
+<style>
+  body{font-family:system-ui,-apple-system,sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;margin:0}
+  .wrap{text-align:center}
+  @media(prefers-color-scheme:dark){body{background:#1a1a2e;color:#e0e0e0}}
+  @media(prefers-color-scheme:light){body{background:#fff;color:#1a1a1a}}
+</style>`;
+
 /** Static HTML success page -- no dynamic content for security */
 const HTML_SUCCESS = `<!DOCTYPE html>
 <html>
-<head><title>Authorization Successful</title></head>
-<body style="font-family:system-ui;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;background:#1a1a2e;color:#e0e0e0">
-<div style="text-align:center">
+<head><title>Authorization Successful</title>${CALLBACK_STYLE}</head>
+<body>
+<div class="wrap">
 <h1 style="color:#4ade80">Connected!</h1>
 <p>You can close this tab and return to Obsidian.</p>
 </div>
@@ -50,9 +66,9 @@ const HTML_SUCCESS = `<!DOCTYPE html>
 /** Static HTML error page */
 const HTML_ERROR = `<!DOCTYPE html>
 <html>
-<head><title>Authorization Failed</title></head>
-<body style="font-family:system-ui;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;background:#1a1a2e;color:#e0e0e0">
-<div style="text-align:center">
+<head><title>Authorization Failed</title>${CALLBACK_STYLE}</head>
+<body>
+<div class="wrap">
 <h1 style="color:#f87171">Authorization Failed</h1>
 <p>Something went wrong. Please close this tab and try again in Obsidian.</p>
 </div>
@@ -131,7 +147,7 @@ export function startCallbackServer(options: CallbackServerOptions): Promise<Cal
       const url = new URL(req.url || '/', `http://127.0.0.1:${port}`);
 
       if (url.pathname !== callbackPath) {
-        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        res.writeHead(404, { 'Content-Type': 'text/plain', ...NO_CACHE_HEADERS });
         res.end('Not found');
         return;
       }
@@ -141,7 +157,7 @@ export function startCallbackServer(options: CallbackServerOptions): Promise<Cal
       const errorDescription = url.searchParams.get('error_description');
       if (error) {
         const msg = errorDescription || error;
-        res.writeHead(400, { 'Content-Type': 'text/html' });
+        res.writeHead(400, { 'Content-Type': 'text/html', ...NO_CACHE_HEADERS });
         res.end(HTML_ERROR);
         if (!settled) {
           settled = true;
@@ -151,10 +167,13 @@ export function startCallbackServer(options: CallbackServerOptions): Promise<Cal
         return;
       }
 
-      // Validate state parameter (CSRF protection)
-      const state = url.searchParams.get('state');
-      if (state !== expectedState) {
-        res.writeHead(400, { 'Content-Type': 'text/html' });
+      // Validate state parameter (CSRF protection via timing-safe comparison)
+      const state = url.searchParams.get('state') || '';
+      const stateValid =
+        state.length === expectedState.length &&
+        timingSafeEqual(Buffer.from(state), Buffer.from(expectedState));
+      if (!stateValid) {
+        res.writeHead(400, { 'Content-Type': 'text/html', ...NO_CACHE_HEADERS });
         res.end(HTML_ERROR);
         if (!settled) {
           settled = true;
@@ -167,7 +186,7 @@ export function startCallbackServer(options: CallbackServerOptions): Promise<Cal
       // Extract authorization code
       const code = url.searchParams.get('code');
       if (!code) {
-        res.writeHead(400, { 'Content-Type': 'text/html' });
+        res.writeHead(400, { 'Content-Type': 'text/html', ...NO_CACHE_HEADERS });
         res.end(HTML_ERROR);
         if (!settled) {
           settled = true;
@@ -178,7 +197,7 @@ export function startCallbackServer(options: CallbackServerOptions): Promise<Cal
       }
 
       // Success: return static HTML and resolve the callback promise
-      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.writeHead(200, { 'Content-Type': 'text/html', ...NO_CACHE_HEADERS });
       res.end(HTML_SUCCESS);
 
       if (!settled) {

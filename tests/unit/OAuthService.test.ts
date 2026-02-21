@@ -30,6 +30,7 @@ const mockStartCallbackServer = startCallbackServer as jest.MockedFunction<typeo
 
 // Mock window.open for browser launch fallback (electron require fails in test env)
 const mockWindowOpen = jest.fn();
+const originalWindow = (global as any).window;
 (global as any).window = { open: mockWindowOpen };
 
 /** Helper to wait for all microtasks and pending callbacks to drain */
@@ -125,6 +126,15 @@ describe('OAuthService', () => {
 
   afterEach(() => {
     OAuthService.resetInstance();
+  });
+
+  afterAll(() => {
+    // Restore original window to prevent mock leaking to other test files
+    if (originalWindow === undefined) {
+      delete (global as any).window;
+    } else {
+      (global as any).window = originalWindow;
+    }
   });
 
   describe('singleton', () => {

@@ -281,7 +281,7 @@ describe('OpenAICodexOAuthProvider', () => {
       expect(result.metadata?.accountId).toBe('acct-from-at');
     });
 
-    it('should include idToken in metadata', async () => {
+    it('should NOT include idToken in metadata (PII prevention)', async () => {
       const idToken = createMockJwt({ chatgpt_account_id: 'acct-x' });
       mockFetch.mockResolvedValue({
         ok: true,
@@ -295,7 +295,10 @@ describe('OpenAICodexOAuthProvider', () => {
 
       const result = await provider.exchangeCode('code', 'verifier', callbackUrl);
 
-      expect(result.metadata?.idToken).toBe(idToken);
+      // id_token contains email PII and must NOT be persisted in metadata
+      expect(result.metadata?.idToken).toBeUndefined();
+      // accountId should still be extracted
+      expect(result.metadata?.accountId).toBe('acct-x');
     });
 
     it('should default expires_in to 3600 when not provided', async () => {

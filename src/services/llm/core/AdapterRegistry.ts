@@ -72,6 +72,7 @@ export class AdapterRegistry implements IAdapterRegistry {
   private vault?: Vault;
   private webllmAdapter?: WebLLMAdapterType;
   private initPromise?: Promise<void>;
+  private _onSettingsDirty?: () => void;
 
   constructor(settings: LLMProviderSettings, vault?: Vault) {
     this.settings = settings;
@@ -97,6 +98,14 @@ export class AdapterRegistry implements IAdapterRegistry {
     if (this.initPromise) {
       await this.initPromise;
     }
+  }
+
+  /**
+   * Set a callback invoked when adapter-level changes (e.g. token refresh) dirty the settings.
+   * The callback should persist settings to disk.
+   */
+  setOnSettingsDirty(cb: () => void): void {
+    this._onSettingsDirty = cb;
   }
 
   /**
@@ -308,7 +317,7 @@ export class AdapterRegistry implements IAdapterRegistry {
       };
 
       // Token refresh callback: updates the settings so refreshed tokens
-      // persist across plugin restarts. Uses LLMSettingsNotifier to propagate.
+      // persist across plugin restarts, then triggers a settings save.
       const onTokenRefresh = (newTokens: CodexOAuthTokens): void => {
         // Update the config object in-place (settings reference)
         config.apiKey = newTokens.accessToken;
@@ -317,7 +326,8 @@ export class AdapterRegistry implements IAdapterRegistry {
           oauthState.refreshToken = newTokens.refreshToken;
           oauthState.expiresAt = newTokens.expiresAt;
         }
-        // The LLMSettingsNotifier will pick up the change on next settings save cycle
+        // Persist to disk immediately so rotated tokens survive a crash
+        this._onSettingsDirty?.();
       };
 
       const adapter = new OpenAICodexAdapter(tokens, onTokenRefresh);

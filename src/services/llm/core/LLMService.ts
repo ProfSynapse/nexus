@@ -84,6 +84,14 @@ export class LLMService {
     this.toolExecutor = executor;
   }
 
+  /**
+   * Set a callback invoked when adapter-level changes (e.g. token refresh) dirty settings.
+   * The callback should persist settings to disk.
+   */
+  setOnSettingsDirty(cb: () => void): void {
+    this.adapterRegistry.setOnSettingsDirty(cb);
+  }
+
 
   /** Update settings and reinitialize adapters */
   updateSettings(settings: LLMProviderSettings): void {

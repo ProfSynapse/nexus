@@ -445,6 +445,26 @@ describe('OpenAICodexAdapter', () => {
 
       expect(texts).toEqual(['ok']);
     });
+
+    it('should correctly buffer and parse SSE data split across chunk boundaries', async () => {
+      // Simulate a network scenario where a single SSE event arrives in two TCP chunks,
+      // splitting mid-JSON. The adapter's buffer logic must reassemble the line before parsing.
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        body: createSSEStream([
+          'data: {"type":"response.output_text.delta","delta":{"tex',  // chunk 1: incomplete line
+          't":"split across chunks"}}\n\ndata: [DONE]\n\n',           // chunk 2: rest of line + DONE
+        ]),
+      });
+
+      const texts: string[] = [];
+      for await (const chunk of adapter.generateStreamAsync('test')) {
+        if (chunk.content) texts.push(chunk.content);
+      }
+
+      expect(texts).toEqual(['split across chunks']);
+    });
   });
 
   describe('HTTP error handling', () => {
@@ -494,6 +514,65 @@ describe('OpenAICodexAdapter', () => {
       await expect(async () => {
         for await (const _ of adapter.generateStreamAsync('test')) { /* no-op */ }
       }).rejects.toThrow('Response body is null');
+    });
+  });
+
+  describe('concurrent token refresh deduplication', () => {
+    it('should make only one refresh call when two requests need refresh simultaneously', async () => {
+      // Both adapters share the same near-expiry token state
+      const nearExpiryTokens = createTokens({
+        expiresAt: Date.now() + 60_000, // Within 5-min threshold
+      });
+      const onRefresh = jest.fn();
+      const sharedAdapter = new OpenAICodexAdapter(nearExpiryTokens, onRefresh);
+
+      // The refresh endpoint -- a single call that resolves after a tick
+      let refreshCallCount = 0;
+      mockFetch.mockImplementation(async (url: string) => {
+        if (url === 'https://auth.openai.com/oauth/token') {
+          refreshCallCount++;
+          return {
+            ok: true,
+            json: async () => ({
+              access_token: 'refreshed-at',
+              refresh_token: 'rotated-rt',
+              expires_in: 3600,
+            }),
+          };
+        }
+        // API call response
+        return createSSEResponse([
+          'data: {"type":"response.output_text.delta","delta":{"text":"ok"}}\n\n',
+          'data: [DONE]\n\n',
+        ]);
+      });
+
+      // Fire two concurrent streaming requests -- both should trigger ensureFreshToken
+      const stream1 = (async () => {
+        const texts: string[] = [];
+        for await (const chunk of sharedAdapter.generateStreamAsync('prompt1')) {
+          if (chunk.content) texts.push(chunk.content);
+        }
+        return texts;
+      })();
+
+      const stream2 = (async () => {
+        const texts: string[] = [];
+        for await (const chunk of sharedAdapter.generateStreamAsync('prompt2')) {
+          if (chunk.content) texts.push(chunk.content);
+        }
+        return texts;
+      })();
+
+      const [result1, result2] = await Promise.all([stream1, stream2]);
+
+      // Both streams should produce output
+      expect(result1).toEqual(['ok']);
+      expect(result2).toEqual(['ok']);
+
+      // The adapter deduplicates refresh via refreshInProgress promise lock.
+      // Only 1 refresh call should be made (not 2).
+      expect(refreshCallCount).toBe(1);
     });
   });
 

@@ -228,6 +228,11 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
                 llmService.setToolExecutor(directToolExecutor);
             }
 
+            // Wire settings persistence so token refresh is saved to disk immediately
+            llmService.setOnSettingsDirty(() => {
+                context.settings.saveSettings().catch(() => {});
+            });
+
             return llmService;
         }
     },

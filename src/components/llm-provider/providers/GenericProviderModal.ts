@@ -122,7 +122,7 @@ export class GenericProviderModal implements IProviderModal {
       cls: 'oauth-disconnect-btn',
     });
     disconnectBtn.setAttribute('aria-label', `Disconnect ${this.config.oauthConfig.providerLabel} OAuth`);
-    disconnectBtn.addEventListener('click', () => this.handleOAuthDisconnect());
+    disconnectBtn.onclick = () => this.handleOAuthDisconnect();
   }
 
   /**

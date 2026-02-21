@@ -302,8 +302,7 @@ export class LLMProviderManager {
         hasApiKey = true; // WebLLM doesn't need an API key
       } else if (provider.id === 'openai-codex') {
         // Codex uses OAuth — check for connected OAuth state with access token
-        const oauth = (config as any)?.oauth;
-        hasApiKey = !!(oauth?.connected && config?.apiKey);
+        hasApiKey = !!(config?.oauth?.connected && config?.apiKey);
       } else if (provider.id === 'ollama' || provider.id === 'lmstudio') {
         hasApiKey = !!(config?.apiKey && config.apiKey.trim());
       } else {

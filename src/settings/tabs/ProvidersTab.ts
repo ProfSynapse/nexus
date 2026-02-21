@@ -118,6 +118,12 @@ export class ProvidersTab {
             keyFormat: 'pplx-...',
             signupUrl: 'https://www.perplexity.ai/settings/api',
             category: 'cloud'
+        },
+        'openai-codex': {
+            name: 'ChatGPT (Codex)',
+            keyFormat: 'OAuth sign-in required',
+            signupUrl: 'https://chatgpt.com',
+            category: 'cloud'
         }
     };
 
@@ -177,10 +183,12 @@ export class ProvidersTab {
             };
         }
 
-        // OpenAI Codex OAuth (experimental)
+        // OpenAI Codex OAuth (experimental) — attaches to 'openai-codex' provider card,
+        // NOT 'openai', so tokens are stored under providers['openai-codex'] where
+        // AdapterRegistry.initializeCodexAdapter() reads them.
         if (oauthService.hasProvider('openai-codex')) {
-            this.providerConfigs.openai = {
-                ...this.providerConfigs.openai,
+            this.providerConfigs['openai-codex'] = {
+                ...this.providerConfigs['openai-codex'],
                 oauthConfig: {
                     providerLabel: 'ChatGPT (Experimental)',
                     experimental: true,
@@ -279,7 +287,7 @@ export class ProvidersTab {
         // Desktop: Cloud providers (SDK + fetch-based)
         this.container.createDiv('nexus-provider-group-title').setText('CLOUD PROVIDERS');
         this.renderProviderList(
-            ['openai', 'anthropic', 'google', 'mistral', 'groq', 'openrouter', 'requesty', 'perplexity'],
+            ['openai', 'openai-codex', 'anthropic', 'google', 'mistral', 'groq', 'openrouter', 'requesty', 'perplexity'],
             settings
         );
     }
