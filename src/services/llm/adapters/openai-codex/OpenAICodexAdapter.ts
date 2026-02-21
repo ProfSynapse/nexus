@@ -270,7 +270,7 @@ export class OpenAICodexAdapter extends BaseAdapter {
 
       // Convert tools from Chat Completions format to Responses API flat format
       if (options?.tools && options.tools.length > 0) {
-        requestBody.tools = options.tools.map((tool: Record<string, unknown>) => {
+        requestBody.tools = options.tools.map((tool) => {
           const fn = tool.function as Record<string, unknown> | undefined;
           if (fn) {
             return {
