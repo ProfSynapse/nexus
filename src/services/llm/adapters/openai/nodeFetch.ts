@@ -85,8 +85,12 @@ export function nodeFetch(input: string | URL | Request, init?: RequestInit): Pr
       bodyData = Buffer.from(init.body);
     } else if (init.body instanceof Uint8Array) {
       bodyData = Buffer.from(init.body);
+    } else if (typeof ReadableStream !== 'undefined' && init.body instanceof ReadableStream) {
+      throw new Error('nodeFetch: ReadableStream request bodies are not supported');
+    } else if (typeof FormData !== 'undefined' && init.body instanceof FormData) {
+      throw new Error('nodeFetch: FormData request bodies are not supported');
     } else {
-      // Fallback for other body types (FormData, ReadableStream, etc.)
+      // Fallback for other unexpected body types
       bodyData = String(init.body);
     }
   }
@@ -205,7 +209,9 @@ function executeRequest(
               controller.close();
             });
             nodeRes.on('error', (err: Error) => {
-              controller.error(err);
+              // Guard: controller.error() throws if the stream is already closed
+              // (e.g., 'end' fired before a late error event). Silently swallow.
+              try { controller.error(err); } catch { /* already closed */ }
             });
           },
           cancel() {
