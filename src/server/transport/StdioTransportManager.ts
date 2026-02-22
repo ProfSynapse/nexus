@@ -15,6 +15,8 @@ import { logger } from '../../utils/logger';
 export class StdioTransportManager {
     private stdioTransport: StdioServerTransport | null = null;
     private isConnected: boolean = false;
+    /** The most recently connected socket-based transport (IPC connections). */
+    private activeSocketTransport: StdioServerTransport | null = null;
 
     constructor(private server: MCPSDKServer) {}
 
@@ -117,12 +119,30 @@ export class StdioTransportManager {
 
     /**
      * Connect a socket transport to the server
+     *
+     * If a previous socket transport is still active (e.g. the old socket's
+     * close/end event hasn't fired yet), close it first so that
+     * Protocol._transport is cleared before we call server.connect().
      */
     async connectSocketTransport(transport: StdioServerTransport): Promise<void> {
+        // Proactively close the previous socket transport to avoid the
+        // "Already connected to a transport" race: a new connection can
+        // arrive before the old socket's async close/end handler runs.
+        if (this.activeSocketTransport) {
+            try {
+                await this.activeSocketTransport.close();
+            } catch {
+                // Transport may already be closed — safe to ignore.
+            }
+            this.activeSocketTransport = null;
+        }
+
         try {
             await this.server.connect(transport);
+            this.activeSocketTransport = transport;
             logger.systemLog('Socket transport connected successfully');
         } catch (error) {
+            this.activeSocketTransport = null;
             logger.systemError(error as Error, 'Socket Transport Connection');
             throw new McpError(
                 ErrorCode.InternalError,
