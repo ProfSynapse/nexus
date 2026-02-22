@@ -298,7 +298,6 @@ export class ChatSettingsRenderer {
                 this.settings.model = models[0].id;
                 if (firstEntry) this.settings.provider = firstEntry.provider;
                 dropdown.setValue(this.settings.model);
-                this.notifyChange();
               }
             }
 
@@ -464,7 +463,6 @@ export class ChatSettingsRenderer {
               this.settings.agentModel = models[0].id;
               if (firstEntry) this.settings.agentProvider = firstEntry.provider;
               dropdown.setValue(this.settings.agentModel);
-              this.notifyChange();
             }
           }
 
