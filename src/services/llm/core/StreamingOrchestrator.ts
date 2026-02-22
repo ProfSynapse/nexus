@@ -151,9 +151,9 @@ export class StreamingOrchestrator {
           }
 
           if (chunk.complete) {
-            // Store response ID for future continuations (OpenAI uses Responses API)
+            // Store response ID for future continuations (OpenAI/Codex use Responses API)
             const rawResponseId = chunk.metadata?.responseId;
-            if (activeProvider === 'openai' && rawResponseId && typeof rawResponseId === 'string') {
+            if ((activeProvider === 'openai' || activeProvider === 'openai-codex') && rawResponseId && typeof rawResponseId === 'string') {
               const responseId = rawResponseId;
 
               // Only capture if we don't already have one (from options or memory)
@@ -240,7 +240,7 @@ export class StreamingOrchestrator {
 
               if (chunk.complete) {
                 const rawResponseId = chunk.metadata?.responseId;
-                if (activeProvider === 'openai' && rawResponseId && typeof rawResponseId === 'string') {
+                if ((activeProvider === 'openai' || activeProvider === 'openai-codex') && rawResponseId && typeof rawResponseId === 'string') {
                   const responseId = rawResponseId;
                   const existingId = options?.responsesApiId ||
                     (options?.conversationId ? this.conversationResponseIds.get(options.conversationId) : undefined);

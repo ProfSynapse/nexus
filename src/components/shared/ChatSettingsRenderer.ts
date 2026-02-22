@@ -281,6 +281,7 @@ export class ChatSettingsRenderer {
               }
             }
 
+
             if (models.length === 0) {
               dropdown.addOption('', 'No models available');
             } else {

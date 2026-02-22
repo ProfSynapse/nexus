@@ -10,10 +10,76 @@
  */
 
 import { OpenAICodexAdapter, CodexOAuthTokens, TokenPersistCallback } from '../../src/services/llm/adapters/openai-codex/OpenAICodexAdapter';
+import { EventEmitter } from 'events';
 
-// Mock global fetch
-const mockFetch = jest.fn();
-global.fetch = mockFetch;
+// --- https mock infrastructure ---
+
+/**
+ * Create a mock IncomingMessage (EventEmitter + async iterable of Buffers).
+ * Simulates a Node.js http.IncomingMessage for SSE streaming.
+ */
+function createMockIncomingMessage(
+  statusCode: number,
+  chunks: string[]
+): { message: any; emit: () => void } {
+  const emitter = new EventEmitter();
+  (emitter as any).statusCode = statusCode;
+
+  // Make it async-iterable (Node.js IncomingMessage supports this)
+  (emitter as any)[Symbol.asyncIterator] = async function* () {
+    for (const chunk of chunks) {
+      yield Buffer.from(chunk);
+    }
+  };
+
+  const emitFn = () => {
+    // Defer emission so the consumer has time to register event listeners.
+    // The adapter sets up on('data')/on('end') after the Promise resolves,
+    // which happens in the same microtask as callback(message). Using
+    // setTimeout(0) pushes emission to the next macrotask.
+    setTimeout(() => {
+      for (const chunk of chunks) {
+        emitter.emit('data', Buffer.from(chunk));
+      }
+      emitter.emit('end');
+    }, 0);
+  };
+
+  return { message: emitter, emit: emitFn };
+}
+
+// Track all https.request calls for assertions
+interface CapturedRequest {
+  options: any;
+  body: string;
+}
+
+let capturedRequests: CapturedRequest[] = [];
+let requestMockImpl: ((options: any, body: string) => { statusCode: number; chunks: string[] }) | null = null;
+
+// Mock the https module
+jest.mock('https', () => ({
+  request: jest.fn((options: any, callback: (res: any) => void) => {
+    const reqEmitter = new EventEmitter();
+    let writtenBody = '';
+
+    (reqEmitter as any).write = (data: string) => { writtenBody += data; };
+    (reqEmitter as any).end = () => {
+      capturedRequests.push({ options, body: writtenBody });
+
+      if (requestMockImpl) {
+        const { statusCode, chunks } = requestMockImpl(options, writtenBody);
+        const { message, emit } = createMockIncomingMessage(statusCode, chunks);
+        callback(message);
+        // Emit data/end events for all responses — the adapter uses event
+        // listeners (not async iteration) to read both SSE streams and error bodies
+        emit();
+      }
+    };
+
+    return reqEmitter;
+  }),
+}));
 
 // Mock ModelRegistry
 jest.mock('../../src/services/llm/adapters/ModelRegistry', () => ({
@@ -55,29 +121,22 @@ function createTokens(overrides?: Partial<CodexOAuthTokens>): CodexOAuthTokens {
   };
 }
 
-// Helper: create a mock ReadableStream from SSE text
-function createSSEStream(events: string[]): ReadableStream<Uint8Array> {
-  const encoder = new TextEncoder();
-  const chunks = events.map(e => encoder.encode(e));
-  let index = 0;
-
-  return new ReadableStream({
-    pull(controller) {
-      if (index < chunks.length) {
-        controller.enqueue(chunks[index++]);
-      } else {
-        controller.close();
-      }
-    },
-  });
+// Helper: set up a mock for the Codex API endpoint returning SSE events
+function mockCodexSSE(events: string[]) {
+  const sseText = events.join('');
+  requestMockImpl = (options) => {
+    if (options.path === '/oauth/token') {
+      // Should not reach here for non-refresh tests
+      return { statusCode: 200, chunks: ['{}'] };
+    }
+    return { statusCode: 200, chunks: [sseText] };
+  };
 }
 
-// Helper: create a mock response with SSE stream
-function createSSEResponse(events: string[]): Partial<Response> {
-  return {
-    ok: true,
-    status: 200,
-    body: createSSEStream(events),
+// Helper: set up a mock for error responses
+function mockCodexError(statusCode: number, errorBody: string) {
+  requestMockImpl = () => {
+    return { statusCode, chunks: [errorBody] };
   };
 }
 
@@ -88,6 +147,8 @@ describe('OpenAICodexAdapter', () => {
   beforeEach(() => {
     tokens = createTokens();
     adapter = new OpenAICodexAdapter(tokens);
+    capturedRequests = [];
+    requestMockImpl = null;
     jest.clearAllMocks();
   });
 
@@ -179,47 +240,50 @@ describe('OpenAICodexAdapter', () => {
       const onRefresh = jest.fn();
       const nearExpiryAdapter = new OpenAICodexAdapter(nearExpiryTokens, onRefresh);
 
-      // Mock the refresh endpoint
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          access_token: 'refreshed-at',
-          refresh_token: 'rotated-rt',
-          expires_in: 3600,
-        }),
-      });
+      let refreshCalled = false;
+      requestMockImpl = (options) => {
+        if (options.path === '/oauth/token') {
+          refreshCalled = true;
+          return {
+            statusCode: 200,
+            chunks: [JSON.stringify({
+              access_token: 'refreshed-at',
+              refresh_token: 'rotated-rt',
+              expires_in: 3600,
+            })],
+          };
+        }
+        // API call
+        return {
+          statusCode: 200,
+          chunks: [
+            'data: {"type":"response.output_text.delta","delta":{"text":"Hello"}}\n\n',
+            'data: [DONE]\n\n',
+          ],
+        };
+      };
 
-      // Mock the actual API call
-      mockFetch.mockResolvedValueOnce(
-        createSSEResponse([
-          'data: {"type":"response.output_text.delta","delta":{"text":"Hello"}}\n\n',
-          'data: [DONE]\n\n',
-        ])
-      );
-
-      // Consume the stream
       const chunks: string[] = [];
       for await (const chunk of nearExpiryAdapter.generateStreamAsync('test prompt')) {
         if (chunk.content) chunks.push(chunk.content);
       }
 
-      // First call should be token refresh
-      expect(mockFetch).toHaveBeenCalledTimes(2);
-      const refreshCall = mockFetch.mock.calls[0];
-      expect(refreshCall[0]).toBe('https://auth.openai.com/oauth/token');
+      // Refresh endpoint should have been called
+      expect(refreshCalled).toBe(true);
 
-      // Callback should have been invoked
+      // Callback should have been invoked with refreshed tokens
       expect(onRefresh).toHaveBeenCalled();
+
+      // Should have captured both refresh + API calls
+      expect(capturedRequests.length).toBe(2);
+      expect(capturedRequests[0].options.path).toBe('/oauth/token');
     });
 
     it('should not refresh token when far from expiry', async () => {
-      // Token is valid for another hour -- no refresh needed
-      mockFetch.mockResolvedValueOnce(
-        createSSEResponse([
-          'data: {"type":"response.output_text.delta","delta":{"text":"Hello"}}\n\n',
-          'data: [DONE]\n\n',
-        ])
-      );
+      mockCodexSSE([
+        'data: {"type":"response.output_text.delta","delta":{"text":"Hello"}}\n\n',
+        'data: [DONE]\n\n',
+      ]);
 
       const chunks: string[] = [];
       for await (const chunk of adapter.generateStreamAsync('test prompt')) {
@@ -227,30 +291,25 @@ describe('OpenAICodexAdapter', () => {
       }
 
       // Only the API call, no refresh call
-      expect(mockFetch).toHaveBeenCalledTimes(1);
-      expect(mockFetch.mock.calls[0][0]).toBe('https://chatgpt.com/backend-api/codex/responses');
+      expect(capturedRequests.length).toBe(1);
+      expect(capturedRequests[0].options.hostname).toBe('chatgpt.com');
     });
   });
 
   describe('generateStreamAsync request construction', () => {
     it('should send correct headers including Authorization and ChatGPT-Account-Id', async () => {
-      mockFetch.mockResolvedValueOnce(
-        createSSEResponse(['data: [DONE]\n\n'])
-      );
+      mockCodexSSE(['data: [DONE]\n\n']);
 
-      // Consume stream
       for await (const _ of adapter.generateStreamAsync('hello')) { /* no-op */ }
 
-      const headers = mockFetch.mock.calls[0][1].headers;
-      expect(headers['Authorization']).toBe('Bearer test-access-token');
-      expect(headers['ChatGPT-Account-Id']).toBe('acct-test-123');
-      expect(headers['Content-Type']).toBe('application/json');
+      const req = capturedRequests[0];
+      expect(req.options.headers['Authorization']).toBe('Bearer test-access-token');
+      expect(req.options.headers['ChatGPT-Account-Id']).toBe('acct-test-123');
+      expect(req.options.headers['Content-Type']).toBe('application/json');
     });
 
     it('should construct correct request body', async () => {
-      mockFetch.mockResolvedValueOnce(
-        createSSEResponse(['data: [DONE]\n\n'])
-      );
+      mockCodexSSE(['data: [DONE]\n\n']);
 
       for await (const _ of adapter.generateStreamAsync('hello', {
         model: 'gpt-5.2-codex',
@@ -259,14 +318,13 @@ describe('OpenAICodexAdapter', () => {
         systemPrompt: 'You are a helper.',
       })) { /* no-op */ }
 
-      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+      const body = JSON.parse(capturedRequests[0].body);
       expect(body.model).toBe('gpt-5.2-codex');
       expect(body.stream).toBe(true);
       expect(body.store).toBe(false);
       expect(body.temperature).toBe(0.7);
       expect(body.max_output_tokens).toBe(1000);
       expect(body.instructions).toBe('You are a helper.');
-      // Input should contain user prompt
       expect(body.input).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ role: 'user', content: 'hello' }),
@@ -275,23 +333,19 @@ describe('OpenAICodexAdapter', () => {
     });
 
     it('should include system prompt in input array', async () => {
-      mockFetch.mockResolvedValueOnce(
-        createSSEResponse(['data: [DONE]\n\n'])
-      );
+      mockCodexSSE(['data: [DONE]\n\n']);
 
       for await (const _ of adapter.generateStreamAsync('hello', {
         systemPrompt: 'System message',
       })) { /* no-op */ }
 
-      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+      const body = JSON.parse(capturedRequests[0].body);
       expect(body.input[0]).toEqual({ role: 'system', content: 'System message' });
       expect(body.input[1]).toEqual({ role: 'user', content: 'hello' });
     });
 
     it('should use conversation history when provided', async () => {
-      mockFetch.mockResolvedValueOnce(
-        createSSEResponse(['data: [DONE]\n\n'])
-      );
+      mockCodexSSE(['data: [DONE]\n\n']);
 
       const history = [
         { role: 'system', content: 'You are helpful.' },
@@ -304,20 +358,18 @@ describe('OpenAICodexAdapter', () => {
         conversationHistory: history,
       })) { /* no-op */ }
 
-      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+      const body = JSON.parse(capturedRequests[0].body);
       expect(body.input).toEqual(history);
     });
   });
 
   describe('SSE stream parsing', () => {
     it('should extract text from delta.text events', async () => {
-      mockFetch.mockResolvedValueOnce(
-        createSSEResponse([
-          'data: {"type":"response.output_text.delta","delta":{"text":"Hello "}}\n\n',
-          'data: {"type":"response.output_text.delta","delta":{"text":"world!"}}\n\n',
-          'data: [DONE]\n\n',
-        ])
-      );
+      mockCodexSSE([
+        'data: {"type":"response.output_text.delta","delta":{"text":"Hello "}}\n\n',
+        'data: {"type":"response.output_text.delta","delta":{"text":"world!"}}\n\n',
+        'data: [DONE]\n\n',
+      ]);
 
       const texts: string[] = [];
       for await (const chunk of adapter.generateStreamAsync('test')) {
@@ -328,12 +380,10 @@ describe('OpenAICodexAdapter', () => {
     });
 
     it('should handle delta.content variant', async () => {
-      mockFetch.mockResolvedValueOnce(
-        createSSEResponse([
-          'data: {"type":"response.output_text.delta","delta":{"content":"content text"}}\n\n',
-          'data: [DONE]\n\n',
-        ])
-      );
+      mockCodexSSE([
+        'data: {"type":"response.output_text.delta","delta":{"content":"content text"}}\n\n',
+        'data: [DONE]\n\n',
+      ]);
 
       const texts: string[] = [];
       for await (const chunk of adapter.generateStreamAsync('test')) {
@@ -344,13 +394,11 @@ describe('OpenAICodexAdapter', () => {
     });
 
     it('should skip output_text.done recap events', async () => {
-      mockFetch.mockResolvedValueOnce(
-        createSSEResponse([
-          'data: {"type":"response.output_text.delta","delta":{"text":"Hello"}}\n\n',
-          'data: {"type":"response.output_text.done","text":"Hello full text recap"}\n\n',
-          'data: [DONE]\n\n',
-        ])
-      );
+      mockCodexSSE([
+        'data: {"type":"response.output_text.delta","delta":{"text":"Hello"}}\n\n',
+        'data: {"type":"response.output_text.done","text":"Hello full text recap"}\n\n',
+        'data: [DONE]\n\n',
+      ]);
 
       const texts: string[] = [];
       for await (const chunk of adapter.generateStreamAsync('test')) {
@@ -362,12 +410,10 @@ describe('OpenAICodexAdapter', () => {
     });
 
     it('should emit complete=true on [DONE]', async () => {
-      mockFetch.mockResolvedValueOnce(
-        createSSEResponse([
-          'data: {"type":"response.output_text.delta","delta":{"text":"hi"}}\n\n',
-          'data: [DONE]\n\n',
-        ])
-      );
+      mockCodexSSE([
+        'data: {"type":"response.output_text.delta","delta":{"text":"hi"}}\n\n',
+        'data: [DONE]\n\n',
+      ]);
 
       const completeFlags: boolean[] = [];
       for await (const chunk of adapter.generateStreamAsync('test')) {
@@ -378,12 +424,10 @@ describe('OpenAICodexAdapter', () => {
     });
 
     it('should emit complete=true on response.completed event', async () => {
-      mockFetch.mockResolvedValueOnce(
-        createSSEResponse([
-          'data: {"type":"response.output_text.delta","delta":{"text":"hi"}}\n\n',
-          'data: {"type":"response.completed","id":"resp-123"}\n\n',
-        ])
-      );
+      mockCodexSSE([
+        'data: {"type":"response.output_text.delta","delta":{"text":"hi"}}\n\n',
+        'data: {"type":"response.completed","id":"resp-123"}\n\n',
+      ]);
 
       const completeFlags: boolean[] = [];
       for await (const chunk of adapter.generateStreamAsync('test')) {
@@ -394,14 +438,12 @@ describe('OpenAICodexAdapter', () => {
     });
 
     it('should handle malformed JSON lines gracefully (skip them)', async () => {
-      mockFetch.mockResolvedValueOnce(
-        createSSEResponse([
-          'data: {"type":"response.output_text.delta","delta":{"text":"before"}}\n\n',
-          'data: {malformed json\n\n',
-          'data: {"type":"response.output_text.delta","delta":{"text":"after"}}\n\n',
-          'data: [DONE]\n\n',
-        ])
-      );
+      mockCodexSSE([
+        'data: {"type":"response.output_text.delta","delta":{"text":"before"}}\n\n',
+        'data: {malformed json\n\n',
+        'data: {"type":"response.output_text.delta","delta":{"text":"after"}}\n\n',
+        'data: [DONE]\n\n',
+      ]);
 
       const texts: string[] = [];
       for await (const chunk of adapter.generateStreamAsync('test')) {
@@ -412,13 +454,11 @@ describe('OpenAICodexAdapter', () => {
     });
 
     it('should handle SSE comments (lines starting with :)', async () => {
-      mockFetch.mockResolvedValueOnce(
-        createSSEResponse([
-          ': this is a comment\n\n',
-          'data: {"type":"response.output_text.delta","delta":{"text":"text"}}\n\n',
-          'data: [DONE]\n\n',
-        ])
-      );
+      mockCodexSSE([
+        ': this is a comment\n\n',
+        'data: {"type":"response.output_text.delta","delta":{"text":"text"}}\n\n',
+        'data: [DONE]\n\n',
+      ]);
 
       const texts: string[] = [];
       for await (const chunk of adapter.generateStreamAsync('test')) {
@@ -429,14 +469,12 @@ describe('OpenAICodexAdapter', () => {
     });
 
     it('should handle empty lines gracefully', async () => {
-      mockFetch.mockResolvedValueOnce(
-        createSSEResponse([
-          '\n',
-          'data: {"type":"response.output_text.delta","delta":{"text":"ok"}}\n\n',
-          '\n',
-          'data: [DONE]\n\n',
-        ])
-      );
+      mockCodexSSE([
+        '\n',
+        'data: {"type":"response.output_text.delta","delta":{"text":"ok"}}\n\n',
+        '\n',
+        'data: [DONE]\n\n',
+      ]);
 
       const texts: string[] = [];
       for await (const chunk of adapter.generateStreamAsync('test')) {
@@ -448,14 +486,13 @@ describe('OpenAICodexAdapter', () => {
 
     it('should correctly buffer and parse SSE data split across chunk boundaries', async () => {
       // Simulate a network scenario where a single SSE event arrives in two TCP chunks,
-      // splitting mid-JSON. The adapter's buffer logic must reassemble the line before parsing.
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        body: createSSEStream([
+      // splitting mid-JSON. The async iterator yields two separate Buffer chunks.
+      requestMockImpl = () => ({
+        statusCode: 200,
+        chunks: [
           'data: {"type":"response.output_text.delta","delta":{"tex',  // chunk 1: incomplete line
           't":"split across chunks"}}\n\ndata: [DONE]\n\n',           // chunk 2: rest of line + DONE
-        ]),
+        ],
       });
 
       const texts: string[] = [];
@@ -469,11 +506,7 @@ describe('OpenAICodexAdapter', () => {
 
   describe('HTTP error handling', () => {
     it('should throw AUTHENTICATION_ERROR on 401', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: false,
-        status: 401,
-        text: async () => 'Unauthorized',
-      });
+      mockCodexError(401, 'Unauthorized');
 
       await expect(async () => {
         for await (const _ of adapter.generateStreamAsync('test')) { /* no-op */ }
@@ -481,11 +514,7 @@ describe('OpenAICodexAdapter', () => {
     });
 
     it('should throw AUTHENTICATION_ERROR on 403', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: false,
-        status: 403,
-        text: async () => 'Forbidden',
-      });
+      mockCodexError(403, 'Forbidden');
 
       await expect(async () => {
         for await (const _ of adapter.generateStreamAsync('test')) { /* no-op */ }
@@ -493,11 +522,7 @@ describe('OpenAICodexAdapter', () => {
     });
 
     it('should throw RATE_LIMIT_ERROR on 429', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: false,
-        status: 429,
-        text: async () => 'Rate limit exceeded',
-      });
+      mockCodexError(429, 'Rate limit exceeded');
 
       try {
         for await (const _ of adapter.generateStreamAsync('test')) { /* no-op */ }
@@ -512,61 +537,45 @@ describe('OpenAICodexAdapter', () => {
     });
 
     it('should throw HTTP_ERROR on other status codes', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: false,
-        status: 500,
-        text: async () => 'Internal Server Error',
-      });
+      mockCodexError(500, 'Internal Server Error');
 
       await expect(async () => {
         for await (const _ of adapter.generateStreamAsync('test')) { /* no-op */ }
       }).rejects.toThrow('Codex API error');
     });
-
-    it('should throw when response body is null', async () => {
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        body: null,
-      });
-
-      await expect(async () => {
-        for await (const _ of adapter.generateStreamAsync('test')) { /* no-op */ }
-      }).rejects.toThrow('Response body is null');
-    });
   });
 
   describe('concurrent token refresh deduplication', () => {
     it('should make only one refresh call when two requests need refresh simultaneously', async () => {
-      // Both adapters share the same near-expiry token state
       const nearExpiryTokens = createTokens({
         expiresAt: Date.now() + 60_000, // Within 5-min threshold
       });
       const onRefresh = jest.fn();
       const sharedAdapter = new OpenAICodexAdapter(nearExpiryTokens, onRefresh);
 
-      // The refresh endpoint -- a single call that resolves after a tick
       let refreshCallCount = 0;
-      mockFetch.mockImplementation(async (url: string) => {
-        if (url === 'https://auth.openai.com/oauth/token') {
+      requestMockImpl = (options) => {
+        if (options.path === '/oauth/token') {
           refreshCallCount++;
           return {
-            ok: true,
-            json: async () => ({
+            statusCode: 200,
+            chunks: [JSON.stringify({
               access_token: 'refreshed-at',
               refresh_token: 'rotated-rt',
               expires_in: 3600,
-            }),
+            })],
           };
         }
-        // API call response
-        return createSSEResponse([
-          'data: {"type":"response.output_text.delta","delta":{"text":"ok"}}\n\n',
-          'data: [DONE]\n\n',
-        ]);
-      });
+        return {
+          statusCode: 200,
+          chunks: [
+            'data: {"type":"response.output_text.delta","delta":{"text":"ok"}}\n\n',
+            'data: [DONE]\n\n',
+          ],
+        };
+      };
 
-      // Fire two concurrent streaming requests -- both should trigger ensureFreshToken
+      // Fire two concurrent streaming requests
       const stream1 = (async () => {
         const texts: string[] = [];
         for await (const chunk of sharedAdapter.generateStreamAsync('prompt1')) {
@@ -585,12 +594,10 @@ describe('OpenAICodexAdapter', () => {
 
       const [result1, result2] = await Promise.all([stream1, stream2]);
 
-      // Both streams should produce output
       expect(result1).toEqual(['ok']);
       expect(result2).toEqual(['ok']);
 
-      // The adapter deduplicates refresh via refreshInProgress promise lock.
-      // Only 1 refresh call should be made (not 2).
+      // Only 1 refresh call should be made (not 2)
       expect(refreshCallCount).toBe(1);
     });
   });
@@ -601,11 +608,12 @@ describe('OpenAICodexAdapter', () => {
         createTokens({ expiresAt: Date.now() + 60_000 })
       );
 
-      mockFetch.mockResolvedValueOnce({
-        ok: false,
-        status: 400,
-        text: async () => 'Invalid grant',
-      });
+      requestMockImpl = (options) => {
+        if (options.path === '/oauth/token') {
+          return { statusCode: 400, chunks: ['Invalid grant'] };
+        }
+        return { statusCode: 200, chunks: ['data: [DONE]\n\n'] };
+      };
 
       await expect(async () => {
         for await (const _ of nearExpiryAdapter.generateStreamAsync('test')) { /* no-op */ }
@@ -659,9 +667,7 @@ describe('OpenAICodexAdapter', () => {
 
   describe('tool call support', () => {
     it('should convert tools from Chat Completions format to Responses API format in request body', async () => {
-      mockFetch.mockResolvedValueOnce(
-        createSSEResponse(['data: [DONE]\n\n'])
-      );
+      mockCodexSSE(['data: [DONE]\n\n']);
 
       const tools = [
         {
@@ -676,22 +682,19 @@ describe('OpenAICodexAdapter', () => {
 
       for await (const _ of adapter.generateStreamAsync('What is the weather?', { tools })) { /* no-op */ }
 
-      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+      const body = JSON.parse(capturedRequests[0].body);
       expect(body.tools).toEqual([
         {
           type: 'function',
           name: 'get_weather',
           description: 'Get current weather',
           parameters: { type: 'object', properties: { city: { type: 'string' } } },
-          strict: null,
         },
       ]);
     });
 
     it('should pass through tools already in Responses API format', async () => {
-      mockFetch.mockResolvedValueOnce(
-        createSSEResponse(['data: [DONE]\n\n'])
-      );
+      mockCodexSSE(['data: [DONE]\n\n']);
 
       const tools = [
         {
@@ -704,27 +707,23 @@ describe('OpenAICodexAdapter', () => {
 
       for await (const _ of adapter.generateStreamAsync('Search for cats', { tools })) { /* no-op */ }
 
-      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-      // Already flat format — passed through unchanged
+      const body = JSON.parse(capturedRequests[0].body);
       expect(body.tools[0].name).toBe('search');
     });
 
     it('should accumulate tool calls from response.output_item.done events', async () => {
-      mockFetch.mockResolvedValueOnce(
-        createSSEResponse([
-          'data: {"type":"response.function_call_arguments.delta","delta":"{\\"city\\":"}\n\n',
-          'data: {"type":"response.function_call_arguments.delta","delta":"\\"NYC\\"}"}\n\n',
-          'data: {"type":"response.output_item.done","output_index":0,"item":{"type":"function_call","call_id":"call_abc","name":"get_weather","arguments":"{\\"city\\":\\"NYC\\"}"}}\n\n',
-          'data: [DONE]\n\n',
-        ])
-      );
+      mockCodexSSE([
+        'data: {"type":"response.function_call_arguments.delta","delta":"{\\"city\\":"}\n\n',
+        'data: {"type":"response.function_call_arguments.delta","delta":"\\"NYC\\"}"}\n\n',
+        'data: {"type":"response.output_item.done","output_index":0,"item":{"type":"function_call","call_id":"call_abc","name":"get_weather","arguments":"{\\"city\\":\\"NYC\\"}"}}\n\n',
+        'data: [DONE]\n\n',
+      ]);
 
       const chunks: Array<{ toolCalls?: any[]; toolCallsReady?: boolean }> = [];
       for await (const chunk of adapter.generateStreamAsync('weather in NYC')) {
         chunks.push({ toolCalls: chunk.toolCalls, toolCallsReady: chunk.toolCallsReady });
       }
 
-      // The final chunk (complete=true) should contain the tool call
       const finalChunk = chunks[chunks.length - 1];
       expect(finalChunk.toolCallsReady).toBe(true);
       expect(finalChunk.toolCalls).toHaveLength(1);
@@ -739,13 +738,11 @@ describe('OpenAICodexAdapter', () => {
     });
 
     it('should accumulate multiple tool calls', async () => {
-      mockFetch.mockResolvedValueOnce(
-        createSSEResponse([
-          'data: {"type":"response.output_item.done","output_index":0,"item":{"type":"function_call","call_id":"call_1","name":"get_weather","arguments":"{\\"city\\":\\"NYC\\"}"}}\n\n',
-          'data: {"type":"response.output_item.done","output_index":1,"item":{"type":"function_call","call_id":"call_2","name":"get_time","arguments":"{\\"tz\\":\\"EST\\"}"}}\n\n',
-          'data: [DONE]\n\n',
-        ])
-      );
+      mockCodexSSE([
+        'data: {"type":"response.output_item.done","output_index":0,"item":{"type":"function_call","call_id":"call_1","name":"get_weather","arguments":"{\\"city\\":\\"NYC\\"}"}}\n\n',
+        'data: {"type":"response.output_item.done","output_index":1,"item":{"type":"function_call","call_id":"call_2","name":"get_time","arguments":"{\\"tz\\":\\"EST\\"}"}}\n\n',
+        'data: [DONE]\n\n',
+      ]);
 
       const chunks: Array<{ toolCalls?: any[] }> = [];
       for await (const chunk of adapter.generateStreamAsync('weather and time')) {
@@ -759,12 +756,10 @@ describe('OpenAICodexAdapter', () => {
     });
 
     it('should include tool calls in completion event from response.completed', async () => {
-      mockFetch.mockResolvedValueOnce(
-        createSSEResponse([
-          'data: {"type":"response.output_item.done","output_index":0,"item":{"type":"function_call","call_id":"call_x","name":"search","arguments":"{\\"q\\":\\"cats\\"}"}}\n\n',
-          'data: {"type":"response.completed","id":"resp-456"}\n\n',
-        ])
-      );
+      mockCodexSSE([
+        'data: {"type":"response.output_item.done","output_index":0,"item":{"type":"function_call","call_id":"call_x","name":"search","arguments":"{\\"q\\":\\"cats\\"}"}}\n\n',
+        'data: {"type":"response.completed","id":"resp-456"}\n\n',
+      ]);
 
       const chunks: Array<{ toolCalls?: any[]; complete: boolean }> = [];
       for await (const chunk of adapter.generateStreamAsync('search cats')) {
@@ -778,12 +773,10 @@ describe('OpenAICodexAdapter', () => {
     });
 
     it('should not include toolCalls in final chunk when no function calls were made', async () => {
-      mockFetch.mockResolvedValueOnce(
-        createSSEResponse([
-          'data: {"type":"response.output_text.delta","delta":{"text":"Hello"}}\n\n',
-          'data: [DONE]\n\n',
-        ])
-      );
+      mockCodexSSE([
+        'data: {"type":"response.output_text.delta","delta":{"text":"Hello"}}\n\n',
+        'data: [DONE]\n\n',
+      ]);
 
       const chunks: Array<{ toolCalls?: any[]; toolCallsReady?: boolean }> = [];
       for await (const chunk of adapter.generateStreamAsync('hello')) {
@@ -796,12 +789,10 @@ describe('OpenAICodexAdapter', () => {
     });
 
     it('should use item.id as fallback when call_id is not present', async () => {
-      mockFetch.mockResolvedValueOnce(
-        createSSEResponse([
-          'data: {"type":"response.output_item.done","output_index":0,"item":{"type":"function_call","id":"item_123","name":"test_fn","arguments":"{}"}}\n\n',
-          'data: [DONE]\n\n',
-        ])
-      );
+      mockCodexSSE([
+        'data: {"type":"response.output_item.done","output_index":0,"item":{"type":"function_call","id":"item_123","name":"test_fn","arguments":"{}"}}\n\n',
+        'data: [DONE]\n\n',
+      ]);
 
       const chunks: Array<{ toolCalls?: any[] }> = [];
       for await (const chunk of adapter.generateStreamAsync('test')) {
@@ -815,28 +806,24 @@ describe('OpenAICodexAdapter', () => {
 
   describe('generateUncached', () => {
     it('should collect all stream chunks and return assembled response', async () => {
-      mockFetch.mockResolvedValueOnce(
-        createSSEResponse([
-          'data: {"type":"response.output_text.delta","delta":{"text":"Hello "}}\n\n',
-          'data: {"type":"response.output_text.delta","delta":{"text":"World!"}}\n\n',
-          'data: [DONE]\n\n',
-        ])
-      );
+      mockCodexSSE([
+        'data: {"type":"response.output_text.delta","delta":{"text":"Hello "}}\n\n',
+        'data: {"type":"response.output_text.delta","delta":{"text":"World!"}}\n\n',
+        'data: [DONE]\n\n',
+      ]);
 
       const response = await adapter.generateUncached('test prompt');
 
       expect(response.text).toBe('Hello World!');
-      expect(response.usage.totalTokens).toBe(0); // Codex doesn't report usage
+      expect(response.usage.totalTokens).toBe(0);
       expect(response.finishReason).toBe('stop');
     });
 
     it('should return tool_calls finishReason and toolCalls when function calls are present', async () => {
-      mockFetch.mockResolvedValueOnce(
-        createSSEResponse([
-          'data: {"type":"response.output_item.done","output_index":0,"item":{"type":"function_call","call_id":"call_uc1","name":"get_weather","arguments":"{\\"city\\":\\"SF\\"}"}}\n\n',
-          'data: [DONE]\n\n',
-        ])
-      );
+      mockCodexSSE([
+        'data: {"type":"response.output_item.done","output_index":0,"item":{"type":"function_call","call_id":"call_uc1","name":"get_weather","arguments":"{\\"city\\":\\"SF\\"}"}}\n\n',
+        'data: [DONE]\n\n',
+      ]);
 
       const response = await adapter.generateUncached('weather in SF');
 
