@@ -269,7 +269,7 @@ export class GenericProviderModal implements IProviderModal {
 
     const section = container.createDiv('secondary-oauth-section');
 
-    section.createEl('h2', { text: `${secondary.providerLabel} (Experimental)` });
+    section.createEl('h2', { text: secondary.providerLabel });
     section.createEl('p', {
       text: secondary.description,
       cls: 'setting-item-description',
