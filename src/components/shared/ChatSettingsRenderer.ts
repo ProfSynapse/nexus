@@ -95,7 +95,8 @@ const PROVIDER_NAMES: Record<string, string> = {
   groq: 'Groq',
   openrouter: 'OpenRouter',
   requesty: 'Requesty',
-  perplexity: 'Perplexity'
+  perplexity: 'Perplexity',
+  'openai-codex': 'ChatGPT'
 };
 
 const EFFORT_LEVELS: ThinkingEffort[] = ['low', 'medium', 'high'];
