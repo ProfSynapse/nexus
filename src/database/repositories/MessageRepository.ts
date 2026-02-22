@@ -462,6 +462,38 @@ export class MessageRepository
    * Convert SQLite row to MessageData
    */
   private rowToMessage(row: any): MessageData {
+    let toolCalls: any;
+    let metadata: any;
+    let alternatives: any;
+
+    // Defensive JSON parsing — corrupt data shouldn't crash the entire message load
+    if (row.toolCallsJson) {
+      try {
+        toolCalls = JSON.parse(row.toolCallsJson);
+      } catch {
+        console.error(`[MessageRepository] Failed to parse toolCallsJson for message ${row.id}`);
+        toolCalls = undefined;
+      }
+    }
+
+    if (row.metadataJson) {
+      try {
+        metadata = JSON.parse(row.metadataJson);
+      } catch {
+        console.error(`[MessageRepository] Failed to parse metadataJson for message ${row.id}`);
+        metadata = undefined;
+      }
+    }
+
+    if (row.alternativesJson) {
+      try {
+        alternatives = JSON.parse(row.alternativesJson);
+      } catch {
+        console.error(`[MessageRepository] Failed to parse alternativesJson for message ${row.id}`);
+        alternatives = undefined;
+      }
+    }
+
     return {
       id: row.id,
       conversationId: row.conversationId,
@@ -470,11 +502,11 @@ export class MessageRepository
       timestamp: row.timestamp,
       state: row.state ?? 'complete',
       sequenceNumber: row.sequenceNumber,
-      toolCalls: row.toolCallsJson ? JSON.parse(row.toolCallsJson) : undefined,
+      toolCalls,
       toolCallId: row.toolCallId ?? undefined,
       reasoning: row.reasoningContent ?? undefined,
-      metadata: row.metadataJson ? JSON.parse(row.metadataJson) : undefined,
-      alternatives: row.alternativesJson ? JSON.parse(row.alternativesJson) : undefined,
+      metadata,
+      alternatives,
       activeAlternativeIndex: row.activeAlternativeIndex ?? 0
     };
   }

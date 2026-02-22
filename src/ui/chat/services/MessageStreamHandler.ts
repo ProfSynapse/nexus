@@ -202,6 +202,24 @@ export class MessageStreamHandler {
       }
     }
 
+    // Post-loop safety net: if the loop exited without hitting isFinalComplete
+    // (e.g., tool execution error yielded complete:true with raw tool calls),
+    // ensure the in-memory message reflects the final accumulated state.
+    // This prevents the subsequent save from writing stale state to JSONL.
+    const finalMessageIndex = conversation.messages.findIndex(msg => msg.id === aiMessageId);
+    if (finalMessageIndex >= 0) {
+      const finalMsg = conversation.messages[finalMessageIndex];
+      if (finalMsg.state !== 'complete') {
+        conversation.messages[finalMessageIndex] = {
+          ...finalMsg,
+          content: streamedContent,
+          state: 'complete',
+          toolCalls: toolCalls,
+          reasoning: reasoningAccumulator || undefined
+        };
+      }
+    }
+
     return {
       streamedContent,
       toolCalls,
