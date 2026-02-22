@@ -321,13 +321,7 @@ export class OpenAICodexAdapter extends BaseAdapter {
           + 'Call getTools first to discover available tools, then call useTools to execute them.\n\n';
         requestBody.instructions = toolPreamble + (requestBody.instructions || '');
 
-        console.log('[Codex] tools being sent:', JSON.stringify(requestBody.tools).slice(0, 500));
-      } else {
-        console.log('[Codex] NO tools in options:', options?.tools);
       }
-
-      console.log('[Codex] request body keys:', Object.keys(requestBody), 'has tools:', !!requestBody.tools, 'input items:', Array.isArray(requestBody.input) ? requestBody.input.length : 'n/a');
-      console.log('[Codex] request body tools count:', Array.isArray(requestBody.tools) ? requestBody.tools.length : 0);
 
       // Use Node.js https to bypass browser CORS restrictions
       // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -353,8 +347,6 @@ export class OpenAICodexAdapter extends BaseAdapter {
         req.write(bodyStr);
         req.end();
       });
-
-      console.log('[Codex] generateStreamAsync statusCode:', statusCode, 'instructions:', JSON.stringify(requestBody.instructions));
 
       // Error handling for non-2xx responses
       if (statusCode >= 400) {
@@ -436,12 +428,10 @@ export class OpenAICodexAdapter extends BaseAdapter {
     };
 
     nodeRes.on('data', (chunk: Buffer) => {
-      console.log('[Codex] SSE chunk received, length:', chunk.toString().length, 'preview:', chunk.toString().slice(0, 100));
       chunkQueue.push(chunk.toString());
       notifyWaiter();
     });
     nodeRes.on('end', () => {
-      console.log('[Codex] SSE stream ended');
       streamEnded = true;
       notifyWaiter();
     });
@@ -553,7 +543,6 @@ export class OpenAICodexAdapter extends BaseAdapter {
     // If stream ended without explicit [DONE], emit completion
     const finalToolCalls = toolCallsMap.size > 0 ? Array.from(toolCallsMap.values()) : undefined;
     const metadata = currentResponseId ? { responseId: currentResponseId } : undefined;
-    console.log('[Codex] SSE stream: emitting fallback complete');
     yield {
       content: '',
       complete: true,
