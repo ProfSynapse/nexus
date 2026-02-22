@@ -159,7 +159,7 @@ export class OpenAICodexOAuthProvider implements IOAuthProvider {
       prompt: 'login',
       id_token_add_organizations: 'true',
       codex_cli_simplified_flow: 'true',
-      originator: 'claudesidian',
+      originator: 'opencode',
     });
 
     return `${AUTH_ENDPOINT}?${params.toString()}`;

@@ -140,10 +140,10 @@ describe('OpenAICodexOAuthProvider', () => {
       expect(params.get('id_token_add_organizations')).toBe('true');
     });
 
-    it('should include originator=claudesidian', () => {
+    it('should include originator=opencode', () => {
       const url = provider.buildAuthUrl(callbackUrl, codeChallenge, state);
       const params = new URL(url).searchParams;
-      expect(params.get('originator')).toBe('claudesidian');
+      expect(params.get('originator')).toBe('opencode');
     });
   });
 

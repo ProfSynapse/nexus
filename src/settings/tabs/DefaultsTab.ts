@@ -228,6 +228,7 @@ export class DefaultsTab {
    * Cleanup
    */
   destroy(): void {
+    this.renderer?.destroy();
     this.renderer = null;
   }
 }

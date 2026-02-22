@@ -11,12 +11,13 @@
  * The difference is only WHERE data is saved (via callbacks).
  */
 
-import { App, Setting } from 'obsidian';
+import { App, Setting, EventRef } from 'obsidian';
 import { LLMProviderManager } from '../../services/llm/providers/ProviderManager';
 import { StaticModelsService } from '../../services/StaticModelsService';
 import { LLMProviderSettings, ThinkingEffort } from '../../types/llm/ProviderTypes';
 import { FilePickerRenderer } from '../workspace/FilePickerRenderer';
 import { isDesktop, isProviderCompatible } from '../../utils/platform';
+import { LLMSettingsNotifier } from '../../services/llm/LLMSettingsNotifier';
 
 /**
  * Current settings state
@@ -130,6 +131,7 @@ export class ChatSettingsRenderer {
   private effortSection?: HTMLElement;
   private agentEffortSection?: HTMLElement;
   private contextNotesListEl?: HTMLElement;
+  private settingsEventRef?: EventRef;
 
   constructor(container: HTMLElement, config: ChatSettingsRendererConfig) {
     this.container = container;
@@ -141,6 +143,19 @@ export class ChatSettingsRenderer {
       config.llmProviderSettings,
       config.app.vault
     );
+
+    this.settingsEventRef = LLMSettingsNotifier.onSettingsChanged((newSettings) => {
+      this.config.llmProviderSettings = newSettings;
+      this.providerManager.updateSettings(newSettings);
+      this.render();
+    });
+  }
+
+  destroy(): void {
+    if (this.settingsEventRef) {
+      LLMSettingsNotifier.unsubscribe(this.settingsEventRef);
+      this.settingsEventRef = undefined;
+    }
   }
 
   render(): void {

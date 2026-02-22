@@ -221,6 +221,7 @@ export class ChatSettingsModal extends Modal {
   }
 
   onClose() {
+    this.renderer?.destroy();
     this.renderer = null;
     this.pendingSettings = null;
     this.contentEl.empty();
