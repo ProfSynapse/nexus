@@ -19,7 +19,7 @@ import { Settings } from '../../settings';
 import { Card, CardConfig } from '../../components/Card';
 import { LLMSettingsNotifier } from '../../services/llm/LLMSettingsNotifier';
 import { isDesktop, supportsLocalLLM, MOBILE_COMPATIBLE_PROVIDERS, isProviderComingSoon } from '../../utils/platform';
-import type { OAuthModalConfig } from '../../components/llm-provider/types';
+import type { OAuthModalConfig, SecondaryOAuthProviderConfig } from '../../components/llm-provider/types';
 import { OAuthService } from '../../services/oauth/OAuthService';
 
 /**
@@ -287,7 +287,7 @@ export class ProvidersTab {
         // Desktop: Cloud providers (SDK + fetch-based)
         this.container.createDiv('nexus-provider-group-title').setText('CLOUD PROVIDERS');
         this.renderProviderList(
-            ['openai', 'openai-codex', 'anthropic', 'google', 'mistral', 'groq', 'openrouter', 'requesty', 'perplexity'],
+            ['openai', 'anthropic', 'google', 'mistral', 'groq', 'openrouter', 'requesty', 'perplexity'],
             settings
         );
     }
@@ -369,6 +369,29 @@ export class ProvidersTab {
     ): void {
         const settings = this.getSettings();
 
+        // Build secondary OAuth provider config for OpenAI (Codex sub-section)
+        let secondaryOAuthProvider: SecondaryOAuthProviderConfig | undefined;
+        if (providerId === 'openai') {
+            const codexDisplay = this.providerConfigs['openai-codex'];
+            if (codexDisplay?.oauthConfig) {
+                const codexConfig = settings.providers['openai-codex'] || {
+                    apiKey: '',
+                    enabled: false,
+                };
+                secondaryOAuthProvider = {
+                    providerId: 'openai-codex',
+                    providerLabel: 'ChatGPT (Codex)',
+                    description: 'Connect your ChatGPT account to use GPT-4o via OAuth. This is an experimental feature that uses an undocumented API.',
+                    config: { ...codexConfig },
+                    oauthConfig: codexDisplay.oauthConfig,
+                    onConfigChange: async (updatedCodexConfig: LLMProviderConfig) => {
+                        settings.providers['openai-codex'] = updatedCodexConfig;
+                        await this.saveSettings();
+                    },
+                };
+            }
+        }
+
         const modalConfig: LLMProviderModalConfig = {
             providerId,
             providerName: displayConfig.name,
@@ -376,6 +399,7 @@ export class ProvidersTab {
             signupUrl: displayConfig.signupUrl,
             config: { ...providerConfig },
             oauthConfig: displayConfig.oauthConfig,
+            secondaryOAuthProvider,
             onSave: async (updatedConfig: LLMProviderConfig) => {
                 settings.providers[providerId] = updatedConfig;
 

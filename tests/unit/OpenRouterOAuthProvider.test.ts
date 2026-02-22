@@ -31,8 +31,8 @@ describe('OpenRouterOAuthProvider', () => {
       expect(provider.config.displayName).toBe('OpenRouter');
     });
 
-    it('should prefer port 3000', () => {
-      expect(provider.config.preferredPort).toBe(3000);
+    it('should prefer port 3456', () => {
+      expect(provider.config.preferredPort).toBe(3456);
     });
 
     it('should use /callback path', () => {

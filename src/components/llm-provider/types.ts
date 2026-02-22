@@ -61,6 +61,28 @@ export interface ProviderModalConfig {
 
   /** Optional OAuth configuration for providers that support OAuth connect */
   oauthConfig?: OAuthModalConfig;
+
+  /** Optional secondary OAuth provider shown as a sub-section in the modal */
+  secondaryOAuthProvider?: SecondaryOAuthProviderConfig;
+}
+
+/**
+ * Secondary OAuth provider shown as a sub-section inside a primary provider modal.
+ * For example, Codex (ChatGPT OAuth) shown inside the OpenAI modal.
+ */
+export interface SecondaryOAuthProviderConfig {
+  /** Provider identifier (e.g., 'openai-codex') */
+  providerId: string;
+  /** Display label (e.g., "ChatGPT (Codex)") */
+  providerLabel: string;
+  /** Description text shown in the sub-section */
+  description: string;
+  /** Current provider configuration for the secondary provider */
+  config: LLMProviderConfig;
+  /** OAuth configuration for the secondary provider's connect button */
+  oauthConfig: OAuthModalConfig;
+  /** Callback when secondary provider configuration changes */
+  onConfigChange: (config: LLMProviderConfig) => void;
 }
 
 /**

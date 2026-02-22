@@ -25,7 +25,7 @@ export class OpenRouterOAuthProvider implements IOAuthProvider {
     displayName: 'OpenRouter',
     authUrl: AUTH_URL,
     tokenUrl: TOKEN_URL,
-    preferredPort: 3000,
+    preferredPort: 3456,
     callbackPath: '/callback',
     scopes: [],
     tokenType: 'permanent-key',
