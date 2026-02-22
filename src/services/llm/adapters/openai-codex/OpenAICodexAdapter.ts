@@ -304,6 +304,15 @@ export class OpenAICodexAdapter extends BaseAdapter {
           );
         }
 
+        // Rate limit — throw specific code so StreamingOrchestrator can fall back
+        if (response.status === 429) {
+          throw new LLMProviderError(
+            `Codex rate limited (HTTP 429). ${errorBody}`,
+            this.name,
+            'RATE_LIMIT_ERROR'
+          );
+        }
+
         throw new LLMProviderError(
           `Codex API error (HTTP ${response.status}): ${errorBody}`,
           this.name,

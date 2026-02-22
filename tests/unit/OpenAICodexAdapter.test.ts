@@ -492,6 +492,25 @@ describe('OpenAICodexAdapter', () => {
       }).rejects.toThrow('authentication failed');
     });
 
+    it('should throw RATE_LIMIT_ERROR on 429', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 429,
+        text: async () => 'Rate limit exceeded',
+      });
+
+      try {
+        for await (const _ of adapter.generateStreamAsync('test')) { /* no-op */ }
+        fail('Expected error to be thrown');
+      } catch (error: any) {
+        expect(error.name).toBe('LLMProviderError');
+        expect(error.code).toBe('RATE_LIMIT_ERROR');
+        expect(error.provider).toBe('openai-codex');
+        expect(error.message).toContain('rate limited');
+        expect(error.message).toContain('429');
+      }
+    });
+
     it('should throw HTTP_ERROR on other status codes', async () => {
       mockFetch.mockResolvedValueOnce({
         ok: false,

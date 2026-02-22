@@ -12,7 +12,8 @@
 import { IToolExecutor } from '../adapters/shared/ToolExecutionUtils';
 import { LLMProviderSettings } from '../../../types';
 import { IAdapterRegistry } from './AdapterRegistry';
-import { TokenUsage } from '../adapters/types';
+import { TokenUsage, LLMProviderError } from '../adapters/types';
+import { Notice } from 'obsidian';
 import { ToolCall as ChatToolCall } from '../../../types/chat/ChatTypes';
 import {
   ProviderMessageBuilder,
@@ -90,81 +91,177 @@ export class StreamingOrchestrator {
       const isGoogleModel = provider === 'google';
       const promptToPass = isGoogleModel ? '' : userPrompt;
 
-      for await (const chunk of adapter.generateStreamAsync(promptToPass, generateOptions)) {
-        // Track usage from chunks
-        if (chunk.usage) {
-          finalUsage = chunk.usage;
-        }
+      // Determine the active adapter and provider for streaming.
+      // These may be swapped to a fallback on Codex rate limit (429).
+      let activeAdapter = adapter;
+      let activeProvider = provider;
 
-        // Handle text content streaming
-        if (chunk.content) {
-          fullContent += chunk.content;
-
-          yield {
-            chunk: chunk.content,
-            complete: false,
-            content: fullContent,
-            toolCalls: undefined
-          };
-        }
-
-        // Handle reasoning/thinking content (Claude, GPT-5, Gemini)
-        if (chunk.reasoning) {
-          yield {
-            chunk: '',
-            complete: false,
-            content: fullContent,
-            toolCalls: undefined,
-            reasoning: chunk.reasoning,
-            reasoningComplete: chunk.reasoningComplete
-          };
-        }
-
-        // Handle dynamic tool call detection
-        if (chunk.toolCalls) {
-          const chatToolCalls: ChatToolCall[] = chunk.toolCalls.map(tc => ({
-            ...tc,
-            type: tc.type || 'function',
-            function: tc.function || { name: '', arguments: '{}' }
-          }));
-
-          // ALWAYS yield tool calls for progressive UI display
-          yield {
-            chunk: '',
-            complete: false,
-            content: fullContent,
-            toolCalls: chatToolCalls,
-            toolCallsReady: chunk.complete || false
-          };
-
-          // Only STORE tool calls for execution when streaming is COMPLETE
-          if (chunk.complete) {
-            detectedToolCalls = chatToolCalls;
+      try {
+        for await (const chunk of activeAdapter.generateStreamAsync(promptToPass, generateOptions)) {
+          // Track usage from chunks
+          if (chunk.usage) {
+            finalUsage = chunk.usage;
           }
-        }
 
-        if (chunk.complete) {
-          // Store response ID for future continuations (OpenAI uses Responses API)
-          const rawResponseId = chunk.metadata?.responseId;
-          if (provider === 'openai' && rawResponseId && typeof rawResponseId === 'string') {
-            const responseId = rawResponseId;
+          // Handle text content streaming
+          if (chunk.content) {
+            fullContent += chunk.content;
 
-            // Only capture if we don't already have one (from options or memory)
-            const existingId = options?.responsesApiId ||
-              (options?.conversationId ? this.conversationResponseIds.get(options.conversationId) : undefined);
+            yield {
+              chunk: chunk.content,
+              complete: false,
+              content: fullContent,
+              toolCalls: undefined
+            };
+          }
 
-            if (!existingId) {
-              // Store in memory for this session
-              if (options?.conversationId) {
-                this.conversationResponseIds.set(options.conversationId, responseId);
-              }
-              // Notify caller to persist to conversation metadata
-              if (options?.onResponsesApiId) {
-                options.onResponsesApiId(responseId);
-              }
+          // Handle reasoning/thinking content (Claude, GPT-5, Gemini)
+          if (chunk.reasoning) {
+            yield {
+              chunk: '',
+              complete: false,
+              content: fullContent,
+              toolCalls: undefined,
+              reasoning: chunk.reasoning,
+              reasoningComplete: chunk.reasoningComplete
+            };
+          }
+
+          // Handle dynamic tool call detection
+          if (chunk.toolCalls) {
+            const chatToolCalls: ChatToolCall[] = chunk.toolCalls.map(tc => ({
+              ...tc,
+              type: tc.type || 'function',
+              function: tc.function || { name: '', arguments: '{}' }
+            }));
+
+            // ALWAYS yield tool calls for progressive UI display
+            yield {
+              chunk: '',
+              complete: false,
+              content: fullContent,
+              toolCalls: chatToolCalls,
+              toolCallsReady: chunk.complete || false
+            };
+
+            // Only STORE tool calls for execution when streaming is COMPLETE
+            if (chunk.complete) {
+              detectedToolCalls = chatToolCalls;
             }
           }
-          break;
+
+          if (chunk.complete) {
+            // Store response ID for future continuations (OpenAI uses Responses API)
+            const rawResponseId = chunk.metadata?.responseId;
+            if (activeProvider === 'openai' && rawResponseId && typeof rawResponseId === 'string') {
+              const responseId = rawResponseId;
+
+              // Only capture if we don't already have one (from options or memory)
+              const existingId = options?.responsesApiId ||
+                (options?.conversationId ? this.conversationResponseIds.get(options.conversationId) : undefined);
+
+              if (!existingId) {
+                // Store in memory for this session
+                if (options?.conversationId) {
+                  this.conversationResponseIds.set(options.conversationId, responseId);
+                }
+                // Notify caller to persist to conversation metadata
+                if (options?.onResponsesApiId) {
+                  options.onResponsesApiId(responseId);
+                }
+              }
+            }
+            break;
+          }
+        }
+      } catch (error) {
+        // On Codex 429, fall back to standard OpenAI adapter if available
+        if (
+          error instanceof LLMProviderError &&
+          error.code === 'RATE_LIMIT_ERROR' &&
+          error.provider === 'openai-codex'
+        ) {
+          const fallbackAdapter = this.adapterRegistry.getAdapter('openai');
+          if (fallbackAdapter) {
+            new Notice('ChatGPT rate limit reached — falling back to OpenAI API');
+            activeAdapter = fallbackAdapter;
+            activeProvider = 'openai';
+
+            // Reset streaming state for retry
+            fullContent = '';
+            detectedToolCalls = [];
+            finalUsage = undefined;
+
+            for await (const chunk of fallbackAdapter.generateStreamAsync(promptToPass, generateOptions)) {
+              if (chunk.usage) {
+                finalUsage = chunk.usage;
+              }
+
+              if (chunk.content) {
+                fullContent += chunk.content;
+                yield {
+                  chunk: chunk.content,
+                  complete: false,
+                  content: fullContent,
+                  toolCalls: undefined
+                };
+              }
+
+              if (chunk.reasoning) {
+                yield {
+                  chunk: '',
+                  complete: false,
+                  content: fullContent,
+                  toolCalls: undefined,
+                  reasoning: chunk.reasoning,
+                  reasoningComplete: chunk.reasoningComplete
+                };
+              }
+
+              if (chunk.toolCalls) {
+                const chatToolCalls: ChatToolCall[] = chunk.toolCalls.map(tc => ({
+                  ...tc,
+                  type: tc.type || 'function',
+                  function: tc.function || { name: '', arguments: '{}' }
+                }));
+
+                yield {
+                  chunk: '',
+                  complete: false,
+                  content: fullContent,
+                  toolCalls: chatToolCalls,
+                  toolCallsReady: chunk.complete || false
+                };
+
+                if (chunk.complete) {
+                  detectedToolCalls = chatToolCalls;
+                }
+              }
+
+              if (chunk.complete) {
+                const rawResponseId = chunk.metadata?.responseId;
+                if (activeProvider === 'openai' && rawResponseId && typeof rawResponseId === 'string') {
+                  const responseId = rawResponseId;
+                  const existingId = options?.responsesApiId ||
+                    (options?.conversationId ? this.conversationResponseIds.get(options.conversationId) : undefined);
+                  if (!existingId) {
+                    if (options?.conversationId) {
+                      this.conversationResponseIds.set(options.conversationId, responseId);
+                    }
+                    if (options?.onResponsesApiId) {
+                      options.onResponsesApiId(responseId);
+                    }
+                  }
+                }
+                break;
+              }
+            }
+          } else {
+            // No fallback available — re-throw original error
+            throw error;
+          }
+        } else {
+          throw error;
         }
       }
 
@@ -182,8 +279,8 @@ export class StreamingOrchestrator {
 
       // Tool calls detected - delegate to ToolContinuationService
       yield* this.toolContinuation.executeToolsAndContinue(
-        adapter,
-        provider,
+        activeAdapter,
+        activeProvider,
         detectedToolCalls,
         previousMessages,
         userPrompt,
