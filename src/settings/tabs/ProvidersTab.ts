@@ -190,13 +190,7 @@ export class ProvidersTab {
             this.providerConfigs['openai-codex'] = {
                 ...this.providerConfigs['openai-codex'],
                 oauthConfig: {
-                    providerLabel: 'ChatGPT (Experimental)',
-                    experimental: true,
-                    experimentalWarning:
-                        'This connects to OpenAI via their ChatGPT OAuth flow. ' +
-                        'This is an experimental feature that uses an undocumented API. ' +
-                        'It may stop working at any time if OpenAI changes their authentication. ' +
-                        'Your ChatGPT account credentials are never stored by this plugin.',
+                    providerLabel: 'ChatGPT',
                     startFlow: (params) => this.startOAuthFlow('openai-codex', params),
                 },
             };
@@ -385,7 +379,7 @@ export class ProvidersTab {
                 secondaryOAuthProvider = {
                     providerId: 'openai-codex',
                     providerLabel: 'ChatGPT (Codex)',
-                    description: 'Connect your ChatGPT account to use GPT-4o via OAuth. This is an experimental feature that uses an undocumented API.',
+                    description: 'Connect your ChatGPT Plus/Pro account to use GPT-5 models via OAuth.',
                     config: { ...codexConfig },
                     oauthConfig: codexDisplay.oauthConfig,
                     onConfigChange: async (updatedCodexConfig: LLMProviderConfig) => {
