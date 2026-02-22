@@ -64,7 +64,11 @@ export class MCPServer implements IMCPServer {
         this.agentRegistry = new AgentRegistry();
         this.httpTransportManager = new HttpTransportManager(this.server, 3000, 'localhost');
         this.stdioTransportManager = new StdioTransportManager(this.server);
-        this.ipcTransportManager = new IPCTransportManager(this.configuration, this.stdioTransportManager);
+        this.ipcTransportManager = new IPCTransportManager(
+            this.configuration,
+            this.stdioTransportManager,
+            () => this.createPerConnectionServer()
+        );
         this.executionManager = new AgentExecutionManager(this.agentRegistry, sessionContextManager);
 
         // Initialize request routing
@@ -102,6 +106,27 @@ export class MCPServer implements IMCPServer {
             logger.systemError(error as Error, 'MCP SDK Server Creation');
             throw error;
         }
+    }
+
+    /**
+     * Create a fully-configured MCPSDKServer for a single IPC connection.
+     *
+     * Each IPC socket gets its own Protocol instance so multiple clients
+     * (Claude Desktop, Cursor, etc.) can connect simultaneously without
+     * the "Already connected to a transport" conflict.
+     */
+    createPerConnectionServer(): MCPSDKServer {
+        const server = new MCPSDKServer(
+            this.configuration.getServerInfo(),
+            this.configuration.getServerOptions()
+        );
+        const handlers = new RequestHandlerFactory(
+            server,
+            this.requestRouter,
+            this.onToolCall
+        );
+        handlers.initializeHandlers();
+        return server;
     }
 
     /**

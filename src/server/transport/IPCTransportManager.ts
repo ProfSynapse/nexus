@@ -18,10 +18,13 @@ import { logger } from '../../utils/logger';
 export class IPCTransportManager {
     private ipcServer: NetServer | null = null;
     private isRunning: boolean = false;
+    /** Per-connection MCPSDKServer instances for multi-client support. */
+    private activeConnections: Set<MCPSDKServer> = new Set();
 
     constructor(
         private configuration: ServerConfiguration,
-        private stdioTransportManager: StdioTransportManager
+        private stdioTransportManager: StdioTransportManager,
+        private serverFactory?: () => MCPSDKServer
     ) {}
 
     /**
@@ -55,20 +58,70 @@ export class IPCTransportManager {
     }
 
     /**
-     * Handle new socket connections
+     * Handle new socket connections.
      *
-     * Wires the raw socket's lifecycle events to the MCP transport so that
-     * Protocol._transport is cleared when a client disconnects.  Without this,
-     * a dropped connector permanently wedges the single-transport Protocol and
-     * all subsequent connections are silently black-holed.
+     * When a serverFactory is provided, each IPC socket gets its own
+     * MCPSDKServer (Protocol) instance.  This allows multiple clients
+     * (Claude Desktop, Cursor, etc.) to be connected simultaneously
+     * without "Already connected to a transport" errors.
+     *
+     * Falls back to the shared single-server path via StdioTransportManager
+     * when no factory is available.
      */
     private handleSocketConnection(socket: NodeJS.ReadWriteStream): void {
+        if (this.serverFactory) {
+            this.handleMultiClientConnection(socket);
+        } else {
+            this.handleSingleClientConnection(socket);
+        }
+    }
+
+    /**
+     * Per-connection server path: create a dedicated MCPSDKServer for this
+     * socket so that multiple clients can coexist.
+     */
+    private handleMultiClientConnection(socket: NodeJS.ReadWriteStream): void {
+        try {
+            const server = this.serverFactory!();
+            const transport = new StdioServerTransport(socket, socket);
+
+            const netSocket = socket as Socket;
+            let closed = false;
+            const onSocketGone = () => {
+                if (closed) return;
+                closed = true;
+                logger.systemLog('IPC socket disconnected — closing per-connection server');
+                this.activeConnections.delete(server);
+                server.close().catch((err: Error) => {
+                    logger.systemError(err, 'Per-Connection Server Close');
+                });
+            };
+            netSocket.on('close', onSocketGone);
+            netSocket.on('end', onSocketGone);
+
+            server.connect(transport)
+                .then(() => {
+                    this.activeConnections.add(server);
+                    logger.systemLog(`IPC socket connected successfully (${this.activeConnections.size} active)`);
+                })
+                .catch(error => {
+                    logger.systemError(error as Error, 'IPC Socket Connection');
+                    if (!netSocket.destroyed) netSocket.destroy();
+                });
+        } catch (error) {
+            logger.systemError(error as Error, 'IPC Socket Handling');
+            const netSocket = socket as Socket;
+            if (!netSocket.destroyed) netSocket.destroy();
+        }
+    }
+
+    /**
+     * Legacy single-server path via StdioTransportManager (kept as fallback).
+     */
+    private handleSingleClientConnection(socket: NodeJS.ReadWriteStream): void {
         try {
             const transport = this.stdioTransportManager.createSocketTransport(socket, socket);
 
-            // The underlying socket emits 'close'/'end' when the connector
-            // process dies — forward that into transport.close() so the SDK's
-            // Protocol._onclose() fires and resets _transport to undefined.
             const netSocket = socket as Socket;
             let closed = false;
             const onSocketGone = () => {
@@ -88,13 +141,10 @@ export class IPCTransportManager {
                 })
                 .catch(error => {
                     logger.systemError(error as Error, 'IPC Socket Connection');
-                    // server.connect() rejected (e.g. "Already connected to a
-                    // transport") — destroy the raw socket so we don't leak FDs.
                     if (!netSocket.destroyed) netSocket.destroy();
                 });
         } catch (error) {
             logger.systemError(error as Error, 'IPC Socket Handling');
-            // Destroy on synchronous failure too
             const netSocket = socket as Socket;
             if (!netSocket.destroyed) netSocket.destroy();
         }
@@ -182,7 +232,7 @@ export class IPCTransportManager {
     }
 
     /**
-     * Stop the IPC transport server
+     * Stop the IPC transport server and close all active connections
      */
     async stopTransport(): Promise<void> {
         if (!this.ipcServer) {
@@ -190,12 +240,21 @@ export class IPCTransportManager {
         }
 
         try {
+            // Close all per-connection servers
+            const closePromises = Array.from(this.activeConnections).map(server =>
+                server.close().catch((err: Error) => {
+                    logger.systemError(err, 'Per-Connection Server Close on Stop');
+                })
+            );
+            this.activeConnections.clear();
+            await Promise.all(closePromises);
+
             this.ipcServer.close();
             this.ipcServer = null;
             this.isRunning = false;
-            
+
             await this.cleanupSocket();
-            
+
             logger.systemLog('IPC transport stopped successfully');
         } catch (error) {
             logger.systemError(error as Error, 'IPC Transport Stop');
