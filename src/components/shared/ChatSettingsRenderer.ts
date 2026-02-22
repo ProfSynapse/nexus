@@ -132,6 +132,9 @@ export class ChatSettingsRenderer {
   private agentEffortSection?: HTMLElement;
   private contextNotesListEl?: HTMLElement;
   private settingsEventRef?: EventRef;
+  // Maps dropdown option value -> actual { provider, modelId } for merged model lists
+  private modelOptionMap: Map<string, { provider: string; modelId: string }> = new Map();
+  private agentModelOptionMap: Map<string, { provider: string; modelId: string }> = new Map();
 
   constructor(container: HTMLElement, config: ChatSettingsRendererConfig) {
     this.container = container;
@@ -177,6 +180,8 @@ export class ChatSettingsRenderer {
   private getEnabledProviders(): string[] {
     const llmSettings = this.config.llmProviderSettings;
     return Object.keys(llmSettings.providers).filter(id => {
+      // Codex models are merged into the OpenAI provider display
+      if (id === 'openai-codex') return false;
       const config = llmSettings.providers[id];
       if (!config?.enabled) return false;
       if (!isProviderCompatible(id)) return false;
@@ -185,6 +190,11 @@ export class ChatSettingsRenderer {
       // Local providers store the server URL in apiKey
       return !!config.apiKey;
     });
+  }
+
+  private isCodexConnected(): boolean {
+    const codexConfig = this.config.llmProviderSettings.providers['openai-codex'];
+    return !!(codexConfig?.oauth?.connected && codexConfig?.apiKey);
   }
 
   // ========== MODEL SECTION ==========
@@ -199,10 +209,12 @@ export class ChatSettingsRenderer {
       .setName('Provider')
       .addDropdown(dropdown => {
         const providers = this.getEnabledProviders();
+        // openai-codex is displayed under openai in the dropdown
+        const displayProvider = this.settings.provider === 'openai-codex' ? 'openai' : this.settings.provider;
 
         // If the currently-selected provider isn't usable on this platform (e.g. desktop-only
         // providers on mobile), fall back to the first available option.
-        if (providers.length > 0 && !providers.includes(this.settings.provider)) {
+        if (providers.length > 0 && !providers.includes(displayProvider)) {
           const nextProvider = providers[0];
           this.settings.provider = nextProvider;
           this.settings.model = '';
@@ -223,7 +235,7 @@ export class ChatSettingsRenderer {
           });
         }
 
-        dropdown.setValue(this.settings.provider);
+        dropdown.setValue(displayProvider);
         dropdown.onChange(async (value) => {
           this.settings.provider = value;
           this.settings.model = await this.getDefaultModelForProvider(value);
@@ -234,8 +246,10 @@ export class ChatSettingsRenderer {
 
     // Model
     const providerId = this.settings.provider;
+    // For display purposes, openai-codex models appear under openai
+    const modelProviderId = providerId === 'openai-codex' ? 'openai' : providerId;
 
-    if (providerId === 'ollama') {
+    if (modelProviderId === 'ollama') {
       new Setting(content)
         .setName('Model')
         .addText(text => text
@@ -246,33 +260,52 @@ export class ChatSettingsRenderer {
       new Setting(content)
         .setName('Model')
         .addDropdown(async dropdown => {
-          if (!providerId) {
+          if (!modelProviderId) {
             dropdown.addOption('', 'Select a provider first');
             return;
           }
 
           try {
-            const models = await this.providerManager.getModelsForProvider(providerId);
+            this.modelOptionMap.clear();
+            let models = await this.providerManager.getModelsForProvider(modelProviderId);
+
+            // Merge Codex models into OpenAI list when Codex OAuth is connected
+            if (modelProviderId === 'openai' && this.isCodexConnected()) {
+              const codexModels = await this.providerManager.getModelsForProvider('openai-codex');
+              const openaiModelIds = new Set(models.map(m => m.id));
+              for (const cm of codexModels) {
+                // Skip duplicates (same model ID available in both providers)
+                if (!openaiModelIds.has(cm.id)) {
+                  models = [...models, { ...cm, name: `${cm.name} (ChatGPT)` }];
+                }
+              }
+            }
 
             if (models.length === 0) {
               dropdown.addOption('', 'No models available');
             } else {
               models.forEach(model => {
-                dropdown.addOption(model.id, model.name);
+                const optionKey = model.id;
+                this.modelOptionMap.set(optionKey, { provider: model.provider, modelId: model.id });
+                dropdown.addOption(optionKey, model.name);
               });
 
               const exists = models.some(m => m.id === this.settings.model);
               if (exists) {
                 dropdown.setValue(this.settings.model);
               } else if (models.length > 0) {
+                const firstEntry = this.modelOptionMap.get(models[0].id);
                 this.settings.model = models[0].id;
+                if (firstEntry) this.settings.provider = firstEntry.provider;
                 dropdown.setValue(this.settings.model);
                 this.notifyChange();
               }
             }
 
             dropdown.onChange((value) => {
-              this.settings.model = value;
+              const entry = this.modelOptionMap.get(value);
+              this.settings.model = entry?.modelId ?? value;
+              this.settings.provider = entry?.provider ?? modelProviderId;
               this.notifyChange();
               // Re-render to update reasoning visibility
               this.render();
@@ -351,13 +384,14 @@ export class ChatSettingsRenderer {
 
     // Get only API-based providers (exclude local ones)
     const apiProviders = this.getEnabledProviders().filter(id => !LOCAL_PROVIDERS.includes(id));
+    const agentDisplayProvider = this.settings.agentProvider === 'openai-codex' ? 'openai' : this.settings.agentProvider;
 
     // Provider dropdown
     new Setting(content)
       .setName('Provider')
       .addDropdown(dropdown => {
         // If the currently-selected agent provider isn't available, fall back to first API provider
-        if (apiProviders.length > 0 && this.settings.agentProvider && !apiProviders.includes(this.settings.agentProvider)) {
+        if (apiProviders.length > 0 && agentDisplayProvider && !apiProviders.includes(agentDisplayProvider)) {
           const nextProvider = apiProviders[0];
           this.settings.agentProvider = nextProvider;
           this.settings.agentModel = '';
@@ -377,7 +411,7 @@ export class ChatSettingsRenderer {
           });
         }
 
-        dropdown.setValue(this.settings.agentProvider || '');
+        dropdown.setValue(agentDisplayProvider || '');
         dropdown.onChange(async (value) => {
           this.settings.agentProvider = value === '' ? undefined : value;
           this.settings.agentModel = value ? await this.getDefaultModelForProvider(value) : undefined;
@@ -388,37 +422,56 @@ export class ChatSettingsRenderer {
 
     // Model dropdown - always shown (mirrors Chat Model pattern)
     const agentProviderId = this.settings.agentProvider;
+    const agentModelProviderId = agentProviderId === 'openai-codex' ? 'openai' : agentProviderId;
 
     new Setting(content)
       .setName('Model')
       .addDropdown(async dropdown => {
-        if (!agentProviderId) {
+        if (!agentModelProviderId) {
           dropdown.addOption('', 'Select a provider first');
           return;
         }
 
         try {
-          const models = await this.providerManager.getModelsForProvider(agentProviderId);
+          this.agentModelOptionMap.clear();
+          let models = await this.providerManager.getModelsForProvider(agentModelProviderId);
+
+          // Merge Codex models into OpenAI list when Codex OAuth is connected
+          if (agentModelProviderId === 'openai' && this.isCodexConnected()) {
+            const codexModels = await this.providerManager.getModelsForProvider('openai-codex');
+            const openaiModelIds = new Set(models.map(m => m.id));
+            for (const cm of codexModels) {
+              if (!openaiModelIds.has(cm.id)) {
+                models = [...models, { ...cm, name: `${cm.name} (ChatGPT)` }];
+              }
+            }
+          }
 
           if (models.length === 0) {
             dropdown.addOption('', 'No models available');
           } else {
             models.forEach(model => {
-              dropdown.addOption(model.id, model.name);
+              const optionKey = model.id;
+              this.agentModelOptionMap.set(optionKey, { provider: model.provider, modelId: model.id });
+              dropdown.addOption(optionKey, model.name);
             });
 
             const exists = models.some(m => m.id === this.settings.agentModel);
             if (exists) {
               dropdown.setValue(this.settings.agentModel!);
             } else if (models.length > 0) {
+              const firstEntry = this.agentModelOptionMap.get(models[0].id);
               this.settings.agentModel = models[0].id;
+              if (firstEntry) this.settings.agentProvider = firstEntry.provider;
               dropdown.setValue(this.settings.agentModel);
               this.notifyChange();
             }
           }
 
           dropdown.onChange((value) => {
-            this.settings.agentModel = value;
+            const entry = this.agentModelOptionMap.get(value);
+            this.settings.agentModel = entry?.modelId ?? value;
+            this.settings.agentProvider = entry?.provider ?? agentModelProviderId;
             this.notifyChange();
             // Re-render to update reasoning visibility
             this.render();
