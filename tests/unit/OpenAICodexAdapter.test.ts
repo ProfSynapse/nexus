@@ -64,6 +64,8 @@ jest.mock('https', () => ({
     let writtenBody = '';
 
     (reqEmitter as any).write = (data: string) => { writtenBody += data; };
+    (reqEmitter as any).setTimeout = jest.fn(); // Mock ClientRequest.setTimeout
+    (reqEmitter as any).destroy = jest.fn();    // Mock ClientRequest.destroy
     (reqEmitter as any).end = () => {
       capturedRequests.push({ options, body: writtenBody });
 
@@ -379,6 +381,38 @@ describe('OpenAICodexAdapter', () => {
       expect(texts).toEqual(['Hello ', 'world!']);
     });
 
+    it('should extract text from delta as plain string (Shape 1a)', async () => {
+      // The Codex Responses API can send delta as a plain string instead of
+      // a nested object. This was the fix for the production text rendering bug.
+      mockCodexSSE([
+        'data: {"type":"response.output_text.delta","delta":"Plain string delta"}\n\n',
+        'data: {"type":"response.output_text.delta","delta":"Second chunk"}\n\n',
+        'data: [DONE]\n\n',
+      ]);
+
+      const texts: string[] = [];
+      for await (const chunk of adapter.generateStreamAsync('test')) {
+        if (chunk.content) texts.push(chunk.content);
+      }
+
+      expect(texts).toEqual(['Plain string delta', 'Second chunk']);
+    });
+
+    it('should extract text from top-level content field (Shape 3)', async () => {
+      // Some Codex event variants place content at the top level
+      mockCodexSSE([
+        'data: {"type":"response.some_event","content":"top level content"}\n\n',
+        'data: [DONE]\n\n',
+      ]);
+
+      const texts: string[] = [];
+      for await (const chunk of adapter.generateStreamAsync('test')) {
+        if (chunk.content) texts.push(chunk.content);
+      }
+
+      expect(texts).toEqual(['top level content']);
+    });
+
     it('should handle delta.content variant', async () => {
       mockCodexSSE([
         'data: {"type":"response.output_text.delta","delta":{"content":"content text"}}\n\n',
@@ -691,6 +725,13 @@ describe('OpenAICodexAdapter', () => {
           parameters: { type: 'object', properties: { city: { type: 'string' } } },
         },
       ]);
+
+      // tool_choice must be 'auto' so the model actually selects tools
+      expect(body.tool_choice).toBe('auto');
+
+      // instructions should be prepended with tool preamble
+      expect(body.instructions).toContain('tool access');
+      expect(body.instructions).toContain('Call getTools first');
     });
 
     it('should pass through tools already in Responses API format', async () => {
@@ -801,6 +842,105 @@ describe('OpenAICodexAdapter', () => {
 
       const finalChunk = chunks[chunks.length - 1];
       expect(finalChunk.toolCalls![0].id).toBe('item_123');
+    });
+  });
+
+  describe('network and stream errors', () => {
+    it('should propagate error when https.request emits error event', async () => {
+      // Override the mock to emit an error on the request object instead of
+      // calling the response callback
+      const https = require('https');
+      (https.request as jest.Mock).mockImplementationOnce(
+        (_options: any, _callback: (res: any) => void) => {
+          const reqEmitter = new EventEmitter();
+          (reqEmitter as any).write = () => {};
+          (reqEmitter as any).setTimeout = jest.fn();
+          (reqEmitter as any).destroy = jest.fn();
+          (reqEmitter as any).end = () => {
+            // Simulate a network-level failure (DNS, connection refused, etc.)
+            setTimeout(() => {
+              reqEmitter.emit('error', new Error('connect ECONNREFUSED 127.0.0.1:443'));
+            }, 0);
+          };
+          return reqEmitter;
+        }
+      );
+
+      await expect(async () => {
+        for await (const _ of adapter.generateStreamAsync('test')) { /* no-op */ }
+      }).rejects.toThrow('ECONNREFUSED');
+    });
+
+    it('should propagate error when SSE stream emits error mid-stream', async () => {
+      // Override the mock to emit data then an error on the response stream
+      const https = require('https');
+      (https.request as jest.Mock).mockImplementationOnce(
+        (_options: any, callback: (res: any) => void) => {
+          const reqEmitter = new EventEmitter();
+          let writtenBody = '';
+          (reqEmitter as any).write = (data: string) => { writtenBody += data; };
+          (reqEmitter as any).setTimeout = jest.fn();
+          (reqEmitter as any).destroy = jest.fn();
+          (reqEmitter as any).end = () => {
+            capturedRequests.push({ options: _options, body: writtenBody });
+
+            const resEmitter = new EventEmitter();
+            (resEmitter as any).statusCode = 200;
+            callback(resEmitter);
+
+            // Emit one good chunk, then an error
+            setTimeout(() => {
+              resEmitter.emit('data', Buffer.from(
+                'data: {"type":"response.output_text.delta","delta":{"text":"partial"}}\n\n'
+              ));
+              resEmitter.emit('error', new Error('socket hang up'));
+            }, 0);
+          };
+          return reqEmitter;
+        }
+      );
+
+      await expect(async () => {
+        for await (const _ of adapter.generateStreamAsync('test')) { /* no-op */ }
+      }).rejects.toThrow('socket hang up');
+    });
+
+    it('should emit fallback completion when stream ends without [DONE]', async () => {
+      // Stream sends a delta then ends abruptly — no [DONE] or response.completed
+      const https = require('https');
+      (https.request as jest.Mock).mockImplementationOnce(
+        (_options: any, callback: (res: any) => void) => {
+          const reqEmitter = new EventEmitter();
+          let writtenBody = '';
+          (reqEmitter as any).write = (data: string) => { writtenBody += data; };
+          (reqEmitter as any).setTimeout = jest.fn();
+          (reqEmitter as any).destroy = jest.fn();
+          (reqEmitter as any).end = () => {
+            capturedRequests.push({ options: _options, body: writtenBody });
+
+            const resEmitter = new EventEmitter();
+            (resEmitter as any).statusCode = 200;
+            callback(resEmitter);
+
+            setTimeout(() => {
+              resEmitter.emit('data', Buffer.from(
+                'data: {"type":"response.output_text.delta","delta":{"text":"truncated"}}\n\n'
+              ));
+              resEmitter.emit('end');
+            }, 0);
+          };
+          return reqEmitter;
+        }
+      );
+
+      const chunks: Array<{ content: string; complete: boolean }> = [];
+      for await (const chunk of adapter.generateStreamAsync('test')) {
+        chunks.push({ content: chunk.content, complete: chunk.complete });
+      }
+
+      // Should get the text delta plus a fallback completion
+      expect(chunks.some(c => c.content === 'truncated')).toBe(true);
+      expect(chunks[chunks.length - 1].complete).toBe(true);
     });
   });
 

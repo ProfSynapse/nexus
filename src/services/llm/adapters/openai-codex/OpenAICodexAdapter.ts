@@ -47,6 +47,15 @@ const OAUTH_CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann';
 /** Proactive refresh threshold: refresh if token expires within 5 minutes */
 const TOKEN_REFRESH_THRESHOLD_MS = 5 * 60 * 1000;
 
+/** Timeout for token refresh requests (30 seconds) */
+const TOKEN_REFRESH_TIMEOUT_MS = 30_000;
+
+/** Timeout for streaming inference requests (2 minutes) */
+const STREAMING_REQUEST_TIMEOUT_MS = 120_000;
+
+/** Two-tool architecture tool names (must match ToolManager slugs) */
+const TOOL_NAMES = { discover: 'getTools', execute: 'useTools' } as const;
+
 /**
  * OAuth token state managed by the adapter.
  * Mirrors the fields persisted in OAuthState on LLMProviderConfig.oauth.
@@ -113,6 +122,11 @@ export class OpenAICodexAdapter extends BaseAdapter {
   /**
    * Execute the OAuth token refresh against auth.openai.com.
    * Updates internal state and invokes the persistence callback.
+   *
+   * NOTE: This duplicates the refresh logic in OpenAICodexOAuthProvider.refreshToken().
+   * The duplication is intentional — the OAuthProvider uses fetch() (fine for the
+   * initial OAuth UI flow), while the adapter must use Node.js https to bypass
+   * CORS restrictions in Electron's renderer process during inference.
    */
   private async performTokenRefresh(): Promise<void> {
     const body = new URLSearchParams({
@@ -145,6 +159,9 @@ export class OpenAICodexAdapter extends BaseAdapter {
             res.on('end', () => resolve({ statusCode: res.statusCode ?? 0, data: responseData }));
           }
         );
+        req.setTimeout(TOKEN_REFRESH_TIMEOUT_MS, () => {
+          req.destroy(new Error('Token refresh request timed out'));
+        });
         req.on('error', reject);
         req.write(bodyStr);
         req.end();
@@ -159,13 +176,28 @@ export class OpenAICodexAdapter extends BaseAdapter {
       );
     }
 
-    const tokenData = JSON.parse(data);
+    let tokenData: Record<string, unknown>;
+    try {
+      tokenData = JSON.parse(data);
+    } catch {
+      throw new LLMProviderError(
+        `Token refresh returned malformed response: ${data.slice(0, 200)}`,
+        this.name,
+        'AUTHENTICATION_ERROR'
+      );
+    }
+
+    // Validate expires_in — default to 10 days if missing or invalid
+    const rawExpiresIn = tokenData.expires_in;
+    const expiresIn = (typeof rawExpiresIn === 'number' && rawExpiresIn > 0)
+      ? rawExpiresIn
+      : 864000;
 
     // Update internal token state
     this.tokens = {
-      accessToken: tokenData.access_token,
-      refreshToken: tokenData.refresh_token || this.tokens.refreshToken, // Rotation: use new if provided
-      expiresAt: Date.now() + (tokenData.expires_in * 1000),
+      accessToken: tokenData.access_token as string,
+      refreshToken: (tokenData.refresh_token as string) || this.tokens.refreshToken, // Rotation: use new if provided
+      expiresAt: Date.now() + (expiresIn * 1000),
       accountId: this.tokens.accountId // Account ID doesn't change on refresh
     };
 
@@ -318,7 +350,7 @@ export class OpenAICodexAdapter extends BaseAdapter {
         // rather than responding with plain text describing what it would do
         const toolPreamble = 'You are an AI assistant with tool access. '
           + 'Fulfill user requests by calling tools immediately — do NOT describe what you will do. '
-          + 'Call getTools first to discover available tools, then call useTools to execute them.\n\n';
+          + `Call ${TOOL_NAMES.discover} first to discover available tools, then call ${TOOL_NAMES.execute} to execute them.\n\n`;
         requestBody.instructions = toolPreamble + (requestBody.instructions || '');
 
       }
@@ -343,6 +375,9 @@ export class OpenAICodexAdapter extends BaseAdapter {
           },
           (res) => resolve({ statusCode: res.statusCode ?? 0, nodeRes: res })
         );
+        req.setTimeout(STREAMING_REQUEST_TIMEOUT_MS, () => {
+          req.destroy(new Error('Codex streaming request timed out'));
+        });
         req.on('error', reject);
         req.write(bodyStr);
         req.end();

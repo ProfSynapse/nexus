@@ -23,7 +23,7 @@ export const OPENAI_CODEX_MODELS: ModelSpec[] = [
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
-      supportsFunctions: false,
+      supportsFunctions: true,
       supportsStreaming: true,
       supportsThinking: false
     }
@@ -39,7 +39,7 @@ export const OPENAI_CODEX_MODELS: ModelSpec[] = [
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
-      supportsFunctions: false,
+      supportsFunctions: true,
       supportsStreaming: true,
       supportsThinking: false
     }
@@ -55,7 +55,7 @@ export const OPENAI_CODEX_MODELS: ModelSpec[] = [
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
-      supportsFunctions: false,
+      supportsFunctions: true,
       supportsStreaming: true,
       supportsThinking: false
     }
@@ -71,7 +71,7 @@ export const OPENAI_CODEX_MODELS: ModelSpec[] = [
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
-      supportsFunctions: false,
+      supportsFunctions: true,
       supportsStreaming: true,
       supportsThinking: false
     }
@@ -87,7 +87,7 @@ export const OPENAI_CODEX_MODELS: ModelSpec[] = [
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
-      supportsFunctions: false,
+      supportsFunctions: true,
       supportsStreaming: true,
       supportsThinking: false
     }
@@ -103,7 +103,7 @@ export const OPENAI_CODEX_MODELS: ModelSpec[] = [
     capabilities: {
       supportsJSON: true,
       supportsImages: false,
-      supportsFunctions: false,
+      supportsFunctions: true,
       supportsStreaming: true,
       supportsThinking: false
     }
