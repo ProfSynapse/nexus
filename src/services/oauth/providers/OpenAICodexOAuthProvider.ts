@@ -136,6 +136,7 @@ export class OpenAICodexOAuthProvider implements IOAuthProvider {
     scopes: ['openid', 'profile', 'email', 'offline_access'],
     tokenType: 'expiring-token',
     clientId: CLIENT_ID,
+    callbackHostname: 'localhost',
     experimental: true,
     experimentalWarning:
       'This uses an unofficial API that may break without notice. ' +

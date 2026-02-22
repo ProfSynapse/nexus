@@ -212,6 +212,10 @@ export class ProvidersTab {
     ): Promise<{ success: boolean; apiKey?: string; refreshToken?: string; expiresAt?: number; metadata?: Record<string, string>; error?: string }> {
         try {
             const oauthService = OAuthService.getInstance();
+            // Cancel any stuck flow before starting a new one (e.g., user dismissed modal while connecting)
+            if (oauthService.getState() !== 'idle') {
+                oauthService.cancelFlow();
+            }
             const result = await oauthService.startFlow(providerId, params);
             return {
                 success: true,

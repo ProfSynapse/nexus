@@ -40,6 +40,8 @@ export interface OAuthProviderConfig {
   experimental?: boolean;
   /** Warning text displayed in the consent dialog for experimental providers */
   experimentalWarning?: string;
+  /** Override hostname used in the redirect_uri (default: '127.0.0.1'). Server still binds to 127.0.0.1. */
+  callbackHostname?: string;
 }
 
 /**

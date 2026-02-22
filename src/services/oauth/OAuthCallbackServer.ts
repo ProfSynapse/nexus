@@ -87,6 +87,8 @@ export interface CallbackServerOptions {
   expectedState: string;
   /** Timeout in milliseconds before auto-shutdown (default: 300_000 = 5 minutes) */
   timeoutMs?: number;
+  /** Hostname used in the callbackUrl string (default: '127.0.0.1'). Server always binds to 127.0.0.1. */
+  callbackUrlHostname?: string;
 }
 
 /**
@@ -102,6 +104,7 @@ export function startCallbackServer(options: CallbackServerOptions): Promise<Cal
     callbackPath,
     expectedState,
     timeoutMs = 300_000,
+    callbackUrlHostname = '127.0.0.1',
   } = options;
 
   return new Promise<CallbackServerHandle>((resolveStart, rejectStart) => {
@@ -233,7 +236,7 @@ export function startCallbackServer(options: CallbackServerOptions): Promise<Cal
       // Return the handle
       resolveStart({
         port,
-        callbackUrl: `http://127.0.0.1:${port}${callbackPath}`,
+        callbackUrl: `http://${callbackUrlHostname}:${port}${callbackPath}`,
         waitForCallback: () => callbackPromise,
         shutdown,
       });

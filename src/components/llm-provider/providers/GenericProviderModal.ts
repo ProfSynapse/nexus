@@ -16,6 +16,7 @@ import {
 import { LLMValidationService } from '../../../services/llm/validation/ValidationService';
 import { ModelWithProvider } from '../../../services/StaticModelsService';
 import { OAuthConsentModal, OAuthPreAuthModal } from './OAuthModals';
+import { OAuthService } from '../../../services/oauth/OAuthService';
 
 export class GenericProviderModal implements IProviderModal {
   private config: ProviderModalConfig;
@@ -631,6 +632,11 @@ export class GenericProviderModal implements IProviderModal {
     if (this.validationTimeout) {
       clearTimeout(this.validationTimeout);
       this.validationTimeout = null;
+    }
+
+    // Cancel any in-progress OAuth flow so the callback server shuts down
+    if (this.isOAuthConnecting || this.isSecondaryOAuthConnecting) {
+      OAuthService.getInstance().cancelFlow();
     }
 
     this.container = null;

@@ -113,6 +113,7 @@ export class OAuthService {
         port: provider.config.preferredPort,
         callbackPath: provider.config.callbackPath,
         expectedState: state,
+        callbackUrlHostname: provider.config.callbackHostname,
       });
       this.activeServerHandle = serverHandle;
 
