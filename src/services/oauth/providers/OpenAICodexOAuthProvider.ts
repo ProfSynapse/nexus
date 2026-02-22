@@ -2,13 +2,10 @@
  * OpenAICodexOAuthProvider.ts
  * Location: src/services/oauth/providers/OpenAICodexOAuthProvider.ts
  *
- * Experimental OAuth 2.0 PKCE provider for OpenAI Codex (ChatGPT Plus/Pro).
+ * OAuth 2.0 PKCE provider for OpenAI Codex (ChatGPT Plus/Pro).
  * Uses the same client ID and endpoints as Cline, OpenCode, and Roo Code.
  * Tokens are expiring (access_token + refresh_token); the adapter must
  * proactively refresh before each API call.
- *
- * This is marked experimental because it uses an unofficial API that may
- * break without notice. Users must accept a consent dialog before connecting.
  *
  * Used by: OAuthService (registered at startup via main.ts)
  * Reference: docs/preparation/opencode-oauth-source-analysis.md
@@ -128,7 +125,7 @@ function tokenResponseToResult(tokens: TokenResponse): OAuthResult {
 export class OpenAICodexOAuthProvider implements IOAuthProvider {
   readonly config: OAuthProviderConfig = {
     providerId: 'openai-codex',
-    displayName: 'ChatGPT (Experimental)',
+    displayName: 'ChatGPT',
     authUrl: AUTH_ENDPOINT,
     tokenUrl: TOKEN_ENDPOINT,
     preferredPort: 1455,
@@ -137,11 +134,6 @@ export class OpenAICodexOAuthProvider implements IOAuthProvider {
     tokenType: 'expiring-token',
     clientId: CLIENT_ID,
     callbackHostname: 'localhost',
-    experimental: true,
-    experimentalWarning:
-      'This uses an unofficial API that may break without notice. ' +
-      'Uses your ChatGPT Plus/Pro subscription. ' +
-      'OAuth tokens will be stored in plugin settings.',
   };
 
   /**

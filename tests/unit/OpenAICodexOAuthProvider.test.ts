@@ -1,7 +1,7 @@
 /**
  * OpenAICodexOAuthProvider Unit Tests
  *
- * Tests the experimental OpenAI Codex OAuth provider:
+ * Tests the OpenAI Codex OAuth provider:
  * - Static configuration
  * - Authorization URL construction
  * - Token exchange (form-urlencoded)
@@ -62,17 +62,8 @@ describe('OpenAICodexOAuthProvider', () => {
       expect(provider.config.tokenType).toBe('expiring-token');
     });
 
-    it('should be marked experimental', () => {
-      expect(provider.config.experimental).toBe(true);
-    });
-
-    it('should have an experimental warning', () => {
-      expect(provider.config.experimentalWarning).toBeDefined();
-      expect(provider.config.experimentalWarning).toContain('unofficial API');
-    });
-
-    it('should display name "ChatGPT (Experimental)"', () => {
-      expect(provider.config.displayName).toBe('ChatGPT (Experimental)');
+    it('should display name "ChatGPT"', () => {
+      expect(provider.config.displayName).toBe('ChatGPT');
     });
 
     it('should point to correct auth endpoint', () => {
