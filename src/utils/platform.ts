@@ -173,6 +173,7 @@ export const MOBILE_COMPATIBLE_PROVIDERS = [
  * These use official SDK packages that have Node.js dependencies.
  */
 export const DESKTOP_ONLY_PROVIDERS = [
+    'openai-codex',  // Uses OAuth/JWT - desktop only
     'openai',       // Uses openai SDK
     'anthropic',    // Uses @anthropic-ai/sdk
     'google',       // Uses @google/genai

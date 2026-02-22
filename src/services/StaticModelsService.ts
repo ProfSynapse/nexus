@@ -12,6 +12,7 @@ import { GROQ_MODELS } from './llm/adapters/groq/GroqModels';
 import { OPENROUTER_MODELS } from './llm/adapters/openrouter/OpenRouterModels';
 import { REQUESTY_MODELS } from './llm/adapters/requesty/RequestyModels';
 import { PERPLEXITY_MODELS } from './llm/adapters/perplexity/PerplexityModels';
+import { OPENAI_CODEX_MODELS } from './llm/adapters/openai-codex/OpenAICodexModels';
 
 export interface ModelWithProvider {
   provider: string;
@@ -63,7 +64,8 @@ export class StaticModelsService {
       { provider: 'groq', models: GROQ_MODELS },
       { provider: 'openrouter', models: OPENROUTER_MODELS },
       { provider: 'requesty', models: REQUESTY_MODELS },
-      { provider: 'perplexity', models: PERPLEXITY_MODELS }
+      { provider: 'perplexity', models: PERPLEXITY_MODELS },
+      { provider: 'openai-codex', models: OPENAI_CODEX_MODELS }
     ];
 
     providerModels.forEach(({ provider, models }) => {
@@ -110,6 +112,9 @@ export class StaticModelsService {
       case 'perplexity':
         providerModels = PERPLEXITY_MODELS;
         break;
+      case 'openai-codex':
+        providerModels = OPENAI_CODEX_MODELS;
+        break;
       default:
         return [];
     }
@@ -149,7 +154,7 @@ export class StaticModelsService {
    * Get provider information
    */
   getAvailableProviders(): string[] {
-    return ['openai', 'anthropic', 'google', 'mistral', 'groq', 'openrouter', 'requesty', 'perplexity'];
+    return ['openai', 'anthropic', 'google', 'mistral', 'groq', 'openrouter', 'requesty', 'perplexity', 'openai-codex'];
   }
 
   /**

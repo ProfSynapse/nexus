@@ -6800,3 +6800,80 @@ body.is-mobile .chat-loading-overlay {
     overflow-y: hidden;
 }
 
+/* ═══════════════════════════════════════════════════════════════════════
+   OAuth Connect UI
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* Connected banner above API key input */
+.oauth-banner-container {
+    margin-bottom: 4px;
+}
+
+.oauth-connected-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    border-radius: var(--radius-s);
+    background-color: rgba(34, 197, 94, 0.1);
+    border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.oauth-connected-status {
+    color: var(--text-normal);
+    font-size: var(--font-ui-small);
+    font-weight: 500;
+}
+
+.oauth-connected-status::before {
+    content: "\2713 ";
+    color: #22c55e;
+    font-weight: bold;
+}
+
+.oauth-disconnect-btn {
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+    background: none;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s);
+    padding: 2px 8px;
+    cursor: pointer;
+}
+
+.oauth-disconnect-btn:hover {
+    color: var(--text-normal);
+    border-color: var(--text-muted);
+}
+
+/* Connecting state */
+.oauth-connecting {
+    opacity: 0.6;
+    cursor: wait;
+}
+
+/* Consent modal */
+.oauth-consent-modal,
+.oauth-preauth-modal {
+    max-width: 480px;
+}
+
+.oauth-consent-warning {
+    color: var(--text-muted);
+    line-height: 1.5;
+    margin-bottom: 16px;
+}
+
+.oauth-consent-fields,
+.oauth-preauth-fields {
+    margin-bottom: 16px;
+}
+
+.oauth-consent-buttons,
+.oauth-preauth-buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 16px;
+}
+

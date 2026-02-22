@@ -188,6 +188,53 @@ export class ProviderMessageBuilder {
         conversationHistory,
         systemPrompt: generateOptions.systemPrompt
       };
+    } else if (provider === 'openai-codex') {
+      // Codex uses stateless Responses API — no previous_response_id.
+      // Build a full input array: prior messages + user prompt + function_call + function_call_output items.
+      const inputItems: Array<Record<string, unknown>> = [];
+
+      // Add prior conversation messages
+      for (const msg of previousMessages) {
+        if (msg.role === 'system') continue; // system prompt goes in instructions
+        inputItems.push({ role: msg.role, content: msg.content });
+      }
+
+      // Add current user prompt
+      if (userPrompt) {
+        inputItems.push({ role: 'user', content: userPrompt });
+      }
+
+      // Add function_call items (what the model called)
+      for (const tc of toolCalls) {
+        const name = ('name' in tc && tc.name) ? tc.name as string : tc.function?.name || '';
+        const args = tc.function?.arguments || '{}';
+        inputItems.push({
+          type: 'function_call',
+          call_id: tc.id,
+          name,
+          arguments: args
+        });
+      }
+
+      // Add function_call_output items (what the tools returned)
+      for (let i = 0; i < toolResults.length; i++) {
+        const result = toolResults[i];
+        const tc = toolCalls[i];
+        inputItems.push({
+          type: 'function_call_output',
+          call_id: tc?.id || result.id,
+          output: result.success
+            ? JSON.stringify(result.result || {})
+            : JSON.stringify({ error: result.error || 'Tool execution failed' })
+        });
+      }
+
+      return {
+        ...generateOptions,
+        conversationHistory: inputItems,
+        systemPrompt: generateOptions.systemPrompt,
+        tools: generateOptions.tools
+      };
     } else if (provider === 'openai') {
       // OpenAI uses Responses API with function_call_output items + previous_response_id
       // State is reliably tracked on OpenAI's servers

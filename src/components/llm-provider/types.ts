@@ -58,6 +58,53 @@ export interface ProviderModalConfig {
 
   /** Callback when configuration changes (for auto-save) */
   onConfigChange: (config: LLMProviderConfig) => void;
+
+  /** Optional OAuth configuration for providers that support OAuth connect */
+  oauthConfig?: OAuthModalConfig;
+
+  /** Optional secondary OAuth provider shown as a sub-section in the modal */
+  secondaryOAuthProvider?: SecondaryOAuthProviderConfig;
+}
+
+/**
+ * Secondary OAuth provider shown as a sub-section inside a primary provider modal.
+ * For example, Codex (ChatGPT OAuth) shown inside the OpenAI modal.
+ */
+export interface SecondaryOAuthProviderConfig {
+  /** Provider identifier (e.g., 'openai-codex') */
+  providerId: string;
+  /** Display label (e.g., "ChatGPT (Codex)") */
+  providerLabel: string;
+  /** Description text shown in the sub-section */
+  description: string;
+  /** Current provider configuration for the secondary provider */
+  config: LLMProviderConfig;
+  /** OAuth configuration for the secondary provider's connect button */
+  oauthConfig: OAuthModalConfig;
+  /** Callback when secondary provider configuration changes */
+  onConfigChange: (config: LLMProviderConfig) => void;
+}
+
+/**
+ * OAuth configuration for the provider modal connect button
+ */
+export interface OAuthModalConfig {
+  /** Display label (e.g., "OpenRouter", "ChatGPT (Experimental)") */
+  providerLabel: string;
+  /** If true, show a consent dialog before starting the flow */
+  experimental?: boolean;
+  /** Warning text for experimental providers */
+  experimentalWarning?: string;
+  /** Fields to collect before opening the browser (e.g., key_name, credit limit) */
+  preAuthFields?: Array<{
+    key: string;
+    label: string;
+    placeholder?: string;
+    required: boolean;
+    defaultValue?: string;
+  }>;
+  /** Start the OAuth flow with collected params, returns the API key on success */
+  startFlow(params: Record<string, string>): Promise<{ success: boolean; apiKey?: string; refreshToken?: string; expiresAt?: number; metadata?: Record<string, string>; error?: string }>;
 }
 
 /**

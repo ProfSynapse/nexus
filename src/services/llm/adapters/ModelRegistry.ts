@@ -15,6 +15,7 @@ import { MISTRAL_MODELS, MISTRAL_DEFAULT_MODEL } from './mistral/MistralModels';
 import { OPENROUTER_MODELS, OPENROUTER_DEFAULT_MODEL } from './openrouter/OpenRouterModels';
 import { REQUESTY_MODELS, REQUESTY_DEFAULT_MODEL } from './requesty/RequestyModels';
 import { GROQ_MODELS, GROQ_DEFAULT_MODEL } from './groq/GroqModels';
+import { OPENAI_CODEX_MODELS, OPENAI_CODEX_DEFAULT_MODEL } from './openai-codex/OpenAICodexModels';
 import type { LLMProviderSettings } from '../../../types';
 
 // Re-export ModelSpec for convenience
@@ -27,6 +28,7 @@ export type { ModelSpec };
  */
 export const AI_MODELS: Record<string, ModelSpec[]> = {
   openai: OPENAI_MODELS,
+  'openai-codex': OPENAI_CODEX_MODELS,
   google: GOOGLE_MODELS,
   anthropic: ANTHROPIC_MODELS,
   mistral: MISTRAL_MODELS,
@@ -208,6 +210,7 @@ export class ModelRegistry {
  */
 export const DEFAULT_MODELS: Record<string, string> = {
   openai: OPENAI_DEFAULT_MODEL,
+  'openai-codex': OPENAI_CODEX_DEFAULT_MODEL,
   google: GOOGLE_DEFAULT_MODEL,
   anthropic: ANTHROPIC_DEFAULT_MODEL,
   mistral: MISTRAL_DEFAULT_MODEL,

@@ -22,6 +22,7 @@ import { isMobile } from '../../../utils/platform';
 
 // Type imports for TypeScript (don't affect bundling)
 import type { WebLLMAdapter as WebLLMAdapterType } from '../adapters/webllm/WebLLMAdapter';
+import type { CodexOAuthTokens } from '../adapters/openai-codex/OpenAICodexAdapter';
 
 /**
  * Interface for adapter registry operations
@@ -71,6 +72,7 @@ export class AdapterRegistry implements IAdapterRegistry {
   private vault?: Vault;
   private webllmAdapter?: WebLLMAdapterType;
   private initPromise?: Promise<void>;
+  private _onSettingsDirty?: () => void;
 
   constructor(settings: LLMProviderSettings, vault?: Vault) {
     this.settings = settings;
@@ -96,6 +98,14 @@ export class AdapterRegistry implements IAdapterRegistry {
     if (this.initPromise) {
       await this.initPromise;
     }
+  }
+
+  /**
+   * Set a callback invoked when adapter-level changes (e.g. token refresh) dirty the settings.
+   * The callback should persist settings to disk.
+   */
+  setOnSettingsDirty(cb: () => void): void {
+    this._onSettingsDirty = cb;
   }
 
   /**
@@ -188,6 +198,10 @@ export class AdapterRegistry implements IAdapterRegistry {
       return new PerplexityAdapter(config.apiKey);
     });
 
+    // OpenAI Codex (OAuth-based, uses fetch — mobile compatible)
+    // Requires OAuth tokens instead of a traditional API key
+    await this.initializeCodexAdapter(providers['openai-codex']);
+
     // ═══════════════════════════════════════════════════════════════════════════
     // DESKTOP-ONLY PROVIDERS (use Node.js SDKs)
     // Skip on mobile to avoid crashes from SDK Node.js dependencies
@@ -276,6 +290,51 @@ export class AdapterRegistry implements IAdapterRegistry {
         console.error('AdapterRegistry: Failed to create WebLLM adapter:', error);
         this.logError('webllm', error);
       }
+    }
+  }
+
+  /**
+   * Initialize the OpenAI Codex adapter from OAuth state.
+   * Unlike API-key providers, Codex uses OAuth tokens stored in config.oauth.
+   * The adapter handles proactive token refresh and calls back to persist new tokens.
+   */
+  private async initializeCodexAdapter(config: LLMProviderConfig | undefined): Promise<void> {
+    if (!config?.enabled) return;
+
+    const oauth = config.oauth;
+    if (!oauth?.connected || !config.apiKey || !oauth.refreshToken || !oauth.metadata?.accountId) {
+      return; // Not connected via OAuth — skip initialization
+    }
+
+    try {
+      const { OpenAICodexAdapter } = await import('../adapters/openai-codex/OpenAICodexAdapter');
+
+      const tokens: CodexOAuthTokens = {
+        accessToken: config.apiKey, // OAuth access token is stored as apiKey
+        refreshToken: oauth.refreshToken,
+        expiresAt: oauth.expiresAt || 0,
+        accountId: oauth.metadata.accountId
+      };
+
+      // Token refresh callback: updates the settings so refreshed tokens
+      // persist across plugin restarts, then triggers a settings save.
+      const onTokenRefresh = (newTokens: CodexOAuthTokens): void => {
+        // Update the config object in-place (settings reference)
+        config.apiKey = newTokens.accessToken;
+        const oauthState = config.oauth;
+        if (oauthState) {
+          oauthState.refreshToken = newTokens.refreshToken;
+          oauthState.expiresAt = newTokens.expiresAt;
+        }
+        // Persist to disk immediately so rotated tokens survive a crash
+        this._onSettingsDirty?.();
+      };
+
+      const adapter = new OpenAICodexAdapter(tokens, onTokenRefresh);
+      this.adapters.set('openai-codex', adapter);
+    } catch (error) {
+      console.error('AdapterRegistry: Failed to initialize OpenAI Codex adapter:', error);
+      this.logError('openai-codex', error);
     }
   }
 

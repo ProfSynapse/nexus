@@ -19,6 +19,8 @@ import { Settings } from '../../settings';
 import { Card, CardConfig } from '../../components/Card';
 import { LLMSettingsNotifier } from '../../services/llm/LLMSettingsNotifier';
 import { isDesktop, supportsLocalLLM, MOBILE_COMPATIBLE_PROVIDERS, isProviderComingSoon } from '../../utils/platform';
+import type { OAuthModalConfig, SecondaryOAuthProviderConfig } from '../../components/llm-provider/types';
+import { OAuthService } from '../../services/oauth/OAuthService';
 
 /**
  * Provider display configuration
@@ -28,6 +30,7 @@ interface ProviderDisplayConfig {
     keyFormat: string;
     signupUrl: string;
     category: 'local' | 'cloud';
+    oauthConfig?: OAuthModalConfig;
 }
 
 export interface ProvidersTabServices {
@@ -115,6 +118,12 @@ export class ProvidersTab {
             keyFormat: 'pplx-...',
             signupUrl: 'https://www.perplexity.ai/settings/api',
             category: 'cloud'
+        },
+        'openai-codex': {
+            name: 'ChatGPT (Codex)',
+            keyFormat: 'OAuth sign-in required',
+            signupUrl: 'https://chatgpt.com',
+            category: 'cloud'
         }
     };
 
@@ -137,7 +146,84 @@ export class ProvidersTab {
             }, this.services.app.vault);
         }
 
+        // Attach OAuth configs to providers that support it (desktop only)
+        if (isDesktop()) {
+            this.attachOAuthConfigs();
+        }
+
         this.render();
+    }
+
+    /**
+     * Attach OAuth configurations to providers that support OAuth connect.
+     * Only called on desktop where the OAuth callback server can run.
+     */
+    private attachOAuthConfigs(): void {
+        const oauthService = OAuthService.getInstance();
+
+        // OpenRouter OAuth
+        if (oauthService.hasProvider('openrouter')) {
+            this.providerConfigs.openrouter.oauthConfig = {
+                providerLabel: 'OpenRouter',
+                preAuthFields: [
+                    {
+                        key: 'key_name',
+                        label: 'Key label',
+                        defaultValue: 'Claudesidian MCP',
+                        required: false,
+                    },
+                    {
+                        key: 'limit',
+                        label: 'Credit limit (optional)',
+                        placeholder: 'Leave blank for unlimited',
+                        required: false,
+                    },
+                ],
+                startFlow: (params) => this.startOAuthFlow('openrouter', params),
+            };
+        }
+
+        // OpenAI Codex OAuth (experimental) — attaches to 'openai-codex' provider card,
+        // NOT 'openai', so tokens are stored under providers['openai-codex'] where
+        // AdapterRegistry.initializeCodexAdapter() reads them.
+        if (oauthService.hasProvider('openai-codex')) {
+            this.providerConfigs['openai-codex'] = {
+                ...this.providerConfigs['openai-codex'],
+                oauthConfig: {
+                    providerLabel: 'ChatGPT',
+                    startFlow: (params) => this.startOAuthFlow('openai-codex', params),
+                },
+            };
+        }
+    }
+
+    /**
+     * Start an OAuth flow for a given provider via OAuthService
+     */
+    private async startOAuthFlow(
+        providerId: string,
+        params: Record<string, string>,
+    ): Promise<{ success: boolean; apiKey?: string; refreshToken?: string; expiresAt?: number; metadata?: Record<string, string>; error?: string }> {
+        try {
+            const oauthService = OAuthService.getInstance();
+            // Cancel any stuck flow before starting a new one (e.g., user dismissed modal while connecting)
+            if (oauthService.getState() !== 'idle') {
+                oauthService.cancelFlow();
+            }
+            const result = await oauthService.startFlow(providerId, params);
+            return {
+                success: true,
+                apiKey: result.apiKey,
+                refreshToken: result.refreshToken,
+                expiresAt: result.expiresAt,
+                metadata: result.metadata,
+            };
+        } catch (error) {
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : 'OAuth flow failed',
+            };
+        }
     }
 
     /**
@@ -281,12 +367,37 @@ export class ProvidersTab {
     ): void {
         const settings = this.getSettings();
 
+        // Build secondary OAuth provider config for OpenAI (Codex sub-section)
+        let secondaryOAuthProvider: SecondaryOAuthProviderConfig | undefined;
+        if (providerId === 'openai') {
+            const codexDisplay = this.providerConfigs['openai-codex'];
+            if (codexDisplay?.oauthConfig) {
+                const codexConfig = settings.providers['openai-codex'] || {
+                    apiKey: '',
+                    enabled: false,
+                };
+                secondaryOAuthProvider = {
+                    providerId: 'openai-codex',
+                    providerLabel: 'ChatGPT (Codex)',
+                    description: 'Connect your ChatGPT Plus/Pro account to use GPT-5 models via OAuth.',
+                    config: { ...codexConfig },
+                    oauthConfig: codexDisplay.oauthConfig,
+                    onConfigChange: async (updatedCodexConfig: LLMProviderConfig) => {
+                        settings.providers['openai-codex'] = updatedCodexConfig;
+                        await this.saveSettings();
+                    },
+                };
+            }
+        }
+
         const modalConfig: LLMProviderModalConfig = {
             providerId,
             providerName: displayConfig.name,
             keyFormat: displayConfig.keyFormat,
             signupUrl: displayConfig.signupUrl,
             config: { ...providerConfig },
+            oauthConfig: displayConfig.oauthConfig,
+            secondaryOAuthProvider,
             onSave: async (updatedConfig: LLMProviderConfig) => {
                 settings.providers[providerId] = updatedConfig;
 

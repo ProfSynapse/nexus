@@ -25,6 +25,13 @@ module.exports = {
     'src/services/embeddings/ConversationIndexer.ts',
     'src/services/embeddings/TraceIndexer.ts',
     'src/agents/searchManager/services/ConversationSearchStrategy.ts',
+    // OAuth service layer + providers + adapter
+    'src/services/oauth/PKCEUtils.ts',
+    'src/services/oauth/OAuthCallbackServer.ts',
+    'src/services/oauth/OAuthService.ts',
+    'src/services/oauth/providers/OpenRouterOAuthProvider.ts',
+    'src/services/oauth/providers/OpenAICodexOAuthProvider.ts',
+    'src/services/llm/adapters/openai-codex/OpenAICodexAdapter.ts',
     '!src/**/*.d.ts'
   ],
   coverageThreshold: {
@@ -126,6 +133,47 @@ module.exports = {
       functions: 85,
       lines: 85,
       statements: 85
+    },
+    // OAuth service layer: pure crypto utils (high bar)
+    './src/services/oauth/PKCEUtils.ts': {
+      branches: 80,
+      functions: 100,
+      lines: 100,
+      statements: 100
+    },
+    // OAuth callback server: integration-style tests cover all paths
+    './src/services/oauth/OAuthCallbackServer.ts': {
+      branches: 75,
+      functions: 80,
+      lines: 80,
+      statements: 80
+    },
+    // OAuth service: orchestration with mocked dependencies
+    './src/services/oauth/OAuthService.ts': {
+      branches: 75,
+      functions: 80,
+      lines: 80,
+      statements: 80
+    },
+    // OAuth providers: API integration with mocked fetch
+    './src/services/oauth/providers/OpenRouterOAuthProvider.ts': {
+      branches: 75,
+      functions: 80,
+      lines: 80,
+      statements: 80
+    },
+    './src/services/oauth/providers/OpenAICodexOAuthProvider.ts': {
+      branches: 75,
+      functions: 80,
+      lines: 80,
+      statements: 80
+    },
+    // Codex adapter: SSE parsing + token management with mocked fetch
+    './src/services/llm/adapters/openai-codex/OpenAICodexAdapter.ts': {
+      branches: 75,
+      functions: 80,
+      lines: 80,
+      statements: 80
     }
   },
   coverageDirectory: 'coverage',
