@@ -68,7 +68,7 @@ export class IPCTransportManager {
      * Falls back to the shared single-server path via StdioTransportManager
      * when no factory is available.
      */
-    private handleSocketConnection(socket: NodeJS.ReadWriteStream): void {
+    private handleSocketConnection(socket: Socket): void {
         if (this.serverFactory) {
             this.handleMultiClientConnection(socket);
         } else {
@@ -80,12 +80,12 @@ export class IPCTransportManager {
      * Per-connection server path: create a dedicated MCPSDKServer for this
      * socket so that multiple clients can coexist.
      */
-    private handleMultiClientConnection(socket: NodeJS.ReadWriteStream): void {
+    private handleMultiClientConnection(socket: Socket): void {
         try {
             const server = this.serverFactory!();
             const transport = new StdioServerTransport(socket, socket);
 
-            const netSocket = socket as Socket;
+            const netSocket = socket;
             let closed = false;
             const onSocketGone = () => {
                 if (closed) return;
@@ -110,19 +110,18 @@ export class IPCTransportManager {
                 });
         } catch (error) {
             logger.systemError(error as Error, 'IPC Socket Handling');
-            const netSocket = socket as Socket;
-            if (!netSocket.destroyed) netSocket.destroy();
+            if (!socket.destroyed) socket.destroy();
         }
     }
 
     /**
      * Legacy single-server path via StdioTransportManager (kept as fallback).
      */
-    private handleSingleClientConnection(socket: NodeJS.ReadWriteStream): void {
+    private handleSingleClientConnection(socket: Socket): void {
         try {
             const transport = this.stdioTransportManager.createSocketTransport(socket, socket);
 
-            const netSocket = socket as Socket;
+            const netSocket = socket;
             let closed = false;
             const onSocketGone = () => {
                 if (closed) return;
@@ -145,8 +144,7 @@ export class IPCTransportManager {
                 });
         } catch (error) {
             logger.systemError(error as Error, 'IPC Socket Handling');
-            const netSocket = socket as Socket;
-            if (!netSocket.destroyed) netSocket.destroy();
+            if (!socket.destroyed) socket.destroy();
         }
     }
 
