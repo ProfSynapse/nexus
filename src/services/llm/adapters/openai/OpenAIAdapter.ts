@@ -1,6 +1,12 @@
 /**
  * OpenAI Adapter - Clean implementation focused on streaming
- * Supports both regular chat completions and deep research models
+ * Location: src/services/llm/adapters/openai/OpenAIAdapter.ts
+ *
+ * Supports both regular chat completions and deep research models.
+ * Uses a custom Node.js fetch implementation to bypass CORS restrictions
+ * in Obsidian's Electron renderer (app://obsidian.md origin).
+ * The OpenAI Responses API endpoint does not return Access-Control-Allow-Origin
+ * headers, so browser fetch() is blocked by CORS.
  */
 
 import OpenAI from 'openai';
@@ -24,6 +30,7 @@ import { DeepResearchHandler } from './DeepResearchHandler';
 import { WebSearchUtils } from '../../utils/WebSearchUtils';
 import { OPENAI_MODELS } from './OpenAIModels';
 import { MCPToolExecution } from '../shared/ToolExecutionUtils';
+import { nodeFetch } from './nodeFetch';
 
 export class OpenAIAdapter extends BaseAdapter {
   readonly name = 'openai';
@@ -38,6 +45,7 @@ export class OpenAIAdapter extends BaseAdapter {
     this.client = new OpenAI({
       apiKey: this.apiKey,
       dangerouslyAllowBrowser: true, // Required for Obsidian plugin environment
+      fetch: nodeFetch,              // Bypass CORS via Node.js http/https
     });
 
     this.deepResearch = new DeepResearchHandler(this.client);

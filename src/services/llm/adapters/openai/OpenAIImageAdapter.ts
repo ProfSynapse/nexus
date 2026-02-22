@@ -1,10 +1,14 @@
 /**
  * OpenAI Image Generation Adapter
- * Supports OpenAI's gpt-image-1 model via Responses API for image generation
- * Based on 2025 API documentation
+ * Location: src/services/llm/adapters/openai/OpenAIImageAdapter.ts
+ *
+ * Supports OpenAI's gpt-image-1 model via Responses API for image generation.
+ * Uses nodeFetch to bypass CORS in Obsidian's Electron renderer.
+ * Based on 2025 API documentation.
  */
 
 import OpenAI from 'openai';
+import { nodeFetch } from './nodeFetch';
 import { BaseImageAdapter } from '../BaseImageAdapter';
 import { 
   ImageGenerationParams, 
@@ -47,7 +51,8 @@ export class OpenAIImageAdapter extends BaseImageAdapter {
       organization: process.env.OPENAI_ORG_ID,
       project: process.env.OPENAI_PROJECT_ID,
       baseURL: config?.baseUrl || this.baseUrl,
-      dangerouslyAllowBrowser: true // Required for Obsidian plugin environment
+      dangerouslyAllowBrowser: true, // Required for Obsidian plugin environment
+      fetch: nodeFetch,              // Bypass CORS via Node.js http/https
     });
 
     this.initializeCache();

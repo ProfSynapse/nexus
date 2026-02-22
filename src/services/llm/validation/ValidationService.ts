@@ -163,7 +163,7 @@ export class LLMValidationService {
         body: JSON.stringify({
           model: 'gpt-5-nano',
           messages: [{ role: 'user', content: 'Hi' }],
-          max_tokens: 5
+          max_completion_tokens: 5
         })
       });
 
@@ -196,7 +196,7 @@ export class LLMValidationService {
           'anthropic-version': '2023-06-01'
         },
         body: JSON.stringify({
-          model: 'claude-3-5-haiku-latest',
+          model: 'claude-haiku-4-5-20251001',
           max_tokens: 5,
           messages: [{ role: 'user', content: 'Hi' }]
         })
@@ -402,7 +402,7 @@ export class LLMValidationService {
         body: JSON.stringify({
           model: 'openai/gpt-5-nano',
           messages: [{ role: 'user', content: 'Hi' }],
-          max_tokens: 5
+          max_completion_tokens: 5
         })
       });
 
