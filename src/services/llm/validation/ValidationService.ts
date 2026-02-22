@@ -163,7 +163,7 @@ export class LLMValidationService {
         body: JSON.stringify({
           model: 'gpt-5-nano',
           messages: [{ role: 'user', content: 'Hi' }],
-          max_tokens: 5
+          max_completion_tokens: 5
         })
       });
 
@@ -402,7 +402,7 @@ export class LLMValidationService {
         body: JSON.stringify({
           model: 'openai/gpt-5-nano',
           messages: [{ role: 'user', content: 'Hi' }],
-          max_tokens: 5
+          max_completion_tokens: 5
         })
       });
 
