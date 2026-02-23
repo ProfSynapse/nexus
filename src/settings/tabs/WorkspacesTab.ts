@@ -20,12 +20,14 @@ import { CustomPromptStorageService } from '../../agents/promptManager/services/
 import { CustomPrompt } from '../../types/mcp/CustomPromptTypes';
 import { CardManager, CardItem } from '../../components/CardManager';
 import { v4 as uuidv4 } from '../../utils/uuid';
+import type { ServiceManager } from '../../core/ServiceManager';
 
 export interface WorkspacesTabServices {
     app: App;
     workspaceService?: WorkspaceService;
     customPromptStorage?: CustomPromptStorageService;
     prefetchedWorkspaces?: ProjectWorkspace[] | null;
+    serviceManager?: ServiceManager;
     component?: Component;
 }
 
@@ -67,7 +69,7 @@ export class WorkspacesTab {
         // Check if we have prefetched data (array, even if empty)
         if (Array.isArray(services.prefetchedWorkspaces)) {
             // Use prefetched data - no loading needed
-            this.workspaces = services.prefetchedWorkspaces;
+            this.workspaces = services.prefetchedWorkspaces!;
             this.isLoading = false;
             this.render();
         } else {
@@ -83,13 +85,42 @@ export class WorkspacesTab {
     }
 
     /**
-     * Load workspaces from service
+     * Load workspaces from service, awaiting initialization if needed
      */
     private async loadWorkspaces(): Promise<void> {
-        if (!this.services.workspaceService) return;
+        let workspaceService = this.services.workspaceService;
+
+        // Wait for both workspaceService and hybridStorageAdapter concurrently.
+        // The adapter takes ~3s (WASM loading delay); without it, getAllWorkspaces()
+        // falls back to JSONL which only has the default workspace.
+        if (this.services.serviceManager) {
+            const timeout = <T>(ms: number) => new Promise<T | undefined>(r => setTimeout(() => r(undefined), ms));
+            try {
+                const [service] = await Promise.all([
+                    Promise.race([
+                        this.services.serviceManager.getService<WorkspaceService>('workspaceService'),
+                        timeout<WorkspaceService>(10000)
+                    ]),
+                    Promise.race([
+                        this.services.serviceManager.getService('hybridStorageAdapter'),
+                        timeout(10000)
+                    ])
+                ]);
+                if (service) {
+                    workspaceService = service as WorkspaceService;
+                    this.services.workspaceService = workspaceService;
+                }
+            } catch (e) {
+                // Service unavailable — fall through to show empty state
+            }
+        }
+
+        if (!workspaceService) {
+            return;
+        }
 
         try {
-            this.workspaces = await this.services.workspaceService.getAllWorkspaces();
+            this.workspaces = await workspaceService.getAllWorkspaces();
         } catch (error) {
             console.error('[WorkspacesTab] Failed to load workspaces:', error);
             this.workspaces = [];
@@ -148,13 +179,15 @@ export class WorkspacesTab {
             return;
         }
 
-        // Convert workspaces to CardItem format
-        const cardItems: CardItem[] = this.workspaces.map(workspace => ({
-            id: workspace.id,
-            name: workspace.name,
-            description: workspace.rootFolder || '/',
-            isEnabled: workspace.isActive ?? true
-        }));
+        // Convert workspaces to CardItem format (defensive: filter invalid + fallback names)
+        const cardItems: CardItem[] = this.workspaces
+            .filter(workspace => workspace && workspace.id)
+            .map(workspace => ({
+                id: workspace.id,
+                name: workspace.name || 'Untitled Workspace',
+                description: workspace.rootFolder || '/',
+                isEnabled: workspace.isActive ?? true
+            }));
 
         // Create card manager
         this.cardManager = new CardManager({

@@ -42,6 +42,8 @@ import {
 } from '../../types/storage/HybridStorageTypes';
 import { RepositoryDependencies } from '../repositories/base/BaseRepository';
 import { LegacyMigrator } from '../migration/LegacyMigrator';
+import { WorkspaceEvent } from '../interfaces/StorageEvents';
+import { WorkspaceEventApplier } from '../sync/WorkspaceEventApplier';
 
 // Import all repositories
 import { WorkspaceRepository } from '../repositories/WorkspaceRepository';
@@ -238,6 +240,15 @@ export class HybridStorageAdapter implements IStorageAdapter {
         } catch (syncError) {
           console.error('[HybridStorageAdapter] Incremental sync failed:', syncError);
         }
+
+        // 5. Reconcile JSONL workspaces missing from SQLite
+        // Incremental sync skips same-device events, so workspaces created
+        // by this device may be missing from SQLite if cache was rebuilt earlier
+        try {
+          await this.reconcileMissingWorkspaces();
+        } catch (reconcileError) {
+          console.error('[HybridStorageAdapter] Workspace reconciliation failed:', reconcileError);
+        }
       }
 
       this.initialized = true;
@@ -254,6 +265,60 @@ export class HybridStorageAdapter implements IStorageAdapter {
         this.initResolve(); // Resolve even on error so waiters don't hang
       }
       throw error;
+    }
+  }
+
+  /**
+   * Reconcile JSONL workspace files that are missing from SQLite.
+   * This handles the case where incremental sync skips same-device events,
+   * leaving workspaces in JSONL but absent from the SQLite cache.
+   */
+  private async reconcileMissingWorkspaces(): Promise<void> {
+    const workspaceFiles = await this.jsonlWriter.listFiles('workspaces');
+    if (workspaceFiles.length === 0) return;
+
+    // Extract workspace IDs from filenames (pattern: workspaces/ws_{id}.jsonl)
+    const jsonlWorkspaceIds: { id: string; file: string }[] = [];
+    for (const file of workspaceFiles) {
+      const match = file.match(/workspaces\/ws_(.+)\.jsonl$/);
+      if (match) {
+        jsonlWorkspaceIds.push({ id: match[1], file });
+      }
+    }
+
+    if (jsonlWorkspaceIds.length === 0) return;
+
+    // Check which IDs are missing from SQLite
+    const workspaceApplier = new WorkspaceEventApplier(this.sqliteCache);
+    let reconciled = 0;
+
+    for (const { id, file } of jsonlWorkspaceIds) {
+      const existing = await this.workspaceRepo.getById(id);
+      if (existing) continue;
+
+      // Missing from SQLite — replay all events from this JSONL file
+      try {
+        const events = await this.jsonlWriter.readEvents<WorkspaceEvent>(file);
+        events.sort((a, b) => a.timestamp - b.timestamp);
+        // Skip deleted workspaces — no need to create then immediately delete
+        const hasDeleteEvent = events.some(e => e.type === 'workspace_deleted');
+        if (hasDeleteEvent) continue;
+
+        // Skip files with no workspace_created event (corrupt/incomplete)
+        const hasCreateEvent = events.some(e => e.type === 'workspace_created');
+        if (!hasCreateEvent) continue;
+
+        for (const event of events) {
+          await workspaceApplier.apply(event);
+        }
+        reconciled++;
+      } catch (e) {
+        console.error(`[HybridStorageAdapter] Failed to reconcile workspace ${id}:`, e);
+      }
+    }
+
+    if (reconciled > 0) {
+      await this.sqliteCache.save();
     }
   }
 

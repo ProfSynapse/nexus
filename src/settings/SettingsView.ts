@@ -146,14 +146,27 @@ export class SettingsView extends PluginSettingTab {
             return; // Already prefetching or already cached
         }
 
-        const services = this.getCurrentServices();
-        if (!services.workspaceService) {
-            return;
-        }
-
         this.isPrefetching = true;
         try {
-            this.prefetchedWorkspaces = await services.workspaceService.getAllWorkspaces();
+            let workspaceService = this.workspaceService;
+            if (!workspaceService && this.serviceManager) {
+                const syncService = this.serviceManager.getServiceIfReady<WorkspaceService>('workspaceService');
+                if (syncService) {
+                    workspaceService = syncService;
+                } else {
+                    workspaceService = await Promise.race([
+                        this.serviceManager.getService<WorkspaceService>('workspaceService'),
+                        new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), 5000))
+                    ]) as WorkspaceService | undefined;
+                }
+            }
+
+            if (!workspaceService) {
+                this.prefetchedWorkspaces = null;
+                return;
+            }
+
+            this.prefetchedWorkspaces = await workspaceService.getAllWorkspaces();
         } catch (error) {
             console.error('[SettingsView] Failed to prefetch workspaces:', error);
             this.prefetchedWorkspaces = null;
@@ -389,7 +402,9 @@ export class SettingsView extends PluginSettingTab {
         // Destroy previous tab instance if exists
         this.workspacesTab?.destroy();
 
-        // Create new WorkspacesTab with prefetched data if available
+        // Always pass null so WorkspacesTab takes the async loading path
+        // (skeleton → loadWorkspaces() with adapter wait → re-render).
+        // This avoids using stale prefetch data from before SQLite was ready.
         this.workspacesTab = new WorkspacesTab(
             container,
             this.router,
@@ -397,7 +412,8 @@ export class SettingsView extends PluginSettingTab {
                 app: this.app,
                 workspaceService: services.workspaceService,
                 customPromptStorage: this.customPromptStorage,
-                prefetchedWorkspaces: this.prefetchedWorkspaces,
+                prefetchedWorkspaces: null,
+                serviceManager: this.serviceManager,
                 component: this.plugin
             }
         );
