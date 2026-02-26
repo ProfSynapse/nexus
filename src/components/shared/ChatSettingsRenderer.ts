@@ -14,6 +14,7 @@
 import { App, Setting, EventRef } from 'obsidian';
 import { LLMProviderManager } from '../../services/llm/providers/ProviderManager';
 import { StaticModelsService } from '../../services/StaticModelsService';
+import { ImageGenerationService } from '../../services/llm/ImageGenerationService';
 import { LLMProviderSettings, ThinkingEffort } from '../../types/llm/ProviderTypes';
 import { FilePickerRenderer } from '../workspace/FilePickerRenderer';
 import { isDesktop, isProviderCompatible } from '../../utils/platform';
@@ -107,19 +108,6 @@ const EFFORT_LABELS: Record<ThinkingEffort, string> = {
   high: 'High'
 };
 
-const IMAGE_MODELS: Record<string, Array<{ id: string; name: string }>> = {
-  google: [
-    { id: 'gemini-2.5-flash-image', name: 'Nano Banana (Fast)' },
-    { id: 'gemini-3-pro-image-preview', name: 'Nano Banana Pro (Advanced)' }
-  ],
-  openrouter: [
-    { id: 'gemini-2.5-flash-image', name: 'Nano Banana (Fast)' },
-    { id: 'gemini-3-pro-image-preview', name: 'Nano Banana Pro (Advanced)' },
-    { id: 'flux-2-pro', name: 'FLUX.2 Pro' },
-    { id: 'flux-2-flex', name: 'FLUX.2 Flex' }
-  ]
-};
-
 export class ChatSettingsRenderer {
   private container: HTMLElement;
   private config: ChatSettingsRendererConfig;
@@ -135,6 +123,7 @@ export class ChatSettingsRenderer {
   // Maps dropdown option value -> actual { provider, modelId } for merged model lists
   private modelOptionMap: Map<string, { provider: string; modelId: string }> = new Map();
   private agentModelOptionMap: Map<string, { provider: string; modelId: string }> = new Map();
+  private imageService: ImageGenerationService;
 
   constructor(container: HTMLElement, config: ChatSettingsRendererConfig) {
     this.container = container;
@@ -147,9 +136,12 @@ export class ChatSettingsRenderer {
       config.app.vault
     );
 
+    this.imageService = new ImageGenerationService(config.app.vault, config.llmProviderSettings);
+
     this.settingsEventRef = LLMSettingsNotifier.onSettingsChanged((newSettings) => {
       this.config.llmProviderSettings = newSettings;
       this.providerManager.updateSettings(newSettings);
+      this.imageService.updateSettings(newSettings);
       this.render();
     });
   }
@@ -624,36 +616,48 @@ export class ChatSettingsRenderer {
         // If current selection isn't supported on this platform, fall back.
         if (!providers.some(p => p.id === this.settings.imageProvider)) {
           this.settings.imageProvider = providers[0].id;
-          this.settings.imageModel = IMAGE_MODELS[this.settings.imageProvider]?.[0]?.id || '';
-          this.notifyChange();
+          this.settings.imageModel = '';
+          // Async: pick the first model from the new provider
+          void this.imageService.getModelsForProvider(this.settings.imageProvider).then(models => {
+            if (models.length > 0) {
+              this.settings.imageModel = models[0].id;
+              this.notifyChange();
+            }
+          });
         }
 
         providers.forEach(p => dropdown.addOption(p.id, p.name));
 
         dropdown.setValue(this.settings.imageProvider);
-        dropdown.onChange((value) => {
+        dropdown.onChange(async (value) => {
           this.settings.imageProvider = value as 'google' | 'openrouter';
-          this.settings.imageModel = IMAGE_MODELS[value]?.[0]?.id || '';
+          const models = await this.imageService.getModelsForProvider(value as 'google' | 'openrouter');
+          this.settings.imageModel = models[0]?.id || '';
           this.notifyChange();
           this.render();
         });
       });
 
-    // Model
-    const models = IMAGE_MODELS[this.settings.imageProvider] || [];
+    // Model (async — populate from adapter)
     new Setting(content)
       .setName('Model')
-      .addDropdown(dropdown => {
-        models.forEach(m => {
-          dropdown.addOption(m.id, m.name);
-        });
+      .addDropdown(async dropdown => {
+        const models = await this.imageService.getModelsForProvider(this.settings.imageProvider);
 
-        const exists = models.some(m => m.id === this.settings.imageModel);
-        if (exists) {
-          dropdown.setValue(this.settings.imageModel);
-        } else if (models.length > 0) {
-          this.settings.imageModel = models[0].id;
-          dropdown.setValue(this.settings.imageModel);
+        if (models.length === 0) {
+          dropdown.addOption('', 'No models available');
+        } else {
+          models.forEach(m => {
+            dropdown.addOption(m.id, m.name);
+          });
+
+          const exists = models.some(m => m.id === this.settings.imageModel);
+          if (exists) {
+            dropdown.setValue(this.settings.imageModel);
+          } else if (models.length > 0) {
+            this.settings.imageModel = models[0].id;
+            dropdown.setValue(this.settings.imageModel);
+          }
         }
 
         dropdown.onChange((value) => {

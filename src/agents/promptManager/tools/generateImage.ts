@@ -182,9 +182,35 @@ export class GenerateImageTool extends BaseTool<GenerateImageParams, GenerateIma
   }
 
   /**
+   * Build the dynamic model enum from the image service adapters.
+   * Falls back to a static list if the service isn't initialized.
+   */
+  private getAvailableModelIds(): string[] {
+    if (!this.imageService) {
+      return ['gemini-2.5-flash-image', 'gemini-3-pro-image-preview', 'gemini-3.1-flash-image-preview', 'gpt-5-image', 'flux-2-pro', 'flux-2-flex'];
+    }
+
+    // Collect unique model IDs across all initialized adapters
+    const modelIds = new Set<string>();
+    const providers: Array<'google' | 'openrouter'> = ['google', 'openrouter'];
+    for (const provider of providers) {
+      const models = this.imageService.getSupportedModelIds(provider);
+      for (const id of models) {
+        modelIds.add(id);
+      }
+    }
+
+    return modelIds.size > 0
+      ? Array.from(modelIds)
+      : ['gemini-2.5-flash-image', 'gemini-3-pro-image-preview', 'gemini-3.1-flash-image-preview', 'gpt-5-image', 'flux-2-pro', 'flux-2-flex'];
+  }
+
+  /**
    * Get parameter schema for MCP
    */
   getParameterSchema(): JSONSchema {
+    const modelEnum = this.getAvailableModelIds();
+
     const toolSchema = {
       type: 'object',
       properties: {
@@ -202,9 +228,9 @@ export class GenerateImageTool extends BaseTool<GenerateImageParams, GenerateIma
         },
         model: {
           type: 'string',
-          enum: ['gemini-2.5-flash-image', 'gemini-3-pro-image-preview', 'gemini-3.1-flash-image-preview', 'gpt-5-image', 'flux-2-pro', 'flux-2-flex'],
+          enum: modelEnum,
           default: 'gemini-2.5-flash-image',
-          description: 'Model (default: gemini-2.5-flash-image). gemini-3.1-flash-image-preview is Nano Banana 2 (flash speed, pro quality). gpt-5-image, FLUX models only via OpenRouter.'
+          description: 'Image generation model. Available models depend on configured providers.'
         },
         aspectRatio: {
           type: 'string',
