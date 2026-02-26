@@ -3,6 +3,7 @@
  * Supports Google's Nano Banana models for image generation
  * - gemini-2.5-flash-image (Nano Banana) - fast generation
  * - gemini-3-pro-image-preview (Nano Banana Pro) - advanced with reference images
+ * - gemini-3.1-flash-image-preview (Nano Banana 2) - flash speed with pro quality
  *
  * Uses generateContent() API with responseModalities: ['TEXT', 'IMAGE']
  *
@@ -64,7 +65,7 @@ export class GeminiImageAdapter extends BaseImageAdapter {
 
   readonly name = 'gemini-image';
   readonly baseUrl = 'https://generativelanguage.googleapis.com/v1beta';
-  readonly supportedModels: ImageModel[] = ['gemini-2.5-flash-image', 'gemini-3-pro-image-preview'];
+  readonly supportedModels: ImageModel[] = ['gemini-2.5-flash-image', 'gemini-3-pro-image-preview', 'gemini-3.1-flash-image-preview'];
   readonly supportedSizes: string[] = ['1024x1024', '1536x1024', '1024x1536', '1792x1024', '1024x1792'];
   readonly supportedFormats: string[] = ['png', 'jpeg', 'webp'];
 
@@ -76,12 +77,14 @@ export class GeminiImageAdapter extends BaseImageAdapter {
   // Max reference images per model (per Google docs Dec 2025)
   private readonly maxReferenceImages = {
     'gemini-2.5-flash-image': 3,
-    'gemini-3-pro-image-preview': 14
+    'gemini-3-pro-image-preview': 14,
+    'gemini-3.1-flash-image-preview': 14
   };
 
   // Supported aspect ratios for Nano Banana models
   private readonly nanoBananaAspectRatios = [
-    '1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9'
+    '1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9',
+    '1:4', '4:1', '1:8', '8:1'
   ];
 
   constructor(config?: ProviderConfig & { vault?: Vault }) {
@@ -263,13 +266,17 @@ export class GeminiImageAdapter extends BaseImageAdapter {
     // Validate image size
     if (params.imageSize) {
       const imageSize = params.imageSize;
-      const validSizes = ['1K', '2K', '4K'];
+      const validSizes = ['512px', '1K', '2K', '4K'];
       if (!validSizes.includes(imageSize)) {
-        errors.push('imageSize must be "1K", "2K", or "4K"');
+        errors.push('imageSize must be "512px", "1K", "2K", or "4K"');
       }
-      // 4K only available for Pro model
-      if (imageSize === '4K' && model !== 'gemini-3-pro-image-preview') {
-        errors.push('4K resolution is only available for gemini-3-pro-image-preview model');
+      // 512px only available for 3.1-flash model
+      if (imageSize === '512px' && model !== 'gemini-3.1-flash-image-preview') {
+        errors.push('512px resolution is only available for gemini-3.1-flash-image-preview model');
+      }
+      // 4K only available for Pro and 3.1-flash models
+      if (imageSize === '4K' && model !== 'gemini-3-pro-image-preview' && model !== 'gemini-3.1-flash-image-preview') {
+        errors.push('4K resolution is only available for gemini-3-pro-image-preview and gemini-3.1-flash-image-preview models');
       }
     }
 
@@ -346,7 +353,11 @@ export class GeminiImageAdapter extends BaseImageAdapter {
       AspectRatio.LANDSCAPE_5_4,
       AspectRatio.PORTRAIT_9_16,
       AspectRatio.LANDSCAPE_16_9,
-      AspectRatio.ULTRAWIDE_21_9
+      AspectRatio.ULTRAWIDE_21_9,
+      AspectRatio.NARROW_1_4,
+      AspectRatio.WIDE_4_1,
+      AspectRatio.ULTRA_NARROW_1_8,
+      AspectRatio.ULTRA_WIDE_8_1
     ];
   }
 
@@ -363,7 +374,8 @@ export class GeminiImageAdapter extends BaseImageAdapter {
   async getImageModelPricing(model: string = 'gemini-2.5-flash-image'): Promise<CostDetails> {
     const pricing: Record<string, number> = {
       'gemini-2.5-flash-image': 0.039,      // Nano Banana
-      'gemini-3-pro-image-preview': 0.08    // Nano Banana Pro (estimate)
+      'gemini-3-pro-image-preview': 0.08,   // Nano Banana Pro (estimate)
+      'gemini-3.1-flash-image-preview': 0.04 // Nano Banana 2
     };
 
     const basePrice = pricing[model] || 0.039;
@@ -420,6 +432,25 @@ export class GeminiImageAdapter extends BaseImageAdapter {
           currency: 'USD',
           lastUpdated: '2025-12-07'
         }
+      },
+      {
+        id: 'gemini-3.1-flash-image-preview',
+        name: 'Nano Banana 2 (Flash Speed, Pro Quality)',
+        contextWindow: 65536,
+        maxOutputTokens: 0,
+        supportsJSON: false,
+        supportsImages: true,
+        supportsFunctions: false,
+        supportsStreaming: false,
+        supportsThinking: false,
+        supportsImageGeneration: true,
+        pricing: {
+          inputPerMillion: 0.25,
+          outputPerMillion: 1.50,
+          imageGeneration: 0.04,
+          currency: 'USD',
+          lastUpdated: '2026-02-26'
+        }
       }
     ];
   }
@@ -470,7 +501,11 @@ export class GeminiImageAdapter extends BaseImageAdapter {
       '5:4': [1120, 896],
       '9:16': [576, 1024],
       '16:9': [1024, 576],
-      '21:9': [1344, 576]
+      '21:9': [1344, 576],
+      '1:4': [256, 1024],
+      '4:1': [1024, 256],
+      '1:8': [128, 1024],
+      '8:1': [1024, 128]
     };
 
     if (params.aspectRatio && aspectRatioToDimensions[params.aspectRatio]) {

@@ -20,10 +20,10 @@ import { LLMProviderSettings } from '../../../types/llm/ProviderTypes';
 export interface GenerateImageParams extends CommonParameters {
   prompt: string;
   provider?: 'google' | 'openrouter'; // Defaults to 'google' if available
-  model?: 'gemini-2.5-flash-image' | 'gemini-3-pro-image-preview' | 'flux-2-pro' | 'flux-2-flex'; // Defaults to 'gemini-2.5-flash-image'
+  model?: 'gemini-2.5-flash-image' | 'gemini-3-pro-image-preview' | 'gemini-3.1-flash-image-preview' | 'gpt-5-image' | 'flux-2-pro' | 'flux-2-flex'; // Defaults to 'gemini-2.5-flash-image'
   aspectRatio?: AspectRatio;
   numberOfImages?: number;
-  imageSize?: '1K' | '2K' | '4K';
+  imageSize?: '512px' | '1K' | '2K' | '4K';
   referenceImages?: string[]; // Vault-relative paths to reference images
   savePath: string;
 }
@@ -202,13 +202,13 @@ export class GenerateImageTool extends BaseTool<GenerateImageParams, GenerateIma
         },
         model: {
           type: 'string',
-          enum: ['gemini-2.5-flash-image', 'gemini-3-pro-image-preview', 'flux-2-pro', 'flux-2-flex'],
+          enum: ['gemini-2.5-flash-image', 'gemini-3-pro-image-preview', 'gemini-3.1-flash-image-preview', 'gpt-5-image', 'flux-2-pro', 'flux-2-flex'],
           default: 'gemini-2.5-flash-image',
-          description: 'Model (default: gemini-2.5-flash-image). FLUX models only via OpenRouter.'
+          description: 'Model (default: gemini-2.5-flash-image). gemini-3.1-flash-image-preview is Nano Banana 2 (flash speed, pro quality). gpt-5-image, FLUX models only via OpenRouter.'
         },
         aspectRatio: {
           type: 'string',
-          enum: ['1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9'],
+          enum: ['1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9', '1:4', '4:1', '1:8', '8:1'],
           description: 'Aspect ratio for the generated image'
         },
         numberOfImages: {
@@ -219,8 +219,8 @@ export class GenerateImageTool extends BaseTool<GenerateImageParams, GenerateIma
         },
         imageSize: {
           type: 'string',
-          enum: ['1K', '2K', '4K'],
-          description: 'Image resolution. 4K only available for gemini-3-pro-image-preview'
+          enum: ['512px', '1K', '2K', '4K'],
+          description: 'Image resolution. 512px only for gemini-3.1-flash-image-preview. 4K available for gemini-3-pro-image-preview and gemini-3.1-flash-image-preview'
         },
         referenceImages: {
           type: 'array',

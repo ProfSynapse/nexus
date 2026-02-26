@@ -35,7 +35,11 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
   readonly baseUrl = 'https://openrouter.ai/api/v1';
   readonly supportedModels: ImageModel[] = [
     'gemini-2.5-flash-image' as ImageModel,
-    'gemini-3-pro-image-preview' as ImageModel
+    'gemini-3-pro-image-preview' as ImageModel,
+    'gemini-3.1-flash-image-preview' as ImageModel,
+    'gpt-5-image' as ImageModel,
+    'flux-2-pro' as ImageModel,
+    'flux-2-flex' as ImageModel
   ];
   readonly supportedSizes: string[] = ['1024x1024', '1536x1024', '1024x1536', '1792x1024', '1024x1792'];
   readonly supportedFormats: string[] = ['png', 'jpeg', 'webp'];
@@ -48,6 +52,8 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
   private readonly modelMap: Record<string, string> = {
     'gemini-2.5-flash-image': 'google/gemini-2.5-flash-image-preview',
     'gemini-3-pro-image-preview': 'google/gemini-3-pro-image-preview',
+    'gemini-3.1-flash-image-preview': 'google/gemini-3.1-flash-image-preview',
+    'gpt-5-image': 'openai/gpt-5-image',
     // Add other image-capable models as they become available
     'flux-2-pro': 'black-forest-labs/flux.2-pro',
     'flux-2-flex': 'black-forest-labs/flux.2-flex'
@@ -57,7 +63,8 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
 
   // Supported aspect ratios per OpenRouter docs
   private readonly openRouterAspectRatios = [
-    '1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9'
+    '1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9',
+    '1:4', '4:1', '1:8', '8:1'
   ];
 
   constructor(config?: ProviderConfig & { vault?: Vault; httpReferer?: string; xTitle?: string }) {
@@ -292,7 +299,11 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
       AspectRatio.LANDSCAPE_5_4,
       AspectRatio.PORTRAIT_9_16,
       AspectRatio.LANDSCAPE_16_9,
-      AspectRatio.ULTRAWIDE_21_9
+      AspectRatio.ULTRAWIDE_21_9,
+      AspectRatio.NARROW_1_4,
+      AspectRatio.WIDE_4_1,
+      AspectRatio.ULTRA_NARROW_1_8,
+      AspectRatio.ULTRA_WIDE_8_1
     ];
   }
 
@@ -313,6 +324,8 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
     const pricing: Record<string, number> = {
       'gemini-2.5-flash-image': 0.039,
       'gemini-3-pro-image-preview': 0.08,
+      'gemini-3.1-flash-image-preview': 0.04,
+      'gpt-5-image': 0.08,
       'flux-2-pro': 0.05,
       'flux-2-flex': 0.03
     };
@@ -370,6 +383,44 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
           imageGeneration: 0.08,
           currency: 'USD',
           lastUpdated: '2025-12-07'
+        }
+      },
+      {
+        id: 'gemini-3.1-flash-image-preview',
+        name: 'Nano Banana 2 (via OpenRouter)',
+        contextWindow: 65536,
+        maxOutputTokens: 0,
+        supportsJSON: false,
+        supportsImages: true,
+        supportsFunctions: false,
+        supportsStreaming: false,
+        supportsThinking: false,
+        supportsImageGeneration: true,
+        pricing: {
+          inputPerMillion: 0.25,
+          outputPerMillion: 1.50,
+          imageGeneration: 0.04,
+          currency: 'USD',
+          lastUpdated: '2026-02-26'
+        }
+      },
+      {
+        id: 'gpt-5-image',
+        name: 'GPT-5 Image (via OpenRouter)',
+        contextWindow: 400000,
+        maxOutputTokens: 128000,
+        supportsJSON: false,
+        supportsImages: true,
+        supportsFunctions: false,
+        supportsStreaming: false,
+        supportsThinking: false,
+        supportsImageGeneration: true,
+        pricing: {
+          inputPerMillion: 10,
+          outputPerMillion: 10,
+          imageGeneration: 0.08,
+          currency: 'USD',
+          lastUpdated: '2026-02-26'
         }
       },
       {
@@ -463,7 +514,11 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
       '5:4': [1152, 896],
       '9:16': [768, 1344],
       '16:9': [1344, 768],
-      '21:9': [1536, 672]
+      '21:9': [1536, 672],
+      '1:4': [256, 1024],
+      '4:1': [1024, 256],
+      '1:8': [128, 1024],
+      '8:1': [1024, 128]
     };
 
     if (params.aspectRatio && aspectRatioToDimensions[params.aspectRatio]) {
