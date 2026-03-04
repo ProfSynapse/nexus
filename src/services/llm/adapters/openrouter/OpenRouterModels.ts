@@ -1,7 +1,7 @@
 /**
  * OpenRouter Model Specifications
  * OpenRouter provides access to multiple providers through a unified API
- * Updated March 2026 with Claude Sonnet 4.6 and Gemini 3.1 models
+ * Updated March 2026 with GPT-5.3, Claude Sonnet 4.6, and Gemini 3.1 models
  */
 
 import { ModelSpec } from '../modelTypes';
@@ -9,6 +9,40 @@ import { ModelSpec } from '../modelTypes';
 // OpenRouter provides access to models from other providers
 // Each model has its own specific API name in OpenRouter
 export const OPENROUTER_MODELS: ModelSpec[] = [
+  // OpenAI GPT-5.3 models via OpenRouter
+  {
+    provider: 'openrouter',
+    name: 'GPT-5.3 Chat',
+    apiName: 'openai/gpt-5.3-chat-latest',
+    contextWindow: 128000,
+    maxTokens: 16384,
+    inputCostPerMillion: 1.75,
+    outputCostPerMillion: 14.00,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    provider: 'openrouter',
+    name: 'GPT-5.3 Codex',
+    apiName: 'openai/gpt-5.3-codex',
+    contextWindow: 128000,
+    maxTokens: 16384,
+    inputCostPerMillion: 1.75,
+    outputCostPerMillion: 14.00,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+
   // OpenAI GPT-5.2 models via OpenRouter
   {
     provider: 'openrouter',

@@ -1,6 +1,6 @@
 /**
  * OpenAI Model Specifications
- * Updated October 19, 2025 - Added GPT-5.2 family
+ * Updated March 2026 - Added GPT-5.3 family
  *
  * Pricing Notes:
  * - GPT-5 family supports 90% caching discount (cached tokens: $0.125/M vs $1.25/M fresh)
@@ -13,7 +13,41 @@
 import { ModelSpec } from '../modelTypes';
 
 export const OPENAI_MODELS: ModelSpec[] = [
-  // GPT-5.2 family (latest flagship models)
+  // GPT-5.3 family (latest models)
+  {
+    provider: 'openai',
+    name: 'GPT-5.3 Chat',
+    apiName: 'gpt-5.3-chat-latest',
+    contextWindow: 128000,
+    maxTokens: 16384,
+    inputCostPerMillion: 1.75,
+    outputCostPerMillion: 14.00,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    provider: 'openai',
+    name: 'GPT-5.3 Codex',
+    apiName: 'gpt-5.3-codex',
+    contextWindow: 128000,
+    maxTokens: 16384,
+    inputCostPerMillion: 1.75,
+    outputCostPerMillion: 14.00,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+
+  // GPT-5.2 family
   {
     provider: 'openai',
     name: 'GPT-5.2',
