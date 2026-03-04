@@ -1,12 +1,46 @@
 /**
  * Google Model Specifications
- * Updated December 18, 2025 with Gemini 3 Flash release
+ * Updated March 2026 with Gemini 3.1 models
  */
 
 import { ModelSpec } from '../modelTypes';
 
 export const GOOGLE_MODELS: ModelSpec[] = [
-  // Gemini 3.0 models (latest)
+  // Gemini 3.1 models (latest)
+  {
+    provider: 'google',
+    name: 'Gemini 3.1 Pro Preview',
+    apiName: 'gemini-3.1-pro-preview',
+    contextWindow: 1048576,
+    maxTokens: 65536,
+    inputCostPerMillion: 2.00,
+    outputCostPerMillion: 12.00,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    provider: 'google',
+    name: 'Gemini 3.1 Flash Lite Preview',
+    apiName: 'gemini-3.1-flash-lite-preview',
+    contextWindow: 1048576,
+    maxTokens: 64000,
+    inputCostPerMillion: 0.25,
+    outputCostPerMillion: 1.50,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+
+  // Gemini 3.0 models
   {
     provider: 'google',
     name: 'Gemini 3.0 Pro Preview',
