@@ -659,8 +659,14 @@ Keep workspaceId and sessionId values EXACTLY as shown above throughout the conv
     getMemoryManager(): MemoryManagerAgent | null {
         return this.agentRegistry.getAgent('memoryManager') as MemoryManagerAgent | null;
     }
-    
-    
+
+    /**
+     * Get the AppManager instance - delegates to AgentRegistrationService
+     */
+    getAppManager(): any | null {
+        return this.agentRegistry.getAppManager();
+    }
+
     /**
      * Get the session context manager instance
      */

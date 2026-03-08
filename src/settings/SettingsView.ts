@@ -19,6 +19,7 @@ import type { ServiceManager } from '../core/ServiceManager';
 // Agents
 import { SearchManagerAgent } from '../agents/searchManager/searchManager';
 import { MemoryManagerAgent } from '../agents/memoryManager/memoryManager';
+import type { AppManager } from '../services/apps/AppManager';
 
 // Tab implementations
 import { DefaultsTab } from './tabs/DefaultsTab';
@@ -50,6 +51,7 @@ export class SettingsView extends PluginSettingTab {
     // Managers
     private serviceManager: ServiceManager | undefined;
     private pluginLifecycleManager: any;
+    private appManager: AppManager | undefined;
 
     // UI Components
     private tabs: UnifiedTabs | undefined;
@@ -80,7 +82,8 @@ export class SettingsView extends PluginSettingTab {
         searchManager?: SearchManagerAgent,
         memoryManager?: MemoryManagerAgent,
         serviceManager?: ServiceManager,
-        pluginLifecycleManager?: any
+        pluginLifecycleManager?: any,
+        appManager?: AppManager
     ) {
         super(app, plugin);
         this.plugin = plugin;
@@ -99,6 +102,7 @@ export class SettingsView extends PluginSettingTab {
         // Store managers
         this.serviceManager = serviceManager;
         this.pluginLifecycleManager = pluginLifecycleManager;
+        this.appManager = appManager;
 
         // Initialize router
         this.router = new SettingsRouter();
@@ -485,6 +489,7 @@ export class SettingsView extends PluginSettingTab {
             {
                 app: this.app,
                 settings: this.settingsManager,
+                appManager: this.appManager,
             }
         );
     }

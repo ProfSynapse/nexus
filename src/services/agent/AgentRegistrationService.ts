@@ -18,6 +18,7 @@ import { logger } from '../../utils/logger';
 import { CustomPromptStorageService } from "../../agents/promptManager/services/CustomPromptStorageService";
 import { AgentInitializationService } from './AgentInitializationService';
 import { AgentValidationService } from './AgentValidationService';
+import type { AppManager } from '../apps/AppManager';
 
 export interface AgentRegistrationServiceInterface {
   /**
@@ -44,6 +45,11 @@ export interface AgentRegistrationServiceInterface {
    * Gets agent registration status
    */
   getRegistrationStatus(): AgentRegistrationStatus;
+
+  /**
+   * Gets the AppManager instance (available after PHASE 3 initialization)
+   */
+  getAppManager(): any | null;
 }
 
 export interface AgentRegistrationStatus {
@@ -55,6 +61,13 @@ export interface AgentRegistrationStatus {
   registrationDuration: number;
 }
 
+/**
+ * Type guard to check if plugin has Settings
+ */
+function hasSettings(plugin: Plugin | NexusPlugin): plugin is NexusPlugin {
+  return 'settings' in plugin && plugin.settings !== undefined;
+}
+
 export class AgentRegistrationService implements AgentRegistrationServiceInterface {
   private agentManager: AgentManager;
   private registrationStatus: AgentRegistrationStatus;
@@ -64,6 +77,7 @@ export class AgentRegistrationService implements AgentRegistrationServiceInterfa
   private validationService: AgentValidationService;
   private isInitialized: boolean = false;
   private initializationPromise: Promise<Map<string, any>> | null = null;
+  private appManagerInstance: AppManager | null = null;
 
   constructor(
     private app: App,
@@ -237,15 +251,17 @@ export class AgentRegistrationService implements AgentRegistrationServiceInterfa
 
       // PHASE 3: Load app agents (must be after core agents, before ToolManager)
       await this.safeInitialize('apps', async () => {
-        const { AppManager } = await import('../apps/AppManager');
+        const { AppManager: AppManagerClass } = await import('../apps/AppManager');
         const pluginSettings = hasSettings(this.plugin) ? this.plugin.settings.settings : undefined;
         const appsSettings = pluginSettings?.apps || { apps: {} };
-        const appManager = new AppManager(
+        const appManager = new AppManagerClass(
           appsSettings,
           (agent) => this.agentManager.registerAgent(agent),
-          (name) => this.agentManager.unregisterAgent(name)
+          (name) => this.agentManager.unregisterAgent(name),
+          this.app.vault
         );
         await appManager.loadInstalledApps();
+        this.appManagerInstance = appManager;
         logger.systemLog('App agents loaded');
       });
 
@@ -420,5 +436,12 @@ export class AgentRegistrationService implements AgentRegistrationServiceInterfa
    */
   getRegistrationStatus(): AgentRegistrationStatus {
     return { ...this.registrationStatus };
+  }
+
+  /**
+   * Gets the AppManager instance (available after PHASE 3 initialization)
+   */
+  getAppManager(): AppManager | null {
+    return this.appManagerInstance;
   }
 }

@@ -11,7 +11,7 @@ export interface AppConfigModalConfig {
   credentials: Record<string, string>;
   onSave: (credentials: Record<string, string>) => Promise<void>;
   onUninstall?: () => Promise<void>;
-  onValidate?: () => Promise<{ success: boolean; error?: string }>;
+  onValidate?: () => Promise<{ success: boolean; error?: string; data?: unknown }>;
 }
 
 export class AppConfigModal extends Modal {
@@ -85,9 +85,19 @@ export class AppConfigModal extends Modal {
           await this.config.onSave(this.currentCredentials);
           const result = await this.config.onValidate!();
           if (result.success) {
-            new Notice(`${this.config.manifest.name}: credentials valid`);
-            statusEl.setText('Valid ✓');
-            statusEl.className = 'app-config-status app-config-status-success';
+            const missing = (result.data != null && typeof result.data === 'object' && 'missingPermissions' in result.data)
+              ? (result.data as { missingPermissions: unknown }).missingPermissions
+              : undefined;
+            if (Array.isArray(missing) && missing.length > 0) {
+              const msg = `Valid, but missing permissions: ${missing.join(', ')}`;
+              new Notice(`${this.config.manifest.name}: ${msg}`);
+              statusEl.setText(msg);
+              statusEl.className = 'app-config-status app-config-status-warning';
+            } else {
+              new Notice(`${this.config.manifest.name}: credentials valid`);
+              statusEl.setText('Valid ✓');
+              statusEl.className = 'app-config-status app-config-status-success';
+            }
           } else {
             new Notice(`${this.config.manifest.name}: ${result.error || 'validation failed'}`);
             statusEl.setText(result.error || 'Validation failed');

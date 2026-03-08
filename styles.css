@@ -6877,3 +6877,7 @@ body.is-mobile .chat-loading-overlay {
     margin-top: 16px;
 }
 
+.app-config-status-warning {
+    color: var(--text-accent);
+}
+

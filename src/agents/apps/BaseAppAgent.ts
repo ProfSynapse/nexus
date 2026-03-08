@@ -9,10 +9,12 @@
 import { BaseAgent } from '../baseAgent';
 import { AppManifest, AppCredentialField } from '../../types/apps/AppTypes';
 import { CommonResult } from '../../types';
+import { Vault } from 'obsidian';
 
 export abstract class BaseAppAgent extends BaseAgent {
   readonly manifest: AppManifest;
   protected credentials: Record<string, string> = {};
+  private _vault: Vault | null = null;
 
   constructor(manifest: AppManifest) {
     super(
@@ -56,6 +58,22 @@ export abstract class BaseAppAgent extends BaseAgent {
   getMissingCredentials(): AppCredentialField[] {
     return this.manifest.credentials
       .filter(c => c.required && !this.credentials[c.key]?.trim());
+  }
+
+  /**
+   * Inject the Obsidian Vault instance. Called by AppManager after construction.
+   * Tools use getVault() to save generated files.
+   */
+  setVault(vault: Vault): void {
+    this._vault = vault;
+  }
+
+  /**
+   * Get the Vault instance for file operations (saving audio, etc.).
+   * Returns null if vault has not been injected yet.
+   */
+  getVault(): Vault | null {
+    return this._vault;
   }
 
   /**

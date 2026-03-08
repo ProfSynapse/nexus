@@ -55,6 +55,11 @@ export class ListVoicesTool extends BaseTool<ListVoicesParams, CommonResult> {
         },
       });
 
+      if (response.status !== 200) {
+        return this.prepareResult(false, undefined,
+          `ElevenLabs API error (${response.status}): ${response.text || 'Unknown error'}`);
+      }
+
       const data = response.json;
       let voices: VoiceInfo[] = data.voices || [];
 
@@ -76,8 +81,13 @@ export class ListVoicesTool extends BaseTool<ListVoicesParams, CommonResult> {
         voices: voiceList,
         total: voiceList.length,
       });
-    } catch (error) {
-      return this.prepareResult(false, undefined, `Failed to list voices: ${error}`);
+    } catch (error: unknown) {
+      const status = (error as Record<string, unknown>)?.status;
+      const body = (error as Record<string, unknown>)?.text
+        ?? (error as Record<string, unknown>)?.message
+        ?? String(error);
+      return this.prepareResult(false, undefined,
+        `Failed to list voices${status ? ` (${status})` : ''}: ${body}`);
     }
   }
 

@@ -11,21 +11,25 @@ import { AppManifest, AppConfig, AppsSettings } from '../../types/apps/AppTypes'
 import { IAgent } from '../../agents/interfaces/IAgent';
 import { logger } from '../../utils/logger';
 import { ElevenLabsAgent } from '../../agents/apps/elevenlabs/ElevenLabsAgent';
+import { Vault } from 'obsidian';
 
 export class AppManager {
   private apps: Map<string, BaseAppAgent> = new Map();
   private appConfigs: Record<string, AppConfig>;
   private registerCallback: (agent: IAgent) => void;
   private unregisterCallback: (agentName: string) => void;
+  private vault: Vault | null;
 
   constructor(
     appsSettings: AppsSettings,
     onRegister: (agent: IAgent) => void,
-    onUnregister: (agentName: string) => void
+    onUnregister: (agentName: string) => void,
+    vault?: Vault
   ) {
     this.appConfigs = appsSettings.apps || {};
     this.registerCallback = onRegister;
     this.unregisterCallback = onUnregister;
+    this.vault = vault || null;
   }
 
   /**
@@ -47,6 +51,7 @@ export class AppManager {
       try {
         const agent = factory();
         agent.setCredentials(config.credentials);
+        if (this.vault) agent.setVault(this.vault);
         this.apps.set(appId, agent);
         this.registerCallback(agent);
         logger.systemLog(`App loaded: ${appId}`);
@@ -79,6 +84,7 @@ export class AppManager {
       installedVersion: agent.manifest.version
     };
 
+    if (this.vault) agent.setVault(this.vault);
     this.apps.set(appId, agent);
     this.registerCallback(agent);
 
@@ -133,6 +139,7 @@ export class AppManager {
       if (factory) {
         const agent = factory();
         agent.setCredentials(this.appConfigs[appId].credentials);
+        if (this.vault) agent.setVault(this.vault);
         this.apps.set(appId, agent);
         this.registerCallback(agent);
       }

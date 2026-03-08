@@ -9,7 +9,7 @@ import { BaseTool } from '../../../baseTool';
 import { CommonParameters, CommonResult } from '../../../../types';
 import { JSONSchema } from '../../../../types/schema/JSONSchemaTypes';
 import { BaseAppAgent } from '../../BaseAppAgent';
-import { requestUrl } from 'obsidian';
+import { requestUrl, normalizePath, TFolder } from 'obsidian';
 
 interface TextToSpeechParams extends CommonParameters {
   text: string;
@@ -68,7 +68,31 @@ export class TextToSpeechTool extends BaseTool<TextToSpeechParams, CommonResult>
         body: JSON.stringify(body),
       });
 
-      const outputPath = params.outputPath || `audio/tts-${Date.now()}.mp3`;
+      if (response.status !== 200) {
+        return this.prepareResult(false, undefined,
+          `ElevenLabs API error (${response.status}): ${response.text || 'Unknown error'}`);
+      }
+
+      const vault = this.agent.getVault();
+      if (!vault) {
+        return this.prepareResult(false, undefined,
+          'Vault not available — cannot save audio file.');
+      }
+
+      const outputPath = normalizePath(params.outputPath || `audio/tts-${Date.now()}.mp3`);
+
+      // Ensure parent directory exists
+      const dir = outputPath.substring(0, outputPath.lastIndexOf('/'));
+      if (dir && !vault.getAbstractFileByPath(dir)) {
+        try {
+          await vault.createFolder(dir);
+        } catch {
+          // Folder may already exist due to race condition
+          if (!(vault.getAbstractFileByPath(dir) instanceof TFolder)) throw new Error(`Failed to create directory: ${dir}`);
+        }
+      }
+
+      await vault.createBinary(outputPath, response.arrayBuffer);
 
       return this.prepareResult(true, {
         path: outputPath,
@@ -77,8 +101,13 @@ export class TextToSpeechTool extends BaseTool<TextToSpeechParams, CommonResult>
         textLength: params.text.length,
         audioSize: response.arrayBuffer.byteLength,
       });
-    } catch (error) {
-      return this.prepareResult(false, undefined, `Text-to-speech failed: ${error}`);
+    } catch (error: unknown) {
+      const status = (error as Record<string, unknown>)?.status;
+      const body = (error as Record<string, unknown>)?.text
+        ?? (error as Record<string, unknown>)?.message
+        ?? String(error);
+      return this.prepareResult(false, undefined,
+        `Text-to-speech failed${status ? ` (${status})` : ''}: ${body}`);
     }
   }
 
