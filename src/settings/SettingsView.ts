@@ -25,6 +25,7 @@ import { DefaultsTab } from './tabs/DefaultsTab';
 import { WorkspacesTab } from './tabs/WorkspacesTab';
 import { PromptsTab } from './tabs/PromptsTab';
 import { ProvidersTab } from './tabs/ProvidersTab';
+import { AppsTab } from './tabs/AppsTab';
 // GetStartedTab is dynamically imported (desktop-only, requires Node.js)
 type GetStartedTabType = import('./tabs/GetStartedTab').GetStartedTab;
 // import { DataTab } from './tabs/DataTab'; // TODO: Re-enable when Data tab is ready
@@ -60,6 +61,7 @@ export class SettingsView extends PluginSettingTab {
     private workspacesTab: WorkspacesTab | undefined;
     private promptsTab: PromptsTab | undefined;
     private providersTab: ProvidersTab | undefined;
+    private appsTab: AppsTab | undefined;
     private getStartedTab: GetStartedTabType | undefined;
     // private dataTab: DataTab | undefined; // TODO: Re-enable when Data tab is ready
 
@@ -132,6 +134,7 @@ export class SettingsView extends PluginSettingTab {
         this.workspacesTab?.destroy();
         this.promptsTab?.destroy();
         this.providersTab?.destroy();
+        this.appsTab?.destroy();
         this.getStartedTab?.destroy();
         // Clear prefetch cache
         this.prefetchedWorkspaces = null;
@@ -195,6 +198,7 @@ export class SettingsView extends PluginSettingTab {
             { key: 'workspaces', label: 'Workspaces' },
             { key: 'prompts', label: 'Prompts' },
             { key: 'providers', label: 'Providers' },
+            { key: 'apps', label: 'Apps' },
             // { key: 'data', label: 'Data' }, // TODO: Re-enable when Data tab is ready
         ];
 
@@ -324,6 +328,9 @@ export class SettingsView extends PluginSettingTab {
                 break;
             case 'providers':
                 this.renderProvidersTab(pane, state, services);
+                break;
+            case 'apps':
+                this.renderAppsTab(pane, state, services);
                 break;
             // case 'data': // TODO: Re-enable when Data tab is ready
             //     this.renderDataTab(pane);
@@ -459,6 +466,25 @@ export class SettingsView extends PluginSettingTab {
                 app: this.app,
                 settings: this.settingsManager,
                 llmProviderSettings: this.settingsManager.settings.llmProviders
+            }
+        );
+    }
+
+    /**
+     * Render Apps tab content
+     */
+    private renderAppsTab(
+        container: HTMLElement,
+        state: RouterState,
+        services: any
+    ): void {
+        this.appsTab?.destroy();
+        this.appsTab = new AppsTab(
+            container,
+            this.router,
+            {
+                app: this.app,
+                settings: this.settingsManager,
             }
         );
     }

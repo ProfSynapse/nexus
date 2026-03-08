@@ -235,7 +235,21 @@ export class AgentRegistrationService implements AgentRegistrationServiceInterfa
         this.safeInitialize('memoryManager', () => this.initializationService.initializeMemoryManager()),
       ]);
 
-      // PHASE 3: ToolManager MUST be last (needs all other agents)
+      // PHASE 3: Load app agents (must be after core agents, before ToolManager)
+      await this.safeInitialize('apps', async () => {
+        const { AppManager } = await import('../apps/AppManager');
+        const pluginSettings = hasSettings(this.plugin) ? this.plugin.settings.settings : undefined;
+        const appsSettings = pluginSettings?.apps || { apps: {} };
+        const appManager = new AppManager(
+          appsSettings,
+          (agent) => this.agentManager.registerAgent(agent),
+          (name) => this.agentManager.unregisterAgent(name)
+        );
+        await appManager.loadInstalledApps();
+        logger.systemLog('App agents loaded');
+      });
+
+      // PHASE 4: ToolManager MUST be last (needs all other agents including apps)
       await this.safeInitialize('toolManager', () => this.initializationService.initializeToolManager());
 
       logger.systemLog('Using native chatbot UI instead of ChatAgent');

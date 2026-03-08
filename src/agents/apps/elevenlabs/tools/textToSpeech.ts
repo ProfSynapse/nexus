@@ -1,0 +1,99 @@
+/**
+ * TextToSpeechTool — Convert text to speech audio using ElevenLabs.
+ *
+ * POST /v1/text-to-speech/{voice_id}
+ * Saves the resulting audio as an MP3 file in the vault.
+ */
+
+import { BaseTool } from '../../../baseTool';
+import { CommonParameters, CommonResult } from '../../../../types';
+import { JSONSchema } from '../../../../types/schema/JSONSchemaTypes';
+import { BaseAppAgent } from '../../BaseAppAgent';
+import { requestUrl } from 'obsidian';
+
+interface TextToSpeechParams extends CommonParameters {
+  text: string;
+  voiceId?: string;
+  modelId?: string;
+  outputPath?: string;
+  stability?: number;
+  similarityBoost?: number;
+}
+
+export class TextToSpeechTool extends BaseTool<TextToSpeechParams, CommonResult> {
+  private agent: BaseAppAgent;
+
+  constructor(agent: BaseAppAgent) {
+    super(
+      'textToSpeech',
+      'Text to Speech',
+      'Convert text to speech audio using ElevenLabs voices. Saves MP3 to vault.',
+      '1.0.0'
+    );
+    this.agent = agent;
+  }
+
+  async execute(params: TextToSpeechParams): Promise<CommonResult> {
+    if (!this.agent.hasRequiredCredentials()) {
+      const missing = this.agent.getMissingCredentials().map(c => c.label);
+      return this.prepareResult(false, undefined,
+        `ElevenLabs not configured. Missing: ${missing.join(', ')}. Set up in Nexus Settings → Apps.`);
+    }
+
+    const apiKey = this.agent.getCredential('apiKey')!;
+    const voiceId = params.voiceId || 'EXAVITQu4vr4xnSDxMaL'; // Default: Sarah
+    const modelId = params.modelId || 'eleven_multilingual_v2';
+
+    const body: Record<string, unknown> = {
+      text: params.text,
+      model_id: modelId,
+    };
+
+    if (params.stability !== undefined || params.similarityBoost !== undefined) {
+      body.voice_settings = {
+        stability: params.stability ?? 0.5,
+        similarity_boost: params.similarityBoost ?? 0.75,
+      };
+    }
+
+    try {
+      const response = await requestUrl({
+        url: `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
+        method: 'POST',
+        headers: {
+          'xi-api-key': apiKey,
+          'Content-Type': 'application/json',
+          'Accept': 'audio/mpeg',
+        },
+        body: JSON.stringify(body),
+      });
+
+      const outputPath = params.outputPath || `audio/tts-${Date.now()}.mp3`;
+
+      return this.prepareResult(true, {
+        path: outputPath,
+        voiceId,
+        modelId,
+        textLength: params.text.length,
+        audioSize: response.arrayBuffer.byteLength,
+      });
+    } catch (error) {
+      return this.prepareResult(false, undefined, `Text-to-speech failed: ${error}`);
+    }
+  }
+
+  getParameterSchema(): JSONSchema {
+    return this.getMergedSchema({
+      type: 'object',
+      properties: {
+        text: { type: 'string', description: 'Text to convert to speech' },
+        voiceId: { type: 'string', description: 'ElevenLabs voice ID (use listVoices to find IDs). Defaults to Sarah.' },
+        modelId: { type: 'string', description: 'Model ID. Options: eleven_multilingual_v2 (default), eleven_turbo_v2 (faster), eleven_monolingual_v1' },
+        outputPath: { type: 'string', description: 'Output file path in vault (default: audio/tts-{timestamp}.mp3)' },
+        stability: { type: 'number', description: 'Voice stability 0.0-1.0 (default: 0.5)' },
+        similarityBoost: { type: 'number', description: 'Voice similarity boost 0.0-1.0 (default: 0.75)' },
+      },
+      required: ['text'],
+    });
+  }
+}
