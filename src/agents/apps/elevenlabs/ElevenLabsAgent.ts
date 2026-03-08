@@ -5,7 +5,7 @@
  * via the ElevenLabs API. Requires an API key from elevenlabs.io.
  */
 
-import { BaseAppAgent } from '../BaseAppAgent';
+import { BaseAppAgent, FetchTTSModelsResult } from '../BaseAppAgent';
 import { AppManifest, ElevenLabsModel } from '../../../types/apps/AppTypes';
 import { TextToSpeechTool } from './tools/textToSpeech';
 import { ListVoicesTool } from './tools/listVoices';
@@ -204,7 +204,7 @@ export class ElevenLabsAgent extends BaseAppAgent {
    * Fetch TTS-capable models from the ElevenLabs API.
    * Filters out models that require alpha access.
    */
-  async fetchTTSModels(): Promise<{ success: boolean; models?: ElevenLabsModel[]; error?: string }> {
+  async fetchTTSModels(): Promise<FetchTTSModelsResult> {
     if (!this.hasRequiredCredentials()) {
       return { success: false, error: 'API key not configured' };
     }

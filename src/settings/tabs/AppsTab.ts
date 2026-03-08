@@ -9,7 +9,6 @@ import { Settings } from '../../settings';
 import { Card, CardConfig } from '../../components/Card';
 import { AppConfigModal, AppSettingsSection } from '../../components/AppConfigModal';
 import { AppManager } from '../../services/apps/AppManager';
-import { ElevenLabsAgent } from '../../agents/apps/elevenlabs/ElevenLabsAgent';
 
 export interface AppsTabServices {
   app: App;
@@ -135,7 +134,6 @@ export class AppsTab {
 
     // Build settings sections for agents that support them
     const settingsSections = this.buildSettingsSections(appId, agent);
-
     new AppConfigModal(this.services.app, {
       manifest: agent.manifest,
       credentials: { ...config.credentials },
@@ -165,20 +163,21 @@ export class AppsTab {
   /**
    * Build settings sections for an app agent.
    * Returns app-specific dropdowns (e.g., ElevenLabs model selection).
+   * Uses manifest.id to identify apps (avoids instanceof issues with bundlers).
    */
   private buildSettingsSections(
     _appId: string,
     agent: import('../../agents/apps/BaseAppAgent').BaseAppAgent
   ): AppSettingsSection[] {
-    if (agent instanceof ElevenLabsAgent) {
+    if (agent.manifest.id === 'elevenlabs') {
       return [{
         key: 'defaultTTSModel',
         label: 'Default TTS model',
         description: 'Model used for text-to-speech when no model is specified.',
         loadOptions: async () => {
           const result = await agent.fetchTTSModels();
-          if (!result.success || !result.models) {
-            return { success: false, error: result.error };
+          if (!result || !result.success || !result.models) {
+            return { success: false, error: result?.error || 'Model fetching not supported' };
           }
           return {
             success: true,

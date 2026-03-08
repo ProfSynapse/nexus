@@ -9,7 +9,6 @@ import { BaseTool } from '../../../baseTool';
 import { CommonParameters, CommonResult } from '../../../../types';
 import { JSONSchema } from '../../../../types/schema/JSONSchemaTypes';
 import { BaseAppAgent } from '../../BaseAppAgent';
-import { ElevenLabsAgent } from '../ElevenLabsAgent';
 import { requestUrl, normalizePath, TFolder } from 'obsidian';
 
 interface TextToSpeechParams extends CommonParameters {
@@ -43,10 +42,7 @@ export class TextToSpeechTool extends BaseTool<TextToSpeechParams, CommonResult>
 
     const apiKey = this.agent.getCredential('apiKey')!;
     const voiceId = params.voiceId || 'EXAVITQu4vr4xnSDxMaL'; // Default: Sarah
-    const defaultModel = this.agent instanceof ElevenLabsAgent
-      ? this.agent.getDefaultModelId()
-      : 'eleven_multilingual_v2';
-    const modelId = params.modelId || defaultModel;
+    const modelId = params.modelId || this.agent.getDefaultModelId() || 'eleven_multilingual_v2';
 
     const body: Record<string, unknown> = {
       text: params.prompt,

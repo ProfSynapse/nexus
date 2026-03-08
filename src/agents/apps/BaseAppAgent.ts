@@ -7,9 +7,19 @@
  */
 
 import { BaseAgent } from '../baseAgent';
-import { AppManifest, AppCredentialField } from '../../types/apps/AppTypes';
+import { AppManifest, AppCredentialField, ElevenLabsModel } from '../../types/apps/AppTypes';
 import { CommonResult } from '../../types';
 import { Vault } from 'obsidian';
+
+/**
+ * Result type for fetchTTSModels. Defined here so subclasses and consumers
+ * can reference it without importing concrete agent classes.
+ */
+export interface FetchTTSModelsResult {
+  success: boolean;
+  models?: ElevenLabsModel[];
+  error?: string;
+}
 
 export abstract class BaseAppAgent extends BaseAgent {
   readonly manifest: AppManifest;
@@ -97,6 +107,24 @@ export abstract class BaseAppAgent extends BaseAgent {
    */
   getVault(): Vault | null {
     return this._vault;
+  }
+
+  /**
+   * Fetch available TTS models from the provider API.
+   * Override in subclasses that support model selection.
+   * Returns undefined by default (no model fetching support).
+   */
+  async fetchTTSModels(): Promise<FetchTTSModelsResult | undefined> {
+    return undefined;
+  }
+
+  /**
+   * Get the user's selected default TTS model ID.
+   * Override in subclasses that support model selection.
+   * Returns undefined by default.
+   */
+  getDefaultModelId(): string | undefined {
+    return undefined;
   }
 
   /**
