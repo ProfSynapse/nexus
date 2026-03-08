@@ -104,17 +104,47 @@ export class PromptManagerAgent extends BaseAgent {
     this.storageService = new CustomPromptStorageService(db || null, settings);
     this.vaultName = sanitizeVaultName(vault.getName());
 
-    // Register prompt management tools
-    this.registerTool(new ListPromptsTool(this.storageService));
-    this.registerTool(new GetPromptTool(this.storageService));
-    this.registerTool(new CreatePromptTool(this.storageService));
-    this.registerTool(new UpdatePromptTool(this.storageService));
-    this.registerTool(new ArchivePromptTool(this.storageService));
+    // Register prompt management tools - lazy loaded
+    this.registerLazyTool({
+      slug: 'listPrompts', name: 'List Prompts',
+      description: 'List all custom prompts',
+      version: '1.0.0',
+      factory: () => new ListPromptsTool(this.storageService),
+    });
+    this.registerLazyTool({
+      slug: 'getPrompt', name: 'Get Prompt',
+      description: 'Get a custom prompt for persona adoption - does NOT execute tasks automatically',
+      version: '1.0.0',
+      factory: () => new GetPromptTool(this.storageService),
+    });
+    this.registerLazyTool({
+      slug: 'createPrompt', name: 'Create Prompt',
+      description: 'Create a new custom prompt',
+      version: '1.0.0',
+      factory: () => new CreatePromptTool(this.storageService),
+    });
+    this.registerLazyTool({
+      slug: 'updatePrompt', name: 'Update Prompt',
+      description: 'Update an existing custom prompt',
+      version: '1.0.0',
+      factory: () => new UpdatePromptTool(this.storageService),
+    });
+    this.registerLazyTool({
+      slug: 'archivePrompt', name: 'Archive Prompt',
+      description: 'Archive a custom prompt by disabling it (preserves configuration for restoration)',
+      version: '1.0.0',
+      factory: () => new ArchivePromptTool(this.storageService),
+    });
 
-    // Register LLM tools with dependencies already available
-    this.registerTool(new ListModelsTool(this.providerManager));
+    // Register LLM tools - lazy loaded
+    this.registerLazyTool({
+      slug: 'listModels', name: 'List Available Models',
+      description: 'List available LLM models grouped by provider',
+      version: '2.0.0',
+      factory: () => new ListModelsTool(this.providerManager),
+    });
 
-    // Register unified prompt execution tool (handles single and batch)
+    // Register unified prompt execution tool (handles single and batch) - eager (complex dependencies)
     this.registerTool(new ExecutePromptsTool(
       undefined, // plugin - not needed in constructor injection pattern
       this.providerManager.getLLMService(), // Get LLM service from provider manager
@@ -129,10 +159,15 @@ export class PromptManagerAgent extends BaseAgent {
     const hasOpenRouterKey = llmProviders?.providers?.openrouter?.apiKey && llmProviders?.providers?.openrouter?.enabled;
 
     if (hasGoogleKey || hasOpenRouterKey) {
-      this.registerTool(new GenerateImageTool({
-        vault: this.vault,
-        llmSettings: llmProviders
-      }));
+      this.registerLazyTool({
+        slug: 'generateImage', name: 'Generate Image',
+        description: 'Generate images using Google Nano Banana models (direct or via OpenRouter). Supports reference images for style/composition guidance.',
+        version: '2.1.0',
+        factory: () => new GenerateImageTool({
+          vault: this.vault,
+          llmSettings: llmProviders
+        }),
+      });
     }
 
     // Register subagent tool (internal chat only - executor wired up separately)

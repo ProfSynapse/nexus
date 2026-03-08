@@ -124,19 +124,28 @@ export class SearchManagerAgent extends BaseAgent {
     }
     this.registerTool(this.searchContentTool);
 
-    // Register focused search tools with enhanced validation and service integration
-    this.registerTool(new SearchDirectoryTool(
-      pluginOrFallback,
-      this.workspaceService || undefined
-    ));
+    // Register focused search tools - lazy loaded
+    this.registerLazyTool({
+      slug: 'searchDirectory', name: 'Search Directory',
+      description: 'FOCUSED directory search with REQUIRED paths parameter. Search for files and/or folders within specific directory paths using fuzzy matching and optional workspace context. Requires: query (search terms) and paths (directory paths to search - cannot be empty).',
+      version: '2.0.0',
+      factory: () => new SearchDirectoryTool(
+        pluginOrFallback,
+        this.workspaceService || undefined
+      ),
+    });
 
-
-    this.registerTool(new SearchMemoryTool(
-      pluginOrFallback,
-      this.memoryService || undefined,
-      this.workspaceService || undefined,
-      this.storageAdapter || undefined  // SQLite storage adapter for memory trace search
-    ));
+    this.registerLazyTool({
+      slug: 'searchMemory', name: 'Search Memory',
+      description: 'Search workspace memory for past conversations, tool execution history, and workspace state snapshots.\n\nTWO MODES:\n- Discovery (default): Search all memory across a workspace. Best for finding past discussions, tool usage, or workspace context.\n- Scoped (provide sessionId): Search within a specific session and get surrounding message context around each match. Best for recovering what happened in a particular session.\n\nTIPS:\n- Use natural language queries for conversations (e.g., "how did we implement auth?").\n- Use specific terms for tool history (e.g., agent or tool names).\n- Narrow results with memoryTypes if you know what you\'re looking for.\n- Use sessionId + windowSize to get full context around a match.\n\nREQUIRES: query. Optional: workspaceId (defaults to global workspace if omitted; available from your useTools context, or use MemoryManager listWorkspaces).',
+      version: '2.1.0',
+      factory: () => new SearchMemoryTool(
+        pluginOrFallback,
+        this.memoryService || undefined,
+        this.workspaceService || undefined,
+        this.storageAdapter || undefined
+      ),
+    });
   }
 
 

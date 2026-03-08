@@ -77,17 +77,57 @@ export class MemoryManagerAgent extends BaseAgent {
     this.memoryService = memoryService;
     this.workspaceService = workspaceService;
 
-    // Register state tools (3 tools: create, list, load)
-    this.registerTool(new CreateStateTool(this));
-    this.registerTool(new ListStatesTool(this));
-    this.registerTool(new LoadStateTool(this));
+    // Register state tools (3 tools: create, list, load) - lazy loaded
+    this.registerLazyTool({
+      slug: 'createState', name: 'Create State',
+      description: 'Create a state with restoration context for later resumption',
+      version: '2.0.0',
+      factory: () => new CreateStateTool(this),
+    });
+    this.registerLazyTool({
+      slug: 'listStates', name: 'List States',
+      description: 'List states with optional filtering and sorting',
+      version: '2.0.0',
+      factory: () => new ListStatesTool(this),
+    });
+    this.registerLazyTool({
+      slug: 'loadState', name: 'Load State',
+      description: 'Load a saved state and optionally create a continuation session with restored context',
+      version: '2.0.0',
+      factory: () => new LoadStateTool(this),
+    });
 
-    // Register workspace tools (5 tools: create, list, load, update, archive)
-    this.registerTool(new CreateWorkspaceTool(this));
-    this.registerTool(new ListWorkspacesTool(this));
-    this.registerTool(new LoadWorkspaceTool(this));
-    this.registerTool(new UpdateWorkspaceTool(this));
-    this.registerTool(new ArchiveWorkspaceTool(this));
+    // Register workspace tools (5 tools: create, list, load, update, archive) - lazy loaded
+    this.registerLazyTool({
+      slug: 'createWorkspace', name: 'Create Workspace',
+      description: 'Create a new workspace with structured context data',
+      version: '2.0.0',
+      factory: () => new CreateWorkspaceTool(this),
+    });
+    this.registerLazyTool({
+      slug: 'listWorkspaces', name: 'List Workspaces',
+      description: 'List available workspaces with filters and sorting',
+      version: '1.0.0',
+      factory: () => new ListWorkspacesTool(this),
+    });
+    this.registerLazyTool({
+      slug: 'loadWorkspace', name: 'Load Workspace',
+      description: 'Load a workspace by ID and restore context and state',
+      version: '2.0.0',
+      factory: () => new LoadWorkspaceTool(this),
+    });
+    this.registerLazyTool({
+      slug: 'updateWorkspace', name: 'Update Workspace',
+      description: 'Update workspace properties. Pass only fields to change - others remain unchanged.',
+      version: '2.0.0',
+      factory: () => new UpdateWorkspaceTool(this),
+    });
+    this.registerLazyTool({
+      slug: 'archiveWorkspace', name: 'Archive Workspace',
+      description: 'Archive a workspace (soft delete). Workspace will be hidden from lists but can be restored.',
+      version: '1.0.0',
+      factory: () => new ArchiveWorkspaceTool(this),
+    });
   }
 
   /**

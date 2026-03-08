@@ -33,10 +33,30 @@ export class CanvasManagerAgent extends BaseAgent {
     this.app = app;
     this.plugin = plugin || null;
 
-    // Register 4 tools
-    this.registerTool(new ReadCanvasTool(app));
-    this.registerTool(new WriteCanvasTool(app));
-    this.registerTool(new UpdateCanvasTool(app));
-    this.registerTool(new ListCanvasTool(app));
+    // Register 4 tools - lazy loaded
+    this.registerLazyTool({
+      slug: 'read', name: 'Read Canvas',
+      description: 'Read the structure of a canvas file (nodes and edges)',
+      version: '1.0.0',
+      factory: () => new ReadCanvasTool(app),
+    });
+    this.registerLazyTool({
+      slug: 'write', name: 'Write Canvas',
+      description: 'Create a NEW canvas file. Fails if canvas already exists - use canvasManager.update to modify existing canvases.',
+      version: '1.0.0',
+      factory: () => new WriteCanvasTool(app),
+    });
+    this.registerLazyTool({
+      slug: 'update', name: 'Update Canvas',
+      description: 'Modify an EXISTING canvas file. Replaces nodes and/or edges arrays. Fails if canvas does not exist - use canvasManager.write to create new canvases.',
+      version: '1.0.0',
+      factory: () => new UpdateCanvasTool(app),
+    });
+    this.registerLazyTool({
+      slug: 'list', name: 'List Canvases',
+      description: 'List canvas files in the vault with node/edge counts',
+      version: '1.0.0',
+      factory: () => new ListCanvasTool(app),
+    });
   }
 }

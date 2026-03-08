@@ -33,13 +33,43 @@ export class StorageManagerAgent extends BaseAgent {
     this.app = app;
     this.vaultName = sanitizeVaultName(app.vault.getName());
 
-    // Register simplified CRUA tools
-    this.registerTool(new ListTool(app));
-    this.registerTool(new CreateFolderTool(app));
-    this.registerTool(new MoveTool(app));
-    this.registerTool(new CopyTool(app));
-    this.registerTool(new ArchiveTool(app));
-    this.registerTool(new OpenTool(app));
+    // Register simplified CRUA tools - lazy loaded
+    this.registerLazyTool({
+      slug: 'list', name: 'List',
+      description: 'List contents of a directory',
+      version: '1.0.0',
+      factory: () => new ListTool(app),
+    });
+    this.registerLazyTool({
+      slug: 'createFolder', name: 'Create Folder',
+      description: 'Create a new folder in the vault',
+      version: '1.0.0',
+      factory: () => new CreateFolderTool(app),
+    });
+    this.registerLazyTool({
+      slug: 'move', name: 'Move',
+      description: 'Move or rename a file or folder',
+      version: '1.0.0',
+      factory: () => new MoveTool(app),
+    });
+    this.registerLazyTool({
+      slug: 'copy', name: 'Copy',
+      description: 'Duplicate a file',
+      version: '1.0.0',
+      factory: () => new CopyTool(app),
+    });
+    this.registerLazyTool({
+      slug: 'archive', name: 'Archive',
+      description: 'Safely archive a file or folder (moves to .archive/ with timestamp)',
+      version: '1.0.0',
+      factory: () => new ArchiveTool(app),
+    });
+    this.registerLazyTool({
+      slug: 'open', name: 'Open',
+      description: 'Open a file in the editor',
+      version: '1.0.0',
+      factory: () => new OpenTool(app),
+    });
   }
 
   /**

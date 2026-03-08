@@ -60,10 +60,25 @@ export class ContentManagerAgent extends BaseAgent {
       this.workspaceService = plugin.services.workspaceService;
     }
 
-    // Register simplified tools (3 tools replacing 8)
-    this.registerTool(new ReadTool(app));
-    this.registerTool(new WriteTool(app));
-    this.registerTool(new UpdateTool(app));
+    // Register simplified tools (3 tools replacing 8) - lazy loaded
+    this.registerLazyTool({
+      slug: 'read', name: 'Read',
+      description: 'Read content from a file with line range',
+      version: '1.0.0',
+      factory: () => new ReadTool(app),
+    });
+    this.registerLazyTool({
+      slug: 'write', name: 'Write',
+      description: 'Create a new file or overwrite existing file',
+      version: '1.0.0',
+      factory: () => new WriteTool(app),
+    });
+    this.registerLazyTool({
+      slug: 'update', name: 'Update',
+      description: 'Insert, replace, or delete content at specific line positions. Returns linesDelta showing net line change - use this to adjust subsequent line numbers in multi-operation workflows.',
+      version: '1.0.0',
+      factory: () => new UpdateTool(app),
+    });
   }
   
   
