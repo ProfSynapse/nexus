@@ -17,7 +17,7 @@ export class UpdateProjectTool extends BaseTool<UpdateProjectParameters, UpdateP
     super(
       'updateProject',
       'Update Project',
-      'Update project metadata or status',
+      'Update a project\'s name, description, status (active/completed/archived), or custom metadata. Requires a projectId (from createProject or listProjects).',
       '1.0.0'
     );
   }
@@ -45,7 +45,7 @@ export class UpdateProjectTool extends BaseTool<UpdateProjectParameters, UpdateP
     return this.getMergedSchema({
       type: 'object',
       properties: {
-        projectId: { type: 'string', description: 'Project ID to update (REQUIRED)' },
+        projectId: { type: 'string', description: 'Project ID to update (REQUIRED — from createProject or listProjects)' },
         name: { type: 'string', description: 'New project name' },
         description: { type: 'string', description: 'New project description' },
         status: { type: 'string', enum: ['active', 'completed', 'archived'], description: 'New project status' },

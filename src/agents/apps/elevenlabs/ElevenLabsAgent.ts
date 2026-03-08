@@ -5,14 +5,16 @@
  * via the ElevenLabs API. Requires an API key from elevenlabs.io.
  */
 
-import { BaseAppAgent } from '../BaseAppAgent';
-import { AppManifest } from '../../../types/apps/AppTypes';
+import { BaseAppAgent, FetchTTSModelsResult } from '../BaseAppAgent';
+import { AppManifest, ElevenLabsModel } from '../../../types/apps/AppTypes';
 import { TextToSpeechTool } from './tools/textToSpeech';
 import { ListVoicesTool } from './tools/listVoices';
 import { SoundEffectsTool } from './tools/soundEffects';
 import { MusicGenerationTool } from './tools/musicGeneration';
 import { CommonResult } from '../../../types';
 import { requestUrl } from 'obsidian';
+
+const DEFAULT_TTS_MODEL = 'eleven_multilingual_v2';
 
 const ELEVENLABS_MANIFEST: AppManifest = {
   id: 'elevenlabs',
@@ -196,5 +198,45 @@ export class ElevenLabsAgent extends BaseAppAgent {
         missingPermissions,
       },
     };
+  }
+
+  /**
+   * Fetch TTS-capable models from the ElevenLabs API.
+   * Filters out models that require alpha access.
+   */
+  async fetchTTSModels(): Promise<FetchTTSModelsResult> {
+    if (!this.hasRequiredCredentials()) {
+      return { success: false, error: 'API key not configured' };
+    }
+
+    const apiKey = this.getCredential('apiKey')!;
+
+    try {
+      const response = await requestUrl({
+        url: 'https://api.elevenlabs.io/v1/models',
+        method: 'GET',
+        headers: { 'xi-api-key': apiKey },
+      });
+
+      const allModels: ElevenLabsModel[] = response.json || [];
+      const ttsModels = allModels.filter(
+        m => m.can_do_text_to_speech && !m.requires_alpha_access
+      );
+
+      return { success: true, models: ttsModels };
+    } catch (error: unknown) {
+      const status = (error as Record<string, unknown>)?.status;
+      return {
+        success: false,
+        error: `Failed to fetch models${status ? ` (${status})` : ''}`
+      };
+    }
+  }
+
+  /**
+   * Get the user's selected default TTS model ID, or fall back to eleven_multilingual_v2.
+   */
+  getDefaultModelId(): string {
+    return this.getSetting('defaultTTSModel') || DEFAULT_TTS_MODEL;
   }
 }

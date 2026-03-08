@@ -17,7 +17,7 @@ export class CreateTaskTool extends BaseTool<CreateTaskParameters, CreateTaskRes
     super(
       'createTask',
       'Create Task',
-      'Create a task with optional dependencies, subtask parent, priority, and note links',
+      'Create a task within a project. Requires a projectId (from createProject or listProjects). Supports optional priority (critical/high/medium/low), assignee, dueDate, tags, dependsOn[] for DAG edges (cycles rejected), parentTaskId for subtask nesting, and linkedNotes[] for vault note links. Returns the new taskId.',
       '1.0.0'
     );
   }
@@ -54,17 +54,17 @@ export class CreateTaskTool extends BaseTool<CreateTaskParameters, CreateTaskRes
     return this.getMergedSchema({
       type: 'object',
       properties: {
-        projectId: { type: 'string', description: 'Project ID to create the task in (REQUIRED)' },
+        projectId: { type: 'string', description: 'Project ID to create the task in (REQUIRED — from createProject or listProjects)' },
         title: { type: 'string', description: 'Task title (REQUIRED)' },
-        description: { type: 'string', description: 'Task description' },
-        parentTaskId: { type: 'string', description: 'Parent task ID for subtask hierarchy' },
+        description: { type: 'string', description: 'Task description (optional)' },
+        parentTaskId: { type: 'string', description: 'Parent task ID to nest this task under as a subtask (optional — from createTask or listTasks)' },
         priority: { type: 'string', enum: ['critical', 'high', 'medium', 'low'], description: 'Task priority (default: medium)' },
-        dueDate: { type: 'number', description: 'Due date as Unix timestamp (milliseconds)' },
-        assignee: { type: 'string', description: 'Assignee name or identifier' },
-        tags: { type: 'array', items: { type: 'string' }, description: 'Tags for categorization' },
-        dependsOn: { type: 'array', items: { type: 'string' }, description: 'Task IDs this task depends on (creates DAG edges)' },
-        linkedNotes: { type: 'array', items: { type: 'string' }, description: 'Vault note paths to link to this task' },
-        metadata: { type: 'object', description: 'Custom metadata', additionalProperties: true }
+        dueDate: { type: 'number', description: 'Due date as Unix timestamp in milliseconds (e.g., Date.now() + 86400000 for tomorrow)' },
+        assignee: { type: 'string', description: 'Assignee name or identifier (optional)' },
+        tags: { type: 'array', items: { type: 'string' }, description: 'Tags for categorization (optional)' },
+        dependsOn: { type: 'array', items: { type: 'string' }, description: 'Task IDs this task depends on — creates DAG edges. Task cannot start until all dependencies are done. Cycles are rejected with an error.' },
+        linkedNotes: { type: 'array', items: { type: 'string' }, description: 'Vault note paths to link to this task (link type defaults to reference)' },
+        metadata: { type: 'object', description: 'Custom metadata key-value pairs (optional)', additionalProperties: true }
       },
       required: ['projectId', 'title']
     });

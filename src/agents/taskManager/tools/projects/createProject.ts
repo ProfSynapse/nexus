@@ -17,7 +17,7 @@ export class CreateProjectTool extends BaseTool<CreateProjectParameters, CreateP
     super(
       'createProject',
       'Create Project',
-      'Create a new project within a workspace',
+      'Create a new project within a workspace. Projects organize tasks and must have a unique name per workspace. Requires a workspaceId (from loadWorkspace or createWorkspace). Returns the new projectId.',
       '1.0.0'
     );
   }
@@ -47,10 +47,10 @@ export class CreateProjectTool extends BaseTool<CreateProjectParameters, CreateP
     return this.getMergedSchema({
       type: 'object',
       properties: {
-        workspaceId: { type: 'string', description: 'Workspace ID to create the project in (REQUIRED)' },
-        name: { type: 'string', description: 'Project name (REQUIRED, must be unique within workspace)' },
-        description: { type: 'string', description: 'Project description' },
-        metadata: { type: 'object', description: 'Custom metadata key-value pairs', additionalProperties: true }
+        workspaceId: { type: 'string', description: 'Workspace ID (REQUIRED — from loadWorkspace or createWorkspace)' },
+        name: { type: 'string', description: 'Project name (REQUIRED — must be unique within the workspace)' },
+        description: { type: 'string', description: 'Project description (optional)' },
+        metadata: { type: 'object', description: 'Custom metadata key-value pairs (optional)', additionalProperties: true }
       },
       required: ['workspaceId', 'name']
     });

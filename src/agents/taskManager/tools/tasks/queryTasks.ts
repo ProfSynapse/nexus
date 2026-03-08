@@ -17,7 +17,7 @@ export class QueryTasksTool extends BaseTool<QueryTasksParameters, QueryTasksRes
     super(
       'queryTasks',
       'Query Tasks',
-      'DAG queries: get next actionable tasks, blocked tasks, or dependency tree for a task',
+      'DAG-aware queries on a project\'s tasks. Three query types: nextActions returns tasks ready to start (status=todo and all dependencies done), blockedTasks returns tasks waiting on incomplete dependencies with their blocker details, dependencyTree returns the full upstream/downstream dependency graph for a specific task. Requires projectId; dependencyTree also requires taskId.',
       '1.0.0'
     );
   }
@@ -63,27 +63,82 @@ export class QueryTasksTool extends BaseTool<QueryTasksParameters, QueryTasksRes
     return this.getMergedSchema({
       type: 'object',
       properties: {
-        projectId: { type: 'string', description: 'Project ID to query (REQUIRED)' },
+        projectId: { type: 'string', description: 'Project ID to query (REQUIRED — from createProject or listProjects)' },
         query: {
           type: 'string',
           enum: ['nextActions', 'blockedTasks', 'dependencyTree'],
-          description: 'Query type (REQUIRED). nextActions: tasks ready to work on (all deps done). blockedTasks: tasks waiting on incomplete deps. dependencyTree: full upstream/downstream graph for a specific task.'
+          description: 'Query type (REQUIRED). nextActions: tasks with status=todo whose dependencies are all done — these are ready to start. blockedTasks: tasks waiting on incomplete dependencies, returned with their blocker details. dependencyTree: full upstream/downstream dependency graph for a specific task (requires taskId).'
         },
-        taskId: { type: 'string', description: 'Task ID (REQUIRED for dependencyTree query)' }
+        taskId: { type: 'string', description: 'Task ID (REQUIRED for dependencyTree query — from createTask or listTasks)' }
       },
       required: ['projectId', 'query']
     });
   }
 
   getResultSchema(): JSONSchema {
+    const taskObjectSchema: JSONSchema = {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'Task ID' },
+        projectId: { type: 'string', description: 'Parent project ID' },
+        workspaceId: { type: 'string', description: 'Parent workspace ID' },
+        parentTaskId: { type: 'string', description: 'Parent task ID if subtask (null if top-level)' },
+        title: { type: 'string', description: 'Task title' },
+        description: { type: 'string', description: 'Task description' },
+        status: { type: 'string', enum: ['todo', 'in_progress', 'done', 'cancelled'], description: 'Task status' },
+        priority: { type: 'string', enum: ['critical', 'high', 'medium', 'low'], description: 'Task priority' },
+        created: { type: 'number', description: 'Creation timestamp (ms since epoch)' },
+        updated: { type: 'number', description: 'Last update timestamp (ms since epoch)' },
+        completedAt: { type: 'number', description: 'Completion timestamp (ms since epoch, only when status=done)' },
+        dueDate: { type: 'number', description: 'Due date timestamp (ms since epoch)' },
+        assignee: { type: 'string', description: 'Assigned person or identifier' },
+        tags: { type: 'array', items: { type: 'string' }, description: 'Categorization tags' },
+        metadata: { type: 'object', description: 'Custom metadata key-value pairs' }
+      }
+    };
+
     return {
       type: 'object',
       properties: {
         success: { type: 'boolean' },
-        query: { type: 'string', description: 'The query type that was executed' },
-        tasks: { type: 'array', items: { type: 'object' }, description: 'Tasks for nextActions query' },
-        blockedTasks: { type: 'array', items: { type: 'object' }, description: 'Blocked tasks with blocker details' },
-        tree: { type: 'object', description: 'Dependency tree for dependencyTree query' },
+        query: { type: 'string', enum: ['nextActions', 'blockedTasks', 'dependencyTree'], description: 'The query type that was executed' },
+        tasks: {
+          type: 'array',
+          description: 'Returned for nextActions query — tasks with status=todo whose dependencies are all done (ready to start)',
+          items: taskObjectSchema
+        },
+        blockedTasks: {
+          type: 'array',
+          description: 'Returned for blockedTasks query — tasks that cannot start because they have incomplete dependencies',
+          items: {
+            type: 'object',
+            properties: {
+              task: { ...taskObjectSchema, description: 'The blocked task' },
+              blockedBy: {
+                type: 'array',
+                description: 'Tasks that must complete before the blocked task can start',
+                items: taskObjectSchema
+              }
+            }
+          }
+        },
+        tree: {
+          type: 'object',
+          description: 'Returned for dependencyTree query — recursive upstream/downstream dependency graph for the specified task',
+          properties: {
+            task: { ...taskObjectSchema, description: 'The root task of the tree' },
+            dependencies: {
+              type: 'array',
+              description: 'Upstream tasks this task depends on (recursive — each has its own dependencies/dependents)',
+              items: { type: 'object', description: 'Recursive DependencyTree node with task, dependencies[], and dependents[]' }
+            },
+            dependents: {
+              type: 'array',
+              description: 'Downstream tasks that depend on this task (recursive — each has its own dependencies/dependents)',
+              items: { type: 'object', description: 'Recursive DependencyTree node with task, dependencies[], and dependents[]' }
+            }
+          }
+        },
         error: { type: 'string' }
       }
     };

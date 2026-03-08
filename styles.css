@@ -6881,3 +6881,15 @@ body.is-mobile .chat-loading-overlay {
     color: var(--text-accent);
 }
 
+.app-config-settings-divider {
+    border-top: 1px solid var(--background-modifier-border);
+    margin-top: 16px;
+    padding-top: 8px;
+}
+
+.app-config-settings-heading {
+    margin: 8px 0 4px;
+    color: var(--text-normal);
+    font-size: var(--font-ui-medium);
+}
+

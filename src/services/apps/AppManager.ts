@@ -51,6 +51,7 @@ export class AppManager {
       try {
         const agent = factory();
         agent.setCredentials(config.credentials);
+        if (config.settings) agent.setSettings(config.settings);
         if (this.vault) agent.setVault(this.vault);
         this.apps.set(appId, agent);
         this.registerCallback(agent);
@@ -126,6 +127,21 @@ export class AppManager {
   }
 
   /**
+   * Update settings for an installed app (e.g., default model).
+   */
+  setAppSettings(appId: string, settings: Record<string, string>): boolean {
+    const agent = this.apps.get(appId);
+    if (!agent) return false;
+
+    agent.setSettings(settings);
+
+    if (this.appConfigs[appId]) {
+      this.appConfigs[appId].settings = { ...settings };
+    }
+    return true;
+  }
+
+  /**
    * Enable/disable an app without uninstalling.
    */
   setAppEnabled(appId: string, enabled: boolean): boolean {
@@ -139,6 +155,7 @@ export class AppManager {
       if (factory) {
         const agent = factory();
         agent.setCredentials(this.appConfigs[appId].credentials);
+        if (this.appConfigs[appId].settings) agent.setSettings(this.appConfigs[appId].settings!);
         if (this.vault) agent.setVault(this.vault);
         this.apps.set(appId, agent);
         this.registerCallback(agent);

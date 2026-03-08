@@ -68,6 +68,8 @@ export interface AppConfig {
   enabled: boolean;
   /** Stored credential values */
   credentials: Record<string, string>;
+  /** App-specific settings (e.g., default model selection) */
+  settings?: Record<string, string>;
   /** ISO timestamp of when the app was installed */
   installedAt: string;
   /** App version at install time */
@@ -80,4 +82,26 @@ export interface AppConfig {
 export interface AppsSettings {
   /** Map of app ID to its configuration */
   apps: Record<string, AppConfig>;
+}
+
+/**
+ * ElevenLabs model language entry from the /v1/models API.
+ */
+export interface ElevenLabsModelLanguage {
+  language_id: string;
+  name: string;
+}
+
+/**
+ * ElevenLabs model entry from GET /v1/models.
+ */
+export interface ElevenLabsModel {
+  model_id: string;
+  name: string;
+  can_do_text_to_speech: boolean;
+  can_do_voice_conversion: boolean;
+  requires_alpha_access: boolean;
+  description: string;
+  token_cost_factor: number;
+  languages: ElevenLabsModelLanguage[];
 }

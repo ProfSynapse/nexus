@@ -17,7 +17,7 @@ export class ArchiveProjectTool extends BaseTool<ArchiveProjectParameters, Archi
     super(
       'archiveProject',
       'Archive Project',
-      'Archive a project (soft-delete)',
+      'Archive a project by setting its status to \'archived\' (soft-delete). The project and its tasks remain queryable but are excluded from active listings. Requires a projectId (from createProject or listProjects).',
       '1.0.0'
     );
   }
@@ -39,7 +39,7 @@ export class ArchiveProjectTool extends BaseTool<ArchiveProjectParameters, Archi
     return this.getMergedSchema({
       type: 'object',
       properties: {
-        projectId: { type: 'string', description: 'Project ID to archive (REQUIRED)' }
+        projectId: { type: 'string', description: 'Project ID to archive (REQUIRED — from createProject or listProjects)' }
       },
       required: ['projectId']
     });

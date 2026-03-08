@@ -17,7 +17,7 @@ export class MoveTaskTool extends BaseTool<MoveTaskParameters, MoveTaskResult> {
     super(
       'moveTask',
       'Move Task',
-      'Move a task to a different project or change its parent task',
+      'Move a task to a different project within the same workspace, or change its parent task (set parentTaskId to nest as subtask, null to make top-level). Requires a taskId (from createTask or listTasks).',
       '1.0.0'
     );
   }
@@ -46,8 +46,8 @@ export class MoveTaskTool extends BaseTool<MoveTaskParameters, MoveTaskResult> {
     return this.getMergedSchema({
       type: 'object',
       properties: {
-        taskId: { type: 'string', description: 'Task ID to move (REQUIRED)' },
-        projectId: { type: 'string', description: 'Target project ID (moves task to a different project within same workspace)' },
+        taskId: { type: 'string', description: 'Task ID to move (REQUIRED — from createTask or listTasks)' },
+        projectId: { type: 'string', description: 'Target project ID to move the task to (from createProject or listProjects — must be in the same workspace)' },
         parentTaskId: {
           type: ['string', 'null'],
           description: 'New parent task ID (null to make top-level, string to nest under another task)'

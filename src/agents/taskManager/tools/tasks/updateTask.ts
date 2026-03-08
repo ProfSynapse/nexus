@@ -17,7 +17,7 @@ export class UpdateTaskTool extends BaseTool<UpdateTaskParameters, UpdateTaskRes
     super(
       'updateTask',
       'Update Task',
-      'Update task fields, status, or manage dependencies',
+      'Update task fields (title, description, status, priority, dueDate, assignee, tags) and manage DAG dependencies (addDependencies/removeDependencies). Dependency additions are validated for cycles. Requires a taskId (from createTask or listTasks).',
       '1.0.0'
     );
   }
@@ -70,17 +70,17 @@ export class UpdateTaskTool extends BaseTool<UpdateTaskParameters, UpdateTaskRes
     return this.getMergedSchema({
       type: 'object',
       properties: {
-        taskId: { type: 'string', description: 'Task ID to update (REQUIRED)' },
+        taskId: { type: 'string', description: 'Task ID to update (REQUIRED — from createTask or listTasks)' },
         title: { type: 'string', description: 'New task title' },
         description: { type: 'string', description: 'New task description' },
-        status: { type: 'string', enum: ['todo', 'in_progress', 'done', 'cancelled'], description: 'New task status' },
+        status: { type: 'string', enum: ['todo', 'in_progress', 'done', 'cancelled'], description: 'New task status (setting to done auto-records completedAt timestamp)' },
         priority: { type: 'string', enum: ['critical', 'high', 'medium', 'low'], description: 'New task priority' },
-        dueDate: { type: 'number', description: 'New due date as Unix timestamp (milliseconds)' },
-        assignee: { type: 'string', description: 'New assignee' },
-        tags: { type: 'array', items: { type: 'string' }, description: 'Replace tags array' },
-        addDependencies: { type: 'array', items: { type: 'string' }, description: 'Task IDs to add as dependencies (validates no cycles)' },
-        removeDependencies: { type: 'array', items: { type: 'string' }, description: 'Task IDs to remove from dependencies' },
-        metadata: { type: 'object', description: 'Custom metadata to merge', additionalProperties: true }
+        dueDate: { type: 'number', description: 'New due date as Unix timestamp in milliseconds (e.g., Date.now() + 86400000 for tomorrow)' },
+        assignee: { type: 'string', description: 'New assignee name or identifier' },
+        tags: { type: 'array', items: { type: 'string' }, description: 'Replace entire tags array with these values' },
+        addDependencies: { type: 'array', items: { type: 'string' }, description: 'Task IDs to add as DAG dependencies — this task cannot start until these are done. Cycles are rejected with an error.' },
+        removeDependencies: { type: 'array', items: { type: 'string' }, description: 'Task IDs to remove from this task\'s dependencies' },
+        metadata: { type: 'object', description: 'Custom metadata to merge (keys are merged, not replaced)', additionalProperties: true }
       },
       required: ['taskId']
     });

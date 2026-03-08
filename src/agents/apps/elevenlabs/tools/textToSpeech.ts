@@ -12,7 +12,7 @@ import { BaseAppAgent } from '../../BaseAppAgent';
 import { requestUrl, normalizePath, TFolder } from 'obsidian';
 
 interface TextToSpeechParams extends CommonParameters {
-  text: string;
+  prompt: string;
   voiceId?: string;
   modelId?: string;
   outputPath?: string;
@@ -42,10 +42,10 @@ export class TextToSpeechTool extends BaseTool<TextToSpeechParams, CommonResult>
 
     const apiKey = this.agent.getCredential('apiKey')!;
     const voiceId = params.voiceId || 'EXAVITQu4vr4xnSDxMaL'; // Default: Sarah
-    const modelId = params.modelId || 'eleven_multilingual_v2';
+    const modelId = params.modelId || this.agent.getDefaultModelId() || 'eleven_multilingual_v2';
 
     const body: Record<string, unknown> = {
-      text: params.text,
+      text: params.prompt,
       model_id: modelId,
     };
 
@@ -98,7 +98,7 @@ export class TextToSpeechTool extends BaseTool<TextToSpeechParams, CommonResult>
         path: outputPath,
         voiceId,
         modelId,
-        textLength: params.text.length,
+        textLength: params.prompt.length,
         audioSize: response.arrayBuffer.byteLength,
       });
     } catch (error: unknown) {
@@ -115,14 +115,14 @@ export class TextToSpeechTool extends BaseTool<TextToSpeechParams, CommonResult>
     return this.getMergedSchema({
       type: 'object',
       properties: {
-        text: { type: 'string', description: 'Text to convert to speech' },
+        prompt: { type: 'string', description: 'Text prompt to convert to speech. Supports dialogue tags like [fearful], [whispered], etc.' },
         voiceId: { type: 'string', description: 'ElevenLabs voice ID (use listVoices to find IDs). Defaults to Sarah.' },
         modelId: { type: 'string', description: 'Model ID. Options: eleven_multilingual_v2 (default), eleven_turbo_v2 (faster), eleven_monolingual_v1' },
         outputPath: { type: 'string', description: 'Output file path in vault (default: audio/tts-{timestamp}.mp3)' },
         stability: { type: 'number', description: 'Voice stability 0.0-1.0 (default: 0.5)' },
         similarityBoost: { type: 'number', description: 'Voice similarity boost 0.0-1.0 (default: 0.75)' },
       },
-      required: ['text'],
+      required: ['prompt'],
     });
   }
 }

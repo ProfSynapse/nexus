@@ -7,13 +7,24 @@
  */
 
 import { BaseAgent } from '../baseAgent';
-import { AppManifest, AppCredentialField } from '../../types/apps/AppTypes';
+import { AppManifest, AppCredentialField, ElevenLabsModel } from '../../types/apps/AppTypes';
 import { CommonResult } from '../../types';
 import { Vault } from 'obsidian';
+
+/**
+ * Result type for fetchTTSModels. Defined here so subclasses and consumers
+ * can reference it without importing concrete agent classes.
+ */
+export interface FetchTTSModelsResult {
+  success: boolean;
+  models?: ElevenLabsModel[];
+  error?: string;
+}
 
 export abstract class BaseAppAgent extends BaseAgent {
   readonly manifest: AppManifest;
   protected credentials: Record<string, string> = {};
+  protected appSettings: Record<string, string> = {};
   private _vault: Vault | null = null;
 
   constructor(manifest: AppManifest) {
@@ -41,6 +52,28 @@ export abstract class BaseAppAgent extends BaseAgent {
    */
   getCredential(key: string): string | undefined {
     return this.credentials[key];
+  }
+
+  /**
+   * Set app-specific settings (e.g., default model).
+   * Called by AppManager on load/configure.
+   */
+  setSettings(settings: Record<string, string>): void {
+    this.appSettings = { ...settings };
+  }
+
+  /**
+   * Get a specific app setting value.
+   */
+  getSetting(key: string): string | undefined {
+    return this.appSettings[key];
+  }
+
+  /**
+   * Get all current app settings.
+   */
+  getSettings(): Record<string, string> {
+    return { ...this.appSettings };
   }
 
   /**
@@ -74,6 +107,24 @@ export abstract class BaseAppAgent extends BaseAgent {
    */
   getVault(): Vault | null {
     return this._vault;
+  }
+
+  /**
+   * Fetch available TTS models from the provider API.
+   * Override in subclasses that support model selection.
+   * Returns undefined by default (no model fetching support).
+   */
+  async fetchTTSModels(): Promise<FetchTTSModelsResult | undefined> {
+    return undefined;
+  }
+
+  /**
+   * Get the user's selected default TTS model ID.
+   * Override in subclasses that support model selection.
+   * Returns undefined by default.
+   */
+  getDefaultModelId(): string | undefined {
+    return undefined;
   }
 
   /**

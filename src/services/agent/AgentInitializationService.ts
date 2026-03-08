@@ -281,6 +281,37 @@ export class AgentInitializationService {
   }
 
   /**
+   * Initialize TaskManager agent
+   */
+  async initializeTaskManager(): Promise<void> {
+    if (!this.serviceManager) {
+      logger.systemWarn('TaskManager requires ServiceManager — skipping');
+      return;
+    }
+
+    const { TaskManagerAgent } = await import('../../agents/taskManager/taskManager');
+    const { TaskService } = await import('../../agents/taskManager/services/TaskService');
+    const { DAGService } = await import('../../agents/taskManager/services/DAGService');
+
+    // Get adapter — may need to await if not yet ready
+    let adapter = this.serviceManager.getServiceIfReady<any>('hybridStorageAdapter');
+    if (!adapter) {
+      adapter = await this.serviceManager.getService('hybridStorageAdapter');
+    }
+    if (!adapter) {
+      logger.systemWarn('HybridStorageAdapter not available — TaskManager skipped');
+      return;
+    }
+
+    const dagService = new DAGService();
+    const taskService = new TaskService(adapter.projects, adapter.tasks, dagService);
+    const taskManagerAgent = new TaskManagerAgent(this.app, this.plugin, taskService);
+
+    this.agentManager.registerAgent(taskManagerAgent);
+    logger.systemLog('TaskManager agent initialized successfully');
+  }
+
+  /**
    * Initialize ToolManager agent
    * MUST be called AFTER all other agents are initialized
    * ToolManager needs access to all registered agents for tool discovery/execution

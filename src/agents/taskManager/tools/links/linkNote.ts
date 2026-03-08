@@ -17,7 +17,7 @@ export class LinkNoteTool extends BaseTool<LinkNoteParameters, LinkNoteResult> {
     super(
       'linkNote',
       'Link Note',
-      'Link or unlink a vault note to/from a task',
+      'Create or remove a bidirectional link between a vault note and a task. Link types: reference (related note), output (task produces this note), input (task consumes this note). Use action=unlink to remove an existing link.',
       '1.0.0'
     );
   }
@@ -50,8 +50,8 @@ export class LinkNoteTool extends BaseTool<LinkNoteParameters, LinkNoteResult> {
     return this.getMergedSchema({
       type: 'object',
       properties: {
-        taskId: { type: 'string', description: 'Task ID to link the note to (REQUIRED)' },
-        notePath: { type: 'string', description: 'Vault note path (REQUIRED)' },
+        taskId: { type: 'string', description: 'Task ID to link the note to (REQUIRED — from createTask or listTasks)' },
+        notePath: { type: 'string', description: 'Vault note path, e.g. "folder/note.md" (REQUIRED)' },
         linkType: {
           type: 'string',
           enum: ['reference', 'output', 'input'],

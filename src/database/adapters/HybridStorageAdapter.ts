@@ -52,6 +52,8 @@ import { StateRepository } from '../repositories/StateRepository';
 import { TraceRepository } from '../repositories/TraceRepository';
 import { ConversationRepository } from '../repositories/ConversationRepository';
 import { MessageRepository } from '../repositories/MessageRepository';
+import { ProjectRepository } from '../repositories/ProjectRepository';
+import { TaskRepository } from '../repositories/TaskRepository';
 // Import services
 import { ExportService } from '../services/ExportService';
 
@@ -101,6 +103,8 @@ export class HybridStorageAdapter implements IStorageAdapter {
   private traceRepo!: TraceRepository;
   private conversationRepo!: ConversationRepository;
   private messageRepo!: MessageRepository;
+  private projectRepo!: ProjectRepository;
+  private taskRepo!: TaskRepository;
 
   // Services
   private exportService!: ExportService;
@@ -144,6 +148,8 @@ export class HybridStorageAdapter implements IStorageAdapter {
     this.traceRepo = new TraceRepository(deps);
     this.conversationRepo = new ConversationRepository(deps);
     this.messageRepo = new MessageRepository(deps);
+    this.projectRepo = new ProjectRepository(deps);
+    this.taskRepo = new TaskRepository(deps);
 
     // Initialize services
     this.exportService = new ExportService({
@@ -364,6 +370,22 @@ export class HybridStorageAdapter implements IStorageAdapter {
    */
   get messages(): MessageRepository {
     return this.messageRepo;
+  }
+
+  /**
+   * Get the project repository instance.
+   * Used by TaskService for project operations.
+   */
+  get projects(): ProjectRepository {
+    return this.projectRepo;
+  }
+
+  /**
+   * Get the task repository instance.
+   * Used by TaskService for task operations.
+   */
+  get tasks(): TaskRepository {
+    return this.taskRepo;
   }
 
   async close(): Promise<void> {

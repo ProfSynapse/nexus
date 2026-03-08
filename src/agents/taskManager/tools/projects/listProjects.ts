@@ -17,7 +17,7 @@ export class ListProjectsTool extends BaseTool<ListProjectsParameters, ListProje
     super(
       'listProjects',
       'List Projects',
-      'List projects in a workspace with optional status filter',
+      'List projects in a workspace with optional status filter (active/completed/archived). Returns paginated project objects with id, name, description, status, and timestamps. Use to discover projectIds for task operations.',
       '1.0.0'
     );
   }
@@ -54,7 +54,7 @@ export class ListProjectsTool extends BaseTool<ListProjectsParameters, ListProje
     return this.getMergedSchema({
       type: 'object',
       properties: {
-        workspaceId: { type: 'string', description: 'Workspace ID (REQUIRED)' },
+        workspaceId: { type: 'string', description: 'Workspace ID (REQUIRED — from loadWorkspace or createWorkspace)' },
         status: { type: 'string', enum: ['active', 'completed', 'archived'], description: 'Filter by project status' },
         page: { type: 'number', description: 'Page number (0-indexed, default: 0)', minimum: 0 },
         pageSize: { type: 'number', description: 'Items per page (default: 20)', minimum: 1, maximum: 100 }
@@ -68,8 +68,34 @@ export class ListProjectsTool extends BaseTool<ListProjectsParameters, ListProje
       type: 'object',
       properties: {
         success: { type: 'boolean' },
-        projects: { type: 'array', items: { type: 'object' }, description: 'List of projects' },
-        pagination: { type: 'object', description: 'Pagination metadata' },
+        projects: {
+          type: 'array',
+          description: 'List of project objects',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string', description: 'Project ID (use as projectId in task operations)' },
+              workspaceId: { type: 'string', description: 'Parent workspace ID' },
+              name: { type: 'string', description: 'Project name' },
+              description: { type: 'string', description: 'Project description' },
+              status: { type: 'string', enum: ['active', 'completed', 'archived'], description: 'Project status' },
+              created: { type: 'number', description: 'Creation timestamp (ms since epoch)' },
+              updated: { type: 'number', description: 'Last update timestamp (ms since epoch)' },
+              metadata: { type: 'object', description: 'Custom metadata key-value pairs' }
+            }
+          }
+        },
+        pagination: {
+          type: 'object',
+          description: 'Pagination metadata',
+          properties: {
+            page: { type: 'number', description: 'Current page number (0-indexed)' },
+            pageSize: { type: 'number', description: 'Items per page' },
+            totalItems: { type: 'number', description: 'Total number of matching projects' },
+            totalPages: { type: 'number', description: 'Total number of pages' },
+            hasNextPage: { type: 'boolean', description: 'Whether more pages are available' }
+          }
+        },
         error: { type: 'string' }
       }
     };
