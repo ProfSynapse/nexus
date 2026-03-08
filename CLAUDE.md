@@ -3,7 +3,7 @@ Last Updated: 2026-03-08
 
 ## Project Overview
 - **Name**: Claudesidian MCP
-- **Version**: 5.0.1
+- **Version**: 5.1.0
 - **Type**: Obsidian Community Plugin
 - **Purpose**: MCP integration for Obsidian with AI-powered vault operations
 - **Architecture**: Agent-Tool pattern with domain-driven design
@@ -259,6 +259,22 @@ onCreate(file: TFile) {
 
 ### March 2026
 
+**Mar 8**: SDK→HTTP Migration ✅ (commit 103a9e73)
+- Removed provider SDKs (OpenAI, Anthropic, Google, Groq, Mistral) — direct HTTP via shared ProviderHttpClient
+- Real-time streaming via Node.js https + `processNodeStream()` (replaces buffered requestUrl approach)
+- New: `ProviderHttpClient.ts` (shared HTTP + streaming + HTTPS enforcement + retry), `BufferedSSEStreamProcessor.ts`
+- Fixed: Google finish reason mapping, MALFORMED_FUNCTION_CALL error surfacing, OpenAI SSE multi-line parser, Anthropic stale betas field, Mistral param names, error body truncation (security)
+- 796 tests (+34 new across ProviderHttpClient, BufferedSSEStreamProcessor, OpenAICodexAdapter, MessageManager)
+- UI: ChatInput tri-state button, MessageManager interrupt-before-send
+
+**Mar 8**: v5.1.0 Release ✅
+- SDK→HTTP migration: Removed all LLM provider SDKs, direct HTTP via `ProviderHttpClient` + Obsidian `requestUrl`
+- Real streaming on desktop (Node.js https), buffered fallback on mobile
+- TaskManager DI wiring fixed (was never registered in runtime init path)
+- Deleted unused agent factory system (`ServiceFactory.ts`, -409 lines)
+- Self-documenting TaskManager tool schemas (result objects fully defined)
+- Wired TaskService into MemoryManager for loadWorkspace task summaries
+
 **Mar 8**: TaskManager Agent ✅ (PR #37)
 - New agent: workspace-scoped project/task management with DAG dependencies
 - Data model: Workspace → Project → Task, with `dependsOn[]` DAG edges + `parentTaskId` subtask tree
@@ -461,9 +477,7 @@ agents/
 | **#24** | Socket lifecycle fix (DylanLacey) | Transport fix in main (v4.3.2); mux awaiting contributor socket path fix |
 
 ### Current Work
-**SDK→HTTP Migration** (uncommitted on `main`): Removing provider SDKs (OpenAI, Anthropic, Google, Groq, Mistral) in favor of direct HTTP via shared `ProviderHttpClient` + `requestUrl`. 38 files, -5100/+2200 lines. Code review complete — fixing findings before commit.
-
-Key new files: `src/services/llm/adapters/shared/ProviderHttpClient.ts`, `src/services/llm/streaming/BufferedSSEStreamProcessor.ts`
+**v5.1.0 release** — SDK→HTTP migration, TaskManager agent, ElevenLabs enhancements. Ready to tag and release.
 
 **PR #23 — plugin store compliance** (`fix/plugin-store-audit-fixes`): ready to merge, needs manual test
 **PR (untracked) — subagent fixes** (`fix/subagent-bugs`): 29 fixes, 372 tests passing, awaiting manual test
@@ -527,7 +541,7 @@ A branch IS a conversation with parent metadata:
 - `npm run deploy` - Build and deploy via PowerShell script
 
 ### Testing Approach
-- **Unit Tests**: Jest for core logic and services (857 tests total — 619 baseline + 238 TaskManager)
+- **Unit Tests**: Jest for core logic and services (796 tests total — 762 baseline + 34 new HTTP/streaming/UI)
 - **Integration Tests**: Manual testing in Obsidian environment
 - **MCP Testing**: Via Claude Desktop connection
 
@@ -537,6 +551,7 @@ A branch IS a conversation with parent metadata:
 - **Tools**: Extend `BaseTool<Params, Result>`, implement `execute()`, `getParameterSchema()`, `getResultSchema()`
 - **Results**: Return `{ success: boolean, ...data }` or `{ success: false, error: string }`
 - **Services**: Singletons with dependency injection via constructor
+- **Adding a new agent**: (1) Add `initializeYourAgent()` to `AgentInitializationService.ts`, (2) Add `safeInitialize('yourAgent', ...)` to a phase in `AgentRegistrationService.doInitializeAllAgents()`. That's it — no factory classes, no ServiceDefinitions entry.
 
 ### Dependencies
 See `package.json`. Key: MCP SDK, express, winston, uuid. LLM provider SDKs removed — direct HTTP via ProviderHttpClient.
@@ -569,7 +584,7 @@ Instead of 50+ tools, MCP exposes just 2: `getTools` (discovery) and `useTools` 
 
 **Key Files**: `src/agents/toolManager/` (agent + tools), `src/services/trace/ToolCallTraceService.ts`
 
-**Tool Count**: 43 tools across 7 agents (not counting ToolManager meta-tools)
+**Tool Count**: 53 tools across 8 agents (not counting ToolManager meta-tools)
 
 ## Memory & Workspace System
 
@@ -616,5 +631,5 @@ Key files: `src/ui/chat/components/suggesters/`, `MessageEnhancer.ts`, `SystemPr
 <!-- Auto-managed by session_init hook. Overwritten each session. -->
 - Resume: `claude --resume aff386b2-653c-4a1d-8517-4f23ede71cca`
 - Team: `pact-aff386b2`
-- Started: 2026-03-08 19:06:45 UTC
+- Started: 2026-03-08 20:32:36 UTC
 <!-- SESSION_END -->

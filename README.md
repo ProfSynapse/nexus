@@ -21,8 +21,9 @@ Nexus turns your Obsidian vault into an MCP-enabled workspace. It exposes safe, 
 - **Workspace Memory** – Workspaces, states, and traces in `.nexus/` (sync-friendly JSONL + local SQLite cache).
 - **Local Semantic Search** – Desktop-only embeddings via sqlite-vec vector search—no external API calls. Search notes and conversation history.
 - **Full Vault Operations** – Create, read, update, delete notes, folders, frontmatter, and batch edits.
-- **Multi-Provider Support** – Anthropic, OpenAI, Google, Groq, Mistral, OpenRouter, Perplexity, Requesty, plus local servers (Ollama, LM Studio).
+- **Multi-Provider Support** – Anthropic, OpenAI, Google, Groq, Mistral, OpenRouter, Perplexity, Requesty, plus local servers (Ollama, LM Studio). All providers use lightweight direct HTTP—no SDK dependencies.
 - **Multi-Vault Ready** – Independent MCP instances per vault.
+- **Task Management** – Workspace-scoped projects and tasks with DAG dependency tracking, priority, assignees, due dates, and vault note linking.
 - **Apps** – Extend Nexus with downloadable tool domains like ElevenLabs for AI audio generation.
 
 **Platform Notes**
@@ -33,7 +34,7 @@ Nexus turns your Obsidian vault into an MCP-enabled workspace. It exposes safe, 
 | MCP Bridge (Claude Desktop) | ✅ | — |
 | Local Providers (Ollama/LM Studio) | ✅ | — |
 | Semantic Embeddings | ✅ | — |
-| Cloud Providers | ✅ | ✅ (fetch-based only) |
+| Cloud Providers | ✅ (real streaming) | ✅ (buffered fallback) |
 
 ---
 
@@ -66,7 +67,7 @@ Every `useTools` call includes context that helps maintain continuity:
 }
 ```
 
-### Available Agents & Tools (34 total)
+### Available Agents & Tools (44 total)
 
 | Agent | Purpose | Tools |
 |-------|---------|-------|
@@ -76,7 +77,8 @@ Every `useTools` call includes context that helps maintain continuity:
 | **memoryManager** | Workspace/state management | createWorkspace, listWorkspaces, loadWorkspace, updateWorkspace, archiveWorkspace, createState, listStates, loadState |
 | **promptManager** | Custom prompts & LLM | listModels, executePrompts, listPrompts, getPrompt, createPrompt, updatePrompt, archivePrompt, generateImage, subagent |
 | **canvasManager** | Canvas operations | read, write, update, list |
-| **elevenlabs** *(app)* | AI audio generation | textToSpeech, listVoices, soundEffects, generateMusic |
+| **taskManager** | Project & task management | createProject, listProjects, updateProject, archiveProject, createTask, listTasks, updateTask, moveTask, queryTasks, linkNote |
+| **elevenlabs** *(app)* | AI audio generation with dynamic model selection | textToSpeech, listVoices, soundEffects, generateMusic |
 
 ---
 
@@ -245,6 +247,8 @@ npm run build      # Production build
 npm run test       # Run tests
 npm run lint       # Run ESLint
 ```
+
+All LLM provider SDKs have been replaced with direct HTTP via a shared `ProviderHttpClient`. No SDK dependencies are required — this keeps the bundle small and avoids version conflicts.
 
 See [CLAUDE.md](CLAUDE.md) for architecture details and contribution notes.
 
