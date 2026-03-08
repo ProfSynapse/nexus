@@ -1,28 +1,59 @@
 /**
- * AppConfigModal — Modal for configuring app credentials.
- * Renders input fields from the app's manifest.credentials declaration.
+ * AppConfigModal — Modal for configuring app credentials and settings.
+ *
+ * Renders input fields from the app's manifest.credentials declaration,
+ * and optional settings sections (e.g., model selection dropdowns)
+ * provided via the settingsSections config.
  */
 
 import { App, Modal, Setting, Notice } from 'obsidian';
 import { AppManifest } from '../types/apps/AppTypes';
 
+/**
+ * An option in a settings dropdown.
+ */
+export interface AppSettingOption {
+  value: string;
+  label: string;
+}
+
+/**
+ * Declares a settings section to render after credentials.
+ * Currently supports 'dropdown' type for model selection.
+ */
+export interface AppSettingsSection {
+  /** Settings key (e.g., 'defaultTTSModel') */
+  key: string;
+  /** Display label */
+  label: string;
+  /** Help text */
+  description: string;
+  /** Async loader for dropdown options */
+  loadOptions: () => Promise<{ success: boolean; options?: AppSettingOption[]; error?: string }>;
+}
+
 export interface AppConfigModalConfig {
   manifest: AppManifest;
   credentials: Record<string, string>;
+  settings?: Record<string, string>;
   onSave: (credentials: Record<string, string>) => Promise<void>;
+  onSaveSettings?: (settings: Record<string, string>) => Promise<void>;
   onUninstall?: () => Promise<void>;
   onValidate?: () => Promise<{ success: boolean; error?: string; data?: unknown }>;
+  settingsSections?: AppSettingsSection[];
 }
 
 export class AppConfigModal extends Modal {
   private config: AppConfigModalConfig;
   private currentCredentials: Record<string, string>;
+  private currentSettings: Record<string, string>;
   private saveTimeout: ReturnType<typeof setTimeout> | null = null;
 
   constructor(app: App, config: AppConfigModalConfig) {
     super(app);
     this.config = config;
     this.currentCredentials = { ...config.credentials };
+    this.currentSettings = { ...(config.settings || {}) };
   }
 
   onOpen(): void {
@@ -65,6 +96,16 @@ export class AppConfigModal extends Modal {
             text.inputEl.type = 'password';
           }
         });
+    }
+
+    // Settings sections (e.g., model dropdown)
+    if (this.config.settingsSections && this.config.settingsSections.length > 0) {
+      contentEl.createDiv('app-config-settings-divider');
+      contentEl.createEl('h3', { text: 'Settings', cls: 'app-config-settings-heading' });
+
+      for (const section of this.config.settingsSections) {
+        this.renderSettingsSection(contentEl, section);
+      }
     }
 
     // Save status
@@ -125,6 +166,48 @@ export class AppConfigModal extends Modal {
     }
   }
 
+  /**
+   * Render a settings section with an async-loaded dropdown.
+   */
+  private renderSettingsSection(container: HTMLElement, section: AppSettingsSection): void {
+    const setting = new Setting(container)
+      .setName(section.label)
+      .setDesc(section.description);
+
+    // Add dropdown with loading state
+    setting.addDropdown(dropdown => {
+      dropdown.addOption('', 'Loading...');
+      dropdown.setDisabled(true);
+
+      // Load options asynchronously
+      section.loadOptions().then(result => {
+        // Clear loading option
+        dropdown.selectEl.empty();
+
+        if (!result.success || !result.options || result.options.length === 0) {
+          dropdown.addOption('', result.error || 'No models available');
+          dropdown.setDisabled(true);
+          return;
+        }
+
+        // Add a "use default" option
+        dropdown.addOption('', 'Default (Eleven Multilingual v2)');
+
+        for (const option of result.options) {
+          dropdown.addOption(option.value, option.label);
+        }
+
+        dropdown.setValue(this.currentSettings[section.key] || '');
+        dropdown.setDisabled(false);
+
+        dropdown.onChange((value) => {
+          this.currentSettings[section.key] = value;
+          this.debounceSaveSettings();
+        });
+      });
+    });
+  }
+
   private debounceSave(): void {
     if (this.saveTimeout) {
       clearTimeout(this.saveTimeout);
@@ -132,21 +215,41 @@ export class AppConfigModal extends Modal {
     this.saveTimeout = setTimeout(async () => {
       try {
         await this.config.onSave(this.currentCredentials);
-        const statusEl = this.contentEl.querySelector('.app-config-status');
-        if (statusEl) {
-          statusEl.setText('Saved');
-          statusEl.className = 'app-config-status app-config-status-saved';
-          setTimeout(() => {
-            if (statusEl) {
-              statusEl.setText('Ready');
-              statusEl.className = 'app-config-status';
-            }
-          }, 2000);
-        }
-      } catch (error) {
+        this.updateStatusEl('Saved');
+      } catch {
         // Save failed silently
       }
     }, 500);
+  }
+
+  private debounceSaveSettings(): void {
+    if (this.saveTimeout) {
+      clearTimeout(this.saveTimeout);
+    }
+    this.saveTimeout = setTimeout(async () => {
+      try {
+        if (this.config.onSaveSettings) {
+          await this.config.onSaveSettings(this.currentSettings);
+        }
+        this.updateStatusEl('Saved');
+      } catch {
+        // Save failed silently
+      }
+    }, 500);
+  }
+
+  private updateStatusEl(text: string): void {
+    const statusEl = this.contentEl.querySelector('.app-config-status');
+    if (statusEl) {
+      statusEl.setText(text);
+      statusEl.className = 'app-config-status app-config-status-saved';
+      setTimeout(() => {
+        if (statusEl) {
+          statusEl.setText('Ready');
+          statusEl.className = 'app-config-status';
+        }
+      }, 2000);
+    }
   }
 
   onClose(): void {

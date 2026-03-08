@@ -7,8 +7,9 @@ import { App, Notice } from 'obsidian';
 import { SettingsRouter } from '../SettingsRouter';
 import { Settings } from '../../settings';
 import { Card, CardConfig } from '../../components/Card';
-import { AppConfigModal } from '../../components/AppConfigModal';
+import { AppConfigModal, AppSettingsSection } from '../../components/AppConfigModal';
 import { AppManager } from '../../services/apps/AppManager';
+import { ElevenLabsAgent } from '../../agents/apps/elevenlabs/ElevenLabsAgent';
 
 export interface AppsTabServices {
   app: App;
@@ -132,13 +133,21 @@ export class AppsTab {
     const config = appManager.getAppsSettings().apps[appId];
     if (!config) return;
 
+    // Build settings sections for agents that support them
+    const settingsSections = this.buildSettingsSections(appId, agent);
+
     new AppConfigModal(this.services.app, {
       manifest: agent.manifest,
       credentials: { ...config.credentials },
+      settings: { ...(config.settings || {}) },
       onSave: async (credentials) => {
         appManager.setAppCredentials(appId, credentials);
         await this.saveSettings();
         this.render();
+      },
+      onSaveSettings: async (settings) => {
+        appManager.setAppSettings(appId, settings);
+        await this.saveSettings();
       },
       onValidate: async () => {
         return agent.validateCredentials();
@@ -148,8 +157,40 @@ export class AppsTab {
         await this.saveSettings();
         this.render();
         new Notice(`${agent.manifest.name} uninstalled`);
-      }
+      },
+      settingsSections,
     }).open();
+  }
+
+  /**
+   * Build settings sections for an app agent.
+   * Returns app-specific dropdowns (e.g., ElevenLabs model selection).
+   */
+  private buildSettingsSections(
+    _appId: string,
+    agent: import('../../agents/apps/BaseAppAgent').BaseAppAgent
+  ): AppSettingsSection[] {
+    if (agent instanceof ElevenLabsAgent) {
+      return [{
+        key: 'defaultTTSModel',
+        label: 'Default TTS model',
+        description: 'Model used for text-to-speech when no model is specified.',
+        loadOptions: async () => {
+          const result = await agent.fetchTTSModels();
+          if (!result.success || !result.models) {
+            return { success: false, error: result.error };
+          }
+          return {
+            success: true,
+            options: result.models.map(m => ({
+              value: m.model_id,
+              label: m.name,
+            })),
+          };
+        },
+      }];
+    }
+    return [];
   }
 
   private async saveSettings(): Promise<void> {

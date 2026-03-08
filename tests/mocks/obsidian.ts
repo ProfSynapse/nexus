@@ -471,6 +471,26 @@ function createMockElement(tagName: string): HTMLElement {
   } as unknown as HTMLElement;
 }
 
+// requestUrl mock
+export const requestUrl = jest.fn();
+
+// normalizePath mock
+export function normalizePath(path: string): string {
+  return path.replace(/\\/g, '/').replace(/\/+/g, '/');
+}
+
+// TFolder mock
+export class TFolder {
+  path: string;
+  name: string;
+  children: unknown[] = [];
+
+  constructor(path: string) {
+    this.path = path;
+    this.name = path.split('/').pop() || '';
+  }
+}
+
 // MarkdownFileInfo mock (used in editorCallback context)
 export interface MarkdownFileInfo {
   file: TFile | null;

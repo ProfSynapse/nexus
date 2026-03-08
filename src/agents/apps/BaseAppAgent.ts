@@ -14,6 +14,7 @@ import { Vault } from 'obsidian';
 export abstract class BaseAppAgent extends BaseAgent {
   readonly manifest: AppManifest;
   protected credentials: Record<string, string> = {};
+  protected appSettings: Record<string, string> = {};
   private _vault: Vault | null = null;
 
   constructor(manifest: AppManifest) {
@@ -41,6 +42,28 @@ export abstract class BaseAppAgent extends BaseAgent {
    */
   getCredential(key: string): string | undefined {
     return this.credentials[key];
+  }
+
+  /**
+   * Set app-specific settings (e.g., default model).
+   * Called by AppManager on load/configure.
+   */
+  setSettings(settings: Record<string, string>): void {
+    this.appSettings = { ...settings };
+  }
+
+  /**
+   * Get a specific app setting value.
+   */
+  getSetting(key: string): string | undefined {
+    return this.appSettings[key];
+  }
+
+  /**
+   * Get all current app settings.
+   */
+  getSettings(): Record<string, string> {
+    return { ...this.appSettings };
   }
 
   /**

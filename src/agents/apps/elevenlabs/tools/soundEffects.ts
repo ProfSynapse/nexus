@@ -12,7 +12,7 @@ import { BaseAppAgent } from '../../BaseAppAgent';
 import { requestUrl, normalizePath, TFolder } from 'obsidian';
 
 interface SoundEffectsParams extends CommonParameters {
-  text: string;
+  prompt: string;
   durationSeconds?: number;
   promptInfluence?: number;
   outputPath?: string;
@@ -41,7 +41,7 @@ export class SoundEffectsTool extends BaseTool<SoundEffectsParams, CommonResult>
     const apiKey = this.agent.getCredential('apiKey')!;
 
     const body: Record<string, unknown> = {
-      text: params.text,
+      text: params.prompt,
     };
 
     if (params.durationSeconds !== undefined) {
@@ -90,7 +90,7 @@ export class SoundEffectsTool extends BaseTool<SoundEffectsParams, CommonResult>
 
       return this.prepareResult(true, {
         path: outputPath,
-        prompt: params.text,
+        prompt: params.prompt,
         durationSeconds: params.durationSeconds,
         audioSize: response.arrayBuffer.byteLength,
       });
@@ -108,12 +108,12 @@ export class SoundEffectsTool extends BaseTool<SoundEffectsParams, CommonResult>
     return this.getMergedSchema({
       type: 'object',
       properties: {
-        text: { type: 'string', description: 'Text description of the sound effect to generate (e.g., "ocean waves crashing on rocks")' },
+        prompt: { type: 'string', description: 'Text description of the sound effect to generate (e.g., "ocean waves crashing on rocks")' },
         durationSeconds: { type: 'number', description: 'Duration in seconds (0.5-30). If omitted, optimal duration is guessed from prompt.' },
         promptInfluence: { type: 'number', description: 'How closely to follow the text prompt (0.0-1.0)' },
         outputPath: { type: 'string', description: 'Output file path in vault (default: audio/sfx-{timestamp}.mp3)' },
       },
-      required: ['text'],
+      required: ['prompt'],
     });
   }
 }
