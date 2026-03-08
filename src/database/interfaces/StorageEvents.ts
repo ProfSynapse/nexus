@@ -500,6 +500,141 @@ export interface BranchUpdatedEvent extends BaseStorageEvent {
 }
 
 // ============================================================================
+// Task Management Events
+// ============================================================================
+
+/**
+ * Event: Project created
+ */
+export interface ProjectCreatedEvent extends BaseStorageEvent {
+  type: 'project_created';
+  data: {
+    id: string;
+    workspaceId: string;
+    name: string;
+    description?: string;
+    status: string;
+    created: number;
+    updated: number;
+    metadataJson?: string;
+  };
+}
+
+/**
+ * Event: Project updated
+ */
+export interface ProjectUpdatedEvent extends BaseStorageEvent {
+  type: 'project_updated';
+  projectId: string;
+  data: Partial<{
+    name: string;
+    description: string;
+    status: string;
+    updated: number;
+    metadataJson: string;
+  }>;
+}
+
+/**
+ * Event: Project deleted
+ */
+export interface ProjectDeletedEvent extends BaseStorageEvent {
+  type: 'project_deleted';
+  projectId: string;
+}
+
+/**
+ * Event: Task created
+ */
+export interface TaskCreatedEvent extends BaseStorageEvent {
+  type: 'task_created';
+  data: {
+    id: string;
+    projectId: string;
+    workspaceId: string;
+    parentTaskId?: string;
+    title: string;
+    description?: string;
+    status: string;
+    priority: string;
+    created: number;
+    updated: number;
+    completedAt?: number;
+    dueDate?: number;
+    assignee?: string;
+    tagsJson?: string;
+    metadataJson?: string;
+  };
+}
+
+/**
+ * Event: Task updated
+ */
+export interface TaskUpdatedEvent extends BaseStorageEvent {
+  type: 'task_updated';
+  taskId: string;
+  data: Partial<{
+    projectId: string;
+    parentTaskId: string | null;
+    title: string;
+    description: string;
+    status: string;
+    priority: string;
+    updated: number;
+    completedAt: number;
+    dueDate: number;
+    assignee: string;
+    tagsJson: string;
+    metadataJson: string;
+  }>;
+}
+
+/**
+ * Event: Task deleted
+ */
+export interface TaskDeletedEvent extends BaseStorageEvent {
+  type: 'task_deleted';
+  taskId: string;
+}
+
+/**
+ * Event: Task dependency added (DAG edge)
+ */
+export interface TaskDependencyAddedEvent extends BaseStorageEvent {
+  type: 'task_dependency_added';
+  taskId: string;
+  dependsOnTaskId: string;
+}
+
+/**
+ * Event: Task dependency removed (DAG edge)
+ */
+export interface TaskDependencyRemovedEvent extends BaseStorageEvent {
+  type: 'task_dependency_removed';
+  taskId: string;
+  dependsOnTaskId: string;
+}
+
+/**
+ * Event: Note linked to task
+ */
+export interface TaskNoteLinkedEvent extends BaseStorageEvent {
+  type: 'task_note_linked';
+  taskId: string;
+  notePath: string;
+  linkType: string;
+}
+
+/**
+ * Event: Note unlinked from task
+ */
+export interface TaskNoteUnlinkedEvent extends BaseStorageEvent {
+  type: 'task_note_unlinked';
+  taskId: string;
+  notePath: string;
+}
+
+// ============================================================================
 // Union Types and Type Guards
 // ============================================================================
 
@@ -530,9 +665,24 @@ export type ConversationEvent =
   | BranchUpdatedEvent;
 
 /**
+ * Union of all task management events
+ */
+export type TaskEvent =
+  | ProjectCreatedEvent
+  | ProjectUpdatedEvent
+  | ProjectDeletedEvent
+  | TaskCreatedEvent
+  | TaskUpdatedEvent
+  | TaskDeletedEvent
+  | TaskDependencyAddedEvent
+  | TaskDependencyRemovedEvent
+  | TaskNoteLinkedEvent
+  | TaskNoteUnlinkedEvent;
+
+/**
  * Union of all storage events
  */
-export type StorageEvent = WorkspaceEvent | ConversationEvent;
+export type StorageEvent = WorkspaceEvent | ConversationEvent | TaskEvent;
 
 /**
  * Type guard: Check if event is workspace-related
@@ -567,6 +717,24 @@ export function isConversationEvent(event: StorageEvent): event is ConversationE
 }
 
 /**
+ * Type guard: Check if event is task-management-related
+ */
+export function isTaskEvent(event: StorageEvent): event is TaskEvent {
+  return [
+    'project_created',
+    'project_updated',
+    'project_deleted',
+    'task_created',
+    'task_updated',
+    'task_deleted',
+    'task_dependency_added',
+    'task_dependency_removed',
+    'task_note_linked',
+    'task_note_unlinked',
+  ].includes(event.type);
+}
+
+/**
  * Type guard: Check if event is a creation event
  */
 export function isCreationEvent(event: StorageEvent): boolean {
@@ -579,6 +747,10 @@ export function isCreationEvent(event: StorageEvent): boolean {
     'message',
     'branch_created',
     'branch_message',
+    'project_created',
+    'task_created',
+    'task_dependency_added',
+    'task_note_linked',
   ].includes(event.type);
 }
 
@@ -593,6 +765,8 @@ export function isUpdateEvent(event: StorageEvent): boolean {
     'message_updated',
     'branch_message_updated',
     'branch_updated',
+    'project_updated',
+    'task_updated',
   ].includes(event.type);
 }
 
@@ -603,5 +777,9 @@ export function isDeletionEvent(event: StorageEvent): boolean {
   return [
     'workspace_deleted',
     'state_deleted',
+    'project_deleted',
+    'task_deleted',
+    'task_dependency_removed',
+    'task_note_unlinked',
   ].includes(event.type);
 }

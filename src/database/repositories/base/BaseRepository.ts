@@ -33,7 +33,7 @@ import { BaseStorageEvent } from '../../interfaces/StorageEvents';
  * Valid entity types for type-specific cache invalidation
  * Must match the types supported by QueryCache.invalidateByType/invalidateById
  */
-export type CacheableEntityType = 'workspace' | 'session' | 'state' | 'conversation' | 'message';
+export type CacheableEntityType = 'workspace' | 'session' | 'state' | 'conversation' | 'message' | 'project' | 'task';
 
 /**
  * Dependencies required by all repositories
@@ -216,7 +216,7 @@ export abstract class BaseRepository<T> implements IRepository<T> {
    * @returns True if type supports QueryCache.invalidateByType/invalidateById
    */
   private isCacheableEntityType(type: string): type is CacheableEntityType {
-    return ['workspace', 'session', 'state', 'conversation', 'message'].includes(type);
+    return ['workspace', 'session', 'state', 'conversation', 'message', 'project', 'task'].includes(type);
   }
 
   /**

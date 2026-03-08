@@ -116,6 +116,12 @@ export interface LoadWorkspaceResult extends CommonResult {
       created: number;
       tags?: string[];
     }>;
+    prompt?: {
+      id: string;
+      name: string;
+      systemPrompt: string;
+    };
+    taskSummary?: import('../../../agents/taskManager/types').WorkspaceTaskSummary;
   };
   pagination?: {
     sessions: {

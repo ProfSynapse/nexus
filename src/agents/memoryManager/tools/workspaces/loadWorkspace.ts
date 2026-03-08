@@ -150,6 +150,15 @@ export class LoadWorkspaceTool extends BaseTool<LoadWorkspaceParameters, LoadWor
       const app = this.agent.getApp();
       const workspacePrompt = await this.promptResolver.fetchWorkspacePrompt(workspace, app);
 
+      // Fetch task summary if TaskManager is available
+      let taskSummary = null;
+      try {
+        const taskService = this.agent.getTaskService?.();
+        if (taskService) {
+          taskSummary = await taskService.getWorkspaceSummary(workspace.id);
+        }
+      } catch { /* TaskManager not initialized — skip */ }
+
       // Collect files using file collector
       const cacheManager = this.agent.getCacheManager();
       const recentFiles = await this.fileCollector.getRecentFilesInWorkspace(workspace, cacheManager);
@@ -179,7 +188,8 @@ export class LoadWorkspaceTool extends BaseTool<LoadWorkspaceParameters, LoadWor
           preferences: preferences,
           sessions: limitedSessions,
           states: limitedStates,
-          ...(workspacePrompt && { prompt: workspacePrompt })
+          ...(workspacePrompt && { prompt: workspacePrompt }),
+          ...(taskSummary && { taskSummary })
         },
         pagination: {
           sessions: {
@@ -424,6 +434,14 @@ export class LoadWorkspaceTool extends BaseTool<LoadWorkspaceParameters, LoadWor
               },
               required: ['id', 'name', 'systemPrompt'],
               description: 'Associated workspace prompt (if available)'
+            },
+            taskSummary: {
+              type: 'object',
+              properties: {
+                projects: { type: 'object', description: 'Project counts and summaries' },
+                tasks: { type: 'object', description: 'Task counts by status, overdue count, next actions, recently completed' }
+              },
+              description: 'Task management summary (if TaskManager is available)'
             }
           }
         },

@@ -24,12 +24,14 @@ import {
     SearchManagerAgent,
     MemoryManagerAgent,
     PromptManagerAgent,
-    CanvasManagerAgent
+    CanvasManagerAgent,
+    TaskManagerAgent
 } from '../agents';
 import { LLMProviderManager } from '../services/llm/providers/ProviderManager';
 import { AgentManager } from '../services/AgentManager';
 import { UsageTracker } from '../services/UsageTracker';
 import { MemoryService } from '../agents/memoryManager/services/MemoryService';
+import { TaskService } from '../agents/taskManager/services/TaskService';
 import { Settings } from '../settings';
 import type NexusPlugin from '../main';
 
@@ -214,6 +216,20 @@ export class PromptManagerAgentFactory extends BaseAgentFactory<PromptManagerAge
 }
 
 /**
+ * TaskManager agent factory with TaskService dependency
+ */
+export class TaskManagerAgentFactory extends BaseAgentFactory<TaskManagerAgent> {
+    constructor() {
+        super('taskManager', ['taskService']);
+    }
+
+    async create(dependencies: Map<string, any>, app: App, plugin: Plugin): Promise<TaskManagerAgent> {
+        const taskService = this.getDependency<TaskService>(dependencies, 'taskService');
+        return new TaskManagerAgent(app, plugin, taskService);
+    }
+}
+
+/**
  * Registry of all agent factories
  */
 export class AgentFactoryRegistry {
@@ -227,6 +243,7 @@ export class AgentFactoryRegistry {
         this.registerFactory(new SearchManagerAgentFactory());
         this.registerFactory(new MemoryManagerAgentFactory());
         this.registerFactory(new PromptManagerAgentFactory());
+        this.registerFactory(new TaskManagerAgentFactory());
     }
 
     private registerFactory(factory: IAgentFactory): void {

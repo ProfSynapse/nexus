@@ -2,7 +2,7 @@
  * SQLite Schema for Hybrid Storage System
  * Location: src/database/schema/schema.ts
  * Purpose: Complete database schema with indexes and FTS
- * Current Version: 7
+ * Current Version: 9
  *
  * IMPORTANT: When updating the schema:
  * 1. Update SCHEMA_SQL below for new installs
@@ -333,7 +333,84 @@ CREATE TABLE IF NOT EXISTS embedding_backfill_state (
   errorMessage TEXT
 );
 
+-- ==================== PROJECTS ====================
+
+CREATE TABLE IF NOT EXISTS projects (
+  id TEXT PRIMARY KEY,
+  workspaceId TEXT NOT NULL,
+  name TEXT NOT NULL,
+  description TEXT,
+  status TEXT NOT NULL DEFAULT 'active',
+  created INTEGER NOT NULL,
+  updated INTEGER NOT NULL,
+  metadataJson TEXT,
+  FOREIGN KEY(workspaceId) REFERENCES workspaces(id) ON DELETE CASCADE,
+  UNIQUE(workspaceId, name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_projects_workspace ON projects(workspaceId);
+CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(status);
+CREATE INDEX IF NOT EXISTS idx_projects_updated ON projects(updated);
+
+-- ==================== TASKS ====================
+
+CREATE TABLE IF NOT EXISTS tasks (
+  id TEXT PRIMARY KEY,
+  projectId TEXT NOT NULL,
+  workspaceId TEXT NOT NULL,
+  parentTaskId TEXT,
+  title TEXT NOT NULL,
+  description TEXT,
+  status TEXT NOT NULL DEFAULT 'todo',
+  priority TEXT DEFAULT 'medium',
+  created INTEGER NOT NULL,
+  updated INTEGER NOT NULL,
+  completedAt INTEGER,
+  dueDate INTEGER,
+  assignee TEXT,
+  tagsJson TEXT,
+  metadataJson TEXT,
+  FOREIGN KEY(projectId) REFERENCES projects(id) ON DELETE CASCADE,
+  FOREIGN KEY(workspaceId) REFERENCES workspaces(id) ON DELETE CASCADE,
+  FOREIGN KEY(parentTaskId) REFERENCES tasks(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_tasks_project ON tasks(projectId);
+CREATE INDEX IF NOT EXISTS idx_tasks_workspace ON tasks(workspaceId);
+CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parentTaskId);
+CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+CREATE INDEX IF NOT EXISTS idx_tasks_priority ON tasks(priority);
+CREATE INDEX IF NOT EXISTS idx_tasks_updated ON tasks(updated);
+CREATE INDEX IF NOT EXISTS idx_tasks_due ON tasks(dueDate);
+
+-- ==================== TASK DEPENDENCIES (DAG edges) ====================
+
+CREATE TABLE IF NOT EXISTS task_dependencies (
+  taskId TEXT NOT NULL,
+  dependsOnTaskId TEXT NOT NULL,
+  created INTEGER NOT NULL,
+  PRIMARY KEY(taskId, dependsOnTaskId),
+  FOREIGN KEY(taskId) REFERENCES tasks(id) ON DELETE CASCADE,
+  FOREIGN KEY(dependsOnTaskId) REFERENCES tasks(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_task_deps_task ON task_dependencies(taskId);
+CREATE INDEX IF NOT EXISTS idx_task_deps_depends ON task_dependencies(dependsOnTaskId);
+
+-- ==================== TASK-NOTE LINKS (bidirectional) ====================
+
+CREATE TABLE IF NOT EXISTS task_note_links (
+  taskId TEXT NOT NULL,
+  notePath TEXT NOT NULL,
+  linkType TEXT NOT NULL DEFAULT 'reference',
+  created INTEGER NOT NULL,
+  PRIMARY KEY(taskId, notePath),
+  FOREIGN KEY(taskId) REFERENCES tasks(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_task_links_note ON task_note_links(notePath);
+
 -- ==================== INITIALIZATION ====================
 
-INSERT OR IGNORE INTO schema_version VALUES (8, strftime('%s', 'now') * 1000);
+INSERT OR IGNORE INTO schema_version VALUES (9, strftime('%s', 'now') * 1000);
 `;

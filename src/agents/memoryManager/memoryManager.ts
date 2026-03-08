@@ -35,6 +35,11 @@ export class MemoryManagerAgent extends BaseAgent {
    * Workspace service instance
    */
   private readonly workspaceService: WorkspaceService;
+
+  /**
+   * TaskService reference for loadWorkspace integration (optional, set during plugin init)
+   */
+  private taskService: { getWorkspaceSummary(workspaceId: string): Promise<any> } | null = null;
   
   /**
    * App instance
@@ -191,6 +196,21 @@ export class MemoryManagerAgent extends BaseAgent {
    */
   getApp() {
     return this.app;
+  }
+
+  /**
+   * Set the TaskService reference for loadWorkspace task summary integration.
+   * Called during plugin init after TaskManagerAgent is created.
+   */
+  setTaskService(service: { getWorkspaceSummary(workspaceId: string): Promise<any> }): void {
+    this.taskService = service;
+  }
+
+  /**
+   * Get the TaskService reference (may be null if TaskManager not initialized).
+   */
+  getTaskService(): { getWorkspaceSummary(workspaceId: string): Promise<any> } | null {
+    return this.taskService;
   }
 
   /**

@@ -178,7 +178,7 @@ export abstract class BaseAgent implements IAgent {
     if (!this.agentManager) return null;
 
     // Search known agent names for exact tool match
-    const agentNames = ['storageManager', 'contentManager', 'searchManager', 'memoryManager', 'promptManager', 'canvasManager'];
+    const agentNames = ['storageManager', 'contentManager', 'searchManager', 'memoryManager', 'promptManager', 'canvasManager', 'taskManager'];
 
     for (const agentName of agentNames) {
       if (agentName === this.name) continue;
