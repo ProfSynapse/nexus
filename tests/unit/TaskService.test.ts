@@ -243,6 +243,24 @@ describe('TaskService', () => {
     });
   });
 
+  describe('deleteProject', () => {
+    it('should delete an existing project', async () => {
+      projectRepo.getById.mockResolvedValue(createMockProject());
+      projectRepo.delete.mockResolvedValue();
+
+      await service.deleteProject('proj-1');
+
+      expect(projectRepo.delete).toHaveBeenCalledWith('proj-1');
+    });
+
+    it('should throw when deleting a missing project', async () => {
+      projectRepo.getById.mockResolvedValue(null);
+
+      await expect(service.deleteProject('missing')).rejects.toThrow('Project "missing" not found');
+      expect(projectRepo.delete).not.toHaveBeenCalled();
+    });
+  });
+
   // ============================================================================
   // Tasks
   // ============================================================================
@@ -547,6 +565,24 @@ describe('TaskService', () => {
       await expect(
         service.moveTask('task-1', { parentTaskId: 'nonexistent' })
       ).rejects.toThrow('not found');
+    });
+  });
+
+  describe('deleteTask', () => {
+    it('should delete an existing task', async () => {
+      taskRepo.getById.mockResolvedValue(createMockTask());
+      taskRepo.delete.mockResolvedValue();
+
+      await service.deleteTask('task-1');
+
+      expect(taskRepo.delete).toHaveBeenCalledWith('task-1');
+    });
+
+    it('should throw when deleting a missing task', async () => {
+      taskRepo.getById.mockResolvedValue(null);
+
+      await expect(service.deleteTask('missing')).rejects.toThrow('Task "missing" not found');
+      expect(taskRepo.delete).not.toHaveBeenCalled();
     });
   });
 

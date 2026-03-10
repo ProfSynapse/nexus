@@ -10,7 +10,7 @@
 
 import { Notice, TextComponent, TextAreaComponent, ButtonComponent } from 'obsidian';
 import { SettingsRouter } from '../SettingsRouter';
-import { BackButton } from '../components/BackButton';
+import { BreadcrumbNav } from '../components/BreadcrumbNav';
 import { CustomPrompt } from '../../types/mcp/CustomPromptTypes';
 import { CustomPromptStorageService } from '../../agents/promptManager/services/CustomPromptStorageService';
 import { CardManager, CardItem } from '../../components/CardManager';
@@ -167,11 +167,16 @@ export class PromptsTab {
             return;
         }
 
-        // Back button
-        new BackButton(this.container, 'Back to Prompts', () => {
-            this.saveCurrentPrompt();
-            this.router.back();
-        });
+        new BreadcrumbNav(this.container, [
+            {
+                label: 'Prompts',
+                onClick: () => {
+                    void this.saveCurrentPrompt();
+                    this.router.back();
+                }
+            },
+            { label: prompt.name || 'New Prompt' }
+        ]);
 
         // Form container with modern stacked layout
         const form = this.container.createDiv('nexus-modern-form');

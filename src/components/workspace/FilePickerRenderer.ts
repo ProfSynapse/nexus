@@ -28,7 +28,8 @@ export class FilePickerRenderer {
     initialSelection?: string,
     workspaceRootFolder?: string,
     title?: string,
-    private component?: Component
+    private component?: Component,
+    private showBackButton = true
   ) {
     // Support single or multiple initial selection
     this.selectedFiles = new Set(initialSelection ? [initialSelection] : []);
@@ -68,9 +69,11 @@ export class FilePickerRenderer {
     const header = container.createDiv('nexus-file-picker-header');
 
     const leftSection = header.createDiv('nexus-file-picker-left');
-    new ButtonComponent(leftSection)
-      .setButtonText('← Back')
-      .onClick(() => this.onCancel());
+    if (this.showBackButton) {
+      new ButtonComponent(leftSection)
+        .setButtonText('← Back')
+        .onClick(() => this.onCancel());
+    }
     leftSection.createEl('h3', { text: this.title });
 
     const actions = header.createDiv('nexus-file-picker-actions');

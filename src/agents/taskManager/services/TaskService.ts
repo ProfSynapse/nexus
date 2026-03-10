@@ -97,6 +97,15 @@ export class TaskService {
     });
   }
 
+  async deleteProject(projectId: string): Promise<void> {
+    const project = await this.projectRepo.getById(projectId);
+    if (!project) {
+      throw new Error(`Project "${projectId}" not found`);
+    }
+
+    await this.projectRepo.delete(projectId);
+  }
+
   // ────────────────────────────────────────────────────────────────
   // Tasks
   // ────────────────────────────────────────────────────────────────
@@ -235,6 +244,15 @@ export class TaskService {
     }
 
     await this.taskRepo.update(taskId, updateData);
+  }
+
+  async deleteTask(taskId: string): Promise<void> {
+    const task = await this.taskRepo.getById(taskId);
+    if (!task) {
+      throw new Error(`Task "${taskId}" not found`);
+    }
+
+    await this.taskRepo.delete(taskId);
   }
 
   // ────────────────────────────────────────────────────────────────

@@ -19,11 +19,12 @@ Nexus turns your Obsidian vault into an MCP-enabled workspace. It exposes safe, 
 - **Native Chat View** – Stream tool calls, branch conversations, and manage models directly inside Obsidian.
 - **Inline AI Editing** – Select text, right-click or use hotkey, and transform it with AI instructions.
 - **Workspace Memory** – Workspaces, states, and traces in `.nexus/` (sync-friendly JSONL + local SQLite cache).
+- **Workflow Automation** – Workspace workflows can bind saved prompts, run on recurring schedules, catch up after downtime, and be tested with `Run now`.
 - **Local Semantic Search** – Desktop-only embeddings via sqlite-vec vector search—no external API calls. Search notes and conversation history.
 - **Full Vault Operations** – Create, read, update, delete notes, folders, frontmatter, and batch edits.
 - **Multi-Provider Support** – Anthropic, OpenAI, Google, Groq, Mistral, OpenRouter, Perplexity, Requesty, plus local servers (Ollama, LM Studio). All providers use lightweight direct HTTP—no SDK dependencies.
 - **Multi-Vault Ready** – Independent MCP instances per vault.
-- **Task Management** – Workspace-scoped projects and tasks with DAG dependency tracking, priority, assignees, due dates, and vault note linking.
+- **Task Management** – Workspace-scoped projects and tasks with DAG dependency tracking, priority, assignees, due dates, vault note linking, and a built-in settings UI for managing projects and tasks.
 - **Apps** – Extend Nexus with downloadable tool domains like ElevenLabs for AI audio generation.
 
 **Platform Notes**
@@ -67,14 +68,14 @@ Every `useTools` call includes context that helps maintain continuity:
 }
 ```
 
-### Available Agents & Tools (44 total)
+### Available Agents & Tools (45 total)
 
 | Agent | Purpose | Tools |
 |-------|---------|-------|
 | **contentManager** | Note reading/editing | read, write, update |
 | **storageManager** | File/folder management | list, createFolder, move, copy, archive, open |
 | **searchManager** | Search operations | searchContent, searchDirectory, searchMemory |
-| **memoryManager** | Workspace/state management | createWorkspace, listWorkspaces, loadWorkspace, updateWorkspace, archiveWorkspace, createState, listStates, loadState |
+| **memoryManager** | Workspace/state management | createWorkspace, listWorkspaces, loadWorkspace, updateWorkspace, archiveWorkspace, runWorkflow, createState, listStates, loadState |
 | **promptManager** | Custom prompts & LLM | listModels, executePrompts, listPrompts, getPrompt, createPrompt, updatePrompt, archivePrompt, generateImage, subagent |
 | **canvasManager** | Canvas operations | read, write, update, list |
 | **taskManager** | Project & task management | createProject, listProjects, updateProject, archiveProject, createTask, listTasks, updateTask, moveTask, queryTasks, linkNote |
@@ -159,8 +160,76 @@ All data lives in `.nexus/` inside your vault:
 
 - Each tool call is tagged to a workspace automatically via context
 - Create/load workspaces and save immutable state snapshots via tools or chat UI
+- Workflows live inside workspace settings and can include:
+  - plain-language `when` + `steps`
+  - optional saved prompt binding
+  - optional recurring schedule: hourly, daily, weekly, or monthly
+  - catch-up behavior for missed runs after Obsidian was closed
+- `Run now` is available from both the workflow list and the workflow editor
+- Scheduled and manual workflow runs create a fresh chat conversation titled `[workspace - workflow - YYYY-MM-DD HH:mm]`
+- Workflow prompts are scoped to the workflow run itself and are not auto-injected just because the workspace was loaded
 - Archive workspaces and states for cold storage (restorable)
 - No external database required
+
+### Workspace Workflows
+
+Use workflows when you want reusable, workspace-scoped operating procedures instead of one-off prompts.
+
+Each workflow can:
+
+- describe when it should be used
+- store workflow-specific steps in plain language
+- bind an optional saved prompt/agent
+- run immediately with `Run now`
+- run automatically on a recurring schedule
+
+Supported schedules:
+
+- **Hourly**: every `N` hours
+- **Daily**: at a selected hour and minute
+- **Weekly**: on a selected weekday, hour, and minute
+- **Monthly**: on a selected day of month, hour, and minute
+
+Catch-up behavior for scheduled workflows:
+
+- **Skip missed runs**: ignore missed schedule slots
+- **Run latest missed**: create one catch-up run for the newest missed slot
+- **Run all missed**: create one run per missed slot in order
+
+### Triggering Workflows Via Tools
+
+AI copilots can also trigger workflows through the workspace tool surface with `memoryManager.runWorkflow`.
+
+Use it when you already know the workspace and want to execute a saved workflow programmatically. The tool accepts:
+
+- `workspaceId`
+- `workflowId` or `workflowName`
+- optional `openInChat`
+
+### Workspace Task Management UI
+
+In addition to MCP/chat task tools, Nexus now includes a built-in task management UI inside **Settings → Nexus → Workspaces**.
+
+Open a workspace, then:
+
+1. Click **Manage Projects**
+2. Open a project card
+3. Review tasks in the project task table
+4. Use the checkbox to mark tasks done or reopen them
+5. Click **Edit** to open the full task editor page with a back button
+
+Current UI flow:
+
+- **Workspace detail** → task/project entrypoint
+- **Project cards** → one card per workspace project
+- **Project detail** → task table with status, priority, due date, assignee, and actions
+- **Task detail** → dedicated editor for title, description, status, priority, due date, assignee, tags, project, and parent task
+
+Notes:
+
+- The database remains the source of truth for tasks
+- This is the v1 management surface; there is no markdown/Kanban note sync yet
+- Task edits made in chat and in settings operate on the same underlying task data
 
 ---
 

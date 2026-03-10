@@ -45,16 +45,18 @@ export class WorkflowEditorRenderer {
     private onRunNow: SaveOrRunHandler
   ) {}
 
-  render(container: HTMLElement, workflow: Workflow, isNew: boolean): void {
+  render(container: HTMLElement, workflow: Workflow, isNew: boolean, options?: { showBackButton?: boolean }): void {
     container.empty();
     this.workflow = this.cloneWorkflow(workflow);
 
     const header = container.createDiv('nexus-workflow-header');
 
-    new ButtonComponent(header)
-      .setButtonText('Back to workspace')
-      .setIcon('chevron-left')
-      .onClick(() => this.onCancel());
+    if (options?.showBackButton !== false) {
+      new ButtonComponent(header)
+        .setButtonText('Back to workspace')
+        .setIcon('chevron-left')
+        .onClick(() => this.onCancel());
+    }
 
     header.createEl('h2', {
       text: isNew ? 'Create workflow' : 'Edit workflow',

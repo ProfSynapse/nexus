@@ -5125,6 +5125,98 @@ a:hover {
     background: var(--background-modifier-hover);
 }
 
+.nexus-task-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 12px;
+}
+
+.nexus-task-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--font-ui-small);
+}
+
+.nexus-task-table th,
+.nexus-task-table td {
+    padding: 10px 8px;
+    border-bottom: 1px solid var(--background-modifier-border);
+    text-align: left;
+    vertical-align: middle;
+}
+
+.nexus-task-table th {
+    color: var(--text-muted);
+    font-weight: var(--font-semibold);
+}
+
+.nexus-task-title-cell {
+    min-width: 220px;
+}
+
+.nexus-task-title {
+    color: var(--text-normal);
+}
+
+.nexus-task-actions {
+    display: flex;
+    gap: 8px;
+    white-space: nowrap;
+}
+
+.nexus-task-checkbox-cell {
+    width: 48px;
+}
+
+.nexus-task-checkbox {
+    width: 16px;
+    height: 16px;
+}
+
+.nexus-task-form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+}
+
+.nexus-breadcrumb {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
+    font-size: var(--font-ui-small);
+}
+
+.nexus-breadcrumb-link {
+    border: none;
+    background: transparent;
+    color: var(--text-accent);
+    padding: 0;
+    cursor: pointer;
+    font: inherit;
+}
+
+.nexus-breadcrumb-link:hover {
+    color: var(--interactive-accent);
+    text-decoration: underline;
+}
+
+.nexus-breadcrumb-current {
+    color: var(--text-normal);
+    font-weight: var(--font-medium);
+}
+
+.nexus-breadcrumb-separator {
+    color: var(--text-muted);
+}
+
+.nexus-settings-page-content {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
 /* File Picker */
 .nexus-file-picker-header {
     display: flex;
