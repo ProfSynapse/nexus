@@ -26,6 +26,14 @@ export class WorkspaceEventApplier {
   }
 
   /**
+   * Validate workspace ID to prevent ghost/orphan workspaces from being inserted.
+   * Rejects "undefined", "null", and empty/whitespace-only IDs.
+   */
+  private isValidWorkspaceId(id: string | undefined): boolean {
+    return !!id && id !== 'undefined' && id !== 'null' && id.trim().length > 0;
+  }
+
+  /**
    * Apply a workspace-related event to SQLite cache.
    */
   async apply(event: WorkspaceEvent): Promise<void> {
@@ -61,6 +69,9 @@ export class WorkspaceEventApplier {
     if (!event.data?.id || !event.data?.name) {
       return;
     }
+    if (!this.isValidWorkspaceId(event.data.id)) {
+      return;
+    }
 
     await this.sqliteCache.run(
       `INSERT OR REPLACE INTO workspaces
@@ -82,6 +93,10 @@ export class WorkspaceEventApplier {
   }
 
   private async applyWorkspaceUpdated(event: WorkspaceUpdatedEvent): Promise<void> {
+    if (!this.isValidWorkspaceId(event.workspaceId)) {
+      return;
+    }
+
     const updates: string[] = [];
     const values: any[] = [];
 
@@ -103,11 +118,17 @@ export class WorkspaceEventApplier {
   }
 
   private async applyWorkspaceDeleted(event: WorkspaceDeletedEvent): Promise<void> {
+    if (!this.isValidWorkspaceId(event.workspaceId)) {
+      return;
+    }
     await this.sqliteCache.run('DELETE FROM workspaces WHERE id = ?', [event.workspaceId]);
   }
 
   private async applySessionCreated(event: SessionCreatedEvent): Promise<void> {
     if (!event.data?.id || !event.workspaceId) {
+      return;
+    }
+    if (!this.isValidWorkspaceId(event.workspaceId)) {
       return;
     }
 
@@ -148,6 +169,9 @@ export class WorkspaceEventApplier {
     if (!event.data?.id || !event.sessionId || !event.workspaceId) {
       return;
     }
+    if (!this.isValidWorkspaceId(event.workspaceId)) {
+      return;
+    }
 
     await this.sqliteCache.run(
       `INSERT OR REPLACE INTO states
@@ -172,6 +196,9 @@ export class WorkspaceEventApplier {
 
   private async applyTraceAdded(event: TraceAddedEvent): Promise<void> {
     if (!event.data?.id || !event.sessionId || !event.workspaceId) {
+      return;
+    }
+    if (!this.isValidWorkspaceId(event.workspaceId)) {
       return;
     }
 

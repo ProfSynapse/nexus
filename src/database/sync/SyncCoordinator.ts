@@ -199,6 +199,13 @@ export class SyncCoordinator {
 
     for (let i = 0; i < workspaceFiles.length; i++) {
       const file = workspaceFiles[i];
+
+      // Skip ws_undefined.jsonl — ghost workspace from legacy bugs
+      const filename = file.split('/').pop() || '';
+      if (filename === 'ws_undefined.jsonl') {
+        continue;
+      }
+
       try {
         const events = await this.jsonlWriter.getEventsNotFromDevice<WorkspaceEvent>(
           file, this.deviceId, lastSync
@@ -276,9 +283,27 @@ export class SyncCoordinator {
 
     for (let i = 0; i < workspaceFiles.length; i++) {
       const file = workspaceFiles[i];
+
+      // Skip ws_undefined.jsonl — ghost workspace from legacy bugs
+      const rebuildFilename = file.split('/').pop() || '';
+      if (rebuildFilename === 'ws_undefined.jsonl') {
+        continue;
+      }
+
       try {
         const events = await this.jsonlWriter.readEvents<WorkspaceEvent>(file);
         events.sort((a, b) => a.timestamp - b.timestamp);
+
+        // Skip orphaned JSONLs that have no workspace_created event (legacy pre-event-sourcing files)
+        const hasWorkspaceCreated = events.some(e => e.type === 'workspace_created');
+        if (!hasWorkspaceCreated && events.length > 0) {
+          const hasOrphanedEvents = events.some(e =>
+            e.type === 'trace_added' || e.type === 'session_created' || e.type === 'state_saved'
+          );
+          if (hasOrphanedEvents) {
+            continue;
+          }
+        }
 
         // Process in very small batches with delays to avoid OOM
         const result = await BatchOperations.executeBatch(

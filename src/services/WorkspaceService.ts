@@ -244,7 +244,10 @@ export class WorkspaceService {
         sortOrder: 'desc'
       });
 
-      return result.items.map(w => ({
+      return result.items
+        // Filter out ghost workspaces with invalid IDs or names from legacy migration
+        .filter(w => w.name && w.name !== 'undefined' && w.id && w.id !== 'undefined')
+        .map(w => ({
         id: w.id,
         name: w.name,
         description: w.description,

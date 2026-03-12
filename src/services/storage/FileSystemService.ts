@@ -127,7 +127,11 @@ export class FileSystemService {
     try {
       const files = await this.vaultOperations.listDirectory(this.workspacesPath);
       const workspaceIds = files.files
-        .filter(file => file.endsWith('.json') && !file.endsWith('index.json'))
+        .filter(file => {
+          // Exclude hidden files (e.g., .DS_Store) from workspace listing
+          const name = file.split('/').pop() || '';
+          return file.endsWith('.json') && !file.endsWith('index.json') && !name.startsWith('.');
+        })
         .map(file => {
           const filename = file.split('/').pop() || '';
           return filename.replace('.json', '');
