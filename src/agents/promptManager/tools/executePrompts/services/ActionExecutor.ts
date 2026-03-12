@@ -71,10 +71,11 @@ export class ActionExecutor {
     actionParams: Record<string, unknown>,
     action: ContentAction
   ): Promise<{ success: boolean; error?: string }> {
-    actionParams.filePath = action.targetPath;
-    const createResult = await this.agentManager!.executeAgentTool('contentManager', 'createContent', actionParams);
+    actionParams.path = action.targetPath;
+    actionParams.overwrite = false;
+    const createResult = await this.agentManager!.executeAgentTool('contentManager', 'write', actionParams);
     if (!isCommonResult(createResult)) {
-      return { success: false, error: 'Invalid response from createContent tool' };
+      return { success: false, error: 'Invalid response from write tool' };
     }
     return { success: createResult.success, error: createResult.error };
   }
@@ -86,10 +87,11 @@ export class ActionExecutor {
     actionParams: Record<string, unknown>,
     action: ContentAction
   ): Promise<{ success: boolean; error?: string }> {
-    actionParams.filePath = action.targetPath;
-    const appendResult = await this.agentManager!.executeAgentTool('contentManager', 'appendContent', actionParams);
+    actionParams.path = action.targetPath;
+    actionParams.startLine = -1;
+    const appendResult = await this.agentManager!.executeAgentTool('contentManager', 'update', actionParams);
     if (!isCommonResult(appendResult)) {
-      return { success: false, error: 'Invalid response from appendContent tool' };
+      return { success: false, error: 'Invalid response from update tool' };
     }
     return { success: appendResult.success, error: appendResult.error };
   }
@@ -101,10 +103,11 @@ export class ActionExecutor {
     actionParams: Record<string, unknown>,
     action: ContentAction
   ): Promise<{ success: boolean; error?: string }> {
-    actionParams.filePath = action.targetPath;
-    const prependResult = await this.agentManager!.executeAgentTool('contentManager', 'prependContent', actionParams);
+    actionParams.path = action.targetPath;
+    actionParams.startLine = 1;
+    const prependResult = await this.agentManager!.executeAgentTool('contentManager', 'update', actionParams);
     if (!isCommonResult(prependResult)) {
-      return { success: false, error: 'Invalid response from prependContent tool' };
+      return { success: false, error: 'Invalid response from update tool' };
     }
     return { success: prependResult.success, error: prependResult.error };
   }
@@ -116,14 +119,16 @@ export class ActionExecutor {
     actionParams: Record<string, unknown>,
     action: ContentAction
   ): Promise<{ success: boolean; error?: string }> {
-    actionParams.filePath = action.targetPath;
+    actionParams.path = action.targetPath;
     let replaceResult: unknown;
 
     if (action.position !== undefined) {
-      actionParams.line = action.position;
-      replaceResult = await this.agentManager!.executeAgentTool('contentManager', 'replaceByLine', actionParams);
+      actionParams.startLine = action.position;
+      actionParams.endLine = action.position;
+      replaceResult = await this.agentManager!.executeAgentTool('contentManager', 'update', actionParams);
     } else {
-      replaceResult = await this.agentManager!.executeAgentTool('contentManager', 'replaceContent', actionParams);
+      actionParams.overwrite = true;
+      replaceResult = await this.agentManager!.executeAgentTool('contentManager', 'write', actionParams);
     }
 
     if (!isCommonResult(replaceResult)) {
@@ -143,18 +148,55 @@ export class ActionExecutor {
       return { success: false, error: 'findText is required for findReplace action' };
     }
 
-    actionParams.filePath = action.targetPath;
-    actionParams.findText = action.findText;
-    actionParams.replaceText = actionParams.content; // LLM response becomes the replacement text
-    actionParams.replaceAll = action.replaceAll ?? false;
-    actionParams.caseSensitive = action.caseSensitive ?? true;
-    actionParams.wholeWord = action.wholeWord ?? false;
+    const targetPath = action.targetPath;
+    const replaceText = actionParams.content as string;
+    const replaceAll = action.replaceAll ?? false;
+    const caseSensitive = action.caseSensitive ?? true;
+    const wholeWord = action.wholeWord ?? false;
 
-    const findReplaceResult = await this.agentManager!.executeAgentTool('contentManager', 'findReplaceContent', actionParams);
-    if (!isCommonResult(findReplaceResult)) {
-      return { success: false, error: 'Invalid response from findReplaceContent tool' };
+    // Step 1: Read the file
+    const readResult = await this.agentManager!.executeAgentTool('contentManager', 'read', {
+      path: targetPath,
+      startLine: 1,
+      sessionId: actionParams.sessionId,
+      context: actionParams.context
+    });
+
+    if (!isCommonResult(readResult) || !readResult.success) {
+      return { success: false, error: 'Failed to read file for findReplace' };
     }
-    return { success: findReplaceResult.success, error: findReplaceResult.error };
+
+    const fileContent = (readResult.data as { content: string })?.content;
+    if (fileContent === undefined) {
+      return { success: false, error: 'Could not read file content for findReplace' };
+    }
+
+    // Step 2: Perform find and replace on the text
+    let modifiedContent: string;
+    const escapedFind = action.findText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const pattern = wholeWord ? `\\b${escapedFind}\\b` : escapedFind;
+    const flags = (replaceAll ? 'g' : '') + (caseSensitive ? '' : 'i');
+    const regex = new RegExp(pattern, flags);
+
+    if (!regex.test(fileContent)) {
+      return { success: false, error: `findText "${action.findText}" not found in file` };
+    }
+    regex.lastIndex = 0;
+    modifiedContent = fileContent.replace(regex, replaceText);
+
+    // Step 3: Write modified content back
+    const writeResult = await this.agentManager!.executeAgentTool('contentManager', 'write', {
+      path: targetPath,
+      content: modifiedContent,
+      overwrite: true,
+      sessionId: actionParams.sessionId,
+      context: actionParams.context
+    });
+
+    if (!isCommonResult(writeResult)) {
+      return { success: false, error: 'Invalid response from write tool after findReplace' };
+    }
+    return { success: writeResult.success, error: writeResult.error };
   }
 
   /**
