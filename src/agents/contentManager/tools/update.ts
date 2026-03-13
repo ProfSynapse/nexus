@@ -2,6 +2,7 @@ import { App, TFile } from 'obsidian';
 import { BaseTool } from '../../baseTool';
 import { UpdateParams, UpdateResult } from '../types';
 import { ContentOperations } from '../utils/ContentOperations';
+import { WriteVerification } from '../types';
 import { createErrorMessage } from '../../../utils/errorUtils';
 import { addRecommendations, Recommendation } from '../../../utils/recommendationUtils';
 import { NudgeHelpers } from '../../../utils/nudgeHelpers';
@@ -47,6 +48,27 @@ export class UpdateTool extends BaseTool<UpdateParams, UpdateResult> {
   }
 
   /**
+   * Compute verification fields for the content after an operation.
+   */
+  private async computeVerification(
+    finalContent: string,
+    affectedStart: number,
+    affectedEnd: number
+  ): Promise<WriteVerification> {
+    const totalLines = finalContent.split('\n').length;
+    const contentHash = await ContentOperations.computeContentHash(finalContent);
+    return {
+      totalLines,
+      linesAffected: {
+        start: affectedStart,
+        end: affectedEnd,
+        count: affectedEnd - affectedStart + 1
+      },
+      contentHash
+    };
+  }
+
+  /**
    * Execute the tool
    * @param params Tool parameters
    * @returns Promise that resolves with the update result
@@ -86,8 +108,14 @@ export class UpdateTool extends BaseTool<UpdateParams, UpdateResult> {
 
         // Calculate linesDelta: number of lines added
         const linesAdded = content.split('\n').length;
+        const newTotalLines = newContent.split('\n').length;
+        const verification = await this.computeVerification(
+          newContent,
+          newTotalLines - linesAdded + 1,
+          newTotalLines
+        );
         // Append doesn't shift existing lines, so no hint needed
-        return { success: true, linesDelta: linesAdded };
+        return { success: true, linesDelta: linesAdded, ...verification };
       }
 
       // Validate line numbers
@@ -120,7 +148,12 @@ export class UpdateTool extends BaseTool<UpdateParams, UpdateResult> {
 
         // Calculate linesDelta: number of lines inserted
         const delta = insertLines.length;
-        const result = { success: true, linesDelta: delta };
+        const verification = await this.computeVerification(
+          newContent,
+          startLine,
+          startLine + insertLines.length - 1
+        );
+        const result: UpdateResult = { success: true, linesDelta: delta, ...verification };
 
         // Add nudge if lines shifted
         const nudge = NudgeHelpers.checkLineShift(delta, startLine);
@@ -157,7 +190,12 @@ export class UpdateTool extends BaseTool<UpdateParams, UpdateResult> {
 
         // Calculate linesDelta: negative (lines removed)
         const delta = -linesRemoved;
-        const result = { success: true, linesDelta: delta };
+        const verification = await this.computeVerification(
+          newContent,
+          startLine,
+          startLine  // After deletion, affected range collapses to the start point
+        );
+        const result: UpdateResult = { success: true, linesDelta: delta, ...verification };
 
         // Add nudge for line shift
         const nudge = NudgeHelpers.checkLineShift(delta, endLine);
@@ -175,7 +213,12 @@ export class UpdateTool extends BaseTool<UpdateParams, UpdateResult> {
 
         // Calculate linesDelta: new lines minus removed lines
         const delta = replacementLines.length - linesRemoved;
-        const result = { success: true, linesDelta: delta };
+        const verification = await this.computeVerification(
+          newContent,
+          startLine,
+          startLine + replacementLines.length - 1
+        );
+        const result: UpdateResult = { success: true, linesDelta: delta, ...verification };
 
         // Add nudge if lines shifted
         const nudge = NudgeHelpers.checkLineShift(delta, endLine);
@@ -233,6 +276,23 @@ export class UpdateTool extends BaseTool<UpdateParams, UpdateResult> {
         linesDelta: {
           type: 'number',
           description: 'Net change in line count. Positive = lines added, negative = lines removed. Use this to adjust subsequent line numbers in multi-operation workflows.'
+        },
+        totalLines: {
+          type: 'number',
+          description: 'Total line count of the file after the update'
+        },
+        linesAffected: {
+          type: 'object',
+          properties: {
+            start: { type: 'number', description: 'First line affected (1-based)' },
+            end: { type: 'number', description: 'Last line affected (1-based)' },
+            count: { type: 'number', description: 'Number of lines affected' }
+          },
+          description: 'Range of lines affected by the operation'
+        },
+        contentHash: {
+          type: 'string',
+          description: 'SHA-256 hash of the full file content after updating (sha256:hex format). Use to verify content integrity without a follow-up read.'
         },
         recommendations: {
           type: 'array',

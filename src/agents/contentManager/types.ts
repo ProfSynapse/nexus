@@ -72,10 +72,26 @@ export interface WriteParams extends CommonParameters {
 }
 
 /**
+ * Verification data returned after write/update operations.
+ * Eliminates the need for a follow-up read to confirm the operation landed correctly.
+ */
+export interface WriteVerification {
+  /** Total line count of the file after the operation */
+  totalLines?: number;
+  /** Range of lines affected by the operation */
+  linesAffected?: {
+    start: number;
+    end: number;
+    count: number;
+  };
+  /** SHA-256 hash of the full file content after the operation */
+  contentHash?: string;
+}
+
+/**
  * Result of writing content to a file
  */
-export interface WriteResult extends CommonResult {
-  // No data returned - LLM already knows the path and content it passed
+export interface WriteResult extends CommonResult, WriteVerification {
 }
 
 /**
@@ -106,7 +122,7 @@ export interface UpdateParams extends CommonParameters {
 /**
  * Result of updating content in a file
  */
-export interface UpdateResult extends CommonResult {
+export interface UpdateResult extends CommonResult, WriteVerification {
   /**
    * Net change in line count after the operation.
    * Positive = lines added, Negative = lines removed, Zero = no change.

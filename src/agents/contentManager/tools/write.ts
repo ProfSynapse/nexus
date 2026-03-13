@@ -86,8 +86,20 @@ export class WriteTool extends BaseTool<WriteParams, WriteResult> {
         await ContentOperations.createContent(this.app, path, content);
       }
 
-      // Success - LLM already knows the path and content it passed
-      return this.prepareResult(true);
+      // Compute verification data from the content we just wrote
+      const lines = content.split('\n');
+      const contentHash = await ContentOperations.computeContentHash(content);
+
+      return {
+        success: true,
+        totalLines: lines.length,
+        linesAffected: {
+          start: 1,
+          end: lines.length,
+          count: lines.length
+        },
+        contentHash
+      };
     } catch (error) {
       return this.prepareResult(false, undefined, createErrorMessage('Error writing file: ', error));
     }
@@ -132,6 +144,23 @@ export class WriteTool extends BaseTool<WriteParams, WriteResult> {
         success: {
           type: 'boolean',
           description: 'Whether the operation succeeded'
+        },
+        totalLines: {
+          type: 'number',
+          description: 'Total line count of the file after the write'
+        },
+        linesAffected: {
+          type: 'object',
+          properties: {
+            start: { type: 'number', description: 'First line affected (1-based)' },
+            end: { type: 'number', description: 'Last line affected (1-based)' },
+            count: { type: 'number', description: 'Number of lines affected' }
+          },
+          description: 'Range of lines affected (entire file for write operations)'
+        },
+        contentHash: {
+          type: 'string',
+          description: 'SHA-256 hash of the full file content after writing (sha256:hex format). Use to verify content integrity without a follow-up read.'
         },
         error: {
           type: 'string',

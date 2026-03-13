@@ -497,6 +497,20 @@ export class ContentOperations {
   }
 
   /**
+   * Compute SHA-256 hash of content using Web Crypto API (mobile-compatible).
+   * @param content The string to hash
+   * @returns Promise resolving to "sha256:<hex>" string
+   */
+  static async computeContentHash(content: string): Promise<string> {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(content);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const hex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    return `sha256:${hex}`;
+  }
+
+  /**
    * Escape special characters in a string for use in a regular expression
    * @param string String to escape
    * @returns Escaped string
