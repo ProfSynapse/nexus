@@ -4,7 +4,7 @@
  */
 
 import { ButtonComponent } from 'obsidian';
-import { Card, CardConfig } from './Card';
+import { Card, CardAction, CardConfig } from './Card';
 
 export interface CardItem {
     id: string;
@@ -13,15 +13,17 @@ export interface CardItem {
     isEnabled: boolean;
     /** Optional CSS class applied to the card's root element */
     cssClass?: string;
+    /** Optional per-card action buttons (e.g., install, download) */
+    additionalActions?: CardAction[];
 }
 
 export interface CardManagerConfig<T extends CardItem> {
     containerEl: HTMLElement;
     title: string;
-    addButtonText: string;
+    addButtonText?: string;
     emptyStateText: string;
     items: T[];
-    onAdd: () => void;
+    onAdd?: () => void;
     onToggle: (item: T, enabled: boolean) => Promise<void>;
     onEdit: (item: T) => void;
     onDelete?: (item: T) => void;
@@ -46,7 +48,7 @@ export class CardManager<T extends CardItem> {
         this.config.containerEl.empty();
 
         // Add button section (optional)
-        if (this.config.showAddButton !== false) {
+        if (this.config.onAdd && this.config.showAddButton !== false) {
             this.createAddButton();
         }
 
@@ -61,9 +63,9 @@ export class CardManager<T extends CardItem> {
     private createAddButton(): void {
         const addButtonContainer = this.config.containerEl.createDiv('card-manager-add-button');
         new ButtonComponent(addButtonContainer)
-            .setButtonText(this.config.addButtonText)
+            .setButtonText(this.config.addButtonText ?? '')
             .setCta()
-            .onClick(() => this.config.onAdd());
+            .onClick(() => this.config.onAdd!());
     }
 
     /**
@@ -100,7 +102,8 @@ export class CardManager<T extends CardItem> {
                 // and the item is already updated in place
             },
             onEdit: () => this.config.onEdit(item),
-            onDelete: this.config.onDelete ? () => this.config.onDelete!(item) : undefined
+            onDelete: this.config.onDelete ? () => this.config.onDelete!(item) : undefined,
+            additionalActions: item.additionalActions
         };
 
         const card = new Card(this.cardsContainer, cardConfig);

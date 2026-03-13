@@ -317,11 +317,8 @@ export class ProvidersTab {
                 containerEl: this.container,
                 cardManagerConfig: {
                     title: 'Mobile Providers',
-                    addButtonText: '',
                     emptyStateText: 'No providers available.',
-                    showAddButton: false,
                     showToggle: true,
-                    onAdd: () => {},
                     onToggle: async (item, enabled) => {
                         if (item.comingSoon) return;
                         settings.providers[item.providerId] = {
@@ -370,11 +367,8 @@ export class ProvidersTab {
             containerEl: this.container,
             cardManagerConfig: {
                 title: 'Providers',
-                addButtonText: '',
                 emptyStateText: 'No providers available.',
-                showAddButton: false,
                 showToggle: true,
-                onAdd: () => {},
                 onToggle: async (item, enabled) => {
                     if (item.comingSoon) return;
                     settings.providers[item.providerId] = {

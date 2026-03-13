@@ -6,9 +6,8 @@
 import { App, Notice } from 'obsidian';
 import { SettingsRouter } from '../SettingsRouter';
 import { Settings } from '../../settings';
-import { Card, CardConfig } from '../../components/Card';
 import { CardItem } from '../../components/CardManager';
-import { SearchableCardManager } from '../../components/SearchableCardManager';
+import { SearchableCardManager, CardGroup } from '../../components/SearchableCardManager';
 import { AppConfigModal, AppSettingsSection } from '../../components/AppConfigModal';
 import { AppManager } from '../../services/apps/AppManager';
 
@@ -77,62 +76,20 @@ export class AppsTab {
       installed: true
     }));
 
-    // Render Installed Apps with toggle + edit
-    if (installedItems.length > 0) {
-      this.container.createDiv('nexus-provider-group-title').setText('INSTALLED APPS');
-      new SearchableCardManager<AppCardItem>({
-        containerEl: this.container,
-        cardManagerConfig: {
-          title: 'Installed Apps',
-          addButtonText: '',
-          emptyStateText: 'No installed apps.',
-          showAddButton: false,
-          showToggle: true,
-          onAdd: () => {},
-          onToggle: async (item, enabled) => {
-            this.services.appManager!.setAppEnabled(item.appId, enabled);
-            await this.saveSettings();
-            this.render();
-          },
-          onEdit: (item) => {
-            this.openAppModal(item.appId);
-          }
-        },
-        items: installedItems,
-        search: {
-          placeholder: 'Search installed apps...'
-        }
-      });
-    }
-
-    // Render Available Apps with install action (direct Card — needs additionalActions)
-    if (available.length > 0) {
-      this.container.createDiv('nexus-provider-group-title').setText('AVAILABLE APPS');
-      const grid = this.container.createDiv('card-manager-grid');
-      for (const app of available) {
-        this.renderAvailableCard(grid, app);
-      }
-    }
-  }
-
-  /**
-   * Render an available (not installed) app card with install action
-   */
-  private renderAvailableCard(
-    grid: HTMLElement,
-    app: { id: string; manifest: import('../../types/apps/AppTypes').AppManifest }
-  ): void {
-    const cardConfig: CardConfig = {
-      title: app.manifest.name,
-      description: app.manifest.description,
-      showToggle: false,
+    const availableItems: AppCardItem[] = available.map(a => ({
+      id: a.id,
+      name: a.manifest.name,
+      description: a.manifest.description,
+      isEnabled: false,
+      appId: a.id,
+      installed: false,
       additionalActions: [{
         icon: 'download',
         label: 'Install',
         onClick: () => {
-          const result = this.services.appManager!.installApp(app.id);
+          const result = this.services.appManager!.installApp(a.id);
           if (result.success) {
-            new Notice(`${app.manifest.name} installed`);
+            new Notice(`${a.manifest.name} installed`);
             this.saveSettings();
             this.render();
           } else {
@@ -140,8 +97,38 @@ export class AppsTab {
           }
         }
       }]
-    };
-    new Card(grid, cardConfig);
+    }));
+
+    const groups: CardGroup<AppCardItem>[] = [];
+    if (installedItems.length > 0) {
+      groups.push({ title: 'INSTALLED APPS', items: installedItems });
+    }
+    if (availableItems.length > 0) {
+      groups.push({ title: 'AVAILABLE APPS', items: availableItems });
+    }
+
+    new SearchableCardManager<AppCardItem>({
+      containerEl: this.container,
+      cardManagerConfig: {
+        title: 'Apps',
+        emptyStateText: 'No apps available.',
+        showToggle: true,
+        onToggle: async (item, enabled) => {
+          if (!item.installed) return;
+          this.services.appManager!.setAppEnabled(item.appId, enabled);
+          await this.saveSettings();
+          this.render();
+        },
+        onEdit: (item) => {
+          if (!item.installed) return;
+          this.openAppModal(item.appId);
+        }
+      },
+      groups,
+      search: {
+        placeholder: 'Search apps...'
+      }
+    });
   }
 
   private openAppModal(appId: string): void {
