@@ -14,59 +14,8 @@
  * These tests lock down behavior BEFORE any extraction.
  */
 
-import { Plugin } from 'obsidian';
 import { WorkspaceService } from '../../src/services/WorkspaceService';
-
-function createMockPlugin(): Plugin {
-  return new Plugin(
-    { vault: {}, workspace: {} } as any,
-    { id: 'test', name: 'Test', version: '0.0.1' }
-  );
-}
-
-function createMockFileSystem(): any {
-  return {
-    readWorkspace: jest.fn(),
-    writeWorkspace: jest.fn(),
-    deleteWorkspace: jest.fn(),
-    listWorkspaceIds: jest.fn().mockResolvedValue([]),
-  };
-}
-
-function createMockIndexManager(): any {
-  return {
-    loadWorkspaceIndex: jest.fn().mockResolvedValue({
-      workspaces: {},
-      byName: {},
-      byDescription: {},
-      byFolder: {},
-    }),
-    updateWorkspaceInIndex: jest.fn(),
-    removeWorkspaceFromIndex: jest.fn(),
-  };
-}
-
-function createMockAdapter(ready: boolean): any {
-  return {
-    isReady: jest.fn().mockReturnValue(ready),
-    getWorkspaces: jest.fn().mockResolvedValue({ items: [], page: 0, pageSize: 100, totalItems: 0, totalPages: 0, hasNextPage: false }),
-    getWorkspace: jest.fn().mockResolvedValue(null),
-    createWorkspace: jest.fn(),
-    updateWorkspace: jest.fn(),
-    deleteWorkspace: jest.fn(),
-    searchWorkspaces: jest.fn().mockResolvedValue([]),
-    getSession: jest.fn().mockResolvedValue(null),
-    getSessions: jest.fn().mockResolvedValue({ items: [], page: 0, pageSize: 100, totalItems: 0, totalPages: 0, hasNextPage: false }),
-    createSession: jest.fn(),
-    updateSession: jest.fn(),
-    deleteSession: jest.fn(),
-    getState: jest.fn().mockResolvedValue(null),
-    getStates: jest.fn().mockResolvedValue({ items: [], page: 0, pageSize: 100, totalItems: 0, totalPages: 0, hasNextPage: false }),
-    saveState: jest.fn(),
-    addTrace: jest.fn(),
-    getTraces: jest.fn().mockResolvedValue({ items: [] }),
-  };
-}
+import { createMockPlugin, createMockFileSystem, createMockIndexManager, createMockAdapter } from '../helpers/mockFactories';
 
 describe('getWorkspaceByNameOrId characterization', () => {
   const plugin = createMockPlugin();

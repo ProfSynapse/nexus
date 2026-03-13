@@ -11,90 +11,10 @@
  * These tests lock down behavior BEFORE extraction into DualBackendExecutor.
  */
 
-import { Plugin } from 'obsidian';
 import { WorkspaceService } from '../../src/services/WorkspaceService';
 import { ConversationService } from '../../src/services/ConversationService';
 import { MemoryService } from '../../src/agents/memoryManager/services/MemoryService';
-
-// ============================================================================
-// Mock factories
-// ============================================================================
-
-function createMockPlugin(): Plugin {
-  return new Plugin(
-    { vault: {}, workspace: {} } as any,
-    { id: 'test', name: 'Test', version: '0.0.1' }
-  );
-}
-
-function createMockFileSystem(): any {
-  return {
-    readWorkspace: jest.fn(),
-    writeWorkspace: jest.fn(),
-    deleteWorkspace: jest.fn(),
-    listWorkspaceIds: jest.fn().mockResolvedValue([]),
-    readConversation: jest.fn(),
-    writeConversation: jest.fn(),
-    deleteConversation: jest.fn(),
-    listConversationIds: jest.fn().mockResolvedValue([]),
-  };
-}
-
-function createMockIndexManager(): any {
-  return {
-    loadWorkspaceIndex: jest.fn().mockResolvedValue({
-      workspaces: {},
-      byName: {},
-      byDescription: {},
-      byFolder: {},
-    }),
-    loadConversationIndex: jest.fn().mockResolvedValue({
-      conversations: {},
-    }),
-    updateWorkspaceInIndex: jest.fn(),
-    removeWorkspaceFromIndex: jest.fn(),
-    updateConversationInIndex: jest.fn(),
-    removeConversationFromIndex: jest.fn(),
-  };
-}
-
-/**
- * Creates a mock IStorageAdapter. When `ready` is true, isReady() returns true
- * and adapter methods will be used. When false, getReadyAdapter() returns undefined
- * and legacy path is used.
- */
-function createMockAdapter(ready: boolean): any {
-  return {
-    isReady: jest.fn().mockReturnValue(ready),
-    // Workspace methods
-    getWorkspaces: jest.fn().mockResolvedValue({ items: [], page: 0, pageSize: 100, totalItems: 0, totalPages: 0, hasNextPage: false }),
-    getWorkspace: jest.fn().mockResolvedValue(null),
-    createWorkspace: jest.fn().mockResolvedValue('ws-new'),
-    updateWorkspace: jest.fn(),
-    deleteWorkspace: jest.fn(),
-    searchWorkspaces: jest.fn().mockResolvedValue([]),
-    // Session methods
-    createSession: jest.fn().mockResolvedValue('session-new'),
-    getSession: jest.fn().mockResolvedValue(null),
-    getSessions: jest.fn().mockResolvedValue({ items: [], page: 0, pageSize: 100, totalItems: 0, totalPages: 0, hasNextPage: false }),
-    updateSession: jest.fn(),
-    deleteSession: jest.fn(),
-    // Trace methods
-    addTrace: jest.fn().mockResolvedValue('trace-new'),
-    getTraces: jest.fn().mockResolvedValue({ items: [], page: 0, pageSize: 100, totalItems: 0, totalPages: 0, hasNextPage: false }),
-    // State methods
-    saveState: jest.fn().mockResolvedValue('state-new'),
-    getState: jest.fn().mockResolvedValue(null),
-    getStates: jest.fn().mockResolvedValue({ items: [], page: 0, pageSize: 100, totalItems: 0, totalPages: 0, hasNextPage: false }),
-    // Conversation methods
-    getConversations: jest.fn().mockResolvedValue({ items: [], page: 0, pageSize: 100, totalItems: 0, totalPages: 0, hasNextPage: false }),
-    getConversation: jest.fn().mockResolvedValue(null),
-    getMessages: jest.fn().mockResolvedValue({ items: [], page: 0, pageSize: 1000, totalItems: 0, totalPages: 0, hasNextPage: false }),
-    createConversation: jest.fn().mockResolvedValue('conv-new'),
-    updateConversation: jest.fn(),
-    deleteConversation: jest.fn(),
-  };
-}
+import { createMockPlugin, createMockFileSystem, createMockIndexManager, createMockAdapter } from '../helpers/mockFactories';
 
 // ============================================================================
 // WorkspaceService: Dual-Backend Characterization

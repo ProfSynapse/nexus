@@ -15,6 +15,7 @@
 
 import { App, Notice } from 'obsidian';
 import { GenericProviderModal } from '../../src/components/llm-provider/providers/GenericProviderModal';
+import { createTrackingElement } from '../helpers/mockFactories';
 
 // Mock the OAuth dependencies
 jest.mock('../../src/services/llm/validation/ValidationService', () => ({
@@ -32,51 +33,6 @@ jest.mock('../../src/components/llm-provider/providers/OAuthModals', () => ({
   OAuthPreAuthModal: jest.fn(),
 }));
 
-// Helper to create DOM-like mock elements that track child creation
-function createTrackingElement(): any {
-  const children: any[] = [];
-  const element: any = {
-    _children: children,
-    _tag: 'div',
-    _cls: '',
-    _text: '',
-    textContent: '',
-    onclick: null,
-    disabled: false,
-    classList: {
-      add: jest.fn(),
-      remove: jest.fn(),
-      contains: jest.fn(() => false),
-    },
-    addClass: jest.fn(function(this: any, cls: string) { this._cls += ' ' + cls; return this; }),
-    removeClass: jest.fn().mockReturnThis(),
-    empty: jest.fn(function(this: any) { this._children.length = 0; }),
-    setAttribute: jest.fn(),
-    createEl: jest.fn((tag: string, opts?: any) => {
-      const child = createTrackingElement();
-      child._tag = tag;
-      if (opts?.text) child.textContent = opts.text;
-      if (opts?.cls) child._cls = opts.cls;
-      children.push(child);
-      return child;
-    }),
-    createDiv: jest.fn((cls?: string) => {
-      const child = createTrackingElement();
-      child._tag = 'div';
-      if (cls) child._cls = cls;
-      children.push(child);
-      return child;
-    }),
-    createSpan: jest.fn((cls?: string) => {
-      const child = createTrackingElement();
-      child._tag = 'span';
-      if (typeof cls === 'string') child._cls = cls;
-      children.push(child);
-      return child;
-    }),
-  };
-  return element;
-}
 
 function createMockProviderConfig(oauthConnected: boolean): any {
   return {

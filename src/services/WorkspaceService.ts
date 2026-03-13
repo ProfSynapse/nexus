@@ -1,5 +1,6 @@
 // Location: src/services/WorkspaceService.ts
-// Centralized workspace management service with split-file storage
+// Centralized workspace management service with split-file storage.
+// Session and state/trace CRUD delegated to WorkspaceSessionService and WorkspaceStateService.
 // Used by: MemoryManager agents, WorkspaceEditModal, UI components
 // Dependencies: FileSystemService, IndexManager for data access (legacy)
 //               IStorageAdapter for new hybrid storage backend
@@ -10,17 +11,19 @@ import { IndexManager } from './storage/IndexManager';
 import { IndividualWorkspace, WorkspaceMetadata, SessionData, MemoryTrace, StateData } from '../types/storage/StorageTypes';
 import { IStorageAdapter } from '../database/interfaces/IStorageAdapter';
 import * as HybridTypes from '../types/storage/HybridStorageTypes';
-import { TraceMetadata } from '../database/types/memory/MemoryTypes';
-import { WorkspaceState } from '../database/types/session/SessionTypes';
 import { StorageAdapterOrGetter, resolveAdapter, withDualBackend } from './helpers/DualBackendExecutor';
 import { convertWorkspaceMetadata } from './helpers/WorkspaceTypeConverters';
 import { normalizeWorkspaceData, normalizeWorkspaceContext } from './helpers/WorkspaceNormalizer';
+import { WorkspaceSessionService } from './workspace/WorkspaceSessionService';
+import { WorkspaceStateService } from './workspace/WorkspaceStateService';
 
 // Export constant for backward compatibility
 export const GLOBAL_WORKSPACE_ID = 'default';
 
 export class WorkspaceService {
   private storageAdapterOrGetter: StorageAdapterOrGetter;
+  private sessionService: WorkspaceSessionService;
+  private stateService: WorkspaceStateService;
 
   constructor(
     private plugin: Plugin,
@@ -29,6 +32,26 @@ export class WorkspaceService {
     storageAdapter?: StorageAdapterOrGetter
   ) {
     this.storageAdapterOrGetter = storageAdapter;
+
+    this.sessionService = new WorkspaceSessionService(
+      fileSystem,
+      indexManager,
+      storageAdapter,
+      {
+        getWorkspace: (id) => this.getWorkspace(id),
+        createWorkspace: (data) => this.createWorkspace(data)
+      }
+    );
+
+    this.stateService = new WorkspaceStateService(
+      fileSystem,
+      indexManager,
+      storageAdapter,
+      {
+        getSession: (wId, sId) => this.getSession(wId, sId),
+        addSession: (wId, data) => this.addSession(wId, data)
+      }
+    );
   }
 
   /**
@@ -40,7 +63,7 @@ export class WorkspaceService {
   }
 
   // ============================================================================
-  // Public API Methods (dual-backend support)
+  // Workspace CRUD (kept in this file — core responsibility)
   // ============================================================================
 
   /**
@@ -322,7 +345,6 @@ export class WorkspaceService {
 
   /**
    * Update last accessed timestamp for a workspace
-   * Lightweight operation that only updates the timestamp in both file and index
    */
   async updateLastAccessed(id: string): Promise<void> {
     return withDualBackend(
@@ -358,396 +380,57 @@ export class WorkspaceService {
     );
   }
 
-  /**
-   * Add session to workspace
-   * Ensures the workspace exists before creating session
-   */
+  // ============================================================================
+  // Session CRUD (delegated to WorkspaceSessionService)
+  // ============================================================================
+
   async addSession(workspaceId: string, sessionData: Partial<SessionData>): Promise<SessionData> {
-    // Use new adapter if available and ready (avoids blocking on SQLite initialization)
-    const adapterForAddSession = this.getReadyAdapter();
-    if (adapterForAddSession) {
-      // Ensure workspace exists before creating session (referential integrity)
-      const existingWorkspace = await this.getWorkspace(workspaceId);
-      if (!existingWorkspace) {
-        // For 'default' workspace, create it automatically
-        if (workspaceId === GLOBAL_WORKSPACE_ID) {
-          await this.createWorkspace({
-            id: GLOBAL_WORKSPACE_ID,
-            name: 'Default Workspace',
-            description: 'Default workspace for general use',
-            rootFolder: '/'
-          });
-        } else {
-          throw new Error(`Workspace ${workspaceId} not found. Create it first or use the default workspace.`);
-        }
-      }
-
-      const hybridSession: Omit<HybridTypes.SessionMetadata, 'id' | 'workspaceId'> = {
-        name: sessionData.name || 'Untitled Session',
-        description: sessionData.description,
-        startTime: sessionData.startTime || Date.now(),
-        endTime: sessionData.endTime,
-        isActive: sessionData.isActive ?? true
-      };
-
-      const sessionId = await adapterForAddSession.createSession(workspaceId, hybridSession);
-
-      // Update workspace lastAccessed
-      await adapterForAddSession.updateWorkspace(workspaceId, { lastAccessed: Date.now() });
-
-      return {
-        id: sessionId,
-        name: hybridSession.name,
-        description: hybridSession.description,
-        startTime: hybridSession.startTime,
-        endTime: hybridSession.endTime,
-        isActive: hybridSession.isActive,
-        memoryTraces: {},
-        states: {}
-      };
-    }
-
-    // Fall back to legacy implementation
-    // Load workspace
-    const workspace = await this.fileSystem.readWorkspace(workspaceId);
-
-    if (!workspace) {
-      throw new Error(`Workspace ${workspaceId} not found`);
-    }
-
-    // Create session
-    const sessionId = sessionData.id || `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    const session: SessionData = {
-      id: sessionId,
-      name: sessionData.name,
-      description: sessionData.description,
-      startTime: sessionData.startTime || Date.now(),
-      endTime: sessionData.endTime,
-      isActive: sessionData.isActive ?? true,
-      memoryTraces: sessionData.memoryTraces || {},
-      states: sessionData.states || {}
-    };
-
-    // Add to workspace
-    workspace.sessions[sessionId] = session;
-    workspace.lastAccessed = Date.now();
-
-    // Save workspace
-    await this.fileSystem.writeWorkspace(workspaceId, workspace);
-
-    // Update index
-    await this.indexManager.updateWorkspaceInIndex(workspace);
-
-    return session;
+    return this.sessionService.addSession(workspaceId, sessionData);
   }
 
-  /**
-   * Update session in workspace
-   */
   async updateSession(workspaceId: string, sessionId: string, updates: Partial<SessionData>): Promise<void> {
-    return withDualBackend(
-      this.storageAdapterOrGetter,
-      async (adapter) => {
-        const hybridUpdates: Partial<HybridTypes.SessionMetadata> = {};
-        if (updates.name !== undefined) hybridUpdates.name = updates.name;
-        if (updates.description !== undefined) hybridUpdates.description = updates.description;
-        if (updates.endTime !== undefined) hybridUpdates.endTime = updates.endTime;
-        if (updates.isActive !== undefined) hybridUpdates.isActive = updates.isActive;
-
-        await adapter.updateSession(workspaceId, sessionId, hybridUpdates);
-        await adapter.updateWorkspace(workspaceId, { lastAccessed: Date.now() });
-      },
-      async () => {
-        const workspace = await this.fileSystem.readWorkspace(workspaceId);
-        if (!workspace) {
-          throw new Error(`Workspace ${workspaceId} not found`);
-        }
-        if (!workspace.sessions[sessionId]) {
-          throw new Error(`Session ${sessionId} not found in workspace ${workspaceId}`);
-        }
-        workspace.sessions[sessionId] = {
-          ...workspace.sessions[sessionId],
-          ...updates,
-          id: sessionId
-        };
-        workspace.lastAccessed = Date.now();
-        await this.fileSystem.writeWorkspace(workspaceId, workspace);
-        await this.indexManager.updateWorkspaceInIndex(workspace);
-      }
-    );
+    return this.sessionService.updateSession(workspaceId, sessionId, updates);
   }
 
-  /**
-   * Delete session from workspace
-   */
   async deleteSession(workspaceId: string, sessionId: string): Promise<void> {
-    return withDualBackend(
-      this.storageAdapterOrGetter,
-      async (adapter) => {
-        await adapter.deleteSession(sessionId);
-        await adapter.updateWorkspace(workspaceId, { lastAccessed: Date.now() });
-      },
-      async () => {
-        const workspace = await this.fileSystem.readWorkspace(workspaceId);
-        if (!workspace) {
-          throw new Error(`Workspace ${workspaceId} not found`);
-        }
-        delete workspace.sessions[sessionId];
-        workspace.lastAccessed = Date.now();
-        await this.fileSystem.writeWorkspace(workspaceId, workspace);
-        await this.indexManager.updateWorkspaceInIndex(workspace);
-      }
-    );
+    return this.sessionService.deleteSession(workspaceId, sessionId);
   }
 
-  /**
-   * Get session from workspace
-   */
   async getSession(workspaceId: string, sessionId: string): Promise<SessionData | null> {
-    return withDualBackend(
-      this.storageAdapterOrGetter,
-      async (adapter) => {
-        const session = await adapter.getSession(sessionId);
-        if (!session) {
-          return null;
-        }
-        return {
-          id: session.id,
-          name: session.name,
-          description: session.description,
-          startTime: session.startTime,
-          endTime: session.endTime,
-          isActive: session.isActive,
-          memoryTraces: {},
-          states: {}
-        };
-      },
-      async () => {
-        const workspace = await this.fileSystem.readWorkspace(workspaceId);
-        if (!workspace) {
-          return null;
-        }
-        return workspace.sessions[sessionId] || null;
-      }
-    );
+    return this.sessionService.getSession(workspaceId, sessionId);
   }
 
-  /**
-   * Add memory trace to session
-   * Ensures the session exists before saving (creates it if needed)
-   */
+  async getSessionByNameOrId(workspaceId: string, identifier: string): Promise<SessionData | null> {
+    return this.sessionService.getSessionByNameOrId(workspaceId, identifier);
+  }
+
+  // ============================================================================
+  // State & Trace CRUD (delegated to WorkspaceStateService)
+  // ============================================================================
+
   async addMemoryTrace(workspaceId: string, sessionId: string, traceData: Partial<MemoryTrace>): Promise<MemoryTrace> {
-    // Use new adapter if available and ready (avoids blocking on SQLite initialization)
-    const adapterForAddTrace = this.getReadyAdapter();
-    if (adapterForAddTrace) {
-      // Ensure session exists before saving trace (referential integrity)
-      const existingSession = await this.getSession(workspaceId, sessionId);
-      if (!existingSession) {
-        await this.addSession(workspaceId, {
-          id: sessionId,
-          name: `Session ${new Date().toLocaleString()}`,
-          description: `Auto-created session for trace storage`,
-          startTime: Date.now(),
-          isActive: true
-        });
-      }
-
-      const hybridTrace: Omit<HybridTypes.MemoryTraceData, 'id' | 'workspaceId' | 'sessionId'> = {
-        timestamp: traceData.timestamp || Date.now(),
-        type: traceData.type,
-        content: traceData.content || '',
-        metadata: traceData.metadata
-      };
-
-      const traceId = await adapterForAddTrace.addTrace(workspaceId, sessionId, hybridTrace);
-      await adapterForAddTrace.updateWorkspace(workspaceId, { lastAccessed: Date.now() });
-
-      return {
-        id: traceId,
-        timestamp: hybridTrace.timestamp,
-        type: hybridTrace.type || 'generic',
-        content: hybridTrace.content,
-        // Safe conversion: HybridTypes.MemoryTraceData.metadata (Record<string, unknown>)
-        // is cast to TraceMetadata which is the expected type for MemoryTrace.metadata
-        // Note: This metadata may be either TraceMetadata or legacy trace metadata at runtime
-        metadata: hybridTrace.metadata as TraceMetadata | undefined
-      };
-    }
-
-    // Fall back to legacy implementation
-    // Load workspace
-    const workspace = await this.fileSystem.readWorkspace(workspaceId);
-
-    if (!workspace) {
-      throw new Error(`Workspace ${workspaceId} not found`);
-    }
-
-    if (!workspace.sessions[sessionId]) {
-      throw new Error(`Session ${sessionId} not found in workspace ${workspaceId}`);
-    }
-
-    // Create trace
-    const traceId = traceData.id || `trace_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    const trace: MemoryTrace = {
-      id: traceId,
-      timestamp: traceData.timestamp || Date.now(),
-      type: traceData.type || 'generic',
-      content: traceData.content || '',
-      metadata: traceData.metadata
-    };
-
-    // Add to session
-    workspace.sessions[sessionId].memoryTraces[traceId] = trace;
-    workspace.lastAccessed = Date.now();
-
-    // Save workspace
-    await this.fileSystem.writeWorkspace(workspaceId, workspace);
-
-    // Update index
-    await this.indexManager.updateWorkspaceInIndex(workspace);
-
-    return trace;
+    return this.stateService.addMemoryTrace(workspaceId, sessionId, traceData);
   }
 
-  /**
-   * Get memory traces from session
-   */
   async getMemoryTraces(workspaceId: string, sessionId: string): Promise<MemoryTrace[]> {
-    return withDualBackend(
-      this.storageAdapterOrGetter,
-      async (adapter) => {
-        const result = await adapter.getTraces(workspaceId, sessionId);
-        return result.items.map(t => ({
-          id: t.id,
-          timestamp: t.timestamp,
-          type: t.type || 'generic',
-          content: t.content,
-          // Safe conversion: HybridTypes.MemoryTraceData.metadata (Record<string, unknown>)
-          // is cast to TraceMetadata which is the expected type for MemoryTrace.metadata
-          metadata: t.metadata as TraceMetadata | undefined
-        }));
-      },
-      async () => {
-        const workspace = await this.fileSystem.readWorkspace(workspaceId);
-        if (!workspace || !workspace.sessions[sessionId]) {
-          return [];
-        }
-        return Object.values(workspace.sessions[sessionId].memoryTraces);
-      }
-    );
+    return this.stateService.getMemoryTraces(workspaceId, sessionId);
   }
 
-  /**
-   * Add state to session
-   * Ensures the session exists before saving (creates it if needed)
-   */
   async addState(workspaceId: string, sessionId: string, stateData: Partial<StateData>): Promise<StateData> {
-    // Use new adapter if available and ready (avoids blocking on SQLite initialization)
-    const adapterForAddState = this.getReadyAdapter();
-    if (adapterForAddState) {
-      // Ensure session exists before saving state (referential integrity)
-      const existingSession = await this.getSession(workspaceId, sessionId);
-      if (!existingSession) {
-        await this.addSession(workspaceId, {
-          id: sessionId,
-          name: `Session ${new Date().toLocaleString()}`,
-          description: `Auto-created session for state storage`,
-          startTime: Date.now(),
-          isActive: true
-        });
-      }
-
-      // Support both new 'state' property and legacy 'snapshot' property
-      const stateContent = stateData.state ||
-        (stateData as Partial<StateData> & { snapshot?: WorkspaceState }).snapshot ||
-        {};
-
-      const hybridState: Omit<HybridTypes.StateData, 'id' | 'workspaceId' | 'sessionId'> = {
-        name: stateData.name || 'Untitled State',
-        created: stateData.created || Date.now(),
-        description: undefined,
-        tags: undefined,
-        content: stateContent
-      };
-
-      const stateId = await adapterForAddState.saveState(workspaceId, sessionId, hybridState);
-      await adapterForAddState.updateWorkspace(workspaceId, { lastAccessed: Date.now() });
-
-      return {
-        id: stateId,
-        name: hybridState.name,
-        created: hybridState.created,
-        state: hybridState.content
-      };
-    }
-
-    // Fall back to legacy implementation
-    // Load workspace
-    const workspace = await this.fileSystem.readWorkspace(workspaceId);
-
-    if (!workspace) {
-      throw new Error(`Workspace ${workspaceId} not found`);
-    }
-
-    if (!workspace.sessions[sessionId]) {
-      throw new Error(`Session ${sessionId} not found in workspace ${workspaceId}`);
-    }
-
-    // Create state
-    const stateId = stateData.id || `state_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
-    // Support both new 'state' property and legacy 'snapshot' property
-    const stateContent = stateData.state ||
-      (stateData as Partial<StateData> & { snapshot?: WorkspaceState }).snapshot ||
-      {} as WorkspaceState;
-
-    const state: StateData = {
-      id: stateId,
-      name: stateData.name || 'Untitled State',
-      created: stateData.created || Date.now(),
-      state: stateContent
-    };
-
-    // Add to session
-    workspace.sessions[sessionId].states[stateId] = state;
-    workspace.lastAccessed = Date.now();
-
-    // Save workspace
-    await this.fileSystem.writeWorkspace(workspaceId, workspace);
-
-    // Update index
-    await this.indexManager.updateWorkspaceInIndex(workspace);
-
-    return state;
+    return this.stateService.addState(workspaceId, sessionId, stateData);
   }
 
-  /**
-   * Get state from session
-   */
   async getState(workspaceId: string, sessionId: string, stateId: string): Promise<StateData | null> {
-    return withDualBackend(
-      this.storageAdapterOrGetter,
-      async (adapter) => {
-        const state = await adapter.getState(stateId);
-        if (!state) {
-          return null;
-        }
-        return {
-          id: state.id,
-          name: state.name,
-          created: state.created,
-          state: state.content
-        };
-      },
-      async () => {
-        const workspace = await this.fileSystem.readWorkspace(workspaceId);
-        if (!workspace || !workspace.sessions[sessionId]) {
-          return null;
-        }
-        return workspace.sessions[sessionId].states[stateId] || null;
-      }
-    );
+    return this.stateService.getState(workspaceId, sessionId, stateId);
   }
+
+  async getStateByNameOrId(workspaceId: string, sessionId: string, identifier: string): Promise<StateData | null> {
+    return this.stateService.getStateByNameOrId(workspaceId, sessionId, identifier);
+  }
+
+  // ============================================================================
+  // Workspace Query Methods (kept — workspace-level concerns)
+  // ============================================================================
 
   /**
    * Search workspaces (uses index search data)
@@ -840,19 +523,17 @@ export class WorkspaceService {
   }
 
   /**
-   * Get workspace by name or ID (unified lookup)
-   * Tries ID lookup first (more specific), then falls back to name lookup (case-insensitive)
+   * Get workspace by name or ID (unified lookup).
+   * Tries ID lookup first (more specific), then falls back to name lookup (case-insensitive).
    * @param identifier Workspace name or ID
    * @returns Full workspace data or null if not found
    */
   async getWorkspaceByNameOrId(identifier: string): Promise<IndividualWorkspace | null> {
-    // Try ID lookup first (more specific)
     const byId = await this.getWorkspace(identifier);
     if (byId) {
       return byId;
     }
 
-    // Name lookup via dual backend
     const matchId = await withDualBackend<string | null>(
       this.storageAdapterOrGetter,
       async (adapter) => {
@@ -879,87 +560,6 @@ export class WorkspaceService {
       return null;
     }
     return this.getWorkspace(matchId);
-  }
-
-  /**
-   * Get session by name or ID within a workspace (unified lookup)
-   * Tries ID lookup first, then falls back to name lookup (case-insensitive)
-   * @param workspaceId Workspace ID to search in
-   * @param identifier Session name or ID
-   * @returns Session data or null if not found
-   */
-  async getSessionByNameOrId(workspaceId: string, identifier: string): Promise<SessionData | null> {
-    // Try ID lookup first
-    const byId = await this.getSession(workspaceId, identifier);
-    if (byId) {
-      return byId;
-    }
-
-    // Name lookup via dual backend
-    return withDualBackend<SessionData | null>(
-      this.storageAdapterOrGetter,
-      async (adapter) => {
-        const result = await adapter.getSessions(workspaceId, { pageSize: 100 });
-        const match = result.items.find(
-          session => session.name?.toLowerCase() === identifier.toLowerCase()
-        );
-        if (!match) {
-          return null;
-        }
-        return this.getSession(workspaceId, match.id);
-      },
-      async () => {
-        const workspace = await this.fileSystem.readWorkspace(workspaceId);
-        if (!workspace) {
-          return null;
-        }
-        const sessions = Object.values(workspace.sessions);
-        return sessions.find(
-          session => session.name?.toLowerCase() === identifier.toLowerCase()
-        ) || null;
-      }
-    );
-  }
-
-  /**
-   * Get state by name or ID within a session (unified lookup)
-   * Tries ID lookup first, then falls back to name lookup (case-insensitive)
-   * @param workspaceId Workspace ID
-   * @param sessionId Session ID to search in
-   * @param identifier State name or ID
-   * @returns State data or null if not found
-   */
-  async getStateByNameOrId(workspaceId: string, sessionId: string, identifier: string): Promise<StateData | null> {
-    // Try ID lookup first
-    const byId = await this.getState(workspaceId, sessionId, identifier);
-    if (byId) {
-      return byId;
-    }
-
-    // Name lookup via dual backend
-    return withDualBackend<StateData | null>(
-      this.storageAdapterOrGetter,
-      async (adapter) => {
-        const result = await adapter.getStates(workspaceId, sessionId, { pageSize: 100 });
-        const match = result.items.find(
-          state => state.name?.toLowerCase() === identifier.toLowerCase()
-        );
-        if (!match) {
-          return null;
-        }
-        return this.getState(workspaceId, sessionId, match.id);
-      },
-      async () => {
-        const workspace = await this.fileSystem.readWorkspace(workspaceId);
-        if (!workspace || !workspace.sessions[sessionId]) {
-          return null;
-        }
-        const states = Object.values(workspace.sessions[sessionId].states);
-        return states.find(
-          state => state.name?.toLowerCase() === identifier.toLowerCase()
-        ) || null;
-      }
-    );
   }
 
 }

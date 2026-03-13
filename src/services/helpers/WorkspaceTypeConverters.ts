@@ -22,17 +22,3 @@ export function convertWorkspaceMetadata(hybrid: HybridTypes.WorkspaceMetadata):
     traceCount: 0    // Will be calculated if needed
   };
 }
-
-/**
- * Convert StorageTypes.WorkspaceMetadata to HybridStorageTypes.WorkspaceMetadata
- */
-export function convertToHybridWorkspaceMetadata(legacy: WorkspaceMetadata): Omit<HybridTypes.WorkspaceMetadata, 'id'> {
-  return {
-    name: legacy.name,
-    description: legacy.description,
-    rootFolder: legacy.rootFolder,
-    created: legacy.created,
-    lastAccessed: legacy.lastAccessed,
-    isActive: legacy.isActive ?? true
-  };
-}

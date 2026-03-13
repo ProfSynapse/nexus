@@ -14,6 +14,7 @@
 
 import { App } from 'obsidian';
 import { ChatSettingsRenderer, ChatSettingsRendererConfig, ChatSettings } from '../../src/components/shared/ChatSettingsRenderer';
+import { createMockElement } from '../helpers/mockFactories';
 
 // Mock deep dependencies to avoid needing real providers
 jest.mock('../../src/services/llm/providers/ProviderManager', () => ({
@@ -58,40 +59,6 @@ jest.mock('../../src/services/llm/LLMSettingsNotifier', () => ({
     unsubscribe: jest.fn(),
   },
 }));
-
-function createMockElement(): any {
-  const element: any = {
-    classList: {
-      add: jest.fn(),
-      remove: jest.fn(),
-      contains: jest.fn(() => false),
-    },
-    addClass: jest.fn().mockReturnThis(),
-    removeClass: jest.fn().mockReturnThis(),
-    hasClass: jest.fn(() => false),
-    setText: jest.fn().mockReturnThis(),
-    createEl: jest.fn((_tag: string, _opts?: any) => createMockElement()),
-    createDiv: jest.fn((clsOrOpts?: string | Record<string, any>) => {
-      const child = createMockElement();
-      // Track the CSS class for structural assertions
-      if (typeof clsOrOpts === 'string') {
-        child._cls = clsOrOpts;
-      }
-      return child;
-    }),
-    createSpan: jest.fn((_opts?: any) => createMockElement()),
-    empty: jest.fn(),
-    remove: jest.fn(),
-    appendChild: jest.fn(),
-    setAttribute: jest.fn(),
-    getAttribute: jest.fn(),
-    style: {},
-    textContent: '',
-    innerHTML: '',
-    _cls: '',
-  };
-  return element;
-}
 
 function createDefaultSettings(): ChatSettings {
   return {

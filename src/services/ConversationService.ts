@@ -181,11 +181,21 @@ export class ConversationService {
             toolCalls: msg.toolCalls?.map(tc => {
               const hasFunction = tc.function && typeof tc.function === 'object';
               const name = (hasFunction ? tc.function.name : tc.name) || 'unknown_tool';
-              const parameters = hasFunction && tc.function.arguments
-                ? (typeof tc.function.arguments === 'string'
-                    ? JSON.parse(tc.function.arguments)
-                    : tc.function.arguments)
-                : tc.parameters;
+              let parameters: any;
+              if (hasFunction && tc.function.arguments) {
+                if (typeof tc.function.arguments === 'string') {
+                  try {
+                    parameters = JSON.parse(tc.function.arguments);
+                  } catch {
+                    // Malformed JSON in arguments — preserve raw string as-is
+                    parameters = tc.function.arguments;
+                  }
+                } else {
+                  parameters = tc.function.arguments;
+                }
+              } else {
+                parameters = tc.parameters;
+              }
               return {
                 id: tc.id,
                 type: tc.type || 'function',
