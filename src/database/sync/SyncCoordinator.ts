@@ -22,6 +22,14 @@ import {
 import { WorkspaceEventApplier } from './WorkspaceEventApplier';
 import { ConversationEventApplier } from './ConversationEventApplier';
 
+/**
+ * Validate workspace ID to prevent ghost/orphan workspaces.
+ * Rejects "undefined", "null", and empty/whitespace-only IDs.
+ */
+function isValidWorkspaceId(id: string): boolean {
+  return !!id && id !== 'undefined' && id !== 'null' && id.trim().length > 0;
+}
+
 // ============================================================================
 // Interfaces
 // ============================================================================
@@ -199,6 +207,13 @@ export class SyncCoordinator {
 
     for (let i = 0; i < workspaceFiles.length; i++) {
       const file = workspaceFiles[i];
+
+      // Skip files with invalid workspace IDs extracted from filename
+      const wsIdMatch = file.match(/ws_(.+)\.jsonl$/);
+      if (wsIdMatch && !isValidWorkspaceId(wsIdMatch[1])) {
+        continue;
+      }
+
       try {
         const events = await this.jsonlWriter.getEventsNotFromDevice<WorkspaceEvent>(
           file, this.deviceId, lastSync
@@ -276,9 +291,22 @@ export class SyncCoordinator {
 
     for (let i = 0; i < workspaceFiles.length; i++) {
       const file = workspaceFiles[i];
+
+      // Skip files with invalid workspace IDs extracted from filename
+      const rebuildWsIdMatch = file.match(/ws_(.+)\.jsonl$/);
+      if (rebuildWsIdMatch && !isValidWorkspaceId(rebuildWsIdMatch[1])) {
+        continue;
+      }
+
       try {
         const events = await this.jsonlWriter.readEvents<WorkspaceEvent>(file);
         events.sort((a, b) => a.timestamp - b.timestamp);
+
+        // Skip orphaned JSONLs that lack a workspace_created event (legacy files)
+        const hasWorkspaceCreated = events.some(e => e.type === 'workspace_created');
+        if (!hasWorkspaceCreated && events.length > 0) {
+          continue;
+        }
 
         // Process in very small batches with delays to avoid OOM
         const result = await BatchOperations.executeBatch(

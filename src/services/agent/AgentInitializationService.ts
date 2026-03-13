@@ -175,6 +175,7 @@ export class AgentInitializationService {
         llmProviderManager,
         this.agentManager,
         usageTracker,
+        this.app,
         this.app.vault,
         db
       );
@@ -201,6 +202,7 @@ export class AgentInitializationService {
           minimalProviderManager,
           this.agentManager,
           minimalUsageTracker,
+          this.app,
           this.app.vault,
           db
         );

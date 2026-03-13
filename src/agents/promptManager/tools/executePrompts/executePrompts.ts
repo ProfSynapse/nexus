@@ -1,5 +1,5 @@
 import { JSONSchema } from '../../../../types/schema/JSONSchemaTypes';
-import { Plugin } from 'obsidian';
+import { App } from 'obsidian';
 import { BaseTool } from '../../../baseTool';
 import { getErrorMessage } from '../../../../utils/errorUtils';
 import { createResult } from '../../../../utils/schemaUtils';
@@ -41,6 +41,7 @@ import { NudgeHelpers } from '../../../../utils/nudgeHelpers';
  */
 export class ExecutePromptsTool extends BaseTool<BatchExecutePromptParams, BatchExecutePromptResult> {
   // Core services (injected)
+  private obsidianApp: App | null = null;
   private llmService: LLMService | null = null;
   private providerManager: LLMProviderManager | null = null;
   private agentManager: AgentManager | null = null;
@@ -60,7 +61,7 @@ export class ExecutePromptsTool extends BaseTool<BatchExecutePromptParams, Batch
   private promptParser!: PromptParser;
 
   constructor(
-    plugin?: Plugin,
+    app?: App,
     llmService?: LLMService,
     providerManager?: LLMProviderManager,
     agentManager?: AgentManager,
@@ -72,8 +73,9 @@ export class ExecutePromptsTool extends BaseTool<BatchExecutePromptParams, Batch
       'Execute one or more LLM prompts. For single: pass one item. For multiple: supports sequencing (sequence: 0,1,2), parallel groups, and result forwarding (includePreviousResults: true).',
       '1.0.0'
     );
-    
+
     // Store injected dependencies
+    this.obsidianApp = app || null;
     this.llmService = llmService || null;
     this.providerManager = providerManager || null;
     this.agentManager = agentManager || null;
@@ -112,7 +114,7 @@ export class ExecutePromptsTool extends BaseTool<BatchExecutePromptParams, Batch
     // Initialize core services
     this.budgetValidator = new BudgetValidator(this.usageTracker || undefined);
     this.contextBuilder = new ContextBuilder();
-    this.actionExecutor = new ActionExecutor(this.agentManager || undefined);
+    this.actionExecutor = new ActionExecutor(this.agentManager || undefined, () => this.obsidianApp);
 
     // PromptExecutor requires LLM service, so we'll initialize it in execute() if needed
     // Same for SequenceManager and ResultProcessor
@@ -256,7 +258,7 @@ export class ExecutePromptsTool extends BaseTool<BatchExecutePromptParams, Batch
       const promptConfig = promptConfigs.find(p => p.id === result.id) || promptConfigs[i];
       
       // Only process actions for text results
-      if (promptConfig?.type === 'text' && 'action' in promptConfig && promptConfig.action && 
+      if (promptConfig?.type === 'text' && 'action' in promptConfig && promptConfig.action &&
           result.success && result.type === 'text' && result.response) {
         try {
           const actionResult = await this.actionExecutor.executeContentAction(
@@ -316,7 +318,7 @@ export class ExecutePromptsTool extends BaseTool<BatchExecutePromptParams, Batch
    */
   setAgentManager(agentManager: AgentManager): void {
     this.agentManager = agentManager;
-    this.actionExecutor = new ActionExecutor(agentManager);
+    this.actionExecutor = new ActionExecutor(agentManager, () => this.obsidianApp);
   }
 
   /**

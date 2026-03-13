@@ -18,7 +18,7 @@ import { sanitizeVaultName } from '../../utils/vaultUtils';
 import { LLMProviderManager } from '../../services/llm/providers/ProviderManager';
 import { AgentManager } from '../../services/AgentManager';
 import { UsageTracker } from '../../services/UsageTracker';
-import { Vault, EventRef } from 'obsidian';
+import { App, Vault, EventRef } from 'obsidian';
 import { LLMSettingsNotifier } from '../../services/llm/LLMSettingsNotifier';
 import { LLMProviderSettings } from '../../types';
 import type { MigratableDatabase } from '../../database/schema/SchemaMigrator';
@@ -58,6 +58,11 @@ export class PromptManagerAgent extends BaseAgent {
   private readonly usageTracker: UsageTracker;
 
   /**
+   * App instance for file operations (e.g., findReplace)
+   */
+  private readonly app: App;
+
+  /**
    * Vault instance for image generation
    */
   private readonly vault: Vault;
@@ -86,6 +91,7 @@ export class PromptManagerAgent extends BaseAgent {
     providerManager: LLMProviderManager,
     parentAgentManager: AgentManager,
     usageTracker: UsageTracker,
+    app: App,
     vault: Vault,
     db?: MigratableDatabase | null
   ) {
@@ -99,6 +105,7 @@ export class PromptManagerAgent extends BaseAgent {
     this.providerManager = providerManager;
     this.parentAgentManager = parentAgentManager;
     this.usageTracker = usageTracker;
+    this.app = app;
     this.vault = vault;
 
     this.storageService = new CustomPromptStorageService(db || null, settings);
@@ -146,8 +153,8 @@ export class PromptManagerAgent extends BaseAgent {
 
     // Register unified prompt execution tool (handles single and batch) - eager (complex dependencies)
     this.registerTool(new ExecutePromptsTool(
-      undefined, // plugin - not needed in constructor injection pattern
-      this.providerManager.getLLMService(), // Get LLM service from provider manager
+      this.app,
+      this.providerManager.getLLMService(),
       this.providerManager,
       this.parentAgentManager,
       this.storageService
