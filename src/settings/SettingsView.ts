@@ -366,8 +366,17 @@ export class SettingsView extends PluginSettingTab {
 
         // Initialize custom prompt storage if needed
         if (!this.customPromptStorage) {
-            // Pass null for db - SettingsView doesn't have access to database
-            this.customPromptStorage = new CustomPromptStorageService(null, this.settingsManager);
+            // Try ServiceManager first (has db, writes to SQLite + data.json)
+            if (this.serviceManager) {
+                const storageFromManager = this.serviceManager.getServiceIfReady<CustomPromptStorageService>('customPromptStorageService');
+                if (storageFromManager) {
+                    this.customPromptStorage = storageFromManager;
+                }
+            }
+            // Fallback: create without db (writes to data.json only)
+            if (!this.customPromptStorage) {
+                this.customPromptStorage = new CustomPromptStorageService(null, this.settingsManager);
+            }
         }
 
         return {

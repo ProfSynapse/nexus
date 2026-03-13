@@ -131,41 +131,34 @@ function connectWithRetry() {
     try {
         const socket = createConnection(ipcPath);
 
-        // Pipe stdin/stdout to/from the socket
-        process.stdin.pipe(socket);
-        socket.pipe(process.stdout);
+        // Pipe stdin/stdout ONLY after connection is confirmed
+        socket.on('connect', () => {
+            hasConnected = true;
+            retryCount = 0;
+            process.stdin.pipe(socket);
+            socket.pipe(process.stdout);
+        });
 
         // Error handling - completely silent for expected connection errors
         socket.on('error', (err) => {
-            // Cast error to NodeJS.ErrnoException to access the code property
             const nodeErr = err as NodeJS.ErrnoException;
             const isWaitingError = nodeErr.code === 'ENOENT' || nodeErr.code === 'ECONNREFUSED';
 
-            // Be completely silent - any stderr output shows as notification in Claude Desktop
-            // Only truly unexpected errors should be logged (never ENOENT/ECONNREFUSED)
             if (!isWaitingError) {
-                // Even unexpected errors should be silent - user can't fix them anyway
-                // and it would clutter Claude Desktop with notifications
+                // Non-expected errors - still silent to avoid Claude Desktop notifications
             }
 
-            // Always retry with exponential backoff (capped at 30s)
             retryCount++;
             const retryDelay = calculateBackoff(retryCount);
             setTimeout(connectWithRetry, retryDelay);
         });
 
-        socket.on('connect', () => {
-            hasConnected = true;
-            // Silent on connection - no need to notify user
-            // Reset retry count on successful connection
-            retryCount = 0;
-        });
-
         socket.on('close', () => {
+            // Unpipe to prevent stdin consumption by dead socket
+            process.stdin.unpipe(socket);
             if (hasConnected) {
-                // Connection was lost - silently go back to waiting mode
-                retryCount = 0;  // Reset backoff
-                setTimeout(connectWithRetry, 1000);  // Start retry loop
+                retryCount = 0;
+                setTimeout(connectWithRetry, 1000);
             }
             // If we never connected, the error handler will schedule a retry
         });
