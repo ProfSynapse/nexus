@@ -79,7 +79,11 @@ export interface WriteResult extends CommonResult {
 }
 
 /**
- * Params for updating content in a file (insert, replace, delete, append)
+ * Params for updating content in a file (insert, replace, delete, append, find-replace)
+ *
+ * Two mutually exclusive modes:
+ * 1. Line-based: provide startLine (+ optional endLine) and content
+ * 2. Find-replace: provide find and replace (+ optional occurrence)
  */
 export interface UpdateParams extends CommonParameters {
   /**
@@ -87,20 +91,45 @@ export interface UpdateParams extends CommonParameters {
    */
   path: string;
 
+  // --- Line-based mode ---
+
   /**
-   * Content to insert/replace (empty string to delete lines)
+   * Content to insert/replace (empty string to delete lines).
+   * Required for line-based mode; ignored in find-replace mode.
    */
-  content: string;
+  content?: string;
 
   /**
    * Start line (1-based). Use -1 to append to end of file.
+   * Required for line-based mode; must NOT be present in find-replace mode.
    */
-  startLine: number;
+  startLine?: number;
 
   /**
    * End line (1-based, inclusive). Omit to INSERT at startLine. Provide to REPLACE range.
    */
   endLine?: number;
+
+  // --- Find-replace mode ---
+
+  /**
+   * Exact text to find (plain text, not regex). Case-sensitive.
+   * May contain newlines for multi-line matching.
+   * Required for find-replace mode; must NOT be present in line-based mode.
+   */
+  find?: string;
+
+  /**
+   * Text to replace the found string with. Can be empty string to delete matched text.
+   * Required for find-replace mode.
+   */
+  replace?: string;
+
+  /**
+   * Which occurrence to replace. 1 = first (default), 2 = second, etc.
+   * Use "all" to replace every occurrence.
+   */
+  occurrence?: number | 'all';
 }
 
 /**
@@ -113,6 +142,11 @@ export interface UpdateResult extends CommonResult {
    * Use this to adjust subsequent line numbers in multi-operation workflows.
    */
   linesDelta?: number;
+
+  /**
+   * Number of replacements made (find-replace mode only).
+   */
+  replacementCount?: number;
 
   /**
    * Recommendations for follow-up actions (uses standard nudge system)

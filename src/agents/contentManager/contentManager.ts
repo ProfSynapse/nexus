@@ -75,7 +75,7 @@ export class ContentManagerAgent extends BaseAgent {
     });
     this.registerLazyTool({
       slug: 'update', name: 'Update',
-      description: 'Insert, replace, or delete content at specific line positions. Returns linesDelta showing net line change - use this to adjust subsequent line numbers in multi-operation workflows.',
+      description: 'Update file content. Two modes: (1) Line-based: provide startLine, endLine, content to insert/replace/delete at specific lines. (2) Find-replace: provide find, replace to substitute text by content match. Returns linesDelta showing net line change.',
       version: '1.0.0',
       factory: () => new UpdateTool(app),
     });
