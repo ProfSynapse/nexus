@@ -4,6 +4,7 @@
  * Owns state and navigation. Delegates rendering to:
  * - WorkspaceListRenderer (list view)
  * - WorkspaceDetailRenderer (detail, project, task views)
+ * - ProjectsManagerView (project/task state and CRUD)
  * - WorkflowEditorRenderer (workflow editor)
  * - FilePickerRenderer (file picker)
  */
@@ -15,6 +16,7 @@ import { WorkflowEditorRenderer, Workflow } from '../../components/workspace/Wor
 import { FilePickerRenderer } from '../../components/workspace/FilePickerRenderer';
 import { WorkspaceListRenderer } from '../../components/workspace/WorkspaceListRenderer';
 import { WorkspaceDetailRenderer, DetailCallbacks } from '../../components/workspace/WorkspaceDetailRenderer';
+import { ProjectsManagerView } from '../../components/workspace/ProjectsManagerView';
 import { ProjectWorkspace } from '../../database/workspace-types';
 import { WorkspaceService } from '../../services/WorkspaceService';
 import { CustomPromptStorageService } from '../../agents/promptManager/services/CustomPromptStorageService';
@@ -22,11 +24,8 @@ import { CustomPrompt } from '../../types/mcp/CustomPromptTypes';
 import { v4 as uuidv4 } from '../../utils/uuid';
 import type { ServiceManager } from '../../core/ServiceManager';
 import type { WorkflowRunService } from '../../services/workflows/WorkflowRunService';
-import { TaskService } from '../../agents/taskManager/services/TaskService';
-import { DAGService } from '../../agents/taskManager/services/DAGService';
-import type { HybridStorageAdapter } from '../../database/adapters/HybridStorageAdapter';
 import type { ProjectMetadata } from '../../database/repositories/interfaces/IProjectRepository';
-import type { TaskMetadata, TaskPriority, TaskStatus } from '../../database/repositories/interfaces/ITaskRepository';
+import type { TaskMetadata } from '../../database/repositories/interfaces/ITaskRepository';
 
 export interface WorkspacesTabServices {
     app: App;
@@ -39,29 +38,6 @@ export interface WorkspacesTabServices {
 
 type WorkspacesView = 'list' | 'detail' | 'workflow' | 'filepicker' | 'projects' | 'project-detail' | 'task-detail';
 
-type ProjectStatus = ProjectMetadata['status'];
-
-interface ProjectEditorState {
-    id?: string;
-    workspaceId: string;
-    name: string;
-    description: string;
-    status: ProjectStatus;
-}
-
-interface TaskEditorState {
-    id?: string;
-    projectId: string;
-    title: string;
-    description: string;
-    status: TaskStatus;
-    priority: TaskPriority;
-    dueDate: string;
-    assignee: string;
-    tags: string;
-    parentTaskId: string;
-}
-
 export class WorkspacesTab {
     private container: HTMLElement;
     private router: SettingsRouter;
@@ -71,16 +47,11 @@ export class WorkspacesTab {
     private currentWorkflowIndex: number = -1;
     private currentFileIndex: number = -1;
     private currentView: WorkspacesView = 'list';
-    private currentProjects: ProjectMetadata[] = [];
-    private currentProject: ProjectEditorState | null = null;
-    private currentTasks: TaskMetadata[] = [];
-    private currentTask: TaskEditorState | null = null;
-    private editingTaskOriginal: TaskMetadata | null = null;
-    private taskService: TaskService | null | undefined;
 
     // Renderers
     private listRenderer: WorkspaceListRenderer;
     private detailRenderer: WorkspaceDetailRenderer;
+    private projectsManager: ProjectsManagerView;
     private workflowRenderer?: WorkflowEditorRenderer;
     private filePickerRenderer?: FilePickerRenderer;
 
@@ -100,6 +71,17 @@ export class WorkspacesTab {
         this.services = services;
         this.listRenderer = new WorkspaceListRenderer();
         this.detailRenderer = new WorkspaceDetailRenderer(services.component);
+        this.projectsManager = new ProjectsManagerView(
+            this.detailRenderer,
+            services.serviceManager,
+            {
+                getCurrentWorkspace: () => this.currentWorkspace,
+                onNavigateList: () => this.showWorkspaceList(),
+                onNavigateDetail: () => this.showWorkspaceDetail(),
+                onRender: () => this.render(),
+                buildDetailCallbacks: () => this.buildDetailCallbacks()
+            }
+        );
 
         if (Array.isArray(services.prefetchedWorkspaces)) {
             this.workspaces = services.prefetchedWorkspaces!;
@@ -163,42 +145,17 @@ export class WorkspacesTab {
         }
 
         if (this.currentView === 'projects') {
-            this.detailRenderer.renderProjects(
-                this.container,
-                this.currentWorkspace!,
-                this.currentProjects,
-                this.currentTasks,
-                this.buildDetailCallbacks()
-            );
+            this.projectsManager.renderProjects(this.container);
             return;
         }
 
         if (this.currentView === 'project-detail') {
-            this.detailRenderer.renderProjectDetail(
-                this.container,
-                this.currentWorkspace!,
-                this.currentProject!,
-                this.currentTasks,
-                this.currentProjects,
-                this.buildDetailCallbacks(),
-                () => this.saveProjectDetail(),
-                (task?) => this.openTaskDetail(task)
-            );
+            this.projectsManager.renderProjectDetail(this.container);
             return;
         }
 
         if (this.currentView === 'task-detail') {
-            this.detailRenderer.renderTaskDetail(
-                this.container,
-                this.currentWorkspace!,
-                this.currentProject!,
-                this.currentTask!,
-                this.editingTaskOriginal,
-                this.currentProjects,
-                this.currentTasks,
-                this.buildDetailCallbacks(),
-                () => this.saveTaskDetail()
-            );
+            this.projectsManager.renderTaskDetail(this.container);
             return;
         }
 
@@ -221,11 +178,7 @@ export class WorkspacesTab {
 
         // Default to list view
         this.currentView = 'list';
-        this.currentProject = null;
-        this.currentTask = null;
-        this.currentProjects = [];
-        this.currentTasks = [];
-        this.editingTaskOriginal = null;
+        this.projectsManager.resetState();
 
         this.listRenderer.render(
             this.container,
@@ -266,9 +219,9 @@ export class WorkspacesTab {
             onOpenFilePicker: (index) => this.openFilePicker(index),
             onRefreshDetail: () => this.refreshDetail(),
             getAvailableAgents: () => this.getAvailableAgents(),
-            getTaskService: () => this.getTaskService() as any,
-            onRefreshProjects: () => this.refreshProjects(),
-            onOpenProjectDetail: (project) => { void this.openProjectDetail(project); },
+            getTaskService: () => this.projectsManager.getTaskService() as any,
+            onRefreshProjects: () => this.projectsManager.refreshProjects(),
+            onOpenProjectDetail: (project) => { void this.openProjectDetailAndRender(project); },
             safeRegisterDomEvent: (el, eventName, handler) => this.safeRegisterDomEvent(el, eventName, handler)
         };
     }
@@ -365,170 +318,20 @@ export class WorkspacesTab {
         }
     }
 
-    // --- Projects ---
+    // --- Projects (delegated to ProjectsManagerView) ---
 
     private async openProjectsPage(): Promise<void> {
-        if (!this.currentWorkspace?.id) {
-            new Notice('Save this workspace before managing projects');
-            return;
-        }
-
-        if (!await this.getTaskService()) {
-            new Notice('Task service is not available yet');
-            return;
-        }
-
-        try {
-            await this.refreshProjects();
+        const success = await this.projectsManager.openProjectsPage();
+        if (success) {
             this.currentView = 'projects';
             this.render();
-        } catch (error) {
-            console.error('[WorkspacesTab] Failed to load projects:', error);
-            new Notice('Failed to load projects');
         }
     }
 
-    private async openProjectDetail(project: ProjectMetadata): Promise<void> {
-        const taskService = await this.getTaskService();
-        if (!taskService) {
-            new Notice('Task service is not available yet');
-            return;
-        }
-
-        try {
-            const taskResult = await taskService.listTasks(project.id, { pageSize: 1000, includeSubtasks: true });
-            this.currentProject = this.createProjectEditorState(project);
-            this.currentTasks = taskResult.items;
-            this.currentView = 'project-detail';
-            this.render();
-        } catch (error) {
-            console.error('[WorkspacesTab] Failed to load project tasks:', error);
-            new Notice('Failed to load project tasks');
-        }
-    }
-
-    private async saveProjectDetail(): Promise<void> {
-        if (!this.currentProject || !this.currentWorkspace?.id) return;
-
-        if (!this.currentProject.name.trim()) {
-            new Notice('Project name is required');
-            return;
-        }
-
-        const taskService = await this.getTaskService();
-        if (!taskService) {
-            new Notice('Task service is not available yet');
-            return;
-        }
-
-        try {
-            if (this.currentProject.id) {
-                await taskService.updateProject(this.currentProject.id, {
-                    name: this.currentProject.name.trim(),
-                    description: this.currentProject.description.trim() || undefined,
-                    status: this.currentProject.status
-                });
-            } else {
-                const projectId = await taskService.createProject(this.currentWorkspace.id, {
-                    name: this.currentProject.name.trim(),
-                    description: this.currentProject.description.trim() || undefined
-                });
-                this.currentProject.id = projectId;
-            }
-
-            await this.refreshProjects();
-            const savedProject = this.currentProjects.find(project => project.id === this.currentProject?.id);
-            if (savedProject) {
-                await this.openProjectDetail(savedProject);
-            } else {
-                this.currentView = 'projects';
-                this.render();
-            }
-            new Notice('Project saved');
-        } catch (error) {
-            console.error('[WorkspacesTab] Failed to save project:', error);
-            new Notice('Failed to save project');
-        }
-    }
-
-    // --- Tasks ---
-
-    private openTaskDetail(task?: TaskMetadata): void {
-        if (!this.currentProject?.id || !this.currentWorkspace?.id) {
-            new Notice('Save the project before editing tasks');
-            return;
-        }
-
-        this.editingTaskOriginal = task ?? null;
-        this.currentTask = this.createTaskEditorState(task, this.currentProject.id);
-        this.currentView = 'task-detail';
+    private async openProjectDetailAndRender(project: ProjectMetadata): Promise<void> {
+        await this.projectsManager.openProjectDetail(project);
+        this.currentView = 'project-detail';
         this.render();
-    }
-
-    private async saveTaskDetail(): Promise<void> {
-        if (!this.currentTask || !this.currentWorkspace?.id || !this.currentProject?.id) return;
-
-        if (!this.currentTask.title.trim()) {
-            new Notice('Task title is required');
-            return;
-        }
-
-        const taskService = await this.getTaskService();
-        if (!taskService) {
-            new Notice('Task service is not available yet');
-            return;
-        }
-
-        const normalizedTags = this.currentTask.tags
-            .split(',')
-            .map(tag => tag.trim())
-            .filter(Boolean);
-
-        try {
-            if (this.currentTask.id) {
-                await taskService.updateTask(this.currentTask.id, {
-                    title: this.currentTask.title.trim(),
-                    description: this.currentTask.description.trim() || undefined,
-                    status: this.currentTask.status,
-                    priority: this.currentTask.priority,
-                    dueDate: this.fromDateInputValue(this.currentTask.dueDate),
-                    assignee: this.currentTask.assignee.trim() || undefined,
-                    tags: normalizedTags.length > 0 ? normalizedTags : undefined
-                });
-
-                const projectChanged = this.editingTaskOriginal && this.currentTask.projectId !== this.editingTaskOriginal.projectId;
-                const parentChanged = this.editingTaskOriginal && (this.currentTask.parentTaskId || '') !== (this.editingTaskOriginal.parentTaskId || '');
-                if (projectChanged || parentChanged) {
-                    await taskService.moveTask(this.currentTask.id, {
-                        projectId: projectChanged ? this.currentTask.projectId : undefined,
-                        parentTaskId: parentChanged
-                            ? (this.currentTask.parentTaskId || null)
-                            : undefined
-                    });
-                }
-            } else {
-                await taskService.createTask(this.currentTask.projectId, {
-                    title: this.currentTask.title.trim(),
-                    description: this.currentTask.description.trim() || undefined,
-                    priority: this.currentTask.priority,
-                    dueDate: this.fromDateInputValue(this.currentTask.dueDate),
-                    assignee: this.currentTask.assignee.trim() || undefined,
-                    tags: normalizedTags.length > 0 ? normalizedTags : undefined,
-                    parentTaskId: this.currentTask.parentTaskId || undefined
-                });
-            }
-
-            await this.refreshProjects();
-            const activeProject = this.currentProjects.find(project => project.id === this.currentTask?.projectId)
-                || this.currentProjects.find(project => project.id === this.currentProject?.id);
-            if (activeProject) {
-                await this.openProjectDetail(activeProject);
-            }
-            new Notice('Task saved');
-        } catch (error) {
-            console.error('[WorkspacesTab] Failed to save task:', error);
-            new Notice('Failed to save task');
-        }
     }
 
     // --- Workflow and file picker (already delegated to existing renderers) ---
@@ -742,42 +545,6 @@ export class WorkspacesTab {
         return this.services.customPromptStorage.getAllPrompts();
     }
 
-    private createProjectEditorState(project?: ProjectMetadata): ProjectEditorState {
-        return {
-            id: project?.id,
-            workspaceId: project?.workspaceId || this.currentWorkspace?.id || '',
-            name: project?.name || '',
-            description: project?.description || '',
-            status: project?.status || 'active'
-        };
-    }
-
-    private createTaskEditorState(task: TaskMetadata | undefined, projectId: string): TaskEditorState {
-        return {
-            id: task?.id,
-            projectId: task?.projectId || projectId,
-            title: task?.title || '',
-            description: task?.description || '',
-            status: task?.status || 'todo',
-            priority: task?.priority || 'medium',
-            dueDate: this.toDateInputValue(task?.dueDate),
-            assignee: task?.assignee || '',
-            tags: task?.tags?.join(', ') || '',
-            parentTaskId: task?.parentTaskId || ''
-        };
-    }
-
-    private toDateInputValue(timestamp?: number): string {
-        if (!timestamp) return '';
-        return new Date(timestamp).toISOString().slice(0, 10);
-    }
-
-    private fromDateInputValue(value: string): number | undefined {
-        if (!value) return undefined;
-        const timestamp = new Date(`${value}T00:00:00`).getTime();
-        return Number.isNaN(timestamp) ? undefined : timestamp;
-    }
-
     private renderBreadcrumbs(items: BreadcrumbNavItem[]): void {
         new BreadcrumbNav(this.container, items, this.services.component);
     }
@@ -797,39 +564,6 @@ export class WorkspacesTab {
             this.services.component.registerDomEvent(element, eventName, handler);
         } else {
             element.addEventListener(eventName, handler as EventListener);
-        }
-    }
-
-    private async refreshProjects(): Promise<void> {
-        if (!this.currentWorkspace?.id) return;
-
-        const taskService = await this.getTaskService();
-        if (!taskService) return;
-
-        const projects = await taskService.listProjects(this.currentWorkspace.id, { pageSize: 1000 });
-        this.currentProjects = projects.items;
-
-        const tasksByProject = await Promise.all(
-            this.currentProjects.map(project => taskService.listTasks(project.id, { pageSize: 1000, includeSubtasks: true }))
-        );
-        this.currentTasks = tasksByProject.flatMap(result => result.items);
-    }
-
-    private async getTaskService(): Promise<TaskService | null> {
-        if (this.taskService !== undefined) return this.taskService;
-
-        if (!this.services.serviceManager) {
-            this.taskService = null;
-            return null;
-        }
-
-        try {
-            const adapter = await this.services.serviceManager.getService<HybridStorageAdapter>('hybridStorageAdapter');
-            this.taskService = new TaskService(adapter.projects, adapter.tasks, new DAGService());
-            return this.taskService;
-        } catch {
-            this.taskService = null;
-            return null;
         }
     }
 
