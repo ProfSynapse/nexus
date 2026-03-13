@@ -32,6 +32,12 @@ module.exports = {
     'src/services/oauth/providers/OpenRouterOAuthProvider.ts',
     'src/services/oauth/providers/OpenAICodexOAuthProvider.ts',
     'src/services/llm/adapters/openai-codex/OpenAICodexAdapter.ts',
+    // Settings UI redesign components
+    'src/components/SearchableCardManager.ts',
+    'src/settings/SettingsRouter.ts',
+    'src/components/Card.ts',
+    'src/components/CardManager.ts',
+    'src/settings/components/BackButton.ts',
     '!src/**/*.d.ts'
   ],
   coverageThreshold: {
@@ -174,6 +180,38 @@ module.exports = {
       functions: 80,
       lines: 80,
       statements: 80
+    },
+    // Settings UI redesign: pure logic + class-level tests
+    './src/components/SearchableCardManager.ts': {
+      branches: 70,
+      functions: 80,
+      lines: 80,
+      statements: 80
+    },
+    './src/settings/SettingsRouter.ts': {
+      branches: 95,
+      functions: 95,
+      lines: 95,
+      statements: 95
+    },
+    // Settings UI redesign: DOM components (tested via lightweight mocks)
+    './src/components/Card.ts': {
+      branches: 90,
+      functions: 75,
+      lines: 90,
+      statements: 90
+    },
+    './src/components/CardManager.ts': {
+      branches: 90,
+      functions: 60,
+      lines: 80,
+      statements: 80
+    },
+    './src/settings/components/BackButton.ts': {
+      branches: 100,
+      functions: 100,
+      lines: 100,
+      statements: 100
     }
   },
   coverageDirectory: 'coverage',

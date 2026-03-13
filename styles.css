@@ -1,4 +1,18 @@
 /* =========================== */
+/* SPACING TOKENS              */
+/* =========================== */
+
+:root {
+    --space-xxs: 2px;
+    --space-xs: 4px;
+    --space-s: 8px;
+    --space-m: 12px;
+    --space-l: 16px;
+    --space-xl: 24px;
+    --space-xxl: 32px;
+}
+
+/* =========================== */
 /* NATIVE CHATBOT STYLES      */
 /* =========================== */
 
@@ -2365,34 +2379,50 @@ a:hover {
     line-height: 1.4;
 }
 
-/* Card Manager Styles - Unified for all card-based UIs */
-.card-manager-add-button,
-.agent-management-add-button {
-    margin-bottom: 16px;
+/* Searchable Card Manager */
+.searchable-card-manager-search {
+    margin-bottom: var(--space-m);
 }
 
-.card-manager-add-button button,
-.agent-management-add-button button {
+.searchable-card-manager-input {
+    width: 100%;
+    padding: var(--space-s) var(--space-m);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s);
+    background: var(--background-primary);
+    color: var(--text-normal);
+    font-size: var(--font-ui-small);
+}
+
+.searchable-card-manager-input:focus {
+    border-color: var(--interactive-accent);
+    outline: none;
+}
+
+.searchable-card-manager-group {
+    margin-bottom: var(--space-l);
+}
+
+.searchable-card-manager-group--hidden {
+    display: none;
+}
+
+/* Card Manager Styles - Unified for all card-based UIs */
+.card-manager-add-button {
+    margin-bottom: var(--space-l);
+}
+
+.card-manager-add-button button {
     width: 100%;
 }
 
-.card-manager-grid,
-.agent-management-cards,
-.llm-provider-cards {
+.card-manager-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 16px;
+    gap: var(--space-l);
 }
 
-.agent-management-disabled {
-    text-align: center;
-    color: var(--text-muted);
-    font-style: italic;
-    padding: 20px;
-}
-
-.card-manager-empty,
-.agent-management-empty {
+.card-manager-empty {
     text-align: center;
     color: var(--text-muted);
     padding: 20px;
@@ -2411,7 +2441,7 @@ a:hover {
 
 .agent-management-card:hover {
     border-color: var(--interactive-accent);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    background-color: var(--background-modifier-hover);
 }
 
 .agent-management-card-header {
@@ -2439,42 +2469,9 @@ a:hover {
     align-items: center;
 }
 
-/* Ensure proper spacing for Obsidian toggle component */
-.agent-management-toggle .checkbox-container {
-    margin-right: 8px;
-}
-
-.agent-management-edit-btn,
-.agent-management-delete-btn {
-    width: 32px;
-    height: 32px;
-    border: 1px solid var(--background-modifier-border);
-    background-color: var(--background-primary);
-    border-radius: 4px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s ease;
-    color: var(--text-muted);
-}
-
-.agent-management-edit-btn:hover {
-    background-color: var(--interactive-accent);
-    color: var(--text-on-accent);
-    border-color: var(--interactive-accent);
-}
-
 .agent-management-delete-btn:hover {
     background-color: var(--text-error);
-    color: white;
-    border-color: var(--text-error);
-}
-
-.agent-management-edit-btn svg,
-.agent-management-delete-btn svg {
-    width: 16px;
-    height: 16px;
+    color: var(--text-on-accent);
 }
 
 .agent-management-card-description {
@@ -3230,9 +3227,7 @@ a:hover {
 
 /* Responsive design for cards */
 @media (max-width: 768px) {
-    .card-manager-grid,
-    .agent-management-cards,
-    .llm-provider-cards {
+    .card-manager-grid {
         grid-template-columns: 1fr;
         gap: 12px;
     }
@@ -4109,19 +4104,19 @@ a:hover {
 .chat-settings-renderer {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: var(--space-m);
 }
 
 /* Section boxes */
 .csr-section {
     background: var(--background-secondary);
-    border-radius: 8px;
+    border-radius: var(--radius-m);
     overflow: hidden;
 }
 
 .csr-section-header {
     background: var(--background-modifier-hover);
-    padding: 8px 12px;
+    padding: var(--space-s) var(--space-m);
     font-weight: 600;
     font-size: 12px;
     text-transform: uppercase;
@@ -4130,12 +4125,12 @@ a:hover {
 }
 
 .csr-section-desc {
-    padding: 4px 12px 0;
+    padding: var(--space-xs) var(--space-m) 0;
     font-size: 12px;
     color: var(--text-muted);
     display: flex;
     align-items: center;
-    gap: 2px;
+    gap: var(--space-xxs);
 }
 
 .csr-info-icon {
@@ -4149,16 +4144,16 @@ a:hover {
 }
 
 .csr-section-content {
-    padding: 8px 12px 12px;
+    padding: var(--space-s) var(--space-m) var(--space-m);
 }
 
 .csr-section-content .setting-item {
     border: none;
-    padding: 6px 0;
+    padding: var(--space-xs) 0;
 }
 
 .csr-section-content .setting-item:first-child {
-    padding-top: 4px;
+    padding-top: var(--space-xs);
 }
 
 .csr-section-content .setting-item:last-child {
@@ -4167,9 +4162,9 @@ a:hover {
 
 /* Effort slider row */
 .csr-effort-row {
-    padding-left: 8px;
+    padding-left: var(--space-s);
     border-left: 2px solid var(--background-modifier-border);
-    margin-top: 4px;
+    margin-top: var(--space-xs);
 }
 
 .csr-effort-value {
@@ -4178,7 +4173,7 @@ a:hover {
     font-weight: 500;
     font-size: 12px;
     color: var(--text-muted);
-    margin-left: 8px;
+    margin-left: var(--space-s);
 }
 
 /* Context notes */
@@ -4186,8 +4181,8 @@ a:hover {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 8px 0 4px;
-    margin-top: 4px;
+    padding: var(--space-s) 0 var(--space-xs);
+    margin-top: var(--space-xs);
     border-top: 1px solid var(--background-modifier-border);
 }
 
@@ -4199,8 +4194,8 @@ a:hover {
 .csr-add-btn {
     background: transparent;
     border: 1px solid var(--background-modifier-border);
-    border-radius: 4px;
-    padding: 2px 8px;
+    border-radius: var(--radius-s);
+    padding: var(--space-xxs) var(--space-s);
     font-size: 11px;
     color: var(--text-muted);
     cursor: pointer;
@@ -4212,23 +4207,23 @@ a:hover {
 }
 
 .csr-notes-list {
-    margin-top: 6px;
+    margin-top: var(--space-xs);
 }
 
 .csr-notes-empty {
     font-size: 12px;
     color: var(--text-faint);
-    padding: 4px 0;
+    padding: var(--space-xs) 0;
 }
 
 .csr-note-item {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 4px 8px;
+    padding: var(--space-xs) var(--space-s);
     background: var(--background-primary);
-    border-radius: 4px;
-    margin-bottom: 4px;
+    border-radius: var(--radius-s);
+    margin-bottom: var(--space-xs);
 }
 
 .csr-note-path {
@@ -4245,7 +4240,7 @@ a:hover {
     border: none;
     color: var(--text-muted);
     cursor: pointer;
-    padding: 0 4px;
+    padding: 0 var(--space-xs);
     font-size: 16px;
     line-height: 1;
 }
@@ -4304,12 +4299,12 @@ a:hover {
 .nexus-back-button {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--space-xs);
     color: var(--text-normal);
     cursor: pointer;
-    margin-bottom: 16px;
-    padding: 8px 14px;
-    border-radius: 6px;
+    margin-bottom: var(--space-l);
+    padding: var(--space-s) var(--space-m);
+    border-radius: var(--radius-s);
     background: var(--background-modifier-hover);
     border: 1px solid var(--background-modifier-border);
     font-size: 0.9em;
@@ -4761,10 +4756,10 @@ a:hover {
 /* Form actions container */
 .nexus-form-actions {
     display: flex;
-    gap: 12px;
+    gap: var(--space-m);
     justify-content: flex-end;
-    margin-top: 24px;
-    padding-top: 20px;
+    margin-top: var(--space-xl);
+    padding-top: var(--space-xl);
     border-top: 1px solid var(--background-modifier-border);
 }
 
@@ -4772,21 +4767,21 @@ a:hover {
 .nexus-modern-form {
     display: flex;
     flex-direction: column;
-    gap: 20px;
+    gap: var(--space-xl);
     max-width: 560px;
 }
 
 .nexus-form-field {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: var(--space-xs);
 }
 
 .nexus-form-field-inline {
     flex-direction: row;
     align-items: center;
     justify-content: space-between;
-    padding: 12px 0;
+    padding: var(--space-m) 0;
     border-top: 1px solid var(--background-modifier-border);
 }
 
@@ -4799,15 +4794,15 @@ a:hover {
 .nexus-form-hint {
     font-size: var(--font-ui-smaller);
     color: var(--text-muted);
-    margin-top: -2px;
+    margin-top: calc(-1 * var(--space-xxs));
 }
 
 .nexus-form-input,
 .nexus-form-textarea {
     width: 100%;
-    padding: 10px 12px;
+    padding: var(--space-m) var(--space-m);
     border: 1px solid var(--background-modifier-border);
-    border-radius: 6px;
+    border-radius: var(--radius-s);
     background: var(--background-primary);
     color: var(--text-normal);
     font-size: var(--font-ui-small);
@@ -4841,7 +4836,7 @@ a:hover {
 .nexus-toggle-label-group {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: var(--space-xxs);
 }
 
 .nexus-toggle-wrapper {
@@ -4884,9 +4879,9 @@ a:hover {
 /* Form select dropdown */
 .nexus-form-select {
     width: 100%;
-    padding: 10px 12px;
+    padding: var(--space-m) var(--space-m);
     border: 1px solid var(--background-modifier-border);
-    border-radius: 6px;
+    border-radius: var(--radius-s);
     background: var(--background-primary);
     color: var(--text-normal);
     font-size: var(--font-ui-small);
@@ -4916,8 +4911,8 @@ a:hover {
 .nexus-workflow-header {
     display: flex;
     align-items: center;
-    gap: 16px;
-    margin-bottom: 20px;
+    gap: var(--space-l);
+    margin-bottom: var(--space-xl);
 }
 
 .nexus-workflow-title {
@@ -4932,8 +4927,8 @@ a:hover {
     display: flex;
     flex-direction: column;
     align-items: stretch;
-    gap: 12px;
-    padding: 18px 0;
+    gap: var(--space-m);
+    padding: var(--space-l) 0;
 }
 
 .nexus-workflow-form .setting-item-info {
@@ -4957,25 +4952,25 @@ a:hover {
 }
 
 .nexus-workflow-form .setting-item-description {
-    margin-top: 4px;
+    margin-top: var(--space-xs);
 }
 
 .nexus-workflow-section-title {
-    margin: 16px 0 8px;
+    margin: var(--space-l) 0 var(--space-s);
     font-size: var(--font-ui-medium);
     color: var(--text-normal);
 }
 
 .nexus-workflow-schedule {
-    margin-top: 8px;
-    padding-top: 8px;
+    margin-top: var(--space-s);
+    padding-top: var(--space-s);
     border-top: 1px solid var(--background-modifier-border);
 }
 
 .nexus-workflow-schedule-fields {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: var(--space-s);
 }
 
 /* Item row with native input component */
@@ -4988,15 +4983,15 @@ a:hover {
 .nexus-workspace-form {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: var(--space-s);
 }
 
 /* Form section with header */
 .nexus-form-section {
     display: flex;
     flex-direction: column;
-    gap: 12px;
-    padding: 16px 0;
+    gap: var(--space-m);
+    padding: var(--space-l) 0;
     border-bottom: 1px solid var(--background-modifier-border);
 }
 
@@ -5009,7 +5004,7 @@ a:hover {
 }
 
 .nexus-section-header {
-    margin: 0 0 4px 0;
+    margin: 0 0 var(--space-xs) 0;
     font-size: 0.9em;
     font-weight: 600;
     color: var(--text-muted);
@@ -5021,17 +5016,17 @@ a:hover {
 .nexus-item-list {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: var(--space-s);
 }
 
 /* Item row (workflow or file entry) */
 .nexus-item-row {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 10px 12px;
+    gap: var(--space-m);
+    padding: var(--space-m) var(--space-m);
     background: var(--background-secondary);
-    border-radius: 6px;
+    border-radius: var(--radius-s);
 }
 
 /* Item info section */
@@ -5039,7 +5034,7 @@ a:hover {
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: var(--space-xxs);
     min-width: 0;
 }
 
@@ -5065,17 +5060,17 @@ a:hover {
 /* Item actions */
 .nexus-item-actions {
     display: flex;
-    gap: 8px;
+    gap: var(--space-s);
     flex-shrink: 0;
     align-items: center;
 }
 
 /* Small buttons for item actions */
 .nexus-btn-small {
-    padding: 4px 10px;
+    padding: var(--space-xs) var(--space-m);
     font-size: var(--font-ui-smaller);
     border: 1px solid var(--background-modifier-border);
-    border-radius: 4px;
+    border-radius: var(--radius-s);
     background: var(--background-primary);
     color: var(--text-muted);
     cursor: pointer;
@@ -5108,15 +5103,15 @@ a:hover {
 /* Add button */
 .nexus-btn-add {
     align-self: flex-start;
-    padding: 6px 12px;
+    padding: var(--space-xs) var(--space-m);
     font-size: var(--font-ui-small);
     border: 1px dashed var(--background-modifier-border);
-    border-radius: 6px;
+    border-radius: var(--radius-s);
     background: transparent;
     color: var(--text-muted);
     cursor: pointer;
     transition: all 0.15s ease;
-    margin-top: 4px;
+    margin-top: var(--space-xs);
 }
 
 .nexus-btn-add:hover {
@@ -5188,16 +5183,21 @@ a:hover {
     font-size: var(--font-ui-small);
 }
 
-.nexus-breadcrumb-link {
+.nexus-breadcrumb .nexus-breadcrumb-link {
+    background: none;
     border: none;
-    background: transparent;
-    color: var(--text-accent);
+    box-shadow: none;
     padding: 0;
-    cursor: pointer;
+    margin: 0;
+    border-radius: 0;
+    min-height: unset;
+    appearance: none;
     font: inherit;
+    color: var(--text-accent);
+    cursor: pointer;
 }
 
-.nexus-breadcrumb-link:hover {
+.nexus-breadcrumb .nexus-breadcrumb-link:hover {
     color: var(--interactive-accent);
     text-decoration: underline;
 }
@@ -5208,7 +5208,14 @@ a:hover {
 }
 
 .nexus-breadcrumb-separator {
+    display: flex;
+    align-items: center;
     color: var(--text-muted);
+}
+
+.nexus-breadcrumb-separator svg {
+    width: 14px;
+    height: 14px;
 }
 
 .nexus-settings-page-content {
@@ -5222,13 +5229,13 @@ a:hover {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 20px;
+    margin-bottom: var(--space-xl);
 }
 
 .nexus-file-picker-left {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: var(--space-m);
 }
 
 .nexus-file-picker-left h3 {
@@ -5237,22 +5244,22 @@ a:hover {
 
 .nexus-file-picker-actions {
     display: flex;
-    gap: 8px;
+    gap: var(--space-s);
 }
 
 .nexus-file-picker-list {
     max-height: 400px;
     overflow-y: auto;
     border: 1px solid var(--background-modifier-border);
-    border-radius: 6px;
-    margin-top: 12px;
+    border-radius: var(--radius-s);
+    margin-top: var(--space-m);
 }
 
 .nexus-file-item {
     display: flex;
     align-items: baseline;
-    gap: 8px;
-    padding: 10px 12px;
+    gap: var(--space-s);
+    padding: var(--space-m) var(--space-m);
     cursor: pointer;
     border-bottom: 1px solid var(--background-modifier-border);
     transition: background 0.1s ease;
@@ -5291,20 +5298,20 @@ a:hover {
 .nexus-file-hint {
     font-size: var(--font-ui-smaller);
     color: var(--text-muted);
-    margin-left: 8px;
+    margin-left: var(--space-s);
 }
 
 .nexus-file-picker-hint,
 .nexus-file-picker-empty,
 .nexus-file-picker-more {
-    padding: 20px;
+    padding: var(--space-xl);
     text-align: center;
     color: var(--text-muted);
     font-size: var(--font-ui-small);
 }
 
 .nexus-file-picker-more {
-    padding: 12px;
+    padding: var(--space-m);
     background: var(--background-secondary);
     border-top: 1px solid var(--background-modifier-border);
 }
@@ -5314,16 +5321,16 @@ a:hover {
     max-height: 400px;
     overflow-y: auto;
     border: 1px solid var(--background-modifier-border);
-    border-radius: 6px;
-    margin-top: 12px;
-    padding: 8px 0;
+    border-radius: var(--radius-s);
+    margin-top: var(--space-m);
+    padding: var(--space-s) 0;
 }
 
 .nexus-tree-row {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 6px 16px;
+    gap: var(--space-s);
+    padding: var(--space-xs) var(--space-l);
     cursor: pointer;
     transition: background 0.1s ease;
 }
@@ -5414,16 +5421,16 @@ a:hover {
 .nexus-tree-empty[data-depth="11"] { padding-left: 216px; }
 
 .nexus-tree-empty {
-    padding-top: 8px;
-    padding-bottom: 8px;
-    padding-right: 12px;
+    padding-top: var(--space-s);
+    padding-bottom: var(--space-s);
+    padding-right: var(--space-m);
     color: var(--text-faint);
     font-size: var(--font-ui-smaller);
     font-style: italic;
 }
 
 .nexus-file-picker-info {
-    margin-bottom: 8px;
+    margin-bottom: var(--space-s);
 }
 
 .nexus-selected-count {

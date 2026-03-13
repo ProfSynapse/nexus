@@ -1,4 +1,4 @@
-import { Component } from 'obsidian';
+import { Component, setIcon } from 'obsidian';
 
 export interface BreadcrumbNavItem {
   label: string;
@@ -35,10 +35,10 @@ export class BreadcrumbNav {
       }
 
       if (index < items.length - 1) {
-        this.element.createEl('span', {
-          cls: 'nexus-breadcrumb-separator',
-          text: '/'
+        const sep = this.element.createEl('span', {
+          cls: 'nexus-breadcrumb-separator'
         });
+        setIcon(sep, 'chevron-right');
       }
     });
   }

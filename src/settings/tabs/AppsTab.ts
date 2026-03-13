@@ -6,9 +6,18 @@
 import { App, Notice } from 'obsidian';
 import { SettingsRouter } from '../SettingsRouter';
 import { Settings } from '../../settings';
-import { Card, CardConfig } from '../../components/Card';
+import { CardItem } from '../../components/CardManager';
+import { SearchableCardManager, CardGroup } from '../../components/SearchableCardManager';
 import { AppConfigModal, AppSettingsSection } from '../../components/AppConfigModal';
 import { AppManager } from '../../services/apps/AppManager';
+
+/**
+ * CardItem-compatible representation of an app for SearchableCardManager
+ */
+interface AppCardItem extends CardItem {
+  appId: string;
+  installed: boolean;
+}
 
 export interface AppsTabServices {
   app: App;
@@ -57,62 +66,30 @@ export class AppsTab {
     const installed = apps.filter(a => a.installed);
     const available = apps.filter(a => !a.installed);
 
-    // Installed Apps section
-    if (installed.length > 0) {
-      this.container.createDiv('nexus-provider-group-title').setText('INSTALLED APPS');
-      const grid = this.container.createDiv('card-manager-grid');
-      for (const app of installed) {
-        this.renderInstalledCard(grid, app);
-      }
-    }
+    // Build card items for each section
+    const installedItems: AppCardItem[] = installed.map(a => ({
+      id: a.id,
+      name: a.manifest.name,
+      description: a.configured ? 'Configured' : 'Setup required',
+      isEnabled: a.enabled,
+      appId: a.id,
+      installed: true
+    }));
 
-    // Available Apps section
-    if (available.length > 0) {
-      this.container.createDiv('nexus-provider-group-title').setText('AVAILABLE APPS');
-      const grid = this.container.createDiv('card-manager-grid');
-      for (const app of available) {
-        this.renderAvailableCard(grid, app);
-      }
-    }
-  }
-
-  private renderInstalledCard(
-    grid: HTMLElement,
-    app: { id: string; manifest: import('../../types/apps/AppTypes').AppManifest; installed: boolean; enabled: boolean; configured: boolean }
-  ): void {
-    const description = app.configured ? 'Configured' : 'Setup required';
-    const cardConfig: CardConfig = {
-      title: app.manifest.name,
-      description,
-      isEnabled: app.enabled,
-      showToggle: true,
-      onToggle: async (enabled: boolean) => {
-        this.services.appManager!.setAppEnabled(app.id, enabled);
-        await this.saveSettings();
-        this.render();
-      },
-      onEdit: () => {
-        this.openAppModal(app.id);
-      }
-    };
-    new Card(grid, cardConfig);
-  }
-
-  private renderAvailableCard(
-    grid: HTMLElement,
-    app: { id: string; manifest: import('../../types/apps/AppTypes').AppManifest }
-  ): void {
-    const cardConfig: CardConfig = {
-      title: app.manifest.name,
-      description: app.manifest.description,
-      showToggle: false,
+    const availableItems: AppCardItem[] = available.map(a => ({
+      id: a.id,
+      name: a.manifest.name,
+      description: a.manifest.description,
+      isEnabled: false,
+      appId: a.id,
+      installed: false,
       additionalActions: [{
         icon: 'download',
         label: 'Install',
         onClick: () => {
-          const result = this.services.appManager!.installApp(app.id);
+          const result = this.services.appManager!.installApp(a.id);
           if (result.success) {
-            new Notice(`${app.manifest.name} installed`);
+            new Notice(`${a.manifest.name} installed`);
             this.saveSettings();
             this.render();
           } else {
@@ -120,8 +97,38 @@ export class AppsTab {
           }
         }
       }]
-    };
-    new Card(grid, cardConfig);
+    }));
+
+    const groups: CardGroup<AppCardItem>[] = [];
+    if (installedItems.length > 0) {
+      groups.push({ title: 'INSTALLED APPS', items: installedItems });
+    }
+    if (availableItems.length > 0) {
+      groups.push({ title: 'AVAILABLE APPS', items: availableItems });
+    }
+
+    new SearchableCardManager<AppCardItem>({
+      containerEl: this.container,
+      cardManagerConfig: {
+        title: 'Apps',
+        emptyStateText: 'No apps available.',
+        showToggle: true,
+        onToggle: async (item, enabled) => {
+          if (!item.installed) return;
+          this.services.appManager!.setAppEnabled(item.appId, enabled);
+          await this.saveSettings();
+          this.render();
+        },
+        onEdit: (item) => {
+          if (!item.installed) return;
+          this.openAppModal(item.appId);
+        }
+      },
+      groups,
+      search: {
+        placeholder: 'Search apps...'
+      }
+    });
   }
 
   private openAppModal(appId: string): void {

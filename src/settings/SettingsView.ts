@@ -446,7 +446,8 @@ export class SettingsView extends PluginSettingTab {
             container,
             this.router,
             {
-                customPromptStorage: services.customPromptStorage
+                customPromptStorage: services.customPromptStorage,
+                component: this.plugin
             }
         );
     }

@@ -1,5 +1,6 @@
 import { App } from 'obsidian';
 import { WorkspacesTab } from '../../src/settings/tabs/WorkspacesTab';
+import { WorkspaceDetailRenderer } from '../../src/components/workspace/WorkspaceDetailRenderer';
 import { SettingsRouter } from '../../src/settings/SettingsRouter';
 import { TaskService } from '../../src/agents/taskManager/services/TaskService';
 
@@ -166,7 +167,6 @@ describe('WorkspacesTab task management', () => {
   });
 
   it('updates task status from checkbox changes', async () => {
-    const tab = createTab();
     const taskService = createMockTaskService();
     const task = {
       id: 'task-1',
@@ -180,14 +180,19 @@ describe('WorkspacesTab task management', () => {
     };
 
     taskService.updateTask.mockResolvedValue();
-    tab.taskService = taskService;
-    tab.currentTasks = [task];
-    tab.render = jest.fn();
+    const onNavigateProjectDetail = jest.fn();
 
-    await tab.handleTaskCheckboxChange(task, true);
+    const renderer = new WorkspaceDetailRenderer() as any;
+    const callbacks = {
+      getTaskService: jest.fn().mockResolvedValue(taskService),
+      onNavigateProjectDetail,
+      safeRegisterDomEvent: jest.fn()
+    };
+
+    await renderer.handleTaskCheckboxChange(task, true, callbacks);
 
     expect(taskService.updateTask).toHaveBeenCalledWith('task-1', { status: 'done' });
-    expect(tab.currentTasks[0].status).toBe('done');
-    expect(tab.render).toHaveBeenCalled();
+    expect(task.status).toBe('done');
+    expect(onNavigateProjectDetail).toHaveBeenCalled();
   });
 });
