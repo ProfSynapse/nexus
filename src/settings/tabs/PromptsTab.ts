@@ -8,7 +8,7 @@
  * - Auto-save on all changes
  */
 
-import { Notice, TextComponent, TextAreaComponent, ButtonComponent } from 'obsidian';
+import { Notice, TextComponent, TextAreaComponent, ButtonComponent, Component } from 'obsidian';
 import { SettingsRouter } from '../SettingsRouter';
 import { BackButton } from '../components/BackButton';
 import { CustomPrompt } from '../../types/mcp/CustomPromptTypes';
@@ -18,6 +18,7 @@ import { SearchableCardManager } from '../../components/SearchableCardManager';
 
 export interface PromptsTabServices {
     customPromptStorage?: CustomPromptStorageService;
+    component?: Component;
 }
 
 type PromptsView = 'list' | 'detail';
@@ -182,7 +183,8 @@ export class PromptsTab {
             () => {
                 void this.saveCurrentPrompt();
                 this.router.back();
-            }
+            },
+            this.services.component
         );
         this.container.createEl('h3', { text: prompt.name || 'New Prompt' });
 

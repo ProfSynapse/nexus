@@ -2379,6 +2379,34 @@ a:hover {
     line-height: 1.4;
 }
 
+/* Searchable Card Manager */
+.searchable-card-manager-search {
+    margin-bottom: var(--space-m);
+}
+
+.searchable-card-manager-input {
+    width: 100%;
+    padding: var(--space-s) var(--space-m);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s);
+    background: var(--background-primary);
+    color: var(--text-normal);
+    font-size: var(--font-ui-small);
+}
+
+.searchable-card-manager-input:focus {
+    border-color: var(--interactive-accent);
+    outline: none;
+}
+
+.searchable-card-manager-group {
+    margin-bottom: var(--space-l);
+}
+
+.searchable-card-manager-group--hidden {
+    display: none;
+}
+
 /* Card Manager Styles - Unified for all card-based UIs */
 .card-manager-add-button {
     margin-bottom: 16px;

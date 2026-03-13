@@ -131,9 +131,7 @@ export class SearchableCardManager<T extends CardItem> {
             this.groupContainers.push(groupEl);
             this.cardManagers.push(manager);
 
-            if (filtered.length === 0) {
-                groupEl.style.display = 'none';
-            }
+            groupEl.toggleClass('searchable-card-manager-group--hidden', filtered.length === 0);
         }
     }
 
@@ -144,8 +142,10 @@ export class SearchableCardManager<T extends CardItem> {
                 this.cardManagers[index].updateItems(filtered);
 
                 if (this.groupContainers[index]) {
-                    this.groupContainers[index].style.display =
-                        filtered.length === 0 ? 'none' : '';
+                    this.groupContainers[index].toggleClass(
+                        'searchable-card-manager-group--hidden',
+                        filtered.length === 0
+                    );
                 }
             });
         } else if (this.config.items) {
