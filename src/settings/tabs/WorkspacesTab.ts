@@ -19,6 +19,7 @@ import { WorkspaceService } from '../../services/WorkspaceService';
 import { CustomPromptStorageService } from '../../agents/promptManager/services/CustomPromptStorageService';
 import { CustomPrompt } from '../../types/mcp/CustomPromptTypes';
 import { CardManager, CardItem } from '../../components/CardManager';
+import { SearchableCardManager } from '../../components/SearchableCardManager';
 import { v4 as uuidv4 } from '../../utils/uuid';
 import type { ServiceManager } from '../../core/ServiceManager';
 import type { WorkflowRunService } from '../../services/workflows/WorkflowRunService';
@@ -91,7 +92,7 @@ export class WorkspacesTab {
     private saveTimeout?: ReturnType<typeof setTimeout>;
 
     // Card manager for list view
-    private cardManager?: CardManager<any>;
+    private cardManager?: CardManager<any> | SearchableCardManager<any>;
 
     // Loading state
     private isLoading: boolean = true;
@@ -258,45 +259,53 @@ export class WorkspacesTab {
                 isEnabled: workspace.isActive ?? true
             }));
 
-        // Create card manager
-        this.cardManager = new CardManager({
+        // Create searchable card manager for workspace list
+        this.cardManager = new SearchableCardManager<CardItem>({
             containerEl: this.container,
-            title: 'Workspaces',
-            addButtonText: '+ New Workspace',
-            emptyStateText: 'No workspaces yet. Create one to get started.',
-            items: cardItems,
-            showToggle: true,
-            onAdd: () => this.createNewWorkspace(),
-            onToggle: async (item, enabled) => {
-                const workspace = this.workspaces.find(w => w.id === item.id);
-                if (workspace && this.services.workspaceService) {
-                    await this.services.workspaceService.updateWorkspace(item.id, { isActive: enabled });
-                    workspace.isActive = enabled;
-                }
-            },
-            onEdit: (item) => {
-                this.router.showDetail(item.id);
-            },
-            onDelete: async (item) => {
-                const confirmed = confirm(`Delete workspace "${item.name}"? This cannot be undone.`);
-                if (!confirmed) return;
-
-                try {
-                    if (this.services.workspaceService) {
-                        await this.services.workspaceService.deleteWorkspace(item.id);
-                        this.workspaces = this.workspaces.filter(w => w.id !== item.id);
-                        this.cardManager?.updateItems(this.workspaces.map(w => ({
-                            id: w.id,
-                            name: w.name,
-                            description: w.rootFolder || '/',
-                            isEnabled: w.isActive ?? true
-                        })));
-                        new Notice('Workspace deleted');
+            cardManagerConfig: {
+                title: 'Workspaces',
+                addButtonText: '+ New Workspace',
+                emptyStateText: 'No workspaces yet. Create one to get started.',
+                showToggle: true,
+                onAdd: () => this.createNewWorkspace(),
+                onToggle: async (item, enabled) => {
+                    const workspace = this.workspaces.find(w => w.id === item.id);
+                    if (workspace && this.services.workspaceService) {
+                        await this.services.workspaceService.updateWorkspace(item.id, { isActive: enabled });
+                        workspace.isActive = enabled;
                     }
-                } catch (error) {
-                    console.error('[WorkspacesTab] Failed to delete workspace:', error);
-                    new Notice('Failed to delete workspace');
+                },
+                onEdit: (item) => {
+                    this.router.showDetail(item.id);
+                },
+                onDelete: async (item) => {
+                    const confirmed = confirm(`Delete workspace "${item.name}"? This cannot be undone.`);
+                    if (!confirmed) return;
+
+                    try {
+                        if (this.services.workspaceService) {
+                            await this.services.workspaceService.deleteWorkspace(item.id);
+                            this.workspaces = this.workspaces.filter(w => w.id !== item.id);
+                            this.cardManager?.updateItems(this.workspaces.map(w => ({
+                                id: w.id,
+                                name: w.name,
+                                description: w.rootFolder || '/',
+                                isEnabled: w.isActive ?? true
+                            })));
+                            new Notice('Workspace deleted');
+                        }
+                    } catch (error) {
+                        console.error('[WorkspacesTab] Failed to delete workspace:', error);
+                        new Notice('Failed to delete workspace');
+                    }
                 }
+            },
+            items: cardItems,
+            search: {
+                placeholder: 'Search workspaces...',
+                filterFn: (item, query) =>
+                    item.name.toLowerCase().includes(query) ||
+                    (item.description?.toLowerCase().includes(query) ?? false)
             }
         });
     }
@@ -478,30 +487,38 @@ export class WorkspacesTab {
             description: `${item.description}\n${item.taskSummary}`
         }));
 
-        this.cardManager = new CardManager({
+        this.cardManager = new SearchableCardManager<CardItem>({
             containerEl: contentContainer,
-            title: 'Projects',
-            addButtonText: '+ New Project',
-            emptyStateText: 'No projects yet. Create one to get started.',
-            items: cardsWithSummary,
-            showToggle: false,
-            onAdd: () => {
-                this.currentProject = this.createProjectEditorState();
-                this.currentTasks = [];
-                this.currentView = 'project-detail';
-                this.render();
-            },
-            onToggle: async () => {
-                return;
-            },
-            onEdit: (item) => {
-                const project = this.currentProjects.find(entry => entry.id === item.id);
-                if (project) {
-                    void this.openProjectDetail(project);
+            cardManagerConfig: {
+                title: 'Projects',
+                addButtonText: '+ New Project',
+                emptyStateText: 'No projects yet. Create one to get started.',
+                showToggle: false,
+                onAdd: () => {
+                    this.currentProject = this.createProjectEditorState();
+                    this.currentTasks = [];
+                    this.currentView = 'project-detail';
+                    this.render();
+                },
+                onToggle: async () => {
+                    return;
+                },
+                onEdit: (item) => {
+                    const project = this.currentProjects.find(entry => entry.id === item.id);
+                    if (project) {
+                        void this.openProjectDetail(project);
+                    }
+                },
+                onDelete: (item) => {
+                    void this.deleteProject(item.id);
                 }
             },
-            onDelete: (item) => {
-                void this.deleteProject(item.id);
+            items: cardsWithSummary,
+            search: {
+                placeholder: 'Search projects...',
+                filterFn: (item, query) =>
+                    item.name.toLowerCase().includes(query) ||
+                    (item.description?.toLowerCase().includes(query) ?? false)
             }
         });
     }
