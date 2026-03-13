@@ -7,7 +7,7 @@
  * Coverage target: 85%+ (pure logic, STANDARD risk)
  */
 
-import { filterItems } from '../../src/components/SearchableCardManager';
+import { filterItems, SearchableCardManager, CardGroup } from '../../src/components/SearchableCardManager';
 import { CardItem } from '../../src/components/CardManager';
 
 // ============================================================================
@@ -253,6 +253,307 @@ describe('filterItems', () => {
       const original = [...ITEMS];
       filterItems(ITEMS, 'openai');
       expect(ITEMS).toEqual(original);
+    });
+  });
+});
+
+// ============================================================================
+// SearchableCardManager class tests
+// ============================================================================
+
+/** Creates a mock container element for class-level tests */
+function createMockContainer(): any {
+  const createElement = (cls?: string): any => {
+    const el: any = {
+      tagName: 'DIV',
+      className: cls || '',
+      classList: { add: jest.fn(), remove: jest.fn(), toggle: jest.fn(), contains: jest.fn(() => false) },
+      addClass: jest.fn((c: string) => { el.className += ' ' + c; }),
+      removeClass: jest.fn(),
+      hasClass: jest.fn(),
+      toggleClass: jest.fn(),
+      setText: jest.fn((text: string) => { el.textContent = text; }),
+      createEl: jest.fn((_tag: string, _opts?: any) => {
+        const child = createElement(_opts?.cls || '');
+        el._children.push(child);
+        return child;
+      }),
+      createDiv: jest.fn((cls2?: string | Record<string, any>) => {
+        const c = typeof cls2 === 'string' ? cls2 : (cls2 as any)?.cls || '';
+        const child = createElement(c);
+        el._children.push(child);
+        return child;
+      }),
+      createSpan: jest.fn((opts?: any) => {
+        const child = createElement(opts?.cls || '');
+        if (opts?.text) child.textContent = opts.text;
+        el._children.push(child);
+        return child;
+      }),
+      empty: jest.fn(() => { el._children = []; }),
+      remove: jest.fn(),
+      appendChild: jest.fn(),
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn(),
+      setAttribute: jest.fn(),
+      getAttribute: jest.fn(),
+      querySelector: jest.fn(),
+      querySelectorAll: jest.fn(() => []),
+      style: {},
+      textContent: '',
+      innerHTML: '',
+      focus: jest.fn(),
+      _children: [] as any[],
+    };
+    return el;
+  };
+  return createElement('');
+}
+
+function makeItems(count: number): CardItem[] {
+  return Array.from({ length: count }, (_, i) => ({
+    id: `item-${i}`,
+    name: `Item ${i}`,
+    description: `Description for item ${i}`,
+    isEnabled: i % 2 === 0,
+  }));
+}
+
+function baseCardManagerConfig(): any {
+  return {
+    title: 'Test',
+    addButtonText: '',
+    emptyStateText: 'No items',
+    showAddButton: false,
+    showToggle: false,
+    onAdd: jest.fn(),
+    onToggle: jest.fn().mockResolvedValue(undefined),
+    onEdit: jest.fn(),
+  };
+}
+
+function findAllByClass(el: any, cls: string): any[] {
+  const results: any[] = [];
+  if (el.className && el.className.includes(cls)) results.push(el);
+  for (const child of (el._children || [])) {
+    results.push(...findAllByClass(child, cls));
+  }
+  return results;
+}
+
+describe('SearchableCardManager', () => {
+
+  // --------------------------------------------------------------------------
+  // Search threshold (minItemsForSearch)
+  // --------------------------------------------------------------------------
+
+  describe('search threshold', () => {
+    it('should not render search when items below default threshold (5)', () => {
+      const container = createMockContainer();
+      new SearchableCardManager({
+        containerEl: container,
+        cardManagerConfig: baseCardManagerConfig(),
+        items: makeItems(4),
+        search: { placeholder: 'Search...' },
+      });
+
+      const searchContainers = findAllByClass(container, 'searchable-card-manager-search');
+      expect(searchContainers).toHaveLength(0);
+    });
+
+    it('should render search when items meet default threshold (5)', () => {
+      const container = createMockContainer();
+      new SearchableCardManager({
+        containerEl: container,
+        cardManagerConfig: baseCardManagerConfig(),
+        items: makeItems(5),
+        search: { placeholder: 'Search...' },
+      });
+
+      const searchContainers = findAllByClass(container, 'searchable-card-manager-search');
+      expect(searchContainers).toHaveLength(1);
+    });
+
+    it('should respect custom minItemsForSearch', () => {
+      const container = createMockContainer();
+      new SearchableCardManager({
+        containerEl: container,
+        cardManagerConfig: baseCardManagerConfig(),
+        items: makeItems(2),
+        search: { placeholder: 'Search...', minItemsForSearch: 2 },
+      });
+
+      const searchContainers = findAllByClass(container, 'searchable-card-manager-search');
+      expect(searchContainers).toHaveLength(1);
+    });
+
+    it('should count items across all groups for threshold', () => {
+      const container = createMockContainer();
+      const groups: CardGroup<CardItem>[] = [
+        { title: 'A', items: makeItems(3) },
+        { title: 'B', items: makeItems(3) },
+      ];
+      // Total items = 6, default threshold = 5
+      new SearchableCardManager({
+        containerEl: container,
+        cardManagerConfig: baseCardManagerConfig(),
+        groups,
+        search: { placeholder: 'Search...' },
+      });
+
+      const searchContainers = findAllByClass(container, 'searchable-card-manager-search');
+      expect(searchContainers).toHaveLength(1);
+    });
+
+    it('should not render search when config is omitted', () => {
+      const container = createMockContainer();
+      new SearchableCardManager({
+        containerEl: container,
+        cardManagerConfig: baseCardManagerConfig(),
+        items: makeItems(10),
+        // No search config
+      });
+
+      const searchContainers = findAllByClass(container, 'searchable-card-manager-search');
+      expect(searchContainers).toHaveLength(0);
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // Grouped mode — visibility
+  // --------------------------------------------------------------------------
+
+  describe('grouped mode', () => {
+    it('should create a group container for each group', () => {
+      const container = createMockContainer();
+      const groups: CardGroup<CardItem>[] = [
+        { title: 'LOCAL', items: [makeItems(1)[0]] },
+        { title: 'CLOUD', items: makeItems(4) },
+      ];
+
+      new SearchableCardManager({
+        containerEl: container,
+        cardManagerConfig: baseCardManagerConfig(),
+        groups,
+        search: { placeholder: 'Search...' },
+      });
+
+      const groupContainers = findAllByClass(container, 'searchable-card-manager-group');
+      expect(groupContainers).toHaveLength(2);
+    });
+
+    it('should set group headers with title text', () => {
+      const container = createMockContainer();
+      const groups: CardGroup<CardItem>[] = [
+        { title: 'LOCAL PROVIDERS', items: [makeItems(1)[0]] },
+      ];
+
+      new SearchableCardManager({
+        containerEl: container,
+        cardManagerConfig: baseCardManagerConfig(),
+        groups,
+      });
+
+      const groupContainers = findAllByClass(container, 'searchable-card-manager-group');
+      expect(groupContainers).toHaveLength(1);
+      // Group header should have setText called with the title
+      const headers = findAllByClass(groupContainers[0], 'nexus-provider-group-title');
+      expect(headers).toHaveLength(1);
+      expect(headers[0].setText).toHaveBeenCalledWith('LOCAL PROVIDERS');
+    });
+
+    it('should not hide groups that have items on initial build', () => {
+      const container = createMockContainer();
+      const groups: CardGroup<CardItem>[] = [
+        { title: 'A', items: makeItems(2) },
+      ];
+
+      new SearchableCardManager({
+        containerEl: container,
+        cardManagerConfig: baseCardManagerConfig(),
+        groups,
+      });
+
+      const groupContainers = findAllByClass(container, 'searchable-card-manager-group');
+      // toggleClass should have been called with false (not hidden)
+      expect(groupContainers[0].toggleClass).toHaveBeenCalledWith(
+        'searchable-card-manager-group--hidden',
+        false
+      );
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // Rebuild cycle — updateItems / updateGroups
+  // --------------------------------------------------------------------------
+
+  describe('rebuild cycle', () => {
+    it('should call empty() and rebuild on updateItems', () => {
+      const container = createMockContainer();
+      const manager = new SearchableCardManager({
+        containerEl: container,
+        cardManagerConfig: baseCardManagerConfig(),
+        items: makeItems(3),
+      });
+
+      container.empty.mockClear();
+      manager.updateItems(makeItems(5));
+      expect(container.empty).toHaveBeenCalled();
+    });
+
+    it('should call empty() and rebuild on updateGroups', () => {
+      const container = createMockContainer();
+      const groups: CardGroup<CardItem>[] = [
+        { title: 'A', items: makeItems(2) },
+      ];
+      const manager = new SearchableCardManager({
+        containerEl: container,
+        cardManagerConfig: baseCardManagerConfig(),
+        groups,
+      });
+
+      container.empty.mockClear();
+      manager.updateGroups([
+        { title: 'A', items: makeItems(2) },
+        { title: 'B', items: makeItems(3) },
+      ]);
+      expect(container.empty).toHaveBeenCalled();
+    });
+
+    it('should reset internal state on rebuild', () => {
+      const container = createMockContainer();
+      const manager = new SearchableCardManager({
+        containerEl: container,
+        cardManagerConfig: baseCardManagerConfig(),
+        items: makeItems(6),
+        search: { placeholder: 'Search...' },
+      });
+
+      // After rebuild with fewer items (below threshold), search should not appear
+      container.empty.mockClear();
+      manager.updateItems(makeItems(2));
+      // After rebuild, the search should not be rendered since 2 < 5
+      const searchContainers = findAllByClass(container, 'searchable-card-manager-search');
+      expect(searchContainers).toHaveLength(0);
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // Ungrouped mode
+  // --------------------------------------------------------------------------
+
+  describe('ungrouped mode', () => {
+    it('should build without groups when items are provided', () => {
+      const container = createMockContainer();
+      new SearchableCardManager({
+        containerEl: container,
+        cardManagerConfig: baseCardManagerConfig(),
+        items: makeItems(3),
+      });
+
+      // No group containers should exist
+      const groupContainers = findAllByClass(container, 'searchable-card-manager-group');
+      expect(groupContainers).toHaveLength(0);
     });
   });
 });

@@ -27,7 +27,12 @@ function createMockContainer(): any {
       addClass: jest.fn(),
       removeClass: jest.fn(),
       hasClass: jest.fn(),
-      createEl: jest.fn(() => createElement()),
+      createEl: jest.fn((_tag?: string, opts?: any) => {
+        const child = createElement(opts?.cls || '');
+        child.tagName = (_tag || 'DIV').toUpperCase();
+        el._children.push(child);
+        return child;
+      }),
       createDiv: jest.fn((cls2?: string | { cls?: string }) => {
         const c = typeof cls2 === 'string' ? cls2 : cls2?.cls || '';
         const child = createElement(c);
@@ -77,7 +82,9 @@ describe('BackButton', () => {
       const container = createMockContainer();
       new BackButton(container, 'Back to list', jest.fn());
 
-      expect(container.createDiv).toHaveBeenCalledWith('nexus-back-button');
+      expect(container.createEl).toHaveBeenCalledWith('button', {
+        cls: 'clickable-icon nexus-back-button'
+      });
     });
 
     it('should create an icon span with chevron-left icon class', () => {

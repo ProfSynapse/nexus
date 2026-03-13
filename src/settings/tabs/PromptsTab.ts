@@ -157,10 +157,7 @@ export class PromptsTab {
             },
             items: cardItems,
             search: {
-                placeholder: 'Search prompts...',
-                filterFn: (item, query) =>
-                    item.name.toLowerCase().includes(query) ||
-                    (item.description?.toLowerCase().includes(query) ?? false)
+                placeholder: 'Search prompts...'
             }
         });
     }

@@ -232,6 +232,41 @@ export class Setting {
   }
 }
 
+// TextComponent mock
+export class TextComponent {
+  inputEl: HTMLInputElement;
+  private value = '';
+  private changeCallback?: (value: string) => void;
+
+  constructor(containerEl: HTMLElement) {
+    this.inputEl = createMockElement('input') as HTMLInputElement;
+  }
+
+  setPlaceholder(placeholder: string): this {
+    return this;
+  }
+
+  setValue(value: string): this {
+    this.value = value;
+    return this;
+  }
+
+  getValue(): string {
+    return this.value;
+  }
+
+  onChange(callback: (value: string) => void): this {
+    this.changeCallback = callback;
+    return this;
+  }
+
+  // Helper for tests to trigger change
+  triggerChange(value: string): void {
+    this.value = value;
+    this.changeCallback?.(value);
+  }
+}
+
 // TextAreaComponent mock
 export class TextAreaComponent {
   inputEl: HTMLTextAreaElement;
@@ -476,10 +511,13 @@ function createMockElement(tagName: string): HTMLElement {
     addClass: jest.fn(),
     removeClass: jest.fn(),
     hasClass: jest.fn(() => false),
-    createEl: jest.fn(() => createMockElement('div')),
-    createDiv: jest.fn(() => createMockElement('div')),
-    createSpan: jest.fn(() => createMockElement('span')),
+    toggleClass: jest.fn(),
+    setText: jest.fn(),
+    createEl: jest.fn((_tag: string, _opts?: any) => createMockElement('div')),
+    createDiv: jest.fn((_cls?: string | Record<string, any>) => createMockElement('div')),
+    createSpan: jest.fn((_opts?: Record<string, any>) => createMockElement('span')),
     empty: jest.fn(),
+    remove: jest.fn(),
     appendChild: jest.fn(),
     removeChild: jest.fn(),
     addEventListener: jest.fn(),

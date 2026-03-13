@@ -284,4 +284,82 @@ describe('CardManager', () => {
       expect(toggleEl).toBeNull();
     });
   });
+
+  // --------------------------------------------------------------------------
+  // cssClass application
+  // --------------------------------------------------------------------------
+
+  describe('cssClass on CardItem', () => {
+    it('should apply cssClass to the card element when provided', () => {
+      const container = createMockContainer();
+      const items: CardItem[] = [{
+        id: 'coming-soon',
+        name: 'Perplexity',
+        description: 'Coming Soon',
+        isEnabled: false,
+        cssClass: 'provider-coming-soon',
+      }];
+
+      const manager = new CardManager(makeConfig(container, items));
+      const card = manager.getCard('coming-soon');
+      expect(card).toBeDefined();
+      // Card.getElement().addClass should have been called with the cssClass
+      expect(card!.getElement().addClass).toHaveBeenCalledWith('provider-coming-soon');
+    });
+
+    it('should not call addClass when cssClass is undefined', () => {
+      const container = createMockContainer();
+      const items: CardItem[] = [{
+        id: 'normal',
+        name: 'OpenAI',
+        description: 'Configured',
+        isEnabled: true,
+        // No cssClass
+      }];
+
+      const manager = new CardManager(makeConfig(container, items));
+      const card = manager.getCard('normal');
+      expect(card).toBeDefined();
+      // Card is created by CardManager.createCard; the parent element will have
+      // agent-management-card class, but no extra addClass call for cssClass
+      const el = card!.getElement();
+      // addClass is called by Card itself for its own structure, but not with a custom class
+      const addClassCalls = (el.addClass as jest.Mock).mock.calls;
+      const customClassCalls = addClassCalls.filter(
+        (call: any[]) => call[0] === 'provider-coming-soon'
+      );
+      expect(customClassCalls).toHaveLength(0);
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // Multiple items with mixed cssClass
+  // --------------------------------------------------------------------------
+
+  describe('multiple items with mixed cssClass', () => {
+    it('should apply cssClass only to items that have it', () => {
+      const container = createMockContainer();
+      const items: CardItem[] = [
+        { id: 'a', name: 'A', isEnabled: true },
+        { id: 'b', name: 'B', isEnabled: false, cssClass: 'special-class' },
+        { id: 'c', name: 'C', isEnabled: true },
+      ];
+
+      const manager = new CardManager(makeConfig(container, items));
+
+      // Item A should not have cssClass applied
+      const cardA = manager.getCard('a');
+      const addClassCallsA = (cardA!.getElement().addClass as jest.Mock).mock.calls;
+      expect(addClassCallsA.filter((c: any[]) => c[0] === 'special-class')).toHaveLength(0);
+
+      // Item B should have cssClass applied
+      const cardB = manager.getCard('b');
+      expect(cardB!.getElement().addClass).toHaveBeenCalledWith('special-class');
+
+      // Item C should not have cssClass applied
+      const cardC = manager.getCard('c');
+      const addClassCallsC = (cardC!.getElement().addClass as jest.Mock).mock.calls;
+      expect(addClassCallsC.filter((c: any[]) => c[0] === 'special-class')).toHaveLength(0);
+    });
+  });
 });

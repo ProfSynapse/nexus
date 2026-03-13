@@ -9,8 +9,8 @@ import { CardManager, CardManagerConfig, CardItem } from './CardManager';
 export interface CardSearchConfig<T extends CardItem> {
     /** Placeholder text for search input */
     placeholder: string;
-    /** Pure filter function — receives item and lowercase query, returns boolean */
-    filterFn: (item: T, query: string) => boolean;
+    /** Pure filter function — receives item and lowercase query, returns boolean. Defaults to name+description match. */
+    filterFn?: (item: T, query: string) => boolean;
     /** Hide search when total items below this threshold. Default: 5 */
     minItemsForSearch?: number;
 }

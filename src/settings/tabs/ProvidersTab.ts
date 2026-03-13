@@ -289,6 +289,7 @@ export class ProvidersTab {
             name: displayConfig.name,
             description: comingSoon ? 'Coming Soon' : (isConfigured ? 'Configured' : 'Not configured'),
             isEnabled: comingSoon ? false : providerConfig.enabled,
+            cssClass: comingSoon ? 'provider-coming-soon' : undefined,
             providerId,
             category: displayConfig.category,
             comingSoon
@@ -341,10 +342,7 @@ export class ProvidersTab {
                 },
                 items,
                 search: {
-                    placeholder: 'Search providers...',
-                    filterFn: (item, query) =>
-                        item.name.toLowerCase().includes(query) ||
-                        (item.description?.toLowerCase().includes(query) ?? false)
+                    placeholder: 'Search providers...'
                 }
             });
             return;
@@ -397,10 +395,7 @@ export class ProvidersTab {
             },
             groups,
             search: {
-                placeholder: 'Search providers...',
-                filterFn: (item, query) =>
-                    item.name.toLowerCase().includes(query) ||
-                    (item.description?.toLowerCase().includes(query) ?? false)
+                placeholder: 'Search providers...'
             }
         });
     }

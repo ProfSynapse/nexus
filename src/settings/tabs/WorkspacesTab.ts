@@ -92,7 +92,7 @@ export class WorkspacesTab {
     private saveTimeout?: ReturnType<typeof setTimeout>;
 
     // Card manager for list view
-    private cardManager?: CardManager<any> | SearchableCardManager<any>;
+    private cardManager?: CardManager<CardItem> | SearchableCardManager<CardItem>;
 
     // Loading state
     private isLoading: boolean = true;
@@ -302,10 +302,7 @@ export class WorkspacesTab {
             },
             items: cardItems,
             search: {
-                placeholder: 'Search workspaces...',
-                filterFn: (item, query) =>
-                    item.name.toLowerCase().includes(query) ||
-                    (item.description?.toLowerCase().includes(query) ?? false)
+                placeholder: 'Search workspaces...'
             }
         });
     }
@@ -515,10 +512,7 @@ export class WorkspacesTab {
             },
             items: cardsWithSummary,
             search: {
-                placeholder: 'Search projects...',
-                filterFn: (item, query) =>
-                    item.name.toLowerCase().includes(query) ||
-                    (item.description?.toLowerCase().includes(query) ?? false)
+                placeholder: 'Search projects...'
             }
         });
     }

@@ -8,6 +8,7 @@
  */
 
 import { Card, CardConfig } from '../../src/components/Card';
+import { Component } from 'obsidian';
 
 // ============================================================================
 // Helpers
@@ -424,6 +425,124 @@ describe('Card', () => {
       });
 
       expect(card.getElement()).toBeTruthy();
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // updateConfig()
+  // --------------------------------------------------------------------------
+
+  describe('updateConfig()', () => {
+    it('should refresh the card with updated config', () => {
+      const container = createMockContainer();
+      const card = new Card(container, baseConfig());
+
+      const oldEl = card.getElement();
+      card.updateConfig({ title: 'Updated Title' });
+
+      // After updateConfig, the old element should be removed and a new one created
+      expect(oldEl.remove).toHaveBeenCalled();
+    });
+
+    it('should merge partial config with existing config', () => {
+      const container = createMockContainer();
+      const card = new Card(container, { ...baseConfig(), isEnabled: true });
+
+      card.updateConfig({ title: 'New Title' });
+      // isEnabled should still be true after partial update
+      expect(card.isEnabled()).toBe(true);
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // safeRegisterDomEvent with Component
+  // --------------------------------------------------------------------------
+
+  describe('safeRegisterDomEvent with Component', () => {
+    it('should use component.registerDomEvent when component is provided', () => {
+      const container = createMockContainer();
+      const component = new Component();
+      const registerSpy = jest.spyOn(component, 'registerDomEvent');
+
+      new Card(container, {
+        ...baseConfig(),
+        onEdit: jest.fn(),
+      }, component);
+
+      // registerDomEvent should have been called for the edit button click handler
+      expect(registerSpy).toHaveBeenCalled();
+      const call = registerSpy.mock.calls[0];
+      expect(call[1]).toBe('click');
+    });
+
+    it('should fall back to addEventListener when no component', () => {
+      const container = createMockContainer();
+      const onEdit = jest.fn();
+      new Card(container, {
+        ...baseConfig(),
+        onEdit,
+      });
+
+      // Without component, edit button should use addEventListener
+      const cardEl = container._children[0];
+      const editBtn = findByClass(cardEl, 'agent-management-edit-btn');
+      expect(editBtn).toBeTruthy();
+      expect(editBtn.addEventListener).toHaveBeenCalledWith('click', expect.any(Function));
+    });
+
+    it('should register all action button events via component when provided', () => {
+      const container = createMockContainer();
+      const component = new Component();
+      const registerSpy = jest.spyOn(component, 'registerDomEvent');
+
+      new Card(container, {
+        ...baseConfig(),
+        onEdit: jest.fn(),
+        onDelete: jest.fn(),
+        additionalActions: [
+          { icon: 'settings', label: 'Settings', onClick: jest.fn() },
+        ],
+      }, component);
+
+      // Should have 3 click registrations: edit, delete, settings action
+      const clickCalls = registerSpy.mock.calls.filter(c => c[1] === 'click');
+      expect(clickCalls).toHaveLength(3);
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // setDescription edge cases
+  // --------------------------------------------------------------------------
+
+  describe('setDescription edge cases', () => {
+    it('should remove description when set to empty string', () => {
+      const container = createMockContainer();
+      const card = new Card(container, baseConfig());
+      const cardEl = card.getElement();
+
+      const existingDesc = findByClass(cardEl, 'agent-management-card-description');
+      (cardEl as any).querySelector = jest.fn(() => existingDesc);
+
+      card.setDescription('');
+      // Should have called remove on the existing description
+      if (existingDesc) {
+        expect(existingDesc.remove).toHaveBeenCalled();
+      }
+      // Should NOT create a new description div for empty string
+    });
+
+    it('should remove description when set to whitespace', () => {
+      const container = createMockContainer();
+      const card = new Card(container, baseConfig());
+      const cardEl = card.getElement();
+
+      const existingDesc = findByClass(cardEl, 'agent-management-card-description');
+      (cardEl as any).querySelector = jest.fn(() => existingDesc);
+
+      card.setDescription('   ');
+      if (existingDesc) {
+        expect(existingDesc.remove).toHaveBeenCalled();
+      }
     });
   });
 });

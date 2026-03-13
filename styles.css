@@ -2409,7 +2409,7 @@ a:hover {
 
 /* Card Manager Styles - Unified for all card-based UIs */
 .card-manager-add-button {
-    margin-bottom: 16px;
+    margin-bottom: var(--space-l);
 }
 
 .card-manager-add-button button {
@@ -2419,7 +2419,7 @@ a:hover {
 .card-manager-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 16px;
+    gap: var(--space-l);
 }
 
 .card-manager-empty {
@@ -4299,12 +4299,12 @@ a:hover {
 .nexus-back-button {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--space-xs);
     color: var(--text-normal);
     cursor: pointer;
-    margin-bottom: 16px;
-    padding: 8px 14px;
-    border-radius: 6px;
+    margin-bottom: var(--space-l);
+    padding: var(--space-s) var(--space-m);
+    border-radius: var(--radius-s);
     background: var(--background-modifier-hover);
     border: 1px solid var(--background-modifier-border);
     font-size: 0.9em;

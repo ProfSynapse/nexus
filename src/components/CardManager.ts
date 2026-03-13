@@ -11,6 +11,8 @@ export interface CardItem {
     name: string;
     description?: string;
     isEnabled: boolean;
+    /** Optional CSS class applied to the card's root element */
+    cssClass?: string;
 }
 
 export interface CardManagerConfig<T extends CardItem> {
@@ -102,6 +104,9 @@ export class CardManager<T extends CardItem> {
         };
 
         const card = new Card(this.cardsContainer, cardConfig);
+        if (item.cssClass) {
+            card.getElement().addClass(item.cssClass);
+        }
         this.cards.set(item.id, card);
     }
 

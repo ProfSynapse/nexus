@@ -100,10 +100,7 @@ export class AppsTab {
         },
         items: installedItems,
         search: {
-          placeholder: 'Search installed apps...',
-          filterFn: (item, query) =>
-            item.name.toLowerCase().includes(query) ||
-            (item.description?.toLowerCase().includes(query) ?? false)
+          placeholder: 'Search installed apps...'
         }
       });
     }

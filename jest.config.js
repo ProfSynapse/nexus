@@ -181,14 +181,12 @@ module.exports = {
       lines: 80,
       statements: 80
     },
-    // Settings UI redesign: pure logic (high bar)
-    // SearchableCardManager: filterItems() pure function is well-tested; class
-    // methods are DOM composition (build, applyFilter, rebuild) with lower coverage.
+    // Settings UI redesign: pure logic + class-level tests
     './src/components/SearchableCardManager.ts': {
-      branches: 20,
-      functions: 15,
-      lines: 13,
-      statements: 13
+      branches: 70,
+      functions: 80,
+      lines: 80,
+      statements: 80
     },
     './src/settings/SettingsRouter.ts': {
       branches: 95,
@@ -198,22 +196,22 @@ module.exports = {
     },
     // Settings UI redesign: DOM components (tested via lightweight mocks)
     './src/components/Card.ts': {
-      branches: 55,
-      functions: 60,
-      lines: 65,
-      statements: 65
+      branches: 90,
+      functions: 75,
+      lines: 90,
+      statements: 90
     },
     './src/components/CardManager.ts': {
-      branches: 55,
+      branches: 90,
       functions: 60,
-      lines: 65,
-      statements: 65
+      lines: 80,
+      statements: 80
     },
     './src/settings/components/BackButton.ts': {
-      branches: 50,
-      functions: 60,
-      lines: 60,
-      statements: 60
+      branches: 100,
+      functions: 100,
+      lines: 100,
+      statements: 100
     }
   },
   coverageDirectory: 'coverage',
