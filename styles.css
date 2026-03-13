@@ -1,4 +1,18 @@
 /* =========================== */
+/* SPACING TOKENS              */
+/* =========================== */
+
+:root {
+    --space-xxs: 2px;
+    --space-xs: 4px;
+    --space-s: 8px;
+    --space-m: 12px;
+    --space-l: 16px;
+    --space-xl: 24px;
+    --space-xxl: 32px;
+}
+
+/* =========================== */
 /* NATIVE CHATBOT STYLES      */
 /* =========================== */
 
@@ -2366,33 +2380,21 @@ a:hover {
 }
 
 /* Card Manager Styles - Unified for all card-based UIs */
-.card-manager-add-button,
-.agent-management-add-button {
+.card-manager-add-button {
     margin-bottom: 16px;
 }
 
-.card-manager-add-button button,
-.agent-management-add-button button {
+.card-manager-add-button button {
     width: 100%;
 }
 
-.card-manager-grid,
-.agent-management-cards,
-.llm-provider-cards {
+.card-manager-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 16px;
 }
 
-.agent-management-disabled {
-    text-align: center;
-    color: var(--text-muted);
-    font-style: italic;
-    padding: 20px;
-}
-
-.card-manager-empty,
-.agent-management-empty {
+.card-manager-empty {
     text-align: center;
     color: var(--text-muted);
     padding: 20px;
@@ -2411,7 +2413,7 @@ a:hover {
 
 .agent-management-card:hover {
     border-color: var(--interactive-accent);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    background-color: var(--background-modifier-hover);
 }
 
 .agent-management-card-header {
@@ -2439,42 +2441,9 @@ a:hover {
     align-items: center;
 }
 
-/* Ensure proper spacing for Obsidian toggle component */
-.agent-management-toggle .checkbox-container {
-    margin-right: 8px;
-}
-
-.agent-management-edit-btn,
-.agent-management-delete-btn {
-    width: 32px;
-    height: 32px;
-    border: 1px solid var(--background-modifier-border);
-    background-color: var(--background-primary);
-    border-radius: 4px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s ease;
-    color: var(--text-muted);
-}
-
-.agent-management-edit-btn:hover {
-    background-color: var(--interactive-accent);
-    color: var(--text-on-accent);
-    border-color: var(--interactive-accent);
-}
-
 .agent-management-delete-btn:hover {
     background-color: var(--text-error);
-    color: white;
-    border-color: var(--text-error);
-}
-
-.agent-management-edit-btn svg,
-.agent-management-delete-btn svg {
-    width: 16px;
-    height: 16px;
+    color: var(--text-on-accent);
 }
 
 .agent-management-card-description {
@@ -3230,9 +3199,7 @@ a:hover {
 
 /* Responsive design for cards */
 @media (max-width: 768px) {
-    .card-manager-grid,
-    .agent-management-cards,
-    .llm-provider-cards {
+    .card-manager-grid {
         grid-template-columns: 1fr;
         gap: 12px;
     }
@@ -5208,7 +5175,14 @@ a:hover {
 }
 
 .nexus-breadcrumb-separator {
+    display: flex;
+    align-items: center;
     color: var(--text-muted);
+}
+
+.nexus-breadcrumb-separator svg {
+    width: 14px;
+    height: 14px;
 }
 
 .nexus-settings-page-content {
