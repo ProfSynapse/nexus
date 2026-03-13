@@ -275,7 +275,8 @@ export class AgentInitializationService {
       this.app,
       this.plugin,
       memoryService,
-      workspaceService
+      workspaceService,
+      this.customPromptStorage
     );
 
     this.agentManager.registerAgent(memoryManagerAgent);
