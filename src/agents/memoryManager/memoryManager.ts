@@ -2,6 +2,7 @@ import { App } from 'obsidian';
 import { BaseAgent } from '../baseAgent';
 import { MemoryService } from "./services/MemoryService";
 import { WorkspaceService } from "../../services/WorkspaceService";
+import { CustomPromptStorageService } from "../promptManager/services/CustomPromptStorageService";
 import { sanitizeVaultName } from '../../utils/vaultUtils';
 import { getNexusPlugin } from '../../utils/pluginLocator';
 import { NexusPluginWithServices } from './tools/utils/pluginTypes';
@@ -38,6 +39,11 @@ export class MemoryManagerAgent extends BaseAgent {
   private readonly workspaceService: WorkspaceService;
 
   /**
+   * Custom prompt storage service for SQLite-backed prompt resolution
+   */
+  public readonly customPromptStorage?: CustomPromptStorageService;
+
+  /**
    * TaskService reference for loadWorkspace integration (optional, set during plugin init)
    */
   private taskService: { getWorkspaceSummary(workspaceId: string): Promise<any> } | null = null;
@@ -63,12 +69,14 @@ export class MemoryManagerAgent extends BaseAgent {
    * @param plugin Plugin instance for accessing shared services
    * @param memoryService Injected memory service
    * @param workspaceService Injected workspace service
+   * @param customPromptStorage Optional prompt storage service for SQLite-backed lookups
    */
   constructor(
     app: App,
     public plugin: any,
     memoryService: MemoryService,
-    workspaceService: WorkspaceService
+    workspaceService: WorkspaceService,
+    customPromptStorage?: CustomPromptStorageService
   ) {
     super(
       'memoryManager',
@@ -82,6 +90,7 @@ export class MemoryManagerAgent extends BaseAgent {
     // Store injected services
     this.memoryService = memoryService;
     this.workspaceService = workspaceService;
+    this.customPromptStorage = customPromptStorage;
 
     // Register state tools (3 tools: create, list, load) - lazy loaded
     this.registerLazyTool({
