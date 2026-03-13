@@ -16,11 +16,10 @@ import { IndividualConversation, ConversationMetadata as LegacyConversationMetad
 // Re-export for consumers
 export type { IndividualConversation, ConversationMessage } from '../types/storage/StorageTypes';
 import { IStorageAdapter } from '../database/interfaces/IStorageAdapter';
-import { ConversationMetadata, MessageData } from '../types/storage/HybridStorageTypes';
+import { ConversationMetadata } from '../types/storage/HybridStorageTypes';
 import { PaginationParams, PaginatedResult, calculatePaginationMetadata } from '../types/pagination/PaginationTypes';
-import type { ConversationBranch, SubagentBranchMetadata, HumanBranchMetadata } from '../types/branch/BranchTypes';
-import type { ToolCall as ChatToolCall } from '../types/chat/ChatTypes';
 import { StorageAdapterOrGetter, resolveAdapter, withDualBackend } from './helpers/DualBackendExecutor';
+import { convertToLegacyMetadata, convertToLegacyConversation, populateMessageBranches } from './helpers/ConversationTypeConverters';
 
 export class ConversationService {
   private storageAdapterOrGetter: StorageAdapterOrGetter;
@@ -56,7 +55,7 @@ export class ConversationService {
           sortBy: 'updated',
           sortOrder: 'desc'
         });
-        return result.items.map(this.convertToLegacyMetadata);
+        return result.items.map(convertToLegacyMetadata);
       },
       async () => {
         const index = await this.indexManager.loadConversationIndex();
@@ -99,8 +98,9 @@ export class ConversationService {
           pageSize: paginationOptions?.pageSize ?? 1000
         });
 
-        const conversation = this.convertToLegacyConversation(metadata, messagesResult.items);
-        await this.populateMessageBranches(id, conversation.messages);
+        const conversation = convertToLegacyConversation(metadata, messagesResult.items);
+        const allBranches = await this.getBranchConversations(id);
+        populateMessageBranches(allBranches, conversation.messages);
 
         if (paginationOptions) {
           conversation.messagePagination = {
@@ -299,7 +299,7 @@ export class ConversationService {
           throw new Error('Failed to retrieve created conversation');
         }
 
-        return this.convertToLegacyConversation(metadata, []);
+        return convertToLegacyConversation(metadata, []);
       },
       async () => {
         const conversation: IndividualConversation = {
@@ -584,7 +584,7 @@ export class ConversationService {
       this.storageAdapterOrGetter,
       async (adapter) => {
         const results = await adapter.searchConversations(query);
-        const converted = results.map(this.convertToLegacyMetadata);
+        const converted = results.map(convertToLegacyMetadata);
         return limit ? converted.slice(0, limit) : converted;
       },
       async () => {
@@ -693,192 +693,6 @@ export class ConversationService {
     stats.newestConversation = newest === 0 ? undefined : newest;
 
     return stats;
-  }
-
-  // ============================================================================
-  // Type Conversion Helpers (New Format <-> Legacy Format)
-  // ============================================================================
-
-  /**
-   * Convert new ConversationMetadata to legacy format
-   */
-  private convertToLegacyMetadata = (metadata: ConversationMetadata): LegacyConversationMetadata => {
-    return {
-      id: metadata.id,
-      title: metadata.title,
-      created: metadata.created,
-      updated: metadata.updated,
-      vault_name: metadata.vaultName,
-      message_count: metadata.messageCount
-    };
-  };
-
-  /**
-   * Populate message.branches from unified branch storage
-   *
-   * With unified model, branches are separate conversations with parentConversationId
-   * and parentMessageId in metadata. This method queries those and converts them
-   * to the embedded ConversationBranch format for UI compatibility.
-   *
-   * Required for MessageBranchNavigator to show branch navigation on messages.
-   * Works for both human branches and subagent branches.
-   */
-  private async populateMessageBranches(
-    conversationId: string,
-    messages: ConversationMessage[]
-  ): Promise<void> {
-    // Get all branch conversations for this parent
-    const allBranchConversations = await this.getBranchConversations(conversationId);
-
-    if (allBranchConversations.length === 0) {
-      return;
-    }
-
-    // Group branches by parent message ID
-    const branchesByMessage = new Map<string, IndividualConversation[]>();
-    for (const branch of allBranchConversations) {
-      const parentMessageId = branch.metadata?.parentMessageId;
-      if (parentMessageId) {
-        const existing = branchesByMessage.get(parentMessageId) || [];
-        existing.push(branch);
-        branchesByMessage.set(parentMessageId, existing);
-      }
-    }
-
-    // Attach branches to their parent messages
-    for (const message of messages) {
-      const branchConversations = branchesByMessage.get(message.id);
-
-      if (branchConversations && branchConversations.length > 0) {
-        // Convert each branch conversation to embedded ConversationBranch format
-        const branches: ConversationBranch[] = branchConversations.map(bc =>
-          this.convertToConversationBranch(bc)
-        );
-
-        message.branches = branches;
-        // Initialize activeAlternativeIndex if not set (0 = original message)
-        if (message.activeAlternativeIndex === undefined) {
-          message.activeAlternativeIndex = 0;
-        }
-      }
-    }
-  }
-
-  /**
-   * Convert a branch conversation to embedded ConversationBranch format
-   * Used for UI compatibility with message.branches[]
-   */
-  private convertToConversationBranch(branchConversation: IndividualConversation): ConversationBranch {
-    const meta = branchConversation.metadata || {};
-    const branchType = meta.branchType === 'subagent' ? 'subagent' : 'human';
-
-    // Extract subagent-specific metadata if present
-    const subagentMeta = meta.subagent as SubagentBranchMetadata | undefined;
-
-    return {
-      id: branchConversation.id,
-      type: branchType,
-      inheritContext: meta.inheritContext ?? (branchType === 'human'),
-      messages: branchConversation.messages.map(m => ({
-        id: m.id,
-        role: m.role,
-        content: m.content,
-        timestamp: m.timestamp,
-        conversationId: branchConversation.id,
-        state: m.state,
-        toolCalls: m.toolCalls as unknown as ChatToolCall[] | undefined, // Storage ToolCall type differs only in narrower type field
-        reasoning: m.reasoning,
-      })),
-      created: branchConversation.created,
-      updated: branchConversation.updated,
-      metadata: branchType === 'subagent' && subagentMeta
-        ? subagentMeta
-        : { description: branchConversation.title } as HumanBranchMetadata,
-    };
-  }
-
-  /**
-   * Convert new ConversationMetadata + MessageData[] to legacy IndividualConversation
-   */
-  private convertToLegacyConversation(
-    metadata: ConversationMetadata,
-    messages: MessageData[]
-  ): IndividualConversation {
-    // Type assertion for metadata - structure matches IndividualConversation.metadata
-    const meta = (metadata.metadata || {}) as IndividualConversation['metadata'] & Record<string, unknown>;
-    const metaCost = meta?.cost;
-    const metaTotalCost = meta?.totalCost;
-    const metaCurrency = meta?.currency;
-    const resolvedCost = metaCost || (metaTotalCost !== undefined ? { totalCost: metaTotalCost, currency: metaCurrency || 'USD' } : undefined);
-    return {
-      id: metadata.id,
-      title: metadata.title,
-      created: metadata.created,
-      updated: metadata.updated,
-      vault_name: metadata.vaultName,
-      message_count: metadata.messageCount,
-      messages: messages.map(msg => ({
-        id: msg.id,
-        role: msg.role as 'user' | 'assistant' | 'tool',
-        content: msg.content || '',
-        timestamp: msg.timestamp,
-        state: msg.state,
-        toolCalls: msg.toolCalls?.map(tc => {
-          // Handle both formats:
-          // 1. Standard OpenAI format: { function: { name, arguments } }
-          // 2. Result format from buildToolMetadata: { name, result, success, error }
-          const hasFunction = tc.function && typeof tc.function === 'object';
-          const name = (hasFunction ? tc.function.name : tc.name) || 'unknown_tool';
-          let parameters: any;
-          if (hasFunction && tc.function.arguments) {
-            if (typeof tc.function.arguments === 'string') {
-              try {
-                parameters = JSON.parse(tc.function.arguments);
-              } catch {
-                // Malformed JSON in arguments — preserve raw string as-is
-                parameters = tc.function.arguments;
-              }
-            } else {
-              parameters = tc.function.arguments;
-            }
-          } else {
-            parameters = tc.parameters;
-          }
-          return {
-            id: tc.id,
-            type: tc.type || 'function',
-            name,
-            function: tc.function || { name, arguments: JSON.stringify(parameters || {}) },
-            parameters: parameters || {},
-            result: tc.result,
-            success: tc.success,
-            error: tc.error
-          };
-        }),
-        reasoning: msg.reasoning,
-        metadata: msg.metadata,
-        // Branching support - cast needed due to AlternativeMessage vs ConversationMessage type differences
-        alternatives: msg.alternatives as unknown as import('../types/storage/StorageTypes').ConversationMessage[] | undefined,
-        activeAlternativeIndex: msg.activeAlternativeIndex
-      })),
-      // Preserve ALL metadata from storage (parentConversationId, branchType, subagent, etc.)
-      // while ensuring chatSettings structure is maintained for compatibility
-      metadata: {
-        ...meta,  // Spread stored metadata first (parentConversationId, branchType, subagent, etc.)
-        chatSettings: {
-          ...meta.chatSettings,
-          workspaceId: metadata.workspaceId,
-          sessionId: metadata.sessionId,
-          promptId: (meta.chatSettings as { promptId?: string } | undefined)?.promptId ?? (meta.promptId as string | undefined)
-        },
-        workflowId: metadata.workflowId ?? (meta.workflowId as string | undefined),
-        runTrigger: metadata.runTrigger ?? (meta.runTrigger as 'manual' | 'scheduled' | 'catch_up' | undefined),
-        scheduledFor: metadata.scheduledFor ?? (meta.scheduledFor as number | undefined),
-        runKey: metadata.runKey ?? (meta.runKey as string | undefined),
-        cost: resolvedCost
-      },
-      cost: resolvedCost
-    };
   }
 
   // ========================================

@@ -10,11 +10,11 @@ import { IndexManager } from './storage/IndexManager';
 import { IndividualWorkspace, WorkspaceMetadata, SessionData, MemoryTrace, StateData } from '../types/storage/StorageTypes';
 import { IStorageAdapter } from '../database/interfaces/IStorageAdapter';
 import * as HybridTypes from '../types/storage/HybridStorageTypes';
-import { TraceMetadata, LegacyWorkspaceTraceMetadata } from '../database/types/memory/MemoryTypes';
+import { TraceMetadata } from '../database/types/memory/MemoryTypes';
 import { WorkspaceState } from '../database/types/session/SessionTypes';
-import type { WorkflowSchedule, WorkspaceWorkflow } from '../database/types/workspace/WorkspaceTypes';
-import { v4 as uuidv4 } from '../utils/uuid';
 import { StorageAdapterOrGetter, resolveAdapter, withDualBackend } from './helpers/DualBackendExecutor';
+import { convertWorkspaceMetadata } from './helpers/WorkspaceTypeConverters';
+import { normalizeWorkspaceData, normalizeWorkspaceContext } from './helpers/WorkspaceNormalizer';
 
 // Export constant for backward compatibility
 export const GLOBAL_WORKSPACE_ID = 'default';
@@ -40,41 +40,6 @@ export class WorkspaceService {
   }
 
   // ============================================================================
-  // Type Conversion Helpers
-  // ============================================================================
-
-  /**
-   * Convert HybridStorageTypes.WorkspaceMetadata to StorageTypes.WorkspaceMetadata
-   */
-  private convertWorkspaceMetadata(hybrid: HybridTypes.WorkspaceMetadata): WorkspaceMetadata {
-    return {
-      id: hybrid.id,
-      name: hybrid.name,
-      description: hybrid.description,
-      rootFolder: hybrid.rootFolder,
-      created: hybrid.created,
-      lastAccessed: hybrid.lastAccessed,
-      isActive: hybrid.isActive,
-      sessionCount: 0, // Will be calculated if needed
-      traceCount: 0    // Will be calculated if needed
-    };
-  }
-
-  /**
-   * Convert StorageTypes.WorkspaceMetadata to HybridStorageTypes.WorkspaceMetadata
-   */
-  private convertToHybridWorkspaceMetadata(legacy: WorkspaceMetadata): Omit<HybridTypes.WorkspaceMetadata, 'id'> {
-    return {
-      name: legacy.name,
-      description: legacy.description,
-      rootFolder: legacy.rootFolder,
-      created: legacy.created,
-      lastAccessed: legacy.lastAccessed,
-      isActive: legacy.isActive ?? true
-    };
-  }
-
-  // ============================================================================
   // Public API Methods (dual-backend support)
   // ============================================================================
 
@@ -90,7 +55,7 @@ export class WorkspaceService {
           sortBy: 'lastAccessed',
           sortOrder: 'desc'
         });
-        return result.items.map(w => this.convertWorkspaceMetadata(w));
+        return result.items.map(w => convertWorkspaceMetadata(w));
       },
       async () => {
         const index = await this.indexManager.loadWorkspaceIndex();
@@ -120,7 +85,7 @@ export class WorkspaceService {
           sortBy: options?.sortBy || 'lastAccessed',
           sortOrder: options?.sortOrder || 'desc'
         });
-        return result.items.map(w => this.convertWorkspaceMetadata(w));
+        return result.items.map(w => convertWorkspaceMetadata(w));
       },
       async () => {
         const index = await this.indexManager.loadWorkspaceIndex();
@@ -175,7 +140,7 @@ export class WorkspaceService {
           lastAccessed: metadata.lastAccessed,
           isActive: metadata.isActive,
           dedicatedAgentId: metadata.dedicatedAgentId,
-          context: metadata.context ? this.normalizeWorkspaceContext(metadata.context).context : metadata.context,
+          context: metadata.context ? normalizeWorkspaceContext(metadata.context).context : metadata.context,
           sessions: {}
         };
       },
@@ -184,7 +149,7 @@ export class WorkspaceService {
         if (!workspace) {
           return null;
         }
-        const migrated = this.normalizeWorkspaceData(workspace);
+        const migrated = normalizeWorkspaceData(workspace);
         if (migrated) {
           await this.fileSystem.writeWorkspace(id, workspace);
         }
@@ -216,7 +181,7 @@ export class WorkspaceService {
             lastAccessed: w.lastAccessed,
             isActive: w.isActive,
             dedicatedAgentId: w.dedicatedAgentId,
-            context: w.context ? this.normalizeWorkspaceContext(w.context).context : w.context,
+            context: w.context ? normalizeWorkspaceContext(w.context).context : w.context,
             sessions: {}
           }));
       },
@@ -226,7 +191,7 @@ export class WorkspaceService {
         for (const id of workspaceIds) {
           const workspace = await this.fileSystem.readWorkspace(id);
           if (workspace) {
-            const migrated = this.normalizeWorkspaceData(workspace);
+            const migrated = normalizeWorkspaceData(workspace);
             if (migrated) {
               await this.fileSystem.writeWorkspace(id, workspace);
             }
@@ -247,7 +212,7 @@ export class WorkspaceService {
     if (adapterForCreate) {
       // Convert context to HybridTypes format if provided
       const hybridContext = data.context ? {
-        ...this.normalizeWorkspaceContext(data.context).context,
+        ...normalizeWorkspaceContext(data.context).context,
         dedicatedAgent: data.context.dedicatedAgent
       } : undefined;
 
@@ -289,7 +254,7 @@ export class WorkspaceService {
       created: data.created || Date.now(),
       lastAccessed: data.lastAccessed || Date.now(),
       isActive: data.isActive ?? true,
-      context: data.context ? this.normalizeWorkspaceContext(data.context).context : data.context,
+      context: data.context ? normalizeWorkspaceContext(data.context).context : data.context,
       sessions: data.sessions || {}
     };
 
@@ -323,7 +288,7 @@ export class WorkspaceService {
         }
 
         if (updates.context !== undefined) {
-          const normalizedContext = this.normalizeWorkspaceContext(updates.context).context;
+          const normalizedContext = normalizeWorkspaceContext(updates.context).context;
           hybridUpdates.context = {
             purpose: normalizedContext.purpose,
             workflows: normalizedContext.workflows,
@@ -348,7 +313,7 @@ export class WorkspaceService {
           id,
           lastAccessed: Date.now()
         };
-        this.normalizeWorkspaceData(updatedWorkspace);
+        normalizeWorkspaceData(updatedWorkspace);
         await this.fileSystem.writeWorkspace(id, updatedWorkspace);
         await this.indexManager.updateWorkspaceInIndex(updatedWorkspace);
       }
@@ -604,7 +569,7 @@ export class WorkspaceService {
         content: hybridTrace.content,
         // Safe conversion: HybridTypes.MemoryTraceData.metadata (Record<string, unknown>)
         // is cast to TraceMetadata which is the expected type for MemoryTrace.metadata
-        // Note: This metadata may be either TraceMetadata or LegacyWorkspaceTraceMetadata at runtime
+        // Note: This metadata may be either TraceMetadata or legacy trace metadata at runtime
         metadata: hybridTrace.metadata as TraceMetadata | undefined
       };
     }
@@ -796,7 +761,7 @@ export class WorkspaceService {
       this.storageAdapterOrGetter,
       async (adapter) => {
         const results = await adapter.searchWorkspaces(query);
-        const converted = results.map(w => this.convertWorkspaceMetadata(w));
+        const converted = results.map(w => convertWorkspaceMetadata(w));
         return limit ? converted.slice(0, limit) : converted;
       },
       async () => {
@@ -837,7 +802,7 @@ export class WorkspaceService {
         if (result.items.length === 0) {
           return null;
         }
-        return this.convertWorkspaceMetadata(result.items[0]);
+        return convertWorkspaceMetadata(result.items[0]);
       },
       async () => {
         const index = await this.indexManager.loadWorkspaceIndex();
@@ -864,7 +829,7 @@ export class WorkspaceService {
         if (result.items.length === 0) {
           return null;
         }
-        return this.convertWorkspaceMetadata(result.items[0]);
+        return convertWorkspaceMetadata(result.items[0]);
       },
       async () => {
         const index = await this.indexManager.loadWorkspaceIndex();
@@ -997,88 +962,4 @@ export class WorkspaceService {
     );
   }
 
-  /**
-   * Migrate legacy array-based workflow steps to string format
-   * @param workspace Workspace to migrate
-   * @returns true if migration was performed, false otherwise
-   */
-  private normalizeWorkspaceData(workspace: IndividualWorkspace): boolean {
-    if (!workspace.context?.workflows || workspace.context.workflows.length === 0) {
-      return false;
-    }
-
-    const normalized = this.normalizeWorkspaceContext(workspace.context);
-    workspace.context = {
-      ...workspace.context,
-      ...normalized.context
-    };
-    return normalized.changed;
-  }
-
-  private normalizeWorkspaceContext(context: HybridTypes.WorkspaceContext): { context: HybridTypes.WorkspaceContext; changed: boolean } {
-    if (!context.workflows || context.workflows.length === 0) {
-      return { context, changed: false };
-    }
-
-    let changed = false;
-    const workflows = context.workflows.map((workflow) => {
-      let nextWorkflow = workflow as WorkspaceWorkflow & { steps: string | string[] };
-
-      if (Array.isArray(nextWorkflow.steps)) {
-        nextWorkflow = { ...nextWorkflow, steps: nextWorkflow.steps.join('\n') };
-        changed = true;
-      }
-
-      if (!nextWorkflow.id) {
-        nextWorkflow = { ...nextWorkflow, id: uuidv4() };
-        changed = true;
-      }
-
-      const normalizedSchedule = this.normalizeWorkflowSchedule(nextWorkflow.schedule);
-      if (normalizedSchedule !== nextWorkflow.schedule) {
-        nextWorkflow = { ...nextWorkflow, schedule: normalizedSchedule };
-        changed = true;
-      }
-
-      return nextWorkflow as WorkspaceWorkflow;
-    });
-
-    return {
-      context: {
-        ...context,
-        workflows
-      },
-      changed
-    };
-  }
-
-  private normalizeWorkflowSchedule(schedule?: WorkflowSchedule): WorkflowSchedule | undefined {
-    if (!schedule) {
-      return undefined;
-    }
-
-    const normalized: WorkflowSchedule = {
-      enabled: schedule.enabled !== false,
-      frequency: schedule.frequency,
-      catchUp: schedule.catchUp || 'skip'
-    };
-
-    if (schedule.intervalHours !== undefined) {
-      normalized.intervalHours = Math.max(1, Math.min(24, Number(schedule.intervalHours) || 1));
-    }
-    if (schedule.hour !== undefined) {
-      normalized.hour = Math.max(0, Math.min(23, Number(schedule.hour) || 0));
-    }
-    if (schedule.minute !== undefined) {
-      normalized.minute = Math.max(0, Math.min(59, Number(schedule.minute) || 0));
-    }
-    if (schedule.dayOfWeek !== undefined) {
-      normalized.dayOfWeek = Math.max(0, Math.min(6, Number(schedule.dayOfWeek) || 0));
-    }
-    if (schedule.dayOfMonth !== undefined) {
-      normalized.dayOfMonth = Math.max(1, Math.min(31, Number(schedule.dayOfMonth) || 1));
-    }
-
-    return normalized;
-  }
 }
