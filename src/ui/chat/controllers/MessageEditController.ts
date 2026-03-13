@@ -49,8 +49,8 @@ export class MessageEditController {
       cls: 'message-edit-cancel'
     });
 
-    // Store original content
-    const originalContent = contentDiv.innerHTML;
+    // Clone original DOM for cancel/restore (avoids innerHTML capture)
+    const originalClone = contentDiv.cloneNode(true) as Element;
 
     // Replace content with edit interface
     contentDiv.empty();
@@ -66,18 +66,18 @@ export class MessageEditController {
       if (newContent && newContent !== message.content) {
         onEdit(message.id, newContent);
       }
-      MessageEditController.exitEditMode(contentDiv, originalContent);
+      MessageEditController.exitEditMode(contentDiv, originalClone);
     };
 
     // Cancel handler
     const cancelHandler = () => {
-      MessageEditController.exitEditMode(contentDiv, originalContent);
+      MessageEditController.exitEditMode(contentDiv, originalClone);
     };
 
     // ESC key handler
     const keydownHandler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        MessageEditController.exitEditMode(contentDiv, originalContent);
+        MessageEditController.exitEditMode(contentDiv, originalClone);
       }
     };
 
@@ -89,7 +89,7 @@ export class MessageEditController {
   /**
    * Exit edit mode and restore original content
    */
-  static exitEditMode(contentDiv: Element, originalContent: string): void {
-    contentDiv.innerHTML = originalContent;
+  static exitEditMode(contentDiv: Element, originalClone: Element): void {
+    contentDiv.replaceChildren(...Array.from(originalClone.childNodes).map(n => n.cloneNode(true)));
   }
 }

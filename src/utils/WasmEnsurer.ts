@@ -73,8 +73,6 @@ export class WasmEnsurer {
         try {
             for (const url of WasmEnsurer.WASM_URLS) {
                 try {
-                    console.log(`[WasmEnsurer] Attempting download from: ${url}`);
-
                     const response = await requestUrl({
                         url,
                         method: 'GET',
@@ -99,7 +97,6 @@ export class WasmEnsurer {
 
                     notice.hide();
                     new Notice('SQLite WASM file downloaded successfully!', 3000);
-                    console.log(`[WasmEnsurer] Successfully downloaded sqlite3.wasm (${wasmData.byteLength} bytes)`);
                     return true;
 
                 } catch (error) {

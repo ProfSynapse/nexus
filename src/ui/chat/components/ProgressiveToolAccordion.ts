@@ -632,11 +632,19 @@ export class ProgressiveToolAccordion {
       href: '#',
     });
 
-    viewLink.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      this.callbacks.onViewBranch?.(branchId!);
-    });
+    if (this.component) {
+      this.component.registerDomEvent(viewLink, 'click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.callbacks.onViewBranch?.(branchId!);
+      });
+    } else {
+      viewLink.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.callbacks.onViewBranch?.(branchId!);
+      });
+    }
   }
 
   /**
@@ -647,7 +655,7 @@ export class ProgressiveToolAccordion {
     setIcon(copyBtn, 'copy');
     copyBtn.setAttribute('aria-label', 'Copy to clipboard');
 
-    copyBtn.addEventListener('click', async (e) => {
+    const copyHandler = async (e: MouseEvent) => {
       e.stopPropagation();
       try {
         await navigator.clipboard.writeText(getContent());
@@ -663,7 +671,12 @@ export class ProgressiveToolAccordion {
       } catch (err) {
         console.error('Failed to copy:', err);
       }
-    });
+    };
+    if (this.component) {
+      this.component.registerDomEvent(copyBtn, 'click', copyHandler);
+    } else {
+      copyBtn.addEventListener('click', copyHandler);
+    }
   }
 
   /**

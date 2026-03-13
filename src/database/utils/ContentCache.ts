@@ -16,7 +16,8 @@ export class ContentCache {
   private maxSize: number;
   private currentSize = 0;
   private ttl: number;
-  
+  private cleanupTimer: ReturnType<typeof setInterval> | null = null;
+
   /**
    * Create a new content cache
    * @param maxSize Maximum cache size in bytes (default: 10MB)
@@ -25,9 +26,9 @@ export class ContentCache {
   constructor(maxSize: number = 10 * 1024 * 1024, ttl: number = 5 * 60 * 1000) {
     this.maxSize = maxSize;
     this.ttl = ttl;
-    
+
     // Periodically clean up expired entries
-    setInterval(() => this.cleanupExpired(), 60 * 1000); // Every minute
+    this.cleanupTimer = setInterval(() => this.cleanupExpired(), 60 * 1000); // Every minute
   }
   
   /**
@@ -103,6 +104,17 @@ export class ContentCache {
   clear(): void {
     this.cache.clear();
     this.currentSize = 0;
+  }
+
+  /**
+   * Destroy the cache and stop the cleanup timer
+   */
+  destroy(): void {
+    if (this.cleanupTimer) {
+      clearInterval(this.cleanupTimer);
+      this.cleanupTimer = null;
+    }
+    this.clear();
   }
   
   /**

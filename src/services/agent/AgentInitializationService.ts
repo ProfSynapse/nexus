@@ -30,6 +30,8 @@ import { MemoryService } from '../../agents/memoryManager/services/MemoryService
 import { WorkspaceService } from '../WorkspaceService';
 import { VaultOperations } from '../../core/VaultOperations';
 import { UsageTracker } from '../UsageTracker';
+import type { IStorageAdapter } from '../../database/interfaces/IStorageAdapter';
+import type { MigratableDatabase } from '../../database/schema/SchemaMigrator';
 
 /**
  * Type guard to check if plugin has Settings
@@ -147,20 +149,18 @@ export class AgentInitializationService {
     }
 
     // Get database for SQLite-based prompt storage (non-blocking - uses data.json fallback if not ready)
-    let db = null;
+    let db: MigratableDatabase | null = null;
     if (this.serviceManager) {
       try {
         // Use getServiceIfReady to avoid blocking on SQLite WASM loading during startup
-        const storageAdapter = this.serviceManager.getServiceIfReady('hybridStorageAdapter');
+        const storageAdapter = this.serviceManager.getServiceIfReady<IStorageAdapter>('hybridStorageAdapter');
         // Only use SQLite if adapter exists AND is fully ready (WASM loaded)
-        if (storageAdapter && typeof storageAdapter === 'object' && storageAdapter !== null) {
-          const adapterAny = storageAdapter as any;
-          // Check isReady() to ensure SQLite WASM is loaded before accessing cache
-          if (typeof adapterAny.isReady === 'function' && adapterAny.isReady() && 'cache' in adapterAny) {
-            const cache = adapterAny.cache;
-            if (cache && typeof cache.exec === 'function' && typeof cache.run === 'function') {
-              db = cache;
-            }
+        if (storageAdapter && storageAdapter.isReady() && 'cache' in storageAdapter) {
+          const cache = (storageAdapter as unknown as { cache: unknown }).cache;
+          if (cache && typeof cache === 'object'
+              && 'exec' in cache && typeof (cache as Record<string, unknown>).exec === 'function'
+              && 'run' in cache && typeof (cache as Record<string, unknown>).run === 'function') {
+            db = cache as MigratableDatabase;
           }
         }
       } catch (error) {
@@ -342,10 +342,9 @@ export class AgentInitializationService {
    */
   private isSQLiteReady(): boolean {
     if (!this.serviceManager) return false;
-    const storageAdapter = this.serviceManager.getServiceIfReady('hybridStorageAdapter');
-    if (storageAdapter && typeof storageAdapter === 'object' && storageAdapter !== null) {
-      const adapterAny = storageAdapter as any;
-      return typeof adapterAny.isReady === 'function' && adapterAny.isReady();
+    const storageAdapter = this.serviceManager.getServiceIfReady<IStorageAdapter>('hybridStorageAdapter');
+    if (storageAdapter) {
+      return storageAdapter.isReady();
     }
     return false;
   }

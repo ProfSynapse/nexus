@@ -769,7 +769,13 @@ export class ChatView extends ItemView {
     }
   }
 
-  private handleConversationUpdated(conversation: ConversationData): void {
+  private handleConversationUpdated(conversation: ConversationData | null): void {
+    if (!conversation) {
+      // Null signals a forced UI refresh (e.g., subagent completion)
+      this.updateChatTitle();
+      this.updateContextProgress();
+      return;
+    }
     this.conversationManager.updateCurrentConversation(conversation);
     this.messageDisplay.setConversation(conversation);
     this.updateChatTitle();
