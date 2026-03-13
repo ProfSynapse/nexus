@@ -199,9 +199,11 @@ export class Scope {
 // Setting mock
 export class Setting {
   settingEl: HTMLElement;
+  controlEl: HTMLElement;
 
   constructor(containerEl: HTMLElement) {
     this.settingEl = createMockElement('div');
+    this.controlEl = createMockElement('div');
   }
 
   setClass(cls: string): this {
@@ -213,6 +215,15 @@ export class Setting {
   }
 
   setDesc(desc: string): this {
+    return this;
+  }
+
+  setTooltip(tooltip: string): this {
+    return this;
+  }
+
+  addText(callback: (text: TextComponent) => void): this {
+    callback(new TextComponent(this.settingEl));
     return this;
   }
 
@@ -228,6 +239,16 @@ export class Setting {
 
   addToggle(callback: (toggle: ToggleComponent) => void): this {
     callback(new ToggleComponent(this.settingEl));
+    return this;
+  }
+
+  addButton(callback: (button: ButtonComponent) => void): this {
+    callback(new ButtonComponent(this.settingEl));
+    return this;
+  }
+
+  addSlider(callback: (slider: SliderComponent) => any): this {
+    callback(new SliderComponent(this.settingEl));
     return this;
   }
 }
@@ -344,6 +365,37 @@ export class ToggleComponent {
   }
 }
 
+// SliderComponent mock
+export class SliderComponent {
+  sliderEl: HTMLElement;
+  private value = 0;
+
+  constructor(containerEl: HTMLElement) {
+    this.sliderEl = createMockElement('input');
+  }
+
+  setLimits(min: number, max: number, step: number): this {
+    return this;
+  }
+
+  setValue(value: number): this {
+    this.value = value;
+    return this;
+  }
+
+  getValue(): number {
+    return this.value;
+  }
+
+  setDynamicTooltip(): this {
+    return this;
+  }
+
+  onChange(callback: (value: number) => void): this {
+    return this;
+  }
+}
+
 // ButtonComponent mock
 export class ButtonComponent {
   buttonEl: HTMLButtonElement;
@@ -361,6 +413,10 @@ export class ButtonComponent {
     return this;
   }
 
+  setTooltip(tooltip: string): this {
+    return this;
+  }
+
   setClass(cls: string): this {
     return this;
   }
@@ -370,6 +426,10 @@ export class ButtonComponent {
   }
 
   setWarning(): this {
+    return this;
+  }
+
+  setDisabled(disabled: boolean): this {
     return this;
   }
 
