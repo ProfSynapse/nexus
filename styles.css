@@ -5155,16 +5155,21 @@ a:hover {
     font-size: var(--font-ui-small);
 }
 
-.nexus-breadcrumb-link {
+.nexus-breadcrumb .nexus-breadcrumb-link {
+    background: none;
     border: none;
-    background: transparent;
-    color: var(--text-accent);
+    box-shadow: none;
     padding: 0;
-    cursor: pointer;
+    margin: 0;
+    border-radius: 0;
+    min-height: unset;
+    appearance: none;
     font: inherit;
+    color: var(--text-accent);
+    cursor: pointer;
 }
 
-.nexus-breadcrumb-link:hover {
+.nexus-breadcrumb .nexus-breadcrumb-link:hover {
     color: var(--interactive-accent);
     text-decoration: underline;
 }
