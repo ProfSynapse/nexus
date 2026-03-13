@@ -185,9 +185,9 @@ export class CustomPromptStorageService {
         // Try SQLite first if available
         if (this.db && this.migrated) {
             try {
-                const adapter = this.db as any;
-                const result = adapter.query
-                    ? adapter.query('SELECT * FROM custom_prompts WHERE id = ? OR name = ? LIMIT 1', [identifier, identifier])
+                const dbWithQuery = this.db as MigratableDatabase & { query?: (sql: string, params?: unknown[]) => { values: unknown[][] }[] };
+                const result = dbWithQuery.query
+                    ? dbWithQuery.query('SELECT * FROM custom_prompts WHERE id = ? OR name = ? LIMIT 1', [identifier, identifier])
                     : [];
 
                 if (result.length > 0 && result[0].values.length > 0) {

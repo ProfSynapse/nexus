@@ -81,11 +81,23 @@ export class ConversationRepository
    * Get all conversations with pagination and filtering
    */
   async getConversations(options?: QueryOptions): Promise<PaginatedResult<ConversationMetadata>> {
+    const ALLOWED_SORT_COLUMNS = ['id', 'title', 'created', 'updated', 'vaultName', 'messageCount', 'workspaceId', 'sessionId'] as const;
+    const ALLOWED_SORT_ORDERS = ['asc', 'desc'] as const;
+
     const page = options?.page ?? 0;
     const pageSize = Math.min(options?.pageSize ?? 25, 200);
-    const sortBy = options?.sortBy ?? 'updated';
-    const sortOrder = options?.sortOrder ?? 'desc';
+    const requestedSort = options?.sortBy ?? 'updated';
+    const requestedOrder = options?.sortOrder ?? 'desc';
     const includeBranches = options?.includeBranches ?? false;
+
+    if (!ALLOWED_SORT_COLUMNS.includes(requestedSort as typeof ALLOWED_SORT_COLUMNS[number])) {
+      throw new Error(`Invalid sort column: ${requestedSort}`);
+    }
+    if (!ALLOWED_SORT_ORDERS.includes(requestedOrder as typeof ALLOWED_SORT_ORDERS[number])) {
+      throw new Error(`Invalid sort order: ${requestedOrder}`);
+    }
+    const sortBy = requestedSort;
+    const sortOrder = requestedOrder;
 
     // Build WHERE clause
     const filters: string[] = [];

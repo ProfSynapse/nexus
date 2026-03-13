@@ -326,13 +326,10 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
     if (!this.db) return;
 
     try {
+      // Temporarily suppress console.log during WASM export to avoid "Heap resize" noise
       const originalLog = console.log;
-      console.log = (...args: any[]) => {
-        const msg = args[0]?.toString() || '';
-        if (!/Heap resize call/.test(msg)) {
-          originalLog.apply(console, args);
-        }
-      };
+      // eslint-disable-next-line @typescript-eslint/no-empty-function
+      console.log = () => {};
 
       let data: any;
       try {

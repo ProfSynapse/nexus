@@ -686,10 +686,11 @@ export abstract class BaseAdapter {
 
     if (error instanceof ProviderHttpError) {
       const status = error.response.status;
-      const responseData = error.response.data as any;
+      const responseData = error.response.data as Record<string, unknown> | null;
+      const errorObj = responseData?.error as Record<string, unknown> | undefined;
       const message =
-        responseData?.error?.message ||
-        responseData?.message ||
+        (errorObj?.message as string) ||
+        (responseData?.message as string) ||
         error.response.text ||
         error.message;
 

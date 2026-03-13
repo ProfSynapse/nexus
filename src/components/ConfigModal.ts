@@ -1,5 +1,4 @@
 import { App, FileSystemAdapter, Modal, Platform, Setting, normalizePath } from 'obsidian';
-import * as path from 'path';
 import { getAllPluginIds, getPrimaryServerKey, BRAND_NAME } from '../constants/branding';
 
 /**
@@ -409,8 +408,9 @@ export class ConfigModal extends Modal {
                 const exists = await adapter.exists(relativeConnectorPath);
                 if (exists) {
                     // Prefer absolute path when available (desktop FileSystemAdapter)
-                    if (vaultRoot) {
-                        return path.join(vaultRoot, relativeConnectorPath);
+                    if (vaultRoot && Platform.isDesktop) {
+                        const nodePath = require('path') as typeof import('path');
+                        return nodePath.join(vaultRoot, relativeConnectorPath);
                     }
                     return relativeConnectorPath;
                 }
@@ -421,7 +421,11 @@ export class ConfigModal extends Modal {
 
         // Default to the primary folder even if we couldn't verify existence
         const fallbackRelative = normalizePath(`.obsidian/plugins/${pluginFolders[0]}/connector.js`);
-        return vaultRoot ? path.join(vaultRoot, fallbackRelative) : fallbackRelative;
+        if (vaultRoot && Platform.isDesktop) {
+            const nodePath = require('path') as typeof import('path');
+            return nodePath.join(vaultRoot, fallbackRelative);
+        }
+        return fallbackRelative;
     }
 
     /**
@@ -474,23 +478,35 @@ export class ConfigModal extends Modal {
      * @returns Windows config path
      */
     private getWindowsConfigPath(): string {
-        return path.join(process.env.APPDATA || '', 'Claude', 'claude_desktop_config.json');
+        if (Platform.isDesktop) {
+            const nodePath = require('path') as typeof import('path');
+            return nodePath.join(process.env.APPDATA || '', 'Claude', 'claude_desktop_config.json');
+        }
+        return '';
     }
-    
+
     /**
      * Get the Mac config path
      * @returns Mac config path
      */
     private getMacConfigPath(): string {
-        return path.join(process.env.HOME || '', 'Library', 'Application Support', 'Claude', 'claude_desktop_config.json');
+        if (Platform.isDesktop) {
+            const nodePath = require('path') as typeof import('path');
+            return nodePath.join(process.env.HOME || '', 'Library', 'Application Support', 'Claude', 'claude_desktop_config.json');
+        }
+        return '';
     }
-    
+
     /**
      * Get the Linux config path
      * @returns Linux config path
      */
     private getLinuxConfigPath(): string {
-        return path.join(process.env.HOME || '', '.config', 'Claude', 'claude_desktop_config.json');
+        if (Platform.isDesktop) {
+            const nodePath = require('path') as typeof import('path');
+            return nodePath.join(process.env.HOME || '', '.config', 'Claude', 'claude_desktop_config.json');
+        }
+        return '';
     }
     
     /**

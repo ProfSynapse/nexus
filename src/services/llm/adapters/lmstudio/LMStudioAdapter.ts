@@ -22,6 +22,33 @@ import {
 import { ToolCallContentParser } from './ToolCallContentParser';
 import { usesCustomToolFormat } from '../../../chat/builders/ContextBuilderFactory';
 
+/** OpenAI-compatible chat completion response shape from LM Studio */
+interface ChatCompletionResponse {
+  id?: string;
+  model?: string;
+  choices?: Array<{
+    message?: {
+      content?: string;
+      tool_calls?: unknown[];
+    };
+    finish_reason?: string;
+  }>;
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    total_tokens?: number;
+  };
+}
+
+/** OpenAI-compatible model list response shape from LM Studio */
+interface ModelListResponse {
+  data?: Array<{
+    id: string;
+    context_length?: number;
+    max_tokens?: number;
+  }>;
+}
+
 export class LMStudioAdapter extends BaseAdapter {
   readonly name = 'lmstudio';
   readonly baseUrl: string;
@@ -90,9 +117,9 @@ export class LMStudioAdapter extends BaseAdapter {
 
     this.assertOk(response, `LM Studio API error: ${response.status} - ${response.text || 'Unknown error'}`);
 
-    const data = response.json as any;
+    const data = response.json as ChatCompletionResponse | null;
 
-    if (!data.choices || !data.choices[0]) {
+    if (!data?.choices || !data.choices[0]) {
       throw new LLMProviderError(
         'Invalid response format from LM Studio API: missing choices',
         'generation',
@@ -315,14 +342,14 @@ export class LMStudioAdapter extends BaseAdapter {
         return [];
       }
 
-      const data = response.json as any;
+      const data = response.json as ModelListResponse | null;
 
-      if (!data.data || !Array.isArray(data.data)) {
+      if (!data?.data || !Array.isArray(data.data)) {
         // Unexpected response format - silently return empty
         return [];
       }
 
-      return data.data.map((model: { id: string; context_length?: number; max_tokens?: number }) => {
+      return data.data.map((model) => {
         const modelId = model.id;
         const isVisionModel = this.detectVisionSupport(modelId);
         const supportsTools = this.detectToolSupport(modelId);

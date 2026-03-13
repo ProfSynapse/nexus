@@ -251,9 +251,11 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
             // Access underlying SQLite database via adapter's cache property
             let db = null;
             if (storageAdapter && 'cache' in storageAdapter) {
-                const cache = (storageAdapter as any).cache;
-                // Check if cache has the necessary methods
-                if (cache && typeof cache.exec === 'function' && typeof cache.run === 'function') {
+                const cache = (storageAdapter as unknown as { cache: unknown }).cache;
+                // Check if cache has the necessary methods for MigratableDatabase
+                if (cache && typeof cache === 'object'
+                    && 'exec' in cache && typeof (cache as Record<string, unknown>).exec === 'function'
+                    && 'run' in cache && typeof (cache as Record<string, unknown>).run === 'function') {
                     db = cache;
                 }
             }

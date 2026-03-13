@@ -18,6 +18,7 @@ import { CustomPromptStorageService } from "../../agents/promptManager/services/
 import { AgentInitializationService } from './AgentInitializationService';
 import { AgentValidationService } from './AgentValidationService';
 import type { AppManager } from '../apps/AppManager';
+import type { IAgent } from '../../agents/interfaces/IAgent';
 
 export interface AgentRegistrationServiceInterface {
   /**
@@ -164,8 +165,8 @@ export class AgentRegistrationService implements AgentRegistrationServiceInterfa
 
       // Wire cross-agent dependencies (after Phase 2, both agents are available)
       try {
-        const memoryAgent = this.agentManager.getAgent('memoryManager') as any;
-        const taskAgent = this.agentManager.getAgent('taskManager') as any;
+        const memoryAgent = this.agentManager.getAgent('memoryManager') as IAgent & { setTaskService?: (s: unknown) => void };
+        const taskAgent = this.agentManager.getAgent('taskManager') as IAgent & { getTaskService?: () => unknown };
         if (memoryAgent?.setTaskService && taskAgent?.getTaskService) {
           memoryAgent.setTaskService(taskAgent.getTaskService());
           logger.systemLog('Wired TaskService into MemoryManager for loadWorkspace task summaries');

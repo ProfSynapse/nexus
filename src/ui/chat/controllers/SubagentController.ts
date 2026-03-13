@@ -19,6 +19,7 @@ import { AgentStatusMenu, createSubagentEventHandlers, getSubagentEventBus } fro
 import { AgentStatusModal } from '../components/AgentStatusModal';
 import type { ChatService } from '../../../services/chat/ChatService';
 import type { DirectToolExecutor } from '../../../services/chat/DirectToolExecutor';
+import type { Tool } from '../../../services/llm/adapters/types';
 import type { PromptManagerAgent } from '../../../agents/promptManager/promptManager';
 import type { HybridStorageAdapter } from '../../../database/adapters/HybridStorageAdapter';
 import type { LLMService } from '../../../services/llm/core/LLMService';
@@ -258,7 +259,7 @@ export class SubagentController {
           systemPrompt: options?.systemPrompt,
           sessionId: options?.sessionId,
           workspaceId: options?.workspaceId,
-          tools: tools as any[],
+          tools: tools as Tool[],
         };
 
         for await (const chunk of llmService.generateResponseStream(messages, streamOptions)) {
@@ -468,7 +469,6 @@ export class SubagentController {
       this.subagentExecutor,
       {
         onViewBranch: (branchId) => {
-          console.log('[SubagentController] View branch:', branchId);
           if (this.navigationCallback) {
             this.navigationCallback(branchId);
           } else {
@@ -476,7 +476,6 @@ export class SubagentController {
           }
         },
         onContinueAgent: (branchId) => {
-          console.log('[SubagentController] Continue agent:', branchId);
           if (this.continueCallback) {
             this.continueCallback(branchId);
           }

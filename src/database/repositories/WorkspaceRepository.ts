@@ -250,8 +250,20 @@ export class WorkspaceRepository
   // ============================================================================
 
   async getWorkspaces(options?: QueryOptions): Promise<PaginatedResult<WorkspaceMetadata>> {
-    const sortBy = options?.sortBy ?? 'lastAccessed';
-    const sortOrder = options?.sortOrder ?? 'desc';
+    const ALLOWED_SORT_COLUMNS = ['id', 'name', 'created', 'lastAccessed', 'isActive', 'rootFolder'] as const;
+    const ALLOWED_SORT_ORDERS = ['asc', 'desc'] as const;
+
+    const requestedSort = options?.sortBy ?? 'lastAccessed';
+    const requestedOrder = options?.sortOrder ?? 'desc';
+
+    if (!ALLOWED_SORT_COLUMNS.includes(requestedSort as typeof ALLOWED_SORT_COLUMNS[number])) {
+      throw new Error(`Invalid sort column: ${requestedSort}`);
+    }
+    if (!ALLOWED_SORT_ORDERS.includes(requestedOrder as typeof ALLOWED_SORT_ORDERS[number])) {
+      throw new Error(`Invalid sort order: ${requestedOrder}`);
+    }
+    const sortBy = requestedSort;
+    const sortOrder = requestedOrder;
 
     let whereClause = '';
     const params: any[] = [];

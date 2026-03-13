@@ -62,7 +62,11 @@ export abstract class ContentEditableSuggester<T> {
         setTimeout(() => this.closeSuggestions(), 100);
       }
     };
-    document.addEventListener('click', this.clickOutsideHandler);
+    if (this.component) {
+      this.component.registerDomEvent(document, 'click', this.clickOutsideHandler);
+    } else {
+      document.addEventListener('click', this.clickOutsideHandler);
+    }
   }
 
   /**

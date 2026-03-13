@@ -508,7 +508,6 @@ export class WebLLMAdapter extends BaseAdapter {
     // Lazy initialization: if adapter wasn't initialized during startup,
     // initialize now on first use. This prevents blocking vault startup.
     if (this.state.status === 'unavailable' && !this.state.vramInfo) {
-      console.log('[WebLLMAdapter] Lazy initialization on first use...');
       await this.initialize();
     }
 

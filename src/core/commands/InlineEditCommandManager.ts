@@ -72,11 +72,7 @@ export class InlineEditCommandManager {
    * Get the active MarkdownView if available
    */
   private getActiveMarkdownView(): MarkdownView | null {
-    const leaf = this.config.app.workspace.activeLeaf;
-    if (leaf?.view instanceof MarkdownView) {
-      return leaf.view;
-    }
-    return null;
+    return this.config.app.workspace.getActiveViewOfType(MarkdownView);
   }
 
   /**
