@@ -7,8 +7,18 @@ import { App, Notice } from 'obsidian';
 import { SettingsRouter } from '../SettingsRouter';
 import { Settings } from '../../settings';
 import { Card, CardConfig } from '../../components/Card';
+import { CardItem } from '../../components/CardManager';
+import { SearchableCardManager } from '../../components/SearchableCardManager';
 import { AppConfigModal, AppSettingsSection } from '../../components/AppConfigModal';
 import { AppManager } from '../../services/apps/AppManager';
+
+/**
+ * CardItem-compatible representation of an app for SearchableCardManager
+ */
+interface AppCardItem extends CardItem {
+  appId: string;
+  installed: boolean;
+}
 
 export interface AppsTabServices {
   app: App;
@@ -57,16 +67,48 @@ export class AppsTab {
     const installed = apps.filter(a => a.installed);
     const available = apps.filter(a => !a.installed);
 
-    // Installed Apps section
-    if (installed.length > 0) {
+    // Build card items for each section
+    const installedItems: AppCardItem[] = installed.map(a => ({
+      id: a.id,
+      name: a.manifest.name,
+      description: a.configured ? 'Configured' : 'Setup required',
+      isEnabled: a.enabled,
+      appId: a.id,
+      installed: true
+    }));
+
+    // Render Installed Apps with toggle + edit
+    if (installedItems.length > 0) {
       this.container.createDiv('nexus-provider-group-title').setText('INSTALLED APPS');
-      const grid = this.container.createDiv('card-manager-grid');
-      for (const app of installed) {
-        this.renderInstalledCard(grid, app);
-      }
+      new SearchableCardManager<AppCardItem>({
+        containerEl: this.container,
+        cardManagerConfig: {
+          title: 'Installed Apps',
+          addButtonText: '',
+          emptyStateText: 'No installed apps.',
+          showAddButton: false,
+          showToggle: true,
+          onAdd: () => {},
+          onToggle: async (item, enabled) => {
+            this.services.appManager!.setAppEnabled(item.appId, enabled);
+            await this.saveSettings();
+            this.render();
+          },
+          onEdit: (item) => {
+            this.openAppModal(item.appId);
+          }
+        },
+        items: installedItems,
+        search: {
+          placeholder: 'Search installed apps...',
+          filterFn: (item, query) =>
+            item.name.toLowerCase().includes(query) ||
+            (item.description?.toLowerCase().includes(query) ?? false)
+        }
+      });
     }
 
-    // Available Apps section
+    // Render Available Apps with install action (direct Card — needs additionalActions)
     if (available.length > 0) {
       this.container.createDiv('nexus-provider-group-title').setText('AVAILABLE APPS');
       const grid = this.container.createDiv('card-manager-grid');
@@ -76,28 +118,9 @@ export class AppsTab {
     }
   }
 
-  private renderInstalledCard(
-    grid: HTMLElement,
-    app: { id: string; manifest: import('../../types/apps/AppTypes').AppManifest; installed: boolean; enabled: boolean; configured: boolean }
-  ): void {
-    const description = app.configured ? 'Configured' : 'Setup required';
-    const cardConfig: CardConfig = {
-      title: app.manifest.name,
-      description,
-      isEnabled: app.enabled,
-      showToggle: true,
-      onToggle: async (enabled: boolean) => {
-        this.services.appManager!.setAppEnabled(app.id, enabled);
-        await this.saveSettings();
-        this.render();
-      },
-      onEdit: () => {
-        this.openAppModal(app.id);
-      }
-    };
-    new Card(grid, cardConfig);
-  }
-
+  /**
+   * Render an available (not installed) app card with install action
+   */
   private renderAvailableCard(
     grid: HTMLElement,
     app: { id: string; manifest: import('../../types/apps/AppTypes').AppManifest }

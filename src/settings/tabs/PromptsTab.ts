@@ -10,10 +10,11 @@
 
 import { Notice, TextComponent, TextAreaComponent, ButtonComponent } from 'obsidian';
 import { SettingsRouter } from '../SettingsRouter';
-import { BreadcrumbNav } from '../components/BreadcrumbNav';
+import { BackButton } from '../components/BackButton';
 import { CustomPrompt } from '../../types/mcp/CustomPromptTypes';
 import { CustomPromptStorageService } from '../../agents/promptManager/services/CustomPromptStorageService';
-import { CardManager, CardItem } from '../../components/CardManager';
+import { CardItem } from '../../components/CardManager';
+import { SearchableCardManager } from '../../components/SearchableCardManager';
 
 export interface PromptsTabServices {
     customPromptStorage?: CustomPromptStorageService;
@@ -33,8 +34,8 @@ export class PromptsTab {
     // Auto-save debounce
     private saveTimeout?: ReturnType<typeof setTimeout>;
 
-    // Card manager for list view
-    private cardManager?: CardManager<CardItem>;
+    // Searchable card manager for list view
+    private searchableCardManager?: SearchableCardManager<CardItem>;
 
     constructor(
         container: HTMLElement,
@@ -83,7 +84,7 @@ export class PromptsTab {
     }
 
     /**
-     * Render list view using CardManager
+     * Render list view using SearchableCardManager
      */
     private renderList(): void {
         this.container.empty();
@@ -112,45 +113,53 @@ export class PromptsTab {
             isEnabled: prompt.isEnabled
         }));
 
-        // Create card manager
-        this.cardManager = new CardManager({
+        // Create searchable card manager
+        this.searchableCardManager = new SearchableCardManager<CardItem>({
             containerEl: this.container,
-            title: 'Custom Prompts',
-            addButtonText: '+ New Prompt',
-            emptyStateText: 'No custom prompts yet. Create one to get started.',
-            items: cardItems,
-            showToggle: true,
-            onAdd: () => this.createNewPrompt(),
-            onToggle: async (item, enabled) => {
-                const prompt = this.prompts.find(p => p.id === item.id);
-                if (prompt && this.services.customPromptStorage) {
-                    await this.services.customPromptStorage.updatePrompt(item.id, { isEnabled: enabled });
-                    prompt.isEnabled = enabled;
-                }
-            },
-            onEdit: (item) => {
-                this.router.showDetail(item.id);
-            },
-            onDelete: async (item) => {
-                const confirmed = confirm(`Delete prompt "${item.name}"? This cannot be undone.`);
-                if (!confirmed) return;
-
-                try {
-                    if (this.services.customPromptStorage) {
-                        await this.services.customPromptStorage.deletePrompt(item.id);
-                        this.prompts = this.prompts.filter(p => p.id !== item.id);
-                        this.cardManager?.updateItems(this.prompts.map(p => ({
-                            id: p.id,
-                            name: p.name,
-                            description: p.description || 'No description',
-                            isEnabled: p.isEnabled
-                        })));
-                        new Notice('Prompt deleted');
+            cardManagerConfig: {
+                title: 'Custom Prompts',
+                addButtonText: '+ New Prompt',
+                emptyStateText: 'No custom prompts yet. Create one to get started.',
+                showToggle: true,
+                onAdd: () => this.createNewPrompt(),
+                onToggle: async (item, enabled) => {
+                    const prompt = this.prompts.find(p => p.id === item.id);
+                    if (prompt && this.services.customPromptStorage) {
+                        await this.services.customPromptStorage.updatePrompt(item.id, { isEnabled: enabled });
+                        prompt.isEnabled = enabled;
                     }
-                } catch (error) {
-                    console.error('[PromptsTab] Failed to delete prompt:', error);
-                    new Notice('Failed to delete prompt');
+                },
+                onEdit: (item) => {
+                    this.router.showDetail(item.id);
+                },
+                onDelete: async (item) => {
+                    const confirmed = confirm(`Delete prompt "${item.name}"? This cannot be undone.`);
+                    if (!confirmed) return;
+
+                    try {
+                        if (this.services.customPromptStorage) {
+                            await this.services.customPromptStorage.deletePrompt(item.id);
+                            this.prompts = this.prompts.filter(p => p.id !== item.id);
+                            this.searchableCardManager?.updateItems(this.prompts.map(p => ({
+                                id: p.id,
+                                name: p.name,
+                                description: p.description || 'No description',
+                                isEnabled: p.isEnabled
+                            })));
+                            new Notice('Prompt deleted');
+                        }
+                    } catch (error) {
+                        console.error('[PromptsTab] Failed to delete prompt:', error);
+                        new Notice('Failed to delete prompt');
+                    }
                 }
+            },
+            items: cardItems,
+            search: {
+                placeholder: 'Search prompts...',
+                filterFn: (item, query) =>
+                    item.name.toLowerCase().includes(query) ||
+                    (item.description?.toLowerCase().includes(query) ?? false)
             }
         });
     }
@@ -167,16 +176,15 @@ export class PromptsTab {
             return;
         }
 
-        new BreadcrumbNav(this.container, [
-            {
-                label: 'Prompts',
-                onClick: () => {
-                    void this.saveCurrentPrompt();
-                    this.router.back();
-                }
-            },
-            { label: prompt.name || 'New Prompt' }
-        ]);
+        new BackButton(
+            this.container,
+            'Back to prompts',
+            () => {
+                void this.saveCurrentPrompt();
+                this.router.back();
+            }
+        );
+        this.container.createEl('h3', { text: prompt.name || 'New Prompt' });
 
         // Form container with modern stacked layout
         const form = this.container.createDiv('nexus-modern-form');

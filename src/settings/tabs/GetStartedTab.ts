@@ -10,7 +10,7 @@
  */
 
 import { App, Setting, Notice, Platform, Component } from 'obsidian';
-import { BreadcrumbNav } from '../components/BreadcrumbNav';
+import { BackButton } from '../components/BackButton';
 import { BRAND_NAME, getPrimaryServerKey } from '../../constants/branding';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -134,13 +134,15 @@ export class GetStartedTab {
      * Render Internal Chat setup view
      */
     private renderInternalChatSetup(): void {
-        new BreadcrumbNav(this.container, [
-            { label: 'Get Started', onClick: () => {
+        new BackButton(
+            this.container,
+            'Back to get started',
+            () => {
                 this.currentView = 'paths';
                 this.render();
-            } },
-            { label: 'Internal Chat' }
-        ], this.services.component);
+            },
+            this.services.component
+        );
 
         this.container.createEl('h3', { text: 'Internal Chat Setup' });
         this.container.createEl('p', {
@@ -190,13 +192,15 @@ export class GetStartedTab {
      * Render MCP Integration setup view
      */
     private renderMCPSetup(): void {
-        new BreadcrumbNav(this.container, [
-            { label: 'Get Started', onClick: () => {
+        new BackButton(
+            this.container,
+            'Back to get started',
+            () => {
                 this.currentView = 'paths';
                 this.render();
-            } },
-            { label: 'MCP Setup' }
-        ], this.services.component);
+            },
+            this.services.component
+        );
 
         this.container.createEl('h3', { text: 'Claude Desktop Setup' });
 

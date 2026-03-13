@@ -16,7 +16,8 @@ import { LLMProviderSettings, LLMProviderConfig } from '../../types/llm/Provider
 import { LLMProviderModal, LLMProviderModalConfig } from '../../components/LLMProviderModal';
 import { LLMProviderManager } from '../../services/llm/providers/ProviderManager';
 import { Settings } from '../../settings';
-import { Card, CardConfig } from '../../components/Card';
+import { CardItem } from '../../components/CardManager';
+import { SearchableCardManager, CardGroup } from '../../components/SearchableCardManager';
 import { LLMSettingsNotifier } from '../../services/llm/LLMSettingsNotifier';
 import { isDesktop, supportsLocalLLM, MOBILE_COMPATIBLE_PROVIDERS, isProviderComingSoon } from '../../utils/platform';
 import type { OAuthModalConfig, SecondaryOAuthProviderConfig } from '../../components/llm-provider/types';
@@ -31,6 +32,15 @@ interface ProviderDisplayConfig {
     signupUrl: string;
     category: 'local' | 'cloud';
     oauthConfig?: OAuthModalConfig;
+}
+
+/**
+ * CardItem-compatible representation of a provider for SearchableCardManager
+ */
+interface ProviderCardItem extends CardItem {
+    providerId: string;
+    category: 'local' | 'cloud';
+    comingSoon: boolean;
 }
 
 export interface ProvidersTabServices {
@@ -256,92 +266,141 @@ export class ProvidersTab {
         this.container.empty();
 
         // Provider groups only - defaults moved to DefaultsTab
-        this.renderProviderGroups();
+        this.renderProviders();
     }
 
     /**
-     * Render provider groups (Local and Cloud)
+     * Build ProviderCardItem from provider ID and current settings
      */
-    private renderProviderGroups(): void {
+    private buildProviderCardItem(providerId: string, settings: LLMProviderSettings): ProviderCardItem | null {
+        const displayConfig = this.providerConfigs[providerId];
+        if (!displayConfig) return null;
+
+        const providerConfig = settings.providers[providerId] || {
+            apiKey: '',
+            enabled: false
+        };
+
+        const comingSoon = isProviderComingSoon(providerId);
+        const isConfigured = comingSoon ? false : this.isProviderConfigured(providerId, providerConfig);
+
+        return {
+            id: providerId,
+            name: displayConfig.name,
+            description: comingSoon ? 'Coming Soon' : (isConfigured ? 'Configured' : 'Not configured'),
+            isEnabled: comingSoon ? false : providerConfig.enabled,
+            providerId,
+            category: displayConfig.category,
+            comingSoon
+        };
+    }
+
+    /**
+     * Render providers using SearchableCardManager with groups
+     */
+    private renderProviders(): void {
         const settings = this.getSettings();
 
-        // Mobile: Only fetch-based providers work (no Node.js/Electron SDKs)
+        // Mobile: Only fetch-based providers
         if (!isDesktop()) {
             this.container.createEl('p', {
                 cls: 'setting-item-description',
                 text: 'On mobile, only OpenRouter, Requesty, and Perplexity are supported. Configure local providers and SDK-based providers on desktop.'
             });
-            this.container.createDiv('nexus-provider-group-title').setText('MOBILE PROVIDERS');
-            this.renderProviderList([...MOBILE_COMPATIBLE_PROVIDERS], settings);
-            return;
-        }
 
-        // Desktop: Local providers (require localhost servers or WebGPU)
-        if (supportsLocalLLM()) {
-            this.container.createDiv('nexus-provider-group-title').setText('LOCAL PROVIDERS');
-            this.renderProviderList(['webllm', 'ollama', 'lmstudio'], settings);
-        }
+            const items = [...MOBILE_COMPATIBLE_PROVIDERS]
+                .map(id => this.buildProviderCardItem(id, settings))
+                .filter((item): item is ProviderCardItem => item !== null);
 
-        // Desktop: Cloud providers (SDK + fetch-based)
-        this.container.createDiv('nexus-provider-group-title').setText('CLOUD PROVIDERS');
-        this.renderProviderList(
-            ['openai', 'anthropic', 'google', 'mistral', 'groq', 'openrouter', 'requesty', 'perplexity'],
-            settings
-        );
-    }
-
-    /**
-     * Render a list of providers as cards
-     */
-    private renderProviderList(providerIds: string[], settings: LLMProviderSettings): void {
-        const grid = this.container.createDiv('card-manager-grid');
-
-        providerIds.forEach(providerId => {
-            const displayConfig = this.providerConfigs[providerId];
-            if (!displayConfig) return;
-
-            const providerConfig = settings.providers[providerId] || {
-                apiKey: '',
-                enabled: false
-            };
-
-            // Check if this provider is coming soon
-            const comingSoon = isProviderComingSoon(providerId);
-
-            if (comingSoon) {
-                // Coming Soon card - no toggle, no edit
-                const cardConfig: CardConfig = {
-                    title: displayConfig.name,
-                    description: 'Coming Soon',
-                    isEnabled: false,
-                    showToggle: false
-                    // No onEdit - prevents edit button from appearing
-                };
-                const card = new Card(grid, cardConfig);
-                card.getElement().addClass('provider-coming-soon');
-            } else {
-                const isConfigured = this.isProviderConfigured(providerId, providerConfig);
-
-                // Create card for this provider
-                const cardConfig: CardConfig = {
-                    title: displayConfig.name,
-                    description: isConfigured ? 'Configured' : 'Not configured',
-                    isEnabled: providerConfig.enabled,
+            new SearchableCardManager<ProviderCardItem>({
+                containerEl: this.container,
+                cardManagerConfig: {
+                    title: 'Mobile Providers',
+                    addButtonText: '',
+                    emptyStateText: 'No providers available.',
+                    showAddButton: false,
                     showToggle: true,
-                    onToggle: async (enabled: boolean) => {
-                        settings.providers[providerId] = {
-                            ...providerConfig,
+                    onAdd: () => {},
+                    onToggle: async (item, enabled) => {
+                        if (item.comingSoon) return;
+                        settings.providers[item.providerId] = {
+                            ...(settings.providers[item.providerId] || { apiKey: '' }),
                             enabled
                         };
                         await this.saveSettings();
-                        this.render(); // Re-render to update defaults dropdown
+                        this.render();
                     },
-                    onEdit: () => {
-                        this.openProviderModal(providerId, displayConfig, providerConfig);
+                    onEdit: (item) => {
+                        if (item.comingSoon) return;
+                        const displayConfig = this.providerConfigs[item.providerId];
+                        const providerConfig = settings.providers[item.providerId] || { apiKey: '', enabled: false };
+                        if (displayConfig) {
+                            this.openProviderModal(item.providerId, displayConfig, providerConfig);
+                        }
                     }
-                };
+                },
+                items,
+                search: {
+                    placeholder: 'Search providers...',
+                    filterFn: (item, query) =>
+                        item.name.toLowerCase().includes(query) ||
+                        (item.description?.toLowerCase().includes(query) ?? false)
+                }
+            });
+            return;
+        }
 
-                new Card(grid, cardConfig);
+        // Desktop: Build groups
+        const groups: CardGroup<ProviderCardItem>[] = [];
+
+        if (supportsLocalLLM()) {
+            const localItems = ['webllm', 'ollama', 'lmstudio']
+                .map(id => this.buildProviderCardItem(id, settings))
+                .filter((item): item is ProviderCardItem => item !== null);
+
+            groups.push({ title: 'LOCAL PROVIDERS', items: localItems });
+        }
+
+        const cloudIds = ['openai', 'anthropic', 'google', 'mistral', 'groq', 'openrouter', 'requesty', 'perplexity'];
+        const cloudItems = cloudIds
+            .map(id => this.buildProviderCardItem(id, settings))
+            .filter((item): item is ProviderCardItem => item !== null);
+
+        groups.push({ title: 'CLOUD PROVIDERS', items: cloudItems });
+
+        new SearchableCardManager<ProviderCardItem>({
+            containerEl: this.container,
+            cardManagerConfig: {
+                title: 'Providers',
+                addButtonText: '',
+                emptyStateText: 'No providers available.',
+                showAddButton: false,
+                showToggle: true,
+                onAdd: () => {},
+                onToggle: async (item, enabled) => {
+                    if (item.comingSoon) return;
+                    settings.providers[item.providerId] = {
+                        ...(settings.providers[item.providerId] || { apiKey: '' }),
+                        enabled
+                    };
+                    await this.saveSettings();
+                    this.render();
+                },
+                onEdit: (item) => {
+                    if (item.comingSoon) return;
+                    const displayConfig = this.providerConfigs[item.providerId];
+                    const providerConfig = settings.providers[item.providerId] || { apiKey: '', enabled: false };
+                    if (displayConfig) {
+                        this.openProviderModal(item.providerId, displayConfig, providerConfig);
+                    }
+                }
+            },
+            groups,
+            search: {
+                placeholder: 'Search providers...',
+                filterFn: (item, query) =>
+                    item.name.toLowerCase().includes(query) ||
+                    (item.description?.toLowerCase().includes(query) ?? false)
             }
         });
     }
