@@ -257,10 +257,10 @@ export class WorkspaceRepository
     const requestedOrder = options?.sortOrder ?? 'desc';
 
     if (!ALLOWED_SORT_COLUMNS.includes(requestedSort as typeof ALLOWED_SORT_COLUMNS[number])) {
-      throw new Error(`Invalid sort column: ${requestedSort}. Allowed: ${ALLOWED_SORT_COLUMNS.join(', ')}`);
+      throw new Error(`Invalid sort column: ${requestedSort}`);
     }
     if (!ALLOWED_SORT_ORDERS.includes(requestedOrder as typeof ALLOWED_SORT_ORDERS[number])) {
-      throw new Error(`Invalid sort order: ${requestedOrder}. Allowed: ${ALLOWED_SORT_ORDERS.join(', ')}`);
+      throw new Error(`Invalid sort order: ${requestedOrder}`);
     }
     const sortBy = requestedSort;
     const sortOrder = requestedOrder;

@@ -94,7 +94,7 @@ export class ConversationRepository
       throw new Error(`Invalid sort column: ${requestedSort}`);
     }
     if (!ALLOWED_SORT_ORDERS.includes(requestedOrder as typeof ALLOWED_SORT_ORDERS[number])) {
-      throw new Error(`Invalid sort order: ${requestedOrder}. Allowed: ${ALLOWED_SORT_ORDERS.join(', ')}`);
+      throw new Error(`Invalid sort order: ${requestedOrder}`);
     }
     const sortBy = requestedSort;
     const sortOrder = requestedOrder;
