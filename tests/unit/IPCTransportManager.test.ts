@@ -372,6 +372,177 @@ describe('IPCTransportManager', () => {
       // No ipcServer set
       await expect(manager.stopTransport()).resolves.toBeUndefined();
     });
+
+    it('should close currentTransport on stop (PR #48)', async () => {
+      const manager = new IPCTransportManager(
+        mockConfig as unknown as ServerConfiguration,
+        mockStdioManager as unknown as StdioTransportManager
+        // no serverFactory — single-client mode
+      );
+
+      (manager as any).ipcServer = { close: jest.fn() };
+      (manager as any).isRunning = true;
+
+      // Simulate a connected single-client transport
+      const socket = createMockSocket();
+      (manager as any).handleSocketConnection(socket);
+      await flushPromises();
+
+      // currentTransport should be set
+      expect((manager as any).currentTransport).toBeDefined();
+
+      await manager.stopTransport();
+
+      // currentTransport should be cleaned up
+      expect((manager as any).currentTransport).toBeNull();
+    });
+  });
+
+  describe('single-client proactive cleanup (PR #48)', () => {
+    it('should track currentTransport after successful connection', async () => {
+      const manager = new IPCTransportManager(
+        mockConfig as unknown as ServerConfiguration,
+        mockStdioManager as unknown as StdioTransportManager
+      );
+
+      const socket = createMockSocket();
+      (manager as any).handleSocketConnection(socket);
+      await flushPromises();
+
+      expect((manager as any).currentTransport).toBeDefined();
+      expect((manager as any).currentTransport).not.toBeNull();
+    });
+
+    it('should close previous transport before connecting a new one', async () => {
+      const firstTransport = { close: jest.fn().mockResolvedValue(undefined) };
+      const secondTransport = { close: jest.fn().mockResolvedValue(undefined) };
+
+      let callCount = 0;
+      (mockStdioManager as any).createSocketTransport = jest.fn(() => {
+        callCount++;
+        return callCount === 1 ? firstTransport : secondTransport;
+      });
+
+      const manager = new IPCTransportManager(
+        mockConfig as unknown as ServerConfiguration,
+        mockStdioManager as unknown as StdioTransportManager
+      );
+
+      // First connection
+      const socket1 = createMockSocket();
+      (manager as any).handleSocketConnection(socket1);
+      await flushPromises();
+
+      expect((manager as any).currentTransport).toBe(firstTransport);
+
+      // Second connection (rapid reconnect)
+      const socket2 = createMockSocket();
+      (manager as any).handleSocketConnection(socket2);
+      await flushPromises();
+
+      // First transport should have been proactively closed
+      expect(firstTransport.close).toHaveBeenCalled();
+      // Current transport should now be the second one
+      expect((manager as any).currentTransport).toBe(secondTransport);
+    });
+
+    it('should nullify currentTransport on socket disconnect', async () => {
+      const manager = new IPCTransportManager(
+        mockConfig as unknown as ServerConfiguration,
+        mockStdioManager as unknown as StdioTransportManager
+      );
+
+      const socket = createMockSocket();
+      (manager as any).handleSocketConnection(socket);
+      await flushPromises();
+
+      expect((manager as any).currentTransport).not.toBeNull();
+
+      // Socket disconnects
+      socket.emit('close');
+      await flushPromises();
+
+      expect((manager as any).currentTransport).toBeNull();
+    });
+
+    it('should handle timeout on slow transport close during cleanup', async () => {
+      // Create a transport whose close() never resolves
+      const hangingTransport = {
+        close: jest.fn().mockReturnValue(new Promise(() => {})), // never resolves
+      };
+
+      const freshTransport = { close: jest.fn().mockResolvedValue(undefined) };
+
+      let callCount = 0;
+      (mockStdioManager as any).createSocketTransport = jest.fn(() => {
+        callCount++;
+        return callCount === 1 ? hangingTransport : freshTransport;
+      });
+
+      const manager = new IPCTransportManager(
+        mockConfig as unknown as ServerConfiguration,
+        mockStdioManager as unknown as StdioTransportManager
+      );
+
+      // First connection
+      const socket1 = createMockSocket();
+      (manager as any).handleSocketConnection(socket1);
+      await flushPromises();
+
+      // Second connection — should not hang forever due to 500ms timeout guard
+      const socket2 = createMockSocket();
+      const connectionPromise = (manager as any).handleSingleClientConnection(socket2);
+
+      // Advance timers past the 500ms timeout
+      jest.useFakeTimers();
+      jest.advanceTimersByTime(600);
+      jest.useRealTimers();
+
+      await flushPromises();
+
+      // Should have proceeded despite hanging close
+      expect(hangingTransport.close).toHaveBeenCalled();
+    });
+
+    it('should handle error during proactive transport close gracefully', async () => {
+      const failingTransport = {
+        close: jest.fn().mockRejectedValue(new Error('close failed')),
+      };
+      const freshTransport = { close: jest.fn().mockResolvedValue(undefined) };
+
+      let callCount = 0;
+      (mockStdioManager as any).createSocketTransport = jest.fn(() => {
+        callCount++;
+        return callCount === 1 ? failingTransport : freshTransport;
+      });
+
+      const manager = new IPCTransportManager(
+        mockConfig as unknown as ServerConfiguration,
+        mockStdioManager as unknown as StdioTransportManager
+      );
+
+      // First connection
+      const socket1 = createMockSocket();
+      (manager as any).handleSocketConnection(socket1);
+      await flushPromises();
+
+      // Second connection — proactive close of first should fail gracefully
+      const socket2 = createMockSocket();
+      (manager as any).handleSocketConnection(socket2);
+      await flushPromises();
+
+      // Should not throw; second connection should proceed
+      expect((manager as any).currentTransport).toBe(freshTransport);
+    });
+
+    it('should initialize currentTransport as null', () => {
+      const manager = new IPCTransportManager(
+        mockConfig as unknown as ServerConfiguration,
+        mockStdioManager as unknown as StdioTransportManager
+      );
+
+      expect((manager as any).currentTransport).toBeNull();
+    });
   });
 });
 
