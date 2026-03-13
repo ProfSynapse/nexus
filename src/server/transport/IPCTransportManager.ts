@@ -20,6 +20,8 @@ export class IPCTransportManager {
     private isRunning: boolean = false;
     /** Per-connection MCPSDKServer instances for multi-client support. */
     private activeConnections: Set<MCPSDKServer> = new Set();
+    /** Track current transport for proactive cleanup */
+    private currentTransport: StdioServerTransport | null = null;
 
     constructor(
         private configuration: ServerConfiguration,
@@ -45,7 +47,11 @@ export class IPCTransportManager {
         return new Promise((resolve, reject) => {
             try {
                 const server = createServer((socket) => {
-                    this.handleSocketConnection(socket);
+                    this.handleSocketConnection(socket).catch(error => {
+                        logger.systemError(error as Error, 'IPC Socket Handling');
+                        const netSocket = socket as Socket;
+                        if (!netSocket.destroyed) netSocket.destroy();
+                    });
                 });
 
                 this.setupServerErrorHandling(server, ipcPath, isWindows, reject);
@@ -67,12 +73,16 @@ export class IPCTransportManager {
      *
      * Falls back to the shared single-server path via StdioTransportManager
      * when no factory is available.
+     *
+     * Proactive cleanup: closes the previous transport BEFORE connecting the
+     * new one, preventing a race where the old transport's onclose fires after
+     * the new connect and nullifies Protocol._transport.
      */
-    private handleSocketConnection(socket: Socket): void {
+    private async handleSocketConnection(socket: NodeJS.ReadWriteStream): Promise<void> {
         if (this.serverFactory) {
-            this.handleMultiClientConnection(socket);
+            this.handleMultiClientConnection(socket as Socket);
         } else {
-            this.handleSingleClientConnection(socket);
+            await this.handleSingleClientConnection(socket);
         }
     }
 
@@ -115,18 +125,20 @@ export class IPCTransportManager {
     }
 
     /**
-     * Legacy single-server path via StdioTransportManager (kept as fallback).
+     * Single-server path via StdioTransportManager (kept as fallback).
+     * Wires the raw socket's lifecycle events to the MCP transport
+     * so that Protocol._transport is cleared when a client disconnects.
      */
-    private handleSingleClientConnection(socket: Socket): void {
+    private async handleSingleClientConnection(socket: NodeJS.ReadWriteStream): Promise<void> {
+        const netSocket = socket as Socket;
         try {
             const transport = this.stdioTransportManager.createSocketTransport(socket, socket);
-
-            const netSocket = socket;
             let closed = false;
             const onSocketGone = () => {
                 if (closed) return;
                 closed = true;
                 logger.systemLog('IPC socket disconnected — releasing transport');
+                this.currentTransport = null;
                 transport.close().catch((err: Error) => {
                     logger.systemError(err, 'IPC Transport Close on Disconnect');
                 });
@@ -134,17 +146,26 @@ export class IPCTransportManager {
             netSocket.on('close', onSocketGone);
             netSocket.on('end', onSocketGone);
 
-            this.stdioTransportManager.connectSocketTransport(transport)
-                .then(() => {
-                    logger.systemLog('IPC socket connected successfully');
-                })
-                .catch(error => {
-                    logger.systemError(error as Error, 'IPC Socket Connection');
-                    if (!netSocket.destroyed) netSocket.destroy();
-                });
+            // Proactive cleanup: close previous transport before connecting new one
+            if (this.currentTransport) {
+                logger.systemLog('Proactive cleanup: closing previous transport before new connection');
+                try {
+                    await Promise.race([
+                        this.currentTransport.close(),
+                        new Promise(resolve => setTimeout(resolve, 500))
+                    ]);
+                } catch (err) {
+                    logger.systemError(err as Error, 'Proactive Transport Cleanup');
+                }
+                this.currentTransport = null;
+            }
+
+            await this.stdioTransportManager.connectSocketTransport(transport);
+            this.currentTransport = transport;
+            logger.systemLog('IPC socket connected successfully');
         } catch (error) {
-            logger.systemError(error as Error, 'IPC Socket Handling');
-            if (!socket.destroyed) socket.destroy();
+            logger.systemError(error as Error, 'IPC Socket Connection');
+            if (!netSocket.destroyed) netSocket.destroy();
         }
     }
 
@@ -246,6 +267,16 @@ export class IPCTransportManager {
             );
             this.activeConnections.clear();
             await Promise.all(closePromises);
+
+            // Close active single-client transport before stopping server
+            if (this.currentTransport) {
+                try {
+                    await this.currentTransport.close();
+                } catch (err) {
+                    logger.systemError(err as Error, 'Transport Cleanup on Stop');
+                }
+                this.currentTransport = null;
+            }
 
             this.ipcServer.close();
             this.ipcServer = null;
