@@ -197,6 +197,15 @@ export class GetStartedTab {
 
         this.container.createEl('h3', { text: 'Claude Desktop Setup' });
 
+        // MCP setup requires Node.js modules (path, fs, child_process) — desktop only
+        if (!Platform.isDesktop) {
+            this.container.createEl('p', {
+                text: 'MCP integration requires a desktop environment.',
+                cls: 'setting-item-description'
+            });
+            return;
+        }
+
         // Check for Node.js availability
         const nodePath = this.resolveNodePath();
         if (!nodePath) {
