@@ -1,7 +1,7 @@
 import { CommonParameters, CommonResult } from '../../types';
 
 // ============================================================================
-// NEW SIMPLIFIED TOOLS (3 tools replacing 8) + setProperty
+// ContentManager tools (4 tools: read, write, update, setProperty)
 // ============================================================================
 
 /**

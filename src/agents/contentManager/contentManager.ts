@@ -12,7 +12,7 @@ import { MemoryService } from '../memoryManager/services/MemoryService';
 
 /**
  * Agent for content operations in the vault
- * Simplified from 8 tools to 3 tools following CRUA pattern
+ * Simplified from 8 tools to 4 tools following CRUA pattern + setProperty
  *
  * Tools:
  * - read: Read content from files with explicit line ranges
@@ -62,7 +62,7 @@ export class ContentManagerAgent extends BaseAgent {
       this.workspaceService = plugin.services.workspaceService;
     }
 
-    // Register simplified tools (3 tools replacing 8) - lazy loaded
+    // Register simplified tools (4 tools) - lazy loaded
     this.registerLazyTool({
       slug: 'read', name: 'Read',
       description: 'Read content from a file with line range',
