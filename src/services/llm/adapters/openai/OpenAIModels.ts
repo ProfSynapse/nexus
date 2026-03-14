@@ -1,6 +1,6 @@
 /**
  * OpenAI Model Specifications
- * Updated March 2026 - Added GPT-5.3 family
+ * Updated March 2026 - Added GPT-5.4 family
  *
  * Pricing Notes:
  * - GPT-5 family supports 90% caching discount (cached tokens: $0.125/M vs $1.25/M fresh)
@@ -13,7 +13,41 @@
 import { ModelSpec } from '../modelTypes';
 
 export const OPENAI_MODELS: ModelSpec[] = [
-  // GPT-5.3 family (latest models)
+  // GPT-5.4 family (latest models)
+  {
+    provider: 'openai',
+    name: 'GPT-5.4',
+    apiName: 'gpt-5.4',
+    contextWindow: 1050000,
+    maxTokens: 128000,
+    inputCostPerMillion: 2.50,
+    outputCostPerMillion: 15.00,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    provider: 'openai',
+    name: 'GPT-5.4 Pro',
+    apiName: 'gpt-5.4-pro',
+    contextWindow: 1050000,
+    maxTokens: 128000,
+    inputCostPerMillion: 30.00,
+    outputCostPerMillion: 180.00,
+    capabilities: {
+      supportsJSON: false,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+
+  // GPT-5.3 family
   {
     provider: 'openai',
     name: 'GPT-5.3 Chat',
@@ -151,4 +185,4 @@ export const OPENAI_MODELS: ModelSpec[] = [
   // These models use a different parameter structure and would need special handling
 ];
 
-export const OPENAI_DEFAULT_MODEL = 'gpt-5.1-2025-11-13';
+export const OPENAI_DEFAULT_MODEL = 'gpt-5.4';

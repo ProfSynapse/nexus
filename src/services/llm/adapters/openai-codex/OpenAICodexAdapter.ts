@@ -88,7 +88,7 @@ export class OpenAICodexAdapter extends BaseAdapter {
    */
   constructor(tokens: CodexOAuthTokens, onTokenRefresh?: TokenPersistCallback) {
     // Pass accessToken as apiKey for BaseAdapter compatibility; baseUrl is the Codex endpoint
-    super(tokens.accessToken, 'gpt-5.3-codex', CODEX_API_ENDPOINT, false);
+    super(tokens.accessToken, 'gpt-5.4', CODEX_API_ENDPOINT, false);
     this.tokens = { ...tokens };
     this.onTokenRefresh = onTokenRefresh;
     this.initializeCache();
@@ -502,13 +502,14 @@ export class OpenAICodexAdapter extends BaseAdapter {
       supportsJSON: true,
       supportsImages: true,
       supportsFunctions: true,
-      supportsThinking: false,
-      maxContextWindow: 400000,
+      supportsThinking: true,
+      maxContextWindow: 1050000,
       supportedFeatures: [
         'streaming',
         'json_mode',
         'image_input',
         'tool_calling',
+        'thinking_models',
         'subscription_based',
         'oauth_required'
       ]
