@@ -1,5 +1,5 @@
 # Claude Code Context Document
-Last Updated: 2026-03-08
+Last Updated: 2026-03-13
 
 ## Project Overview
 - **Name**: Claudesidian MCP
@@ -259,6 +259,19 @@ onCreate(file: TFile) {
 
 ### March 2026
 
+**Mar 13**: Settings UI Redesign ✅ (PR #42)
+- CSS spacing token system: 7 `--space-*` tokens (4px base), replacing ~15 hardcoded values
+- New `SearchableCardManager` component: composition wrapper with search/filter + group headers
+- All 4 card tabs migrated (Workspaces, Providers, Apps, Prompts) + GetStartedTab
+- BreadcrumbNav: chevron icon separators, CSS specificity fix for Obsidian button defaults
+- Card hover: `box-shadow` → `background-color` transition (theme-aware)
+- Cross-platform: removed hardcoded button sizes fighting `clickable-icon`
+- BackButton: `div` → `button` element (keyboard accessibility)
+- `CardManagerConfig.onAdd`/`addButtonText` now optional
+- WorkspacesTab decomposed: 1,611 → 855 lines + WorkspaceListRenderer + WorkspaceDetailRenderer
+- 132 new tests across 6 files (SettingsRouter, SearchableCardManager, Card, CardManager, BackButton, WorkspacesTab)
+- Plan: `docs/plans/settings-ui-redesign-plan.md`
+
 **Mar 8**: SDK→HTTP Migration ✅ (commit 103a9e73)
 - Removed provider SDKs (OpenAI, Anthropic, Google, Groq, Mistral) — direct HTTP via shared ProviderHttpClient
 - Real-time streaming via Node.js https + `processNodeStream()` (replaces buffered requestUrl approach)
@@ -467,20 +480,25 @@ agents/
 
 ### Active Branch
 `main` (current) — active worktrees:
-- `.worktrees/fix-subagent-bugs` (branch: `fix/subagent-bugs`) — pending manual test
+- `.worktrees/feat/elevenlabs-dynamic-models` (branch: `feat/elevenlabs-dynamic-models`)
+- `.worktrees/feat/large-file-refactoring` (branch: `feat/large-file-refactoring`)
 
 ### Open PRs
 | # | Title | Status |
 |---|-------|--------|
-| **#29** | OpenAI CORS bypass + validation probe fixes | **Merged** ✅ |
-| **#23** | Plugin store compliance audit | Awaiting manual test in Obsidian before merge |
+| **#43** | Plugin store compliance fixes | **Merged** ✅ |
 | **#24** | Socket lifecycle fix (DylanLacey) | Transport fix in main (v4.3.2); mux awaiting contributor socket path fix |
 
 ### Current Work
-**v5.1.0 release** — SDK→HTTP migration, TaskManager agent, ElevenLabs enhancements. Ready to tag and release.
+**Large File Refactoring + DRY Consolidation** — Branch `feat/large-file-refactoring`, PR pending. Plan: `docs/plans/large-file-refactoring-plan.md`. Waves 0-3 complete:
+- DualBackendExecutor helper (eliminates dual-backend if/else across 3 services)
+- ModelDropdownRenderer shared component (ChatSettingsRenderer 798→552 lines)
+- OAuthBannerComponent + OAuthFlowManager (GenericProviderModal 650→466 lines)
+- ProjectsManagerView extraction (WorkspacesTab 855→589 lines)
+- Service decomposition: type converters + normalizers extracted (WorkspaceService 1206→965, ConversationService 1108→813)
+- 30 characterization tests + 980/1016 passing
 
-**PR #23 — plugin store compliance** (`fix/plugin-store-audit-fixes`): ready to merge, needs manual test
-**PR (untracked) — subagent fixes** (`fix/subagent-bugs`): 29 fixes, 372 tests passing, awaiting manual test
+**File Picker Bug** — `FilePickerRenderer.getRootFolder()` fails when workspace rootFolder has leading `/` (e.g., `/blog-test` → Obsidian expects `blog-test`). Separate fix needed.
 
 ### Branch Architecture
 
@@ -496,6 +514,11 @@ A branch IS a conversation with parent metadata:
 - `src/ui/chat/services/ContextTracker.ts` - Token/cost tracking
 
 ### Known Issues
+
+**File Picker rootFolder Leading Slash** (Mar 13):
+- `FilePickerRenderer.getRootFolder()` passes workspace rootFolder (e.g., `/blog-test`) directly to `getAbstractFileByPath()`, which expects no leading slash (`blog-test`)
+- Shows "Folder not found" for valid folders. Also "Destination file already exists" error when adding context files.
+- Fix: `normalizePath(this.rootPath)` or strip leading slash before lookup
 
 **Workspace Delete Persistence** (Feb 2):
 - Deleted workspaces may reappear on page reload
@@ -520,16 +543,21 @@ A branch IS a conversation with parent metadata:
 
 ## Obsidian Plugin Guidelines Compliance
 
-**Status**: All major issues addressed (Dec 2025). `isDesktopOnly: false` is correct (chat works on mobile, MCP requires desktop).
+**Status**: Audit 2026-03-13 found regressions. `isDesktopOnly: false` is correct (chat works on mobile, MCP requires desktop).
+**Full audit report**: `docs/review/plugin-store-audit-2026-03-13.md`
 
-| Issue | Status |
-|-------|--------|
-| innerHTML security | XSS fix applied (MessageEditController); 11 safe patterns remain |
-| registerDomEvent | Complete (15 more migrated Feb 20) |
-| console.log cleanup | 398 → 1 (ImageGenerationService.ts:55 pending) |
-| Inline styles | 85 → 13 |
-| Type safety (`as any`) | 0 remaining (all 12 removed Feb 20) |
-| `@ts-ignore` | 1 remaining (documented) |
+| Issue | Status | Count |
+|-------|--------|-------|
+| innerHTML security | 1 unsafe (MessageEditController restore); 6 safe patterns | 1 to fix |
+| registerDomEvent | ~27 raw addEventListener (modals + view components) | ~27 to fix |
+| console.log cleanup | 398 → 37 (WebLLM: 25, others: 12) | 37 to fix |
+| Inline styles | 85 → 10 (all dynamic/justified — progress bars, positioning) | 0 blocking |
+| Type safety (`as any`) | Regressed from 0 → 16 | 16 to fix |
+| `@ts-ignore` | Regressed from 1 → 5 | 5 to fix |
+| SQL injection | sortBy column interpolation in 2 repositories | 2 to fix |
+| Timer leak | ContentCache.ts unmanaged setInterval | 1 to fix |
+| Node.js imports | 4 ungated imports (path, fs, child_process) — mobile crash risk | 4 to fix |
+| Accessibility | ~5 icon buttons missing aria-label | ~5 to fix |
 
 ## Development Notes
 
@@ -539,9 +567,10 @@ A branch IS a conversation with parent metadata:
 - `npm run test` - Run Jest test suite
 - `npm run lint` - Run ESLint
 - `npm run deploy` - Build and deploy via PowerShell script
+- **Release**: Use `/nexus-release` skill for version bumping and GitHub release creation
 
 ### Testing Approach
-- **Unit Tests**: Jest for core logic and services (796 tests total — 762 baseline + 34 new HTTP/streaming/UI)
+- **Unit Tests**: Jest for core logic and services (980 tests — 796 baseline + 132 settings UI + 4 WorkspacesTab + 30 characterization + 18 refactoring)
 - **Integration Tests**: Manual testing in Obsidian environment
 - **MCP Testing**: Via Claude Desktop connection
 
@@ -558,11 +587,22 @@ See `package.json`. Key: MCP SDK, express, winston, uuid. LLM provider SDKs remo
 
 ## Code Quality
 
-### SOLID Refactoring Progress (12/17 large files completed)
-Key reductions: HybridStorageAdapter (-72%), LLMService (-75%), ChatService (-60%), LLMProviderModal (-82%), MessageBubble (-45%), EmbeddingService (-81% facade), MemorySearchProcessor (-33%), IndexingQueue (-40%)
+### SOLID Refactoring Progress (17/22 large files completed or assessed)
+Key reductions: HybridStorageAdapter (-72%), LLMService (-75%), ChatService (-60%), LLMProviderModal (-82%), MessageBubble (-45%), EmbeddingService (-81% facade), MemorySearchProcessor (-33%), IndexingQueue (-40%), ChatSettingsRenderer (-31%), GenericProviderModal (-28%), WorkspacesTab (-31%), WorkspaceService (-20%), ConversationService (-27%)
 
 ### Remaining Large Files (600+ lines)
-ChatSettingsModal (702), ChatView (659), OpenRouterAdapter (640), ValidationService (625), BatchExecutePromptTool (618), GoogleAdapter (612)
+WorkspaceService (965), ConversationService (813), connector (731), ModelAgentManager (895), SQLiteCacheManager (856), ChatSettingsModal (702), ChatView (659, well-decomposed), OpenRouterAdapter (640), ValidationService (625), BatchExecutePromptTool (618), GoogleAdapter (612)
+
+### New Shared Modules (from DRY refactoring)
+- `src/services/helpers/DualBackendExecutor.ts` — shared dual-backend routing for 3 services
+- `src/services/helpers/findByNameOrId.ts` — generic ID/name lookup
+- `src/services/helpers/WorkspaceTypeConverters.ts` — workspace type conversion
+- `src/services/helpers/WorkspaceNormalizer.ts` — workspace normalization + search indexing
+- `src/services/helpers/ConversationTypeConverters.ts` — conversation type conversion
+- `src/components/shared/ModelDropdownRenderer.ts` — shared provider+model dropdown
+- `src/components/shared/OAuthBannerComponent.ts` — shared OAuth banner rendering
+- `src/services/oauth/OAuthFlowManager.ts` — shared OAuth connect/disconnect flow
+- `src/components/workspace/ProjectsManagerView.ts` — projects CRUD extracted from WorkspacesTab
 
 ## MCP Integration
 
@@ -629,7 +669,7 @@ Key files: `src/ui/chat/components/suggesters/`, `MessageEnhancer.ts`, `SystemPr
 <!-- SESSION_START -->
 ## Current Session
 <!-- Auto-managed by session_init hook. Overwritten each session. -->
-- Resume: `claude --resume 25c361b2-deba-4d8f-8074-9f8a176c5640`
-- Team: `pact-25c361b2`
-- Started: 2026-03-13 10:23:17 UTC
+- Resume: `claude --resume c351fb97-3bfb-435e-954d-834606b8add3`
+- Team: `pact-c351fb97`
+- Started: 2026-03-13 20:03:07 UTC
 <!-- SESSION_END -->

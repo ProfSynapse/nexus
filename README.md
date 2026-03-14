@@ -7,303 +7,184 @@
 
 # Nexus MCP for Obsidian
 
-Nexus turns your Obsidian vault into an MCP-enabled workspace. It exposes safe, structured tools that AI copilots can call to read/write notes, manage folders, run searches, and maintain long-term memory—all while keeping data local to your vault.
+Nexus gives AI agents like Claude full access to your Obsidian vault — so you can manage your entire knowledge base through natural conversation while keeping everything local.
+
+**Everything is natural language first.** Notes, folders, workspaces, workflows, projects, tasks, search, image generation — the AI can create, read, update, and manage all of it just by you asking. There's also a settings UI for when you prefer clicking, but you never have to leave the conversation.
 
 > Nexus is the successor to Claudesidian. Legacy installs in `.obsidian/plugins/claudesidian-mcp/` still work.
 
 ---
 
-## Highlights
+## Get Started
 
-- **Two-Tool Architecture** – Just 2 MCP tools (`getTools` + `useTools`) replace 40+ individual tools, reducing upfront token cost by ~95%.
-- **Native Chat View** – Stream tool calls, branch conversations, and manage models directly inside Obsidian.
-- **Inline AI Editing** – Select text, right-click or use hotkey, and transform it with AI instructions.
-- **Workspace Memory** – Workspaces, states, and traces in `.nexus/` (sync-friendly JSONL + local SQLite cache).
-- **Workflow Automation** – Workspace workflows can bind saved prompts, run on recurring schedules, catch up after downtime, and be tested with `Run now`.
-- **Local Semantic Search** – Desktop-only embeddings via sqlite-vec vector search—no external API calls. Search notes and conversation history.
-- **Full Vault Operations** – Create, read, update, delete notes, folders, frontmatter, and batch edits.
-- **Multi-Provider Support** – Anthropic, OpenAI, Google, Groq, Mistral, OpenRouter, Perplexity, Requesty, plus local servers (Ollama, LM Studio). All providers use lightweight direct HTTP—no SDK dependencies.
-- **Multi-Vault Ready** – Independent MCP instances per vault.
-- **Task Management** – Workspace-scoped projects and tasks with DAG dependency tracking, priority, assignees, due dates, vault note linking, and a built-in settings UI for managing projects and tasks.
-- **Apps** – Extend Nexus with downloadable tool domains like ElevenLabs for AI audio generation.
+### 1. Install the Plugin
 
-**Platform Notes**
-| Feature | Desktop | Mobile |
-|---------|---------|--------|
-| Native Chat | ✅ | ✅ |
-| Inline AI Editing | ✅ | ✅ (command palette only) |
-| MCP Bridge (Claude Desktop) | ✅ | — |
-| Local Providers (Ollama/LM Studio) | ✅ | — |
-| Semantic Embeddings | ✅ | — |
-| Cloud Providers | ✅ (real streaming) | ✅ (buffered fallback) |
-
----
-
-## Two-Tool Architecture
-
-Nexus exposes exactly **2 tools** to MCP clients like Claude Desktop:
-
-| Tool | Purpose |
-|------|---------|
-| `toolManager_getTools` | **Discovery** – Returns schemas for requested agents/tools |
-| `toolManager_useTools` | **Execution** – Runs tools with unified context |
-
-### Why This Matters
-
-- **~95% token reduction** in upfront schemas (~15,000 → ~500 tokens)
-- Works great with small context window models (local LLMs)
-- Context-first design captures memory/goal for every operation
-
-### Context Schema
-
-Every `useTools` call includes context that helps maintain continuity:
-
-```typescript
-{
-  workspaceId: string;   // Scope identifier (name or UUID)
-  sessionId: string;     // Session name (system assigns standard ID)
-  memory: string;        // Conversation essence (1-3 sentences)
-  goal: string;          // Current objective (1-3 sentences)
-  constraints?: string;  // Rules/limits (1-3 sentences, optional)
-}
-```
-
-### Available Agents & Tools (45 total)
-
-| Agent | Purpose | Tools |
-|-------|---------|-------|
-| **contentManager** | Note reading/editing | read, write, update |
-| **storageManager** | File/folder management | list, createFolder, move, copy, archive, open |
-| **searchManager** | Search operations | searchContent, searchDirectory, searchMemory |
-| **memoryManager** | Workspace/state management | createWorkspace, listWorkspaces, loadWorkspace, updateWorkspace, archiveWorkspace, runWorkflow, createState, listStates, loadState |
-| **promptManager** | Custom prompts & LLM | listModels, executePrompts, listPrompts, getPrompt, createPrompt, updatePrompt, archivePrompt, generateImage, subagent |
-| **canvasManager** | Canvas operations | read, write, update, list |
-| **taskManager** | Project & task management | createProject, listProjects, updateProject, archiveProject, createTask, listTasks, updateTask, moveTask, queryTasks, linkNote |
-| **elevenlabs** *(app)* | AI audio generation with dynamic model selection | textToSpeech, listVoices, soundEffects, generateMusic |
-
----
-
-## Install
-
-1. Download the latest release assets: `manifest.json`, `styles.css`, `main.js`, `connector.js`
+1. Download the latest [release](https://github.com/ProfSynapse/claudesidian-mcp/releases): `manifest.json`, `styles.css`, `main.js`, `connector.js`
 2. Place them in `.obsidian/plugins/nexus/` (or keep legacy `.obsidian/plugins/claudesidian-mcp/`)
-3. Enable **Nexus** in Obsidian Settings → Community Plugins
-4. Restart Obsidian after first install
+3. Enable **Nexus** in Settings &rarr; Community Plugins
+4. Restart Obsidian
 
----
+### 2. Set Up a Provider (for Native Chat)
 
-## Configure Claude Desktop
+The built-in chat works right away with no extra software. Just add an API key in **Settings &rarr; Nexus &rarr; Providers** and start chatting inside Obsidian. Supports Anthropic, OpenAI, Google, Groq, Mistral, OpenRouter, Perplexity, Requesty, Ollama, and LM Studio.
 
-Add the Nexus server to your `claude_desktop_config.json`:
+### 3. Connect an External AI Agent (optional)
+
+Nexus works as an MCP server with Claude Desktop, Claude Code, Codex CLI, Gemini CLI, GitHub Copilot, Cline, Roo Code, Cursor, Windsurf, and any other MCP-compatible tool. Requires [Node.js](https://nodejs.org/) (v18+) on your machine. The native chat inside Obsidian works fine without this.
+
+**Quick setup for Claude Desktop**:
+
+1. Open Claude Desktop &rarr; **Settings** &rarr; **Developer** &rarr; **Edit Config**
+2. Add Nexus to the config (or use one-click: Settings &rarr; Nexus &rarr; Get Started &rarr; **Add Nexus to Claude**):
 
 ```json
 {
   "mcpServers": {
-    "nexus-your-vault": {
+    "nexus": {
       "command": "node",
-      "args": [
-        "/path/to/Vault/.obsidian/plugins/nexus/connector.js"
-      ]
+      "args": ["/path/to/Vault/.obsidian/plugins/nexus/connector.js"]
     }
   }
 }
 ```
 
-Or use the **one-click setup**: Settings → Nexus → Get Started → MCP Integration → **Add Nexus to Claude**
+3. Fully quit and relaunch Claude Desktop
 
-After adding, fully quit and relaunch Claude Desktop.
+[Setup guides for all supported agents &rarr;](guide/mcp-setup.md)
 
----
+#### Add a system prompt (recommended)
 
-## Using Native Chat
+For best results, give your AI agent some guidance on how to use your vault:
 
-1. Configure a provider in **Settings → Nexus → Providers**
-2. Open chat via ribbon icon or command palette (**Nexus: Open Nexus Chat**)
-3. Type `/` for tools, `@` for custom agents, `[[` to link notes
-4. Tool calls stream live with collapsible result panels
+> At the start of every conversation, list workspaces and load the appropriate one. If one doesn't exist, create one. If you lost context from compaction, reload the workspace. Always call getTools before useTools — never guess parameters.
 
----
-
-## Inline AI Editing
-
-Edit selected text directly in your notes using AI:
-
-1. **Select text** in any note
-2. **Trigger** via:
-   - Right-click → **Edit with AI** (requires "Native menus" disabled in Obsidian settings)
-   - Command palette → **Edit selection with AI**
-3. **Enter instruction** (e.g., "Make this more concise", "Translate to French")
-4. **Generate** – Watch streaming preview with cancel option
-5. **Review & Apply** – Edit the result, retry, or apply to replace original text
-
-| Feature | Description |
-|---------|-------------|
-| Model Selection | Dropdown to choose from configured providers |
-| Streaming Preview | See AI output as it generates |
-| Cancel Support | Stop generation mid-stream |
-| Editable Result | Modify AI output before applying |
-| Retry | Regenerate with same or new instruction |
-| Undo | Standard Ctrl/Cmd+Z after applying |
+[Full recommended system prompt &rarr;](guide/recommended-system-prompt.md)
 
 ---
 
-## Workspace Memory
+## What Can You Do?
 
-All data lives in `.nexus/` inside your vault:
+Just tell the AI what you want in plain language. Everything below works through Claude Desktop or the built-in native chat — no menus or special syntax required.
 
-```
-.nexus/
-├── conversations/*.jsonl  # Chat history (syncs across devices)
-├── workspaces/*.jsonl     # Workspace events
-└── cache.db               # SQLite cache (auto-rebuilt, not synced)
-```
+### Read, write, and organize your vault
 
-- Each tool call is tagged to a workspace automatically via context
-- Create/load workspaces and save immutable state snapshots via tools or chat UI
-- Workflows live inside workspace settings and can include:
-  - plain-language `when` + `steps`
-  - optional saved prompt binding
-  - optional recurring schedule: hourly, daily, weekly, or monthly
-  - catch-up behavior for missed runs after Obsidian was closed
-- `Run now` is available from both the workflow list and the workflow editor
-- Scheduled and manual workflow runs create a fresh chat conversation titled `[workspace - workflow - YYYY-MM-DD HH:mm]`
-- Workflow prompts are scoped to the workflow run itself and are not auto-injected just because the workspace was loaded
-- Archive workspaces and states for cold storage (restorable)
-- No external database required
+> "Summarize my meeting notes from this week"
 
-### Workspace Workflows
+> "Create a new note called 'Project Roadmap' with sections for Q1 and Q2"
 
-Use workflows when you want reusable, workspace-scoped operating procedures instead of one-off prompts.
+> "Move everything in my Inbox folder to the Archive"
 
-Each workflow can:
+### Set up and manage workspaces
 
-- describe when it should be used
-- store workflow-specific steps in plain language
-- bind an optional saved prompt/agent
-- run immediately with `Run now`
-- run automatically on a recurring schedule
+Workspaces scope your AI sessions to a project. The AI creates them, loads them, saves states, and manages everything inside them — you just ask.
 
-Supported schedules:
+> "Create a workspace called 'Thesis Research'"
 
-- **Hourly**: every `N` hours
-- **Daily**: at a selected hour and minute
-- **Weekly**: on a selected weekday, hour, and minute
-- **Monthly**: on a selected day of month, hour, and minute
+> "Save the current state as 'Literature Review Complete'"
 
-Catch-up behavior for scheduled workflows:
+[Details &rarr;](guide/workspace-memory.md)
 
-- **Skip missed runs**: ignore missed schedule slots
-- **Run latest missed**: create one catch-up run for the newest missed slot
-- **Run all missed**: create one run per missed slot in order
+### Create and schedule workflows
 
-### Triggering Workflows Via Tools
+Workflows are reusable routines that live inside a workspace. The AI can create them, bind prompts, set schedules, and trigger them — all through conversation.
 
-AI copilots can also trigger workflows through the workspace tool surface with `memoryManager.runWorkflow`.
+> "Add a daily workflow that summarizes notes I modified yesterday"
 
-Use it when you already know the workspace and want to execute a saved workflow programmatically. The tool accepts:
+> "Run the Morning Briefing workflow now"
 
-- `workspaceId`
-- `workflowId` or `workflowName`
-- optional `openInChat`
+[Details &rarr;](guide/workspace-memory.md#workflows)
 
-### Workspace Task Management UI
+### Manage projects and tasks
 
-In addition to MCP/chat task tools, Nexus now includes a built-in task management UI inside **Settings → Nexus → Workspaces**.
+Create projects, add tasks with dependencies, update status, assign work, set due dates — the AI handles the full lifecycle. There's also a settings UI if you prefer, but conversation is the primary interface.
 
-Open a workspace, then:
+> "Create a project called 'Website Relaunch' and add tasks for design, implementation, and testing"
 
-1. Click **Manage Projects**
-2. Open a project card
-3. Review tasks in the project task table
-4. Use the checkbox to mark tasks done or reopen them
-5. Click **Edit** to open the full task editor page with a back button
+> "What can I work on next?"
 
-Current UI flow:
+[Details &rarr;](guide/task-management.md)
 
-- **Workspace detail** → task/project entrypoint
-- **Project cards** → one card per workspace project
-- **Project detail** → task table with status, priority, due date, assignee, and actions
-- **Task detail** → dedicated editor for title, description, status, priority, due date, assignee, tags, project, and parent task
+### Search by meaning
 
-Notes:
+Find notes by what they're about, not just keywords. Search past conversations too. All local — no external API calls.
 
-- The database remains the source of truth for tasks
-- This is the v1 management surface; there is no markdown/Kanban note sync yet
-- Task edits made in chat and in settings operate on the same underlying task data
+> "Find everything I've written about behavioral economics"
+
+> "What did we discuss about the API design last week?"
+
+[Details &rarr;](guide/semantic-search.md)
+
+### Build custom prompts
+
+Create reusable prompts with specific instructions, bind them to workspaces or workflows, and invoke them anytime. The AI can create, edit, list, and run prompts through conversation.
+
+> "Create a prompt called 'Code Review' that analyzes a note for bugs and suggests improvements"
+
+> "Run my 'Weekly Reflection' prompt"
+
+In the native chat, type `@` to quickly browse and invoke your saved prompts from the keyboard.
+
+### Edit text inline
+
+Select text in any note, right-click &rarr; **Edit with AI**, and transform it with a natural language instruction. Streaming preview, retry, and undo built in.
+[Details &rarr;](guide/inline-editing.md)
+
+### Chat inside Obsidian
+
+Open the built-in chat (ribbon icon or command palette) to talk to any configured LLM with full vault access. Type `/` for tools, `@` for custom prompts, `[[` to link notes.
+[Details &rarr;](guide/native-chat.md)
+
+### Extend with apps
+
+Install app plugins like ElevenLabs to add capabilities. The AI uses them just like any other tool.
+
+> "Convert my blog post note to speech and save it to Audio/"
+
+[Details &rarr;](guide/apps.md)
+
+[See more examples of what you can do &rarr;](guide/workflow-examples.md)
 
 ---
 
-## Semantic Search
+## Platform Support
 
-Use `searchManager.searchContent` with `semantic: true` for meaning-based search:
-
-- **Desktop only** – Embeddings run locally via iframe-sandboxed transformers.js
-- **Model**: `Xenova/all-MiniLM-L6-v2` (384 dimensions, ~23MB, cached in browser IndexedDB)
-- **Vectors**: Stored in `.nexus/cache.db` via sqlite-vec for fast similarity search
-- **First run** downloads the model (requires internet); subsequent runs are fully offline
-- Watch the status bar for indexing progress; click to pause/resume
-
-### Conversation Memory Search
-
-Use `searchManager.searchMemory` to search across past conversation turns and tool call traces:
-
-| Mode | Scope | Use Case |
-|------|-------|----------|
-| **Discovery** | Workspace-wide | "What have I discussed about authentication?" |
-| **Scoped** | Session + N-turn window | "What did I just ask about this file?" |
-
-- Conversations are chunked into Q&A pairs and embedded in real-time as you chat
-- Multi-signal reranking: semantic similarity + recency + session density + note references
-- Background backfill indexes existing conversations automatically
-- Works with the same local embedding model—no external API calls
+| Feature | Desktop | Mobile |
+|---------|---------|--------|
+| Native Chat | Yes | Yes |
+| Inline AI Editing | Yes | Yes (command palette) |
+| MCP Bridge (Claude Desktop) | Yes | — |
+| Local Providers (Ollama/LM Studio) | Yes | — |
+| Semantic Embeddings | Yes | — |
+| Cloud Providers | Yes (real streaming) | Yes (buffered) |
 
 ---
 
-## Apps
+## How It Works
 
-Apps are downloadable tool domains that extend Nexus with third-party integrations. Each app brings its own set of tools, credentials, and API connections — install only what you need.
+Nexus uses a **two-tool architecture** — instead of exposing 45+ tools upfront, it gives the AI just two: one to discover available tools, and one to execute them. This keeps things fast and works well even with smaller models.
 
-Configure apps in **Settings → Nexus → Apps**. Enter your API key, hit **Validate**, and the modal will confirm which capabilities your key supports (and flag any missing permissions).
+All your data stays in a `.nexus/` folder inside your vault as sync-friendly JSONL files with a local SQLite cache.
 
-### Available Apps
-
-| App | Tools | What It Does |
-|-----|-------|--------------|
-| **ElevenLabs** | textToSpeech, listVoices, soundEffects, generateMusic | AI audio generation — convert text to speech, create sound effects, and generate music. Audio files save directly to your vault. |
-
-### Requesting & Contributing Apps
-
-Have an idea for a new app? [Open an issue](https://github.com/ProfSynapse/claudesidian-mcp/issues) with the `app-request` label describing the integration you'd like to see.
-
-Want to build your own? See **[Building Apps](docs/BUILDING_APPS.md)** — an agentic prompt you can feed to your AI coding assistant to create a new app from scratch. It covers the full pattern: manifest, agent class, tools, vault file saving, and registration.
-
----
-
-## Multi-Vault Setup
-
-- Each vault runs its own MCP server with key `nexus-[vault-name]`
-- Add one entry per vault in your MCP client config
-- Keep vaults open to keep their servers reachable
+[Architecture details &rarr;](guide/two-tool-architecture.md) | [Full tool reference &rarr;](docs/TOOL_REFERENCE.md)
 
 ---
 
 ## Security & Privacy
 
-- MCP server binds locally only—no remote listeners
-- All file operations stay inside the active vault
-- Network calls only for remote LLM providers (per your API keys)
+- MCP server runs locally only — no remote connections
+- All file operations stay inside your vault
+- Network calls only for LLM providers you configure
 - Embeddings download once, then run fully on-device
 
 ---
 
 ## Troubleshooting
 
-| Issue | Solution |
-|-------|----------|
-| Server not found | Settings → Nexus → Get Started → MCP Integration → **Add Nexus to Claude**, then restart Claude Desktop |
-| Pipes not created | Ensure Obsidian is open; Windows uses `nexus_mcp_<vault>` named pipes |
-| WebLLM crashes | Currently disabled due to WebGPU bug on Apple Silicon; use Ollama or LM Studio |
-| Legacy install | Paths to `.obsidian/plugins/claudesidian-mcp/connector.js` still work |
+| Issue | Fix |
+|-------|-----|
+| Server not found in Claude | Settings &rarr; Nexus &rarr; Get Started &rarr; **Add Nexus to Claude**, restart Claude Desktop |
+| Pipes not created | Make sure Obsidian is open (Windows uses named pipes) |
+| Legacy install path | `.obsidian/plugins/claudesidian-mcp/connector.js` still works |
 
 ---
 
@@ -317,14 +198,10 @@ npm run test       # Run tests
 npm run lint       # Run ESLint
 ```
 
-All LLM provider SDKs have been replaced with direct HTTP via a shared `ProviderHttpClient`. No SDK dependencies are required — this keeps the bundle small and avoids version conflicts.
-
-See [CLAUDE.md](CLAUDE.md) for architecture details and contribution notes.
-
 ---
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) for details.
+MIT — see [LICENSE](LICENSE) for details.
 
-Questions or issues? Open a GitHub issue with your OS, Obsidian version, and any console logs.
+Questions? [Open an issue](https://github.com/ProfSynapse/claudesidian-mcp/issues) with your OS, Obsidian version, and any console logs.
