@@ -1,8 +1,29 @@
 import { CommonParameters, CommonResult } from '../../types';
 
 // ============================================================================
-// NEW SIMPLIFIED TOOLS (3 tools replacing 8)
+// ContentManager tools (4 tools: read, write, update, setProperty)
 // ============================================================================
+
+/**
+ * Params for setting a frontmatter property on a note
+ */
+export interface SetPropertyParams extends CommonParameters {
+  /** Path to the note file */
+  path: string;
+  /** Frontmatter property name */
+  property: string;
+  /** Value to set (scalar or array) */
+  value: string | number | boolean | string[];
+  /** How to apply the value: 'replace' (default) or 'merge' (array union with dedup) */
+  mode?: 'replace' | 'merge';
+}
+
+/**
+ * Result of setting a frontmatter property
+ */
+export interface SetPropertyResult extends CommonResult {
+  // No data returned - LLM already knows the property and value it passed
+}
 
 /**
  * Params for reading content from a file

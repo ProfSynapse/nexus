@@ -7,7 +7,7 @@
  * compatibility for legacy workspace structures.
  *
  * Used by: LoadWorkspaceMode for resolving workspace prompts
- * Integrates with: Plugin settings (data.json customPrompts)
+ * Integrates with: CustomPromptStorageService (SQLite primary, data.json fallback)
  *
  * Responsibilities:
  * - Resolve workspace prompt from dedicatedAgent or legacy agents array
@@ -17,6 +17,7 @@
 
 import type { App } from 'obsidian';
 import { ProjectWorkspace, WorkspaceContext } from '../../../database/types/workspace/WorkspaceTypes';
+import { CustomPromptStorageService } from '../../promptManager/services/CustomPromptStorageService';
 
 /**
  * Prompt information returned from resolution operations
@@ -45,10 +46,12 @@ interface LegacyWorkspaceContext extends WorkspaceContext {
 export class WorkspacePromptResolver {
   private app: App;
   private plugin: any;
+  private customPromptStorage?: CustomPromptStorageService;
 
-  constructor(app: App, plugin: any) {
+  constructor(app: App, plugin: any, customPromptStorage?: CustomPromptStorageService) {
     this.app = app;
     this.plugin = plugin;
+    this.customPromptStorage = customPromptStorage;
   }
 
   /**
@@ -100,8 +103,7 @@ export class WorkspacePromptResolver {
 
   /**
    * Fetch prompt by name or ID (unified lookup)
-   * Tries ID first (more specific), then falls back to name
-   * Accesses prompts directly from plugin settings (data.json)
+   * Tries CustomPromptStorageService first (SQLite-backed), falls back to data.json
    * @param identifier The prompt name or ID
    * @param app The Obsidian app instance (unused, kept for compatibility)
    * @returns Prompt info or null if not found
@@ -111,25 +113,37 @@ export class WorkspacePromptResolver {
     app: App
   ): Promise<WorkspacePromptInfo | null> {
     try {
-      // Access customPrompts directly from plugin settings
+      // Primary: CustomPromptStorageService (SQLite -> internal fallback to data.json)
+      if (this.customPromptStorage) {
+        const prompt = this.customPromptStorage.getPromptByNameOrId(identifier);
+        if (prompt) {
+          return {
+            id: prompt.id,
+            name: prompt.name,
+            systemPrompt: prompt.prompt
+          };
+        }
+      }
+
+      // Fallback: direct data.json read (when service unavailable)
       const prompts = this.plugin?.settings?.settings?.customPrompts?.prompts || [];
 
       // Try ID lookup first (more specific)
-      let prompt = prompts.find((p: any) => p.id === identifier);
+      let fallbackPrompt = prompts.find((p: any) => p.id === identifier);
 
       // Fall back to name lookup
-      if (!prompt) {
-        prompt = prompts.find((p: any) => p.name === identifier);
+      if (!fallbackPrompt) {
+        fallbackPrompt = prompts.find((p: any) => p.name === identifier);
       }
 
-      if (!prompt) {
+      if (!fallbackPrompt) {
         return null;
       }
 
       return {
-        id: prompt.id,
-        name: prompt.name,
-        systemPrompt: prompt.prompt
+        id: fallbackPrompt.id,
+        name: fallbackPrompt.name,
+        systemPrompt: fallbackPrompt.prompt
       };
 
     } catch (error) {

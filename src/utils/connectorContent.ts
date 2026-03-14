@@ -5,7 +5,7 @@
  * DO NOT EDIT MANUALLY - This file is regenerated during the build process.
  * To update, modify connector.ts and rebuild.
  *
- * Generated: 2026-03-13T11:29:54.630Z
+ * Generated: 2026-03-13T23:21:42.481Z
  */
 
 export const CONNECTOR_JS_CONTENT = `"use strict";
@@ -129,37 +129,31 @@ function connectWithRetry() {
     // Track whether this socket ever successfully connected
     var hasConnected = false;
     try {
-        var socket = (0, net_1.createConnection)(ipcPath);
-        // Pipe stdin/stdout to/from the socket
-        process.stdin.pipe(socket);
-        socket.pipe(process.stdout);
+        var socket_1 = (0, net_1.createConnection)(ipcPath);
+        // Pipe stdin/stdout ONLY after connection is confirmed
+        socket_1.on('connect', function () {
+            hasConnected = true;
+            retryCount = 0;
+            process.stdin.pipe(socket_1);
+            socket_1.pipe(process.stdout);
+        });
         // Error handling - completely silent for expected connection errors
-        socket.on('error', function (err) {
-            // Cast error to NodeJS.ErrnoException to access the code property
+        socket_1.on('error', function (err) {
             var nodeErr = err;
             var isWaitingError = nodeErr.code === 'ENOENT' || nodeErr.code === 'ECONNREFUSED';
-            // Be completely silent - any stderr output shows as notification in Claude Desktop
-            // Only truly unexpected errors should be logged (never ENOENT/ECONNREFUSED)
             if (!isWaitingError) {
-                // Even unexpected errors should be silent - user can't fix them anyway
-                // and it would clutter Claude Desktop with notifications
+                // Non-expected errors - still silent to avoid Claude Desktop notifications
             }
-            // Always retry with exponential backoff (capped at 30s)
             retryCount++;
             var retryDelay = calculateBackoff(retryCount);
             setTimeout(connectWithRetry, retryDelay);
         });
-        socket.on('connect', function () {
-            hasConnected = true;
-            // Silent on connection - no need to notify user
-            // Reset retry count on successful connection
-            retryCount = 0;
-        });
-        socket.on('close', function () {
+        socket_1.on('close', function () {
+            // Unpipe to prevent stdin consumption by dead socket
+            process.stdin.unpipe(socket_1);
             if (hasConnected) {
-                // Connection was lost - silently go back to waiting mode
-                retryCount = 0; // Reset backoff
-                setTimeout(connectWithRetry, 1000); // Start retry loop
+                retryCount = 0;
+                setTimeout(connectWithRetry, 1000);
             }
             // If we never connected, the error handler will schedule a retry
         });

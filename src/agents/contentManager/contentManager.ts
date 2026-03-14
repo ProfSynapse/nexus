@@ -3,7 +3,8 @@ import { BaseAgent } from '../baseAgent';
 import {
   ReadTool,
   WriteTool,
-  UpdateTool
+  UpdateTool,
+  SetPropertyTool
 } from './tools';
 import NexusPlugin from '../../main';
 import { WorkspaceService } from '../../services/WorkspaceService';
@@ -11,12 +12,13 @@ import { MemoryService } from '../memoryManager/services/MemoryService';
 
 /**
  * Agent for content operations in the vault
- * Simplified from 8 tools to 3 tools following CRUA pattern
+ * Simplified from 8 tools to 4 tools following CRUA pattern + setProperty
  *
  * Tools:
  * - read: Read content from files with explicit line ranges
  * - write: Create new files or overwrite existing files
  * - update: Insert, replace, delete, append, or prepend content
+ * - setProperty: Set frontmatter properties with optional merge mode
  */
 export class ContentManagerAgent extends BaseAgent {
   protected app: App;
@@ -60,7 +62,7 @@ export class ContentManagerAgent extends BaseAgent {
       this.workspaceService = plugin.services.workspaceService;
     }
 
-    // Register simplified tools (3 tools replacing 8) - lazy loaded
+    // Register simplified tools (4 tools) - lazy loaded
     this.registerLazyTool({
       slug: 'read', name: 'Read',
       description: 'Read content from a file with line range',
@@ -78,6 +80,12 @@ export class ContentManagerAgent extends BaseAgent {
       description: 'Insert, replace, or delete content at specific line positions. Returns linesDelta showing net line change - use this to adjust subsequent line numbers in multi-operation workflows.',
       version: '1.0.0',
       factory: () => new UpdateTool(app),
+    });
+    this.registerLazyTool({
+      slug: 'setProperty', name: 'Set property',
+      description: 'Set a frontmatter property on a note. Supports "replace" (default) and "merge" (array union with dedup) modes.',
+      version: '1.0.0',
+      factory: () => new SetPropertyTool(app),
     });
   }
   

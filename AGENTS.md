@@ -399,7 +399,7 @@ onCreate(file: TFile) {
    - Tools: listModels, executePrompts, createPrompt, updatePrompt, deletePrompt, listPrompts, getPrompt, generateImage
 
 2. **ContentManager** (`src/agents/contentManager/`) - Note reading/editing operations
-   - Tools: readContent, createContent, appendContent, prependContent, replaceContent, replaceByLine, deleteContent, findReplaceContent
+   - Tools: read, write, update, setProperty
 
 3. **StorageManager** (`src/agents/storageManager/`) - File/folder management
    - Tools: list, createFolder, move, copy, archive, open
@@ -413,13 +413,18 @@ onCreate(file: TFile) {
 6. **CanvasManager** (`src/agents/canvasManager/`) - Obsidian canvas operations
    - Tools: read, write, update, list
 
+7. **TaskManager** (`src/agents/taskManager/`) - Workspace-scoped project/task management with DAG dependencies
+   - Tools: createProject, listProjects, updateProject, archiveProject, createTask, listTasks, updateTask, moveTask, queryTasks, linkNote
+   - Services: TaskService (business facade), DAGService (pure computation)
+   - Auto-loads task summary when workspace loads
+
 ### Agent Structure Pattern
 ```
 agents/
   [agentName]/
     [agentName].ts          # Main agent class extending BaseAgent
     tools/                   # Operation tools
-      [toolName].ts         # File: readContent.ts, Class: ReadContentTool
+      [toolName].ts         # File: read.ts, Class: ReadTool
       services/             # Tool-specific services
     services/               # Agent-level shared services
     types.ts                # Agent-specific types
@@ -550,7 +555,7 @@ Instead of 50+ tools, MCP exposes just 2: `getTools` (discovery) and `useTools` 
 
 **Key Files**: `src/agents/toolManager/` (agent + tools), `src/services/trace/ToolCallTraceService.ts`
 
-**Tool Count**: 33 tools across 6 agents (not counting ToolManager meta-tools)
+**Tool Count**: 54 tools across 8 agents (not counting ToolManager meta-tools)
 
 ## Memory & Workspace System
 
