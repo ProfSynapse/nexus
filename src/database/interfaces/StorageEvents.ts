@@ -72,6 +72,8 @@ export interface WorkspaceCreatedEvent extends BaseStorageEvent {
     created: number;
     /** Whether this workspace is active (defaults to true) */
     isActive?: boolean;
+    /** Whether this workspace is archived */
+    isArchived?: boolean;
     /** Optional dedicated agent ID */
     dedicatedAgentId?: string;
     /** JSON-serialized workspace context */
@@ -95,6 +97,7 @@ export interface WorkspaceUpdatedEvent extends BaseStorageEvent {
     rootFolder: string;
     lastAccessed: number;
     isActive: boolean;
+    isArchived: boolean;
     dedicatedAgentId: string;
     contextJson: string;
   }>;

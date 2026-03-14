@@ -73,7 +73,7 @@ export interface MigratableDatabase {
 // Alias for backward compatibility
 type Database = MigratableDatabase;
 
-export const CURRENT_SCHEMA_VERSION = 10;
+export const CURRENT_SCHEMA_VERSION = 11;
 
 export interface Migration {
   version: number;
@@ -380,6 +380,16 @@ export const MIGRATIONS: Migration[] = [
         }
       }
     }
+  },
+
+  // Version 10 -> 11: Add workspace archive flag
+  {
+    version: 11,
+    description: 'Add isArchived column to workspaces table for soft-delete persistence',
+    sql: [
+      'ALTER TABLE workspaces ADD COLUMN isArchived INTEGER DEFAULT 0',
+      'CREATE INDEX IF NOT EXISTS idx_workspaces_archived ON workspaces(isArchived)'
+    ]
   },
 ];
 

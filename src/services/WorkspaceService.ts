@@ -162,6 +162,7 @@ export class WorkspaceService {
           created: metadata.created,
           lastAccessed: metadata.lastAccessed,
           isActive: metadata.isActive,
+          isArchived: metadata.isArchived,
           dedicatedAgentId: metadata.dedicatedAgentId,
           context: metadata.context ? normalizeWorkspaceContext(metadata.context).context : metadata.context,
           sessions: {}
@@ -203,6 +204,7 @@ export class WorkspaceService {
             created: w.created,
             lastAccessed: w.lastAccessed,
             isActive: w.isActive,
+            isArchived: w.isArchived,
             dedicatedAgentId: w.dedicatedAgentId,
             context: w.context ? normalizeWorkspaceContext(w.context).context : w.context,
             sessions: {}
@@ -247,6 +249,7 @@ export class WorkspaceService {
         created: data.created || Date.now(),
         lastAccessed: data.lastAccessed || Date.now(),
         isActive: data.isActive ?? true,
+        isArchived: data.isArchived,
         dedicatedAgentId: data.dedicatedAgentId, // Pass through dedicatedAgentId
         context: hybridContext
       };
@@ -261,6 +264,7 @@ export class WorkspaceService {
         created: hybridData.created,
         lastAccessed: hybridData.lastAccessed,
         isActive: hybridData.isActive,
+        isArchived: hybridData.isArchived,
         context: data.context,
         sessions: {}
       };

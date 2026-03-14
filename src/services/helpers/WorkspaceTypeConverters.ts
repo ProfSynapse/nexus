@@ -18,6 +18,7 @@ export function convertWorkspaceMetadata(hybrid: HybridTypes.WorkspaceMetadata):
     created: hybrid.created,
     lastAccessed: hybrid.lastAccessed,
     isActive: hybrid.isActive,
+    isArchived: hybrid.isArchived,
     sessionCount: 0, // Will be calculated if needed
     traceCount: 0    // Will be calculated if needed
   };

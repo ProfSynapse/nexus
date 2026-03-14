@@ -92,6 +92,8 @@ export class WorkspaceRepository
               description: data.description,
               rootFolder: data.rootFolder,
               created: data.created ?? now,
+              isActive: data.isActive,
+              isArchived: data.isArchived,
               dedicatedAgentId: data.dedicatedAgentId,
               contextJson
             }
@@ -100,8 +102,8 @@ export class WorkspaceRepository
 
         // 2. Update SQLite cache
         await this.sqliteCache.run(
-          `INSERT INTO workspaces (id, name, description, rootFolder, created, lastAccessed, isActive, dedicatedAgentId, contextJson)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO workspaces (id, name, description, rootFolder, created, lastAccessed, isActive, isArchived, dedicatedAgentId, contextJson)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             id,
             data.name,
@@ -111,6 +113,7 @@ export class WorkspaceRepository
             now,
             // Default to 1 (active) if not specified
             data.isActive !== undefined ? (data.isActive ? 1 : 0) : 1,
+            data.isArchived !== undefined ? (data.isArchived ? 1 : 0) : 0,
             data.dedicatedAgentId ?? null,
             contextJson ?? null  // SQLite needs null, not undefined
           ]
@@ -132,13 +135,14 @@ export class WorkspaceRepository
     try {
       await this.transaction(async () => {
         // 1. Write event to JSONL
-        const eventData: Partial<{ name: string; description: string; rootFolder: string; lastAccessed: number; isActive: boolean; dedicatedAgentId: string; contextJson: string }> = {
+        const eventData: Partial<{ name: string; description: string; rootFolder: string; lastAccessed: number; isActive: boolean; isArchived: boolean; dedicatedAgentId: string; contextJson: string }> = {
           lastAccessed: data.lastAccessed ?? Date.now()
         };
         if (data.name !== undefined) eventData.name = data.name;
         if (data.description !== undefined) eventData.description = data.description;
         if (data.rootFolder !== undefined) eventData.rootFolder = data.rootFolder;
         if (data.isActive !== undefined) eventData.isActive = data.isActive;
+        if (data.isArchived !== undefined) eventData.isArchived = data.isArchived;
         if (data.dedicatedAgentId !== undefined) eventData.dedicatedAgentId = data.dedicatedAgentId;
         if (data.context !== undefined) eventData.contextJson = JSON.stringify(data.context);
 
@@ -170,6 +174,10 @@ export class WorkspaceRepository
         if (data.isActive !== undefined) {
           setClauses.push('isActive = ?');
           params.push(data.isActive ? 1 : 0);
+        }
+        if (data.isArchived !== undefined) {
+          setClauses.push('isArchived = ?');
+          params.push(data.isArchived ? 1 : 0);
         }
         if (data.dedicatedAgentId !== undefined) {
           setClauses.push('dedicatedAgentId = ?');
@@ -236,6 +244,10 @@ export class WorkspaceRepository
         conditions.push('isActive = ?');
         params.push(criteria.isActive ? 1 : 0);
       }
+      if (criteria.isArchived !== undefined) {
+        conditions.push('isArchived = ?');
+        params.push(criteria.isArchived ? 1 : 0);
+      }
       if (conditions.length > 0) {
         sql += ` WHERE ${conditions.join(' AND ')}`;
       }
@@ -250,7 +262,7 @@ export class WorkspaceRepository
   // ============================================================================
 
   async getWorkspaces(options?: QueryOptions): Promise<PaginatedResult<WorkspaceMetadata>> {
-    const ALLOWED_SORT_COLUMNS = ['id', 'name', 'created', 'lastAccessed', 'isActive', 'rootFolder'] as const;
+    const ALLOWED_SORT_COLUMNS = ['id', 'name', 'created', 'lastAccessed', 'isActive', 'isArchived', 'rootFolder'] as const;
     const ALLOWED_SORT_ORDERS = ['asc', 'desc'] as const;
 
     const requestedSort = options?.sortBy ?? 'lastAccessed';
@@ -273,6 +285,10 @@ export class WorkspaceRepository
       if (options.filter.isActive !== undefined) {
         filters.push('isActive = ?');
         params.push(options.filter.isActive ? 1 : 0);
+      }
+      if (options.filter.isArchived !== undefined) {
+        filters.push('isArchived = ?');
+        params.push(options.filter.isArchived ? 1 : 0);
       }
       if (filters.length > 0) {
         whereClause = `WHERE ${filters.join(' AND ')}`;
@@ -355,6 +371,7 @@ export class WorkspaceRepository
       created: row.created,
       lastAccessed: row.lastAccessed,
       isActive: row.isActive === 1,
+      isArchived: row.isArchived === 1,
       dedicatedAgentId: row.dedicatedAgentId ?? undefined,
       context
     };

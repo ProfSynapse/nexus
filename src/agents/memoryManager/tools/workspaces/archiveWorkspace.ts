@@ -80,7 +80,21 @@ export class ArchiveWorkspaceTool extends BaseTool<ArchiveWorkspaceParameters, A
             // Perform the update
             await workspaceService.updateWorkspace(existingWorkspace.id, workspaceCopy);
 
-            // Success - LLM already knows what it passed
+            const persistedWorkspace = await workspaceService.getWorkspaceByNameOrId(existingWorkspace.id);
+            const expectedArchivedState = !isRestore;
+
+            if (!persistedWorkspace) {
+                return this.prepareResult(false, undefined, `Workspace "${params.name}" could not be reloaded after ${isRestore ? 'restore' : 'archive'}.`);
+            }
+
+            if (persistedWorkspace.isArchived !== expectedArchivedState) {
+                return this.prepareResult(
+                    false,
+                    undefined,
+                    `Workspace "${params.name}" was not ${isRestore ? 'restored' : 'archived'} successfully. Persisted archive state did not change.`
+                );
+            }
+
             return this.prepareResult(true);
 
         } catch (error) {

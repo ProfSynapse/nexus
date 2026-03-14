@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS workspaces (
   created INTEGER NOT NULL,
   lastAccessed INTEGER NOT NULL,
   isActive INTEGER DEFAULT 1,
+  isArchived INTEGER DEFAULT 0,
   contextJson TEXT,
   dedicatedAgentId TEXT,
   UNIQUE(name)
@@ -37,6 +38,7 @@ CREATE TABLE IF NOT EXISTS workspaces (
 CREATE INDEX IF NOT EXISTS idx_workspaces_name ON workspaces(name);
 CREATE INDEX IF NOT EXISTS idx_workspaces_folder ON workspaces(rootFolder);
 CREATE INDEX IF NOT EXISTS idx_workspaces_active ON workspaces(isActive);
+CREATE INDEX IF NOT EXISTS idx_workspaces_archived ON workspaces(isArchived);
 CREATE INDEX IF NOT EXISTS idx_workspaces_accessed ON workspaces(lastAccessed);
 
 -- ==================== SESSIONS ====================

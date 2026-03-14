@@ -222,6 +222,7 @@ export interface WorkspaceMetadata {
   created: number;
   lastAccessed: number;
   isActive?: boolean;
+  isArchived?: boolean;
   sessionCount: number;
   traceCount: number;
 }
