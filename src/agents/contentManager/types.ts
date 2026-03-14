@@ -131,9 +131,20 @@ export interface UpdateResult extends CommonResult {
   /**
    * Net change in line count after the operation.
    * Positive = lines added, Negative = lines removed, Zero = no change.
-   * Use this to adjust subsequent line numbers in multi-operation workflows.
    */
   linesDelta?: number;
+
+  /**
+   * Total line count of the file after the operation.
+   */
+  totalLines?: number;
+
+  /**
+   * Unified diff showing exactly what changed, with context lines.
+   * Includes @@ hunk headers with new line numbers so subsequent edits
+   * can target correct positions without re-reading the file.
+   */
+  diff?: string;
 
   /**
    * Recommendations for follow-up actions (uses standard nudge system)

@@ -3,8 +3,7 @@ import { BaseTool } from '../../baseTool';
 import { UpdateParams, UpdateResult } from '../types';
 import { ContentOperations } from '../utils/ContentOperations';
 import { createErrorMessage } from '../../../utils/errorUtils';
-import { addRecommendations, Recommendation } from '../../../utils/recommendationUtils';
-import { NudgeHelpers } from '../../../utils/nudgeHelpers';
+import { generateUnifiedDiff } from '../utils/unifiedDiff';
 
 /**
  * Location: src/agents/contentManager/tools/update.ts
@@ -21,7 +20,7 @@ import { NudgeHelpers } from '../../../utils/nudgeHelpers';
  * Key Design:
  * - Single tool replaces: appendContent, prependContent, replaceContent, replaceByLine, findReplaceContent, deleteContent
  * - Line-based operations are explicit and predictable
- * - Clear error messages guide recovery
+ * - Returns unified diff with context so subsequent edits can target correct line numbers without re-reading
  *
  * Relationships:
  * - Uses ContentOperations utility for file operations
@@ -39,11 +38,28 @@ export class UpdateTool extends BaseTool<UpdateParams, UpdateResult> {
     super(
       'update',
       'Update',
-      'Insert, replace, or delete content at specific line positions. Returns linesDelta showing net line change - use this to adjust subsequent line numbers in multi-operation workflows.',
+      'Insert, replace, or delete content at specific line positions. Returns a unified diff with context lines showing what changed and the new line numbers — use the @@ headers to target subsequent edits without re-reading the file.',
       '1.0.0'
     );
 
     this.app = app;
+  }
+
+  /**
+   * Build the result with diff, totalLines, and linesDelta.
+   */
+  private buildResult(
+    oldLines: string[],
+    newLines: string[],
+    delta: number
+  ): UpdateResult {
+    const diff = generateUnifiedDiff(oldLines, newLines);
+    return {
+      success: true,
+      linesDelta: delta,
+      totalLines: newLines.length,
+      diff
+    };
   }
 
   /**
@@ -72,8 +88,8 @@ export class UpdateTool extends BaseTool<UpdateParams, UpdateResult> {
       }
 
       const existingContent = await this.app.vault.read(file);
-      const lines = existingContent.split('\n');
-      const totalLines = lines.length;
+      const oldLines = existingContent.split('\n');
+      const totalLines = oldLines.length;
 
       let newContent: string;
 
@@ -84,10 +100,9 @@ export class UpdateTool extends BaseTool<UpdateParams, UpdateResult> {
         newContent = existingContent + (needsNewline ? '\n' : '') + content;
         await this.app.vault.modify(file, newContent);
 
-        // Calculate linesDelta: number of lines added
-        const linesAdded = content.split('\n').length;
-        // Append doesn't shift existing lines, so no hint needed
-        return { success: true, linesDelta: linesAdded };
+        const newLines = newContent.split('\n');
+        const linesAdded = newLines.length - oldLines.length;
+        return this.buildResult(oldLines, newLines, linesAdded);
       }
 
       // Validate line numbers
@@ -106,8 +121,8 @@ export class UpdateTool extends BaseTool<UpdateParams, UpdateResult> {
       // Case 1: INSERT (startLine only, no endLine)
       if (endLine === undefined) {
         // Insert content at startLine, pushing existing content down
-        const beforeLines = lines.slice(0, startLine - 1);
-        const afterLines = lines.slice(startLine - 1);
+        const beforeLines = oldLines.slice(0, startLine - 1);
+        const afterLines = oldLines.slice(startLine - 1);
         const insertLines = content.split('\n');
 
         newContent = [
@@ -118,13 +133,9 @@ export class UpdateTool extends BaseTool<UpdateParams, UpdateResult> {
 
         await this.app.vault.modify(file, newContent);
 
-        // Calculate linesDelta: number of lines inserted
+        const newLines = newContent.split('\n');
         const delta = insertLines.length;
-        const result = { success: true, linesDelta: delta };
-
-        // Add nudge if lines shifted
-        const nudge = NudgeHelpers.checkLineShift(delta, startLine);
-        return nudge ? addRecommendations(result, [nudge]) : result;
+        return this.buildResult(oldLines, newLines, delta);
       }
 
       // Validate endLine
@@ -142,8 +153,8 @@ export class UpdateTool extends BaseTool<UpdateParams, UpdateResult> {
 
       // Case 2: REPLACE (startLine + endLine with content)
       // Case 3: DELETE (startLine + endLine with empty content)
-      const beforeLines = lines.slice(0, startLine - 1);
-      const afterLines = lines.slice(endLine);
+      const beforeLines = oldLines.slice(0, startLine - 1);
+      const afterLines = oldLines.slice(endLine);
       const linesRemoved = endLine - startLine + 1;
 
       if (content === '') {
@@ -155,13 +166,9 @@ export class UpdateTool extends BaseTool<UpdateParams, UpdateResult> {
 
         await this.app.vault.modify(file, newContent);
 
-        // Calculate linesDelta: negative (lines removed)
+        const newLines = newContent.split('\n');
         const delta = -linesRemoved;
-        const result = { success: true, linesDelta: delta };
-
-        // Add nudge for line shift
-        const nudge = NudgeHelpers.checkLineShift(delta, endLine);
-        return nudge ? addRecommendations(result, [nudge]) : result;
+        return this.buildResult(oldLines, newLines, delta);
       } else {
         // REPLACE: Remove lines and insert new content
         const replacementLines = content.split('\n');
@@ -173,13 +180,9 @@ export class UpdateTool extends BaseTool<UpdateParams, UpdateResult> {
 
         await this.app.vault.modify(file, newContent);
 
-        // Calculate linesDelta: new lines minus removed lines
+        const newLines = newContent.split('\n');
         const delta = replacementLines.length - linesRemoved;
-        const result = { success: true, linesDelta: delta };
-
-        // Add nudge if lines shifted
-        const nudge = NudgeHelpers.checkLineShift(delta, endLine);
-        return nudge ? addRecommendations(result, [nudge]) : result;
+        return this.buildResult(oldLines, newLines, delta);
       }
 
     } catch (error) {
@@ -232,18 +235,15 @@ export class UpdateTool extends BaseTool<UpdateParams, UpdateResult> {
         },
         linesDelta: {
           type: 'number',
-          description: 'Net change in line count. Positive = lines added, negative = lines removed. Use this to adjust subsequent line numbers in multi-operation workflows.'
+          description: 'Net change in line count. Positive = lines added, negative = lines removed.'
         },
-        recommendations: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              type: { type: 'string' },
-              message: { type: 'string' }
-            }
-          },
-          description: 'Recommendations for follow-up actions when line numbers have shifted.'
+        totalLines: {
+          type: 'number',
+          description: 'Total line count of the file after the operation.'
+        },
+        diff: {
+          type: 'string',
+          description: 'Unified diff showing what changed with context lines. The @@ headers contain new line numbers — use them to target subsequent edits without re-reading the file.'
         },
         error: {
           type: 'string',
