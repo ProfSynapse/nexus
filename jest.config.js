@@ -5,7 +5,7 @@ module.exports = {
   roots: ['<rootDir>/tests'],
   testMatch: ['**/*.test.ts'],
   moduleNameMapper: {
-    '^obsidian$': '<rootDir>/tests/mocks/obsidian.ts',
+    '^obsidian$': '<rootDir>/tests/mocks/obsidian/index.ts',
     '^@/(.*)$': '<rootDir>/src/$1'
   },
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],

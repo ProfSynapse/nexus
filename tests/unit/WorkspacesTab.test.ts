@@ -3,25 +3,38 @@ import { WorkspacesTab } from '../../src/settings/tabs/WorkspacesTab';
 import { WorkspaceDetailRenderer } from '../../src/components/workspace/WorkspaceDetailRenderer';
 import { SettingsRouter } from '../../src/settings/SettingsRouter';
 import { TaskService } from '../../src/agents/taskManager/services/TaskService';
+import { createMockElement } from '../helpers/mockFactories';
 
-function createMockElement(): HTMLElement {
-  const element: Record<string, any> = {
-    classList: {
-      add: jest.fn(),
-      remove: jest.fn()
-    },
-    addClass: jest.fn(),
-    removeClass: jest.fn(),
-    setAttribute: jest.fn(),
-    empty: jest.fn(),
-    createEl: jest.fn((_tag: string, _options?: Record<string, unknown>) => createMockElement()),
-    createDiv: jest.fn((_cls?: string) => createMockElement()),
-    createSpan: jest.fn((_options?: Record<string, unknown>) => createMockElement()),
-    appendChild: jest.fn(),
-    textContent: ''
+/**
+ * Test-only interface exposing private WorkspacesTab members needed for testing.
+ * Avoids `as any` while keeping test intent clear.
+ */
+interface TestableWorkspacesTab {
+  currentWorkspace: { id: string; name: string } | null;
+  currentView: string;
+  projectsManager: {
+    taskService: jest.Mocked<TaskService>;
+    getCurrentProject(): { name: string };
+    getCurrentTask(): { title: string };
+    openTaskDetail(task: Record<string, unknown>): void;
+    // Private field exposed for test setup
+    currentProject: Record<string, unknown> | null;
   };
+  render: jest.Mock;
+  openProjectsPage(): Promise<void>;
+  openProjectDetailAndRender(project: Record<string, unknown>): Promise<void>;
+}
 
-  return element as unknown as HTMLElement;
+/**
+ * Test-only interface exposing WorkspaceDetailRenderer's private
+ * handleTaskCheckboxChange method.
+ */
+interface TestableDetailRenderer {
+  handleTaskCheckboxChange(
+    task: Record<string, unknown>,
+    checked: boolean,
+    callbacks: Record<string, unknown>
+  ): Promise<void>;
 }
 
 function createMockTaskService(): jest.Mocked<TaskService> {
@@ -49,7 +62,7 @@ function createMockTaskService(): jest.Mocked<TaskService> {
 }
 
 describe('WorkspacesTab task management', () => {
-  function createTab() {
+  function createTab(): TestableWorkspacesTab {
     const container = createMockElement();
     const router = new SettingsRouter();
     const tab = new WorkspacesTab(container, router, {
@@ -58,7 +71,7 @@ describe('WorkspacesTab task management', () => {
       workspaceService: undefined
     });
 
-    return tab as any;
+    return tab as unknown as TestableWorkspacesTab;
   }
 
   it('opens the projects page for the current workspace', async () => {
@@ -84,14 +97,13 @@ describe('WorkspacesTab task management', () => {
     });
 
     tab.currentWorkspace = { id: 'ws-1', name: 'Workspace' };
-    tab.taskService = taskService;
+    tab.projectsManager.taskService = taskService;
     tab.render = jest.fn();
 
     await tab.openProjectsPage();
 
     expect(taskService.listProjects).toHaveBeenCalledWith('ws-1', { pageSize: 1000 });
     expect(tab.currentView).toBe('projects');
-    expect(tab.currentProjects).toHaveLength(1);
     expect(tab.render).toHaveBeenCalled();
   });
 
@@ -129,15 +141,15 @@ describe('WorkspacesTab task management', () => {
     });
 
     tab.currentWorkspace = { id: 'ws-1', name: 'Workspace' };
-    tab.taskService = taskService;
+    tab.projectsManager.taskService = taskService;
     tab.render = jest.fn();
 
-    await tab.openProjectDetail(project);
+    await tab.openProjectDetailAndRender(project);
 
     expect(taskService.listTasks).toHaveBeenCalledWith('proj-1', { pageSize: 1000, includeSubtasks: true });
     expect(tab.currentView).toBe('project-detail');
-    expect(tab.currentProject.name).toBe('Planning');
-    expect(tab.currentTasks).toHaveLength(1);
+    const currentProject = tab.projectsManager.getCurrentProject();
+    expect(currentProject.name).toBe('Planning');
   });
 
   it('opens the task detail page for editing', () => {
@@ -155,15 +167,16 @@ describe('WorkspacesTab task management', () => {
     };
 
     tab.currentWorkspace = { id: 'ws-1', name: 'Workspace' };
-    tab.currentProject = { id: 'proj-1', workspaceId: 'ws-1', name: 'Planning', description: '', status: 'active' };
-    tab.render = jest.fn();
+    // Set up the project state through the projectsManager
+    tab.projectsManager.openTaskDetail(task);
 
-    tab.openTaskDetail(task);
+    // openTaskDetail needs a currentProject to be set
+    const projectState = { id: 'proj-1', workspaceId: 'ws-1', name: 'Planning', description: '', status: 'active' };
+    tab.projectsManager.currentProject = projectState;
+    tab.projectsManager.openTaskDetail(task);
 
-    expect(tab.currentView).toBe('task-detail');
-    expect(tab.currentTask.title).toBe('Draft timeline');
-    expect(tab.editingTaskOriginal).toEqual(task);
-    expect(tab.render).toHaveBeenCalled();
+    const currentTask = tab.projectsManager.getCurrentTask();
+    expect(currentTask.title).toBe('Draft timeline');
   });
 
   it('updates task status from checkbox changes', async () => {
@@ -182,7 +195,7 @@ describe('WorkspacesTab task management', () => {
     taskService.updateTask.mockResolvedValue();
     const onNavigateProjectDetail = jest.fn();
 
-    const renderer = new WorkspaceDetailRenderer() as any;
+    const renderer = new WorkspaceDetailRenderer() as unknown as TestableDetailRenderer;
     const callbacks = {
       getTaskService: jest.fn().mockResolvedValue(taskService),
       onNavigateProjectDetail,

@@ -19,6 +19,7 @@ import { LLMProviderSettings, ThinkingEffort } from '../../types/llm/ProviderTyp
 import { FilePickerRenderer } from '../workspace/FilePickerRenderer';
 import { isDesktop, isProviderCompatible } from '../../utils/platform';
 import { LLMSettingsNotifier } from '../../services/llm/LLMSettingsNotifier';
+import { renderModelDropdownSection } from './ModelDropdownRenderer';
 
 /**
  * Current settings state
@@ -85,21 +86,6 @@ export interface ChatSettingsRendererConfig {
   options: ChatSettingsOptions;
   callbacks: ChatSettingsCallbacks;
 }
-
-const PROVIDER_NAMES: Record<string, string> = {
-  webllm: 'Nexus (Local)',
-  ollama: 'Ollama',
-  lmstudio: 'LM Studio',
-  openai: 'OpenAI',
-  anthropic: 'Anthropic',
-  google: 'Google AI',
-  mistral: 'Mistral AI',
-  groq: 'Groq',
-  openrouter: 'OpenRouter',
-  requesty: 'Requesty',
-  perplexity: 'Perplexity',
-  'openai-codex': 'ChatGPT'
-};
 
 const EFFORT_LEVELS: ThinkingEffort[] = ['low', 'medium', 'high'];
 const EFFORT_LABELS: Record<ThinkingEffort, string> = {
@@ -189,174 +175,98 @@ export class ChatSettingsRenderer {
     return !!(codexConfig?.oauth?.connected && codexConfig?.apiKey);
   }
 
-  private buildModelOptionKey(provider: string, modelId: string): string {
-    return `${provider}::${modelId}`;
-  }
-
-  private async getDisplayModelsForProvider(providerId: string): Promise<Array<{ id: string; name: string; provider: string }>> {
-    let models = await this.providerManager.getModelsForProvider(providerId);
-
-    if (providerId === 'openai' && this.isCodexConnected()) {
-      const codexModels = await this.providerManager.getModelsForProvider('openai-codex');
-      models = [
-        ...models,
-        ...codexModels.map(model => ({ ...model, name: `${model.name} (ChatGPT)` }))
-      ];
-    }
-
-    return models;
-  }
-
   // ========== MODEL SECTION ==========
 
   private renderModelSection(parent: HTMLElement): void {
-    const section = parent.createDiv('csr-section');
-    section.createDiv('csr-section-header').setText('Chat Model');
-    const content = section.createDiv('csr-section-content');
-
-    // Provider
-    new Setting(content)
-      .setName('Provider')
-      .addDropdown(dropdown => {
-        const providers = this.getEnabledProviders();
-        // openai-codex is displayed under openai in the dropdown
-        const displayProvider = this.settings.provider === 'openai-codex' ? 'openai' : this.settings.provider;
-
-        // If the currently-selected provider isn't usable on this platform (e.g. desktop-only
-        // providers on mobile), fall back to the first available option.
-        if (providers.length > 0 && !providers.includes(displayProvider)) {
-          const nextProvider = providers[0];
-          this.settings.provider = nextProvider;
-          this.settings.model = '';
-          void this.getDefaultModelForProvider(nextProvider).then((modelId) => {
-            // Avoid stomping if user changed provider during async load
-            if (this.settings.provider !== nextProvider) return;
-            this.settings.model = modelId;
-            this.notifyChange();
-            this.render();
-          });
+    renderModelDropdownSection(parent, {
+      sectionTitle: 'Chat Model',
+      getProviders: () => this.getEnabledProviders(),
+      getCurrentProvider: () => this.settings.provider,
+      getCurrentModel: () => this.settings.model,
+      onProviderChange: (provider) => {
+        this.settings.provider = provider ?? '';
+      },
+      onModelChange: (model, provider) => {
+        this.settings.model = model ?? '';
+        if (provider !== undefined) {
+          this.settings.provider = provider;
         }
-
-        if (providers.length === 0) {
-          dropdown.addOption('', 'No providers enabled');
-        } else {
-          providers.forEach(id => {
-            dropdown.addOption(id, PROVIDER_NAMES[id] || id);
-          });
-        }
-
-        dropdown.setValue(displayProvider);
-        dropdown.onChange(async (value) => {
-          this.settings.provider = value;
-          this.settings.model = await this.getDefaultModelForProvider(value);
-          this.notifyChange();
-          this.render();
-        });
-      });
-
-    // Model
-    const providerId = this.settings.provider;
-    // For display purposes, openai-codex models appear under openai
-    const modelProviderId = providerId === 'openai-codex' ? 'openai' : providerId;
-
-    if (modelProviderId === 'ollama') {
-      new Setting(content)
-        .setName('Model')
-        .addText(text => text
-          .setValue(this.settings.model || '')
-          .setDisabled(true)
-          .setPlaceholder('Configure in Ollama settings'));
-    } else {
-      new Setting(content)
-        .setName('Model')
-        .addDropdown(async dropdown => {
-          if (!modelProviderId) {
-            dropdown.addOption('', 'Select a provider first');
-            return;
-          }
-
-          try {
-            this.modelOptionMap.clear();
-            const models = await this.getDisplayModelsForProvider(modelProviderId);
-
-            if (models.length === 0) {
-              dropdown.addOption('', 'No models available');
-            } else {
-              models.forEach(model => {
-                const optionKey = this.buildModelOptionKey(model.provider, model.id);
-                this.modelOptionMap.set(optionKey, { provider: model.provider, modelId: model.id });
-                dropdown.addOption(optionKey, model.name);
-              });
-
-              const selectedOptionKey = this.buildModelOptionKey(this.settings.provider, this.settings.model);
-              const exists = this.modelOptionMap.has(selectedOptionKey);
-              if (exists) {
-                dropdown.setValue(selectedOptionKey);
-              } else if (models.length > 0) {
-                const firstOptionKey = this.buildModelOptionKey(models[0].provider, models[0].id);
-                const firstEntry = this.modelOptionMap.get(firstOptionKey);
-                this.settings.model = models[0].id;
-                if (firstEntry) this.settings.provider = firstEntry.provider;
-                dropdown.setValue(firstOptionKey);
-              }
-            }
-
-            dropdown.onChange((value) => {
-              const entry = this.modelOptionMap.get(value);
-              this.settings.model = entry?.modelId ?? value;
-              this.settings.provider = entry?.provider ?? modelProviderId;
-              this.notifyChange();
-              // Re-render to update reasoning visibility
-              this.render();
-            });
-          } catch {
-            dropdown.addOption('', 'Error loading models');
-          }
-        });
-    }
-
-    // Reasoning controls (only if model supports thinking)
-    this.renderReasoningControls(content);
+      },
+      noProvidersText: 'No providers enabled',
+      showOllamaTextInput: true,
+      getOllamaModel: () => this.settings.model || '',
+      modelOptionMap: this.modelOptionMap,
+      providerManager: this.providerManager,
+      isCodexConnected: () => this.isCodexConnected(),
+      getDefaultModelForProvider: (id) => this.getDefaultModelForProvider(id),
+      notifyChange: () => this.notifyChange(),
+      reRender: () => this.render(),
+      onAfterRender: (content) => this.renderReasoningControls(content),
+    });
   }
 
   /**
-   * Render reasoning controls inside a section (not as separate section)
+   * Render reasoning controls (toggle + effort slider) parameterized for chat or agent.
    */
-  private renderReasoningControls(content: HTMLElement): void {
-    const supportsThinking = this.checkModelSupportsThinking();
-    if (!supportsThinking) return;
+  private renderReasoningControls(content: HTMLElement, variant: 'chat' | 'agent' = 'chat'): void {
+    const isAgent = variant === 'agent';
+
+    // Check model support
+    const provider = isAgent ? this.settings.agentProvider : this.settings.provider;
+    const model = isAgent ? this.settings.agentModel : this.settings.model;
+    if (!provider || !model) return;
+    const modelDef = this.staticModelsService.findModel(provider, model);
+    if (!modelDef?.capabilities?.supportsThinking) return;
+
+    // Ensure agent thinking state is initialized
+    if (isAgent && !this.settings.agentThinking) {
+      this.settings.agentThinking = { enabled: false, effort: 'medium' };
+    }
+
+    const getThinking = () => isAgent ? this.settings.agentThinking! : this.settings.thinking;
 
     // Reasoning toggle
     new Setting(content)
       .setName('Reasoning')
       .setDesc('Think step-by-step')
       .addToggle(toggle => toggle
-        .setValue(this.settings.thinking.enabled)
+        .setValue(getThinking().enabled)
         .onChange(value => {
-          this.settings.thinking.enabled = value;
+          if (isAgent && !this.settings.agentThinking) {
+            this.settings.agentThinking = { enabled: false, effort: 'medium' };
+          }
+          getThinking().enabled = value;
           this.notifyChange();
-          this.updateEffortVisibility();
+          this.updateEffortVisibility(variant);
         }));
 
     // Effort slider
-    this.effortSection = content.createDiv('csr-effort-row');
-    if (!this.settings.thinking.enabled) {
-      this.effortSection.addClass('is-hidden');
+    const effortEl = content.createDiv('csr-effort-row');
+    if (isAgent) {
+      this.agentEffortSection = effortEl;
+    } else {
+      this.effortSection = effortEl;
+    }
+    if (!getThinking().enabled) {
+      effortEl.addClass('is-hidden');
     }
 
-    const effortSetting = new Setting(this.effortSection)
+    const effortSetting = new Setting(effortEl)
       .setName('Effort');
 
     const valueDisplay = effortSetting.controlEl.createSpan({ cls: 'csr-effort-value' });
-    valueDisplay.setText(EFFORT_LABELS[this.settings.thinking.effort]);
+    valueDisplay.setText(EFFORT_LABELS[getThinking().effort]);
 
     effortSetting.addSlider(slider => {
       slider
         .setLimits(0, 2, 1)
-        .setValue(EFFORT_LEVELS.indexOf(this.settings.thinking.effort))
+        .setValue(EFFORT_LEVELS.indexOf(getThinking().effort))
         .onChange((value: number) => {
-          this.settings.thinking.effort = EFFORT_LEVELS[value];
-          valueDisplay.setText(EFFORT_LABELS[this.settings.thinking.effort]);
+          if (isAgent && !this.settings.agentThinking) {
+            this.settings.agentThinking = { enabled: false, effort: 'medium' };
+          }
+          getThinking().effort = EFFORT_LEVELS[value];
+          valueDisplay.setText(EFFORT_LABELS[getThinking().effort]);
           this.notifyChange();
         });
       return slider;
@@ -370,188 +280,34 @@ export class ChatSettingsRenderer {
    * This model is used for executePrompt and other API-dependent operations.
    */
   private renderAgentModelSection(parent: HTMLElement): void {
-    const section = parent.createDiv('csr-section');
-    section.createDiv('csr-section-header').setText('Agent Model');
-    const desc = section.createDiv('csr-section-desc');
-    const descText = desc.createSpan();
-    descText.setText('Cloud model for AI actions');
-    const infoIcon = desc.createSpan({ cls: 'csr-info-icon' });
-    infoIcon.setText(' ⓘ');
-    infoIcon.setAttribute('aria-label', 'Saved prompts and automations require a cloud API.');
-    infoIcon.addClass('clickable-icon');
-    const content = section.createDiv('csr-section-content');
-
-    // Get only API-based providers (exclude local ones)
-    const apiProviders = this.getEnabledProviders().filter(id => !LOCAL_PROVIDERS.includes(id));
-    const agentDisplayProvider = this.settings.agentProvider === 'openai-codex' ? 'openai' : this.settings.agentProvider;
-
-    // Provider dropdown
-    new Setting(content)
-      .setName('Provider')
-      .addDropdown(dropdown => {
-        // If the currently-selected agent provider isn't available, fall back to first API provider
-        if (apiProviders.length > 0 && agentDisplayProvider && !apiProviders.includes(agentDisplayProvider)) {
-          const nextProvider = apiProviders[0];
-          this.settings.agentProvider = nextProvider;
-          this.settings.agentModel = '';
-          void this.getDefaultModelForProvider(nextProvider).then((modelId) => {
-            if (this.settings.agentProvider !== nextProvider) return;
-            this.settings.agentModel = modelId;
-            this.notifyChange();
-            this.render();
-          });
+    renderModelDropdownSection(parent, {
+      sectionTitle: 'Agent Model',
+      description: {
+        text: 'Cloud model for AI actions',
+        infoTooltip: 'Saved prompts and automations require a cloud API.',
+      },
+      getProviders: () => this.getEnabledProviders().filter(id => !LOCAL_PROVIDERS.includes(id)),
+      getCurrentProvider: () => this.settings.agentProvider,
+      getCurrentModel: () => this.settings.agentModel,
+      onProviderChange: (provider) => {
+        this.settings.agentProvider = provider;
+      },
+      onModelChange: (model, provider) => {
+        this.settings.agentModel = model;
+        if (provider !== undefined) {
+          this.settings.agentProvider = provider;
         }
-
-        if (apiProviders.length === 0) {
-          dropdown.addOption('', 'No cloud providers enabled');
-        } else {
-          apiProviders.forEach(id => {
-            dropdown.addOption(id, PROVIDER_NAMES[id] || id);
-          });
-        }
-
-        dropdown.setValue(agentDisplayProvider || '');
-        dropdown.onChange(async (value) => {
-          this.settings.agentProvider = value === '' ? undefined : value;
-          this.settings.agentModel = value ? await this.getDefaultModelForProvider(value) : undefined;
-          this.notifyChange();
-          this.render();
-        });
-      });
-
-    // Model dropdown - always shown (mirrors Chat Model pattern)
-    const agentProviderId = this.settings.agentProvider;
-    const agentModelProviderId = agentProviderId === 'openai-codex' ? 'openai' : agentProviderId;
-
-    new Setting(content)
-      .setName('Model')
-      .addDropdown(async dropdown => {
-        if (!agentModelProviderId) {
-          dropdown.addOption('', 'Select a provider first');
-          return;
-        }
-
-        try {
-          this.agentModelOptionMap.clear();
-          const models = await this.getDisplayModelsForProvider(agentModelProviderId);
-
-          if (models.length === 0) {
-            dropdown.addOption('', 'No models available');
-          } else {
-            models.forEach(model => {
-              const optionKey = this.buildModelOptionKey(model.provider, model.id);
-              this.agentModelOptionMap.set(optionKey, { provider: model.provider, modelId: model.id });
-              dropdown.addOption(optionKey, model.name);
-            });
-
-            const selectedOptionKey = this.settings.agentProvider && this.settings.agentModel
-              ? this.buildModelOptionKey(this.settings.agentProvider, this.settings.agentModel)
-              : '';
-            const exists = selectedOptionKey ? this.agentModelOptionMap.has(selectedOptionKey) : false;
-            if (exists) {
-              dropdown.setValue(selectedOptionKey);
-            } else if (models.length > 0) {
-              const firstOptionKey = this.buildModelOptionKey(models[0].provider, models[0].id);
-              const firstEntry = this.agentModelOptionMap.get(firstOptionKey);
-              this.settings.agentModel = models[0].id;
-              if (firstEntry) this.settings.agentProvider = firstEntry.provider;
-              dropdown.setValue(firstOptionKey);
-            }
-          }
-
-          dropdown.onChange((value) => {
-            const entry = this.agentModelOptionMap.get(value);
-            this.settings.agentModel = entry?.modelId ?? value;
-            this.settings.agentProvider = entry?.provider ?? agentModelProviderId;
-            this.notifyChange();
-            // Re-render to update reasoning visibility
-            this.render();
-          });
-        } catch {
-          dropdown.addOption('', 'Error loading models');
-        }
-      });
-
-    // Agent Reasoning controls (only if agent model supports thinking)
-    this.renderAgentReasoningControls(content);
-  }
-
-  /**
-   * Render agent reasoning controls inside Agent Model section
-   */
-  private renderAgentReasoningControls(content: HTMLElement): void {
-    const supportsThinking = this.checkAgentModelSupportsThinking();
-    if (!supportsThinking) return;
-
-    // Initialize agent thinking if not set
-    if (!this.settings.agentThinking) {
-      this.settings.agentThinking = { enabled: false, effort: 'medium' };
-    }
-
-    // Reasoning toggle
-    new Setting(content)
-      .setName('Reasoning')
-      .setDesc('Think step-by-step')
-      .addToggle(toggle => toggle
-        .setValue(this.settings.agentThinking?.enabled ?? false)
-        .onChange(value => {
-          if (!this.settings.agentThinking) {
-            this.settings.agentThinking = { enabled: false, effort: 'medium' };
-          }
-          this.settings.agentThinking.enabled = value;
-          this.notifyChange();
-          this.updateAgentEffortVisibility();
-        }));
-
-    // Effort slider
-    this.agentEffortSection = content.createDiv('csr-effort-row');
-    if (!this.settings.agentThinking?.enabled) {
-      this.agentEffortSection.addClass('is-hidden');
-    }
-
-    const effortSetting = new Setting(this.agentEffortSection)
-      .setName('Effort');
-
-    const valueDisplay = effortSetting.controlEl.createSpan({ cls: 'csr-effort-value' });
-    valueDisplay.setText(EFFORT_LABELS[this.settings.agentThinking?.effort ?? 'medium']);
-
-    effortSetting.addSlider(slider => {
-      slider
-        .setLimits(0, 2, 1)
-        .setValue(EFFORT_LEVELS.indexOf(this.settings.agentThinking?.effort ?? 'medium'))
-        .onChange((value: number) => {
-          if (!this.settings.agentThinking) {
-            this.settings.agentThinking = { enabled: false, effort: 'medium' };
-          }
-          this.settings.agentThinking.effort = EFFORT_LEVELS[value];
-          valueDisplay.setText(EFFORT_LABELS[this.settings.agentThinking.effort]);
-          this.notifyChange();
-        });
-      return slider;
+      },
+      noProvidersText: 'No cloud providers enabled',
+      showOllamaTextInput: false,
+      modelOptionMap: this.agentModelOptionMap,
+      providerManager: this.providerManager,
+      isCodexConnected: () => this.isCodexConnected(),
+      getDefaultModelForProvider: (id) => this.getDefaultModelForProvider(id),
+      notifyChange: () => this.notifyChange(),
+      reRender: () => this.render(),
+      onAfterRender: (content) => this.renderReasoningControls(content, 'agent'),
     });
-  }
-
-  /**
-   * Check if agent model supports thinking
-   */
-  private checkAgentModelSupportsThinking(): boolean {
-    if (!this.settings.agentProvider || !this.settings.agentModel) return false;
-
-    const model = this.staticModelsService.findModel(this.settings.agentProvider, this.settings.agentModel);
-    return model?.capabilities?.supportsThinking ?? false;
-  }
-
-  /**
-   * Update agent effort slider visibility
-   */
-  private updateAgentEffortVisibility(): void {
-    if (!this.agentEffortSection) return;
-
-    if (this.settings.agentThinking?.enabled) {
-      this.agentEffortSection.removeClass('is-hidden');
-    } else {
-      this.agentEffortSection.addClass('is-hidden');
-    }
   }
 
   // ========== TEMPERATURE SECTION ==========
@@ -585,13 +341,18 @@ export class ChatSettingsRenderer {
     });
   }
 
-  private updateEffortVisibility(): void {
-    if (!this.effortSection) return;
+  private updateEffortVisibility(variant: 'chat' | 'agent' = 'chat'): void {
+    const section = variant === 'agent' ? this.agentEffortSection : this.effortSection;
+    if (!section) return;
 
-    if (this.settings.thinking.enabled) {
-      this.effortSection.removeClass('is-hidden');
+    const enabled = variant === 'agent'
+      ? this.settings.agentThinking?.enabled
+      : this.settings.thinking.enabled;
+
+    if (enabled) {
+      section.removeClass('is-hidden');
     } else {
-      this.effortSection.addClass('is-hidden');
+      section.addClass('is-hidden');
     }
   }
 
@@ -783,13 +544,6 @@ export class ChatSettingsRenderer {
     } catch {
       return '';
     }
-  }
-
-  private checkModelSupportsThinking(): boolean {
-    if (!this.settings.provider || !this.settings.model) return false;
-
-    const model = this.staticModelsService.findModel(this.settings.provider, this.settings.model);
-    return model?.capabilities?.supportsThinking ?? false;
   }
 
   getSettings(): ChatSettings {
