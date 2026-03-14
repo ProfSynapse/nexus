@@ -254,23 +254,28 @@ export class SettingsView extends PluginSettingTab {
             cls: 'nexus-settings-version'
         });
 
-        // Update notification if available
-        if (this.settingsManager.settings.availableUpdateVersion) {
-            const updateBadge = versionRow.createSpan({ cls: 'nexus-update-badge' });
-            updateBadge.setText(`Update available: v${this.settingsManager.settings.availableUpdateVersion}`);
-        }
+        // Conditionally show update UI (hidden when plugin is in the community store)
+        UpdateManager.isStoreAvailable(this.plugin.manifest.id).then((storeAvailable) => {
+            if (storeAvailable) return;
 
-        // Update button
-        const updateBtn = new ButtonComponent(versionRow);
-        updateBtn
-            .setButtonText(
-                this.settingsManager.settings.availableUpdateVersion
-                    ? `Install v${this.settingsManager.settings.availableUpdateVersion}`
-                    : 'Check for Updates'
-            )
-            .onClick(async () => {
-                await this.handleUpdateCheck(updateBtn);
-            });
+            // Update notification if available
+            if (this.settingsManager.settings.availableUpdateVersion) {
+                const updateBadge = versionRow.createSpan({ cls: 'nexus-update-badge' });
+                updateBadge.setText(`Update available: v${this.settingsManager.settings.availableUpdateVersion}`);
+            }
+
+            // Update button
+            const updateBtn = new ButtonComponent(versionRow);
+            updateBtn
+                .setButtonText(
+                    this.settingsManager.settings.availableUpdateVersion
+                        ? `Install v${this.settingsManager.settings.availableUpdateVersion}`
+                        : 'Check for Updates'
+                )
+                .onClick(async () => {
+                    await this.handleUpdateCheck(updateBtn);
+                });
+        });
     }
 
     /**

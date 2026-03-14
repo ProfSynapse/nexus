@@ -20,6 +20,35 @@ interface GitHubRelease {
  * - manifest.json
  */
 export class UpdateManager {
+    private static _isStoreAvailable: boolean | null = null;
+
+    /**
+     * Check if this plugin is listed in the Obsidian community plugin registry.
+     * Result is cached for the session lifetime.
+     * @param pluginId The plugin manifest id to look up
+     * @returns true if the plugin is in the store, false otherwise
+     */
+    static async isStoreAvailable(pluginId: string): Promise<boolean> {
+        if (UpdateManager._isStoreAvailable !== null) {
+            return UpdateManager._isStoreAvailable;
+        }
+        try {
+            const response = await requestUrl({
+                url: 'https://raw.githubusercontent.com/obsidianmd/obsidian-releases/master/community-plugins.json',
+                method: 'GET',
+            });
+            if (response.status === 200) {
+                const plugins: Array<{ id: string }> = response.json;
+                UpdateManager._isStoreAvailable = plugins.some(p => p.id === pluginId);
+                return UpdateManager._isStoreAvailable;
+            }
+        } catch {
+            // Network error — assume not in store (show updater)
+        }
+        UpdateManager._isStoreAvailable = false;
+        return false;
+    }
+
     private readonly GITHUB_API_ENDPOINTS = [
         'https://api.github.com/repos/ProfSynapse/nexus',
         'https://api.github.com/repos/ProfSynapse/claudesidian-mcp'

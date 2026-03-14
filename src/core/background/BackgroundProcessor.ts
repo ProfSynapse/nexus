@@ -71,6 +71,10 @@ export class BackgroundProcessor {
         // Run in background to avoid blocking startup
         setTimeout(async () => {
             try {
+                // Skip custom update check if plugin is available in the community store
+                const storeAvailable = await UpdateManager.isStoreAvailable(this.config.plugin.manifest.id);
+                if (storeAvailable) return;
+
                 const { settings } = this.config;
                 const lastCheck = settings.settings.lastUpdateCheckDate;
                 if (lastCheck) {
