@@ -105,7 +105,7 @@ describe('OpenAICodexAdapter', () => {
 
     expect(request.headers.Authorization).toBe('Bearer test-access-token');
     expect(request.headers['ChatGPT-Account-Id']).toBe('acct-test-123');
-    expect(body.model).toBe('gpt-5.3-codex');
+    expect(body.model).toBe('gpt-5.4');
     expect(body.stream).toBe(true);
     expect(body.tool_choice).toBe('auto');
     expect(body.instructions).toContain('System message');
@@ -268,8 +268,10 @@ describe('OpenAICodexAdapter', () => {
     expect(capabilities.supportsStreaming).toBe(true);
     expect(capabilities.supportsFunctions).toBe(true);
     expect(capabilities.supportsImages).toBe(true);
-    expect(capabilities.maxContextWindow).toBe(400000);
+    expect(capabilities.supportsThinking).toBe(true);
+    expect(capabilities.maxContextWindow).toBe(1050000);
     expect(capabilities.supportedFeatures).toContain('tool_calling');
+    expect(capabilities.supportedFeatures).toContain('thinking_models');
     expect(capabilities.supportedFeatures).toContain('oauth_required');
   });
 

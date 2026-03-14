@@ -21,7 +21,9 @@ export class DeepResearchHandler {
   ) {}
 
   isDeepResearchModel(model: string): boolean {
-    return model.includes('deep-research') || model.includes('gpt-5.2-pro');
+    return model.includes('deep-research')
+      || model.includes('gpt-5.2-pro')
+      || model.includes('gpt-5.4-pro');
   }
 
   async generate(prompt: string, options?: GenerateOptions): Promise<LLMResponse> {
@@ -95,7 +97,11 @@ export class DeepResearchHandler {
 
   private async pollForCompletion(responseId: string, model: string, maxWaitTime = 300000): Promise<any> {
     const startTime = Date.now();
-    const pollInterval = (model.includes('o4-mini') || model.includes('gpt-5.2-pro')) ? 2000 : 5000;
+    const pollInterval = (
+      model.includes('o4-mini')
+      || model.includes('gpt-5.2-pro')
+      || model.includes('gpt-5.4-pro')
+    ) ? 2000 : 5000;
 
     while (Date.now() - startTime < maxWaitTime) {
       try {

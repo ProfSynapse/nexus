@@ -29,7 +29,7 @@ export class OpenAIAdapter extends BaseAdapter {
   private deepResearch: DeepResearchHandler;
 
   constructor(apiKey: string) {
-    super(apiKey, 'gpt-5');
+    super(apiKey, 'gpt-5.4');
     this.deepResearch = new DeepResearchHandler(this.apiKey, this.baseUrl);
     this.initializeCache();
   }
@@ -536,7 +536,7 @@ export class OpenAIAdapter extends BaseAdapter {
       supportsFunctions: true,
       supportsThinking: true,
       supportsImageGeneration: true,
-      maxContextWindow: 2000000, // GPT-5 context window
+      maxContextWindow: 1050000, // GPT-5.4/GPT-5.4 Pro context window
       supportedFeatures: [
         'streaming',
         'json_mode',
