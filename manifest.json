@@ -1,7 +1,7 @@
 {
     "id": "nexus",
     "name": "Nexus",
-    "version": "5.2.1",
+    "version": "5.3.0",
     "minAppVersion": "0.15.0",
     "description": "Nexus MCP server integration for Obsidian",
     "author": "Synaptic Labs",
