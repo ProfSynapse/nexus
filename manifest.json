@@ -6,9 +6,5 @@
     "description": "Agentic AI for your vault. Use Claude, ChatGPT, Gemini, and local models to chat, search, create, and manage your notes with semantic memory, image generation, and MCP server integration.",
     "author": "Synaptic Labs",
     "authorUrl": "https://github.com/ProfSynapse",
-    "isDesktopOnly": false,
-    "mcp": {
-        "enabled": true,
-        "server": true
-    }
+    "isDesktopOnly": false
 }
