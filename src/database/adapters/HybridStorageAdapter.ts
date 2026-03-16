@@ -230,15 +230,22 @@ export class HybridStorageAdapter implements IStorageAdapter {
           (migrationResult.stats.workspacesMigrated > 0 || migrationResult.stats.conversationsMigrated > 0);
       }
 
-      // 4. Perform initial sync (rebuild cache from JSONL)
-      // Only full rebuild if no sync state OR if we actually migrated new data
+      // Mark as initialized BEFORE sync so the UI isn't blocked.
+      // SQLite schema is ready — sync populates data in the background.
+      this.initialized = true;
+      if (this.initResolve) {
+        this.initResolve();
+      }
+
+      // 4. Perform initial sync (rebuild cache from JSONL) in background
+      // This can take a long time for large vaults (168MB+ JSONL files).
+      // The UI will show incrementally as data syncs in.
       const syncState = await this.sqliteCache.getSyncState(this.jsonlWriter.getDeviceId());
       if (!syncState || actuallyMigrated) {
         try {
           await this.syncCoordinator.fullRebuild();
         } catch (rebuildError) {
           console.error('[HybridStorageAdapter] Full rebuild failed:', rebuildError);
-          // Continue anyway - partial data is better than no data
         }
       } else {
         try {
@@ -248,20 +255,11 @@ export class HybridStorageAdapter implements IStorageAdapter {
         }
 
         // 5. Reconcile JSONL workspaces missing from SQLite
-        // Incremental sync skips same-device events, so workspaces created
-        // by this device may be missing from SQLite if cache was rebuilt earlier
         try {
           await this.reconcileMissingWorkspaces();
         } catch (reconcileError) {
           console.error('[HybridStorageAdapter] Workspace reconciliation failed:', reconcileError);
         }
-      }
-
-      this.initialized = true;
-
-      // Resolve the ready promise
-      if (this.initResolve) {
-        this.initResolve();
       }
 
     } catch (error) {
