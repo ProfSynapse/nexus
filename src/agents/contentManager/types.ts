@@ -122,6 +122,13 @@ export interface UpdateParams extends CommonParameters {
    * End line (1-based, inclusive). Omit to INSERT at startLine. Provide to REPLACE range.
    */
   endLine?: number;
+
+  /**
+   * Expected content at target lines (startLine to endLine).
+   * If provided, the update will only proceed if the current content at those lines
+   * matches this value exactly, preventing stale writes from outdated line numbers.
+   */
+  expectedContent?: string;
 }
 
 /**

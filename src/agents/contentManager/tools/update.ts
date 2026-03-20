@@ -69,7 +69,7 @@ export class UpdateTool extends BaseTool<UpdateParams, UpdateResult> {
    */
   async execute(params: UpdateParams): Promise<UpdateResult> {
     try {
-      const { path, content, startLine, endLine } = params;
+      const { path, content, startLine, endLine, expectedContent } = params;
 
       // Normalize path (remove leading slash)
       const normalizedPath = path.startsWith('/') ? path.slice(1) : path;
@@ -116,6 +116,18 @@ export class UpdateTool extends BaseTool<UpdateParams, UpdateResult> {
         return this.prepareResult(false, undefined,
           `Start line ${startLine} is beyond file length (${totalLines} lines). Use read to view the file first.`
         );
+      }
+
+      // Validate expectedContent against current file state (stale write prevention)
+      if (expectedContent !== undefined && startLine >= 1) {
+        const checkEndLine = endLine !== undefined ? endLine : startLine;
+        const targetLines = oldLines.slice(startLine - 1, checkEndLine).join('\n');
+        const expected = expectedContent.replace(/\r\n/g, '\n');
+        if (targetLines !== expected) {
+          return this.prepareResult(false, undefined,
+            `Content mismatch at lines ${startLine}-${checkEndLine}. File has changed since last read. Current content at target lines:\n---\n${targetLines}\n---\nRe-read the file and retry with updated line numbers.`
+          );
+        }
       }
 
       // Case 1: INSERT (startLine only, no endLine)
@@ -213,6 +225,10 @@ export class UpdateTool extends BaseTool<UpdateParams, UpdateResult> {
         endLine: {
           type: 'number',
           description: 'End line (1-based, inclusive). Omit to INSERT at startLine. Provide to REPLACE range.'
+        },
+        expectedContent: {
+          type: 'string',
+          description: 'Expected content at target lines (startLine to endLine). If provided, the update will fail with the current content if it doesn\'t match, preventing stale writes. Recommended for replace operations.'
         }
       },
       required: ['path', 'content', 'startLine']
