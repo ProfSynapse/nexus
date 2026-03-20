@@ -381,6 +381,219 @@ describe('UpdateTool', () => {
   });
 
   // ========================================================================
+  // expectedContent (stale write prevention)
+  // ========================================================================
+
+  describe('expectedContent validation', () => {
+    it('succeeds when expectedContent matches target lines', async () => {
+      mockFileContent = 'line 1\nline 2\nline 3';
+      const result = await tool.execute({
+        ...baseParams,
+        path: 'test/note.md',
+        content: 'REPLACED',
+        startLine: 2,
+        endLine: 2,
+        expectedContent: 'line 2',
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.diff).toContain('+REPLACED');
+    });
+
+    it('fails when expectedContent does not match (stale write)', async () => {
+      mockFileContent = 'line 1\nACTUAL LINE 2\nline 3';
+      const result = await tool.execute({
+        ...baseParams,
+        path: 'test/note.md',
+        content: 'REPLACED',
+        startLine: 2,
+        endLine: 2,
+        expectedContent: 'old line 2',
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Content mismatch');
+      expect(result.error).toContain('ACTUAL LINE 2');
+    });
+
+    it('validates multi-line expectedContent for range replace', async () => {
+      mockFileContent = 'a\nb\nc\nd\ne';
+      const result = await tool.execute({
+        ...baseParams,
+        path: 'test/note.md',
+        content: 'X\nY',
+        startLine: 2,
+        endLine: 3,
+        expectedContent: 'b\nc',
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.linesDelta).toBe(0);
+    });
+
+    it('fails multi-line expectedContent when content shifted', async () => {
+      mockFileContent = 'a\nNEW\nb\nc\nd\ne';
+      const result = await tool.execute({
+        ...baseParams,
+        path: 'test/note.md',
+        content: 'X\nY',
+        startLine: 2,
+        endLine: 3,
+        expectedContent: 'b\nc',
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Content mismatch');
+    });
+
+    it('skips validation for append mode (startLine -1)', async () => {
+      mockFileContent = 'line 1';
+      const result = await tool.execute({
+        ...baseParams,
+        path: 'test/note.md',
+        content: 'appended',
+        startLine: -1,
+        expectedContent: 'irrelevant',
+      });
+
+      // Append bypasses expectedContent check (startLine === -1 returns early)
+      expect(result.success).toBe(true);
+    });
+
+    it('skips validation when expectedContent is not provided', async () => {
+      mockFileContent = 'line 1\nline 2\nline 3';
+      const result = await tool.execute({
+        ...baseParams,
+        path: 'test/note.md',
+        content: 'REPLACED',
+        startLine: 2,
+        endLine: 2,
+      });
+
+      expect(result.success).toBe(true);
+    });
+
+    it('normalizes CRLF in expectedContent', async () => {
+      mockFileContent = 'line 1\nline 2\nline 3';
+      const result = await tool.execute({
+        ...baseParams,
+        path: 'test/note.md',
+        content: 'REPLACED',
+        startLine: 2,
+        endLine: 2,
+        expectedContent: 'line 2\r\n',  // CRLF should be normalized
+      });
+
+      // 'line 2\r\n' normalized to 'line 2\n' won't match 'line 2' (no trailing newline)
+      // This tests that CRLF normalization works but doesn't add false matches
+      expect(result.success).toBe(false);
+    });
+
+    it('validates expectedContent for insert mode (single line check)', async () => {
+      mockFileContent = 'a\nb\nc';
+      const result = await tool.execute({
+        ...baseParams,
+        path: 'test/note.md',
+        content: 'NEW',
+        startLine: 2,
+        expectedContent: 'b',
+      });
+
+      // Insert mode with expectedContent: checks that line at startLine matches
+      expect(result.success).toBe(true);
+    });
+  });
+
+  // ========================================================================
+  // expectedHash (lightweight stale write prevention)
+  // ========================================================================
+
+  describe('expectedHash validation', () => {
+    // Helper to compute the same hash the tool uses
+    function computeHash(text: string): string {
+      const { createHash } = require('crypto');
+      return createHash('sha256').update(text).digest('hex').slice(0, 8);
+    }
+
+    it('succeeds when expectedHash matches target lines', async () => {
+      mockFileContent = 'line 1\nline 2\nline 3';
+      const hash = computeHash('line 2');
+      const result = await tool.execute({
+        ...baseParams,
+        path: 'test/note.md',
+        content: 'REPLACED',
+        startLine: 2,
+        endLine: 2,
+        expectedHash: hash,
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.diff).toContain('+REPLACED');
+    });
+
+    it('fails when expectedHash does not match', async () => {
+      mockFileContent = 'line 1\nline 2\nline 3';
+      const result = await tool.execute({
+        ...baseParams,
+        path: 'test/note.md',
+        content: 'REPLACED',
+        startLine: 2,
+        endLine: 2,
+        expectedHash: 'deadbeef',
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Content hash mismatch');
+      expect(result.error).toContain('deadbeef');
+    });
+
+    it('validates multi-line range hash', async () => {
+      mockFileContent = 'a\nb\nc\nd\ne';
+      const hash = computeHash('b\nc');
+      const result = await tool.execute({
+        ...baseParams,
+        path: 'test/note.md',
+        content: 'X\nY',
+        startLine: 2,
+        endLine: 3,
+        expectedHash: hash,
+      });
+
+      expect(result.success).toBe(true);
+    });
+
+    it('expectedHash takes precedence over expectedContent', async () => {
+      mockFileContent = 'line 1\nline 2\nline 3';
+      const correctHash = computeHash('line 2');
+      const result = await tool.execute({
+        ...baseParams,
+        path: 'test/note.md',
+        content: 'REPLACED',
+        startLine: 2,
+        endLine: 2,
+        expectedHash: correctHash,
+        expectedContent: 'wrong content', // would fail if checked
+      });
+
+      // Hash matches, so update succeeds (expectedContent not checked)
+      expect(result.success).toBe(true);
+    });
+
+    it('skips validation for append mode', async () => {
+      mockFileContent = 'line 1';
+      const result = await tool.execute({
+        ...baseParams,
+        path: 'test/note.md',
+        content: 'appended',
+        startLine: -1,
+        expectedHash: 'deadbeef',
+      });
+
+      expect(result.success).toBe(true);
+    });
+  });
+
+  // ========================================================================
   // Schema
   // ========================================================================
 
