@@ -1,6 +1,5 @@
 import { App } from 'obsidian';
 import { BaseTool } from '../../baseTool';
-import { hashContent } from '../../../services/embeddings/EmbeddingUtils';
 import { ReadParams, ReadResult } from '../types';
 import { ContentOperations } from '../utils/ContentOperations';
 import { createErrorMessage } from '../../../utils/errorUtils';
@@ -73,16 +72,11 @@ export class ReadTool extends BaseTool<ReadParams, ReadResult> {
       });
       const content = numberedLines.join('\n');
 
-      // Hash of raw content (without line numbers) for stale write prevention
-      const rawContent = requestedLines.join('\n');
-      const hash = hashContent(rawContent).padStart(8, '0');
-
       const resultData = {
         content,
         path,
         startLine: actualStartLine,
-        endLine: actualEndLine,
-        contentHash: hash
+        endLine: actualEndLine
       };
 
       const result = this.prepareResult(true, resultData);
@@ -149,10 +143,6 @@ export class ReadTool extends BaseTool<ReadParams, ReadResult> {
         endLine: {
           type: 'number',
           description: 'Ending line that was read (if applicable)'
-        },
-        contentHash: {
-          type: 'string',
-          description: 'Hash (8 hex chars) of the raw content read. Pass as expectedHash in update to prevent stale writes.'
         }
       },
       required: ['content', 'path', 'startLine']

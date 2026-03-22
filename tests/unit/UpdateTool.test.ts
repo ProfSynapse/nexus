@@ -400,22 +400,6 @@ describe('UpdateTool', () => {
       expect(result.diff).toContain('+REPLACED');
     });
 
-    it('fails when expectedContent does not match (stale write)', async () => {
-      mockFileContent = 'line 1\nACTUAL LINE 2\nline 3';
-      const result = await tool.execute({
-        ...baseParams,
-        path: 'test/note.md',
-        content: 'REPLACED',
-        startLine: 2,
-        endLine: 2,
-        expectedContent: 'old line 2',
-      });
-
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('Content mismatch');
-      expect(result.error).toContain('ACTUAL LINE 2');
-    });
-
     it('validates multi-line expectedContent for range replace', async () => {
       mockFileContent = 'a\nb\nc\nd\ne';
       const result = await tool.execute({
@@ -431,21 +415,6 @@ describe('UpdateTool', () => {
       expect(result.linesDelta).toBe(0);
     });
 
-    it('fails multi-line expectedContent when content shifted', async () => {
-      mockFileContent = 'a\nNEW\nb\nc\nd\ne';
-      const result = await tool.execute({
-        ...baseParams,
-        path: 'test/note.md',
-        content: 'X\nY',
-        startLine: 2,
-        endLine: 3,
-        expectedContent: 'b\nc',
-      });
-
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('Content mismatch');
-    });
-
     it('skips validation for append mode (startLine -1)', async () => {
       mockFileContent = 'line 1';
       const result = await tool.execute({
@@ -456,7 +425,6 @@ describe('UpdateTool', () => {
         expectedContent: 'irrelevant',
       });
 
-      // Append bypasses expectedContent check (startLine === -1 returns early)
       expect(result.success).toBe(true);
     });
 
@@ -473,22 +441,6 @@ describe('UpdateTool', () => {
       expect(result.success).toBe(true);
     });
 
-    it('normalizes CRLF in expectedContent', async () => {
-      mockFileContent = 'line 1\nline 2\nline 3';
-      const result = await tool.execute({
-        ...baseParams,
-        path: 'test/note.md',
-        content: 'REPLACED',
-        startLine: 2,
-        endLine: 2,
-        expectedContent: 'line 2\r\n',  // CRLF should be normalized
-      });
-
-      // 'line 2\r\n' normalized to 'line 2\n' won't match 'line 2' (no trailing newline)
-      // This tests that CRLF normalization works but doesn't add false matches
-      expect(result.success).toBe(false);
-    });
-
     it('skips validation for insert mode (no endLine)', async () => {
       mockFileContent = 'a\nb\nc';
       const result = await tool.execute({
@@ -499,42 +451,10 @@ describe('UpdateTool', () => {
         expectedContent: 'wrong content',
       });
 
-      // Insert mode skips validation — endLine is undefined, so no content is being overwritten
       expect(result.success).toBe(true);
     });
-  });
 
-  // ========================================================================
-  // expectedHash (lightweight stale write prevention)
-  // ========================================================================
-
-  describe('expectedHash validation', () => {
-    // Helper to compute the same hash the tool uses (djb2 from EmbeddingUtils, padded to 8 chars)
-    function computeHash(text: string): string {
-      let hash = 5381;
-      for (let i = 0; i < text.length; i++) {
-        hash = ((hash << 5) + hash + text.charCodeAt(i)) | 0;
-      }
-      return (hash >>> 0).toString(16).padStart(8, '0');
-    }
-
-    it('succeeds when expectedHash matches target lines', async () => {
-      mockFileContent = 'line 1\nline 2\nline 3';
-      const hash = computeHash('line 2');
-      const result = await tool.execute({
-        ...baseParams,
-        path: 'test/note.md',
-        content: 'REPLACED',
-        startLine: 2,
-        endLine: 2,
-        expectedHash: hash,
-      });
-
-      expect(result.success).toBe(true);
-      expect(result.diff).toContain('+REPLACED');
-    });
-
-    it('fails when expectedHash does not match', async () => {
+    it('normalizes CRLF in expectedContent', async () => {
       mockFileContent = 'line 1\nline 2\nline 3';
       const result = await tool.execute({
         ...baseParams,
@@ -542,57 +462,66 @@ describe('UpdateTool', () => {
         content: 'REPLACED',
         startLine: 2,
         endLine: 2,
-        expectedHash: 'deadbeef',
+        expectedContent: 'line 2\r\n',
       });
 
+      // '\r\n' normalized to '\n' leaves trailing newline — won't match 'line 2'
       expect(result.success).toBe(false);
-      expect(result.error).toContain('Content hash mismatch');
-      expect(result.error).toContain('deadbeef');
     });
 
-    it('validates multi-line range hash', async () => {
-      mockFileContent = 'a\nb\nc\nd\ne';
-      const hash = computeHash('b\nc');
+    // ---- Smart error: content found at one location ----
+    it('reports new line numbers when content shifted to one location', async () => {
+      // Content 'b\nc' was at lines 2-3 but a new line was inserted before it
+      mockFileContent = 'a\nNEW\nb\nc\nd\ne';
       const result = await tool.execute({
         ...baseParams,
         path: 'test/note.md',
         content: 'X\nY',
         startLine: 2,
         endLine: 3,
-        expectedHash: hash,
+        expectedContent: 'b\nc',
       });
 
-      expect(result.success).toBe(true);
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Content not found at lines 2-3');
+      expect(result.error).toContain('Found at lines 3-4');
+      expect(result.error).toContain('Please retry with updated line numbers');
     });
 
-    it('expectedHash takes precedence over expectedContent', async () => {
-      mockFileContent = 'line 1\nline 2\nline 3';
-      const correctHash = computeHash('line 2');
+    // ---- Smart error: content found at multiple locations ----
+    it('reports multiple locations when content appears more than once', async () => {
+      mockFileContent = 'a\nb\nc\nd\nb\nc\ne';
+      const result = await tool.execute({
+        ...baseParams,
+        path: 'test/note.md',
+        content: 'X\nY',
+        startLine: 1,
+        endLine: 2,
+        expectedContent: 'b\nc',
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Content not found at lines 1-2');
+      expect(result.error).toContain('Found at multiple locations');
+      expect(result.error).toContain('lines 2-3');
+      expect(result.error).toContain('lines 5-6');
+    });
+
+    // ---- Smart error: content not found anywhere ----
+    it('reports content does not exist when not found anywhere', async () => {
+      mockFileContent = 'line 1\nACTUAL LINE 2\nline 3';
       const result = await tool.execute({
         ...baseParams,
         path: 'test/note.md',
         content: 'REPLACED',
         startLine: 2,
         endLine: 2,
-        expectedHash: correctHash,
-        expectedContent: 'wrong content', // would fail if checked
+        expectedContent: 'old line 2',
       });
 
-      // Hash matches, so update succeeds (expectedContent not checked)
-      expect(result.success).toBe(true);
-    });
-
-    it('skips validation for append mode', async () => {
-      mockFileContent = 'line 1';
-      const result = await tool.execute({
-        ...baseParams,
-        path: 'test/note.md',
-        content: 'appended',
-        startLine: -1,
-        expectedHash: 'deadbeef',
-      });
-
-      expect(result.success).toBe(true);
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Content not found at lines 2-2');
+      expect(result.error).toContain('does not exist in the note');
     });
   });
 

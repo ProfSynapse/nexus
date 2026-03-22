@@ -1,6 +1,5 @@
 import { App, TFile } from 'obsidian';
 import { BaseTool } from '../../baseTool';
-import { hashContent } from '../../../services/embeddings/EmbeddingUtils';
 import { UpdateParams, UpdateResult } from '../types';
 import { ContentOperations } from '../utils/ContentOperations';
 import { createErrorMessage } from '../../../utils/errorUtils';
@@ -28,12 +27,34 @@ import { generateUnifiedDiff } from '../utils/unifiedDiff';
  * - Part of CRUA architecture (Update operation)
  * - Follows write tool response stripping principle (returns { success: true } only)
  */
+
 /**
- * Compute a padded hash (8 hex chars) of a string.
- * Uses djb2 from EmbeddingUtils for mobile-compatible stale-write detection.
+ * Search for a multi-line content block in a file's lines array.
+ * Returns all 1-based line ranges where the block appears as a contiguous match.
  */
-function computeContentHash(text: string): string {
-  return hashContent(text).padStart(8, '0');
+function findContentInLines(
+  fileLines: string[],
+  expectedLines: string[]
+): Array<{ start: number; end: number }> {
+  const matches: Array<{ start: number; end: number }> = [];
+  const searchLen = expectedLines.length;
+
+  if (searchLen === 0 || searchLen > fileLines.length) return matches;
+
+  for (let i = 0; i <= fileLines.length - searchLen; i++) {
+    let found = true;
+    for (let j = 0; j < searchLen; j++) {
+      if (fileLines[i + j] !== expectedLines[j]) {
+        found = false;
+        break;
+      }
+    }
+    if (found) {
+      matches.push({ start: i + 1, end: i + searchLen }); // 1-based
+    }
+  }
+
+  return matches;
 }
 
 export class UpdateTool extends BaseTool<UpdateParams, UpdateResult> {
@@ -78,7 +99,7 @@ export class UpdateTool extends BaseTool<UpdateParams, UpdateResult> {
    */
   async execute(params: UpdateParams): Promise<UpdateResult> {
     try {
-      const { path, content, startLine, endLine, expectedContent, expectedHash } = params;
+      const { path, content, startLine, endLine, expectedContent } = params;
 
       // Normalize path (remove leading slash)
       const normalizedPath = path.startsWith('/') ? path.slice(1) : path;
@@ -128,24 +149,29 @@ export class UpdateTool extends BaseTool<UpdateParams, UpdateResult> {
       }
 
       // Validate against current file state (stale write prevention)
-      // Only applies to REPLACE/DELETE (endLine defined) — insert mode doesn't overwrite content,
-      // so stale-write detection has no meaning and the hash scope wouldn't match read's output.
-      // expectedHash is preferred (lightweight, ~10 tokens); expectedContent is fallback (exact, expensive)
-      if ((expectedHash !== undefined || expectedContent !== undefined) && startLine >= 1 && endLine !== undefined) {
+      // Only applies to REPLACE/DELETE (endLine defined) — insert mode doesn't overwrite content.
+      if (expectedContent !== undefined && startLine >= 1 && endLine !== undefined) {
+        const expected = expectedContent.replace(/\r\n/g, '\n');
         const targetLines = oldLines.slice(startLine - 1, endLine).join('\n');
 
-        if (expectedHash !== undefined) {
-          const actualHash = computeContentHash(targetLines);
-          if (actualHash !== expectedHash) {
+        if (targetLines !== expected) {
+          // Content shifted — search the full file for the expected block
+          const expectedLines = expected.split('\n');
+          const matches = findContentInLines(oldLines, expectedLines);
+
+          if (matches.length === 1) {
+            const m = matches[0];
             return this.prepareResult(false, undefined,
-              `Content hash mismatch at lines ${startLine}-${endLine} (expected ${expectedHash}, got ${actualHash}). File has changed since last read. Re-read the file and retry with updated line numbers.`
+              `Content not found at lines ${startLine}-${endLine}. Found at lines ${m.start}-${m.end}. Please retry with updated line numbers.`
             );
-          }
-        } else if (expectedContent !== undefined) {
-          const expected = expectedContent.replace(/\r\n/g, '\n');
-          if (targetLines !== expected) {
+          } else if (matches.length > 1) {
+            const locations = matches.map(m => `lines ${m.start}-${m.end}`).join(', ');
             return this.prepareResult(false, undefined,
-              `Content mismatch at lines ${startLine}-${endLine}. File has changed since last read. Current content at target lines:\n---\n${targetLines}\n---\nRe-read the file and retry with updated line numbers.`
+              `Content not found at lines ${startLine}-${endLine}. Found at multiple locations: ${locations}. Multiple matches — please specify which occurrence to update.`
+            );
+          } else {
+            return this.prepareResult(false, undefined,
+              `Content not found at lines ${startLine}-${endLine}. This content does not exist in the note.`
             );
           }
         }
@@ -249,11 +275,7 @@ export class UpdateTool extends BaseTool<UpdateParams, UpdateResult> {
         },
         expectedContent: {
           type: 'string',
-          description: 'Expected content at target lines. If provided, update fails on mismatch. Use expectedHash instead for lower token cost.'
-        },
-        expectedHash: {
-          type: 'string',
-          description: 'Hash (8 hex chars) of expected content at target lines (requires endLine). Use the contentHash returned by read. Lightweight alternative to expectedContent (~10 tokens vs hundreds).'
+          description: 'Pass the exact content you expect at these lines to prevent stale overwrites. If the content has shifted, the error will tell you the new line numbers.'
         }
       },
       required: ['path', 'content', 'startLine']
