@@ -1,7 +1,7 @@
 import { CommonParameters, CommonResult } from '../../types';
 
 // ============================================================================
-// ContentManager tools (4 tools: read, write, update, setProperty)
+// ContentManager tools (5 tools: read, write, replace, insert, setProperty)
 // ============================================================================
 
 /**
@@ -100,64 +100,65 @@ export interface WriteResult extends CommonResult {
 }
 
 /**
- * Params for updating content in a file (insert, replace, delete, append)
+ * Params for replacing or deleting content in a file
  */
-export interface UpdateParams extends CommonParameters {
-  /**
-   * Path to the file to modify
-   */
+export interface ReplaceParams extends CommonParameters {
+  /** Path to the file to modify */
   path: string;
 
-  /**
-   * Content to insert/replace (empty string to delete lines)
-   */
-  content: string;
+  /** The exact text currently at lines startLine through endLine that you want to replace */
+  oldContent: string;
 
-  /**
-   * Start line (1-based). Use -1 to append to end of file.
-   */
+  /** The text to replace oldContent with. Set to empty string to delete the content. */
+  newContent: string;
+
+  /** The line number (1-indexed) where oldContent begins */
   startLine: number;
 
-  /**
-   * End line (1-based, inclusive). Omit to INSERT at startLine. Provide to REPLACE range.
-   */
-  endLine?: number;
-
-  /**
-   * Expected content at target lines (startLine to endLine).
-   * If provided, the update will only proceed if the current content at those lines
-   * matches this value exactly, preventing stale writes from outdated line numbers.
-   * On mismatch, the error will search the file and report where the content moved.
-   */
-  expectedContent?: string;
+  /** The line number (1-indexed) where oldContent ends (inclusive) */
+  endLine: number;
 }
 
 /**
- * Result of updating content in a file
+ * Result of replacing or deleting content in a file
  */
-export interface UpdateResult extends CommonResult {
-  /**
-   * Net change in line count after the operation.
-   * Positive = lines added, Negative = lines removed, Zero = no change.
-   */
+export interface ReplaceResult extends CommonResult {
+  /** Net change in line count. Positive = lines added, negative = lines removed. */
   linesDelta?: number;
 
-  /**
-   * Total line count of the file after the operation.
-   */
+  /** Total line count of the file after the operation. */
   totalLines?: number;
 
-  /**
-   * Unified diff showing exactly what changed, with context lines.
-   * Includes @@ hunk headers with new line numbers so subsequent edits
-   * can target correct positions without re-reading the file.
-   */
+  /** Unified diff showing what changed with context lines. */
   diff?: string;
+}
 
-  /**
-   * Recommendations for follow-up actions (uses standard nudge system)
-   */
-  recommendations?: Array<{ type: string; message: string }>;
+/**
+ * Params for inserting new content into a file
+ */
+export interface InsertParams extends CommonParameters {
+  /** Path to the file to modify */
+  path: string;
+
+  /** The text to insert into the note */
+  content: string;
+
+  /** Where to insert (1-indexed). Use -1 to append, 1 to prepend, N to insert before line N. */
+  startLine: number;
+}
+
+/**
+ * Result of inserting content into a file
+ */
+export interface InsertResult extends CommonResult {
+  /** Net change in line count (always positive for insert). */
+  linesDelta?: number;
+
+  /** Total line count of the file after the operation. */
+  totalLines?: number;
+
+  /** Unified diff showing what changed with context lines. */
+  diff?: string;
 }
 
 // ============================================================================
