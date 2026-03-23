@@ -241,6 +241,11 @@ export class LLMProviderManager {
         description: 'Claude models with strong reasoning and safety features'
       },
       {
+        id: 'anthropic-claude-code',
+        name: 'Claude Code',
+        description: 'Claude models via your local Claude Code subscription login — desktop only'
+      },
+      {
         id: 'google',
         name: 'Google',
         description: 'Gemini models with multimodal capabilities and thinking mode'
@@ -303,6 +308,8 @@ export class LLMProviderManager {
       } else if (provider.id === 'openai-codex') {
         // Codex uses OAuth — check for connected OAuth state with access token
         hasApiKey = !!(config?.oauth?.connected && config?.apiKey);
+      } else if (provider.id === 'anthropic-claude-code') {
+        hasApiKey = !!config?.oauth?.connected;
       } else if (provider.id === 'ollama' || provider.id === 'lmstudio') {
         hasApiKey = !!(config?.apiKey && config.apiKey.trim());
       } else {

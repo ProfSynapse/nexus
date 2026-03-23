@@ -73,6 +73,7 @@ export interface ToolCall {
   error?: string;
   parameters?: Record<string, unknown>;
   executionTime?: number;
+  providerExecuted?: boolean;
   /** Format the model used: 'bracket' = [TOOL_CALLS], 'xml' = <tool_call>, 'native' = OpenAI tool_calls */
   sourceFormat?: ToolCallFormat;
 }

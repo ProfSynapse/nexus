@@ -18,6 +18,7 @@ const PROVIDER_NAMES: Record<string, string> = {
   lmstudio: 'LM Studio',
   openai: 'OpenAI',
   anthropic: 'Anthropic',
+  'anthropic-claude-code': 'Claude Code',
   google: 'Google AI',
   mistral: 'Mistral AI',
   groq: 'Groq',
@@ -71,6 +72,9 @@ export interface ModelDropdownConfig {
 
   /** Whether Codex OAuth is connected (for merging Codex models into OpenAI) */
   isCodexConnected: () => boolean;
+
+  /** Whether Claude Code local auth is connected (for merging Claude Code models into Anthropic) */
+  isClaudeCodeConnected: () => boolean;
 
   /** Get default model for a provider (async) */
   getDefaultModelForProvider: (providerId: string) => Promise<string>;
@@ -139,7 +143,11 @@ function renderProviderDropdown(
 ): void {
   const providers = config.getProviders();
   const currentProvider = config.getCurrentProvider();
-  const displayProvider = currentProvider === 'openai-codex' ? 'openai' : currentProvider;
+  const displayProvider = currentProvider === 'openai-codex'
+    ? 'openai'
+    : currentProvider === 'anthropic-claude-code'
+      ? 'anthropic'
+      : currentProvider;
 
   new Setting(content)
     .setName('Provider')
@@ -190,7 +198,11 @@ function renderModelDropdown(
   config: ModelDropdownConfig
 ): void {
   const currentProvider = config.getCurrentProvider();
-  const modelProviderId = currentProvider === 'openai-codex' ? 'openai' : currentProvider;
+  const modelProviderId = currentProvider === 'openai-codex'
+    ? 'openai'
+    : currentProvider === 'anthropic-claude-code'
+      ? 'anthropic'
+      : currentProvider;
 
   // Ollama special case: show text input instead of dropdown
   if (config.showOllamaTextInput && modelProviderId === 'ollama') {
@@ -221,6 +233,14 @@ function renderModelDropdown(
           models = [
             ...models,
             ...codexModels.map(model => ({ ...model, name: `${model.name} (ChatGPT)` }))
+          ];
+        }
+
+        if (modelProviderId === 'anthropic' && config.isClaudeCodeConnected()) {
+          const claudeCodeModels = await config.providerManager.getModelsForProvider('anthropic-claude-code');
+          models = [
+            ...models,
+            ...claudeCodeModels.map(model => ({ ...model, name: `${model.name} (Claude Code)` }))
           ];
         }
 

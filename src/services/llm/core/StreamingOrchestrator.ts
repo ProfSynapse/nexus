@@ -277,6 +277,24 @@ export class StreamingOrchestrator {
         return;
       }
 
+      const providerExecutedTools = detectedToolCalls.every((toolCall) =>
+        toolCall.providerExecuted ||
+        toolCall.result !== undefined ||
+        toolCall.success !== undefined ||
+        toolCall.error !== undefined
+      );
+
+      if (providerExecutedTools) {
+        yield {
+          chunk: '',
+          complete: true,
+          content: fullContent,
+          toolCalls: detectedToolCalls,
+          usage: finalUsage
+        };
+        return;
+      }
+
       // Tool calls detected - delegate to ToolContinuationService
       yield* this.toolContinuation.executeToolsAndContinue(
         activeAdapter,

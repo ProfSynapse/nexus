@@ -228,6 +228,68 @@
     color: var(--text-on-accent);
 }
 
+/* =========================== */
+/* CLAUDE HEADLESS EXPERIMENT  */
+/* =========================== */
+
+.nexus-claude-headless-modal textarea.nexus-claude-headless-prompt {
+    width: 100%;
+    min-height: 10rem;
+    resize: vertical;
+}
+
+.nexus-claude-headless-status {
+    margin-bottom: var(--space-m);
+    padding: var(--space-s) var(--space-m);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-m);
+    white-space: pre-wrap;
+    font-size: 0.9rem;
+}
+
+.nexus-claude-headless-status-muted {
+    color: var(--text-muted);
+    background: var(--background-secondary);
+}
+
+.nexus-claude-headless-status-success {
+    color: var(--text-normal);
+    background: var(--background-secondary);
+}
+
+.nexus-claude-headless-status-warning {
+    color: var(--text-normal);
+    background: var(--background-secondary);
+}
+
+.nexus-claude-headless-status-error {
+    color: var(--text-normal);
+    background: color-mix(in srgb, var(--background-modifier-error) 20%, var(--background-primary));
+    border-color: var(--background-modifier-error);
+}
+
+.nexus-claude-headless-output {
+    max-height: 18rem;
+    overflow: auto;
+    margin: 0 0 var(--space-m);
+    padding: var(--space-m);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-m);
+    background: var(--background-secondary);
+    color: var(--text-normal);
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: var(--font-monospace);
+    font-size: 0.85rem;
+}
+
+.nexus-claude-headless-buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-s);
+    flex-wrap: wrap;
+}
+
 /* Inline rename input */
 .conversation-rename-input {
     width: 100%;

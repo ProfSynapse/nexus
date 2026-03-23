@@ -22,6 +22,7 @@ import { LLMSettingsNotifier } from '../../services/llm/LLMSettingsNotifier';
 import { isDesktop, supportsLocalLLM, MOBILE_COMPATIBLE_PROVIDERS, isProviderComingSoon } from '../../utils/platform';
 import type { OAuthModalConfig, SecondaryOAuthProviderConfig } from '../../components/llm-provider/types';
 import { OAuthService } from '../../services/oauth/OAuthService';
+import { ClaudeCodeAuthService } from '../../services/external/ClaudeCodeAuthService';
 
 /**
  * Provider display configuration
@@ -91,6 +92,12 @@ export class ProvidersTab {
             name: 'Anthropic',
             keyFormat: 'sk-ant-...',
             signupUrl: 'https://console.anthropic.com/login',
+            category: 'cloud'
+        },
+        'anthropic-claude-code': {
+            name: 'Claude Code',
+            keyFormat: 'Local Claude Code login required',
+            signupUrl: 'https://claude.ai/download',
             category: 'cloud'
         },
         google: {
@@ -234,6 +241,15 @@ export class ProvidersTab {
                 error: error instanceof Error ? error.message : 'OAuth flow failed',
             };
         }
+    }
+
+    /**
+     * Start a local Claude Code subscription login flow.
+     * Reuses the OAuth-style banner UI even though auth is handled by the local CLI.
+     */
+    private async startClaudeCodeConnectFlow(): Promise<{ success: boolean; apiKey?: string; metadata?: Record<string, string>; error?: string }> {
+        const authService = new ClaudeCodeAuthService(this.services.app);
+        return await authService.connectSubscriptionLogin();
     }
 
     /**
@@ -401,6 +417,7 @@ export class ProvidersTab {
         if (!config.enabled) return false;
         // WebLLM doesn't need an API key
         if (providerId === 'webllm') return true;
+        if (providerId === 'anthropic-claude-code') return !!config.oauth?.connected;
         // Other providers need an API key
         return !!config.apiKey;
     }
@@ -436,6 +453,27 @@ export class ProvidersTab {
                     },
                 };
             }
+        } else if (providerId === 'anthropic') {
+            const claudeCodeDisplay = this.providerConfigs['anthropic-claude-code'];
+            const claudeCodeConfig = settings.providers['anthropic-claude-code'] || {
+                apiKey: '',
+                enabled: false,
+            };
+
+            secondaryOAuthProvider = {
+                providerId: 'anthropic-claude-code',
+                providerLabel: 'Claude Code',
+                description: 'Connect your local Claude Code subscription login and use Claude models through the desktop CLI.',
+                config: { ...claudeCodeConfig },
+                oauthConfig: {
+                    providerLabel: 'Claude Code',
+                    startFlow: () => this.startClaudeCodeConnectFlow(),
+                },
+                onConfigChange: async (updatedClaudeCodeConfig: LLMProviderConfig) => {
+                    settings.providers['anthropic-claude-code'] = updatedClaudeCodeConfig;
+                    await this.saveSettings();
+                },
+            };
         }
 
         const modalConfig: LLMProviderModalConfig = {

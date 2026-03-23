@@ -157,22 +157,50 @@ export class ChatSettingsRenderer {
 
   private getEnabledProviders(): string[] {
     const llmSettings = this.config.llmProviderSettings;
-    return Object.keys(llmSettings.providers).filter(id => {
-      // Codex models are merged into the OpenAI provider display
-      if (id === 'openai-codex') return false;
+    const providers = new Set<string>();
+
+    for (const id of Object.keys(llmSettings.providers)) {
+      if (id === 'openai-codex') {
+        const config = llmSettings.providers[id];
+        if (config?.enabled && config?.oauth?.connected && config?.apiKey) {
+          providers.add('openai');
+        }
+        continue;
+      }
+
+      if (id === 'anthropic-claude-code') {
+        const config = llmSettings.providers[id];
+        if (config?.enabled && config?.oauth?.connected) {
+          providers.add('anthropic');
+        }
+        continue;
+      }
+
       const config = llmSettings.providers[id];
-      if (!config?.enabled) return false;
-      if (!isProviderCompatible(id)) return false;
-      // WebLLM doesn't need an API key
-      if (id === 'webllm') return true;
-      // Local providers store the server URL in apiKey
-      return !!config.apiKey;
-    });
+      if (!config?.enabled) continue;
+      if (!isProviderCompatible(id)) continue;
+
+      if (id === 'webllm') {
+        providers.add(id);
+        continue;
+      }
+
+      if (config.apiKey) {
+        providers.add(id);
+      }
+    }
+
+    return Array.from(providers);
   }
 
   private isCodexConnected(): boolean {
     const codexConfig = this.config.llmProviderSettings.providers['openai-codex'];
     return !!(codexConfig?.oauth?.connected && codexConfig?.apiKey);
+  }
+
+  private isClaudeCodeConnected(): boolean {
+    const claudeCodeConfig = this.config.llmProviderSettings.providers['anthropic-claude-code'];
+    return !!claudeCodeConfig?.oauth?.connected;
   }
 
   // ========== MODEL SECTION ==========
@@ -198,6 +226,7 @@ export class ChatSettingsRenderer {
       modelOptionMap: this.modelOptionMap,
       providerManager: this.providerManager,
       isCodexConnected: () => this.isCodexConnected(),
+      isClaudeCodeConnected: () => this.isClaudeCodeConnected(),
       getDefaultModelForProvider: (id) => this.getDefaultModelForProvider(id),
       notifyChange: () => this.notifyChange(),
       reRender: () => this.render(),
@@ -303,6 +332,7 @@ export class ChatSettingsRenderer {
       modelOptionMap: this.agentModelOptionMap,
       providerManager: this.providerManager,
       isCodexConnected: () => this.isCodexConnected(),
+      isClaudeCodeConnected: () => this.isClaudeCodeConnected(),
       getDefaultModelForProvider: (id) => this.getDefaultModelForProvider(id),
       notifyChange: () => this.notifyChange(),
       reRender: () => this.render(),

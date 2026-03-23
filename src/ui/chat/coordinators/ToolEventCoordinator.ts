@@ -64,6 +64,22 @@ export class ToolEventCoordinator {
         };
 
         messageBubble.handleToolEvent('detected', toolData);
+
+        if (
+          toolCall.providerExecuted &&
+          (
+            toolCall.result !== undefined ||
+            toolCall.success !== undefined ||
+            toolCall.error !== undefined
+          )
+        ) {
+          messageBubble.handleToolEvent('completed', {
+            toolId: toolCall.id,
+            result: toolCall.result,
+            success: toolCall.success !== false,
+            error: toolCall.error
+          });
+        }
       }
     }
   }
