@@ -10,6 +10,7 @@ export class ProviderUtils {
     const displayNames: Record<string, string> = {
       'openai': 'OpenAI',
       'anthropic': 'Anthropic',
+      'anthropic-claude-code': 'Anthropic (Claude Code)',
       'mistral': 'Mistral AI',
       'ollama': 'Ollama',
       'lmstudio': 'LM Studio',
@@ -73,6 +74,7 @@ export class ProviderUtils {
     const colors: Record<string, string> = {
       'openai': '#10a37f',
       'anthropic': '#d97757',
+      'anthropic-claude-code': '#d97757',
       'mistral': '#ff6b35',
       'ollama': '#000000',
       'lmstudio': '#4A90E2',
@@ -92,6 +94,7 @@ export class ProviderUtils {
     const icons: Record<string, string> = {
       'openai': '🤖',
       'anthropic': '🧠',
+      'anthropic-claude-code': '🧠',
       'mistral': '🌪️',
       'ollama': '🦙',
       'lmstudio': '🖥️',
@@ -124,6 +127,7 @@ export class ProviderUtils {
     const abbreviations: Record<string, string> = {
       'openai': 'OAI',
       'anthropic': 'ANT',
+      'anthropic-claude-code': 'ACC',
       'mistral': 'MST',
       'ollama': 'OLL',
       'lmstudio': 'LMS',
@@ -143,6 +147,7 @@ export class ProviderUtils {
     const streamingProviders = [
       'openai',
       'anthropic',
+      'anthropic-claude-code',
       'mistral',
       'ollama',
       'lmstudio',    // ✅ LM Studio streaming via OpenAI-compatible API
@@ -168,6 +173,7 @@ export class ProviderUtils {
       'mistral',     // ✅ Native Mistral function calling
       'requesty',    // ✅ OpenAI-compatible function calling
       'anthropic',   // ✅ Native Claude tool calling
+      'anthropic-claude-code',
       'google'       // ✅ Native Google Gemini function calling (functionDeclarations)
     ];
     // Note: Perplexity does NOT support function calling (web search focused)
@@ -221,7 +227,7 @@ export class ProviderUtils {
     return {
       streaming: this.supportsStreaming(providerId),
       functionCalling: this.supportsFunctionCalling(providerId),
-      imageInput: ['openai', 'anthropic', 'google'].includes(providerId),
+      imageInput: ['openai', 'anthropic', 'anthropic-claude-code', 'google'].includes(providerId),
       jsonMode: ['openai', 'mistral'].includes(providerId)
     };
   }

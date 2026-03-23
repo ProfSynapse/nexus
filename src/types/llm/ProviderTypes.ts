@@ -97,6 +97,10 @@ export const DEFAULT_LLM_PROVIDER_SETTINGS: LLMProviderSettings = {
       apiKey: '',
       enabled: false
     },
+    'anthropic-claude-code': {
+      apiKey: '',
+      enabled: false
+    },
     google: {
       apiKey: '',
       enabled: false

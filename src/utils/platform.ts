@@ -155,6 +155,7 @@ export const getMobileUnavailableFeatures = (): string[] => {
         'Local LLM providers (Ollama, LM Studio)',
         'WebLLM/Nexus local models',
         'ChatGPT Codex OAuth provider',
+        'Claude Code subscription provider',
     ];
 };
 
@@ -178,6 +179,7 @@ export const MOBILE_COMPATIBLE_PROVIDERS = [
  */
 export const DESKTOP_ONLY_PROVIDERS = [
     'openai-codex',  // OAuth callback server remains desktop only
+    'anthropic-claude-code', // Local Claude Code runtime + desktop auth
     'ollama',       // Local server - desktop only
     'lmstudio',     // Local server - desktop only
     'webllm',       // WebGPU - disabled due to bugs

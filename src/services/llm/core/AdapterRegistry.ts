@@ -227,6 +227,7 @@ export class AdapterRegistry implements IAdapterRegistry {
     // ═══════════════════════════════════════════════════════════════════════════
     if (!onMobile) {
       await this.initializeCodexAdapter(providers['openai-codex']);
+      await this.initializeClaudeCodeAdapter(providers['anthropic-claude-code']);
 
       // Ollama - apiKey is actually the server URL
       if (providers.ollama?.enabled && providers.ollama.apiKey) {
@@ -326,6 +327,27 @@ export class AdapterRegistry implements IAdapterRegistry {
     } catch (error) {
       console.error('AdapterRegistry: Failed to initialize OpenAI Codex adapter:', error);
       this.logError('openai-codex', error);
+    }
+  }
+
+  /**
+   * Initialize the Claude Code adapter from local CLI auth state.
+   */
+  private async initializeClaudeCodeAdapter(config: LLMProviderConfig | undefined): Promise<void> {
+    if (!config?.enabled) return;
+
+    const oauth = config.oauth;
+    if (!oauth?.connected || !this.vault) {
+      return;
+    }
+
+    try {
+      const { AnthropicClaudeCodeAdapter } = await import('../adapters/anthropic-claude-code/AnthropicClaudeCodeAdapter');
+      const adapter = new AnthropicClaudeCodeAdapter(this.vault);
+      this.adapters.set('anthropic-claude-code', adapter);
+    } catch (error) {
+      console.error('AdapterRegistry: Failed to initialize Claude Code adapter:', error);
+      this.logError('anthropic-claude-code', error);
     }
   }
 
