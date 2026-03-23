@@ -28,6 +28,17 @@ Nexus gives AI agents like Claude full access to your Obsidian vault — so you 
 
 The built-in chat works right away with no extra software. Just add an API key in **Settings &rarr; Nexus &rarr; Providers** and start chatting inside Obsidian. Supports Anthropic, OpenAI, Google, Groq, Mistral, OpenRouter, Perplexity, Requesty, Ollama, and LM Studio.
 
+#### Use Claude Code (no API key needed)
+
+If you have [Claude Code](https://claude.ai/download) installed and authorized on your machine, you can use your existing Claude subscription directly in Nexus — no API key required.
+
+1. Install and authorize [Claude Code](https://claude.ai/download) on your desktop
+2. In Nexus, go to **Settings &rarr; Providers &rarr; Anthropic**
+3. Click the **Connect** button under "Claude Code"
+4. In chat settings, select a model labeled **(Claude Code)** — e.g. "Claude Sonnet 4.6 (Claude Code)"
+
+That's it. Your messages route through the local Claude CLI using your subscription limits. Desktop only.
+
 ### 3. Connect an External AI Agent (optional)
 
 Nexus works as an MCP server with Claude Desktop, Claude Code, Codex CLI, Gemini CLI, GitHub Copilot, Cline, Roo Code, Cursor, Windsurf, and any other MCP-compatible tool. Requires [Node.js](https://nodejs.org/) (v18+) on your machine. The native chat inside Obsidian works fine without this.

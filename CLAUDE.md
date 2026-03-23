@@ -3,7 +3,7 @@ Last Updated: 2026-03-13
 
 ## Project Overview
 - **Name**: Claudesidian MCP
-- **Version**: 5.3.2
+- **Version**: 5.4.0
 - **Type**: Obsidian Community Plugin
 - **Purpose**: MCP integration for Obsidian with AI-powered vault operations
 - **Architecture**: Agent-Tool pattern with domain-driven design
@@ -258,6 +258,15 @@ onCreate(file: TFile) {
 ## Recent Milestones
 
 ### March 2026
+
+**Mar 23**: Claude Code Integration + Replace/Insert Tools ✅ (v5.4.0, PRs #57, #58)
+- Claude Code as native chat provider: uses local Claude CLI subscription login (no API key needed)
+- New `anthropic-claude-code` adapter with headless Claude Code runner and binary discovery
+- Claude Code models (Haiku 4.5, Sonnet 4.6, Opus 4.6) labeled "(Claude Code)" in model dropdown
+- Tool call traces and reasoning surfaced in existing chat accordions
+- Replaced unified `update` tool with `replace` + `insert` tools (inspired by community PR #56)
+- `replace`: validates `oldContent` at startLine/endLine, sliding-window search on mismatch
+- `insert`: positional insert (N), prepend (1), append (-1)
 
 **Mar 13**: Settings UI Redesign ✅ (PR #42)
 - CSS spacing token system: 7 `--space-*` tokens (4px base), replacing ~15 hardcoded values
@@ -668,7 +677,7 @@ Key files: `src/ui/chat/components/suggesters/`, `MessageEnhancer.ts`, `SystemPr
 <!-- SESSION_START -->
 ## Current Session
 <!-- Auto-managed by session_init hook. Overwritten each session. -->
-- Resume: `claude --resume 642186fc-8dba-4de7-a88d-918d62428e62`
-- Team: `pact-642186fc`
-- Started: 2026-03-22 11:03:58 UTC
+- Resume: `claude --resume 5313cad9-b60d-4476-b092-5231b694bc90`
+- Team: `pact-5313cad9`
+- Started: 2026-03-23 11:49:31 UTC
 <!-- SESSION_END -->
