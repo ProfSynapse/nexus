@@ -1,5 +1,6 @@
 import { App, FileSystemAdapter, Platform } from 'obsidian';
 import { resolveDesktopBinaryPath } from '../../utils/binaryDiscovery';
+import { spawnDesktopProcess } from '../../utils/desktopProcess';
 
 export interface ClaudeCodeAuthStatus {
     available: boolean;
@@ -73,7 +74,8 @@ export class ClaudeCodeAuthService {
         }
 
         const childProcess = require('child_process') as typeof import('child_process');
-        const child = childProcess.spawn(
+        const child = spawnDesktopProcess(
+            childProcess,
             initialStatus.claudePath,
             ['auth', 'login', '--claudeai'],
             {
@@ -122,11 +124,20 @@ export class ClaudeCodeAuthService {
         const childProcess = require('child_process') as typeof import('child_process');
 
         return await new Promise((resolve) => {
-            const child = childProcess.spawn(command, args, {
+            const child = spawnDesktopProcess(childProcess, command, args, {
                 cwd,
                 env: { ...process.env },
                 stdio: ['ignore', 'pipe', 'pipe']
             });
+
+            if (!child.stdout || !child.stderr) {
+                resolve({
+                    stdout: '',
+                    stderr: 'Failed to capture Claude Code process output.',
+                    exitCode: null
+                });
+                return;
+            }
 
             let stdout = '';
             let stderr = '';

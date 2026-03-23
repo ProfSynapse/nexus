@@ -1,6 +1,7 @@
 import { App, FileSystemAdapter, Plugin, Platform } from 'obsidian';
 import { getPrimaryServerKey } from '../../constants/branding';
 import { resolveDesktopBinaryPath } from '../../utils/binaryDiscovery';
+import { spawnDesktopProcess } from '../../utils/desktopProcess';
 
 export interface ClaudeHeadlessPreflightResult {
     claudePath: string | null;
@@ -139,13 +140,12 @@ export class ClaudeHeadlessService {
                 args.push('--model', model);
             }
 
-            args.push(prompt);
-
             const processResult = await this.runProcess(
                 preflight.claudePath,
                 args,
                 preflight.vaultPath,
-                this.buildClaudeEnv()
+                this.buildClaudeEnv(),
+                prompt
             );
 
             return {
@@ -208,19 +208,34 @@ export class ClaudeHeadlessService {
         command: string,
         args: string[],
         cwd?: string,
-        env?: NodeJS.ProcessEnv
+        env?: NodeJS.ProcessEnv,
+        stdinText?: string
     ): Promise<ProcessResult> {
         const childProcess = require('child_process') as typeof import('child_process');
 
         return await new Promise<ProcessResult>((resolve) => {
-            const child = childProcess.spawn(command, args, {
+            const child = spawnDesktopProcess(childProcess, command, args, {
                 cwd,
                 env,
-                stdio: ['ignore', 'pipe', 'pipe']
+                stdio: ['pipe', 'pipe', 'pipe']
             });
+
+            if (!child.stdin || !child.stdout || !child.stderr) {
+                resolve({
+                    stdout: '',
+                    stderr: 'Failed to attach Claude Code process stdio.',
+                    exitCode: null
+                });
+                return;
+            }
 
             let stdout = '';
             let stderr = '';
+
+            if (stdinText) {
+                child.stdin.write(stdinText);
+            }
+            child.stdin.end();
 
             child.stdout.on('data', (chunk: Buffer | string) => {
                 stdout += chunk.toString();
@@ -256,7 +271,7 @@ export class ClaudeHeadlessService {
 
         const pathMod = require('path') as typeof import('path');
         const manifestDir = this.plugin.manifest.dir;
-        const pluginFolderName = manifestDir ? manifestDir.split('/').pop() || manifestDir : '';
+        const pluginFolderName = manifestDir ? pathMod.basename(manifestDir) : '';
 
         if (!pluginFolderName) {
             return null;

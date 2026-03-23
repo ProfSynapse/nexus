@@ -16,6 +16,8 @@ const COMMON_WINDOWS_BIN_DIRS = [
     'C:\\Program Files\\Anthropic\\Claude'
 ];
 
+const WINDOWS_BINARY_PRIORITY = ['.exe', '.cmd', '.bat', '.com', ''];
+
 export function resolveDesktopBinaryPath(binaryName: string): string | null {
     if (!Platform.isDesktop) {
         return null;
@@ -38,16 +40,23 @@ function resolveFromCurrentPath(binaryName: string): string | null {
     try {
         const childProcess = require('child_process') as typeof import('child_process');
         const nodeFs = require('fs') as typeof import('fs');
-        const command = Platform.isWin ? `where ${binaryName}` : `which ${binaryName}`;
+        const command = Platform.isWin ? `where.exe ${binaryName}` : `which ${binaryName}`;
         const result = childProcess.execSync(command, {
             encoding: 'utf8',
             timeout: 5000,
             env: { ...process.env }
-        }).trim();
+        });
 
-        const firstLine = result.split(/\r?\n/u)[0]?.trim();
-        if (firstLine && nodeFs.existsSync(firstLine)) {
-            return firstLine;
+        const candidates = result
+            .split(/\r?\n/u)
+            .map((line: string) => line.trim())
+            .filter(Boolean)
+            .filter((candidate: string) => nodeFs.existsSync(candidate));
+
+        if (candidates.length > 0) {
+            return Platform.isWin
+                ? chooseBestWindowsCandidate(candidates)
+                : candidates[0] ?? null;
         }
     } catch {
         // Fall through to deterministic location checks.
@@ -61,7 +70,9 @@ function resolveFromCommonLocations(binaryName: string): string | null {
         const nodeFs = require('fs') as typeof import('fs');
         const pathMod = require('path') as typeof import('path');
         const binDirs = Platform.isWin ? COMMON_WINDOWS_BIN_DIRS : COMMON_UNIX_BIN_DIRS;
-        const candidateNames = Platform.isWin ? [binaryName, `${binaryName}.exe`, `${binaryName}.cmd`] : [binaryName];
+        const candidateNames = Platform.isWin
+            ? [`${binaryName}.exe`, `${binaryName}.cmd`, `${binaryName}.bat`, binaryName]
+            : [binaryName];
 
         for (const dir of binDirs) {
             for (const candidateName of candidateNames) {
@@ -76,6 +87,25 @@ function resolveFromCommonLocations(binaryName: string): string | null {
     }
 
     return null;
+}
+
+function chooseBestWindowsCandidate(candidates: string[]): string | null {
+    const pathMod = require('path') as typeof import('path');
+
+    const ranked = [...candidates].sort((left, right) => {
+        const leftScore = WINDOWS_BINARY_PRIORITY.indexOf(pathMod.extname(left).toLowerCase());
+        const rightScore = WINDOWS_BINARY_PRIORITY.indexOf(pathMod.extname(right).toLowerCase());
+        const normalizedLeft = leftScore === -1 ? Number.MAX_SAFE_INTEGER : leftScore;
+        const normalizedRight = rightScore === -1 ? Number.MAX_SAFE_INTEGER : rightScore;
+
+        if (normalizedLeft !== normalizedRight) {
+            return normalizedLeft - normalizedRight;
+        }
+
+        return left.localeCompare(right);
+    });
+
+    return ranked[0] ?? null;
 }
 
 function resolveFromLoginShell(binaryName: string): string | null {

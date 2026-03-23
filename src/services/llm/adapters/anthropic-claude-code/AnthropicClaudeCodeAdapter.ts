@@ -1,6 +1,7 @@
 import { FileSystemAdapter, Vault } from 'obsidian';
 import { BaseAdapter } from '../BaseAdapter';
 import { resolveDesktopBinaryPath } from '../../../../utils/binaryDiscovery';
+import { spawnDesktopProcess } from '../../../../utils/desktopProcess';
 import {
   GenerateOptions,
   StreamChunk,
@@ -127,22 +128,30 @@ export class AnthropicClaudeCodeAdapter extends BaseAdapter {
         args.push('--model', model);
       }
 
-      args.push(prompt);
-
       const env = { ...process.env };
       delete env.ANTHROPIC_API_KEY;
       delete env.ANTHROPIC_AUTH_TOKEN;
 
-      const child = childProcess.spawn(runtime.claudePath, args, {
+      const child = spawnDesktopProcess(childProcess, runtime.claudePath, args, {
         cwd: runtime.vaultPath,
         env,
-        stdio: ['ignore', 'pipe', 'pipe']
+        stdio: ['pipe', 'pipe', 'pipe']
       });
+      if (!child.stdin || !child.stdout || !child.stderr) {
+        throw new LLMProviderError(
+          'Failed to attach Claude Code process stdio.',
+          this.name,
+          'PROVIDER_ERROR'
+        );
+      }
       const closePromise = new Promise<{ exitCode: number | null; signal: NodeJS.Signals | null }>((resolve) => {
         child.on('close', (exitCode: number | null, signal: NodeJS.Signals | null) => {
           resolve({ exitCode, signal });
         });
       });
+
+      child.stdin.write(prompt);
+      child.stdin.end();
 
       child.stderr.on('data', (chunk: Buffer | string) => {
         stderr += chunk.toString();
@@ -498,11 +507,20 @@ export class AnthropicClaudeCodeAdapter extends BaseAdapter {
       delete env.ANTHROPIC_API_KEY;
       delete env.ANTHROPIC_AUTH_TOKEN;
 
-      const child = childProcess.spawn(command, args, {
+      const child = spawnDesktopProcess(childProcess, command, args, {
         cwd,
         env,
         stdio: ['ignore', 'pipe', 'pipe']
       });
+
+      if (!child.stdout || !child.stderr) {
+        resolve({
+          stdout: '',
+          stderr: 'Failed to capture Claude Code process output.',
+          exitCode: null
+        });
+        return;
+      }
 
       let stdout = '';
       let stderr = '';
