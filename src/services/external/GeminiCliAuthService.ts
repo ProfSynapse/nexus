@@ -7,12 +7,8 @@
  * whether the CLI is present and authenticated.
  */
 import { App, Platform } from 'obsidian';
-import { runCliProcess, CliProcessResult } from '../../utils/cliProcessRunner';
-import {
-    buildGeminiCliEnv,
-    buildGeminiCliSystemSettings,
-    resolveGeminiCliRuntime
-} from '../../utils/geminiCli';
+import { CliProcessResult } from '../../utils/cliProcessRunner';
+import { resolveGeminiCliRuntime } from '../../utils/geminiCli';
 
 export interface GeminiCliAuthStatus {
     available: boolean;
@@ -89,43 +85,72 @@ export class GeminiCliAuthService {
         };
     }
 
+    /**
+     * Check authentication by reading the Gemini CLI credential file at
+     * ~/.gemini/oauth_creds.json. This avoids launching an actual LLM call
+     * (which fails when the MCP server is not running) and instead verifies
+     * that valid OAuth credentials are present on disk.
+     *
+     * Returns exitCode 0 if credentials exist and contain an access token,
+     * non-zero otherwise.
+     */
     private async runAuthProbe(): Promise<CliProcessResult> {
-        const runtime = resolveGeminiCliRuntime(this.app.vault);
-        if (!runtime.geminiPath || !runtime.vaultPath) {
-            return { stdout: '', stderr: 'Gemini CLI runtime is unavailable.', exitCode: null };
-        }
-
-        const fsPromises = require('fs/promises') as typeof import('fs/promises');
+        const fs = require('fs') as typeof import('fs');
         const osMod = require('os') as typeof import('os');
         const pathMod = require('path') as typeof import('path');
-        const tempDir = await fsPromises.mkdtemp(pathMod.join(osMod.tmpdir(), 'nexus-gemini-auth-'));
-        const settingsPath = pathMod.join(tempDir, 'system-settings.json');
 
+        const credsPath = pathMod.join(osMod.homedir(), '.gemini', 'oauth_creds.json');
+
+        // Check file exists and is accessible
         try {
-            await fsPromises.writeFile(
-                settingsPath,
-                JSON.stringify(buildGeminiCliSystemSettings(runtime), null, 2),
-                'utf8'
-            );
-
-            const handle = runCliProcess(
-                runtime.geminiPath,
-                [
-                    '--prompt',
-                    'Reply with exactly OK.',
-                    '--model',
-                    'gemini-2.5-flash',
-                    '--output-format',
-                    'json'
-                ],
-                {
-                    cwd: runtime.vaultPath,
-                    env: buildGeminiCliEnv(settingsPath)
-                }
-            );
-            return await handle.result;
-        } finally {
-            await fsPromises.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+            fs.accessSync(credsPath, fs.constants.R_OK);
+        } catch {
+            return {
+                stdout: '',
+                stderr: `Credential file not found or not readable: ${credsPath}`,
+                exitCode: 1
+            };
         }
+
+        // Read and validate the credential file
+        let raw: string;
+        try {
+            raw = fs.readFileSync(credsPath, 'utf8');
+        } catch (err) {
+            return {
+                stdout: '',
+                stderr: `Failed to read credential file: ${(err as Error).message}`,
+                exitCode: 1
+            };
+        }
+
+        if (!raw || raw.trim().length === 0) {
+            return {
+                stdout: '',
+                stderr: 'Credential file is empty.',
+                exitCode: 1
+            };
+        }
+
+        // Parse and confirm an access token is present
+        try {
+            const creds = JSON.parse(raw) as Record<string, unknown>;
+            const hasToken = typeof creds['access_token'] === 'string' && (creds['access_token'] as string).length > 0;
+            if (!hasToken) {
+                return {
+                    stdout: '',
+                    stderr: 'Credential file does not contain a valid access_token.',
+                    exitCode: 1
+                };
+            }
+        } catch {
+            return {
+                stdout: '',
+                stderr: 'Credential file is not valid JSON.',
+                exitCode: 1
+            };
+        }
+
+        return { stdout: 'ok', stderr: '', exitCode: 0 };
     }
 }

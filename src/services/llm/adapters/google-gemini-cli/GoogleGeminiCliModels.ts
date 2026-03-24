@@ -13,7 +13,7 @@ export const GOOGLE_GEMINI_CLI_MODELS: ModelSpec[] = [
       supportsJSON: true,
       supportsImages: true,
       supportsFunctions: true,
-      supportsStreaming: true,
+      supportsStreaming: false,
       supportsThinking: true
     }
   },
@@ -29,10 +29,58 @@ export const GOOGLE_GEMINI_CLI_MODELS: ModelSpec[] = [
       supportsJSON: true,
       supportsImages: true,
       supportsFunctions: true,
-      supportsStreaming: true,
+      supportsStreaming: false,
       supportsThinking: true
+    }
+  },
+  {
+    provider: 'google-gemini-cli',
+    name: 'Gemini 3.1 Pro (Preview)',
+    apiName: 'gemini-3.1-pro-preview',
+    contextWindow: 1048576,
+    maxTokens: 65536,
+    inputCostPerMillion: 0,
+    outputCostPerMillion: 0,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: false,
+      supportsThinking: true
+    }
+  },
+  {
+    provider: 'google-gemini-cli',
+    name: 'Gemini 3.1 Flash Lite (Preview)',
+    apiName: 'gemini-3.1-flash-lite-preview',
+    contextWindow: 1048576,
+    maxTokens: 65536,
+    inputCostPerMillion: 0,
+    outputCostPerMillion: 0,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: false,
+      supportsThinking: false
+    }
+  },
+  {
+    provider: 'google-gemini-cli',
+    name: 'Gemini 3 Flash',
+    apiName: 'gemini-3-flash',
+    contextWindow: 1048576,
+    maxTokens: 65536,
+    inputCostPerMillion: 0,
+    outputCostPerMillion: 0,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: false,
+      supportsThinking: false
     }
   }
 ];
 
-export const GOOGLE_GEMINI_CLI_DEFAULT_MODEL = 'gemini-2.5-pro';
+export const GOOGLE_GEMINI_CLI_DEFAULT_MODEL = 'gemini-2.5-flash';
