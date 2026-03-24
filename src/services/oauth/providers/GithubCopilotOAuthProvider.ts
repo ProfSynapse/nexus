@@ -158,7 +158,7 @@ export class GithubCopilotOAuthProvider implements IOAuthProvider {
    *
    * @returns OAuthResult with the GitHub OAuth token (ghu_*)
    */
-  async startDeviceFlow(): Promise<OAuthResult> {
+  async startDeviceFlow(onCode?: (userCode: string, verificationUri: string) => void): Promise<OAuthResult> {
     // Step 1: Request device code
     const deviceResponse = await ProviderHttpClient.request({
       url: DEVICE_CODE_URL,
@@ -188,11 +188,15 @@ export class GithubCopilotOAuthProvider implements IOAuthProvider {
       window.open(deviceData.verification_uri || VERIFICATION_URL, '_blank');
     }
 
-    // Step 3: Show user_code via Notice (persistent — 30 second duration)
-    new Notice(
-      `GitHub Copilot: Enter code ${deviceData.user_code} in your browser to complete sign-in.`,
-      30000
-    );
+    // Step 3: Show user_code — prefer inline callback, fallback to Notice
+    if (onCode) {
+      onCode(deviceData.user_code, deviceData.verification_uri || VERIFICATION_URL);
+    } else {
+      new Notice(
+        `GitHub Copilot: Enter code ${deviceData.user_code} in your browser to complete sign-in.`,
+        30000
+      );
+    }
 
     // Step 4: Poll for token using exchangeCode
     return this.exchangeCode(deviceData.device_code, '', '');

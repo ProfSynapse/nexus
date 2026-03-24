@@ -37,9 +37,34 @@ Branch any conversation to explore alternative directions without losing the ori
 
 ---
 
+## Providers
+
+Configure providers in **Settings &rarr; Nexus &rarr; Providers**. All configured models appear in the chat model selector.
+
+| Provider | Auth | Notes |
+|----------|------|-------|
+| Anthropic | API key | `sk-ant-...` |
+| OpenAI | API key | `sk-proj-...` |
+| Google AI | API key | `AIza...` |
+| Mistral | API key | `msak_...` |
+| Groq | API key | `gsk_...` |
+| OpenRouter | API key or OAuth | `sk-or-...` or sign in |
+| Requesty | API key | `req_...` |
+| Perplexity | API key | `pplx-...` |
+| Ollama | None | Local, requires Ollama running |
+| LM Studio | None | Local, requires LM Studio running |
+| **Claude Code** | Local CLI | Must be installed and signed in on your computer first; no API key needed |
+| **Gemini CLI** | Local CLI | Must be installed and signed in on your computer first; no API key needed |
+| **GitHub Copilot** | OAuth device flow | Requires active Copilot subscription; sign in via code in modal |
+| **Codex (ChatGPT)** | OAuth | Requires ChatGPT Plus/Pro; sign in via browser redirect |
+
+See the [main README](../README.md#2-set-up-a-provider-for-native-chat) for setup instructions for each subscription-based provider.
+
+---
+
 ## Model Selection
 
-Switch between any configured provider and model mid-conversation. Supports all providers listed in the main README.
+Switch between any configured provider and model mid-conversation.
 
 ---
 

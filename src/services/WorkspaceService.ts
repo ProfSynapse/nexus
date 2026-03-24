@@ -19,6 +19,7 @@ import { WorkspaceStateService } from './workspace/WorkspaceStateService';
 
 // Export constant for backward compatibility
 export const GLOBAL_WORKSPACE_ID = 'default';
+const DEFAULT_WORKSPACE_NAME = 'Default Workspace';
 
 export class WorkspaceService {
   private storageAdapterOrGetter: StorageAdapterOrGetter;
@@ -39,6 +40,7 @@ export class WorkspaceService {
       storageAdapter,
       {
         getWorkspace: (id) => this.getWorkspace(id),
+        getWorkspaceByNameOrId: (identifier) => this.getWorkspaceByNameOrId(identifier),
         createWorkspace: (data) => this.createWorkspace(data)
       }
     );
@@ -60,6 +62,26 @@ export class WorkspaceService {
    */
   private getReadyAdapter(): IStorageAdapter | undefined {
     return resolveAdapter(this.storageAdapterOrGetter);
+  }
+
+  private isWorkspaceNameUniqueConstraint(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : String(error);
+    return message.includes('UNIQUE constraint failed: workspaces.name');
+  }
+
+  private async reuseExistingWorkspaceAfterUniqueError(
+    data: Partial<IndividualWorkspace>
+  ): Promise<IndividualWorkspace | null> {
+    const existingById = data.id ? await this.getWorkspace(data.id) : null;
+    if (existingById) {
+      return existingById;
+    }
+
+    if (!data.name) {
+      return null;
+    }
+
+    return this.getWorkspaceByNameOrId(data.name);
   }
 
   // ============================================================================
@@ -254,20 +276,34 @@ export class WorkspaceService {
         context: hybridContext
       };
 
-      const id = await adapterForCreate.createWorkspace(hybridData);
+      try {
+        const id = await adapterForCreate.createWorkspace(hybridData);
 
-      return {
-        id,
-        name: hybridData.name,
-        description: hybridData.description,
-        rootFolder: hybridData.rootFolder,
-        created: hybridData.created,
-        lastAccessed: hybridData.lastAccessed,
-        isActive: hybridData.isActive,
-        isArchived: hybridData.isArchived,
-        context: data.context,
-        sessions: {}
-      };
+        return {
+          id,
+          name: hybridData.name,
+          description: hybridData.description,
+          rootFolder: hybridData.rootFolder,
+          created: hybridData.created,
+          lastAccessed: hybridData.lastAccessed,
+          isActive: hybridData.isActive,
+          isArchived: hybridData.isArchived,
+          context: data.context,
+          sessions: {}
+        };
+      } catch (error) {
+        const isDefaultWorkspace =
+          hybridData.id === GLOBAL_WORKSPACE_ID || hybridData.name === DEFAULT_WORKSPACE_NAME;
+
+        if (isDefaultWorkspace && this.isWorkspaceNameUniqueConstraint(error)) {
+          const existingWorkspace = await this.reuseExistingWorkspaceAfterUniqueError(hybridData);
+          if (existingWorkspace) {
+            return existingWorkspace;
+          }
+        }
+
+        throw error;
+      }
     }
 
     // Fall back to legacy implementation

@@ -35,6 +35,17 @@ export class WorkspaceIntegrationService {
         return null;
       }
 
+      const workspaceService = await plugin.getService<WorkspaceService>('workspaceService');
+      const resolvedWorkspace = workspaceService
+        ? await workspaceService.getWorkspaceByNameOrId(workspaceId)
+        : null;
+
+      if (!resolvedWorkspace) {
+        return null;
+      }
+
+      const resolvedWorkspaceId = resolvedWorkspace.id;
+
       // Try to get the agentManager and memoryManager agent
       const agentManager = await plugin.getService<AgentManager>('agentManager');
 
@@ -45,14 +56,14 @@ export class WorkspaceIntegrationService {
           if (memoryManager) {
             // Execute loadWorkspace tool to get comprehensive workspace data
             const result = await memoryManager.executeTool('loadWorkspace', {
-              id: workspaceId,
+              id: resolvedWorkspaceId,
               limit: 3 // Get recent sessions, states, and activity
             });
 
             if (result.success && result.data) {
               // Return the comprehensive workspace data from the tool
               return {
-                id: workspaceId,
+                id: resolvedWorkspaceId,
                 ...result.data,
                 // Keep the workspace context from the result
                 workspaceContext: result.workspaceContext
@@ -66,9 +77,8 @@ export class WorkspaceIntegrationService {
       }
 
       // Fallback: just load basic workspace data if LoadWorkspaceTool fails
-      const workspaceService = await plugin.getService<WorkspaceService>('workspaceService');
       if (workspaceService) {
-        const workspace = await workspaceService.getWorkspace(workspaceId);
+        const workspace = await workspaceService.getWorkspace(resolvedWorkspaceId);
         // Convert IndividualWorkspace to Record<string, unknown> for dynamic usage
         return workspace as unknown as Record<string, unknown>;
       }
@@ -82,7 +92,7 @@ export class WorkspaceIntegrationService {
         const plugin = getNexusPlugin<NexusPlugin>(this.app);
         const workspaceService = await plugin?.getService<WorkspaceService>('workspaceService');
         if (workspaceService) {
-          const workspace = await workspaceService.getWorkspace(workspaceId);
+          const workspace = await workspaceService.getWorkspaceByNameOrId(workspaceId);
           // Convert IndividualWorkspace to Record<string, unknown> for dynamic usage
           return workspace as unknown as Record<string, unknown>;
         }

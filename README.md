@@ -26,18 +26,52 @@ Nexus gives AI agents like Claude full access to your Obsidian vault — so you 
 
 ### 2. Set Up a Provider (for Native Chat)
 
-The built-in chat works right away with no extra software. Just add an API key in **Settings &rarr; Nexus &rarr; Providers** and start chatting inside Obsidian. Supports Anthropic, OpenAI, Google, Groq, Mistral, OpenRouter, Perplexity, Requesty, Ollama, and LM Studio.
+The built-in chat works right away with no extra software. Just add an API key in **Settings &rarr; Nexus &rarr; Providers** and start chatting inside Obsidian. Supports Anthropic, OpenAI, Google, Groq, Mistral, OpenRouter, Perplexity, Requesty, Ollama, LM Studio, Claude Code, Gemini CLI, Codex (ChatGPT), and GitHub Copilot.
 
 #### Use Claude Code (no API key needed)
 
-If you have [Claude Code](https://claude.ai/download) installed and authorized on your machine, you can use your existing Claude subscription directly in Nexus — no API key required.
+**Prerequisite: [Claude Code](https://claude.ai/download) must be installed on your computer and you must be signed in.** Nexus uses your existing CLI installation — it won't work if Claude Code isn't installed and authenticated outside of Obsidian first.
 
-1. Install and authorize [Claude Code](https://claude.ai/download) on your desktop
+1. Install [Claude Code](https://claude.ai/download) and run `claude` in your terminal to sign in
 2. In Nexus, go to **Settings &rarr; Providers &rarr; Anthropic**
 3. Click the **Connect** button under "Claude Code"
 4. In chat settings, select a model labeled **(Claude Code)** — e.g. "Claude Sonnet 4.6 (Claude Code)"
 
-That's it. Your messages route through the local Claude CLI using your subscription limits. Desktop only.
+Your messages route through the local Claude CLI using your existing subscription. Desktop only.
+
+#### Use Gemini CLI (no API key needed)
+
+**Prerequisite: [Gemini CLI](https://github.com/google-gemini/gemini-cli) must be installed on your computer and you must be signed in.** Nexus uses your existing CLI installation — it won't work if Gemini CLI isn't installed and authenticated outside of Obsidian first.
+
+1. Install Gemini CLI: `npm install -g @google/gemini-cli`
+2. Sign in: run `gemini` in your terminal and complete the Google auth flow
+3. In Nexus, go to **Settings &rarr; Providers &rarr; Google AI**
+4. The "Gemini CLI" section shows **Connected** once your credentials are detected
+5. In chat settings, select a Gemini CLI model
+
+Your messages route through the local Gemini CLI using your existing Google account. Desktop only.
+
+#### Use GitHub Copilot (requires active Copilot subscription)
+
+Connect your GitHub Copilot subscription via OAuth — no API key to manage.
+
+1. In Nexus, go to **Settings &rarr; Providers &rarr; GitHub Copilot**
+2. Click **Connect**
+3. A code appears in the modal — copy it, then enter it at the GitHub page that opens automatically
+4. Once authorized, Nexus fetches available Copilot models automatically
+
+Requires an active [GitHub Copilot](https://github.com/features/copilot) subscription. Desktop only. Experimental — uses an undocumented Copilot proxy.
+
+#### Use Codex via ChatGPT (requires ChatGPT Plus/Pro)
+
+Connect your ChatGPT account via OAuth to access GPT-5 models through the Responses API.
+
+1. In Nexus, go to **Settings &rarr; Providers &rarr; OpenAI**
+2. Click **Connect** under "ChatGPT (Codex)"
+3. Sign in with your ChatGPT account in the browser window that opens
+4. In chat settings, select a model labeled **(ChatGPT)**
+
+Requires an active [ChatGPT Plus or Pro](https://chatgpt.com) subscription. Desktop only. Experimental.
 
 ### 3. Connect an External AI Agent (optional)
 

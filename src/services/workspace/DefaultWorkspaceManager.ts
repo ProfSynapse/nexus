@@ -132,6 +132,12 @@ export class DefaultWorkspaceManager {
         return;
       }
 
+      const legacyDefaultWorkspace = await this.workspaceService.getWorkspaceByNameOrId(this.defaultConfig.name);
+      if (legacyDefaultWorkspace) {
+        this.setDefaultWorkspaceId(legacyDefaultWorkspace.id);
+        return;
+      }
+
       // Create default workspace JSON
       await this.workspaceService.createWorkspace({
         id: this.defaultWorkspaceId,

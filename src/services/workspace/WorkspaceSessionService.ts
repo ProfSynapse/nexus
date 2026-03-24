@@ -11,6 +11,7 @@ import * as HybridTypes from '../../types/storage/HybridStorageTypes';
 import { StorageAdapterOrGetter, resolveAdapter, withDualBackend } from '../helpers/DualBackendExecutor';
 
 const GLOBAL_WORKSPACE_ID = 'default';
+const DEFAULT_WORKSPACE_NAME = 'Default Workspace';
 
 /**
  * Dependencies injected from WorkspaceService to avoid circular references.
@@ -19,6 +20,7 @@ const GLOBAL_WORKSPACE_ID = 'default';
  */
 export interface WorkspaceSessionDeps {
   getWorkspace: (id: string) => Promise<any>;
+  getWorkspaceByNameOrId: (identifier: string) => Promise<any>;
   createWorkspace: (data: any) => Promise<any>;
 }
 
@@ -38,15 +40,21 @@ export class WorkspaceSessionService {
     const adapter = resolveAdapter(this.storageAdapterOrGetter);
     if (adapter) {
       // Ensure workspace exists before creating session (referential integrity)
-      const existingWorkspace = await this.workspaceDeps.getWorkspace(workspaceId);
+      let existingWorkspace = await this.workspaceDeps.getWorkspace(workspaceId);
       if (!existingWorkspace) {
         if (workspaceId === GLOBAL_WORKSPACE_ID) {
-          await this.workspaceDeps.createWorkspace({
-            id: GLOBAL_WORKSPACE_ID,
-            name: 'Default Workspace',
-            description: 'Default workspace for general use',
-            rootFolder: '/'
-          });
+          existingWorkspace = await this.workspaceDeps.getWorkspaceByNameOrId(DEFAULT_WORKSPACE_NAME);
+          if (existingWorkspace) {
+            workspaceId = existingWorkspace.id;
+          } else {
+            existingWorkspace = await this.workspaceDeps.createWorkspace({
+              id: GLOBAL_WORKSPACE_ID,
+              name: DEFAULT_WORKSPACE_NAME,
+              description: 'Default workspace for general use',
+              rootFolder: '/'
+            });
+            workspaceId = existingWorkspace.id;
+          }
         } else {
           throw new Error(`Workspace ${workspaceId} not found. Create it first or use the default workspace.`);
         }

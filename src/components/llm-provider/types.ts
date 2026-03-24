@@ -62,6 +62,9 @@ export interface ProviderModalConfig {
   /** Optional OAuth configuration for providers that support OAuth connect */
   oauthConfig?: OAuthModalConfig;
 
+  /** If true, hide the API key input — provider uses OAuth exclusively (e.g. GitHub Copilot) */
+  oauthOnly?: boolean;
+
   /** Optional secondary OAuth provider shown as a sub-section in the modal */
   secondaryOAuthProvider?: SecondaryOAuthProviderConfig;
 }
@@ -108,7 +111,10 @@ export interface OAuthModalConfig {
     defaultValue?: string;
   }>;
   /** Start the OAuth flow with collected params, returns the API key on success */
-  startFlow(params: Record<string, string>): Promise<{ success: boolean; apiKey?: string; refreshToken?: string; expiresAt?: number; metadata?: Record<string, string>; error?: string }>;
+  startFlow(
+    params: Record<string, string>,
+    onDeviceCode?: (userCode: string, verificationUri: string) => void
+  ): Promise<{ success: boolean; apiKey?: string; refreshToken?: string; expiresAt?: number; metadata?: Record<string, string>; error?: string }>;
 }
 
 /**

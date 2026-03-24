@@ -28,6 +28,7 @@ export class GenericProviderModal implements IProviderModal {
   private apiKeyInput: HTMLInputElement | null = null;
   private modelsContainer: HTMLElement | null = null;
   private oauthBannerContainer: HTMLElement | null = null;
+  private deviceCodeEl: HTMLElement | null = null;
   private connectButton: HTMLButtonElement | null = null;
 
   // Secondary OAuth UI elements
@@ -98,6 +99,13 @@ export class GenericProviderModal implements IProviderModal {
               connecting,
               this.config.oauthConfig!.providerLabel,
             );
+            // Hide device code display when flow ends
+            if (!connecting) {
+              this.hideDeviceCode();
+            }
+          },
+          onDeviceCode: (userCode, verificationUri) => {
+            this.showDeviceCode(userCode, verificationUri);
           },
         },
       });
@@ -162,11 +170,18 @@ export class GenericProviderModal implements IProviderModal {
    * Render API key input section, with optional OAuth connect button and connected banner
    */
   private renderApiKeySection(container: HTMLElement): void {
-    container.createEl('h2', { text: 'API key' });
+    container.createEl('h2', { text: this.config.oauthOnly ? 'Authentication' : 'API key' });
 
     // OAuth connected banner (shown above the key input when connected)
     this.oauthBannerContainer = container.createDiv('oauth-banner-container');
     this.refreshPrimaryBanner();
+
+    // Device code inline display (hidden until a device flow fires onDeviceCode)
+    this.deviceCodeEl = container.createDiv('oauth-device-code-container');
+    this.deviceCodeEl.addClass('oauth-device-code-hidden');
+
+    // OAuth-only providers (e.g. GitHub Copilot) don't have a manual key input
+    if (this.config.oauthOnly) return;
 
     const setting = new Setting(container)
       .setDesc(`Enter your ${this.config.providerName} API key (format: ${this.config.keyFormat})`)
@@ -194,10 +209,53 @@ export class GenericProviderModal implements IProviderModal {
   }
 
   /**
+   * Show the device code inline for the user to copy and enter
+   */
+  private showDeviceCode(userCode: string, verificationUri: string): void {
+    if (!this.deviceCodeEl) return;
+
+    this.deviceCodeEl.empty();
+    this.deviceCodeEl.removeClass('oauth-device-code-hidden');
+
+    this.deviceCodeEl.createEl('p', {
+      text: 'Enter this code at github.com/login/device:',
+      cls: 'oauth-device-code-instruction',
+    });
+
+    const row = this.deviceCodeEl.createDiv('oauth-device-code-row');
+    row.createSpan({ text: userCode, cls: 'oauth-device-code-value' });
+
+    const copyBtn = row.createEl('button', { text: 'Copy' });
+    copyBtn.addEventListener('click', () => {
+      navigator.clipboard.writeText(userCode);
+      copyBtn.textContent = 'Copied!';
+      setTimeout(() => {
+        copyBtn.textContent = 'Copy';
+      }, 2000);
+    });
+
+    this.deviceCodeEl.createEl('p', {
+      text: `Browser opened to ${verificationUri}`,
+      cls: 'oauth-device-code-url',
+    });
+  }
+
+  /**
+   * Hide and clear the device code display
+   */
+  private hideDeviceCode(): void {
+    if (!this.deviceCodeEl) return;
+    this.deviceCodeEl.addClass('oauth-device-code-hidden');
+    this.deviceCodeEl.empty();
+  }
+
+  /**
    * Refresh the primary OAuth banner
    */
   private refreshPrimaryBanner(): void {
     if (!this.oauthBannerContainer || !this.config.oauthConfig) return;
+
+    this.hideDeviceCode();
 
     const result = renderOAuthBanner(this.oauthBannerContainer, {
       providerLabel: this.config.oauthConfig.providerLabel,
@@ -513,6 +571,7 @@ export class GenericProviderModal implements IProviderModal {
     this.apiKeyInput = null;
     this.modelsContainer = null;
     this.oauthBannerContainer = null;
+    this.deviceCodeEl = null;
     this.connectButton = null;
     this.secondaryBannerContainer = null;
     this.secondaryConnectButton = null;

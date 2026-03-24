@@ -7143,6 +7143,47 @@ body.is-mobile .chat-loading-overlay {
     cursor: wait;
 }
 
+/* Device code inline display */
+.oauth-device-code-container {
+    margin: var(--space-3) 0;
+    padding: var(--space-3);
+    background: var(--background-secondary);
+    border-radius: var(--radius-m);
+    border: 1px solid var(--background-modifier-border);
+}
+
+.oauth-device-code-hidden {
+    display: none;
+}
+
+.oauth-device-code-instruction {
+    color: var(--text-muted);
+    font-size: 0.85em;
+    margin: 0 0 var(--space-2) 0;
+}
+
+.oauth-device-code-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin-bottom: var(--space-2);
+}
+
+.oauth-device-code-value {
+    font-family: var(--font-monospace);
+    font-size: 1.4em;
+    font-weight: bold;
+    letter-spacing: 0.1em;
+    color: var(--text-normal);
+    flex: 1;
+}
+
+.oauth-device-code-url {
+    color: var(--text-faint);
+    font-size: 0.8em;
+    margin: 0;
+}
+
 /* Consent modal */
 .oauth-consent-modal,
 .oauth-preauth-modal {

@@ -217,23 +217,29 @@ export class ModelAgentManager {
    * Restore workspace from settings - loads full comprehensive data
    */
   private async restoreWorkspace(workspaceId: string, sessionId?: string): Promise<void> {
-    this.selectedWorkspaceId = workspaceId;
-
     try {
       // Load full comprehensive workspace data (same as #workspace suggester)
       const fullWorkspaceData = await this.workspaceIntegration.loadWorkspace(workspaceId);
 
-      if (fullWorkspaceData) {
-        this.loadedWorkspaceData = fullWorkspaceData;
-        // Also extract basic context for backward compatibility
-        this.workspaceContext = fullWorkspaceData.context || fullWorkspaceData.workspaceContext || null;
+      if (!fullWorkspaceData) {
+        this.selectedWorkspaceId = null;
+        this.loadedWorkspaceData = null;
+        this.workspaceContext = null;
+        return;
       }
 
+      this.selectedWorkspaceId = (fullWorkspaceData.id as string) || workspaceId;
+
+      this.loadedWorkspaceData = fullWorkspaceData;
+      // Also extract basic context for backward compatibility
+      this.workspaceContext = fullWorkspaceData.context || fullWorkspaceData.workspaceContext || null;
+
       // Bind session to workspace
-      await this.workspaceIntegration.bindSessionToWorkspace(sessionId, workspaceId);
+      await this.workspaceIntegration.bindSessionToWorkspace(sessionId, this.selectedWorkspaceId);
     } catch (error) {
       console.error('[ModelAgentManager] Failed to restore workspace:', error);
       // Clear workspace data on failure
+      this.selectedWorkspaceId = null;
       this.loadedWorkspaceData = null;
       this.workspaceContext = null;
     }

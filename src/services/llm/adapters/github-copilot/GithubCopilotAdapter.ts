@@ -36,15 +36,15 @@ export class GithubCopilotAdapter extends BaseAdapter {
 
   async listModels(): Promise<ModelInfo[]> {
     const toModelInfo = (model: any): ModelInfo => ({
-      id: model.apiName || model.id,
+      id: model.id,
       name: model.name || model.id,
-      contextWindow: model.contextWindow || 200000,
-      maxOutputTokens: model.maxTokens || 64000,
-      supportsJSON: model.capabilities ? model.capabilities.supportsJSON : true,
-      supportsImages: model.capabilities ? model.capabilities.supportsImages : true,
-      supportsFunctions: model.capabilities ? model.capabilities.supportsFunctions : true,
-      supportsStreaming: model.capabilities ? model.capabilities.supportsStreaming : true,
-      supportsThinking: model.capabilities ? model.capabilities.supportsThinking : false,
+      contextWindow: model.context_window || model.contextWindow || 200000,
+      maxOutputTokens: model.max_output_tokens || model.maxTokens || 16000,
+      supportsJSON: true,
+      supportsImages: false,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: false,
       pricing: { inputPerMillion: 0, outputPerMillion: 0, currency: 'USD', lastUpdated: '' }
     });
 
@@ -52,15 +52,11 @@ export class GithubCopilotAdapter extends BaseAdapter {
       try {
         const syncedModels = await this.syncModels(this.apiKey);
         if (syncedModels && syncedModels.length > 0) {
-          const merged = GITHUB_COPILOT_MODELS.map(base => {
-            const found = syncedModels.find((m: any) => m.id === base.apiName);
-            return found ? { ...base, ...found } : base;
-          });
-          return merged.map(toModelInfo);
+          return syncedModels.map(toModelInfo);
         }
       } catch (err) {}
     }
-    return GITHUB_COPILOT_MODELS.map(toModelInfo);
+    return [];
   }
 
   async syncModels(token: string): Promise<any[]> {

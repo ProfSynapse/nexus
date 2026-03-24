@@ -64,6 +64,56 @@ describe('WorkspaceService dual-backend characterization', () => {
       expect(result.sessions).toEqual({});
     });
 
+    it('createWorkspace reuses the existing default workspace after a unique-name race', async () => {
+      const fs = createMockFileSystem();
+      const idx = createMockIndexManager();
+      const adapter = createMockAdapter(true);
+
+      adapter.createWorkspace.mockRejectedValue(
+        new Error('SQLITE_CONSTRAINT_UNIQUE: UNIQUE constraint failed: workspaces.name')
+      );
+      adapter.getWorkspace
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({
+          id: 'ws-existing-default',
+          name: 'Default Workspace',
+          description: 'desc',
+          rootFolder: '/',
+          created: 1000,
+          lastAccessed: 2000,
+          isActive: true
+        });
+      adapter.getWorkspaces.mockResolvedValue({
+        items: [{
+          id: 'ws-existing-default',
+          name: 'Default Workspace',
+          description: 'desc',
+          rootFolder: '/',
+          created: 1000,
+          lastAccessed: 2000,
+          isActive: true
+        }],
+        page: 0,
+        pageSize: 100,
+        totalItems: 1,
+        totalPages: 1,
+        hasNextPage: false,
+        hasPreviousPage: false
+      });
+
+      const service = new WorkspaceService(plugin, fs, idx, adapter);
+      const result = await service.createWorkspace({
+        id: 'default',
+        name: 'Default Workspace',
+        rootFolder: '/'
+      });
+
+      expect(result.id).toBe('ws-existing-default');
+      expect(adapter.createWorkspace).toHaveBeenCalled();
+      expect(adapter.getWorkspaces).toHaveBeenCalled();
+    });
+
     it('deleteWorkspace delegates to adapter.deleteWorkspace', async () => {
       const fs = createMockFileSystem();
       const idx = createMockIndexManager();

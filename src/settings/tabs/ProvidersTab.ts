@@ -234,7 +234,7 @@ export class ProvidersTab {
                     providerLabel: 'GitHub Copilot',
                     experimental: true,
                     experimentalWarning: 'This connects via an undocumented GitHub Copilot proxy. Requires an active GitHub Copilot subscription.',
-                    startFlow: () => this.startGithubCopilotDeviceFlow(),
+                    startFlow: (_params, onDeviceCode) => this.startGithubCopilotDeviceFlow(onDeviceCode),
                 },
             };
         }
@@ -291,11 +291,13 @@ export class ProvidersTab {
      * Start a GitHub Copilot device authorization flow.
      * Bypasses OAuthService.startFlow() since device flow has no redirect callback.
      */
-    private async startGithubCopilotDeviceFlow(): Promise<{ success: boolean; apiKey?: string; error?: string }> {
+    private async startGithubCopilotDeviceFlow(
+        onDeviceCode?: (userCode: string, verificationUri: string) => void
+    ): Promise<{ success: boolean; apiKey?: string; error?: string }> {
         try {
             const { GithubCopilotOAuthProvider } = await import('../../services/oauth/providers/GithubCopilotOAuthProvider');
             const provider = new GithubCopilotOAuthProvider();
-            const result = await provider.startDeviceFlow();
+            const result = await provider.startDeviceFlow(onDeviceCode);
             return {
                 success: true,
                 apiKey: result.apiKey,
@@ -428,7 +430,7 @@ export class ProvidersTab {
             groups.push({ title: 'LOCAL PROVIDERS', items: localItems });
         }
 
-        const cloudIds = ['openai', 'anthropic', 'google', 'mistral', 'groq', 'openrouter', 'requesty', 'perplexity'];
+        const cloudIds = ['openai', 'anthropic', 'google', 'mistral', 'groq', 'openrouter', 'requesty', 'perplexity', 'github-copilot'];
         const cloudItems = cloudIds
             .map(id => this.buildProviderCardItem(id, settings))
             .filter((item): item is ProviderCardItem => item !== null);
@@ -566,6 +568,7 @@ export class ProvidersTab {
             config: { ...providerConfig },
             oauthConfig: displayConfig.oauthConfig,
             secondaryOAuthProvider,
+            oauthOnly: providerId === 'github-copilot',
             onSave: async (updatedConfig: LLMProviderConfig) => {
                 settings.providers[providerId] = updatedConfig;
 

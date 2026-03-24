@@ -31,6 +31,8 @@ export interface OAuthFlowCallbacks {
   onDisconnect: () => void;
   /** Called when connecting state changes (for UI updates) */
   onConnectingChange: (connecting: boolean) => void;
+  /** Called when a device flow provides a user code for manual entry */
+  onDeviceCode?: (userCode: string, verificationUri: string) => void;
 }
 
 /**
@@ -126,7 +128,7 @@ export class OAuthFlowManager {
     this.setConnecting(true);
 
     try {
-      const result = await this.config.oauthConfig.startFlow(params);
+      const result = await this.config.oauthConfig.startFlow(params, this.config.callbacks.onDeviceCode);
 
       if (result.success && result.apiKey) {
         this.config.callbacks.onConnect({

@@ -499,12 +499,13 @@ agents/
 | **#24** | Socket lifecycle fix (DylanLacey) | Transport fix in main (v4.3.2); mux awaiting contributor socket path fix |
 
 ### Current Work
-**New LLM Provider Integrations** (Mar 24) — Peer-reviewed, fixes needed before testing:
-- **Claude Code** ✅ committed (PR #58) — solid, minor DRY opportunities
-- **Codex** ✅ committed — solid
-- **Gemini CLI** ⚠️ uncommitted — `runProcess()` duplication, streaming declaration misleading (`supportsStreaming: true` but batch-only), sandbox disabled
-- **GitHub Copilot** ❌ uncommitted — non-functional: token never passed to adapter, OAuth device flow broken (discards device_code response), missing from ~10 integration points (`SupportedProvider` type, `DEFAULT_LLM_PROVIDER_SETTINGS`, `StaticModelsService`, `ProviderUtils` maps, etc.), `initializeCache()` never called
-- **Shared DRY debt**: `runProcess()` duplicated 3× (Claude Code adapter, Gemini CLI adapter, GeminiCliAuthService); vault/connector path resolution duplicated in Claude Code adapter and `geminiCli.ts`
+**New LLM Provider Integrations** (Mar 24) — All committed to main, testing in progress:
+- **Claude Code** ✅ merged (PR #58, #62, #63)
+- **Gemini CLI** ✅ committed — auth uses `~/.gemini/oauth_creds.json` credential check, nodePath prepended to PATH
+- **Codex** ✅ committed
+- **GitHub Copilot** ✅ working — OAuth device flow confirmed working; card visible; user_code shown inline; token saves immediately on connect
+  - `listModels()` returns API models directly (no static fallback); default model `gpt-5.4`
+  - `oauthOnly: true` flag hides API key input for OAuth-exclusive providers (heading changed to "Authentication")
 
 **Large File Refactoring + DRY Consolidation** — Branch `feat/large-file-refactoring`, PR pending. Plan: `docs/plans/large-file-refactoring-plan.md`. Waves 0-3 complete:
 - DualBackendExecutor helper (eliminates dual-backend if/else across 3 services)
@@ -687,5 +688,5 @@ Key files: `src/ui/chat/components/suggesters/`, `MessageEnhancer.ts`, `SystemPr
 <!-- Auto-managed by session_init hook. Overwritten each session. -->
 - Resume: `claude --resume 871c2f0a-4323-4b1c-94da-7ae242b1024c`
 - Team: `pact-871c2f0a`
-- Started: 2026-03-24 11:54:27 UTC
+- Started: 2026-03-24 14:17:34 UTC
 <!-- SESSION_END -->
