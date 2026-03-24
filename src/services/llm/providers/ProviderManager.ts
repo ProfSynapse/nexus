@@ -251,6 +251,11 @@ export class LLMProviderManager {
         description: 'Gemini models with multimodal capabilities and thinking mode'
       },
       {
+        id: 'google-gemini-cli',
+        name: 'Gemini CLI',
+        description: 'Gemini models via your local Gemini CLI Google login — desktop only'
+      },
+      {
         id: 'mistral',
         name: 'Mistral',
         description: 'European models with strong coding and multilingual support'
@@ -279,6 +284,11 @@ export class LLMProviderManager {
         id: 'openai-codex',
         name: 'ChatGPT (Codex)',
         description: 'GPT models via ChatGPT subscription — free inference, requires OAuth sign-in'
+      },
+      {
+        id: 'github-copilot',
+        name: 'GitHub Copilot',
+        description: 'AI models via GitHub Copilot subscription — free inference, requires OAuth device flow'
       },
       {
         id: 'webllm',
@@ -310,6 +320,10 @@ export class LLMProviderManager {
         hasApiKey = !!(config?.oauth?.connected && config?.apiKey);
       } else if (provider.id === 'anthropic-claude-code') {
         hasApiKey = !!config?.oauth?.connected;
+      } else if (provider.id === 'google-gemini-cli') {
+        hasApiKey = !!config?.oauth?.connected;
+      } else if (provider.id === 'github-copilot') {
+        hasApiKey = !!(config?.oauth?.connected && config?.apiKey);
       } else if (provider.id === 'ollama' || provider.id === 'lmstudio') {
         hasApiKey = !!(config?.apiKey && config.apiKey.trim());
       } else {

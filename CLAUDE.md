@@ -1,5 +1,5 @@
 # Claude Code Context Document
-Last Updated: 2026-03-13
+Last Updated: 2026-03-24
 
 ## Project Overview
 - **Name**: Claudesidian MCP
@@ -488,9 +488,10 @@ agents/
 ## Current Context
 
 ### Active Branch
-`main` (current) — active worktrees:
+`feat/provider-integrations` (current worktree: `.worktrees/feat/provider-integrations`) — active worktrees:
 - `.worktrees/feat/elevenlabs-dynamic-models` (branch: `feat/elevenlabs-dynamic-models`)
 - `.worktrees/feat/large-file-refactoring` (branch: `feat/large-file-refactoring`)
+- `.worktrees/feat/provider-integrations` (branch: `feat/provider-integrations`) ← active
 
 ### Open PRs
 | # | Title | Status |
@@ -498,6 +499,13 @@ agents/
 | **#24** | Socket lifecycle fix (DylanLacey) | Transport fix in main (v4.3.2); mux awaiting contributor socket path fix |
 
 ### Current Work
+**New LLM Provider Integrations** (Mar 24) — Peer-reviewed, fixes needed before testing:
+- **Claude Code** ✅ committed (PR #58) — solid, minor DRY opportunities
+- **Codex** ✅ committed — solid
+- **Gemini CLI** ⚠️ uncommitted — `runProcess()` duplication, streaming declaration misleading (`supportsStreaming: true` but batch-only), sandbox disabled
+- **GitHub Copilot** ❌ uncommitted — non-functional: token never passed to adapter, OAuth device flow broken (discards device_code response), missing from ~10 integration points (`SupportedProvider` type, `DEFAULT_LLM_PROVIDER_SETTINGS`, `StaticModelsService`, `ProviderUtils` maps, etc.), `initializeCache()` never called
+- **Shared DRY debt**: `runProcess()` duplicated 3× (Claude Code adapter, Gemini CLI adapter, GeminiCliAuthService); vault/connector path resolution duplicated in Claude Code adapter and `geminiCli.ts`
+
 **Large File Refactoring + DRY Consolidation** — Branch `feat/large-file-refactoring`, PR pending. Plan: `docs/plans/large-file-refactoring-plan.md`. Waves 0-3 complete:
 - DualBackendExecutor helper (eliminates dual-backend if/else across 3 services)
 - ModelDropdownRenderer shared component (ChatSettingsRenderer 798→552 lines)
@@ -560,11 +568,11 @@ A branch IS a conversation with parent metadata:
 | registerDomEvent | ~27 raw addEventListener (modals + view components) | ~27 to fix |
 | console.log cleanup | 398 → 37 (WebLLM: 25, others: 12) | 37 to fix |
 | Inline styles | 85 → 10 (all dynamic/justified — progress bars, positioning) | 0 blocking |
-| Type safety (`as any`) | Regressed from 0 → 16 | 16 to fix |
+| Type safety (`as any`) | Regressed from 0 → 16; GithubCopilotAdapter adds 7 more | ~23 to fix |
 | `@ts-ignore` | Regressed from 1 → 5 | 5 to fix |
 | SQL injection | sortBy column interpolation in 2 repositories | 2 to fix |
 | Timer leak | ContentCache.ts unmanaged setInterval | 1 to fix |
-| Node.js imports | 4 ungated imports (path, fs, child_process) — mobile crash risk | 4 to fix |
+| Node.js imports | 4 pre-existing + new CLI utils (desktopProcess, geminiCli, binaryDiscovery) — mobile crash risk; CLI features are desktop-only, need Platform guards | ~7 to fix |
 | Accessibility | ~5 icon buttons missing aria-label | ~5 to fix |
 
 ## Development Notes
@@ -677,7 +685,7 @@ Key files: `src/ui/chat/components/suggesters/`, `MessageEnhancer.ts`, `SystemPr
 <!-- SESSION_START -->
 ## Current Session
 <!-- Auto-managed by session_init hook. Overwritten each session. -->
-- Resume: `claude --resume 5313cad9-b60d-4476-b092-5231b694bc90`
-- Team: `pact-5313cad9`
-- Started: 2026-03-23 11:49:31 UTC
+- Resume: `claude --resume 871c2f0a-4323-4b1c-94da-7ae242b1024c`
+- Team: `pact-871c2f0a`
+- Started: 2026-03-24 11:54:27 UTC
 <!-- SESSION_END -->

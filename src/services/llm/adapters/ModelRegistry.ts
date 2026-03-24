@@ -17,6 +17,8 @@ import { REQUESTY_MODELS, REQUESTY_DEFAULT_MODEL } from './requesty/RequestyMode
 import { GROQ_MODELS, GROQ_DEFAULT_MODEL } from './groq/GroqModels';
 import { OPENAI_CODEX_MODELS, OPENAI_CODEX_DEFAULT_MODEL } from './openai-codex/OpenAICodexModels';
 import { ANTHROPIC_CLAUDE_CODE_MODELS, ANTHROPIC_CLAUDE_CODE_DEFAULT_MODEL } from './anthropic-claude-code/AnthropicClaudeCodeModels';
+import { GOOGLE_GEMINI_CLI_MODELS, GOOGLE_GEMINI_CLI_DEFAULT_MODEL } from './google-gemini-cli/GoogleGeminiCliModels';
+import { GITHUB_COPILOT_MODELS, GITHUB_COPILOT_DEFAULT_MODEL } from './github-copilot/GithubCopilotModels';
 import type { LLMProviderSettings } from '../../../types';
 
 // Re-export ModelSpec for convenience
@@ -31,12 +33,14 @@ export const AI_MODELS: Record<string, ModelSpec[]> = {
   openai: OPENAI_MODELS,
   'openai-codex': OPENAI_CODEX_MODELS,
   'anthropic-claude-code': ANTHROPIC_CLAUDE_CODE_MODELS,
+  'google-gemini-cli': GOOGLE_GEMINI_CLI_MODELS,
   google: GOOGLE_MODELS,
   anthropic: ANTHROPIC_MODELS,
   mistral: MISTRAL_MODELS,
   openrouter: OPENROUTER_MODELS,
   requesty: REQUESTY_MODELS,
-  groq: GROQ_MODELS
+  groq: GROQ_MODELS,
+  'github-copilot': GITHUB_COPILOT_MODELS
 };
 
 /**
@@ -214,10 +218,12 @@ export const DEFAULT_MODELS: Record<string, string> = {
   openai: OPENAI_DEFAULT_MODEL,
   'openai-codex': OPENAI_CODEX_DEFAULT_MODEL,
   'anthropic-claude-code': ANTHROPIC_CLAUDE_CODE_DEFAULT_MODEL,
+  'google-gemini-cli': GOOGLE_GEMINI_CLI_DEFAULT_MODEL,
   google: GOOGLE_DEFAULT_MODEL,
   anthropic: ANTHROPIC_DEFAULT_MODEL,
   mistral: MISTRAL_DEFAULT_MODEL,
   openrouter: OPENROUTER_DEFAULT_MODEL,
   requesty: REQUESTY_DEFAULT_MODEL,
-  groq: GROQ_DEFAULT_MODEL
+  groq: GROQ_DEFAULT_MODEL,
+  'github-copilot': GITHUB_COPILOT_DEFAULT_MODEL
 };

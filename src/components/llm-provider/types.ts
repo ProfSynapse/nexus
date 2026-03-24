@@ -83,6 +83,10 @@ export interface SecondaryOAuthProviderConfig {
   oauthConfig: OAuthModalConfig;
   /** Callback when secondary provider configuration changes */
   onConfigChange: (config: LLMProviderConfig) => void;
+  /** If true, render a CLI status indicator instead of OAuth connect/disconnect banner */
+  statusOnly?: boolean;
+  /** Hint text shown when not authenticated (e.g., "run `gemini auth` in your terminal") */
+  statusHint?: string;
 }
 
 /**

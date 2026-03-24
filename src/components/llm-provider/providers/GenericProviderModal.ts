@@ -16,7 +16,7 @@ import {
 } from '../types';
 import { LLMValidationService } from '../../../services/llm/validation/ValidationService';
 import { ModelWithProvider } from '../../../services/StaticModelsService';
-import { renderOAuthBanner, updateConnectButtonState } from '../../shared/OAuthBannerComponent';
+import { renderOAuthBanner, updateConnectButtonState, renderCliStatusBanner, updateCheckStatusButtonState } from '../../shared/OAuthBannerComponent';
 import { OAuthFlowManager } from '../../../services/oauth/OAuthFlowManager';
 
 export class GenericProviderModal implements IProviderModal {
@@ -33,6 +33,7 @@ export class GenericProviderModal implements IProviderModal {
   // Secondary OAuth UI elements
   private secondaryBannerContainer: HTMLElement | null = null;
   private secondaryConnectButton: HTMLButtonElement | null = null;
+  private secondaryCheckStatusButton: HTMLButtonElement | null = null;
 
   // State
   private apiKey: string = '';
@@ -102,8 +103,8 @@ export class GenericProviderModal implements IProviderModal {
       });
     }
 
-    // Set up secondary OAuth flow manager
-    if (config.secondaryOAuthProvider) {
+    // Set up secondary OAuth flow manager (skip for statusOnly — handled via direct startFlow)
+    if (config.secondaryOAuthProvider && !config.secondaryOAuthProvider.statusOnly) {
       const secondary = config.secondaryOAuthProvider;
       this.secondaryFlowManager = new OAuthFlowManager({
         oauthConfig: secondary.oauthConfig,
@@ -222,13 +223,13 @@ export class GenericProviderModal implements IProviderModal {
       cls: 'setting-item-description',
     });
 
-    // Banner container for connected/disconnected state
+    // Banner container for connected/disconnected or status indicator
     this.secondaryBannerContainer = section.createDiv('oauth-banner-container');
     this.refreshSecondaryBanner();
   }
 
   /**
-   * Refresh the secondary OAuth banner
+   * Refresh the secondary OAuth/CLI status banner
    */
   private refreshSecondaryBanner(): void {
     if (!this.secondaryBannerContainer) return;
@@ -236,13 +237,66 @@ export class GenericProviderModal implements IProviderModal {
     const secondary = this.config.secondaryOAuthProvider;
     if (!secondary) return;
 
-    const result = renderOAuthBanner(this.secondaryBannerContainer, {
-      providerLabel: secondary.oauthConfig.providerLabel,
-      isConnected: !!secondary.config.oauth?.connected,
-      onConnect: () => this.secondaryFlowManager?.connect(),
-      onDisconnect: () => this.secondaryFlowManager?.disconnect(),
-    });
-    this.secondaryConnectButton = result.connectButton;
+    if (secondary.statusOnly) {
+      // CLI status indicator: shows authenticated/not-authenticated + "Check status" button
+      const result = renderCliStatusBanner(this.secondaryBannerContainer, {
+        providerLabel: secondary.oauthConfig.providerLabel,
+        isAuthenticated: !!secondary.config.oauth?.connected,
+        notAuthenticatedHint: secondary.statusHint,
+        onCheckStatus: () => this.checkSecondaryCliStatus(),
+      });
+      this.secondaryCheckStatusButton = result.checkStatusButton;
+    } else {
+      // Standard OAuth connect/disconnect banner
+      const result = renderOAuthBanner(this.secondaryBannerContainer, {
+        providerLabel: secondary.oauthConfig.providerLabel,
+        isConnected: !!secondary.config.oauth?.connected,
+        onConnect: () => this.secondaryFlowManager?.connect(),
+        onDisconnect: () => this.secondaryFlowManager?.disconnect(),
+      });
+      this.secondaryConnectButton = result.connectButton;
+    }
+  }
+
+  /**
+   * Run a CLI status check for a statusOnly secondary provider.
+   * Calls startFlow (which is check-only), updates config on success,
+   * and refreshes the status banner.
+   */
+  private async checkSecondaryCliStatus(): Promise<void> {
+    const secondary = this.config.secondaryOAuthProvider;
+    if (!secondary) return;
+
+    updateCheckStatusButtonState(this.secondaryCheckStatusButton, true);
+
+    try {
+      const result = await secondary.oauthConfig.startFlow({});
+
+      if (result.success && result.apiKey) {
+        secondary.config.apiKey = result.apiKey;
+        secondary.config.oauth = {
+          connected: true,
+          providerId: secondary.providerId,
+          connectedAt: Date.now(),
+          metadata: result.metadata,
+        };
+        secondary.config.enabled = true;
+        secondary.onConfigChange(secondary.config);
+        new Notice(`${secondary.oauthConfig.providerLabel} authenticated`);
+      } else {
+        secondary.config.apiKey = '';
+        secondary.config.oauth = undefined;
+        secondary.config.enabled = false;
+        secondary.onConfigChange(secondary.config);
+        new Notice(result.error || `${secondary.oauthConfig.providerLabel} not authenticated`);
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      new Notice(`Status check failed: ${errorMessage}`);
+    } finally {
+      updateCheckStatusButtonState(this.secondaryCheckStatusButton, false);
+      this.refreshSecondaryBanner();
+    }
   }
 
   /**
@@ -462,5 +516,6 @@ export class GenericProviderModal implements IProviderModal {
     this.connectButton = null;
     this.secondaryBannerContainer = null;
     this.secondaryConnectButton = null;
+    this.secondaryCheckStatusButton = null;
   }
 }

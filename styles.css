@@ -7105,6 +7105,44 @@ body.is-mobile .chat-loading-overlay {
     cursor: wait;
 }
 
+/* CLI status banner (for statusOnly secondary providers like Gemini CLI, Claude Code) */
+.cli-status-banner {
+    margin-bottom: var(--space-sm, 8px);
+}
+
+.cli-status-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-xs, 4px) var(--space-sm, 8px);
+    border-radius: var(--radius-s);
+    background-color: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+}
+
+.cli-status-text {
+    font-size: var(--font-ui-small);
+}
+
+.cli-status-authenticated {
+    color: var(--text-success, var(--interactive-accent));
+}
+
+.cli-status-not-authenticated {
+    color: var(--text-muted);
+}
+
+.cli-status-check-btn {
+    font-size: var(--font-ui-smaller);
+    padding: var(--space-xs, 4px) var(--space-sm, 8px);
+    cursor: pointer;
+}
+
+.cli-status-checking {
+    opacity: 0.6;
+    cursor: wait;
+}
+
 /* Consent modal */
 .oauth-consent-modal,
 .oauth-preauth-modal {

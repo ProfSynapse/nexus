@@ -228,6 +228,8 @@ export class AdapterRegistry implements IAdapterRegistry {
     if (!onMobile) {
       await this.initializeCodexAdapter(providers['openai-codex']);
       await this.initializeClaudeCodeAdapter(providers['anthropic-claude-code']);
+      await this.initializeGeminiCliAdapter(providers['google-gemini-cli']);
+      await this.initializeGithubCopilotAdapter(providers['github-copilot']);
 
       // Ollama - apiKey is actually the server URL
       if (providers.ollama?.enabled && providers.ollama.apiKey) {
@@ -348,6 +350,48 @@ export class AdapterRegistry implements IAdapterRegistry {
     } catch (error) {
       console.error('AdapterRegistry: Failed to initialize Claude Code adapter:', error);
       this.logError('anthropic-claude-code', error);
+    }
+  }
+
+  /**
+   * Initialize the Gemini CLI adapter from local CLI auth state.
+   */
+  private async initializeGeminiCliAdapter(config: LLMProviderConfig | undefined): Promise<void> {
+    if (!config?.enabled) return;
+
+    const oauth = config.oauth;
+    if (!oauth?.connected || !this.vault) {
+      return;
+    }
+
+    try {
+      const { GoogleGeminiCliAdapter } = await import('../adapters/google-gemini-cli/GoogleGeminiCliAdapter');
+      const adapter = new GoogleGeminiCliAdapter(this.vault);
+      this.adapters.set('google-gemini-cli', adapter);
+    } catch (error) {
+      console.error('AdapterRegistry: Failed to initialize Gemini CLI adapter:', error);
+      this.logError('google-gemini-cli', error);
+    }
+  }
+
+  /**
+   * Initialize the GitHub Copilot adapter.
+   */
+  private async initializeGithubCopilotAdapter(config: LLMProviderConfig | undefined): Promise<void> {
+    if (!config?.enabled) return;
+
+    const oauth = config.oauth;
+    if (!oauth?.connected || !config.apiKey) {
+      return; // Not connected via OAuth or no token — skip initialization
+    }
+
+    try {
+      const { GithubCopilotAdapter } = await import('../adapters/github-copilot/GithubCopilotAdapter');
+      const adapter = new GithubCopilotAdapter(config.apiKey);
+      this.adapters.set('github-copilot', adapter);
+    } catch (error) {
+      console.error('AdapterRegistry: Failed to initialize GitHub Copilot adapter:', error);
+      this.logError('github-copilot', error);
     }
   }
 

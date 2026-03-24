@@ -35,6 +35,10 @@ export function resolveDesktopBinaryPath(binaryName: string): string | null {
 }
 
 function resolveFromCurrentPath(binaryName: string): string | null {
+    if (!Platform.isDesktop) {
+        return null;
+    }
+
     try {
         const childProcess = require('child_process') as typeof import('child_process');
         const nodeFs = require('fs') as typeof import('fs');
@@ -45,7 +49,7 @@ function resolveFromCurrentPath(binaryName: string): string | null {
             env: { ...process.env }
         }).trim();
 
-        const firstLine = result.split(/\r?\n/u)[0]?.trim();
+        const firstLine = result.split(/\r?\n/)[0]?.trim();
         if (firstLine && nodeFs.existsSync(firstLine)) {
             return firstLine;
         }
@@ -57,6 +61,10 @@ function resolveFromCurrentPath(binaryName: string): string | null {
 }
 
 function resolveFromCommonLocations(binaryName: string): string | null {
+    if (!Platform.isDesktop) {
+        return null;
+    }
+
     try {
         const nodeFs = require('fs') as typeof import('fs');
         const pathMod = require('path') as typeof import('path');
@@ -79,7 +87,7 @@ function resolveFromCommonLocations(binaryName: string): string | null {
 }
 
 function resolveFromLoginShell(binaryName: string): string | null {
-    if (Platform.isWin) {
+    if (!Platform.isDesktop || Platform.isWin) {
         return null;
     }
 
@@ -98,7 +106,7 @@ function resolveFromLoginShell(binaryName: string): string | null {
             }
         ).trim();
 
-        const firstLine = result.split(/\r?\n/u)[0]?.trim();
+        const firstLine = result.split(/\r?\n/)[0]?.trim();
         if (firstLine && nodeFs.existsSync(firstLine)) {
             return firstLine;
         }

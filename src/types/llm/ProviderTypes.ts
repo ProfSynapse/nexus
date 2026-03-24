@@ -101,6 +101,10 @@ export const DEFAULT_LLM_PROVIDER_SETTINGS: LLMProviderSettings = {
       apiKey: '',
       enabled: false
     },
+    'google-gemini-cli': {
+      apiKey: '',
+      enabled: false
+    },
     google: {
       apiKey: '',
       enabled: false
@@ -128,6 +132,10 @@ export const DEFAULT_LLM_PROVIDER_SETTINGS: LLMProviderSettings = {
       enabled: false
     },
     'openai-codex': {
+      apiKey: '',
+      enabled: false
+    },
+    'github-copilot': {
       apiKey: '',
       enabled: false
     },
