@@ -93,14 +93,15 @@ export class MessageAlternativeService {
     // Mark retry as in progress
     this.retryInProgress.add(aiMessageId);
 
+    const originalContent = aiMessage.content;
+    const originalToolCalls = aiMessage.toolCalls ? [...aiMessage.toolCalls] : undefined;
+    const originalReasoning = aiMessage.reasoning;
+    const originalState = aiMessage.state || 'complete';
+
     try {
       this.events.onLoadingStateChanged(true);
 
       // 1. Save original content as a branch FIRST (preserves old response)
-      const originalContent = aiMessage.content;
-      const originalToolCalls = aiMessage.toolCalls ? [...aiMessage.toolCalls] : undefined;
-      const originalReasoning = aiMessage.reasoning;
-
       const branchMessage: ConversationMessage = {
         id: `alt_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`,
         role: 'assistant',
@@ -190,10 +191,15 @@ export class MessageAlternativeService {
             await this.chatService.updateConversation(conversation);
             this.events.onStreamingUpdate(aiMessageId, abortedMessage.content, true, false);
           } else {
-            // No content streamed yet - mark as aborted with empty content
-            abortedMessage.isLoading = false;
-            abortedMessage.state = 'aborted';
-            abortedMessage.content = '';
+            // If nothing streamed yet, restore the original visible response
+            // rather than leaving an empty aborted bubble behind.
+            this.restoreOriginalMessage(
+              abortedMessage,
+              originalContent,
+              originalToolCalls,
+              originalReasoning,
+              originalState
+            );
 
             await this.chatService.updateConversation(conversation);
           }
@@ -201,6 +207,19 @@ export class MessageAlternativeService {
 
         this.events.onConversationUpdated(conversation);
       } else {
+        const failedMessage = conversation.messages[aiMessageIndex];
+        if (failedMessage) {
+          this.restoreOriginalMessage(
+            failedMessage,
+            originalContent,
+            originalToolCalls,
+            originalReasoning,
+            originalState
+          );
+          await this.chatService.updateConversation(conversation);
+          this.events.onConversationUpdated(conversation);
+        }
+
         this.events.onError('Failed to generate alternative response');
       }
     } finally {
@@ -227,5 +246,23 @@ export class MessageAlternativeService {
    */
   isGenerating(): boolean {
     return this.currentAbortController !== null;
+  }
+
+  /**
+   * Restore the pre-retry message so failures do not leave the UI blank.
+   */
+  private restoreOriginalMessage(
+    message: ConversationMessage,
+    originalContent: string,
+    originalToolCalls: ConversationMessage['toolCalls'],
+    originalReasoning: string | undefined,
+    originalState: NonNullable<ConversationMessage['state']>
+  ): void {
+    message.content = originalContent;
+    message.toolCalls = originalToolCalls;
+    message.reasoning = originalReasoning;
+    message.state = originalState;
+    message.isLoading = false;
+    message.activeAlternativeIndex = 0;
   }
 }

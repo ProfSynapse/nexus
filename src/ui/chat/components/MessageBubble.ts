@@ -50,10 +50,8 @@ export class MessageBubble extends Component {
    */
   createElement(): HTMLElement {
     const activeToolCalls = this.getActiveToolCalls(this.message);
-    const hasToolCalls = this.message.role === 'assistant' && activeToolCalls && activeToolCalls.length > 0;
     const activeReasoning = this.getActiveReasoning(this.message);
-    const hasReasoning = this.message.role === 'assistant' && activeReasoning;
-    const showToolBubble = hasToolCalls || hasReasoning;
+    const showToolBubble = this.getRenderMode(this.message) === 'group';
     const activeContent = this.getActiveMessageContent(this.message);
 
     if (showToolBubble) {
@@ -94,8 +92,7 @@ export class MessageBubble extends Component {
       }
 
       // Create text bubble if there's content OR if streaming (need element for StreamingController)
-      const isStreaming = this.message.state === 'streaming';
-      if ((activeContent && activeContent.trim()) || isStreaming) {
+      if (this.shouldRenderTextBubble(this.message)) {
         this.textBubbleElement = ToolBubbleFactory.createTextBubble(
           renderMessage,
           (container, content) => this.renderContent(container, content),
@@ -123,6 +120,11 @@ export class MessageBubble extends Component {
             this.messageBranchNavigator = new MessageBranchNavigator(actions, navigatorEvents, this);
             this.messageBranchNavigator.updateMessage(renderMessage);
           }
+        }
+
+        const contentElement = this.textBubbleElement.querySelector('.message-content');
+        if (contentElement instanceof HTMLElement && this.message.isLoading && !activeContent.trim()) {
+          this.appendLoadingIndicator(contentElement);
         }
       }
 
@@ -343,6 +345,11 @@ export class MessageBubble extends Component {
    * Update MessageBubble with new message data
    */
   updateWithNewMessage(newMessage: ConversationMessage): void {
+    const previousRenderMode = this.getRenderMode(this.message);
+    const nextRenderMode = this.getRenderMode(newMessage);
+    const previousHadTextBubble = this.shouldRenderTextBubble(this.message);
+    const nextNeedsTextBubble = this.shouldRenderTextBubble(newMessage);
+
     // Handle progressive accordion transition to static
     const activeToolCalls = this.getActiveToolCalls(newMessage);
     if (this.progressiveToolAccordions.size > 0 && activeToolCalls) {
@@ -357,6 +364,12 @@ export class MessageBubble extends Component {
         }
         return;
       }
+    }
+
+    if (previousRenderMode !== nextRenderMode || previousHadTextBubble !== nextNeedsTextBubble) {
+      this.message = newMessage;
+      this.rebuildElement();
+      return;
     }
 
     this.message = newMessage;
@@ -399,7 +412,10 @@ export class MessageBubble extends Component {
 
     if (!this.element) return;
     const contentElement = this.element.querySelector('.message-content');
-    if (!contentElement) return;
+    if (!(contentElement instanceof HTMLElement)) {
+      this.rebuildElement();
+      return;
+    }
 
     contentElement.empty();
 
@@ -409,11 +425,7 @@ export class MessageBubble extends Component {
     });
 
     if (newMessage.isLoading && newMessage.role === 'assistant') {
-      const loadingDiv = contentElement.createDiv('ai-loading-continuation');
-      const loadingSpan = loadingDiv.createEl('span', { cls: 'ai-loading' });
-      loadingSpan.appendText('Thinking');
-      loadingSpan.createEl('span', { cls: 'dots', text: '...' });
-      this.startLoadingAnimation(loadingDiv);
+      this.appendLoadingIndicator(contentElement);
     }
   }
 
@@ -610,6 +622,70 @@ export class MessageBubble extends Component {
    */
   getProgressiveToolAccordions(): Map<string, ProgressiveToolAccordion> {
     return this.progressiveToolAccordions;
+  }
+
+  /**
+   * Determine which DOM structure this message needs.
+   */
+  private getRenderMode(message: ConversationMessage): 'group' | 'standard' {
+    const activeToolCalls = this.getActiveToolCalls(message);
+    const hasToolCalls = message.role === 'assistant' && !!activeToolCalls && activeToolCalls.length > 0;
+    const activeReasoning = this.getActiveReasoning(message);
+    const hasReasoning = message.role === 'assistant' && !!activeReasoning;
+    return hasToolCalls || hasReasoning ? 'group' : 'standard';
+  }
+
+  /**
+   * Tool/reasoning messages still need a text bubble while loading so streaming
+   * updates always have a content container to target.
+   */
+  private shouldRenderTextBubble(message: ConversationMessage): boolean {
+    if (message.role !== 'assistant') {
+      return false;
+    }
+
+    const activeContent = this.getActiveMessageContent(message);
+    return !!activeContent.trim() || message.state === 'streaming' || !!message.isLoading;
+  }
+
+  /**
+   * Replace the current DOM node when the message switches between incompatible
+   * layouts, such as tool-only -> plain loading bubble during retry.
+   */
+  private rebuildElement(): void {
+    const previousElement = this.element;
+    const parentElement = previousElement?.parentElement ?? null;
+
+    this.stopLoadingAnimation();
+    this.cleanupProgressiveAccordions();
+
+    if (this.messageBranchNavigator) {
+      this.messageBranchNavigator.destroy();
+      this.messageBranchNavigator = null;
+    }
+
+    this.toolBubbleElement = null;
+    this.textBubbleElement = null;
+    this.imageBubbleElement = null;
+
+    const nextElement = this.createElement();
+
+    if (previousElement && parentElement) {
+      previousElement.replaceWith(nextElement);
+    } else {
+      this.element = nextElement;
+    }
+  }
+
+  /**
+   * Render the inline loading indicator used after the initial bubble is on screen.
+   */
+  private appendLoadingIndicator(contentElement: HTMLElement): void {
+    const loadingDiv = contentElement.createDiv('ai-loading-continuation');
+    const loadingSpan = loadingDiv.createEl('span', { cls: 'ai-loading' });
+    loadingSpan.appendText('Thinking');
+    loadingSpan.createEl('span', { cls: 'dots', text: '...' });
+    this.startLoadingAnimation(loadingDiv);
   }
 
   /**
