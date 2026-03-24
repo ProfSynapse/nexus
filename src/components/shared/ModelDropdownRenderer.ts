@@ -20,12 +20,14 @@ const PROVIDER_NAMES: Record<string, string> = {
   anthropic: 'Anthropic',
   'anthropic-claude-code': 'Claude Code',
   google: 'Google AI',
+  'google-gemini-cli': 'Gemini CLI',
   mistral: 'Mistral AI',
   groq: 'Groq',
   openrouter: 'OpenRouter',
   requesty: 'Requesty',
   perplexity: 'Perplexity',
-  'openai-codex': 'ChatGPT'
+  'openai-codex': 'ChatGPT',
+  'github-copilot': 'GitHub Copilot'
 };
 
 export { PROVIDER_NAMES };
@@ -75,6 +77,9 @@ export interface ModelDropdownConfig {
 
   /** Whether Claude Code local auth is connected (for merging Claude Code models into Anthropic) */
   isClaudeCodeConnected: () => boolean;
+
+  /** Whether Gemini CLI local auth is connected (for merging Gemini CLI models into Google) */
+  isGeminiCliConnected: () => boolean;
 
   /** Get default model for a provider (async) */
   getDefaultModelForProvider: (providerId: string) => Promise<string>;
@@ -147,6 +152,8 @@ function renderProviderDropdown(
     ? 'openai'
     : currentProvider === 'anthropic-claude-code'
       ? 'anthropic'
+      : currentProvider === 'google-gemini-cli'
+        ? 'google'
       : currentProvider;
 
   new Setting(content)
@@ -202,6 +209,8 @@ function renderModelDropdown(
     ? 'openai'
     : currentProvider === 'anthropic-claude-code'
       ? 'anthropic'
+      : currentProvider === 'google-gemini-cli'
+        ? 'google'
       : currentProvider;
 
   // Ollama special case: show text input instead of dropdown
@@ -241,6 +250,14 @@ function renderModelDropdown(
           models = [
             ...models,
             ...claudeCodeModels.map(model => ({ ...model, name: `${model.name} (Claude Code)` }))
+          ];
+        }
+
+        if (modelProviderId === 'google' && config.isGeminiCliConnected()) {
+          const geminiCliModels = await config.providerManager.getModelsForProvider('google-gemini-cli');
+          models = [
+            ...models,
+            ...geminiCliModels.map(model => ({ ...model, name: `${model.name} (Gemini CLI)` }))
           ];
         }
 

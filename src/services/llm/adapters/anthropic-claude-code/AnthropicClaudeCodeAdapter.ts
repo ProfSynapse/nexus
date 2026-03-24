@@ -1,6 +1,10 @@
-import { FileSystemAdapter, Vault } from 'obsidian';
+import { Vault } from 'obsidian';
+import type { ChildProcess } from 'child_process';
 import { BaseAdapter } from '../BaseAdapter';
 import { resolveDesktopBinaryPath } from '../../../../utils/binaryDiscovery';
+import { getVaultBasePath, getConnectorPath } from '../../../../utils/cliPathUtils';
+import { runCliProcess } from '../../../../utils/cliProcessRunner';
+import { spawnDesktopProcess } from '../../../../utils/desktopProcess';
 import {
   GenerateOptions,
   StreamChunk,
@@ -11,13 +15,14 @@ import {
   LLMProviderError
 } from '../types';
 import { ModelRegistry } from '../ModelRegistry';
-import { getAllPluginIds, getPrimaryServerKey } from '../../../../constants/branding';
+import { getPrimaryServerKey } from '../../../../constants/branding';
 
 type ClaudeCodeToolCall = NonNullable<StreamChunk['toolCalls']>[number];
 
 export class AnthropicClaudeCodeAdapter extends BaseAdapter {
   readonly name = 'anthropic-claude-code';
   readonly baseUrl = 'claude-code://local';
+  private activeProcess: ChildProcess | null = null;
 
   constructor(private vault: Vault) {
     super('claude-code-local-auth', 'claude-sonnet-4-6', 'claude-code://local', false);
@@ -109,9 +114,7 @@ export class AnthropicClaudeCodeAdapter extends BaseAdapter {
         '--no-session-persistence',
         '--dangerously-skip-permissions',
         '--output-format',
-        'stream-json',
-        '--max-turns',
-        String(Math.max(1, options?.maxTokens ? Math.min(12, Math.ceil(options.maxTokens / 8000)) : 8))
+        'stream-json'
       ];
 
       if (options?.systemPrompt?.trim()) {
@@ -133,11 +136,17 @@ export class AnthropicClaudeCodeAdapter extends BaseAdapter {
       delete env.ANTHROPIC_API_KEY;
       delete env.ANTHROPIC_AUTH_TOKEN;
 
-      const child = childProcess.spawn(runtime.claudePath, args, {
+      const child = spawnDesktopProcess(childProcess, runtime.claudePath, args, {
         cwd: runtime.vaultPath,
         env,
         stdio: ['ignore', 'pipe', 'pipe']
       });
+      this.activeProcess = child;
+
+      if (!child.stdout || !child.stderr) {
+        throw new LLMProviderError('Failed to capture Claude Code process output.', this.name, 'CONFIGURATION_ERROR');
+      }
+
       const closePromise = new Promise<{ exitCode: number | null; signal: NodeJS.Signals | null }>((resolve) => {
         child.on('close', (exitCode: number | null, signal: NodeJS.Signals | null) => {
           resolve({ exitCode, signal });
@@ -223,6 +232,7 @@ export class AnthropicClaudeCodeAdapter extends BaseAdapter {
         }
       };
     } finally {
+      this.activeProcess = null;
       try {
         await fsPromises.rm(tempDir, { recursive: true, force: true });
       } catch {
@@ -270,7 +280,7 @@ export class AnthropicClaudeCodeAdapter extends BaseAdapter {
   }> {
     const claudePath = resolveDesktopBinaryPath('claude');
     const nodePath = resolveDesktopBinaryPath('node');
-    const vaultPath = this.getVaultBasePath();
+    const vaultPath = getVaultBasePath(this.vault);
 
     if (!nodePath) {
       throw new LLMProviderError('Node.js was not found on PATH.', this.name, 'CONFIGURATION_ERROR');
@@ -279,7 +289,7 @@ export class AnthropicClaudeCodeAdapter extends BaseAdapter {
     return {
       claudePath,
       nodePath,
-      connectorPath: this.getConnectorPath(vaultPath),
+      connectorPath: getConnectorPath(vaultPath),
       vaultPath
     };
   }
@@ -444,34 +454,21 @@ export class AnthropicClaudeCodeAdapter extends BaseAdapter {
     return normalized;
   }
 
-  private getVaultBasePath(): string | null {
-    const adapter = this.vault.adapter;
-    if (adapter instanceof FileSystemAdapter) {
-      return adapter.getBasePath();
+
+  abort(): void {
+    if (this.activeProcess) {
+      this.activeProcess.kill();
+      this.activeProcess = null;
     }
-    return null;
-  }
-
-  private getConnectorPath(vaultPath: string | null): string | null {
-    if (!vaultPath) {
-      return null;
-    }
-
-    const pathMod = require('path') as typeof import('path');
-    const nodeFs = require('fs') as typeof import('fs');
-
-    for (const pluginId of getAllPluginIds()) {
-      const candidate = pathMod.join(vaultPath, '.obsidian', 'plugins', pluginId, 'connector.js');
-      if (nodeFs.existsSync(candidate)) {
-        return candidate;
-      }
-    }
-
-    return null;
   }
 
   private async readAuthStatus(claudePath: string, cwd: string): Promise<{ loggedIn: boolean; authMethod: string }> {
-    const result = await this.runProcess(claudePath, ['auth', 'status'], cwd);
+    const env = { ...process.env };
+    delete env.ANTHROPIC_API_KEY;
+    delete env.ANTHROPIC_AUTH_TOKEN;
+
+    const handle = runCliProcess(claudePath, ['auth', 'status'], { cwd, env });
+    const result = await handle.result;
     try {
       const parsed = JSON.parse(result.stdout) as { loggedIn?: boolean; authMethod?: string };
       return {
@@ -484,48 +481,5 @@ export class AnthropicClaudeCodeAdapter extends BaseAdapter {
         authMethod: 'unknown'
       };
     }
-  }
-
-  private async runProcess(
-    command: string,
-    args: string[],
-    cwd?: string
-  ): Promise<{ stdout: string; stderr: string; exitCode: number | null }> {
-    const childProcess = require('child_process') as typeof import('child_process');
-
-    return await new Promise((resolve) => {
-      const env = { ...process.env };
-      delete env.ANTHROPIC_API_KEY;
-      delete env.ANTHROPIC_AUTH_TOKEN;
-
-      const child = childProcess.spawn(command, args, {
-        cwd,
-        env,
-        stdio: ['ignore', 'pipe', 'pipe']
-      });
-
-      let stdout = '';
-      let stderr = '';
-
-      child.stdout.on('data', (chunk: Buffer | string) => {
-        stdout += chunk.toString();
-      });
-
-      child.stderr.on('data', (chunk: Buffer | string) => {
-        stderr += chunk.toString();
-      });
-
-      child.on('error', (error: Error) => {
-        resolve({
-          stdout,
-          stderr: stderr ? `${stderr}\n${error.message}` : error.message,
-          exitCode: null
-        });
-      });
-
-      child.on('close', (exitCode: number | null) => {
-        resolve({ stdout, stderr, exitCode });
-      });
-    });
   }
 }

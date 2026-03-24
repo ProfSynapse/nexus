@@ -23,6 +23,7 @@ import { isDesktop, supportsLocalLLM, MOBILE_COMPATIBLE_PROVIDERS, isProviderCom
 import type { OAuthModalConfig, SecondaryOAuthProviderConfig } from '../../components/llm-provider/types';
 import { OAuthService } from '../../services/oauth/OAuthService';
 import { ClaudeCodeAuthService } from '../../services/external/ClaudeCodeAuthService';
+import { GeminiCliAuthService } from '../../services/external/GeminiCliAuthService';
 
 /**
  * Provider display configuration
@@ -106,6 +107,12 @@ export class ProvidersTab {
             signupUrl: 'https://aistudio.google.com/app/apikey',
             category: 'cloud'
         },
+        'google-gemini-cli': {
+            name: 'Gemini CLI',
+            keyFormat: 'Local Gemini CLI Google login required',
+            signupUrl: 'https://github.com/google-gemini/gemini-cli',
+            category: 'cloud'
+        },
         mistral: {
             name: 'Mistral AI',
             keyFormat: 'msak_...',
@@ -140,6 +147,12 @@ export class ProvidersTab {
             name: 'ChatGPT (Codex)',
             keyFormat: 'OAuth sign-in required',
             signupUrl: 'https://chatgpt.com',
+            category: 'cloud'
+        },
+        'github-copilot': {
+            name: 'GitHub Copilot',
+            keyFormat: 'Device flow sign-in required',
+            signupUrl: 'https://github.com/features/copilot',
             category: 'cloud'
         }
     };
@@ -212,6 +225,19 @@ export class ProvidersTab {
                 },
             };
         }
+
+        // GitHub Copilot (experimental) — uses device flow, bypasses OAuthService.startFlow()
+        if (oauthService.hasProvider('github-copilot')) {
+            this.providerConfigs['github-copilot'] = {
+                ...this.providerConfigs['github-copilot'],
+                oauthConfig: {
+                    providerLabel: 'GitHub Copilot',
+                    experimental: true,
+                    experimentalWarning: 'This connects via an undocumented GitHub Copilot proxy. Requires an active GitHub Copilot subscription.',
+                    startFlow: () => this.startGithubCopilotDeviceFlow(),
+                },
+            };
+        }
     }
 
     /**
@@ -250,6 +276,36 @@ export class ProvidersTab {
     private async startClaudeCodeConnectFlow(): Promise<{ success: boolean; apiKey?: string; metadata?: Record<string, string>; error?: string }> {
         const authService = new ClaudeCodeAuthService(this.services.app);
         return await authService.connectSubscriptionLogin();
+    }
+
+    /**
+     * Check Gemini CLI auth status. The plugin does not initiate auth —
+     * users must authenticate externally via `gemini` in their terminal.
+     */
+    private async startGeminiCliConnectFlow(): Promise<{ success: boolean; apiKey?: string; metadata?: Record<string, string>; error?: string }> {
+        const authService = new GeminiCliAuthService(this.services.app);
+        return await authService.checkAuth();
+    }
+
+    /**
+     * Start a GitHub Copilot device authorization flow.
+     * Bypasses OAuthService.startFlow() since device flow has no redirect callback.
+     */
+    private async startGithubCopilotDeviceFlow(): Promise<{ success: boolean; apiKey?: string; error?: string }> {
+        try {
+            const { GithubCopilotOAuthProvider } = await import('../../services/oauth/providers/GithubCopilotOAuthProvider');
+            const provider = new GithubCopilotOAuthProvider();
+            const result = await provider.startDeviceFlow();
+            return {
+                success: true,
+                apiKey: result.apiKey,
+            };
+        } catch (error) {
+            return {
+                success: false,
+                error: error instanceof Error ? error.message : 'GitHub Copilot device flow failed',
+            };
+        }
     }
 
     /**
@@ -418,6 +474,8 @@ export class ProvidersTab {
         // WebLLM doesn't need an API key
         if (providerId === 'webllm') return true;
         if (providerId === 'anthropic-claude-code') return !!config.oauth?.connected;
+        if (providerId === 'google-gemini-cli') return !!config.oauth?.connected;
+        if (providerId === 'github-copilot') return !!(config.oauth?.connected && config.apiKey);
         // Other providers need an API key
         return !!config.apiKey;
     }
@@ -463,7 +521,7 @@ export class ProvidersTab {
             secondaryOAuthProvider = {
                 providerId: 'anthropic-claude-code',
                 providerLabel: 'Claude Code',
-                description: 'Connect your local Claude Code subscription login and use Claude models through the desktop CLI.',
+                description: 'Use Claude models through the desktop CLI. Authenticate by running `claude auth login` in your terminal first.',
                 config: { ...claudeCodeConfig },
                 oauthConfig: {
                     providerLabel: 'Claude Code',
@@ -473,6 +531,30 @@ export class ProvidersTab {
                     settings.providers['anthropic-claude-code'] = updatedClaudeCodeConfig;
                     await this.saveSettings();
                 },
+                statusOnly: true,
+                statusHint: 'run `claude auth login` in your terminal',
+            };
+        } else if (providerId === 'google') {
+            const geminiCliConfig = settings.providers['google-gemini-cli'] || {
+                apiKey: '',
+                enabled: false,
+            };
+
+            secondaryOAuthProvider = {
+                providerId: 'google-gemini-cli',
+                providerLabel: 'Gemini CLI',
+                description: 'Use Gemini models through the desktop CLI. Authenticate by running `gemini` in your terminal first.',
+                config: { ...geminiCliConfig },
+                oauthConfig: {
+                    providerLabel: 'Gemini CLI',
+                    startFlow: () => this.startGeminiCliConnectFlow(),
+                },
+                onConfigChange: async (updatedGeminiCliConfig: LLMProviderConfig) => {
+                    settings.providers['google-gemini-cli'] = updatedGeminiCliConfig;
+                    await this.saveSettings();
+                },
+                statusOnly: true,
+                statusHint: 'run `gemini auth` in your terminal',
             };
         }
 

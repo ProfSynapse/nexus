@@ -32,3 +32,4 @@ export { OAuthService } from './OAuthService';
 
 export { OpenRouterOAuthProvider } from './providers/OpenRouterOAuthProvider';
 export { OpenAICodexOAuthProvider } from './providers/OpenAICodexOAuthProvider';
+export { GithubCopilotOAuthProvider } from './providers/GithubCopilotOAuthProvider';

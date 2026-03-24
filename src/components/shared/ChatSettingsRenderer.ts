@@ -176,6 +176,22 @@ export class ChatSettingsRenderer {
         continue;
       }
 
+      if (id === 'google-gemini-cli') {
+        const config = llmSettings.providers[id];
+        if (config?.enabled && config?.oauth?.connected) {
+          providers.add('google');
+        }
+        continue;
+      }
+
+      if (id === 'github-copilot') {
+        const config = llmSettings.providers[id];
+        if (config?.enabled && config?.oauth?.connected && config?.apiKey) {
+          providers.add('github-copilot');
+        }
+        continue;
+      }
+
       const config = llmSettings.providers[id];
       if (!config?.enabled) continue;
       if (!isProviderCompatible(id)) continue;
@@ -203,6 +219,11 @@ export class ChatSettingsRenderer {
     return !!claudeCodeConfig?.oauth?.connected;
   }
 
+  private isGeminiCliConnected(): boolean {
+    const geminiCliConfig = this.config.llmProviderSettings.providers['google-gemini-cli'];
+    return !!geminiCliConfig?.oauth?.connected;
+  }
+
   // ========== MODEL SECTION ==========
 
   private renderModelSection(parent: HTMLElement): void {
@@ -227,6 +248,7 @@ export class ChatSettingsRenderer {
       providerManager: this.providerManager,
       isCodexConnected: () => this.isCodexConnected(),
       isClaudeCodeConnected: () => this.isClaudeCodeConnected(),
+      isGeminiCliConnected: () => this.isGeminiCliConnected(),
       getDefaultModelForProvider: (id) => this.getDefaultModelForProvider(id),
       notifyChange: () => this.notifyChange(),
       reRender: () => this.render(),
@@ -333,6 +355,7 @@ export class ChatSettingsRenderer {
       providerManager: this.providerManager,
       isCodexConnected: () => this.isCodexConnected(),
       isClaudeCodeConnected: () => this.isClaudeCodeConnected(),
+      isGeminiCliConnected: () => this.isGeminiCliConnected(),
       getDefaultModelForProvider: (id) => this.getDefaultModelForProvider(id),
       notifyChange: () => this.notifyChange(),
       reRender: () => this.render(),
