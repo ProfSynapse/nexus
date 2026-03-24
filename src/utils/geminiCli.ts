@@ -37,7 +37,7 @@ export function resolveGeminiCliRuntime(vault: Vault): GeminiCliRuntime {
     };
 }
 
-export function buildGeminiCliEnv(systemSettingsPath?: string): NodeJS.ProcessEnv {
+export function buildGeminiCliEnv(systemSettingsPath?: string, nodePath?: string | null): NodeJS.ProcessEnv {
     const env = { ...process.env };
 
     delete env.GEMINI_API_KEY;
@@ -50,6 +50,16 @@ export function buildGeminiCliEnv(systemSettingsPath?: string): NodeJS.ProcessEn
         env.GEMINI_CLI_SYSTEM_SETTINGS_PATH = systemSettingsPath;
     } else {
         delete env.GEMINI_CLI_SYSTEM_SETTINGS_PATH;
+    }
+
+    // Prepend the node binary's directory to PATH so that subprocess spawns
+    // (e.g. `node connector.js`) succeed when Obsidian runs with a restricted
+    // PATH that omits nvm/homebrew/system node locations.
+    if (nodePath) {
+        const pathMod = require('path') as typeof import('path');
+        const nodeDir = pathMod.dirname(nodePath);
+        const separator = process.platform === 'win32' ? ';' : ':';
+        env.PATH = nodeDir + separator + (env.PATH || '');
     }
 
     return env;

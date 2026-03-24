@@ -91,7 +91,7 @@ export class GoogleGeminiCliAdapter extends BaseAdapter {
 
       const handle = runCliProcess(runtime.geminiPath, args, {
         cwd: runtime.vaultPath,
-        env: buildGeminiCliEnv(settingsPath)
+        env: buildGeminiCliEnv(settingsPath, runtime.nodePath)
       });
       this.activeProcess = handle.child;
       const result = await handle.result;
