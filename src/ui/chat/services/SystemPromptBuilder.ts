@@ -14,6 +14,7 @@
 import { WorkspaceContext } from '../../../database/types/workspace/WorkspaceTypes';
 import { MessageEnhancement } from '../components/suggesters/base/SuggesterInterfaces';
 import { CompactedContext } from '../../../services/chat/ContextCompactionService';
+import { CompactionFrontierRecord } from '../../../services/chat/CompactionFrontierService';
 
 /**
  * Vault structure for system prompt context
@@ -81,7 +82,11 @@ export interface SystemPromptOptions {
   skipToolsSection?: boolean;
   // Context status for token-limited models (enables context awareness)
   contextStatus?: ContextStatusInfo | null;
-  // Previous context from compaction (when conversation was truncated)
+  // Active compaction frontier (bounded multi-record projection)
+  compactionFrontier?: CompactionFrontierRecord[] | null;
+  // Legacy single-record fallback for older callers while frontier migration completes.
+  legacyCompactionRecord?: CompactedContext | null;
+  // Legacy alias retained for compatibility with older tests/call sites.
   previousContext?: CompactedContext | null;
 }
 
@@ -106,12 +111,16 @@ export class SystemPromptBuilder {
       }
     }
 
-    // 0.5. Previous context (from compaction - truncated conversation summary)
+    // 0.5. Compaction frontier (from compaction - truncated conversation summaries)
     // This comes right after status so the model knows what came before
-    if (options.previousContext && options.previousContext.summary) {
-      const previousContextSection = this.buildPreviousContextSection(options.previousContext);
-      if (previousContextSection) {
-        sections.push(previousContextSection);
+    const legacyCompactionRecord = options.legacyCompactionRecord ?? options.previousContext;
+    const compactionFrontier = options.compactionFrontier && options.compactionFrontier.length > 0
+      ? options.compactionFrontier
+      : (legacyCompactionRecord && legacyCompactionRecord.summary ? [legacyCompactionRecord] : []);
+    if (compactionFrontier.length > 0) {
+      const compactionFrontierSection = this.buildCompactionFrontierSection(compactionFrontier);
+      if (compactionFrontierSection) {
+        sections.push(compactionFrontierSection);
       }
     }
 
@@ -486,34 +495,71 @@ Prefer targeted context gathering over large dumps.
   }
 
   /**
-   * Build previous context section from compacted conversation
-   * This provides the model with a summary of what was discussed before truncation
+   * Build deterministic bounded compaction frontier section from compacted conversation records.
+   * Records are rendered oldest-to-newest so the active frontier reads chronologically.
    */
-  private buildPreviousContextSection(previousContext: CompactedContext): string | null {
-    let prompt = '<previous_context>\n';
-    prompt += 'Note: Earlier conversation was compacted to stay within context limits.\n\n';
-
-    // Main summary
-    prompt += `Summary: ${this.escapeXmlContent(previousContext.summary)}\n`;
-
-    // Files referenced (if any)
-    if (previousContext.filesReferenced && previousContext.filesReferenced.length > 0) {
-      prompt += `\nFiles discussed: ${this.escapeXmlContent(previousContext.filesReferenced.slice(0, 5).join(', '))}`;
-      if (previousContext.filesReferenced.length > 5) {
-        prompt += ` (+${previousContext.filesReferenced.length - 5} more)`;
-      }
-      prompt += '\n';
+  private buildCompactionFrontierSection(frontier: CompactionFrontierRecord[]): string | null {
+    if (frontier.length === 0) {
+      return null;
     }
 
-    // Topics (if any)
-    if (previousContext.topics && previousContext.topics.length > 0) {
-      prompt += `\nKey tasks: ${this.escapeXmlContent(previousContext.topics.join('; '))}\n`;
+    let prompt = '<compaction_context>\n';
+    prompt += '<status>active</status>\n';
+    prompt += '<source>bounded_frontier</source>\n';
+    prompt += `<frontier_records count="${frontier.length}">\n`;
+
+    for (const [index, record] of frontier.entries()) {
+      prompt += this.buildCompactionRecordSection(record, index);
     }
 
-    // Stats
-    prompt += `\n(${previousContext.messagesRemoved} messages compacted, ${previousContext.messagesKept} retained)`;
+    prompt += '</frontier_records>\n';
+    prompt += '<instruction>Treat this block as compressed prior conversation context. Use it to maintain continuity across older work, but rely on the live conversation for the most recent turns.</instruction>\n';
+    prompt += '</compaction_context>';
+    return prompt;
+  }
 
-    prompt += '\n</previous_context>';
+  private buildCompactionRecordSection(record: CompactionFrontierRecord, index: number): string {
+    const files = record.filesReferenced.slice(0, 5);
+    const topics = record.topics.slice(0, 8);
+    const ancestry = record.transcriptCoverageAncestry ?? (record.transcriptCoverage ? [record.transcriptCoverage] : []);
+    const renderedAncestry = ancestry.slice(0, 3);
+
+    let prompt = `  <record index="${index}" compacted_at="${record.compactedAt}" level="${record.level ?? 0}" merged_records="${record.mergedRecordCount ?? 1}">\n`;
+    prompt += `    <summary>${this.escapeXmlContent(record.summary)}</summary>\n`;
+
+    if (files.length > 0) {
+      const remainingFiles = record.filesReferenced.length - files.length;
+      const fileText = remainingFiles > 0
+        ? `${files.join(', ')} (+${remainingFiles} more)`
+        : files.join(', ');
+      prompt += `    <files>${this.escapeXmlContent(fileText)}</files>\n`;
+    }
+
+    if (topics.length > 0) {
+      const remainingTopics = record.topics.length - topics.length;
+      const topicText = remainingTopics > 0
+        ? `${topics.join('; ')} (+${remainingTopics} more)`
+        : topics.join('; ');
+      prompt += `    <topics>${this.escapeXmlContent(topicText)}</topics>\n`;
+    }
+
+    if (record.transcriptCoverage && (!record.level || record.level === 0)) {
+      prompt += `    <coverage conversation_id="${this.escapeXmlContent(record.transcriptCoverage.conversationId)}" start_sequence_number="${record.transcriptCoverage.startSequenceNumber}" end_sequence_number="${record.transcriptCoverage.endSequenceNumber}" />\n`;
+    }
+
+    if (ancestry.length > 1 || ((record.level ?? 0) > 0 && ancestry.length > 0)) {
+      const ancestryText = renderedAncestry
+        .map(ref => `${ref.conversationId}:${ref.startSequenceNumber}-${ref.endSequenceNumber}`)
+        .join(' | ');
+      const remainingCount = ancestry.length - renderedAncestry.length;
+      const boundedText = remainingCount > 0
+        ? `${ancestryText} (+${remainingCount} more)`
+        : ancestryText;
+      prompt += `    <coverage_ancestry count="${ancestry.length}">${this.escapeXmlContent(boundedText)}</coverage_ancestry>\n`;
+    }
+
+    prompt += `    <stats messages_compacted="${record.messagesRemoved}" messages_retained="${record.messagesKept}" />\n`;
+    prompt += '  </record>\n';
     return prompt;
   }
 }

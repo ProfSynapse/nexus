@@ -26,6 +26,7 @@ import { MessageManager, MessageManagerEvents } from './services/MessageManager'
 import { ModelAgentManager, ModelAgentManagerEvents } from './services/ModelAgentManager';
 import { BranchManager, BranchManagerEvents } from './services/BranchManager';
 import { ContextCompactionService } from '../../services/chat/ContextCompactionService';
+import { CompactionTranscriptRecoveryService } from '../../services/chat/CompactionTranscriptRecoveryService';
 import { ContextPreservationService } from '../../services/chat/ContextPreservationService';
 import { ContextTracker } from './services/ContextTracker';
 
@@ -813,8 +814,13 @@ export class ChatView extends ItemView {
         messageOptions.systemPrompt || null,
         messageOptions.provider
       )) {
-        await this.performContextCompaction(currentConversation);
-        messageOptions = await this.modelAgentManager.getMessageOptions();
+        this.setPreSendCompactionState(true);
+        try {
+          await this.performContextCompaction(currentConversation);
+          messageOptions = await this.modelAgentManager.getMessageOptions();
+        } finally {
+          this.setPreSendCompactionState(false);
+        }
       }
 
       await this.messageManager.sendMessage(
@@ -824,6 +830,7 @@ export class ChatView extends ItemView {
         metadata
       );
     } finally {
+      this.setPreSendCompactionState(false);
       this.modelAgentManager.clearMessageEnhancement();
       this.chatInput?.clearMessageEnhancer();
     }
@@ -840,6 +847,7 @@ export class ChatView extends ItemView {
    * 4. Update storage and progress bar
    */
   private async performContextCompaction(conversation: ConversationData): Promise<void> {
+    const originalMessages = [...conversation.messages];
     let stateContent: string | undefined;
     let usedLLM = false;
 
@@ -888,14 +896,33 @@ export class ChatView extends ItemView {
         compactedContext.summary = stateContent;
       }
 
-      // Set previous context for injection into system prompt
-      this.modelAgentManager.setPreviousContext(compactedContext);
+      compactedContext.transcriptCoverage = await this.buildCompactionTranscriptCoverage(
+        conversation.id,
+        originalMessages,
+        conversation.messages
+      ) ?? undefined;
+
+      // Append the new compaction record so the active frontier is projected into the system prompt.
+      this.modelAgentManager.appendCompactionRecord(compactedContext);
+      conversation.metadata = this.modelAgentManager.buildMetadataWithCompactionRecord(
+        conversation.metadata,
+        compactedContext
+      );
 
       // Reset token tracker for fresh accounting with compacted conversation
       this.modelAgentManager.resetTokenTracker();
 
-      // Update conversation in storage with compacted messages
-      await this.chatService.updateConversation(conversation);
+      // Update conversation in storage with compacted messages and metadata.
+      const conversationService = this.chatService.getConversationService();
+      if (conversationService?.updateConversation) {
+        await conversationService.updateConversation(conversation.id, {
+          title: conversation.title,
+          messages: conversation.messages,
+          metadata: conversation.metadata
+        });
+      } else {
+        await this.chatService.updateConversation(conversation);
+      }
 
       // Update progress bar immediately to reflect new token count
       this.updateContextProgress();
@@ -906,6 +933,33 @@ export class ChatView extends ItemView {
         : `Context compacted (${compactedContext.messagesRemoved} messages)`;
       new Notice(savedMsg, 2500);
     }
+  }
+
+  private async buildCompactionTranscriptCoverage(
+    conversationId: string,
+    originalMessages: ConversationMessage[],
+    keptMessages: ConversationMessage[]
+  ) {
+    const plugin = getNexusPlugin<NexusPlugin>(this.app);
+    const storageAdapter = plugin?.getServiceIfReady<HybridStorageAdapter>('hybridStorageAdapter');
+    if (!storageAdapter) {
+      return null;
+    }
+
+    const keptIds = new Set(keptMessages.map(message => message.id));
+    const compactedMessageIds = originalMessages
+      .filter(message => !keptIds.has(message.id))
+      .map(message => message.id);
+
+    if (compactedMessageIds.length === 0) {
+      return null;
+    }
+
+    const transcriptRecoveryService = new CompactionTranscriptRecoveryService(
+      storageAdapter.messages,
+      this.app
+    );
+    return transcriptRecoveryService.buildCoverageRef(conversationId, compactedMessageIds);
   }
 
   private async handleRetryMessage(messageId: string): Promise<void> {
@@ -965,7 +1019,20 @@ export class ChatView extends ItemView {
 
   private handleLoadingStateChanged(loading: boolean): void {
     if (this.chatInput) {
+      if (loading) {
+        this.chatInput.setPreSendCompacting(false);
+        this.messageDisplay.clearTransientEventRow();
+      }
       this.chatInput.setLoading(loading);
+    }
+  }
+
+  private setPreSendCompactionState(compacting: boolean): void {
+    this.chatInput?.setPreSendCompacting(compacting);
+    if (compacting) {
+      this.messageDisplay.showTransientEventRow('Compacting context before sending...');
+    } else {
+      this.messageDisplay.clearTransientEventRow();
     }
   }
 
