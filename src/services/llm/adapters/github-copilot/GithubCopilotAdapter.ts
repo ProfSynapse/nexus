@@ -1,9 +1,7 @@
 import { BaseAdapter } from '../BaseAdapter';
-import { GenerateOptions, StreamChunk, LLMResponse, ModelInfo, ProviderCapabilities, ModelPricing } from '../types';
+import { GenerateOptions, StreamChunk, LLMResponse, ModelInfo, ProviderCapabilities, ModelPricing, Tool } from '../types';
 import { GITHUB_COPILOT_MODELS, GITHUB_COPILOT_DEFAULT_MODEL } from './GithubCopilotModels';
 import { ProviderHttpClient } from '../shared/ProviderHttpClient';
-import { BufferedSSEStreamProcessor } from '../../streaming/BufferedSSEStreamProcessor';
-import { LLMProviderConfig } from '../../../../types';
 
 const COPILOT_API_ENDPOINT = 'https://api.githubcopilot.com/chat/completions';
 const COPILOT_MODELS_ENDPOINT = 'https://api.githubcopilot.com/models';
@@ -109,16 +107,22 @@ export class GithubCopilotAdapter extends BaseAdapter {
   async generateUncached(prompt: string, options?: GenerateOptions): Promise<LLMResponse> {
     if (!this.apiKey) throw new Error('GitHub Copilot requires authentication.');
 
+    if (options?.tools && options.tools.length > 0) {
+      throw new Error('Tool execution requires streaming. Use generateStreamAsync() instead.');
+    }
+
     const sessionToken = await this.getSessionToken(this.apiKey);
     const headers = this.getAuthHeaders(sessionToken);
-    
-    // Fallback standard options to prevent type errors on options?.messages
-    const messages = options && 'messages' in options ? (options as any).messages : [{ role: 'user', content: prompt }];
+    const messages = this.buildRequestMessages(prompt, options);
 
     const payload = {
       model: options?.model || this.currentModel,
-      messages: messages,
+      messages,
       temperature: options?.temperature ?? 0.5,
+      max_tokens: options?.maxTokens,
+      top_p: options?.topP,
+      stop: options?.stopSequences,
+      response_format: options?.jsonMode ? { type: 'json_object' } : undefined,
       stream: false
     };
 
@@ -144,13 +148,19 @@ export class GithubCopilotAdapter extends BaseAdapter {
 
     const sessionToken = await this.getSessionToken(this.apiKey);
     const headers = this.getAuthHeaders(sessionToken);
-
-    const messages = options && 'messages' in options ? (options as any).messages : [{ role: 'user', content: prompt }];
+    const messages = this.buildRequestMessages(prompt, options);
+    const tools = options?.tools ? this.convertTools(options.tools) : undefined;
 
     const payload = {
       model: options?.model || this.currentModel,
-      messages: messages,
+      messages,
       temperature: options?.temperature ?? 0.5,
+      max_tokens: options?.maxTokens,
+      top_p: options?.topP,
+      stop: options?.stopSequences,
+      response_format: options?.jsonMode ? { type: 'json_object' } : undefined,
+      tools,
+      tool_choice: tools && tools.length > 0 ? 'auto' : undefined,
       stream: true
     };
 
@@ -164,8 +174,39 @@ export class GithubCopilotAdapter extends BaseAdapter {
 
     yield* this.processNodeStream(stream, {
       extractContent: (parsed) => parsed.choices?.[0]?.delta?.content || null,
-      extractToolCalls: () => null,
+      extractToolCalls: (parsed) => parsed.choices?.[0]?.delta?.tool_calls || null,
       extractFinishReason: (parsed) => parsed.choices?.[0]?.finish_reason || null
+      ,
+      accumulateToolCalls: true,
+      toolCallThrottling: {
+        initialYield: true,
+        progressInterval: 50
+      }
+    });
+  }
+
+  private buildRequestMessages(prompt: string, options?: GenerateOptions): any[] {
+    if (options?.conversationHistory && options.conversationHistory.length > 0) {
+      return options.conversationHistory;
+    }
+
+    return this.buildMessages(prompt, options?.systemPrompt);
+  }
+
+  private convertTools(tools: Tool[]): any[] {
+    return tools.map(tool => {
+      if (tool.type === 'function' && tool.function) {
+        return {
+          type: 'function',
+          function: {
+            name: tool.function.name,
+            description: tool.function.description,
+            parameters: tool.function.parameters
+          }
+        };
+      }
+
+      throw new Error(`Unsupported tool type: ${tool.type}`);
     });
   }
 }

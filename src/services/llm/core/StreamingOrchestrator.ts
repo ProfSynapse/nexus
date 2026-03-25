@@ -43,6 +43,35 @@ export class StreamingOrchestrator {
     this.toolContinuation = new ToolContinuationService(toolExecutor, this.messageBuilder);
   }
 
+  private persistLatestResponseId(
+    provider: string,
+    chunk: { metadata?: Record<string, unknown> },
+    options?: StreamingOptions
+  ): void {
+    if (provider !== 'openai' && provider !== 'openai-codex') {
+      return;
+    }
+
+    const rawResponseId = chunk.metadata?.responseId;
+    if (typeof rawResponseId !== 'string' || !rawResponseId) {
+      return;
+    }
+
+    const existingId = options?.conversationId
+      ? this.conversationResponseIds.get(options.conversationId)
+      : undefined;
+
+    this.messageBuilder.updateResponseId(options?.conversationId, rawResponseId);
+
+    if (options) {
+      options.responsesApiId = rawResponseId;
+    }
+
+    if (options?.onResponsesApiId && existingId !== rawResponseId) {
+      options.onResponsesApiId(rawResponseId);
+    }
+  }
+
   /**
    * Primary method: orchestrate streaming response with tool execution
    * @param messages - Conversation message history
@@ -151,26 +180,7 @@ export class StreamingOrchestrator {
           }
 
           if (chunk.complete) {
-            // Store response ID for future continuations (OpenAI/Codex use Responses API)
-            const rawResponseId = chunk.metadata?.responseId;
-            if ((activeProvider === 'openai' || activeProvider === 'openai-codex') && rawResponseId && typeof rawResponseId === 'string') {
-              const responseId = rawResponseId;
-
-              // Only capture if we don't already have one (from options or memory)
-              const existingId = options?.responsesApiId ||
-                (options?.conversationId ? this.conversationResponseIds.get(options.conversationId) : undefined);
-
-              if (!existingId) {
-                // Store in memory for this session
-                if (options?.conversationId) {
-                  this.conversationResponseIds.set(options.conversationId, responseId);
-                }
-                // Notify caller to persist to conversation metadata
-                if (options?.onResponsesApiId) {
-                  options.onResponsesApiId(responseId);
-                }
-              }
-            }
+            this.persistLatestResponseId(activeProvider, chunk, options);
             break;
           }
         }
@@ -239,20 +249,7 @@ export class StreamingOrchestrator {
               }
 
               if (chunk.complete) {
-                const rawResponseId = chunk.metadata?.responseId;
-                if ((activeProvider === 'openai' || activeProvider === 'openai-codex') && rawResponseId && typeof rawResponseId === 'string') {
-                  const responseId = rawResponseId;
-                  const existingId = options?.responsesApiId ||
-                    (options?.conversationId ? this.conversationResponseIds.get(options.conversationId) : undefined);
-                  if (!existingId) {
-                    if (options?.conversationId) {
-                      this.conversationResponseIds.set(options.conversationId, responseId);
-                    }
-                    if (options?.onResponsesApiId) {
-                      options.onResponsesApiId(responseId);
-                    }
-                  }
-                }
+                this.persistLatestResponseId(activeProvider, chunk, options);
                 break;
               }
             }

@@ -264,7 +264,7 @@ export class QueryCache {
     type: 'workspace' | 'session' | 'state' | 'conversation' | 'message' | 'project' | 'task',
     id: string
   ): number {
-    return this.invalidate(`^${type}:.*:${id}`);
+    return this.invalidate(new RegExp(`^${type}:(?:.*:)?${id}$`));
   }
 
   /**

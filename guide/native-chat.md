@@ -58,7 +58,7 @@ Configure providers in **Settings &rarr; Nexus &rarr; Providers**. All configure
 | **GitHub Copilot** | OAuth device flow | Requires active Copilot subscription; sign in via code in modal |
 | **Codex (ChatGPT)** | OAuth | Requires ChatGPT Plus/Pro; sign in via browser redirect |
 
-See the [main README](../README.md#2-set-up-a-provider-for-native-chat) for setup instructions for each subscription-based provider.
+See [Provider setup](provider-setup.md) for connection instructions for API key, local, CLI, and OAuth-backed providers.
 
 ---
 

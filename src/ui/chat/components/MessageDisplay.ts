@@ -13,6 +13,7 @@ export class MessageDisplay {
   private conversation: ConversationData | null = null;
   private currentConversationId: string | null = null;
   private messageBubbles: Map<string, MessageBubble> = new Map();
+  private transientEventRow: HTMLElement | null = null;
 
   constructor(
     private container: HTMLElement,
@@ -113,6 +114,8 @@ export class MessageDisplay {
         previousElement = bubbleEl;
       }
     }
+
+    this.ensureTransientEventRowPosition(messagesContainer as HTMLElement);
   }
 
   /**
@@ -141,6 +144,7 @@ export class MessageDisplay {
   addMessage(message: ConversationMessage): void {
     const bubble = this.createMessageBubble(message);
     this.container.querySelector('.messages-container')?.appendChild(bubble);
+    this.ensureTransientEventRowPosition(this.container.querySelector('.messages-container') as HTMLElement | null);
     this.scrollToBottom();
   }
 
@@ -150,6 +154,7 @@ export class MessageDisplay {
   addAIMessage(message: ConversationMessage): void {
     const bubble = this.createMessageBubble(message);
     this.container.querySelector('.messages-container')?.appendChild(bubble);
+    this.ensureTransientEventRowPosition(this.container.querySelector('.messages-container') as HTMLElement | null);
     this.scrollToBottom();
   }
 
@@ -242,7 +247,59 @@ export class MessageDisplay {
       messagesContainer.appendChild(messageEl);
     });
 
+    this.ensureTransientEventRowPosition(messagesContainer);
+
     this.scrollToBottom();
+  }
+
+  showTransientEventRow(message: string): void {
+    if (!message.trim()) {
+      this.clearTransientEventRow();
+      return;
+    }
+
+    if (!this.transientEventRow) {
+      this.transientEventRow = this.createTransientEventRow(message);
+    } else {
+      const textEl = this.transientEventRow.querySelector('.message-display-event-text');
+      if (textEl) {
+        textEl.textContent = message;
+      }
+    }
+
+    this.ensureTransientEventRowPosition(this.container.querySelector('.messages-container') as HTMLElement | null);
+    this.scrollToBottom();
+  }
+
+  clearTransientEventRow(): void {
+    if (this.transientEventRow) {
+      this.transientEventRow.remove();
+      this.transientEventRow = null;
+    }
+  }
+
+  private createTransientEventRow(message: string): HTMLElement {
+    const row = this.container.createDiv('message-display-event-row');
+    row.setAttribute('role', 'status');
+    row.setAttribute('aria-live', 'polite');
+    row.setAttribute('aria-atomic', 'true');
+
+    const pill = row.createDiv('message-display-event-pill');
+    pill.createSpan({ cls: 'message-display-event-dot' });
+    pill.createSpan({
+      cls: 'message-display-event-text',
+      text: message
+    });
+
+    return row;
+  }
+
+  private ensureTransientEventRowPosition(messagesContainer: HTMLElement | null): void {
+    if (!messagesContainer || !this.transientEventRow) {
+      return;
+    }
+
+    messagesContainer.appendChild(this.transientEventRow);
   }
 
   /**
@@ -401,6 +458,7 @@ export class MessageDisplay {
       bubble.cleanup();
     }
     this.messageBubbles.clear();
+    this.clearTransientEventRow();
     this.currentConversationId = null;
   }
 }

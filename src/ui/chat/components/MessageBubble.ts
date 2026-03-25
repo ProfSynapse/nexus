@@ -19,6 +19,7 @@ import { setIcon, Component, App } from 'obsidian';
 import { ReferenceBadgeRenderer } from './renderers/ReferenceBadgeRenderer';
 import { ToolBubbleFactory } from './factories/ToolBubbleFactory';
 import { ToolEventParser } from '../utils/ToolEventParser';
+import { normalizeToolCallForDisplay } from '../utils/toolDisplayNormalizer';
 import { MessageContentRenderer } from './renderers/MessageContentRenderer';
 import { MessageEditController } from '../controllers/MessageEditController';
 
@@ -65,8 +66,6 @@ export class MessageBubble extends Component {
       // Create tool bubble using factory
       this.toolBubbleElement = ToolBubbleFactory.createToolBubble({
         message: renderMessage,
-        parseParameterValue: ToolEventParser.parseParameterValue,
-        getToolCallArguments: ToolEventParser.getToolCallArguments,
         progressiveToolAccordions: this.progressiveToolAccordions,
         component: this
       });
@@ -433,15 +432,15 @@ export class MessageBubble extends Component {
    * Handle tool events from MessageManager
    */
   handleToolEvent(event: 'detected' | 'updated' | 'started' | 'completed', data: any): void {
-    const info = ToolEventParser.getToolEventInfo(data);
-    const toolId = info.toolId;
+    const info = ToolEventParser.getToolEventInfo(data, event);
+    const toolId = info.toolId || info.batchId || info.parentToolCallId || info.stepId;
     if (!toolId) {
       return;
     }
 
     let accordion = this.progressiveToolAccordions.get(toolId);
 
-    if (!accordion && (event === 'detected' || event === 'started')) {
+    if (!accordion && (event === 'detected' || event === 'started' || event === 'completed')) {
       accordion = new ProgressiveToolAccordion(this);
       const accordionElement = accordion.createElement();
 
@@ -466,48 +465,52 @@ export class MessageBubble extends Component {
       return;
     }
 
-    switch (event) {
-      case 'detected':
-        accordion.detectTool({
-          id: toolId,
-          name: info.displayName,
-          technicalName: info.technicalName,
-          parameters: info.parameters,
-          isComplete: info.isComplete,
-          // Pass reasoning-specific properties
-          type: info.type,
-          result: info.result,
-          status: info.status,
-          isVirtual: info.isVirtual
-        });
-        break;
+    const hasToolMetadata =
+      Boolean(data?.toolCall) ||
+      Boolean(data?.name) ||
+      Boolean(data?.technicalName) ||
+      Boolean(data?.displayName);
 
-      case 'updated':
-        accordion.updateToolParameters(toolId, info.parameters, info.isComplete);
-        break;
+    const isLiveBatchStep = Boolean(info.isBatchStepEvent);
 
-      case 'started':
-        accordion.startTool({
-          id: toolId,
-          name: info.displayName,
-          technicalName: info.technicalName,
-          parameters: info.parameters
-        });
-        break;
+    if (event === 'completed' && !hasToolMetadata) {
+      accordion.completeTool(toolId, data.result, data.success !== false, data.error);
+    } else {
+      const currentGroup = accordion.getDisplayGroup();
+      const nextDisplayGroup = isLiveBatchStep
+        ? normalizeToolCallForDisplay({
+            ...data,
+            id: toolId,
+            toolId,
+            parentToolCallId: info.parentToolCallId ?? info.batchId ?? toolId,
+            batchId: info.batchId ?? toolId,
+            callIndex: info.callIndex,
+            totalCalls: info.totalCalls,
+            strategy: info.strategy,
+            stepId: info.stepId,
+            status: info.status
+          }, currentGroup)
+        : info.displayGroup;
 
-      case 'completed':
-        accordion.completeTool(
-          toolId,
-          data.result,
-          data.success,
-          data.error
+      const shouldPreserveCurrentBatch =
+        !isLiveBatchStep &&
+        Boolean(currentGroup) &&
+        currentGroup?.kind === 'batch' &&
+        currentGroup.steps.length > 0 &&
+        nextDisplayGroup.kind === 'batch' &&
+        nextDisplayGroup.steps.length === 0 &&
+        (
+          nextDisplayGroup.technicalName === 'useTools' ||
+          nextDisplayGroup.technicalName?.endsWith('.useTools')
         );
 
-        // Check if this is an image generation result
-        if (data.success && data.result) {
-          this.checkAndRenderImageResult(data.result);
-        }
-        break;
+      const displayGroup = shouldPreserveCurrentBatch ? currentGroup! : nextDisplayGroup;
+
+      accordion.setDisplayGroup(displayGroup);
+    }
+
+    if (event === 'completed' && data.success && data.result) {
+      this.checkAndRenderImageResult(data.result);
     }
   }
 

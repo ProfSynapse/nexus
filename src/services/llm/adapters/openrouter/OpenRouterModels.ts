@@ -9,6 +9,40 @@ import { ModelSpec } from '../modelTypes';
 // OpenRouter provides access to models from other providers
 // Each model has its own specific API name in OpenRouter
 export const OPENROUTER_MODELS: ModelSpec[] = [
+  // OpenAI GPT-5.4 models via OpenRouter
+  {
+    provider: 'openrouter',
+    name: 'GPT-5.4 Mini',
+    apiName: 'openai/gpt-5.4-mini',
+    contextWindow: 400000,
+    maxTokens: 128000,
+    inputCostPerMillion: 0.75,
+    outputCostPerMillion: 4.50,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    provider: 'openrouter',
+    name: 'GPT-5.4 Nano',
+    apiName: 'openai/gpt-5.4-nano',
+    contextWindow: 400000,
+    maxTokens: 128000,
+    inputCostPerMillion: 0.20,
+    outputCostPerMillion: 1.25,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+
   // OpenAI GPT-5.3 models via OpenRouter
   {
     provider: 'openrouter',

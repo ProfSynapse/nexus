@@ -21,6 +21,7 @@ import { DeepResearchHandler } from './DeepResearchHandler';
 import { WebSearchUtils } from '../../utils/WebSearchUtils';
 import { OPENAI_MODELS } from './OpenAIModels';
 import { MCPToolExecution } from '../shared/ToolExecutionUtils';
+import { ProviderHttpError } from '../shared/ProviderHttpClient';
 
 export class OpenAIAdapter extends BaseAdapter {
   readonly name = 'openai';
@@ -68,6 +69,8 @@ export class OpenAIAdapter extends BaseAdapter {
    * Uses OpenAI Responses API for stateful conversations with tool support
    */
   async* generateStreamAsync(prompt: string, options?: GenerateOptions): AsyncGenerator<StreamChunk, void, unknown> {
+    let lastRequestSummary: Record<string, unknown> | undefined;
+
     try {
       const model = options?.model || this.currentModel;
 
@@ -140,6 +143,8 @@ export class OpenAIAdapter extends BaseAdapter {
           responseParams.include.push('reasoning.encrypted_content');
         }
 
+        lastRequestSummary = this.buildStreamingRequestSummary(responseParams, options, prompt);
+
         const nodeStream = await this.requestStream({
           url: `${this.baseUrl}/responses`,
           operation: 'streaming generation',
@@ -155,9 +160,130 @@ export class OpenAIAdapter extends BaseAdapter {
       yield* this.processResponsesNodeStream(stream);
 
     } catch (error) {
+      this.logStreamingFailure(error, lastRequestSummary);
       console.error('[OpenAIAdapter] Streaming error:', error);
       throw this.handleError(error, 'streaming generation');
     }
+  }
+
+  private buildStreamingRequestSummary(
+    responseParams: Record<string, unknown>,
+    options: GenerateOptions | undefined,
+    prompt: string
+  ): Record<string, unknown> {
+    const input = responseParams.input;
+    const inputItems = Array.isArray(input) ? input : null;
+    const toolNames = Array.isArray(responseParams.tools)
+      ? (responseParams.tools as Array<Record<string, unknown>>)
+          .map(tool => typeof tool.name === 'string' ? tool.name : undefined)
+          .filter((name): name is string => Boolean(name))
+      : [];
+
+    return {
+      model: responseParams.model,
+      previousResponseId: responseParams.previous_response_id,
+      hasSystemPrompt: Boolean(options?.systemPrompt),
+      systemPromptLength: options?.systemPrompt?.length || 0,
+      promptLength: prompt.length,
+      inputMode: inputItems ? 'continuation' : 'prompt',
+      continuationItemCount: inputItems?.length || 0,
+      continuationItemTypes: inputItems?.map(item => {
+        if (item && typeof item === 'object' && 'type' in item && typeof item.type === 'string') {
+          return item.type;
+        }
+        if (item && typeof item === 'object' && 'role' in item && typeof item.role === 'string') {
+          return `role:${item.role}`;
+        }
+        return typeof item;
+      }) || [],
+      continuationCallIds: inputItems?.flatMap(item => {
+        if (item && typeof item === 'object' && 'call_id' in item && typeof item.call_id === 'string') {
+          return [item.call_id];
+        }
+        return [];
+      }) || [],
+      toolCount: toolNames.length,
+      toolNames,
+      temperature: responseParams.temperature,
+      maxOutputTokens: responseParams.max_output_tokens,
+      thinkingEnabled: Boolean(responseParams.reasoning),
+      thinkingEffort: isRecord(responseParams.reasoning) ? responseParams.reasoning.effort : undefined
+    };
+  }
+
+  private logStreamingFailure(error: unknown, requestSummary?: Record<string, unknown>): void {
+    if (!(error instanceof ProviderHttpError)) {
+      return;
+    }
+
+    const responseJson = this.sanitizeForLogging(error.response.json);
+    const responseText = typeof error.response.text === 'string'
+      ? error.response.text.slice(0, 2000)
+      : undefined;
+    const missingCallId = this.extractMissingToolCallId(error.response);
+    const continuationCallIds = Array.isArray(requestSummary?.continuationCallIds)
+      ? requestSummary?.continuationCallIds
+      : [];
+
+    console.error('[OpenAIAdapter] Streaming request failed', {
+      status: error.response.status,
+      statusText: error.response.statusText,
+      request: requestSummary,
+      diagnostics: missingCallId ? {
+        missingCallId,
+        requestIncludesMissingCallId: continuationCallIds.includes(missingCallId),
+        continuationCallIds
+      } : undefined,
+      responseJson,
+      responseText
+    });
+  }
+
+  private extractMissingToolCallId(response: { json?: unknown; text?: string }): string | undefined {
+    const messageFromJson = isRecord(response.json) &&
+      isRecord(response.json.error) &&
+      typeof response.json.error.message === 'string'
+      ? response.json.error.message
+      : undefined;
+
+    const message = messageFromJson || response.text;
+    if (typeof message !== 'string') {
+      return undefined;
+    }
+
+    const match = message.match(/function call ([A-Za-z0-9_-]+)/);
+    return match?.[1];
+  }
+
+  private sanitizeForLogging(value: unknown): unknown {
+    if (Array.isArray(value)) {
+      return value.slice(0, 10).map(item => this.sanitizeForLogging(item));
+    }
+
+    if (!isRecord(value)) {
+      if (typeof value === 'string') {
+        return value.length > 500 ? `${value.slice(0, 500)}...` : value;
+      }
+      return value;
+    }
+
+    const sanitizedEntries = Object.entries(value).slice(0, 20).map(([key, entryValue]) => {
+      if (typeof entryValue === 'string') {
+        return [key, entryValue.length > 500 ? `${entryValue.slice(0, 500)}...` : entryValue];
+      }
+
+      if (Array.isArray(entryValue)) {
+        return [key, entryValue.slice(0, 10).map(item => this.sanitizeForLogging(item))];
+      }
+
+      if (isRecord(entryValue)) {
+        return [key, this.sanitizeForLogging(entryValue)];
+      }
+
+      return [key, entryValue];
+    });
+
+    return Object.fromEntries(sanitizedEntries);
   }
 
   /**
@@ -571,4 +697,8 @@ export class OpenAIAdapter extends BaseAdapter {
       return null;
     }
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

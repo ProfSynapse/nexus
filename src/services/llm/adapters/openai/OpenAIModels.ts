@@ -32,6 +32,38 @@ export const OPENAI_MODELS: ModelSpec[] = [
   },
   {
     provider: 'openai',
+    name: 'GPT-5.4 Mini',
+    apiName: 'gpt-5.4-mini',
+    contextWindow: 400000,
+    maxTokens: 128000,
+    inputCostPerMillion: 0.75,
+    outputCostPerMillion: 4.50,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    provider: 'openai',
+    name: 'GPT-5.4 Nano',
+    apiName: 'gpt-5.4-nano',
+    contextWindow: 400000,
+    maxTokens: 128000,
+    inputCostPerMillion: 0.20,
+    outputCostPerMillion: 1.25,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    provider: 'openai',
     name: 'GPT-5.4 Pro',
     apiName: 'gpt-5.4-pro',
     contextWindow: 1050000,

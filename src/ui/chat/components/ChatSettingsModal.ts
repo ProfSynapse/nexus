@@ -162,12 +162,8 @@ export class ChatSettingsModal extends Modal {
       const settings = this.pendingSettings;
 
       // Update model
-      const availableModels = await this.modelAgentManager.getAvailableModels();
-      const model = availableModels.find(
-        m => m.providerId === settings.provider && m.modelId === settings.model
-      );
-      if (model) {
-        this.modelAgentManager.handleModelChange(model);
+      if (settings.provider && settings.model) {
+        await this.modelAgentManager.setSelectedModelById(settings.provider, settings.model);
       }
 
       // Update prompt

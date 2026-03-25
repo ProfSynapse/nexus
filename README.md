@@ -7,246 +7,79 @@
 
 # Nexus MCP for Obsidian
 
-Nexus gives AI agents like Claude full access to your Obsidian vault — so you can manage your entire knowledge base through natural conversation while keeping everything local.
+Nexus gives AI agents and built-in chat access to your Obsidian vault so you can read, write, search, organize, and automate notes in natural language while keeping storage local to the vault.
 
-**Everything is natural language first.** Notes, folders, workspaces, workflows, projects, tasks, search, image generation — the AI can create, read, update, and manage all of it just by you asking. There's also a settings UI for when you prefer clicking, but you never have to leave the conversation.
+Nexus can be used in two ways:
+- Inside Obsidian with native chat (hook up to your favorite provider or agentic platform!)
+- From external agents like Claude Desktop, Claude Code, Codex CLI, Gemini CLI, Cursor, Cline, and other MCP clients
 
 > Nexus is the successor to Claudesidian. Legacy installs in `.obsidian/plugins/claudesidian-mcp/` still work.
 
----
+## Setup
 
-## Get Started
+- Install the latest release from [GitHub Releases](https://github.com/ProfSynapse/claudesidian-mcp/releases): `manifest.json`, `styles.css`, `main.js`, and `connector.js`
+- Put them in `.obsidian/plugins/nexus/` and enable **Nexus** in Obsidian
+- Native chat in Obsidian: [Provider setup](guide/provider-setup.md) and [Native chat guide](guide/native-chat.md)
+- External agent over MCP: [MCP setup guide](guide/mcp-setup.md) and [Recommended system prompt](guide/recommended-system-prompt.md)
+- Optional desktop features: [Semantic search](guide/semantic-search.md) and [Apps and integrations](guide/apps.md)
 
-### 1. Install the Plugin
+Native chat works on desktop and mobile. MCP clients, local desktop providers, and semantic search are desktop-only.
 
-1. Download the latest [release](https://github.com/ProfSynapse/claudesidian-mcp/releases): `manifest.json`, `styles.css`, `main.js`, `connector.js`
-2. Place them in `.obsidian/plugins/nexus/` (or keep legacy `.obsidian/plugins/claudesidian-mcp/`)
-3. Enable **Nexus** in Settings &rarr; Community Plugins
-4. Restart Obsidian
+## Use Cases
 
-### 2. Set Up a Provider (for Native Chat)
+| If you want to... | Start here |
+|---|---|
+| Connect Claude Desktop, Codex CLI, Gemini CLI, Cursor, Cline, or another MCP client | [MCP setup](guide/mcp-setup.md) |
+| Configure built-in chat providers inside Obsidian | [Provider setup](guide/provider-setup.md) |
+| Give your agent better instructions for using Nexus | [Recommended system prompt](guide/recommended-system-prompt.md) |
+| Manage long-running work with persistent workspace context | [Workspace memory](guide/workspace-memory.md) |
+| Track projects, tasks, blockers, and dependencies | [Task management](guide/task-management.md) |
+| Search notes and past conversations by meaning | [Semantic search](guide/semantic-search.md) |
+| Edit selected text directly in notes | [Inline editing](guide/inline-editing.md) |
+| Create recurring routines and reusable workflows | [Workflow examples](guide/workflow-examples.md) |
+| Understand the MCP design and available tools | [Two-tool architecture](guide/two-tool-architecture.md) |
+| Extend Nexus with downloadable apps | [Apps](guide/apps.md) |
 
-The built-in chat works right away with no extra software. Just add an API key in **Settings &rarr; Nexus &rarr; Providers** and start chatting inside Obsidian. Supports Anthropic, OpenAI, Google, Groq, Mistral, OpenRouter, Perplexity, Requesty, Ollama, LM Studio, Claude Code, Gemini CLI, Codex (ChatGPT), and GitHub Copilot.
+## Prompt For Your Agent
 
-#### Use Claude Code (no API key needed)
+If you want another agent to walk you through setup, paste this:
 
-**Prerequisite: [Claude Code](https://claude.ai/download) must be installed on your computer and you must be signed in.** Nexus uses your existing CLI installation — it won't work if Claude Code isn't installed and authenticated outside of Obsidian first.
+```text
+Help me set up Nexus for Obsidian and guide me step by step.
 
-1. Install [Claude Code](https://claude.ai/download) and run `claude` in your terminal to sign in
-2. In Nexus, go to **Settings &rarr; Providers &rarr; Anthropic**
-3. Click the **Connect** button under "Claude Code"
-4. In chat settings, select a model labeled **(Claude Code)** — e.g. "Claude Sonnet 4.6 (Claude Code)"
+Use these docs as the source of truth:
+- README: https://github.com/ProfSynapse/claudesidian-mcp/blob/main/README.md
+- Provider setup: https://github.com/ProfSynapse/claudesidian-mcp/blob/main/guide/provider-setup.md
+- MCP setup: https://github.com/ProfSynapse/claudesidian-mcp/blob/main/guide/mcp-setup.md
+- Recommended system prompt: https://github.com/ProfSynapse/claudesidian-mcp/blob/main/guide/recommended-system-prompt.md
+- Native chat guide: https://github.com/ProfSynapse/claudesidian-mcp/blob/main/guide/native-chat.md
 
-Your messages route through the local Claude CLI using your existing subscription. Desktop only.
+Start by figuring out whether I want native chat inside Obsidian, an external MCP agent, or both. Ask for my OS and the agent I want to use if that matters. Then walk me through the exact setup path, one step at a time.
 
-#### Use Gemini CLI (no API key needed)
-
-**Prerequisite: [Gemini CLI](https://github.com/google-gemini/gemini-cli) must be installed on your computer and you must be signed in.** Nexus uses your existing CLI installation — it won't work if Gemini CLI isn't installed and authenticated outside of Obsidian first.
-
-1. Install Gemini CLI: `npm install -g @google/gemini-cli`
-2. Sign in: run `gemini` in your terminal and complete the Google auth flow
-3. In Nexus, go to **Settings &rarr; Providers &rarr; Google AI**
-4. The "Gemini CLI" section shows **Connected** once your credentials are detected
-5. In chat settings, select a Gemini CLI model
-
-Your messages route through the local Gemini CLI using your existing Google account. Desktop only.
-
-#### Use GitHub Copilot (requires active Copilot subscription)
-
-Connect your GitHub Copilot subscription via OAuth — no API key to manage.
-
-1. In Nexus, go to **Settings &rarr; Providers &rarr; GitHub Copilot**
-2. Click **Connect**
-3. A code appears in the modal — copy it, then enter it at the GitHub page that opens automatically
-4. Once authorized, Nexus fetches available Copilot models automatically
-
-Requires an active [GitHub Copilot](https://github.com/features/copilot) subscription. Desktop only. Experimental — uses an undocumented Copilot proxy.
-
-#### Use Codex via ChatGPT (requires ChatGPT Plus/Pro)
-
-Connect your ChatGPT account via OAuth to access GPT-5 models through the Responses API.
-
-1. In Nexus, go to **Settings &rarr; Providers &rarr; OpenAI**
-2. Click **Connect** under "ChatGPT (Codex)"
-3. Sign in with your ChatGPT account in the browser window that opens
-4. In chat settings, select a model labeled **(ChatGPT)**
-
-Requires an active [ChatGPT Plus or Pro](https://chatgpt.com) subscription. Desktop only. Experimental.
-
-### 3. Connect an External AI Agent (optional)
-
-Nexus works as an MCP server with Claude Desktop, Claude Code, Codex CLI, Gemini CLI, GitHub Copilot, Cline, Roo Code, Cursor, Windsurf, and any other MCP-compatible tool. Requires [Node.js](https://nodejs.org/) (v18+) on your machine. The native chat inside Obsidian works fine without this.
-
-**Quick setup for Claude Desktop**:
-
-1. Open Claude Desktop &rarr; **Settings** &rarr; **Developer** &rarr; **Edit Config**
-2. Add Nexus to the config (or use one-click: Settings &rarr; Nexus &rarr; Get Started &rarr; **Add Nexus to Claude**):
-
-```json
-{
-  "mcpServers": {
-    "nexus": {
-      "command": "node",
-      "args": ["/path/to/Vault/.obsidian/plugins/nexus/connector.js"]
-    }
-  }
-}
+When a config file needs to be edited, show the exact snippet with my vault path inserted. Do not invent config formats or skip restart/reload steps. If multiple setup paths are possible, recommend the simplest one first.
 ```
 
-3. Fully quit and relaunch Claude Desktop
+## More Guides
 
-[Setup guides for all supported agents &rarr;](guide/mcp-setup.md)
-
-#### Add a system prompt (recommended)
-
-For best results, give your AI agent some guidance on how to use your vault:
-
-> At the start of every conversation, list workspaces and load the appropriate one. If one doesn't exist, create one. If you lost context from compaction, reload the workspace. Always call getTools before useTools — never guess parameters.
-
-[Full recommended system prompt &rarr;](guide/recommended-system-prompt.md)
-
----
-
-## What Can You Do?
-
-Just tell the AI what you want in plain language. Everything below works through Claude Desktop or the built-in native chat — no menus or special syntax required.
-
-### Read, write, and organize your vault
-
-> "Summarize my meeting notes from this week"
-
-> "Create a new note called 'Project Roadmap' with sections for Q1 and Q2"
-
-> "Move everything in my Inbox folder to the Archive"
-
-### Set up and manage workspaces
-
-Workspaces scope your AI sessions to a project. The AI creates them, loads them, saves states, and manages everything inside them — you just ask.
-
-> "Create a workspace called 'Thesis Research'"
-
-> "Save the current state as 'Literature Review Complete'"
-
-[Details &rarr;](guide/workspace-memory.md)
-
-### Create and schedule workflows
-
-Workflows are reusable routines that live inside a workspace. The AI can create them, bind prompts, set schedules, and trigger them — all through conversation.
-
-> "Add a daily workflow that summarizes notes I modified yesterday"
-
-> "Run the Morning Briefing workflow now"
-
-[Details &rarr;](guide/workspace-memory.md#workflows)
-
-### Manage projects and tasks
-
-Create projects, add tasks with dependencies, update status, assign work, set due dates — the AI handles the full lifecycle. There's also a settings UI if you prefer, but conversation is the primary interface.
-
-> "Create a project called 'Website Relaunch' and add tasks for design, implementation, and testing"
-
-> "What can I work on next?"
-
-[Details &rarr;](guide/task-management.md)
-
-### Search by meaning
-
-Find notes by what they're about, not just keywords. Search past conversations too. All local — no external API calls.
-
-> "Find everything I've written about behavioral economics"
-
-> "What did we discuss about the API design last week?"
-
-[Details &rarr;](guide/semantic-search.md)
-
-### Build custom prompts
-
-Create reusable prompts with specific instructions, bind them to workspaces or workflows, and invoke them anytime. The AI can create, edit, list, and run prompts through conversation.
-
-> "Create a prompt called 'Code Review' that analyzes a note for bugs and suggests improvements"
-
-> "Run my 'Weekly Reflection' prompt"
-
-In the native chat, type `@` to quickly browse and invoke your saved prompts from the keyboard.
-
-### Edit text inline
-
-Select text in any note, right-click &rarr; **Edit with AI**, and transform it with a natural language instruction. Streaming preview, retry, and undo built in.
-[Details &rarr;](guide/inline-editing.md)
-
-### Chat inside Obsidian
-
-Open the built-in chat (ribbon icon or command palette) to talk to any configured LLM with full vault access. Type `/` for tools, `@` for custom prompts, `[[` to link notes.
-[Details &rarr;](guide/native-chat.md)
-
-### Extend with apps
-
-Install app plugins like ElevenLabs to add capabilities. The AI uses them just like any other tool.
-
-> "Convert my blog post note to speech and save it to Audio/"
-
-[Details &rarr;](guide/apps.md)
-
-[See more examples of what you can do &rarr;](guide/workflow-examples.md)
-
----
-
-## Platform Support
-
-| Feature | Desktop | Mobile |
-|---------|---------|--------|
-| Native Chat | Yes | Yes |
-| Inline AI Editing | Yes | Yes (command palette) |
-| MCP Bridge (Claude Desktop) | Yes | — |
-| Local Providers (Ollama/LM Studio) | Yes | — |
-| Semantic Embeddings | Yes | — |
-| Cloud Providers | Yes (real streaming) | Yes (buffered) |
-
----
-
-## How It Works
-
-Nexus uses a **two-tool architecture** — instead of exposing 45+ tools upfront, it gives the AI just two: one to discover available tools, and one to execute them. This keeps things fast and works well even with smaller models.
-
-All your data stays in a `.nexus/` folder inside your vault as sync-friendly JSONL files with a local SQLite cache.
-
-[Architecture details &rarr;](guide/two-tool-architecture.md) | [Full tool reference &rarr;](docs/TOOL_REFERENCE.md)
-
----
-
-## Security & Privacy
-
-- MCP server runs locally only — no remote connections
-- All file operations stay inside your vault
-- Network calls only for LLM providers you configure
-- Embeddings download once, then run fully on-device
-
----
-
-## Troubleshooting
-
-| Issue | Fix |
-|-------|-----|
-| Server not found in Claude | Settings &rarr; Nexus &rarr; Get Started &rarr; **Add Nexus to Claude**, restart Claude Desktop |
-| Pipes not created | Make sure Obsidian is open (Windows uses named pipes) |
-| Legacy install path | `.obsidian/plugins/claudesidian-mcp/connector.js` still works |
-
----
+- [Workspace memory](guide/workspace-memory.md)
+- [Task management](guide/task-management.md)
+- [Semantic search](guide/semantic-search.md)
+- [Native chat](guide/native-chat.md)
+- [Inline editing](guide/inline-editing.md)
+- [Apps](guide/apps.md)
+- [Workflow examples](guide/workflow-examples.md)
+- [Two-tool architecture](guide/two-tool-architecture.md)
 
 ## Development
 
 ```bash
-npm install        # Install dependencies
-npm run dev        # Development build with watch
-npm run build      # Production build
-npm run test       # Run tests
-npm run lint       # Run ESLint
+npm install
+npm run dev
+npm run build
+npm run test
+npm run lint
 ```
-
----
 
 ## License
 
-MIT — see [LICENSE](LICENSE) for details.
-
-Questions? [Open an issue](https://github.com/ProfSynapse/claudesidian-mcp/issues) with your OS, Obsidian version, and any console logs.
+MIT. See [LICENSE](LICENSE).
