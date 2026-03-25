@@ -27,6 +27,7 @@ import {
 import type { IProjectRepository, ProjectMetadata } from '../../../database/repositories/interfaces/IProjectRepository';
 import type { ITaskRepository, TaskMetadata, NoteLink } from '../../../database/repositories/interfaces/ITaskRepository';
 import { PaginatedResult } from '../../../types/pagination/PaginationTypes';
+import { TaskBoardEvents } from '../../../services/task/TaskBoardEvents';
 
 export class TaskService {
   constructor(
@@ -52,6 +53,13 @@ export class TaskService {
       description: data.description,
       workspaceId,
       metadata: data.metadata
+    });
+
+    TaskBoardEvents.notify({
+      workspaceId,
+      entity: 'project',
+      action: 'created',
+      projectId
     });
 
     return projectId;
@@ -83,6 +91,13 @@ export class TaskService {
       ...data,
       updated: Date.now()
     });
+
+    TaskBoardEvents.notify({
+      workspaceId: project.workspaceId,
+      entity: 'project',
+      action: 'updated',
+      projectId
+    });
   }
 
   async archiveProject(projectId: string): Promise<void> {
@@ -95,6 +110,13 @@ export class TaskService {
       status: 'archived',
       updated: Date.now()
     });
+
+    TaskBoardEvents.notify({
+      workspaceId: project.workspaceId,
+      entity: 'project',
+      action: 'archived',
+      projectId
+    });
   }
 
   async deleteProject(projectId: string): Promise<void> {
@@ -104,6 +126,13 @@ export class TaskService {
     }
 
     await this.projectRepo.delete(projectId);
+
+    TaskBoardEvents.notify({
+      workspaceId: project.workspaceId,
+      entity: 'project',
+      action: 'deleted',
+      projectId
+    });
   }
 
   // ────────────────────────────────────────────────────────────────
@@ -169,6 +198,14 @@ export class TaskService {
       }
     }
 
+    TaskBoardEvents.notify({
+      workspaceId: project.workspaceId,
+      entity: 'task',
+      action: 'created',
+      taskId,
+      projectId
+    });
+
     return taskId;
   }
 
@@ -180,6 +217,18 @@ export class TaskService {
       priority: options?.priority,
       assignee: options?.assignee,
       parentTaskId: options?.parentTaskId
+    });
+  }
+
+  async listWorkspaceTasks(workspaceId: string, options?: TaskListOptions): Promise<PaginatedResult<TaskMetadata>> {
+    return this.taskRepo.getByWorkspace(workspaceId, {
+      page: options?.page,
+      pageSize: options?.pageSize,
+      status: options?.status,
+      priority: options?.priority,
+      assignee: options?.assignee,
+      parentTaskId: options?.parentTaskId,
+      includeSubtasks: options?.includeSubtasks
     });
   }
 
@@ -204,6 +253,14 @@ export class TaskService {
     }
 
     await this.taskRepo.update(taskId, updateData);
+
+    TaskBoardEvents.notify({
+      workspaceId: task.workspaceId,
+      entity: 'task',
+      action: 'updated',
+      taskId,
+      projectId: task.projectId
+    });
   }
 
   async moveTask(taskId: string, target: { projectId?: string; parentTaskId?: string | null }): Promise<void> {
@@ -244,6 +301,14 @@ export class TaskService {
     }
 
     await this.taskRepo.update(taskId, updateData);
+
+    TaskBoardEvents.notify({
+      workspaceId: task.workspaceId,
+      entity: 'task',
+      action: 'moved',
+      taskId,
+      projectId: (updateData.projectId as string | undefined) || task.projectId
+    });
   }
 
   async deleteTask(taskId: string): Promise<void> {
@@ -253,6 +318,14 @@ export class TaskService {
     }
 
     await this.taskRepo.delete(taskId);
+
+    TaskBoardEvents.notify({
+      workspaceId: task.workspaceId,
+      entity: 'task',
+      action: 'deleted',
+      taskId,
+      projectId: task.projectId
+    });
   }
 
   // ────────────────────────────────────────────────────────────────

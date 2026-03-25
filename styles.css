@@ -7224,3 +7224,316 @@ body.is-mobile .chat-loading-overlay {
     color: var(--text-normal);
     font-size: var(--font-ui-medium);
 }
+
+/* =========================== */
+/* TASK BOARD VIEW            */
+/* =========================== */
+
+.nexus-task-board-view {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.nexus-task-board-shell {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    gap: var(--space-l);
+    min-height: 0;
+    padding: var(--space-l);
+    overflow: hidden;
+}
+
+.nexus-task-board-header,
+.nexus-task-board-toolbar,
+.nexus-task-board-column,
+.nexus-task-board-modal-shell {
+    background: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-m);
+}
+
+.nexus-task-board-header,
+.nexus-task-board-toolbar {
+    padding: var(--space-l);
+}
+
+.nexus-task-board-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-l);
+}
+
+.nexus-task-board-header h2,
+.nexus-task-board-column-header h3,
+.nexus-task-board-modal-header h2 {
+    margin: 0;
+}
+
+.nexus-task-board-kicker,
+.nexus-task-board-field-label,
+.nexus-task-board-card-meta,
+.nexus-task-board-modal-kicker,
+.nexus-task-board-modal-note,
+.nexus-task-board-stat {
+    color: var(--text-faint);
+    font-size: 0.75rem;
+}
+
+.nexus-task-board-subtitle {
+    margin: var(--space-xs) 0 0;
+    color: var(--text-muted);
+}
+
+.nexus-task-board-actions,
+.nexus-task-board-modal-actions {
+    display: flex;
+    gap: var(--space-s);
+}
+
+.nexus-task-board-button {
+    min-height: 34px;
+    padding: 0 var(--space-m);
+    border-radius: var(--radius-s);
+}
+
+.nexus-task-board-button-secondary {
+    background: var(--background-primary);
+    color: var(--text-normal);
+    border: 1px solid var(--background-modifier-border);
+}
+
+.nexus-task-board-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-m);
+    align-items: end;
+}
+
+.nexus-task-board-field {
+    display: flex;
+    flex-direction: column;
+    flex: 0 1 220px;
+    gap: var(--space-xs);
+}
+
+.nexus-task-board-field-search {
+    flex: 1 1 280px;
+    min-width: 0;
+}
+
+.nexus-task-board-input {
+    width: 100%;
+    min-height: 36px;
+    padding: 0 var(--space-m);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s);
+    background: var(--background-primary);
+    color: var(--text-normal);
+}
+
+.nexus-task-board-textarea {
+    padding: var(--space-s) var(--space-m);
+    min-height: 96px;
+    resize: vertical;
+}
+
+.nexus-task-board-stats {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--space-m);
+    margin-left: auto;
+    white-space: nowrap;
+}
+
+.nexus-task-board-columns {
+    display: flex;
+    flex: 1 1 auto;
+    gap: var(--space-m);
+    min-height: 0;
+    align-items: stretch;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: 2px;
+}
+
+.nexus-task-board-column {
+    flex: 1 0 260px;
+    min-width: 260px;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    padding: var(--space-m);
+}
+
+.nexus-task-board-column-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-s);
+    margin-bottom: var(--space-m);
+}
+
+.nexus-task-board-column-header h3 {
+    font-size: 0.95rem;
+}
+
+.nexus-task-board-column-count {
+    min-width: 24px;
+    height: 24px;
+    padding: 0 var(--space-s);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    color: var(--text-muted);
+    font-size: 0.75rem;
+}
+
+.nexus-task-board-column-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-s);
+    padding: 2px;
+    border-radius: var(--radius-s);
+    overflow-y: auto;
+}
+
+.nexus-task-board-column-body.is-drop-target {
+    background: var(--background-modifier-hover);
+    outline: 1px dashed var(--interactive-accent);
+}
+
+.nexus-task-board-card {
+    padding: var(--space-m);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s);
+    background: var(--background-primary);
+    cursor: grab;
+}
+
+.nexus-task-board-card:hover {
+    background: var(--background-modifier-hover);
+}
+
+.nexus-task-board-card.is-dragging {
+    opacity: 0.5;
+}
+
+.nexus-task-board-card-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-s);
+}
+
+.nexus-task-board-card-title {
+    color: var(--text-normal);
+    font-weight: 600;
+    line-height: 1.35;
+}
+
+.nexus-task-board-card-meta {
+    margin-top: var(--space-xs);
+}
+
+.nexus-task-board-icon-button {
+    width: 28px;
+    height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-s);
+}
+
+.nexus-task-board-empty-column,
+.nexus-task-board-loading-text,
+.nexus-task-board-error p {
+    color: var(--text-muted);
+}
+
+.nexus-task-board-loading,
+.nexus-task-board-error {
+    padding: var(--space-xl);
+}
+
+.nexus-task-board-error h3 {
+    margin-top: 0;
+}
+
+.nexus-task-board-modal {
+    padding: 0;
+}
+
+.nexus-task-board-modal-shell {
+    padding: var(--space-l);
+}
+
+.nexus-task-board-modal-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-m);
+    margin-bottom: var(--space-l);
+}
+
+.nexus-task-board-modal-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-m);
+}
+
+.nexus-task-board-modal-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-m);
+}
+
+.nexus-task-board-modal-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-m);
+    flex-wrap: wrap;
+}
+
+body.is-mobile .nexus-task-board-shell {
+    padding: var(--space-m);
+}
+
+@media (max-width: 1100px) {
+    .nexus-task-board-stats {
+        justify-content: flex-start;
+        margin-left: 0;
+    }
+}
+
+@media (max-width: 760px) {
+    .nexus-task-board-header {
+        flex-direction: column;
+    }
+
+    .nexus-task-board-toolbar,
+    .nexus-task-board-modal-grid {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .nexus-task-board-field,
+    .nexus-task-board-field-search,
+    .nexus-task-board-stats,
+    .nexus-task-board-column {
+        flex-basis: auto;
+        min-width: 0;
+    }
+}
