@@ -11,6 +11,7 @@ export interface CliProcessResult {
   stdout: string;
   stderr: string;
   exitCode: number | null;
+  errorCode?: string;
 }
 
 export interface CliProcessHandle {
@@ -32,6 +33,7 @@ export function runCliProcess(
   options?: {
     cwd?: string;
     env?: NodeJS.ProcessEnv;
+    stdinText?: string;
   }
 ): CliProcessHandle {
   const childProcess = require('child_process') as typeof import('child_process');
@@ -39,14 +41,23 @@ export function runCliProcess(
   const spawnOptions: SpawnOptions = {
     cwd: options?.cwd,
     env: options?.env,
-    stdio: ['ignore', 'pipe', 'pipe']
+    stdio: options?.stdinText !== undefined ? ['pipe', 'pipe', 'pipe'] : ['ignore', 'pipe', 'pipe']
   };
 
   const child = spawnDesktopProcess(childProcess, command, args, spawnOptions);
 
   const result = new Promise<CliProcessResult>((resolve) => {
-    if (!child.stdout || !child.stderr) {
-      resolve({
+    let settled = false;
+    const resolveOnce = (value: CliProcessResult) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      resolve(value);
+    };
+
+    if (!child.stdout || !child.stderr || (options?.stdinText !== undefined && !child.stdin)) {
+      resolveOnce({
         stdout: '',
         stderr: 'Failed to capture CLI process output.',
         exitCode: null
@@ -65,17 +76,44 @@ export function runCliProcess(
       stderr += chunk.toString();
     });
 
-    child.on('error', (error: Error) => {
-      resolve({
+    child.on('error', (error: NodeJS.ErrnoException) => {
+      resolveOnce({
         stdout,
         stderr: stderr ? `${stderr}\n${error.message}` : error.message,
-        exitCode: null
+        exitCode: null,
+        errorCode: error.code
       });
     });
 
     child.on('close', (exitCode: number | null) => {
-      resolve({ stdout, stderr, exitCode });
+      resolveOnce({ stdout, stderr, exitCode });
     });
+
+    if (options?.stdinText !== undefined) {
+      const stdin = child.stdin;
+      if (!stdin) {
+        resolveOnce({
+          stdout,
+          stderr: 'Failed to open CLI stdin for prompt input.',
+          exitCode: null
+        });
+        return;
+      }
+
+      const handleStdinError = (error: NodeJS.ErrnoException) => {
+        resolveOnce({
+          stdout,
+          stderr: stderr ? `${stderr}\n${error.message}` : error.message,
+          exitCode: null,
+          errorCode: error.code
+        });
+      };
+
+      stdin.once('error', handleStdinError);
+      stdin.end(options.stdinText, 'utf8', () => {
+        stdin.off('error', handleStdinError);
+      });
+    }
   });
 
   return { child, result };
