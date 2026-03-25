@@ -6,20 +6,9 @@
  * because it uses a different context format (ToolContext) than CommonParameters.
  */
 
-import { App } from 'obsidian';
 import { ITool } from '../../interfaces/ITool';
-import { UseToolParams, UseToolResult, ToolCallParams, ToolCallResult, ToolContext, getToolContextSchema } from '../types';
-import { IAgent } from '../../interfaces/IAgent';
-import { getErrorMessage } from '../../../utils/errorUtils';
-import { getNexusPlugin } from '../../../utils/pluginLocator';
-import { WorkspaceService } from '../../../services/WorkspaceService';
-import { CommonResult } from '../../../types';
-
-/** Workspace info for validation */
-interface WorkspaceInfo {
-  name: string;
-  description?: string;
-}
+import { UseToolParams, UseToolResult, getToolContextSchema } from '../types';
+import { ToolBatchExecutionService } from '../services/ToolBatchExecutionService';
 
 /**
  * Tool for executing other tools with unified context
@@ -31,25 +20,11 @@ export class UseToolTool implements ITool<UseToolParams, UseToolResult> {
   description: string;
   version: string;
 
-  private app: App;
-  private agentRegistry: Map<string, IAgent>;
-  private knownWorkspaces: WorkspaceInfo[];
-
-  /**
-   * Create a new UseToolTool
-   * @param app Obsidian app instance
-   * @param agentRegistry Map of agent name to agent instance
-   * @param workspaces Known workspaces for validation by name
-   */
-  constructor(app: App, agentRegistry: Map<string, IAgent>, workspaces: WorkspaceInfo[] = []) {
+  constructor(private batchExecutionService: ToolBatchExecutionService) {
     this.slug = 'useTools';
     this.name = 'Use Tools';
     this.description = 'Execute tools. IMPORTANT: You MUST call getTools first to get the parameter schemas before calling this tool. Do NOT guess or hallucinate parameters - call getTools to discover the exact schema, then call useTools with those parameters. Fill context (memory→goal→constraints), then specify tools.';
     this.version = '1.0.0';
-
-    this.app = app;
-    this.agentRegistry = agentRegistry;
-    this.knownWorkspaces = workspaces;
   }
 
   /**
@@ -58,289 +33,7 @@ export class UseToolTool implements ITool<UseToolParams, UseToolResult> {
    * @returns Promise that resolves with execution results
    */
   async execute(params: UseToolParams): Promise<UseToolResult> {
-    try {
-      // Validate context
-      const contextErrors = this.validateContext(params.context);
-      if (contextErrors.length > 0) {
-        return {
-          success: false,
-          error: `Invalid context: ${contextErrors.join(', ')}`
-        };
-      }
-
-      // Validate workspaceId exists
-      const workspaceError = await this.validateWorkspaceId(params.context.workspaceId);
-      if (workspaceError) {
-        return {
-          success: false,
-          error: workspaceError
-        };
-      }
-
-      // Validate calls array
-      if (!params.calls || params.calls.length === 0) {
-        return {
-          success: false,
-          error: 'calls array is required. Structure: calls: [{ agent: "agentName", tool: "toolName", params: {...} }]'
-        };
-      }
-
-      // Execute based on strategy
-      const strategy = params.strategy || 'serial';
-      let results: ToolCallResult[];
-
-      if (strategy === 'parallel') {
-        results = await this.executeParallel(params.context, params.calls);
-      } else {
-        results = await this.executeSerial(params.context, params.calls);
-      }
-
-      // Determine overall success
-      const allSucceeded = results.every(r => r.success);
-
-      // Format each result with its own success/error status
-      const formatResult = (r: ToolCallResult): Record<string, unknown> => {
-        if (r.success) {
-          // Success: spread object data, nest primitives/arrays
-          if (r.data !== undefined && typeof r.data === 'object' && r.data !== null && !Array.isArray(r.data)) {
-            return { success: true, ...(r.data as Record<string, unknown>) };
-          } else if (r.data !== undefined) {
-            return { success: true, data: r.data };
-          }
-          return { success: true };
-        }
-        // Failure: include error
-        return { success: false, error: r.error || 'Unknown error' };
-      };
-
-      // Single call: return formatted result directly (no data wrapper needed)
-      if (results.length === 1) {
-        return formatResult(results[0]) as unknown as UseToolResult;
-      }
-
-      // Multiple calls: each result has its own success/error
-      const formattedResults = results.map(formatResult);
-      const failCount = results.filter(r => !r.success).length;
-
-      return {
-        success: allSucceeded,
-        ...(allSucceeded ? {} : { error: `${failCount} of ${results.length} failed` }),
-        data: { results: formattedResults }
-      };
-    } catch (error) {
-      return {
-        success: false,
-        error: `Error executing tools: ${getErrorMessage(error)}`
-      };
-    }
-  }
-
-  /**
-   * Validate the context block
-   * Returns recovery-oriented error messages
-   */
-  private validateContext(context: ToolContext): string[] {
-    const errors: string[] = [];
-
-    if (!context) {
-      errors.push('context is required. Structure: { workspaceId, sessionId, memory, goal }');
-      return errors;
-    }
-
-    if (!context.workspaceId || typeof context.workspaceId !== 'string') {
-      errors.push('context.workspaceId is required (use "default" for global workspace)');
-    }
-
-    if (!context.sessionId || typeof context.sessionId !== 'string') {
-      errors.push('context.sessionId is required (any descriptive name, e.g. "blog_writing_session")');
-    }
-
-    if (!context.memory || typeof context.memory !== 'string') {
-      errors.push('context.memory is required (1-3 sentences: what has happened in this conversation so far)');
-    }
-
-    if (!context.goal || typeof context.goal !== 'string') {
-      errors.push('context.goal is required (1-3 sentences: what you are trying to accomplish right now)');
-    }
-
-    // constraints is optional, but if provided should be a string
-    if (context.constraints !== undefined && context.constraints !== null && typeof context.constraints !== 'string') {
-      errors.push('context.constraints must be a string if provided');
-    }
-
-    return errors;
-  }
-
-  /**
-   * Validate workspaceId exists (by name or UUID)
-   * Returns error message with available workspaces if invalid, null if valid
-   */
-  private async validateWorkspaceId(workspaceId: string): Promise<string | null> {
-    // "default" is always valid (global workspace)
-    if (workspaceId === 'default') {
-      return null;
-    }
-
-    // First, check if it matches a known workspace NAME (case-insensitive)
-    const byName = this.knownWorkspaces.find(w =>
-      w.name.toLowerCase() === workspaceId.toLowerCase()
-    );
-    if (byName) {
-      return null; // Valid - matched by name
-    }
-
-    // If not found by name, check if it's a valid UUID via WorkspaceService
-    try {
-      const plugin = getNexusPlugin(this.app);
-      if (!plugin) {
-        return null; // Plugin not ready, allow to proceed
-      }
-
-      const workspaceService = (plugin as { workspaceService?: WorkspaceService }).workspaceService;
-      if (!workspaceService) {
-        return null; // Service not ready, allow to proceed
-      }
-
-      // Check if it matches by UUID
-      const workspaces = await workspaceService.listWorkspaces();
-      const byUuid = workspaces.find(w => w.id === workspaceId);
-      if (byUuid) {
-        return null; // Valid - matched by UUID
-      }
-
-      // Not found - build error message with available workspace NAMES
-      const availableNames = this.knownWorkspaces.length > 0
-        ? this.knownWorkspaces.map(w => `"${w.name}"`).join(', ')
-        : '(none created yet)';
-      return `Invalid workspace "${workspaceId}". Available: "default" (global), ${availableNames}`;
-    } catch {
-      return null; // Error, allow to proceed
-    }
-  }
-
-  /**
-   * Execute calls serially (one at a time)
-   * Stops on first error unless continueOnFailure is set
-   */
-  private async executeSerial(context: ToolContext, calls: ToolCallParams[]): Promise<ToolCallResult[]> {
-    const results: ToolCallResult[] = [];
-
-    for (const call of calls) {
-      const result = await this.executeCall(context, call);
-      results.push(result);
-
-      // Stop on failure unless continueOnFailure is set
-      if (!result.success && !call.continueOnFailure) {
-        break;
-      }
-    }
-
-    return results;
-  }
-
-  /**
-   * Execute calls in parallel
-   */
-  private async executeParallel(context: ToolContext, calls: ToolCallParams[]): Promise<ToolCallResult[]> {
-    const promises = calls.map(call => this.executeCall(context, call));
-    return Promise.all(promises);
-  }
-
-  /**
-   * Execute a single tool call
-   */
-  private async executeCall(context: ToolContext, call: ToolCallParams): Promise<ToolCallResult> {
-    const { agent: agentName, tool: toolSlug } = call;
-
-    // Handle LLM confusion: accept both "params" and "parameters"
-    const callWithAny = call as ToolCallParams & { parameters?: Record<string, unknown> };
-    const params = call.params || callWithAny.parameters || {};
-
-    // Validate agent and tool are provided
-    if (!agentName) {
-      const availableAgents = Array.from(this.agentRegistry.keys()).join(', ');
-      return {
-        agent: agentName || 'unknown',
-        tool: toolSlug || 'unknown',
-        success: false,
-        error: `"agent" is required in each call. Available agents: ${availableAgents}`
-      };
-    }
-
-    if (!toolSlug) {
-      return {
-        agent: agentName,
-        tool: 'unknown',
-        success: false,
-        error: `"tool" is required in each call. Use getTools({ request: { "${agentName}": [] } }) to see available tools for ${agentName}.`
-      };
-    }
-
-    // Get agent
-    const agent = this.agentRegistry.get(agentName);
-    if (!agent) {
-      const availableAgents = Array.from(this.agentRegistry.keys()).join(', ');
-      return {
-        agent: agentName,
-        tool: toolSlug,
-        success: false,
-        error: `Agent "${agentName}" not found. Available agents: ${availableAgents}. Use getTools({ request: { "agentName": [] } }) to see an agent's tools.`
-      };
-    }
-
-    // Check tool exists
-    const toolInstance = agent.getTool(toolSlug);
-    if (!toolInstance) {
-      const availableTools = agent.getTools().map(t => t.slug).join(', ');
-      return {
-        agent: agentName,
-        tool: toolSlug,
-        success: false,
-        error: `Tool "${toolSlug}" not found in agent "${agentName}". Available tools: ${availableTools}`
-      };
-    }
-
-    try {
-      // Execute tool with ONLY its specific params
-      // Context is handled at useTool level - individual tools don't need it
-      const toolResult = await toolInstance.execute(params || {}) as CommonResult;
-
-      // Build minimal result
-      const result: ToolCallResult = {
-        agent: agentName,
-        tool: toolSlug,
-        success: toolResult.success
-      };
-
-      // Only include error if failed
-      if (!toolResult.success && toolResult.error) {
-        result.error = toolResult.error;
-      }
-
-      // Include data if present (for tools that return data)
-      // Also pass through any extra properties (e.g., linesDelta from update tool)
-      if (toolResult.success) {
-        const { success: _s, error: _e, data, workspaceContext: _w, context: _c, sessionId: _sid, ...extra } = toolResult as unknown as Record<string, unknown>;
-
-        // If tool returned explicit data property, use it
-        if (data !== undefined && data !== null) {
-          result.data = data;
-        }
-        // If tool returned extra properties (like linesDelta), include them in data
-        else if (Object.keys(extra).length > 0) {
-          result.data = extra;
-        }
-      }
-
-      return result;
-    } catch (error) {
-      return {
-        agent: agentName,
-        tool: toolSlug,
-        success: false,
-        error: `Error executing ${agentName}_${toolSlug}: ${getErrorMessage(error)}`
-      };
-    }
+    return await this.batchExecutionService.execute(params);
   }
 
   /**
@@ -423,8 +116,7 @@ export class UseToolTool implements ITool<UseToolParams, UseToolResult> {
             }
           }
         }
-      },
-      required: ['success']
+      }
     };
   }
 }
