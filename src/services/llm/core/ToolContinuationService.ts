@@ -45,6 +45,31 @@ export class ToolContinuationService {
     private messageBuilder: ProviderMessageBuilder
   ) {}
 
+  private persistLatestResponseId(
+    provider: string,
+    chunk: { metadata?: Record<string, unknown> },
+    options?: StreamingOptions
+  ): void {
+    if (provider !== 'openai' && provider !== 'openai-codex') {
+      return;
+    }
+
+    const rawResponseId = chunk.metadata?.responseId;
+    if (typeof rawResponseId !== 'string' || !rawResponseId) {
+      return;
+    }
+
+    this.messageBuilder.updateResponseId(options?.conversationId, rawResponseId);
+
+    if (options) {
+      options.responsesApiId = rawResponseId;
+    }
+
+    if (options?.onResponsesApiId) {
+      options.onResponsesApiId(rawResponseId);
+    }
+  }
+
   /**
    * Parse get_tools results and merge with existing tools
    */
@@ -205,6 +230,13 @@ export class ToolContinuationService {
         options
       );
 
+      const updatedPreviousMessages = this.updatePreviousMessagesWithToolExecution(
+        provider,
+        previousMessages,
+        detectedToolCalls,
+        toolResults
+      );
+
       // Step 3: Start NEW stream with continuation (pingpong)
       yield {
         chunk: '\n\n',
@@ -247,8 +279,10 @@ export class ToolContinuationService {
             continue;
           }
 
-          // Note: Response ID is stored once in StreamingOrchestrator and kept for the session
-          // No need to update here - we reuse the first response ID throughout
+          // Persist the latest OpenAI/Codex response ID BEFORE recursing so the
+          // next function_call_output continuation is attached to the response
+          // that actually produced these tool calls.
+          this.persistLatestResponseId(provider, chunk, options);
 
           // Check iteration limit before recursing
           toolIterationCount++;
@@ -262,7 +296,7 @@ export class ToolContinuationService {
             adapter,
             provider,
             chatToolCalls,
-            previousMessages,
+            updatedPreviousMessages,
             userPrompt,
             generateOptions,
             options,
@@ -271,6 +305,7 @@ export class ToolContinuationService {
         }
 
         if (chunk.complete) {
+          this.persistLatestResponseId(provider, chunk, options);
           break;
         }
       }
@@ -452,7 +487,7 @@ export class ToolContinuationService {
         }
 
         if (recursiveChunk.complete) {
-          // Note: Response ID is kept from first response for entire session
+          this.persistLatestResponseId(provider, recursiveChunk, options);
           break;
         }
       }

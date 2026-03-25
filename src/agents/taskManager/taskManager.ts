@@ -20,6 +20,7 @@ import { ArchiveProjectTool } from './tools/projects/archiveProject';
 // Task tools
 import { CreateTaskTool } from './tools/tasks/createTask';
 import { ListTasksTool } from './tools/tasks/listTasks';
+import { OpenTasksTool } from './tools/tasks/openTasks';
 import { UpdateTaskTool } from './tools/tasks/updateTask';
 import { MoveTaskTool } from './tools/tasks/moveTask';
 import { QueryTasksTool } from './tools/tasks/queryTasks';
@@ -30,9 +31,9 @@ import { LinkNoteTool } from './tools/links/linkNote';
 /**
  * Agent for workspace-scoped project and task management with DAG-like dependencies.
  *
- * Tools (10 total):
+ * Tools (11 total):
  * - Projects: createProject, listProjects, updateProject, archiveProject
- * - Tasks: createTask, listTasks, updateTask, moveTask, queryTasks
+ * - Tasks: createTask, listTasks, openTasks, updateTask, moveTask, queryTasks
  * - Links: linkNote
  *
  * Data model: Workspace > Project > Task with dependsOn[] for DAG edges
@@ -45,7 +46,7 @@ export class TaskManagerAgent extends BaseAgent {
   constructor(app: App, plugin: any, taskService: TaskService) {
     super(
       'taskManager',
-      'Workspace-scoped project and task management with DAG dependencies. Data model: Workspace → Project → Task. Two relationship types: dependsOn[] creates DAG edges between tasks (task cannot start until dependencies are done; cycles are rejected), parentTaskId nests subtasks under a parent (organizational hierarchy). Typical workflow: loadWorkspace → listProjects → createProject → createTask → queryTasks (nextActions) to find ready work. 10 tools: createProject, listProjects, updateProject, archiveProject, createTask, listTasks, updateTask, moveTask, queryTasks, linkNote.',
+      'Workspace-scoped project and task management with DAG dependencies. Data model: Workspace → Project → Task. Two relationship types: dependsOn[] creates DAG edges between tasks (task cannot start until dependencies are done; cycles are rejected), parentTaskId nests subtasks under a parent (organizational hierarchy). Typical workflow: loadWorkspace → listProjects → createProject → createTask → queryTasks (nextActions) to find ready work, or openTasks for the visual board. 11 tools: createProject, listProjects, updateProject, archiveProject, createTask, listTasks, openTasks, updateTask, moveTask, queryTasks, linkNote.',
       '1.0.0'
     );
 
@@ -90,6 +91,12 @@ export class TaskManagerAgent extends BaseAgent {
       description: 'List tasks in a project with optional filters for status (todo/in_progress/done/cancelled), priority, assignee, and parentTaskId. Returns paginated task objects with full metadata including dependencies and timestamps.',
       version: '1.0.0',
       factory: () => new ListTasksTool(this.taskService),
+    });
+    this.registerLazyTool({
+      slug: 'openTasks', name: 'Open Tasks',
+      description: 'Open the native Task Board workspace view in Obsidian. Optional filters let you preselect a workspace, project, or search query before the board is shown.',
+      version: '1.0.0',
+      factory: () => new OpenTasksTool(this.app),
     });
     this.registerLazyTool({
       slug: 'updateTask', name: 'Update Task',

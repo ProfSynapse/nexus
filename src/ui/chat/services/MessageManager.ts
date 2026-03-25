@@ -20,6 +20,7 @@ import { AbortHandler } from '../utils/AbortHandler';
 import { getWebLLMLifecycleManager } from '../../../services/llm/adapters/webllm/WebLLMLifecycleManager';
 import type { MessageQueueService } from '../../../services/chat/MessageQueueService';
 import type { QueuedMessage } from '../../../types/branch/BranchTypes';
+import { getErrorMessage } from '../../../utils/errorUtils';
 
 export interface MessageManagerEvents {
   onMessageAdded: (message: ConversationMessage) => void;
@@ -183,7 +184,7 @@ export class MessageManager {
         );
 
         if (!wasAborted) {
-          this.events.onError('Failed to send message');
+          this.events.onError(this.getUserVisibleErrorMessage(error, 'Failed to send message'));
         }
       } finally {
         this.currentAbortController = null;
@@ -321,7 +322,7 @@ export class MessageManager {
       );
 
       if (!wasAborted) {
-        this.events.onError('Failed to generate AI response');
+        this.events.onError(this.getUserVisibleErrorMessage(error, 'Failed to generate AI response'));
       }
     } finally {
       this.currentAbortController = null;
@@ -412,6 +413,11 @@ export class MessageManager {
   private setLoading(loading: boolean): void {
     this.isLoading = loading;
     this.events.onLoadingStateChanged(loading);
+  }
+
+  private getUserVisibleErrorMessage(error: unknown, fallbackMessage: string): string {
+    const message = getErrorMessage(error).trim();
+    return message || fallbackMessage;
   }
 
   /**

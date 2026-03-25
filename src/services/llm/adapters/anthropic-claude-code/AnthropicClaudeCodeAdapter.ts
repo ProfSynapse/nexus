@@ -1,4 +1,4 @@
-import { Vault } from 'obsidian';
+import { Platform, Vault } from 'obsidian';
 import type { ChildProcess } from 'child_process';
 import { BaseAdapter } from '../BaseAdapter';
 import { resolveDesktopBinaryPath } from '../../../../utils/binaryDiscovery';
@@ -18,6 +18,7 @@ import { ModelRegistry } from '../ModelRegistry';
 import { getPrimaryServerKey } from '../../../../constants/branding';
 
 type ClaudeCodeToolCall = NonNullable<StreamChunk['toolCalls']>[number];
+const MAX_SAFE_WINDOWS_ARGV_CHARS = 24_000;
 
 export class AnthropicClaudeCodeAdapter extends BaseAdapter {
   readonly name = 'anthropic-claude-code';
@@ -83,6 +84,7 @@ export class AnthropicClaudeCodeAdapter extends BaseAdapter {
 
     const tempDir = await fsPromises.mkdtemp(pathMod.join(osMod.tmpdir(), 'nexus-claude-code-adapter-'));
     const mcpConfigPath = pathMod.join(tempDir, 'mcp.json');
+    const trimmedSystemPrompt = options?.systemPrompt?.trim();
     const toolCalls = new Map<string, ClaudeCodeToolCall>();
     let accumulatedText = '';
     let stderr = '';
@@ -117,8 +119,8 @@ export class AnthropicClaudeCodeAdapter extends BaseAdapter {
         'stream-json'
       ];
 
-      if (options?.systemPrompt?.trim()) {
-        args.push('--append-system-prompt', options.systemPrompt.trim());
+      if (trimmedSystemPrompt) {
+        args.push('--append-system-prompt', trimmedSystemPrompt);
       }
 
       if (options?.enableThinking && options?.thinkingEffort) {
@@ -130,7 +132,7 @@ export class AnthropicClaudeCodeAdapter extends BaseAdapter {
         args.push('--model', model);
       }
 
-      args.push(prompt);
+      this.assertSafeWindowsArgv(runtime.claudePath, args);
 
       const env = { ...process.env };
       delete env.ANTHROPIC_API_KEY;
@@ -139,16 +141,19 @@ export class AnthropicClaudeCodeAdapter extends BaseAdapter {
       const child = spawnDesktopProcess(childProcess, runtime.claudePath, args, {
         cwd: runtime.vaultPath,
         env,
-        stdio: ['ignore', 'pipe', 'pipe']
+        stdio: ['pipe', 'pipe', 'pipe']
       });
       this.activeProcess = child;
 
-      if (!child.stdout || !child.stderr) {
+      if (!child.stdin || !child.stdout || !child.stderr) {
         throw new LLMProviderError('Failed to capture Claude Code process output.', this.name, 'CONFIGURATION_ERROR');
       }
 
-      const closePromise = new Promise<{ exitCode: number | null; signal: NodeJS.Signals | null }>((resolve) => {
-        child.on('close', (exitCode: number | null, signal: NodeJS.Signals | null) => {
+      const closePromise = new Promise<{ exitCode: number | null; signal: NodeJS.Signals | null }>((resolve, reject) => {
+        child.once('error', (error: NodeJS.ErrnoException) => {
+          reject(this.mapProcessError(error));
+        });
+        child.once('close', (exitCode: number | null, signal: NodeJS.Signals | null) => {
           resolve({ exitCode, signal });
         });
       });
@@ -156,6 +161,8 @@ export class AnthropicClaudeCodeAdapter extends BaseAdapter {
       child.stderr.on('data', (chunk: Buffer | string) => {
         stderr += chunk.toString();
       });
+
+      await this.writePromptToStdin(child, prompt);
 
       const stdoutReader = readline.createInterface({ input: child.stdout });
 
@@ -481,5 +488,63 @@ export class AnthropicClaudeCodeAdapter extends BaseAdapter {
         authMethod: 'unknown'
       };
     }
+  }
+
+  private estimateArgvChars(command: string, args: string[]): number {
+    return [command, ...args].reduce((total, value) => total + value.length + 1, 0);
+  }
+
+  private assertSafeWindowsArgv(command: string, args: string[]): void {
+    if (!Platform.isWin) {
+      return;
+    }
+
+    const estimatedArgvChars = this.estimateArgvChars(command, args);
+    if (estimatedArgvChars > MAX_SAFE_WINDOWS_ARGV_CHARS) {
+      throw new LLMProviderError(
+        'Claude Code could not start because the appended system prompt is too large for Windows command-line limits. Reduce attached context files or shorten the system prompt and try again.',
+        this.name,
+        'REQUEST_TOO_LARGE'
+      );
+    }
+  }
+
+  private async writePromptToStdin(child: ChildProcess, prompt: string): Promise<void> {
+    const stdin = child.stdin;
+    if (!stdin) {
+      throw new LLMProviderError('Failed to open Claude Code stdin for prompt input.', this.name, 'CONFIGURATION_ERROR');
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      const handleError = (error: Error) => {
+        stdin.off('error', handleError);
+        reject(this.mapProcessError(error));
+      };
+
+      stdin.once('error', handleError);
+      stdin.end(prompt, 'utf8', () => {
+        stdin.off('error', handleError);
+        resolve();
+      });
+    });
+  }
+
+  private mapProcessError(error: Error): LLMProviderError {
+    const errnoError = error as NodeJS.ErrnoException;
+    if (errnoError.code === 'ENAMETOOLONG' || errnoError.code === 'E2BIG') {
+      return new LLMProviderError(
+        'Claude Code could not start because the local CLI command was too long for this platform. Reduce attached context files or shorten the prompt and try again.',
+        this.name,
+        'REQUEST_TOO_LARGE',
+        error
+      );
+    }
+
+    return new LLMProviderError(
+      error.message || 'Claude Code failed to start.',
+      this.name,
+      'PROVIDER_ERROR',
+      error
+    );
   }
 }

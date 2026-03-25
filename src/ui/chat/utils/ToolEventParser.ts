@@ -11,7 +11,8 @@
  * ensuring consistent data structure for ProgressiveToolAccordion.
  */
 
-import { formatToolDisplayName, normalizeToolName } from '../../../utils/toolNameUtils';
+import { normalizeToolCallForDisplay, ToolDisplayGroup } from './toolDisplayNormalizer';
+import { formatToolGroupHeader } from './toolDisplayFormatter';
 
 /**
  * Represents a tool call object that may have arguments in different locations
@@ -28,10 +29,18 @@ interface ToolCallWithArguments {
 
 export interface ToolEventInfo {
   toolId: string | null;
+  batchId?: string | null;
+  stepId?: string | null;
+  parentToolCallId?: string | null;
+  callIndex?: number;
+  totalCalls?: number;
+  strategy?: 'serial' | 'parallel' | string;
+  isBatchStepEvent?: boolean;
   displayName: string;
   technicalName?: string;
   parameters?: any;
   isComplete: boolean;
+  displayGroup: ToolDisplayGroup;
   // Reasoning-specific properties
   type?: string;
   result?: any;
@@ -43,44 +52,76 @@ export class ToolEventParser {
   /**
    * Extract tool event information from raw event data
    */
-  static getToolEventInfo(data: any): ToolEventInfo {
+  static getToolEventInfo(data: any, event?: 'detected' | 'updated' | 'started' | 'completed'): ToolEventInfo {
     const toolCall = data?.toolCall;
-    const toolId = data?.id ?? data?.toolId ?? toolCall?.id ?? null;
-    const rawName =
-      data?.rawName ??
-      data?.technicalName ??
-      data?.name ??
-      toolCall?.function?.name ??
-      toolCall?.name;
+    const batchId = this.getBatchId(data, toolCall);
+    const stepId = data?.stepId ?? data?.id ?? toolCall?.id ?? null;
+    const isBatchStepEvent = Boolean(
+      batchId &&
+      (
+        typeof data?.callIndex === 'number' ||
+        typeof data?.totalCalls === 'number' ||
+        data?.parentToolCallId !== undefined ||
+        data?.batchId !== undefined ||
+        data?.toolId !== undefined
+      )
+    );
+    const toolId = isBatchStepEvent ? batchId : (data?.toolId ?? data?.id ?? toolCall?.id ?? batchId ?? null);
+    const eventStatus = this.getEventStatus(data, event);
+    const normalizedInput = toolCall || data;
+    const displayGroup = normalizeToolCallForDisplay({
+      ...normalizedInput,
+      id: toolId || normalizedInput?.id || normalizedInput?.toolId || data?.id || data?.toolId,
+      stepId,
+      toolId: batchId || data?.toolId || normalizedInput?.toolId,
+      batchId: batchId || data?.batchId,
+      parentToolCallId: data?.parentToolCallId ?? toolCall?.parentToolCallId ?? batchId ?? undefined,
+      callIndex: data?.callIndex ?? normalizedInput?.callIndex,
+      totalCalls: data?.totalCalls ?? normalizedInput?.totalCalls,
+      strategy: data?.strategy ?? normalizedInput?.strategy,
+      name: data?.name ?? normalizedInput?.name,
+      technicalName: data?.technicalName ?? normalizedInput?.technicalName,
+      displayName: data?.displayName ?? normalizedInput?.displayName,
+      type: data?.type ?? normalizedInput?.type,
+      parameters: data?.parameters ?? normalizedInput?.parameters,
+      result: data?.result ?? normalizedInput?.result,
+      error: data?.error ?? normalizedInput?.error,
+      success: data?.success ?? normalizedInput?.success,
+      status: eventStatus,
+      isVirtual: data?.isVirtual ?? normalizedInput?.isVirtual,
+      function: normalizedInput?.function,
+      arguments: normalizedInput?.arguments,
+      parametersComplete: data?.parametersComplete ?? normalizedInput?.parametersComplete
+    });
 
-    const displayName =
-      typeof data?.displayName === 'string' && data.displayName.trim().length > 0
-        ? data.displayName
-        : formatToolDisplayName(rawName);
-
-    const technicalNameCandidate =
-      typeof data?.technicalName === 'string' && data.technicalName.trim().length > 0
-        ? data.technicalName
-        : rawName;
-
-    const technicalName = technicalNameCandidate
-      ? normalizeToolName(technicalNameCandidate) ?? technicalNameCandidate
-      : undefined;
+    const displayName = formatToolGroupHeader(displayGroup);
+    const technicalName = displayGroup.technicalName;
 
     const parameters = this.extractToolParametersFromEvent(data);
     const isComplete =
-      data?.isComplete !== undefined
-        ? Boolean(data.isComplete)
-        : Boolean(toolCall?.parametersComplete);
+      event === 'started'
+        ? false
+        : event === 'completed'
+          ? true
+          : data?.isComplete !== undefined
+            ? Boolean(data.isComplete)
+            : Boolean(toolCall?.parametersComplete);
 
     // Extract reasoning-specific properties
     const type = data?.type;
     const result = data?.result;
-    const status = data?.status;
+    const status = eventStatus;
     const isVirtual = data?.isVirtual;
 
     return {
       toolId,
+      batchId,
+      stepId,
+      parentToolCallId: data?.parentToolCallId ?? toolCall?.parentToolCallId ?? batchId ?? null,
+      callIndex: typeof data?.callIndex === 'number' ? data.callIndex : undefined,
+      totalCalls: typeof data?.totalCalls === 'number' ? data.totalCalls : undefined,
+      strategy: data?.strategy ?? normalizedInput?.strategy,
+      isBatchStepEvent,
       displayName,
       technicalName,
       parameters,
@@ -89,7 +130,8 @@ export class ToolEventParser {
       type,
       result,
       status,
-      isVirtual
+      isVirtual,
+      displayGroup
     };
   }
 
@@ -152,5 +194,40 @@ export class ToolEventParser {
     }
 
     return typedToolCall.arguments;
+  }
+
+  private static getBatchId(data: any, toolCall: any): string | null {
+    const candidates = [
+      data?.parentToolCallId,
+      data?.batchId,
+      data?.toolId,
+      toolCall?.parentToolCallId,
+      toolCall?.batchId,
+      toolCall?.toolId
+    ];
+
+    for (const candidate of candidates) {
+      if (typeof candidate === 'string' && candidate.trim().length > 0) {
+        return candidate.trim();
+      }
+    }
+
+    return null;
+  }
+
+  private static getEventStatus(data: any, event?: 'detected' | 'updated' | 'started' | 'completed'): string | undefined {
+    if (event === 'started') {
+      return 'executing';
+    }
+
+    if (event === 'completed') {
+      return data?.success === false ? 'failed' : 'completed';
+    }
+
+    if (data?.status !== undefined) {
+      return data.status;
+    }
+
+    return undefined;
   }
 }

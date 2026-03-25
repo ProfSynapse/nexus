@@ -243,13 +243,12 @@ export class ProviderMessageBuilder {
         toolResults
       );
 
-      // Use responsesApiId from options (loaded from conversation metadata)
-      // Falls back to in-memory map for backward compatibility
-      let previousResponseId = options?.responsesApiId;
-      if (!previousResponseId) {
-        const convId = options?.conversationId;
-        previousResponseId = convId ? this.conversationResponseIds.get(convId) : undefined;
-      }
+      // Prefer the latest in-memory response ID because recursive tool continuations
+      // can advance past the value originally loaded from conversation metadata.
+      const convId = options?.conversationId;
+      const previousResponseId =
+        (convId ? this.conversationResponseIds.get(convId) : undefined) ||
+        options?.responsesApiId;
 
       return {
         ...generateOptions,

@@ -17,6 +17,8 @@ import { AgentRegistry } from '../../server/services/AgentRegistry';
 import { SessionContextManager } from '../SessionContextManager';
 import { ToolListService } from '../../handlers/services/ToolListService';
 import { IAgent } from '../../agents/interfaces/IAgent';
+import { ToolManagerAgent } from '../../agents/toolManager/toolManager';
+import type { UseToolParams } from '../../agents/toolManager/types';
 import type { JSONSchema } from '../../types/schema/JSONSchemaTypes';
 import type { AgentProvider } from '../agent/LazyAgentProvider';
 
@@ -36,6 +38,23 @@ interface ToolEventData {
     name: string;
     parameters?: Record<string, unknown>;
     toolId?: string;
+    parentToolCallId?: string;
+    batchId?: string;
+    strategy?: 'serial' | 'parallel';
+    callIndex?: number;
+    totalCalls?: number;
+    displayName?: string;
+    technicalName?: string;
+    agentName?: string;
+    actionName?: string;
+    toolCall?: {
+        id: string;
+        function: {
+            name: string;
+            arguments: string;
+        };
+        parameters?: Record<string, unknown>;
+    };
     result?: unknown;
     success?: boolean;
     error?: string;
@@ -186,6 +205,18 @@ export class DirectToolExecutor {
      */
     private async getAgentByNameAsync(name: string): Promise<IAgent | null> {
         return this.ensureAgentRegistered(name);
+    }
+
+    /**
+     * Get the shared ToolBatchExecutionService from the ToolManager agent.
+     */
+    private async getToolBatchExecutionService(): Promise<import('../../agents/toolManager/services/ToolBatchExecutionService').ToolBatchExecutionService | null> {
+        const toolManagerAgent = await this.getAgentByNameAsync('toolManager');
+        if (toolManagerAgent instanceof ToolManagerAgent) {
+            return toolManagerAgent.getToolBatchExecutionService();
+        }
+
+        return null;
     }
 
     /**
@@ -363,9 +394,12 @@ export class DirectToolExecutor {
      */
     private async handleUseTool(
         params: Record<string, unknown>,
-        context?: { sessionId?: string; workspaceId?: string }
+        context?: { sessionId?: string; workspaceId?: string },
+        options?: {
+            batchId?: string;
+            onToolEvent?: (event: 'started' | 'completed', data: ToolEventData) => void;
+        }
     ): Promise<unknown> {
-        // Get toolManager agent to use its useTool implementation (with lazy init)
         const toolManagerAgent = await this.getAgentByNameAsync('toolManager');
         if (!toolManagerAgent) {
             return {
@@ -374,15 +408,8 @@ export class DirectToolExecutor {
             };
         }
 
-        const useToolsTool = toolManagerAgent.getTool('useTools');
-        if (!useToolsTool) {
-            return {
-                success: false,
-                error: 'useTools tool not found in ToolManager'
-            };
-        }
-
-        // Merge context from params and external context
+        const batchId = options?.batchId;
+        const onToolEvent = options?.onToolEvent;
         const paramsContext = (params.context || {}) as Record<string, unknown>;
         const mergedParams = {
             ...params,
@@ -393,7 +420,79 @@ export class DirectToolExecutor {
             }
         };
 
-        // Execute via toolManager's useTools
+        const batchExecutionService = toolManagerAgent instanceof ToolManagerAgent
+            ? toolManagerAgent.getToolBatchExecutionService()
+            : null;
+
+        if (batchExecutionService) {
+            return await batchExecutionService.execute(mergedParams as UseToolParams, {
+                batchId,
+                observer: onToolEvent
+                    ? {
+                        onStepStarted: (event) => {
+                            const toolCallId = event.call.agent && event.call.tool
+                                ? `${event.call.agent}_${event.call.tool}`
+                                : event.stepId;
+                            onToolEvent('started', {
+                                id: event.stepId,
+                                name: toolCallId,
+                                toolId: batchId || event.batchId,
+                                parentToolCallId: batchId || event.batchId,
+                                batchId: event.batchId,
+                                strategy: event.strategy,
+                                callIndex: event.callIndex,
+                                totalCalls: event.totalCalls,
+                                parameters: event.call.params,
+                                toolCall: {
+                                    id: event.stepId,
+                                    function: {
+                                        name: toolCallId,
+                                        arguments: JSON.stringify(event.call.params || {})
+                                    },
+                                    parameters: event.call.params as Record<string, unknown> | undefined
+                                }
+                            });
+                        },
+                        onStepCompleted: (event) => {
+                            const toolCallId = event.call.agent && event.call.tool
+                                ? `${event.call.agent}_${event.call.tool}`
+                                : event.stepId;
+                            onToolEvent('completed', {
+                                id: event.stepId,
+                                name: toolCallId,
+                                toolId: batchId || event.batchId,
+                                parentToolCallId: batchId || event.batchId,
+                                batchId: event.batchId,
+                                strategy: event.strategy,
+                                callIndex: event.callIndex,
+                                totalCalls: event.totalCalls,
+                                parameters: event.call.params,
+                                result: event.result.success ? event.result.data ?? event.result : undefined,
+                                success: event.result.success,
+                                error: event.result.error,
+                                toolCall: {
+                                    id: event.stepId,
+                                    function: {
+                                        name: toolCallId,
+                                        arguments: JSON.stringify(event.call.params || {})
+                                    },
+                                    parameters: event.call.params as Record<string, unknown> | undefined
+                                }
+                            });
+                        }
+                    }
+                    : undefined
+            });
+        }
+
+        const useToolsTool = toolManagerAgent.getTool('useTools');
+        if (!useToolsTool) {
+            return {
+                success: false,
+                error: 'useTools tool not found in ToolManager'
+            };
+        }
+
         return await useToolsTool.execute(mergedParams);
     }
 
@@ -429,12 +528,21 @@ export class DirectToolExecutor {
                     parameters: parameters
                 });
 
-                // Execute the tool
-                const rawResult = await this.executeTool(
-                    toolCall.function.name,
-                    parameters,
-                    context
-                );
+                let rawResult: unknown;
+
+                if (toolCall.function.name === 'useTool' || toolCall.function.name === 'useTools' || toolCall.function.name === 'use_tools') {
+                    rawResult = await this.handleUseTool(parameters, context, {
+                        batchId: toolCall.id,
+                        onToolEvent
+                    });
+                } else {
+                    // Execute the tool
+                    rawResult = await this.executeTool(
+                        toolCall.function.name,
+                        parameters,
+                        context
+                    );
+                }
 
                 // Cast result to expected shape
                 const result = rawResult as { success?: boolean; error?: string } | null;

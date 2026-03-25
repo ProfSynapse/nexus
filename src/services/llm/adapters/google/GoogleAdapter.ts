@@ -19,6 +19,7 @@ import { ReasoningPreserver } from '../shared/ReasoningPreserver';
 import { SchemaValidator } from '../../utils/SchemaValidator';
 import { ThinkingEffortMapper } from '../../utils/ThinkingEffortMapper';
 import { MCPToolExecution } from '../shared/ToolExecutionUtils';
+import { ProviderHttpError } from '../shared/ProviderHttpClient';
 
 export class GoogleAdapter extends BaseAdapter {
   readonly name = 'google';
@@ -46,7 +47,7 @@ export class GoogleAdapter extends BaseAdapter {
   }
 
   async* generateStreamAsync(prompt: string, options?: GenerateOptions): AsyncGenerator<StreamChunk, void, unknown> {
-    let request: any;
+    let requestSummary: Record<string, unknown> | undefined;
     try {
       // Validate web search support
       if (options?.webSearch) {
@@ -150,6 +151,8 @@ export class GoogleAdapter extends BaseAdapter {
         config: config
       };
 
+      requestSummary = this.buildStreamingRequestSummary(request, options);
+
       const nodeStream = await this.requestStream({
         url: this.buildGenerateContentUrl(request.model, true),
         operation: 'streaming generation',
@@ -247,6 +250,7 @@ export class GoogleAdapter extends BaseAdapter {
         }
       });
     } catch (error: any) {
+      this.logStreamingFailure(error, requestSummary);
       console.error('[Google Adapter] ❌❌❌ STREAMING ERROR:', error);
       console.error('[Google Adapter] Error details:', {
         name: error?.name,
@@ -425,6 +429,107 @@ export class GoogleAdapter extends BaseAdapter {
     };
   }
 
+  private buildStreamingRequestSummary(
+    request: { model: string; contents: any[]; config?: Record<string, unknown> },
+    options?: GenerateOptions
+  ): Record<string, unknown> {
+    const contents = Array.isArray(request.contents) ? request.contents : [];
+    const contentSummary = contents.map((message: any, index: number) => {
+      const parts = Array.isArray(message?.parts) ? message.parts : [];
+      const functionCallNames = parts
+        .map((part: any) => part?.functionCall?.name)
+        .filter((name: unknown): name is string => typeof name === 'string');
+      const functionResponseNames = parts
+        .map((part: any) => part?.functionResponse?.name)
+        .filter((name: unknown): name is string => typeof name === 'string');
+
+      return {
+        index,
+        role: message?.role,
+        partTypes: parts.map((part: any) => {
+          if (part?.functionCall) return 'functionCall';
+          if (part?.functionResponse) return 'functionResponse';
+          if (part?.text) return 'text';
+          if (part?.thought || part?.thinking || part?.thoughtSignature) return 'thinking';
+          return 'unknown';
+        }),
+        functionCallNames,
+        functionResponseNames,
+        textLength: parts
+          .map((part: any) => typeof part?.text === 'string' ? part.text.length : 0)
+          .reduce((sum: number, len: number) => sum + len, 0)
+      };
+    });
+
+    const toolNames = Array.isArray(request.config?.tools)
+      ? (request.config?.tools as Array<any>).flatMap((toolWrapper: any) =>
+          Array.isArray(toolWrapper?.functionDeclarations)
+            ? toolWrapper.functionDeclarations
+                .map((tool: any) => typeof tool?.name === 'string' ? tool.name : undefined)
+                .filter((name: unknown): name is string => typeof name === 'string')
+            : []
+        )
+      : [];
+
+    return {
+      model: request.model,
+      hasSystemPrompt: Boolean(options?.systemPrompt),
+      systemPromptLength: options?.systemPrompt?.length || 0,
+      promptLength: promptLengthFromContents(contents),
+      continuation: Boolean(options?.conversationHistory && options.conversationHistory.length > 0),
+      messageCount: contents.length,
+      messages: contentSummary,
+      toolCount: toolNames.length,
+      toolNames,
+      thinkingEnabled: Boolean(
+        isRecord(request.config?.generationConfig) &&
+        isRecord((request.config?.generationConfig as Record<string, unknown>).thinkingConfig)
+      ),
+      functionCallingMode: isRecord(request.config?.toolConfig) &&
+        isRecord((request.config?.toolConfig as Record<string, unknown>).functionCallingConfig)
+        ? ((request.config?.toolConfig as Record<string, any>).functionCallingConfig?.mode as string | undefined)
+        : undefined
+    };
+  }
+
+  private logStreamingFailure(error: unknown, requestSummary?: Record<string, unknown>): void {
+    if (!(error instanceof ProviderHttpError)) {
+      return;
+    }
+
+    console.error('[Google Adapter] Streaming request failed', {
+      status: error.response.status,
+      statusText: error.response.statusText,
+      request: requestSummary,
+      responseJson: this.sanitizeForLogging(error.response.json),
+      responseText: typeof error.response.text === 'string' ? error.response.text.slice(0, 2000) : undefined
+    });
+  }
+
+  private sanitizeForLogging(value: unknown): unknown {
+    if (Array.isArray(value)) {
+      return value.slice(0, 10).map(item => this.sanitizeForLogging(item));
+    }
+
+    if (!isRecord(value)) {
+      if (typeof value === 'string') {
+        return value.length > 500 ? `${value.slice(0, 500)}...` : value;
+      }
+      return value;
+    }
+
+    return Object.fromEntries(
+      Object.entries(value)
+        .slice(0, 20)
+        .map(([key, entryValue]) => [
+          key,
+          typeof entryValue === 'string'
+            ? (entryValue.length > 500 ? `${entryValue.slice(0, 500)}...` : entryValue)
+            : this.sanitizeForLogging(entryValue)
+        ])
+    );
+  }
+
   private extractToolCalls(response: any): any[] {
     // Extract from response.candidates[0].content.parts
     const parts = response.candidates?.[0]?.content?.parts || [];
@@ -541,4 +646,18 @@ export class GoogleAdapter extends BaseAdapter {
       currency: 'USD'
     };
   }
+}
+
+function isRecord(value: unknown): value is Record<string, any> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function promptLengthFromContents(contents: any[]): number {
+  return contents.reduce((total, message) => {
+    const parts = Array.isArray(message?.parts) ? message.parts : [];
+    const partLength = parts.reduce((sum: number, part: any) => {
+      return sum + (typeof part?.text === 'string' ? part.text.length : 0);
+    }, 0);
+    return total + partLength;
+  }, 0);
 }

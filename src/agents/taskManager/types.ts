@@ -220,6 +220,13 @@ export interface QueryTasksParameters extends CommonParameters {
   taskId?: string;
 }
 
+export interface OpenTasksParameters extends CommonParameters {
+  workspaceId?: string;
+  projectId?: string;
+  search?: string;
+  mode?: 'tab' | 'split' | 'current' | 'sidebar';
+}
+
 export interface LinkNoteParameters extends CommonParameters {
   taskId: string;
   notePath: string;
@@ -277,6 +284,14 @@ export interface QueryTasksResult extends CommonResult {
 }
 
 export interface LinkNoteResult extends CommonResult {}
+
+export interface OpenTasksResult extends CommonResult {
+  opened?: boolean;
+  workspaceId?: string;
+  projectId?: string;
+  search?: string;
+  mode?: string;
+}
 
 // ────────────────────────────────────────────────────────────────
 // Service Interfaces

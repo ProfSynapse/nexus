@@ -1,6 +1,7 @@
 import { MessageManager } from '../../src/ui/chat/services/MessageManager';
 import { createConversation } from '../fixtures/chatBugs';
 import { createMockBranchManager, createMockChatService } from '../mocks/chatService';
+import { LLMProviderError } from '../../src/services/llm/adapters/types';
 
 jest.mock('../../src/services/llm/adapters/webllm/WebLLMLifecycleManager', () => ({
   getWebLLMLifecycleManager: () => ({
@@ -243,6 +244,50 @@ describe('MessageManager interrupt flow', () => {
     expect(loadingStates[0]).toBe(true);
     expect(loadingStates[loadingStates.length - 1]).toBe(false);
     expect(manager.getIsLoading()).toBe(false);
+  });
+
+  it('surfaces provider-specific send errors instead of a generic fallback', async () => {
+    const conversation = createConversation({ messages: [] });
+    const mockChatService = createMockChatService({ conversation });
+
+    mockChatService.generateResponseStreaming.mockImplementation(() => {
+      async function* stream() {
+        throw new LLMProviderError(
+          'Claude Code could not start because the local CLI command was too long for this platform.',
+          'anthropic-claude-code',
+          'REQUEST_TOO_LARGE'
+        );
+      }
+
+      return stream();
+    });
+
+    const events = {
+      onMessageAdded: jest.fn(),
+      onAIMessageStarted: jest.fn(),
+      onStreamingUpdate: jest.fn(),
+      onConversationUpdated: jest.fn(),
+      onLoadingStateChanged: jest.fn(),
+      onError: jest.fn(),
+      onToolCallsDetected: jest.fn(),
+      onToolExecutionStarted: jest.fn(),
+      onToolExecutionCompleted: jest.fn(),
+      onMessageIdUpdated: jest.fn(),
+      onGenerationAborted: jest.fn(),
+      onUsageAvailable: jest.fn()
+    };
+
+    const manager = new MessageManager(
+      mockChatService as any,
+      createMockBranchManager() as any,
+      events
+    );
+
+    await manager.sendMessage(conversation, 'Explain the bug');
+
+    expect(events.onError).toHaveBeenCalledWith(
+      'Claude Code could not start because the local CLI command was too long for this platform.'
+    );
   });
 
   it('second sendMessage waits for first to complete when interrupted', async () => {

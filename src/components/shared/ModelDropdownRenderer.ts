@@ -159,23 +159,16 @@ function renderProviderDropdown(
   new Setting(content)
     .setName('Provider')
     .addDropdown(dropdown => {
-      // If the currently-selected provider isn't available, fall back
-      if (providers.length > 0 && displayProvider && !providers.includes(displayProvider)) {
-        const nextProvider = providers[0];
-        config.onProviderChange(nextProvider);
-        config.onModelChange('', nextProvider);
-        void config.getDefaultModelForProvider(nextProvider).then((modelId) => {
-          // Avoid stomping if user changed provider during async load
-          if (config.getCurrentProvider() !== nextProvider) return;
-          config.onModelChange(modelId, nextProvider);
-          config.notifyChange();
-          config.reRender();
-        });
-      }
-
       if (providers.length === 0) {
         dropdown.addOption('', config.noProvidersText);
       } else {
+        if (displayProvider && !providers.includes(displayProvider)) {
+          dropdown.addOption(
+            displayProvider,
+            `${PROVIDER_NAMES[displayProvider] || displayProvider} (Unavailable)`
+          );
+        }
+
         providers.forEach(id => {
           dropdown.addOption(id, PROVIDER_NAMES[id] || id);
         });
@@ -277,6 +270,9 @@ function renderModelDropdown(
             : '';
           const exists = selectedOptionKey ? config.modelOptionMap.has(selectedOptionKey) : false;
           if (exists) {
+            dropdown.setValue(selectedOptionKey);
+          } else if (currentProvider && currentModel) {
+            dropdown.addOption(selectedOptionKey, `${currentModel} (Unavailable)`);
             dropdown.setValue(selectedOptionKey);
           } else if (models.length > 0) {
             const firstOptionKey = buildModelOptionKey(models[0].provider, models[0].id);

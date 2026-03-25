@@ -18,7 +18,8 @@ import {
   TokenUsage
 } from '../types';
 import { ModelRegistry } from '../ModelRegistry';
-import { runCliProcess } from '../../../../utils/cliProcessRunner';
+import { CliProcessResult, runCliProcess } from '../../../../utils/cliProcessRunner';
+import { GOOGLE_GEMINI_CLI_DEFAULT_MODEL } from './GoogleGeminiCliModels';
 import {
   buildGeminiCliEnv,
   buildGeminiCliSystemSettings,
@@ -46,7 +47,7 @@ export class GoogleGeminiCliAdapter extends BaseAdapter {
   private activeProcess: ChildProcess | null = null;
 
   constructor(private vault: Vault) {
-    super('gemini-cli-local-auth', 'gemini-2.5-pro', 'gemini-cli://local', false);
+    super('gemini-cli-local-auth', GOOGLE_GEMINI_CLI_DEFAULT_MODEL, 'gemini-cli://local', false);
     this.initializeCache();
   }
 
@@ -82,7 +83,7 @@ export class GoogleGeminiCliAdapter extends BaseAdapter {
       const combinedPrompt = this.buildPrompt(prompt, options?.systemPrompt);
       const args = [
         '--prompt',
-        combinedPrompt,
+        '',
         '--model',
         options?.model || this.currentModel,
         '--output-format',
@@ -91,18 +92,15 @@ export class GoogleGeminiCliAdapter extends BaseAdapter {
 
       const handle = runCliProcess(runtime.geminiPath, args, {
         cwd: runtime.vaultPath,
-        env: buildGeminiCliEnv(settingsPath, runtime.nodePath)
+        env: buildGeminiCliEnv(settingsPath, runtime.nodePath),
+        stdinText: combinedPrompt
       });
       this.activeProcess = handle.child;
       const result = await handle.result;
       this.activeProcess = null;
 
       if (result.exitCode !== 0) {
-        throw new LLMProviderError(
-          result.stderr.trim() || result.stdout.trim() || `Gemini CLI exited with status ${result.exitCode ?? 'unknown'}`,
-          this.name,
-          result.exitCode === null ? 'CONFIGURATION_ERROR' : 'PROVIDER_ERROR'
-        );
+        throw this.mapCliProcessFailure(result);
       }
 
       const parsed = this.parseOutput(result.stdout);
@@ -211,13 +209,13 @@ export class GoogleGeminiCliAdapter extends BaseAdapter {
         .find((line) => line.startsWith('{') && line.endsWith('}'));
 
       if (!lastJsonLine) {
-        return null;
+        return this.parseTrailingJsonBlock(trimmed);
       }
 
       try {
         return JSON.parse(lastJsonLine) as GeminiCliJsonResponse;
       } catch {
-        return null;
+        return this.parseTrailingJsonBlock(trimmed);
       }
     }
   }
@@ -232,14 +230,15 @@ export class GoogleGeminiCliAdapter extends BaseAdapter {
   }
 
   private extractUsageFromStats(parsed: GeminiCliJsonResponse): TokenUsage | undefined {
-    const modelStats = Array.isArray(parsed.stats?.models) ? parsed.stats?.models[0] : undefined;
+    const modelStats = this.extractModelStats(parsed.stats?.models);
     if (!modelStats || typeof modelStats !== 'object') {
       return undefined;
     }
 
-    const promptTokens = this.readNumber(modelStats, ['promptTokens', 'inputTokens']);
-    const completionTokens = this.readNumber(modelStats, ['candidatesTokens', 'outputTokens', 'completionTokens']);
-    const totalTokens = this.readNumber(modelStats, ['totalTokens']);
+    const tokenStats = this.extractTokenStats(modelStats);
+    const promptTokens = this.readNumber(tokenStats, ['prompt', 'promptTokens', 'inputTokens']);
+    const completionTokens = this.readNumber(tokenStats, ['candidates', 'candidatesTokens', 'outputTokens', 'completionTokens']);
+    const totalTokens = this.readNumber(tokenStats, ['total', 'totalTokens']);
 
     if (promptTokens === undefined && completionTokens === undefined && totalTokens === undefined) {
       return undefined;
@@ -260,5 +259,70 @@ export class GoogleGeminiCliAdapter extends BaseAdapter {
       }
     }
     return undefined;
+  }
+
+  private parseTrailingJsonBlock(output: string): GeminiCliJsonResponse | null {
+    const lines = output
+      .split(/\r?\n/)
+      .map((line) => line.trimEnd())
+      .filter(Boolean);
+
+    for (let index = lines.length - 1; index >= 0; index--) {
+      if (lines[index].trim() !== '{') {
+        continue;
+      }
+
+      try {
+        return JSON.parse(lines.slice(index).join('\n')) as GeminiCliJsonResponse;
+      } catch {
+        continue;
+      }
+    }
+
+    return null;
+  }
+
+  private extractModelStats(
+    modelStats: Record<string, unknown>[] | Record<string, unknown> | undefined
+  ): Record<string, unknown> | undefined {
+    if (Array.isArray(modelStats)) {
+      const firstEntry = modelStats[0];
+      return firstEntry && typeof firstEntry === 'object' ? firstEntry as Record<string, unknown> : undefined;
+    }
+
+    if (!modelStats || typeof modelStats !== 'object') {
+      return undefined;
+    }
+
+    const firstEntry = Object.values(modelStats).find(
+      (value) => value && typeof value === 'object' && !Array.isArray(value)
+    );
+
+    return firstEntry ? firstEntry as Record<string, unknown> : undefined;
+  }
+
+  private extractTokenStats(modelStats: Record<string, unknown>): Record<string, unknown> {
+    const tokens = modelStats.tokens;
+    if (tokens && typeof tokens === 'object' && !Array.isArray(tokens)) {
+      return tokens as Record<string, unknown>;
+    }
+
+    return modelStats;
+  }
+
+  private mapCliProcessFailure(result: CliProcessResult): LLMProviderError {
+    if (result.errorCode === 'ENAMETOOLONG' || result.errorCode === 'E2BIG') {
+      return new LLMProviderError(
+        'Gemini CLI could not start because the local CLI command was too long for this platform. Reduce attached context files or shorten the prompt and try again.',
+        this.name,
+        'REQUEST_TOO_LARGE'
+      );
+    }
+
+    return new LLMProviderError(
+      result.stderr.trim() || result.stdout.trim() || `Gemini CLI exited with status ${result.exitCode ?? 'unknown'}`,
+      this.name,
+      result.exitCode === null ? 'CONFIGURATION_ERROR' : 'PROVIDER_ERROR'
+    );
   }
 }
