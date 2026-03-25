@@ -15,15 +15,15 @@ import { getWebLLMLifecycleManager } from '../../../services/llm/adapters/webllm
 import { ThinkingSettings } from '../../../types/llm/ProviderTypes';
 import { ContextTokenTracker, ContextStatus } from '../../../services/chat/ContextTokenTracker';
 import { CompactedContext } from '../../../services/chat/ContextCompactionService';
+import { ContextBudgetService } from '../../../services/chat/ContextBudgetService';
+import { ConversationData } from '../../../types/chat/ChatTypes';
 import type NexusPlugin from '../../../main';
 import type { App } from 'obsidian';
 
-// Context window sizes for providers that need auto-compaction
-// Only WebLLM/Nexus needs this - it crashes on context overflow (WebGPU hard limit)
-// Ollama/LM Studio handle overflow gracefully and have variable context sizes
+// Only WebLLM currently uses the live ContextTokenTracker for prompt-level status
+// messaging. Broader pre-send compaction decisions are handled by ContextBudgetService.
 const LOCAL_PROVIDER_CONTEXT_WINDOWS: Record<string, number> = {
-  webllm: 4096,   // Nexus Quark uses 4K context - NEEDS compaction or crashes
-  // ollama and lmstudio omitted - they handle overflow gracefully
+  webllm: 4096,
 };
 
 /**
@@ -626,7 +626,7 @@ export class ModelAgentManager {
     this.temperature = Math.max(0, Math.min(1, temperature));
   }
 
-  // ========== Context Token Tracking (for local providers) ==========
+  // ========== Context Token Tracking (status display for WebLLM) ==========
 
   /**
    * Record token usage from a generation response
@@ -648,8 +648,21 @@ export class ModelAgentManager {
   /**
    * Check if message should trigger compaction before sending
    */
-  shouldCompactBeforeSending(message: string): boolean {
-    return this.contextTokenTracker?.shouldCompactBeforeSending(message) || false;
+  shouldCompactBeforeSending(
+    conversation: ConversationData,
+    message: string,
+    systemPrompt?: string | null,
+    providerOverride?: string
+  ): boolean {
+    const provider = providerOverride || this.selectedModel?.providerId || null;
+    const budget = ContextBudgetService.estimateBudget(
+      provider,
+      conversation,
+      systemPrompt,
+      message
+    );
+
+    return budget.shouldCompact;
   }
 
   /**

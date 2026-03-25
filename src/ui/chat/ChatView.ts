@@ -803,13 +803,19 @@ export class ChatView extends ItemView {
         this.modelAgentManager.setMessageEnhancement(enhancement);
       }
 
-      // Check if context compaction is needed (local models with limited context)
-      // Triggered at 90% context usage - uses LLM to save state before compacting
-      if (this.modelAgentManager.shouldCompactBeforeSending(message)) {
-        await this.performContextCompaction(currentConversation);
-      }
+      let messageOptions = await this.modelAgentManager.getMessageOptions();
 
-      const messageOptions = await this.modelAgentManager.getMessageOptions();
+      // Check if context compaction is needed before sending.
+      // Uses shared provider policy with conservative soft caps.
+      if (this.modelAgentManager.shouldCompactBeforeSending(
+        currentConversation,
+        message,
+        messageOptions.systemPrompt || null,
+        messageOptions.provider
+      )) {
+        await this.performContextCompaction(currentConversation);
+        messageOptions = await this.modelAgentManager.getMessageOptions();
+      }
 
       await this.messageManager.sendMessage(
         currentConversation,
