@@ -48,9 +48,9 @@ export class TaskBoardView extends ItemView {
   private dragTaskId: string | null = null;
   private isClosing = false;
   private isReady = false;
-  private isRefreshing = false;
+  private isSyncingBoardData = false;
   private isEditModalOpen = false;
-  private pendingExternalRefresh = false;
+  private hasPendingEventSync = false;
 
   constructor(leaf: WorkspaceLeaf, private plugin: NexusPlugin) {
     super(leaf);
@@ -110,7 +110,7 @@ export class TaskBoardView extends ItemView {
   private async initializeView(): Promise<void> {
     try {
       await this.ensureServices();
-      await this.refreshData();
+      await this.loadBoardData();
       if (this.isClosing) {
         return;
       }
@@ -156,7 +156,7 @@ export class TaskBoardView extends ItemView {
     }));
   }
 
-  private async refreshData(): Promise<void> {
+  private async loadBoardData(): Promise<void> {
     if (!this.workspaceService || !this.taskService) {
       throw new Error('Task board services are not initialized');
     }
@@ -254,16 +254,6 @@ export class TaskBoardView extends ItemView {
     text.createEl('p', {
       cls: 'nexus-task-board-subtitle',
       text: 'Drag cards to change status. Use the edit icon for task details.'
-    });
-
-    const actions = header.createDiv('nexus-task-board-actions');
-    const refreshButton = actions.createEl('button', {
-      cls: 'mod-cta nexus-task-board-button nexus-task-board-button-secondary',
-      text: 'Refresh',
-      attr: { type: 'button' }
-    });
-    this.registerDomEvent(refreshButton, 'click', () => {
-      void this.handleRefresh();
     });
   }
 
@@ -493,9 +483,9 @@ export class TaskBoardView extends ItemView {
       },
       onClose: () => {
         this.isEditModalOpen = false;
-        if (this.pendingExternalRefresh) {
-          this.pendingExternalRefresh = false;
-          void this.refreshFromEvent();
+        if (this.hasPendingEventSync) {
+          this.hasPendingEventSync = false;
+          void this.syncFromEvent();
         }
       }
     }).open();
@@ -530,7 +520,7 @@ export class TaskBoardView extends ItemView {
       });
     }
 
-    await this.refreshData();
+    await this.loadBoardData();
     this.renderBoard();
     new Notice('Task saved');
   }
@@ -560,19 +550,6 @@ export class TaskBoardView extends ItemView {
     }
   }
 
-  private async handleRefresh(): Promise<void> {
-    this.renderLoading('Refreshing task board...');
-    try {
-      await this.refreshData();
-      if (!this.isClosing) {
-        this.renderBoard();
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to refresh task board';
-      this.renderError(message);
-    }
-  }
-
   private async handleTaskBoardEvent(event: TaskBoardDataChangedEvent): Promise<void> {
     if (this.isClosing || !this.isReady) {
       return;
@@ -586,29 +563,29 @@ export class TaskBoardView extends ItemView {
       return;
     }
 
-    if (this.isEditModalOpen || this.dragTaskId || this.isRefreshing) {
-      this.pendingExternalRefresh = true;
+    if (this.isEditModalOpen || this.dragTaskId || this.isSyncingBoardData) {
+      this.hasPendingEventSync = true;
       return;
     }
 
-    await this.refreshFromEvent();
+    await this.syncFromEvent();
   }
 
-  private async refreshFromEvent(): Promise<void> {
-    if (this.isClosing || !this.isReady || this.isRefreshing) {
+  private async syncFromEvent(): Promise<void> {
+    if (this.isClosing || !this.isReady || this.isSyncingBoardData) {
       return;
     }
 
-    this.isRefreshing = true;
+    this.isSyncingBoardData = true;
     try {
-      await this.refreshData();
+      await this.loadBoardData();
       if (!this.isClosing) {
         this.renderBoard();
       }
     } catch (error) {
-      console.error('[TaskBoardView] Event refresh failed:', error);
+      console.error('[TaskBoardView] Event sync failed:', error);
     } finally {
-      this.isRefreshing = false;
+      this.isSyncingBoardData = false;
     }
   }
 
