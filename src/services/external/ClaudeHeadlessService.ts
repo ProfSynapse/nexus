@@ -2,6 +2,8 @@ import { App, FileSystemAdapter, Plugin, Platform } from 'obsidian';
 import { getPrimaryServerKey } from '../../constants/branding';
 import { resolveDesktopBinaryPath } from '../../utils/binaryDiscovery';
 
+const MAX_SAFE_WINDOWS_ARGV_CHARS = 24_000;
+
 export interface ClaudeHeadlessPreflightResult {
     claudePath: string | null;
     nodePath: string | null;
@@ -32,6 +34,7 @@ interface ProcessResult {
     stdout: string;
     stderr: string;
     exitCode: number | null;
+    errorCode?: string;
 }
 
 export class ClaudeHeadlessService {
@@ -139,19 +142,21 @@ export class ClaudeHeadlessService {
                 args.push('--model', model);
             }
 
-            args.push(prompt);
+            this.assertSafeWindowsArgv(preflight.claudePath, args);
 
             const processResult = await this.runProcess(
                 preflight.claudePath,
                 args,
                 preflight.vaultPath,
-                this.buildClaudeEnv()
+                this.buildClaudeEnv(),
+                prompt
             );
 
+            const transportError = this.mapTransportError(processResult);
             return {
-                success: processResult.exitCode === 0,
+                success: processResult.exitCode === 0 && !transportError,
                 stdout: processResult.stdout,
-                stderr: processResult.stderr,
+                stderr: transportError || processResult.stderr,
                 exitCode: processResult.exitCode,
                 durationMs: Date.now() - startedAt,
                 commandLine: this.formatCommand(preflight.claudePath, args),
@@ -208,19 +213,46 @@ export class ClaudeHeadlessService {
         command: string,
         args: string[],
         cwd?: string,
-        env?: NodeJS.ProcessEnv
+        env?: NodeJS.ProcessEnv,
+        stdinText?: string
     ): Promise<ProcessResult> {
         const childProcess = require('child_process') as typeof import('child_process');
 
         return await new Promise<ProcessResult>((resolve) => {
+            const stdio = (stdinText !== undefined ? ['pipe', 'pipe', 'pipe'] : ['ignore', 'pipe', 'pipe']) as any;
             const child = childProcess.spawn(command, args, {
                 cwd,
                 env,
-                stdio: ['ignore', 'pipe', 'pipe']
-            });
+                stdio
+            }) as any;
 
             let stdout = '';
             let stderr = '';
+
+            if (stdinText !== undefined) {
+                if (!child.stdin) {
+                    resolve({
+                        stdout,
+                        stderr: 'Failed to open Claude Code stdin for prompt input.',
+                        exitCode: null
+                    });
+                    return;
+                }
+
+                const handleStdinError = (error: NodeJS.ErrnoException) => {
+                    resolve({
+                        stdout,
+                        stderr: stderr ? `${stderr}\n${error.message}` : error.message,
+                        exitCode: null,
+                        errorCode: error.code
+                    });
+                };
+
+                child.stdin.once('error', handleStdinError);
+                child.stdin.end(stdinText, 'utf8', () => {
+                    child.stdin?.off('error', handleStdinError);
+                });
+            }
 
             child.stdout.on('data', (chunk: Buffer | string) => {
                 stdout += chunk.toString();
@@ -234,7 +266,8 @@ export class ClaudeHeadlessService {
                 resolve({
                     stdout,
                     stderr: stderr ? `${stderr}\n${error.message}` : error.message,
-                    exitCode: null
+                    exitCode: null,
+                    errorCode: (error as NodeJS.ErrnoException).code
                 });
             });
 
@@ -283,5 +316,24 @@ export class ClaudeHeadlessService {
         });
 
         return parts.join(' ');
+    }
+
+    private assertSafeWindowsArgv(command: string, args: string[]): void {
+        if (!Platform.isWin) {
+            return;
+        }
+
+        const totalChars = [command, ...args].reduce((sum, part) => sum + part.length + 1, 0);
+        if (totalChars > MAX_SAFE_WINDOWS_ARGV_CHARS) {
+            throw new Error('Claude headless command is too large for Windows argv transport. Shorten the prompt or attached context and try again.');
+        }
+    }
+
+    private mapTransportError(result: ProcessResult): string | null {
+        if (result.errorCode === 'E2BIG' || result.errorCode === 'ENAMETOOLONG') {
+            return 'Claude headless command is too large for local CLI transport. Shorten the prompt or attached context and try again.';
+        }
+
+        return null;
     }
 }
