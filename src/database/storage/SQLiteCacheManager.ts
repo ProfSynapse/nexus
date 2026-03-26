@@ -639,6 +639,10 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
   async clearAllData(): Promise<void> {
     await this.transaction(async () => {
       this.db.exec(`
+        DELETE FROM task_note_links;
+        DELETE FROM task_dependencies;
+        DELETE FROM tasks;
+        DELETE FROM projects;
         DELETE FROM messages;
         DELETE FROM conversations;
         DELETE FROM memory_traces;

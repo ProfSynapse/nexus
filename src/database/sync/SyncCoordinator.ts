@@ -6,6 +6,7 @@
  * Thin orchestrator that delegates event application to:
  * - WorkspaceEventApplier: workspace, session, state, trace events
  * - ConversationEventApplier: conversation, message events
+ * - TaskEventApplier: project, task, dependency, note-link events
  *
  * Design Principles:
  * - Single Responsibility: Orchestration only
@@ -18,9 +19,11 @@ import {
   StorageEvent,
   WorkspaceEvent,
   ConversationEvent,
+  TaskEvent,
 } from '../interfaces/StorageEvents';
 import { WorkspaceEventApplier } from './WorkspaceEventApplier';
 import { ConversationEventApplier } from './ConversationEventApplier';
+import { TaskEventApplier } from './TaskEventApplier';
 
 /**
  * Validate workspace ID to prevent ghost/orphan workspaces.
@@ -36,7 +39,7 @@ function isValidWorkspaceId(id: string): boolean {
 
 export interface IJSONLWriter {
   getDeviceId(): string;
-  listFiles(category: 'workspaces' | 'conversations'): Promise<string[]>;
+  listFiles(category: 'workspaces' | 'conversations' | 'tasks'): Promise<string[]>;
   readEvents<T extends StorageEvent>(file: string): Promise<T[]>;
   getEventsNotFromDevice<T extends StorageEvent>(
     file: string,
@@ -51,6 +54,8 @@ export interface ISQLiteCacheManager {
   isEventApplied(eventId: string): Promise<boolean>;
   markEventApplied(eventId: string): Promise<void>;
   run(sql: string, params?: any[]): Promise<any>;
+  query<T>(sql: string, params?: any[]): Promise<T[]>;
+  queryOne<T>(sql: string, params?: any[]): Promise<T | null>;
   clearAllData(): Promise<void>;
   rebuildFTSIndexes(): Promise<void>;
   save(): Promise<void>;
@@ -88,6 +93,7 @@ export class SyncCoordinator {
   private deviceId: string;
   private workspaceApplier: WorkspaceEventApplier;
   private conversationApplier: ConversationEventApplier;
+  private taskApplier: TaskEventApplier;
 
   constructor(jsonlWriter: IJSONLWriter, sqliteCache: ISQLiteCacheManager) {
     this.jsonlWriter = jsonlWriter;
@@ -95,6 +101,7 @@ export class SyncCoordinator {
     this.deviceId = jsonlWriter.getDeviceId();
     this.workspaceApplier = new WorkspaceEventApplier(sqliteCache);
     this.conversationApplier = new ConversationEventApplier(sqliteCache);
+    this.taskApplier = new TaskEventApplier(sqliteCache);
   }
 
   /**
@@ -126,6 +133,12 @@ export class SyncCoordinator {
       eventsApplied += conversationResult.applied;
       eventsSkipped += conversationResult.skipped;
       filesProcessed.push(...conversationResult.files);
+
+      // Process task files
+      const taskResult = await this.processTaskFiles(lastSync, options, errors);
+      eventsApplied += taskResult.applied;
+      eventsSkipped += taskResult.skipped;
+      filesProcessed.push(...taskResult.files);
 
       // Update sync state and save
       await this.sqliteCache.updateSyncState(this.deviceId, Date.now(), {});
@@ -166,6 +179,11 @@ export class SyncCoordinator {
       const conversationResult = await this.rebuildConversations(options, errors, batchSize);
       eventsApplied += conversationResult.applied;
       filesProcessed.push(...conversationResult.files);
+
+      // Rebuild tasks (must come after workspaces for normalizeWorkspaceId to work)
+      const taskResult = await this.rebuildTasks(options, errors, batchSize);
+      eventsApplied += taskResult.applied;
+      filesProcessed.push(...taskResult.files);
 
       // Rebuild FTS and save
       options.onProgress?.('Rebuilding search indexes', 0, 1);
@@ -369,6 +387,89 @@ export class SyncCoordinator {
 
         files.push(file);
         options.onProgress?.('Processing conversations', i + 1, conversationFiles.length);
+
+        // Save after each file to prevent memory accumulation (OOM prevention)
+        await this.sqliteCache.save();
+      } catch (e) {
+        errors.push(`Failed to process ${file}: ${e}`);
+      }
+    }
+
+    return { applied, files };
+  }
+
+  private async processTaskFiles(
+    lastSync: number,
+    options: SyncOptions,
+    errors: string[]
+  ): Promise<{ applied: number; skipped: number; files: string[] }> {
+    let applied = 0;
+    let skipped = 0;
+    const files: string[] = [];
+
+    const taskFiles = await this.jsonlWriter.listFiles('tasks');
+    options.onProgress?.('Processing tasks', 0, taskFiles.length);
+
+    for (let i = 0; i < taskFiles.length; i++) {
+      const file = taskFiles[i];
+      try {
+        const events = await this.jsonlWriter.getEventsNotFromDevice<TaskEvent>(
+          file, this.deviceId, lastSync
+        );
+
+        for (const event of events) {
+          if (await this.sqliteCache.isEventApplied(event.id)) {
+            skipped++;
+            continue;
+          }
+          await this.taskApplier.apply(event);
+          await this.sqliteCache.markEventApplied(event.id);
+          applied++;
+        }
+
+        files.push(file);
+        options.onProgress?.('Processing tasks', i + 1, taskFiles.length);
+      } catch (e) {
+        errors.push(`Failed to process ${file}: ${e}`);
+      }
+    }
+
+    return { applied, skipped, files };
+  }
+
+  private async rebuildTasks(
+    options: SyncOptions,
+    errors: string[],
+    batchSize: number
+  ): Promise<{ applied: number; files: string[] }> {
+    let applied = 0;
+    const files: string[] = [];
+
+    const taskFiles = await this.jsonlWriter.listFiles('tasks');
+    options.onProgress?.('Processing tasks', 0, taskFiles.length);
+
+    for (let i = 0; i < taskFiles.length; i++) {
+      const file = taskFiles[i];
+      try {
+        const events = await this.jsonlWriter.readEvents<TaskEvent>(file);
+        events.sort((a, b) => a.timestamp - b.timestamp);
+
+        const result = await BatchOperations.executeBatch(
+          events,
+          async (event) => {
+            await this.taskApplier.apply(event);
+            await this.sqliteCache.markEventApplied(event.id);
+          },
+          { batchSize: Math.min(batchSize, 10), delayBetweenBatches: 10 }
+        );
+
+        applied += result.totalProcessed;
+        if (result.errors.length > 0) {
+          errors.push(...result.errors.map(e => `${file}: ${e.error.message}`));
+        }
+
+        files.push(file);
+        options.onProgress?.('Processing tasks', i + 1, taskFiles.length);
 
         // Save after each file to prevent memory accumulation (OOM prevention)
         await this.sqliteCache.save();
