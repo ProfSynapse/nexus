@@ -71,8 +71,8 @@ export class LMStudioProviderModal implements IProviderModal {
       .addButton(button => {
         this.discoverButton = button.buttonEl;
         button
-          .setButtonText('Discover Models')
-          .setTooltip('Connect to LM Studio server and discover available models')
+          .setButtonText('Scan for models')
+          .setTooltip('Connect to the server and scan for available models')
           .onClick(() => this.discoverModels());
       });
   }
@@ -136,7 +136,7 @@ export class LMStudioProviderModal implements IProviderModal {
 
     if (this.discoveredModels.length > 0) {
       const titleP = descDiv.createEl('p');
-      titleP.createEl('strong', { text: `Discovered Models (${this.discoveredModels.length}):` });
+      titleP.createEl('strong', { text: `Discovered models (${this.discoveredModels.length}):` });
 
       const ul = descDiv.createEl('ul');
       ul.addClass('llm-provider-model-list');
@@ -147,7 +147,7 @@ export class LMStudioProviderModal implements IProviderModal {
       });
     } else {
       const p = descDiv.createEl('p');
-      p.createEl('em', { text: 'No models discovered yet. Click "Discover Models" to scan the server.' });
+      p.createEl('em', { text: 'No models discovered yet. Click the scan for models button to scan the server.' });
     }
   }
 
@@ -159,20 +159,20 @@ export class LMStudioProviderModal implements IProviderModal {
     const descDiv = helpDiv.createDiv('setting-item-description');
 
     const details = descDiv.createEl('details');
-    const summary = details.createEl('summary', { text: 'Setup Help' });
+    const summary = details.createEl('summary', { text: 'Setup help' });
     summary.addClass('llm-provider-help-summary');
 
     const contentDiv = details.createDiv();
     contentDiv.addClass('llm-provider-help-content');
 
     const titleP = contentDiv.createEl('p');
-    titleP.createEl('strong', { text: 'To configure LM Studio:' });
+    titleP.createEl('strong', { text: 'To configure the server:' });
 
     const ol = contentDiv.createEl('ol');
     ol.addClass('llm-provider-help-list');
-    ol.createEl('li', { text: 'Open LM Studio and load your desired model(s)' });
+    ol.createEl('li', { text: 'Open the app and load your desired models' });
     ol.createEl('li', { text: 'Start the local server (usually on port 1234)' });
-    ol.createEl('li', { text: 'Click "Discover Models" to fetch available models' });
+    ol.createEl('li', { text: 'Click the scan for models button to fetch available models' });
     ol.createEl('li', { text: 'The first discovered model will be used by default' });
   }
 
@@ -222,7 +222,7 @@ export class LMStudioProviderModal implements IProviderModal {
       this.discoveredModels = modelsData.data.map((model: { id: string }) => model.id);
 
       if (this.discoveredModels.length === 0) {
-        new Notice('No models loaded in LM Studio. Please load a model first.');
+        new Notice('No models are loaded. Load one first.');
         return;
       }
 
@@ -253,7 +253,7 @@ export class LMStudioProviderModal implements IProviderModal {
       new Notice(`LM Studio discovery failed: ${errorMessage}`);
     } finally {
       if (this.discoverButton) {
-        this.discoverButton.textContent = 'Discover Models';
+        this.discoverButton.textContent = 'Scan for models';
         this.discoverButton.disabled = false;
       }
     }

@@ -68,7 +68,7 @@ export class SearchResultFormatter {
 
       // Add snippet for files if content requested
       if (isFile && includeContent) {
-        const snippet = await this.extractSnippet(item as TFile);
+        const snippet = await this.extractSnippet(item);
         if (snippet) {
           result.snippet = snippet;
         }
@@ -93,7 +93,7 @@ export class SearchResultFormatter {
       return firstFewLines.length > 200
         ? firstFewLines.substring(0, 200) + '...'
         : firstFewLines;
-    } catch (error) {
+    } catch {
       return 'Content not available';
     }
   }

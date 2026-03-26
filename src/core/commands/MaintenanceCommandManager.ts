@@ -44,7 +44,7 @@ export class MaintenanceCommandManager {
   private registerDiagnosticsCommand(): void {
     this.context.plugin.addCommand({
       id: 'run-service-diagnostics',
-      name: 'Run Service Diagnostics',
+      name: 'Run service diagnostics',
       callback: async () => {
         await this.runServiceDiagnostics();
       }
@@ -58,7 +58,7 @@ export class MaintenanceCommandManager {
   private registerClaudeHeadlessExperimentCommand(): void {
     this.context.plugin.addCommand({
       id: 'experimental-run-claude-headless-session',
-      name: 'Experimental: Run Claude Headless Session',
+      name: 'Run headless session',
       callback: async () => {
         if (!Platform.isDesktop) {
           new Notice('This experiment is only available on desktop.');

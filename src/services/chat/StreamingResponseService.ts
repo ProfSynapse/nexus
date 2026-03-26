@@ -18,12 +18,96 @@
  * Follows Single Responsibility Principle - only handles streaming coordination.
  */
 
-import { ConversationData } from '../../types/chat/ChatTypes';
+import { ConversationData, ToolCall } from '../../types/chat/ChatTypes';
 import { ConversationContextBuilder } from './ConversationContextBuilder';
-import { ToolCallService } from './ToolCallService';
-import { CostTrackingService } from './CostTrackingService';
+import { ToolCallService, type ToolEventData } from './ToolCallService';
+import { CostTrackingService, type CostData, type UsageData } from './CostTrackingService';
 import type { MessageQueueService } from './MessageQueueService';
-import { ContextBudgetService } from './ContextBudgetService';
+import { ContextBudgetService, type NormalizedTokenUsage } from './ContextBudgetService';
+
+interface ChatContextMessage {
+  role: string;
+  content?: unknown;
+  [key: string]: unknown;
+}
+
+interface OpenAIToolDefinition {
+  type: 'function';
+  function: {
+    name: string;
+    description?: string;
+    parameters?: unknown;
+  };
+}
+
+interface ToolCallLike {
+  id: string;
+  type?: 'function';
+  name?: string;
+  function?: {
+    name?: string;
+    arguments?: string;
+  };
+  arguments?: string;
+  result?: unknown;
+  success?: boolean;
+  error?: string;
+  providerExecuted?: boolean;
+}
+
+interface StreamingChunk {
+  chunk: string;
+  complete: boolean;
+  messageId: string;
+  toolCalls?: ToolCallLike[];
+  toolCallsReady?: boolean;
+  reasoning?: string;
+  reasoningComplete?: boolean;
+  usage?: UsageData;
+}
+
+interface StreamingGenerateOptions {
+  provider?: string;
+  model?: string;
+  tools?: OpenAIToolDefinition[];
+  toolChoice?: 'auto' | undefined;
+  abortSignal?: AbortSignal;
+  sessionId?: string;
+  workspaceId?: string;
+  conversationId: string;
+  enableThinking?: boolean;
+  thinkingEffort?: 'low' | 'medium' | 'high';
+  temperature?: number;
+  responsesApiId?: string;
+  onToolEvent?: (event: 'started' | 'completed', data: ToolEventData) => void;
+  onUsageAvailable?: (usage: UsageData, cost: CostData | null) => Promise<void>;
+  onResponsesApiId?: (id: string) => Promise<void>;
+}
+
+interface DefaultModel {
+  provider: string;
+  model: string;
+}
+
+interface ConversationServiceLike {
+  getConversation(id: string): Promise<ConversationData | null>;
+  addMessage(params: {
+    conversationId: string;
+    role: 'user' | 'assistant' | 'system' | 'tool';
+    content: string;
+    id?: string;
+    toolCalls?: ToolCall[];
+  }): Promise<void>;
+  updateConversation(id: string, updates: Partial<ConversationData>): Promise<void>;
+}
+
+interface LLMServiceLike {
+  getDefaultModel(): DefaultModel;
+  generateResponseStream(
+    messages: ChatContextMessage[],
+    options: StreamingGenerateOptions
+  ): AsyncGenerator<StreamingChunk, void, unknown>;
+}
 
 export interface StreamingOptions {
   provider?: string;
@@ -33,34 +117,51 @@ export interface StreamingOptions {
   sessionId?: string;
   messageId?: string;
   abortSignal?: AbortSignal;
-  excludeFromMessageId?: string; // Exclude this message and everything after from context (for retry)
+  excludeFromMessageId?: string;
   enableThinking?: boolean;
   thinkingEffort?: 'low' | 'medium' | 'high';
-  temperature?: number; // 0.0-1.0, controls randomness
-}
-
-export interface StreamingChunk {
-  chunk: string;
-  complete: boolean;
-  messageId: string;
-  toolCalls?: any[];
-  // Reasoning/thinking support (Claude, GPT-5, Gemini, etc.)
-  reasoning?: string;           // Incremental reasoning text
-  reasoningComplete?: boolean;  // True when reasoning finished
-  // Token usage (available on complete chunk)
-  usage?: {
-    promptTokens: number;
-    completionTokens: number;
-    totalTokens: number;
-  };
+  temperature?: number;
 }
 
 export interface StreamingDependencies {
-  llmService: any;
-  conversationService: any;
+  llmService: LLMServiceLike;
+  conversationService: ConversationServiceLike;
   toolCallService: ToolCallService;
   costTrackingService: CostTrackingService;
-  messageQueueService?: MessageQueueService; // Optional: for subagent result queueing
+  messageQueueService?: MessageQueueService;
+}
+
+function normalizeToolCalls(toolCalls: ToolCallLike[]): ToolCall[] {
+  return toolCalls.map((toolCall) => {
+    const functionName = toolCall.function?.name || toolCall.name || '';
+    const functionArguments =
+      typeof toolCall.function?.arguments === 'string'
+        ? toolCall.function.arguments
+        : typeof toolCall.arguments === 'string'
+          ? toolCall.arguments
+          : '';
+
+    return {
+      id: toolCall.id,
+      type: 'function',
+      name: toolCall.name || functionName || undefined,
+      function: {
+        name: functionName,
+        arguments: functionArguments
+      },
+      result: toolCall.result,
+      success: toolCall.success,
+      error: toolCall.error,
+      providerExecuted: toolCall.providerExecuted
+    };
+  });
+}
+
+function hasMeaningfulToolArguments(toolCalls: ToolCallLike[]): boolean {
+  return toolCalls.some((toolCall) => {
+    const args = toolCall.function?.arguments || toolCall.arguments || '';
+    return typeof args === 'string' ? args.trim().length > 0 : true;
+  });
 }
 
 export class StreamingResponseService {
@@ -80,41 +181,34 @@ export class StreamingResponseService {
     userMessage: string,
     options?: StreamingOptions
   ): AsyncGenerator<StreamingChunk, void, unknown> {
-    // Notify queue service that generation is starting (pauses processing)
     this.dependencies.messageQueueService?.onGenerationStart?.();
 
     try {
       const messageId = options?.messageId || `msg_${Date.now()}_ai`;
       let accumulatedContent = '';
 
-      // Get defaults from LLMService if user didn't select provider/model
       const defaultModel = this.dependencies.llmService.getDefaultModel();
 
-      // Check if message already exists (retry case)
       const existingConv = await this.dependencies.conversationService.getConversation(conversationId);
-      const messageExists = existingConv?.messages.some((m: any) => m.id === messageId);
+      const messageExists = existingConv?.messages.some((message) => message.id === messageId);
 
-      // Only create placeholder if message doesn't exist (prevents duplicate during retry)
       if (!messageExists) {
         await this.dependencies.conversationService.addMessage({
           conversationId,
           role: 'assistant',
-          content: '', // Will be updated as streaming progresses
+          content: '',
           id: messageId
         });
       }
 
-      // Get provider for context building
       const provider = options?.provider || defaultModel.provider;
-      this.currentProvider = provider; // Store for context building
+      this.currentProvider = provider;
 
-      // ALWAYS load conversation from storage to get complete history including tool calls
       const conversation = await this.dependencies.conversationService.getConversation(conversationId);
 
-      // Filter conversation for retry: exclude message being retried and everything after
       let filteredConversation = conversation;
       if (conversation && options?.excludeFromMessageId) {
-        const excludeIndex = conversation.messages.findIndex((m: any) => m.id === options.excludeFromMessageId);
+        const excludeIndex = conversation.messages.findIndex((message) => message.id === options.excludeFromMessageId);
         if (excludeIndex >= 0) {
           filteredConversation = {
             ...conversation,
@@ -123,58 +217,42 @@ export class StreamingResponseService {
         }
       }
 
-      // Build conversation context for LLM with provider-specific formatting
-      // NOTE: buildLLMMessages includes ALL messages from storage, including the user message
-      // that was just saved by sendMessage(), so we DON'T add it again here
-      const messages = filteredConversation ?
-        this.buildLLMMessages(filteredConversation, provider, options?.systemPrompt) : [];
+      const messages = filteredConversation
+        ? this.buildLLMMessages(filteredConversation, provider, options?.systemPrompt)
+        : [];
 
-      // Add system prompt if provided and not already added by buildLLMMessages
-      if (options?.systemPrompt && !messages.some(m => m.role === 'system')) {
+      if (options?.systemPrompt && !messages.some((message) => message.role === 'system')) {
         messages.unshift({ role: 'system', content: options.systemPrompt });
       }
 
-      // Only add user message if it's NOT already in the filtered conversation
-      // (happens on first message when conversation is empty, or during retry)
-      if (!filteredConversation || !filteredConversation.messages.some((m: any) => m.content === userMessage && m.role === 'user')) {
+      if (!filteredConversation || !filteredConversation.messages.some((message) => message.content === userMessage && message.role === 'user')) {
         messages.push({ role: 'user', content: userMessage });
       }
 
-      // Get tools from ToolCallService in OpenAI format
-      // NOTE: WebLLM/Nexus models are fine-tuned with tool knowledge baked in
-      // They don't need tool schemas passed - they generate [TOOL_CALLS] naturally
       const isWebLLM = provider === 'webllm';
-      const openAITools = isWebLLM ? [] : this.dependencies.toolCallService.getAvailableTools();
+      const openAITools: OpenAIToolDefinition[] = isWebLLM ? [] : this.dependencies.toolCallService.getAvailableTools();
 
-      // Prepare LLM options with converted tools
-      // NOTE: systemPrompt is already in the messages array from buildLLMMessages()
-      // Do NOT pass it again here - this caused duplicate system prompts
-      const llmOptions: any = {
+      const llmOptions: StreamingGenerateOptions = {
         provider: options?.provider || defaultModel.provider,
         model: options?.model || defaultModel.model,
-        // systemPrompt intentionally omitted - already in messages array
         tools: openAITools,
         toolChoice: openAITools.length > 0 ? 'auto' : undefined,
         abortSignal: options?.abortSignal,
         sessionId: options?.sessionId,
         workspaceId: options?.workspaceId,
-        conversationId, // CRITICAL: Required for OpenAI Responses API response ID tracking
+        conversationId,
         enableThinking: options?.enableThinking,
         thinkingEffort: options?.thinkingEffort,
         temperature: options?.temperature,
-        // Responses API (OpenAI/LM Studio): Load persisted ID for conversation continuity
         responsesApiId: filteredConversation?.metadata?.responsesApiId
       };
 
-      // Add tool event callback for live UI updates (delegates to ToolCallService)
-      llmOptions.onToolEvent = (event: 'started' | 'completed', data: any) => {
+      llmOptions.onToolEvent = (event: 'started' | 'completed', data: ToolEventData) => {
         this.dependencies.toolCallService.fireToolEvent(messageId, event, data);
       };
 
-      // Add usage callback for async cost calculation (e.g., OpenRouter streaming)
       llmOptions.onUsageAvailable = this.dependencies.costTrackingService.createUsageCallback(conversationId, messageId);
 
-      // Responses API: Persist ID when first captured (for conversation continuity across restarts)
       llmOptions.onResponsesApiId = async (id: string) => {
         try {
           const conv = await this.dependencies.conversationService.getConversation(conversationId);
@@ -183,47 +261,36 @@ export class StreamingResponseService {
               metadata: { ...conv.metadata, responsesApiId: id }
             });
           }
-        } catch (err) {
-          console.error('[StreamingResponseService] Failed to persist responsesApiId:', err);
+        } catch (error) {
+          console.error('[StreamingResponseService] Failed to persist responsesApiId:', error);
         }
       };
 
-      // Stream the response from LLM service with MCP tools
-      let toolCalls: any[] | undefined = undefined;
-      this.dependencies.toolCallService.resetDetectedTools(); // Reset tool detection state for new message
+      let toolCalls: ToolCallLike[] | undefined;
+      this.dependencies.toolCallService.resetDetectedTools();
 
-      // Track usage and cost for conversation tracking
-      let finalUsage: any = undefined;
-      let finalCost: any = undefined;
+      let finalUsage: UsageData | undefined;
+      let finalCost: CostData | undefined;
 
       for await (const chunk of this.dependencies.llmService.generateResponseStream(messages, llmOptions)) {
-        // Check if aborted FIRST before processing chunk
         if (options?.abortSignal?.aborted) {
           throw new DOMException('Generation aborted by user', 'AbortError');
         }
 
         accumulatedContent += chunk.chunk;
 
-        // Extract usage for cost calculation
         if (chunk.usage) {
-          const normalizedUsage = ContextBudgetService.normalizeUsage(chunk.usage);
+          const normalizedUsage: NormalizedTokenUsage | null = ContextBudgetService.normalizeUsage(chunk.usage);
           if (normalizedUsage) {
             finalUsage = normalizedUsage;
           }
         }
 
-        // Extract tool calls when available and handle progressive display
         if (chunk.toolCalls) {
           toolCalls = chunk.toolCalls;
+        }
 
-      // Handle progressive tool call detection (fires 'detected' and 'updated' events)
-      if (toolCalls) {
-        // Only emit once we have non-empty argument content to reduce duplicate spam
-        const hasMeaningfulArgs = toolCalls.some((tc: any) => {
-          const args = tc.function?.arguments || tc.arguments || '';
-          return typeof args === 'string' ? args.trim().length > 0 : true;
-        });
-        if (hasMeaningfulArgs) {
+        if (toolCalls && hasMeaningfulToolArguments(toolCalls)) {
           this.dependencies.toolCallService.handleToolCallDetection(
             messageId,
             toolCalls,
@@ -231,12 +298,8 @@ export class StreamingResponseService {
             conversationId
           );
         }
-      }
-        }
 
-        // Save to database BEFORE yielding final chunk to ensure persistence
         if (chunk.complete) {
-          // Calculate cost from final usage using CostTrackingService
           if (finalUsage) {
             const usageData = this.dependencies.costTrackingService.extractUsage(finalUsage);
             if (usageData) {
@@ -246,24 +309,20 @@ export class StreamingResponseService {
                 provider,
                 llmOptions.model,
                 usageData
-              );
+              ) || undefined;
             }
           }
 
-          // Update the placeholder message with final content
           const conv = await this.dependencies.conversationService.getConversation(conversationId);
           if (conv) {
-            const msg = conv.messages.find((m: any) => m.id === messageId);
+            const msg = conv.messages.find((message) => message.id === messageId);
             if (msg) {
-              // Update existing placeholder message
               msg.content = accumulatedContent;
               msg.state = 'complete';
               if (toolCalls) {
-                msg.toolCalls = toolCalls;
+                msg.toolCalls = normalizeToolCalls(toolCalls);
               }
 
-              // Only update cost/usage if we have values (don't overwrite with undefined)
-              // This prevents overwriting async updates from OpenRouter's generation API
               if (finalCost) {
                 msg.cost = finalCost;
               }
@@ -274,18 +333,11 @@ export class StreamingResponseService {
               msg.provider = provider;
               msg.model = llmOptions.model;
 
-              // Save updated conversation
               await this.dependencies.conversationService.updateConversation(conversationId, {
                 messages: conv.messages,
                 metadata: conv.metadata
               });
             }
-          }
-
-          // Handle tool calls - if present, add separate message for pingpong response
-          if (toolCalls && toolCalls.length > 0) {
-            // Had tool calls - the placeholder is the tool call message, add pingpong response separately
-            // No separate message needed; placeholder already holds tool calls and final content
           }
         }
 
@@ -293,11 +345,9 @@ export class StreamingResponseService {
           chunk: chunk.chunk,
           complete: chunk.complete,
           messageId,
-          toolCalls: toolCalls,
-          // Pass through reasoning for UI display
+          toolCalls,
           reasoning: chunk.reasoning,
           reasoningComplete: chunk.reasoningComplete,
-          // Pass through usage for context tracking
           usage: chunk.complete ? finalUsage : undefined
         };
 
@@ -305,13 +355,11 @@ export class StreamingResponseService {
           break;
         }
       }
-
     } catch (error) {
       console.error('Error in generateResponse:', error);
       throw error;
     } finally {
-      // Notify queue service that generation is complete (resumes processing)
-      this.dependencies.messageQueueService?.onGenerationComplete?.();
+      await this.dependencies.messageQueueService?.onGenerationComplete?.();
     }
   }
 
@@ -324,31 +372,27 @@ export class StreamingResponseService {
    * NOTE: For Google, we return simple {role, content} format because
    * StreamingOrchestrator will convert to Google format ({role, parts})
    */
-  private buildLLMMessages(conversation: ConversationData, provider?: string, systemPrompt?: string): any[] {
+  private buildLLMMessages(conversation: ConversationData, provider?: string, systemPrompt?: string): ChatContextMessage[] {
     const currentProvider = provider || this.getCurrentProvider();
 
-    // For Google, return simple format - StreamingOrchestrator handles Google conversion
     if (currentProvider === 'google') {
-      const messages: any[] = [];
+      const messages: ChatContextMessage[] = [];
 
-      // Add system prompt if provided
       if (systemPrompt) {
         messages.push({ role: 'system', content: systemPrompt });
       }
 
-      // Add conversation messages in simple format
-      for (const msg of conversation.messages) {
-        if (msg.role === 'user' && msg.content && msg.content.trim()) {
-          messages.push({ role: 'user', content: msg.content });
-        } else if (msg.role === 'assistant' && msg.content && msg.content.trim()) {
-          messages.push({ role: 'assistant', content: msg.content });
+      for (const message of conversation.messages) {
+        if (message.role === 'user' && message.content && message.content.trim()) {
+          messages.push({ role: 'user', content: message.content });
+        } else if (message.role === 'assistant' && message.content && message.content.trim()) {
+          messages.push({ role: 'assistant', content: message.content });
         }
       }
 
       return messages;
     }
 
-    // For other providers, use ConversationContextBuilder
     return ConversationContextBuilder.buildContextForProvider(
       conversation,
       currentProvider,

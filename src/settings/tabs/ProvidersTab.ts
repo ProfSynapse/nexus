@@ -380,7 +380,7 @@ export class ProvidersTab {
         if (!isDesktop()) {
             this.container.createEl('p', {
                 cls: 'setting-item-description',
-                text: 'On mobile, only OpenRouter, Requesty, and Perplexity are supported. Configure local providers and SDK-based providers on desktop.'
+                text: 'On mobile, only cloud providers are supported. Use the desktop app for local providers.'
             });
 
             const items = [...MOBILE_COMPATIBLE_PROVIDERS]

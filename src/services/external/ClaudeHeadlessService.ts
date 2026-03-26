@@ -295,7 +295,7 @@ export class ClaudeHeadlessService {
             return null;
         }
 
-        return pathMod.join(vaultBasePath, '.obsidian', 'plugins', pluginFolderName, 'connector.js');
+        return pathMod.join(vaultBasePath, this.app.vault.configDir, 'plugins', pluginFolderName, 'connector.js');
     }
 
     private getVaultBasePath(): string | null {

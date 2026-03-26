@@ -7,6 +7,154 @@ import { IndividualConversation, IndividualWorkspace, MemoryTrace, StateData } f
 import { ChromaCollectionData } from './ChromaDataLoader';
 import { normalizeLegacyTraceMetadata } from '../memory/LegacyTraceMetadataNormalizer';
 
+type LegacyRecord = Record<string, unknown>;
+
+interface LegacyConversationRecord {
+  id?: string;
+  metadata?: LegacyConversationMetadata;
+}
+
+interface LegacyMessageRecord {
+  id?: string;
+  role?: string;
+  content?: string;
+  timestamp?: number;
+  toolCalls?: unknown;
+  toolName?: unknown;
+  toolParams?: unknown;
+  toolResult?: unknown;
+}
+
+interface LegacyConversationMetadata extends LegacyRecord {
+  title?: string;
+  created?: number;
+  updated?: number;
+  vault_name?: string;
+  conversation?: {
+    title?: string;
+    created?: number;
+    updated?: number;
+    vault_name?: string;
+    messages?: unknown[];
+    [key: string]: unknown;
+  };
+}
+
+interface LegacySessionMetadata extends LegacyRecord {
+  workspaceId?: string;
+  name?: string;
+  description?: string;
+  startTime?: number;
+  created?: number;
+  endTime?: number;
+  isActive?: boolean;
+}
+
+interface LegacySessionRecord {
+  id?: string;
+  metadata?: LegacySessionMetadata;
+}
+
+interface LegacyTraceMetadata extends LegacyRecord {
+  sessionId?: string;
+  content?: string;
+  params?: unknown;
+  result?: unknown;
+  relatedFiles?: unknown;
+  activityType?: string;
+  type?: string;
+  timestamp?: number;
+}
+
+interface LegacyTraceRecord {
+  id?: string;
+  document?: {
+    content?: string;
+    timestamp?: number;
+    [key: string]: unknown;
+  };
+  content?: string;
+  metadata?: LegacyTraceMetadata;
+}
+
+interface LegacyStateMetadata extends LegacyRecord {
+  name?: string;
+  created?: number;
+  snapshot?: unknown;
+}
+
+interface LegacyStateRecord {
+  id?: string;
+  metadata?: LegacyStateMetadata;
+  snapshot?: unknown;
+}
+
+interface LegacyWorkspaceContext extends LegacyRecord {
+  agents?: Array<{
+    id?: string;
+    name?: string;
+    [key: string]: unknown;
+  }>;
+  keyFiles?: Array<{
+    files?: Record<string, unknown>;
+    [key: string]: unknown;
+  }>;
+  preferences?: unknown[];
+  status?: unknown;
+  dedicatedAgent?: {
+    agentId?: string;
+    agentName?: string;
+  };
+}
+
+function isRecord(value: unknown): value is LegacyRecord {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isString(value: unknown): value is string {
+  return typeof value === 'string';
+}
+
+function isNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+function isUnknownArray(value: unknown): value is unknown[] {
+  return Array.isArray(value);
+}
+
+function isLegacyConversationRecord(value: unknown): value is LegacyConversationRecord {
+  return isRecord(value);
+}
+
+function isLegacySessionRecord(value: unknown): value is LegacySessionRecord {
+  return isRecord(value);
+}
+
+function isLegacyTraceRecord(value: unknown): value is LegacyTraceRecord {
+  return isRecord(value);
+}
+
+function isLegacyStateRecord(value: unknown): value is LegacyStateRecord {
+  return isRecord(value);
+}
+
+function isLegacyWorkspaceContext(value: unknown): value is LegacyWorkspaceContext {
+  return isRecord(value);
+}
+
+function getString(value: unknown, fallback: string): string {
+  return isString(value) && value.length > 0 ? value : fallback;
+}
+
+function getNumber(value: unknown, fallback: number): number {
+  return isNumber(value) ? value : fallback;
+}
+
+function getBoolean(value: unknown, fallback: boolean): boolean {
+  return typeof value === 'boolean' ? value : fallback;
+}
+
 export class DataTransformer {
 
   transformToNewStructure(chromaData: ChromaCollectionData): {
@@ -23,58 +171,75 @@ export class DataTransformer {
     return { conversations, workspaces };
   }
 
-  private transformConversations(conversations: any[]): IndividualConversation[] {
+  private transformConversations(conversations: unknown[]): IndividualConversation[] {
     const result: IndividualConversation[] = [];
 
     for (const conv of conversations) {
       try {
-        const conversationData = conv.metadata?.conversation || {};
-        const messages = conversationData.messages || [];
+        if (!isLegacyConversationRecord(conv)) {
+          continue;
+        }
+
+        const metadata = isRecord(conv.metadata) ? conv.metadata : undefined;
+        const conversationData = isRecord(metadata?.conversation) ? metadata.conversation : undefined;
+        const messages = isUnknownArray(conversationData?.messages) ? conversationData.messages : [];
 
         const transformed: IndividualConversation = {
-          id: conv.id,
-          title: conv.metadata?.title || conversationData.title || 'Untitled Conversation',
-          created: conv.metadata?.created || conversationData.created || Date.now(),
-          updated: conv.metadata?.updated || conversationData.updated || Date.now(),
-          vault_name: conv.metadata?.vault_name || conversationData.vault_name || 'Unknown',
+          id: getString(conv.id, 'unknown'),
+          title: getString(metadata?.title ?? conversationData?.title, 'Untitled Conversation'),
+          created: getNumber(metadata?.created ?? conversationData?.created, Date.now()),
+          updated: getNumber(metadata?.updated ?? conversationData?.updated, Date.now()),
+          vault_name: getString(metadata?.vault_name ?? conversationData?.vault_name, 'Unknown'),
           message_count: messages.length,
           messages: this.transformMessages(messages)
         };
 
         result.push(transformed);
       } catch (error) {
-        console.error(`[DataTransformer] Error transforming conversation ${conv.id}:`, error);
+        console.error(`[DataTransformer] Error transforming conversation ${isLegacyConversationRecord(conv) && isString(conv.id) ? conv.id : 'unknown'}:`, error);
       }
     }
 
     return result;
   }
 
-  private transformMessages(messages: any[]): any[] {
+  private transformMessages(messages: unknown[]): Array<Record<string, unknown>> {
     if (!Array.isArray(messages)) return [];
 
-    return messages.map(msg => ({
-      id: msg.id || `msg_${Date.now()}_${Math.random().toString(36).substr(2, 8)}`,
-      role: msg.role || 'user',
-      content: msg.content || '',
-      timestamp: msg.timestamp || Date.now(),
-      toolCalls: msg.toolCalls,
-      toolName: msg.toolName,
-      toolParams: msg.toolParams,
-      toolResult: msg.toolResult
-    }));
+    return messages.map(msg => {
+      const message = isRecord(msg) ? (msg as LegacyMessageRecord) : {};
+      return {
+        id: getString(message.id, `msg_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`),
+        role: getString(message.role, 'user'),
+        content: getString(message.content, ''),
+        timestamp: getNumber(message.timestamp, Date.now()),
+        toolCalls: message.toolCalls,
+        toolName: message.toolName,
+        toolParams: message.toolParams,
+        toolResult: message.toolResult
+      };
+    });
   }
 
   private transformWorkspaceHierarchy(
-    workspaces: any[],
-    sessions: any[],
-    memoryTraces: any[],
-    snapshots: any[]
+    workspaces: unknown[],
+    sessions: unknown[],
+    memoryTraces: unknown[],
+    snapshots: unknown[]
   ): IndividualWorkspace[] {
     // Group data by relationships
-    const sessionsByWorkspace = this.groupBy(sessions, s => s.metadata?.workspaceId || 'unknown');
-    const tracesBySession = this.groupBy(memoryTraces, t => t.metadata?.sessionId || 'orphan');
-    const statesBySession = this.groupBy(snapshots, s => s.metadata?.sessionId || 'orphan');
+    const sessionsByWorkspace = this.groupBy(sessions, session => {
+      const metadata = this.getSessionMetadata(session);
+      return getString(metadata?.workspaceId, 'unknown');
+    });
+    const tracesBySession = this.groupBy(memoryTraces, trace => {
+      const metadata = this.getTraceMetadata(trace);
+      return getString(metadata?.sessionId, 'orphan');
+    });
+    const statesBySession = this.groupBy(snapshots, state => {
+      const metadata = this.getStateMetadata(state);
+      return getString(metadata?.sessionId, 'orphan');
+    });
 
     const result: IndividualWorkspace[] = [];
 
@@ -87,7 +252,7 @@ export class DataTransformer {
 
       try {
         // Parse context if it's a string
-        let context;
+        let context: unknown;
         if (wsMetadata?.metadata?.context) {
           context = this.parseJSONString(wsMetadata.metadata.context);
           // Apply workspace context migration to new structure
@@ -96,29 +261,35 @@ export class DataTransformer {
 
         const workspace: IndividualWorkspace = {
           id: workspaceId,
-          name: wsMetadata?.metadata?.name || `Workspace ${workspaceId}`,
-          description: wsMetadata?.metadata?.description || '',
-          rootFolder: wsMetadata?.metadata?.rootFolder || '/',
-          created: wsMetadata?.metadata?.created || Date.now(),
-          lastAccessed: wsMetadata?.metadata?.lastAccessed || Date.now(),
-          isActive: wsMetadata?.metadata?.isActive ?? true,
+          name: getString(wsMetadata?.metadata?.name, `Workspace ${workspaceId}`),
+          description: getString(wsMetadata?.metadata?.description, ''),
+          rootFolder: getString(wsMetadata?.metadata?.rootFolder, '/'),
+          created: getNumber(wsMetadata?.metadata?.created, Date.now()),
+          lastAccessed: getNumber(wsMetadata?.metadata?.lastAccessed, Date.now()),
+          isActive: getBoolean(wsMetadata?.metadata?.isActive, true),
           context,
           sessions: {}
         };
 
         // Process sessions within workspace
         for (const session of workspaceSessions) {
-          const sessionTraces = tracesBySession[session.id] || [];
-          const sessionStates = statesBySession[session.id] || [];
+          if (!isRecord(session)) {
+            continue;
+          }
 
-          workspace.sessions[session.id] = {
-            id: session.id,
-            name: session.metadata?.name,
-            description: session.metadata?.description,
-            startTime: session.metadata?.startTime || session.metadata?.created || Date.now(),
-            endTime: session.metadata?.endTime,
-            isActive: session.metadata?.isActive ?? true,
-            memoryTraces: this.transformTraces(sessionTraces, workspaceId, session.id),
+          const sessionId = getString(session.id, 'unknown');
+          const sessionTraces = tracesBySession[sessionId] || [];
+          const sessionStates = statesBySession[sessionId] || [];
+          const sessionMetadata = this.getSessionMetadata(session);
+
+          workspace.sessions[sessionId] = {
+            id: sessionId,
+            name: sessionMetadata?.name,
+            description: sessionMetadata?.description,
+            startTime: getNumber(sessionMetadata?.startTime ?? sessionMetadata?.created, Date.now()),
+            endTime: sessionMetadata?.endTime,
+            isActive: sessionMetadata?.isActive ?? true,
+            memoryTraces: this.transformTraces(sessionTraces, workspaceId, sessionId),
             states: this.transformStates(sessionStates)
           };
         }
@@ -132,58 +303,71 @@ export class DataTransformer {
     return result;
   }
 
-  private transformTraces(traces: any[], workspaceId: string, sessionId: string): Record<string, MemoryTrace> {
+  private transformTraces(traces: unknown[], workspaceId: string, sessionId: string): Record<string, MemoryTrace> {
     const result: Record<string, MemoryTrace> = {};
 
     for (const trace of traces) {
       try {
+        if (!isLegacyTraceRecord(trace)) {
+          continue;
+        }
+
+        const metadata = this.getTraceMetadata(trace);
+        const traceDocument = isRecord(trace.document) ? trace.document : undefined;
         // Extract content from either document.content or direct content
-        const content = trace.document?.content || trace.content || trace.metadata?.content || '';
-        const legacyParams = this.parseJSONString(trace.metadata?.params);
-        const legacyResult = this.parseJSONString(trace.metadata?.result);
-        const legacyFiles = this.parseJSONString(trace.metadata?.relatedFiles) || [];
+        const content = getString(traceDocument?.content ?? trace.content ?? metadata?.content, '');
+        const legacyParams = this.parseJSONString(metadata?.params);
+        const legacyResult = this.parseJSONString(metadata?.result);
+        const legacyFiles = this.parseJSONString(metadata?.relatedFiles) || [];
         const mergedMetadata = {
-          ...(trace.metadata || {}),
+          ...(metadata || {}),
           params: legacyParams,
           result: legacyResult,
           relatedFiles: legacyFiles
         };
 
-        const metadata = normalizeLegacyTraceMetadata({
+        const normalizedMetadata = normalizeLegacyTraceMetadata({
           workspaceId,
           sessionId,
-          traceType: trace.metadata?.activityType || trace.metadata?.type,
+          traceType: metadata?.activityType || metadata?.type,
           metadata: mergedMetadata
         });
 
-        result[trace.id] = {
-          id: trace.id,
-          timestamp: trace.metadata?.timestamp || trace.document?.timestamp || Date.now(),
-          type: trace.metadata?.activityType || trace.metadata?.type || 'unknown',
+        const traceId = getString(trace.id, `trace_${Date.now()}`);
+        result[traceId] = {
+          id: traceId,
+          timestamp: getNumber(normalizedMetadata?.timestamp ?? traceDocument?.timestamp, Date.now()),
+          type: getString(normalizedMetadata?.activityType ?? normalizedMetadata?.type, 'unknown'),
           content: content,
-          metadata
+          metadata: normalizedMetadata
         };
       } catch (error) {
-        console.error(`[DataTransformer] Error transforming trace ${trace.id}:`, error);
+        console.error(`[DataTransformer] Error transforming trace ${isLegacyTraceRecord(trace) && isString(trace.id) ? trace.id : 'unknown'}:`, error);
       }
     }
 
     return result;
   }
 
-  private transformStates(states: any[]): Record<string, StateData> {
+  private transformStates(states: unknown[]): Record<string, StateData> {
     const result: Record<string, StateData> = {};
 
     for (const state of states) {
       try {
-        result[state.id] = {
-          id: state.id,
-          name: state.metadata?.name || 'Unnamed State',
-          created: state.metadata?.created || Date.now(),
-          state: state.metadata?.snapshot || state.snapshot || {}
+        if (!isLegacyStateRecord(state)) {
+          continue;
+        }
+
+        const metadata = this.getStateMetadata(state);
+        const stateId = getString(state.id, `state_${Date.now()}`);
+        result[stateId] = {
+          id: stateId,
+          name: getString(metadata?.name, 'Unnamed State'),
+          created: getNumber(metadata?.created, Date.now()),
+          state: metadata?.snapshot || state.snapshot || {}
         };
       } catch (error) {
-        console.error(`[DataTransformer] Error transforming state ${state.id}:`, error);
+        console.error(`[DataTransformer] Error transforming state ${isLegacyStateRecord(state) && isString(state.id) ? state.id : 'unknown'}:`, error);
       }
     }
 
@@ -208,7 +392,7 @@ export class DataTransformer {
     }, {} as Record<string, T>);
   }
 
-  private parseJSONString(str: string | undefined): any {
+  private parseJSONString(str: unknown): unknown {
     if (!str) return undefined;
     if (typeof str !== 'string') return str;
 
@@ -222,19 +406,19 @@ export class DataTransformer {
   /**
    * Migrate workspace context from old structure to new structure
    */
-  private migrateWorkspaceContext(context: any): any {
-    if (!context || typeof context !== 'object') {
+  private migrateWorkspaceContext(context: unknown): unknown {
+    if (!isLegacyWorkspaceContext(context)) {
       return context;
     }
 
-    const migratedContext = { ...context };
+    const migratedContext = { ...context } as LegacyWorkspaceContext;
 
     // Migrate agents array to dedicatedAgent
-    if (context.agents && Array.isArray(context.agents) && context.agents.length > 0) {
+    if (Array.isArray(context.agents) && context.agents.length > 0) {
       const firstAgent = context.agents[0];
-      if (firstAgent && firstAgent.name) {
+      if (isRecord(firstAgent) && isString(firstAgent.name)) {
         migratedContext.dedicatedAgent = {
-          agentId: firstAgent.id || firstAgent.name,
+          agentId: getString(firstAgent.id, firstAgent.name),
           agentName: firstAgent.name
         };
       }
@@ -242,11 +426,11 @@ export class DataTransformer {
     }
 
     // Migrate keyFiles from complex categorized structure to simple array
-    if (context.keyFiles && Array.isArray(context.keyFiles)) {
+    if (Array.isArray(context.keyFiles)) {
       const simpleKeyFiles: string[] = [];
-      context.keyFiles.forEach((category: any) => {
-        if (category.files && typeof category.files === 'object') {
-          Object.values(category.files).forEach((filePath: any) => {
+      context.keyFiles.forEach(category => {
+        if (isRecord(category.files)) {
+          Object.values(category.files).forEach(filePath => {
             if (typeof filePath === 'string') {
               simpleKeyFiles.push(filePath);
             }
@@ -257,9 +441,9 @@ export class DataTransformer {
     }
 
     // Migrate preferences from array to string
-    if (context.preferences && Array.isArray(context.preferences)) {
+    if (Array.isArray(context.preferences)) {
       const preferencesString = context.preferences
-        .filter((pref: any) => typeof pref === 'string' && pref.trim())
+        .filter((pref): pref is string => typeof pref === 'string' && pref.trim().length > 0)
         .join('. ') + (context.preferences.length > 0 ? '.' : '');
       migratedContext.preferences = preferencesString;
     }
@@ -270,5 +454,29 @@ export class DataTransformer {
     }
 
     return migratedContext;
+  }
+
+  private getSessionMetadata(session: unknown): LegacySessionMetadata | undefined {
+    if (!isLegacySessionRecord(session) || !isRecord(session.metadata)) {
+      return undefined;
+    }
+
+    return session.metadata;
+  }
+
+  private getTraceMetadata(trace: unknown): LegacyTraceMetadata | undefined {
+    if (!isLegacyTraceRecord(trace) || !isRecord(trace.metadata)) {
+      return undefined;
+    }
+
+    return trace.metadata;
+  }
+
+  private getStateMetadata(state: unknown): LegacyStateMetadata | undefined {
+    if (!isLegacyStateRecord(state) || !isRecord(state.metadata)) {
+      return undefined;
+    }
+
+    return state.metadata;
   }
 }

@@ -23,7 +23,7 @@ import {
 } from '../../../services/chat/CompactionFrontierService';
 import { ContextBudgetService } from '../../../services/chat/ContextBudgetService';
 import { ConversationData } from '../../../types/chat/ChatTypes';
-import type NexusPlugin from '../../../main';
+import { getNexusPlugin } from '../../../utils/pluginLocator';
 import type { App } from 'obsidian';
 
 // Context window sizes for providers that participate in app-level pre-send compaction.
@@ -51,26 +51,42 @@ interface ConversationCompactionMetadata {
   frontier?: CompactionFrontierRecord[];
 }
 
-interface ConversationMetadataWithCompaction {
-  chatSettings?: {
-    providerId?: string;
-    modelId?: string;
-    promptId?: string;
-    workspaceId?: string;
-    sessionId?: string;
-  };
-  compaction?: ConversationCompactionMetadata;
-  [key: string]: unknown;
+interface ConversationChatSettings {
+  providerId?: string;
+  modelId?: string;
+  promptId?: string | null;
+  workspaceId?: string | null;
+  sessionId?: string | null;
+  contextNotes?: string[];
+  agentProvider?: string | null;
+  agentModel?: string | null;
+  agentThinking?: ThinkingSettings;
+  thinking?: ThinkingSettings;
+  temperature?: number;
 }
 
-/**
- * App type with plugin registry access
- */
-type AppWithPlugins = {
-  plugins?: {
-    plugins?: Record<string, NexusPlugin>;
-  };
-} & Omit<App, 'plugins'>;
+interface ConversationMetadataWithCompaction extends Record<string, unknown> {
+  chatSettings?: ConversationChatSettings;
+  compaction?: ConversationCompactionMetadata;
+}
+
+interface ConversationRecordLike {
+  metadata?: ConversationMetadataWithCompaction;
+}
+
+interface ConversationServiceLike {
+  getConversation(conversationId: string): Promise<ConversationRecordLike | null>;
+  updateConversationMetadata(conversationId: string, metadata: Record<string, unknown>): Promise<void>;
+}
+
+interface AgentLike {
+  description?: unknown;
+  getTools?: () => unknown;
+}
+
+interface AgentRegistryLike {
+  getAllAgents: () => unknown;
+}
 
 /**
  * Plugin interface with settings structure
@@ -90,13 +106,101 @@ interface PluginWithSettings {
     };
   };
   serviceManager?: {
-    getServiceIfReady?: (name: string) => any;
+    getServiceIfReady?: (name: string) => unknown;
   };
   connector?: {
-    agentRegistry?: {
-      getAllAgents: () => Map<string, any>;
-    };
+    agentRegistry?: AgentRegistryLike;
   };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isPluginWithSettings(value: unknown): value is PluginWithSettings {
+  return isRecord(value);
+}
+
+function isAgentRegistryLike(value: unknown): value is AgentRegistryLike {
+  return isRecord(value) && typeof value.getAllAgents === 'function';
+}
+
+function isNamedAgent(value: unknown): value is AgentLike & { name: string } {
+  return isRecord(value) && typeof value.name === 'string';
+}
+
+function isAgentLike(value: unknown): value is AgentLike {
+  return isRecord(value);
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every(item => typeof item === 'string');
+}
+
+function getStringProperty(record: Record<string, unknown>, key: string): string | undefined {
+  const value = record[key];
+  return typeof value === 'string' ? value : undefined;
+}
+
+function isWorkspaceContext(value: unknown): value is WorkspaceContext {
+  return isRecord(value);
+}
+
+function getWorkspaceContextProperty(record: Record<string, unknown>, key: string): WorkspaceContext | undefined {
+  const value = record[key];
+  return isWorkspaceContext(value) ? value : undefined;
+}
+
+function getAgentToolNames(tools: unknown): string[] {
+  if (!Array.isArray(tools)) {
+    return [];
+  }
+
+  return tools.map((tool): string => {
+    if (!isRecord(tool)) {
+      return 'unknown';
+    }
+
+    return typeof tool.slug === 'string' && tool.slug.length > 0
+      ? tool.slug
+      : typeof tool.name === 'string' && tool.name.length > 0
+        ? tool.name
+        : 'unknown';
+  });
+}
+
+function normalizeAgentEntries(agents: unknown): Array<[string, AgentLike]> {
+  if (agents instanceof Map) {
+    return Array.from(agents.entries()).flatMap(([name, agent]) => {
+      if (typeof name !== 'string' || !isAgentLike(agent)) {
+        return [];
+      }
+
+      return [[name, agent]];
+    });
+  }
+
+  if (Array.isArray(agents)) {
+    return agents.flatMap(agent => {
+      if (!isNamedAgent(agent)) {
+        return [];
+      }
+
+      return [[agent.name, agent]];
+    });
+  }
+
+  if (isRecord(agents)) {
+    return Object.entries(agents).flatMap(([name, agent]) => {
+      if (!isAgentLike(agent)) {
+        return [];
+      }
+
+      return [[name, agent]];
+    });
+  }
+
+  return [];
 }
 
 export interface ModelAgentManagerEvents {
@@ -113,7 +217,7 @@ export class ModelAgentManager {
   private currentSystemPrompt: string | null = null;
   private selectedWorkspaceId: string | null = null;
   private workspaceContext: WorkspaceContext | null = null;
-  private loadedWorkspaceData: any = null; // Full comprehensive workspace data from LoadWorkspaceTool
+  private loadedWorkspaceData: Record<string, unknown> | null = null; // Full comprehensive workspace data from LoadWorkspaceTool
   private contextNotesManager: ContextNotesManager;
   private currentConversationId: string | null = null;
   private messageEnhancement: MessageEnhancement | null = null;
@@ -129,9 +233,9 @@ export class ModelAgentManager {
   private compactionFrontierService = new CompactionFrontierService();
 
   constructor(
-    private app: any, // Obsidian App
+    private app: App, // Obsidian App
     private events: ModelAgentManagerEvents,
-    private conversationService?: any, // Optional ConversationService for persistence
+    private conversationService?: ConversationServiceLike, // Optional ConversationService for persistence
     conversationId?: string
   ) {
     this.currentConversationId = conversationId || null;
@@ -159,13 +263,13 @@ export class ModelAgentManager {
    */
   async initializeFromConversation(conversationId: string): Promise<void> {
     try {
-      let chatSettings: Record<string, unknown> | undefined;
+      let chatSettings: ConversationChatSettings | undefined;
       let conversationMetadata: ConversationMetadataWithCompaction | undefined;
 
       if (this.conversationService) {
         const conversation = await this.conversationService.getConversation(conversationId);
-        conversationMetadata = conversation?.metadata as ConversationMetadataWithCompaction | undefined;
-        chatSettings = conversation?.metadata?.chatSettings as Record<string, unknown> | undefined;
+        conversationMetadata = conversation?.metadata;
+        chatSettings = conversation?.metadata?.chatSettings;
       }
 
       this.clearCompactionFrontier();
@@ -175,13 +279,13 @@ export class ModelAgentManager {
       if (this.hasStoredChatSettings(chatSettings)) {
         await this.restoreFromConversationMetadata(chatSettings);
       }
-    } catch (error) {
+    } catch {
       this.clearCompactionFrontier();
       await this.initializeDefaultModel();
     }
   }
 
-  private hasStoredChatSettings(settings: Record<string, unknown> | undefined): boolean {
+  private hasStoredChatSettings(settings: ConversationChatSettings | undefined): boolean {
     if (!settings) {
       return false;
     }
@@ -192,7 +296,7 @@ export class ModelAgentManager {
   /**
    * Restore settings from conversation metadata
    */
-  private async restoreFromConversationMetadata(settings: any): Promise<void> {
+  private async restoreFromConversationMetadata(settings: ConversationChatSettings): Promise<void> {
     // Restore model
     if (settings.providerId && settings.modelId) {
       try {
@@ -291,11 +395,14 @@ export class ModelAgentManager {
         return;
       }
 
-      this.selectedWorkspaceId = (fullWorkspaceData.id as string) || workspaceId;
+      this.selectedWorkspaceId = getStringProperty(fullWorkspaceData, 'id') || workspaceId;
 
       this.loadedWorkspaceData = fullWorkspaceData;
       // Also extract basic context for backward compatibility
-      this.workspaceContext = fullWorkspaceData.context || fullWorkspaceData.workspaceContext || null;
+      this.workspaceContext =
+        getWorkspaceContextProperty(fullWorkspaceData, 'context') ||
+        getWorkspaceContextProperty(fullWorkspaceData, 'workspaceContext') ||
+        null;
 
       // Bind session to workspace
       await this.workspaceIntegration.bindSessionToWorkspace(sessionId, this.selectedWorkspaceId);
@@ -337,8 +444,7 @@ export class ModelAgentManager {
       this.agentThinkingSettings = { enabled: false, effort: 'medium' };
 
       // Get plugin settings for defaults
-      const { getNexusPlugin } = await import('../../../utils/pluginLocator');
-      const plugin = getNexusPlugin<NexusPlugin>(this.app) as unknown as PluginWithSettings | null;
+      const plugin = this.getPluginWithSettings();
       const settings = plugin?.settings?.settings;
 
       // Load default thinking settings
@@ -370,7 +476,7 @@ export class ModelAgentManager {
       }
 
       // Load default context notes if set
-      if (settings?.defaultContextNotes && Array.isArray(settings.defaultContextNotes)) {
+      if (isStringArray(settings?.defaultContextNotes)) {
         this.contextNotesManager.setNotes(settings.defaultContextNotes);
       }
 
@@ -378,7 +484,7 @@ export class ModelAgentManager {
       if (settings?.defaultWorkspaceId) {
         try {
           await this.restoreWorkspace(settings.defaultWorkspaceId, undefined);
-        } catch (error) {
+        } catch {
           // Failed to load default workspace
         }
       }
@@ -395,7 +501,7 @@ export class ModelAgentManager {
             this.events.onSystemPromptChanged(this.currentSystemPrompt);
             return; // Prompt was set, don't reset
           }
-        } catch (error) {
+        } catch {
           // Failed to load default prompt
         }
       }
@@ -403,7 +509,7 @@ export class ModelAgentManager {
       // Notify listeners about the state (no prompt selected)
       this.events.onPromptChanged(null);
       this.events.onSystemPromptChanged(null);
-    } catch (error) {
+    } catch {
       // Failed to initialize defaults
     }
   }
@@ -438,7 +544,7 @@ export class ModelAgentManager {
       };
 
       await this.conversationService.updateConversationMetadata(conversationId, metadata);
-    } catch (error) {
+    } catch {
       // Failed to save to conversation
     }
   }
@@ -545,7 +651,7 @@ export class ModelAgentManager {
    * Get full loaded workspace data (sessions, states, files, etc.)
    * This is the comprehensive data used in system prompts
    */
-  getLoadedWorkspaceData(): any {
+  getLoadedWorkspaceData(): Record<string, unknown> | null {
     return this.loadedWorkspaceData;
   }
 
@@ -830,7 +936,7 @@ export class ModelAgentManager {
     compactionRecord: CompactedContext
   ): Record<string, unknown> {
     const frontier = this.compactionFrontierService.appendRecord(
-      this.getFrontierFromMetadata((metadata ?? {}) as ConversationMetadataWithCompaction),
+      this.getFrontierFromMetadata(metadata),
       compactionRecord
     );
     return this.buildMetadataWithCompactionFrontier(metadata, frontier);
@@ -840,9 +946,10 @@ export class ModelAgentManager {
     metadata: Record<string, unknown> | undefined,
     frontier: CompactedContext[]
   ): Record<string, unknown> {
-    const existingMetadata = (metadata ?? {}) as ConversationMetadataWithCompaction;
-    const existingCompaction = existingMetadata.compaction ?? {};
-    const { previousContext: _legacyPreviousContext, ...remainingCompaction } = existingCompaction;
+    const existingMetadata = { ...(metadata ?? {}) };
+    const existingCompaction = this.getCompactionSection(metadata);
+    const remainingCompaction = { ...(existingCompaction ?? {}) };
+    delete remainingCompaction.previousContext;
     const normalizedFrontier = this.compactionFrontierService.normalizeFrontier(frontier);
 
     return {
@@ -891,16 +998,16 @@ export class ModelAgentManager {
   }
 
   private getFrontierFromMetadata(
-    metadata: ConversationMetadataWithCompaction | undefined
+    metadata: Record<string, unknown> | undefined
   ): CompactionFrontierRecord[] {
-    const frontier = metadata?.compaction?.frontier;
+    const frontier = this.getCompactionSection(metadata)?.frontier;
     if (Array.isArray(frontier)) {
       return this.compactionFrontierService.normalizeFrontier(
         frontier.filter(this.isValidCompactedContext)
       );
     }
 
-    const legacyCompactionRecord = metadata?.compaction?.previousContext;
+    const legacyCompactionRecord = this.getCompactionSection(metadata)?.previousContext;
     if (this.isValidCompactedContext(legacyCompactionRecord)) {
       return this.compactionFrontierService.normalizeFrontier([legacyCompactionRecord]);
     }
@@ -908,13 +1015,31 @@ export class ModelAgentManager {
     return [];
   }
 
+  private getCompactionSection(metadata: Record<string, unknown> | undefined): ConversationCompactionMetadata | null {
+    const compaction = metadata?.compaction;
+    if (!isRecord(compaction)) {
+      return null;
+    }
+
+    const result: ConversationCompactionMetadata = {};
+
+    if (Array.isArray(compaction.frontier)) {
+      result.frontier = compaction.frontier.filter(this.isValidCompactedContext);
+    }
+
+    if (this.isValidCompactedContext(compaction.previousContext)) {
+      result.previousContext = compaction.previousContext;
+    }
+
+    return result;
+  }
+
   private isValidCompactedContext = (
     value: unknown
   ): value is CompactedContext => {
-    return !!value &&
-      typeof value === 'object' &&
-      typeof (value as CompactedContext).summary === 'string' &&
-      (value as CompactedContext).summary.length > 0;
+    return isRecord(value) &&
+      typeof value.summary === 'string' &&
+      value.summary.length > 0;
   };
 
   /**
@@ -1088,51 +1213,44 @@ export class ModelAgentManager {
    */
   private getToolAgentInfo(): ToolAgentInfo[] {
     try {
-      // Access plugin from app
-      const appWithPlugins = this.app as AppWithPlugins;
-      const plugin = appWithPlugins.plugins?.plugins?.['claudesidian-mcp'] as unknown as PluginWithSettings | undefined;
+      const plugin = this.getPluginWithSettings();
       if (!plugin) {
         return [];
       }
 
       // Try agentRegistrationService first (works on both desktop and mobile)
       const agentService = plugin.serviceManager?.getServiceIfReady?.('agentRegistrationService');
-      if (agentService) {
-        const agents = agentService.getAllAgents();
-        const agentMap = agents instanceof Map ? agents : new Map(agents.map((a: { name: string }) => [a.name, a]));
-
-        return Array.from(agentMap.entries()).map(([name, agent]: [string, any]) => {
-          const agentTools = agent.getTools?.() || [];
-          return {
-            name,
-            description: agent.description || '',
-            tools: agentTools.map((t: { slug?: string; name?: string }) => t.slug || t.name || 'unknown')
-          };
-        });
+      if (isAgentRegistryLike(agentService)) {
+        return this.mapToolAgents(normalizeAgentEntries(agentService.getAllAgents()));
       }
 
       // Fallback to connector's agentRegistry (desktop only)
       const connector = plugin.connector;
       if (connector?.agentRegistry) {
-        const agents = connector.agentRegistry.getAllAgents() as Map<string, any>;
-        const result: ToolAgentInfo[] = [];
-
-        for (const [name, agent] of agents) {
-          const agentTools = agent.getTools?.() || [];
-          result.push({
-            name,
-            description: agent.description || '',
-            tools: agentTools.map((t: { slug?: string; name?: string }) => t.slug || t.name || 'unknown')
-          });
-        }
-
-        return result;
+        return this.mapToolAgents(normalizeAgentEntries(connector.agentRegistry.getAllAgents()));
       }
 
       return [];
-    } catch (error) {
+    } catch {
       return [];
     }
+  }
+
+  private getPluginWithSettings(): PluginWithSettings | null {
+    const plugin = getNexusPlugin(this.app);
+    return isPluginWithSettings(plugin) ? plugin : null;
+  }
+
+  private mapToolAgents(agents: Array<[string, AgentLike]>): ToolAgentInfo[] {
+    return agents.map(([name, agent]) => {
+      const agentTools = agent.getTools?.();
+
+      return {
+        name,
+        description: typeof agent.description === 'string' ? agent.description : '',
+        tools: getAgentToolNames(agentTools)
+      };
+    });
   }
 
   /**
@@ -1146,7 +1264,7 @@ export class ModelAgentManager {
     try {
       const conversation = await this.conversationService.getConversation(this.currentConversationId);
       return conversation?.metadata?.chatSettings?.sessionId;
-    } catch (error) {
+    } catch {
       return undefined;
     }
   }

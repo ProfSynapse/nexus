@@ -11,11 +11,123 @@ import {
   LLMResponse,
   ModelInfo,
   ProviderCapabilities,
-  ModelPricing
+  ModelPricing,
+  TokenUsage,
+  Tool
 } from '../types';
 import { ANTHROPIC_MODELS, ANTHROPIC_DEFAULT_MODEL } from './AnthropicModels';
 import { ThinkingEffortMapper } from '../../utils/ThinkingEffortMapper';
-import { MCPToolExecution } from '../shared/ToolExecutionUtils';
+
+interface AnthropicUsageLike {
+  input_tokens?: number;
+  output_tokens?: number;
+  [key: string]: unknown;
+}
+
+interface AnthropicContentBlock {
+  type?: string;
+  text?: string;
+  id?: string;
+  name?: string;
+  input?: unknown;
+  thinking?: string;
+  [key: string]: unknown;
+}
+
+interface AnthropicConversationMessage {
+  role: 'user' | 'assistant' | 'system';
+  content: string | AnthropicContentBlock[];
+  [key: string]: unknown;
+}
+
+interface AnthropicRequestMessage {
+  role: 'user' | 'assistant';
+  content: string | AnthropicContentBlock[];
+  [key: string]: unknown;
+}
+
+interface AnthropicRequestParams {
+  model: string;
+  max_tokens: number;
+  messages: AnthropicRequestMessage[];
+  temperature?: number;
+  stream: true;
+  stop_sequences?: string[];
+  system?: string;
+  thinking?: {
+    type: 'enabled';
+    budget_tokens: number;
+  };
+  tools?: Array<Record<string, unknown>>;
+  [key: string]: unknown;
+}
+
+interface AnthropicStreamEvent {
+  type: string;
+  index?: number;
+  message?: {
+    usage?: AnthropicUsageLike;
+    [key: string]: unknown;
+  };
+  usage?: AnthropicUsageLike;
+  content_block?: {
+    type?: string;
+    id?: string;
+    name?: string;
+    input?: unknown;
+    [key: string]: unknown;
+  };
+  delta?: {
+    type?: string;
+    text?: string;
+    partial_json?: string;
+    thinking?: string;
+    [key: string]: unknown;
+  };
+  error?: {
+    message?: string;
+    [key: string]: unknown;
+  };
+  content?: AnthropicContentBlock[];
+  stop_reason?: string | null;
+  stop_sequence?: string;
+  model?: string;
+  [key: string]: unknown;
+}
+
+interface AnthropicResponseJson {
+  content?: AnthropicContentBlock[];
+  usage?: AnthropicUsageLike;
+  stop_reason?: string | null;
+  stop_sequence?: string;
+  model?: string;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isAnthropicStreamEvent(value: unknown): value is AnthropicStreamEvent {
+  return isRecord(value) && typeof value.type === 'string';
+}
+
+function isAnthropicContentBlock(value: unknown): value is AnthropicContentBlock {
+  return isRecord(value) && typeof value.type === 'string';
+}
+
+function isAnthropicConversationMessage(value: unknown): value is AnthropicConversationMessage {
+  return isRecord(value)
+    && (value.role === 'user' || value.role === 'assistant' || value.role === 'system')
+    && ('content' in value);
+}
+
+function isAnthropicUsageLike(value: unknown): value is AnthropicUsageLike {
+  return isRecord(value);
+}
+
+function getAnthropicSystemPrompt(message: AnthropicConversationMessage | undefined): string | undefined {
+  return typeof message?.content === 'string' ? message.content : undefined;
+}
 
 export class AnthropicAdapter extends BaseAdapter {
   readonly name = 'anthropic';
@@ -45,27 +157,32 @@ export class AnthropicAdapter extends BaseAdapter {
   async* generateStreamAsync(prompt: string, options?: GenerateOptions): AsyncGenerator<StreamChunk, void, unknown> {
     try {
       // Build messages - use conversation history if provided (for tool continuations)
-      let messages: any[];
-      if (options?.conversationHistory && options.conversationHistory.length > 0) {
+      let messages: AnthropicConversationMessage[];
+      if (
+        Array.isArray(options?.conversationHistory) &&
+        options.conversationHistory.length > 0 &&
+        options.conversationHistory.every(isAnthropicConversationMessage)
+      ) {
         // Use provided conversation history for tool continuations
         messages = options.conversationHistory;
       } else {
         // Build simple messages for initial request
-        messages = this.buildMessages(prompt, options?.systemPrompt);
+        messages = this.buildMessages(prompt, options?.systemPrompt).filter(isAnthropicConversationMessage);
       }
 
-      const requestParams: any = {
+      const requestParams: AnthropicRequestParams = {
         model: this.normalizeModelId(options?.model || this.currentModel),
         max_tokens: options?.maxTokens || 4096,
-        messages: messages.filter(msg => msg.role !== 'system'),
+        messages: messages.filter((msg): msg is AnthropicRequestMessage => msg.role !== 'system'),
         temperature: options?.temperature,
         stream: true
       };
 
       // Add system message if provided (either from messages or from options)
       const systemMessage = messages.find(msg => msg.role === 'system');
-      if (systemMessage) {
-        requestParams.system = systemMessage.content;
+      const systemPrompt = getAnthropicSystemPrompt(systemMessage);
+      if (systemPrompt) {
+        requestParams.system = systemPrompt;
       } else if (options?.systemPrompt) {
         requestParams.system = options.systemPrompt;
       }
@@ -103,7 +220,7 @@ export class AnthropicAdapter extends BaseAdapter {
       // Look up model spec for beta headers (sent via HTTP header, not body field)
       const modelSpec = ANTHROPIC_MODELS.find(m => m.apiName === this.normalizeModelId(options?.model || this.currentModel));
 
-      let usage: any = undefined;
+      let usage: AnthropicUsageLike | undefined = undefined;
       let thinkingBlockIndex: number | null = null;  // Track thinking block for completion
       const nodeStream = await this.requestStream({
         url: `${this.baseUrl}/v1/messages`,
@@ -117,6 +234,9 @@ export class AnthropicAdapter extends BaseAdapter {
       yield* this.processNodeStream(nodeStream, {
         debugLabel: 'Anthropic',
         extractContent: (event) => {
+          if (!isAnthropicStreamEvent(event)) {
+            return null;
+          }
           if (event.type === 'message_start' && event.message?.usage) {
             usage = event.message.usage;
           } else if (event.type === 'message_delta' && event.usage) {
@@ -131,6 +251,9 @@ export class AnthropicAdapter extends BaseAdapter {
           return null;
         },
         extractToolCalls: (event) => {
+          if (!isAnthropicStreamEvent(event)) {
+            return null;
+          }
           if (event.type === 'content_block_start' && event.content_block?.type === 'tool_use') {
             return [{
               index: event.index,
@@ -155,6 +278,9 @@ export class AnthropicAdapter extends BaseAdapter {
           return null;
         },
         extractFinishReason: (event) => {
+          if (!isAnthropicStreamEvent(event)) {
+            return null;
+          }
           if (event.type === 'message_stop') {
             return 'stop';
           }
@@ -165,6 +291,9 @@ export class AnthropicAdapter extends BaseAdapter {
         },
         extractUsage: () => usage,
         extractReasoning: (event) => {
+          if (!isAnthropicStreamEvent(event)) {
+            return null;
+          }
           if (event.type === 'content_block_delta' && event.delta?.type === 'thinking_delta') {
             return {
               text: event.delta.thinking || '',
@@ -249,20 +378,21 @@ export class AnthropicAdapter extends BaseAdapter {
    * Generate using basic message API without tools
    */
   private async generateWithBasicMessages(prompt: string, options?: GenerateOptions): Promise<LLMResponse> {
-    const messages = this.buildMessages(prompt, options?.systemPrompt);
+    const messages = this.buildMessages(prompt, options?.systemPrompt).filter(isAnthropicConversationMessage);
     
-    const requestParams: any = {
+    const requestParams: AnthropicRequestParams = {
       model: options?.model || this.currentModel,
       max_tokens: options?.maxTokens || 4096,
-      messages: messages.filter(msg => msg.role !== 'system'),
+      messages: messages.filter((msg): msg is AnthropicRequestMessage => msg.role !== 'system'),
       temperature: options?.temperature,
       stop_sequences: options?.stopSequences
     };
 
     // Add system message if provided
     const systemMessage = messages.find(msg => msg.role === 'system');
-    if (systemMessage) {
-      requestParams.system = systemMessage.content;
+    const systemPrompt = getAnthropicSystemPrompt(systemMessage);
+    if (systemPrompt) {
+      requestParams.system = systemPrompt;
     }
 
     // Extended thinking mode for Claude 4 models
@@ -298,7 +428,7 @@ export class AnthropicAdapter extends BaseAdapter {
     // Look up model spec for beta headers (sent via HTTP header, not body field)
     const modelSpec = ANTHROPIC_MODELS.find(m => m.apiName === this.normalizeModelId(options?.model || this.currentModel));
 
-    const response = await this.request<any>({
+    const response = await this.request<AnthropicResponseJson>({
       url: `${this.baseUrl}/v1/messages`,
       operation: 'generation',
       method: 'POST',
@@ -308,6 +438,9 @@ export class AnthropicAdapter extends BaseAdapter {
     });
     this.assertOk(response, `Anthropic generation failed: HTTP ${response.status}`);
     const responseJson = response.json;
+    if (!responseJson) {
+      throw new Error('Anthropic response missing JSON body');
+    }
     
     const extractedUsage = this.extractUsage(responseJson);
     const finishReason = this.mapStopReason(responseJson.stop_reason);
@@ -357,31 +490,38 @@ export class AnthropicAdapter extends BaseAdapter {
     return headers;
   }
 
-  private convertTools(tools: any[]): any[] {
+  private convertTools(tools: readonly Tool[]): Array<Record<string, unknown>> {
     return tools.map(tool => {
-      if (tool.type === 'function') {
+      if (tool.type === 'function' && tool.function) {
         // Handle both nested (Chat Completions) and flat (Responses API) formats
-        const toolDef = tool.function || tool;
+        const toolDef = tool.function;
         return {
           name: toolDef.name,
           description: toolDef.description,
           input_schema: toolDef.parameters || toolDef.input_schema
         };
       }
-      return tool;
+      return { ...tool };
     });
   }
 
-  private extractTextFromContent(content: any[]): string {
-    return content
-      .filter(block => block.type === 'text')
+  private extractTextFromContent(content: AnthropicContentBlock[] | undefined): string {
+    return (content ?? [])
+      .filter((block): block is AnthropicContentBlock & { type: 'text'; text: string } => {
+        return isAnthropicContentBlock(block) && block.type === 'text' && typeof block.text === 'string';
+      })
       .map(block => block.text)
       .join('');
   }
 
-  private extractToolCalls(content: any[]): any[] {
-    return content
-      .filter(block => block.type === 'tool_use')
+  private extractToolCalls(content: AnthropicContentBlock[] | undefined): LLMResponse['toolCalls'] {
+    return (content ?? [])
+      .filter((block): block is AnthropicContentBlock & { type: 'tool_use'; id: string; name: string; input?: unknown } => {
+        return isAnthropicContentBlock(block)
+          && block.type === 'tool_use'
+          && typeof block.id === 'string'
+          && typeof block.name === 'string';
+      })
       .map(block => ({
         id: block.id,
         type: 'function',
@@ -392,11 +532,13 @@ export class AnthropicAdapter extends BaseAdapter {
       }));
   }
 
-  private extractThinking(response: any): string | undefined {
+  private extractThinking(response: AnthropicResponseJson): string | undefined {
     // Extract thinking process from response if available
-    const thinkingBlocks = response.content?.filter((block: { type: string; thinking?: string }) => block.type === 'thinking') || [];
+    const thinkingBlocks = (response.content ?? []).filter((block): block is AnthropicContentBlock & { type: 'thinking'; thinking?: string } => {
+      return isAnthropicContentBlock(block) && block.type === 'thinking';
+    });
     if (thinkingBlocks.length > 0) {
-      return thinkingBlocks.map((block: { thinking?: string }) => block.thinking).join('\n');
+      return thinkingBlocks.map(block => block.thinking || '').join('\n');
     }
     return undefined;
   }
@@ -413,8 +555,8 @@ export class AnthropicAdapter extends BaseAdapter {
     return reasonMap[reason] || 'stop';
   }
 
-  protected extractUsage(response: any): any {
-    if (response.usage) {
+  protected extractUsage(response: AnthropicResponseJson): TokenUsage | undefined {
+    if (isAnthropicUsageLike(response.usage)) {
       return {
         promptTokens: response.usage.input_tokens || 0,
         completionTokens: response.usage.output_tokens || 0,

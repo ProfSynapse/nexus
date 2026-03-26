@@ -193,7 +193,7 @@ export class StreamingOrchestrator {
         ) {
           const fallbackAdapter = this.adapterRegistry.getAdapter('openai');
           if (fallbackAdapter) {
-            new Notice('ChatGPT rate limit reached — falling back to OpenAI API');
+            new Notice('Rate limit reached — falling back to the API');
             activeAdapter = fallbackAdapter;
             activeProvider = 'openai';
 

@@ -13,7 +13,7 @@
  * - Configuration file handling
  */
 
-import { Vault, TFile, TFolder, normalizePath } from 'obsidian';
+import { Vault, TFile, TFolder } from 'obsidian';
 import { ObsidianPathManager } from './ObsidianPathManager';
 import { StructuredLogger } from './StructuredLogger';
 
@@ -254,7 +254,7 @@ export class VaultOperations {
       const file = await this.getFile(normalizedPath);
       
       if (file) {
-        await this.vault.delete(file);
+        await this.pathManager.getApp().fileManager.trashFile(file);
         this.fileCache.delete(normalizedPath);
         this.logger.debug(`Deleted file: ${normalizedPath}`);
         return true;
@@ -277,7 +277,7 @@ export class VaultOperations {
       const folder = await this.getFolder(normalizedPath);
       
       if (folder) {
-        await this.vault.delete(folder);
+        await this.pathManager.getApp().fileManager.trashFile(folder);
         this.logger.debug(`Deleted folder: ${normalizedPath}`);
         return true;
       }

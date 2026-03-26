@@ -245,9 +245,11 @@ export class SettingsView extends PluginSettingTab {
         const header = containerEl.createDiv('nexus-settings-header');
 
         // Title and description
-        header.createEl('h2', { text: 'Nexus' });
+        new Setting(header)
+            .setName('About')
+            .setHeading();
         header.createEl('p', {
-            text: 'AI-powered assistant for your Obsidian vault',
+            text: 'A chat assistant for your Obsidian vault.',
             cls: 'nexus-settings-desc'
         });
 

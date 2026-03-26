@@ -27,13 +27,13 @@ export class ConfigModal extends Modal {
         const { contentEl } = this;
         contentEl.empty();
         
-        contentEl.createEl('h2', { text: 'MCP Configuration' });
+        contentEl.createEl('h2', { text: 'Desktop configuration' });
 
         // Add configuration type toggle
         const toggleContainer = contentEl.createDiv({ cls: 'mcp-config-toggle' });
-        toggleContainer.createEl('span', { text: 'Configuration Type:', cls: 'mcp-config-label' });
+        toggleContainer.createEl('span', { text: 'Configuration type:', cls: 'mcp-config-label' });
         new Setting(toggleContainer)
-            .setName('First Time Setup')
+            .setName('First time setup')
             .setDesc('Toggle between first-time setup and adding to existing configuration')
             .addToggle(toggle => toggle
                 .setValue(this.isFirstTimeSetup)
@@ -130,7 +130,7 @@ export class ConfigModal extends Modal {
         step1.appendText(' → ');
         step1.createEl('strong', { text: 'Developer' });
         step1.appendText(' → ');
-        step1.createEl('strong', { text: 'Edit Config' });
+        step1.createEl('strong', { text: 'Edit config' });
         step1.appendText(' (this creates the config file if it doesn\'t exist)');
 
         // Step 2: Alternative - use file link
@@ -160,7 +160,7 @@ export class ConfigModal extends Modal {
         
         // Copy button
         const copyButton = windowsContent.createEl('button', {
-            text: 'Copy Configuration',
+            text: 'Copy configuration',
             cls: 'mod-cta'
         });
         
@@ -171,7 +171,7 @@ export class ConfigModal extends Modal {
             ? 'Paste this into your config file, replacing any existing content'
             : 'Add this to the mcpServers section of your existing config file'
         });
-        steps.createEl('li', { text: 'Save the file and restart Claude Desktop' });
+        steps.createEl('li', { text: 'Save the file, then restart the desktop app.' });
     }
     
     /**
@@ -194,7 +194,7 @@ export class ConfigModal extends Modal {
         step1.appendText(' → ');
         step1.createEl('strong', { text: 'Developer' });
         step1.appendText(' → ');
-        step1.createEl('strong', { text: 'Edit Config' });
+        step1.createEl('strong', { text: 'Edit config' });
         step1.appendText(' (this creates the config file if it doesn\'t exist)');
 
         // Step 2: Alternative - use file link
@@ -224,7 +224,7 @@ export class ConfigModal extends Modal {
         
         // Copy button
         const copyButton = macContent.createEl('button', {
-            text: 'Copy Configuration',
+            text: 'Copy configuration',
             cls: 'mod-cta'
         });
         
@@ -235,7 +235,7 @@ export class ConfigModal extends Modal {
             ? 'Paste this into your config file, replacing any existing content'
             : 'Add this to the mcpServers section of your existing config file'
         });
-        steps.createEl('li', { text: 'Save the file and restart Claude Desktop' });
+        steps.createEl('li', { text: 'Save the file, then restart the desktop app.' });
     }
     
     /**
@@ -258,7 +258,7 @@ export class ConfigModal extends Modal {
         step1.appendText(' → ');
         step1.createEl('strong', { text: 'Developer' });
         step1.appendText(' → ');
-        step1.createEl('strong', { text: 'Edit Config' });
+        step1.createEl('strong', { text: 'Edit config' });
         step1.appendText(' (this creates the config file if it doesn\'t exist)');
 
         // Step 2: Alternative - use file link
@@ -288,7 +288,7 @@ export class ConfigModal extends Modal {
         
         // Copy button
         const copyButton = linuxContent.createEl('button', {
-            text: 'Copy Configuration',
+            text: 'Copy configuration',
             cls: 'mod-cta'
         });
         
@@ -299,7 +299,7 @@ export class ConfigModal extends Modal {
             ? 'Paste this into your config file, replacing any existing content'
             : 'Add this to the mcpServers section of your existing config file'
         });
-        steps.createEl('li', { text: 'Save the file and restart Claude Desktop' });
+        steps.createEl('li', { text: 'Save the file, then restart the desktop app.' });
     }
     
     /**
@@ -403,14 +403,13 @@ export class ConfigModal extends Modal {
         const pluginFolders = getAllPluginIds();
         for (const folder of pluginFolders) {
             // Use vault-relative path for adapter checks
-            const relativeConnectorPath = normalizePath(`.obsidian/plugins/${folder}/connector.js`);
+            const relativeConnectorPath = normalizePath(`${this.app.vault.configDir}/plugins/${folder}/connector.js`);
             try {
                 const exists = await adapter.exists(relativeConnectorPath);
                 if (exists) {
                     // Prefer absolute path when available (desktop FileSystemAdapter)
                     if (vaultRoot && Platform.isDesktop) {
-                        const nodePath = require('path') as typeof import('path');
-                        return nodePath.join(vaultRoot, relativeConnectorPath);
+                        return `${vaultRoot}/${relativeConnectorPath}`;
                     }
                     return relativeConnectorPath;
                 }
@@ -420,10 +419,9 @@ export class ConfigModal extends Modal {
         }
 
         // Default to the primary folder even if we couldn't verify existence
-        const fallbackRelative = normalizePath(`.obsidian/plugins/${pluginFolders[0]}/connector.js`);
+        const fallbackRelative = normalizePath(`${this.app.vault.configDir}/plugins/${pluginFolders[0]}/connector.js`);
         if (vaultRoot && Platform.isDesktop) {
-            const nodePath = require('path') as typeof import('path');
-            return nodePath.join(vaultRoot, fallbackRelative);
+            return `${vaultRoot}/${fallbackRelative}`;
         }
         return fallbackRelative;
     }
@@ -454,7 +452,7 @@ export class ConfigModal extends Modal {
             copyButton.onclick = () => {
                 navigator.clipboard.writeText(JSON.stringify(config, null, 2));
                 copyButton.setText('Copied!');
-                setTimeout(() => copyButton.setText('Copy Configuration'), 2000);
+                setTimeout(() => copyButton.setText('Copy configuration'), 2000);
             };
         } catch (error) {
             console.error(`[ConfigModal] Failed to populate config for ${tabId}:`, error);
@@ -479,8 +477,7 @@ export class ConfigModal extends Modal {
      */
     private getWindowsConfigPath(): string {
         if (Platform.isDesktop) {
-            const nodePath = require('path') as typeof import('path');
-            return nodePath.join(process.env.APPDATA || '', 'Claude', 'claude_desktop_config.json');
+            return normalizePath(`${process.env.APPDATA || ''}/Claude/claude_desktop_config.json`);
         }
         return '';
     }
@@ -491,8 +488,7 @@ export class ConfigModal extends Modal {
      */
     private getMacConfigPath(): string {
         if (Platform.isDesktop) {
-            const nodePath = require('path') as typeof import('path');
-            return nodePath.join(process.env.HOME || '', 'Library', 'Application Support', 'Claude', 'claude_desktop_config.json');
+            return normalizePath(`${process.env.HOME || ''}/Library/Application Support/Claude/claude_desktop_config.json`);
         }
         return '';
     }
@@ -503,8 +499,7 @@ export class ConfigModal extends Modal {
      */
     private getLinuxConfigPath(): string {
         if (Platform.isDesktop) {
-            const nodePath = require('path') as typeof import('path');
-            return nodePath.join(process.env.HOME || '', '.config', 'Claude', 'claude_desktop_config.json');
+            return normalizePath(`${process.env.HOME || ''}/.config/Claude/claude_desktop_config.json`);
         }
         return '';
     }

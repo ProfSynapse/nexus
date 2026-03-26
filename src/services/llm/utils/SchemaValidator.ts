@@ -12,6 +12,39 @@
  */
 
 export class SchemaValidator {
+  private static isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+  }
+
+  private static isStringArray(value: unknown): value is string[] {
+    return Array.isArray(value) && value.every(item => typeof item === 'string');
+  }
+
+  private static isUnknownArray(value: unknown): value is unknown[] {
+    return Array.isArray(value);
+  }
+
+  private static getSchemaType(schema: Record<string, unknown>): string | string[] | undefined {
+    const schemaType = schema.type;
+    if (typeof schemaType === 'string' || this.isStringArray(schemaType)) {
+      return schemaType;
+    }
+
+    return undefined;
+  }
+
+  private static hasProperty(schema: Record<string, unknown>, key: string): boolean {
+    return Object.prototype.hasOwnProperty.call(schema, key);
+  }
+
+  private static addNullToSchemaType(type: string | string[]): string | string[] {
+    if (Array.isArray(type)) {
+      return type.includes('null') ? type : [...type, 'null'];
+    }
+
+    return type === 'null' ? type : [type, 'null'];
+  }
+
   /**
    * Validate data against a JSON schema
    * Basic implementation that checks:
@@ -19,28 +52,36 @@ export class SchemaValidator {
    * - Required properties
    * - Nested object validation
    */
-  static validateSchema(data: any, schema: any): boolean {
+  static validateSchema(data: unknown, schema: unknown): boolean {
     // Basic schema validation - could be enhanced with a proper validator
-    if (typeof schema !== 'object' || schema === null) {
+    if (!this.isRecord(schema)) {
       return true;
     }
 
-    if (schema.type) {
-      const expectedType = schema.type;
-      const actualType = Array.isArray(data) ? 'array' : typeof data;
+    const expectedType = this.getSchemaType(schema);
+    if (expectedType !== undefined) {
+      const actualType = Array.isArray(data) ? 'array' : data === null ? 'null' : typeof data;
 
-      if (expectedType !== actualType) {
+      if (Array.isArray(expectedType)) {
+        if (!expectedType.includes(actualType)) {
+          return false;
+        }
+      } else if (expectedType !== actualType) {
         return false;
       }
     }
 
-    if (schema.properties && typeof data === 'object') {
+    if (this.isRecord(schema.properties) && this.isRecord(data)) {
+      const requiredProperties = Array.isArray(schema.required)
+        ? schema.required.filter((key): key is string => typeof key === 'string')
+        : [];
+
       for (const [key, propSchema] of Object.entries(schema.properties)) {
-        if (schema.required?.includes(key) && !(key in data)) {
+        if (requiredProperties.includes(key) && !this.hasProperty(data, key)) {
           return false;
         }
 
-        if (key in data && !this.validateSchema(data[key], propSchema)) {
+        if (this.hasProperty(data, key) && !this.validateSchema(data[key], propSchema)) {
           return false;
         }
       }
@@ -69,13 +110,13 @@ export class SchemaValidator {
    *
    * Note: For nullable types, use type arrays like ["string", "null"] instead of nullable property
    */
-  static sanitizeSchemaForGoogle(schema: any): any {
-    if (!schema || typeof schema !== 'object') {
+  static sanitizeSchemaForGoogle(schema: unknown): unknown {
+    if (!this.isRecord(schema)) {
       return schema;
     }
 
     // Create a clean copy
-    const sanitized: any = {};
+    const sanitized: Record<string, unknown> = {};
 
     // Properties officially supported by Google Gemini (as per docs)
     const allowedProperties = [
@@ -97,26 +138,20 @@ export class SchemaValidator {
 
     // Copy allowed properties
     for (const key of allowedProperties) {
-      if (key in schema) {
+      if (this.hasProperty(schema, key)) {
         sanitized[key] = schema[key];
       }
     }
 
     // Handle nullable types - convert to type array if needed
-    if (schema.nullable === true && sanitized.type && sanitized.type !== 'null') {
-      if (Array.isArray(sanitized.type)) {
-        if (!sanitized.type.includes('null')) {
-          sanitized.type = [...sanitized.type, 'null'];
-        }
-      } else {
-        sanitized.type = [sanitized.type, 'null'];
-      }
+    if (schema.nullable === true && (typeof sanitized.type === 'string' || Array.isArray(sanitized.type)) && sanitized.type !== 'null') {
+      sanitized.type = this.addNullToSchemaType(sanitized.type);
       delete sanitized.nullable; // Remove after converting to type array
     }
 
     // Recursively sanitize nested properties
-    if (sanitized.properties && typeof sanitized.properties === 'object') {
-      const cleanProps: any = {};
+    if (this.isRecord(sanitized.properties)) {
+      const cleanProps: Record<string, unknown> = {};
       for (const [propName, propSchema] of Object.entries(sanitized.properties)) {
         cleanProps[propName] = this.sanitizeSchemaForGoogle(propSchema);
       }
@@ -125,33 +160,32 @@ export class SchemaValidator {
 
     // Recursively sanitize array items
     if (sanitized.items) {
-      if (Array.isArray(sanitized.items)) {
+      const items = sanitized.items;
+      if (this.isUnknownArray(items)) {
         // Convert array of schemas to prefixItems (tuple validation)
-        sanitized.prefixItems = sanitized.items.map((itemSchema: Record<string, unknown>) =>
-          this.sanitizeSchemaForGoogle(itemSchema)
-        );
+        sanitized.prefixItems = items.map((itemSchema: unknown) => this.sanitizeSchemaForGoogle(itemSchema));
         delete sanitized.items;
-      } else if (typeof sanitized.items === 'object') {
-        sanitized.items = this.sanitizeSchemaForGoogle(sanitized.items);
+      } else if (this.isRecord(items)) {
+        sanitized.items = this.sanitizeSchemaForGoogle(items);
       }
     }
 
     // Recursively sanitize prefixItems (tuple schemas)
-    if (sanitized.prefixItems && Array.isArray(sanitized.prefixItems)) {
-      sanitized.prefixItems = sanitized.prefixItems.map((itemSchema: Record<string, unknown>) =>
-        this.sanitizeSchemaForGoogle(itemSchema)
-      );
+    if (this.isUnknownArray(sanitized.prefixItems)) {
+      const prefixItems = sanitized.prefixItems;
+      sanitized.prefixItems = prefixItems.map((itemSchema: unknown) => this.sanitizeSchemaForGoogle(itemSchema));
     }
 
     // Recursively sanitize additionalProperties if it's a schema
-    if (sanitized.additionalProperties && typeof sanitized.additionalProperties === 'object') {
+    if (this.isRecord(sanitized.additionalProperties)) {
       sanitized.additionalProperties = this.sanitizeSchemaForGoogle(sanitized.additionalProperties);
     }
 
     // CRITICAL: Validate required array - remove any properties that don't exist in sanitized.properties
-    if (sanitized.required && Array.isArray(sanitized.required) && sanitized.properties) {
-      sanitized.required = sanitized.required.filter((propName: string) => {
-        return propName in sanitized.properties;
+    if (Array.isArray(sanitized.required) && this.isRecord(sanitized.properties)) {
+      const properties = sanitized.properties;
+      sanitized.required = sanitized.required.filter((propName): propName is string => {
+        return typeof propName === 'string' && propName in properties;
       });
 
       // If required array is now empty, remove it
@@ -167,8 +201,8 @@ export class SchemaValidator {
    * Validate that a schema is suitable for Google Gemini
    * Returns validation result with error details if invalid
    */
-  static validateGoogleSchema(schema: any, schemaName?: string): { valid: boolean; error?: string } {
-    if (!schema || typeof schema !== 'object') {
+  static validateGoogleSchema(schema: unknown, schemaName?: string): { valid: boolean; error?: string } {
+    if (!this.isRecord(schema)) {
       return { valid: false, error: 'Schema must be an object' };
     }
 
@@ -201,7 +235,7 @@ export class SchemaValidator {
     }
 
     // Recursively validate nested properties
-    if (schema.properties && typeof schema.properties === 'object') {
+    if (this.isRecord(schema.properties)) {
       for (const [propName, propSchema] of Object.entries(schema.properties)) {
         const result = this.validateGoogleSchema(propSchema, `${schemaName}.${propName}`);
         if (!result.valid) {
@@ -211,7 +245,7 @@ export class SchemaValidator {
     }
 
     // Validate array items
-    if (schema.items && typeof schema.items === 'object' && !Array.isArray(schema.items)) {
+    if (this.isRecord(schema.items)) {
       const result = this.validateGoogleSchema(schema.items, `${schemaName}.items`);
       if (!result.valid) {
         return result;
@@ -224,15 +258,15 @@ export class SchemaValidator {
   /**
    * Calculate the maximum depth of a schema (for complexity checking)
    */
-  private static calculateSchemaDepth(schema: any, currentDepth: number = 0): number {
-    if (!schema || typeof schema !== 'object' || currentDepth > 20) {
+  private static calculateSchemaDepth(schema: unknown, currentDepth: number = 0): number {
+    if (!this.isRecord(schema) || currentDepth > 20) {
       return currentDepth;
     }
 
     let maxDepth = currentDepth;
 
     // Check nested properties
-    if (schema.properties && typeof schema.properties === 'object') {
+    if (this.isRecord(schema.properties)) {
       for (const propSchema of Object.values(schema.properties)) {
         const depth = this.calculateSchemaDepth(propSchema, currentDepth + 1);
         maxDepth = Math.max(maxDepth, depth);
@@ -240,13 +274,13 @@ export class SchemaValidator {
     }
 
     // Check array items
-    if (schema.items && typeof schema.items === 'object') {
+    if (this.isRecord(schema.items)) {
       const depth = this.calculateSchemaDepth(schema.items, currentDepth + 1);
       maxDepth = Math.max(maxDepth, depth);
     }
 
     // Check additionalProperties
-    if (schema.additionalProperties && typeof schema.additionalProperties === 'object') {
+    if (this.isRecord(schema.additionalProperties)) {
       const depth = this.calculateSchemaDepth(schema.additionalProperties, currentDepth + 1);
       maxDepth = Math.max(maxDepth, depth);
     }

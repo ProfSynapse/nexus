@@ -40,6 +40,51 @@ export interface StateSummary {
   workspaceId?: string;
 }
 
+interface SessionRecordLike {
+  id: string;
+  name?: string;
+  description?: string;
+  startTime?: number;
+  workspaceId?: string;
+}
+
+interface WorkspaceStateRecordLike {
+  workspaceId?: string;
+  description?: string;
+  sessionId?: string;
+  metadata?: {
+    tags?: string[];
+    isArchived?: boolean;
+  };
+}
+
+interface StateRecordLike {
+  id: string;
+  name?: string;
+  description?: string;
+  sessionId?: string;
+  created?: number;
+  timestamp?: number;
+  workspaceId?: string;
+  state?: WorkspaceStateRecordLike;
+}
+
+interface WorkspaceMemoryServiceLike {
+  getSessions(workspaceId: string): Promise<PaginatedResult<SessionRecordLike>>;
+  getStates(
+    workspaceId: string,
+    sessionId?: string,
+    options?: PaginationParams
+  ): Promise<PaginatedResult<StateRecordLike>>;
+}
+
+function isWorkspaceMemoryService(value: unknown): value is WorkspaceMemoryServiceLike {
+  return typeof value === 'object' &&
+    value !== null &&
+    typeof (value as WorkspaceMemoryServiceLike).getSessions === 'function' &&
+    typeof (value as WorkspaceMemoryServiceLike).getStates === 'function';
+}
+
 /**
  * Service for fetching workspace sessions and states
  * Implements Single Responsibility Principle - only handles data fetching
@@ -54,11 +99,11 @@ export class WorkspaceDataFetcher {
    */
   async fetchWorkspaceSessions(
     workspaceId: string,
-    memoryService: any,
+    memoryService: unknown,
     options?: PaginationParams
   ): Promise<PaginatedResult<SessionSummary>> {
     try {
-      if (!memoryService) {
+      if (!isWorkspaceMemoryService(memoryService)) {
         return createEmptyPaginatedResult<SessionSummary>(0, options?.pageSize ?? 10);
       }
 
@@ -67,14 +112,11 @@ export class WorkspaceDataFetcher {
         return createEmptyPaginatedResult<SessionSummary>(0, options?.pageSize ?? 10);
       }
 
-      // getSessions returns PaginatedResult<WorkspaceSession>
       const sessionsResult = await memoryService.getSessions(workspaceId);
-      const sessions = sessionsResult.items || [];
+      const sessions = sessionsResult.items ?? [];
 
       // Defensive validation: ensure all sessions belong to workspace
-      const validSessions = sessions.filter((session: { isActive?: boolean; workspaceId?: string }) =>
-        session.workspaceId === workspaceId
-      );
+      const validSessions = sessions.filter((session) => session.workspaceId === workspaceId);
 
       if (validSessions.length !== sessions.length) {
         console.error(
@@ -84,12 +126,12 @@ export class WorkspaceDataFetcher {
       }
 
       // Map to session summaries
-      const sessionSummaries = validSessions.map((session: { id: string; name?: string; description?: string; isActive?: boolean; startTime?: number; workspaceId?: string }) => ({
+      const sessionSummaries = validSessions.map((session) => ({
         id: session.id,
         name: session.name,
         description: session.description,
-        created: session.startTime,
-        workspaceId: session.workspaceId // Include for validation
+        created: session.startTime ?? 0,
+        workspaceId: session.workspaceId
       }));
 
       // Apply manual pagination since getSessions doesn't support it yet
@@ -125,11 +167,11 @@ export class WorkspaceDataFetcher {
    */
   async fetchWorkspaceStates(
     workspaceId: string,
-    memoryService: any,
+    memoryService: unknown,
     options?: PaginationParams
   ): Promise<PaginatedResult<StateSummary>> {
     try {
-      if (!memoryService) {
+      if (!isWorkspaceMemoryService(memoryService)) {
         return createEmptyPaginatedResult<StateSummary>(0, options?.pageSize ?? 10);
       }
 
@@ -138,14 +180,11 @@ export class WorkspaceDataFetcher {
         return createEmptyPaginatedResult<StateSummary>(0, options?.pageSize ?? 10);
       }
 
-      // getStates returns PaginatedResult - pass pagination options
       const statesResult = await memoryService.getStates(workspaceId, undefined, options);
-
-      // Extract items from paginated result
-      const states = statesResult.items;
+      const states = statesResult.items ?? [];
 
       // Defensive validation: ensure all states belong to workspace
-      const validStates = states.filter((state: { isArchived?: boolean; workspaceId?: string; state?: { workspaceId?: string } }) =>
+      const validStates = states.filter((state) =>
         state.state?.workspaceId === workspaceId || state.workspaceId === workspaceId
       );
 
@@ -157,29 +196,14 @@ export class WorkspaceDataFetcher {
       }
 
       // Map to state summaries
-      const stateSummaries = validStates.map((state: {
-        id: string;
-        name?: string;
-        description?: string;
-        sessionId?: string;
-        isArchived?: boolean;
-        created?: number;
-        timestamp?: number;
-        workspaceId?: string;
-        state?: {
-          description?: string;
-          sessionId?: string;
-          workspaceId?: string;
-          metadata?: { tags?: string[] }
-        }
-      }) => ({
+      const stateSummaries = validStates.map((state) => ({
         id: state.id,
         name: state.name,
-        description: state.description || state.state?.description,
-        sessionId: state.sessionId || state.state?.sessionId,
-        created: state.created || state.timestamp,
-        tags: state.state?.metadata?.tags || [],
-        workspaceId: state.state?.workspaceId || state.workspaceId // Include for validation
+        description: state.description ?? state.state?.description,
+        sessionId: state.sessionId ?? state.state?.sessionId ?? '',
+        created: state.created ?? state.timestamp ?? 0,
+        tags: state.state?.metadata?.tags ?? [],
+        workspaceId: state.state?.workspaceId ?? state.workspaceId
       }));
 
       // Return with pagination metadata from the original result

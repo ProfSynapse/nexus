@@ -27,7 +27,7 @@
 // @ts-ignore - esbuild alias handling
 import sqlite3InitModule from '@dao-xyz/sqlite3-vec/wasm';
 
-import { App, normalizePath } from 'obsidian';
+import { App } from 'obsidian';
 import { PaginatedResult, PaginationParams } from '../../types/pagination/PaginationTypes';
 import { IStorageBackend, RunResult, DatabaseStats } from '../interfaces/IStorageBackend';
 import type { SyncState, ISQLiteCacheManager } from '../sync/SyncCoordinator';
@@ -35,7 +35,7 @@ import { SQLiteSearchService } from './SQLiteSearchService';
 
 // Import schema from TypeScript module (esbuild compatible)
 import { SCHEMA_SQL } from '../schema/schema';
-import { SchemaMigrator, CURRENT_SCHEMA_VERSION } from '../schema/SchemaMigrator';
+import { SchemaMigrator } from '../schema/SchemaMigrator';
 
 export interface SQLiteCacheManagerOptions {
   app: App;
@@ -48,30 +48,80 @@ export interface QueryResult<T> {
   totalCount?: number;
 }
 
+type SqliteBindValue = string | number | bigint | ArrayBuffer | ArrayBufferView | null;
+type SqliteBindParams = readonly SqliteBindValue[];
+
+interface SqliteStatement {
+  bind(params: SqliteBindParams): void;
+  step(): boolean;
+  stepReset(): void;
+  get(columns: readonly string[]): unknown[];
+  get(columns: Record<string, never>): Record<string, unknown>;
+  finalize(): void;
+}
+
+interface SqliteDatabase {
+  pointer: number;
+  prepare(sql: string): SqliteStatement;
+  exec(sql: string): void;
+  close(): void;
+  changes(): number;
+  selectValue(sql: string): unknown;
+}
+
+interface Sqlite3Module {
+  oo1: {
+    DB: new (filename: string) => SqliteDatabase;
+  };
+  capi: {
+    sqlite3_deserialize(
+      dbPointer: number,
+      schema: string,
+      ptr: number,
+      size: number,
+      maxSize: number,
+      flags: number
+    ): number;
+    sqlite3_js_db_export(dbPointer: number): Uint8Array;
+    sqlite3_last_insert_rowid(dbPointer: number): number;
+    SQLITE_DESERIALIZE_FREEONCLOSE: number;
+    SQLITE_DESERIALIZE_RESIZEABLE: number;
+  };
+  wasm: {
+    allocFromTypedArray(bytes: Uint8Array): number;
+  };
+}
+
 /**
  * Database adapter that wraps raw WASM SQLite database to provide
  * exec() and run() methods for MigratableDatabase interface.
  */
 class DatabaseAdapter {
-  constructor(private rawDb: any) {}
+  constructor(private rawDb: SqliteDatabase) {}
 
-  exec(sql: string): { values: any[][] }[] {
+  exec(sql: string): { values: unknown[][] }[] {
     const stmt = this.rawDb.prepare(sql);
-    const results: any[][] = [];
-    while (stmt.step()) {
-      results.push(stmt.get([]));
+    const results: unknown[][] = [];
+    try {
+      while (stmt.step()) {
+        results.push(stmt.get([]));
+      }
+    } finally {
+      stmt.finalize();
     }
-    stmt.finalize();
     return results.length > 0 ? [{ values: results }] : [];
   }
 
-  run(sql: string, params?: any[]): void {
+  run(sql: string, params?: SqliteBindParams): void {
     const stmt = this.rawDb.prepare(sql);
     if (params?.length) {
       stmt.bind(params);
     }
-    stmt.step();
-    stmt.finalize();
+    try {
+      stmt.step();
+    } finally {
+      stmt.finalize();
+    }
   }
 }
 
@@ -89,13 +139,13 @@ class DatabaseAdapter {
 export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager {
   private app: App;
   private dbPath: string;  // Relative path within vault
-  private sqlite3: any = null;  // The sqlite3 WASM module
-  private db: any = null;  // The oo1.DB instance
+  private sqlite3: Sqlite3Module | null = null;  // The sqlite3 WASM module
+  private db: SqliteDatabase | null = null;  // The oo1.DB instance
   private isInitialized: boolean = false;
   private searchService: SQLiteSearchService;
   private hasUnsavedData: boolean = false;
   private autoSaveInterval: number;
-  private autoSaveTimer: NodeJS.Timeout | null = null;
+  private autoSaveTimer: ReturnType<typeof setInterval> | null = null;
 
   // Transaction management - prevent nested transactions
   private transactionDepth: number = 0;
@@ -108,6 +158,22 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
     this.searchService = new SQLiteSearchService(this);
   }
 
+  private getSqlite3(): Sqlite3Module {
+    if (!this.sqlite3) {
+      throw new Error('SQLite module not initialized');
+    }
+
+    return this.sqlite3;
+  }
+
+  private getDb(): SqliteDatabase {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+
+    return this.db;
+  }
+
   /**
    * Resolve the sqlite3.wasm path for the currently-installed plugin folder.
    *
@@ -115,7 +181,7 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
    * as well as the current `.obsidian/plugins/nexus/` folder.
    */
   private async resolveSqliteWasmPath(): Promise<string> {
-    const configDir = this.app.vault.configDir || '.obsidian';
+    const configDir = this.app.vault.configDir;
     const candidatePluginFolders = ['nexus', 'claudesidian-mcp'];
     const candidates = candidatePluginFolders.map(folder => `${configDir}/plugins/${folder}/sqlite3.wasm`);
 
@@ -124,7 +190,7 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
         if (await this.app.vault.adapter.exists(candidate)) {
           return candidate;
         }
-      } catch (error) {
+      } catch {
         // Ignore adapter errors and continue trying other candidates.
       }
     }
@@ -151,6 +217,7 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
       // Read WASM binary using Obsidian's API
       const wasmBinary = await this.app.vault.adapter.readBinary(wasmPath);
 
+      /* eslint-disable no-console */
       const originalWarn = console.warn;
       const originalLog = console.log;
       const suppressPatterns = [
@@ -158,16 +225,16 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
         /Heap resize call/,
         /instantiateWasm/
       ];
-      console.warn = (...args: any[]) => {
-        const msg = args[0]?.toString() || '';
+      console.warn = (...args: Parameters<typeof console.warn>) => {
+        const msg = String(args[0] ?? '');
         if (!suppressPatterns.some(p => p.test(msg))) {
-          originalWarn.apply(console, args);
+          originalWarn(...args);
         }
       };
-      console.log = (...args: any[]) => {
-        const msg = args[0]?.toString() || '';
+      console.log = (...args: Parameters<typeof console.log>) => {
+        const msg = String(args[0] ?? '');
         if (!suppressPatterns.some(p => p.test(msg))) {
-          originalLog.apply(console, args);
+          originalLog(...args);
         }
       };
 
@@ -192,6 +259,7 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
       } finally {
         console.warn = originalWarn;
         console.log = originalLog;
+        /* eslint-enable no-console */
       }
 
       // Ensure parent directory exists
@@ -208,7 +276,8 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
         // Load existing database from file
         await this.loadFromFile();
       } else {
-        this.db = new this.sqlite3.oo1.DB(':memory:');
+        const sqlite3 = this.getSqlite3();
+        this.db = new sqlite3.oo1.DB(':memory:');
         this.db.exec(SCHEMA_SQL);
         await this.saveToFile();
       }
@@ -249,29 +318,30 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
       // Read binary data from vault
       const data = await this.app.vault.adapter.readBinary(this.dbPath);
       const uint8 = new Uint8Array(data);
+      const sqlite3 = this.getSqlite3();
 
       if (uint8.length === 0) {
         // Empty file, create new database
-        this.db = new this.sqlite3.oo1.DB(':memory:');
+        this.db = new sqlite3.oo1.DB(':memory:');
         this.db.exec(SCHEMA_SQL);
         return;
       }
 
       // Allocate memory for the database bytes
-      const ptr = this.sqlite3.wasm.allocFromTypedArray(uint8);
+      const ptr = sqlite3.wasm.allocFromTypedArray(uint8);
 
       // Create empty in-memory database
-      this.db = new this.sqlite3.oo1.DB(':memory:');
+      this.db = new sqlite3.oo1.DB(':memory:');
 
       // Deserialize the data into the database
-      const rc = this.sqlite3.capi.sqlite3_deserialize(
+      const rc = sqlite3.capi.sqlite3_deserialize(
         this.db.pointer,
         'main',
         ptr,
         uint8.byteLength,
         uint8.byteLength,
-        this.sqlite3.capi.SQLITE_DESERIALIZE_FREEONCLOSE |
-        this.sqlite3.capi.SQLITE_DESERIALIZE_RESIZEABLE
+        sqlite3.capi.SQLITE_DESERIALIZE_FREEONCLOSE |
+        sqlite3.capi.SQLITE_DESERIALIZE_RESIZEABLE
       );
 
       if (rc !== 0) {
@@ -282,9 +352,10 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
       try {
         const integrityResult = this.db.selectValue('PRAGMA integrity_check');
         if (integrityResult !== 'ok') {
-          throw new Error(`Database integrity check failed: ${integrityResult}`);
+          const integrityText = String(integrityResult);
+          throw new Error(`Database integrity check failed: ${integrityText}`);
         }
-      } catch (integrityError) {
+      } catch {
         await this.recreateCorruptedDatabase();
         return;
       }
@@ -305,6 +376,7 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
       try {
         this.db.close();
       } catch {
+        // Ignore close failures during recovery.
       }
       this.db = null;
     }
@@ -312,9 +384,11 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
     try {
       await this.app.vault.adapter.remove(this.dbPath);
     } catch {
+      // Ignore remove failures during recovery.
     }
 
-    this.db = new this.sqlite3.oo1.DB(':memory:');
+    const sqlite3 = this.getSqlite3();
+    this.db = new sqlite3.oo1.DB(':memory:');
     this.db.exec(SCHEMA_SQL);
     await this.saveToFile();
   }
@@ -327,15 +401,17 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
 
     try {
       // Temporarily suppress console.log during WASM export to avoid "Heap resize" noise
+      /* eslint-disable no-console */
       const originalLog = console.log;
-      // eslint-disable-next-line @typescript-eslint/no-empty-function
       console.log = () => {};
 
-      let data: any;
+      const sqlite3 = this.getSqlite3();
+      let data: Uint8Array;
       try {
-        data = this.sqlite3.capi.sqlite3_js_db_export(this.db.pointer);
+        data = sqlite3.capi.sqlite3_js_db_export(this.db.pointer);
       } finally {
         console.log = originalLog;
+        /* eslint-enable no-console */
       }
 
       await this.app.vault.adapter.writeBinary(this.dbPath, data.buffer);
@@ -393,11 +469,12 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
   /**
    * Query returning multiple rows
    */
-  async query<T>(sql: string, params?: any[]): Promise<T[]> {
+  async query<T>(sql: string, params: SqliteBindParams = []): Promise<T[]> {
     if (!this.db) throw new Error('Database not initialized');
+    const db = this.getDb();
 
     try {
-      const stmt = this.db.prepare(sql);
+      const stmt = db.prepare(sql);
       try {
         if (params?.length) {
           stmt.bind(params);
@@ -419,11 +496,12 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
   /**
    * Query returning single row
    */
-  async queryOne<T>(sql: string, params?: any[]): Promise<T | null> {
+  async queryOne<T>(sql: string, params: SqliteBindParams = []): Promise<T | null> {
     if (!this.db) throw new Error('Database not initialized');
+    const db = this.getDb();
 
     try {
-      const stmt = this.db.prepare(sql);
+      const stmt = db.prepare(sql);
       try {
         if (params?.length) {
           stmt.bind(params);
@@ -445,11 +523,13 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
    * Run a statement (INSERT, UPDATE, DELETE)
    * Returns changes count and last insert rowid
    */
-  async run(sql: string, params?: any[]): Promise<RunResult> {
+  async run(sql: string, params: SqliteBindParams = []): Promise<RunResult> {
     if (!this.db) throw new Error('Database not initialized');
+    const db = this.getDb();
+    const sqlite3 = this.getSqlite3();
 
     try {
-      const stmt = this.db.prepare(sql);
+      const stmt = db.prepare(sql);
       try {
         if (params?.length) {
           stmt.bind(params);
@@ -460,8 +540,8 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
       }
 
       // Get changes count and last insert rowid
-      const changes = this.db.changes();
-      const lastInsertRowid = Number(this.sqlite3.capi.sqlite3_last_insert_rowid(this.db.pointer));
+      const changes = db.changes();
+      const lastInsertRowid = Number(sqlite3.capi.sqlite3_last_insert_rowid(db.pointer));
 
       this.hasUnsavedData = true;
       return { changes, lastInsertRowid };
@@ -475,14 +555,14 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
    * Begin a transaction
    */
   async beginTransaction(): Promise<void> {
-    this.db.exec('BEGIN TRANSACTION');
+    this.getDb().exec('BEGIN TRANSACTION');
   }
 
   /**
    * Commit a transaction
    */
   async commit(): Promise<void> {
-    this.db.exec('COMMIT');
+    this.getDb().exec('COMMIT');
     this.hasUnsavedData = true;
   }
 
@@ -490,7 +570,7 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
    * Rollback a transaction
    */
   async rollback(): Promise<void> {
-    this.db.exec('ROLLBACK');
+    this.getDb().exec('ROLLBACK');
   }
 
   /**
@@ -540,7 +620,7 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
     baseQuery: string,
     countQuery: string,
     options: PaginationParams = {},
-    params: any[] = []
+    params: SqliteBindParams = []
   ): Promise<PaginatedResult<T>> {
     const page = options.page ?? 0;
     const pageSize = Math.min(options.pageSize ?? 25, 200);
@@ -616,7 +696,7 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
     return {
       deviceId: result.deviceId,
       lastEventTimestamp: result.lastEventTimestamp,
-      fileTimestamps: result.syncedFilesJson ? JSON.parse(result.syncedFilesJson) : {}
+      fileTimestamps: result.syncedFilesJson ? this.parseFileTimestamps(result.syncedFilesJson) : {}
     };
   }
 
@@ -638,7 +718,9 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
    */
   async clearAllData(): Promise<void> {
     await this.transaction(async () => {
-      this.db.exec(`
+      const db = this.getDb();
+
+      db.exec(`
         DELETE FROM messages;
         DELETE FROM conversations;
         DELETE FROM memory_traces;
@@ -651,10 +733,10 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
 
       // Drop and recreate vec0 virtual tables (cannot DELETE from vec0)
       // Conversation embeddings
-      this.db.exec(`DROP TABLE IF EXISTS conversation_embeddings`);
-      this.db.exec(`CREATE VIRTUAL TABLE IF NOT EXISTS conversation_embeddings USING vec0(embedding float[384])`);
-      this.db.exec(`DELETE FROM conversation_embedding_metadata`);
-      this.db.exec(`DELETE FROM embedding_backfill_state`);
+      db.exec(`DROP TABLE IF EXISTS conversation_embeddings`);
+      db.exec(`CREATE VIRTUAL TABLE IF NOT EXISTS conversation_embeddings USING vec0(embedding float[384])`);
+      db.exec(`DELETE FROM conversation_embedding_metadata`);
+      db.exec(`DELETE FROM embedding_backfill_state`);
     });
   }
 
@@ -663,18 +745,20 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
    */
   async rebuildFTSIndexes(): Promise<void> {
     await this.transaction(async () => {
+      const db = this.getDb();
+
       // Rebuild workspace FTS5
-      this.db.exec(`
+      db.exec(`
         INSERT INTO workspace_fts(workspace_fts) VALUES ('rebuild');
       `);
 
       // Rebuild conversation FTS5
-      this.db.exec(`
+      db.exec(`
         INSERT INTO conversation_fts(conversation_fts) VALUES ('rebuild');
       `);
 
       // Rebuild message FTS5
-      this.db.exec(`
+      db.exec(`
         INSERT INTO message_fts(message_fts) VALUES ('rebuild');
       `);
     });
@@ -684,10 +768,9 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
    * Vacuum the database to reclaim space
    */
   async vacuum(): Promise<void> {
-    if (!this.db) throw new Error('Database not initialized');
-
     try {
-      this.db.exec('VACUUM');
+      const db = this.getDb();
+      db.exec('VACUUM');
       this.hasUnsavedData = true;
     } catch (error) {
       console.error('[SQLiteCacheManager] Vacuum failed:', error);
@@ -701,28 +784,28 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
   /**
    * Search workspaces using FTS4
    */
-  async searchWorkspaces(query: string, limit: number = 50): Promise<any[]> {
+  async searchWorkspaces(query: string, limit: number = 50): Promise<unknown[]> {
     return this.searchService.searchWorkspaces(query, limit);
   }
 
   /**
    * Search conversations using FTS4
    */
-  async searchConversations(query: string, limit: number = 50): Promise<any[]> {
+  async searchConversations(query: string, limit: number = 50): Promise<unknown[]> {
     return this.searchService.searchConversations(query, limit);
   }
 
   /**
    * Search messages using FTS4
    */
-  async searchMessages(query: string, limit: number = 50): Promise<any[]> {
+  async searchMessages(query: string, limit: number = 50): Promise<unknown[]> {
     return this.searchService.searchMessages(query, limit);
   }
 
   /**
    * Search messages within a specific conversation using FTS4
    */
-  async searchMessagesInConversation(conversationId: string, query: string, limit: number = 50): Promise<any[]> {
+  async searchMessagesInConversation(conversationId: string, query: string, limit: number = 50): Promise<unknown[]> {
     return this.searchService.searchMessagesInConversation(conversationId, query, limit);
   }
 
@@ -762,6 +845,7 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
         dbSizeBytes = stat?.size ?? 0;
       }
     } catch {
+      // Ignore filesystem stat errors when collecting stats.
     }
 
     return {
@@ -852,5 +936,26 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
       },
       walMode: false  // WASM doesn't use WAL mode
     };
+  }
+
+  private parseFileTimestamps(json: string): Record<string, number> {
+    try {
+      const parsed: unknown = JSON.parse(json);
+      if (this.isNumberRecord(parsed)) {
+        return parsed;
+      }
+    } catch {
+      // Ignore malformed sync state payloads and fall back to an empty map.
+    }
+
+    return {};
+  }
+
+  private isNumberRecord(value: unknown): value is Record<string, number> {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+      return false;
+    }
+
+    return Object.values(value).every(item => typeof item === 'number');
   }
 }

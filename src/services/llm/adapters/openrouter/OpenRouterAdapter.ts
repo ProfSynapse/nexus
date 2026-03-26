@@ -9,16 +9,200 @@ import {
   GenerateOptions,
   StreamChunk,
   LLMResponse,
+  TokenUsage,
+  CostDetails,
   ModelInfo,
   ProviderCapabilities,
   ModelPricing,
+  ToolCall,
   SearchResult
 } from '../types';
 import { ModelRegistry } from '../ModelRegistry';
+import type { ModelSpec } from '../modelTypes';
 import { ReasoningPreserver } from '../shared/ReasoningPreserver';
 import { WebSearchUtils } from '../../utils/WebSearchUtils';
 import { BRAND_NAME } from '../../../../constants/branding';
 import { MCPToolExecution } from '../shared/ToolExecutionUtils';
+
+interface OpenRouterExtraContent {
+  google?: {
+    thought_signature?: string;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}
+
+interface OpenRouterToolCallLike {
+  id?: string;
+  index?: number;
+  type?: string;
+  name?: string;
+  function?: {
+    name?: string;
+    arguments?: string;
+    [key: string]: unknown;
+  };
+  parameters?: Record<string, unknown>;
+  reasoning_details?: unknown[];
+  thought_signature?: string;
+  thoughtSignature?: string;
+  extra_content?: OpenRouterExtraContent;
+  [key: string]: unknown;
+}
+
+interface OpenRouterChoiceLike {
+  delta?: OpenRouterToolCallLike & {
+    content?: string;
+    text?: string;
+    tool_calls?: OpenRouterToolCallLike[];
+    toolCalls?: OpenRouterToolCallLike[];
+  };
+  message?: OpenRouterToolCallLike & {
+    content?: string;
+    text?: string;
+    tool_calls?: OpenRouterToolCallLike[];
+    toolCalls?: OpenRouterToolCallLike[];
+  };
+  text?: string;
+  finish_reason?: string;
+  thought_signature?: string;
+  thoughtSignature?: string;
+  [key: string]: unknown;
+}
+
+interface OpenRouterChatResponse {
+  id?: string;
+  choices?: OpenRouterChoiceLike[];
+  reasoning_details?: unknown[];
+  extra_content?: OpenRouterExtraContent;
+  thought_signature?: string;
+  thoughtSignature?: string;
+  usage?: unknown;
+  [key: string]: unknown;
+}
+
+interface OpenRouterGenerationStatsResponse {
+  data?: {
+    native_tokens_prompt?: number;
+    tokens_prompt?: number;
+    native_tokens_completion?: number;
+    tokens_completion?: number;
+    total_cost?: number;
+    currency?: string;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}
+
+interface OpenRouterAnnotation {
+  type?: string;
+  url_citation?: {
+    title?: string;
+    text?: string;
+    url?: string;
+    date?: string;
+    timestamp?: string;
+  };
+  [key: string]: unknown;
+}
+
+interface OpenRouterAnnotatedResponse {
+  choices?: Array<{
+    message?: {
+      annotations?: OpenRouterAnnotation[];
+      [key: string]: unknown;
+    };
+    [key: string]: unknown;
+  }>;
+  [key: string]: unknown;
+}
+
+interface OpenRouterToolResultLike {
+  id: string;
+  name?: string;
+  success: boolean;
+  result?: unknown;
+  error?: string;
+  executionTime?: number;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isOpenRouterToolCallArray(value: unknown): value is OpenRouterToolCallLike[] {
+  return Array.isArray(value);
+}
+
+function getToolCallArray(source: unknown): OpenRouterToolCallLike[] | undefined {
+  if (!isRecord(source)) {
+    return undefined;
+  }
+
+  const toolCalls = source.tool_calls ?? source.toolCalls;
+  return isOpenRouterToolCallArray(toolCalls) ? toolCalls : undefined;
+}
+
+function getReasoningDetails(source: unknown): unknown[] | undefined {
+  if (!isRecord(source)) {
+    return undefined;
+  }
+
+  const reasoningDetails = source.reasoning_details;
+  if (!Array.isArray(reasoningDetails)) {
+    return undefined;
+  }
+
+  const result: unknown[] = [];
+  for (const entry of reasoningDetails) {
+    result.push(entry);
+  }
+
+  return result;
+}
+
+function getThoughtSignature(source: unknown): string | undefined {
+  if (!isRecord(source)) {
+    return undefined;
+  }
+
+  const extraContent = isRecord(source.extra_content) ? source.extra_content : undefined;
+  const google = extraContent && isRecord(extraContent.google) ? extraContent.google : undefined;
+
+  if (google && typeof google.thought_signature === 'string') {
+    return google.thought_signature;
+  }
+
+  if (typeof source.thought_signature === 'string') {
+    return source.thought_signature;
+  }
+
+  if (typeof source.thoughtSignature === 'string') {
+    return source.thoughtSignature;
+  }
+
+  return undefined;
+}
+
+function getChoices(response: unknown): OpenRouterChoiceLike[] {
+  if (!isRecord(response) || !Array.isArray(response.choices)) {
+    return [];
+  }
+
+  const choices = response.choices as unknown[];
+  const result: OpenRouterChoiceLike[] = [];
+  for (const choice of choices) {
+    if (isRecord(choice)) {
+      result.push(choice);
+    }
+  }
+
+  return result;
+}
+
+function normalizeStreamChunkChunk(chunk: unknown): OpenRouterChatResponse | null {
+  return isRecord(chunk) ? chunk : null;
+}
 
 export class OpenRouterAdapter extends BaseAdapter {
   readonly name = 'openrouter';
@@ -76,7 +260,7 @@ export class OpenRouterAdapter extends BaseAdapter {
         usage: { include: true } // Enable token usage and cost tracking
       };
 
-      const response = await this.request<any>({
+      const response = await this.request<OpenRouterChatResponse>({
         url: `${this.baseUrl}/chat/completions`,
         operation: 'generation',
         method: 'POST',
@@ -93,6 +277,9 @@ export class OpenRouterAdapter extends BaseAdapter {
       this.assertOk(response, `OpenRouter generation failed: HTTP ${response.status}`);
 
       const data = response.json;
+      if (!data) {
+        throw new Error('OpenRouter generation returned no JSON payload');
+      }
 
       const text = data.choices[0]?.message?.content || '';
       const usage = this.extractUsage(data);
@@ -111,7 +298,7 @@ export class OpenRouterAdapter extends BaseAdapter {
         finishReason as 'stop' | 'length' | 'tool_calls' | 'content_filter'
       );
     } catch (error) {
-      throw this.handleError(error, 'generation');
+      this.handleError(error, 'generation');
     }
   }
 
@@ -137,7 +324,7 @@ export class OpenRouterAdapter extends BaseAdapter {
       const needsReasoning = ReasoningPreserver.requiresReasoningPreservation(baseModel, 'openrouter');
       const hasTools = options?.tools && options.tools.length > 0;
 
-      const requestBody: any = {
+      const requestBody: Record<string, unknown> = {
         model,
         messages,
         temperature: options?.temperature,
@@ -174,53 +361,52 @@ export class OpenRouterAdapter extends BaseAdapter {
       // Gemini requires TWO different fields for tool continuations:
       // - reasoning_details: array of reasoning objects from OpenRouter
       // - thought_signature: string signature required by Google for function call continuations
-      let capturedReasoning: any[] | undefined = undefined;
+      let capturedReasoning: unknown[] | undefined = undefined;
       let capturedThoughtSignature: string | undefined = undefined;
 
       yield* this.processNodeStream(nodeStream, {
         debugLabel: 'OpenRouter',
 
-        extractContent: (parsed: any) => {
+        extractContent: (parsed: unknown) => {
+          const chunk = normalizeStreamChunkChunk(parsed);
+          if (!chunk) {
+            return null;
+          }
+
           // Capture generation ID from first chunk
-          if (!generationId && parsed.id) {
-            generationId = parsed.id;
+          if (!generationId && typeof chunk.id === 'string') {
+            generationId = chunk.id;
           }
 
           // Capture reasoning_details for Gemini models (required for tool continuations)
           if (needsReasoning && !capturedReasoning) {
             capturedReasoning =
-              parsed.reasoning_details ||
-              parsed.choices?.[0]?.message?.reasoning_details ||
-              parsed.choices?.[0]?.delta?.reasoning_details ||
-              parsed.choices?.[0]?.reasoning_details ||
-              ReasoningPreserver.extractFromStreamChunk(parsed);
-
+              getReasoningDetails(chunk) ||
+              getReasoningDetails(chunk.choices?.[0]?.message) ||
+              getReasoningDetails(chunk.choices?.[0]?.delta) ||
+              getReasoningDetails(chunk.choices?.[0]) ||
+              ReasoningPreserver.extractFromStreamChunk(chunk);
           }
 
           // Capture thought_signature for Gemini models (OpenAI compatibility format)
           // Per Google docs, this can be in: extra_content.google.thought_signature
           // or directly on the delta/message
           if (needsReasoning && !capturedThoughtSignature) {
-            const delta = parsed.choices?.[0]?.delta;
-            const message = parsed.choices?.[0]?.message;
+            const firstChoice = chunk.choices?.[0];
+            const delta = firstChoice?.delta;
+            const message = firstChoice?.message;
 
             capturedThoughtSignature =
               // OpenAI compatibility format per Google docs
-              delta?.extra_content?.google?.thought_signature ||
-              message?.extra_content?.google?.thought_signature ||
-              parsed.extra_content?.google?.thought_signature ||
+              getThoughtSignature(delta) ||
+              getThoughtSignature(message) ||
+              getThoughtSignature(chunk) ||
               // Direct formats
-              delta?.thought_signature ||
-              delta?.thoughtSignature ||
-              message?.thought_signature ||
-              message?.thoughtSignature ||
-              parsed.thought_signature ||
-              parsed.thoughtSignature;
-
+              undefined;
           }
 
           // Process all available choices - reasoning models may use multiple choices
-          for (const choice of parsed.choices || []) {
+          for (const choice of getChoices(chunk)) {
             const delta = choice?.delta;
             const content = delta?.content || delta?.text || choice?.text;
             if (content) {
@@ -230,20 +416,25 @@ export class OpenRouterAdapter extends BaseAdapter {
           return null;
         },
 
-        extractToolCalls: (parsed: any) => {
+        extractToolCalls: (parsed: unknown) => {
+          const chunk = normalizeStreamChunkChunk(parsed);
+          if (!chunk) {
+            return null;
+          }
+
           // Extract tool calls from any choice that has them
-          for (const choice of parsed.choices || []) {
-            let toolCalls = choice?.delta?.tool_calls || choice?.delta?.toolCalls;
+          for (const choice of getChoices(chunk)) {
+            let toolCalls = getToolCallArray(choice.delta);
             if (toolCalls) {
               // Extract reasoning_details from this chunk (it may contain encrypted thought signatures)
-              const chunkReasoningDetails = choice?.delta?.reasoning_details;
-              if (chunkReasoningDetails && Array.isArray(chunkReasoningDetails)) {
+              const chunkReasoningDetails = getReasoningDetails(choice.delta);
+              if (chunkReasoningDetails) {
                 // Look for reasoning.encrypted entries - these contain the thought_signature
                 for (const entry of chunkReasoningDetails) {
-                  if (entry.type === 'reasoning.encrypted' && entry.data && entry.id) {
+                  if (isRecord(entry) && entry.type === 'reasoning.encrypted' && typeof entry.data === 'string' && typeof entry.id === 'string') {
                     // Match encrypted entry to tool call by id
                     for (const tc of toolCalls) {
-                      if (tc.id === entry.id || tc.id?.startsWith(entry.id?.split('_').slice(0, -1).join('_'))) {
+                      if (typeof tc.id === 'string' && (tc.id === entry.id || tc.id.startsWith(entry.id.split('_').slice(0, -1).join('_')))) {
                         tc.thought_signature = entry.data;
                       }
                     }
@@ -264,10 +455,7 @@ export class OpenRouterAdapter extends BaseAdapter {
 
               // Also check direct thought_signature fields (fallback)
               for (const tc of toolCalls) {
-                const tcThoughtSig =
-                  tc.thought_signature ||
-                  tc.thoughtSignature ||
-                  tc.extra_content?.google?.thought_signature;
+                const tcThoughtSig = getThoughtSignature(tc);
                 if (tcThoughtSig && !tc.thought_signature) {
                   tc.thought_signature = tcThoughtSig;
                 }
@@ -290,23 +478,22 @@ export class OpenRouterAdapter extends BaseAdapter {
           return null;
         },
 
-        extractFinishReason: (parsed: any) => {
+        extractFinishReason: (parsed: unknown) => {
+          const chunk = normalizeStreamChunkChunk(parsed);
+          if (!chunk) {
+            return null;
+          }
+
           // Extract finish reason from any choice
-          for (const choice of parsed.choices || []) {
+          for (const choice of getChoices(chunk)) {
             if (choice?.finish_reason) {
               // Last chance to capture thought_signature from final chunk
               if (needsReasoning && !capturedThoughtSignature) {
-                const delta = choice?.delta;
-                const message = choice?.message;
                 capturedThoughtSignature =
-                  delta?.extra_content?.google?.thought_signature ||
-                  message?.extra_content?.google?.thought_signature ||
-                  parsed.extra_content?.google?.thought_signature ||
-                  delta?.thought_signature ||
-                  message?.thought_signature ||
-                  parsed.thought_signature ||
-                  choice?.thought_signature;
-
+                  getThoughtSignature(choice.delta) ||
+                  getThoughtSignature(choice.message) ||
+                  getThoughtSignature(chunk) ||
+                  getThoughtSignature(choice);
               }
 
               // When we detect completion, trigger async usage fetch (only once)
@@ -322,23 +509,29 @@ export class OpenRouterAdapter extends BaseAdapter {
           return null;
         },
 
-        extractUsage: (parsed: any) => {
+        extractUsage: (_parsed: unknown) => {
           // OpenRouter doesn't include usage in streaming responses
           // We'll fetch it asynchronously using the generation ID when completion is detected
           return null;
         },
 
         // Extract reasoning from reasoning_details array (OpenRouter unified format)
-        extractReasoning: (parsed: any) => {
-          // Check for reasoning_details in delta or message
-          const reasoningDetails =
-            parsed.choices?.[0]?.delta?.reasoning_details ||
-            parsed.choices?.[0]?.message?.reasoning_details ||
-            parsed.reasoning_details;
+        extractReasoning: (parsed: unknown) => {
+          const chunk = normalizeStreamChunkChunk(parsed);
+          if (!chunk) {
+            return null;
+          }
 
-          if (reasoningDetails && Array.isArray(reasoningDetails)) {
+          // Check for reasoning_details in delta or message
+          const firstChoice = chunk.choices?.[0];
+          const reasoningDetails =
+            getReasoningDetails(firstChoice?.delta) ||
+            getReasoningDetails(firstChoice?.message) ||
+            getReasoningDetails(chunk);
+
+          if (reasoningDetails) {
             // Find reasoning.text entries (these contain the actual reasoning text)
-            const textEntries = reasoningDetails.filter((r) => r.type === 'reasoning.text');
+            const textEntries = reasoningDetails.filter((r): r is { type?: string; text?: string } & Record<string, unknown> => isRecord(r) && r.type === 'reasoning.text');
             if (textEntries.length > 0) {
               const reasoningText = textEntries.map((r) => r.text || '').join('');
               if (reasoningText) {
@@ -350,7 +543,7 @@ export class OpenRouterAdapter extends BaseAdapter {
             }
 
             // Also check for reasoning.summary entries
-            const summaryEntries = reasoningDetails.filter((r) => r.type === 'reasoning.summary');
+            const summaryEntries = reasoningDetails.filter((r): r is { type?: string; text?: string; summary?: string } & Record<string, unknown> => isRecord(r) && r.type === 'reasoning.summary');
             if (summaryEntries.length > 0) {
               const summaryText = summaryEntries.map((r) => r.text || r.summary || '').join('');
               if (summaryText) {
@@ -371,7 +564,7 @@ export class OpenRouterAdapter extends BaseAdapter {
       });
 
     } catch (error) {
-      throw this.handleError(error, 'streaming generation');
+      this.handleError(error, 'streaming generation');
     }
   }
 
@@ -381,38 +574,37 @@ export class OpenRouterAdapter extends BaseAdapter {
   private async fetchAndNotifyUsage(
     generationId: string,
     model: string,
-    onUsageAvailable: (usage: any, cost?: any) => void
+    onUsageAvailable: (usage: TokenUsage, cost?: CostDetails) => void
   ): Promise<void> {
-    try {
-      const stats = await this.fetchGenerationStats(generationId);
+    const stats = await this.fetchGenerationStats(generationId);
 
-      if (!stats) {
-        return;
-      }
-
-      const usage = {
-        promptTokens: stats.promptTokens,
-        completionTokens: stats.completionTokens,
-        totalTokens: stats.totalTokens
-      };
-
-      // Calculate cost - prefer provider total_cost when present, otherwise fall back to pricing calculation
-      let cost;
-      if (stats.totalCost !== undefined) {
-        cost = {
-          totalCost: stats.totalCost,
-          currency: stats.currency || 'USD'
-        };
-      } else {
-        cost = await this.calculateCost(usage, model);
-      }
-
-      // Notify via callback
-      onUsageAvailable(usage, cost || undefined);
-
-    } catch (error) {
-      throw error;
+    if (!stats) {
+      return;
     }
+
+    const usage: TokenUsage = {
+      promptTokens: stats.promptTokens,
+      completionTokens: stats.completionTokens,
+      totalTokens: stats.totalTokens
+    };
+
+    // Calculate cost - prefer provider total_cost when present, otherwise fall back to pricing calculation
+    let cost: CostDetails | null;
+    if (stats.totalCost !== undefined) {
+      const calculatedCost = await this.calculateCost(usage, model);
+      cost = calculatedCost
+        ? {
+            ...calculatedCost,
+            totalCost: stats.totalCost,
+            currency: stats.currency || calculatedCost.currency
+          }
+        : null;
+    } else {
+      cost = await this.calculateCost(usage, model);
+    }
+
+    // Notify via callback
+    onUsageAvailable(usage, cost || undefined);
   }
 
   /**
@@ -430,8 +622,6 @@ export class OpenRouterAdapter extends BaseAdapter {
     const maxRetries = 12;
     const baseDelay = 900; // Start near 1s
     const incrementDelay = 500; // Grow more aggressively
-    let lastStatus: number | null = null;
-
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       try {
         // Linear backoff: 800ms, 1000ms, 1200ms, 1400ms, 1600ms
@@ -440,7 +630,7 @@ export class OpenRouterAdapter extends BaseAdapter {
           await new Promise(resolve => setTimeout(resolve, delay));
         }
 
-        const response = await this.request<any>({
+        const response = await this.request<OpenRouterGenerationStatsResponse>({
           url: `${this.baseUrl}/generation?id=${generationId}`,
           operation: 'fetch generation stats',
           method: 'GET',
@@ -452,8 +642,6 @@ export class OpenRouterAdapter extends BaseAdapter {
           timeoutMs: 30_000
         });
 
-        lastStatus = response.status;
-
         if (response.status === 404) {
           // Stats not ready yet, retry
           continue;
@@ -464,6 +652,9 @@ export class OpenRouterAdapter extends BaseAdapter {
         }
 
         const data = response.json;
+        if (!data) {
+          continue;
+        }
 
         // Extract token counts from response
         // OpenRouter returns: tokens_prompt, tokens_completion, native_tokens_prompt, native_tokens_completion
@@ -483,7 +674,7 @@ export class OpenRouterAdapter extends BaseAdapter {
         }
 
         // Data returned but no tokens - might not be ready yet
-      } catch (error) {
+      } catch {
         if (attempt === maxRetries - 1) {
           return null;
         }
@@ -500,9 +691,25 @@ export class OpenRouterAdapter extends BaseAdapter {
     try {
       // Use centralized model registry
       const openrouterModels = ModelRegistry.getProviderModels('openrouter');
-      return openrouterModels.map(model => ModelRegistry.toModelInfo(model));
-    } catch (error) {
-      this.handleError(error, 'listing models');
+      return openrouterModels.map((model: ModelSpec): ModelInfo => ({
+        id: model.apiName,
+        name: model.name,
+        contextWindow: model.contextWindow,
+        maxOutputTokens: model.maxTokens,
+        supportsJSON: model.capabilities.supportsJSON,
+        supportsImages: model.capabilities.supportsImages,
+        supportsFunctions: model.capabilities.supportsFunctions,
+        supportsStreaming: model.capabilities.supportsStreaming,
+        supportsThinking: model.capabilities.supportsThinking,
+        pricing: {
+          inputPerMillion: model.inputCostPerMillion,
+          outputPerMillion: model.outputCostPerMillion,
+          currency: 'USD',
+          lastUpdated: new Date().toISOString()
+        }
+      }));
+    } catch {
+      this.handleError(new Error('Failed to list models'), 'listing models');
       return [];
     }
   }
@@ -535,11 +742,11 @@ export class OpenRouterAdapter extends BaseAdapter {
    * Execute detected tool calls from streaming and get AI response
    * Used for post-stream tool execution - implements pingpong pattern
    */
-  private async executeDetectedToolCalls(detectedToolCalls: any[], model: string, prompt: string, options?: GenerateOptions): Promise<LLMResponse> {
+  private async executeDetectedToolCalls(detectedToolCalls: ReadonlyArray<ToolCall>, model: string, prompt: string, options?: GenerateOptions): Promise<LLMResponse> {
 
     try {
       // Convert to MCP format
-      const mcpToolCalls: any[] = detectedToolCalls.map((tc) => ({
+      const mcpToolCalls = detectedToolCalls.map((tc) => ({
         id: tc.id,
         function: {
           name: tc.function?.name || tc.name,
@@ -555,7 +762,7 @@ export class OpenRouterAdapter extends BaseAdapter {
         mcpToolCalls,
         'openrouter',
         options?.onToolEvent
-      );
+      ) as OpenRouterToolResultLike[];
 
 
       // Now do the "pingpong" - send the conversation with tool results back to the LLM
@@ -570,7 +777,11 @@ export class OpenRouterAdapter extends BaseAdapter {
       messages.push(assistantMessage);
 
       // Add tool result messages
-      const toolMessages = MCPToolExecution.buildToolMessages(toolResults, 'openrouter');
+      const toolMessages = MCPToolExecution.buildToolMessages(toolResults, 'openrouter') as Array<{
+        role: 'tool';
+        tool_call_id: string;
+        content: string;
+      }>;
       messages.push(...toolMessages);
 
 
@@ -588,7 +799,7 @@ export class OpenRouterAdapter extends BaseAdapter {
         usage: { include: true } // Enable token usage and cost tracking
       };
       
-      const response = await this.request<any>({
+      const response = await this.request<OpenRouterChatResponse>({
         url: `${this.baseUrl}/chat/completions`,
         operation: 'post-stream tool execution',
         method: 'POST',
@@ -605,18 +816,27 @@ export class OpenRouterAdapter extends BaseAdapter {
       this.assertOk(response, `OpenRouter tool execution failed: HTTP ${response.status}`);
 
       const data = response.json;
-      const choice = data.choices[0];
+      if (!data) {
+        throw new Error('OpenRouter tool execution returned no JSON payload');
+      }
+
+      const choice = data.choices?.[0];
       const finalContent = choice?.message?.content || 'No response from AI after tool execution';
       const usage = this.extractUsage(data);
 
 
       // Combine original tool calls with their execution results
-      const completeToolCalls = detectedToolCalls.map(originalCall => {
-        const result = toolResults.find(r => r.id === originalCall.id);
+      const completeToolCalls: ToolCall[] = detectedToolCalls.map(originalCall => {
+        const result = toolResults.find((toolResult): toolResult is OpenRouterToolResultLike => toolResult.id === originalCall.id);
+        const parameters = JSON.parse(originalCall.function.arguments || '{}') as Record<string, unknown>;
         return {
           id: originalCall.id,
-          name: originalCall.function?.name || originalCall.name,
-          parameters: JSON.parse(originalCall.function?.arguments || '{}'),
+          name: originalCall.name,
+          function: {
+            name: originalCall.function.name,
+            arguments: originalCall.function.arguments
+          },
+          parameters,
           result: result?.result,
           success: result?.success || false,
           error: result?.error,
@@ -636,30 +856,37 @@ export class OpenRouterAdapter extends BaseAdapter {
 
     } catch (error) {
       console.error('OpenRouter adapter post-stream tool execution failed:', error);
-      throw this.handleError(error, 'post-stream tool execution');
+      this.handleError(error, 'post-stream tool execution');
     }
   }
 
   /**
    * Extract search results from OpenRouter response annotations
    */
-  private extractOpenRouterSources(response: any): SearchResult[] {
+  private extractOpenRouterSources(response: OpenRouterAnnotatedResponse): SearchResult[] {
     try {
-      const annotations = response.choices?.[0]?.message?.annotations || [];
-      const sources = annotations
-        .filter((ann: { type: string }) => ann.type === 'url_citation')
-        .map((ann: { type: string; url?: string; title?: string; url_citation?: { title?: string; text?: string; url?: string; date?: string; timestamp?: string } }) => {
-          const citation = ann.url_citation;
-          return WebSearchUtils.validateSearchResult({
-            title: citation?.title || citation?.text || 'Unknown Source',
-            url: citation?.url,
-            date: citation?.date || citation?.timestamp
-          });
-        })
-        .filter((result: SearchResult | null): result is SearchResult => result !== null);
+      const annotations: OpenRouterAnnotation[] = response.choices?.[0]?.message?.annotations ?? [];
+      const sources: SearchResult[] = [];
+
+      for (const annotation of annotations) {
+        if (annotation.type !== 'url_citation') {
+          continue;
+        }
+
+        const citation = annotation.url_citation;
+        const result = WebSearchUtils.validateSearchResult({
+          title: citation?.title || citation?.text || 'Unknown Source',
+          url: citation?.url,
+          date: citation?.date || citation?.timestamp
+        });
+
+        if (result) {
+          sources.push(result);
+        }
+      }
 
       return sources;
-    } catch (error) {
+    } catch {
       return [];
     }
   }
@@ -680,16 +907,25 @@ export class OpenRouterAdapter extends BaseAdapter {
         rateOutputPerMillion: model.outputCostPerMillion,
         currency: 'USD'
       };
-    } catch (error) {
+    } catch {
       return null;
     }
   }
 
-  private convertTools(tools: any[]): any[] {
+  private convertTools(tools: GenerateOptions['tools']): Array<{ type: 'function'; function: { name: string; description: string; parameters?: Record<string, unknown> } }> {
+    if (!Array.isArray(tools)) {
+      return [];
+    }
+
     return tools.map(tool => {
       if (tool.type === 'function') {
         // Handle both nested (Chat Completions) and flat (Responses API) formats
-        const toolDef = tool.function || tool;
+        const toolDef = (tool.function || tool) as {
+          name: string;
+          description: string;
+          parameters?: Record<string, unknown>;
+          input_schema?: Record<string, unknown>;
+        };
         return {
           type: 'function',
           function: {

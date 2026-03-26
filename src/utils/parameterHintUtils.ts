@@ -1,8 +1,7 @@
 /**
  * Utilities for generating helpful parameter hints for users
  */
-import { getErrorMessage } from './errorUtils';
-import { ValidationError } from './validationUtils';
+import { ValidationError, SchemaProperty } from './validationUtils';
 
 /**
  * Parameter hint for a specific tool parameter
@@ -35,52 +34,64 @@ export interface ToolHelp {
  */
 export type ModeHelp = ToolHelp;
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isSchemaProperty(value: unknown): value is SchemaProperty {
+    return isRecord(value);
+}
+
+function formatSchemaType(type: SchemaProperty['type']): string {
+    if (Array.isArray(type)) {
+        return Array.from(type).join(' | ');
+    }
+
+    return type ?? 'any';
+}
+
 /**
  * Generate structured parameter hints from a JSON schema
- * 
+ *
  * @param schema JSON schema to generate hints from
  * @returns Parameter hints for all properties in the schema
  */
-export function generateStructuredHints(schema: any): ParameterHint[] {
-    if (!schema || !schema.properties || typeof schema.properties !== 'object') {
+export function generateStructuredHints(schema: unknown): ParameterHint[] {
+    if (!isSchemaProperty(schema) || !schema.properties) {
         return [];
     }
-    
-    const requiredProps = Array.isArray(schema.required) ? schema.required : [];
+
+    const requiredProps = schema.required ?? [];
     const hints: ParameterHint[] = [];
-    
-    for (const [propName, propSchema] of Object.entries<any>(schema.properties)) {
+
+    for (const [propName, propSchema] of Object.entries(schema.properties)) {
         if (!propSchema) continue;
-        
+
         const hint: ParameterHint = {
             name: propName,
             description: propSchema.description || 'No description provided',
             type: getTypeFromSchema(propSchema),
             required: requiredProps.includes(propName)
         };
-        
-        // Add default value if present
+
         if (propSchema.default !== undefined) {
             hint.defaultValue = propSchema.default;
         }
-        
-        // Add constraints if present
+
         const constraints = getConstraintsFromSchema(propSchema);
         if (constraints) {
             hint.constraints = constraints;
         }
-        
-        // Add example if present
+
         if (propSchema.examples && propSchema.examples.length > 0) {
             hint.example = propSchema.examples[0];
         } else if (propSchema.example !== undefined) {
             hint.example = propSchema.example;
         }
-        
+
         hints.push(hint);
     }
-    
-    // Sort required parameters first, then alphabetically
+
     return hints.sort((a, b) => {
         if (a.required && !b.required) return -1;
         if (!a.required && b.required) return 1;
@@ -100,7 +111,7 @@ export function generateStructuredHints(schema: any): ParameterHint[] {
 export function generateToolHelp(
     toolName: string,
     description: string,
-    schema: Record<string, unknown>,
+    schema: unknown,
     examples?: { description: string; parameters: Record<string, unknown> }[]
 ): ToolHelp {
     return {
@@ -159,155 +170,150 @@ export function formatModeHelp(help: ToolHelp): string {
 
 /**
  * Generate parameter hints for validation errors
- * 
+ *
  * @param errors Array of validation errors
  * @param schema JSON schema used for validation
  * @returns Array of hint strings for each error
  */
-export function generateHintsForErrors(errors: ValidationError[], schema: any): Record<string, string> {
+export function generateHintsForErrors(errors: ValidationError[], schema: unknown): Record<string, string> {
     const hints: Record<string, string> = {};
-    
-    if (!schema || !schema.properties) {
+
+    if (!isSchemaProperty(schema) || !schema.properties) {
         return hints;
     }
-    
+
     for (const error of errors) {
-        // Skip errors already having hints
         if (error.hint) continue;
-        
-        // Get parameter name from the error path
+
         const paramName = error.path.length > 0 ? error.path[0] : '';
         if (!paramName || typeof paramName !== 'string') continue;
-        
-        // Get schema for this parameter
+
         const paramSchema = schema.properties[paramName];
         if (!paramSchema) continue;
-        
-        // Generate hint based on error code
+
         let hint = '';
-        
+
         switch (error.code) {
             case 'MISSING_REQUIRED':
                 hint = `Required parameter. ${paramSchema.description || ''}`;
                 break;
-                
+
             case 'TYPE_ERROR':
                 hint = `Must be ${getTypeFromSchema(paramSchema)}. ${paramSchema.description || ''}`;
                 break;
-                
+
             case 'ENUM_ERROR':
                 if (paramSchema.enum && Array.isArray(paramSchema.enum)) {
                     hint = `Must be one of: ${paramSchema.enum.map((v: unknown) => JSON.stringify(v)).join(', ')}`;
                 }
                 break;
-                
+
             case 'MIN_ERROR':
                 hint = `Must be at least ${paramSchema.minimum}`;
                 break;
-                
+
             case 'MAX_ERROR':
                 hint = `Must be at most ${paramSchema.maximum}`;
                 break;
-                
+
             case 'MIN_LENGTH_ERROR':
                 hint = `Must be at least ${paramSchema.minLength} characters long`;
                 break;
-                
+
             case 'MAX_LENGTH_ERROR':
                 hint = `Must be at most ${paramSchema.maxLength} characters long`;
                 break;
-                
+
             case 'PATTERN_ERROR':
                 hint = `Must match pattern: ${paramSchema.pattern}`;
                 break;
-                
+
             default:
-                // For unknown error codes, provide general parameter information
                 hint = paramSchema.description || '';
                 if (paramSchema.type) {
                     hint += ` Type: ${getTypeFromSchema(paramSchema)}.`;
                 }
         }
-        
+
         if (hint) {
             hints[paramName] = hint;
         }
     }
-    
+
     return hints;
 }
 
 /**
  * Extract type information from a schema property
- * 
+ *
  * @param schema Schema property to extract type from
  * @returns String representation of the property type
  */
-function getTypeFromSchema(schema: any): string {
+function getTypeFromSchema(schema: SchemaProperty): string {
     if (!schema) return 'any';
-    
+
     if (schema.enum && Array.isArray(schema.enum)) {
         return `enum (${schema.enum.map((v: unknown) => JSON.stringify(v)).join(', ')})`;
     }
-    
-    if (schema.type) {
-        if (schema.type === 'array' && schema.items) {
-            const itemType = schema.items.type || 'any';
-            return `array of ${itemType}`;
+
+    const { type } = schema;
+    if (type) {
+        if (type === 'array' && schema.items) {
+            return `array of ${formatSchemaType(schema.items.type)}`;
         }
-        
-        if (schema.type === 'object' && schema.properties) {
+
+        if (type === 'object' && schema.properties) {
             const propNames = Object.keys(schema.properties);
             if (propNames.length === 0) {
                 return 'object';
             }
             return `object with properties: ${propNames.join(', ')}`;
         }
-        
-        return Array.isArray(schema.type) ? schema.type.join(' | ') : schema.type;
+
+        return formatSchemaType(type);
     }
-    
+
     return 'any';
 }
 
 /**
  * Extract constraints from a schema property
- * 
+ *
  * @param schema Schema property to extract constraints from
  * @returns String representation of constraints, or undefined if none
  */
-function getConstraintsFromSchema(schema: any): string | undefined {
+function getConstraintsFromSchema(schema: SchemaProperty): string | undefined {
     if (!schema) return undefined;
-    
+
     const constraints: string[] = [];
-    
+
     if (schema.minLength !== undefined) {
         constraints.push(`min length: ${schema.minLength}`);
     }
-    
+
     if (schema.maxLength !== undefined) {
         constraints.push(`max length: ${schema.maxLength}`);
     }
-    
+
     if (schema.pattern) {
         constraints.push(`pattern: ${schema.pattern}`);
     }
-    
+
     if (schema.minimum !== undefined) {
         constraints.push(`min: ${schema.minimum}`);
     }
-    
+
     if (schema.maximum !== undefined) {
         constraints.push(`max: ${schema.maximum}`);
     }
-    
+
     if (schema.minItems !== undefined) {
         constraints.push(`min items: ${schema.minItems}`);
     }
-    
+
     if (schema.maxItems !== undefined) {
         constraints.push(`max items: ${schema.maxItems}`);
     }
-    
+
     return constraints.length > 0 ? constraints.join(', ') : undefined;
 }

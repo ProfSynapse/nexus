@@ -94,8 +94,8 @@ export class ProgressiveToolAccordion {
     name: string;
     technicalName?: string;
     type?: string;
-    parameters?: any;
-    result?: any;
+    parameters?: unknown;
+    result?: unknown;
     isComplete?: boolean;
     isVirtual?: boolean;
     status?: string;
@@ -103,7 +103,7 @@ export class ProgressiveToolAccordion {
     this.setDisplayGroup(normalizeToolCallForDisplay(toolCall));
   }
 
-  updateToolParameters(toolId: string, parameters: any, isComplete: boolean): void {
+  updateToolParameters(toolId: string, parameters: unknown, isComplete: boolean): void {
     if (!this.displayGroup) {
       return;
     }
@@ -123,7 +123,7 @@ export class ProgressiveToolAccordion {
     this.refresh();
   }
 
-  startTool(toolCall: { id: string; name: string; technicalName?: string; parameters?: any }): void {
+  startTool(toolCall: { id: string; name: string; technicalName?: string; parameters?: unknown }): void {
     if (!this.displayGroup) {
       this.setDisplayGroup(normalizeToolCallForDisplay({
         id: toolCall.id,
@@ -143,7 +143,7 @@ export class ProgressiveToolAccordion {
     this.refresh();
   }
 
-  completeTool(toolId: string, result: any, success: boolean, error?: string): void {
+  completeTool(toolId: string, result: unknown, success: boolean, error?: string): void {
     if (!this.displayGroup) {
       return;
     }
@@ -166,10 +166,10 @@ export class ProgressiveToolAccordion {
       return;
     }
 
-    const header = this.element.querySelector('.progressive-tool-header') as HTMLElement | null;
-    const icon = this.element.querySelector('.tool-icon') as HTMLElement | null;
-    const text = this.element.querySelector('.tool-text') as HTMLElement | null;
-    const content = this.element.querySelector('.progressive-tool-content') as HTMLElement | null;
+    const header = this.element.querySelector('.progressive-tool-header');
+    const icon = this.element.querySelector('.tool-icon');
+    const text = this.element.querySelector('.tool-text');
+    const content = this.element.querySelector('.progressive-tool-content');
 
     if (!header || !icon || !text || !content) {
       return;
@@ -253,7 +253,7 @@ export class ProgressiveToolAccordion {
 
     const meta = header.createSpan('tool-meta');
     if (step.status === 'streaming' || step.status === 'executing') {
-      meta.textContent = 'thinking...';
+      meta.textContent = 'Thinking...';
       meta.addClass('reasoning-streaming');
     } else {
       meta.textContent = '';
@@ -369,10 +369,10 @@ export class ProgressiveToolAccordion {
         }
         break;
       case 'queued':
-        metaElement.textContent = 'queued';
+        metaElement.textContent = 'Queued';
         break;
       case 'skipped':
-        metaElement.textContent = 'skipped';
+        metaElement.textContent = 'Skipped';
         break;
       default:
         metaElement.textContent = '';
@@ -386,8 +386,8 @@ export class ProgressiveToolAccordion {
 
     this.isExpanded = !this.isExpanded;
 
-    const content = this.element.querySelector('.progressive-tool-content') as HTMLElement | null;
-    const expandIcon = this.element.querySelector('.tool-expand-icon') as HTMLElement | null;
+    const content = this.element.querySelector('.progressive-tool-content');
+    const expandIcon = this.element.querySelector('.tool-expand-icon');
 
     if (!content || !expandIcon) {
       return;
@@ -458,7 +458,7 @@ export class ProgressiveToolAccordion {
 
     const linkContainer = resultSection.createDiv('nexus-view-branch-link-container');
     const viewLink = linkContainer.createEl('a', {
-      text: 'View Branch →',
+      text: 'View branch →',
       cls: 'nexus-view-branch-link clickable-icon',
       href: '#'
     });
@@ -467,13 +467,13 @@ export class ProgressiveToolAccordion {
       this.component.registerDomEvent(viewLink, 'click', (e) => {
         e.preventDefault();
         e.stopPropagation();
-        this.callbacks.onViewBranch?.(branchId!);
+        this.callbacks.onViewBranch?.(branchId);
       });
     } else {
       viewLink.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
-        this.callbacks.onViewBranch?.(branchId!);
+        this.callbacks.onViewBranch?.(branchId);
       });
     }
   }
@@ -520,7 +520,7 @@ export class ProgressiveToolAccordion {
     };
   }
 
-  private normalizeParameters(parameters: any): Record<string, unknown> | undefined {
+  private normalizeParameters(parameters: unknown): Record<string, unknown> | undefined {
     if (parameters === undefined || parameters === null) {
       return undefined;
     }
@@ -595,7 +595,7 @@ export class ProgressiveToolAccordion {
     return this.displayGroup?.steps.find(step => step.id === stepId);
   }
 
-  private findOrCreateStep(stepId: string, name: string, technicalName?: string, parameters?: any): ToolDisplayStep {
+  private findOrCreateStep(stepId: string, name: string, technicalName?: string, parameters?: unknown): ToolDisplayStep {
     if (!this.displayGroup) {
       this.displayGroup = {
         id: stepId,

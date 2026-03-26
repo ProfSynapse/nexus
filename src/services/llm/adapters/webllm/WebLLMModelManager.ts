@@ -2,10 +2,10 @@
  * WebLLMModelManager
  *
  * Single Responsibility: Handle model download, storage, and deletion.
- * Manages model files in the vault's .obsidian/models/ directory.
+ * Manages model files in the vault's config/models/ directory.
  */
 
-import { Vault, requestUrl, FileSystemAdapter } from 'obsidian';
+import { Vault, requestUrl, FileSystemAdapter, normalizePath } from 'obsidian';
 import {
   InstalledModel,
   DownloadProgress,
@@ -16,9 +16,6 @@ import {
 } from './types';
 import { HF_BASE_URL, getWebLLMModel } from './WebLLMModels';
 
-/** Default model storage path within vault */
-const MODEL_STORAGE_PATH = '.obsidian/models';
-
 /** Manifest file name for tracking installed models */
 const INSTALLED_MANIFEST = 'installed-models.json';
 
@@ -28,7 +25,7 @@ export class WebLLMModelManager {
 
   constructor(vault: Vault, customStoragePath?: string) {
     this.vault = vault;
-    this.storagePath = customStoragePath || MODEL_STORAGE_PATH;
+    this.storagePath = customStoragePath || normalizePath(`${this.vault.configDir}/models`);
   }
 
   // ============================================================================

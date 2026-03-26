@@ -91,7 +91,7 @@ export class PromptsTab {
         this.container.empty();
 
         // Header
-        this.container.createEl('h3', { text: 'Custom Prompts' });
+        this.container.createEl('h3', { text: 'Custom prompts' });
         this.container.createEl('p', {
             text: 'Create specialized prompts with custom system instructions',
             cls: 'setting-item-description'
@@ -192,7 +192,7 @@ export class PromptsTab {
         const nameField = form.createDiv('nexus-form-field');
         nameField.createEl('label', { text: 'Name', cls: 'nexus-form-label' });
         const nameInput = new TextComponent(nameField);
-        nameInput.setPlaceholder('e.g., Code Reviewer');
+        nameInput.setPlaceholder('For example, code reviewer');
         nameInput.setValue(prompt.name || '');
         nameInput.onChange((value) => {
             prompt.name = value;
@@ -207,7 +207,7 @@ export class PromptsTab {
             cls: 'nexus-form-hint'
         });
         const descInput = new TextAreaComponent(descField);
-        descInput.setPlaceholder('e.g., Reviews code for best practices and potential issues');
+        descInput.setPlaceholder('For example, reviews code for best practices and potential issues');
         descInput.setValue(prompt.description || '');
         descInput.onChange((value) => {
             prompt.description = value;
@@ -216,7 +216,7 @@ export class PromptsTab {
 
         // System Prompt field
         const promptField = form.createDiv('nexus-form-field');
-        promptField.createEl('label', { text: 'System Prompt', cls: 'nexus-form-label' });
+        promptField.createEl('label', { text: 'System prompt', cls: 'nexus-form-label' });
         promptField.createEl('span', {
             text: 'Instructions that define this prompt\'s behavior and expertise',
             cls: 'nexus-form-hint'

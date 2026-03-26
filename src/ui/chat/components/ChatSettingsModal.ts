@@ -46,7 +46,7 @@ export class ChatSettingsModal extends Modal {
 
     // Header with buttons
     const header = contentEl.createDiv('chat-settings-header');
-    header.createEl('h2', { text: 'Chat Settings' });
+    header.createEl('h2', { text: 'Chat settings' });
 
     const buttonContainer = header.createDiv('chat-settings-buttons');
     new ButtonComponent(buttonContainer)

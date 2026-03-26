@@ -72,8 +72,8 @@ export class OllamaProviderModal implements IProviderModal {
       .addButton(button => {
         this.testButton = button.buttonEl;
         button
-          .setButtonText('Test Connection')
-          .setTooltip('Test connection to Ollama server with the configured model')
+          .setButtonText('Test connection')
+          .setTooltip('Test the connection to the server with the selected model')
           .onClick(() => this.testConnection());
       });
   }
@@ -126,13 +126,13 @@ export class OllamaProviderModal implements IProviderModal {
     container.createEl('h2', { text: 'Model' });
 
     new Setting(container)
-      .setName('Default Model')
-      .setDesc('Enter the name of the Ollama model to use')
+      .setName('Default model')
+      .setDesc('Enter the model name to use.')
       .addText(text => {
         this.modelInput = text.inputEl;
 
         text
-          .setPlaceholder('e.g., llama3.1, mistral, phi3')
+          .setPlaceholder('For example: llama3.1, mistral, phi3')
           .setValue(this.modelName)
           .onChange(value => {
             this.modelName = value;
@@ -153,29 +153,31 @@ export class OllamaProviderModal implements IProviderModal {
     const descDiv = helpDiv.createDiv('setting-item-description');
 
     const details = descDiv.createEl('details');
-    const summary = details.createEl('summary', { text: 'Setup Help' });
+    const summary = details.createEl('summary', { text: 'Setup help' });
     summary.addClass('llm-provider-help-summary');
 
     const contentDiv = details.createDiv();
     contentDiv.addClass('llm-provider-help-content');
 
     const titleP = contentDiv.createEl('p');
-    titleP.createEl('strong', { text: 'To configure Ollama:' });
+    titleP.createEl('strong', { text: 'To configure the server:' });
 
     const ol = contentDiv.createEl('ol');
     ol.addClass('llm-provider-help-list');
 
     const li1 = ol.createEl('li');
-    li1.appendText('Install the model: ');
-    li1.createEl('code', { text: 'ollama pull [model-name]' });
+    li1.appendText('Run ');
+    li1.createEl('code', { text: 'Ollama pull [model-name]' });
+    li1.appendText(' to install the model.');
 
     ol.createEl('li', { text: 'Common models: llama3.1, mistral, codellama, phi3, gemma' });
 
     const li3 = ol.createEl('li');
-    li3.appendText('View installed models: ');
-    li3.createEl('code', { text: 'ollama list' });
+    li3.appendText('Run ');
+    li3.createEl('code', { text: 'Ollama list' });
+    li3.appendText(' to view installed models.');
 
-    ol.createEl('li', { text: 'Enter the exact model name above' });
+    ol.createEl('li', { text: 'Enter the exact model name above.' });
   }
 
   /**
@@ -278,7 +280,7 @@ export class OllamaProviderModal implements IProviderModal {
       new Notice(`Ollama test failed: ${errorMessage}`);
     } finally {
       if (this.testButton) {
-        this.testButton.textContent = 'Test Connection';
+        this.testButton.textContent = 'Test connection';
         this.testButton.disabled = false;
       }
     }

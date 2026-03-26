@@ -149,7 +149,7 @@ export class WorkspaceDetailRenderer {
         });
 
         new ButtonComponent(section)
-            .setButtonText('Manage Projects')
+            .setButtonText('Manage projects')
             .onClick(() => {
                 callbacks.onNavigateProjects();
             });
@@ -258,7 +258,7 @@ export class WorkspaceDetailRenderer {
 
         const formContainer = container.createDiv('nexus-workspace-form');
         const section = formContainer.createDiv('nexus-form-section');
-        section.createEl('h4', { text: 'Project Details', cls: 'nexus-section-header' });
+        section.createEl('h4', { text: 'Project details', cls: 'nexus-section-header' });
 
         const nameField = section.createDiv('nexus-form-field');
         nameField.createEl('label', { text: 'Name', cls: 'nexus-form-label' });
@@ -286,13 +286,13 @@ export class WorkspaceDetailRenderer {
 
         const actions = container.createDiv('nexus-form-actions');
         new ButtonComponent(actions)
-            .setButtonText('Save Project')
+            .setButtonText('Save project')
             .setCta()
             .onClick(() => void onSaveProject());
 
         if (project.id) {
             new ButtonComponent(actions)
-                .setButtonText('Delete Project')
+                .setButtonText('Delete project')
                 .setWarning()
                 .onClick(() => {
                     if (project.id) {
@@ -308,7 +308,7 @@ export class WorkspaceDetailRenderer {
 
         const taskToolbar = tasksSection.createDiv('nexus-task-toolbar');
         new ButtonComponent(taskToolbar)
-            .setButtonText('+ New Task')
+            .setButtonText('+ new task')
             .onClick(() => onOpenTaskDetail());
 
         if (tasks.length === 0) {
@@ -390,13 +390,13 @@ export class WorkspaceDetailRenderer {
         ]);
 
         container.createEl('h3', {
-            text: task.id ? 'Edit Task' : 'New Task',
+            text: task.id ? 'Edit task' : 'New task',
             cls: 'nexus-detail-title'
         });
 
         const form = container.createDiv('nexus-workspace-form');
         const details = form.createDiv('nexus-form-section');
-        details.createEl('h4', { text: 'Task Details', cls: 'nexus-section-header' });
+        details.createEl('h4', { text: 'Task details', cls: 'nexus-section-header' });
 
         const titleField = details.createDiv('nexus-form-field');
         titleField.createEl('label', { text: 'Title', cls: 'nexus-form-label' });
@@ -457,13 +457,13 @@ export class WorkspaceDetailRenderer {
 
         const actions = container.createDiv('nexus-form-actions');
         new ButtonComponent(actions)
-            .setButtonText('Save Task')
+            .setButtonText('Save task')
             .setCta()
             .onClick(() => void onSaveTask());
 
         if (task.id) {
             new ButtonComponent(actions)
-                .setButtonText('Delete Task')
+                .setButtonText('Delete task')
                 .setWarning()
                 .onClick(() => {
                     if (task.id) {

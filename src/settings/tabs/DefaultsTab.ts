@@ -205,7 +205,7 @@ export class DefaultsTab {
 
       new Setting(embeddingsContent)
         .setName('Enable')
-        .setDesc('Local AI for semantic search (~23MB download). Restart to apply.')
+        .setDesc('Semantic search. Restart to apply.')
         .addToggle(toggle => {
           toggle
             .setValue(this.services.settings.settings.enableEmbeddings ?? true)

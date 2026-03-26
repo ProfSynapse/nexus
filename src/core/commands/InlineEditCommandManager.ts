@@ -60,7 +60,7 @@ export class InlineEditCommandManager {
         // Get MarkdownView from context
         const view = ctx instanceof MarkdownView ? ctx : this.getActiveMarkdownView();
         if (!view) {
-          new Notice('No active markdown view');
+          new Notice('No note is open.');
           return;
         }
         await this.handleInlineEdit(editor, view);
@@ -133,7 +133,7 @@ export class InlineEditCommandManager {
     // Get LLM service
     const llmService = await this.config.getService<LLMService>('llmService');
     if (!llmService) {
-      new Notice('LLM service not available. Please check your configuration.');
+      new Notice('Model service unavailable. Check your configuration.');
       return;
     }
 

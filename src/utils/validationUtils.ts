@@ -13,7 +13,57 @@ export interface ValidationError {
     hint?: string;     // Optional hint for fixing the issue
     expectedType?: string; // Expected type or format
     receivedType?: string; // Received type or format
-    allowedValues?: any[]; // Allowed values if enum
+    allowedValues?: unknown[]; // Allowed values if enum
+}
+
+/**
+ * Narrow schema subset used by the validation helpers.
+ */
+export interface SchemaProperty {
+    description?: string;
+    type?: string | readonly string[];
+    enum?: readonly unknown[];
+    default?: unknown;
+    example?: unknown;
+    examples?: readonly unknown[];
+    minimum?: number;
+    maximum?: number;
+    minLength?: number;
+    maxLength?: number;
+    minItems?: number;
+    maxItems?: number;
+    pattern?: string;
+    patternHint?: string;
+    items?: SchemaProperty;
+    properties?: Record<string, SchemaProperty>;
+    required?: readonly string[];
+    allOf?: readonly SchemaProperty[];
+    anyOf?: readonly SchemaProperty[];
+    oneOf?: readonly SchemaProperty[];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isSchemaProperty(value: unknown): value is SchemaProperty {
+    return isRecord(value);
+}
+
+function formatSchemaType(type: SchemaProperty['type']): string {
+    if (Array.isArray(type)) {
+        return Array.from(type).join(' | ');
+    }
+
+    return type ?? 'any';
+}
+
+function getSchemaEntries(properties: Record<string, SchemaProperty>): Array<[string, SchemaProperty]> {
+    return Object.entries(properties);
+}
+
+function cloneSchema(schema: SchemaProperty): SchemaProperty {
+    return structuredClone(schema);
 }
 
 /**
@@ -23,11 +73,11 @@ export interface ValidationError {
  * @param schema Schema to validate against
  * @returns An array of validation errors, empty if validation passed
  */
-export function validateParams(params: any, schema: any): ValidationError[] {
+export function validateParams(params: unknown, schema: unknown): ValidationError[] {
     const errors: ValidationError[] = [];
     
     // Check if schema exists
-    if (!schema || typeof schema !== 'object') {
+    if (!isSchemaProperty(schema)) {
         return [{
             path: [],
             message: 'Invalid schema: Schema is missing or not an object',
@@ -36,7 +86,7 @@ export function validateParams(params: any, schema: any): ValidationError[] {
     }
     
     // Handle required properties
-    const requiredProps = Array.isArray(schema.required) ? schema.required : [];
+    const requiredProps = schema.required ?? [];
     for (const prop of requiredProps) {
         if (!hasProperty(params, prop)) {
             errors.push({
@@ -73,12 +123,12 @@ export function validateParams(params: any, schema: any): ValidationError[] {
  * Validate object properties against schema
  */
 function validateObjectProperties(
-    obj: any, 
-    propSchemas: Record<string, unknown>, 
+    obj: unknown,
+    propSchemas: Record<string, SchemaProperty>,
     path: string[], 
     errors: ValidationError[]
 ): void {
-    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) {
+    if (!isRecord(obj)) {
         errors.push({
             path,
             message: 'Expected an object',
@@ -105,8 +155,8 @@ function validateObjectProperties(
  * Validate a specific property value against its schema
  */
 function validateProperty(
-    value: any, 
-    schema: any, 
+    value: unknown,
+    schema: SchemaProperty,
     path: string[], 
     errors: ValidationError[]
 ): void {
@@ -132,7 +182,7 @@ function validateProperty(
         if (schema.minimum !== undefined && value < schema.minimum) {
             errors.push({
                 path,
-                message: `Value ${value} is less than minimum ${schema.minimum}`,
+                message: `Value ${String(value)} is less than minimum ${schema.minimum}`,
                 code: 'MIN_ERROR',
                 hint: `The minimum allowed value is ${schema.minimum}`
             });
@@ -141,7 +191,7 @@ function validateProperty(
         if (schema.maximum !== undefined && value > schema.maximum) {
             errors.push({
                 path,
-                message: `Value ${value} is greater than maximum ${schema.maximum}`,
+                message: `Value ${String(value)} is greater than maximum ${schema.maximum}`,
                 code: 'MAX_ERROR',
                 hint: `The maximum allowed value is ${schema.maximum}`
             });
@@ -233,7 +283,7 @@ function validateProperty(
 /**
  * Validate all conditions in allOf must be satisfied
  */
-function validateAllOf(obj: any, schemas: any[], errors: ValidationError[]): void {
+function validateAllOf(obj: unknown, schemas: readonly SchemaProperty[], errors: ValidationError[]): void {
     for (const schema of schemas) {
         const subErrors = validateParams(obj, schema);
         errors.push(...subErrors);
@@ -243,7 +293,7 @@ function validateAllOf(obj: any, schemas: any[], errors: ValidationError[]): voi
 /**
  * Validate at least one condition in anyOf must be satisfied
  */
-function validateAnyOf(obj: any, schemas: any[], errors: ValidationError[]): void {
+function validateAnyOf(obj: unknown, schemas: readonly SchemaProperty[], errors: ValidationError[]): void {
     const allSubErrors: ValidationError[][] = [];
     
     // Check if at least one schema is valid
@@ -280,7 +330,7 @@ function validateAnyOf(obj: any, schemas: any[], errors: ValidationError[]): voi
 /**
  * Validate exactly one condition in oneOf must be satisfied
  */
-function validateOneOf(obj: any, schemas: any[], errors: ValidationError[]): void {
+function validateOneOf(obj: unknown, schemas: readonly SchemaProperty[], errors: ValidationError[]): void {
     const validSchemas = schemas.filter(schema => validateParams(obj, schema).length === 0);
     
     if (validSchemas.length === 0) {
@@ -317,14 +367,14 @@ function validateOneOf(obj: any, schemas: any[], errors: ValidationError[]): voi
 /**
  * Check if an object has a given property
  */
-function hasProperty(obj: any, prop: string): boolean {
-    return obj && typeof obj === 'object' && prop in obj;
+function hasProperty(obj: unknown, prop: string): boolean {
+    return isRecord(obj) && prop in obj;
 }
 
 /**
  * Validate a value against a JSON Schema type
  */
-function validateType(value: any, type: string | string[]): boolean {
+function validateType(value: unknown, type: string | readonly string[]): boolean {
     const types = Array.isArray(type) ? type : [type];
     
     return types.some(t => {
@@ -352,20 +402,24 @@ function validateType(value: any, type: string | string[]): boolean {
 /**
  * Get a human-readable description of a type
  */
-function getTypeDescription(type: string | string[]): string {
+function getTypeDescription(type: string | readonly string[]): string {
     if (Array.isArray(type)) {
-        if (type.length === 1) {
-            return getTypeDescription(type[0]);
+        const typeList: string[] = Array.from(type as readonly string[]);
+        if (typeList.length === 1) {
+            return getTypeDescription(typeList[0]);
         }
         
-        const descriptions = type.map(t => getTypeDescription(t));
+        const descriptions = typeList.map(t => getTypeDescription(t));
         const lastDesc = descriptions.pop();
-        return descriptions.length > 0
-            ? `${descriptions.join(', ')} or ${lastDesc}`
-            : lastDesc as string;
+        if (descriptions.length > 0) {
+            return `${descriptions.join(', ')} or ${lastDesc ?? ''}`;
+        }
+        return lastDesc ?? '';
     }
+
+    const normalizedType = formatSchemaType(type);
     
-    switch (type) {
+    switch (normalizedType) {
         case 'string': return 'a string';
         case 'number': return 'a number';
         case 'integer': return 'an integer';
@@ -373,7 +427,7 @@ function getTypeDescription(type: string | string[]): string {
         case 'array': return 'an array';
         case 'object': return 'an object';
         case 'null': return 'null';
-        default: return `a ${type}`;
+        default: return `a ${normalizedType}`;
     }
 }
 
@@ -417,16 +471,16 @@ export function formatValidationErrors(errors: ValidationError[]): string {
  * @param schema The schema to generate hints from
  * @returns Object with parameter hints
  */
-export function generateParameterHints(schema: any): Record<string, string> {
+export function generateParameterHints(schema: unknown): Record<string, string> {
     const hints: Record<string, string> = {};
     
-    if (!schema || !schema.properties) {
+    if (!isSchemaProperty(schema) || !schema.properties) {
         return hints;
     }
     
-    const requiredProps = Array.isArray(schema.required) ? schema.required : [];
+    const requiredProps = schema.required ?? [];
     
-    for (const [propName, propSchema] of Object.entries<any>(schema.properties)) {
+    for (const [propName, propSchema] of getSchemaEntries(schema.properties)) {
         const isRequired = requiredProps.includes(propName);
         const typeInfo = getTypeInfo(propSchema);
         const constraints = getConstraints(propSchema);
@@ -450,7 +504,7 @@ export function generateParameterHints(schema: any): Record<string, string> {
 /**
  * Get type information from a schema property
  */
-function getTypeInfo(schema: any): string {
+function getTypeInfo(schema: SchemaProperty): string {
     if (!schema) return '';
     
     if (schema.enum && Array.isArray(schema.enum)) {
@@ -459,10 +513,9 @@ function getTypeInfo(schema: any): string {
     
     if (schema.type) {
         if (schema.type === 'array' && schema.items) {
-            const itemType = schema.items.type || 'any';
-            return `Array of ${itemType}`;
+            return `Array of ${formatSchemaType(schema.items.type)}`;
         }
-        return Array.isArray(schema.type) ? schema.type.join(' | ') : schema.type;
+        return formatSchemaType(schema.type);
     }
     
     return '';
@@ -471,7 +524,7 @@ function getTypeInfo(schema: any): string {
 /**
  * Get constraints information from a schema property
  */
-function getConstraints(schema: any): string {
+function getConstraints(schema: SchemaProperty): string {
     if (!schema) return '';
     
     const constraints: string[] = [];
@@ -514,16 +567,16 @@ function getConstraints(schema: any): string {
  * @param schema The schema to enhance
  * @returns The enhanced schema
  */
-export function enhanceSchemaDocumentation(schema: any): any {
-    if (!schema || !schema.properties) {
+export function enhanceSchemaDocumentation(schema: SchemaProperty): SchemaProperty {
+    if (!isSchemaProperty(schema) || !schema.properties) {
         return schema;
     }
     
     // Create a deep copy to avoid modifying the original
-    const enhancedSchema = JSON.parse(JSON.stringify(schema));
-    const requiredProps = Array.isArray(enhancedSchema.required) ? enhancedSchema.required : [];
+    const enhancedSchema = cloneSchema(schema);
+    const requiredProps = enhancedSchema.required ?? [];
     
-    for (const [propName, propSchema] of Object.entries<any>(enhancedSchema.properties)) {
+    for (const [propName, propSchema] of getSchemaEntries(enhancedSchema.properties)) {
         const isRequired = requiredProps.includes(propName);
         const requirementMarker = isRequired ? '[REQUIRED] ' : '[OPTIONAL] ';
         

@@ -12,6 +12,7 @@ import {
   GenerateOptions,
   StreamChunk,
   LLMResponse,
+  ToolCall,
   ModelInfo,
   LLMProviderError,
   ProviderConfig,
@@ -35,7 +36,96 @@ import {
   ProviderHttpResponse,
   ProviderStreamRequest
 } from './shared/ProviderHttpClient';
-import { SSEStreamOptions } from '../streaming/SSEStreamProcessor';
+
+interface StreamUsageLike {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+  promptTokens?: number;
+  promptTokenCount?: number;
+  completionTokens?: number;
+  totalTokens?: number;
+  totalTokenCount?: number;
+  candidatesTokenCount?: number;
+  input_tokens?: number;
+  output_tokens?: number;
+  [key: string]: unknown;
+}
+
+interface StreamToolCallAccumulator {
+  id: string;
+  type: string;
+  function: {
+    name: string;
+    arguments: string;
+  };
+  reasoning_details?: unknown[];
+  thought_signature?: string;
+  [key: string]: unknown;
+}
+
+interface StreamToolCallDelta {
+  index?: number;
+  id?: string;
+  type?: string;
+  function?: {
+    name?: string;
+    arguments?: string;
+  };
+  reasoning_details?: unknown[];
+  thought_signature?: string;
+  [key: string]: unknown;
+}
+
+interface StreamParseOptions {
+  extractContent: (parsed: unknown) => string | null;
+  extractToolCalls: (parsed: unknown) => StreamToolCallDelta[] | null;
+  extractFinishReason: (parsed: unknown) => string | null;
+  extractUsage?: (parsed: unknown) => StreamUsageLike | null | undefined;
+  onParseError?: (error: Error, rawData: string) => void;
+  debugLabel?: string;
+  accumulateToolCalls?: boolean;
+  toolCallThrottling?: {
+    initialYield: boolean;
+    progressInterval: number;
+  };
+}
+
+interface BufferedStreamParseOptions extends StreamParseOptions {
+  extractMetadata?: (parsed: unknown) => Record<string, unknown> | null;
+  extractReasoning?: (parsed: unknown) => { text: string; complete: boolean } | null;
+}
+
+interface StreamChunkParseOptions {
+  extractContent: (chunk: unknown) => string | null;
+  extractToolCalls: (chunk: unknown) => StreamToolCallDelta[] | null;
+  extractFinishReason: (chunk: unknown) => string | null;
+  extractUsage?: (chunk: unknown) => StreamUsageLike | null | undefined;
+  extractReasoning?: (parsed: unknown) => { text: string; complete: boolean } | null;
+  debugLabel?: string;
+}
+
+interface NodeJsonLineParseOptions {
+  extractChunk: (parsed: unknown) => StreamChunk | null;
+  extractDone: (parsed: unknown) => boolean;
+}
+
+interface BaseChatMessage {
+  role: 'system' | 'user';
+  content: string;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+function getNumericValue(value: unknown): number | undefined {
+  return isNumber(value) ? value : undefined;
+}
 
 // Browser-compatible hash function (djb2 algorithm)
 // Not cryptographically secure but sufficient for cache keys
@@ -57,7 +147,7 @@ export abstract class BaseAdapter {
   protected config: ProviderConfig;
   protected cache!: BaseCache<LLMResponse>;
 
-  constructor(apiKey: string, defaultModel: string, baseUrl?: string, requiresApiKey: boolean = true) {
+  constructor(apiKey: string, defaultModel: string, baseUrl?: string, _requiresApiKey: boolean = true) {
     this.apiKey = apiKey || '';
     this.currentModel = defaultModel;
 
@@ -67,12 +157,12 @@ export abstract class BaseAdapter {
     };
   }
 
-  protected initializeCache(cacheConfig?: any): void {
+  protected initializeCache(cacheConfig?: Record<string, unknown>): void {
     const cacheName = `${this.name}-responses`;
     // getLRUCache creates a new cache if it doesn't exist
     this.cache = CacheManager.getLRUCache<LLMResponse>(cacheName, {
-      maxSize: cacheConfig?.maxSize || 1000,
-      defaultTTL: cacheConfig?.defaultTTL || 3600000, // 1 hour
+      maxSize: typeof cacheConfig?.maxSize === 'number' ? cacheConfig.maxSize : 1000,
+      defaultTTL: typeof cacheConfig?.defaultTTL === 'number' ? cacheConfig.defaultTTL : 3600000, // 1 hour
       ...cacheConfig
     });
   }
@@ -90,41 +180,14 @@ export abstract class BaseAdapter {
    */
   protected async* processSSEStream(
     response: Response,
-    options: {
-      extractContent: (parsed: any) => string | null;
-      extractToolCalls: (parsed: any) => any[] | null;
-      extractFinishReason: (parsed: any) => string | null;
-      extractUsage?: (parsed: any) => any;
-      onParseError?: (error: Error, rawData: string) => void;
-      debugLabel?: string;
-      // Tool call accumulation settings
-      accumulateToolCalls?: boolean;
-      toolCallThrottling?: {
-        initialYield: boolean;
-        progressInterval: number; // Yield every N characters of arguments
-      };
-    }
+    options: StreamParseOptions
   ): AsyncGenerator<StreamChunk, void, unknown> {
     yield* SSEStreamProcessor.processSSEStream(response, options);
   }
 
   protected async* processBufferedSSEText(
     sseText: string,
-    options: {
-      extractContent: (parsed: any) => string | null;
-      extractToolCalls: (parsed: any) => any[] | null;
-      extractFinishReason: (parsed: any) => string | null;
-      extractUsage?: (parsed: any) => any;
-      extractMetadata?: (parsed: any) => Record<string, unknown> | null;
-      extractReasoning?: (parsed: any) => { text: string; complete: boolean } | null;
-      onParseError?: (error: Error, rawData: string) => void;
-      debugLabel?: string;
-      accumulateToolCalls?: boolean;
-      toolCallThrottling?: {
-        initialYield: boolean;
-        progressInterval: number;
-      };
-    }
+    options: BufferedStreamParseOptions
   ): AsyncGenerator<StreamChunk, void, unknown> {
     yield* BufferedSSEStreamProcessor.processSSEText(sseText, options);
   }
@@ -136,7 +199,7 @@ export abstract class BaseAdapter {
    */
   protected requestStream(
     config: Omit<ProviderStreamRequest, 'provider'>
-  ): Promise<NodeJS.ReadableStream> {
+  ): Promise<AsyncIterable<unknown>> {
     return ProviderHttpClient.requestStream({
       provider: this.name,
       ...config
@@ -149,16 +212,16 @@ export abstract class BaseAdapter {
    * This is the real-streaming replacement for processBufferedSSEText.
    */
   protected async* processNodeStream(
-    nodeStream: NodeJS.ReadableStream,
-    options: SSEStreamOptions
+    nodeStream: AsyncIterable<unknown>,
+    options: BufferedStreamParseOptions
   ): AsyncGenerator<StreamChunk, void, unknown> {
     const { createParser } = await import('eventsource-parser');
 
     const eventQueue: StreamChunk[] = [];
     let isCompleted = false;
-    let usage: any = undefined;
+    let usage: StreamUsageLike | undefined = undefined;
     let metadata: Record<string, unknown> | undefined = undefined;
-    const toolCallsAccumulator: Map<number, any> = new Map();
+    const toolCallsAccumulator: Map<number, StreamToolCallAccumulator> = new Map();
 
     const parser = createParser((event) => {
       if (event.type === 'reconnect-interval' || isCompleted) return;
@@ -178,7 +241,7 @@ export abstract class BaseAdapter {
       }
 
       try {
-        const parsed = JSON.parse(event.data);
+        const parsed: unknown = JSON.parse(event.data);
 
         if (options.extractMetadata) {
           metadata = { ...(metadata || {}), ...(options.extractMetadata(parsed) || {}) };
@@ -207,7 +270,7 @@ export abstract class BaseAdapter {
           for (const toolCall of toolCalls) {
             const index = toolCall.index || 0;
             if (!toolCallsAccumulator.has(index)) {
-              const accumulated: any = {
+              const accumulated: StreamToolCallAccumulator = {
                 id: toolCall.id || '',
                 type: toolCall.type || 'function',
                 function: {
@@ -221,6 +284,7 @@ export abstract class BaseAdapter {
               shouldYieldToolCalls = options.toolCallThrottling?.initialYield !== false;
             } else {
               const existing = toolCallsAccumulator.get(index);
+              if (!existing) continue;
               if (toolCall.id) existing.id = toolCall.id;
               if (toolCall.function?.name) existing.function.name = toolCall.function.name;
               if (toolCall.function?.arguments) {
@@ -264,7 +328,7 @@ export abstract class BaseAdapter {
           });
           isCompleted = true;
         }
-      } catch (parseError) {
+      } catch (parseError: unknown) {
         if (options.onParseError) {
           options.onParseError(parseError as Error, event.data);
         }
@@ -273,10 +337,12 @@ export abstract class BaseAdapter {
 
     // Read from the Node.js stream and feed to the SSE parser
     try {
-      for await (const chunk of nodeStream as AsyncIterable<Buffer>) {
+      for await (const chunk of nodeStream) {
         if (isCompleted) break;
 
-        const text = typeof chunk === 'string' ? chunk : chunk.toString('utf-8');
+        const text = typeof chunk === 'string'
+          ? chunk
+          : Buffer.from(chunk as ArrayBufferLike | Uint8Array).toString('utf-8');
         parser.feed(text);
 
         // Yield queued events
@@ -303,7 +369,7 @@ export abstract class BaseAdapter {
           usage: this.formatStreamUsage(usage)
         };
       }
-    } catch (error) {
+    } catch (error: unknown) {
       // If stream was destroyed (abort), yield completion
       if (!isCompleted) {
         yield { content: '', complete: true };
@@ -317,20 +383,19 @@ export abstract class BaseAdapter {
    * Used by Ollama which returns one JSON object per line instead of SSE.
    */
   protected async* processNodeStreamJsonLines(
-    nodeStream: NodeJS.ReadableStream,
-    options: {
-      extractChunk: (parsed: any) => StreamChunk | null;
-      extractDone: (parsed: any) => boolean;
-    }
+    nodeStream: AsyncIterable<unknown>,
+    options: NodeJsonLineParseOptions
   ): AsyncGenerator<StreamChunk, void, unknown> {
     let buffer = '';
     let isCompleted = false;
 
     try {
-      for await (const chunk of nodeStream as AsyncIterable<Buffer>) {
+      for await (const chunk of nodeStream) {
         if (isCompleted) break;
 
-        buffer += typeof chunk === 'string' ? chunk : chunk.toString('utf-8');
+        buffer += typeof chunk === 'string'
+          ? chunk
+          : Buffer.from(chunk as ArrayBufferLike | Uint8Array).toString('utf-8');
 
         // Process complete lines
         let newlineIdx: number;
@@ -341,7 +406,7 @@ export abstract class BaseAdapter {
           if (!line) continue;
 
           try {
-            const parsed = JSON.parse(line);
+            const parsed: unknown = JSON.parse(line);
             if (options.extractDone(parsed)) {
               isCompleted = true;
               const streamChunk = options.extractChunk(parsed);
@@ -360,7 +425,7 @@ export abstract class BaseAdapter {
       if (!isCompleted) {
         yield { content: '', complete: true };
       }
-    } catch (error) {
+    } catch (error: unknown) {
       if (!isCompleted) {
         yield { content: '', complete: true };
       }
@@ -369,19 +434,33 @@ export abstract class BaseAdapter {
   }
 
   private getFinalToolCallsFromAccumulator(
-    accumulator: Map<number, any>,
-    options: SSEStreamOptions
-  ): any[] | undefined {
+    accumulator: Map<number, StreamToolCallAccumulator>,
+    options: { accumulateToolCalls?: boolean }
+  ): ToolCall[] | undefined {
     if (!options.accumulateToolCalls || accumulator.size === 0) return undefined;
     return Array.from(accumulator.values());
   }
 
-  private formatStreamUsage(usage: any): StreamChunk['usage'] {
+  private formatStreamUsage(usage: StreamUsageLike | undefined): StreamChunk['usage'] {
     if (!usage) return undefined;
     return {
-      promptTokens: usage.prompt_tokens || usage.promptTokenCount || usage.promptTokens || usage.input_tokens || 0,
-      completionTokens: usage.completion_tokens || usage.candidatesTokenCount || usage.completionTokens || usage.output_tokens || 0,
-      totalTokens: usage.total_tokens || usage.totalTokenCount || usage.totalTokens || 0
+      promptTokens:
+        getNumericValue(usage.prompt_tokens) ??
+        getNumericValue(usage.promptTokens) ??
+        getNumericValue(usage.promptTokenCount) ??
+        getNumericValue(usage.input_tokens) ??
+        0,
+      completionTokens:
+        getNumericValue(usage.completion_tokens) ??
+        getNumericValue(usage.candidatesTokenCount) ??
+        getNumericValue(usage.completionTokens) ??
+        getNumericValue(usage.output_tokens) ??
+        0,
+      totalTokens:
+        getNumericValue(usage.total_tokens) ??
+        getNumericValue(usage.totalTokens) ??
+        getNumericValue(usage.totalTokenCount) ??
+        0
     };
   }
 
@@ -398,28 +477,18 @@ export abstract class BaseAdapter {
    * Used by: OpenAI, Groq, Mistral, Requesty, Perplexity, OpenRouter
    */
   protected async* processStream(
-    stream: AsyncIterable<any> | Response,
-    options: {
-      extractContent: (chunk: any) => string | null;
-      extractToolCalls: (chunk: any) => any[] | null;
-      extractFinishReason: (chunk: any) => string | null;
-      extractUsage?: (chunk: any) => any;
-      // Reasoning/thinking extraction for models that support it
-      extractReasoning?: (parsed: any) => { text: string; complete: boolean } | null;
-      debugLabel?: string;
-    }
+    stream: AsyncIterable<unknown> | Response,
+    options: StreamChunkParseOptions
   ): AsyncGenerator<StreamChunk, void, unknown> {
-    const debugLabel = options.debugLabel || 'Stream';
-
     // Determine if this is SDK stream or SSE Response
     const isSdkStream = Symbol.iterator in Object(stream) || Symbol.asyncIterator in Object(stream);
 
     if (isSdkStream) {
       // Process SDK stream (OpenAI SDK, Groq, Mistral)
-      const toolCallsAccumulator: Map<number, any> = new Map();
-      let usage: any = undefined;
+      const toolCallsAccumulator: Map<number, StreamToolCallAccumulator> = new Map();
+      let usage: StreamUsageLike | undefined = undefined;
 
-      for await (const chunk of stream as AsyncIterable<any>) {
+      for await (const chunk of stream as AsyncIterable<unknown>) {
         yield* this.processStreamChunk(chunk, options, toolCallsAccumulator, usage);
 
         // Update usage reference if extracted
@@ -437,9 +506,9 @@ export abstract class BaseAdapter {
         : undefined;
 
       const finalUsage = usage ? {
-        promptTokens: usage.prompt_tokens || usage.promptTokens || 0,
+        promptTokens: usage.prompt_tokens || usage.promptTokens || usage.promptTokenCount || 0,
         completionTokens: usage.completion_tokens || usage.completionTokens || 0,
-        totalTokens: usage.total_tokens || usage.totalTokens || 0
+        totalTokens: usage.total_tokens || usage.totalTokens || usage.totalTokenCount || 0
       } : undefined;
 
       yield {
@@ -467,15 +536,10 @@ export abstract class BaseAdapter {
    * Delegates to StreamChunkProcessor for actual processing
    */
   private* processStreamChunk(
-    chunk: any,
-    options: {
-      extractContent: (chunk: any) => string | null;
-      extractToolCalls: (chunk: any) => any[] | null;
-      extractFinishReason: (chunk: any) => string | null;
-      extractUsage?: (chunk: any) => any;
-    },
-    toolCallsAccumulator: Map<number, any>,
-    usageRef: any
+    chunk: unknown,
+    options: StreamChunkParseOptions,
+    toolCallsAccumulator: Map<number, StreamToolCallAccumulator>,
+    usageRef: StreamUsageLike | undefined
   ): Generator<StreamChunk, void, unknown> {
     yield* StreamChunkProcessor.processStreamChunk(chunk, options, toolCallsAccumulator, usageRef);
   }
@@ -519,14 +583,14 @@ export abstract class BaseAdapter {
   }
 
   // Common implementations
-  async generateJSON(prompt: string, schema?: any, options?: GenerateOptions): Promise<any> {
+  async generateJSON(prompt: string, schema?: unknown, options?: GenerateOptions): Promise<unknown> {
     try {
       const response = await this.generate(prompt, { 
         ...options, 
         jsonMode: true 
       });
       
-      const parsed = JSON.parse(response.text);
+      const parsed: unknown = JSON.parse(response.text);
       
       // Basic schema validation if provided
       if (schema && !this.validateSchema(parsed, schema)) {
@@ -538,7 +602,7 @@ export abstract class BaseAdapter {
       }
       
       return parsed;
-    } catch (error) {
+    } catch (error: unknown) {
       if (error instanceof SyntaxError) {
         throw new LLMProviderError(
           `Invalid JSON response: ${error.message}`,
@@ -574,7 +638,7 @@ export abstract class BaseAdapter {
     await this.cache.clear();
   }
 
-  getCacheMetrics() {
+  getCacheMetrics(): ReturnType<BaseCache<LLMResponse>['getMetrics']> {
     return this.cache.getMetrics();
   }
 
@@ -586,7 +650,7 @@ export abstract class BaseAdapter {
     try {
       await this.listModels();
       return true;
-    } catch (error) {
+    } catch {
       return false;
     }
   }
@@ -653,19 +717,22 @@ export abstract class BaseAdapter {
     maxRetries: number = 3,
     initialDelayMs: number = 50
   ): Promise<T> {
-    let lastError: any;
+    let lastError: unknown;
     let delay = initialDelayMs;
 
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       try {
         return await operation();
-      } catch (error: any) {
+      } catch (error: unknown) {
         lastError = error;
 
         // Only retry on specific "previous_response_not_found" error
         const isPreviousResponseNotFound =
-          error?.status === 400 &&
-          error?.error?.message?.includes('previous_response_not_found');
+          isRecord(error) &&
+          error.status === 400 &&
+          isRecord(error.error) &&
+          typeof error.error.message === 'string' &&
+          error.error.message.includes('previous_response_not_found');
 
         if (!isPreviousResponseNotFound || attempt === maxRetries - 1) {
           throw error;
@@ -676,21 +743,21 @@ export abstract class BaseAdapter {
       }
     }
 
-    throw lastError;
+    throw lastError instanceof Error ? lastError : new Error('Unknown error');
   }
 
-  protected handleError(error: any, operation: string): never {
+  protected handleError(error: unknown, operation: string): never {
     if (error instanceof LLMProviderError) {
       throw error;
     }
 
     if (error instanceof ProviderHttpError) {
       const status = error.response.status;
-      const responseData = error.response.data as Record<string, unknown> | null;
-      const errorObj = responseData?.error as Record<string, unknown> | undefined;
+      const responseData = isRecord(error.response.data) ? error.response.data : null;
+      const errorObj = isRecord(responseData?.error) ? responseData.error : undefined;
       const message =
-        (errorObj?.message as string) ||
-        (responseData?.message as string) ||
+        (typeof errorObj?.message === 'string' ? errorObj.message : undefined) ||
+        (typeof responseData?.message === 'string' ? responseData.message : undefined) ||
         error.response.text ||
         error.message;
 
@@ -709,10 +776,15 @@ export abstract class BaseAdapter {
       );
     }
 
-    if (error.response) {
+    if (isRecord(error) && isRecord(error.response)) {
       // HTTP error
-      const status = error.response.status;
-      const message = error.response.data?.error?.message || error.message;
+      const status = typeof error.response.status === 'number' ? error.response.status : 0;
+      const responseData = isRecord(error.response.data) ? error.response.data : null;
+      const errorData = isRecord(responseData?.error) ? responseData.error : undefined;
+      const message =
+        (typeof errorData?.message === 'string' ? errorData.message : undefined) ||
+        (typeof responseData?.message === 'string' ? responseData.message : undefined) ||
+        (typeof error.message === 'string' ? error.message : 'Unknown error');
       
       let errorCode = 'HTTP_ERROR';
       if (status === 401) errorCode = 'AUTHENTICATION_ERROR';
@@ -724,24 +796,33 @@ export abstract class BaseAdapter {
         `${operation} failed: ${message}`,
         this.name,
         errorCode,
-        error
+        error instanceof Error ? error : undefined
+      );
+    }
+
+    if (isRecord(error) && typeof error.message === 'string') {
+      throw new LLMProviderError(
+        `${operation} failed: ${error.message}`,
+        this.name,
+        'UNKNOWN_ERROR',
+        error instanceof Error ? error : undefined
       );
     }
 
     throw new LLMProviderError(
-      `${operation} failed: ${error.message}`,
+      `${operation} failed: Unknown error`,
       this.name,
       'UNKNOWN_ERROR',
-      error
+      undefined
     );
   }
 
-  protected validateSchema(data: any, schema: any): boolean {
+  protected validateSchema(data: unknown, schema: unknown): boolean {
     return SchemaValidator.validateSchema(data, schema);
   }
 
-  protected buildMessages(prompt: string, systemPrompt?: string): any[] {
-    const messages: any[] = [];
+  protected buildMessages(prompt: string, systemPrompt?: string): BaseChatMessage[] {
+    const messages: BaseChatMessage[] = [];
     
     if (systemPrompt) {
       messages.push({ role: 'system', content: systemPrompt });
@@ -752,7 +833,7 @@ export abstract class BaseAdapter {
     return messages;
   }
 
-  protected extractUsage(response: any): TokenUsage | undefined {
+  protected extractUsage(response: unknown): TokenUsage | undefined {
     return TokenUsageExtractor.extractUsage(response);
   }
 
@@ -776,7 +857,7 @@ export abstract class BaseAdapter {
     usage?: TokenUsage,
     metadata?: Record<string, unknown>,
     finishReason?: 'stop' | 'length' | 'tool_calls' | 'content_filter',
-    toolCalls?: any[]
+    toolCalls?: ToolCall[]
   ): Promise<LLMResponse> {
     const response: LLMResponse = {
       text: content,
@@ -789,8 +870,12 @@ export abstract class BaseAdapter {
     };
 
     // Extract webSearchResults from metadata if present
-    if (metadata?.webSearchResults && Array.isArray(metadata.webSearchResults)) {
-      response.webSearchResults = metadata.webSearchResults as SearchResult[];
+    if (Array.isArray(metadata?.webSearchResults)) {
+      response.webSearchResults = metadata.webSearchResults.filter((result): result is SearchResult => {
+        return isRecord(result) &&
+          typeof result.title === 'string' &&
+          typeof result.url === 'string';
+      });
     }
 
     // Calculate cost if usage is available

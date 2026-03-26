@@ -61,7 +61,7 @@ export class TaskBoardView extends ItemView {
   }
 
   getDisplayText(): string {
-    return 'Task Board';
+    return 'Task board';
   }
 
   getIcon(): string {
@@ -250,7 +250,7 @@ export class TaskBoardView extends ItemView {
     const header = container.createDiv('nexus-task-board-header');
     const text = header.createDiv();
     text.createDiv({ cls: 'nexus-task-board-kicker', text: 'Workspace view' });
-    text.createEl('h2', { text: 'Task Board' });
+    text.createEl('h2', { text: 'Task board' });
     text.createEl('p', {
       cls: 'nexus-task-board-subtitle',
       text: 'Drag cards to change status. Use the edit icon for task details.'

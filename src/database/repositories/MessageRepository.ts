@@ -23,6 +23,77 @@ import { MessageData, AlternativeMessage } from '../../types/storage/HybridStora
 import { MessageEvent, MessageUpdatedEvent, MessageDeletedEvent, AlternativeMessageEvent } from '../interfaces/StorageEvents';
 import { PaginatedResult, PaginationParams } from '../../types/pagination/PaginationTypes';
 
+interface MessageRow {
+  id: string;
+  conversationId: string;
+  role: MessageData['role'];
+  content: string | null;
+  timestamp: number;
+  state?: MessageData['state'] | null;
+  sequenceNumber: number;
+  toolCallId?: string | null;
+  reasoningContent?: string | null;
+  metadataJson?: string | null;
+  toolCallsJson?: string | null;
+  alternativesJson?: string | null;
+  activeAlternativeIndex?: number | null;
+}
+
+interface MessageUpdateRow {
+  conversationId: string;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isToolCall(value: unknown): value is NonNullable<MessageData['toolCalls']>[number] {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  const functionValue = value.function;
+  return typeof value.id === 'string'
+    && value.type === 'function'
+    && isRecord(functionValue)
+    && typeof functionValue.name === 'string'
+    && typeof functionValue.arguments === 'string';
+}
+
+function isAlternativeMessage(value: unknown): value is AlternativeMessage {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return typeof value.id === 'string'
+    && (value.content === null || typeof value.content === 'string')
+    && typeof value.timestamp === 'number'
+    && (value.state === 'draft'
+      || value.state === 'streaming'
+      || value.state === 'complete'
+      || value.state === 'aborted'
+      || value.state === 'invalid');
+}
+
+function parseJsonField<T>(
+  value: string | null | undefined,
+  isValid: (parsed: unknown) => parsed is T,
+  fieldName: string,
+  messageId: string
+): T | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return isValid(parsed) ? parsed : undefined;
+  } catch {
+    console.error(`[MessageRepository] Failed to parse ${fieldName} for message ${messageId}`);
+    return undefined;
+  }
+}
+
 /**
  * Callback signature for message completion observers.
  *
@@ -100,12 +171,12 @@ export class MessageRepository
   // Abstract method implementations
   // ============================================================================
 
-  protected rowToEntity(row: any): MessageData {
+  protected rowToEntity(row: MessageRow): MessageData {
     return this.rowToMessage(row);
   }
 
   async getById(id: string): Promise<MessageData | null> {
-    const row = await this.sqliteCache.queryOne<any>(
+    const row = await this.sqliteCache.queryOne<MessageRow>(
       `SELECT * FROM ${this.tableName} WHERE id = ?`,
       [id]
     );
@@ -126,7 +197,7 @@ export class MessageRepository
     };
   }
 
-  async create(data: any): Promise<string> {
+  async create(_data: CreateMessageData): Promise<string> {
     // Use addMessage with conversationId
     throw new Error('Use addMessage(conversationId, data) instead');
   }
@@ -169,7 +240,7 @@ export class MessageRepository
     const totalItems = countResult?.count ?? 0;
 
     // Get data (ordered by sequence number)
-    const rows = await this.sqliteCache.query<any>(
+    const rows = await this.sqliteCache.query<MessageRow>(
       `SELECT * FROM ${this.tableName} WHERE conversationId = ?
        ORDER BY sequenceNumber ASC
        LIMIT ? OFFSET ?`,
@@ -223,7 +294,7 @@ export class MessageRepository
     startSeq: number,
     endSeq: number
   ): Promise<MessageData[]> {
-    const rows = await this.sqliteCache.query<any>(
+    const rows = await this.sqliteCache.query<MessageRow>(
       `SELECT * FROM ${this.tableName}
        WHERE conversationId = ?
          AND sequenceNumber >= ?
@@ -340,7 +411,7 @@ export class MessageRepository
   async update(messageId: string, data: UpdateMessageData): Promise<void> {
     try {
       // Get message to find conversation ID
-      const message = await this.sqliteCache.queryOne<any>(
+      const message = await this.sqliteCache.queryOne<MessageUpdateRow>(
         `SELECT conversationId FROM ${this.tableName} WHERE id = ?`,
         [messageId]
       );
@@ -381,7 +452,7 @@ export class MessageRepository
 
       // 2. Update SQLite cache
       const setClauses: string[] = [];
-      const params: any[] = [];
+      const params: Array<string | number | null> = [];
 
       if (data.content !== undefined) {
         setClauses.push('content = ?');
@@ -477,38 +548,10 @@ export class MessageRepository
   /**
    * Convert SQLite row to MessageData
    */
-  private rowToMessage(row: any): MessageData {
-    let toolCalls: any;
-    let metadata: any;
-    let alternatives: any;
-
-    // Defensive JSON parsing — corrupt data shouldn't crash the entire message load
-    if (row.toolCallsJson) {
-      try {
-        toolCalls = JSON.parse(row.toolCallsJson);
-      } catch {
-        console.error(`[MessageRepository] Failed to parse toolCallsJson for message ${row.id}`);
-        toolCalls = undefined;
-      }
-    }
-
-    if (row.metadataJson) {
-      try {
-        metadata = JSON.parse(row.metadataJson);
-      } catch {
-        console.error(`[MessageRepository] Failed to parse metadataJson for message ${row.id}`);
-        metadata = undefined;
-      }
-    }
-
-    if (row.alternativesJson) {
-      try {
-        alternatives = JSON.parse(row.alternativesJson);
-      } catch {
-        console.error(`[MessageRepository] Failed to parse alternativesJson for message ${row.id}`);
-        alternatives = undefined;
-      }
-    }
+  private rowToMessage(row: MessageRow): MessageData {
+    const toolCalls = parseJsonField(row.toolCallsJson, isToolCallArray, 'toolCallsJson', row.id);
+    const metadata = parseJsonField(row.metadataJson, isRecord, 'metadataJson', row.id);
+    const alternatives = parseJsonField(row.alternativesJson, isAlternativeMessageArray, 'alternativesJson', row.id);
 
     return {
       id: row.id,
@@ -554,4 +597,12 @@ export class MessageRepository
       state: alt.state
     }));
   }
+}
+
+function isToolCallArray(value: unknown): value is NonNullable<MessageData['toolCalls']> {
+  return Array.isArray(value) && value.every(isToolCall);
+}
+
+function isAlternativeMessageArray(value: unknown): value is AlternativeMessage[] {
+  return Array.isArray(value) && value.every(isAlternativeMessage);
 }

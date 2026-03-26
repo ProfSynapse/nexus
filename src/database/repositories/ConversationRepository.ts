@@ -24,6 +24,107 @@ import { ConversationCreatedEvent, ConversationUpdatedEvent } from '../interface
 import { PaginatedResult, PaginationParams } from '../../types/pagination/PaginationTypes';
 import { QueryOptions } from '../interfaces/IStorageAdapter';
 
+interface ConversationRow {
+  id: string;
+  title: string;
+  created: number;
+  updated: number;
+  vaultName: string;
+  messageCount: number;
+  metadataJson?: string | null;
+  workspaceId?: string | null;
+  sessionId?: string | null;
+  workflowId?: string | null;
+  runTrigger?: string | null;
+  scheduledFor?: number | null;
+  runKey?: string | null;
+}
+
+type ConversationSortColumn = 'id' | 'title' | 'created' | 'updated' | 'vaultName' | 'messageCount' | 'workspaceId' | 'sessionId';
+type ConversationSortOrder = 'asc' | 'desc';
+
+interface ConversationChatSettings extends Record<string, unknown> {
+  workspaceId?: string;
+  sessionId?: string;
+}
+
+interface ConversationMetadataRecord extends Record<string, unknown> {
+  chatSettings?: ConversationChatSettings;
+  workspaceId?: string;
+  sessionId?: string;
+  workflowId?: string;
+  runTrigger?: string;
+  scheduledFor?: number;
+  runKey?: string;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isString(value: unknown): value is string {
+  return typeof value === 'string';
+}
+
+function isNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+function isAllowedSortColumn(value: string): value is ConversationSortColumn {
+  return value === 'id' ||
+    value === 'title' ||
+    value === 'created' ||
+    value === 'updated' ||
+    value === 'vaultName' ||
+    value === 'messageCount' ||
+    value === 'workspaceId' ||
+    value === 'sessionId';
+}
+
+function isAllowedSortOrder(value: string): value is ConversationSortOrder {
+  return value === 'asc' || value === 'desc';
+}
+
+function parseConversationMetadata(metadataJson: string | null | undefined): ConversationMetadataRecord | undefined {
+  if (!metadataJson) {
+    return undefined;
+  }
+
+  const parsed: unknown = JSON.parse(metadataJson);
+  return isRecord(parsed) ? parsed : undefined;
+}
+
+function isConversationChatSettings(value: unknown): value is ConversationChatSettings {
+  return isRecord(value) &&
+    (value.workspaceId === undefined || isString(value.workspaceId)) &&
+    (value.sessionId === undefined || isString(value.sessionId));
+}
+
+function isConversationRow(value: unknown): value is ConversationRow {
+  return isRecord(value) &&
+    isString(value.id) &&
+    isString(value.title) &&
+    isNumber(value.created) &&
+    isNumber(value.updated) &&
+    isString(value.vaultName) &&
+    isNumber(value.messageCount) &&
+    (value.metadataJson === undefined || value.metadataJson === null || isString(value.metadataJson)) &&
+    (value.workspaceId === undefined || value.workspaceId === null || isString(value.workspaceId)) &&
+    (value.sessionId === undefined || value.sessionId === null || isString(value.sessionId)) &&
+    (value.workflowId === undefined || value.workflowId === null || isString(value.workflowId)) &&
+    (value.runTrigger === undefined || value.runTrigger === null || isString(value.runTrigger)) &&
+    (value.scheduledFor === undefined || value.scheduledFor === null || isNumber(value.scheduledFor)) &&
+    (value.runKey === undefined || value.runKey === null || isString(value.runKey));
+}
+
+function getConversationChatSettings(metadata: Record<string, unknown> | undefined): ConversationChatSettings | undefined {
+  if (!metadata || !isConversationChatSettings(metadata.chatSettings)) {
+    return undefined;
+  }
+
+  return metadata.chatSettings;
+}
+
 /**
  * Conversation repository implementation
  *
@@ -49,7 +150,11 @@ export class ConversationRepository
   // Abstract method implementations
   // ============================================================================
 
-  protected rowToEntity(row: any): ConversationMetadata {
+  protected rowToEntity(row: unknown): ConversationMetadata {
+    if (!isConversationRow(row)) {
+      throw new Error('Invalid conversation row');
+    }
+
     return this.rowToConversation(row);
   }
 
@@ -68,7 +173,7 @@ export class ConversationRepository
     return this.getCachedOrFetch(
       `${this.entityType}:${id}`,
       async () => {
-        const row = await this.sqliteCache.queryOne<any>(
+        const row = await this.sqliteCache.queryOne<ConversationRow>(
           `SELECT * FROM ${this.tableName} WHERE id = ?`,
           [id]
         );
@@ -81,27 +186,24 @@ export class ConversationRepository
    * Get all conversations with pagination and filtering
    */
   async getConversations(options?: QueryOptions): Promise<PaginatedResult<ConversationMetadata>> {
-    const ALLOWED_SORT_COLUMNS = ['id', 'title', 'created', 'updated', 'vaultName', 'messageCount', 'workspaceId', 'sessionId'] as const;
-    const ALLOWED_SORT_ORDERS = ['asc', 'desc'] as const;
-
     const page = options?.page ?? 0;
     const pageSize = Math.min(options?.pageSize ?? 25, 200);
     const requestedSort = options?.sortBy ?? 'updated';
     const requestedOrder = options?.sortOrder ?? 'desc';
     const includeBranches = options?.includeBranches ?? false;
 
-    if (!ALLOWED_SORT_COLUMNS.includes(requestedSort as typeof ALLOWED_SORT_COLUMNS[number])) {
+    if (!isAllowedSortColumn(requestedSort)) {
       throw new Error(`Invalid sort column: ${requestedSort}`);
     }
-    if (!ALLOWED_SORT_ORDERS.includes(requestedOrder as typeof ALLOWED_SORT_ORDERS[number])) {
-      throw new Error(`Invalid sort order: ${requestedOrder}`);
+    if (!isAllowedSortOrder(requestedOrder)) {
+      throw new Error(`Invalid sort order: ${String(requestedOrder)}`);
     }
-    const sortBy = requestedSort;
-    const sortOrder = requestedOrder;
+    const sortBy: ConversationSortColumn = requestedSort;
+    const sortOrder: ConversationSortOrder = requestedOrder;
 
     // Build WHERE clause
     const filters: string[] = [];
-    const params: any[] = [];
+    const params: Array<string | number | null> = [];
 
     // Exclude branches by default (branches have parentConversationId in metadata)
     if (!includeBranches) {
@@ -145,7 +247,7 @@ export class ConversationRepository
     const totalItems = countResult?.count ?? 0;
 
     // Get data
-    const rows = await this.sqliteCache.query<any>(
+    const rows = await this.sqliteCache.query<ConversationRow>(
       `SELECT * FROM ${this.tableName} ${whereClause}
        ORDER BY ${sortBy} ${sortOrder}
        LIMIT ? OFFSET ?`,
@@ -168,7 +270,9 @@ export class ConversationRepository
    */
   async search(query: string): Promise<ConversationMetadata[]> {
     const rows = await this.sqliteCache.searchConversations(query);
-    return rows.map((r) => this.rowToConversation(r));
+    return rows
+      .filter(isConversationRow)
+      .map((r) => this.rowToConversation(r));
   }
 
   /**
@@ -176,7 +280,7 @@ export class ConversationRepository
    */
   async count(filter?: Record<string, unknown>): Promise<number> {
     let whereClause = '';
-    const params: any[] = [];
+    const params: Array<string | number | null> = [];
 
     if (filter) {
       const filters: string[] = [];
@@ -284,7 +388,7 @@ export class ConversationRepository
 
       // 2. Update SQLite cache
       const setClauses: string[] = [];
-      const params: any[] = [];
+      const params: Array<string | number | null> = [];
 
       if (data.title !== undefined) {
         setClauses.push('title = ?');
@@ -400,9 +504,9 @@ export class ConversationRepository
   /**
    * Convert SQLite row to ConversationMetadata
    */
-  private rowToConversation(row: any): ConversationMetadata {
-    const metadata = row.metadataJson ? JSON.parse(row.metadataJson) : undefined;
-    const chatSettings = metadata?.chatSettings;
+  private rowToConversation(row: ConversationRow): ConversationMetadata {
+    const metadata = parseConversationMetadata(row.metadataJson);
+    const chatSettings = getConversationChatSettings(metadata);
     const workspaceId = row.workspaceId ?? metadata?.workspaceId ?? chatSettings?.workspaceId;
     const sessionId = row.sessionId ?? metadata?.sessionId ?? chatSettings?.sessionId;
     const workflowId = row.workflowId ?? metadata?.workflowId;
@@ -427,26 +531,28 @@ export class ConversationRepository
   }
 
   private getWorkspaceId(data: Partial<ConversationMetadata>): string | undefined {
-    return data.workspaceId ?? (data.metadata?.chatSettings as { workspaceId?: string } | undefined)?.workspaceId;
+    const chatSettings = getConversationChatSettings(data.metadata);
+    return data.workspaceId ?? chatSettings?.workspaceId;
   }
 
   private getSessionId(data: Partial<ConversationMetadata>): string | undefined {
-    return data.sessionId ?? (data.metadata?.chatSettings as { sessionId?: string } | undefined)?.sessionId;
+    const chatSettings = getConversationChatSettings(data.metadata);
+    return data.sessionId ?? chatSettings?.sessionId;
   }
 
   private getWorkflowId(data: Partial<ConversationMetadata>): string | undefined {
-    return data.workflowId ?? (data.metadata?.workflowId as string | undefined);
+    return data.workflowId ?? (isRecord(data.metadata) && isString(data.metadata.workflowId) ? data.metadata.workflowId : undefined);
   }
 
   private getRunTrigger(data: Partial<ConversationMetadata>): string | undefined {
-    return data.runTrigger ?? (data.metadata?.runTrigger as string | undefined);
+    return data.runTrigger ?? (isRecord(data.metadata) && isString(data.metadata.runTrigger) ? data.metadata.runTrigger : undefined);
   }
 
   private getScheduledFor(data: Partial<ConversationMetadata>): number | undefined {
-    return data.scheduledFor ?? (data.metadata?.scheduledFor as number | undefined);
+    return data.scheduledFor ?? (isRecord(data.metadata) && typeof data.metadata.scheduledFor === 'number' ? data.metadata.scheduledFor : undefined);
   }
 
   private getRunKey(data: Partial<ConversationMetadata>): string | undefined {
-    return data.runKey ?? (data.metadata?.runKey as string | undefined);
+    return data.runKey ?? (isRecord(data.metadata) && isString(data.metadata.runKey) ? data.metadata.runKey : undefined);
   }
 }

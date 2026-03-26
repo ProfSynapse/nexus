@@ -8,11 +8,10 @@
  * with contextual vault information for better Claude understanding.
  */
 
-import { ISchemaProvider, EnhancedJSONSchema } from '../../interfaces/ISchemaProvider';
+import { EnhancedJSONSchema } from '../../interfaces/ISchemaProvider';
 import { BaseSchemaProvider } from '../BaseSchemaProvider';
-import { App, TFile, TFolder } from 'obsidian';
+import { App, TFolder } from 'obsidian';
 import { logger } from '../../../utils/logger';
-import { FileUtils } from '../../../database/utils/FileUtils';
 
 interface VaultStructureInfo {
   rootFolders: Array<{
@@ -118,20 +117,19 @@ export class VaultSchemaProvider extends BaseSchemaProvider {
 
       // Get root folders with file counts
       const rootFolders = rootFolder.children
-        .filter(child => child instanceof TFolder)
+        .filter((child): child is TFolder => child instanceof TFolder)
         .slice(0, this.MAX_FOLDERS_TO_SHOW) // Limit to prevent schema bloat
         .map(folder => {
-          const typedFolder = folder as TFolder;
           const filesInFolder = markdownFiles.filter(file => 
-            file.path.startsWith(typedFolder.path + '/')
+            file.path.startsWith(folder.path + '/')
           ).length;
 
-          const subfolderCount = typedFolder.children
-            .filter(child => child instanceof TFolder)
+          const subfolderCount = folder.children
+            .filter((child): child is TFolder => child instanceof TFolder)
             .length;
 
           return {
-            name: typedFolder.name,
+            name: folder.name,
             fileCount: filesInFolder,
             subfolderCount
           };

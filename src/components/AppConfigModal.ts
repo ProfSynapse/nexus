@@ -191,7 +191,7 @@ export class AppConfigModal extends Modal {
         }
 
         // Add a "use default" option
-        dropdown.addOption('', 'Default (Eleven Multilingual v2)');
+        dropdown.addOption('', 'Use default model');
 
         for (const option of result.options) {
           dropdown.addOption(option.value, option.label);

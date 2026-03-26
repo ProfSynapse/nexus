@@ -15,9 +15,64 @@
 
 export interface ReasoningDetails {
   /** OpenRouter format: array of reasoning detail objects */
-  reasoning_details?: any[];
+  reasoning_details?: unknown[];
   /** Google Gemini format: thought signature string */
   thought_signature?: string;
+}
+
+interface ReasoningToolCall {
+  id?: string;
+  type?: string;
+  name?: string;
+  function?: {
+    name?: string;
+    arguments?: string;
+  };
+  parameters?: Record<string, unknown>;
+  reasoning_details?: unknown[];
+  thought_signature?: string;
+  [key: string]: unknown;
+}
+
+interface AssistantToolCall {
+  id: string;
+  type: 'function';
+  function: {
+    name: string;
+    arguments: string;
+  };
+  reasoning_details?: unknown[];
+  thought_signature?: string;
+  [key: string]: unknown;
+}
+
+interface AssistantMessage {
+  role: 'assistant';
+  content: string | null;
+  tool_calls: AssistantToolCall[];
+  reasoning_details?: unknown[];
+  [key: string]: unknown;
+}
+
+interface GoogleModelPart {
+  functionCall: {
+    name: string;
+    args: unknown;
+  };
+  thoughtSignature?: string;
+}
+
+interface GoogleModelMessage {
+  role: 'model';
+  parts: GoogleModelPart[];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isUnknownArray(value: unknown): value is unknown[] {
+  return Array.isArray(value);
 }
 
 export class ReasoningPreserver {
@@ -48,45 +103,56 @@ export class ReasoningPreserver {
    * In streaming, reasoning_details appears in choice.delta.reasoning_details
    * See: https://openrouter.ai/docs/guides/best-practices/reasoning-tokens
    */
-  static extractFromStreamChunk(parsed: any): any[] | undefined {
-    // Check top-level first
-    if (parsed.reasoning_details) {
+  static extractFromStreamChunk(parsed: unknown): unknown[] | undefined {
+    if (!isRecord(parsed)) {
+      return undefined;
+    }
+
+    if (isUnknownArray(parsed.reasoning_details)) {
       return parsed.reasoning_details;
     }
 
-    // Check each choice
-    for (const choice of parsed.choices || []) {
-      // Streaming: check delta
-      if (choice?.delta?.reasoning_details) {
+    if (!Array.isArray(parsed.choices)) {
+      return undefined;
+    }
+
+    for (const choice of parsed.choices) {
+      if (!isRecord(choice)) {
+        continue;
+      }
+
+      if (isRecord(choice.delta) && isUnknownArray(choice.delta.reasoning_details)) {
         return choice.delta.reasoning_details;
       }
-      // Non-streaming: check message
-      if (choice?.message?.reasoning_details) {
+
+      if (isRecord(choice.message) && isUnknownArray(choice.message.reasoning_details)) {
         return choice.message.reasoning_details;
       }
-      // Also check at choice level
-      if (choice?.reasoning_details) {
+
+      if (isUnknownArray(choice.reasoning_details)) {
         return choice.reasoning_details;
       }
     }
+
     return undefined;
   }
 
   /**
    * Extract reasoning data from a non-streaming response (OpenRouter format)
    */
-  static extractFromResponse(choice: any): ReasoningDetails | undefined {
-    const message = choice?.message;
-    if (!message) return undefined;
+  static extractFromResponse(choice: unknown): ReasoningDetails | undefined {
+    if (!isRecord(choice) || !isRecord(choice.message)) {
+      return undefined;
+    }
 
     const result: ReasoningDetails = {};
 
-    if (message.reasoning_details) {
-      result.reasoning_details = message.reasoning_details;
+    if (isUnknownArray(choice.message.reasoning_details)) {
+      result.reasoning_details = choice.message.reasoning_details;
     }
 
-    if (message.thought_signature) {
-      result.thought_signature = message.thought_signature;
+    if (typeof choice.message.thought_signature === 'string') {
+      result.thought_signature = choice.message.thought_signature;
     }
 
     return Object.keys(result).length > 0 ? result : undefined;
@@ -95,8 +161,20 @@ export class ReasoningPreserver {
   /**
    * Extract thought_signature from Google Gemini streaming part
    */
-  static extractThoughtSignatureFromPart(part: any): string | undefined {
-    return part.thoughtSignature || part.thought_signature;
+  static extractThoughtSignatureFromPart(part: unknown): string | undefined {
+    if (!isRecord(part)) {
+      return undefined;
+    }
+
+    if (typeof part.thoughtSignature === 'string') {
+      return part.thoughtSignature;
+    }
+
+    if (typeof part.thought_signature === 'string') {
+      return part.thought_signature;
+    }
+
+    return undefined;
   }
 
   /**
@@ -104,11 +182,11 @@ export class ReasoningPreserver {
    * Returns new tool call objects with reasoning attached
    */
   static attachToToolCalls(
-    toolCalls: any[],
+    toolCalls: readonly ReasoningToolCall[],
     reasoning: ReasoningDetails | undefined
-  ): any[] {
+  ): ReasoningToolCall[] {
     if (!reasoning || !toolCalls?.length) {
-      return toolCalls;
+      return [...toolCalls];
     }
 
     return toolCalls.map(tc => ({
@@ -121,15 +199,15 @@ export class ReasoningPreserver {
   /**
    * Extract reasoning from tool calls (for building continuation messages)
    */
-  static extractFromToolCalls(toolCalls: any[]): ReasoningDetails | undefined {
+  static extractFromToolCalls(toolCalls: readonly ReasoningToolCall[]): ReasoningDetails | undefined {
     if (!toolCalls?.length) return undefined;
 
     // Find the first tool call with reasoning data
     for (const tc of toolCalls) {
-      if (tc.reasoning_details) {
+      if (isUnknownArray(tc.reasoning_details)) {
         return { reasoning_details: tc.reasoning_details };
       }
-      if (tc.thought_signature) {
+      if (typeof tc.thought_signature === 'string') {
         return { thought_signature: tc.thought_signature };
       }
     }
@@ -146,29 +224,29 @@ export class ReasoningPreserver {
    * 2. On the message itself (for some providers)
    */
   static buildAssistantMessageWithReasoning(
-    toolCalls: any[],
+    toolCalls: readonly ReasoningToolCall[],
     content: string | null = null
-  ): any {
+  ): AssistantMessage {
     const reasoning = this.extractFromToolCalls(toolCalls);
 
-    const message: any = {
+    const message: AssistantMessage = {
       role: 'assistant',
       content,
       tool_calls: toolCalls.map(tc => {
-        const toolCall: any = {
-          id: tc.id,
+        const toolCall: AssistantToolCall = {
+          id: tc.id ?? '',
           type: 'function',
           function: {
-            name: tc.function?.name || tc.name,
+            name: tc.function?.name || tc.name || '',
             arguments: tc.function?.arguments || JSON.stringify(tc.parameters || {})
           }
         };
 
         // CRITICAL: Preserve reasoning data on each tool call (Gemini requires this)
-        if (tc.reasoning_details) {
+        if (isUnknownArray(tc.reasoning_details)) {
           toolCall.reasoning_details = tc.reasoning_details;
         }
-        if (tc.thought_signature) {
+        if (typeof tc.thought_signature === 'string') {
           toolCall.thought_signature = tc.thought_signature;
         }
 
@@ -188,17 +266,17 @@ export class ReasoningPreserver {
    * Build a Google Gemini model message with thought signature preserved
    * Used for tool continuation requests
    */
-  static buildGoogleModelMessageWithThinking(toolCalls: any[]): any {
+  static buildGoogleModelMessageWithThinking(toolCalls: readonly ReasoningToolCall[]): GoogleModelMessage {
     const parts = toolCalls.map(tc => {
-      const part: any = {
+      const part: GoogleModelPart = {
         functionCall: {
-          name: tc.function?.name || tc.name,
+          name: tc.function?.name || tc.name || '',
           args: JSON.parse(tc.function?.arguments || '{}')
         }
       };
 
       // Preserve thought_signature if present
-      if (tc.thought_signature) {
+      if (typeof tc.thought_signature === 'string') {
         part.thoughtSignature = tc.thought_signature;
       }
 
@@ -215,7 +293,7 @@ export class ReasoningPreserver {
    * Get reasoning request parameters for a model
    * Returns the parameters to enable reasoning capture (if applicable)
    */
-  static getReasoningRequestParams(model: string, provider: string, hasTools: boolean): any {
+  static getReasoningRequestParams(model: string, provider: string, hasTools: boolean): Record<string, unknown> {
     if (!hasTools) return {};
 
     if (this.requiresReasoningPreservation(model, provider)) {
@@ -227,7 +305,7 @@ export class ReasoningPreserver {
         return {
           reasoning: {
             max_tokens: 8192,
-            exclude: false  // Include reasoning in response
+            exclude: false // Include reasoning in response
           }
         };
       }

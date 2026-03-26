@@ -9,7 +9,7 @@
  * Simplified architecture for JSON-based storage
  */
 
-import type { Plugin } from 'obsidian';
+import type { App, Plugin } from 'obsidian';
 import { Events } from 'obsidian';
 import type { ServiceManager } from '../ServiceManager';
 import type { Settings } from '../../settings';
@@ -18,19 +18,62 @@ import type { DirectToolExecutor } from '../../services/chat/DirectToolExecutor'
 import type { AgentRegistrationService } from '../../services/agent/AgentRegistrationService';
 import type { SessionContextManager } from '../../services/SessionContextManager';
 
+type VaultOperationsService = import('../VaultOperations').VaultOperations;
+type WorkspaceServiceType = import('../../services/WorkspaceService').WorkspaceService;
+type MemoryServiceType = import('../../agents/memoryManager/services/MemoryService').MemoryService;
+type SessionMemoryService = import('../../services/session/SessionService').IMemoryService;
+type AgentManagerType = import('../../services/AgentManager').AgentManager;
+type ChatTraceServiceType = import('../../services/chat/ChatTraceService').ChatTraceService;
+type ChatServiceType = import('../../services/chat/ChatService').ChatService;
+type ConversationServiceType = import('../../services/ConversationService').ConversationService;
+type CustomPromptStorageServiceType = import('../../agents/promptManager/services/CustomPromptStorageService').CustomPromptStorageService;
+type WorkflowRunServiceType = import('../../services/workflows/WorkflowRunService').WorkflowRunService;
+
+interface PluginWithEvents extends Plugin {
+    events?: Events;
+}
+
+interface PromptStorageCacheLike {
+    db?: unknown;
+    exec: (...args: unknown[]) => unknown;
+    run: (...args: unknown[]) => unknown;
+}
+
 export interface ServiceDefinition {
     name: string;
     dependencies?: string[];
-    create: (context: ServiceCreationContext) => Promise<any>;
+    create: (context: ServiceCreationContext) => Promise<unknown>;
 }
 
 export interface ServiceCreationContext {
     plugin: Plugin;
-    app: any;
+    app: App;
     settings: Settings;
     serviceManager: ServiceManager;
-    connector: any; // MCPConnector
-    manifest: any;
+    connector: unknown; // MCPConnector
+    manifest: unknown;
+}
+
+function getService<T>(context: ServiceCreationContext, serviceName: string): Promise<T> {
+    return context.serviceManager.getService<T>(serviceName);
+}
+
+function getServiceIfReady<T>(context: ServiceCreationContext, serviceName: string): T | undefined {
+    return context.serviceManager.getServiceIfReady<T>(serviceName) ?? undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null;
+}
+
+function isPromptStorageCacheLike(value: unknown): value is PromptStorageCacheLike {
+    return isRecord(value)
+        && typeof value.exec === 'function'
+        && typeof value.run === 'function';
+}
+
+function getPluginWithEvents(plugin: Plugin): PluginWithEvents {
+    return plugin as PluginWithEvents;
 }
 
 /**
@@ -41,7 +84,7 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
     // VaultOperations - centralized vault operations using Obsidian API
     {
         name: 'vaultOperations',
-        create: async (context) => {
+        create: async (context: ServiceCreationContext): Promise<unknown> => {
             const { VaultOperations } = await import('../VaultOperations');
             const { ObsidianPathManager } = await import('../ObsidianPathManager');
             const { StructuredLogger } = await import('../StructuredLogger');
@@ -59,20 +102,19 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
     {
         name: 'workspaceService',
         dependencies: ['vaultOperations'],
-        create: async (context) => {
+        create: async (context: ServiceCreationContext): Promise<unknown> => {
             const { WorkspaceService } = await import('../../services/WorkspaceService');
             const { FileSystemService } = await import('../../services/storage/FileSystemService');
             const { IndexManager } = await import('../../services/storage/IndexManager');
-            const { VaultOperations } = await import('../VaultOperations');
 
-            const vaultOperations = await context.serviceManager.getService('vaultOperations') as InstanceType<typeof VaultOperations>;
+            const vaultOperations = await getService<VaultOperationsService>(context, 'vaultOperations');
             const fileSystem = new FileSystemService(context.plugin, vaultOperations);
             const indexManager = new IndexManager(fileSystem);
 
             // Pass a lazy getter so the service re-resolves the adapter on each access.
             // This is critical because the adapter may be null at service creation time
             // (SQLite initializes in background) but becomes available later.
-            const adapterGetter = () => context.serviceManager.getServiceIfReady<IStorageAdapter>('hybridStorageAdapter') ?? undefined;
+            const adapterGetter = () => getServiceIfReady<IStorageAdapter>(context, 'hybridStorageAdapter');
 
             return new WorkspaceService(context.plugin, fileSystem, indexManager, adapterGetter);
         }
@@ -82,10 +124,9 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
     {
         name: 'defaultWorkspaceManager',
         dependencies: ['workspaceService'],
-        create: async (context) => {
+        create: async (context: ServiceCreationContext): Promise<unknown> => {
             const { DefaultWorkspaceManager } = await import('../../services/workspace/DefaultWorkspaceManager');
-            const { WorkspaceService } = await import('../../services/WorkspaceService');
-            const workspaceService = await context.serviceManager.getService('workspaceService') as InstanceType<typeof WorkspaceService>;
+            const workspaceService = await getService<WorkspaceServiceType>(context, 'workspaceService');
 
             const manager = new DefaultWorkspaceManager(context.app, workspaceService);
 
@@ -103,15 +144,14 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
     {
         name: 'memoryService',
         dependencies: ['workspaceService'],
-        create: async (context) => {
+        create: async (context: ServiceCreationContext): Promise<unknown> => {
             const { MemoryService } = await import('../../agents/memoryManager/services/MemoryService');
-            const WorkspaceService = (await import('../../services/WorkspaceService')).WorkspaceService;
-            const workspaceService = await context.serviceManager.getService('workspaceService') as InstanceType<typeof WorkspaceService>;
+            const workspaceService = await getService<WorkspaceServiceType>(context, 'workspaceService');
 
             // Pass a lazy getter so the service re-resolves the adapter on each access.
             // This is critical because the adapter may be null at service creation time
             // (SQLite initializes in background) but becomes available later.
-            const adapterGetter = () => context.serviceManager.getServiceIfReady<IStorageAdapter>('hybridStorageAdapter') ?? undefined;
+            const adapterGetter = () => getServiceIfReady<IStorageAdapter>(context, 'hybridStorageAdapter');
 
             return new MemoryService(context.plugin, workspaceService, adapterGetter);
         }
@@ -121,13 +161,11 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
     {
         name: 'cacheManager',
         dependencies: ['workspaceService', 'memoryService'],
-        create: async (context) => {
+        create: async (context: ServiceCreationContext): Promise<unknown> => {
             const { CacheManager } = await import('../../database/services/cache/CacheManager');
-            const { WorkspaceService } = await import('../../services/WorkspaceService');
-            const { MemoryService } = await import('../../agents/memoryManager/services/MemoryService');
 
-            const workspaceService = await context.serviceManager.getService<InstanceType<typeof WorkspaceService>>('workspaceService');
-            const memoryService = await context.serviceManager.getService<InstanceType<typeof MemoryService>>('memoryService');
+            const workspaceService = await getService<WorkspaceServiceType>(context, 'workspaceService');
+            const memoryService = await getService<MemoryServiceType>(context, 'memoryService');
 
             const cacheManager = new CacheManager(
                 context.plugin.app,
@@ -149,10 +187,9 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
     {
         name: 'sessionService',
         dependencies: ['memoryService'],
-        create: async (context) => {
+        create: async (context: ServiceCreationContext): Promise<unknown> => {
             const { SessionService } = await import('../../services/session/SessionService');
-            type IMemoryService = import('../../services/session/SessionService').IMemoryService;
-            const memoryService = await context.serviceManager.getService('memoryService') as IMemoryService;
+            const memoryService = await getService<SessionMemoryService>(context, 'memoryService');
 
             const service = new SessionService(memoryService);
             return service;
@@ -163,12 +200,9 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
     {
         name: 'sessionContextManager',
         dependencies: ['workspaceService', 'memoryService', 'sessionService'],
-        create: async (context) => {
+        create: async (_context: ServiceCreationContext): Promise<unknown> => {
             const { SessionContextManager } = await import('../../services/SessionContextManager');
-
-            const workspaceService = await context.serviceManager.getService('workspaceService');
-            const memoryService = await context.serviceManager.getService('memoryService');
-            const sessionService = await context.serviceManager.getService('sessionService');
+            const sessionService = await getService<SessionMemoryService>(_context, 'sessionService');
 
             const manager = new SessionContextManager();
             manager.setSessionService(sessionService);
@@ -180,15 +214,12 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
     {
         name: 'toolCallTraceService',
         dependencies: ['memoryService', 'sessionContextManager', 'workspaceService'],
-        create: async (context) => {
+        create: async (context: ServiceCreationContext): Promise<unknown> => {
             const { ToolCallTraceService } = await import('../../services/trace/ToolCallTraceService');
-            const { MemoryService } = await import('../../agents/memoryManager/services/MemoryService');
-            const { SessionContextManager } = await import('../../services/SessionContextManager');
-            const { WorkspaceService } = await import('../../services/WorkspaceService');
 
-            const memoryService = await context.serviceManager.getService('memoryService') as InstanceType<typeof MemoryService>;
-            const sessionContextManager = await context.serviceManager.getService('sessionContextManager') as InstanceType<typeof SessionContextManager>;
-            const workspaceService = await context.serviceManager.getService('workspaceService') as InstanceType<typeof WorkspaceService>;
+            const memoryService = await getService<MemoryServiceType>(context, 'memoryService');
+            const sessionContextManager = await getService<SessionContextManager>(context, 'sessionContextManager');
+            const workspaceService = await getService<WorkspaceServiceType>(context, 'workspaceService');
 
             return new ToolCallTraceService(
                 memoryService,
@@ -204,9 +235,8 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
     {
         name: 'llmService',
         dependencies: ['vaultOperations', 'directToolExecutor'],
-        create: async (context) => {
+        create: async (context: ServiceCreationContext): Promise<unknown> => {
             const { LLMService } = await import('../../services/llm/core/LLMService');
-            const { VaultOperations } = await import('../../core/VaultOperations');
 
             const llmProviders = context.settings.settings.llmProviders;
             if (!llmProviders || typeof llmProviders !== 'object' || !('providers' in llmProviders)) {
@@ -217,13 +247,13 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
             const llmService = new LLMService(llmProviders, context.app.vault);
 
             // Inject VaultOperations for file reading
-            const vaultOperations = await context.serviceManager.getService('vaultOperations') as InstanceType<typeof VaultOperations>;
+            const vaultOperations = await getService<VaultOperationsService>(context, 'vaultOperations');
             if (vaultOperations) {
                 llmService.setVaultOperations(vaultOperations);
             }
 
             // Inject DirectToolExecutor for tool execution (works on ALL platforms)
-            const directToolExecutor = await context.serviceManager.getService<DirectToolExecutor>('directToolExecutor');
+            const directToolExecutor = await getService<DirectToolExecutor>(context, 'directToolExecutor');
             if (directToolExecutor) {
                 llmService.setToolExecutor(directToolExecutor);
             }
@@ -241,23 +271,18 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
     {
         name: 'customPromptStorageService',
         dependencies: [],
-        create: async (context) => {
+        create: async (context: ServiceCreationContext): Promise<unknown> => {
             const { CustomPromptStorageService } = await import('../../agents/promptManager/services/CustomPromptStorageService');
 
             // Get storage adapter NON-BLOCKING (may be null if still initializing)
             // Service will use settings-based storage until SQLite is ready
-            const storageAdapter = context.serviceManager.getServiceIfReady<IStorageAdapter | null>('hybridStorageAdapter');
+            const storageAdapter = getServiceIfReady<IStorageAdapter>(context, 'hybridStorageAdapter');
 
             // Access underlying SQLite database via adapter's cache property
-            let db = null;
-            if (storageAdapter && 'cache' in storageAdapter) {
-                const cache = (storageAdapter as unknown as { cache: unknown }).cache;
-                // Check if cache has the necessary methods for MigratableDatabase
-                if (cache && typeof cache === 'object'
-                    && 'exec' in cache && typeof (cache as Record<string, unknown>).exec === 'function'
-                    && 'run' in cache && typeof (cache as Record<string, unknown>).run === 'function') {
-                    db = cache;
-                }
+            let db: PromptStorageCacheLike | null = null;
+            const cache = isRecord(storageAdapter) ? storageAdapter.cache : undefined;
+            if (isPromptStorageCacheLike(cache)) {
+                db = cache;
             }
 
             return new CustomPromptStorageService(db, context.settings);
@@ -268,7 +293,7 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
     {
         name: 'agentManager',
         dependencies: [],
-        create: async (context) => {
+        create: async (context: ServiceCreationContext): Promise<unknown> => {
             const { AgentManager } = await import('../../services/AgentManager');
 
             return new AgentManager(
@@ -282,7 +307,7 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
     // Hybrid storage adapter (SQLite + JSONL) - deferred initialization for fast startup
     {
         name: 'hybridStorageAdapter',
-        create: async (context) => {
+        create: async (context: ServiceCreationContext): Promise<unknown> => {
             try {
                 const { HybridStorageAdapter } = await import('../../database/adapters/HybridStorageAdapter');
 
@@ -296,7 +321,7 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
 
                 // Start initialization in background (non-blocking)
                 // ChatView will show loading indicator until ready
-                adapter.initialize(false);
+                void adapter.initialize(false);
                 return adapter;
             } catch {
                 // HybridStorageAdapter creation failed - graceful fallback to legacy storage
@@ -309,20 +334,19 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
     {
         name: 'conversationService',
         dependencies: ['vaultOperations'],
-        create: async (context) => {
+        create: async (context: ServiceCreationContext): Promise<unknown> => {
             const { ConversationService } = await import('../../services/ConversationService');
             const { FileSystemService } = await import('../../services/storage/FileSystemService');
             const { IndexManager } = await import('../../services/storage/IndexManager');
-            const { VaultOperations } = await import('../VaultOperations');
 
-            const vaultOperations = await context.serviceManager.getService('vaultOperations') as InstanceType<typeof VaultOperations>;
+            const vaultOperations = await getService<VaultOperationsService>(context, 'vaultOperations');
             const fileSystem = new FileSystemService(context.plugin, vaultOperations);
             const indexManager = new IndexManager(fileSystem);
 
             // Pass a lazy getter so the service re-resolves the adapter on each access.
             // This is critical because the adapter may be null at service creation time
             // (SQLite initializes in background) but becomes available later.
-            const adapterGetter = () => context.serviceManager.getServiceIfReady<IStorageAdapter>('hybridStorageAdapter') ?? undefined;
+            const adapterGetter = () => getServiceIfReady<IStorageAdapter>(context, 'hybridStorageAdapter');
 
             return new ConversationService(context.plugin, fileSystem, indexManager, adapterGetter);
         }
@@ -333,14 +357,13 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
     {
         name: 'agentRegistrationService',
         dependencies: ['memoryService', 'workspaceService', 'agentManager'],
-        create: async (context) => {
+        create: async (context: ServiceCreationContext): Promise<unknown> => {
             const { AgentRegistrationService } = await import('../../services/agent/AgentRegistrationService');
-            const { AgentManager } = await import('../../services/AgentManager');
             // Plugin type augmentation - NexusPlugin extends Plugin with events property
-            const plugin = context.plugin as Plugin & { events?: Events };
+            const plugin = getPluginWithEvents(context.plugin);
 
             // Get the AgentManager service instance (not create a new one)
-            const agentManager = await context.serviceManager.getService('agentManager') as InstanceType<typeof AgentManager>;
+            const agentManager = await getService<AgentManagerType>(context, 'agentManager');
 
             // Create agent registration service with the shared AgentManager
             // NOTE: Agents are NOT initialized here - they initialize lazily on first access
@@ -364,12 +387,12 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
     {
         name: 'directToolExecutor',
         dependencies: ['agentRegistrationService', 'sessionContextManager'],
-        create: async (context) => {
+        create: async (context: ServiceCreationContext): Promise<unknown> => {
             const { DirectToolExecutor } = await import('../../services/chat/DirectToolExecutor');
             const { LazyAgentProvider } = await import('../../services/agent/LazyAgentProvider');
 
-            const agentService = await context.serviceManager.getService<AgentRegistrationService>('agentRegistrationService');
-            const sessionContextManager = context.serviceManager.getServiceIfReady<SessionContextManager>('sessionContextManager') ?? undefined;
+            const agentService = await getService<AgentRegistrationService>(context, 'agentRegistrationService');
+            const sessionContextManager = getServiceIfReady<SessionContextManager>(context, 'sessionContextManager');
 
             // Use LazyAgentProvider to avoid triggering agent initialization at construction
             // Agents will be initialized on first tool access, not at startup
@@ -388,11 +411,10 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
     {
         name: 'chatTraceService',
         dependencies: ['workspaceService'],
-        create: async (context) => {
+        create: async (context: ServiceCreationContext): Promise<unknown> => {
             const { ChatTraceService } = await import('../../services/chat/ChatTraceService');
-            const { WorkspaceService } = await import('../../services/WorkspaceService');
 
-            const workspaceService = await context.serviceManager.getService('workspaceService') as InstanceType<typeof WorkspaceService>;
+            const workspaceService = await getService<WorkspaceServiceType>(context, 'workspaceService');
 
             return new ChatTraceService({
                 workspaceService
@@ -405,14 +427,13 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
     {
         name: 'chatService',
         dependencies: ['conversationService', 'llmService', 'directToolExecutor', 'chatTraceService'],
-        create: async (context) => {
+        create: async (context: ServiceCreationContext): Promise<unknown> => {
             const { ChatService } = await import('../../services/chat/ChatService');
-            const { ChatTraceService } = await import('../../services/chat/ChatTraceService');
 
-            const conversationService = await context.serviceManager.getService('conversationService');
-            const llmService = await context.serviceManager.getService('llmService');
-            const directToolExecutor = await context.serviceManager.getService('directToolExecutor');
-            const chatTraceService = await context.serviceManager.getService('chatTraceService') as InstanceType<typeof ChatTraceService> | null;
+            const conversationService = await getService<ConversationServiceType>(context, 'conversationService');
+            const llmService = await getService(context, 'llmService');
+            const directToolExecutor = await getService<DirectToolExecutor>(context, 'directToolExecutor');
+            const chatTraceService = await getService<ChatTraceServiceType | null>(context, 'chatTraceService');
 
             const chatService = new ChatService(
                 {
@@ -430,7 +451,7 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
             );
 
             // Set up DirectToolExecutor for tool execution (works on ALL platforms)
-            chatService.setDirectToolExecutor(directToolExecutor as DirectToolExecutor);
+            chatService.setDirectToolExecutor(directToolExecutor);
 
             return chatService;
         }
@@ -439,14 +460,11 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
     {
         name: 'workflowRunService',
         dependencies: ['chatService', 'workspaceService', 'customPromptStorageService'],
-        create: async (context) => {
+        create: async (context: ServiceCreationContext): Promise<unknown> => {
             const { WorkflowRunService } = await import('../../services/workflows/WorkflowRunService');
-            const { ChatService } = await import('../../services/chat/ChatService');
-            const { WorkspaceService } = await import('../../services/WorkspaceService');
-            const { CustomPromptStorageService } = await import('../../agents/promptManager/services/CustomPromptStorageService');
-            const chatService = await context.serviceManager.getService<InstanceType<typeof ChatService>>('chatService');
-            const workspaceService = await context.serviceManager.getService<InstanceType<typeof WorkspaceService>>('workspaceService');
-            const customPromptStorage = await context.serviceManager.getService<InstanceType<typeof CustomPromptStorageService>>('customPromptStorageService');
+            const chatService = await getService<ChatServiceType>(context, 'chatService');
+            const workspaceService = await getService<WorkspaceServiceType>(context, 'workspaceService');
+            const customPromptStorage = await getService<CustomPromptStorageServiceType>(context, 'customPromptStorageService');
 
             return new WorkflowRunService({
                 app: context.app,
@@ -461,14 +479,11 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
     {
         name: 'workflowScheduleService',
         dependencies: ['workspaceService', 'conversationService', 'workflowRunService'],
-        create: async (context) => {
+        create: async (context: ServiceCreationContext): Promise<unknown> => {
             const { WorkflowScheduleService } = await import('../../services/workflows/WorkflowScheduleService');
-            const { WorkspaceService } = await import('../../services/WorkspaceService');
-            const { ConversationService } = await import('../../services/ConversationService');
-            const { WorkflowRunService } = await import('../../services/workflows/WorkflowRunService');
-            const workspaceService = await context.serviceManager.getService<InstanceType<typeof WorkspaceService>>('workspaceService');
-            const conversationService = await context.serviceManager.getService<InstanceType<typeof ConversationService>>('conversationService');
-            const workflowRunService = await context.serviceManager.getService<InstanceType<typeof WorkflowRunService>>('workflowRunService');
+            const workspaceService = await getService<WorkspaceServiceType>(context, 'workspaceService');
+            const conversationService = await getService<ConversationServiceType>(context, 'conversationService');
+            const workflowRunService = await getService<WorkflowRunServiceType>(context, 'workflowRunService');
 
             return new WorkflowScheduleService({
                 plugin: context.plugin,
@@ -487,7 +502,7 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
 export interface AdditionalServiceFactory {
     name: string;
     dependencies: string[];
-    factory: (deps: Record<string, unknown>) => Promise<any>;
+    factory: (deps: Record<string, unknown>) => Promise<unknown>;
 }
 
 /**

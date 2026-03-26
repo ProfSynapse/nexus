@@ -86,7 +86,7 @@ export class NexusLoadingController extends Component {
 
       if (progressBar) progressBar.addClass('chat-progress-bar-reset');
       if (progressText) progressText.textContent = '0%';
-      if (statusEl) statusEl.textContent = 'Loading Nexus model...';
+      if (statusEl) statusEl.textContent = 'Loading model...';
     }, 300);
   }
 
@@ -119,7 +119,7 @@ export class NexusLoadingController extends Component {
       this.overlayEl!.addClass('chat-loading-overlay-hidden');
       // Reset text for potential Nexus loading later
       const statusEl = this.overlayEl!.querySelector('[data-status-el]');
-      if (statusEl) statusEl.textContent = 'Loading Nexus model...';
+      if (statusEl) statusEl.textContent = 'Loading model...';
     }, 300);
   }
 

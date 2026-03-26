@@ -18,8 +18,181 @@ import { WebSearchUtils } from '../../utils/WebSearchUtils';
 import { ReasoningPreserver } from '../shared/ReasoningPreserver';
 import { SchemaValidator } from '../../utils/SchemaValidator';
 import { ThinkingEffortMapper } from '../../utils/ThinkingEffortMapper';
-import { MCPToolExecution } from '../shared/ToolExecutionUtils';
 import { ProviderHttpError } from '../shared/ProviderHttpClient';
+
+interface GoogleFunctionCall {
+  name?: string;
+  args?: unknown;
+}
+
+interface GoogleFunctionResponse {
+  name?: string;
+  response?: {
+    results?: unknown[];
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}
+
+interface GoogleTextPart {
+  text?: string;
+  functionCall?: GoogleFunctionCall;
+  functionResponse?: GoogleFunctionResponse;
+  thought?: string;
+  thinking?: string;
+  thoughtSignature?: string;
+  thought_signature?: string;
+  [key: string]: unknown;
+}
+
+interface GoogleContent {
+  role?: string;
+  parts?: GoogleTextPart[];
+  [key: string]: unknown;
+}
+
+interface GoogleCandidate {
+  finishReason?: string;
+  content?: {
+    parts?: GoogleTextPart[];
+  };
+  [key: string]: unknown;
+}
+
+interface GoogleUsageMetadata {
+  promptTokenCount?: number;
+  inputTokens?: number;
+  candidatesTokenCount?: number;
+  outputTokens?: number;
+  totalTokenCount?: number;
+  totalTokens?: number;
+  [key: string]: unknown;
+}
+
+interface GoogleGroundingChunk {
+  title?: string;
+  web?: {
+    uri?: string;
+  };
+  uri?: string;
+  publishedDate?: string;
+  [key: string]: unknown;
+}
+
+interface GoogleResponse {
+  candidates?: GoogleCandidate[];
+  usageMetadata?: GoogleUsageMetadata;
+  usage?: GoogleUsageMetadata;
+  groundingMetadata?: {
+    webSearchQueries?: unknown[];
+    groundingChunks?: GoogleGroundingChunk[];
+  };
+  functionCalls?: GoogleFunctionResponse[];
+  [key: string]: unknown;
+}
+
+interface GoogleGenerationConfig {
+  temperature?: number;
+  maxOutputTokens?: number;
+  topK?: number;
+  topP?: number;
+  thinkingConfig?: {
+    thinkingBudget?: number;
+  };
+}
+
+interface GoogleSystemInstruction {
+  parts: { text: string }[];
+}
+
+interface GoogleFunctionDeclaration {
+  name: string;
+  description?: string;
+  parameters?: unknown;
+}
+
+interface GoogleToolWrapper {
+  googleSearch?: Record<string, never>;
+  functionDeclarations?: GoogleFunctionDeclaration[];
+  [key: string]: unknown;
+}
+
+interface GoogleRequestConfig {
+  generationConfig?: GoogleGenerationConfig;
+  systemInstruction?: GoogleSystemInstruction;
+  tools?: GoogleToolWrapper[];
+  toolConfig?: {
+    functionCallingConfig?: {
+      mode?: string;
+    };
+  };
+  [key: string]: unknown;
+}
+
+interface GoogleGenerateRequest {
+  model: string;
+  contents: GoogleContent[];
+  config: GoogleRequestConfig;
+}
+
+interface GoogleToolInput {
+  type?: string;
+  function?: {
+    name?: string;
+    description?: string;
+    parameters?: unknown;
+    input_schema?: unknown;
+  };
+  name?: string;
+  description?: string;
+  parameters?: unknown;
+  input_schema?: unknown;
+  [key: string]: unknown;
+}
+
+interface GoogleStreamToolCall {
+  index: number;
+  id: string;
+  type: 'function';
+  function: {
+    name: string;
+    arguments: string;
+  };
+  thought_signature?: string;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isGoogleResponse(value: unknown): value is GoogleResponse {
+  return isRecord(value);
+}
+
+function isGoogleCandidate(value: unknown): value is GoogleCandidate {
+  return isRecord(value);
+}
+
+function isGoogleTextPart(value: unknown): value is GoogleTextPart {
+  return isRecord(value);
+}
+
+function isGoogleGenerationConfig(value: unknown): value is GoogleGenerationConfig {
+  return isRecord(value);
+}
+
+function isGoogleUsageMetadata(value: unknown): value is GoogleUsageMetadata {
+  return isRecord(value);
+}
+
+function getFirstCandidate(response: GoogleResponse): GoogleCandidate | undefined {
+  const candidate = response.candidates?.[0];
+  return isGoogleCandidate(candidate) ? candidate : undefined;
+}
+
+function getCandidateParts(response: GoogleResponse): GoogleTextPart[] {
+  return getFirstCandidate(response)?.content?.parts ?? [];
+}
 
 export class GoogleAdapter extends BaseAdapter {
   readonly name = 'google';
@@ -55,9 +228,9 @@ export class GoogleAdapter extends BaseAdapter {
       }
 
       // Build contents - use conversation history if provided (for tool continuations)
-      let contents: any[];
+      let contents: GoogleContent[];
       if (options?.conversationHistory && options.conversationHistory.length > 0) {
-        contents = options.conversationHistory;
+        contents = options.conversationHistory as GoogleContent[];
       } else {
         // Ensure prompt is not empty
         if (!prompt || !prompt.trim()) {
@@ -75,7 +248,7 @@ export class GoogleAdapter extends BaseAdapter {
       const thinkingBudget = googleThinkingParams?.thinkingBudget || 8192;
 
       // Build config object with all generation settings
-      const config: any = {
+      const config: GoogleRequestConfig = {
         generationConfig: {
           // Use temperature 0 when tools are provided for more deterministic function calling
           temperature: (options?.tools && options.tools.length > 0) ? 0 : (options?.temperature ?? 0.7),
@@ -145,7 +318,7 @@ export class GoogleAdapter extends BaseAdapter {
       }
 
       // Build final request with config wrapper
-      const request: any = {
+      const request: GoogleGenerateRequest = {
         model: options?.model || this.currentModel,
         contents: contents,
         config: config
@@ -165,8 +338,11 @@ export class GoogleAdapter extends BaseAdapter {
       yield* this.processNodeStream(nodeStream, {
         debugLabel: 'Google',
         extractContent: (chunk) => {
+          const candidate = getFirstCandidate(chunk as GoogleResponse);
+          if (!candidate) return null;
+
           // Surface error finish reasons as user-facing content before the stream ends
-          const finishReason = chunk.candidates?.[0]?.finishReason;
+          const finishReason = candidate.finishReason;
           if (finishReason === 'MALFORMED_FUNCTION_CALL') {
             return '\n\n[Error: MALFORMED_FUNCTION_CALL — Google rejected a tool call due to a ' +
               'schema mismatch. The model generated arguments that don\'t match the tool\'s ' +
@@ -183,21 +359,25 @@ export class GoogleAdapter extends BaseAdapter {
               'text too similar to copyrighted material.]';
           }
 
-          const parts = chunk.candidates?.[0]?.content?.parts || [];
-          return this.extractTextFromParts(parts) || null;
+          return this.extractTextFromParts(candidate.content?.parts || []) || null;
         },
         extractToolCalls: (chunk) => {
-          const parts = chunk.candidates?.[0]?.content?.parts || [];
+          const candidate = getFirstCandidate(chunk as GoogleResponse);
+          if (!candidate) return null;
+
+          const parts = candidate.content?.parts || [];
           const toolCalls = parts
-            .filter((part: any) => part.functionCall)
-            .map((part: any, index: number) => {
-              const toolCall: any = {
+            .filter(isGoogleTextPart)
+            .filter(part => Boolean(part.functionCall))
+            .map((part, index): GoogleStreamToolCall => {
+              const functionCall = part.functionCall;
+              const toolCall: GoogleStreamToolCall = {
                 index,
-                id: `${part.functionCall.name}_${index}`,
+                id: `${functionCall?.name || 'tool'}_${index}`,
                 type: 'function',
                 function: {
-                  name: part.functionCall.name,
-                  arguments: JSON.stringify(part.functionCall.args || {})
+                  name: functionCall?.name || '',
+                  arguments: JSON.stringify(functionCall?.args || {})
                 }
               };
 
@@ -212,7 +392,7 @@ export class GoogleAdapter extends BaseAdapter {
           return toolCalls.length > 0 ? toolCalls : null;
         },
         extractFinishReason: (chunk) => {
-          const finishReason = chunk.candidates?.[0]?.finishReason;
+          const finishReason = getFirstCandidate(chunk as GoogleResponse)?.finishReason;
           if (!finishReason) return null;
 
           // M4: Map Google finish reasons properly.
@@ -231,11 +411,17 @@ export class GoogleAdapter extends BaseAdapter {
               return 'stop';
           }
         },
-        extractUsage: (chunk) => chunk.usageMetadata || null,
+        extractUsage: (chunk) => {
+          const response = chunk as GoogleResponse;
+          return isGoogleUsageMetadata(response.usageMetadata) ? response.usageMetadata : null;
+        },
         extractReasoning: (chunk) => {
-          const parts = chunk.candidates?.[0]?.content?.parts || [];
+          const candidate = getFirstCandidate(chunk as GoogleResponse);
+          if (!candidate) return null;
+
+          const parts = candidate.content?.parts || [];
           const thinkingText = parts
-            .map((part: any) => part.thought || part.thinking || '')
+            .map(part => part.thought || part.thinking || '')
             .filter(Boolean)
             .join('');
           if (thinkingText) {
@@ -249,13 +435,13 @@ export class GoogleAdapter extends BaseAdapter {
           progressInterval: 50
         }
       });
-    } catch (error: any) {
+    } catch (error) {
       this.logStreamingFailure(error, requestSummary);
       console.error('[Google Adapter] ❌❌❌ STREAMING ERROR:', error);
       console.error('[Google Adapter] Error details:', {
-        name: error?.name,
-        message: error?.message,
-        stack: error?.stack
+        name: error instanceof Error ? error.name : undefined,
+        message: error instanceof Error ? error.message : undefined,
+        stack: error instanceof Error ? error.stack : undefined
       });
       throw error;
     }
@@ -319,23 +505,25 @@ export class GoogleAdapter extends BaseAdapter {
       WebSearchUtils.validateWebSearchRequest('google', options.webSearch);
     }
 
-    const request: any = {
+    const request: GoogleGenerateRequest = {
       model: options?.model || this.currentModel,
       contents: [{
         role: 'user',
         parts: [{ text: prompt }]
       }],
-      generationConfig: {
+      config: {
+        generationConfig: {
         temperature: options?.temperature,
         maxOutputTokens: options?.maxTokens,
         topK: 40,
         topP: 0.95
+        }
       }
     };
 
     // Add system instruction if provided
     if (options?.systemPrompt) {
-      request.systemInstruction = {
+      request.config.systemInstruction = {
         parts: [{ text: options.systemPrompt }]
       };
     }
@@ -343,10 +531,10 @@ export class GoogleAdapter extends BaseAdapter {
     // Add web search grounding if requested
     // Google Search grounding uses special googleSearch tool, not a function
     if (options?.webSearch) {
-      request.tools = [{ googleSearch: {} }];
+      request.config.tools = [{ googleSearch: {} }];
     }
 
-    const response = await this.request<any>({
+    const response = await this.request<GoogleResponse>({
       url: this.buildGenerateContentUrl(request.model, false),
       operation: 'generation',
       method: 'POST',
@@ -358,7 +546,7 @@ export class GoogleAdapter extends BaseAdapter {
     const responseJson = response.json;
 
     const extractedUsage = this.extractUsage(responseJson);
-    const finishReason = this.mapFinishReason(responseJson.candidates?.[0]?.finishReason);
+    const finishReason = this.mapFinishReason(getFirstCandidate(responseJson)?.finishReason || null);
     const toolCalls = this.extractToolCalls(responseJson);
 
     // Extract web search results if web search was enabled
@@ -379,7 +567,7 @@ export class GoogleAdapter extends BaseAdapter {
   }
 
   // Private methods
-  private convertTools(tools: any[]): any[] {
+  private convertTools(tools: GoogleToolInput[]): GoogleToolWrapper[] {
     // Gemini uses functionDeclarations wrapper (NOT OpenAI's flat array)
     return [{
       functionDeclarations: tools.map(tool => {
@@ -387,12 +575,14 @@ export class GoogleAdapter extends BaseAdapter {
           // Handle both nested (Chat Completions) and flat (Responses API) formats
           const toolDef = tool.function || tool;
           return {
-            name: toolDef.name,
+            name: toolDef.name || '',
             description: toolDef.description,
             parameters: this.sanitizeSchemaForGoogle(toolDef.parameters || toolDef.input_schema)
           };
         }
-        return tool;
+        return {
+          ...tool
+        };
       })
     }];
   }
@@ -401,7 +591,7 @@ export class GoogleAdapter extends BaseAdapter {
    * Sanitize JSON Schema for Google's simplified schema format
    * Delegates to SchemaValidator utility
    */
-  private sanitizeSchemaForGoogle(schema: any): any {
+  private sanitizeSchemaForGoogle(schema: unknown): unknown {
     return SchemaValidator.sanitizeSchemaForGoogle(schema);
   }
 
@@ -419,54 +609,54 @@ export class GoogleAdapter extends BaseAdapter {
       : `${this.baseUrl}/models/${encodedModel}:generateContent`;
   }
 
-  private buildGenerateContentBody(request: any): Record<string, unknown> {
+  private buildGenerateContentBody(request: GoogleGenerateRequest): Record<string, unknown> {
     return {
       contents: request.contents,
-      generationConfig: request.config?.generationConfig || request.generationConfig,
-      systemInstruction: request.config?.systemInstruction || request.systemInstruction,
-      tools: request.config?.tools || request.tools,
-      toolConfig: request.config?.toolConfig || request.toolConfig
+      generationConfig: request.config?.generationConfig,
+      systemInstruction: request.config?.systemInstruction,
+      tools: request.config?.tools,
+      toolConfig: request.config?.toolConfig
     };
   }
 
   private buildStreamingRequestSummary(
-    request: { model: string; contents: any[]; config?: Record<string, unknown> },
+    request: GoogleGenerateRequest,
     options?: GenerateOptions
   ): Record<string, unknown> {
-    const contents = Array.isArray(request.contents) ? request.contents : [];
-    const contentSummary = contents.map((message: any, index: number) => {
-      const parts = Array.isArray(message?.parts) ? message.parts : [];
+    const contents = request.contents;
+    const contentSummary = contents.map((message, index) => {
+      const parts = message.parts || [];
       const functionCallNames = parts
-        .map((part: any) => part?.functionCall?.name)
+        .map(part => part.functionCall?.name)
         .filter((name: unknown): name is string => typeof name === 'string');
       const functionResponseNames = parts
-        .map((part: any) => part?.functionResponse?.name)
+        .map(part => part.functionResponse?.name)
         .filter((name: unknown): name is string => typeof name === 'string');
 
       return {
         index,
-        role: message?.role,
-        partTypes: parts.map((part: any) => {
-          if (part?.functionCall) return 'functionCall';
-          if (part?.functionResponse) return 'functionResponse';
-          if (part?.text) return 'text';
-          if (part?.thought || part?.thinking || part?.thoughtSignature) return 'thinking';
+        role: message.role,
+        partTypes: parts.map(part => {
+          if (part.functionCall) return 'functionCall';
+          if (part.functionResponse) return 'functionResponse';
+          if (part.text) return 'text';
+          if (part.thought || part.thinking || part.thoughtSignature) return 'thinking';
           return 'unknown';
         }),
         functionCallNames,
         functionResponseNames,
         textLength: parts
-          .map((part: any) => typeof part?.text === 'string' ? part.text.length : 0)
+          .map(part => typeof part.text === 'string' ? part.text.length : 0)
           .reduce((sum: number, len: number) => sum + len, 0)
       };
     });
 
     const toolNames = Array.isArray(request.config?.tools)
-      ? (request.config?.tools as Array<any>).flatMap((toolWrapper: any) =>
-          Array.isArray(toolWrapper?.functionDeclarations)
+      ? request.config.tools.flatMap(toolWrapper =>
+          toolWrapper.functionDeclarations
             ? toolWrapper.functionDeclarations
-                .map((tool: any) => typeof tool?.name === 'string' ? tool.name : undefined)
-                .filter((name: unknown): name is string => typeof name === 'string')
+                .map(tool => tool.name)
+                .filter((name): name is string => typeof name === 'string')
             : []
         )
       : [];
@@ -482,13 +672,10 @@ export class GoogleAdapter extends BaseAdapter {
       toolCount: toolNames.length,
       toolNames,
       thinkingEnabled: Boolean(
-        isRecord(request.config?.generationConfig) &&
-        isRecord((request.config?.generationConfig as Record<string, unknown>).thinkingConfig)
+        isGoogleGenerationConfig(request.config?.generationConfig) &&
+        isRecord(request.config.generationConfig.thinkingConfig)
       ),
-      functionCallingMode: isRecord(request.config?.toolConfig) &&
-        isRecord((request.config?.toolConfig as Record<string, unknown>).functionCallingConfig)
-        ? ((request.config?.toolConfig as Record<string, any>).functionCallingConfig?.mode as string | undefined)
-        : undefined
+      functionCallingMode: request.config?.toolConfig?.functionCallingConfig?.mode
     };
   }
 
@@ -530,18 +717,18 @@ export class GoogleAdapter extends BaseAdapter {
     );
   }
 
-  private extractToolCalls(response: any): any[] {
+  private extractToolCalls(response: GoogleResponse): GoogleStreamToolCall[] {
     // Extract from response.candidates[0].content.parts
-    const parts = response.candidates?.[0]?.content?.parts || [];
-    const toolCalls: any[] = [];
+    const parts = getCandidateParts(response);
+    const toolCalls: GoogleStreamToolCall[] = [];
 
     for (const part of parts) {
       if (part.functionCall) {
         toolCalls.push({
-          id: part.functionCall.name + '_' + Date.now(),
+          id: `${part.functionCall.name || 'tool'}_${Date.now()}`,
           type: 'function',
           function: {
-            name: part.functionCall.name,
+            name: part.functionCall.name || '',
             arguments: JSON.stringify(part.functionCall.args || {})
           }
         });
@@ -551,10 +738,10 @@ export class GoogleAdapter extends BaseAdapter {
     return toolCalls;
   }
 
-  private extractTextFromParts(parts: any[]): string {
+  private extractTextFromParts(parts: GoogleTextPart[]): string {
     return parts
       .filter(part => part.text)
-      .map(part => part.text)
+      .map(part => part.text || '')
       .join('');
   }
 
@@ -562,7 +749,7 @@ export class GoogleAdapter extends BaseAdapter {
    * Extract search results from Google response
    * Google may include sources in grounding chunks or tool results
    */
-  private extractGoogleSources(response: any): SearchResult[] {
+  private extractGoogleSources(response: GoogleResponse): SearchResult[] {
     try {
       const sources: SearchResult[] = [];
 
@@ -589,13 +776,14 @@ export class GoogleAdapter extends BaseAdapter {
               const extractedSources = WebSearchUtils.extractSearchResults(searchData.results);
               sources.push(...extractedSources);
             }
-          } catch (error) {
+          } catch {
+            // Ignore malformed function response payloads while keeping other sources.
           }
         }
       }
 
       return sources;
-    } catch (error) {
+    } catch {
       return [];
     }
   }
@@ -614,8 +802,14 @@ export class GoogleAdapter extends BaseAdapter {
     return reasonMap[reason] || 'stop';
   }
 
-  protected extractUsage(response: any): any {
-    const usage = response.usageMetadata || response.usage;
+  protected extractUsage(response: unknown): { promptTokens: number; completionTokens: number; totalTokens: number } | undefined {
+    if (!isGoogleResponse(response)) {
+      return undefined;
+    }
+
+    const usage = isGoogleUsageMetadata(response.usageMetadata) ? response.usageMetadata
+      : isGoogleUsageMetadata(response.usage) ? response.usage
+      : undefined;
     if (usage) {
       return {
         promptTokens: usage.promptTokenCount || usage.inputTokens || 0,
@@ -648,15 +842,11 @@ export class GoogleAdapter extends BaseAdapter {
   }
 }
 
-function isRecord(value: unknown): value is Record<string, any> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function promptLengthFromContents(contents: any[]): number {
+function promptLengthFromContents(contents: GoogleContent[]): number {
   return contents.reduce((total, message) => {
-    const parts = Array.isArray(message?.parts) ? message.parts : [];
-    const partLength = parts.reduce((sum: number, part: any) => {
-      return sum + (typeof part?.text === 'string' ? part.text.length : 0);
+    const parts = message.parts || [];
+    const partLength = parts.reduce((sum: number, part) => {
+      return sum + (typeof part.text === 'string' ? part.text.length : 0);
     }, 0);
     return total + partLength;
   }, 0);

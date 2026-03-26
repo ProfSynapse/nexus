@@ -71,7 +71,7 @@ export class FilePickerRenderer {
     const leftSection = header.createDiv('nexus-file-picker-left');
     if (this.showBackButton) {
       new ButtonComponent(leftSection)
-        .setButtonText('← Back')
+        .setButtonText('← back')
         .onClick(() => this.onCancel());
     }
     leftSection.createEl('h3', { text: this.title });

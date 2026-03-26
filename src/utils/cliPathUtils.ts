@@ -30,10 +30,17 @@ export function getConnectorPath(vaultPath: string | null): string | null {
   const pathMod = require('path') as typeof import('path');
   const nodeFs = require('fs') as typeof import('fs');
 
-  for (const pluginId of getAllPluginIds()) {
-    const candidate = pathMod.join(vaultPath, '.obsidian', 'plugins', pluginId, 'connector.js');
-    if (nodeFs.existsSync(candidate)) {
-      return candidate;
+  const configFolders = nodeFs
+    .readdirSync(vaultPath, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name);
+
+  for (const configFolder of configFolders) {
+    for (const pluginId of getAllPluginIds()) {
+      const candidate = pathMod.join(vaultPath, configFolder, 'plugins', pluginId, 'connector.js');
+      if (nodeFs.existsSync(candidate)) {
+        return candidate;
+      }
     }
   }
 

@@ -9,8 +9,57 @@ import { MemoryManagerAgent } from '../../memoryManager'
 import { ListStatesParams, StateResult } from '../../types';
 import { createErrorMessage } from '../../../../utils/errorUtils';
 import { extractContextFromParams } from '../../../../utils/contextUtils';
-import { MemoryService } from "../../services/MemoryService";
-import { WorkspaceService, GLOBAL_WORKSPACE_ID } from '../../../../services/WorkspaceService';
+import { GLOBAL_WORKSPACE_ID } from '../../../../services/WorkspaceService';
+import type { WorkspaceState } from '../../../../database/types/session/SessionTypes';
+
+interface StateMetadataLike {
+  isArchived?: boolean;
+  tags?: string[];
+}
+
+interface LegacyStateShape {
+  metadata?: StateMetadataLike;
+}
+
+interface StateContextLike {
+  activeTask?: string;
+}
+
+interface ListStatesItem extends Omit<WorkspaceState, 'state'> {
+  created?: number;
+  timestamp?: number;
+  state?: LegacyStateShape & {
+    context?: StateContextLike;
+  };
+}
+
+interface ListStatesResultItem {
+  name: string;
+  description: string;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function getWorkspaceIdFromContext(context: unknown): string | undefined {
+  if (!isRecord(context)) {
+    return undefined;
+  }
+
+  return typeof context.workspaceId === 'string' && context.workspaceId.length > 0
+    ? context.workspaceId
+    : undefined;
+}
+
+function getStateTags(state: ListStatesItem): string[] {
+  const tags = state.state?.metadata?.tags;
+  return Array.isArray(tags) ? tags.filter((tag): tag is string => typeof tag === 'string') : [];
+}
+
+function isArchivedState(state: ListStatesItem): boolean {
+  return Boolean(state.state?.metadata?.isArchived);
+}
 
 /**
  * Mode for listing states with filtering and sorting
@@ -32,18 +81,13 @@ export class ListStatesTool extends BaseTool<ListStatesParams, StateResult> {
     try {
       // Get services from agent
       const memoryService = await this.agent.getMemoryServiceAsync();
-      const workspaceService = await this.agent.getWorkspaceServiceAsync();
 
       if (!memoryService) {
         return this.prepareResult(false, undefined, 'Memory service not available');
       }
 
       // Get workspace ID from context
-      let workspaceId: string | undefined;
-      const inheritedContext = this.getInheritedWorkspaceContext(params);
-      if (inheritedContext?.workspaceId) {
-        workspaceId = inheritedContext.workspaceId;
-      }
+      const workspaceId = getWorkspaceIdFromContext(this.getInheritedWorkspaceContext(params));
 
       // Prepare pagination options for DB-level pagination
       // Use pageSize if provided, otherwise fall back to limit for backward compatibility
@@ -61,27 +105,19 @@ export class ListStatesTool extends BaseTool<ListStatesParams, StateResult> {
       );
 
       // Extract items from PaginatedResult
-      let processedStates = statesResult.items;
+      let processedStates: ListStatesItem[] = statesResult.items;
 
       // Filter out archived states by default (unless includeArchived is true)
       if (!params.includeArchived) {
-        processedStates = processedStates.filter(state => {
-          const stateData = state.state as unknown as Record<string, unknown> | undefined;
-          const nestedState = stateData?.state as Record<string, unknown> | undefined;
-          const metadata = nestedState?.metadata as Record<string, unknown> | undefined;
-          return !metadata?.isArchived;
-        });
+        processedStates = processedStates.filter(state => !isArchivedState(state));
       }
 
       // Filter by tags if provided (tags aren't in DB, so must filter in-memory)
       // Note: This happens AFTER pagination, so may return fewer results than pageSize
       if (params.tags && params.tags.length > 0) {
         processedStates = processedStates.filter(state => {
-          const stateData = state.state as unknown as Record<string, unknown> | undefined;
-          const nestedState = stateData?.state as Record<string, unknown> | undefined;
-          const metadata = nestedState?.metadata as Record<string, unknown> | undefined;
-          const stateTags = (metadata?.tags as string[]) || [];
-          return params.tags!.some(tag => stateTags.includes(tag));
+          const stateTags = getStateTags(state);
+          return params.tags.some(tag => stateTags.includes(tag));
         });
       }
 
@@ -89,7 +125,7 @@ export class ListStatesTool extends BaseTool<ListStatesParams, StateResult> {
       const sortedStates = this.sortStates(processedStates, params.order || 'desc');
 
       // Simplify state data to just name and description
-      const simplifiedStates = sortedStates.map(state => ({
+      const simplifiedStates: ListStatesResultItem[] = sortedStates.map(state => ({
         name: state.name,
         description: state.description || state.state?.context?.activeTask || 'No description'
       }));
@@ -104,7 +140,7 @@ export class ListStatesTool extends BaseTool<ListStatesParams, StateResult> {
   /**
    * Sort states by creation date
    */
-  private sortStates(states: any[], order: 'asc' | 'desc'): any[] {
+  private sortStates(states: ListStatesItem[], order: 'asc' | 'desc'): ListStatesItem[] {
     return states.sort((a, b) => {
       const timeA = a.timestamp || a.created || 0;
       const timeB = b.timestamp || b.created || 0;
@@ -112,51 +148,11 @@ export class ListStatesTool extends BaseTool<ListStatesParams, StateResult> {
     });
   }
 
-  /**
-   * Enhance states with workspace names and context
-   */
-  private async enhanceStatesWithContext(states: any[], workspaceService: WorkspaceService, includeContext?: boolean): Promise<any[]> {
-    const workspaceCache = new Map<string, string>();
-    
-    return await Promise.all(states.map(async (state) => {
-      let workspaceName = 'Unknown Workspace';
-      
-      if (!workspaceCache.has(state.workspaceId)) {
-        try {
-          const workspace = await workspaceService.getWorkspace(state.workspaceId);
-          workspaceName = workspace?.name || 'Unknown Workspace';
-          workspaceCache.set(state.workspaceId, workspaceName);
-        } catch {
-          workspaceCache.set(state.workspaceId, 'Unknown Workspace');
-        }
-      } else {
-        workspaceName = workspaceCache.get(state.workspaceId)!;
-      }
-
-      const enhanced: any = {
-        ...state,
-        workspaceName,
-        created: state.created || state.timestamp
-      };
-
-      if (includeContext && state.state?.context) {
-        enhanced.context = {
-          files: state.state.context.activeFiles || [],
-          traceCount: 0, // Could be enhanced to count related traces
-          tags: state.state?.state?.metadata?.tags || [],
-          summary: state.state.context.activeTask || 'No active task recorded'
-        };
-      }
-
-      return enhanced;
-    }));
-  }
-
 
   /**
    * Get workspace context from inherited parameters
    */
-  protected getInheritedWorkspaceContext(params: ListStatesParams): any {
+  protected getInheritedWorkspaceContext(params: ListStatesParams): unknown {
     return extractContextFromParams(params);
   }
 

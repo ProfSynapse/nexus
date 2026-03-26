@@ -51,13 +51,13 @@ export class WorkspaceFormRenderer {
    */
   private renderBasicInfoSection(container: HTMLElement): void {
     const section = container.createDiv('nexus-form-section');
-    section.createEl('h4', { text: 'Basic Info', cls: 'nexus-section-header' });
+    section.createEl('h4', { text: 'Basic info', cls: 'nexus-section-header' });
 
     // Name field
     const nameField = section.createDiv('nexus-form-field');
     nameField.createEl('label', { text: 'Name', cls: 'nexus-form-label' });
     const nameInput = new TextComponent(nameField);
-    nameInput.setPlaceholder('My Workspace');
+    nameInput.setPlaceholder('My workspace');
     nameInput.setValue(this.formData.name || '');
     nameInput.onChange((value) => {
       this.formData.name = value;
@@ -75,7 +75,7 @@ export class WorkspaceFormRenderer {
 
     // Root Folder field
     const folderField = section.createDiv('nexus-form-field');
-    folderField.createEl('label', { text: 'Root Folder', cls: 'nexus-form-label' });
+    folderField.createEl('label', { text: 'Root folder', cls: 'nexus-form-label' });
     const folderInput = new TextComponent(folderField);
     folderInput.setPlaceholder('/');
     folderInput.setValue(this.formData.rootFolder || '/');
@@ -135,7 +135,7 @@ export class WorkspaceFormRenderer {
    */
   private renderAgentFilesSection(container: HTMLElement): void {
     const section = container.createDiv('nexus-form-section');
-    section.createEl('h4', { text: 'Agent & Files', cls: 'nexus-section-header' });
+    section.createEl('h4', { text: 'Agent & files', cls: 'nexus-section-header' });
 
     // Ensure context exists
     if (!this.formData.context) {
@@ -149,7 +149,7 @@ export class WorkspaceFormRenderer {
 
     // Dedicated Agent field
     const agentField = section.createDiv('nexus-form-field');
-    agentField.createEl('label', { text: 'Dedicated Agent', cls: 'nexus-form-label' });
+    agentField.createEl('label', { text: 'Dedicated agent', cls: 'nexus-form-label' });
 
     const dropdownContainer = agentField.createDiv('nexus-dropdown-container');
     const dropdown = new DropdownComponent(dropdownContainer);
@@ -233,7 +233,7 @@ export class WorkspaceFormRenderer {
     }
 
     new ButtonComponent(subsection)
-      .setButtonText('+ Add Workflow')
+      .setButtonText('+ add workflow')
       .onClick(() => this.onWorkflowEdit());
   }
 
@@ -242,7 +242,7 @@ export class WorkspaceFormRenderer {
    */
   private renderKeyFilesSection(container: HTMLElement): void {
     const subsection = container.createDiv('nexus-form-field');
-    subsection.createEl('label', { text: 'Key Files', cls: 'nexus-form-label' });
+    subsection.createEl('label', { text: 'Key files', cls: 'nexus-form-label' });
 
     if (!this.formData.context?.keyFiles) {
       this.formData.context = this.formData.context || {
@@ -287,7 +287,7 @@ export class WorkspaceFormRenderer {
     updateKeyFilesList();
 
     new ButtonComponent(subsection)
-      .setButtonText('+ Add Key File')
+      .setButtonText('+ add key file')
       .onClick(() => {
         const newIndex = this.formData.context!.keyFiles!.length;
         this.formData.context!.keyFiles!.push('');

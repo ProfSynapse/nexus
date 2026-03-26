@@ -373,7 +373,7 @@ export class ChatSettingsRenderer {
     // Create container for slider row with value display
     const tempSetting = new Setting(content)
       .setName('Creativity')
-      .setDesc('Lower = more focused, Higher = more creative');
+      .setDesc('Lower = more focused, higher = more creative');
 
     // Add value display span
     const valueDisplay = tempSetting.controlEl.createSpan({ cls: 'csr-temp-value' });
@@ -413,7 +413,7 @@ export class ChatSettingsRenderer {
 
   private renderImageSection(parent: HTMLElement): void {
     const section = parent.createDiv('csr-section');
-    section.createDiv('csr-section-header').setText('Image Model');
+    section.createDiv('csr-section-header').setText('Image model');
     const content = section.createDiv('csr-section-content');
 
     // Provider
@@ -525,9 +525,9 @@ export class ChatSettingsRenderer {
 
     // Context Notes header with Add button
     const notesHeader = content.createDiv('csr-notes-header');
-    notesHeader.createSpan().setText('Context Notes');
+    notesHeader.createSpan().setText('Context notes');
     const addBtn = notesHeader.createEl('button', { cls: 'csr-add-btn' });
-    addBtn.setText('+ Add');
+    addBtn.setText('Add');
     addBtn.onclick = () => this.openNotePicker();
 
     this.contextNotesListEl = content.createDiv('csr-notes-list');

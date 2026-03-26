@@ -53,7 +53,7 @@ export class UIStateController {
       setIcon(welcomeIcon, 'sparkles');
 
       welcomeContent.createEl('div', {
-        text: 'Welcome to Nexus Chat',
+        text: 'Welcome to the chat',
         cls: 'chat-welcome-title'
       });
 
@@ -87,13 +87,13 @@ export class UIStateController {
       setIcon(welcomeIcon, 'settings');
 
       welcomeContent.createEl('p', {
-        text: 'Configure an LLM provider to start chatting',
+        text: 'Set up a provider to start chatting.',
         cls: 'chat-welcome-hint'
       });
 
       const settingsBtn = welcomeContent.createEl('button', {
         cls: 'chat-welcome-button',
-        text: 'Open Settings'
+        text: 'Open settings'
       });
       const settingsBtnIcon = settingsBtn.createSpan({ cls: 'chat-welcome-button-icon' });
       setIcon(settingsBtnIcon, 'settings');

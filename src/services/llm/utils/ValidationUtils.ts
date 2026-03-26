@@ -20,28 +20,50 @@ export interface SchemaValidationRule {
   min?: number;
   max?: number;
   pattern?: RegExp;
-  allowedValues?: any[];
-  customValidator?: (value: any) => string | null;
+  allowedValues?: unknown[];
+  customValidator?: (value: unknown) => string | null;
 }
 
 export class ValidationUtils {
+  private static isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+  }
+
+  private static isString(value: unknown): value is string {
+    return typeof value === 'string';
+  }
+
+  private static isNumber(value: unknown): value is number {
+    return typeof value === 'number' && Number.isFinite(value);
+  }
+
+  private static isStringArray(value: unknown): value is string[] {
+    return Array.isArray(value) && value.every(item => typeof item === 'string');
+  }
+
   /**
    * Validate test configuration
    */
-  static validateTestConfig(config: any): ValidationResult {
+  static validateTestConfig(config: unknown): ValidationResult {
     const result: ValidationResult = {
       isValid: true,
       errors: [],
       warnings: []
     };
 
+    if (!this.isRecord(config)) {
+      result.errors.push('Test configuration must be an object');
+      result.isValid = false;
+      return result;
+    }
+
     // Required fields
-    if (!config.name || typeof config.name !== 'string') {
+    if (!this.isString(config.name) || config.name.length === 0) {
       result.errors.push('Test name is required and must be a string');
       result.isValid = false;
     }
 
-    if (!config.provider || typeof config.provider !== 'string') {
+    if (!this.isString(config.provider) || config.provider.length === 0) {
       result.errors.push('Provider is required and must be a string');
       result.isValid = false;
     }
@@ -52,8 +74,8 @@ export class ValidationUtils {
     }
 
     // Validate scenarios
-    if (config.scenarios && Array.isArray(config.scenarios)) {
-      config.scenarios.forEach((scenario: any, index: number) => {
+    if (Array.isArray(config.scenarios)) {
+      config.scenarios.forEach((scenario, index) => {
         const scenarioResult = this.validateTestScenario(scenario);
         if (!scenarioResult.isValid) {
           result.errors.push(...scenarioResult.errors.map(err => `Scenario ${index + 1}: ${err}`));
@@ -79,36 +101,42 @@ export class ValidationUtils {
   /**
    * Validate test scenario
    */
-  static validateTestScenario(scenario: any): ValidationResult {
+  static validateTestScenario(scenario: unknown): ValidationResult {
     const result: ValidationResult = {
       isValid: true,
       errors: [],
       warnings: []
     };
 
-    if (!scenario.id || typeof scenario.id !== 'string') {
+    if (!this.isRecord(scenario)) {
+      result.errors.push('Scenario must be an object');
+      result.isValid = false;
+      return result;
+    }
+
+    if (!this.isString(scenario.id) || scenario.id.length === 0) {
       result.errors.push('Scenario ID is required and must be a string');
       result.isValid = false;
     }
 
-    if (!scenario.userInput || typeof scenario.userInput !== 'string') {
+    if (!this.isString(scenario.userInput) || scenario.userInput.length === 0) {
       result.errors.push('User input is required and must be a string');
       result.isValid = false;
     }
 
-    if (scenario.expectedOutput && typeof scenario.expectedOutput !== 'string') {
+    if (scenario.expectedOutput !== undefined && scenario.expectedOutput !== null && !this.isString(scenario.expectedOutput)) {
       result.errors.push('Expected output must be a string if provided');
       result.isValid = false;
     }
 
     // Validate metadata
-    if (scenario.metadata && typeof scenario.metadata !== 'object') {
+    if (scenario.metadata !== undefined && scenario.metadata !== null && !this.isRecord(scenario.metadata)) {
       result.errors.push('Scenario metadata must be an object');
       result.isValid = false;
     }
 
     // Check for overly long inputs
-    if (scenario.userInput && scenario.userInput.length > 10000) {
+    if (this.isString(scenario.userInput) && scenario.userInput.length > 10000) {
       result.warnings.push('User input is very long (>10,000 characters) - may affect performance');
     }
 
@@ -118,26 +146,38 @@ export class ValidationUtils {
   /**
    * Validate evaluation configuration
    */
-  static validateEvaluationConfig(evaluation: any): ValidationResult {
+  static validateEvaluationConfig(evaluation: unknown): ValidationResult {
     const result: ValidationResult = {
       isValid: true,
       errors: [],
       warnings: []
     };
 
-    if (!evaluation.criteria || !Array.isArray(evaluation.criteria)) {
+    if (!this.isRecord(evaluation)) {
+      result.errors.push('Evaluation configuration must be an object');
+      result.isValid = false;
+      return result;
+    }
+
+    if (!Array.isArray(evaluation.criteria)) {
       result.errors.push('Evaluation criteria must be an array');
       result.isValid = false;
       return result;
     }
 
-    evaluation.criteria.forEach((criterion: any, index: number) => {
-      if (!criterion.name || typeof criterion.name !== 'string') {
+    evaluation.criteria.forEach((criterion, index) => {
+      if (!this.isRecord(criterion)) {
+        result.errors.push(`Criterion ${index + 1}: must be an object`);
+        result.isValid = false;
+        return;
+      }
+
+      if (!this.isString(criterion.name) || criterion.name.length === 0) {
         result.errors.push(`Criterion ${index + 1}: name is required and must be a string`);
         result.isValid = false;
       }
 
-      if (!criterion.type || typeof criterion.type !== 'string') {
+      if (!this.isString(criterion.type) || criterion.type.length === 0) {
         result.errors.push(`Criterion ${index + 1}: type is required and must be a string`);
         result.isValid = false;
       }
@@ -156,34 +196,40 @@ export class ValidationUtils {
   /**
    * Validate optimization configuration
    */
-  static validateOptimizationConfig(config: any): ValidationResult {
+  static validateOptimizationConfig(config: unknown): ValidationResult {
     const result: ValidationResult = {
       isValid: true,
       errors: [],
       warnings: []
     };
 
-    if (!config.basePrompt || typeof config.basePrompt !== 'string') {
+    if (!this.isRecord(config)) {
+      result.errors.push('Optimization configuration must be an object');
+      result.isValid = false;
+      return result;
+    }
+
+    if (!this.isString(config.basePrompt) || config.basePrompt.length === 0) {
       result.errors.push('Base prompt is required and must be a string');
       result.isValid = false;
     }
 
-    if (!config.testScenarios || !Array.isArray(config.testScenarios)) {
+    if (!Array.isArray(config.testScenarios)) {
       result.errors.push('Test scenarios are required and must be an array');
       result.isValid = false;
     }
 
-    if (config.generations && (typeof config.generations !== 'number' || config.generations < 1)) {
+    if (config.generations !== undefined && (!this.isNumber(config.generations) || config.generations < 1)) {
       result.errors.push('Generations must be a positive number');
       result.isValid = false;
     }
 
-    if (config.populationSize && (typeof config.populationSize !== 'number' || config.populationSize < 2)) {
+    if (config.populationSize !== undefined && (!this.isNumber(config.populationSize) || config.populationSize < 2)) {
       result.errors.push('Population size must be at least 2');
       result.isValid = false;
     }
 
-    if (config.mutationRate && (typeof config.mutationRate !== 'number' || config.mutationRate < 0 || config.mutationRate > 1)) {
+    if (config.mutationRate !== undefined && (!this.isNumber(config.mutationRate) || config.mutationRate < 0 || config.mutationRate > 1)) {
       result.errors.push('Mutation rate must be a number between 0 and 1');
       result.isValid = false;
     }
@@ -194,20 +240,20 @@ export class ValidationUtils {
   /**
    * Validate provider configuration
    */
-  static validateProviderConfig(provider: string, config: any): ValidationResult {
+  static validateProviderConfig(provider: string, config: unknown): ValidationResult {
     const result: ValidationResult = {
       isValid: true,
       errors: [],
       warnings: []
     };
 
-    const providerValidators: Record<string, (config: any) => ValidationResult> = {
-      openai: this.validateOpenAIConfig,
-      google: this.validateGoogleConfig,
-      anthropic: this.validateAnthropicConfig,
-      mistral: this.validateMistralConfig,
-      openrouter: this.validateOpenRouterConfig,
-      requesty: this.validateRequestyConfig
+    const providerValidators: Record<string, (config: unknown) => ValidationResult> = {
+      openai: config => this.validateOpenAIConfig(config),
+      google: config => this.validateGoogleConfig(config),
+      anthropic: config => this.validateAnthropicConfig(config),
+      mistral: config => this.validateMistralConfig(config),
+      openrouter: config => this.validateOpenRouterConfig(config),
+      requesty: config => this.validateRequestyConfig(config)
     };
 
     const validator = providerValidators[provider.toLowerCase()];
@@ -223,7 +269,7 @@ export class ValidationUtils {
   /**
    * Validate using custom schema
    */
-  static validateSchema(data: any, rules: SchemaValidationRule[]): ValidationResult {
+  static validateSchema(data: unknown, rules: SchemaValidationRule[]): ValidationResult {
     const result: ValidationResult = {
       isValid: true,
       errors: [],
@@ -250,14 +296,14 @@ export class ValidationUtils {
   /**
    * Validate API response format
    */
-  static validateAPIResponse(response: any, expectedFields: string[]): ValidationResult {
+  static validateAPIResponse(response: unknown, expectedFields: string[]): ValidationResult {
     const result: ValidationResult = {
       isValid: true,
       errors: [],
       warnings: []
     };
 
-    if (!response || typeof response !== 'object') {
+    if (!this.isRecord(response)) {
       result.errors.push('Response must be an object');
       result.isValid = false;
       return result;
@@ -276,12 +322,18 @@ export class ValidationUtils {
   /**
    * Validate test result
    */
-  static validateTestResult(result: any): ValidationResult {
+  static validateTestResult(result: unknown): ValidationResult {
     const validationResult: ValidationResult = {
       isValid: true,
       errors: [],
       warnings: []
     };
+
+    if (!this.isRecord(result)) {
+      validationResult.errors.push('Test result must be an object');
+      validationResult.isValid = false;
+      return validationResult;
+    }
 
     const requiredFields = ['id', 'response', 'evaluation', 'timestamp'];
     const fieldValidation = this.validateAPIResponse(result, requiredFields);
@@ -292,21 +344,27 @@ export class ValidationUtils {
     }
 
     // Validate response structure
-    if (result.response) {
-      if (!result.response.content || typeof result.response.content !== 'string') {
+    if (!this.isRecord(result.response)) {
+      validationResult.errors.push('Response must be an object');
+      validationResult.isValid = false;
+    } else {
+      if (!this.isString(result.response.content) || result.response.content.length === 0) {
         validationResult.errors.push('Response content is required and must be a string');
         validationResult.isValid = false;
       }
 
-      if (result.response.tokens && typeof result.response.tokens !== 'number') {
+      if (result.response.tokens !== undefined && !this.isNumber(result.response.tokens)) {
         validationResult.errors.push('Response tokens must be a number');
         validationResult.isValid = false;
       }
     }
 
     // Validate evaluation structure
-    if (result.evaluation) {
-      if (typeof result.evaluation.overall !== 'number' || result.evaluation.overall < 0 || result.evaluation.overall > 1) {
+    if (!this.isRecord(result.evaluation)) {
+      validationResult.errors.push('Evaluation must be an object');
+      validationResult.isValid = false;
+    } else {
+      if (!this.isNumber(result.evaluation.overall) || result.evaluation.overall < 0 || result.evaluation.overall > 1) {
         validationResult.errors.push('Evaluation overall score must be a number between 0 and 1');
         validationResult.isValid = false;
       }
@@ -322,15 +380,15 @@ export class ValidationUtils {
 
   // Private validation methods for specific providers
 
-  private static validateOpenAIConfig(config: any): ValidationResult {
+  private static validateOpenAIConfig(config: unknown): ValidationResult {
     const result: ValidationResult = { isValid: true, errors: [], warnings: [] };
 
-    if (!config.apiKey || typeof config.apiKey !== 'string') {
+    if (!this.isRecord(config) || !this.isString(config.apiKey) || config.apiKey.length === 0) {
       result.errors.push('OpenAI API key is required');
       result.isValid = false;
     }
 
-    if (config.organization && typeof config.organization !== 'string') {
+    if (this.isRecord(config) && config.organization !== undefined && !this.isString(config.organization)) {
       result.errors.push('OpenAI organization must be a string');
       result.isValid = false;
     }
@@ -338,10 +396,10 @@ export class ValidationUtils {
     return result;
   }
 
-  private static validateGoogleConfig(config: any): ValidationResult {
+  private static validateGoogleConfig(config: unknown): ValidationResult {
     const result: ValidationResult = { isValid: true, errors: [], warnings: [] };
 
-    if (!config.apiKey || typeof config.apiKey !== 'string') {
+    if (!this.isRecord(config) || !this.isString(config.apiKey) || config.apiKey.length === 0) {
       result.errors.push('Google API key is required');
       result.isValid = false;
     }
@@ -349,10 +407,10 @@ export class ValidationUtils {
     return result;
   }
 
-  private static validateAnthropicConfig(config: any): ValidationResult {
+  private static validateAnthropicConfig(config: unknown): ValidationResult {
     const result: ValidationResult = { isValid: true, errors: [], warnings: [] };
 
-    if (!config.apiKey || typeof config.apiKey !== 'string') {
+    if (!this.isRecord(config) || !this.isString(config.apiKey) || config.apiKey.length === 0) {
       result.errors.push('Anthropic API key is required');
       result.isValid = false;
     }
@@ -360,10 +418,10 @@ export class ValidationUtils {
     return result;
   }
 
-  private static validateMistralConfig(config: any): ValidationResult {
+  private static validateMistralConfig(config: unknown): ValidationResult {
     const result: ValidationResult = { isValid: true, errors: [], warnings: [] };
 
-    if (!config.apiKey || typeof config.apiKey !== 'string') {
+    if (!this.isRecord(config) || !this.isString(config.apiKey) || config.apiKey.length === 0) {
       result.errors.push('Mistral API key is required');
       result.isValid = false;
     }
@@ -371,10 +429,10 @@ export class ValidationUtils {
     return result;
   }
 
-  private static validateOpenRouterConfig(config: any): ValidationResult {
+  private static validateOpenRouterConfig(config: unknown): ValidationResult {
     const result: ValidationResult = { isValid: true, errors: [], warnings: [] };
 
-    if (!config.apiKey || typeof config.apiKey !== 'string') {
+    if (!this.isRecord(config) || !this.isString(config.apiKey) || config.apiKey.length === 0) {
       result.errors.push('OpenRouter API key is required');
       result.isValid = false;
     }
@@ -382,10 +440,10 @@ export class ValidationUtils {
     return result;
   }
 
-  private static validateRequestyConfig(config: any): ValidationResult {
+  private static validateRequestyConfig(config: unknown): ValidationResult {
     const result: ValidationResult = { isValid: true, errors: [], warnings: [] };
 
-    if (!config.apiKey || typeof config.apiKey !== 'string') {
+    if (!this.isRecord(config) || !this.isString(config.apiKey) || config.apiKey.length === 0) {
       result.errors.push('Requesty API key is required');
       result.isValid = false;
     }
@@ -395,7 +453,7 @@ export class ValidationUtils {
 
   // Helper methods
 
-  private static validateField(value: any, rule: SchemaValidationRule): { error?: string; warning?: string } {
+  private static validateField(value: unknown, rule: SchemaValidationRule): { error?: string; warning?: string } {
     // Check required
     if (rule.required && (value === undefined || value === null)) {
       return { error: 'is required' };
@@ -406,13 +464,13 @@ export class ValidationUtils {
     }
 
     // Check type
-    const actualType = Array.isArray(value) ? 'array' : typeof value;
-    if (rule.type === 'email' && actualType === 'string') {
-      if (!this.isValidEmail(value)) {
+    const actualType = Array.isArray(value) ? 'array' : value === null ? 'null' : typeof value;
+    if (rule.type === 'email') {
+      if (!this.isString(value) || !this.isValidEmail(value)) {
         return { error: 'must be a valid email address' };
       }
-    } else if (rule.type === 'url' && actualType === 'string') {
-      if (!this.isValidUrl(value)) {
+    } else if (rule.type === 'url') {
+      if (!this.isString(value) || !this.isValidUrl(value)) {
         return { error: 'must be a valid URL' };
       }
     } else if (rule.type !== actualType) {
@@ -458,8 +516,18 @@ export class ValidationUtils {
     return {};
   }
 
-  private static getNestedValue(obj: any, path: string): any {
-    return path.split('.').reduce((current, key) => current?.[key], obj);
+  private static getNestedValue(obj: unknown, path: string): unknown {
+    let current: unknown = obj;
+
+    for (const key of path.split('.')) {
+      if (!this.isRecord(current) || !(key in current)) {
+        return undefined;
+      }
+
+      current = current[key];
+    }
+
+    return current;
   }
 
   private static isValidEmail(email: string): boolean {

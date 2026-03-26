@@ -49,22 +49,23 @@ export class DirectoryItemCollector {
         // Handle glob pattern
         const regex = globToRegex(normalizedPath);
         const vaultItems = this.plugin.app.vault.getAllLoadedFiles();
-        
+
         for (const item of vaultItems) {
           // Skip root folder itself if it comes up
           if (item.path === '/') continue;
 
-          if (regex.test(item.path)) {
-             if (this.matchesSearchType(item, searchType)) {
-                allItems.push(item as TFile | TFolder);
-             }
+          if (regex.test(item.path) && this.isCollectableItem(item, searchType)) {
+            allItems.push(item);
           }
         }
       } else if (normalizedPath === '/' || normalizedPath === '') {
         // Root path - get all vault items
-        const vaultItems = this.plugin.app.vault.getAllLoadedFiles()
-          .filter(file => this.matchesSearchType(file, searchType)) as (TFile | TFolder)[];
-        allItems.push(...vaultItems);
+        const vaultItems = this.plugin.app.vault.getAllLoadedFiles();
+        for (const item of vaultItems) {
+          if (this.isCollectableItem(item, searchType)) {
+            allItems.push(item);
+          }
+        }
       } else {
         // Specific directory
         const directoryItems = await this.getItemsInDirectory(
@@ -94,7 +95,7 @@ export class DirectoryItemCollector {
   ): Promise<(TFile | TFolder)[]> {
     const folder = this.plugin.app.vault.getAbstractFileByPath(directoryPath);
 
-    if (!folder || !('children' in folder)) {
+    if (!(folder instanceof TFolder)) {
       return [];
     }
 
@@ -106,18 +107,18 @@ export class DirectoryItemCollector {
       }
 
       for (const child of currentFolder.children) {
-        if (this.matchesSearchType(child, searchType)) {
-          items.push(child as TFile | TFolder);
+        if (this.isCollectableItem(child, searchType)) {
+          items.push(child);
         }
 
         // Recursive traversal for folders
-        if ('children' in child) {
-          collectItems(child as TFolder, currentDepth + 1);
+        if (child instanceof TFolder) {
+          collectItems(child, currentDepth + 1);
         }
       }
     };
 
-    collectItems(folder as TFolder);
+    collectItems(folder);
     return items;
   }
 
@@ -140,6 +141,16 @@ export class DirectoryItemCollector {
       default:
         return item instanceof TFile || item instanceof TFolder;
     }
+  }
+
+  /**
+   * Check if an item should be included in the result set and narrow the type.
+   */
+  private isCollectableItem(
+    item: TAbstractFile,
+    searchType: 'files' | 'folders' | 'both'
+  ): item is TFile | TFolder {
+    return this.matchesSearchType(item, searchType);
   }
 
   /**

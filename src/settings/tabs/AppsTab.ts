@@ -57,7 +57,7 @@ export class AppsTab {
     if (apps.length === 0) {
       this.container.createEl('p', {
         cls: 'setting-item-description',
-        text: 'No apps available yet. Apps will appear here as they are added to Nexus.'
+        text: 'No apps are available yet.'
       });
       return;
     }
@@ -101,10 +101,10 @@ export class AppsTab {
 
     const groups: CardGroup<AppCardItem>[] = [];
     if (installedItems.length > 0) {
-      groups.push({ title: 'INSTALLED APPS', items: installedItems });
+      groups.push({ title: 'Installed apps', items: installedItems });
     }
     if (availableItems.length > 0) {
-      groups.push({ title: 'AVAILABLE APPS', items: availableItems });
+      groups.push({ title: 'Available apps', items: availableItems });
     }
 
     new SearchableCardManager<AppCardItem>({

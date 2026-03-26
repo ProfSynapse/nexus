@@ -11,15 +11,83 @@
 import { Plugin } from 'obsidian';
 import { FileSystemService } from './storage/FileSystemService';
 import { IndexManager } from './storage/IndexManager';
-import { IndividualConversation, ConversationMetadata as LegacyConversationMetadata, ConversationMessage } from '../types/storage/StorageTypes';
+import { IndividualConversation, ConversationMetadata as LegacyConversationMetadata, ConversationMessage, ToolCall } from '../types/storage/StorageTypes';
 
 // Re-export for consumers
 export type { IndividualConversation, ConversationMessage } from '../types/storage/StorageTypes';
 import { IStorageAdapter } from '../database/interfaces/IStorageAdapter';
-import { ConversationMetadata } from '../types/storage/HybridStorageTypes';
+import type { AlternativeMessage, ToolCall as HybridToolCall } from '../types/storage/HybridStorageTypes';
 import { PaginationParams, PaginatedResult, calculatePaginationMetadata } from '../types/pagination/PaginationTypes';
 import { StorageAdapterOrGetter, resolveAdapter, withDualBackend } from './helpers/DualBackendExecutor';
 import { convertToLegacyMetadata, convertToLegacyConversation, populateMessageBranches } from './helpers/ConversationTypeConverters';
+
+type ConversationMetadataValue = NonNullable<IndividualConversation['metadata']>;
+type ChatSettingsValue = NonNullable<ConversationMetadataValue['chatSettings']>;
+type MessageMetadataValue = Record<string, unknown>;
+type ToolCallParameterValue = Record<string, unknown> | unknown[] | string | number | boolean | null;
+type ConversationServiceToolCall = Omit<ToolCall, 'parameters'> & {
+  parameters?: ToolCallParameterValue;
+};
+type ConversationServiceMessage = Omit<ConversationMessage, 'toolCalls' | 'alternatives'> & {
+  toolCalls?: ConversationServiceToolCall[];
+  metadata?: MessageMetadataValue;
+  alternatives?: ConversationMessage[] | AlternativeMessage[];
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isToolCallParameterValue(value: unknown): value is ToolCallParameterValue {
+  return value === null || Array.isArray(value) || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' || isRecord(value);
+}
+
+function parseToolCallParameters(argumentsValue: string): ToolCallParameterValue {
+  try {
+    const parsed: unknown = JSON.parse(argumentsValue);
+    return isToolCallParameterValue(parsed) ? parsed : argumentsValue;
+  } catch {
+    // Malformed JSON in arguments — preserve raw string as-is.
+    return argumentsValue;
+  }
+}
+
+function buildGeneratedId(prefix: string): string {
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+}
+
+function toAdapterToolCalls(toolCalls?: ToolCall[]): HybridToolCall[] | undefined {
+  return toolCalls?.map((toolCall) => {
+    const name = toolCall.function?.name ?? toolCall.name ?? 'unknown_tool';
+    const parameters = toolCall.parameters ?? {};
+
+    return {
+      id: toolCall.id,
+      type: 'function',
+      function: toolCall.function ?? {
+        name,
+        arguments: JSON.stringify(parameters)
+      },
+      name: toolCall.name,
+      parameters,
+      result: toolCall.result,
+      success: toolCall.success,
+      error: toolCall.error,
+      executionTime: toolCall.executionTime
+    };
+  });
+}
+
+function toAdapterAlternatives(alternatives?: ConversationMessage[]): AlternativeMessage[] | undefined {
+  return alternatives?.map((alternative) => ({
+    id: alternative.id,
+    content: alternative.content,
+    timestamp: alternative.timestamp,
+    toolCalls: toAdapterToolCalls(alternative.toolCalls),
+    reasoning: alternative.reasoning,
+    state: alternative.state ?? 'complete'
+  }));
+}
 
 export class ConversationService {
   private storageAdapterOrGetter: StorageAdapterOrGetter;
@@ -161,8 +229,8 @@ export class ConversationService {
   async getMessages(
     conversationId: string,
     options?: PaginationParams
-  ): Promise<PaginatedResult<any>> {
-    return withDualBackend<PaginatedResult<any>>(
+  ): Promise<PaginatedResult<ConversationServiceMessage>> {
+    return withDualBackend<PaginatedResult<ConversationServiceMessage>>(
       this.storageAdapterOrGetter,
       async (adapter) => {
         const messagesResult = await adapter.getMessages(conversationId, {
@@ -181,18 +249,9 @@ export class ConversationService {
             toolCalls: msg.toolCalls?.map(tc => {
               const hasFunction = tc.function && typeof tc.function === 'object';
               const name = (hasFunction ? tc.function.name : tc.name) || 'unknown_tool';
-              let parameters: any;
+              let parameters: ToolCallParameterValue | undefined;
               if (hasFunction && tc.function.arguments) {
-                if (typeof tc.function.arguments === 'string') {
-                  try {
-                    parameters = JSON.parse(tc.function.arguments);
-                  } catch {
-                    // Malformed JSON in arguments — preserve raw string as-is
-                    parameters = tc.function.arguments;
-                  }
-                } else {
-                  parameters = tc.function.arguments;
-                }
+                parameters = parseToolCallParameters(tc.function.arguments);
               } else {
                 parameters = tc.parameters;
               }
@@ -285,7 +344,7 @@ export class ConversationService {
    * Create new conversation (writes to adapter or legacy storage)
    */
   async createConversation(data: Partial<IndividualConversation>): Promise<IndividualConversation> {
-    const id = data.id || `conv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const id = data.id || buildGeneratedId('conv');
 
     return withDualBackend(
       this.storageAdapterOrGetter,
@@ -297,10 +356,10 @@ export class ConversationService {
           vaultName: data.vault_name || this.plugin.app.vault.getName(),
           workspaceId: data.metadata?.chatSettings?.workspaceId,
           sessionId: data.metadata?.chatSettings?.sessionId,
-          workflowId: data.metadata?.workflowId as string | undefined,
-          runTrigger: data.metadata?.runTrigger as 'manual' | 'scheduled' | 'catch_up' | undefined,
-          scheduledFor: data.metadata?.scheduledFor as number | undefined,
-          runKey: data.metadata?.runKey as string | undefined,
+          workflowId: data.metadata?.workflowId,
+          runTrigger: data.metadata?.runTrigger,
+          scheduledFor: data.metadata?.scheduledFor,
+          runKey: data.metadata?.runKey,
           metadata: data.metadata
         });
 
@@ -339,10 +398,9 @@ export class ConversationService {
       async (adapter) => {
         // Merge existing metadata so we don't lose chat settings when only cost is updated
         const existing = await adapter.getConversation(id);
-        type ChatSettingsType = NonNullable<IndividualConversation['metadata']>['chatSettings'];
-        const existingMetadata = (existing?.metadata ?? {}) as IndividualConversation['metadata'];
-        const existingChatSettings = (existingMetadata?.chatSettings ?? {}) as ChatSettingsType;
-        const updatesChatSettings = (updates.metadata?.chatSettings ?? {}) as ChatSettingsType;
+        const existingMetadata: ConversationMetadataValue = existing?.metadata ?? {};
+        const existingChatSettings: ChatSettingsValue = existingMetadata.chatSettings ?? {};
+        const updatesChatSettings: ChatSettingsValue = updates.metadata?.chatSettings ?? {};
 
         const mergedMetadata = {
           ...existingMetadata,
@@ -368,26 +426,13 @@ export class ConversationService {
           }
 
           for (const msg of nextMessages) {
-            const convertedToolCalls = msg.toolCalls?.map(tc => ({
-              id: tc.id,
-              type: 'function' as const,
-              function: tc.function || {
-                name: tc.name || 'unknown_tool',
-                arguments: JSON.stringify(tc.parameters || {})
-              },
-              result: tc.result,
-              success: tc.success,
-              error: tc.error,
-              executionTime: tc.executionTime
-            }));
-
             await adapter.updateMessage(id, msg.id, {
               content: msg.content ?? null,
               state: msg.state,
               reasoning: msg.reasoning,
-              toolCalls: convertedToolCalls,
+              toolCalls: toAdapterToolCalls(msg.toolCalls),
               toolCallId: msg.toolCallId,
-              alternatives: msg.alternatives as unknown as import('../types/storage/HybridStorageTypes').AlternativeMessage[] | undefined,
+              alternatives: toAdapterAlternatives(msg.alternatives),
               activeAlternativeIndex: msg.activeAlternativeIndex
             });
           }
@@ -398,10 +443,10 @@ export class ConversationService {
           updated: updates.updated ?? Date.now(),
           workspaceId: updates.metadata?.chatSettings?.workspaceId,
           sessionId: updates.metadata?.chatSettings?.sessionId,
-          workflowId: updates.metadata?.workflowId as string | undefined,
-          runTrigger: updates.metadata?.runTrigger as 'manual' | 'scheduled' | 'catch_up' | undefined,
-          scheduledFor: updates.metadata?.scheduledFor as number | undefined,
-          runKey: updates.metadata?.runKey as string | undefined,
+          workflowId: updates.metadata?.workflowId,
+          runTrigger: updates.metadata?.runTrigger,
+          scheduledFor: updates.metadata?.scheduledFor,
+          runKey: updates.metadata?.runKey,
           metadata: mergedMetadata
         });
       },
@@ -467,7 +512,7 @@ export class ConversationService {
   /**
    * Update conversation metadata only (for chat settings persistence)
    */
-  async updateConversationMetadata(id: string, metadata: any): Promise<void> {
+  async updateConversationMetadata(id: string, metadata: IndividualConversation['metadata']): Promise<void> {
     await this.updateConversation(id, { metadata });
   }
 
@@ -480,13 +525,13 @@ export class ConversationService {
     conversationId: string;
     role: 'user' | 'assistant' | 'tool';
     content: string;
-    toolCalls?: any[];
+    toolCalls?: ToolCall[];
     cost?: { totalCost: number; currency: string };
     usage?: { promptTokens: number; completionTokens: number; totalTokens: number };
     provider?: string;
     model?: string;
     id?: string;
-    metadata?: any;
+    metadata?: MessageMetadataValue;
   }): Promise<{ success: boolean; messageId?: string; error?: string }> {
     try {
       return await withDualBackend(
@@ -503,11 +548,11 @@ export class ConversationService {
             content: params.content,
             timestamp: Date.now(),
             state: initialState,
-            toolCalls: params.toolCalls,
+            toolCalls: toAdapterToolCalls(params.toolCalls),
             metadata: params.metadata
           });
 
-          return { success: true, messageId } as { success: boolean; messageId?: string; error?: string };
+          return { success: true, messageId };
         },
         async () => {
           const conversation = await this.fileSystem.readConversation(params.conversationId);
@@ -515,7 +560,7 @@ export class ConversationService {
             return { success: false, error: `Conversation ${params.conversationId} not found` };
           }
 
-          const messageId = params.id || `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+          const messageId = params.id || buildGeneratedId('msg');
           let initialState: 'draft' | 'complete' = 'complete';
           if (params.role === 'assistant' && (!params.content || params.content.trim() === '')) {
             initialState = 'draft';
@@ -574,7 +619,7 @@ export class ConversationService {
     updates: {
       content?: string;
       state?: 'draft' | 'streaming' | 'complete' | 'aborted' | 'invalid';
-      toolCalls?: any[];
+      toolCalls?: ToolCall[];
       reasoning?: string;
     }
   ): Promise<{ success: boolean; error?: string }> {
@@ -582,8 +627,11 @@ export class ConversationService {
       return await withDualBackend(
         this.storageAdapterOrGetter,
         async (adapter) => {
-          await adapter.updateMessage(conversationId, messageId, updates);
-          return { success: true } as { success: boolean; error?: string };
+          await adapter.updateMessage(conversationId, messageId, {
+            ...updates,
+            toolCalls: toAdapterToolCalls(updates.toolCalls)
+          });
+          return { success: true };
         },
         async () => {
           const conversation = await this.fileSystem.readConversation(conversationId);
@@ -828,7 +876,7 @@ export class ConversationService {
     task?: string,
     subagentMetadata?: Record<string, unknown>
   ): Promise<IndividualConversation> {
-    const branchId = `branch_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const branchId = buildGeneratedId('branch');
 
     const branch = await this.createConversation({
       id: branchId,

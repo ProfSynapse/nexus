@@ -23,6 +23,76 @@ import { MemoryService } from "../../services/MemoryService";
 import { WorkspaceService, GLOBAL_WORKSPACE_ID } from '../../../../services/WorkspaceService';
 import { createServiceIntegration } from '../../services/ValidationService';
 import { SchemaBuilder, SchemaType } from '../../../../utils/schemas/SchemaBuilder';
+import type { WorkspaceState } from '../../../../database/types/session/SessionTypes';
+
+interface StateLoadData {
+    loadedState: WorkspaceState;
+    relatedTraces: TraceSummary[];
+}
+
+interface TraceSummary {
+    timestamp: number;
+    content: string;
+    type: string;
+    importance?: unknown;
+}
+
+interface WorkspaceSummary {
+    name: string;
+}
+
+interface LoadedStateContext {
+    workspaceId: string;
+    conversationContext?: string;
+    activeTask?: string;
+    activeFiles?: string[];
+    nextSteps?: string[];
+    reasoning?: string;
+    workspaceContext?: unknown;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function getString(value: unknown): string | undefined {
+    return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+function getStringArray(value: unknown): string[] {
+    return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+}
+
+function getLoadedStateContext(state: WorkspaceState): LoadedStateContext {
+    const context = state.context;
+
+    return {
+        workspaceId: state.workspaceId,
+        conversationContext: context.conversationContext,
+        activeTask: context.activeTask,
+        activeFiles: context.activeFiles,
+        nextSteps: context.nextSteps,
+        reasoning: undefined,
+        workspaceContext: context.workspaceContext
+    };
+}
+
+function parseWorkspaceContext(value: unknown): { workspaceId?: string } | null {
+    if (!value) {
+        return null;
+    }
+
+    if (typeof value === 'string') {
+        const parsed = JSON.parse(value) as unknown;
+        return isRecord(parsed) ? { workspaceId: getString(parsed.workspaceId) } : null;
+    }
+
+    if (isRecord(value)) {
+        return { workspaceId: getString(value.workspaceId) };
+    }
+
+    return null;
+}
 
 /**
  * Consolidated LoadStateMode - combines all state loading functionality
@@ -68,12 +138,13 @@ export class LoadStateTool extends BaseTool<LoadStateParams, StateResult> {
             }
 
             // Extract workspaceId from params (use '_workspace' as sessionId for workspace-scoped states)
-            const parsedContext = params.workspaceContext ?
-                (typeof params.workspaceContext === 'string' ? JSON.parse(params.workspaceContext) : params.workspaceContext) : null;
+            const parsedContext = parseWorkspaceContext(params.workspaceContext);
             const workspaceId = parsedContext?.workspaceId || GLOBAL_WORKSPACE_ID;
 
             // Use name (required) or fall back to deprecated stateId for backward compatibility
-            const stateName = params.name ?? params.stateId;
+            type LoadStateParamsCompat = Omit<LoadStateParams, 'stateId'> & { stateId?: string };
+            const compatParams = params as LoadStateParamsCompat;
+            const stateName = compatParams.name ?? compatParams.stateId;
             if (!stateName) {
                 return this.prepareResult(false, undefined, 'State name is required. Use listStates to see available states.', extractContextFromParams(params));
             }
@@ -127,7 +198,12 @@ export class LoadStateTool extends BaseTool<LoadStateParams, StateResult> {
      * Load state data (consolidated from StateRetriever logic)
      * Looks up state by name
      */
-    private async loadStateData(workspaceId: string, sessionId: string, stateName: string, memoryService: MemoryService): Promise<{success: boolean; error?: string; data?: any}> {
+    private async loadStateData(
+        workspaceId: string,
+        sessionId: string,
+        stateName: string,
+        memoryService: MemoryService
+    ): Promise<{ success: boolean; error?: string; data?: StateLoadData }> {
         try {
             // Get state from memory service by name
             const loadedState = await memoryService.getStateByNameOrId(workspaceId, sessionId, stateName);
@@ -136,12 +212,17 @@ export class LoadStateTool extends BaseTool<LoadStateParams, StateResult> {
             }
 
             // Get related traces if available using the actual state's session ID
-            let relatedTraces: any[] = [];
+            let relatedTraces: TraceSummary[] = [];
             try {
                 const effectiveSessionId = loadedState.sessionId || sessionId;
                 if (effectiveSessionId && effectiveSessionId !== 'current') {
                     const tracesResult = await memoryService.getMemoryTraces(workspaceId, effectiveSessionId);
-                    relatedTraces = tracesResult.items;
+                    relatedTraces = tracesResult.items.map(trace => ({
+                        timestamp: trace.timestamp,
+                        content: trace.content,
+                        type: trace.type,
+                        importance: trace.metadata
+                    }));
                 }
             } catch {
                 // Ignore errors getting traces - not critical for state loading
@@ -163,20 +244,42 @@ export class LoadStateTool extends BaseTool<LoadStateParams, StateResult> {
     /**
      * Process and restore context (consolidated from FileCollector and TraceProcessor logic)
      */
-    private async processAndRestoreContext(stateData: any, workspaceService: WorkspaceService, memoryService: MemoryService): Promise<any> {
+    private async processAndRestoreContext(
+        stateData: StateLoadData,
+        workspaceService: WorkspaceService,
+        _memoryService: MemoryService
+    ): Promise<{
+        summary: string;
+        associatedNotes: string[];
+        stateCreatedAt: string;
+        originalSessionId?: string;
+        workspace: WorkspaceSummary;
+        restoredContext: {
+            conversationContext?: string;
+            activeTask?: string;
+            activeFiles: string[];
+            nextSteps: string[];
+            reasoning?: string;
+            workspaceContext?: unknown;
+        };
+        traces: TraceSummary[];
+    }> {
         try {
             const { loadedState, relatedTraces } = stateData;
 
             // Get workspace for context
-            let workspace: any;
+            let workspace: WorkspaceSummary;
             try {
-                workspace = await workspaceService.getWorkspace(loadedState.workspaceId);
+                const workspaceRecord = await workspaceService.getWorkspace(loadedState.workspaceId);
+                workspace = workspaceRecord
+                    ? { name: workspaceRecord.name }
+                    : { name: 'Unknown Workspace' };
             } catch {
                 workspace = { name: 'Unknown Workspace' };
             }
 
             // Extract state context details (using new naming: context instead of snapshot)
-            const stateContext = loadedState.context || {};
+            const stateContext = getLoadedStateContext(loadedState);
 
             // Build context summary (consolidated from FileCollector logic)
             const summary = this.buildContextSummary(loadedState, workspace, stateContext);
@@ -205,7 +308,7 @@ export class LoadStateTool extends BaseTool<LoadStateParams, StateResult> {
                 traces: processedTraces
             };
 
-        } catch (error) {
+        } catch {
             return {
                 summary: `State "${stateData.loadedState.name}" loaded successfully`,
                 associatedNotes: [],
@@ -227,9 +330,10 @@ export class LoadStateTool extends BaseTool<LoadStateParams, StateResult> {
     /**
      * Prepare final result - simplified to return just the structured state data
      */
-    private prepareFinalResult(stateData: any, contextResult: any): StateResult {
+    private prepareFinalResult(stateData: StateLoadData, _contextResult: unknown): StateResult {
         const loadedState = stateData.loadedState;
-        const stateContext = loadedState.context || {};
+        const stateContext = loadedState.context;
+        const tags = loadedState.state?.metadata?.tags;
 
         const resultData = {
             name: loadedState.name,
@@ -238,7 +342,7 @@ export class LoadStateTool extends BaseTool<LoadStateParams, StateResult> {
             activeFiles: stateContext.activeFiles || [],
             nextSteps: stateContext.nextSteps || [],
             description: loadedState.description,
-            tags: loadedState.state?.metadata?.tags || []
+            tags: getStringArray(tags)
         };
 
         return this.prepareResult(
@@ -252,7 +356,11 @@ export class LoadStateTool extends BaseTool<LoadStateParams, StateResult> {
     /**
      * Helper methods (consolidated from various services)
      */
-    private buildContextSummary(loadedState: any, workspace: any, stateContext: any): string {
+    private buildContextSummary(
+        loadedState: WorkspaceState,
+        workspace: WorkspaceSummary,
+        stateContext: LoadedStateContext
+    ): string {
         const parts: string[] = [];
 
         parts.push(`Loaded state: "${loadedState.name}"`);
@@ -300,7 +408,7 @@ export class LoadStateTool extends BaseTool<LoadStateParams, StateResult> {
             .slice(0, 20); // Limit to 20 files for performance
     }
 
-    private processMemoryTraces(traces: any[]): any[] {
+    private processMemoryTraces(traces: TraceSummary[]): TraceSummary[] {
         // Process and format traces for display
         return traces
             .slice(0, 5) // Limit to 5 most recent traces
@@ -334,6 +442,6 @@ export class LoadStateTool extends BaseTool<LoadStateParams, StateResult> {
     getResultSchema(): JSONSchema {
         return this.schemaBuilder.buildResultSchema(SchemaType.State, {
             mode: 'loadState'
-        });
+        }) as JSONSchema;
     }
 }

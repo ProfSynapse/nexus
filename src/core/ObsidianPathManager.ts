@@ -116,7 +116,7 @@ export class ObsidianPathManager {
    */
   getStoragePath(fileName: string): string {
     const safeName = this.sanitizePath(fileName);
-    return this.normalizePath(`.obsidian/plugins/${this.manifest.id}/data/storage/${safeName}`);
+    return this.normalizePath(`${this.vault.configDir}/plugins/${this.manifest.id}/data/storage/${safeName}`);
   }
 
   /**
@@ -298,10 +298,11 @@ export class ObsidianPathManager {
       }
     }
     
-    // Look for .obsidian/plugins pattern
-    const obsidianIndex = normalized.indexOf('.obsidian/plugins/');
-    if (obsidianIndex >= 0) {
-      return normalized.substring(obsidianIndex);
+    // Look for the configured config directory pattern
+    const configDir = this.normalizePath(this.vault.configDir);
+    const configIndex = normalized.indexOf(`${configDir}/plugins/`);
+    if (configIndex >= 0) {
+      return normalized.substring(configIndex);
     }
 
     // Ultimate fallback

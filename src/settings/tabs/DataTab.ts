@@ -20,7 +20,7 @@ export class DataTab {
         this.container.addClass('nexus-settings-tab-content');
 
         // Header
-        this.container.createEl('h3', { text: 'Data Management' });
+        this.container.createEl('h3', { text: 'Data management' });
         this.container.createEl('p', { 
             text: 'Manage your conversation data, exports, and backups.',
             cls: 'nexus-settings-desc'
@@ -51,10 +51,10 @@ export class DataTab {
         section.createEl('h4', { text: 'Export' });
 
         new Setting(section)
-            .setName('Export to ChatML')
-            .setDesc('Export all conversations in ChatML JSONL format (compatible with OpenAI fine-tuning).')
+            .setName('Export conversations')
+            .setDesc('Export all conversations for fine tuning.')
             .addButton(button => button
-                .setButtonText('Export Dataset')
+                .setButtonText('Export dataset')
                 .setIcon('download')
                 .onClick(async () => {
                     if (!this.storageAdapter) {
@@ -83,7 +83,7 @@ export class DataTab {
                         console.error('Export failed:', error);
                         new Notice('Export failed. Check console for details.');
                     } finally {
-                        button.setButtonText('Export Dataset').setDisabled(false);
+                        button.setButtonText('Export dataset').setDisabled(false);
                     }
                 }));
     }

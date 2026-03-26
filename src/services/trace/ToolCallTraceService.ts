@@ -5,18 +5,60 @@
 
 import { Plugin } from 'obsidian';
 import { MemoryService } from '../../agents/memoryManager/services/MemoryService';
-import { SessionContextManager } from '../SessionContextManager';
+import { SessionContextManager, type WorkspaceContext } from '../SessionContextManager';
 import { WorkspaceService } from '../WorkspaceService';
 import { TraceMetadataBuilder } from '../memory/TraceMetadataBuilder';
 import { TraceContextMetadata, TraceOutcomeMetadata } from '../../database/workspace-types';
 import { formatTraceContent } from './TraceContentFormatter';
 
-export interface ToolCallCaptureData {
-  toolName: string;
-  params: any;
-  response: any;
-  success: boolean;
-  executionTime: number;
+type TraceRecord = Record<string, unknown>;
+
+interface ToolCallContextPayload extends TraceRecord {
+  workspaceId?: unknown;
+  sessionId?: unknown;
+  memory?: unknown;
+  goal?: unknown;
+  constraints?: unknown;
+}
+
+interface ToolCallParamsPayload extends TraceRecord {
+  sessionId?: unknown;
+  context?: ToolCallContextPayload;
+  workspaceContext?: ToolCallContextPayload;
+  params?: TraceRecord;
+  filePath?: unknown;
+  path?: unknown;
+  paths?: unknown;
+  operations?: unknown;
+  query?: unknown;
+  id?: unknown;
+  name?: unknown;
+}
+
+interface ToolCallResponsePayload extends TraceRecord {
+  error?: unknown;
+  result?: TraceRecord;
+  filePath?: unknown;
+  files?: unknown;
+  affectedFiles?: unknown;
+  createdFiles?: unknown;
+  modifiedFiles?: unknown;
+}
+
+function isTraceRecord(value: unknown): value is TraceRecord {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function getStringValue(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim().length > 0 ? value : undefined;
+}
+
+function getStringArray(values: unknown): string[] {
+  if (!Array.isArray(values)) {
+    return [];
+  }
+
+  return values.filter((value): value is string => getStringValue(value) !== undefined);
 }
 
 /**
@@ -47,10 +89,10 @@ export class ToolCallTraceService {
    */
   async captureToolCall(
     toolName: string,
-    params: any,
-    response: any,
+    params: ToolCallParamsPayload,
+    response: ToolCallResponsePayload,
     success: boolean,
-    executionTime: number
+    _executionTime: number
   ): Promise<void> {
     try {
       // 1. Extract agent and mode from tool name
@@ -63,11 +105,12 @@ export class ToolCallTraceService {
       }
 
       // 3. Get workspace context from SessionContextManager
-      const workspaceContext = this.sessionContextManager.getWorkspaceContext(sessionId);
-      const workspaceId = workspaceContext?.workspaceId ||
-                         params?.workspaceContext?.workspaceId ||
-                         params?.context?.workspaceId ||
-                         'default';
+      const workspaceContext: WorkspaceContext | null = this.sessionContextManager.getWorkspaceContext(sessionId);
+      const workspaceId =
+        getStringValue(workspaceContext?.workspaceId) ||
+        getStringValue(params.workspaceContext?.workspaceId) ||
+        getStringValue(params.context?.workspaceId) ||
+        'default';
 
       if (!workspaceId) {
         return;
@@ -135,11 +178,22 @@ export class ToolCallTraceService {
   /**
    * Extract session ID from various possible locations in params
    */
-  private extractSessionId(params: any): string | null {
+  private extractSessionId(params: unknown): string | null {
+    if (!isTraceRecord(params)) {
+      return null;
+    }
+
     // Try different locations where sessionId might be
-    if (params?.sessionId) return params.sessionId;
-    if (params?.context?.sessionId) return params.context.sessionId;
-    if (params?.params?.sessionId) return params.params.sessionId;
+    const sessionId = getStringValue(params.sessionId);
+    if (sessionId) return sessionId;
+
+    const context = isTraceRecord(params.context) ? params.context : undefined;
+    const contextSessionId = getStringValue(context?.sessionId);
+    if (contextSessionId) return contextSessionId;
+
+    const nestedParams = isTraceRecord(params.params) ? params.params : undefined;
+    const nestedSessionId = getStringValue(nestedParams?.sessionId);
+    if (nestedSessionId) return nestedSessionId;
 
     return null;
   }
@@ -148,8 +202,8 @@ export class ToolCallTraceService {
     toolName: string;
     agent: string;
     mode: string;
-    params: any;
-    response: any;
+    params: ToolCallParamsPayload;
+    response: ToolCallResponsePayload;
     success: boolean;
     sessionId: string;
     workspaceId: string;
@@ -187,43 +241,53 @@ export class ToolCallTraceService {
   private buildContextMetadata(
     workspaceId: string,
     sessionId: string,
-    params: any
+    params: ToolCallParamsPayload
   ): TraceContextMetadata {
-    const contextSource = params?.context || {};
+    const contextSource = params.context;
 
     // Use new V2 format: memory, goal, constraints
     // These come from the ToolContext provided via getTools/useTool
     return {
       workspaceId,
       sessionId,
-      memory: contextSource.memory || '',
-      goal: contextSource.goal || '',
-      constraints: contextSource.constraints
+      memory: getStringValue(contextSource?.memory) ?? '',
+      goal: getStringValue(contextSource?.goal) ?? '',
+      constraints: getStringValue(contextSource?.constraints)
     };
   }
 
-  private sanitizeParams(params: any): any {
-    if (!params || typeof params !== 'object' || Array.isArray(params)) {
-      return params;
+  private sanitizeParams(params: ToolCallParamsPayload): unknown {
+    const sanitized: TraceRecord = {};
+    for (const [key, value] of Object.entries(params)) {
+      if (key === 'context' || key === 'workspaceContext') {
+        continue;
+      }
+
+      sanitized[key] = value;
     }
 
-    const { context, workspaceContext, ...rest } = params;
-    return Object.keys(rest).length > 0 ? rest : undefined;
+    return Object.keys(sanitized).length > 0 ? sanitized : undefined;
   }
 
-  private buildOutcomeMetadata(success: boolean, response: any): TraceOutcomeMetadata {
+  private buildOutcomeMetadata(success: boolean, response: ToolCallResponsePayload): TraceOutcomeMetadata {
     if (success) {
       return { success: true };
     }
 
-    const errorSource = response?.error || response?.result?.error;
+    const errorSource = isTraceRecord(response.error)
+      ? response.error
+      : isTraceRecord(response.result)
+        ? response.result.error
+        : response.error;
+
     return {
       success: false,
       error: {
-        type: errorSource?.type,
+        type: isTraceRecord(errorSource) ? getStringValue(errorSource.type) : undefined,
         message:
-          errorSource?.message || (typeof errorSource === 'string' ? errorSource : 'Unknown error'),
-        code: errorSource?.code
+          (isTraceRecord(errorSource) ? getStringValue(errorSource.message) : undefined) ||
+          (typeof errorSource === 'string' ? errorSource : 'Unknown error'),
+        code: isTraceRecord(errorSource) ? errorSource.code : undefined
       }
     };
   }
@@ -232,44 +296,47 @@ export class ToolCallTraceService {
    * Extract file paths from response and params
    * Looks in multiple locations to capture all affected files
    */
-  private extractRelatedFiles(response: any, params: any): string[] {
+  private extractRelatedFiles(response: ToolCallResponsePayload, params: ToolCallParamsPayload): string[] {
     const files: string[] = [];
+    const appendString = (value: unknown) => {
+      const stringValue = getStringValue(value);
+      if (stringValue) {
+        files.push(stringValue);
+      }
+    };
+
+    const appendStringValues = (values: unknown) => {
+      files.push(...getStringArray(values));
+    };
 
     // From params
-    if (params?.filePath) files.push(params.filePath);
-    if (params?.params?.filePath) files.push(params.params.filePath);
-    if (params?.paths && Array.isArray(params.paths)) {
-      files.push(...params.paths);
-    }
-    if (params?.params?.paths && Array.isArray(params.params.paths)) {
-      files.push(...params.params.paths);
-    }
+    appendString(params.filePath);
+    appendString(isTraceRecord(params.params) ? params.params.filePath : undefined);
+    appendStringValues(params.paths);
+    appendStringValues(isTraceRecord(params.params) ? params.params.paths : undefined);
 
     // From batch operations
-    if (params?.operations && Array.isArray(params.operations)) {
-      for (const op of params.operations) {
-        if (op.params?.filePath) files.push(op.params.filePath);
-        if (op.path) files.push(op.path);
+    if (Array.isArray(params.operations)) {
+      for (const operation of params.operations) {
+        if (!isTraceRecord(operation)) {
+          continue;
+        }
+
+        const operationParams = isTraceRecord(operation.params) ? operation.params : undefined;
+        appendString(operationParams?.filePath);
+        appendString(operation.path);
       }
     }
 
     // From response
-    if (response?.filePath) files.push(response.filePath);
-    if (response?.files && Array.isArray(response.files)) {
-      files.push(...response.files);
-    }
-    if (response?.affectedFiles && Array.isArray(response.affectedFiles)) {
-      files.push(...response.affectedFiles);
-    }
-    if (response?.createdFiles && Array.isArray(response.createdFiles)) {
-      files.push(...response.createdFiles);
-    }
-    if (response?.modifiedFiles && Array.isArray(response.modifiedFiles)) {
-      files.push(...response.modifiedFiles);
-    }
+    appendString(response.filePath);
+    appendStringValues(response.files);
+    appendStringValues(response.affectedFiles);
+    appendStringValues(response.createdFiles);
+    appendStringValues(response.modifiedFiles);
 
     // Deduplicate and filter empty strings (ensure strings only)
-    return [...new Set(files.filter(f => typeof f === 'string' && f.trim()))];
+    return [...new Set(files)];
   }
 
 }

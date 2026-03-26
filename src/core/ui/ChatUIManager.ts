@@ -99,14 +99,14 @@ export class ChatUIManager {
             await this.registerViewEarly();
 
             // Add ribbon icon for chat
-            plugin.addRibbonIcon('message-square', 'Nexus Chat', () => {
+            plugin.addRibbonIcon('message-square', 'Open chat', () => {
                 this.activateChatView();
             });
 
             // Add command to open chat
             plugin.addCommand({
                 id: 'open-chat',
-                name: 'Open Nexus Chat',
+                name: 'Open chat',
                 callback: () => {
                     this.activateChatView();
                 }

@@ -19,16 +19,16 @@ export class ConversationTitleModal extends Modal {
     const { contentEl } = this;
     contentEl.addClass('chat-conversation-title-modal');
 
-    contentEl.createEl('h2', { text: 'New Conversation' });
+    contentEl.createEl('h2', { text: 'New conversation' });
     contentEl.createEl('p', { text: 'Enter a title for your new conversation:' });
 
     new Setting(contentEl)
-      .setName('Conversation Title')
+      .setName('Conversation title')
       .addText((text) => {
         this.inputEl = text.inputEl;
 
         text
-          .setPlaceholder('e.g., "Help with React project"')
+          .setPlaceholder('For example, help with a coding project')
           .onChange((value) => {
             this.result = value;
           });
@@ -52,7 +52,7 @@ export class ConversationTitleModal extends Modal {
     cancelBtn.addEventListener('click', () => this.close());
 
     const createBtn = buttonContainer.createEl('button', {
-      text: 'Create Chat',
+      text: 'Create chat',
       cls: 'mod-cta'
     });
     createBtn.addEventListener('click', () => this.submit());

@@ -40,9 +40,9 @@ export class ClaudeHeadlessModal extends Modal {
         contentEl.empty();
         contentEl.addClass('nexus-claude-headless-modal');
 
-        contentEl.createEl('h2', { text: 'Experimental Claude headless session' });
+        contentEl.createEl('h2', { text: 'Headless session' });
         contentEl.createEl('p', {
-            text: 'This launches your local Claude Code CLI in print mode, restricts built-in tools, and exposes only the Nexus MCP server for this vault.',
+            text: 'This runs the local command-line client in print mode, limits built-in tools, and exposes only the local server for this vault.',
             cls: 'setting-item-description'
         });
 
@@ -53,7 +53,7 @@ export class ClaudeHeadlessModal extends Modal {
             .setName('Prompt')
             .setDesc('Cmd/Ctrl+Enter runs the session.');
         this.promptInput = new TextAreaComponent(promptSetting.controlEl);
-        this.promptInput.setPlaceholder('Ask Claude to inspect, edit, or organize your vault through Nexus MCP tools.');
+        this.promptInput.setPlaceholder('Ask the assistant to inspect, edit, or organize your vault.');
         this.promptInput.setValue(this.promptValue);
         this.promptInput.inputEl.rows = 8;
         this.promptInput.inputEl.addClass('nexus-claude-headless-prompt');
@@ -69,7 +69,7 @@ export class ClaudeHeadlessModal extends Modal {
             .setDesc('Claude model alias or full name passed to the local CLI.')
             .addText((text: TextComponent) => {
                 text
-                    .setPlaceholder('sonnet')
+                    .setPlaceholder('Sonnet')
                     .setValue(this.modelValue)
                     .onChange((value) => {
                         this.modelValue = value;
@@ -90,7 +90,7 @@ export class ClaudeHeadlessModal extends Modal {
 
         new Setting(contentEl)
             .setName('Bypass permissions')
-            .setDesc('Recommended for print mode so Nexus MCP tool calls do not stop on permission prompts.')
+            .setDesc('Recommended for print mode to avoid permission prompts.')
             .addToggle((toggle: ToggleComponent) => {
                 toggle
                     .setValue(this.bypassPermissions)
@@ -124,7 +124,7 @@ export class ClaudeHeadlessModal extends Modal {
             });
 
         this.runButton = new ButtonComponent(buttonRow)
-            .setButtonText('Run Claude')
+            .setButtonText('Run session')
             .setCta()
             .onClick(() => {
                 void this.runClaudeSession();

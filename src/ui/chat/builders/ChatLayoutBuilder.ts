@@ -105,7 +105,7 @@ export class ChatLayoutBuilder {
 
     // Status text
     const statusText = content.createDiv('nexus-loading-status');
-    statusText.textContent = 'Loading Nexus model...';
+    statusText.textContent = 'Loading model...';
     statusText.dataset.statusEl = 'true';
 
     // Progress bar
@@ -129,12 +129,12 @@ export class ChatLayoutBuilder {
     const warningBanner = container.createDiv('chat-experimental-warning');
 
     warningBanner.createEl('span', { cls: 'warning-icon', text: '⚠️' });
-    warningBanner.createEl('span', { cls: 'warning-text', text: 'Experimental Feature: Nexus Chat is in beta.' });
+    warningBanner.createEl('span', { cls: 'warning-text', text: 'Experimental feature: this chat is in beta.' });
     const link = warningBanner.createEl('a', { cls: 'warning-link', text: 'Report issues' });
     link.href = 'https://github.com/ProfSynapse/nexus/issues';
     link.target = '_blank';
     link.rel = 'noopener noreferrer';
-    warningBanner.createEl('span', { cls: 'warning-text', text: '• Use at your own risk' });
+    warningBanner.createEl('span', { cls: 'warning-text', text: '• use at your own risk' });
 
     // Auto-hide warning after 5 seconds
     setTimeout(() => {
@@ -161,7 +161,7 @@ export class ChatLayoutBuilder {
 
     // Center: Title
     const chatTitle = chatHeader.createDiv('chat-title');
-    chatTitle.textContent = 'Nexus Chat';
+    chatTitle.textContent = 'Nexus';
 
     // Right: Settings gear icon
     const settingsButton = chatHeader.createEl('button', { cls: 'chat-settings-button' });
@@ -186,7 +186,7 @@ export class ChatLayoutBuilder {
     sidebarHeader.createEl('h3', { text: 'Conversations' });
     const newChatButton = sidebarHeader.createEl('button', {
       cls: 'chat-new-button',
-      text: '+ New Chat'
+      text: '+ new chat'
     });
 
     const conversationListContainer = sidebarContainer.createDiv('conversation-list-container');
