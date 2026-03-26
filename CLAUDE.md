@@ -3,7 +3,7 @@ Last Updated: 2026-03-25
 
 ## Project Overview
 - **Name**: Claudesidian MCP
-- **Version**: 5.5.0
+- **Version**: 5.5.1
 - **Type**: Obsidian Community Plugin
 - **Purpose**: MCP integration for Obsidian with AI-powered vault operations
 - **Architecture**: Agent-Tool pattern with domain-driven design
@@ -677,7 +677,7 @@ Key files: `src/ui/chat/components/suggesters/`, `MessageEnhancer.ts`, `SystemPr
 <!-- SESSION_START -->
 ## Current Session
 <!-- Auto-managed by session_init hook. Overwritten each session. -->
-- Resume: `claude --resume 647d22be-bd4c-4bb6-983d-49754a1c1d32`
-- Team: `pact-647d22be`
-- Started: 2026-03-25 12:48:19 UTC
+- Resume: `claude --resume 0cf1fb1a-0663-4486-9437-6cbf7ac55394`
+- Team: `pact-0cf1fb1a`
+- Started: 2026-03-26 10:15:45 UTC
 <!-- SESSION_END -->
