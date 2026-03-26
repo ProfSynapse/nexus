@@ -17,6 +17,13 @@
  * import { VaultOperations, StructuredLogger } from './core';
  */
 
+import type { Plugin } from 'obsidian';
+import type { ObsidianPathManager } from './ObsidianPathManager';
+import type { PluginDataManager } from './PluginDataManager';
+import type { ServiceContainer } from './ServiceContainer';
+import type { StructuredLogger } from './StructuredLogger';
+import type { VaultOperations } from './VaultOperations';
+
 // Core services
 export { VaultOperations } from './VaultOperations';
 export { ObsidianPathManager } from './ObsidianPathManager';
@@ -52,11 +59,26 @@ export type {
   ServiceMetadata 
 } from './ServiceContainer';
 
+type PluginWithCoreServices = Plugin & {
+  logger?: StructuredLogger;
+  pathManager?: ObsidianPathManager;
+  vaultOperations?: VaultOperations;
+  dataManager?: PluginDataManager;
+};
+
+interface CoreServices {
+  logger: StructuredLogger;
+  pathManager: ObsidianPathManager;
+  dataManager: PluginDataManager;
+  vaultOperations: VaultOperations;
+  container: ServiceContainer;
+}
+
 /**
  * Utility function to create a complete service setup for a plugin
  * This provides a quick way to bootstrap the new architecture
  */
-export async function createCoreServices(plugin: any) {
+export async function createCoreServices(plugin: PluginWithCoreServices): Promise<CoreServices> {
   // Import components directly to avoid circular dependency
   const { StructuredLogger } = await import('./StructuredLogger');
   const { ObsidianPathManager } = await import('./ObsidianPathManager');
@@ -99,7 +121,7 @@ export async function createCoreServices(plugin: any) {
  * Architecture validation utility
  * Helps ensure proper implementation of the new patterns
  */
-export function validateArchitecture(plugin: any): {
+export function validateArchitecture(plugin: PluginWithCoreServices): {
   valid: boolean;
   issues: string[];
   recommendations: string[];
@@ -129,7 +151,7 @@ export function validateArchitecture(plugin: any): {
   }
   
   // Check for anti-patterns
-  const pluginCode = plugin.toString();
+  const pluginCode = plugin.constructor.toString();
   
   if (pluginCode.includes('require("fs")') || pluginCode.includes('require(\'fs\')')) {
     issues.push('Node.js filesystem usage detected');
@@ -157,7 +179,7 @@ export function validateArchitecture(plugin: any): {
  * Migration helper to gradually transition from old to new architecture
  */
 export class ArchitectureMigrationHelper {
-  constructor(private plugin: any) {}
+  constructor(private plugin: PluginWithCoreServices) {}
   
   /**
    * Phase 1: Replace console logging
@@ -199,7 +221,7 @@ export class ArchitectureMigrationHelper {
   /**
    * Phase 4: Replace data management
    */
-  async migrateDataManagement(defaults: any): Promise<void> {
+  async migrateDataManagement(_defaults: unknown): Promise<void> {
     if (!this.plugin.dataManager) {
       const { PluginDataManager } = await import('./PluginDataManager');
       this.plugin.dataManager = new PluginDataManager(this.plugin);
@@ -210,7 +232,7 @@ export class ArchitectureMigrationHelper {
   /**
    * Complete migration in phases
    */
-  async performFullMigration(defaults: any): Promise<void> {
+  async performFullMigration(defaults: unknown): Promise<void> {
     await this.migrateLogging();
     await this.migratePaths();
     await this.migrateFileOperations();

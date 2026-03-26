@@ -16,68 +16,94 @@
 import { getToolNameMetadata } from '../../../utils/toolNameUtils';
 import { MessageDisplay } from '../components/MessageDisplay';
 
+type ToolEventName = 'detected' | 'updated' | 'started' | 'completed';
+
+interface ToolExecutionStartedPayload {
+  id: string;
+  name: string;
+  parameters?: unknown;
+}
+
+interface ToolCallPayload {
+  id?: unknown;
+  name?: string;
+  functionName?: string;
+  parameters?: unknown;
+  arguments?: unknown;
+  functionArguments?: unknown;
+  isComplete?: unknown;
+  type?: unknown;
+  result?: unknown;
+  status?: unknown;
+  isVirtual?: unknown;
+  success?: unknown;
+  providerExecuted?: unknown;
+  error?: unknown;
+}
+
 export class ToolEventCoordinator {
   constructor(private messageDisplay: MessageDisplay) {}
 
   /**
    * Handle tool calls detected event
    */
-  handleToolCallsDetected(messageId: string, toolCalls: any[]): void {
+  handleToolCallsDetected(messageId: string, toolCalls: unknown[]): void {
     const messageBubble = this.messageDisplay.findMessageBubble(messageId);
 
     if (messageBubble && toolCalls && toolCalls.length > 0) {
       for (const toolCall of toolCalls) {
+        const parsedToolCall = this.parseToolCall(toolCall);
+        if (!parsedToolCall) {
+          continue;
+        }
 
-        const metadata = getToolNameMetadata(
-          toolCall.function?.name || toolCall.name
+        const rawName = this.firstTruthyString(
+          parsedToolCall.functionName,
+          parsedToolCall.name
         );
 
-        let parameters = toolCall.parameters || toolCall.arguments;
-        if (!parameters && toolCall.function?.arguments) {
-          parameters = toolCall.function.arguments;
+        const metadata = getToolNameMetadata(rawName);
+
+        let parameters = parsedToolCall.parameters || parsedToolCall.arguments;
+        if (!parameters && parsedToolCall.functionArguments !== undefined) {
+          parameters = parsedToolCall.functionArguments;
         }
-        if (typeof parameters === 'string') {
-          try {
-            parameters = JSON.parse(parameters);
-          } catch {
-            // leave as string if parsing fails
-          }
-        }
+        parameters = this.parseJsonIfString(parameters);
 
         // Extract the tool call data in the format expected by MessageBubble
         const toolData = {
-          id: toolCall.id,
+          id: parsedToolCall.id,
           name: metadata.displayName,
           displayName: metadata.displayName,
           technicalName: metadata.technicalName,
           agentName: metadata.agentName,
           actionName: metadata.actionName,
-          rawName: toolCall.function?.name || toolCall.name,
-          parameters: parameters,
-          isComplete: toolCall.isComplete,
+          rawName,
+          parameters,
+          isComplete: parsedToolCall.isComplete,
           // Pass through reasoning-specific properties
-          type: toolCall.type,
-          result: toolCall.result,
-          status: toolCall.status,
-          isVirtual: toolCall.isVirtual,
-          success: toolCall.success
+          type: parsedToolCall.type,
+          result: parsedToolCall.result,
+          status: parsedToolCall.status,
+          isVirtual: parsedToolCall.isVirtual,
+          success: parsedToolCall.success
         };
 
         messageBubble.handleToolEvent('detected', toolData);
 
         if (
-          toolCall.providerExecuted &&
+          parsedToolCall.providerExecuted &&
           (
-            toolCall.result !== undefined ||
-            toolCall.success !== undefined ||
-            toolCall.error !== undefined
+            parsedToolCall.result !== undefined ||
+            parsedToolCall.success !== undefined ||
+            parsedToolCall.error !== undefined
           )
         ) {
           messageBubble.handleToolEvent('completed', {
-            toolId: toolCall.id,
-            result: toolCall.result,
-            success: toolCall.success !== false,
-            error: toolCall.error
+            toolId: parsedToolCall.id,
+            result: parsedToolCall.result,
+            success: parsedToolCall.success !== false,
+            error: parsedToolCall.error
           });
         }
       }
@@ -87,7 +113,7 @@ export class ToolEventCoordinator {
   /**
    * Handle tool execution started event
    */
-  handleToolExecutionStarted(messageId: string, toolCall: { id: string; name: string; parameters?: any }): void {
+  handleToolExecutionStarted(messageId: string, toolCall: ToolExecutionStartedPayload): void {
     const messageBubble = this.messageDisplay.findMessageBubble(messageId);
     messageBubble?.handleToolEvent('started', toolCall);
   }
@@ -95,7 +121,7 @@ export class ToolEventCoordinator {
   /**
    * Handle tool execution completed event
    */
-  handleToolExecutionCompleted(messageId: string, toolId: string, result: any, success: boolean, error?: string): void {
+  handleToolExecutionCompleted(messageId: string, toolId: string, result: unknown, success: boolean, error?: string): void {
     const messageBubble = this.messageDisplay.findMessageBubble(messageId);
     messageBubble?.handleToolEvent('completed', { toolId, result, success, error });
   }
@@ -103,7 +129,7 @@ export class ToolEventCoordinator {
   /**
    * Handle generic tool event with data enrichment
    */
-  handleToolEvent(messageId: string, event: 'detected' | 'updated' | 'started' | 'completed', data: any): void {
+  handleToolEvent(messageId: string, event: ToolEventName, data: unknown): void {
     const messageBubble = this.messageDisplay.findMessageBubble(messageId);
     if (!messageBubble) {
       return;
@@ -116,27 +142,33 @@ export class ToolEventCoordinator {
   /**
    * Enrich tool event data with metadata
    */
-  private enrichToolEventData(data: any): any {
+  private enrichToolEventData(data: unknown): unknown {
     if (!data) {
       return data;
     }
 
-    const toolCall = data.toolCall;
-    const rawName =
-      data.rawName ||
-      data.technicalName ||
-      data.name ||
-      toolCall?.function?.name ||
-      toolCall?.name;
+    const dataRecord = this.asRecord(data);
+    if (!dataRecord) {
+      return data;
+    }
+
+    const toolCall = this.parseToolCall(dataRecord.toolCall);
+    const rawName = this.firstTruthyString(
+      this.getString(dataRecord, 'rawName'),
+      this.getString(dataRecord, 'technicalName'),
+      this.getString(dataRecord, 'name'),
+      toolCall?.functionName,
+      toolCall?.name
+    );
 
     const metadata = getToolNameMetadata(rawName);
     const parameters =
-      data.parameters !== undefined
-        ? data.parameters
+      dataRecord.parameters !== undefined
+        ? dataRecord.parameters
         : this.extractToolParameters(toolCall);
 
     return {
-      ...data,
+      ...dataRecord,
       name: metadata.displayName,
       displayName: metadata.displayName,
       technicalName: metadata.technicalName,
@@ -150,7 +182,7 @@ export class ToolEventCoordinator {
   /**
    * Extract tool parameters from tool call data
    */
-  private extractToolParameters(toolCall: any): any {
+  private extractToolParameters(toolCall?: ToolCallPayload): unknown {
     if (!toolCall) {
       return undefined;
     }
@@ -160,22 +192,75 @@ export class ToolEventCoordinator {
     }
 
     const raw =
-      toolCall.function?.arguments !== undefined
-        ? toolCall.function.arguments
+      toolCall.functionArguments !== undefined
+        ? toolCall.functionArguments
         : toolCall.arguments;
 
     if (raw === undefined) {
       return undefined;
     }
 
-    if (typeof raw === 'string') {
-      try {
-        return JSON.parse(raw);
-      } catch {
-        return raw;
+    return this.parseJsonIfString(raw);
+  }
+
+  private asRecord(value: unknown): Record<string, unknown> | undefined {
+    if (typeof value === 'object' && value !== null) {
+      return value as Record<string, unknown>;
+    }
+
+    return undefined;
+  }
+
+  private getString(record: Record<string, unknown>, key: string): string | undefined {
+    const value = record[key];
+    return typeof value === 'string' ? value : undefined;
+  }
+
+  private parseToolCall(value: unknown): ToolCallPayload | undefined {
+    const toolCallRecord = this.asRecord(value);
+    if (!toolCallRecord) {
+      return undefined;
+    }
+
+    const functionRecord = this.asRecord(toolCallRecord.function);
+
+    return {
+      id: toolCallRecord.id,
+      name: this.getString(toolCallRecord, 'name'),
+      functionName: functionRecord ? this.getString(functionRecord, 'name') : undefined,
+      parameters: toolCallRecord.parameters,
+      arguments: toolCallRecord.arguments,
+      functionArguments: functionRecord?.arguments,
+      isComplete: toolCallRecord.isComplete,
+      type: toolCallRecord.type,
+      result: toolCallRecord.result,
+      status: toolCallRecord.status,
+      isVirtual: toolCallRecord.isVirtual,
+      success: toolCallRecord.success,
+      providerExecuted: toolCallRecord.providerExecuted,
+      error: toolCallRecord.error
+    };
+  }
+
+  private parseJsonIfString(value: unknown): unknown {
+    if (typeof value !== 'string') {
+      return value;
+    }
+
+    try {
+      return JSON.parse(value) as unknown;
+    } catch {
+      return value;
+    }
+  }
+
+  private firstTruthyString(...values: Array<string | undefined>): string | undefined {
+    for (const value of values) {
+      if (value) {
+        return value;
       }
     }
 
-    return raw;
+    return undefined;
   }
 }

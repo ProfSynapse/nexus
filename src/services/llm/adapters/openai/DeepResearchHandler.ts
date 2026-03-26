@@ -14,6 +14,81 @@ interface UsageInfo {
   total_tokens?: number;
 }
 
+interface DeepResearchInputContent {
+  type: 'input_text';
+  text: string;
+}
+
+interface DeepResearchInputItem {
+  role: 'developer' | 'user';
+  content: DeepResearchInputContent[];
+}
+
+interface DeepResearchRequestTool {
+  type: string;
+  container?: {
+    type: 'auto';
+    file_ids: string[];
+  };
+}
+
+interface DeepResearchRequest {
+  model: string;
+  input: DeepResearchInputItem[];
+  reasoning: {
+    summary: 'auto';
+  };
+  background: boolean;
+  tools?: DeepResearchRequestTool[];
+}
+
+interface UrlCitationAnnotation {
+  type: 'url_citation';
+  url?: string;
+  title?: string;
+  start_index?: number;
+  end_index?: number;
+}
+
+interface DeepResearchContentItem {
+  type: string;
+}
+
+interface DeepResearchOutputTextContent extends DeepResearchContentItem {
+  type: 'output_text';
+  text?: string;
+  annotations?: UrlCitationAnnotation[];
+}
+
+interface DeepResearchOutputItem {
+  type: string;
+  usage?: UsageInfo;
+}
+
+interface DeepResearchMessageOutput extends DeepResearchOutputItem {
+  type: 'message';
+  content?: DeepResearchContentItem[];
+}
+
+interface DeepResearchResponseMetadata {
+  processing_time_ms?: number;
+}
+
+interface DeepResearchResponse {
+  id: string;
+  status?: string;
+  output?: DeepResearchOutputItem[];
+  metadata?: DeepResearchResponseMetadata;
+  error?: string;
+}
+
+interface CitationMetadata {
+  title?: string;
+  url: string;
+  startIndex?: number;
+  endIndex?: number;
+}
+
 export class DeepResearchHandler {
   constructor(
     private apiKey: string,
@@ -29,7 +104,7 @@ export class DeepResearchHandler {
   async generate(prompt: string, options?: GenerateOptions): Promise<LLMResponse> {
     const model = options?.model || 'sonar-deep-research';
 
-    const input: any[] = [];
+    const input: DeepResearchInputItem[] = [];
     if (options?.systemPrompt) {
       input.push({
         role: 'developer',
@@ -42,7 +117,7 @@ export class DeepResearchHandler {
       content: [{ type: 'input_text', text: prompt }]
     });
 
-    const requestParams: any = {
+    const requestParams: DeepResearchRequest = {
       model,
       input,
       reasoning: { summary: 'auto' },
@@ -64,7 +139,7 @@ export class DeepResearchHandler {
     }
 
     try {
-      const response = await ProviderHttpClient.request<any>({
+      const response = await ProviderHttpClient.request<DeepResearchResponse>({
         url: `${this.baseUrl}/responses`,
         provider: 'openai',
         operation: 'deep research generation',
@@ -95,7 +170,7 @@ export class DeepResearchHandler {
     }
   }
 
-  private async pollForCompletion(responseId: string, model: string, maxWaitTime = 300000): Promise<any> {
+  private async pollForCompletion(responseId: string, model: string, maxWaitTime = 300000): Promise<DeepResearchResponse> {
     const startTime = Date.now();
     const pollInterval = (
       model.includes('o4-mini')
@@ -105,7 +180,7 @@ export class DeepResearchHandler {
 
     while (Date.now() - startTime < maxWaitTime) {
       try {
-        const response = await ProviderHttpClient.request<any>({
+        const response = await ProviderHttpClient.request<DeepResearchResponse>({
           url: `${this.baseUrl}/responses/${responseId}`,
           provider: 'openai',
           operation: 'deep research poll',
@@ -138,29 +213,31 @@ export class DeepResearchHandler {
     throw new Error(`Deep research timed out after ${maxWaitTime}ms`);
   }
 
-  private isComplete(response: any): boolean {
-    return !!(response.output &&
+  private isComplete(response: DeepResearchResponse): boolean {
+    return Boolean(response.output &&
       response.output.length > 0 &&
-      response.output.some((item: any) => {
-        if (item.type !== 'message') return false;
-        if (!item.content || item.content.length === 0) return false;
+      response.output.some((item) => {
+        if (!this.isMessageOutput(item) || !item.content || item.content.length === 0) {
+          return false;
+        }
+
         const firstContent = item.content[0];
-        return firstContent?.type === 'output_text' && Boolean(firstContent.text);
+        return this.isOutputTextContent(firstContent) && Boolean(firstContent.text);
       }));
   }
 
-  private parseResponse(response: any, model: string): LLMResponse {
+  private parseResponse(response: DeepResearchResponse, model: string): LLMResponse {
     if (!response.output || response.output.length === 0) {
       throw new Error('No output received from deep research');
     }
 
     const finalOutput = response.output[response.output.length - 1];
-    if (finalOutput.type !== 'message' || !finalOutput.content || finalOutput.content.length === 0) {
+    if (!this.isMessageOutput(finalOutput) || !finalOutput.content || finalOutput.content.length === 0) {
       throw new Error('Invalid deep research response structure');
     }
 
     const content = finalOutput.content[0];
-    if (content.type !== 'output_text') {
+    if (!this.isOutputTextContent(content)) {
       throw new Error('Expected text output from deep research');
     }
 
@@ -168,7 +245,7 @@ export class DeepResearchHandler {
     const annotations = content.annotations || [];
 
     let usage: TokenUsage | undefined;
-    const usageOutput = response.output.find((item: any) => item?.usage);
+    const usageOutput = response.output.find((item) => item.usage !== undefined);
     const rawUsage: UsageInfo | undefined = usageOutput?.usage;
     if (rawUsage) {
       usage = {
@@ -181,7 +258,7 @@ export class DeepResearchHandler {
     const metadata: Record<string, unknown> = {
       deepResearch: true,
       citations: annotations
-        .map((annotation: any) => {
+        .map((annotation): CitationMetadata | null => {
           if (annotation.type !== 'url_citation' || !annotation.url) {
             return null;
           }
@@ -193,7 +270,7 @@ export class DeepResearchHandler {
             endIndex: annotation.end_index
           };
         })
-        .filter((citation: unknown) => citation !== null),
+        .filter((citation): citation is CitationMetadata => citation !== null),
       intermediateSteps: response.output.length - 1,
       processingTime: response.metadata?.processing_time_ms
     };
@@ -206,6 +283,14 @@ export class DeepResearchHandler {
       metadata,
       finishReason: 'stop'
     };
+  }
+
+  private isMessageOutput(item: DeepResearchOutputItem): item is DeepResearchMessageOutput {
+    return item.type === 'message';
+  }
+
+  private isOutputTextContent(content: DeepResearchContentItem | undefined): content is DeepResearchOutputTextContent {
+    return content?.type === 'output_text';
   }
 
   private buildHeaders(): Record<string, string> {
