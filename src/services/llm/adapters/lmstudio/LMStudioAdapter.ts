@@ -49,6 +49,177 @@ interface ModelListResponse {
   }>;
 }
 
+interface LMStudioRequestBody {
+  model: string;
+  messages: readonly unknown[];
+  stream: boolean;
+  temperature?: number;
+  max_tokens?: number;
+  top_p?: number;
+  frequency_penalty?: number;
+  presence_penalty?: number;
+  stop?: string[];
+  tools?: Array<Record<string, unknown>>;
+  response_format?: {
+    type: 'json_object';
+  };
+}
+
+interface LMStudioToolFunction {
+  name?: string;
+  description?: string;
+  parameters?: Record<string, unknown>;
+  arguments?: string;
+}
+
+interface LMStudioToolCallInput {
+  id?: string;
+  function?: LMStudioToolFunction;
+}
+
+interface LMStudioToolInput extends Record<string, unknown> {
+  type?: string;
+  name?: string;
+  description?: string;
+  parameters?: Record<string, unknown>;
+  function?: LMStudioToolFunction;
+}
+
+interface LMStudioChatMessage {
+  role?: string;
+  content?: string;
+  tool_calls?: unknown[];
+  tool_call_id?: string;
+}
+
+interface LMStudioResponsesToolDefinition {
+  type: 'function';
+  name: string;
+  description?: string;
+  parameters?: Record<string, unknown>;
+}
+
+type LMStudioResponsesInputItem =
+  | { role: 'system' | 'user' | 'assistant'; content: string }
+  | { type: 'function_call'; call_id: string; name: string; arguments: string }
+  | { type: 'function_call_output'; call_id: string; output: string };
+
+interface LMStudioStreamDelta {
+  content?: string;
+  tool_calls?: unknown[];
+}
+
+interface LMStudioStreamChoice {
+  delta?: LMStudioStreamDelta;
+  finish_reason?: string;
+}
+
+interface LMStudioErrorLike {
+  message?: string;
+  code?: string;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isString(value: unknown): value is string {
+  return typeof value === 'string';
+}
+
+function isToolFunction(value: unknown): value is LMStudioToolFunction {
+  return isRecord(value);
+}
+
+function isChatMessage(value: unknown): value is LMStudioChatMessage {
+  return isRecord(value) && (!('role' in value) || isString(value.role));
+}
+
+function toToolInput(value: unknown): LMStudioToolInput | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  return {
+    ...value,
+    type: isString(value.type) ? value.type : undefined,
+    name: isString(value.name) ? value.name : undefined,
+    description: isString(value.description) ? value.description : undefined,
+    parameters: isRecord(value.parameters) ? value.parameters : undefined,
+    function: isToolFunction(value.function)
+      ? {
+          name: isString(value.function.name) ? value.function.name : undefined,
+          description: isString(value.function.description) ? value.function.description : undefined,
+          parameters: isRecord(value.function.parameters) ? value.function.parameters : undefined,
+          arguments: isString(value.function.arguments) ? value.function.arguments : undefined
+        }
+      : undefined
+  };
+}
+
+function toToolCallInput(value: unknown): LMStudioToolCallInput {
+  if (!isRecord(value)) {
+    return {};
+  }
+
+  return {
+    id: isString(value.id) ? value.id : undefined,
+    function: isToolFunction(value.function)
+      ? {
+          name: isString(value.function.name) ? value.function.name : undefined,
+          arguments: isString(value.function.arguments) ? value.function.arguments : undefined
+        }
+      : undefined
+  };
+}
+
+function getStreamChoice(parsed: unknown): LMStudioStreamChoice | undefined {
+  if (!isRecord(parsed) || !Array.isArray(parsed.choices) || parsed.choices.length === 0) {
+    return undefined;
+  }
+
+  const choices = parsed.choices as unknown[];
+  const firstChoice = choices[0];
+  if (!isRecord(firstChoice)) {
+    return undefined;
+  }
+
+  const delta = isRecord(firstChoice.delta)
+    ? {
+        content: isString(firstChoice.delta.content) ? firstChoice.delta.content : undefined,
+        tool_calls: Array.isArray(firstChoice.delta.tool_calls) ? firstChoice.delta.tool_calls : undefined
+      }
+    : undefined;
+
+  return {
+    delta,
+    finish_reason: isString(firstChoice.finish_reason) ? firstChoice.finish_reason : undefined
+  };
+}
+
+function getUsage(parsed: unknown): ChatCompletionResponse['usage'] | undefined {
+  if (!isRecord(parsed) || !isRecord(parsed.usage)) {
+    return undefined;
+  }
+
+  return {
+    prompt_tokens: typeof parsed.usage.prompt_tokens === 'number' ? parsed.usage.prompt_tokens : undefined,
+    completion_tokens: typeof parsed.usage.completion_tokens === 'number' ? parsed.usage.completion_tokens : undefined,
+    total_tokens: typeof parsed.usage.total_tokens === 'number' ? parsed.usage.total_tokens : undefined
+  };
+}
+
+function getErrorDetails(error: unknown): LMStudioErrorLike {
+  if (!isRecord(error)) {
+    return {};
+  }
+
+  return {
+    message: isString(error.message) ? error.message : undefined,
+    code: isString(error.code) ? error.code : undefined
+  };
+}
+
 export class LMStudioAdapter extends BaseAdapter {
   readonly name = 'lmstudio';
   readonly baseUrl: string;
@@ -72,24 +243,42 @@ export class LMStudioAdapter extends BaseAdapter {
   async generateUncached(prompt: string, options?: GenerateOptions): Promise<LLMResponse> {
     const model = options?.model || this.currentModel;
 
-    let messages: any[];
-    if (options?.conversationHistory && options.conversationHistory.length > 0) {
-      messages = options.conversationHistory;
+    let messages: readonly unknown[];
+    if (Array.isArray(options?.conversationHistory) && options.conversationHistory.length > 0) {
+      messages = options.conversationHistory as unknown[];
     } else {
       messages = this.buildMessages(prompt, options?.systemPrompt);
     }
 
-    const requestBody: any = {
+    const requestBody: LMStudioRequestBody = {
       model: model,
       messages: messages,
-      stream: false,
-      temperature: options?.temperature,
-      max_tokens: options?.maxTokens,
-      top_p: options?.topP,
-      frequency_penalty: options?.frequencyPenalty,
-      presence_penalty: options?.presencePenalty,
-      stop: options?.stopSequences
+      stream: false
     };
+
+    if (options?.temperature !== undefined) {
+      requestBody.temperature = options.temperature;
+    }
+
+    if (options?.maxTokens !== undefined) {
+      requestBody.max_tokens = options.maxTokens;
+    }
+
+    if (options?.topP !== undefined) {
+      requestBody.top_p = options.topP;
+    }
+
+    if (options?.frequencyPenalty !== undefined) {
+      requestBody.frequency_penalty = options.frequencyPenalty;
+    }
+
+    if (options?.presencePenalty !== undefined) {
+      requestBody.presence_penalty = options.presencePenalty;
+    }
+
+    if (options?.stopSequences !== undefined) {
+      requestBody.stop = options.stopSequences;
+    }
 
     const skipToolSchemas = LMStudioAdapter.usesToolCallsContentFormat(model);
     if (options?.tools && options.tools.length > 0 && !skipToolSchemas) {
@@ -99,12 +288,6 @@ export class LMStudioAdapter extends BaseAdapter {
     if (options?.jsonMode) {
       requestBody.response_format = { type: 'json_object' };
     }
-
-    Object.keys(requestBody).forEach(key => {
-      if (requestBody[key] === undefined) {
-        delete requestBody[key];
-      }
-    });
 
     const response = await this.request({
       url: `${this.serverUrl}/v1/chat/completions`,
@@ -165,37 +348,48 @@ export class LMStudioAdapter extends BaseAdapter {
     const model = options?.model || this.currentModel;
 
     // Check for pre-built conversation history (tool continuations)
-    let messages: any[];
-    if (options?.conversationHistory && options.conversationHistory.length > 0) {
-      messages = options.conversationHistory;
+    let messages: readonly unknown[];
+    if (Array.isArray(options?.conversationHistory) && options.conversationHistory.length > 0) {
+      messages = options.conversationHistory as unknown[];
     } else {
       messages = this.buildMessages(prompt, options?.systemPrompt);
     }
 
-    const requestBody: any = {
+    const requestBody: LMStudioRequestBody = {
       model: model,
       messages: messages,
-      stream: true,
-      temperature: options?.temperature,
-      max_tokens: options?.maxTokens,
-      top_p: options?.topP,
-      frequency_penalty: options?.frequencyPenalty,
-      presence_penalty: options?.presencePenalty,
-      stop: options?.stopSequences
+      stream: true
     };
+
+    if (options?.temperature !== undefined) {
+      requestBody.temperature = options.temperature;
+    }
+
+    if (options?.maxTokens !== undefined) {
+      requestBody.max_tokens = options.maxTokens;
+    }
+
+    if (options?.topP !== undefined) {
+      requestBody.top_p = options.topP;
+    }
+
+    if (options?.frequencyPenalty !== undefined) {
+      requestBody.frequency_penalty = options.frequencyPenalty;
+    }
+
+    if (options?.presencePenalty !== undefined) {
+      requestBody.presence_penalty = options.presencePenalty;
+    }
+
+    if (options?.stopSequences !== undefined) {
+      requestBody.stop = options.stopSequences;
+    }
 
     // Add tools if provided
     const skipToolSchemas = LMStudioAdapter.usesToolCallsContentFormat(model);
     if (options?.tools && options.tools.length > 0 && !skipToolSchemas) {
       requestBody.tools = this.convertTools(options.tools);
     }
-
-    // Remove undefined values
-    Object.keys(requestBody).forEach(key => {
-      if (requestBody[key] === undefined) {
-        delete requestBody[key];
-      }
-    });
 
     // requestStream() throws on HTTP errors; no assertOk needed
     const nodeStream = await this.requestStream({
@@ -212,10 +406,10 @@ export class LMStudioAdapter extends BaseAdapter {
 
     for await (const chunk of this.processNodeStream(nodeStream, {
       debugLabel: 'LM Studio',
-      extractContent: (parsed) => parsed.choices?.[0]?.delta?.content || null,
-      extractToolCalls: (parsed) => parsed.choices?.[0]?.delta?.tool_calls || null,
-      extractFinishReason: (parsed) => parsed.choices?.[0]?.finish_reason || null,
-      extractUsage: (parsed) => parsed.usage,
+      extractContent: (parsed) => getStreamChoice(parsed)?.delta?.content || null,
+      extractToolCalls: (parsed) => getStreamChoice(parsed)?.delta?.tool_calls || null,
+      extractFinishReason: (parsed) => getStreamChoice(parsed)?.finish_reason || null,
+      extractUsage: (parsed) => getUsage(parsed),
       accumulateToolCalls: true,
       toolCallThrottling: {
         initialYield: true,
@@ -250,17 +444,20 @@ export class LMStudioAdapter extends BaseAdapter {
   /**
    * Convert tools to Responses API format
    */
-  private convertToolsForResponsesApi(tools: any[]): any[] {
+  private convertToolsForResponsesApi(tools: readonly unknown[]): Array<LMStudioResponsesToolDefinition | Record<string, unknown>> {
     return tools.map((tool) => {
-      if (tool.function) {
+      const toolInput = toToolInput(tool);
+
+      if (toolInput?.function) {
         return {
           type: 'function',
-          name: tool.function.name,
-          description: tool.function.description,
-          parameters: tool.function.parameters
+          name: toolInput.function.name || '',
+          description: toolInput.function.description,
+          parameters: toolInput.function.parameters
         };
       }
-      return tool;
+
+      return toolInput || {};
     });
   }
 
@@ -277,46 +474,57 @@ export class LMStudioAdapter extends BaseAdapter {
    * - { role: 'assistant', content: '...' } OR function_call items
    * - { type: 'function_call_output', call_id: '...', output: '...' }
    */
-  private convertChatCompletionsToResponsesInput(messages: any[], systemPrompt?: string): any[] {
-    const input: any[] = [];
+  private convertChatCompletionsToResponsesInput(messages: readonly unknown[], systemPrompt?: string): LMStudioResponsesInputItem[] {
+    const input: LMStudioResponsesInputItem[] = [];
 
     // Add system prompt first if provided
     if (systemPrompt) {
       input.push({ role: 'system', content: systemPrompt });
     }
 
-    for (const msg of messages) {
+    for (const rawMessage of messages) {
+      if (!isChatMessage(rawMessage)) {
+        continue;
+      }
+
+      const msg = rawMessage;
+      const content = msg.content || '';
+
       if (msg.role === 'user') {
-        input.push({ role: 'user', content: msg.content || '' });
+        input.push({ role: 'user', content });
       } else if (msg.role === 'assistant') {
-        if (msg.tool_calls && msg.tool_calls.length > 0) {
+        const toolCalls = Array.isArray(msg.tool_calls) ? msg.tool_calls : [];
+
+        if (toolCalls.length > 0) {
           // Add text content if present
-          if (msg.content && msg.content.trim()) {
-            input.push({ role: 'assistant', content: msg.content });
+          if (content.trim()) {
+            input.push({ role: 'assistant', content });
           }
+
           // Convert tool_calls to function_call items
-          for (const tc of msg.tool_calls) {
+          for (const rawToolCall of toolCalls) {
+            const toolCall = toToolCallInput(rawToolCall);
             input.push({
               type: 'function_call',
-              call_id: tc.id,
-              name: tc.function?.name || '',
-              arguments: tc.function?.arguments || '{}'
+              call_id: toolCall.id || '',
+              name: toolCall.function?.name || '',
+              arguments: toolCall.function?.arguments || '{}'
             });
           }
         } else {
           // Plain assistant message
-          input.push({ role: 'assistant', content: msg.content || '' });
+          input.push({ role: 'assistant', content });
         }
       } else if (msg.role === 'tool') {
         // Convert tool result to function_call_output
         input.push({
           type: 'function_call_output',
-          call_id: msg.tool_call_id,
-          output: msg.content || '{}'
+          call_id: msg.tool_call_id || '',
+          output: content || '{}'
         });
       } else if (msg.role === 'system') {
         // System messages (shouldn't be here but handle gracefully)
-        input.push({ role: 'system', content: msg.content || '' });
+        input.push({ role: 'system', content });
       }
     }
 
@@ -391,7 +599,7 @@ export class LMStudioAdapter extends BaseAdapter {
     };
   }
 
-  async getModelPricing(modelId: string): Promise<ModelPricing | null> {
+  async getModelPricing(_modelId: string): Promise<ModelPricing | null> {
     // Local models are free - zero rates
     const pricing: ModelPricing = {
       rateInputPerMillion: 0,
@@ -411,7 +619,7 @@ export class LMStudioAdapter extends BaseAdapter {
         timeoutMs: 10_000
       });
       return response.status === 200;
-    } catch (error) {
+    } catch {
       return false;
     }
   }
@@ -420,26 +628,28 @@ export class LMStudioAdapter extends BaseAdapter {
    * Convert tools from Chat Completions format to ensure compatibility
    * Handles both flat and nested tool formats
    */
-  private convertTools(tools: any[]): any[] {
+  private convertTools(tools: readonly unknown[]): Array<Record<string, unknown>> {
     return tools.map((tool) => {
+      const toolInput = toToolInput(tool);
+
       // If already in flat format {type, name, description, parameters}, return as-is
-      if (tool.name && !tool.function) {
-        return tool;
+      if (toolInput?.name && !toolInput.function) {
+        return toolInput;
       }
 
       // If in nested format {type, function: {name, description, parameters}}, flatten it
-      if (tool.function) {
+      if (toolInput?.function) {
         return {
           type: 'function',
           function: {
-            name: tool.function.name,
-            description: tool.function.description,
-            parameters: tool.function.parameters
+            name: toolInput.function.name,
+            description: toolInput.function.description,
+            parameters: toolInput.function.parameters
           }
         };
       }
 
-      return tool;
+      return toolInput || {};
     });
   }
 
@@ -503,8 +713,8 @@ export class LMStudioAdapter extends BaseAdapter {
     }
   }
 
-  protected buildMessages(prompt: string, systemPrompt?: string): any[] {
-    const messages = [];
+  protected buildMessages(prompt: string, systemPrompt?: string): Array<{ role: 'system' | 'user'; content: string }> {
+    const messages: Array<{ role: 'system' | 'user'; content: string }> = [];
 
     if (systemPrompt) {
       messages.push({ role: 'system', content: systemPrompt });
@@ -515,26 +725,27 @@ export class LMStudioAdapter extends BaseAdapter {
     return messages;
   }
 
-  protected handleError(error: any, operation: string): never {
+  protected handleError(error: unknown, operation: string): never {
     if (error instanceof LLMProviderError) {
       throw error;
     }
 
     let message = `LM Studio ${operation} failed`;
     let code = 'UNKNOWN_ERROR';
+    const details = getErrorDetails(error);
 
-    if (error?.message) {
-      message += `: ${error.message}`;
+    if (details.message) {
+      message += `: ${details.message}`;
     }
 
-    if (error?.code === 'ECONNREFUSED') {
+    if (details.code === 'ECONNREFUSED') {
       message = 'Cannot connect to LM Studio server. Make sure LM Studio is running and the server is started.';
       code = 'CONNECTION_REFUSED';
-    } else if (error?.code === 'ENOTFOUND') {
+    } else if (details.code === 'ENOTFOUND') {
       message = 'LM Studio server not found. Check the URL configuration.';
       code = 'SERVER_NOT_FOUND';
     }
 
-    throw new LLMProviderError(message, this.name, code, error);
+    throw new LLMProviderError(message, this.name, code, error instanceof Error ? error : undefined);
   }
 }

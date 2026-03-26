@@ -253,9 +253,9 @@ export interface ListProjectsResult extends CommonResult {
   };
 }
 
-export interface UpdateProjectResult extends CommonResult {}
+export type UpdateProjectResult = CommonResult;
 
-export interface ArchiveProjectResult extends CommonResult {}
+export type ArchiveProjectResult = CommonResult;
 
 export interface CreateTaskResult extends CommonResult {
   taskId?: string;
@@ -272,9 +272,9 @@ export interface ListTasksResult extends CommonResult {
   };
 }
 
-export interface UpdateTaskResult extends CommonResult {}
+export type UpdateTaskResult = CommonResult;
 
-export interface MoveTaskResult extends CommonResult {}
+export type MoveTaskResult = CommonResult;
 
 export interface QueryTasksResult extends CommonResult {
   query?: string;
@@ -283,7 +283,7 @@ export interface QueryTasksResult extends CommonResult {
   blockedTasks?: TaskWithBlockers[];
 }
 
-export interface LinkNoteResult extends CommonResult {}
+export type LinkNoteResult = CommonResult;
 
 export interface OpenTasksResult extends CommonResult {
   opened?: boolean;

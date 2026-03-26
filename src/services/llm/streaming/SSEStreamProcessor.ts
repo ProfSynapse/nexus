@@ -47,17 +47,84 @@
  * - Proper finish reason handling
  */
 
-import { createParser, type ParsedEvent, type ParseEvent } from 'eventsource-parser';
-import { StreamChunk } from '../adapters/types';
+import { createParser, type ParseEvent } from 'eventsource-parser';
+import { StreamChunk, type TokenUsage, type ToolCall } from '../adapters/types';
 
-export interface SSEStreamOptions {
-  extractContent: (parsed: any) => string | null;
-  extractToolCalls: (parsed: any) => any[] | null;
-  extractFinishReason: (parsed: any) => string | null;
-  extractUsage?: (parsed: any) => any;
-  extractMetadata?: (parsed: any) => Record<string, unknown> | null;
+interface SSEUsagePayload {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+}
+
+interface SSEReasoningChunk {
+  text: string;
+  complete: boolean;
+}
+
+interface SSEToolCallDelta {
+  index?: number;
+  id?: string;
+  type?: ToolCall['type'];
+  function?: {
+    name?: string;
+    arguments?: string;
+  };
+  reasoning_details?: ToolCall['reasoning_details'];
+  thought_signature?: string;
+}
+
+function parseSSEEventData<TParsed>(rawData: string): TParsed {
+  return JSON.parse(rawData) as TParsed;
+}
+
+function formatTokenUsage(usage?: SSEUsagePayload): TokenUsage | undefined {
+  if (!usage) {
+    return undefined;
+  }
+
+  return {
+    promptTokens: usage.prompt_tokens || 0,
+    completionTokens: usage.completion_tokens || 0,
+    totalTokens: usage.total_tokens || 0
+  };
+}
+
+function createAccumulatedToolCall(toolCall: SSEToolCallDelta): ToolCall {
+  const accumulated: ToolCall = {
+    id: toolCall.id || '',
+    type: toolCall.type || 'function',
+    function: {
+      name: toolCall.function?.name || '',
+      arguments: toolCall.function?.arguments || ''
+    }
+  };
+
+  if (toolCall.reasoning_details) {
+    accumulated.reasoning_details = toolCall.reasoning_details;
+  }
+  if (toolCall.thought_signature) {
+    accumulated.thought_signature = toolCall.thought_signature;
+  }
+
+  return accumulated;
+}
+
+function throwError(error: Error): never {
+  throw error;
+}
+
+export interface SSEStreamOptions<
+  TParsed = unknown,
+  TUsage extends SSEUsagePayload = SSEUsagePayload,
+  TToolCall extends SSEToolCallDelta = SSEToolCallDelta
+> {
+  extractContent: (parsed: TParsed) => string | null;
+  extractToolCalls: (parsed: TParsed) => TToolCall[] | null;
+  extractFinishReason: (parsed: TParsed) => string | null;
+  extractUsage?: (parsed: TParsed) => TUsage | null | undefined;
+  extractMetadata?: (parsed: TParsed) => Record<string, unknown> | null;
   // Reasoning/thinking extraction for models that support it
-  extractReasoning?: (parsed: any) => { text: string; complete: boolean } | null;
+  extractReasoning?: (parsed: TParsed) => SSEReasoningChunk | null;
   onParseError?: (error: Error, rawData: string) => void;
   debugLabel?: string;
   // Tool call accumulation settings
@@ -73,23 +140,19 @@ export class SSEStreamProcessor {
    * Process SSE stream with automatic tool call accumulation
    * Handles all the complex buffering, parsing, and error recovery
    */
-  static async* processSSEStream(
+  static async* processSSEStream<TParsed, TUsage extends SSEUsagePayload, TToolCall extends SSEToolCallDelta>(
     response: Response,
-    options: SSEStreamOptions
+    options: SSEStreamOptions<TParsed, TUsage, TToolCall>
   ): AsyncGenerator<StreamChunk, void, unknown> {
     if (!response.body) {
       throw new Error('Response body is not readable');
     }
 
-    const debugLabel = options.debugLabel || 'SSE';
-    let tokenCount = 0;
-    let usage: any = undefined;
+    let usage: TUsage | undefined = undefined;
     let metadata: Record<string, unknown> | undefined = undefined;
 
     // Tool call accumulation system
-    const toolCallsAccumulator: Map<number, any> = new Map();
-    let accumulatedContent = '';
-
+    const toolCallsAccumulator: Map<number, ToolCall> = new Map();
     // Event queue for handling async events in sync generator
     const eventQueue: StreamChunk[] = [];
     let isCompleted = false;
@@ -108,11 +171,7 @@ export class SSEStreamProcessor {
 
       // Handle [DONE] event
       if (event.data === '[DONE]') {
-        const finalUsage = usage ? {
-          promptTokens: usage.prompt_tokens || 0,
-          completionTokens: usage.completion_tokens || 0,
-          totalTokens: usage.total_tokens || 0
-        } : undefined;
+        const finalUsage = formatTokenUsage(usage);
 
         const finalToolCalls = options.accumulateToolCalls && toolCallsAccumulator.size > 0
           ? Array.from(toolCallsAccumulator.values())
@@ -132,7 +191,7 @@ export class SSEStreamProcessor {
       }
 
       try {
-        const parsed = JSON.parse(event.data);
+        const parsed = parseSSEEventData<TParsed>(event.data);
 
         if (options.extractMetadata) {
           metadata = {
@@ -144,9 +203,6 @@ export class SSEStreamProcessor {
         // Extract content using adapter-specific logic
         const content = options.extractContent(parsed);
         if (content) {
-          tokenCount++;
-          accumulatedContent += content;
-
           eventQueue.push({
             content,
             complete: false
@@ -176,30 +232,23 @@ export class SSEStreamProcessor {
 
             if (!toolCallsAccumulator.has(index)) {
               // Initialize new tool call - preserve reasoning_details and thought_signature
-              const accumulated: any = {
-                id: toolCall.id || '',
-                type: toolCall.type || 'function',
-                function: {
-                  name: toolCall.function?.name || '',
-                  arguments: toolCall.function?.arguments || ''
-                }
-              };
-
-              // Preserve reasoning data for OpenRouter Gemini and Google models
-              if (toolCall.reasoning_details) {
-                accumulated.reasoning_details = toolCall.reasoning_details;
-              }
-              if (toolCall.thought_signature) {
-                accumulated.thought_signature = toolCall.thought_signature;
-              }
+              const accumulated = createAccumulatedToolCall(toolCall);
 
               toolCallsAccumulator.set(index, accumulated);
               shouldYieldToolCalls = options.toolCallThrottling?.initialYield !== false;
             } else {
               // Accumulate existing tool call
               const existing = toolCallsAccumulator.get(index);
-              if (toolCall.id) existing.id = toolCall.id;
-              if (toolCall.function?.name) existing.function.name = toolCall.function.name;
+              if (!existing) {
+                continue;
+              }
+
+              if (toolCall.id) {
+                existing.id = toolCall.id;
+              }
+              if (toolCall.function?.name) {
+                existing.function.name = toolCall.function.name;
+              }
               if (toolCall.function?.arguments) {
                 existing.function.arguments += toolCall.function.arguments;
 
@@ -245,11 +294,7 @@ export class SSEStreamProcessor {
             ? Array.from(toolCallsAccumulator.values())
             : undefined;
 
-          const finalUsageFormatted = usage ? {
-            promptTokens: usage.prompt_tokens || 0,
-            completionTokens: usage.completion_tokens || 0,
-            totalTokens: usage.total_tokens || 0
-          } : undefined;
+          const finalUsageFormatted = formatTokenUsage(usage);
 
           eventQueue.push({
             content: '',
@@ -309,26 +354,15 @@ export class SSEStreamProcessor {
         yield {
           content: '',
           complete: true,
-          usage: usage ? {
-            promptTokens: usage.prompt_tokens || 0,
-            completionTokens: usage.completion_tokens || 0,
-            totalTokens: usage.total_tokens || 0
-          } : undefined
+          usage: formatTokenUsage(usage)
         };
       }
-
-    } catch (error) {
-      throw error;
     } finally {
-      try {
-        reader.cancel();
-      } catch (error) {
-        // Ignore cancellation errors
-      }
+      void reader.cancel().catch(() => undefined);
     }
 
-    if (completionError) {
-      throw completionError;
+    if (completionError instanceof Error) {
+      throwError(completionError);
     }
   }
 }
