@@ -307,7 +307,8 @@ export class StreamingResponseService {
       }
 
     } catch (error) {
-      console.error('Error in generateResponse:', error);
+      const extra = (error as any)?.response?.data ?? (error as any)?.response?.json ?? (error as any)?.response?.text;
+      console.error('Error in generateResponse:', error, extra ? JSON.stringify(extra) : '');
       throw error;
     } finally {
       // Notify queue service that generation is complete (resumes processing)

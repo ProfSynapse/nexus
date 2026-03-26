@@ -504,6 +504,14 @@ agents/
 None — all v5.5.0 PRs (#65–72) merged to main.
 
 ### Current Work
+**GitHub Copilot Responses API** — ✅ Implemented. `gpt-5.4` now routes to `https://api.githubcopilot.com/responses` via dual-endpoint routing in `GithubCopilotAdapter.ts`. Changes uncommitted on `main` branch — pending test + PR.
+
+**Copilot API gotchas (CRITICAL — same as Codex)**:
+- `delta` is plain string, not object — `typeof event.delta === 'string'` check required
+- Request format: `input` array (not `messages`), `instructions` (not system message)
+- Route via `supported_endpoints` from `/models` response; fallback: GPT-5+ → `/responses`, else → `/chat/completions`
+- `generateUncached()` still uses `/chat/completions` only — non-streaming gpt-5.4 calls will fail (streaming path is used in practice)
+
 **Context Budget Service** — `feat/context-budget-service` branch is the user's active in-progress branch. Work ongoing.
 
 **File Picker Bug** — `FilePickerRenderer.getRootFolder()` fails when workspace rootFolder has leading `/` (e.g., `/blog-test` → Obsidian expects `blog-test`). Separate fix needed.
@@ -522,6 +530,11 @@ A branch IS a conversation with parent metadata:
 - `src/ui/chat/services/ContextTracker.ts` - Token/cost tracking
 
 ### Known Issues
+
+**Task Board: No JSONL→SQLite sync for tasks** (Mar 26 — fix in progress, branch `fix/task-board-sync`):
+- Fix implemented: `TaskEventApplier.ts` (new), `SyncCoordinator.rebuildTasks()`, `clearAllData()` now clears task tables, `reconcileMissingTasks()` in HybridStorageAdapter, workspace name→UUID resolution in TaskService
+- Workspace name resolution: `createProject`/`createTask` now accept workspace names (e.g. `"Website Redesign"`) and silently resolve to UUID; ambiguous names (2+ matches) fail with nudge listing all UUIDs
+- **Do NOT recommend deleting `cache.db`** for task data recovery — task tables are not rebuilt from JSONL (this PR fixes that, but until released, don't delete)
 
 **File Picker rootFolder Leading Slash** (Mar 13):
 - `FilePickerRenderer.getRootFolder()` passes workspace rootFolder (e.g., `/blog-test`) directly to `getAbstractFileByPath()`, which expects no leading slash (`blog-test`)
@@ -641,7 +654,7 @@ Instead of 50+ tools, MCP exposes just 2: `getTools` (discovery) and `useTools` 
 - `conversations/*.jsonl` - OpenAI fine-tuning format (syncs across devices)
 - `workspaces/*.jsonl` - Event-sourced workspace data
 - `tasks/tasks_[workspaceId].jsonl` - Task/project events per workspace
-- `cache.db` - SQLite local cache (auto-rebuilt, not synced)
+- `cache.db` - SQLite local cache (auto-rebuilt, not synced) ⚠️ **Do NOT delete** — task/project data is NOT recovered from JSONL on rebuild
 
 ### Architecture
 - Hybrid JSONL + SQLite: JSONL = source of truth, SQLite = fast queries
@@ -677,7 +690,7 @@ Key files: `src/ui/chat/components/suggesters/`, `MessageEnhancer.ts`, `SystemPr
 <!-- SESSION_START -->
 ## Current Session
 <!-- Auto-managed by session_init hook. Overwritten each session. -->
-- Resume: `claude --resume 0cf1fb1a-0663-4486-9437-6cbf7ac55394`
-- Team: `pact-0cf1fb1a`
-- Started: 2026-03-26 10:15:45 UTC
+- Resume: `claude --resume 38afcced-d4b5-4845-8e03-765bead255e0`
+- Team: `pact-38afcced`
+- Started: 2026-03-26 20:32:26 UTC
 <!-- SESSION_END -->
