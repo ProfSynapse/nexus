@@ -14,7 +14,7 @@
  * - Format file and folder metadata
  */
 
-import { TFile, TFolder } from 'obsidian';
+import { App, TFile, TFolder } from 'obsidian';
 
 /**
  * Directory item structure for search results (lean format)
@@ -39,9 +39,9 @@ export interface SearchMatch {
  * Implements Single Responsibility Principle - only handles result formatting
  */
 export class SearchResultFormatter {
-  private app: any;
+  private app: App;
 
-  constructor(app: any) {
+  constructor(app: App) {
     this.app = app;
   }
 

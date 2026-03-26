@@ -16,6 +16,70 @@ import { requestUrl } from 'obsidian';
 
 const DEFAULT_TTS_MODEL = 'eleven_multilingual_v2';
 
+interface VoicesResponse {
+  voices?: unknown[];
+}
+
+interface ErrorDetail {
+  message?: string;
+}
+
+interface ErrorResponse {
+  detail?: ErrorDetail;
+}
+
+interface ElevenLabsSubscription {
+  tier?: string;
+  character_count?: number;
+  character_limit?: number;
+}
+
+interface UserResponse {
+  subscription?: ElevenLabsSubscription;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function getVoicesResponse(value: unknown): VoicesResponse {
+  return isRecord(value) && Array.isArray(value.voices) ? { voices: value.voices } : {};
+}
+
+function getErrorResponse(value: unknown): ErrorResponse {
+  if (!isRecord(value)) {
+    return {};
+  }
+
+  const detail = value.detail;
+  if (!isRecord(detail)) {
+    return {};
+  }
+
+  return {
+    detail: typeof detail.message === 'string' ? { message: detail.message } : {}
+  };
+}
+
+function getUserResponse(value: unknown): UserResponse {
+  if (!isRecord(value) || !isRecord(value.subscription)) {
+    return {};
+  }
+
+  const subscription = value.subscription;
+  return {
+    subscription: {
+      tier: typeof subscription.tier === 'string' ? subscription.tier : undefined,
+      character_count: typeof subscription.character_count === 'number' ? subscription.character_count : undefined,
+      character_limit: typeof subscription.character_limit === 'number' ? subscription.character_limit : undefined,
+    }
+  };
+}
+
+function getStatusSuffix(status: unknown): string {
+  return typeof status === 'number' || typeof status === 'string' ? ` (${status})` : '';
+}
+
 const ELEVENLABS_MANIFEST: AppManifest = {
   id: 'elevenlabs',
   name: 'ElevenLabs',
@@ -78,7 +142,7 @@ export class ElevenLabsAgent extends BaseAppAgent {
         method: 'GET',
         headers,
       });
-      const voices: unknown[] = response.json?.voices || [];
+      const voices = getVoicesResponse(response.json).voices ?? [];
       voiceCount = voices.length;
       voicesOk = true;
     } catch (error: unknown) {
@@ -115,11 +179,11 @@ export class ElevenLabsAgent extends BaseAppAgent {
           try {
             const errText = (error as Record<string, unknown>)?.text;
             if (typeof errText === 'string') {
-              const parsed = JSON.parse(errText);
-              const detail = parsed?.detail;
-              if (typeof detail === 'object' && detail?.message) {
+              const parsed: unknown = JSON.parse(errText);
+              const detail = getErrorResponse(parsed).detail;
+              if (typeof detail?.message === 'string') {
                 // e.g. "...permission text_to_speech..."
-                const match = String(detail.message).match(/permission\s+(\S+)/i);
+                const match = detail.message.match(/permission\s+(\S+)/i);
                 if (match) missingPermission = match[1];
               }
             }
@@ -163,7 +227,7 @@ export class ElevenLabsAgent extends BaseAppAgent {
       });
       if (userResponse.status === 200) {
         userInfoOk = true;
-        const userData = userResponse.json;
+        const userData = getUserResponse(userResponse.json);
         subscription = userData.subscription?.tier || 'unknown';
         characterCount = userData.subscription?.character_count;
         characterLimit = userData.subscription?.character_limit;
@@ -218,7 +282,7 @@ export class ElevenLabsAgent extends BaseAppAgent {
         headers: { 'xi-api-key': apiKey },
       });
 
-      const allModels: ElevenLabsModel[] = response.json || [];
+      const allModels = Array.isArray(response.json) ? response.json as ElevenLabsModel[] : [];
       const ttsModels = allModels.filter(
         m => m.can_do_text_to_speech && !m.requires_alpha_access
       );
@@ -228,7 +292,7 @@ export class ElevenLabsAgent extends BaseAppAgent {
       const status = (error as Record<string, unknown>)?.status;
       return {
         success: false,
-        error: `Failed to fetch models${status ? ` (${status})` : ''}`
+        error: `Failed to fetch models${getStatusSuffix(status)}`
       };
     }
   }

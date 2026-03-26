@@ -14,10 +14,64 @@ import {
   WebLLMError,
   WebLLMModelSpec,
 } from './types';
-import { HF_BASE_URL, getWebLLMModel } from './WebLLMModels';
+import { HF_BASE_URL } from './WebLLMModels';
 
 /** Manifest file name for tracking installed models */
 const INSTALLED_MANIFEST = 'installed-models.json';
+
+interface TensorCacheRecord {
+  dataPath?: string;
+  nbytes?: number;
+}
+
+interface TensorCacheConfig {
+  records?: TensorCacheRecord[];
+}
+
+interface ResourcePathAdapter {
+  getResourcePath(path: string): string;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isInstalledModel(value: unknown): value is InstalledModel {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return typeof value.id === 'string'
+    && typeof value.name === 'string'
+    && typeof value.quantization === 'string'
+    && typeof value.sizeBytes === 'number'
+    && typeof value.installedAt === 'string'
+    && typeof value.path === 'string';
+}
+
+function parseInstalledModels(content: string): InstalledModel[] {
+  const parsed: unknown = JSON.parse(content);
+  return Array.isArray(parsed) ? parsed.filter(isInstalledModel) : [];
+}
+
+function parseTensorCacheConfig(value: unknown): TensorCacheConfig {
+  if (!isRecord(value) || !Array.isArray(value.records)) {
+    return {};
+  }
+
+  const records = value.records
+    .filter(isRecord)
+    .map((record) => ({
+      dataPath: typeof record.dataPath === 'string' ? record.dataPath : undefined,
+      nbytes: typeof record.nbytes === 'number' ? record.nbytes : undefined,
+    }));
+
+  return { records };
+}
+
+function hasGetResourcePath(value: unknown): value is ResourcePathAdapter {
+  return isRecord(value) && typeof value.getResourcePath === 'function';
+}
 
 export class WebLLMModelManager {
   private vault: Vault;
@@ -53,8 +107,8 @@ export class WebLLMModelManager {
       }
 
       const content = await this.vault.adapter.read(manifestPath);
-      return JSON.parse(content);
-    } catch (error) {
+      return parseInstalledModels(content);
+    } catch {
       return [];
     }
   }
@@ -177,7 +231,7 @@ export class WebLLMModelManager {
         throw new Error(`Failed to fetch manifest: ${response.status}`);
       }
 
-      const config = response.json;
+      const config: unknown = response.json;
 
       // Parse file list from config
       // MLC models typically have: mlc-chat-config.json, tokenizer files, and weight shards
@@ -214,7 +268,7 @@ export class WebLLMModelManager {
       try {
         const tensorResp = await requestUrl({ url: tensorCacheUrl, method: 'GET' });
         if (tensorResp.status === 200) {
-          const tensorConfig = tensorResp.json;
+          const tensorConfig = parseTensorCacheConfig(tensorResp.json);
           files.push({
             name: 'tensor-cache.json',
             url: tensorCacheUrl,
@@ -222,7 +276,7 @@ export class WebLLMModelManager {
           });
 
           // Add all weight shards listed in tensor-cache.json
-          if (tensorConfig.records && Array.isArray(tensorConfig.records)) {
+          if (tensorConfig.records) {
             for (const record of tensorConfig.records) {
               if (record.dataPath) {
                 const dataUrl = `${basePath}/${record.dataPath}`;
@@ -366,7 +420,7 @@ export class WebLLMModelManager {
       } else {
         await this.vault.adapter.remove(path);
       }
-    } catch (error) {
+    } catch {
       // Ignore deletion errors
     }
   }
@@ -435,8 +489,8 @@ export class WebLLMModelManager {
   async getLocalModelUrl(modelId: string): Promise<string> {
     const modelPath = this.getModelPath(modelId);
 
-    const adapter: any = this.vault.adapter;
-    if (typeof adapter.getResourcePath === 'function') {
+    const adapter: unknown = this.vault.adapter;
+    if (hasGetResourcePath(adapter)) {
       return adapter.getResourcePath(modelPath);
     }
 
@@ -461,7 +515,7 @@ export class WebLLMModelManager {
       if (!exists) {
         await this.vault.adapter.mkdir(path);
       }
-    } catch (error) {
+    } catch {
       // Directory might already exist, ignore error
     }
   }

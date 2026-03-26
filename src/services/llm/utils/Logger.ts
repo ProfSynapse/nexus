@@ -34,10 +34,16 @@ export interface LoggerConfig {
   includeStackTrace: boolean;
 }
 
+interface VaultLogAdapter {
+  mkdir(path: string): Promise<void>;
+  read(path: string): Promise<string>;
+  write(path: string, data: string): Promise<void>;
+}
+
 export class Logger {
   private static instance: Logger;
   private config: LoggerConfig;
-  private static vaultAdapterConfig: { adapter: any; baseDir: string } | null = null;
+  private static vaultAdapterConfig: { adapter: VaultLogAdapter; baseDir: string } | null = null;
   private logLevels: Record<LogLevel, number> = {
     debug: 0,
     info: 1,
@@ -275,7 +281,7 @@ export class Logger {
     // File logging only works with vault adapter (mobile compatible)
     if (Logger.vaultAdapterConfig) {
       const dir = normalizePath(Logger.vaultAdapterConfig.baseDir || '.nexus/logs');
-      Logger.vaultAdapterConfig.adapter.mkdir(dir).catch(() => {});
+      void Logger.vaultAdapterConfig.adapter.mkdir(dir).catch(() => undefined);
       this.config.logDirectory = dir;
     } else {
       // No vault adapter - disable file logging on mobile
@@ -284,7 +290,7 @@ export class Logger {
   }
 
   private getDateString(): string {
-    return new Date().toISOString().split('T')[0]!;
+    return new Date().toISOString().split('T')[0] || '';
   }
 
   // Log rotation not supported on mobile - rely on manual cleanup or vault sync
@@ -300,7 +306,7 @@ export class Logger {
   /**
    * Configure vault adapter-backed logging (uses Obsidian vault adapter for writes).
    */
-  static setVaultAdapter(adapter: any, baseDir: string = '.nexus/logs') {
+  static setVaultAdapter(adapter: VaultLogAdapter, baseDir: string = '.nexus/logs'): void {
     Logger.vaultAdapterConfig = { adapter, baseDir };
     if (Logger.instance) {
       Logger.instance.config.logDirectory = baseDir;
@@ -308,14 +314,14 @@ export class Logger {
     }
   }
 
-  private writeViaVaultAdapter(logFile: string, line: string) {
+  private writeViaVaultAdapter(logFile: string, line: string): void {
     const adapter = Logger.vaultAdapterConfig?.adapter;
     if (!adapter) return;
     const normalizedPath = normalizePath(logFile);
-    adapter.read(normalizedPath)
+    void adapter.read(normalizedPath)
       .catch(() => '')
       .then((existing: string) => adapter.write(normalizedPath, `${existing}${line}`))
-      .catch((error: Error) => {
+      .catch((error: unknown) => {
         console.error('Failed to write to vault-backed log file:', error);
       });
   }

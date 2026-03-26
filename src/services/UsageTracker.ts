@@ -32,6 +32,14 @@ export interface UsageResponse {
     budgetStatus: BudgetStatus;
 }
 
+function getStorage(): Storage | null {
+    try {
+        return typeof globalThis.localStorage === 'undefined' ? null : globalThis.localStorage;
+    } catch {
+        return null;
+    }
+}
+
 /**
  * Shared service for tracking usage costs by provider
  * Supports tracking for LLM usage
@@ -44,7 +52,7 @@ export class UsageTracker {
     
     constructor(
         private usageType: UsageType,
-        private settings: any
+        _settings?: unknown
     ) {
         this.storageKeyPrefix = `nexus-usage-${usageType}`;
         this.budgetKey = `nexus-budget-${usageType}`;
@@ -131,12 +139,14 @@ export class UsageTracker {
      * Set monthly budget
      */
     setMonthlyBudget(budget: number): void {
-        if (typeof localStorage === 'undefined') return;
+        const storage = getStorage();
+        if (!storage) return;
         
         try {
-            localStorage.setItem(this.budgetKey, budget.toString());
+            storage.setItem(this.budgetKey, budget.toString());
             this.cleanupLegacyKeys(this.legacyBudgetKeys);
-        } catch (error) {
+        } catch {
+            return;
         }
     }
 
@@ -144,12 +154,13 @@ export class UsageTracker {
      * Get monthly budget
      */
     getMonthlyBudget(): number {
-        if (typeof localStorage === 'undefined') return 0;
+        const storage = getStorage();
+        if (!storage) return 0;
         
         try {
             const budget = this.getWithLegacyKeys(this.budgetKey, this.legacyBudgetKeys);
             return budget ? parseFloat(budget) : 0;
-        } catch (error) {
+        } catch {
             return 0;
         }
     }
@@ -167,7 +178,7 @@ export class UsageTracker {
             lastUpdated: new Date().toISOString()
         };
 
-        if (typeof localStorage === 'undefined') {
+        if (!getStorage()) {
             return defaultData;
         }
 
@@ -186,7 +197,7 @@ export class UsageTracker {
                 currentMonth: parsed.currentMonth || this.getCurrentMonthKey(),
                 lastUpdated: parsed.lastUpdated || new Date().toISOString()
             };
-        } catch (error) {
+        } catch {
             return defaultData;
         }
     }
@@ -195,30 +206,34 @@ export class UsageTracker {
      * Save usage data to storage
      */
     private async saveUsageData(data: UsageData): Promise<void> {
-        if (typeof localStorage === 'undefined') return;
+        const storage = getStorage();
+        if (!storage) return;
 
         try {
-            localStorage.setItem(this.storageKeyPrefix, JSON.stringify(data));
+            storage.setItem(this.storageKeyPrefix, JSON.stringify(data));
             this.cleanupLegacyKeys(this.legacyStorageKeys);
-        } catch (error) {
+        } catch {
+            return;
         }
     }
 
     private getWithLegacyKeys(primaryKey: string, legacyKeys: string[]): string | null {
-        if (typeof localStorage === 'undefined') return null;
+        const storage = getStorage();
+        if (!storage) return null;
 
-        const primaryValue = localStorage.getItem(primaryKey);
+        const primaryValue = storage.getItem(primaryKey);
         if (primaryValue) {
             return primaryValue;
         }
 
         for (const key of legacyKeys) {
-            const legacyValue = localStorage.getItem(key);
+            const legacyValue = storage.getItem(key);
             if (legacyValue) {
                 try {
-                    localStorage.setItem(primaryKey, legacyValue);
+                    storage.setItem(primaryKey, legacyValue);
                     this.cleanupLegacyKeys(legacyKeys);
-                } catch (error) {
+                } catch {
+                    return legacyValue;
                 }
                 return legacyValue;
             }
@@ -228,11 +243,12 @@ export class UsageTracker {
     }
 
     private cleanupLegacyKeys(keys: string[]): void {
-        if (typeof localStorage === 'undefined') return;
+        const storage = getStorage();
+        if (!storage) return;
 
         for (const key of keys) {
             try {
-                localStorage.removeItem(key);
+                storage.removeItem(key);
             } catch {
                 // Ignore cleanup errors
             }

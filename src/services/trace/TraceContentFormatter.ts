@@ -8,8 +8,39 @@
 interface TraceFormatParams {
   agent: string;
   mode: string;
-  params: any;
+  params: unknown;
   success: boolean;
+}
+
+interface TraceParamBag {
+  filePath?: string;
+  path?: string;
+  query?: string;
+  id?: string;
+  name?: string;
+  params?: TraceParamBag;
+}
+
+function isTraceParamBag(value: unknown): value is TraceParamBag {
+  return typeof value === 'object' && value !== null;
+}
+
+function getTraceField(params: TraceParamBag | undefined, field: keyof Omit<TraceParamBag, 'params'>): string | undefined {
+  if (!params) {
+    return undefined;
+  }
+
+  const directValue = params[field];
+  if (typeof directValue === 'string') {
+    return directValue;
+  }
+
+  const nestedParams = params.params;
+  if (nestedParams && typeof nestedParams[field] === 'string') {
+    return nestedParams[field];
+  }
+
+  return undefined;
 }
 
 const modeVerbs: Record<string, { success: string; failure: string }> = {
@@ -66,11 +97,12 @@ const modeVerbs: Record<string, { success: string; failure: string }> = {
 /**
  * Format a tool call into a human-readable activity description
  */
-export function formatTraceContent({ agent, mode, params, success }: TraceFormatParams): string {
-  const filePath = params?.filePath || params?.path || params?.params?.filePath;
-  const query = params?.query || params?.params?.query;
-  const id = params?.id || params?.params?.id;
-  const name = params?.name || params?.params?.name;
+export function formatTraceContent({ agent: _agent, mode, params, success }: TraceFormatParams): string {
+  const traceParams = isTraceParamBag(params) ? params : undefined;
+  const filePath = getTraceField(traceParams, 'filePath') || getTraceField(traceParams, 'path');
+  const query = getTraceField(traceParams, 'query');
+  const id = getTraceField(traceParams, 'id');
+  const name = getTraceField(traceParams, 'name');
 
   const verbs = modeVerbs[mode] || { success: 'Executed', failure: 'Failed' };
   const verb = success ? verbs.success : verbs.failure;

@@ -33,6 +33,7 @@ import {
   ToolCall
 } from '../types';
 import { ModelRegistry } from '../ModelRegistry';
+import type { ModelSpec } from '../ModelRegistry';
 import { BRAND_NAME } from '../../../../constants/branding';
 
 /** Codex API endpoint (requires ChatGPT subscription) */
@@ -73,6 +74,63 @@ export interface CodexOAuthTokens {
  * new tokens survive across plugin restarts.
  */
 export type TokenPersistCallback = (tokens: CodexOAuthTokens) => void;
+
+interface CodexResponseEnvelope {
+  id?: string;
+}
+
+interface CodexFunctionCallItem {
+  type?: string;
+  call_id?: string;
+  id?: string;
+  name?: string;
+  arguments?: string;
+}
+
+interface CodexStreamEvent {
+  type?: string;
+  delta?: string | Record<string, unknown>;
+  content?: string;
+  response?: CodexResponseEnvelope;
+  item?: CodexFunctionCallItem;
+  output_index?: number;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isCodexResponseEnvelope(value: unknown): value is CodexResponseEnvelope {
+  return isRecord(value);
+}
+
+function isCodexFunctionCallItem(value: unknown): value is CodexFunctionCallItem {
+  return isRecord(value);
+}
+
+function getStringValue(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
+function toModelInfo(modelSpec: ModelSpec): ModelInfo {
+  return {
+    id: modelSpec.apiName,
+    name: modelSpec.name,
+    contextWindow: modelSpec.contextWindow,
+    maxOutputTokens: modelSpec.maxTokens,
+    supportsJSON: modelSpec.capabilities.supportsJSON,
+    supportsImages: modelSpec.capabilities.supportsImages,
+    supportsFunctions: modelSpec.capabilities.supportsFunctions,
+    supportsStreaming: modelSpec.capabilities.supportsStreaming,
+    supportsThinking: modelSpec.capabilities.supportsThinking,
+    pricing: {
+      inputPerMillion: modelSpec.inputCostPerMillion,
+      outputPerMillion: modelSpec.outputCostPerMillion,
+      currency: 'USD',
+      lastUpdated: new Date().toISOString()
+    }
+  };
+}
 
 export class OpenAICodexAdapter extends BaseAdapter {
   readonly name = 'openai-codex';
@@ -256,7 +314,7 @@ export class OpenAICodexAdapter extends BaseAdapter {
         hasToolCalls ? collectedToolCalls : undefined
       );
     } catch (error) {
-      throw this.handleError(error, 'generation');
+      this.handleError(error, 'generation');
     }
   }
 
@@ -326,7 +384,8 @@ export class OpenAICodexAdapter extends BaseAdapter {
         const toolPreamble = 'You are an AI assistant with tool access. '
           + 'Fulfill user requests by calling tools immediately — do NOT describe what you will do. '
           + `Call ${TOOL_NAMES.discover} first to discover available tools, then call ${TOOL_NAMES.execute} to execute them.\n\n`;
-        requestBody.instructions = toolPreamble + (requestBody.instructions || '');
+        const currentInstructions = typeof requestBody.instructions === 'string' ? requestBody.instructions : '';
+        requestBody.instructions = toolPreamble + currentInstructions;
 
       }
 
@@ -343,7 +402,7 @@ export class OpenAICodexAdapter extends BaseAdapter {
       yield* this.processCodexNodeStream(nodeStream);
 
     } catch (error) {
-      throw this.handleError(error, 'streaming generation');
+      this.handleError(error, 'streaming generation');
     }
   }
 
@@ -385,11 +444,11 @@ export class OpenAICodexAdapter extends BaseAdapter {
    * Reads SSE events incrementally as they arrive from the wire.
    * Uses the same Responses API event format as OpenAI (not Chat Completions).
    */
-  private async* processCodexNodeStream(nodeStream: NodeJS.ReadableStream): AsyncGenerator<StreamChunk, void, unknown> {
+  private async* processCodexNodeStream(nodeStream: AsyncIterable<unknown>): AsyncGenerator<StreamChunk, void, unknown> {
     const { createParser } = await import('eventsource-parser');
 
     const eventQueue: StreamChunk[] = [];
-    const toolCallsMap = new Map<number, any>();
+    const toolCallsMap = new Map<number, ToolCall>();
     let currentResponseId: string | null = null;
     let isCompleted = false;
 
@@ -400,14 +459,14 @@ export class OpenAICodexAdapter extends BaseAdapter {
         return;
       }
 
-      let event: Record<string, any>;
+      let event: CodexStreamEvent;
       try {
-        event = JSON.parse(sseEvent.data);
+        event = JSON.parse(sseEvent.data) as CodexStreamEvent;
       } catch {
         return;
       }
 
-      if (event.response?.id && !currentResponseId) {
+      if (isCodexResponseEnvelope(event.response) && typeof event.response.id === 'string' && !currentResponseId) {
         currentResponseId = event.response.id;
       }
 
@@ -424,13 +483,13 @@ export class OpenAICodexAdapter extends BaseAdapter {
 
         case 'response.output_item.done':
           // Completed item — may be a function_call
-          if (event.item?.type === 'function_call') {
+          if (isCodexFunctionCallItem(event.item) && event.item.type === 'function_call') {
             toolCallsMap.set(event.output_index || 0, {
-              id: event.item.call_id || event.item.id || '',
+              id: getStringValue(event.item.call_id) || getStringValue(event.item.id) || '',
               type: 'function',
               function: {
-                name: event.item.name || '',
-                arguments: event.item.arguments || '{}'
+                name: getStringValue(event.item.name) || '',
+                arguments: getStringValue(event.item.arguments) || '{}'
               }
             });
           }
@@ -458,9 +517,11 @@ export class OpenAICodexAdapter extends BaseAdapter {
     });
 
     try {
-      for await (const chunk of nodeStream as AsyncIterable<Buffer>) {
+      for await (const chunk of nodeStream) {
         if (isCompleted) break;
-        const text = typeof chunk === 'string' ? chunk : chunk.toString('utf-8');
+        const text = typeof chunk === 'string'
+          ? chunk
+          : Buffer.from(chunk as ArrayBufferLike | Uint8Array).toString('utf-8');
         parser.feed(text);
 
         while (eventQueue.length > 0) {
@@ -489,7 +550,7 @@ export class OpenAICodexAdapter extends BaseAdapter {
    */
   async listModels(): Promise<ModelInfo[]> {
     const codexModels = ModelRegistry.getProviderModels('openai-codex');
-    return codexModels.map(model => ModelRegistry.toModelInfo(model));
+    return codexModels.map(model => toModelInfo(model));
   }
 
   /**

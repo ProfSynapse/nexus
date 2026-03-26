@@ -7,7 +7,6 @@ import {
   mergeWithCommonSchema
 } from '../utils/schemaUtils';
 import { parseWorkspaceContext } from '../utils/contextUtils';
-import { getErrorMessage } from '../utils/errorUtils';
 import { enhanceSchemaDocumentation } from '../utils/validationUtils';
 import { JSONSchema } from '../types/schema/JSONSchemaTypes';
 
@@ -22,6 +21,19 @@ import {
   CommonValidators,
   ValidationRuleSet
 } from '../utils/validation/CommonValidators';
+
+type ToolSchemaWithProperties = JSONSchema & {
+  type?: string;
+  properties: Record<string, unknown>;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function toResultMetadata(value: unknown): Record<string, unknown> | undefined {
+  return isRecord(value) ? value : undefined;
+}
 
 /**
  * Base class for all tools in the MCP plugin
@@ -72,7 +84,7 @@ export abstract class BaseTool<T extends CommonParameters = CommonParameters, R 
    * @returns JSON schema for common parameters
    */
   protected getCommonParameterSchema(): JSONSchema {
-    return getCommonParameterSchema();
+    return getCommonParameterSchema() as JSONSchema;
   }
 
   /**
@@ -81,7 +93,7 @@ export abstract class BaseTool<T extends CommonParameters = CommonParameters, R 
    */
   getResultSchema(): JSONSchema {
     // Default implementation returns the common result schema
-    return getCommonResultSchema();
+    return getCommonResultSchema() as JSONSchema;
   }
 
   /**
@@ -94,7 +106,7 @@ export abstract class BaseTool<T extends CommonParameters = CommonParameters, R 
    */
   protected getMergedSchema(customSchema: JSONSchema): JSONSchema {
     // Get the merged schema with common parameters
-    const mergedSchema = mergeWithCommonSchema(customSchema);
+    const mergedSchema = mergeWithCommonSchema(customSchema) as ToolSchemaWithProperties;
 
     // Ensure the schema has a type and properties
     mergedSchema.type = mergedSchema.type || 'object';
@@ -126,7 +138,7 @@ export abstract class BaseTool<T extends CommonParameters = CommonParameters, R 
 
     // Enhance schema with detailed documentation on required vs. optional parameters
     // and type information, to improve user experience
-    return enhanceSchemaDocumentation(mergedSchema);
+    return enhanceSchemaDocumentation(mergedSchema) as JSONSchema;
   }
 
   /**
@@ -208,9 +220,14 @@ export abstract class BaseTool<T extends CommonParameters = CommonParameters, R 
   protected createErrorResult(
     error: string | Error | ValidationError[],
     params?: T,
-    context?: any
+    context?: unknown
   ): R {
-    return ValidationResultHelper.createErrorResult(this as ToolInterface, error, params, context);
+    return ValidationResultHelper.createErrorResult(
+      this as ToolInterface,
+      error,
+      params,
+      toResultMetadata(context)
+    );
   }
 
   /**
@@ -225,11 +242,16 @@ export abstract class BaseTool<T extends CommonParameters = CommonParameters, R 
    * @returns Standardized success result
    */
   protected createSuccessResult(
-    data: any,
+    data: unknown,
     params?: T,
-    additionalData?: any
+    additionalData?: unknown
   ): R {
-    return ValidationResultHelper.createSuccessResult(this as ToolInterface, data, params, additionalData);
+    return ValidationResultHelper.createSuccessResult(
+      this as ToolInterface,
+      data,
+      params,
+      toResultMetadata(additionalData)
+    );
   }
 
   /**

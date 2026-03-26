@@ -24,22 +24,22 @@ export interface AgentRegistrationServiceInterface {
   /**
    * Initializes all configured agents
    */
-  initializeAllAgents(): Promise<Map<string, any>>;
+  initializeAllAgents(): Promise<Map<string, IAgent>>;
 
   /**
    * Gets registered agent by name
    */
-  getAgent(name: string): any | null;
+  getAgent(name: string): IAgent | null;
 
   /**
    * Gets all registered agents
    */
-  getAllAgents(): Map<string, any>;
+  getAllAgents(): Map<string, IAgent>;
 
   /**
    * Registers agents with server
    */
-  registerAgentsWithServer(registerFunction: (agent: any) => void): void;
+  registerAgentsWithServer(registerFunction: (agent: IAgent) => void): void;
 
   /**
    * Gets agent registration status
@@ -49,7 +49,7 @@ export interface AgentRegistrationServiceInterface {
   /**
    * Gets the AppManager instance (available after PHASE 3 initialization)
    */
-  getAppManager(): any | null;
+  getAppManager(): AppManager | null;
 }
 
 export interface AgentRegistrationStatus {
@@ -75,7 +75,7 @@ export class AgentRegistrationService implements AgentRegistrationServiceInterfa
   private initializationService: AgentInitializationService;
   private validationService: AgentValidationService;
   private isInitialized: boolean = false;
-  private initializationPromise: Promise<Map<string, any>> | null = null;
+  private initializationPromise: Promise<Map<string, IAgent>> | null = null;
   private appManagerInstance: AppManager | null = null;
 
   constructor(
@@ -112,7 +112,7 @@ export class AgentRegistrationService implements AgentRegistrationServiceInterfa
    * Initializes all configured agents.
    * Supports lazy initialization - can be called multiple times safely.
    */
-  async initializeAllAgents(): Promise<Map<string, any>> {
+  async initializeAllAgents(): Promise<Map<string, IAgent>> {
     // Return cached result if already initialized
     if (this.isInitialized) {
       return this.getAllAgents();
@@ -131,7 +131,7 @@ export class AgentRegistrationService implements AgentRegistrationServiceInterfa
   /**
    * Internal method that performs the actual agent initialization
    */
-  private async doInitializeAllAgents(): Promise<Map<string, any>> {
+  private async doInitializeAllAgents(): Promise<Map<string, IAgent>> {
     const startTime = Date.now();
     this.registrationStatus.registrationTime = new Date();
     this.initializationErrors = {};
@@ -262,7 +262,7 @@ export class AgentRegistrationService implements AgentRegistrationServiceInterfa
    * Gets registered agent by name.
    * Triggers lazy initialization if agents haven't been initialized yet.
    */
-  getAgent(name: string): any | null {
+  getAgent(name: string): IAgent | null {
     // Trigger lazy initialization if not yet initialized
     if (!this.isInitialized && !this.initializationPromise) {
       // Start initialization in background - caller may need to retry
@@ -273,7 +273,7 @@ export class AgentRegistrationService implements AgentRegistrationServiceInterfa
 
     try {
       return this.agentManager.getAgent(name);
-    } catch (error) {
+    } catch {
       return null;
     }
   }
@@ -282,7 +282,7 @@ export class AgentRegistrationService implements AgentRegistrationServiceInterfa
    * Gets all registered agents.
    * Triggers lazy initialization if agents haven't been initialized yet.
    */
-  getAllAgents(): Map<string, any> {
+  getAllAgents(): Map<string, IAgent> {
     // Trigger lazy initialization if not yet initialized
     if (!this.isInitialized && !this.initializationPromise) {
       // Start initialization in background - caller may need to retry
@@ -299,7 +299,7 @@ export class AgentRegistrationService implements AgentRegistrationServiceInterfa
    * Async version of getAgent that waits for initialization to complete.
    * Use this when you need guaranteed agent availability.
    */
-  async getAgentAsync(name: string): Promise<any | null> {
+  async getAgentAsync(name: string): Promise<IAgent | null> {
     // Ensure agents are initialized
     if (!this.isInitialized) {
       await this.initializeAllAgents();
@@ -307,7 +307,7 @@ export class AgentRegistrationService implements AgentRegistrationServiceInterfa
 
     try {
       return this.agentManager.getAgent(name);
-    } catch (error) {
+    } catch {
       return null;
     }
   }
@@ -316,7 +316,7 @@ export class AgentRegistrationService implements AgentRegistrationServiceInterfa
    * Async version of getAllAgents that waits for initialization to complete.
    * Use this when you need guaranteed agent availability.
    */
-  async getAllAgentsAsync(): Promise<Map<string, any>> {
+  async getAllAgentsAsync(): Promise<Map<string, IAgent>> {
     // Ensure agents are initialized
     if (!this.isInitialized) {
       await this.initializeAllAgents();
@@ -336,7 +336,7 @@ export class AgentRegistrationService implements AgentRegistrationServiceInterfa
   /**
    * Registers agents with server
    */
-  registerAgentsWithServer(registerFunction: (agent: any) => void): void {
+  registerAgentsWithServer(registerFunction: (agent: IAgent) => void): void {
     try {
       const agents = this.agentManager.getAgents();
 

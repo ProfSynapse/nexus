@@ -1,6 +1,16 @@
 import type { CommonResult } from '../types';
 import { enhanceSchemaDocumentation } from './validationUtils';
 
+interface SchemaObject {
+  type?: string;
+  description?: string;
+  properties?: Record<string, SchemaObject>;
+  items?: SchemaObject;
+  enum?: string[];
+  oneOf?: SchemaObject[];
+  required?: string[];
+}
+
 /**
  * Utility functions for handling JSON schemas in a DRY way
  */
@@ -9,7 +19,7 @@ import { enhanceSchemaDocumentation } from './validationUtils';
  * Get schema for workspace context parameters
  * @returns JSON schema for workspace context
  */
-export function getWorkspaceContextSchema(): any {
+export function getWorkspaceContextSchema(): Record<string, SchemaObject> {
   return enhanceSchemaDocumentation({
     workspaceContext: {
       oneOf: [
@@ -51,7 +61,7 @@ export function getWorkspaceContextSchema(): any {
  *
  * @returns JSON schema for context
  */
-export function getContextSchema(): any {
+export function getContextSchema(): Record<string, SchemaObject> {
   return enhanceSchemaDocumentation({
     context: {
       type: 'object',
@@ -83,7 +93,7 @@ export function getContextSchema(): any {
   });
 }
 
-export function getCommonParameterSchema(): any {
+export function getCommonParameterSchema(): Record<string, SchemaObject> {
   return {
     ...getWorkspaceContextSchema(),
     ...getContextSchema()
@@ -94,7 +104,7 @@ export function getCommonParameterSchema(): any {
  * Get schema for common result
  * @returns JSON schema for common result
  */
-export function getCommonResultSchema(): any {
+export function getCommonResultSchema(): SchemaObject {
   return enhanceSchemaDocumentation({
     type: 'object',
     properties: {
@@ -156,17 +166,18 @@ export function getCommonResultSchema(): any {
  * @param customSchema The mode-specific schema
  * @returns Merged schema with common parameters
  */
-export function mergeWithCommonSchema(customSchema: any): any {
+export function mergeWithCommonSchema(customSchema: SchemaObject): SchemaObject {
   const commonSchema = getCommonParameterSchema();
+  const customProperties = customSchema.properties ?? {};
   
   // Merge properties without duplication
   const mergedProperties = {
-    ...customSchema.properties,
+    ...customProperties,
     ...commonSchema
   };
   
   // Merge required arrays without duplicates
-  const customRequired = customSchema.required || [];
+  const customRequired = customSchema.required ?? [];
   const commonRequired = ['sessionId', 'context'];
   const mergedRequired = Array.from(new Set([...customRequired, ...commonRequired]));
   
@@ -190,14 +201,14 @@ export function mergeWithCommonSchema(customSchema: any): any {
  */
 export function createResult<T extends CommonResult>(
   success: boolean,
-  data?: any,
+  data?: unknown,
   error?: string,
   workspaceContext?: CommonResult['workspaceContext'],
   sessionId?: string,
   context?: CommonResult['context'] | string,
   additionalProps?: Record<string, unknown>
 ): T {
-  const result: any = {
+  const result: CommonResult & Record<string, unknown> = {
     success,
     ...(data !== undefined && { data }),
     ...(error !== undefined && { error }),

@@ -7,6 +7,93 @@ import { normalizePath, Plugin } from 'obsidian';
 import { VaultOperations } from '../../core/VaultOperations';
 import { IndividualConversation, IndividualWorkspace, ConversationIndex, WorkspaceIndex } from '../../types/storage/StorageTypes';
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function hasNumber(value: Record<string, unknown>, key: string): boolean {
+  return typeof value[key] === 'number';
+}
+
+function hasString(value: Record<string, unknown>, key: string): boolean {
+  return typeof value[key] === 'string';
+}
+
+function isIndividualConversation(value: unknown): value is IndividualConversation {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return hasString(value, 'id')
+    && hasString(value, 'title')
+    && hasNumber(value, 'created')
+    && hasNumber(value, 'updated')
+    && hasString(value, 'vault_name')
+    && hasNumber(value, 'message_count')
+    && Array.isArray(value.messages);
+}
+
+function isIndividualWorkspace(value: unknown): value is IndividualWorkspace {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return hasString(value, 'id')
+    && hasString(value, 'name')
+    && hasString(value, 'rootFolder')
+    && hasNumber(value, 'created')
+    && hasNumber(value, 'lastAccessed')
+    && isRecord(value.sessions);
+}
+
+function isConversationIndex(value: unknown): value is ConversationIndex {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return isRecord(value.conversations)
+    && isRecord(value.byTitle)
+    && isRecord(value.byContent)
+    && isRecord(value.byVault)
+    && Array.isArray(value.byDateRange)
+    && hasNumber(value, 'lastUpdated');
+}
+
+function isWorkspaceIndex(value: unknown): value is WorkspaceIndex {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return isRecord(value.workspaces)
+    && isRecord(value.byName)
+    && isRecord(value.byDescription)
+    && isRecord(value.byFolder)
+    && isRecord(value.sessionsByWorkspace)
+    && hasNumber(value, 'lastUpdated');
+}
+
+function parseJsonFile<T>(content: string, validator: (value: unknown) => value is T): T | null {
+  try {
+    const parsed: unknown = JSON.parse(content);
+    return validator(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function parseChromaItems(content: string): unknown[] {
+  try {
+    const parsed: unknown = JSON.parse(content);
+    if (!isRecord(parsed) || !Array.isArray(parsed.items)) {
+      return [];
+    }
+
+    return parsed.items;
+  } catch {
+    return [];
+  }
+}
+
 export class FileSystemService {
   private plugin: Plugin;
   private conversationsPath: string;
@@ -52,12 +139,7 @@ export class FileSystemService {
     
     if (!content) return null;
     
-    try {
-      const data = JSON.parse(content);
-      return data;
-    } catch (error) {
-      return null;
-    }
+    return parseJsonFile(content, isIndividualConversation);
   }
 
   /**
@@ -81,7 +163,7 @@ export class FileSystemService {
           return filename.replace('.json', '');
         });
       return conversationIds;
-    } catch (error) {
+    } catch {
       return [];
     }
   }
@@ -104,12 +186,7 @@ export class FileSystemService {
     
     if (!content) return null;
 
-    try {
-      const data = JSON.parse(content);
-      return data;
-    } catch (error) {
-      return null;
-    }
+    return parseJsonFile(content, isIndividualWorkspace);
   }
 
   /**
@@ -137,7 +214,7 @@ export class FileSystemService {
         })
         .filter(id => !!id && id !== 'undefined' && id !== 'null');
       return workspaceIds;
-    } catch (error) {
+    } catch {
       return [];
     }
   }
@@ -151,12 +228,7 @@ export class FileSystemService {
     
     if (!content) return null;
 
-    try {
-      const data = JSON.parse(content);
-      return data;
-    } catch (error) {
-      return null;
-    }
+    return parseJsonFile(content, isConversationIndex);
   }
 
   /**
@@ -177,12 +249,7 @@ export class FileSystemService {
     
     if (!content) return null;
 
-    try {
-      const data = JSON.parse(content);
-      return data;
-    } catch (error) {
-      return null;
-    }
+    return parseJsonFile(content, isWorkspaceIndex);
   }
 
   /**
@@ -211,19 +278,13 @@ export class FileSystemService {
   /**
    * Read legacy ChromaDB collection for migration
    */
-  async readChromaCollection(collectionName: string): Promise<any[]> {
+  async readChromaCollection(collectionName: string): Promise<unknown[]> {
     const chromaPath = normalizePath(`${this.plugin.manifest.dir}/data/chroma-db/collections/${collectionName}/items.json`);
     const content = await this.vaultOperations.readFile(chromaPath);
     
     if (!content) return [];
 
-    try {
-      const data = JSON.parse(content);
-      const items = data.items || [];
-      return items;
-    } catch (error) {
-      return [];
-    }
+    return parseChromaItems(content);
   }
 
   /**

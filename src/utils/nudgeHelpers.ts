@@ -5,6 +5,21 @@
 
 import { Recommendation } from './recommendationUtils';
 
+interface SearchResultLike {
+  category?: string;
+  metadata?: {
+    type?: string;
+  };
+  filePath?: string;
+  path?: string;
+  file?: string;
+}
+
+interface OperationLike {
+  operation?: string;
+  type?: string;
+}
+
 /**
  * Helper functions for analyzing tool results and creating nudges
  */
@@ -70,7 +85,7 @@ export class NudgeHelpers {
   /**
    * Check session for multiple file creations to suggest state saving
    */
-  static checkMultipleFilesInSession(sessionContext: any): Recommendation | null {
+  static checkMultipleFilesInSession(_sessionContext: unknown): Recommendation | null {
     // This would need session tracking - for now return null and implement later with full session context
     // In the future, this could check session memory for previous file creation operations
     return null;
@@ -178,7 +193,7 @@ export class NudgeHelpers {
   /**
    * Check memory search results for previous states
    */
-  static checkPreviousStates(results: any[]): Recommendation | null {
+  static checkPreviousStates(results: SearchResultLike[]): Recommendation | null {
     // Look for states in memory search results
     const hasStates = results.some(result => 
       result.category === 'states' || 
@@ -197,7 +212,7 @@ export class NudgeHelpers {
   /**
    * Check memory search results for workspace sessions
    */
-  static checkWorkspaceSessions(results: any[]): Recommendation | null {
+  static checkWorkspaceSessions(results: SearchResultLike[]): Recommendation | null {
     // Look for sessions in memory search results
     const hasSessions = results.some(result => 
       result.category === 'sessions' || 
@@ -216,11 +231,11 @@ export class NudgeHelpers {
   /**
    * Helper to extract file paths from search results
    */
-  static extractFilePathsFromResults(results: any[]): string[] {
+  static extractFilePathsFromResults(results: SearchResultLike[]): string[] {
     if (!Array.isArray(results)) return [];
     
     return results
-      .map(result => result.filePath || result.path || result.file)
+        .map(result => result.filePath || result.path || result.file)
       .filter(path => typeof path === 'string')
       .filter(Boolean);
   }
@@ -228,7 +243,7 @@ export class NudgeHelpers {
   /**
    * Helper to count file operations in batch results
    */
-  static countOperationsByType(operations: any[]): { read: number; create: number; total: number } {
+  static countOperationsByType(operations: OperationLike[]): { read: number; create: number; total: number } {
     if (!Array.isArray(operations)) return { read: 0, create: 0, total: 0 };
 
     const read = operations.filter(op => op.operation === 'read' || op.type === 'read').length;

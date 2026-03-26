@@ -24,14 +24,50 @@ import {
 import { logger } from '../../utils/logger';
 import { CustomPromptStorageService } from "../../agents/promptManager/services/CustomPromptStorageService";
 import { LLMProviderManager } from '../llm/providers/ProviderManager';
-import { DEFAULT_LLM_PROVIDER_SETTINGS, MCPSettings, MemorySettings } from '../../types';
-import { Settings } from '../../settings';
+import { DEFAULT_LLM_PROVIDER_SETTINGS, MemorySettings } from '../../types';
 import { MemoryService } from '../../agents/memoryManager/services/MemoryService';
 import { WorkspaceService } from '../WorkspaceService';
-import { VaultOperations } from '../../core/VaultOperations';
 import { UsageTracker } from '../UsageTracker';
 import type { IStorageAdapter } from '../../database/interfaces/IStorageAdapter';
+import type { IProjectRepository } from '../../database/repositories/interfaces/IProjectRepository';
+import type { ITaskRepository } from '../../database/repositories/interfaces/ITaskRepository';
 import type { MigratableDatabase } from '../../database/schema/SchemaMigrator';
+
+interface PluginServices {
+  memoryService?: MemoryService;
+  workspaceService?: WorkspaceService;
+}
+
+interface PluginWithServices extends NexusPlugin {
+  services: PluginServices;
+}
+
+interface StorageAdapterWithCache extends IStorageAdapter {
+  cache?: unknown;
+}
+
+interface TaskStorageAdapter {
+  projects: IProjectRepository;
+  tasks: ITaskRepository;
+}
+
+function getTaskStorageAdapter(value: unknown): TaskStorageAdapter | null {
+  if (typeof value !== 'object' || value === null) {
+    return null;
+  }
+
+  const candidate = value as Record<string, unknown>;
+  const { projects, tasks } = candidate;
+
+  if (typeof projects !== 'object' || projects === null || typeof tasks !== 'object' || tasks === null) {
+    return null;
+  }
+
+  return {
+    projects: projects as IProjectRepository,
+    tasks: tasks as ITaskRepository
+  };
+}
 
 /**
  * Type guard to check if plugin has Settings
@@ -43,7 +79,7 @@ function hasSettings(plugin: Plugin | NexusPlugin): plugin is NexusPlugin {
 /**
  * Type guard to check if plugin has services
  */
-function hasServices(plugin: Plugin | NexusPlugin): plugin is NexusPlugin & { services: Record<string, unknown> } {
+function hasServices(plugin: Plugin | NexusPlugin): plugin is PluginWithServices {
   return 'services' in plugin && typeof plugin.services === 'object' && plugin.services !== null;
 }
 
@@ -132,7 +168,8 @@ export class AgentInitializationService {
             if (vaultOperations) {
               llmProviderManager.setVaultOperations(vaultOperations);
             }
-          } catch (error) {
+          } catch {
+            // Vault operations may not be ready during startup; continue without them.
           }
         }
 
@@ -153,7 +190,7 @@ export class AgentInitializationService {
     if (this.serviceManager) {
       try {
         // Use getServiceIfReady to avoid blocking on SQLite WASM loading during startup
-        const storageAdapter = this.serviceManager.getServiceIfReady<IStorageAdapter>('hybridStorageAdapter');
+        const storageAdapter = this.serviceManager.getServiceIfReady<StorageAdapterWithCache>('hybridStorageAdapter');
         // Only use SQLite if adapter exists AND is fully ready (WASM loaded)
         if (storageAdapter && storageAdapter.isReady() && 'cache' in storageAdapter) {
           const cache = (storageAdapter as unknown as { cache: unknown }).cache;
@@ -163,7 +200,7 @@ export class AgentInitializationService {
             db = cache as MigratableDatabase;
           }
         }
-      } catch (error) {
+      } catch {
         // Database not available, will use data.json fallback
       }
     }
@@ -229,8 +266,8 @@ export class AgentInitializationService {
       workspaceService = this.serviceManager.getServiceIfReady<WorkspaceService>('workspaceService');
     } else if (hasServices(this.plugin)) {
       // Fallback to plugin's direct service access
-      memoryService = this.plugin.services.memoryService as MemoryService | undefined || null;
-      workspaceService = this.plugin.services.workspaceService as WorkspaceService | undefined || null;
+      memoryService = this.plugin.services.memoryService || null;
+      workspaceService = this.plugin.services.workspaceService || null;
     }
 
     const searchManagerAgent = new SearchManagerAgent(
@@ -242,7 +279,7 @@ export class AgentInitializationService {
 
     // Update SearchManager with memory settings
     if (memorySettings) {
-      searchManagerAgent.updateSettings(memorySettings);
+      await searchManagerAgent.updateSettings(memorySettings);
     }
 
     this.agentManager.registerAgent(searchManagerAgent);
@@ -262,8 +299,8 @@ export class AgentInitializationService {
       workspaceService = this.serviceManager.getServiceIfReady<WorkspaceService>('workspaceService');
     } else if (hasServices(this.plugin)) {
       // Fallback to plugin's direct service access
-      memoryService = this.plugin.services.memoryService as MemoryService | undefined || null;
-      workspaceService = this.plugin.services.workspaceService as WorkspaceService | undefined || null;
+      memoryService = this.plugin.services.memoryService || null;
+      workspaceService = this.plugin.services.workspaceService || null;
     }
 
     if (!memoryService || !workspaceService) {
@@ -297,17 +334,18 @@ export class AgentInitializationService {
     const { DAGService } = await import('../../agents/taskManager/services/DAGService');
 
     // Get adapter — may need to await if not yet ready
-    let adapter = this.serviceManager.getServiceIfReady<any>('hybridStorageAdapter');
+    let adapter: unknown = this.serviceManager.getServiceIfReady('hybridStorageAdapter');
     if (!adapter) {
       adapter = await this.serviceManager.getService('hybridStorageAdapter');
     }
-    if (!adapter) {
+    const taskStorageAdapter = getTaskStorageAdapter(adapter);
+    if (!taskStorageAdapter) {
       logger.systemWarn('HybridStorageAdapter not available — TaskManager skipped');
       return;
     }
 
     const dagService = new DAGService();
-    const taskService = new TaskService(adapter.projects, adapter.tasks, dagService);
+    const taskService = new TaskService(taskStorageAdapter.projects, taskStorageAdapter.tasks, dagService);
     const taskManagerAgent = new TaskManagerAgent(this.app, this.plugin, taskService);
 
     this.agentManager.registerAgent(taskManagerAgent);
@@ -377,7 +415,7 @@ export class AgentInitializationService {
       if (this.serviceManager) {
         workspaceService = this.serviceManager.getServiceIfReady<WorkspaceService>('workspaceService');
       } else if (hasServices(this.plugin)) {
-        workspaceService = this.plugin.services.workspaceService as WorkspaceService | undefined || null;
+        workspaceService = this.plugin.services.workspaceService || null;
       }
 
       // CRITICAL: Check if SQLite is ready BEFORE calling any service methods
@@ -390,7 +428,7 @@ export class AgentInitializationService {
         }));
       }
       // If SQLite not ready, return empty - schema data will be populated on subsequent calls
-    } catch (error) {
+    } catch {
       logger.systemWarn('Failed to fetch workspaces for schema data');
     }
 
@@ -406,7 +444,7 @@ export class AgentInitializationService {
         }));
       }
       // If SQLite not ready, return empty - schema data will be populated on subsequent calls
-    } catch (error) {
+    } catch {
       logger.systemWarn('Failed to fetch custom agents for schema data');
     }
 
@@ -418,7 +456,7 @@ export class AgentInitializationService {
         .map(child => child.name)
         .filter(name => !name.startsWith('.')) // Exclude hidden folders
         .sort();
-    } catch (error) {
+    } catch {
       logger.systemWarn('Failed to fetch vault root for schema data');
     }
 
