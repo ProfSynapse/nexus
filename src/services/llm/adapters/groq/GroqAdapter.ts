@@ -16,13 +16,41 @@ import {
   TokenUsage
 } from '../types';
 import { GROQ_MODELS, GROQ_DEFAULT_MODEL } from './GroqModels';
-import { MCPToolExecution } from '../shared/ToolExecutionUtils';
+
+interface GroqChatMessage {
+  role: 'system' | 'user';
+  content: string;
+}
+
+interface GroqToolCallDelta {
+  id?: string;
+  type?: 'function';
+  function?: {
+    name?: string;
+    arguments?: string;
+  };
+  reasoning_details?: unknown[];
+  thought_signature?: string;
+}
+
+interface GroqChoice {
+  delta?: {
+    content?: string | null;
+    tool_calls?: GroqToolCallDelta[];
+  };
+  message?: {
+    content?: string | null;
+    tool_calls?: GroqToolCallDelta[];
+  };
+  finish_reason?: string | null;
+}
 
 /**
  * Extended Groq chunk type with x_groq metadata
  * x_groq contains timing information (queue_time, prompt_time, completion_time)
  */
 interface GroqChatCompletionChunk {
+  choices?: GroqChoice[];
   usage?: {
     prompt_tokens?: number;
     completion_tokens?: number;
@@ -42,6 +70,43 @@ interface GroqChatCompletionChunk {
   };
 }
 
+type GroqUsageMetrics = NonNullable<GroqChatCompletionChunk['usage']>;
+type GroqExtendedTokenUsage = TokenUsage & {
+  queueTime?: number;
+  promptTime?: number;
+  completionTime?: number;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function isUnknownArray(value: unknown): value is unknown[] {
+  return Array.isArray(value);
+}
+
+function isGroqChoice(value: unknown): value is GroqChoice {
+  return isRecord(value);
+}
+
+function getFirstChoice(value: unknown): GroqChoice | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const choices = value['choices'];
+  if (!isUnknownArray(choices) || choices.length === 0) {
+    return undefined;
+  }
+
+  const [firstChoice] = choices;
+  return isGroqChoice(firstChoice) ? firstChoice : undefined;
+}
+
+function getErrorToThrow(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error));
+}
+
 export class GroqAdapter extends BaseAdapter {
   readonly name = 'groq';
   readonly baseUrl = 'https://api.groq.com/openai/v1';
@@ -53,8 +118,6 @@ export class GroqAdapter extends BaseAdapter {
 
   async generateUncached(prompt: string, options?: GenerateOptions): Promise<LLMResponse> {
     try {
-      const model = options?.model || this.currentModel;
-      
       // Tool execution requires streaming - use generateStreamAsync instead
       if (options?.tools && options.tools.length > 0) {
         throw new Error('Tool execution requires streaming. Use generateStreamAsync() instead.');
@@ -63,7 +126,7 @@ export class GroqAdapter extends BaseAdapter {
       // Use basic chat completions
       return await this.generateWithChatCompletions(prompt, options);
     } catch (error) {
-      throw this.handleError(error, 'generation');
+      this.handleError(error, 'generation');
     }
   }
 
@@ -83,7 +146,7 @@ export class GroqAdapter extends BaseAdapter {
         },
         body: JSON.stringify({
           model: options?.model || this.currentModel,
-          messages: this.buildMessages(prompt, options?.systemPrompt),
+          messages: this.buildGroqMessages(prompt, options?.systemPrompt),
           temperature: options?.temperature,
           max_completion_tokens: options?.maxTokens,
           top_p: options?.topP,
@@ -97,17 +160,10 @@ export class GroqAdapter extends BaseAdapter {
 
       yield* this.processNodeStream(nodeStream, {
         debugLabel: 'Groq',
-        extractContent: (chunk) => chunk.choices[0]?.delta?.content || null,
-        extractToolCalls: (chunk) => chunk.choices[0]?.delta?.tool_calls || null,
-        extractFinishReason: (chunk) => chunk.choices[0]?.finish_reason || null,
-        extractUsage: (chunk) => {
-          // Groq has both standard usage and x_groq metadata
-          const groqChunk = chunk as GroqChatCompletionChunk;
-          if (groqChunk.usage || groqChunk.x_groq) {
-            return groqChunk.usage || groqChunk.x_groq?.usage || null;
-          }
-          return null;
-        },
+        extractContent: (chunk) => getFirstChoice(chunk)?.delta?.content ?? null,
+        extractToolCalls: (chunk) => getFirstChoice(chunk)?.delta?.tool_calls ?? null,
+        extractFinishReason: (chunk) => getFirstChoice(chunk)?.finish_reason ?? null,
+        extractUsage: (chunk) => this.extractStreamUsage(chunk),
         accumulateToolCalls: true,
         toolCallThrottling: {
           initialYield: true,
@@ -116,7 +172,7 @@ export class GroqAdapter extends BaseAdapter {
       });
     } catch (error) {
       console.error('[GroqAdapter] Streaming error:', error);
-      throw error;
+      throw getErrorToThrow(error);
     }
   }
 
@@ -180,7 +236,7 @@ export class GroqAdapter extends BaseAdapter {
 
     interface ChatCompletionParams {
       model: string;
-      messages: any[];
+      messages: GroqChatMessage[];
       temperature?: number;
       max_completion_tokens?: number;
       top_p?: number;
@@ -191,7 +247,7 @@ export class GroqAdapter extends BaseAdapter {
 
     const chatParams: ChatCompletionParams = {
       model,
-      messages: this.buildMessages(prompt, options?.systemPrompt),
+      messages: this.buildGroqMessages(prompt, options?.systemPrompt),
       temperature: options?.temperature,
       max_completion_tokens: options?.maxTokens,
       top_p: options?.topP,
@@ -204,7 +260,7 @@ export class GroqAdapter extends BaseAdapter {
       chatParams.tools = this.convertTools(options.tools);
     }
 
-    const response = await this.request<any>({
+    const response = await this.request<GroqChatCompletionChunk>({
       url: `${this.baseUrl}/chat/completions`,
       operation: 'generation',
       method: 'POST',
@@ -217,19 +273,20 @@ export class GroqAdapter extends BaseAdapter {
     });
     this.assertOk(response, `Groq generation failed: HTTP ${response.status}`);
     const responseJson = response.json;
-    const choice = responseJson.choices[0];
+    const choice = getFirstChoice(responseJson);
     
     if (!choice) {
       throw new Error('No response from Groq');
     }
     
-    let text = choice.message?.content || '';
+    let text = choice.message?.content ?? '';
     const usage = this.extractUsage(responseJson);
-    const finishReason = this.mapFinishReason(choice.finish_reason);
+    const finishReason = this.mapFinishReason(choice.finish_reason ?? null);
+    const toolCalls = this.extractToolCalls(choice.message);
 
     // If tools were provided and we got tool calls, we need to handle them
     // For now, just return the response as-is since tool execution is complex
-    if (options?.tools && choice.message?.tool_calls && choice.message.tool_calls.length > 0) {
+    if (options?.tools && toolCalls.length > 0) {
       text = text || '[AI requested tool calls but tool execution not available]';
     }
 
@@ -243,6 +300,13 @@ export class GroqAdapter extends BaseAdapter {
   }
 
   // Private methods
+  private buildGroqMessages(prompt: string, systemPrompt?: string): GroqChatMessage[] {
+    return this.buildMessages(prompt, systemPrompt).map(message => ({
+      role: message.role,
+      content: message.content
+    }));
+  }
+
   private convertTools(tools: Tool[]): Array<{ type: 'function'; function: { name: string; description: string; parameters: Record<string, unknown> } }> {
     return tools.map(tool => {
       if (tool.type === 'function' && tool.function) {
@@ -260,8 +324,21 @@ export class GroqAdapter extends BaseAdapter {
     });
   }
 
-  private extractToolCalls(message: any): any[] {
-    return message?.tool_calls || [];
+  private extractToolCalls(message: unknown): GroqToolCallDelta[] {
+    if (!isRecord(message) || !Array.isArray(message.tool_calls)) {
+      return [];
+    }
+
+    return message.tool_calls.filter((toolCall): toolCall is GroqToolCallDelta => isRecord(toolCall));
+  }
+
+  private extractStreamUsage(chunk: unknown): GroqUsageMetrics | NonNullable<NonNullable<GroqChatCompletionChunk['x_groq']>['usage']> | null {
+    if (!isRecord(chunk)) {
+      return null;
+    }
+
+    const groqChunk = chunk as GroqChatCompletionChunk;
+    return groqChunk.usage ?? groqChunk.x_groq?.usage ?? null;
   }
 
   private mapFinishReason(reason: string | null): 'stop' | 'length' | 'tool_calls' | 'content_filter' {
@@ -276,11 +353,14 @@ export class GroqAdapter extends BaseAdapter {
     return reasonMap[reason] || 'stop';
   }
 
-  protected extractUsage(response: GroqChatCompletionChunk | any): TokenUsage | undefined {
-    const usage = response?.usage;
+  protected extractUsage(response: unknown): TokenUsage | undefined {
+    if (!isRecord(response)) {
+      return undefined;
+    }
+
+    const usage = (response as GroqChatCompletionChunk).usage;
     if (usage) {
-      const groqResponse = response as GroqChatCompletionChunk;
-      return {
+      const extractedUsage: GroqExtendedTokenUsage = {
         promptTokens: usage.prompt_tokens || 0,
         completionTokens: usage.completion_tokens || 0,
         totalTokens: usage.total_tokens || 0,
@@ -289,8 +369,11 @@ export class GroqAdapter extends BaseAdapter {
         ...(usage.queue_time !== undefined && { queueTime: usage.queue_time }),
         ...(usage.prompt_time !== undefined && { promptTime: usage.prompt_time }),
         ...(usage.completion_time !== undefined && { completionTime: usage.completion_time })
-      } as TokenUsage & { queueTime?: number; promptTime?: number; completionTime?: number };
+      };
+
+      return extractedUsage;
     }
+
     return undefined;
   }
 
