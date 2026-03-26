@@ -12,6 +12,9 @@
  */
 
 export { SyncCoordinator } from './SyncCoordinator';
+export { TaskEventApplier } from './TaskEventApplier';
+export { resolveWorkspaceId } from './resolveWorkspaceId';
+export type { ResolveResult } from './resolveWorkspaceId';
 export type {
   SyncResult,
   SyncOptions,

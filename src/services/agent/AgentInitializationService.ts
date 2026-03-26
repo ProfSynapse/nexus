@@ -307,7 +307,23 @@ export class AgentInitializationService {
     }
 
     const dagService = new DAGService();
-    const taskService = new TaskService(adapter.projects, adapter.tasks, dagService);
+
+    // Workspace resolver: checks by ID first, then by name, returns resolved UUID or null
+    const { resolveWorkspaceId } = await import('../../database/sync/resolveWorkspaceId');
+    const sqliteCache = adapter.cache;
+    const validateWorkspace = async (workspaceId: string): Promise<string | null> => {
+      const result = await resolveWorkspaceId(workspaceId, sqliteCache);
+      if (result.warning) {
+        console.error(`[TaskService] ${result.warning}`);
+      }
+      // Ambiguous name — fail with nudge listing all matching UUIDs
+      if (result.matchingIds && result.matchingIds.length > 1) {
+        throw new Error(result.warning);
+      }
+      return result.id;
+    };
+
+    const taskService = new TaskService(adapter.projects, adapter.tasks, dagService, validateWorkspace);
     const taskManagerAgent = new TaskManagerAgent(this.app, this.plugin, taskService);
 
     this.agentManager.registerAgent(taskManagerAgent);

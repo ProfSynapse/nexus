@@ -29,18 +29,49 @@ import type { ITaskRepository, TaskMetadata, NoteLink } from '../../../database/
 import { PaginatedResult } from '../../../types/pagination/PaginationTypes';
 import { TaskBoardEvents } from '../../../services/task/TaskBoardEvents';
 
+/**
+ * Function type for resolving a workspace identifier (UUID or name) to a UUID.
+ * Returns the resolved UUID if found, or null if no match.
+ */
+export type WorkspaceResolver = (workspaceId: string) => Promise<string | null>;
+
 export class TaskService {
+  private resolveWorkspace: WorkspaceResolver | null;
+
   constructor(
     private projectRepo: IProjectRepository,
     private taskRepo: ITaskRepository,
-    private dagService: IDAGService
-  ) {}
+    private dagService: IDAGService,
+    resolveWorkspace?: WorkspaceResolver
+  ) {
+    this.resolveWorkspace = resolveWorkspace ?? null;
+  }
+
+  /**
+   * Resolve a raw workspace identifier (UUID or name) to a workspace UUID.
+   * If no resolver is configured, returns the raw ID unchanged.
+   * Throws if the workspace cannot be found.
+   */
+  private async resolveWorkspaceId(rawId: string): Promise<string> {
+    if (!this.resolveWorkspace) return rawId;
+
+    const resolvedId = await this.resolveWorkspace(rawId);
+    if (!resolvedId) {
+      throw new Error(
+        `Workspace "${rawId}" not found. Call loadWorkspace or createWorkspace first to get a valid workspaceId.`
+      );
+    }
+    return resolvedId;
+  }
 
   // ────────────────────────────────────────────────────────────────
   // Projects
   // ────────────────────────────────────────────────────────────────
 
   async createProject(workspaceId: string, data: CreateProjectData): Promise<string> {
+    // Resolve workspace name → UUID transparently
+    workspaceId = await this.resolveWorkspaceId(workspaceId);
+
     // Check for duplicate name in workspace
     const existing = await this.projectRepo.getByName(workspaceId, data.name);
     if (existing) {
@@ -66,6 +97,7 @@ export class TaskService {
   }
 
   async listProjects(workspaceId: string, options?: ProjectListOptions): Promise<PaginatedResult<ProjectMetadata>> {
+    workspaceId = await this.resolveWorkspaceId(workspaceId);
     return this.projectRepo.getByWorkspace(workspaceId, {
       page: options?.page,
       pageSize: options?.pageSize,
@@ -221,6 +253,7 @@ export class TaskService {
   }
 
   async listWorkspaceTasks(workspaceId: string, options?: TaskListOptions): Promise<PaginatedResult<TaskMetadata>> {
+    workspaceId = await this.resolveWorkspaceId(workspaceId);
     return this.taskRepo.getByWorkspace(workspaceId, {
       page: options?.page,
       pageSize: options?.pageSize,
@@ -460,6 +493,7 @@ export class TaskService {
   // ────────────────────────────────────────────────────────────────
 
   async getWorkspaceSummary(workspaceId: string): Promise<WorkspaceTaskSummary> {
+    workspaceId = await this.resolveWorkspaceId(workspaceId);
     const projects = await this.projectRepo.getByWorkspace(workspaceId, { pageSize: 1000 });
     const allTasks = await this.taskRepo.getByWorkspace(workspaceId, { pageSize: 10000 });
 
