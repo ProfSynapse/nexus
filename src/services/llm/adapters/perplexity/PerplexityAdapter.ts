@@ -13,11 +13,11 @@ import {
   ProviderCapabilities,
   ModelPricing,
   TokenUsage,
-  SearchResult
+  SearchResult,
+  Tool
 } from '../types';
 import { PERPLEXITY_MODELS, PERPLEXITY_DEFAULT_MODEL } from './PerplexityModels';
 import { WebSearchUtils } from '../../utils/WebSearchUtils';
-import { MCPToolExecution } from '../shared/ToolExecutionUtils';
 
 export interface PerplexityOptions extends GenerateOptions {
   webSearch?: boolean;
@@ -26,9 +26,189 @@ export interface PerplexityOptions extends GenerateOptions {
   searchContextSize?: 'low' | 'medium' | 'high';
 }
 
+interface PerplexityUsage {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+}
+
+interface PerplexityToolFunction {
+  name?: string;
+  description?: string;
+  parameters?: Record<string, unknown>;
+  input_schema?: Record<string, unknown>;
+  arguments?: string;
+}
+
+interface PerplexityToolCall {
+  id?: string;
+  type?: string;
+  function?: PerplexityToolFunction;
+}
+
+interface PerplexitySearchResult {
+  title?: string;
+  name?: string;
+  url?: string;
+  date?: string;
+  timestamp?: string;
+}
+
+interface PerplexityRequestBody {
+  model: string;
+  messages: Array<{ role: 'system' | 'user'; content: string }>;
+  temperature?: number;
+  max_tokens?: number;
+  top_p?: number;
+  presence_penalty?: number;
+  frequency_penalty?: number;
+  tools?: ConvertedPerplexityTool[];
+  stream?: boolean;
+  extra: {
+    search_mode: 'web' | 'academic';
+    reasoning_effort: 'low' | 'medium' | 'high';
+    web_search_options: {
+      search_context_size: 'low' | 'medium' | 'high';
+    };
+  };
+}
+
+interface PerplexityStreamDelta {
+  content?: string;
+  tool_calls?: PerplexityToolCall[];
+}
+
+interface PerplexityStreamChoice {
+  delta?: PerplexityStreamDelta;
+  finish_reason?: string | null;
+}
+
+interface PerplexityFlatFunctionTool {
+  type: 'function';
+  name?: string;
+  description?: string;
+  parameters?: Record<string, unknown>;
+  input_schema?: Record<string, unknown>;
+}
+
+type PerplexityCompatibleTool = Tool | PerplexityFlatFunctionTool;
+
+interface ConvertedPerplexityTool {
+  type: string;
+  function?: {
+    name?: string;
+    description?: string;
+    parameters?: Record<string, unknown>;
+  };
+  [key: string]: unknown;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isPerplexityUsage(value: unknown): value is PerplexityUsage {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return (
+    (value.prompt_tokens === undefined || typeof value.prompt_tokens === 'number') &&
+    (value.completion_tokens === undefined || typeof value.completion_tokens === 'number') &&
+    (value.total_tokens === undefined || typeof value.total_tokens === 'number')
+  );
+}
+
+function isPerplexityToolFunction(value: unknown): value is PerplexityToolFunction {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return (
+    (value.name === undefined || typeof value.name === 'string') &&
+    (value.description === undefined || typeof value.description === 'string') &&
+    (value.parameters === undefined || isRecord(value.parameters)) &&
+    (value.input_schema === undefined || isRecord(value.input_schema)) &&
+    (value.arguments === undefined || typeof value.arguments === 'string')
+  );
+}
+
+function isPerplexityToolCall(value: unknown): value is PerplexityToolCall {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return (
+    (value.id === undefined || typeof value.id === 'string') &&
+    (value.type === undefined || typeof value.type === 'string') &&
+    (value.function === undefined || isPerplexityToolFunction(value.function))
+  );
+}
+
+function isPerplexitySearchResult(value: unknown): value is PerplexitySearchResult {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return (
+    (value.title === undefined || typeof value.title === 'string') &&
+    (value.name === undefined || typeof value.name === 'string') &&
+    (value.url === undefined || typeof value.url === 'string') &&
+    (value.date === undefined || typeof value.date === 'string') &&
+    (value.timestamp === undefined || typeof value.timestamp === 'string')
+  );
+}
+
+function isPerplexityStreamDelta(value: unknown): value is PerplexityStreamDelta {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return (
+    (value.content === undefined || typeof value.content === 'string') &&
+    (value.tool_calls === undefined || (Array.isArray(value.tool_calls) && value.tool_calls.every(isPerplexityToolCall)))
+  );
+}
+
+function isPerplexityStreamChoice(value: unknown): value is PerplexityStreamChoice {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return (
+    (value.delta === undefined || isPerplexityStreamDelta(value.delta)) &&
+    (value.finish_reason === undefined || value.finish_reason === null || typeof value.finish_reason === 'string')
+  );
+}
+
+function getFirstStreamChoice(parsed: unknown): PerplexityStreamChoice | undefined {
+  if (!isRecord(parsed) || !Array.isArray(parsed.choices)) {
+    return undefined;
+  }
+
+  const firstChoice: unknown = parsed.choices.length > 0 ? parsed.choices[0] : undefined;
+  return isPerplexityStreamChoice(firstChoice) ? firstChoice : undefined;
+}
+
+function getStreamUsage(parsed: unknown): PerplexityUsage | undefined {
+  if (!isRecord(parsed)) {
+    return undefined;
+  }
+
+  return isPerplexityUsage(parsed.usage) ? parsed.usage : undefined;
+}
+
+function getResponseUsage(response: unknown): PerplexityUsage | undefined {
+  if (!isRecord(response)) {
+    return undefined;
+  }
+
+  return isPerplexityUsage(response.usage) ? response.usage : undefined;
+}
+
 interface PerplexityChatMessage {
   content?: string;
-  toolCalls?: any[];
+  toolCalls?: PerplexityToolCall[];
 }
 
 interface PerplexityChatChoice {
@@ -38,12 +218,8 @@ interface PerplexityChatChoice {
 
 interface PerplexityChatResponse {
   choices: PerplexityChatChoice[];
-  usage?: {
-    prompt_tokens?: number;
-    completion_tokens?: number;
-    total_tokens?: number;
-  };
-  search_results?: any[];
+  usage?: PerplexityUsage;
+  search_results?: PerplexitySearchResult[];
 }
 
 export class PerplexityAdapter extends BaseAdapter {
@@ -62,15 +238,13 @@ export class PerplexityAdapter extends BaseAdapter {
         WebSearchUtils.validateWebSearchRequest('perplexity', options.webSearch);
       }
 
-      const model = options?.model || this.currentModel;
-
       // Perplexity does not support native function calling
       // If tools are requested, proceed without tools
 
       // Use standard chat completions (Perplexity's strength is web search, not tool calling)
       return await this.generateWithChatCompletions(prompt, options);
     } catch (error) {
-      throw this.handleError(error, 'generation');
+      this.handleError(error, 'generation');
     }
   }
 
@@ -80,7 +254,7 @@ export class PerplexityAdapter extends BaseAdapter {
    */
   async* generateStreamAsync(prompt: string, options?: PerplexityOptions): AsyncGenerator<StreamChunk, void, unknown> {
     try {
-      const requestBody = {
+      const requestBody: PerplexityRequestBody = {
         model: options?.model || this.currentModel,
         messages: this.buildMessages(prompt, options?.systemPrompt),
         temperature: options?.temperature,
@@ -113,10 +287,10 @@ export class PerplexityAdapter extends BaseAdapter {
 
       yield* this.processNodeStream(nodeStream, {
         debugLabel: 'Perplexity',
-        extractContent: (parsed) => parsed.choices?.[0]?.delta?.content || null,
-        extractToolCalls: (parsed) => parsed.choices?.[0]?.delta?.tool_calls || null,
-        extractFinishReason: (parsed) => parsed.choices?.[0]?.finish_reason || null,
-        extractUsage: (parsed) => parsed.usage || null,
+        extractContent: (parsed) => getFirstStreamChoice(parsed)?.delta?.content ?? null,
+        extractToolCalls: (parsed) => getFirstStreamChoice(parsed)?.delta?.tool_calls ?? null,
+        extractFinishReason: (parsed) => getFirstStreamChoice(parsed)?.finish_reason ?? null,
+        extractUsage: (parsed) => getStreamUsage(parsed) ?? null,
         accumulateToolCalls: true,
         toolCallThrottling: {
           initialYield: true,
@@ -125,7 +299,7 @@ export class PerplexityAdapter extends BaseAdapter {
       });
     } catch (error) {
       console.error('[PerplexityAdapter] Streaming error:', error);
-      throw error;
+      throw error instanceof Error ? error : new Error(String(error));
     }
   }
 
@@ -185,8 +359,8 @@ export class PerplexityAdapter extends BaseAdapter {
    */
   private async generateWithChatCompletions(prompt: string, options?: PerplexityOptions): Promise<LLMResponse> {
     const model = options?.model || this.currentModel;
-    
-    const requestBody: any = {
+
+    const requestBody: PerplexityRequestBody = {
       model,
       messages: this.buildMessages(prompt, options?.systemPrompt),
       temperature: options?.temperature,
@@ -265,26 +439,31 @@ export class PerplexityAdapter extends BaseAdapter {
   /**
    * Extract search results from Perplexity response
    */
-  private extractPerplexitySources(searchResults: any[]): SearchResult[] {
+  private extractPerplexitySources(searchResults: unknown): SearchResult[] {
     try {
       if (!Array.isArray(searchResults)) {
         return [];
       }
 
       return searchResults
+        .filter(isPerplexitySearchResult)
         .map(result => WebSearchUtils.validateSearchResult({
           title: result.title || result.name || 'Unknown Source',
           url: result.url,
           date: result.date || result.timestamp
         }))
         .filter((result: SearchResult | null): result is SearchResult => result !== null);
-    } catch (error) {
+    } catch {
       return [];
     }
   }
 
-  private extractToolCalls(message: any): any[] {
-    return message?.toolCalls || [];
+  private extractToolCalls(message: unknown): PerplexityToolCall[] {
+    if (!isRecord(message) || !Array.isArray(message.toolCalls)) {
+      return [];
+    }
+
+    return message.toolCalls.filter(isPerplexityToolCall);
   }
 
   private mapFinishReason(reason: string | null): 'stop' | 'length' | 'tool_calls' | 'content_filter' {
@@ -299,8 +478,8 @@ export class PerplexityAdapter extends BaseAdapter {
     return reasonMap[reason] || 'stop';
   }
 
-  protected extractUsage(response: any): TokenUsage | undefined {
-    const usage = response?.usage;
+  protected extractUsage(response: unknown): TokenUsage | undefined {
+    const usage = getResponseUsage(response);
     if (usage) {
       return {
         promptTokens: usage.prompt_tokens || 0,
@@ -332,11 +511,11 @@ export class PerplexityAdapter extends BaseAdapter {
     };
   }
 
-  private convertTools(tools: any[]): any[] {
-    return tools.map(tool => {
+  private convertTools(tools: PerplexityCompatibleTool[]): ConvertedPerplexityTool[] {
+    return tools.map((tool): ConvertedPerplexityTool => {
       if (tool.type === 'function') {
         // Handle both nested (Chat Completions) and flat (Responses API) formats
-        const toolDef = tool.function || tool;
+        const toolDef = this.getToolDefinition(tool);
         return {
           type: 'function',
           function: {
@@ -348,5 +527,13 @@ export class PerplexityAdapter extends BaseAdapter {
       }
       return tool;
     });
+  }
+
+  private getToolDefinition(tool: PerplexityCompatibleTool): PerplexityToolFunction {
+    if ('function' in tool && tool.function) {
+      return tool.function;
+    }
+
+    return tool;
   }
 }

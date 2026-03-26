@@ -14,6 +14,52 @@ import {
   ProviderHttpResponse
 } from '../adapters/shared/ProviderHttpClient';
 
+type JsonObject = Record<string, unknown>;
+
+function isJsonObject(value: unknown): value is JsonObject {
+  return typeof value === 'object' && value !== null;
+}
+
+function getResponsePayload(response: ProviderHttpResponse<unknown>): unknown {
+  return response.json ?? {};
+}
+
+function getProviderPayloadErrorMessage(payload: unknown): string | undefined {
+  if (!isJsonObject(payload)) {
+    return undefined;
+  }
+
+  const error = payload.error;
+  if (!isJsonObject(error)) {
+    return undefined;
+  }
+
+  const message = error.message;
+  return typeof message === 'string' ? message : undefined;
+}
+
+function getValidationErrorMessage(response: ProviderHttpResponse<unknown>): string {
+  return getProviderPayloadErrorMessage(getResponsePayload(response)) ?? `HTTP ${response.status}`;
+}
+
+function getOpenRouterValidationErrorMessage(response: ProviderHttpResponse<unknown>): string {
+  const payload = getResponsePayload(response);
+  return getProviderPayloadErrorMessage(payload) ?? JSON.stringify(payload) || `HTTP ${response.status}`;
+}
+
+function getCaughtErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message.length > 0) {
+    return error.message;
+  }
+
+  if (!isJsonObject(error)) {
+    return fallback;
+  }
+
+  const message = error.message;
+  return typeof message === 'string' && message.length > 0 ? message : fallback;
+}
+
 // Browser-compatible hash function (djb2 algorithm)
 // Not cryptographically secure but sufficient for cache key validation
 function generateHash(input: string): string {
@@ -73,7 +119,7 @@ export class LLMValidationService {
       headers?: Record<string, string>;
       body?: string;
     }
-  ): Promise<ProviderHttpResponse<any>> {
+  ): Promise<ProviderHttpResponse<unknown>> {
     return ProviderHttpClient.request({
       provider,
       operation,
@@ -173,16 +219,15 @@ export class LLMValidationService {
       if (response.status >= 200 && response.status < 300) {
         return { success: true };
       } else {
-        const errorData = response.json || {};
         return {
           success: false,
-          error: errorData.error?.message || `HTTP ${response.status}`
+          error: getValidationErrorMessage(response)
         };
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       return {
         success: false,
-        error: error.message || 'OpenAI API key validation failed'
+        error: getCaughtErrorMessage(error, 'OpenAI API key validation failed')
       };
     }
   }
@@ -208,16 +253,15 @@ export class LLMValidationService {
       if (response.status >= 200 && response.status < 300) {
         return { success: true };
       } else {
-        const errorData = response.json || {};
         return { 
           success: false, 
-          error: errorData.error?.message || `HTTP ${response.status}` 
+          error: getValidationErrorMessage(response) 
         };
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       return { 
         success: false, 
-        error: error.message || 'Anthropic API key validation failed' 
+        error: getCaughtErrorMessage(error, 'Anthropic API key validation failed') 
       };
     }
   }
@@ -240,16 +284,15 @@ export class LLMValidationService {
       if (response.status >= 200 && response.status < 300) {
         return { success: true };
       } else {
-        const errorData = response.json || {};
         return { 
           success: false, 
-          error: errorData.error?.message || `HTTP ${response.status}` 
+          error: getValidationErrorMessage(response) 
         };
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       return { 
         success: false, 
-        error: error.message || 'Google API key validation failed' 
+        error: getCaughtErrorMessage(error, 'Google API key validation failed') 
       };
     }
   }
@@ -273,16 +316,15 @@ export class LLMValidationService {
       if (response.status >= 200 && response.status < 300) {
         return { success: true };
       } else {
-        const errorData = response.json || {};
         return { 
           success: false, 
-          error: errorData.error?.message || `HTTP ${response.status}` 
+          error: getValidationErrorMessage(response) 
         };
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       return { 
         success: false, 
-        error: error.message || 'Mistral API key validation failed' 
+        error: getCaughtErrorMessage(error, 'Mistral API key validation failed') 
       };
     }
   }
@@ -306,16 +348,15 @@ export class LLMValidationService {
       if (response.status >= 200 && response.status < 300) {
         return { success: true };
       } else {
-        const errorData = response.json || {};
         return { 
           success: false, 
-          error: errorData.error?.message || `HTTP ${response.status}` 
+          error: getValidationErrorMessage(response) 
         };
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       return { 
         success: false, 
-        error: error.message || 'Groq API key validation failed' 
+        error: getCaughtErrorMessage(error, 'Groq API key validation failed') 
       };
     }
   }
@@ -343,19 +384,18 @@ export class LLMValidationService {
       if (response.status >= 200 && response.status < 300) {
         return { success: true };
       } else {
-        const errorData = response.json || {};
-        const errorMessage = errorData.error?.message || JSON.stringify(errorData) || `HTTP ${response.status}`;
+        const errorMessage = getOpenRouterValidationErrorMessage(response);
         console.error('OpenRouter validation error:', errorMessage);
         return { 
           success: false, 
           error: errorMessage
         };
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('OpenRouter validation exception:', error);
       return { 
         success: false, 
-        error: error.message || 'OpenRouter API key validation failed' 
+        error: getCaughtErrorMessage(error, 'OpenRouter API key validation failed') 
       };
     }
   }
@@ -379,16 +419,15 @@ export class LLMValidationService {
       if (response.status >= 200 && response.status < 300) {
         return { success: true };
       } else {
-        const errorData = response.json || {};
         return { 
           success: false, 
-          error: errorData.error?.message || `HTTP ${response.status}` 
+          error: getValidationErrorMessage(response) 
         };
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       return { 
         success: false, 
-        error: error.message || 'Perplexity API key validation failed' 
+        error: getCaughtErrorMessage(error, 'Perplexity API key validation failed') 
       };
     }
   }
@@ -412,16 +451,15 @@ export class LLMValidationService {
       if (response.status >= 200 && response.status < 300) {
         return { success: true };
       } else {
-        const errorData = response.json || {};
         return { 
           success: false, 
-          error: errorData.error?.message || `HTTP ${response.status}` 
+          error: getValidationErrorMessage(response) 
         };
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       return { 
         success: false, 
-        error: error.message || 'Requesty API key validation failed' 
+        error: getCaughtErrorMessage(error, 'Requesty API key validation failed') 
       };
     }
   }

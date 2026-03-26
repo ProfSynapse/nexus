@@ -34,11 +34,36 @@
 
 import { StreamChunk } from '../adapters/types';
 
-export interface StreamChunkOptions {
-  extractContent: (chunk: any) => string | null;
-  extractToolCalls: (chunk: any) => any[] | null;
-  extractFinishReason: (chunk: any) => string | null;
-  extractUsage?: (chunk: any) => any;
+interface StreamToolCallAccumulator {
+  id: string;
+  type: string;
+  function: {
+    name: string;
+    arguments: string;
+  };
+  reasoning_details?: unknown[];
+  thought_signature?: string;
+  [key: string]: unknown;
+}
+
+interface StreamToolCallDelta {
+  index?: number;
+  id?: string;
+  type?: string;
+  function?: {
+    name?: string;
+    arguments?: string;
+  };
+  reasoning_details?: unknown[];
+  thought_signature?: string;
+  [key: string]: unknown;
+}
+
+export interface StreamChunkOptions<TChunk = unknown, TUsage = unknown> {
+  extractContent: (chunk: TChunk) => string | null;
+  extractToolCalls: (chunk: TChunk) => StreamToolCallDelta[] | null;
+  extractFinishReason: (chunk: TChunk) => string | null;
+  extractUsage?: (chunk: TChunk) => TUsage;
 }
 
 export class StreamChunkProcessor {
@@ -46,11 +71,11 @@ export class StreamChunkProcessor {
    * Process individual stream chunk with tool call accumulation
    * Handles delta.content and delta.tool_calls from any OpenAI-compatible provider
    */
-  static* processStreamChunk(
-    chunk: any,
-    options: StreamChunkOptions,
-    toolCallsAccumulator: Map<number, any>,
-    usageRef: any
+  static* processStreamChunk<TChunk = unknown, TUsage = unknown>(
+    chunk: TChunk,
+    options: StreamChunkOptions<TChunk, TUsage>,
+    toolCallsAccumulator: Map<number, StreamToolCallAccumulator>,
+    _usageRef: TUsage
   ): Generator<StreamChunk, void, unknown> {
 
     // Extract text content
@@ -63,11 +88,11 @@ export class StreamChunkProcessor {
     const toolCalls = options.extractToolCalls(chunk);
     if (toolCalls) {
       for (const toolCall of toolCalls) {
-        const index = toolCall.index || 0;
+        const index = typeof toolCall.index === 'number' ? toolCall.index : 0;
 
         if (!toolCallsAccumulator.has(index)) {
           // Initialize new tool call - preserve reasoning_details and thought_signature
-          const accumulated: any = {
+          const accumulated: StreamToolCallAccumulator = {
             id: toolCall.id || '',
             type: toolCall.type || 'function',
             function: {
@@ -88,6 +113,10 @@ export class StreamChunkProcessor {
         } else {
           // Accumulate existing tool call arguments
           const existing = toolCallsAccumulator.get(index);
+          if (!existing) {
+            continue;
+          }
+
           if (toolCall.id) existing.id = toolCall.id;
           if (toolCall.function?.name) existing.function.name = toolCall.function.name;
           if (toolCall.function?.arguments) {
@@ -106,14 +135,14 @@ export class StreamChunkProcessor {
       // Yield progress for UI (every 50 characters of arguments)
       const currentToolCalls = Array.from(toolCallsAccumulator.values());
       const totalArgLength = currentToolCalls.reduce((sum, tc) =>
-        sum + (tc.function?.arguments?.length || 0), 0
+        sum + tc.function.arguments.length, 0
       );
 
       if (totalArgLength > 0 && totalArgLength % 50 === 0) {
         yield {
           content: '',
           complete: false,
-          toolCalls: currentToolCalls
+          toolCalls: currentToolCalls as StreamChunk['toolCalls']
         };
       }
     }

@@ -61,6 +61,50 @@ import type { HybridStorageAdapter } from '../../database/adapters/HybridStorage
 import { BranchHeader, BranchViewContext } from './components/BranchHeader';
 import { isSubagentMetadata } from '../../types/branch/BranchTypes';
 
+type ModelChangedValue = Parameters<ModelAgentManagerEvents['onModelChanged']>[0];
+type PromptChangedValue = Parameters<ModelAgentManagerEvents['onPromptChanged']>[0];
+type ToolEventType = Parameters<ToolEventCoordinator['handleToolEvent']>[1];
+type ToolEventData = Parameters<ToolEventCoordinator['handleToolEvent']>[2];
+type ModelAgentConversationService = Exclude<ConstructorParameters<typeof ModelAgentManager>[2], undefined>;
+type SubagentInitializeDependencies = Parameters<SubagentController['initialize']>[0];
+type SubagentLLMService = SubagentInitializeDependencies['llmService'];
+type ConversationUpdatePayload = {
+  title: string;
+  messages: ConversationMessage[];
+  metadata: ConversationData['metadata'];
+};
+type ConversationUpdateService = {
+  updateConversation: (conversationId: string, updates: ConversationUpdatePayload) => Promise<void>;
+};
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function isDirectToolExecutor(value: unknown): value is DirectToolExecutor {
+  return isObject(value) && typeof value.executeToolCalls === 'function';
+}
+
+function isAgentManager(value: unknown): value is AgentManager {
+  return isObject(value) && typeof value.getAgent === 'function';
+}
+
+function isWorkspaceService(value: unknown): value is WorkspaceService {
+  return isObject(value);
+}
+
+function isModelAgentConversationService(value: unknown): value is ModelAgentConversationService {
+  return isObject(value);
+}
+
+function isSubagentLLMService(value: unknown): value is SubagentLLMService {
+  return isObject(value);
+}
+
+function isConversationUpdateService(value: unknown): value is ConversationUpdateService {
+  return isObject(value) && typeof value.updateConversation === 'function';
+}
+
 export const CHAT_VIEW_TYPE = CHAT_VIEW_TYPES.current;
 
 export class ChatView extends ItemView {
@@ -258,7 +302,7 @@ export class ChatView extends ItemView {
       this.chatService.setToolEventCallback((messageId, event, data) => {
         this.handleToolEvent(messageId, event, data);
       });
-    } catch (error) {
+    } catch {
       // ChatService initialization failed - continue with UI setup anyway
     }
 
@@ -345,15 +389,21 @@ export class ChatView extends ItemView {
     // Branch management
     const branchEvents: BranchManagerEvents = {
       onBranchCreated: (messageId: string, branchId: string) => this.handleBranchCreated(messageId, branchId),
-      onBranchSwitched: (messageId: string, branchId: string) => this.handleBranchSwitched(messageId, branchId),
+      onBranchSwitched: (messageId: string, branchId: string) => {
+        void this.handleBranchSwitched(messageId, branchId);
+      },
       onError: (message) => this.uiStateController.showError(message)
     };
     this.branchManager = new BranchManager(this.chatService.getConversationRepository(), branchEvents);
 
     // Conversation management
     const conversationEvents: ConversationManagerEvents = {
-      onConversationSelected: (conversation) => this.handleConversationSelected(conversation),
-      onConversationsChanged: () => this.handleConversationsChanged(),
+      onConversationSelected: (conversation) => {
+        void this.handleConversationSelected(conversation);
+      },
+      onConversationsChanged: () => {
+        void this.handleConversationsChanged();
+      },
       onError: (message) => this.uiStateController.showError(message)
     };
     this.conversationManager = new ConversationManager(this.app, this.chatService, this.branchManager, conversationEvents);
@@ -382,12 +432,15 @@ export class ChatView extends ItemView {
     const modelAgentEvents: ModelAgentManagerEvents = {
       onModelChanged: (model) => this.handleModelChanged(model),
       onPromptChanged: (prompt) => this.handlePromptChanged(prompt),
-      onSystemPromptChanged: () => this.updateContextProgress()
+      onSystemPromptChanged: () => {
+        void this.updateContextProgress();
+      }
     };
+    const conversationService: unknown = this.chatService.getConversationService();
     this.modelAgentManager = new ModelAgentManager(
       this.app,
       modelAgentEvents,
-      this.chatService.getConversationService()
+      isModelAgentConversationService(conversationService) ? conversationService : undefined
     );
 
     // Context tracking
@@ -402,10 +455,12 @@ export class ChatView extends ItemView {
    */
   private initializeControllers(): void {
     const uiStateEvents: UIStateControllerEvents = {
-      onSidebarToggled: (visible) => { /* Sidebar toggled */ }
+      onSidebarToggled: (_visible) => { /* Sidebar toggled */ }
     };
     this.uiStateController = new UIStateController(this.containerEl, uiStateEvents, this);
-    this.uiStateController.setOpenSettingsCallback(() => this.openChatSettingsModal());
+    this.uiStateController.setOpenSettingsCallback(() => {
+      void this.openChatSettingsModal();
+    });
     this.streamingController = new StreamingController(this.containerEl, this.app, this);
     this.nexusLoadingController = new NexusLoadingController(this.containerEl);
   }
@@ -416,9 +471,15 @@ export class ChatView extends ItemView {
   private initializeComponents(): void {
     this.conversationList = new ConversationList(
       this.layoutElements.conversationListContainer,
-      (conversation) => this.conversationManager.selectConversation(conversation),
-      (conversationId) => this.conversationManager.deleteConversation(conversationId),
-      (conversationId, newTitle) => this.conversationManager.renameConversation(conversationId, newTitle),
+      (conversation) => {
+        void this.conversationManager.selectConversation(conversation);
+      },
+      (conversationId) => {
+        void this.conversationManager.deleteConversation(conversationId);
+      },
+      (conversationId, newTitle) => {
+        void this.conversationManager.renameConversation(conversationId, newTitle);
+      },
       this // Pass Component for registerDomEvent
     );
 
@@ -426,11 +487,19 @@ export class ChatView extends ItemView {
       this.layoutElements.messageContainer,
       this.app,
       this.branchManager,
-      (messageId) => this.handleRetryMessage(messageId),
-      (messageId, newContent) => this.handleEditMessage(messageId, newContent),
+      (messageId) => {
+        void this.handleRetryMessage(messageId);
+      },
+      (messageId, newContent) => {
+        void this.handleEditMessage(messageId, newContent);
+      },
       (messageId, event, data) => this.handleToolEvent(messageId, event, data),
-      (messageId: string, alternativeIndex: number) => this.handleBranchSwitchedByIndex(messageId, alternativeIndex),
-      (branchId: string) => this.navigateToBranch(branchId)
+      (messageId: string, alternativeIndex: number) => {
+        void this.handleBranchSwitchedByIndex(messageId, alternativeIndex);
+      },
+      (branchId: string) => {
+        void this.navigateToBranch(branchId);
+      }
     );
 
     // Initialize tool event coordinator after messageDisplay is created
@@ -438,7 +507,9 @@ export class ChatView extends ItemView {
 
     this.chatInput = new ChatInput(
       this.layoutElements.inputContainer,
-      (message, enhancement, metadata) => this.handleSendMessage(message, enhancement, metadata),
+      (message, enhancement, metadata) => {
+        void this.handleSendMessage(message, enhancement, metadata);
+      },
       () => this.messageManager.getIsLoading(),
       this.app,
       () => this.handleStopGeneration(),
@@ -465,13 +536,17 @@ export class ChatView extends ItemView {
   private wireEventHandlers(): void {
     ChatEventBinder.bindNewChatButton(
       this.layoutElements.newChatButton,
-      () => this.conversationManager.createNewConversation(),
+      () => {
+        void this.conversationManager.createNewConversation();
+      },
       this
     );
 
     ChatEventBinder.bindSettingsButton(
       this.layoutElements.settingsButton,
-      () => this.openChatSettingsModal(),
+      () => {
+        void this.openChatSettingsModal();
+      },
       this
     );
 
@@ -488,11 +563,13 @@ export class ChatView extends ItemView {
       if (!plugin) return;
 
       // Get required services
-      const directToolExecutor = await plugin.getService<DirectToolExecutor>('directToolExecutor');
-      if (!directToolExecutor) return;
+      const directToolExecutorService: unknown = await plugin.getService<unknown>('directToolExecutor');
+      if (!isDirectToolExecutor(directToolExecutorService)) return;
+      const directToolExecutor = directToolExecutorService;
 
-      const agentManager = await plugin.getService<AgentManager>('agentManager');
-      if (!agentManager) return;
+      const agentManagerService: unknown = await plugin.getService<unknown>('agentManager');
+      if (!isAgentManager(agentManagerService)) return;
+      const agentManager = agentManagerService;
 
       const promptManagerAgent = agentManager.getAgent('promptManager') as PromptManagerAgent | null;
       if (!promptManagerAgent) return;
@@ -503,21 +580,17 @@ export class ChatView extends ItemView {
         return;
       }
 
-      const llmService = this.chatService.getLLMService();
-      if (!llmService) return;
+      const llmServiceValue: unknown = this.chatService.getLLMService();
+      if (!isSubagentLLMService(llmServiceValue)) return;
+      const llmService: SubagentLLMService = llmServiceValue;
 
       // Create SubagentController
       this.subagentController = new SubagentController(this.app, this, {
         onStreamingUpdate: () => { /* handled internally */ },
         onToolCallsDetected: () => { /* handled internally */ },
         onStatusChanged: () => { /* status menu auto-updates */ },
-        onConversationNeedsRefresh: async (conversationId: string) => {
-          // Reload conversation if viewing the one that was updated
-          const current = this.conversationManager?.getCurrentConversation();
-          if (current?.id === conversationId) {
-            // Re-select current conversation to trigger full reload
-            await this.conversationManager?.selectConversation(current);
-          }
+        onConversationNeedsRefresh: (conversationId: string) => {
+          void this.handleConversationRefresh(conversationId);
         },
       });
 
@@ -551,8 +624,12 @@ export class ChatView extends ItemView {
 
       // Wire up navigation callbacks for agent status modal
       this.subagentController.setNavigationCallbacks({
-        onNavigateToBranch: (branchId) => this.navigateToBranch(branchId),
-        onContinueAgent: (branchId) => this.continueSubagent(branchId),
+        onNavigateToBranch: (branchId) => {
+          void this.navigateToBranch(branchId);
+        },
+        onContinueAgent: (branchId) => {
+          void this.continueSubagent(branchId);
+        },
       });
 
       // Initialize ContextPreservationService for LLM-driven saveState at 90% context
@@ -580,11 +657,12 @@ export class ChatView extends ItemView {
       return;
     }
 
-    const workspaceService = await plugin.getService<WorkspaceService>('workspaceService');
-    if (!workspaceService) {
+    const workspaceServiceValue: unknown = await plugin.getService<unknown>('workspaceService');
+    if (!isWorkspaceService(workspaceServiceValue)) {
       console.error('[ChatView] WorkspaceService not available');
       return;
     }
+    const workspaceService = workspaceServiceValue;
 
     const currentConversation = this.conversationManager.getCurrentConversation();
 
@@ -690,9 +768,18 @@ export class ChatView extends ItemView {
   private wireWelcomeButton(): void {
     ChatEventBinder.bindWelcomeButton(
       this.containerEl,
-      () => this.conversationManager.createNewConversation(),
+      () => {
+        void this.conversationManager.createNewConversation();
+      },
       this
     );
+  }
+
+  private async handleConversationRefresh(conversationId: string): Promise<void> {
+    const current = this.conversationManager?.getCurrentConversation();
+    if (current?.id === conversationId) {
+      await this.conversationManager?.selectConversation(current);
+    }
   }
 
   // Event Handlers
@@ -701,7 +788,7 @@ export class ChatView extends ItemView {
     // Cancel any ongoing generation from the previous conversation
     // This prevents the loading state from blocking the new conversation
     if (this.messageManager.getIsLoading()) {
-      this.messageManager.cancelCurrentGeneration();
+      void this.messageManager.cancelCurrentGeneration();
       this.streamingController.cleanup();
     }
 
@@ -714,7 +801,7 @@ export class ChatView extends ItemView {
     this.messageDisplay.setConversation(conversation);
     this.updateChatTitle();
     this.uiStateController.setInputPlaceholder('Type your message...');
-    this.updateContextProgress();
+    void this.updateContextProgress();
 
     if (this.chatInput) {
       this.chatInput.setConversationState(true);
@@ -755,10 +842,6 @@ export class ChatView extends ItemView {
   }
 
   private handleStreamingUpdate(messageId: string, content: string, isComplete: boolean, isIncremental?: boolean): void {
-    const currentConversation = this.conversationManager?.getCurrentConversation();
-    const message = currentConversation?.messages.find((m) => m.id === messageId);
-    const isRetry = message && message.branches && message.branches.length > 0;
-
     if (isIncremental) {
       this.streamingController.updateStreamingChunk(messageId, content);
     } else if (isComplete) {
@@ -774,14 +857,14 @@ export class ChatView extends ItemView {
     if (!conversation) {
       // Null signals a forced UI refresh (e.g., subagent completion)
       this.updateChatTitle();
-      this.updateContextProgress();
+      void this.updateContextProgress();
       return;
     }
     this.conversationManager.updateCurrentConversation(conversation);
     this.messageDisplay.setConversation(conversation);
     this.updateChatTitle();
 
-    this.updateContextProgress();
+    void this.updateContextProgress();
   }
 
   private async handleSendMessage(
@@ -913,8 +996,8 @@ export class ChatView extends ItemView {
       this.modelAgentManager.resetTokenTracker();
 
       // Update conversation in storage with compacted messages and metadata.
-      const conversationService = this.chatService.getConversationService();
-      if (conversationService?.updateConversation) {
+      const conversationService: unknown = this.chatService.getConversationService();
+      if (isConversationUpdateService(conversationService)) {
         await conversationService.updateConversation(conversation.id, {
           title: conversation.title,
           messages: conversation.messages,
@@ -925,7 +1008,7 @@ export class ChatView extends ItemView {
       }
 
       // Update progress bar immediately to reflect new token count
-      this.updateContextProgress();
+  void this.updateContextProgress();
 
       // Show completion notice - brief auto-save style feedback
       const savedMsg = usedLLM
@@ -1036,11 +1119,11 @@ export class ChatView extends ItemView {
     }
   }
 
-  private handleModelChanged(model: any | null): void {
-    this.updateContextProgress();
+  private handleModelChanged(_model: ModelChangedValue): void {
+    void this.updateContextProgress();
   }
 
-  private handlePromptChanged(prompt: any | null): void {
+  private handlePromptChanged(_prompt: PromptChangedValue): void {
     // Prompt changed
   }
 
@@ -1069,7 +1152,7 @@ export class ChatView extends ItemView {
 
   // Tool event handlers delegated to coordinator
 
-  private handleToolEvent(messageId: string, event: 'detected' | 'updated' | 'started' | 'completed', data: any): void {
+  private handleToolEvent(messageId: string, event: ToolEventType, data: ToolEventData): void {
     this.toolEventCoordinator.handleToolEvent(messageId, event, data);
   }
 
@@ -1079,7 +1162,7 @@ export class ChatView extends ItemView {
 
   // Branch event handlers
 
-  private handleBranchCreated(messageId: string, branchId: string): void {
+  private handleBranchCreated(_messageId: string, _branchId: string): void {
     const currentConversation = this.conversationManager.getCurrentConversation();
     if (currentConversation) {
       this.messageDisplay.setConversation(currentConversation);
@@ -1215,9 +1298,13 @@ export class ChatView extends ItemView {
         this.branchHeader = new BranchHeader(
           this.layoutElements.branchHeaderContainer,
           {
-            onNavigateToParent: () => this.navigateToParent(),
+            onNavigateToParent: () => {
+              void this.navigateToParent();
+            },
             onCancel: (subagentId) => this.cancelSubagent(subagentId),
-            onContinue: (branchId) => this.continueSubagent(branchId),
+            onContinue: (branchId) => {
+              void this.continueSubagent(branchId);
+            },
           },
           this
         );
@@ -1293,7 +1380,7 @@ export class ChatView extends ItemView {
   /**
    * Continue a paused subagent (hit max_iterations)
    */
-  private async continueSubagent(branchId: string): Promise<void> {
+  private async continueSubagent(_branchId: string): Promise<void> {
     // Navigate back to parent first
     await this.navigateToParent();
 
@@ -1321,8 +1408,12 @@ export class ChatView extends ItemView {
     };
 
     this.subagentController.openStatusModal(contextProvider, {
-      onViewBranch: (branchId) => this.navigateToBranch(branchId),
-      onContinueAgent: (branchId) => this.continueSubagent(branchId),
+      onViewBranch: (branchId) => {
+        void this.navigateToBranch(branchId);
+      },
+      onContinueAgent: (branchId) => {
+        void this.continueSubagent(branchId);
+      },
     });
   }
 
