@@ -14,20 +14,41 @@ import {
   ListWorkspacesParameters, 
   ListWorkspacesResult
 } from '../../../../database/workspace-types';
-import { WorkspaceService } from '../../../../services/WorkspaceService';
-import { parseWorkspaceContext } from '../../../../utils/contextUtils';
+
+interface WorkspaceSummaryLike {
+  id: string;
+  name: string;
+  description?: string;
+  rootFolder: string;
+  created: number;
+  lastAccessed: number;
+  isActive?: boolean;
+  isArchived?: boolean;
+}
+
+interface WorkspaceServiceLike {
+  getWorkspaces(options?: {
+    sortBy?: ListWorkspacesParameters['sortBy'];
+    sortOrder?: NonNullable<ListWorkspacesParameters['order']>;
+    limit?: number;
+  }): Promise<WorkspaceSummaryLike[]>;
+}
+
+interface MemoryManagerAgentLike {
+  getWorkspaceServiceAsync(): Promise<WorkspaceServiceLike | null | undefined>;
+}
 
 /**
  * Mode to list available workspaces with filtering and sorting
  */
 export class ListWorkspacesTool extends BaseTool<ListWorkspacesParameters, ListWorkspacesResult> {
-  private agent: any;
+  private readonly agent: MemoryManagerAgentLike;
   
   /**
    * Create a new ListWorkspacesMode for the consolidated MemoryManager
    * @param agent The MemoryManagerAgent instance
    */
-  constructor(agent: any) {
+  constructor(agent: MemoryManagerAgentLike) {
     super(
       'listWorkspaces',
       'List Workspaces',
@@ -60,12 +81,12 @@ export class ListWorkspacesTool extends BaseTool<ListWorkspacesParameters, ListW
         sortOrder?: 'asc' | 'desc',
         limit?: number
       } = {
-        sortBy: params.sortBy as 'name' | 'created' | 'lastAccessed' | undefined,
-        sortOrder: params.order as 'asc' | 'desc' | undefined,
+        sortBy: params.sortBy,
+        sortOrder: params.order,
         limit: params.limit
       };
 
-      let workspaces;
+      let workspaces: WorkspaceSummaryLike[];
       try {
         workspaces = await workspaceService.getWorkspaces(queryParams);
       } catch (queryError) {
@@ -78,15 +99,15 @@ export class ListWorkspacesTool extends BaseTool<ListWorkspacesParameters, ListW
 
       // Filter out archived workspaces unless explicitly requested
       const includeArchived = params.includeArchived ?? false;
-      let filteredWorkspaces = workspaces;
+      let filteredWorkspaces: WorkspaceSummaryLike[] = workspaces;
       if (!includeArchived) {
-        filteredWorkspaces = workspaces.filter((ws: { isArchived?: boolean }) => !ws.isArchived);
+        filteredWorkspaces = workspaces.filter((workspace) => !workspace.isArchived);
       }
 
       // Lean format: just name and description
-      const leanWorkspaces = filteredWorkspaces.map((ws: { id: string; name: string; description?: string; rootFolder?: string; created?: number; lastAccessed?: number; isActive?: boolean }) => ({
-        name: ws.name,
-        description: ws.description || ''
+      const leanWorkspaces = filteredWorkspaces.map((workspace) => ({
+        name: workspace.name,
+        description: workspace.description || ''
       }));
 
       return {
@@ -94,10 +115,11 @@ export class ListWorkspacesTool extends BaseTool<ListWorkspacesParameters, ListW
         data: leanWorkspaces
       };
       
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
       return {
         success: false,
-        error: `Unexpected error: ${error.message || String(error)}`,
+        error: `Unexpected error: ${errorMessage}`,
         data: { workspaces: [] }
       };
     }

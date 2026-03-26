@@ -18,6 +18,7 @@
 import type { App } from 'obsidian';
 import { ProjectWorkspace, WorkspaceContext } from '../../../database/types/workspace/WorkspaceTypes';
 import { CustomPromptStorageService } from '../../promptManager/services/CustomPromptStorageService';
+import type { CustomPrompt } from '../../../types/mcp/CustomPromptTypes';
 
 /**
  * Prompt information returned from resolution operations
@@ -39,17 +40,25 @@ interface LegacyWorkspaceContext extends WorkspaceContext {
   }>;
 }
 
+interface PluginWithPromptSettings {
+  settings?: {
+    settings?: {
+      customPrompts?: {
+        prompts?: CustomPrompt[];
+      };
+    };
+  };
+}
+
 /**
  * Service for resolving workspace prompts (custom prompts associated with workspaces)
  * Implements Single Responsibility Principle - only handles prompt resolution
  */
 export class WorkspacePromptResolver {
-  private app: App;
-  private plugin: any;
+  private plugin: PluginWithPromptSettings;
   private customPromptStorage?: CustomPromptStorageService;
 
-  constructor(app: App, plugin: any, customPromptStorage?: CustomPromptStorageService) {
-    this.app = app;
+  constructor(_app: App, plugin: PluginWithPromptSettings, customPromptStorage?: CustomPromptStorageService) {
     this.plugin = plugin;
     this.customPromptStorage = customPromptStorage;
   }
@@ -110,7 +119,7 @@ export class WorkspacePromptResolver {
    */
   async fetchPromptByNameOrId(
     identifier: string,
-    app: App
+    _app: App
   ): Promise<WorkspacePromptInfo | null> {
     try {
       // Primary: CustomPromptStorageService (SQLite -> internal fallback to data.json)
@@ -126,14 +135,14 @@ export class WorkspacePromptResolver {
       }
 
       // Fallback: direct data.json read (when service unavailable)
-      const prompts = this.plugin?.settings?.settings?.customPrompts?.prompts || [];
+      const prompts = this.plugin.settings?.settings?.customPrompts?.prompts || [];
 
       // Try ID lookup first (more specific)
-      let fallbackPrompt = prompts.find((p: any) => p.id === identifier);
+      let fallbackPrompt = prompts.find(prompt => prompt.id === identifier);
 
       // Fall back to name lookup
       if (!fallbackPrompt) {
-        fallbackPrompt = prompts.find((p: any) => p.name === identifier);
+        fallbackPrompt = prompts.find(prompt => prompt.name === identifier);
       }
 
       if (!fallbackPrompt) {

@@ -22,6 +22,67 @@ export interface WorkflowRunServiceDeps {
   customPromptStorage?: CustomPromptStorageService | null;
 }
 
+interface ToolDescriptorLike {
+  slug?: string;
+  name?: string;
+}
+
+interface AgentDescriptorLike {
+  name: string;
+  description?: string;
+  getTools?(): ToolDescriptorLike[];
+}
+
+interface AgentRegistrationServiceLike {
+  getAllAgents(): Map<string, AgentDescriptorLike> | AgentDescriptorLike[];
+}
+
+interface PluginWithWorkflowServices extends Plugin {
+  serviceManager?: {
+    getServiceIfReady?(name: string): unknown;
+  };
+  connector?: {
+    agentRegistry?: {
+      getAllAgents?(): Map<string, AgentDescriptorLike>;
+    };
+  };
+}
+
+interface ChatViewLike {
+  sendMessageToConversation?: (
+    id: string,
+    message: string,
+    viewOptions?: {
+      provider?: string;
+      model?: string;
+      systemPrompt?: string;
+      workspaceId?: string;
+      sessionId?: string;
+    }
+  ) => Promise<void>;
+  openConversationById?: (id: string) => Promise<void>;
+}
+
+function isAgentRegistrationService(value: unknown): value is AgentRegistrationServiceLike {
+  return typeof value === 'object' && value !== null && 'getAllAgents' in value && typeof value.getAllAgents === 'function';
+}
+
+function toAgentMap(agents: Map<string, AgentDescriptorLike> | AgentDescriptorLike[]): Map<string, AgentDescriptorLike> {
+  if (agents instanceof Map) {
+    return agents;
+  }
+
+  return new Map(agents.map(agent => [agent.name, agent]));
+}
+
+function toToolAgentInfo(name: string, agent: AgentDescriptorLike): ToolAgentInfo {
+  return {
+    name,
+    description: agent.description || '',
+    tools: (agent.getTools?.() || []).map(tool => tool.slug || tool.name || 'unknown')
+  };
+}
+
 export class WorkflowRunService {
   private workspaceIntegration: WorkspaceIntegrationService;
   private systemPromptBuilder: SystemPromptBuilder;
@@ -165,20 +226,12 @@ export class WorkflowRunService {
   }
 
   private async getToolAgentInfo(): Promise<ToolAgentInfo[]> {
-    const plugin = this.deps.plugin as Plugin & {
-      serviceManager?: { getServiceIfReady?: (name: string) => any };
-      connector?: { agentRegistry?: { getAllAgents: () => Map<string, any> } };
-    };
+    const plugin = this.deps.plugin as PluginWithWorkflowServices;
 
     const agentService = plugin.serviceManager?.getServiceIfReady?.('agentRegistrationService');
-    if (agentService) {
-      const agents = agentService.getAllAgents();
-      const agentMap = agents instanceof Map ? agents : new Map(agents.map((agent: { name: string }) => [agent.name, agent]));
-      return Array.from(agentMap.entries()).map(([name, agent]: [string, any]) => ({
-        name,
-        description: agent.description || '',
-        tools: (agent.getTools?.() || []).map((tool: { slug?: string; name?: string }) => tool.slug || tool.name || 'unknown')
-      }));
+    if (isAgentRegistrationService(agentService)) {
+      const agentMap = toAgentMap(agentService.getAllAgents());
+      return Array.from(agentMap.entries()).map(([name, agent]) => toToolAgentInfo(name, agent));
     }
 
     const agents = plugin.connector?.agentRegistry?.getAllAgents?.();
@@ -186,11 +239,7 @@ export class WorkflowRunService {
       return [];
     }
 
-    return Array.from(agents.entries()).map(([name, agent]: [string, any]) => ({
-      name,
-      description: agent.description || '',
-      tools: (agent.getTools?.() || []).map((tool: { slug?: string; name?: string }) => tool.slug || tool.name || 'unknown')
-    }));
+    return Array.from(agents.entries()).map(([name, agent]) => toToolAgentInfo(name, agent));
   }
 
   private findWorkflowDefinition(loadedWorkspaceData: Record<string, unknown>, workflowId: string): WorkspaceWorkflow | undefined {
@@ -226,7 +275,7 @@ export class WorkflowRunService {
       });
     }
 
-    this.deps.app.workspace.revealLeaf(leaf);
+    void this.deps.app.workspace.revealLeaf(leaf);
     return await this.waitForChatViewReady(leaf, conversationId, kickoffMessage, options);
   }
 
@@ -243,20 +292,7 @@ export class WorkflowRunService {
     }
   ): Promise<boolean> {
     for (let attempt = 0; attempt < 30; attempt++) {
-      const view = leaf.view as {
-        sendMessageToConversation?: (
-          id: string,
-          message: string,
-          viewOptions?: {
-            provider?: string;
-            model?: string;
-            systemPrompt?: string;
-            workspaceId?: string;
-            sessionId?: string;
-          }
-        ) => Promise<void>;
-        openConversationById?: (id: string) => Promise<void>;
-      };
+      const view = leaf.view as ChatViewLike;
       if (typeof view.sendMessageToConversation === 'function') {
         await view.sendMessageToConversation(conversationId, kickoffMessage, options);
         return true;

@@ -10,6 +10,8 @@
  * Follows Single Responsibility Principle - only handles prompt discovery.
  */
 
+import type { CustomPrompt } from '../../types/mcp/CustomPromptTypes';
+
 export interface PromptInfo {
   id: string;
   name: string;
@@ -20,9 +22,18 @@ export interface PromptInfo {
   updatedAt?: number;
 }
 
+interface StoredPrompt extends CustomPrompt {
+  createdAt?: number;
+  updatedAt?: number;
+}
+
+interface PromptStorageService {
+  getAllPrompts(): StoredPrompt[];
+}
+
 export class PromptDiscoveryService {
   constructor(
-    private customPromptStorageService: any
+    private customPromptStorageService: PromptStorageService
   ) {}
 
   /**
@@ -32,15 +43,15 @@ export class PromptDiscoveryService {
   async getAvailablePrompts(enabledOnly: boolean = false): Promise<PromptInfo[]> {
     try {
       // Get all prompts from storage
-      const allPrompts = await this.customPromptStorageService.getAllPrompts();
+      const allPrompts = this.customPromptStorageService.getAllPrompts();
 
       // Filter by enabled status if requested
       const prompts = enabledOnly
-        ? allPrompts.filter((prompt: any) => prompt.isEnabled)
+        ? allPrompts.filter((prompt: StoredPrompt) => prompt.isEnabled)
         : allPrompts;
 
       // Map to PromptInfo format
-      return prompts.map((prompt: any) => this.mapToPromptInfo(prompt));
+      return prompts.map((prompt: StoredPrompt) => this.mapToPromptInfo(prompt));
     } catch (error) {
       console.error('[PromptDiscoveryService] Failed to get prompts:', error);
       return [];
@@ -70,7 +81,7 @@ export class PromptDiscoveryService {
   /**
    * Map custom prompt to PromptInfo format
    */
-  private mapToPromptInfo(promptData: any): PromptInfo {
+  private mapToPromptInfo(promptData: StoredPrompt): PromptInfo {
     return {
       id: promptData.id,
       name: promptData.name,
