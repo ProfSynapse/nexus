@@ -21,6 +21,83 @@ import { ConversationRepository } from '../repositories/ConversationRepository';
 import { MessageRepository } from '../repositories/MessageRepository';
 import { ExportFilter, ExportData, MessageData, ConversationExportData, WorkspaceExportData } from '../../types/storage/HybridStorageTypes';
 
+type PaginatedItems<T> = {
+  items: T[];
+};
+
+type ExportedMessage = {
+  role: MessageData['role'];
+  content: MessageData['content'];
+  tool_calls?: Array<{
+    id: string;
+    type: 'function';
+    function: {
+      name: string;
+      arguments: string;
+    };
+  }>;
+  tool_call_id?: string;
+};
+
+type ConversationChatSettings = {
+  systemPrompt?: string;
+};
+
+interface WorkspaceRepositoryLike {
+  getWorkspaces(options: { pageSize: number }): Promise<PaginatedItems<WorkspaceExportData['metadata']>>;
+}
+
+interface SessionRepositoryLike {
+  getByWorkspaceId(
+    workspaceId: string,
+    options: { pageSize: number }
+  ): Promise<PaginatedItems<WorkspaceExportData['sessions'][number]>>;
+}
+
+interface StateRepositoryLike {
+  getStates(
+    workspaceId: string,
+    sessionId: string | undefined,
+    options: { pageSize: number }
+  ): Promise<PaginatedItems<WorkspaceExportData['states'][number]>>;
+}
+
+interface TraceRepositoryLike {
+  getTraces(
+    workspaceId: string,
+    sessionId: string | undefined,
+    options: { pageSize: number }
+  ): Promise<PaginatedItems<WorkspaceExportData['traces'][number]>>;
+}
+
+interface AppWithTypedLocalStorage extends App {
+  loadLocalStorage(key: string): unknown;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function hasMethod<K extends string>(value: unknown, methodName: K): value is Record<K, (...args: never[]) => unknown> {
+  return isRecord(value) && typeof value[methodName] === 'function';
+}
+
+function isWorkspaceRepository(value: unknown): value is WorkspaceRepositoryLike {
+  return hasMethod(value, 'getWorkspaces');
+}
+
+function isSessionRepository(value: unknown): value is SessionRepositoryLike {
+  return hasMethod(value, 'getByWorkspaceId');
+}
+
+function isStateRepository(value: unknown): value is StateRepositoryLike {
+  return hasMethod(value, 'getStates');
+}
+
+function isTraceRepository(value: unknown): value is TraceRepositoryLike {
+  return hasMethod(value, 'getTraces');
+}
+
 /**
  * Dependencies for ExportService
  * Following Dependency Inversion Principle - depends on abstractions
@@ -30,10 +107,10 @@ export interface ExportServiceDependencies {
   conversationRepo: ConversationRepository;
   messageRepo: MessageRepository;
   // Workspace-related repos (if needed for full export)
-  workspaceRepo?: any;
-  sessionRepo?: any;
-  stateRepo?: any;
-  traceRepo?: any;
+  workspaceRepo?: unknown;
+  sessionRepo?: unknown;
+  stateRepo?: unknown;
+  traceRepo?: unknown;
 }
 
 /**
@@ -48,6 +125,24 @@ export class ExportService {
 
   constructor(deps: ExportServiceDependencies) {
     this.deps = deps;
+  }
+
+  private getTypedApp(): AppWithTypedLocalStorage {
+    return this.deps.app as AppWithTypedLocalStorage;
+  }
+
+  private getConversationSystemPrompt(metadata: ConversationExportData['metadata']['metadata']): string | undefined {
+    if (!isRecord(metadata)) {
+      return undefined;
+    }
+
+    const chatSettings = metadata.chatSettings;
+    if (!isRecord(chatSettings)) {
+      return undefined;
+    }
+
+    const systemPrompt = (chatSettings as ConversationChatSettings).systemPrompt;
+    return typeof systemPrompt === 'string' ? systemPrompt : undefined;
   }
 
   // ============================================================================
@@ -109,8 +204,7 @@ export class ExportService {
       const formattedMessages = filteredMessages.map(m => this.formatMessageForExport(m));
 
       // Inject system prompt from metadata if available and not already present
-      const chatSettings = conv.metadata?.chatSettings as { systemPrompt?: string } | undefined;
-      const systemPrompt = chatSettings?.systemPrompt;
+      const systemPrompt = this.getConversationSystemPrompt(conv.metadata?.metadata);
       if (systemPrompt && filter?.includeSystem !== false) {
         const hasSystemMessage = formattedMessages.length > 0 && formattedMessages[0].role === 'system';
         if (!hasSystemMessage) {
@@ -131,8 +225,8 @@ export class ExportService {
   /**
    * Format a message for OpenAI export
    */
-  private formatMessageForExport(message: MessageData): any {
-    const formatted: any = {
+  private formatMessageForExport(message: MessageData): ExportedMessage {
+    const formatted: ExportedMessage = {
       role: message.role,
       content: message.content
     };
@@ -177,7 +271,7 @@ export class ExportService {
     const conversations = await this.exportAllConversations();
 
     // Export workspaces (if repository provided)
-    const workspaces = this.deps.workspaceRepo
+    const workspaces = isWorkspaceRepository(this.deps.workspaceRepo)
       ? await this.exportAllWorkspaces()
       : [];
 
@@ -218,7 +312,7 @@ export class ExportService {
    * Export all workspaces with related data
    */
   private async exportAllWorkspaces(): Promise<WorkspaceExportData[]> {
-    if (!this.deps.workspaceRepo) {
+    if (!isWorkspaceRepository(this.deps.workspaceRepo)) {
       return [];
     }
 
@@ -229,17 +323,17 @@ export class ExportService {
     return Promise.all(
       workspacesResult.items.map(async (ws: { id: string }) => {
         // Get sessions
-        const sessions = this.deps.sessionRepo
+        const sessions = isSessionRepository(this.deps.sessionRepo)
           ? (await this.deps.sessionRepo.getByWorkspaceId(ws.id, { pageSize: 10000 })).items
           : [];
 
         // Get states
-        const states = this.deps.stateRepo
+        const states = isStateRepository(this.deps.stateRepo)
           ? (await this.deps.stateRepo.getStates(ws.id, undefined, { pageSize: 10000 })).items
           : [];
 
         // Get traces
-        const traces = this.deps.traceRepo
+        const traces = isTraceRepository(this.deps.traceRepo)
           ? (await this.deps.traceRepo.getTraces(ws.id, undefined, { pageSize: 10000 })).items
           : [];
 
@@ -261,6 +355,7 @@ export class ExportService {
    * Get device ID from localStorage
    */
   private getDeviceId(): string {
-    return localStorage.getItem('claudesidian-device-id') ?? 'unknown';
+    const deviceId = this.getTypedApp().loadLocalStorage('claudesidian-device-id');
+    return typeof deviceId === 'string' ? deviceId : 'unknown';
   }
 }

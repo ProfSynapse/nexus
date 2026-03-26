@@ -10,7 +10,7 @@
  * MessageContentRenderer, and MessageEditController for specific concerns.
  */
 
-import { ConversationMessage } from '../../../types/chat/ChatTypes';
+import type { ConversationMessage, ToolCall } from '../../../types/chat/ChatTypes';
 import { ProgressiveToolAccordion } from './ProgressiveToolAccordion';
 import { MessageBranchNavigator, MessageBranchNavigatorEvents } from './MessageBranchNavigator';
 import { setIcon, Component, App } from 'obsidian';
@@ -23,9 +23,51 @@ import { normalizeToolCallForDisplay } from '../utils/toolDisplayNormalizer';
 import { MessageContentRenderer } from './renderers/MessageContentRenderer';
 import { MessageEditController } from '../controllers/MessageEditController';
 
+type ToolEventData = Parameters<typeof normalizeToolCallForDisplay>[0] & {
+  toolCall?: unknown;
+};
+
+type ImageDimensions = {
+  width: number;
+  height: number;
+};
+
+type ImageBubbleData = {
+  imagePath: string;
+  prompt?: string;
+  dimensions?: ImageDimensions;
+  model?: string;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function asToolEventData(value: unknown): ToolEventData | undefined {
+  return isRecord(value) ? (value as ToolEventData) : undefined;
+}
+
+function getStringValue(source: Record<string, unknown>, key: string): string | undefined {
+  const value = source[key];
+  return typeof value === 'string' && value.trim().length > 0 ? value : undefined;
+}
+
+function getImageDimensions(value: unknown): ImageDimensions | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const width = value.width;
+  const height = value.height;
+
+  return typeof width === 'number' && typeof height === 'number'
+    ? { width, height }
+    : undefined;
+}
+
 export class MessageBubble extends Component {
   private element: HTMLElement | null = null;
-  private loadingInterval: any = null;
+  private loadingInterval: ReturnType<typeof setInterval> | null = null;
   private progressiveToolAccordions: Map<string, ProgressiveToolAccordion> = new Map();
   private messageBranchNavigator: MessageBranchNavigator | null = null;
   private toolBubbleElement: HTMLElement | null = null;
@@ -38,7 +80,7 @@ export class MessageBubble extends Component {
     private onCopy: (messageId: string) => void,
     private onRetry: (messageId: string) => void,
     private onEdit?: (messageId: string, newContent: string) => void,
-    private onToolEvent?: (messageId: string, event: 'detected' | 'started' | 'completed', data: any) => void,
+    private onToolEvent?: (messageId: string, event: 'detected' | 'started' | 'completed', data: unknown) => void,
     private onMessageAlternativeChanged?: (messageId: string, alternativeIndex: number) => void,
     private onViewBranch?: (branchId: string) => void
   ) {
@@ -184,7 +226,7 @@ export class MessageBubble extends Component {
   /**
    * Create action buttons (edit, retry, copy, branch navigator)
    */
-  private createActionButtons(actions: HTMLElement, bubble: HTMLElement): void {
+  private createActionButtons(actions: HTMLElement, _bubble: HTMLElement): void {
     if (this.message.role === 'user') {
       // Edit button for user messages
       if (this.onEdit) {
@@ -307,7 +349,7 @@ export class MessageBubble extends Component {
     if (!this.element) return;
 
     const contentElement = this.element.querySelector('.message-content');
-    if (!contentElement) return;
+    if (!(contentElement instanceof HTMLElement)) return;
 
     this.stopLoadingAnimation();
 
@@ -325,7 +367,7 @@ export class MessageBubble extends Component {
 
     contentElement.empty();
 
-    this.renderContent(contentElement as HTMLElement, content).catch(error => {
+    this.renderContent(contentElement, content).catch(error => {
       console.error('[MessageBubble] Error rendering content:', error);
       const fallbackDiv = document.createElement('div');
       fallbackDiv.textContent = content;
@@ -419,7 +461,7 @@ export class MessageBubble extends Component {
     contentElement.empty();
 
     const activeContent = this.getActiveMessageContent(newMessage);
-    this.renderContent(contentElement as HTMLElement, activeContent).catch(error => {
+    this.renderContent(contentElement, activeContent).catch(error => {
       console.error('[MessageBubble] Error re-rendering content:', error);
     });
 
@@ -431,7 +473,8 @@ export class MessageBubble extends Component {
   /**
    * Handle tool events from MessageManager
    */
-  handleToolEvent(event: 'detected' | 'updated' | 'started' | 'completed', data: any): void {
+  handleToolEvent(event: 'detected' | 'updated' | 'started' | 'completed', data: unknown): void {
+    const eventData = asToolEventData(data);
     const info = ToolEventParser.getToolEventInfo(data, event);
     const toolId = info.toolId || info.batchId || info.parentToolCallId || info.stepId;
     if (!toolId) {
@@ -466,20 +509,20 @@ export class MessageBubble extends Component {
     }
 
     const hasToolMetadata =
-      Boolean(data?.toolCall) ||
-      Boolean(data?.name) ||
-      Boolean(data?.technicalName) ||
-      Boolean(data?.displayName);
+      Boolean(eventData?.toolCall) ||
+      Boolean(eventData?.name) ||
+      Boolean(eventData?.technicalName) ||
+      Boolean(eventData?.displayName);
 
     const isLiveBatchStep = Boolean(info.isBatchStepEvent);
 
     if (event === 'completed' && !hasToolMetadata) {
-      accordion.completeTool(toolId, data.result, data.success !== false, data.error);
+      accordion.completeTool(toolId, eventData?.result, eventData?.success !== false, eventData?.error);
     } else {
       const currentGroup = accordion.getDisplayGroup();
       const nextDisplayGroup = isLiveBatchStep
         ? normalizeToolCallForDisplay({
-            ...data,
+            ...(eventData ?? {}),
             id: toolId,
             toolId,
             parentToolCallId: info.parentToolCallId ?? info.batchId ?? toolId,
@@ -504,13 +547,15 @@ export class MessageBubble extends Component {
           nextDisplayGroup.technicalName?.endsWith('.useTools')
         );
 
-      const displayGroup = shouldPreserveCurrentBatch ? currentGroup! : nextDisplayGroup;
+      const displayGroup = shouldPreserveCurrentBatch && currentGroup
+        ? currentGroup
+        : nextDisplayGroup;
 
       accordion.setDisplayGroup(displayGroup);
     }
 
-    if (event === 'completed' && data.success && data.result) {
-      this.checkAndRenderImageResult(data.result);
+    if (event === 'completed' && eventData?.success && eventData.result !== undefined) {
+      this.checkAndRenderImageResult(eventData.result);
     }
   }
 
@@ -526,7 +571,7 @@ export class MessageBubble extends Component {
   /**
    * Check if a tool result contains an image path and render it
    */
-  private checkAndRenderImageResult(result: any): void {
+  private checkAndRenderImageResult(result: unknown): void {
     const imageData = this.extractImageFromResult(result);
     if (!imageData) return;
 
@@ -536,29 +581,30 @@ export class MessageBubble extends Component {
   /**
    * Extract image data from a tool result (supports generateImage tool format)
    */
-  private extractImageFromResult(result: any): { imagePath: string; prompt?: string; dimensions?: { width: number; height: number }; model?: string } | null {
-    if (!result) return null;
-
-    // Handle both direct result and nested data structure
-    const data = result.data || result;
-
-    // Check for imagePath which indicates an image generation result
-    if (data && typeof data.imagePath === 'string') {
-      return {
-        imagePath: data.imagePath,
-        prompt: data.prompt || data.revisedPrompt,
-        dimensions: data.dimensions,
-        model: data.model
-      };
+  private extractImageFromResult(result: unknown): ImageBubbleData | null {
+    if (!isRecord(result)) {
+      return null;
     }
 
-    return null;
+    const data = isRecord(result.data) ? result.data : result;
+    const imagePath = getStringValue(data, 'imagePath');
+
+    if (!imagePath) {
+      return null;
+    }
+
+    return {
+      imagePath,
+      prompt: getStringValue(data, 'prompt') ?? getStringValue(data, 'revisedPrompt'),
+      dimensions: getImageDimensions(data.dimensions),
+      model: getStringValue(data, 'model')
+    };
   }
 
   /**
    * Create an image bubble to display generated images prominently in the chat
    */
-  private createImageBubble(imageData: { imagePath: string; prompt?: string; dimensions?: { width: number; height: number }; model?: string }): void {
+  private createImageBubble(imageData: ImageBubbleData): void {
     if (!this.element) return;
 
     const imageBubble = this.buildImageBubbleElement(imageData);
@@ -579,7 +625,7 @@ export class MessageBubble extends Component {
   /**
    * Create an image bubble for static content (during createElement)
    */
-  private createImageBubbleStatic(parent: HTMLElement, imageData: { imagePath: string; prompt?: string; dimensions?: { width: number; height: number }; model?: string }): void {
+  private createImageBubbleStatic(parent: HTMLElement, imageData: ImageBubbleData): void {
     const imageBubble = this.buildImageBubbleElement(imageData);
     parent.appendChild(imageBubble);
     this.imageBubbleElement = imageBubble;
@@ -588,7 +634,7 @@ export class MessageBubble extends Component {
   /**
    * Build the image bubble element
    */
-  private buildImageBubbleElement(imageData: { imagePath: string; prompt?: string; dimensions?: { width: number; height: number }; model?: string }): HTMLElement {
+  private buildImageBubbleElement(imageData: ImageBubbleData): HTMLElement {
     // Create image bubble container
     const imageBubble = document.createElement('div');
     imageBubble.addClass('message-container');
@@ -614,7 +660,7 @@ export class MessageBubble extends Component {
     setIcon(openButton, 'external-link');
     openButton.createSpan({ text: 'Open in Obsidian' });
     this.registerDomEvent(openButton, 'click', () => {
-      this.app.workspace.openLinkText(imageData.imagePath, '', false);
+      void this.app.workspace.openLinkText(imageData.imagePath, '', false);
     });
 
     return imageBubble;
@@ -718,7 +764,7 @@ export class MessageBubble extends Component {
   /**
    * Get the active tool calls for the message (original or from branch)
    */
-  private getActiveToolCalls(message: ConversationMessage): any[] | undefined {
+  private getActiveToolCalls(message: ConversationMessage): ToolCall[] | undefined {
     const activeIndex = message.activeAlternativeIndex || 0;
 
     if (activeIndex === 0) {

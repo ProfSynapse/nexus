@@ -10,6 +10,15 @@
 
 import { ValidationError } from './ValidationTypes';
 
+type StateCreationParams = {
+  name?: unknown;
+  conversationContext?: unknown;
+  activeTask?: unknown;
+  activeFiles?: unknown;
+  nextSteps?: unknown;
+  reasoning?: unknown;
+};
+
 /**
  * Validator for state operations
  */
@@ -17,7 +26,7 @@ export class StateValidator {
   /**
    * Validate state creation parameters
    */
-  static validateCreationParams(params: any): ValidationError[] {
+  static validateCreationParams(params: StateCreationParams): ValidationError[] {
     const errors: ValidationError[] = [];
 
     if (!params.name) {

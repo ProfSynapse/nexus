@@ -29,7 +29,75 @@ import {
   StateDeletedEvent
 } from '../interfaces/StorageEvents';
 import { PaginatedResult, PaginationParams } from '../../types/pagination/PaginationTypes';
-import { QueryCache } from '../optimizations/QueryCache';
+
+type SqlParam = string | number | null;
+
+interface StateRow {
+  id: string;
+  sessionId: string;
+  workspaceId: string;
+  name: string;
+  description: string | null;
+  created: number;
+  tagsJson: string | null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function getRequiredStringField(row: Record<string, unknown>, field: string): string {
+  const value = row[field];
+  if (typeof value !== 'string') {
+    throw new Error(`Invalid state row: ${field}`);
+  }
+  return value;
+}
+
+function getRequiredNumberField(row: Record<string, unknown>, field: string): number {
+  const value = row[field];
+  if (typeof value !== 'number') {
+    throw new Error(`Invalid state row: ${field}`);
+  }
+  return value;
+}
+
+function getNullableStringField(row: Record<string, unknown>, field: string): string | null {
+  const value = row[field];
+  if (value === null || typeof value === 'string') {
+    return value;
+  }
+  throw new Error(`Invalid state row: ${field}`);
+}
+
+function parseStateRow(row: unknown): StateRow {
+  if (!isRecord(row)) {
+    throw new Error('Invalid state row');
+  }
+
+  return {
+    id: getRequiredStringField(row, 'id'),
+    sessionId: getRequiredStringField(row, 'sessionId'),
+    workspaceId: getRequiredStringField(row, 'workspaceId'),
+    name: getRequiredStringField(row, 'name'),
+    description: getNullableStringField(row, 'description'),
+    created: getRequiredNumberField(row, 'created'),
+    tagsJson: getNullableStringField(row, 'tagsJson')
+  };
+}
+
+function parseStateTags(tagsJson: string | null): string[] | undefined {
+  if (!tagsJson) {
+    return undefined;
+  }
+
+  const parsed: unknown = JSON.parse(tagsJson);
+  if (!Array.isArray(parsed) || !parsed.every(tag => typeof tag === 'string')) {
+    throw new Error('Invalid state row: tagsJson');
+  }
+
+  return parsed;
+}
 
 /**
  * Repository for state entities
@@ -44,7 +112,7 @@ export class StateRepository
   protected readonly tableName = 'states';
   protected readonly entityType = 'state';
   // States write to workspace JSONL file
-  protected readonly jsonlPath = (workspaceId: string) => `workspaces/ws_${workspaceId}.jsonl`;
+  protected readonly jsonlPath = (workspaceId: string): string => `workspaces/ws_${workspaceId}.jsonl`;
 
   // In-memory cache for full state data (since content not in SQLite)
   private stateContentCache: Map<string, StateData> = new Map();
@@ -58,7 +126,7 @@ export class StateRepository
   // ============================================================================
 
   async getById(id: string): Promise<StateMetadata | null> {
-    const row = await this.sqliteCache.queryOne<any>(
+    const row = await this.sqliteCache.queryOne<StateRow>(
       'SELECT * FROM states WHERE id = ?',
       [id]
     );
@@ -68,7 +136,7 @@ export class StateRepository
   async getAll(options?: PaginationParams): Promise<PaginatedResult<StateMetadata>> {
     const baseQuery = 'SELECT * FROM states ORDER BY created DESC';
     const countQuery = 'SELECT COUNT(*) as count FROM states';
-    const result = await this.queryPaginated<any>(baseQuery, countQuery, options);
+    const result = await this.queryPaginated<StateRow>(baseQuery, countQuery, options);
     return {
       items: result.items.map(row => this.rowToEntity(row)),
       page: result.page,
@@ -84,7 +152,7 @@ export class StateRepository
     return this.saveState(data.workspaceId, data.sessionId, data);
   }
 
-  async update(id: string, data: any): Promise<void> {
+  async update(_id: string, _data: unknown): Promise<void> {
     // States are immutable snapshots - no updates allowed
     throw new Error('States are immutable. Create a new state instead.');
   }
@@ -127,15 +195,15 @@ export class StateRepository
 
   async count(criteria?: Record<string, unknown>): Promise<number> {
     let sql = 'SELECT COUNT(*) as count FROM states';
-    const params: any[] = [];
+    const params: SqlParam[] = [];
 
     if (criteria) {
       const conditions: string[] = [];
-      if (criteria.workspaceId) {
+      if (typeof criteria.workspaceId === 'string') {
         conditions.push('workspaceId = ?');
         params.push(criteria.workspaceId);
       }
-      if (criteria.sessionId) {
+      if (typeof criteria.sessionId === 'string') {
         conditions.push('sessionId = ?');
         params.push(criteria.sessionId);
       }
@@ -159,7 +227,7 @@ export class StateRepository
   ): Promise<PaginatedResult<StateMetadata>> {
     let baseQuery = 'SELECT * FROM states WHERE workspaceId = ?';
     let countQuery = 'SELECT COUNT(*) as count FROM states WHERE workspaceId = ?';
-    const params: any[] = [workspaceId];
+    const params: SqlParam[] = [workspaceId];
 
     if (sessionId) {
       baseQuery += ' AND sessionId = ?';
@@ -169,7 +237,7 @@ export class StateRepository
 
     baseQuery += ' ORDER BY created DESC';
 
-    const result = await this.queryPaginated<any>(baseQuery, countQuery, options, params);
+    const result = await this.queryPaginated<StateRow>(baseQuery, countQuery, options, params);
     return {
       items: result.items.map(row => this.rowToEntity(row)),
       page: result.page,
@@ -209,7 +277,7 @@ export class StateRepository
         return null;
       }
 
-      const content = JSON.parse(stateEvent.data.stateJson);
+      const content: unknown = JSON.parse(stateEvent.data.stateJson);
 
       const stateData: StateData = {
         ...metadata,
@@ -233,6 +301,7 @@ export class StateRepository
   ): Promise<string> {
     const id = this.generateId();
     const now = Date.now();
+    const content: unknown = data.content;
 
     try {
       await this.transaction(async () => {
@@ -248,7 +317,7 @@ export class StateRepository
               name: data.name,
               description: data.description,
               created: data.created ?? now,
-              stateJson: JSON.stringify(data.content),
+              stateJson: JSON.stringify(content),
               tags: data.tags
             }
           }
@@ -278,7 +347,7 @@ export class StateRepository
           description: data.description,
           created: data.created ?? now,
           tags: data.tags,
-          content: data.content
+          content
         });
       });
 
@@ -301,9 +370,9 @@ export class StateRepository
     // SQLite JSON query for tags array
     const baseQuery = `SELECT * FROM states WHERE tagsJson LIKE ? ORDER BY created DESC`;
     const countQuery = `SELECT COUNT(*) as count FROM states WHERE tagsJson LIKE ?`;
-    const params = [`%"${tag}"%`];
+    const params: SqlParam[] = [`%"${tag}"%`];
 
-    const result = await this.queryPaginated<any>(baseQuery, countQuery, options, params);
+    const result = await this.queryPaginated<StateRow>(baseQuery, countQuery, options, params);
     return {
       items: result.items.map(row => this.rowToEntity(row)),
       page: result.page,
@@ -319,15 +388,17 @@ export class StateRepository
   // Protected Methods
   // ============================================================================
 
-  protected rowToEntity(row: any): StateMetadata {
+  protected rowToEntity(row: StateRow): StateMetadata {
+    const parsedRow = parseStateRow(row);
+
     return {
-      id: row.id,
-      sessionId: row.sessionId,
-      workspaceId: row.workspaceId,
-      name: row.name,
-      description: row.description ?? undefined,
-      created: row.created,
-      tags: row.tagsJson ? JSON.parse(row.tagsJson) : undefined
+      id: parsedRow.id,
+      sessionId: parsedRow.sessionId,
+      workspaceId: parsedRow.workspaceId,
+      name: parsedRow.name,
+      description: parsedRow.description ?? undefined,
+      created: parsedRow.created,
+      tags: parseStateTags(parsedRow.tagsJson)
     };
   }
 }

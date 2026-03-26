@@ -44,6 +44,20 @@ interface PerformanceWithMemory extends Performance {
   memory: PerformanceMemory;
 }
 
+type LogData = unknown;
+
+interface StoredLoggingSettings {
+  debugMode?: boolean;
+  level?: LogLevel;
+  maxBufferSize?: number;
+  enablePerformanceLogging?: boolean;
+  enableExport?: boolean;
+}
+
+type StoredPluginData = Record<string, unknown> & {
+  logging?: LoggerConfig;
+};
+
 /**
  * Type guard to check if performance.memory is available
  * This is a Chrome-specific feature not available in all environments
@@ -56,11 +70,51 @@ function hasMemoryAPI(perf: Performance): perf is PerformanceWithMemory {
          'usedJSHeapSize' in perf.memory;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function isLogLevel(value: unknown): value is LogLevel {
+  return value === LogLevel.DEBUG ||
+         value === LogLevel.INFO ||
+         value === LogLevel.WARN ||
+         value === LogLevel.ERROR;
+}
+
+function isStoredLoggingSettings(value: unknown): value is StoredLoggingSettings {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  const {
+    debugMode,
+    level,
+    maxBufferSize,
+    enablePerformanceLogging,
+    enableExport
+  } = value;
+
+  return (debugMode === undefined || typeof debugMode === 'boolean') &&
+         (level === undefined || isLogLevel(level)) &&
+         (maxBufferSize === undefined || typeof maxBufferSize === 'number') &&
+         (enablePerformanceLogging === undefined || typeof enablePerformanceLogging === 'boolean') &&
+         (enableExport === undefined || typeof enableExport === 'boolean');
+}
+
+function getStoredLoggingSettings(value: unknown): StoredLoggingSettings | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const { logging } = value;
+  return isStoredLoggingSettings(logging) ? logging : undefined;
+}
+
 export interface LogEntry {
   timestamp: string;
   level: LogLevel;
   message: string;
-  data?: any;
+  data?: LogData;
   context?: string;
   plugin: string;
   performance?: {
@@ -86,15 +140,15 @@ export class ContextLogger {
     private context: string
   ) {}
 
-  debug(message: string, data?: any): void {
+  debug(message: string, data?: LogData): void {
     this.logger.debug(message, data, this.context);
   }
 
-  info(message: string, data?: any): void {
+  info(message: string, data?: LogData): void {
     this.logger.info(message, data, this.context);
   }
 
-  warn(message: string, data?: any): void {
+  warn(message: string, data?: LogData): void {
     this.logger.warn(message, data, this.context);
   }
 
@@ -130,24 +184,25 @@ export class StructuredLogger {
       enableExport: true
     };
     
-    this.loadLogSettings();
+    void this.loadLogSettings();
   }
 
   private async loadLogSettings(): Promise<void> {
     try {
-      const settings = await this.plugin.loadData();
-      const loggingSettings = settings?.logging;
+      const settings: unknown = await this.plugin.loadData();
+      const loggingSettings = getStoredLoggingSettings(settings);
 
       if (loggingSettings) {
         this.config = {
-          debugMode: loggingSettings.debugMode || false,
-          level: loggingSettings.level || LogLevel.INFO,
-          maxBufferSize: loggingSettings.maxBufferSize || 1000,
-          enablePerformanceLogging: loggingSettings.enablePerformanceLogging || false,
+          debugMode: loggingSettings.debugMode ?? false,
+          level: loggingSettings.level ?? LogLevel.INFO,
+          maxBufferSize: loggingSettings.maxBufferSize ?? 1000,
+          enablePerformanceLogging: loggingSettings.enablePerformanceLogging ?? false,
           enableExport: loggingSettings.enableExport !== false
         };
       }
-    } catch (error) {
+    } catch {
+      return;
     }
   }
 
@@ -158,7 +213,8 @@ export class StructuredLogger {
     this.config = { ...this.config, ...newConfig };
     
     try {
-      const settings = await this.plugin.loadData() || {};
+      const loadedSettings: unknown = await this.plugin.loadData();
+      const settings: StoredPluginData = isRecord(loadedSettings) ? { ...loadedSettings } : {};
       settings.logging = this.config;
       await this.plugin.saveData(settings);
     } catch (error) {
@@ -169,7 +225,7 @@ export class StructuredLogger {
   /**
    * Debug level logging
    */
-  debug(message: string, data?: any, context?: string): void {
+  debug(message: string, data?: LogData, context?: string): void {
     if (this.config.debugMode && this.shouldLog(LogLevel.DEBUG)) {
       this.log(LogLevel.DEBUG, message, data, context);
     }
@@ -178,7 +234,7 @@ export class StructuredLogger {
   /**
    * Info level logging
    */
-  info(message: string, data?: any, context?: string): void {
+  info(message: string, data?: LogData, context?: string): void {
     if (this.shouldLog(LogLevel.INFO)) {
       this.log(LogLevel.INFO, message, data, context);
     }
@@ -187,7 +243,7 @@ export class StructuredLogger {
   /**
    * Warning level logging
    */
-  warn(message: string, data?: any, context?: string): void {
+  warn(message: string, data?: LogData, context?: string): void {
     if (this.shouldLog(LogLevel.WARN)) {
       this.log(LogLevel.WARN, message, data, context);
     }
@@ -243,7 +299,13 @@ export class StructuredLogger {
     if (!this.contextLoggers.has(context)) {
       this.contextLoggers.set(context, new ContextLogger(this, context));
     }
-    return this.contextLoggers.get(context)!;
+
+    const contextLogger = this.contextLoggers.get(context);
+    if (!contextLogger) {
+      throw new Error(`Failed to create logger context: ${context}`);
+    }
+
+    return contextLogger;
   }
 
   /**
@@ -272,7 +334,7 @@ export class StructuredLogger {
     }
   }
 
-  private log(level: LogLevel, message: string, data?: any, context?: string): void {
+  private log(level: LogLevel, message: string, data?: LogData, context?: string): void {
     const timestamp = new Date().toISOString();
     const logEntry: LogEntry = {
       timestamp,

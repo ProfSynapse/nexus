@@ -19,6 +19,42 @@ import { logger } from '../../utils/logger';
 
 // MCP SDK result types for handler return values
 type MCPResult = ServerResult | Record<string, unknown>;
+type ToolCallHook = (toolName: string, params: unknown) => Promise<void>;
+type ToolArguments = Record<string, unknown>;
+type ToolCallRequest = Record<string, unknown> & {
+    params: {
+        name: string;
+        arguments: unknown;
+    };
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null;
+}
+
+function isToolCallRequest(request: unknown): request is ToolCallRequest {
+    if (!isRecord(request) || !isRecord(request.params)) {
+        return false;
+    }
+
+    return typeof request.params.name === 'string' && 'arguments' in request.params;
+}
+
+function getToolCallRequest(request: unknown): ToolCallRequest {
+    if (!isToolCallRequest(request)) {
+        throw new Error('Invalid tool call request');
+    }
+
+    return request;
+}
+
+function parseToolArguments(args: unknown): unknown {
+    return parseJsonArrays(args) as unknown;
+}
+
+function asToolArguments(args: unknown): ToolArguments | undefined {
+    return isRecord(args) ? args : undefined;
+}
 
 /**
  * Service responsible for creating and configuring request handlers
@@ -28,7 +64,7 @@ export class RequestHandlerFactory {
     constructor(
         private server: MCPSDKServer,
         private requestRouter: RequestRouter,
-        private onToolCall?: (toolName: string, params: any) => Promise<void>
+        private onToolCall?: ToolCallHook
     ) {}
 
     /**
@@ -88,73 +124,76 @@ export class RequestHandlerFactory {
 
         // Handle tool execution
         this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
-            return await this.handleToolCall(request) as MCPResult;
+            return await this.handleToolCall(request);
         });
     }
 
     /**
      * Handle tool call with preprocessing
      */
-    private async handleToolCall(request: any): Promise<any> {
-        const parsedArgs = parseJsonArrays(request.params.arguments);
+    private async handleToolCall(request: unknown): Promise<MCPResult> {
+        const toolRequest = getToolCallRequest(request);
+        const parsedArgs = parseToolArguments(toolRequest.params.arguments);
+        const parsedToolArgs = asToolArguments(parsedArgs);
         
         // Trigger tool call hook for lazy loading
-        await this.triggerToolCallHook(request.params.name, parsedArgs);
+        await this.triggerToolCallHook(toolRequest.params.name, parsedArgs);
         
         // Check if this is a help request
-        if (this.isHelpRequest(parsedArgs)) {
-            return await this.handleHelpRequest(request, parsedArgs);
+        if (this.isHelpRequest(parsedToolArgs)) {
+            return await this.handleHelpRequest(toolRequest, parsedArgs);
         }
         
         // Normal execution
-        return await this.handleNormalExecution(request, parsedArgs);
+        return await this.handleNormalExecution(toolRequest, parsedArgs);
     }
 
     /**
      * Trigger tool call hook if available
      */
-    private async triggerToolCallHook(toolName: string, params: any): Promise<void> {
+    private async triggerToolCallHook(toolName: string, params: unknown): Promise<void> {
         if (!this.onToolCall) {
             return;
         }
 
         try {
             await this.onToolCall(toolName, params);
-        } catch (error) {
+        } catch {
+            return;
         }
     }
 
     /**
      * Check if this is a help request
      */
-    private isHelpRequest(parsedArgs: any): boolean {
-        return parsedArgs && parsedArgs.help === true;
+    private isHelpRequest(parsedArgs: ToolArguments | undefined): boolean {
+        return parsedArgs?.help === true;
     }
 
     /**
      * Handle help request
      */
-    private async handleHelpRequest(request: any, parsedArgs: any): Promise<any> {
+    private async handleHelpRequest(request: ToolCallRequest, parsedArgs: unknown): Promise<MCPResult> {
         return await this.requestRouter.handleRequest('tools/help', {
             ...request,
             params: {
                 ...request.params,
                 arguments: parsedArgs
             }
-        });
+        }) as MCPResult;
     }
 
     /**
      * Handle normal tool execution
      */
-    private async handleNormalExecution(request: any, parsedArgs: any): Promise<any> {
+    private async handleNormalExecution(request: ToolCallRequest, parsedArgs: unknown): Promise<MCPResult> {
         return await this.requestRouter.handleRequest('tools/call', {
             ...request,
             params: {
                 ...request.params,
                 arguments: parsedArgs
             }
-        });
+        }) as MCPResult;
     }
 
     /**

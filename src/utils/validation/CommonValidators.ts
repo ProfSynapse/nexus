@@ -13,6 +13,14 @@
 import { CommonParameters } from '../../types/mcp/AgentTypes';
 import { ValidationError } from './ValidationResultHelper';
 
+type ContextFieldKey = 'memory' | 'goal' | 'constraints';
+type InheritedWorkspaceContextProvider = {
+  getInheritedWorkspaceContext?: (params: CommonParameters) => unknown;
+};
+
+const INVALID_PATH_CHARACTERS = new Set(['<', '>', ':', '"', '|', '?', '*']);
+const INVALID_GLOB_PATH_CHARACTERS = new Set(['<', '>', ':', '"', '|']);
+
 /**
  * String validation options interface
  */
@@ -101,12 +109,12 @@ export interface SessionContextOptions {
 /**
  * Validation rule function type
  */
-export type ValidationRule<T> = (value: any, fieldName: string) => ValidationError | null;
+export type ValidationRule<TValue = unknown> = (value: TValue, fieldName: string) => ValidationError | null;
 
 /**
  * Validation rule set type
  */
-export type ValidationRuleSet<T> = {
+export type ValidationRuleSet<T extends Record<string, unknown>> = {
   [K in keyof T]?: ValidationRule<T[K]>;
 };
 
@@ -126,7 +134,7 @@ export class CommonValidators {
    * @returns ValidationError if validation fails, null if valid
    */
   static requiredString(
-    value: any,
+    value: unknown,
     fieldName: string,
     options: StringValidationOptions = {}
   ): ValidationError | null {
@@ -198,7 +206,7 @@ export class CommonValidators {
    * @returns ValidationError if validation fails, null if valid
    */
   static filePath(
-    value: any, 
+    value: unknown,
     fieldName: string = 'filePath',
     options: FilePathValidationOptions = {}
   ): ValidationError | null {
@@ -208,27 +216,28 @@ export class CommonValidators {
       maxLength: options.maxLength || 1000
     });
     if (stringError) return stringError;
+    if (typeof value !== 'string') {
+      return this.createFieldError(fieldName, 'TYPE_ERROR',
+        `${fieldName} must be a string`,
+        `Expected string, received ${typeof value}`);
+    }
 
     const path = value.trim();
     
     // Obsidian-specific file path validation
     if (options.obsidianValidation !== false) {
       // Check for invalid characters in Obsidian file paths
-      const invalidChars = /[<>:"|?*\u0000-\u001f]/;
-      if (!options.allowGlobs && invalidChars.test(path)) {
+      if (!options.allowGlobs && this.hasInvalidPathCharacters(path, false)) {
         return this.createFieldError(fieldName, 'INVALID_PATH_CHARS',
           `${fieldName} contains invalid characters`,
           'File paths cannot contain: < > : " | ? * or control characters');
       }
 
       // Allow glob patterns if specified
-      if (options.allowGlobs) {
-        const invalidGlobChars = /[<>:"|]/;
-        if (invalidGlobChars.test(path)) {
-          return this.createFieldError(fieldName, 'INVALID_GLOB_CHARS',
-            `${fieldName} contains invalid characters for glob patterns`,
-            'Glob patterns cannot contain: < > : " | or control characters');
-        }
+      if (options.allowGlobs && this.hasInvalidPathCharacters(path, true)) {
+        return this.createFieldError(fieldName, 'INVALID_GLOB_CHARS',
+          `${fieldName} contains invalid characters for glob patterns`,
+          'Glob patterns cannot contain: < > : " | or control characters');
       }
 
       // Check for reserved names (Windows-specific but good practice)
@@ -321,14 +330,13 @@ export class CommonValidators {
 
     // Validate context field lengths (new format: memory, goal, constraints)
     const contextFields = [
-      { key: 'memory', name: 'Memory', required: true },
-      { key: 'goal', name: 'Goal', required: true },
-      { key: 'constraints', name: 'Constraints', required: false }
+      { key: 'memory' as const, name: 'Memory' },
+      { key: 'goal' as const, name: 'Goal' },
+      { key: 'constraints' as const, name: 'Constraints' }
     ];
 
     for (const field of contextFields) {
-      const contextObj = params.context as unknown as Record<string, unknown>;
-      const value = contextObj[field.key];
+      const value = this.getContextFieldValue(params.context, field.key);
       // Only validate if field is present or required
       if (value !== undefined && (typeof value !== 'string' || value.trim().length < opts.minContextLength)) {
         errors.push(this.createFieldError(
@@ -342,10 +350,10 @@ export class CommonValidators {
 
     // Workspace context validation if required
     if (opts.requireWorkspace && mode) {
-      const modeObj = mode as { getInheritedWorkspaceContext?: (params: CommonParameters) => unknown };
+      const modeObj = mode as InheritedWorkspaceContextProvider;
       if (typeof modeObj.getInheritedWorkspaceContext === 'function') {
         try {
-          const workspaceContext = modeObj.getInheritedWorkspaceContext(params) as { workspaceId?: string } | undefined;
+          const workspaceContext = modeObj.getInheritedWorkspaceContext(params);
           if (!workspaceContext?.workspaceId) {
             errors.push(this.createFieldError(
               'workspaceContext',
@@ -354,7 +362,8 @@ export class CommonValidators {
               'Provide workspaceContext or ensure inherited context is available'
             ));
           }
-        } catch (error) {
+        } catch {
+          // Preserve existing behavior by ignoring inherited workspace context lookup failures.
         }
       }
     }
@@ -372,22 +381,25 @@ export class CommonValidators {
    * @param validators Mapping of field names to validation functions
    * @returns Array of validation errors
    */
-  static validateFields<T>(
+  static validateFields<T extends Record<string, unknown>>(
     params: T,
     validators: ValidationRuleSet<T>
   ): ValidationError[] {
     const errors: ValidationError[] = [];
     const startTime = performance.now();
 
-    for (const [fieldName, validator] of Object.entries(validators)) {
+    for (const fieldName of Object.keys(validators) as Array<keyof T & string>) {
+      const validator = validators[fieldName];
       try {
-        if (typeof validator === 'function') {
-          const paramsObj = params as Record<string, unknown>;
-          const fieldValue = paramsObj[fieldName];
-          const error = validator(fieldValue, fieldName);
-          if (error) {
-            errors.push(error);
-          }
+        if (!validator) {
+          continue;
+        }
+
+        const fieldValue = params[fieldName];
+        const typedValidator = validator as ValidationRule<unknown>;
+        const error = typedValidator(fieldValue, fieldName);
+        if (error) {
+          errors.push(error);
         }
       } catch (validationError) {
         errors.push(this.createFieldError(
@@ -414,7 +426,7 @@ export class CommonValidators {
    * @returns ValidationError if validation fails, null if valid
    */
   static booleanFlag(
-    value: any,
+    value: unknown,
     fieldName: string,
     required: boolean = false
   ): ValidationError | null {
@@ -444,7 +456,7 @@ export class CommonValidators {
    * @returns ValidationError if validation fails, null if valid
    */
   static numericValue(
-    value: any,
+    value: unknown,
     fieldName: string,
     options: {
       minimum?: number;
@@ -525,6 +537,29 @@ export class CommonValidators {
     };
   }
 
+  private static getContextFieldValue(
+    context: CommonParameters['context'],
+    key: ContextFieldKey
+  ): string | undefined {
+    return context[key];
+  }
+
+  private static hasInvalidPathCharacters(path: string, allowGlobs: boolean): boolean {
+    const invalidCharacters = allowGlobs ? INVALID_GLOB_PATH_CHARACTERS : INVALID_PATH_CHARACTERS;
+
+    for (const character of path) {
+      if (character.charCodeAt(0) < 32) {
+        return true;
+      }
+
+      if (invalidCharacters.has(character)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   /**
    * Track validation performance for monitoring
    * 
@@ -539,8 +574,6 @@ export class CommonValidators {
     startTime: number,
     success: boolean
   ): void {
-    const duration = performance.now() - startTime;
-
     // Integration with existing CompatibilityMonitor
     const globalObj = globalThis as Record<string, unknown>;
     const compatMonitor = globalObj.CompatibilityMonitor as {
@@ -556,6 +589,5 @@ export class CommonValidators {
         success
       );
     }
-
   }
 }

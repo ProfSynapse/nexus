@@ -1,17 +1,82 @@
 import { createParser, type ParseEvent } from 'eventsource-parser';
-import { StreamChunk } from '../adapters/types';
+import { StreamChunk, type TokenUsage, type ToolCall } from '../adapters/types';
 import { SSEStreamOptions } from './SSEStreamProcessor';
 
+interface BufferedSSEUsagePayload {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+  promptTokenCount?: number;
+  candidatesTokenCount?: number;
+  totalTokenCount?: number;
+  promptTokens?: number;
+  completionTokens?: number;
+  totalTokens?: number;
+  input_tokens?: number;
+  output_tokens?: number;
+}
+
+interface BufferedSSEToolCallDelta {
+  index?: number;
+  id?: string;
+  type?: ToolCall['type'];
+  function?: {
+    name?: string;
+    arguments?: string;
+  };
+  reasoning_details?: ToolCall['reasoning_details'];
+  thought_signature?: string;
+}
+
+function parseSSEEventData<TParsed>(rawData: string): TParsed {
+  return JSON.parse(rawData) as TParsed;
+}
+
+function createAccumulatedToolCall(toolCall: BufferedSSEToolCallDelta): ToolCall {
+  const accumulated: ToolCall = {
+    id: toolCall.id || '',
+    type: toolCall.type || 'function',
+    function: {
+      name: toolCall.function?.name || '',
+      arguments: toolCall.function?.arguments || ''
+    }
+  };
+
+  if (toolCall.reasoning_details) {
+    accumulated.reasoning_details = toolCall.reasoning_details;
+  }
+
+  if (toolCall.thought_signature) {
+    accumulated.thought_signature = toolCall.thought_signature;
+  }
+
+  return accumulated;
+}
+
+function getUsageFallbackValue(...values: Array<number | undefined>): number {
+  for (const value of values) {
+    if (value) {
+      return value;
+    }
+  }
+
+  return 0;
+}
+
 export class BufferedSSEStreamProcessor {
-  static async* processSSEText(
+  static async* processSSEText<
+    TParsed,
+    TUsage extends BufferedSSEUsagePayload,
+    TToolCall extends BufferedSSEToolCallDelta
+  >(
     sseText: string,
-    options: SSEStreamOptions
+    options: SSEStreamOptions<TParsed, TUsage, TToolCall>
   ): AsyncGenerator<StreamChunk, void, unknown> {
     const eventQueue: StreamChunk[] = [];
     let isCompleted = false;
-    let usage: any = undefined;
+    let usage: TUsage | undefined = undefined;
     let metadata: Record<string, unknown> | undefined = undefined;
-    const toolCallsAccumulator: Map<number, any> = new Map();
+    const toolCallsAccumulator: Map<number, ToolCall> = new Map();
 
     const parser = createParser((event: ParseEvent) => {
       if (event.type === 'reconnect-interval' || isCompleted) {
@@ -33,7 +98,7 @@ export class BufferedSSEStreamProcessor {
       }
 
       try {
-        const parsed = JSON.parse(event.data);
+        const parsed = parseSSEEventData<TParsed>(event.data);
 
         if (options.extractMetadata) {
           metadata = {
@@ -70,28 +135,22 @@ export class BufferedSSEStreamProcessor {
             const index = toolCall.index || 0;
 
             if (!toolCallsAccumulator.has(index)) {
-              const accumulated: any = {
-                id: toolCall.id || '',
-                type: toolCall.type || 'function',
-                function: {
-                  name: toolCall.function?.name || '',
-                  arguments: toolCall.function?.arguments || ''
-                }
-              };
-
-              if (toolCall.reasoning_details) {
-                accumulated.reasoning_details = toolCall.reasoning_details;
-              }
-              if (toolCall.thought_signature) {
-                accumulated.thought_signature = toolCall.thought_signature;
-              }
+              const accumulated = createAccumulatedToolCall(toolCall);
 
               toolCallsAccumulator.set(index, accumulated);
               shouldYieldToolCalls = options.toolCallThrottling?.initialYield !== false;
             } else {
               const existing = toolCallsAccumulator.get(index);
-              if (toolCall.id) existing.id = toolCall.id;
-              if (toolCall.function?.name) existing.function.name = toolCall.function.name;
+              if (!existing) {
+                continue;
+              }
+
+              if (toolCall.id) {
+                existing.id = toolCall.id;
+              }
+              if (toolCall.function?.name) {
+                existing.function.name = toolCall.function.name;
+              }
               if (toolCall.function?.arguments) {
                 existing.function.arguments += toolCall.function.arguments;
                 const interval = options.toolCallThrottling?.progressInterval || 50;
@@ -154,22 +213,36 @@ export class BufferedSSEStreamProcessor {
   }
 }
 
-function formatUsage(usage: any): StreamChunk['usage'] {
+function formatUsage<TUsage extends BufferedSSEUsagePayload>(usage?: TUsage): TokenUsage | undefined {
   if (!usage) {
     return undefined;
   }
 
   return {
-    promptTokens: usage.prompt_tokens || usage.promptTokenCount || usage.promptTokens || usage.input_tokens || 0,
-    completionTokens: usage.completion_tokens || usage.candidatesTokenCount || usage.completionTokens || usage.output_tokens || 0,
-    totalTokens: usage.total_tokens || usage.totalTokenCount || usage.totalTokens || 0
+    promptTokens: getUsageFallbackValue(
+      usage.prompt_tokens,
+      usage.promptTokenCount,
+      usage.promptTokens,
+      usage.input_tokens
+    ),
+    completionTokens: getUsageFallbackValue(
+      usage.completion_tokens,
+      usage.candidatesTokenCount,
+      usage.completionTokens,
+      usage.output_tokens
+    ),
+    totalTokens: getUsageFallbackValue(
+      usage.total_tokens,
+      usage.totalTokenCount,
+      usage.totalTokens
+    )
   };
 }
 
 function getFinalToolCalls(
-  toolCallsAccumulator: Map<number, any>,
+  toolCallsAccumulator: Map<number, ToolCall>,
   options: SSEStreamOptions
-): any[] | undefined {
+): ToolCall[] | undefined {
   if (!options.accumulateToolCalls || toolCallsAccumulator.size === 0) {
     return undefined;
   }

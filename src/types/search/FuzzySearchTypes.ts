@@ -134,32 +134,62 @@ export type StemCache = Map<string, string>;
 export type SoundexMapping = Record<string, string>;
 
 // Type guards
-export function isFuzzySearchResult(obj: any): obj is FuzzySearchResult {
-  return obj && 
-    typeof obj.id === 'string' && 
-    typeof obj.title === 'string' && 
-    typeof obj.snippet === 'string' && 
-    typeof obj.score === 'number' && 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function hasStringProperty(obj: Record<string, unknown>, key: string): boolean {
+  return typeof obj[key] === 'string';
+}
+
+function hasNumberProperty(obj: Record<string, unknown>, key: string): boolean {
+  return typeof obj[key] === 'number';
+}
+
+function hasArrayProperty(obj: Record<string, unknown>, key: string): boolean {
+  return Array.isArray(obj[key]);
+}
+
+function hasFuzzyMatchTypeProperty(obj: Record<string, unknown>, key: string): boolean {
+  const value = obj[key];
+  return value === 'typo' || value === 'stem' || value === 'synonym' || value === 'phonetic';
+}
+
+export function isFuzzySearchResult(obj: unknown): obj is FuzzySearchResult {
+  if (!isRecord(obj)) {
+    return false;
+  }
+
+  const metadata = obj.metadata;
+  return hasStringProperty(obj, 'id') &&
+    hasStringProperty(obj, 'title') &&
+    hasStringProperty(obj, 'snippet') &&
+    hasNumberProperty(obj, 'score') &&
     obj.searchMethod === 'fuzzy' &&
-    obj.metadata &&
-    Array.isArray(obj.metadata.fuzzyMatches);
+    isRecord(metadata) &&
+    hasArrayProperty(metadata, 'fuzzyMatches');
 }
 
-export function isFuzzyMatch(obj: any): obj is FuzzyMatch {
-  return obj &&
-    typeof obj.original === 'string' &&
-    typeof obj.matched === 'string' &&
-    typeof obj.distance === 'number' &&
-    typeof obj.similarity === 'number' &&
-    ['typo', 'stem', 'synonym', 'phonetic'].includes(obj.matchType);
+export function isFuzzyMatch(obj: unknown): obj is FuzzyMatch {
+  if (!isRecord(obj)) {
+    return false;
+  }
+
+  return hasStringProperty(obj, 'original') &&
+    hasStringProperty(obj, 'matched') &&
+    hasNumberProperty(obj, 'distance') &&
+    hasNumberProperty(obj, 'similarity') &&
+    hasFuzzyMatchTypeProperty(obj, 'matchType');
 }
 
-export function isFuzzyDocument(obj: any): obj is FuzzyDocument {
-  return obj &&
-    typeof obj.id === 'string' &&
-    typeof obj.title === 'string' &&
-    typeof obj.content === 'string' &&
-    typeof obj.filePath === 'string' &&
-    obj.metadata &&
-    typeof obj.metadata === 'object';
+export function isFuzzyDocument(obj: unknown): obj is FuzzyDocument {
+  if (!isRecord(obj)) {
+    return false;
+  }
+
+  return hasStringProperty(obj, 'id') &&
+    hasStringProperty(obj, 'title') &&
+    hasStringProperty(obj, 'content') &&
+    hasStringProperty(obj, 'filePath') &&
+    isRecord(obj.metadata);
 }
