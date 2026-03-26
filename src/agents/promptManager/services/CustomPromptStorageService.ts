@@ -1,45 +1,153 @@
-import { CustomPrompt, CustomPromptsSettings, DEFAULT_CUSTOM_PROMPTS_SETTINGS } from '../../../types';
+import { CustomPrompt, DEFAULT_CUSTOM_PROMPTS_SETTINGS } from '../../../types';
 import { Settings } from '../../../settings';
 import type { MigratableDatabase } from '../../../database/schema/SchemaMigrator';
+
+type SqliteScalar = string | number | null | Uint8Array;
+type SqliteParams = SqliteScalar[];
+type SqliteRow = unknown[];
+type QueryResult = Array<{ values: SqliteRow[] }>;
+
+interface RawSqliteStatement {
+    step(): boolean;
+    get(columnNames?: string[]): SqliteRow;
+    bind(params: SqliteParams): void;
+    finalize(): void;
+}
+
+interface RawSqliteDatabase {
+    prepare(sql: string): RawSqliteStatement;
+}
+
+interface RawDatabaseContainer {
+    db: RawSqliteDatabase;
+}
+
+interface PromptStorageDatabase {
+    exec(sql: string): QueryResult;
+    run(sql: string, params?: SqliteParams): void;
+    query(sql: string, params?: SqliteParams): QueryResult;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null;
+}
+
+function isRawSqliteDatabase(value: unknown): value is RawSqliteDatabase {
+    return isRecord(value) && typeof value.prepare === 'function';
+}
+
+function isRawDatabaseContainer(value: unknown): value is RawDatabaseContainer {
+    if (!isRecord(value) || !('db' in value)) {
+        return false;
+    }
+
+    return isRawSqliteDatabase(value.db);
+}
+
+function readRowString(row: SqliteRow, index: number): string {
+    const value = row[index];
+    if (typeof value === 'string') {
+        return value;
+    }
+
+    if (typeof value === 'number') {
+        return String(value);
+    }
+
+    if (value === null || value === undefined) {
+        return '';
+    }
+
+    return '';
+}
+
+function readRowNumber(row: SqliteRow, index: number): number {
+    const value = row[index];
+    if (typeof value === 'number') {
+        return value;
+    }
+
+    if (typeof value === 'string') {
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed : 0;
+    }
+
+    return 0;
+}
+
+function readRowBooleanish(row: SqliteRow, index: number): boolean {
+    const value = row[index];
+    return value === 1 || value === true || value === '1';
+}
+
+function mapPromptRow(row: SqliteRow, forceEnabled?: boolean): CustomPrompt {
+    return {
+        id: readRowString(row, 0),
+        name: readRowString(row, 1),
+        description: readRowString(row, 2),
+        prompt: readRowString(row, 3),
+        isEnabled: forceEnabled ?? readRowBooleanish(row, 4)
+    };
+}
 
 /**
  * Database-like wrapper that adapts raw sqlite db to MigratableDatabase interface
  * Adds query() method for parameterized SELECT queries
  */
-class DatabaseAdapter implements MigratableDatabase {
-    constructor(private rawDb: any) {}
+class DatabaseAdapter implements MigratableDatabase, PromptStorageDatabase {
+    constructor(private rawDb: RawSqliteDatabase) {}
 
-    exec(sql: string): { values: any[][] }[] {
-        const stmt = this.rawDb.prepare(sql);
-        const results: any[][] = [];
-        while (stmt.step()) {
-            results.push(stmt.get([]));
-        }
-        stmt.finalize();
-        return results.length > 0 ? [{ values: results }] : [];
+    exec(sql: string): QueryResult {
+        return this.executeQuery(sql);
     }
 
-    run(sql: string, params?: any[]): void {
+    run(sql: string, params?: SqliteParams): void {
         const stmt = this.rawDb.prepare(sql);
-        if (params?.length) {
-            stmt.bind(params);
+
+        try {
+            if (params?.length) {
+                stmt.bind(params);
+            }
+
+            stmt.step();
+        } finally {
+            stmt.finalize();
         }
-        stmt.step();
-        stmt.finalize();
     }
 
     /** Query with parameters (extension of MigratableDatabase) */
-    query(sql: string, params?: any[]): { values: any[][] }[] {
+    query(sql: string, params?: SqliteParams): QueryResult {
         const stmt = this.rawDb.prepare(sql);
-        if (params?.length) {
-            stmt.bind(params);
+
+        try {
+            if (params?.length) {
+                stmt.bind(params);
+            }
+
+            const results: SqliteRow[] = [];
+            while (stmt.step()) {
+                results.push(stmt.get([]));
+            }
+
+            return results.length > 0 ? [{ values: results }] : [];
+        } finally {
+            stmt.finalize();
         }
-        const results: any[][] = [];
-        while (stmt.step()) {
-            results.push(stmt.get([]));
+    }
+
+    private executeQuery(sql: string): QueryResult {
+        const stmt = this.rawDb.prepare(sql);
+
+        try {
+            const results: SqliteRow[] = [];
+            while (stmt.step()) {
+                results.push(stmt.get([]));
+            }
+
+            return results.length > 0 ? [{ values: results }] : [];
+        } finally {
+            stmt.finalize();
         }
-        stmt.finalize();
-        return results.length > 0 ? [{ values: results }] : [];
     }
 }
 
@@ -48,13 +156,13 @@ class DatabaseAdapter implements MigratableDatabase {
  * Migrated to SQLite-based storage with data.json fallback for backward compatibility
  */
 export class CustomPromptStorageService {
-    private db: MigratableDatabase | null;
+    private db: PromptStorageDatabase | null;
     private settings: Settings;
     private migrated: boolean = false;
 
-    constructor(rawDb: any | null, settings: Settings) {
+    constructor(rawDb: unknown, settings: Settings) {
         // Wrap raw db in adapter if provided
-        this.db = rawDb && rawDb.db ? new DatabaseAdapter(rawDb.db) : null;
+        this.db = isRawDatabaseContainer(rawDb) ? new DatabaseAdapter(rawDb.db) : null;
         this.settings = settings;
         this.initialize();
     }
@@ -72,7 +180,7 @@ export class CustomPromptStorageService {
             // Check if table is empty
             const result = this.db.exec('SELECT COUNT(*) as count FROM custom_prompts');
             const count = result.length > 0 && result[0].values.length > 0
-                ? result[0].values[0][0] as number
+                ? readRowNumber(result[0].values[0], 0)
                 : 0;
 
             if (count === 0) {
@@ -128,13 +236,7 @@ export class CustomPromptStorageService {
             try {
                 const result = this.db.exec('SELECT * FROM custom_prompts ORDER BY name');
                 if (result.length > 0 && result[0].values.length > 0) {
-                    return result[0].values.map(row => ({
-                        id: row[0] as string,
-                        name: row[1] as string,
-                        description: (row[2] as string) || '',
-                        prompt: row[3] as string,
-                        isEnabled: (row[4] as number) === 1
-                    }));
+                    return result[0].values.map(row => mapPromptRow(row));
                 }
                 return [];
             } catch (error) {
@@ -157,13 +259,7 @@ export class CustomPromptStorageService {
             try {
                 const result = this.db.exec('SELECT * FROM custom_prompts WHERE isEnabled = 1 ORDER BY name');
                 if (result.length > 0 && result[0].values.length > 0) {
-                    return result[0].values.map(row => ({
-                        id: row[0] as string,
-                        name: row[1] as string,
-                        description: (row[2] as string) || '',
-                        prompt: row[3] as string,
-                        isEnabled: true
-                    }));
+                    return result[0].values.map(row => mapPromptRow(row, true));
                 }
                 return [];
             } catch (error) {
@@ -185,20 +281,13 @@ export class CustomPromptStorageService {
         // Try SQLite first if available
         if (this.db && this.migrated) {
             try {
-                const dbWithQuery = this.db as MigratableDatabase & { query?: (sql: string, params?: unknown[]) => { values: unknown[][] }[] };
-                const result = dbWithQuery.query
-                    ? dbWithQuery.query('SELECT * FROM custom_prompts WHERE id = ? OR name = ? LIMIT 1', [identifier, identifier])
-                    : [];
+                const result = this.db.query(
+                    'SELECT * FROM custom_prompts WHERE id = ? OR name = ? LIMIT 1',
+                    [identifier, identifier]
+                );
 
                 if (result.length > 0 && result[0].values.length > 0) {
-                    const row = result[0].values[0];
-                    return {
-                        id: row[0] as string,
-                        name: row[1] as string,
-                        description: (row[2] as string) || '',
-                        prompt: row[3] as string,
-                        isEnabled: (row[4] as number) === 1
-                    };
+                    return mapPromptRow(result[0].values[0]);
                 }
                 return undefined;
             } catch (error) {
@@ -281,7 +370,7 @@ export class CustomPromptStorageService {
         if (this.db && this.migrated) {
             try {
                 const fields: string[] = [];
-                const values: any[] = [];
+                const values: SqliteParams = [];
 
                 if (updates.name !== undefined) {
                     fields.push('name = ?');
@@ -411,6 +500,6 @@ export class CustomPromptStorageService {
      * @returns Unique string ID
      */
     private generatePromptId(): string {
-        return `prompt_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        return `prompt_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
     }
 }

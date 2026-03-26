@@ -13,35 +13,76 @@
 
 import { TokenUsage } from '../adapters/types';
 
+type UnknownRecord = Record<string, unknown>;
+
+function isRecord(value: unknown): value is UnknownRecord {
+  return typeof value === 'object' && value !== null;
+}
+
+function getNestedRecord(value: unknown, key: string): UnknownRecord | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const nestedValue = value[key];
+  return isRecord(nestedValue) ? nestedValue : undefined;
+}
+
+function getTruthyNumber(value: unknown, key: string): number | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const candidate = value[key];
+  return typeof candidate === 'number' && Boolean(candidate) ? candidate : undefined;
+}
+
+function getFirstTruthyNumber(value: unknown, ...keys: string[]): number | undefined {
+  for (const key of keys) {
+    const candidate = getTruthyNumber(value, key);
+    if (candidate !== undefined) {
+      return candidate;
+    }
+  }
+
+  return undefined;
+}
+
 export class TokenUsageExtractor {
   /**
    * Extract token usage from provider response
    * Supports multiple provider formats and detailed token breakdowns
    */
-  static extractUsage(response: any): TokenUsage | undefined {
+  static extractUsage(response: unknown): TokenUsage | undefined {
     // Check for usage data
-    if (!response.usage) {
+    const usageData = getNestedRecord(response, 'usage');
+    if (!usageData) {
       return undefined;
     }
 
     const usage: TokenUsage = {
-      promptTokens: response.usage.prompt_tokens || response.usage.input_tokens || 0,
-      completionTokens: response.usage.completion_tokens || response.usage.output_tokens || 0,
-      totalTokens: response.usage.total_tokens || 0
+      promptTokens: getFirstTruthyNumber(usageData, 'prompt_tokens', 'input_tokens') ?? 0,
+      completionTokens: getFirstTruthyNumber(usageData, 'completion_tokens', 'output_tokens') ?? 0,
+      totalTokens: getTruthyNumber(usageData, 'total_tokens') ?? 0
     };
 
+    const promptTokenDetails = getNestedRecord(usageData, 'prompt_tokens_details');
+    const completionTokenDetails = getNestedRecord(usageData, 'completion_tokens_details');
+
     // Extract detailed token breakdowns (OpenAI format)
-    if (response.usage.prompt_tokens_details?.cached_tokens) {
-      usage.cachedTokens = response.usage.prompt_tokens_details.cached_tokens;
+    const cachedTokens = getTruthyNumber(promptTokenDetails, 'cached_tokens');
+    if (cachedTokens !== undefined) {
+      usage.cachedTokens = cachedTokens;
     }
 
-    if (response.usage.completion_tokens_details?.reasoning_tokens) {
-      usage.reasoningTokens = response.usage.completion_tokens_details.reasoning_tokens;
+    const reasoningTokens = getTruthyNumber(completionTokenDetails, 'reasoning_tokens');
+    if (reasoningTokens !== undefined) {
+      usage.reasoningTokens = reasoningTokens;
     }
 
     // Audio tokens (sum of input and output if present)
-    const inputAudio = response.usage.prompt_tokens_details?.audio_tokens || 0;
-    const outputAudio = response.usage.completion_tokens_details?.audio_tokens || 0;
+    const inputAudio = getTruthyNumber(promptTokenDetails, 'audio_tokens') ?? 0;
+    const outputAudio = getTruthyNumber(completionTokenDetails, 'audio_tokens') ?? 0;
     if (inputAudio + outputAudio > 0) {
       usage.audioTokens = inputAudio + outputAudio;
     }
@@ -52,18 +93,18 @@ export class TokenUsageExtractor {
   /**
    * Format usage for streaming context (convert snake_case to camelCase)
    */
-  static formatStreamingUsage(rawUsage: any): TokenUsage | undefined {
-    if (!rawUsage) {
+  static formatStreamingUsage(rawUsage: unknown): TokenUsage | undefined {
+    if (!isRecord(rawUsage)) {
       return undefined;
     }
 
     return {
-      promptTokens: rawUsage.prompt_tokens || rawUsage.promptTokens || 0,
-      completionTokens: rawUsage.completion_tokens || rawUsage.completionTokens || 0,
-      totalTokens: rawUsage.total_tokens || rawUsage.totalTokens || 0,
-      cachedTokens: rawUsage.cached_tokens || rawUsage.cachedTokens,
-      reasoningTokens: rawUsage.reasoning_tokens || rawUsage.reasoningTokens,
-      audioTokens: rawUsage.audio_tokens || rawUsage.audioTokens
+      promptTokens: getFirstTruthyNumber(rawUsage, 'prompt_tokens', 'promptTokens') ?? 0,
+      completionTokens: getFirstTruthyNumber(rawUsage, 'completion_tokens', 'completionTokens') ?? 0,
+      totalTokens: getFirstTruthyNumber(rawUsage, 'total_tokens', 'totalTokens') ?? 0,
+      cachedTokens: getFirstTruthyNumber(rawUsage, 'cached_tokens', 'cachedTokens'),
+      reasoningTokens: getFirstTruthyNumber(rawUsage, 'reasoning_tokens', 'reasoningTokens'),
+      audioTokens: getFirstTruthyNumber(rawUsage, 'audio_tokens', 'audioTokens')
     };
   }
 }

@@ -28,6 +28,50 @@ export interface FormatOptions {
   prettyPrint?: boolean;
 }
 
+type WorkspaceDataInput = Record<string, unknown>;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function getWorkspaceDataInput(workspaceData: unknown): WorkspaceDataInput | null {
+  return isRecord(workspaceData) ? workspaceData : null;
+}
+
+function getArrayField(
+  workspaceData: WorkspaceDataInput,
+  key: 'workflows' | 'workspaceStructure' | 'recentFiles' | 'sessions' | 'states'
+): unknown[] | undefined {
+  const value = workspaceData[key];
+  return Array.isArray(value) && value.length > 0 ? value : undefined;
+}
+
+function getSlicedArrayField(
+  workspaceData: WorkspaceDataInput,
+  key: 'sessions' | 'states',
+  maxItems?: number
+): unknown[] | undefined {
+  const value = getArrayField(workspaceData, key);
+
+  if (!value) {
+    return undefined;
+  }
+
+  return maxItems ? value.slice(0, maxItems) : value;
+}
+
+function getKeyFilesField(
+  workspaceData: WorkspaceDataInput
+): Record<string, unknown> | undefined {
+  const value = workspaceData.keyFiles;
+  return isRecord(value) && Object.keys(value).length > 0 ? value : undefined;
+}
+
+function getPreferencesField(workspaceData: WorkspaceDataInput): string | undefined {
+  const value = workspaceData.preferences;
+  return typeof value === 'string' && value ? value : undefined;
+}
+
 /**
  * Extract relevant fields from workspace data into a clean object
  * @param workspaceData Raw workspace data from LoadWorkspaceTool or similar
@@ -35,56 +79,61 @@ export interface FormatOptions {
  * @returns Formatted workspace data object
  */
 export function extractWorkspaceData(
-  workspaceData: any,
+  workspaceData: unknown,
   options: FormatOptions = {}
 ): FormattedWorkspaceData {
-  if (!workspaceData) return {};
+  const input = getWorkspaceDataInput(workspaceData);
+
+  if (!input) return {};
 
   const { maxStates, maxSessions } = options;
   const formatted: FormattedWorkspaceData = {};
+  const workflows = getArrayField(input, 'workflows');
+  const workspaceStructure = getArrayField(input, 'workspaceStructure');
+  const recentFiles = getArrayField(input, 'recentFiles');
+  const keyFiles = getKeyFilesField(input);
+  const preferences = getPreferencesField(input);
+  const sessions = getSlicedArrayField(input, 'sessions', maxSessions);
+  const states = getSlicedArrayField(input, 'states', maxStates);
 
   // Core context (memory, goal, constraints, etc.)
-  if (workspaceData.context) {
-    formatted.context = workspaceData.context;
+  if (input.context) {
+    formatted.context = input.context;
   }
 
   // Workflows
-  if (workspaceData.workflows?.length) {
-    formatted.workflows = workspaceData.workflows;
+  if (workflows) {
+    formatted.workflows = workflows;
   }
 
   // Workspace structure (folder/file tree)
-  if (workspaceData.workspaceStructure?.length) {
-    formatted.workspaceStructure = workspaceData.workspaceStructure;
+  if (workspaceStructure) {
+    formatted.workspaceStructure = workspaceStructure;
   }
 
   // Recent files
-  if (workspaceData.recentFiles?.length) {
-    formatted.recentFiles = workspaceData.recentFiles;
+  if (recentFiles) {
+    formatted.recentFiles = recentFiles;
   }
 
   // Key files
-  if (workspaceData.keyFiles && Object.keys(workspaceData.keyFiles).length) {
-    formatted.keyFiles = workspaceData.keyFiles;
+  if (keyFiles) {
+    formatted.keyFiles = keyFiles;
   }
 
   // Preferences
-  if (workspaceData.preferences) {
-    formatted.preferences = workspaceData.preferences;
+  if (preferences) {
+    formatted.preferences = preferences;
   }
 
   // Sessions (with optional limit)
-  if (workspaceData.sessions?.length) {
-    formatted.sessions = maxSessions
-      ? workspaceData.sessions.slice(0, maxSessions)
-      : workspaceData.sessions;
+  if (sessions) {
+    formatted.sessions = sessions;
   }
 
   // States (with optional limit for subagents that don't need full history)
-  if (workspaceData.states?.length) {
-    formatted.states = maxStates
-      ? workspaceData.states.slice(0, maxStates)
-      : workspaceData.states;
+  if (states) {
+    formatted.states = states;
   }
 
   return formatted;
@@ -97,7 +146,7 @@ export function extractWorkspaceData(
  * @returns JSON string or empty string if no data
  */
 export function formatWorkspaceDataForPrompt(
-  workspaceData: any,
+  workspaceData: unknown,
   options: FormatOptions = {}
 ): string {
   const formatted = extractWorkspaceData(workspaceData, options);
@@ -117,17 +166,19 @@ export function formatWorkspaceDataForPrompt(
  * @param workspaceData Raw workspace data
  * @returns true if there's content worth including in a prompt
  */
-export function hasWorkspaceContent(workspaceData: any): boolean {
-  if (!workspaceData) return false;
+export function hasWorkspaceContent(workspaceData: unknown): boolean {
+  const input = getWorkspaceDataInput(workspaceData);
+
+  if (!input) return false;
 
   return !!(
-    workspaceData.context ||
-    workspaceData.workflows?.length ||
-    workspaceData.workspaceStructure?.length ||
-    workspaceData.recentFiles?.length ||
-    (workspaceData.keyFiles && Object.keys(workspaceData.keyFiles).length) ||
-    workspaceData.preferences ||
-    workspaceData.sessions?.length ||
-    workspaceData.states?.length
+    input.context ||
+    getArrayField(input, 'workflows') ||
+    getArrayField(input, 'workspaceStructure') ||
+    getArrayField(input, 'recentFiles') ||
+    getKeyFilesField(input) ||
+    getPreferencesField(input) ||
+    getArrayField(input, 'sessions') ||
+    getArrayField(input, 'states')
   );
 }
