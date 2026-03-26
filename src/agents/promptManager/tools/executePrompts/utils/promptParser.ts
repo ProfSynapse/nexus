@@ -1,10 +1,49 @@
-import { PromptConfig, BatchExecutePromptParams, BatchRequest, TextPromptRequest, ImageGenerationRequest } from '../types';
+import { PromptConfig, BatchExecutePromptParams, ImageGenerationRequest, ContentAction } from '../types';
+
+interface RawRequestConfig {
+  id?: unknown;
+  type?: unknown;
+  sequence?: unknown;
+  parallelGroup?: unknown;
+  includePreviousResults?: unknown;
+  contextFromSteps?: unknown;
+  prompt?: unknown;
+  provider?: unknown;
+  model?: unknown;
+  contextFiles?: unknown;
+  workspace?: unknown;
+  action?: unknown;
+  agent?: unknown;
+  aspectRatio?: unknown;
+  size?: unknown;
+  quality?: unknown;
+  safety?: unknown;
+  savePath?: unknown;
+  format?: unknown;
+  background?: unknown;
+  referenceImages?: unknown;
+}
+
+interface RawActionConfig {
+  type?: unknown;
+  targetPath?: unknown;
+  position?: unknown;
+  findText?: unknown;
+}
 
 /**
  * Utility for parsing and validating prompt configurations
  * Follows SRP by focusing only on prompt parsing logic
  */
 export class PromptParser {
+
+  private static readonly VALID_ACTION_TYPES: readonly ContentAction['type'][] = [
+    'create',
+    'append',
+    'prepend',
+    'replace',
+    'findReplace'
+  ];
 
   /**
    * Validate batch execution parameters
@@ -37,16 +76,17 @@ export class PromptParser {
   /**
    * Validate individual request configuration (text or image)
    */
-  validatePromptConfig(requestConfig: any, index: number): string[] {
+  validatePromptConfig(requestConfig: RawRequestConfig, index: number): string[] {
     const errors: string[] = [];
     const prefix = `Request ${index + 1}`;
     const requestType = requestConfig.type || 'text'; // Default to text for backward compatibility
+    const prompt = requestConfig.prompt;
 
-    if (!requestConfig.prompt || typeof requestConfig.prompt !== 'string') {
+    if (!prompt || typeof prompt !== 'string') {
       errors.push(`${prefix}: prompt text is required and must be a string`);
     }
 
-    if (requestConfig.prompt && requestConfig.prompt.length > 32000) {
+    if (typeof prompt === 'string' && prompt.length > 32000) {
       errors.push(`${prefix}: prompt text cannot exceed 32,000 characters`);
     }
 
@@ -82,7 +122,7 @@ export class PromptParser {
 
     // Only validate actions for text requests (images don't have actions)
     if (requestType === 'text' && requestConfig.action) {
-      const actionErrors = this.validateActionConfig(requestConfig.action, prefix);
+      const actionErrors = this.validateActionConfig(this.toRawActionConfig(requestConfig.action), prefix);
       errors.push(...actionErrors);
     }
 
@@ -92,7 +132,7 @@ export class PromptParser {
   /**
    * Validate action configuration
    */
-  validateActionConfig(action: any, prefix: string): string[] {
+  validateActionConfig(action: RawActionConfig, prefix: string): string[] {
     const errors: string[] = [];
 
     if (!action.type) {
@@ -103,9 +143,8 @@ export class PromptParser {
       errors.push(`${prefix}: action.targetPath is required`);
     }
 
-    const validActionTypes = ['create', 'append', 'prepend', 'replace', 'findReplace'];
-    if (action.type && !validActionTypes.includes(action.type)) {
-      errors.push(`${prefix}: action.type must be one of: ${validActionTypes.join(', ')}`);
+    if (action.type && (typeof action.type !== 'string' || !PromptParser.VALID_ACTION_TYPES.includes(action.type))) {
+      errors.push(`${prefix}: action.type must be one of: ${PromptParser.VALID_ACTION_TYPES.join(', ')}`);
     }
 
     if (action.type === 'findReplace' && !action.findText) {
@@ -122,7 +161,7 @@ export class PromptParser {
   /**
    * Normalize request configurations (text and image)
    */
-  normalizePromptConfigs(requests: any[]): PromptConfig[] {
+  normalizePromptConfigs(requests: RawRequestConfig[]): PromptConfig[] {
     return requests.map((request, index) => {
       const requestType = request.type || 'text'; // Default to text for backward compatibility
       const baseConfig = {
@@ -162,6 +201,23 @@ export class PromptParser {
         } as PromptConfig;
       }
     });
+  }
+
+  private toRawActionConfig(action: unknown): RawActionConfig {
+    if (!this.isRecord(action)) {
+      return {};
+    }
+
+    return {
+      type: action.type,
+      targetPath: action.targetPath,
+      position: action.position,
+      findText: action.findText
+    };
+  }
+
+  private isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null;
   }
 
   /**

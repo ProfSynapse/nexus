@@ -5,8 +5,7 @@ import type { ServiceManager } from './core/ServiceManager';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { logger } from './utils/logger';
 import { CustomPromptStorageService } from "./agents/promptManager/services/CustomPromptStorageService";
-import { generateSessionId, formatSessionInstructions, isStandardSessionId } from './utils/sessionUtils';
-import { getContextSchema } from './utils/schemaUtils';
+import { generateSessionId, isStandardSessionId } from './utils/sessionUtils';
 // ToolCallCaptureService removed in simplified architecture
 
 // Extracted services
@@ -14,13 +13,65 @@ import { MCPConnectionManager, MCPConnectionManagerInterface } from './services/
 import { ToolCallRouter, ToolCallRouterInterface } from './services/mcp/ToolCallRouter';
 import { AgentRegistrationService, AgentRegistrationServiceInterface } from './services/agent/AgentRegistrationService';
 import { ToolCallTraceService } from './services/trace/ToolCallTraceService';
+import { AppManager } from './services/apps/AppManager';
+import type { MCPServer } from './server/MCPServer';
 
 // Type definitions
 import { AgentToolParams } from './types/agent/AgentTypes';
+import type { JSONSchema } from './types/schema/JSONSchemaTypes';
 import { SearchManagerAgent } from './agents';
 import { MemoryManagerAgent } from './agents';
 import { IAgent } from './agents/interfaces/IAgent';
 import { ITool } from './agents/interfaces/ITool';
+
+type UnknownRecord = Record<string, unknown>;
+
+interface ConnectorContext extends UnknownRecord {
+    sessionId?: string;
+    workspaceId?: string;
+    tools?: unknown;
+}
+
+interface ConnectorToolParams extends UnknownRecord {
+    context?: ConnectorContext;
+    sessionId?: string;
+    workspaceContext?: { workspaceId?: string };
+    workspaceId?: string;
+    workspace?: string;
+    params?: UnknownRecord;
+    tools?: unknown;
+}
+
+interface AgentToolOverview {
+    description: string;
+    tools: string[];
+}
+
+type ToolSchemaResponse = {
+    name: string;
+    description: string;
+    inputSchema: Record<string, unknown>;
+};
+
+function isRecord(value: unknown): value is UnknownRecord {
+    return typeof value === 'object' && value !== null;
+}
+
+function getStringProperty(record: UnknownRecord, key: string): string | undefined {
+    const value = record[key];
+    return typeof value === 'string' ? value : undefined;
+}
+
+function isAgent(value: unknown): value is IAgent {
+    return isRecord(value)
+        && typeof value.name === 'string'
+        && typeof value.description === 'string'
+        && typeof value.getTools === 'function';
+}
+
+function toToolName(tool: ITool<unknown, unknown>): string {
+    return tool.slug || tool.name || 'unknown';
+}
 
 /**
  * Type guard to check if a plugin is a NexusPlugin instance
@@ -82,8 +133,8 @@ export class MCPConnector {
             this.events,
             this.serviceManager,
             this.customPromptStorage,
-            (toolName: string, params: any) => this.onToolCall(toolName, params),
-            (toolName: string, params: any, response: any, success: boolean, executionTime: number) => this.onToolResponse(toolName, params, response, success, executionTime)
+            (toolName: string, params: unknown) => this.onToolCall(toolName, params),
+            (toolName: string, params: unknown, response: unknown, success: boolean, executionTime: number) => this.onToolResponse(toolName, params, response, success, executionTime)
         );
 
         this.toolRouter = new ToolCallRouter();
@@ -119,7 +170,7 @@ export class MCPConnector {
     /**
      * Handle tool call responses - now handled by ToolCallTraceService via MCPConnectionManager
      */
-    private async onToolResponse(toolName: string, params: any, response: any, success: boolean, executionTime: number): Promise<void> {
+    private async onToolResponse(_toolName: string, _params: unknown, _response: unknown, _success: boolean, _executionTime: number): Promise<void> {
         // Tool call tracing is now handled by ToolCallTraceService
         // This callback is kept for backward compatibility
     }
@@ -127,7 +178,7 @@ export class MCPConnector {
     /**
      * Handle tool calls - now handled by ToolCallTraceService via MCPConnectionManager
      */
-    private async onToolCall(toolName: string, params: any): Promise<void> {
+    private async onToolCall(_toolName: string, _params: unknown): Promise<void> {
         // Tool call tracing is now handled by ToolCallTraceService
         // This callback is kept for backward compatibility
     }
@@ -135,26 +186,61 @@ export class MCPConnector {
     /**
      * Check if this tool call is workspace-related
      */
-    private isWorkspaceOperation(toolName: string, params: any): boolean {
+    private isWorkspaceOperation(toolName: string, params: unknown): boolean {
         const workspaceTools = [
             'memoryManager.switchWorkspace',
             'memoryManager.createWorkspace',
             'memoryManager.getWorkspace',
             'searchManager.search'
         ];
+
+        const typedParams = isRecord(params) ? params : null;
         
         return workspaceTools.some(tool => toolName.includes(tool)) || 
-               (params && (params.workspaceId || params.workspace));
+               !!(typedParams && (getStringProperty(typedParams, 'workspaceId') || getStringProperty(typedParams, 'workspace')));
     }
     
     /**
      * Extract workspace ID from tool parameters
      */
-    private extractWorkspaceId(params: any): string | null {
-        if (params?.workspaceId) return params.workspaceId;
-        if (params?.workspace) return params.workspace;
-        if (params?.params?.workspaceId) return params.params.workspaceId;
+    private extractWorkspaceId(params: unknown): string | null {
+        if (!isRecord(params)) {
+            return null;
+        }
+
+        const workspaceId = getStringProperty(params, 'workspaceId');
+        if (workspaceId) {
+            return workspaceId;
+        }
+
+        const workspace = getStringProperty(params, 'workspace');
+        if (workspace) {
+            return workspace;
+        }
+
+        const nestedParams = params.params;
+        if (isRecord(nestedParams)) {
+            return getStringProperty(nestedParams, 'workspaceId') ?? null;
+        }
+
         return null;
+    }
+
+    private getRegisteredAgents(): Map<string, IAgent> {
+        const registeredAgents = new Map<string, IAgent>();
+        const rawAgents: unknown = this.agentRegistry?.getAllAgents();
+
+        if (!(rawAgents instanceof Map)) {
+            return registeredAgents;
+        }
+
+        for (const [agentName, agent] of rawAgents.entries()) {
+            if (typeof agentName === 'string' && isAgent(agent)) {
+                registeredAgents.set(agentName, agent);
+            }
+        }
+
+        return registeredAgents;
     }
     
     /**
@@ -263,8 +349,7 @@ export class MCPConnector {
      * then execute tools via useTools with unified context.
      */
     getAvailableTools(): unknown[] {
-        // Get toolManager agent
-        const toolManagerAgent = this.agentRegistry?.getAgent('toolManager');
+        const toolManagerAgent = this.getRegisteredAgents().get('toolManager');
 
         if (!toolManagerAgent) {
             logger.systemWarn('ToolManager agent not yet initialized - returning empty tools list');
@@ -276,7 +361,7 @@ export class MCPConnector {
 
         // Convert to MCP tool format
         // Use underscore separator (not dots) for API compatibility
-        return toolManagerTools.map((tool: ITool<unknown, unknown>) => ({
+        return toolManagerTools.map((tool) => ({
             name: `toolManager_${tool.slug}`,
             description: tool.description,
             inputSchema: tool.getParameterSchema()
@@ -287,14 +372,14 @@ export class MCPConnector {
      * Get overview of all agents and their available tools (no schemas)
      * Used when get_tools is called with empty tools array
      */
-    private getAgentToolOverview(): Record<string, { description: string; tools: string[] }> {
-        const overview: Record<string, { description: string; tools: string[] }> = {};
+    private getAgentToolOverview(): Record<string, AgentToolOverview> {
+        const overview: Record<string, AgentToolOverview> = {};
 
         if (!this.agentRegistry) {
             return overview;
         }
 
-        const registeredAgents = this.agentRegistry.getAllAgents();
+        const registeredAgents = this.getRegisteredAgents();
 
         for (const [agentName, agent] of registeredAgents) {
             const tools = agent.getTools();
@@ -302,7 +387,7 @@ export class MCPConnector {
 
             overview[agentName] = {
                 description: agentDescription,
-                tools: tools.map((tool: ITool<unknown, unknown>) => tool.slug || tool.name || 'unknown')
+                tools: tools.map((tool) => toToolName(tool))
             };
         }
 
@@ -315,14 +400,14 @@ export class MCPConnector {
      *
      * @param toolNames Array of specific tool names like ["contentManager_createNote", "searchManager_searchDirectory"]
      */
-    private getToolsForSpecificNames(toolNames: string[]): Array<{ name: string; description: string; inputSchema: Record<string, unknown> }> {
-        const toolSchemas: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }> = [];
+    private getToolsForSpecificNames(toolNames: string[]): ToolSchemaResponse[] {
+        const toolSchemas: ToolSchemaResponse[] = [];
 
         if (!this.agentRegistry) {
             return [];
         }
 
-        const registeredAgents = this.agentRegistry.getAllAgents();
+        const registeredAgents = this.getRegisteredAgents();
 
         for (const toolName of toolNames) {
             // Parse tool name: "contentManager_createNote" -> agentName="contentManager", toolSlug="createNote"
@@ -342,9 +427,7 @@ export class MCPConnector {
 
             // Find the tool
             const tools = agent.getTools();
-            const toolInstance = tools.find((t: ITool<unknown, unknown>) =>
-                (t.slug || t.name) === toolSlug
-            );
+            const toolInstance = tools.find((candidateTool) => toToolName(candidateTool) === toolSlug);
 
             if (!toolInstance) {
                 continue; // Tool not found
@@ -364,7 +447,7 @@ export class MCPConnector {
                         description: toolInstance.description || `Execute ${toolSlug} on ${agentName}`,
                         inputSchema: cleanSchema
                     });
-                } catch (error) {
+                } catch {
                     // Skip tools with invalid schemas
                 }
             }
@@ -377,13 +460,18 @@ export class MCPConnector {
      * Strip common parameters from tool schema to reduce context bloat
      * Common parameters (context, workspaceContext, sessionId) are documented in get_tools instruction
      */
-    private stripCommonParameters(schema: any): any {
-        if (!schema || !schema.properties) {
+    private stripCommonParameters(schema: JSONSchema): Record<string, unknown> {
+        if (!schema.properties || typeof schema.properties !== 'object') {
             return schema;
         }
 
-        const { context, workspaceContext, sessionId, ...cleanProperties } = schema.properties;
-        const cleanRequired = (schema.required || []).filter(
+        const cleanProperties = { ...schema.properties };
+        delete cleanProperties.context;
+        delete cleanProperties.workspaceContext;
+        delete cleanProperties.sessionId;
+
+        const requiredFields = Array.isArray(schema.required) ? schema.required : [];
+        const cleanRequired = requiredFields.filter(
             (field: string) => field !== 'context' && field !== 'workspaceContext' && field !== 'sessionId'
         );
 
@@ -403,19 +491,22 @@ export class MCPConnector {
             // ========================================
             if (agent === 'get' && tool === 'tools') {
                 // This is a call to the get_tools meta-tool
-                const toolParamsTyped = toolParams as Record<string, unknown>;
-                const contextTyped = toolParamsTyped.context as Record<string, unknown> | undefined;
-                const toolNames = (toolParamsTyped.tools || contextTyped?.tools || []) as string[];
+                const toolParamsTyped = toolParams as ConnectorToolParams;
+                const contextTyped = isRecord(toolParamsTyped.context) ? toolParamsTyped.context : undefined;
+                const requestedTools = toolParamsTyped.tools ?? contextTyped?.tools;
+                const toolNames = Array.isArray(requestedTools)
+                    ? requestedTools.filter((toolName): toolName is string => typeof toolName === 'string')
+                    : [];
 
-                if (!Array.isArray(toolNames)) {
+                if (requestedTools !== undefined && !Array.isArray(requestedTools)) {
                     return {
                         success: false,
                         error: 'tools parameter must be an array'
                     };
                 }
 
-                const sessionId = contextTyped?.sessionId as string | undefined;
-                const workspaceId = (contextTyped?.workspaceId || 'default') as string;
+                const sessionId = contextTyped?.sessionId;
+                const workspaceId = contextTyped?.workspaceId || 'default';
 
                 // TIER 1: Discovery mode (empty array) - return agent/tool overview
                 if (toolNames.length === 0) {
@@ -483,16 +574,17 @@ Keep workspaceId and sessionId values EXACTLY as shown above throughout the conv
             };
 
             // 1. SESSION ID VALIDATION: Extract and validate/generate sessionId first
-            const providedSessionId = (typedParams.context?.sessionId || typedParams.sessionId) as string | undefined;
+            const contextSessionId = typedParams.context?.sessionId;
+            const providedSessionId = typeof contextSessionId === 'string'
+                ? contextSessionId
+                : typeof typedParams.sessionId === 'string'
+                    ? typedParams.sessionId
+                    : undefined;
             let validatedSessionId: string;
-            let isNewSession = false;
-            let isNonStandardId = false;
 
             if (!providedSessionId || !isStandardSessionId(providedSessionId)) {
                 // No sessionId or non-standard format - generate a new one
                 validatedSessionId = generateSessionId();
-                isNewSession = true;
-                isNonStandardId = !!providedSessionId; // True if they provided a friendly name
             } else {
                 // Valid standard sessionId - use it
                 validatedSessionId = providedSessionId;
@@ -547,7 +639,7 @@ Keep workspaceId and sessionId values EXACTLY as shown above throughout the conv
                     result,
                     success,
                     executionTime
-                ).catch((err: Error) => {
+                ).catch((_err: Error) => {
                     // Silent error handling for tool trace capture
                 });
             }
@@ -614,7 +706,7 @@ Keep workspaceId and sessionId values EXACTLY as shown above throughout the conv
     /**
      * Get the MCP server instance - delegates to MCPConnectionManager
      */
-    getServer(): any {
+    getServer(): MCPServer | null {
         return this.connectionManager.getServer();
     }
     
@@ -663,8 +755,9 @@ Keep workspaceId and sessionId values EXACTLY as shown above throughout the conv
     /**
      * Get the AppManager instance - delegates to AgentRegistrationService
      */
-    getAppManager(): any | null {
-        return this.agentRegistry.getAppManager();
+    getAppManager(): AppManager | null {
+        const appManager: unknown = this.agentRegistry.getAppManager();
+        return appManager instanceof AppManager ? appManager : null;
     }
 
     /**
