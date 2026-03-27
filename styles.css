@@ -7298,8 +7298,7 @@ body.is-mobile .chat-loading-overlay {
 
 .nexus-task-board-header,
 .nexus-task-board-toolbar,
-.nexus-task-board-column,
-.nexus-task-board-modal-shell {
+.nexus-task-board-column {
     background: var(--background-secondary);
     border: 1px solid var(--background-modifier-border);
     border-radius: var(--radius-m);
@@ -7318,16 +7317,13 @@ body.is-mobile .chat-loading-overlay {
 }
 
 .nexus-task-board-header h2,
-.nexus-task-board-column-header h3,
-.nexus-task-board-modal-header h2 {
+.nexus-task-board-column-header h3 {
     margin: 0;
 }
 
 .nexus-task-board-kicker,
 .nexus-task-board-field-label,
 .nexus-task-board-card-meta,
-.nexus-task-board-modal-kicker,
-.nexus-task-board-modal-note,
 .nexus-task-board-stat {
     color: var(--text-faint);
     font-size: 0.75rem;
@@ -7338,8 +7334,7 @@ body.is-mobile .chat-loading-overlay {
     color: var(--text-muted);
 }
 
-.nexus-task-board-actions,
-.nexus-task-board-modal-actions {
+.nexus-task-board-actions {
     display: flex;
     gap: var(--space-s);
 }
@@ -7579,40 +7574,13 @@ body.is-mobile .chat-loading-overlay {
     margin-top: 0;
 }
 
-.nexus-task-board-modal {
-    padding: 0;
-}
-
-.nexus-task-board-modal-shell {
+/* Task edit modal — reuses nexus-form-* and nexus-workspace-form classes */
+.nexus-task-edit-modal {
     padding: var(--space-l);
 }
 
-.nexus-task-board-modal-header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: var(--space-m);
-    margin-bottom: var(--space-l);
-}
-
-.nexus-task-board-modal-form {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-m);
-}
-
-.nexus-task-board-modal-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: var(--space-m);
-}
-
-.nexus-task-board-modal-footer {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-m);
-    flex-wrap: wrap;
+.nexus-task-edit-modal .nexus-detail-title {
+    margin-top: 0;
 }
 
 body.is-mobile .nexus-task-board-shell {
@@ -7631,8 +7599,7 @@ body.is-mobile .nexus-task-board-shell {
         flex-direction: column;
     }
 
-    .nexus-task-board-toolbar,
-    .nexus-task-board-modal-grid {
+    .nexus-task-board-toolbar {
         display: flex;
         flex-direction: column;
     }
