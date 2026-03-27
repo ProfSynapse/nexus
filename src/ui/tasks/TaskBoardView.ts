@@ -136,25 +136,40 @@ export class TaskBoardView extends ItemView {
     container.empty();
     container.addClass('nexus-task-board-view');
     const loading = container.createDiv('nexus-task-board-loading');
+    loading.createDiv('nexus-task-board-spinner');
     loading.createDiv({ cls: 'nexus-task-board-loading-text', text: message });
   }
 
   private async initializeView(): Promise<void> {
-    try {
-      await this.ensureServices();
-      await this.loadBoardData();
-      if (this.isClosing) {
-        return;
-      }
-      this.isReady = true;
-      this.renderBoard();
-    } catch (error) {
+    const maxAttempts = 40;
+    const delayMs = 750;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       if (this.isClosing) {
         return;
       }
 
-      console.error('[TaskBoardView] Failed to initialize:', error);
-      this.renderError(error instanceof Error ? error.message : 'Failed to load task board');
+      try {
+        await this.ensureServices();
+        await this.loadBoardData();
+        if (this.isClosing) {
+          return;
+        }
+        this.isReady = true;
+        this.renderBoard();
+        return;
+      } catch {
+        if (this.isClosing) {
+          return;
+        }
+
+        if (attempt < maxAttempts) {
+          this.renderLoading('Waiting for services to start...');
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+        } else {
+          this.renderError('Task board services did not become available. Please try again later.');
+        }
+      }
     }
   }
 
