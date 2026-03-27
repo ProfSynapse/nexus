@@ -7296,6 +7296,14 @@ body.is-mobile .chat-loading-overlay {
     overflow: hidden;
 }
 
+.nexus-task-board-columns-wrapper {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+}
+
 .nexus-task-board-header,
 .nexus-task-board-toolbar,
 .nexus-task-board-column {
