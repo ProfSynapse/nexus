@@ -33,6 +33,24 @@ const STATUS_COLUMNS: Array<{ id: TaskStatus; label: string }> = [
   { id: 'cancelled', label: 'Cancelled' }
 ];
 
+type TaskSortField = 'created' | 'updated' | 'priority' | 'title' | 'dueDate';
+type TaskSortOrder = 'asc' | 'desc';
+
+const SORT_OPTIONS: Array<{ field: TaskSortField; label: string }> = [
+  { field: 'created', label: 'Date created' },
+  { field: 'updated', label: 'Last updated' },
+  { field: 'priority', label: 'Priority' },
+  { field: 'title', label: 'Title' },
+  { field: 'dueDate', label: 'Due date' }
+];
+
+const PRIORITY_ORDER: Record<string, number> = {
+  critical: 1,
+  high: 2,
+  medium: 3,
+  low: 4
+};
+
 export class TaskBoardView extends ItemView {
   private workspaceService: WorkspaceService | null = null;
   private taskService: TaskService | null = null;
@@ -43,7 +61,9 @@ export class TaskBoardView extends ItemView {
   private filterState: TaskBoardViewState = {
     workspaceId: '',
     projectId: '',
-    search: ''
+    search: '',
+    sortField: 'created',
+    sortOrder: 'asc'
   };
   private dragTaskId: string | null = null;
   private isClosing = false;
@@ -51,6 +71,8 @@ export class TaskBoardView extends ItemView {
   private isSyncingBoardData = false;
   private isEditModalOpen = false;
   private hasPendingEventSync = false;
+  private columnsContainer: HTMLElement | null = null;
+  private statsContainer: HTMLElement | null = null;
 
   constructor(leaf: WorkspaceLeaf, private plugin: NexusPlugin) {
     super(leaf);
@@ -76,7 +98,9 @@ export class TaskBoardView extends ItemView {
     this.filterState = {
       workspaceId: state?.workspaceId || '',
       projectId: state?.projectId || '',
-      search: state?.search || ''
+      search: state?.search || '',
+      sortField: state?.sortField || 'created',
+      sortOrder: state?.sortOrder || 'asc'
     };
 
     if (this.isReady) {
@@ -243,7 +267,30 @@ export class TaskBoardView extends ItemView {
     const shell = container.createDiv('nexus-task-board-shell');
     this.renderHeader(shell);
     this.renderToolbar(shell);
-    this.renderColumns(shell);
+    this.columnsContainer = shell.createDiv();
+    this.renderColumns();
+  }
+
+  /**
+   * Re-render only the columns and stats, preserving the toolbar (search input keeps focus).
+   */
+  private refreshColumns(): void {
+    if (this.columnsContainer) {
+      this.renderColumns();
+    }
+    if (this.statsContainer) {
+      this.statsContainer.empty();
+      const filteredTasks = this.getFilteredAndSortedTasks();
+      const projectCount = new Set(filteredTasks.map(task => task.projectId)).size;
+      this.statsContainer.createDiv({
+        cls: 'nexus-task-board-stat',
+        text: `${filteredTasks.length} tasks`
+      });
+      this.statsContainer.createDiv({
+        cls: 'nexus-task-board-stat',
+        text: `${projectCount} projects`
+      });
+    }
   }
 
   private renderHeader(container: HTMLElement): void {
@@ -274,7 +321,7 @@ export class TaskBoardView extends ItemView {
     this.registerDomEvent(workspaceSelect, 'change', () => {
       this.filterState.workspaceId = workspaceSelect.value;
       this.ensureValidFilters();
-      this.renderBoard();
+      this.refreshColumns();
     });
 
     const projectField = toolbar.createDiv('nexus-task-board-field');
@@ -290,7 +337,7 @@ export class TaskBoardView extends ItemView {
     projectSelect.value = this.filterState.projectId || 'all';
     this.registerDomEvent(projectSelect, 'change', () => {
       this.filterState.projectId = projectSelect.value;
-      this.renderBoard();
+      this.refreshColumns();
     });
 
     const searchField = toolbar.createDiv('nexus-task-board-field nexus-task-board-field-search');
@@ -305,25 +352,53 @@ export class TaskBoardView extends ItemView {
     searchInput.value = this.filterState.search || '';
     this.registerDomEvent(searchInput, 'input', () => {
       this.filterState.search = searchInput.value;
-      this.renderBoard();
+      this.refreshColumns();
     });
 
-    const stats = toolbar.createDiv('nexus-task-board-stats');
-    const filteredTasks = this.getFilteredTasks();
+    const sortField = toolbar.createDiv('nexus-task-board-field');
+    sortField.createEl('label', { cls: 'nexus-task-board-field-label', text: 'Sort by' });
+    const sortSelect = sortField.createEl('select', { cls: 'nexus-task-board-input' });
+    SORT_OPTIONS.forEach(option => {
+      sortSelect.createEl('option', {
+        value: option.field,
+        text: option.label
+      });
+    });
+    sortSelect.value = this.filterState.sortField || 'created';
+    this.registerDomEvent(sortSelect, 'change', () => {
+      this.filterState.sortField = sortSelect.value;
+      this.refreshColumns();
+    });
+
+    const orderField = toolbar.createDiv('nexus-task-board-field');
+    orderField.createEl('label', { cls: 'nexus-task-board-field-label', text: 'Order' });
+    const orderSelect = orderField.createEl('select', { cls: 'nexus-task-board-input' });
+    orderSelect.createEl('option', { value: 'asc', text: 'Ascending' });
+    orderSelect.createEl('option', { value: 'desc', text: 'Descending' });
+    orderSelect.value = this.filterState.sortOrder || 'asc';
+    this.registerDomEvent(orderSelect, 'change', () => {
+      this.filterState.sortOrder = orderSelect.value;
+      this.refreshColumns();
+    });
+
+    this.statsContainer = toolbar.createDiv('nexus-task-board-stats');
+    const filteredTasks = this.getFilteredAndSortedTasks();
     const projectCount = new Set(filteredTasks.map(task => task.projectId)).size;
-    stats.createDiv({
+    this.statsContainer.createDiv({
       cls: 'nexus-task-board-stat',
       text: `${filteredTasks.length} tasks`
     });
-    stats.createDiv({
+    this.statsContainer.createDiv({
       cls: 'nexus-task-board-stat',
       text: `${projectCount} projects`
     });
   }
 
-  private renderColumns(container: HTMLElement): void {
-    const columns = container.createDiv('nexus-task-board-columns');
-    const filteredTasks = this.getFilteredTasks();
+  private renderColumns(): void {
+    if (!this.columnsContainer) return;
+    this.columnsContainer.empty();
+    const columns = this.columnsContainer.createDiv('nexus-task-board-columns');
+    const filteredTasks = this.getFilteredAndSortedTasks();
 
     STATUS_COLUMNS.forEach(column => {
       const columnEl = columns.createDiv('nexus-task-board-column');
@@ -410,10 +485,10 @@ export class TaskBoardView extends ItemView {
     return this.projects.filter(project => project.workspaceId === this.filterState.workspaceId);
   }
 
-  private getFilteredTasks(): TaskBoardTask[] {
+  private getFilteredAndSortedTasks(): TaskBoardTask[] {
     const searchQuery = (this.filterState.search || '').trim().toLowerCase();
 
-    return this.tasks.filter(task => {
+    const filtered = this.tasks.filter(task => {
       const matchesWorkspace = !this.filterState.workspaceId || this.filterState.workspaceId === 'all'
         || task.workspaceId === this.filterState.workspaceId;
       const matchesProject = !this.filterState.projectId || this.filterState.projectId === 'all'
@@ -441,6 +516,37 @@ export class TaskBoardView extends ItemView {
 
       return haystack.includes(searchQuery);
     });
+
+    const sortField = (this.filterState.sortField || 'created') as TaskSortField;
+    const sortOrder = (this.filterState.sortOrder || 'asc') as TaskSortOrder;
+    const multiplier = sortOrder === 'asc' ? 1 : -1;
+
+    filtered.sort((a, b) => {
+      let comparison = 0;
+      switch (sortField) {
+        case 'created':
+          comparison = a.created - b.created;
+          break;
+        case 'updated':
+          comparison = a.updated - b.updated;
+          break;
+        case 'priority':
+          comparison = (PRIORITY_ORDER[a.priority] ?? 5) - (PRIORITY_ORDER[b.priority] ?? 5);
+          break;
+        case 'title':
+          comparison = a.title.localeCompare(b.title);
+          break;
+        case 'dueDate': {
+          const aDue = a.dueDate ?? Number.MAX_SAFE_INTEGER;
+          const bDue = b.dueDate ?? Number.MAX_SAFE_INTEGER;
+          comparison = aDue - bDue;
+          break;
+        }
+      }
+      return comparison * multiplier;
+    });
+
+    return filtered;
   }
 
   private openEditModal(task: TaskBoardTask): void {
@@ -538,13 +644,13 @@ export class TaskBoardView extends ItemView {
 
     const previousStatus = task.status;
     task.status = newStatus;
-    this.renderBoard();
+    this.refreshColumns();
 
     try {
       await this.taskService.updateTask(taskId, { status: newStatus });
     } catch (error) {
       task.status = previousStatus;
-      this.renderBoard();
+      this.refreshColumns();
       const message = error instanceof Error ? error.message : 'Failed to update task status';
       new Notice(message);
     }

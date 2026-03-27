@@ -8,13 +8,17 @@ export interface TaskBoardViewState extends Record<string, unknown> {
   workspaceId?: string;
   projectId?: string;
   search?: string;
+  sortField?: string;
+  sortOrder?: string;
 }
 
 function normalizeTaskBoardState(state?: TaskBoardViewState): TaskBoardViewState {
   return {
     workspaceId: state?.workspaceId || '',
     projectId: state?.projectId || '',
-    search: state?.search || ''
+    search: state?.search || '',
+    sortField: state?.sortField || 'created',
+    sortOrder: state?.sortOrder || 'asc'
   };
 }
 

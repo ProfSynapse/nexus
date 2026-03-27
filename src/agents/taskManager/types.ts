@@ -190,6 +190,8 @@ export interface ListTasksParameters extends CommonParameters {
   assignee?: string;
   parentTaskId?: string;
   includeSubtasks?: boolean;
+  sortBy?: 'created' | 'updated' | 'priority' | 'title' | 'dueDate';
+  sortOrder?: 'asc' | 'desc';
   page?: number;
   pageSize?: number;
 }

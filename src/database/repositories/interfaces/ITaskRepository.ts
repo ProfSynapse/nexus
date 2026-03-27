@@ -94,6 +94,11 @@ export interface NoteLink {
 }
 
 /**
+ * Valid sort fields for task listing
+ */
+export type TaskSortField = 'created' | 'updated' | 'priority' | 'title' | 'dueDate';
+
+/**
  * Options for filtering task lists
  */
 export interface TaskListOptions extends PaginationParams {
@@ -102,6 +107,8 @@ export interface TaskListOptions extends PaginationParams {
   assignee?: string;
   parentTaskId?: string;
   includeSubtasks?: boolean;
+  sortBy?: TaskSortField;
+  sortOrder?: 'asc' | 'desc';
 }
 
 /**

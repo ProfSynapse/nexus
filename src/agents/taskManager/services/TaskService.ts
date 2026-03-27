@@ -248,7 +248,9 @@ export class TaskService {
       status: options?.status,
       priority: options?.priority,
       assignee: options?.assignee,
-      parentTaskId: options?.parentTaskId
+      parentTaskId: options?.parentTaskId,
+      sortBy: options?.sortBy,
+      sortOrder: options?.sortOrder
     });
   }
 
@@ -261,7 +263,9 @@ export class TaskService {
       priority: options?.priority,
       assignee: options?.assignee,
       parentTaskId: options?.parentTaskId,
-      includeSubtasks: options?.includeSubtasks
+      includeSubtasks: options?.includeSubtasks,
+      sortBy: options?.sortBy,
+      sortOrder: options?.sortOrder
     });
   }
 

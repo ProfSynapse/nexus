@@ -34,6 +34,8 @@ export class ListTasksTool extends BaseTool<ListTasksParameters, ListTasksResult
         assignee: params.assignee,
         parentTaskId: params.parentTaskId,
         includeSubtasks: params.includeSubtasks,
+        sortBy: params.sortBy,
+        sortOrder: params.sortOrder,
         page: params.page,
         pageSize: params.pageSize
       });
@@ -64,6 +66,8 @@ export class ListTasksTool extends BaseTool<ListTasksParameters, ListTasksResult
         assignee: { type: 'string', description: 'Filter by assignee' },
         parentTaskId: { type: 'string', description: 'Filter by parent task (subtasks of this task)' },
         includeSubtasks: { type: 'boolean', description: 'Include subtasks in results (default: true)' },
+        sortBy: { type: 'string', enum: ['created', 'updated', 'priority', 'title', 'dueDate'], description: 'Sort field (default: updated)' },
+        sortOrder: { type: 'string', enum: ['asc', 'desc'], description: 'Sort direction (default: desc)' },
         page: { type: 'number', description: 'Page number (0-indexed, default: 0)', minimum: 0 },
         pageSize: { type: 'number', description: 'Items per page (default: 20)', minimum: 1, maximum: 100 }
       },

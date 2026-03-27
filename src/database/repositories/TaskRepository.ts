@@ -28,7 +28,8 @@ import {
   NoteLink,
   LinkType,
   TaskStatus,
-  TaskListOptions
+  TaskListOptions,
+  TaskSortField
 } from './interfaces/ITaskRepository';
 import {
   TaskCreatedEvent,
@@ -273,6 +274,26 @@ export class TaskRepository
   // ITaskRepository Specific Methods
   // ============================================================================
 
+  /**
+   * Build a safe ORDER BY clause from whitelist sort fields.
+   * Defaults to `t.updated DESC` if no valid sortBy is provided.
+   */
+  private buildOrderClause(options?: TaskListOptions): string {
+    const SORT_COLUMN_MAP: Record<TaskSortField, string> = {
+      created: 't.created',
+      updated: 't.updated',
+      priority: "CASE t.priority WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 WHEN 'low' THEN 4 END",
+      title: 't.title',
+      dueDate: 't.dueDate'
+    };
+
+    const sortField = options?.sortBy && SORT_COLUMN_MAP[options.sortBy]
+      ? options.sortBy
+      : 'updated';
+    const sortDirection = options?.sortOrder === 'asc' ? 'ASC' : 'DESC';
+    return `ORDER BY ${SORT_COLUMN_MAP[sortField]} ${sortDirection}`;
+  }
+
   async getByProject(projectId: string, options?: TaskListOptions): Promise<PaginatedResult<TaskMetadata>> {
     let whereClause = 'WHERE t.projectId = ?';
     const params: unknown[] = [projectId];
@@ -283,7 +304,8 @@ export class TaskRepository
     if (options?.parentTaskId) { whereClause += ' AND t.parentTaskId = ?'; params.push(options.parentTaskId); }
     if (options?.includeSubtasks === false) { whereClause += ' AND t.parentTaskId IS NULL'; }
 
-    const baseQuery = `SELECT t.* FROM tasks t ${whereClause} ORDER BY t.updated DESC`;
+    const orderClause = this.buildOrderClause(options);
+    const baseQuery = `SELECT t.* FROM tasks t ${whereClause} ${orderClause}`;
     const countQuery = `SELECT COUNT(*) as count FROM tasks t ${whereClause}`;
 
     const result = await this.queryPaginated<Record<string, unknown>>(baseQuery, countQuery, options, params);
@@ -301,7 +323,8 @@ export class TaskRepository
     if (options?.priority) { whereClause += ' AND t.priority = ?'; params.push(options.priority); }
     if (options?.assignee) { whereClause += ' AND t.assignee = ?'; params.push(options.assignee); }
 
-    const baseQuery = `SELECT t.* FROM tasks t ${whereClause} ORDER BY t.updated DESC`;
+    const orderClause = this.buildOrderClause(options);
+    const baseQuery = `SELECT t.* FROM tasks t ${whereClause} ${orderClause}`;
     const countQuery = `SELECT COUNT(*) as count FROM tasks t ${whereClause}`;
 
     const result = await this.queryPaginated<Record<string, unknown>>(baseQuery, countQuery, options, params);
