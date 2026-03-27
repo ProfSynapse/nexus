@@ -1,4 +1,4 @@
-import { Component, Modal, Notice, setIcon } from 'obsidian';
+import { ButtonComponent, DropdownComponent, Modal, Notice, TextAreaComponent, TextComponent } from 'obsidian';
 import type { App } from 'obsidian';
 
 export interface TaskBoardProjectOption {
@@ -36,16 +36,8 @@ interface TaskBoardEditModalOptions {
 
 export class TaskBoardEditModal extends Modal {
   private draft: TaskBoardEditableTask;
-  private projectSelect!: HTMLSelectElement;
-  private parentTaskSelect!: HTMLSelectElement;
-  private titleInput!: HTMLInputElement;
-  private descriptionInput!: HTMLTextAreaElement;
-  private statusSelect!: HTMLSelectElement;
-  private prioritySelect!: HTMLSelectElement;
-  private assigneeInput!: HTMLInputElement;
-  private dueDateInput!: HTMLInputElement;
-  private tagsInput!: HTMLInputElement;
-  private saveButton!: HTMLButtonElement;
+  private parentTaskDropdown: DropdownComponent | null = null;
+  private isSaving = false;
 
   constructor(app: App, private options: TaskBoardEditModalOptions) {
     super(app);
@@ -55,111 +47,103 @@ export class TaskBoardEditModal extends Modal {
   onOpen(): void {
     const { contentEl } = this;
     contentEl.empty();
-    contentEl.addClass('nexus-task-board-modal');
+    contentEl.addClass('nexus-task-edit-modal');
 
-    const shell = contentEl.createDiv('nexus-task-board-modal-shell');
-    const header = shell.createDiv('nexus-task-board-modal-header');
-    const titleWrap = header.createDiv();
-    titleWrap.createDiv({ cls: 'nexus-task-board-modal-kicker', text: 'Task details' });
-    titleWrap.createEl('h2', { text: 'Edit task' });
-
-    const closeButton = header.createEl('button', {
-      cls: 'clickable-icon nexus-task-board-icon-button',
-      attr: { 'aria-label': 'Close dialog', type: 'button' }
-    });
-    setIcon(closeButton, 'x');
-    this.registerModalDomEvent(closeButton, 'click', () => this.close());
-
-    const form = shell.createDiv('nexus-task-board-modal-form');
-
-    this.titleInput = this.createTextField(form, 'Title', this.draft.title, (value) => {
-      this.draft.title = value;
-    });
-    this.titleInput.placeholder = 'Task title';
-
-    this.descriptionInput = this.createTextAreaField(form, 'Description', this.draft.description, (value) => {
-      this.draft.description = value;
-    });
-    this.descriptionInput.placeholder = 'Task description';
-
-    const grid = form.createDiv('nexus-task-board-modal-grid');
-    this.statusSelect = this.createSelectField(grid, 'Status', [
-      ['todo', 'Todo'],
-      ['in_progress', 'In progress'],
-      ['done', 'Done'],
-      ['cancelled', 'Cancelled']
-    ], this.draft.status, (value) => {
-      this.draft.status = value as TaskBoardEditableTask['status'];
+    contentEl.createEl('h3', {
+      text: this.draft.id ? 'Edit task' : 'New task',
+      cls: 'nexus-detail-title'
     });
 
-    this.prioritySelect = this.createSelectField(grid, 'Priority', [
-      ['critical', 'Critical'],
-      ['high', 'High'],
-      ['medium', 'Medium'],
-      ['low', 'Low']
-    ], this.draft.priority, (value) => {
-      this.draft.priority = value as TaskBoardEditableTask['priority'];
-    });
+    const form = contentEl.createDiv('nexus-workspace-form');
+    const details = form.createDiv('nexus-form-section');
+    details.createEl('h4', { text: 'Task details', cls: 'nexus-section-header' });
 
-    this.projectSelect = this.createSelectField(
-      grid,
-      'Project',
-      this.options.projects.map(project => [project.id, project.name]),
-      this.draft.projectId,
+    // Title
+    const titleField = details.createDiv('nexus-form-field');
+    titleField.createEl('label', { text: 'Title', cls: 'nexus-form-label' });
+    const titleInput = new TextComponent(titleField);
+    titleInput.setPlaceholder('Task title');
+    titleInput.setValue(this.draft.title);
+    titleInput.onChange((value) => { this.draft.title = value; });
+
+    // Description
+    const descField = details.createDiv('nexus-form-field');
+    descField.createEl('label', { text: 'Description', cls: 'nexus-form-label' });
+    const descInput = new TextAreaComponent(descField);
+    descInput.setPlaceholder('Optional task description');
+    descInput.setValue(this.draft.description);
+    descInput.onChange((value) => { this.draft.description = value; });
+    descInput.inputEl.rows = 4;
+
+    // Grid of metadata fields
+    const metaGrid = details.createDiv('nexus-task-form-grid');
+
+    // Status
+    this.renderDropdown(metaGrid, 'Status', this.draft.status, [
+      ['todo', 'Todo'], ['in_progress', 'In progress'],
+      ['done', 'Done'], ['cancelled', 'Cancelled']
+    ], (value) => { this.draft.status = value as TaskBoardEditableTask['status']; }, false);
+
+    // Priority
+    this.renderDropdown(metaGrid, 'Priority', this.draft.priority, [
+      ['critical', 'Critical'], ['high', 'High'],
+      ['medium', 'Medium'], ['low', 'Low']
+    ], (value) => { this.draft.priority = value as TaskBoardEditableTask['priority']; }, false);
+
+    // Project
+    this.renderDropdown(
+      metaGrid, 'Project', this.draft.projectId,
+      this.options.projects.map(project => [project.id, project.name] as [string, string]),
       (value) => {
         this.draft.projectId = value;
         if (this.draft.parentTaskId && !this.getParentTaskOptionsForProject(value).some(task => task.id === this.draft.parentTaskId)) {
           this.draft.parentTaskId = '';
         }
-        this.renderParentTaskOptions();
-      }
+        this.refreshParentTaskOptions();
+      },
+      false
     );
 
-    this.parentTaskSelect = this.createSelectField(grid, 'Parent task', [], '', (value) => {
-      this.draft.parentTaskId = value;
-    });
-    this.renderParentTaskOptions();
+    // Parent task
+    const parentField = metaGrid.createDiv('nexus-form-field');
+    parentField.createEl('label', { text: 'Parent task', cls: 'nexus-form-label' });
+    this.parentTaskDropdown = new DropdownComponent(parentField);
+    this.refreshParentTaskOptions();
+    this.parentTaskDropdown.onChange((value) => { this.draft.parentTaskId = value; });
 
-    this.assigneeInput = this.createTextField(grid, 'Assignee', this.draft.assignee, (value) => {
+    // Assignee
+    this.renderTextField(metaGrid, 'Assignee', this.draft.assignee, (value) => {
       this.draft.assignee = value;
-    });
-    this.assigneeInput.placeholder = 'Optional';
+    }, 'Optional');
 
-    this.dueDateInput = this.createTextField(grid, 'Due date', this.draft.dueDate, (value) => {
+    // Due date
+    this.renderDateField(metaGrid, 'Due date', this.draft.dueDate, (value) => {
       this.draft.dueDate = value;
     });
-    this.dueDateInput.type = 'date';
 
-    this.tagsInput = this.createTextField(form, 'Tags', this.draft.tags, (value) => {
-      this.draft.tags = value;
-    });
-    this.tagsInput.placeholder = 'Comma-separated tags';
+    // Tags (full width, outside grid)
+    const tagsField = details.createDiv('nexus-form-field');
+    tagsField.createEl('label', { text: 'Tags', cls: 'nexus-form-label' });
+    const tagsInput = new TextComponent(tagsField);
+    tagsInput.setPlaceholder('Comma-separated tags');
+    tagsInput.setValue(this.draft.tags);
+    tagsInput.onChange((value) => { this.draft.tags = value; });
 
-    const footer = shell.createDiv('nexus-task-board-modal-footer');
-    footer.createDiv({
-      cls: 'nexus-task-board-modal-note',
-      text: 'Use drag and drop on the board for quick status changes. Use this dialog for field edits.'
-    });
+    // Actions
+    const actions = contentEl.createDiv('nexus-form-actions');
 
-    const actions = footer.createDiv('nexus-task-board-modal-actions');
-    const cancelButton = actions.createEl('button', {
-      cls: 'mod-cta nexus-task-board-button nexus-task-board-button-secondary',
-      text: 'Cancel',
-      attr: { type: 'button' }
-    });
-    this.registerModalDomEvent(cancelButton, 'click', () => this.close());
+    new ButtonComponent(actions)
+      .setButtonText('Cancel')
+      .onClick(() => this.close());
 
-    this.saveButton = actions.createEl('button', {
-      cls: 'mod-cta nexus-task-board-button',
-      text: 'Save task',
-      attr: { type: 'button' }
-    });
-    this.registerModalDomEvent(this.saveButton, 'click', () => {
-      void this.handleSave();
-    });
+    new ButtonComponent(actions)
+      .setButtonText('Save task')
+      .setCta()
+      .onClick(() => { void this.handleSave(); });
 
-    this.titleInput.focus();
-    this.titleInput.select();
+    // Focus title on open
+    titleInput.inputEl.focus();
+    titleInput.inputEl.select();
   }
 
   onClose(): void {
@@ -170,85 +154,70 @@ export class TaskBoardEditModal extends Modal {
     return this.options.parentTasks.filter(task => task.projectId === projectId && task.id !== this.draft.id);
   }
 
-  private registerModalDomEvent<K extends keyof HTMLElementEventMap>(
-    element: HTMLElement,
-    type: K,
-    handler: (event: HTMLElementEventMap[K]) => void
-  ): void {
-    (this as unknown as Component).registerDomEvent(element, type, handler as EventListener);
-  }
+  private refreshParentTaskOptions(): void {
+    if (!this.parentTaskDropdown) return;
 
-  private renderParentTaskOptions(): void {
-    this.parentTaskSelect.empty();
-    this.parentTaskSelect.createEl('option', { value: '', text: 'None' });
+    const selectEl = this.parentTaskDropdown.selectEl;
+    selectEl.empty();
+
+    this.parentTaskDropdown.addOption('', 'None');
     const options = this.getParentTaskOptionsForProject(this.draft.projectId);
     options.forEach(task => {
-      this.parentTaskSelect.createEl('option', {
-        value: task.id,
-        text: task.title
-      });
+      this.parentTaskDropdown!.addOption(task.id, task.title);
     });
-    this.parentTaskSelect.value = this.draft.parentTaskId;
+    this.parentTaskDropdown.setValue(this.draft.parentTaskId);
   }
 
-  private createField(container: HTMLElement, label: string): HTMLElement {
-    const field = container.createDiv('nexus-task-board-field');
-    field.createEl('label', { cls: 'nexus-task-board-field-label', text: label });
-    return field;
+  private renderDropdown(
+    container: HTMLElement,
+    label: string,
+    value: string,
+    options: Array<[string, string]>,
+    onChange: (value: string) => void,
+    includeEmpty = true
+  ): void {
+    const field = container.createDiv('nexus-form-field');
+    field.createEl('label', { text: label, cls: 'nexus-form-label' });
+    const dropdown = new DropdownComponent(field);
+    if (includeEmpty && !options.some(([optionValue]) => optionValue === '')) {
+      dropdown.addOption('', 'None');
+    }
+    options.forEach(([optionValue, optionLabel]) => dropdown.addOption(optionValue, optionLabel));
+    dropdown.setValue(value || '');
+    dropdown.onChange(onChange);
   }
 
-  private createTextField(
+  private renderTextField(
+    container: HTMLElement,
+    label: string,
+    value: string,
+    onChange: (value: string) => void,
+    placeholder = ''
+  ): void {
+    const field = container.createDiv('nexus-form-field');
+    field.createEl('label', { text: label, cls: 'nexus-form-label' });
+    const input = new TextComponent(field);
+    if (placeholder) input.setPlaceholder(placeholder);
+    input.setValue(value);
+    input.onChange(onChange);
+  }
+
+  private renderDateField(
     container: HTMLElement,
     label: string,
     value: string,
     onChange: (value: string) => void
-  ): HTMLInputElement {
-    const field = this.createField(container, label);
+  ): void {
+    const field = container.createDiv('nexus-form-field');
+    field.createEl('label', { text: label, cls: 'nexus-form-label' });
     const input = field.createEl('input', {
-      cls: 'nexus-task-board-input',
-      attr: { type: 'text' }
+      cls: 'nexus-form-input',
+      attr: { type: 'date' }
     });
     input.value = value;
-    this.registerModalDomEvent(input, 'input', () => onChange(input.value));
-    return input;
-  }
-
-  private createTextAreaField(
-    container: HTMLElement,
-    label: string,
-    value: string,
-    onChange: (value: string) => void
-  ): HTMLTextAreaElement {
-    const field = this.createField(container, label);
-    const textarea = field.createEl('textarea', {
-      cls: 'nexus-task-board-input nexus-task-board-textarea'
+    input.addEventListener('input', () => {
+      onChange(input.value);
     });
-    textarea.value = value;
-    textarea.rows = 4;
-    this.registerModalDomEvent(textarea, 'input', () => onChange(textarea.value));
-    return textarea;
-  }
-
-  private createSelectField(
-    container: HTMLElement,
-    label: string,
-    options: Array<[string, string]>,
-    value: string,
-    onChange: (value: string) => void
-  ): HTMLSelectElement {
-    const field = this.createField(container, label);
-    const select = field.createEl('select', {
-      cls: 'nexus-task-board-input'
-    });
-    options.forEach(([optionValue, optionLabel]) => {
-      select.createEl('option', {
-        value: optionValue,
-        text: optionLabel
-      });
-    });
-    select.value = value;
-    this.registerModalDomEvent(select, 'change', () => onChange(select.value));
-    return select;
   }
 
   private async handleSave(): Promise<void> {
@@ -257,7 +226,9 @@ export class TaskBoardEditModal extends Modal {
       return;
     }
 
-    this.saveButton.disabled = true;
+    if (this.isSaving) return;
+    this.isSaving = true;
+
     try {
       await this.options.onSave({
         ...this.draft,
@@ -268,7 +239,7 @@ export class TaskBoardEditModal extends Modal {
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to save task';
       new Notice(message);
-      this.saveButton.disabled = false;
+      this.isSaving = false;
     }
   }
 }
