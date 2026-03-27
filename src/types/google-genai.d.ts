@@ -4,18 +4,16 @@
  */
 
 declare module '@google/genai' {
+  export type GenAIRequest = string | Record<string, unknown>;
+
   export interface GenerativeModel {
-    generateContent(prompt: string | any): Promise<any>;
-    generateContentStream(prompt: string | any): AsyncIterable<any>;
+    generateContent(prompt: GenAIRequest): Promise<unknown>;
+    generateContentStream(prompt: GenAIRequest): AsyncIterable<unknown>;
   }
 
   export interface ModelsAPI {
-    generateContent(request: any): Promise<any>;
-    generateContentStream(request: any): AsyncIterable<any>;
-  }
-
-  export interface GoogleGenAI {
-    getGenerativeModel(options: { model: string }): GenerativeModel;
+    generateContent(request: Record<string, unknown>): Promise<unknown>;
+    generateContentStream(request: Record<string, unknown>): AsyncIterable<unknown>;
     models: ModelsAPI;
   }
 
@@ -25,12 +23,6 @@ declare module '@google/genai' {
     models: ModelsAPI;
   }
 
-  export const GoogleGenAI: {
-    new (options: { apiKey: string }): GoogleGenAI;
-  };
-
-  // Export other commonly used types as any for now
-  export const HarmCategory: any;
-  export const HarmBlockThreshold: any;
-  export const GenerativeModel: any;
+  export const HarmCategory: Record<string, unknown>;
+  export const HarmBlockThreshold: Record<string, unknown>;
 }

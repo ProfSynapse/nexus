@@ -2,13 +2,11 @@ import { Plugin } from 'obsidian';
 import { BaseTool } from '../../baseTool';
 import { getErrorMessage } from '../../../utils/errorUtils';
 import {
-  MemorySearchParameters,
-  MemorySearchResult,
   EnrichedMemorySearchResult,
   SearchMemoryModeResult,
   DateRange
 } from '../../../types/memory/MemorySearchTypes';
-import { MemorySearchProcessor, MemorySearchProcessorInterface, SearchMetadata, SearchProcessResult } from '../services/MemorySearchProcessor';
+import { MemorySearchProcessor, MemorySearchProcessorInterface, SearchMetadata } from '../services/MemorySearchProcessor';
 import { MemorySearchFilters, MemorySearchFiltersInterface } from '../services/MemorySearchFilters';
 import { ResultFormatter, ResultFormatterInterface } from '../services/ResultFormatter';
 import { CommonParameters } from '../../../types/mcp/AgentTypes';
@@ -69,14 +67,24 @@ export interface SearchMemoryParams extends CommonParameters {
   // Additional properties to match MemorySearchParams
   workspace?: string;
   dateRange?: DateRange;
-  toolCallFilters?: any;
+  toolCallFilters?: unknown;
 }
 
-// SearchMemoryResult extends the base type
-export interface SearchMemoryResult extends SearchMemoryModeResult {}
+export type SearchMemoryResult = SearchMemoryModeResult;
+
+type FormattedSearchResult = Record<string, unknown>;
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined;
+}
+
+function getString(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
 
 // Legacy interface names for backward compatibility
-export type { MemorySearchResult };
 export type { SearchMemoryModeResult };
 
 /**
@@ -120,7 +128,7 @@ export class SearchMemoryTool extends BaseTool<SearchMemoryParams, SearchMemoryR
     this.formatter = formatter || new ResultFormatter();
   }
 
-  private isThinContext(context: any): boolean {
+  private isThinContext(context: unknown): boolean {
     if (!context || typeof context !== 'object') {
       return true;
     }
@@ -152,10 +160,10 @@ export class SearchMemoryTool extends BaseTool<SearchMemoryParams, SearchMemoryR
 
       // Transform results to simple format
       // Use the raw trace data attached during enrichment
-      const simplifiedResults = results.map((result: EnrichedMemorySearchResult) => {
+      const simplifiedResults = results.map((result: EnrichedMemorySearchResult): FormattedSearchResult | null => {
         try {
           // Access the raw trace that was attached during enrichment
-          const trace = result._rawTrace;
+          const trace = asRecord(result._rawTrace);
           if (!trace) {
             return null;
           }
@@ -167,27 +175,27 @@ export class SearchMemoryTool extends BaseTool<SearchMemoryParams, SearchMemoryR
 
           // Standard trace/state result formatting
           return this.formatTraceResult(trace);
-        } catch (error) {
+        } catch {
           return null;
         }
       });
       
       // Filter out nulls
-      const finalResults = simplifiedResults.filter(r => r !== null);
+      const finalResults = simplifiedResults.filter((result): result is FormattedSearchResult => result !== null);
 
       // Provide actionable guidance when no results are found
       if (finalResults.length === 0) {
         return this.prepareResult(false, undefined, this.buildEmptyResultGuidance(searchParams, metadata));
       }
 
-      const result = this.prepareResult(true, {
+      const result: SearchMemoryResult = this.prepareResult(true, {
         results: finalResults
       });
 
       // Generate nudges based on memory search results
       const nudges = this.generateMemorySearchNudges(results, metadata);
 
-      return addRecommendations(result, nudges);
+      return addRecommendations(result, nudges) as SearchMemoryResult;
 
     } catch (error) {
       console.error('[SearchMemoryTool] Search error:', error);
@@ -195,7 +203,7 @@ export class SearchMemoryTool extends BaseTool<SearchMemoryParams, SearchMemoryR
     }
   }
 
-  getParameterSchema() {
+  getParameterSchema(): Record<string, unknown> {
     // Create the enhanced tool-specific schema
     const toolSchema = {
       type: 'object',
@@ -294,7 +302,7 @@ export class SearchMemoryTool extends BaseTool<SearchMemoryParams, SearchMemoryR
     return this.getMergedSchema(toolSchema);
   }
 
-  getResultSchema() {
+  getResultSchema(): Record<string, unknown> {
     return {
       type: 'object',
       properties: {
@@ -381,24 +389,27 @@ export class SearchMemoryTool extends BaseTool<SearchMemoryParams, SearchMemoryR
    * Returns a structured object with type 'conversation', the matched Q/A pair,
    * conversation metadata, and optional windowed messages for scoped search.
    */
-  private formatConversationResult(trace: Record<string, unknown>): Record<string, unknown> {
-    const entry: Record<string, unknown> = {
+  private formatConversationResult(trace: Record<string, unknown>): FormattedSearchResult {
+    const entry: FormattedSearchResult = {
       type: 'conversation',
-      conversationTitle: trace.conversationTitle || 'Untitled',
+      conversationTitle: getString(trace.conversationTitle) || 'Untitled',
       conversationId: trace.conversationId,
-      question: trace.question || '',
-      answer: trace.answer || '',
+      question: getString(trace.question) || '',
+      answer: getString(trace.answer) || '',
       matchedSide: trace.matchedSide,
       pairType: trace.pairType
     };
 
     // Include windowed messages when available (scoped mode)
     if (Array.isArray(trace.windowMessages) && trace.windowMessages.length > 0) {
-      entry.windowMessages = (trace.windowMessages as Array<Record<string, unknown>>).map((msg) => ({
-        role: msg.role,
-        content: typeof msg.content === 'string' ? msg.content : '',
-        sequenceNumber: msg.sequenceNumber
-      }));
+      entry.windowMessages = trace.windowMessages
+        .map(message => asRecord(message))
+        .filter((message): message is Record<string, unknown> => message !== undefined)
+        .map((message) => ({
+          role: message.role,
+          content: getString(message.content) || '',
+          sequenceNumber: message.sequenceNumber
+        }));
     }
 
     return entry;
@@ -408,14 +419,14 @@ export class SearchMemoryTool extends BaseTool<SearchMemoryParams, SearchMemoryR
    * Format a standard trace/state result for the tool response.
    * Extracts content, tool name, and context from the raw trace metadata.
    */
-  private formatTraceResult(trace: Record<string, unknown>): Record<string, unknown> | null {
+  private formatTraceResult(trace: Record<string, unknown>): FormattedSearchResult | null {
     // Target canonical metadata context first, then legacy fallbacks
-    const metadata = trace.metadata as Record<string, unknown> | undefined;
-    let context = metadata?.context as Record<string, unknown> | undefined;
+    const metadata = asRecord(trace.metadata);
+    let context = asRecord(metadata?.context);
 
-    const legacy = metadata?.legacy as Record<string, unknown> | undefined;
-    const legacyParamsContext = (legacy?.params as Record<string, unknown> | undefined)?.context as Record<string, unknown> | undefined;
-    const legacyResultContext = (legacy?.result as Record<string, unknown> | undefined)?.context as Record<string, unknown> | undefined;
+    const legacy = asRecord(metadata?.legacy);
+    const legacyParamsContext = asRecord(asRecord(legacy?.params)?.context);
+    const legacyResultContext = asRecord(asRecord(legacy?.result)?.context);
 
     if (this.isThinContext(context) && legacyParamsContext) {
       context = legacyParamsContext;
@@ -438,8 +449,8 @@ export class SearchMemoryTool extends BaseTool<SearchMemoryParams, SearchMemoryR
       context = {};
     }
 
-    const entry: Record<string, unknown> = {
-      content: (trace.content as string) || ''
+    const entry: FormattedSearchResult = {
+      content: getString(trace.content) || ''
     };
     if (metadata?.tool) {
       entry.tool = metadata.tool;
@@ -478,7 +489,7 @@ export class SearchMemoryTool extends BaseTool<SearchMemoryParams, SearchMemoryR
   /**
    * Generate nudges based on memory search results
    */
-  private generateMemorySearchNudges(results: any[], metadata: SearchMetadata): Recommendation[] {
+  private generateMemorySearchNudges(results: EnrichedMemorySearchResult[], metadata: SearchMetadata): Recommendation[] {
     const nudges: Recommendation[] = [];
 
     if (!Array.isArray(results) || results.length === 0) {

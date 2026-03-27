@@ -60,6 +60,26 @@ export interface MemorySearchProcessorInterface {
   updateConfiguration(config: Partial<MemoryProcessorConfiguration>): Promise<void>;
 }
 
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === 'object' && value !== null ? value as Record<string, unknown> : undefined;
+}
+
+function getString(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
+function getNumber(value: unknown): number | undefined {
+  return typeof value === 'number' ? value : undefined;
+}
+
+function getBoolean(value: unknown): boolean | undefined {
+  return typeof value === 'boolean' ? value : undefined;
+}
+
+function getStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+}
+
 export class MemorySearchProcessor implements MemorySearchProcessorInterface {
   private configuration: MemoryProcessorConfiguration;
   private workspaceService?: WorkspaceService;
@@ -461,7 +481,7 @@ export class MemorySearchProcessor implements MemorySearchProcessorInterface {
     }
   }
 
-  private async searchWorkspaces(query: string, options: MemorySearchExecutionOptions): Promise<RawMemoryResult[]> {
+  private async searchWorkspaces(query: string, _options: MemorySearchExecutionOptions): Promise<RawMemoryResult[]> {
     const workspaceService = this.serviceAccessors.getWorkspaceService();
     if (!workspaceService) return [];
 
@@ -490,7 +510,10 @@ export class MemorySearchProcessor implements MemorySearchProcessorInterface {
   // ---------------------------------------------------------------------------
 
   private enrichSingleResult(result: RawMemoryResult, context: MemorySearchContext): EnrichedMemorySearchResult | null {
-    const trace = result.trace;
+    const trace = asRecord(result.trace);
+    if (!trace) {
+      return null;
+    }
     const query = context.params.query;
 
     try {
@@ -501,7 +524,7 @@ export class MemorySearchProcessor implements MemorySearchProcessorInterface {
 
       return {
         type: resultType,
-        id: trace.id,
+        id: getString(trace.id) || '',
         highlight,
         metadata,
         context: searchContext,
@@ -509,7 +532,7 @@ export class MemorySearchProcessor implements MemorySearchProcessorInterface {
         _rawTrace: trace
       };
     } catch (error) {
-      console.error('[MemorySearchProcessor] Failed to enrich result:', { error, traceId: trace?.id });
+      console.error('[MemorySearchProcessor] Failed to enrich result:', { error, traceId: getString(trace.id) });
       return null;
     }
   }
@@ -525,7 +548,7 @@ export class MemorySearchProcessor implements MemorySearchProcessorInterface {
 
   private generateHighlight(trace: Record<string, unknown>, query: string): string {
     const maxLength = 200;
-    const content = (trace.content || trace.description || trace.name || '') as string;
+    const content = getString(trace.content) || getString(trace.description) || getString(trace.name) || '';
     const queryLower = query.toLowerCase();
     const contentLower = content.toLowerCase();
 
@@ -543,58 +566,61 @@ export class MemorySearchProcessor implements MemorySearchProcessorInterface {
   }
 
   private buildMetadata(trace: Record<string, unknown>, resultType: MemoryType): MemoryResultMetadata {
-    const metadata = (trace.metadata || {}) as Record<string, unknown>;
-    const context = (metadata.context || {}) as Record<string, unknown>;
+    const metadata = asRecord(trace.metadata) || {};
+    const context = asRecord(metadata.context) || {};
     const baseMetadata: MemoryResultMetadata = {
-      created: trace.timestamp ? new Date(trace.timestamp as number).toISOString() :
-               trace.startTime ? new Date(trace.startTime as number).toISOString() :
-               trace.created ? new Date(trace.created as number).toISOString() :
+      created: getNumber(trace.timestamp) ? new Date(getNumber(trace.timestamp)!).toISOString() :
+               getNumber(trace.startTime) ? new Date(getNumber(trace.startTime)!).toISOString() :
+               getNumber(trace.created) ? new Date(getNumber(trace.created)!).toISOString() :
                new Date().toISOString(),
-      sessionId: (context.sessionId || trace.sessionId) as string | undefined,
-      workspaceId: (context.workspaceId || trace.workspaceId) as string | undefined,
-      primaryGoal: (context.primaryGoal || '') as string,
+      sessionId: getString(context.sessionId) || getString(trace.sessionId),
+      workspaceId: getString(context.workspaceId) || getString(trace.workspaceId),
+      primaryGoal: getString(context.primaryGoal) || '',
       filesReferenced: this.getFilesReferenced(trace),
-      type: trace.type as string | undefined
+      type: getString(trace.type)
     };
 
     if (resultType === MemoryType.TOOL_CALL) {
-      const tool = metadata.tool as Record<string, unknown> | undefined;
-      const outcome = metadata.outcome as Record<string, unknown> | undefined;
-      const response = metadata.response as Record<string, unknown> | undefined;
-      const execCtx = trace.executionContext as Record<string, unknown> | undefined;
-      const timing = execCtx?.timing as Record<string, unknown> | undefined;
-      const rels = trace.relationships as Record<string, unknown> | undefined;
-      const legacy = metadata.legacy as Record<string, unknown> | undefined;
+      const tool = asRecord(metadata.tool);
+      const outcome = asRecord(metadata.outcome);
+      const response = asRecord(metadata.response);
+      const execCtx = asRecord(trace.executionContext);
+      const timing = asRecord(execCtx?.timing);
+      const rels = asRecord(trace.relationships);
+      const legacy = asRecord(metadata.legacy);
+      const outcomeError = asRecord(outcome?.error);
+      const responseError = asRecord(response?.error);
       return {
         ...baseMetadata,
-        toolUsed: (tool?.id || trace.toolName) as string | undefined,
-        modeUsed: (tool?.mode || trace.mode) as string | undefined,
-        toolCallId: trace.toolCallId as string | undefined,
-        agent: (tool?.agent || trace.agent) as string | undefined,
-        mode: (tool?.mode || trace.mode) as string | undefined,
-        executionTime: timing?.executionTime as number | undefined,
-        success: (outcome?.success ?? response?.success) as boolean | undefined,
-        errorMessage: ((outcome?.error as Record<string, unknown> | undefined)?.message ||
-                      (response?.error as Record<string, unknown> | undefined)?.message) as string | undefined,
-        affectedResources: (rels?.affectedResources || legacy?.relatedFiles || []) as string[]
+        toolUsed: getString(tool?.id) || getString(trace.toolName),
+        modeUsed: getString(tool?.mode) || getString(trace.mode),
+        toolCallId: getString(trace.toolCallId),
+        agent: getString(tool?.agent) || getString(trace.agent),
+        mode: getString(tool?.mode) || getString(trace.mode),
+        executionTime: getNumber(timing?.executionTime),
+        success: getBoolean(outcome?.success) ?? getBoolean(response?.success),
+        errorMessage: getString(outcomeError?.message) || getString(responseError?.message),
+        affectedResources: getStringArray(rels?.affectedResources).length > 0
+          ? getStringArray(rels?.affectedResources)
+          : getStringArray(legacy?.relatedFiles)
       };
     }
 
-    const tool = metadata.tool as Record<string, unknown> | undefined;
-    const legacy = metadata.legacy as Record<string, unknown> | undefined;
-    const legacyParams = legacy?.params as Record<string, unknown> | undefined;
-    const traceMeta = trace.metadata as Record<string, unknown> | undefined;
+    const tool = asRecord(metadata.tool);
+    const legacy = asRecord(metadata.legacy);
+    const legacyParams = asRecord(legacy?.params);
+    const traceMeta = asRecord(trace.metadata);
     return {
       ...baseMetadata,
-      toolUsed: (tool?.id || legacyParams?.tool || traceMeta?.tool) as string | undefined,
-      modeUsed: (tool?.mode || '') as string,
-      updated: trace.endTime ? new Date(trace.endTime as number).toISOString() :
-               trace.lastAccessed ? new Date(trace.lastAccessed as number).toISOString() : undefined
+      toolUsed: getString(tool?.id) || getString(legacyParams?.tool) || getString(traceMeta?.tool),
+      modeUsed: getString(tool?.mode) || '',
+      updated: getNumber(trace.endTime) ? new Date(getNumber(trace.endTime)!).toISOString() :
+               getNumber(trace.lastAccessed) ? new Date(getNumber(trace.lastAccessed)!).toISOString() : undefined
     };
   }
 
   private generateSearchContext(trace: Record<string, unknown>, query: string, resultType: MemoryType): SearchResultContext {
-    const content = (trace.content || trace.description || trace.name || '') as string;
+    const content = getString(trace.content) || getString(trace.description) || getString(trace.name) || '';
     const ctx = this.generateBasicContext(content, query);
     if (resultType === MemoryType.TOOL_CALL) {
       return this.enhanceToolCallContext(ctx, trace);
@@ -619,16 +645,18 @@ export class MemorySearchProcessor implements MemorySearchProcessorInterface {
   }
 
   private enhanceToolCallContext(ctx: SearchResultContext, trace: Record<string, unknown>): SearchResultContext {
-    const meta = trace.metadata as Record<string, unknown> | undefined;
-    const toolMeta = meta?.tool as Record<string, unknown> | undefined;
-    const toolInfo = toolMeta ? `${toolMeta.agent}.${toolMeta.mode}` : `${trace.agent}.${trace.mode}`;
-    const outcome = meta?.outcome as Record<string, unknown> | undefined;
-    const response = meta?.response as Record<string, unknown> | undefined;
-    const success = outcome?.success ?? response?.success;
+    const meta = asRecord(trace.metadata);
+    const toolMeta = asRecord(meta?.tool);
+    const toolAgent = getString(toolMeta?.agent) || getString(trace.agent) || 'unknown';
+    const toolMode = getString(toolMeta?.mode) || getString(trace.mode) || 'unknown';
+    const toolInfo = `${toolAgent}.${toolMode}`;
+    const outcome = asRecord(meta?.outcome);
+    const response = asRecord(meta?.response);
+    const success = getBoolean(outcome?.success) ?? getBoolean(response?.success);
     const statusInfo = success === false ? 'FAILED' : 'SUCCESS';
-    const execCtx = trace.executionContext as Record<string, unknown> | undefined;
-    const timing = execCtx?.timing as Record<string, unknown> | undefined;
-    const executionTime = timing?.executionTime;
+    const execCtx = asRecord(trace.executionContext);
+    const timing = asRecord(execCtx?.timing);
+    const executionTime = getNumber(timing?.executionTime);
 
     return {
       before: `[${toolInfo}] ${ctx.before}`,
@@ -638,18 +666,21 @@ export class MemorySearchProcessor implements MemorySearchProcessorInterface {
   }
 
   private getFilesReferenced(trace: Record<string, unknown>): string[] {
-    const metadata = (trace.metadata || {}) as Record<string, unknown>;
-    const input = metadata.input as Record<string, unknown> | undefined;
-    if (Array.isArray(input?.files) && input.files.length > 0) {
-      return input.files as string[];
+    const metadata = asRecord(trace.metadata) || {};
+    const input = asRecord(metadata.input);
+    const inputFiles = getStringArray(input?.files);
+    if (inputFiles.length > 0) {
+      return inputFiles;
     }
-    const legacy = metadata.legacy as Record<string, unknown> | undefined;
-    if (Array.isArray(legacy?.relatedFiles) && legacy.relatedFiles.length > 0) {
-      return legacy.relatedFiles as string[];
+    const legacy = asRecord(metadata.legacy);
+    const legacyFiles = getStringArray(legacy?.relatedFiles);
+    if (legacyFiles.length > 0) {
+      return legacyFiles;
     }
-    const rels = trace.relationships as Record<string, unknown> | undefined;
-    if (Array.isArray(rels?.relatedFiles) && rels.relatedFiles.length > 0) {
-      return rels.relatedFiles as string[];
+    const rels = asRecord(trace.relationships);
+    const relatedFiles = getStringArray(rels?.relatedFiles);
+    if (relatedFiles.length > 0) {
+      return relatedFiles;
     }
     return [];
   }

@@ -17,7 +17,7 @@
  * - Configuration file path handling
  */
 
-import { Vault, normalizePath, FileSystemAdapter, App } from 'obsidian';
+import { Vault, normalizePath, FileSystemAdapter } from 'obsidian';
 
 export interface PathValidationResult {
   isValid: boolean;
@@ -26,15 +26,27 @@ export interface PathValidationResult {
   normalizedPath: string;
 }
 
+interface PluginManifestLike {
+  id?: string;
+}
+
 /**
  * Path management using Obsidian's normalizePath and proper validation
  * Replaces all manual path construction
  */
 export class ObsidianPathManager {
-  private manifest: any;
+  private manifest?: PluginManifestLike;
 
-  constructor(private vault: Vault, manifest?: any) {
+  constructor(private vault: Vault, manifest?: PluginManifestLike) {
     this.manifest = manifest;
+  }
+
+  private getPluginId(): string {
+    const pluginId = this.manifest?.id;
+    if (!pluginId) {
+      throw new Error('Plugin manifest ID not available for path construction');
+    }
+    return pluginId;
   }
 
   /**
@@ -105,10 +117,7 @@ export class ObsidianPathManager {
    * Plugin-specific path construction
    */
   getPluginDataPath(): string {
-    if (!this.manifest?.id) {
-      throw new Error('Plugin manifest ID not available for path construction');
-    }
-    return this.normalizePath(`${this.manifest.id}/data`);
+    return this.normalizePath(`${this.getPluginId()}/data`);
   }
 
   /**
@@ -116,7 +125,7 @@ export class ObsidianPathManager {
    */
   getStoragePath(fileName: string): string {
     const safeName = this.sanitizePath(fileName);
-    return this.normalizePath(`${this.vault.configDir}/plugins/${this.manifest.id}/data/storage/${safeName}`);
+    return this.normalizePath(`${this.vault.configDir}/plugins/${this.getPluginId()}/data/storage/${safeName}`);
   }
 
   /**
@@ -273,7 +282,7 @@ export class ObsidianPathManager {
       
       // Fallback to pattern extraction
       return this.extractPluginPathPattern(absolutePath);
-    } catch (error) {
+    } catch {
       // Ultimate fallback
       return this.getPluginDataPath();
     }
@@ -286,15 +295,15 @@ export class ObsidianPathManager {
     const normalized = this.normalizePath(path);
     
     // Look for plugin directory pattern
-    if (this.manifest?.id) {
-      const pluginPattern = `/${this.manifest.id}/`;
+    const pluginId = this.manifest?.id;
+    if (pluginId) {
+      const pluginPattern = `/${pluginId}/`;
       const pluginIndex = normalized.indexOf(pluginPattern);
       
       if (pluginIndex >= 0) {
         // Extract from plugin directory onwards
-        const pluginStart = normalized.substring(0, pluginIndex + pluginPattern.length - 1);
         const remaining = normalized.substring(pluginIndex + pluginPattern.length);
-        return this.normalizePath(`${this.manifest.id}/${remaining}`);
+        return this.normalizePath(`${pluginId}/${remaining}`);
       }
     }
     
@@ -319,7 +328,7 @@ export class ObsidianPathManager {
         return adapter.getBasePath();
       }
       return null;
-    } catch (error) {
+    } catch {
       return null;
     }
   }
@@ -373,7 +382,7 @@ export class ObsidianPathManager {
       const normalizedPath = this.normalizePath(path);
       const stat = await this.vault.adapter.stat(normalizedPath);
       return stat?.type as 'file' | 'folder' || null;
-    } catch (error) {
+    } catch {
       return null;
     }
   }
@@ -385,7 +394,7 @@ export class ObsidianPathManager {
     try {
       const normalizedPath = this.normalizePath(path);
       return await this.vault.adapter.exists(normalizedPath);
-    } catch (error) {
+    } catch {
       return false;
     }
   }

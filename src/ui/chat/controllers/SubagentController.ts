@@ -24,10 +24,12 @@ import type { PromptManagerAgent } from '../../../agents/promptManager/promptMan
 import type { HybridStorageAdapter } from '../../../database/adapters/HybridStorageAdapter';
 import type { LLMService } from '../../../services/llm/core/LLMService';
 import type { ToolSchemaInfo, AgentStatusItem, BranchViewContext } from '../../../types/branch/BranchTypes';
-import type { ConversationData } from '../../../types/chat/ChatTypes';
+import type { ChatMessage, ConversationData } from '../../../types/chat/ChatTypes';
 import type { StreamingController } from './StreamingController';
 import type { ToolEventCoordinator } from '../coordinators/ToolEventCoordinator';
 import { isSubagentMetadata } from '../../../types/branch/BranchTypes';
+import type { SubagentBranchMetadata } from '../../../types/branch/BranchTypes';
+import type { SubagentToolContext } from '../../../agents/promptManager/tools/subagent';
 
 /**
  * Dependencies for SubagentController initialization
@@ -49,7 +51,7 @@ export interface SubagentContextProvider {
   getCurrentConversation: () => ConversationData | null;
   getSelectedModel: () => { providerId?: string; modelId?: string } | null;
   getSelectedPrompt: () => { name?: string; systemPrompt?: string } | null;
-  getLoadedWorkspaceData: () => any;
+  getLoadedWorkspaceData: () => unknown;
   getContextNotes: () => string[];
   getThinkingSettings: () => { enabled?: boolean; effort?: 'low' | 'medium' | 'high' } | null;
   getSelectedWorkspaceId: () => string | null;
@@ -60,9 +62,67 @@ export interface SubagentContextProvider {
  */
 export interface SubagentControllerEvents {
   onStreamingUpdate: (branchId: string, messageId: string, chunk: string, isComplete: boolean, fullContent: string) => void;
-  onToolCallsDetected: (branchId: string, messageId: string, toolCalls: any[]) => void;
+  onToolCallsDetected: (branchId: string, messageId: string, toolCalls: unknown[]) => void;
   onStatusChanged: () => void;
   onConversationNeedsRefresh?: (conversationId: string) => void;
+}
+
+interface QueuedSubagentResult {
+  success?: boolean;
+  result?: string;
+  status?: string;
+  error?: string;
+  iterations?: number;
+}
+
+interface QueuedSubagentMetadata {
+  conversationId?: string;
+  subagentTask?: string;
+  branchId?: string;
+  subagentId?: string;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function getString(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
+function getBoolean(value: unknown): boolean | undefined {
+  return typeof value === 'boolean' ? value : undefined;
+}
+
+function getNumber(value: unknown): number | undefined {
+  return typeof value === 'number' ? value : undefined;
+}
+
+function getQueuedSubagentResult(value: unknown): QueuedSubagentResult {
+  if (!isRecord(value)) {
+    return {};
+  }
+
+  return {
+    success: getBoolean(value.success),
+    result: getString(value.result),
+    status: getString(value.status),
+    error: getString(value.error),
+    iterations: getNumber(value.iterations),
+  };
+}
+
+function getQueuedSubagentMetadata(value: unknown): QueuedSubagentMetadata {
+  if (!isRecord(value)) {
+    return {};
+  }
+
+  return {
+    conversationId: getString(value.conversationId),
+    subagentTask: getString(value.subagentTask),
+    branchId: getString(value.branchId),
+    subagentId: getString(value.subagentId),
+  };
 }
 
 export class SubagentController {
@@ -161,7 +221,7 @@ export class SubagentController {
    */
   private setupMessageQueueProcessor(
     chatService: ChatService,
-    contextProvider: SubagentContextProvider
+    _contextProvider: SubagentContextProvider
   ): void {
     if (!this.messageQueueService) return;
 
@@ -171,8 +231,8 @@ export class SubagentController {
       }
 
       try {
-        const result = JSON.parse(message.content || '{}');
-        const metadata = message.metadata || {};
+        const result = getQueuedSubagentResult(JSON.parse(message.content || '{}'));
+        const metadata = getQueuedSubagentMetadata(message.metadata);
 
         const conversationId = metadata.conversationId;
         if (!conversationId) {
@@ -185,10 +245,6 @@ export class SubagentController {
         const resultContent = result.success
           ? `[Subagent "${taskLabel}" completed]\n\nResult:\n${result.result || 'Task completed successfully.'}`
           : `[Subagent "${taskLabel}" ${result.status === 'max_iterations' ? 'paused (max iterations)' : 'failed'}]\n\n${result.error || 'Unknown error'}`;
-
-        // Check if viewing parent conversation
-        const currentConversation = contextProvider.getCurrentConversation();
-        const isViewingParent = currentConversation?.id === conversationId && !this.currentBranchContext;
 
         // Add result as user message
         await chatService.addMessage({
@@ -241,7 +297,7 @@ export class SubagentController {
     directToolExecutor: DirectToolExecutor
   ) {
     return async function* (
-      messages: any[],
+      messages: ChatMessage[],
       options: {
         provider?: string;
         model?: string;
@@ -341,7 +397,7 @@ export class SubagentController {
 
         this.events.onStreamingUpdate(branchId, messageId, chunk, isComplete, fullContent);
       },
-      onToolCallsDetected: (branchId: string, messageId: string, toolCalls: any[]) => {
+      onToolCallsDetected: (branchId: string, messageId: string, toolCalls: unknown[]) => {
         if (this.currentBranchContext?.branchId !== branchId) return;
         toolEventCoordinator.handleToolCallsDetected(messageId, toolCalls);
         this.events.onToolCallsDetected(branchId, messageId, toolCalls);
@@ -352,7 +408,7 @@ export class SubagentController {
   /**
    * Build context for subagent execution from current state
    */
-  private buildSubagentContext(contextProvider: SubagentContextProvider) {
+  private buildSubagentContext(contextProvider: SubagentContextProvider): SubagentToolContext {
     const currentConversation = contextProvider.getCurrentConversation();
     const messages = currentConversation?.messages || [];
     const lastMessage = messages[messages.length - 1];
@@ -385,7 +441,7 @@ export class SubagentController {
   /**
    * Get streaming branch messages for live UI updates
    */
-  getStreamingBranchMessages(branchId: string) {
+  getStreamingBranchMessages(branchId: string): ChatMessage[] | null {
     return this.subagentExecutor?.getStreamingBranchMessages(branchId) || null;
   }
 
@@ -433,7 +489,7 @@ export class SubagentController {
   /**
    * Update branch header context metadata
    */
-  updateBranchHeaderMetadata(subagentId: string, updates: Partial<any>): void {
+  updateBranchHeaderMetadata(subagentId: string, updates: Partial<SubagentBranchMetadata>): void {
     const contextMetadata = this.currentBranchContext?.metadata;
     if (isSubagentMetadata(contextMetadata) && contextMetadata.subagentId === subagentId) {
       Object.assign(contextMetadata, updates);

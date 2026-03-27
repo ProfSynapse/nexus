@@ -4,14 +4,27 @@
 // Dependencies: FileSystemService for ChromaDB collection file reading
 
 import { FileSystemService } from '../storage/FileSystemService';
-import { BRAND_NAME } from '../../constants/branding';
 
 export interface ChromaCollectionData {
-  memoryTraces: any[];
-  sessions: any[];
-  conversations: any[];
-  workspaces: any[];
-  snapshots: any[];
+  memoryTraces: unknown[];
+  sessions: unknown[];
+  conversations: unknown[];
+  workspaces: unknown[];
+  snapshots: unknown[];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function getTimestamp(value: unknown): number | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const metadata = isRecord(value.metadata) ? value.metadata : undefined;
+  const timestamp = metadata?.timestamp ?? metadata?.created;
+  return typeof timestamp === 'number' ? timestamp : undefined;
 }
 
 export class ChromaDataLoader {
@@ -67,15 +80,13 @@ export class ChromaDataLoader {
 
     const collectionCounts: Record<string, number> = {};
 
-    for (const [collectionName, items] of Object.entries(collections)) {
+    for (const [collectionName, items] of Object.entries(collections) as Array<[string, unknown[]]>) {
       collectionCounts[collectionName] = items.length;
       totalItems += items.length;
 
       // Find timestamp ranges
       for (const item of items) {
-        const timestamp = item.metadata?.timestamp ||
-                         item.metadata?.created ||
-                         item.metadata?.created;
+        const timestamp = getTimestamp(item);
 
         if (timestamp) {
           if (!oldestTimestamp || timestamp < oldestTimestamp) {

@@ -8,7 +8,7 @@
  * Dependencies: LLMService, ProviderUtils
  */
 
-import { Plugin } from 'obsidian';
+import { App, Plugin } from 'obsidian';
 import { ModelOption } from '../types/SelectionTypes';
 import { ProviderUtils } from '../utils/ProviderUtils';
 import { getNexusPlugin } from '../../../utils/pluginLocator';
@@ -29,7 +29,34 @@ interface LLMServiceWithModels {
 interface NexusPluginExtended extends Plugin {
   settings: Settings;
   getService<T>(name: string): Promise<T | null>;
-  loadData(): Promise<any>;
+  loadData(): Promise<unknown>;
+}
+
+interface DefaultModelConfig {
+  provider: string;
+  model: string;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function getStoredDefaultModel(value: unknown): DefaultModelConfig | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const llmProviders = isRecord(value.llmProviders) ? value.llmProviders : undefined;
+  const defaultModel = isRecord(llmProviders?.defaultModel) ? llmProviders.defaultModel : undefined;
+
+  if (!defaultModel) {
+    return undefined;
+  }
+
+  const provider = typeof defaultModel.provider === 'string' ? defaultModel.provider : undefined;
+  const model = typeof defaultModel.model === 'string' ? defaultModel.model : undefined;
+
+  return provider && model ? { provider, model } : undefined;
 }
 
 /**
@@ -39,7 +66,7 @@ export class ModelSelectionUtility {
   /**
    * Get available models from validated providers
    */
-  static async getAvailableModels(app: any): Promise<ModelOption[]> {
+  static async getAvailableModels(app: App): Promise<ModelOption[]> {
     try {
       // Get plugin instance to access LLMService
       const plugin = getNexusPlugin<NexusPluginExtended>(app);
@@ -65,7 +92,7 @@ export class ModelSelectionUtility {
         .map((model: ModelWithProvider) => ModelSelectionUtility.mapToModelOption(model));
 
       return models;
-    } catch (error) {
+    } catch {
       return [];
     }
   }
@@ -73,7 +100,7 @@ export class ModelSelectionUtility {
   /**
    * Get the configured default model from plugin settings
    */
-  static async getDefaultModel(app: any): Promise<{ provider: string; model: string }> {
+  static async getDefaultModel(app: App): Promise<DefaultModelConfig> {
     try {
       const plugin = getNexusPlugin<NexusPluginExtended>(app);
       if (!plugin) {
@@ -90,16 +117,16 @@ export class ModelSelectionUtility {
 
       // Fallback to raw data.json
       const pluginData = await plugin.loadData();
-      const defaultModel = pluginData?.llmProviders?.defaultModel;
+      const defaultModel = getStoredDefaultModel(pluginData);
 
-      if (defaultModel?.provider && defaultModel?.model) {
+      if (defaultModel) {
         return defaultModel;
       }
 
       // If still no default, return the hardcoded default (openai/gpt-4o)
       // This prevents errors during initial setup
       return { provider: 'openai', model: 'gpt-4o' };
-    } catch (error) {
+    } catch {
       // Return fallback instead of throwing to prevent UI errors
       return { provider: 'openai', model: 'gpt-4o' };
     }
@@ -109,7 +136,7 @@ export class ModelSelectionUtility {
    * Find default model in available models
    */
   static async findDefaultModelOption(
-    app: any,
+    app: App,
     availableModels: ModelOption[]
   ): Promise<ModelOption | null> {
     try {

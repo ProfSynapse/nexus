@@ -15,6 +15,7 @@ import { createServiceIntegration } from '../../services/ValidationService';
 import { createErrorMessage } from '../../../../utils/errorUtils';
 import { CommonResult, CommonParameters } from '../../../../types/mcp/AgentTypes';
 import type { WorkspaceWorkflow } from '../../../../database/types/workspace/WorkspaceTypes';
+import type { IndividualWorkspace } from '../../../../types/storage/StorageTypes';
 
 // Define parameter and result types for workspace updates
 export interface UpdateWorkspaceParameters extends CommonParameters {
@@ -94,8 +95,14 @@ export class UpdateWorkspaceTool extends BaseTool<UpdateWorkspaceParameters, Upd
             // Lookup will happen in WorkspacePromptResolver when loading
             console.error('[UpdateWorkspace] Updating dedicatedAgentId to:', params.dedicatedAgentId);
 
-            // Create a deep copy for updating
-            const workspaceCopy = JSON.parse(JSON.stringify(existingWorkspace));
+            const workspaceCopy: Partial<IndividualWorkspace> = {
+                name: existingWorkspace.name,
+                description: existingWorkspace.description,
+                rootFolder: existingWorkspace.rootFolder,
+                context: existingWorkspace.context ? { ...existingWorkspace.context } : {},
+                dedicatedAgentId: existingWorkspace.dedicatedAgentId,
+                lastAccessed: existingWorkspace.lastAccessed,
+            };
             const now = Date.now();
 
             // Apply top-level updates
@@ -112,7 +119,7 @@ export class UpdateWorkspaceTool extends BaseTool<UpdateWorkspaceParameters, Upd
                     if (!folder) {
                         await this.app.vault.createFolder(params.rootFolder);
                     }
-                } catch (folderError) {
+                } catch {
                     // Ignore folder creation errors
                 }
                 workspaceCopy.rootFolder = params.rootFolder;
