@@ -8,10 +8,9 @@
  * Used by main.ts to manage the plugin's lifecycle phases in a structured way.
  */
 
-import { Plugin, Notice, Platform, App, PluginManifest } from 'obsidian';
+import { Plugin, Platform, App, PluginManifest } from 'obsidian';
 import { ServiceManager } from './ServiceManager';
 import { Settings } from '../settings';
-import { UpdateManager } from '../utils/UpdateManager';
 import { ServiceRegistrar } from './services/ServiceRegistrar';
 import { MaintenanceCommandManager } from './commands/MaintenanceCommandManager';
 import { InlineEditCommandManager } from './commands/InlineEditCommandManager';
@@ -95,7 +94,7 @@ export class PluginLifecycleManager {
         this.commandManager = new MaintenanceCommandManager({
             plugin: config.plugin,
             serviceManager: config.serviceManager,
-            getService: (name, timeoutMs) => this.serviceRegistrar.getService(name, timeoutMs),
+            getService: (name: string, timeoutMs?: number) => this.serviceRegistrar.getService(name, timeoutMs),
             isInitialized: () => this.isInitialized
         });
 
@@ -104,7 +103,7 @@ export class PluginLifecycleManager {
             plugin: config.plugin,
             app: config.app,
             settings: config.settings,
-            getService: (name, timeoutMs) => this.serviceRegistrar.getService(name, timeoutMs)
+            getService: (name: string, timeoutMs?: number) => this.serviceRegistrar.getService(name, timeoutMs)
         });
 
         this.taskBoardUIManager = new TaskBoardUIManager({
@@ -117,8 +116,8 @@ export class PluginLifecycleManager {
             plugin: config.plugin,
             settings: config.settings,
             serviceManager: config.serviceManager,
-            getService: (name, timeoutMs) => this.serviceRegistrar.getService(name, timeoutMs),
-            waitForService: (name, timeoutMs) => this.serviceRegistrar.waitForService(name, timeoutMs),
+            getService: (name: string, timeoutMs?: number) => this.serviceRegistrar.getService(name, timeoutMs),
+            waitForService: (name: string, timeoutMs?: number) => this.serviceRegistrar.waitForService(name, timeoutMs),
             isInitialized: () => this.isInitialized
         });
 
@@ -141,7 +140,7 @@ export class PluginLifecycleManager {
         this.inlineEditCommandManager = new InlineEditCommandManager({
             plugin: config.plugin,
             app: config.app,
-            getService: (name, timeoutMs) => this.serviceRegistrar.getService(name, timeoutMs)
+            getService: (name: string, timeoutMs?: number) => this.serviceRegistrar.getService(name, timeoutMs)
         });
     }
 
@@ -189,7 +188,7 @@ export class PluginLifecycleManager {
             if (this.config.connector) {
                 try {
                     await this.config.connector.start();
-                } catch (error) {
+                } catch {
                     // MCP connector start failed - non-fatal
                 }
             }
@@ -212,15 +211,17 @@ export class PluginLifecycleManager {
             // Uses a fixed timeout from onload rather than onLayoutReady (which is unreliable, can take 13+s)
             // 3 second delay gives Obsidian enough time to finish loading screen
             if (!Platform.isMobile) {
-                const sqliteTimer = setTimeout(async () => {
-                    try {
-                        const adapter = await this.config.serviceManager?.getService<HybridStorageAdapter>('hybridStorageAdapter');
-                        if (adapter) {
-                            await this.initializeEmbeddingsWhenReady(adapter);
+                const sqliteTimer = setTimeout(() => {
+                    void (async () => {
+                        try {
+                            const adapter = await this.config.serviceManager?.getService<HybridStorageAdapter>('hybridStorageAdapter');
+                            if (adapter) {
+                                await this.initializeEmbeddingsWhenReady(adapter);
+                            }
+                        } catch (err) {
+                            console.error('[PluginLifecycleManager] Background SQLite initialization failed:', err);
                         }
-                    } catch (err) {
-                        console.error('[PluginLifecycleManager] Background SQLite initialization failed:', err);
-                    }
+                    })();
                 }, 3000); // 3s from background init start - Obsidian loading screen is gone by then
                 this.pendingTimers.push(sqliteTimer);
             }
@@ -232,7 +233,7 @@ export class PluginLifecycleManager {
             this.inlineEditCommandManager.registerCommands();
 
             // Check for updates
-            this.backgroundProcessor.checkForUpdatesOnStartup();
+            void this.backgroundProcessor.checkForUpdatesOnStartup();
 
             // Update settings tab with loaded services
             this.backgroundProcessor.updateSettingsTabServices();
@@ -262,7 +263,7 @@ export class PluginLifecycleManager {
     /**
      * Get service helper method
      */
-    private async getService<T>(name: string, timeoutMs: number = 10000): Promise<T | null> {
+    private async getService<T>(name: string, _timeoutMs: number = 10000): Promise<T | null> {
         if (!this.config.serviceManager) {
             return null;
         }
@@ -270,7 +271,7 @@ export class PluginLifecycleManager {
         // Try to get service (will initialize if needed)
         try {
             return await this.config.serviceManager.getService<T>(name);
-        } catch (error) {
+        } catch {
             return null;
         }
     }
@@ -341,7 +342,8 @@ export class PluginLifecycleManager {
             if (this.embeddingManager) {
                 try {
                     await this.embeddingManager.shutdown();
-                } catch (error) {
+                } catch {
+                    // Ignore non-fatal embedding shutdown errors during unload.
                 }
             }
 
@@ -356,7 +358,8 @@ export class PluginLifecycleManager {
             if (storageAdapter && typeof storageAdapter.close === 'function') {
                 try {
                     await storageAdapter.close();
-                } catch (error) {
+                } catch {
+                    // Ignore non-fatal storage shutdown errors during unload.
                 }
             }
 

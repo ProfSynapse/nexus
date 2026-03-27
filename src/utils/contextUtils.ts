@@ -1,5 +1,35 @@
 import { CommonParameters, CommonResult } from '../types';
 
+interface WorkspaceIdSource {
+  workspaceId?: string;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function getWorkspaceIdFromSource(value: unknown): string | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  return typeof value.workspaceId === 'string' ? value.workspaceId : undefined;
+}
+
+function parseWorkspaceContextValue(value: unknown): Partial<WorkspaceContext> {
+  if (!isRecord(value)) {
+    return {};
+  }
+
+  return {
+    workspaceId: typeof value.workspaceId === 'string' ? value.workspaceId : undefined,
+    workspacePath: Array.isArray(value.workspacePath)
+      ? value.workspacePath.filter((item): item is string => typeof item === 'string')
+      : undefined,
+    activeWorkspace: typeof value.activeWorkspace === 'boolean' ? value.activeWorkspace : undefined,
+  };
+}
+
 /**
  * Interface for workspace context
  */
@@ -19,14 +49,12 @@ export interface WorkspaceContext {
 export function parseWorkspaceContext(
   workspaceContext: CommonParameters['workspaceContext'] | null | undefined,
   fallbackId = 'default-workspace',
-  contextParam?: any
+  contextParam?: WorkspaceIdSource | null
 ): WorkspaceContext | null {
   // First, try to get workspaceId from context parameter if available
   let workspaceId: string | undefined;
 
-  if (contextParam?.workspaceId) {
-    workspaceId = contextParam.workspaceId;
-  }
+  workspaceId = getWorkspaceIdFromSource(contextParam);
 
   if (!workspaceContext) {
     // If no workspaceContext but we have workspaceId from context, create a minimal context
@@ -45,8 +73,8 @@ export function parseWorkspaceContext(
   // Handle string vs object format
   if (typeof workspaceContext === 'string') {
     try {
-      parsedContext = JSON.parse(workspaceContext);
-    } catch (e) {
+      parsedContext = parseWorkspaceContextValue(JSON.parse(workspaceContext) as unknown);
+    } catch {
       return {
         workspaceId: workspaceId || fallbackId,
         workspacePath: [],
@@ -54,7 +82,7 @@ export function parseWorkspaceContext(
       };
     }
   } else if (typeof workspaceContext === 'object' && workspaceContext !== null) {
-    parsedContext = workspaceContext;
+    parsedContext = parseWorkspaceContextValue(workspaceContext);
   }
 
   // Use workspaceId from context if available, otherwise from workspaceContext
@@ -139,8 +167,10 @@ export function mergeWorkspaceContexts(
  * @param params Parameters object that may contain context information
  * @returns Context suitable for prepareResult calls
  */
-export function extractContextFromParams(params: any): CommonResult['context'] {
-  if (params.context !== undefined) {
+export function extractContextFromParams(
+  params: Partial<Pick<CommonParameters, 'context'>> | null | undefined
+): CommonResult['context'] {
+  if (params?.context !== undefined) {
     return normalizeContextForResult(params.context);
   }
   return undefined;
@@ -151,7 +181,9 @@ export function extractContextFromParams(params: any): CommonResult['context'] {
  * @param context Context in either string or enhanced object format
  * @returns Normalized context for result
  */
-export function normalizeContextForResult(context: any): CommonResult['context'] {
+export function normalizeContextForResult(
+  context: CommonResult['context'] | null | undefined
+): CommonResult['context'] {
   if (typeof context === 'string') {
     return context;
   } else if (typeof context === 'object' && context !== null) {

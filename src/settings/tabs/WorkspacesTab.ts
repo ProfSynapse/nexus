@@ -9,13 +9,13 @@
  * - FilePickerRenderer (file picker)
  */
 
-import { App, Notice, Component } from 'obsidian';
+import { App, Modal, Notice, Setting, Component } from 'obsidian';
 import { SettingsRouter } from '../SettingsRouter';
 import { BreadcrumbNav, BreadcrumbNavItem } from '../components/BreadcrumbNav';
 import { WorkflowEditorRenderer, Workflow } from '../../components/workspace/WorkflowEditorRenderer';
 import { FilePickerRenderer } from '../../components/workspace/FilePickerRenderer';
 import { WorkspaceListRenderer } from '../../components/workspace/WorkspaceListRenderer';
-import { WorkspaceDetailRenderer, DetailCallbacks } from '../../components/workspace/WorkspaceDetailRenderer';
+import { WorkspaceDetailRenderer, DetailCallbacks, TaskServiceLike } from '../../components/workspace/WorkspaceDetailRenderer';
 import { ProjectsManagerView } from '../../components/workspace/ProjectsManagerView';
 import { ProjectWorkspace } from '../../database/workspace-types';
 import { WorkspaceService } from '../../services/WorkspaceService';
@@ -25,7 +25,6 @@ import { v4 as uuidv4 } from '../../utils/uuid';
 import type { ServiceManager } from '../../core/ServiceManager';
 import type { WorkflowRunService } from '../../services/workflows/WorkflowRunService';
 import type { ProjectMetadata } from '../../database/repositories/interfaces/IProjectRepository';
-import type { TaskMetadata } from '../../database/repositories/interfaces/ITaskRepository';
 
 export interface WorkspacesTabServices {
     app: App;
@@ -34,6 +33,37 @@ export interface WorkspacesTabServices {
     prefetchedWorkspaces?: ProjectWorkspace[] | null;
     serviceManager?: ServiceManager;
     component?: Component;
+}
+
+class ConfirmActionModal extends Modal {
+    constructor(
+        app: App,
+        private readonly message: string,
+        private readonly onConfirm: () => void,
+        private readonly onCancel: () => void
+    ) {
+        super(app);
+    }
+
+    onOpen(): void {
+        const { contentEl } = this;
+        contentEl.empty();
+        contentEl.createEl('h3', { text: 'Confirm action' });
+        contentEl.createEl('p', { text: this.message });
+        new Setting(contentEl)
+            .addButton((button) => button.setButtonText('Cancel').onClick(() => {
+                this.onCancel();
+                this.close();
+            }))
+            .addButton((button) => button.setButtonText('Delete').setWarning().onClick(() => {
+                this.onConfirm();
+                this.close();
+            }));
+    }
+
+    onClose(): void {
+        this.contentEl.empty();
+    }
 }
 
 type WorkspacesView = 'list' | 'detail' | 'workflow' | 'filepicker' | 'projects' | 'project-detail' | 'task-detail';
@@ -70,7 +100,7 @@ export class WorkspacesTab {
         this.router = router;
         this.services = services;
         this.listRenderer = new WorkspaceListRenderer();
-        this.detailRenderer = new WorkspaceDetailRenderer(services.component);
+        this.detailRenderer = new WorkspaceDetailRenderer(services.app, services.component);
         this.projectsManager = new ProjectsManagerView(
             this.detailRenderer,
             services.serviceManager,
@@ -89,7 +119,7 @@ export class WorkspacesTab {
             this.render();
         } else {
             this.render();
-            this.loadWorkspaces().then(() => {
+            void this.loadWorkspaces().then(() => {
                 this.isLoading = false;
                 this.render();
             });
@@ -113,10 +143,10 @@ export class WorkspacesTab {
                     ])
                 ]);
                 if (service) {
-                    workspaceService = service as WorkspaceService;
+                    workspaceService = service;
                     this.services.workspaceService = workspaceService;
                 }
-            } catch (e) {
+            } catch {
                 // Service unavailable
             }
         }
@@ -219,7 +249,7 @@ export class WorkspacesTab {
             onOpenFilePicker: (index) => this.openFilePicker(index),
             onRefreshDetail: () => this.refreshDetail(),
             getAvailableAgents: () => this.getAvailableAgents(),
-            getTaskService: () => this.projectsManager.getTaskService() as any,
+            getTaskService: () => this.projectsManager.getTaskService() as Promise<TaskServiceLike | null>,
             onRefreshProjects: () => this.projectsManager.refreshProjects(),
             onOpenProjectDetail: (project) => { void this.openProjectDetailAndRender(project); },
             safeRegisterDomEvent: (el, eventName, handler) => this.safeRegisterDomEvent(el, eventName, handler)
@@ -303,7 +333,14 @@ export class WorkspacesTab {
     private async deleteCurrentWorkspace(): Promise<void> {
         if (!this.currentWorkspace?.id || !this.services.workspaceService) return;
 
-        const confirmed = confirm(`Delete workspace "${this.currentWorkspace.name}"? This cannot be undone.`);
+        const confirmed = await new Promise<boolean>((resolve) => {
+            new ConfirmActionModal(
+                this.services.app,
+                `Delete workspace "${this.currentWorkspace?.name}"? This cannot be undone.`,
+                () => resolve(true),
+                () => resolve(false)
+            ).open();
+        });
         if (!confirmed) return;
 
         try {
@@ -579,7 +616,7 @@ export class WorkspacesTab {
 
     private debouncedSave(): void {
         if (this.saveTimeout) clearTimeout(this.saveTimeout);
-        this.saveTimeout = setTimeout(() => { this.saveCurrentWorkspace(); }, 500);
+        this.saveTimeout = setTimeout(() => { void this.saveCurrentWorkspace(); }, 500);
     }
 
     destroy(): void {

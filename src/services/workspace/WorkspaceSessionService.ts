@@ -5,8 +5,7 @@
 
 import { FileSystemService } from '../storage/FileSystemService';
 import { IndexManager } from '../storage/IndexManager';
-import { SessionData } from '../../types/storage/StorageTypes';
-import { IStorageAdapter } from '../../database/interfaces/IStorageAdapter';
+import { IndividualWorkspace, SessionData } from '../../types/storage/StorageTypes';
 import * as HybridTypes from '../../types/storage/HybridStorageTypes';
 import { StorageAdapterOrGetter, resolveAdapter, withDualBackend } from '../helpers/DualBackendExecutor';
 
@@ -19,9 +18,9 @@ const DEFAULT_WORKSPACE_NAME = 'Default Workspace';
  * referential integrity checks (e.g., ensuring workspace exists before creating session).
  */
 export interface WorkspaceSessionDeps {
-  getWorkspace: (id: string) => Promise<any>;
-  getWorkspaceByNameOrId: (identifier: string) => Promise<any>;
-  createWorkspace: (data: any) => Promise<any>;
+  getWorkspace: (id: string) => Promise<IndividualWorkspace | null>;
+  getWorkspaceByNameOrId: (identifier: string) => Promise<IndividualWorkspace | null>;
+  createWorkspace: (data: Partial<IndividualWorkspace>) => Promise<IndividualWorkspace>;
 }
 
 export class WorkspaceSessionService {
@@ -89,7 +88,7 @@ export class WorkspaceSessionService {
       throw new Error(`Workspace ${workspaceId} not found`);
     }
 
-    const sessionId = sessionData.id || `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const sessionId = sessionData.id || `session_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
     const session: SessionData = {
       id: sessionId,
       name: sessionData.name,

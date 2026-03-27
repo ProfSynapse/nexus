@@ -15,6 +15,61 @@ import {
 } from '../interfaces/StorageEvents';
 import { ISQLiteCacheManager } from './SyncCoordinator';
 
+type SqlParameter = string | number | null;
+
+interface ConversationChatSettings {
+  workspaceId?: string;
+  sessionId?: string;
+}
+
+interface ConversationSyncSettings {
+  workspaceId?: string;
+  sessionId?: string;
+  workflowId?: string;
+  runTrigger?: string;
+  scheduledFor?: string | number;
+  runKey?: string;
+  chatSettings?: ConversationChatSettings;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function getOptionalString(record: Record<string, unknown>, key: string): string | undefined {
+  const value = record[key];
+  return typeof value === 'string' ? value : undefined;
+}
+
+function getOptionalScheduledValue(record: Record<string, unknown>, key: string): string | number | undefined {
+  const value = record[key];
+  return typeof value === 'string' || typeof value === 'number' ? value : undefined;
+}
+
+function parseConversationSettings(value: unknown): ConversationSyncSettings | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const chatSettingsValue = value.chatSettings;
+  const chatSettings = isRecord(chatSettingsValue)
+    ? {
+        workspaceId: getOptionalString(chatSettingsValue, 'workspaceId'),
+        sessionId: getOptionalString(chatSettingsValue, 'sessionId'),
+      }
+    : undefined;
+
+  return {
+    workspaceId: getOptionalString(value, 'workspaceId'),
+    sessionId: getOptionalString(value, 'sessionId'),
+    workflowId: getOptionalString(value, 'workflowId'),
+    runTrigger: getOptionalString(value, 'runTrigger'),
+    scheduledFor: getOptionalScheduledValue(value, 'scheduledFor'),
+    runKey: getOptionalString(value, 'runKey'),
+    chatSettings,
+  };
+}
+
 export class ConversationEventApplier {
   private sqliteCache: ISQLiteCacheManager;
 
@@ -58,7 +113,7 @@ export class ConversationEventApplier {
       return;
     }
 
-    const settings = event.data.settings;
+    const settings = parseConversationSettings(event.data.settings);
     const chatSettings = settings?.chatSettings;
     const workspaceId = settings?.workspaceId ?? chatSettings?.workspaceId ?? null;
     const sessionId = settings?.sessionId ?? chatSettings?.sessionId ?? null;
@@ -91,15 +146,15 @@ export class ConversationEventApplier {
 
   private async applyConversationUpdated(event: ConversationUpdatedEvent): Promise<void> {
     const updates: string[] = [];
-    const values: any[] = [];
+    const values: SqlParameter[] = [];
 
     if (event.data.title !== undefined) { updates.push('title = ?'); values.push(event.data.title); }
     if (event.data.updated !== undefined) { updates.push('updated = ?'); values.push(event.data.updated); }
     if (event.data.settings !== undefined) {
-      const settings = event.data.settings;
+      const settings = parseConversationSettings(event.data.settings);
       const chatSettings = settings?.chatSettings;
       updates.push('metadataJson = ?');
-      values.push(JSON.stringify(settings));
+      values.push(JSON.stringify(event.data.settings));
       updates.push('workspaceId = ?');
       values.push(settings?.workspaceId ?? chatSettings?.workspaceId ?? null);
       updates.push('sessionId = ?');
@@ -158,7 +213,7 @@ export class ConversationEventApplier {
 
   private async applyMessageUpdated(event: MessageUpdatedEvent): Promise<void> {
     const updates: string[] = [];
-    const values: any[] = [];
+    const values: SqlParameter[] = [];
 
     if (event.data.content !== undefined) { updates.push('content = ?'); values.push(event.data.content); }
     if (event.data.state !== undefined) { updates.push('state = ?'); values.push(event.data.state); }

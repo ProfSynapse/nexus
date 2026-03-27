@@ -8,12 +8,19 @@ export interface Recommendation {
 	message: string;
 }
 
+export interface RecommendationCarrier {
+	recommendations?: Recommendation[];
+}
+
 /**
  * Adds recommendations array to any mode result object
  * @param result - The base result object from a mode execution
  * @param recommendations - Array of recommendations to inject
  * @returns Enhanced result with recommendations field
  */
-export function addRecommendations(result: any, recommendations: Recommendation[]): any {
+export function addRecommendations<T extends RecommendationCarrier>(
+	result: T,
+	recommendations: Recommendation[]
+): T & { recommendations: Recommendation[] } {
 	return { ...result, recommendations };
 }

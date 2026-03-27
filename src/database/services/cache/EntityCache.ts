@@ -2,25 +2,29 @@ import { Events, Vault, TFile } from 'obsidian';
 import { WorkspaceService } from '../../../services/WorkspaceService';
 import { MemoryService } from '../../../agents/memoryManager/services/MemoryService';
 
+type WorkspaceCacheData = NonNullable<Awaited<ReturnType<WorkspaceService['getWorkspace']>>>;
+type SessionCacheData = NonNullable<Awaited<ReturnType<MemoryService['getSession']>>>;
+type StateCacheData = Awaited<ReturnType<MemoryService['getStates']>>['items'][number];
+
 interface TimestampedEntry {
     timestamp: number;
 }
 
 interface CachedWorkspace extends TimestampedEntry {
-    data: any;
+    data: WorkspaceCacheData;
     sessionIds: string[];
     stateIds: string[];
     associatedFiles: string[];
 }
 
 interface CachedSession extends TimestampedEntry {
-    data: any;
+    data: SessionCacheData;
     traceIds: string[];
     associatedFiles: string[];
 }
 
 interface CachedState extends TimestampedEntry {
-    data: any;
+    data: StateCacheData;
     associatedFiles: string[];
 }
 
@@ -30,7 +34,7 @@ interface FileMetadata {
     modified: number;
     size: number;
     isKeyFile: boolean;
-    frontmatter?: any;
+    frontmatter?: Record<string, unknown> | null;
     workspaceIds?: string[];
 }
 
@@ -206,7 +210,7 @@ export class EntityCache extends Events {
     async preloadFiles(filePaths: string[]): Promise<void> {
         const files = filePaths
             .map(path => this.vault.getAbstractFileByPath(path))
-            .filter(file => file instanceof TFile) as TFile[];
+            .filter((file): file is TFile => file instanceof TFile);
 
         await Promise.all(files.map(file => this.cacheFileMetadata(file)));
     }
@@ -225,9 +229,9 @@ export class EntityCache extends Events {
     }
 
     // Batch loading methods
-    async batchLoadSessions(sessionIds: string[]): Promise<any[]> {
+    async batchLoadSessions(sessionIds: string[]): Promise<SessionCacheData[]> {
         const uncached: string[] = [];
-        const results: any[] = [];
+        const results: SessionCacheData[] = [];
 
         // Check cache first
         for (const id of sessionIds) {
@@ -244,28 +248,26 @@ export class EntityCache extends Events {
             // Load sessions individually
             const sessionPromises = uncached.map(id => this.memoryService.getSession('default-workspace', id));
             const sessionResults = await Promise.all(sessionPromises);
-            const sessions = sessionResults.filter((s): s is any => s !== undefined);
+            const sessions = sessionResults.filter((session): session is SessionCacheData => session !== null);
             
             // Cache the loaded sessions
             for (const session of sessions) {
-                if (session) {
-                    this.sessionCache.set(session.id, {
-                        data: session,
-                        traceIds: [],
-                        associatedFiles: [],
-                        timestamp: Date.now()
-                    });
-                    results.push(session);
-                }
+                this.sessionCache.set(session.id, {
+                    data: session,
+                    traceIds: [],
+                    associatedFiles: [],
+                    timestamp: Date.now()
+                });
+                results.push(session);
             }
         }
 
         return results;
     }
 
-    async batchLoadStates(stateIds: string[]): Promise<any[]> {
+    async batchLoadStates(stateIds: string[]): Promise<StateCacheData[]> {
         const uncached: string[] = [];
-        const results: any[] = [];
+        const results: StateCacheData[] = [];
 
         // Check cache first
         for (const id of stateIds) {

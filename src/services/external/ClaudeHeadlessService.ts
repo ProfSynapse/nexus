@@ -4,6 +4,17 @@ import { resolveDesktopBinaryPath } from '../../utils/binaryDiscovery';
 
 const MAX_SAFE_WINDOWS_ARGV_CHARS = 24_000;
 
+type DesktopProcessEnv = Record<string, string | undefined>;
+type ClaudeChildProcess = import('child_process').ChildProcess & {
+    stdin: import('child_process').ChildProcess['stdin'];
+    stdout: NonNullable<import('child_process').ChildProcess['stdout']>;
+    stderr: NonNullable<import('child_process').ChildProcess['stderr']>;
+};
+
+interface ProcessExecutionError extends Error {
+    code?: string;
+}
+
 export interface ClaudeHeadlessPreflightResult {
     claudePath: string | null;
     nodePath: string | null;
@@ -105,9 +116,9 @@ export class ClaudeHeadlessService {
             return this.buildFailureResult('Vault base path is unavailable. This experiment requires the desktop filesystem adapter.', preflight, startedAt);
         }
 
-        const fsPromises = require('fs/promises') as typeof import('fs/promises');
-        const pathMod = require('path') as typeof import('path');
-        const osMod = require('os') as typeof import('os');
+        const fsPromises = this.getFsPromisesModule();
+        const pathMod = this.getPathModule();
+        const osMod = this.getOsModule();
 
         const tempDir = await fsPromises.mkdtemp(pathMod.join(osMod.tmpdir(), 'nexus-claude-headless-'));
         const mcpConfigPath = pathMod.join(tempDir, 'mcp.json');
@@ -198,7 +209,7 @@ export class ClaudeHeadlessService {
         };
     }
 
-    private buildClaudeEnv(): NodeJS.ProcessEnv {
+    private buildClaudeEnv(): DesktopProcessEnv {
         const env = { ...process.env };
 
         // Favor the user's local Claude subscription login instead of any API key
@@ -213,24 +224,27 @@ export class ClaudeHeadlessService {
         command: string,
         args: string[],
         cwd?: string,
-        env?: NodeJS.ProcessEnv,
+        env?: DesktopProcessEnv,
         stdinText?: string
     ): Promise<ProcessResult> {
-        const childProcess = require('child_process') as typeof import('child_process');
+        const childProcess = this.getChildProcessModule();
 
         return await new Promise<ProcessResult>((resolve) => {
-            const stdio = (stdinText !== undefined ? ['pipe', 'pipe', 'pipe'] : ['ignore', 'pipe', 'pipe']) as any;
+            const stdio: import('child_process').SpawnOptions['stdio'] = stdinText !== undefined
+                ? ['pipe', 'pipe', 'pipe']
+                : ['ignore', 'pipe', 'pipe'];
             const child = childProcess.spawn(command, args, {
                 cwd,
                 env,
                 stdio
-            }) as any;
+            }) as ClaudeChildProcess;
 
             let stdout = '';
             let stderr = '';
 
             if (stdinText !== undefined) {
-                if (!child.stdin) {
+                const stdin = child.stdin;
+                if (!stdin) {
                     resolve({
                         stdout,
                         stderr: 'Failed to open Claude Code stdin for prompt input.',
@@ -239,7 +253,7 @@ export class ClaudeHeadlessService {
                     return;
                 }
 
-                const handleStdinError = (error: NodeJS.ErrnoException) => {
+                const handleStdinError = (error: ProcessExecutionError) => {
                     resolve({
                         stdout,
                         stderr: stderr ? `${stderr}\n${error.message}` : error.message,
@@ -248,9 +262,9 @@ export class ClaudeHeadlessService {
                     });
                 };
 
-                child.stdin.once('error', handleStdinError);
-                child.stdin.end(stdinText, 'utf8', () => {
-                    child.stdin?.off('error', handleStdinError);
+                stdin.once('error', handleStdinError);
+                stdin.end(stdinText, 'utf8', () => {
+                    stdin.off('error', handleStdinError);
                 });
             }
 
@@ -262,12 +276,12 @@ export class ClaudeHeadlessService {
                 stderr += chunk.toString();
             });
 
-            child.on('error', (error: Error) => {
+            child.on('error', (error: ProcessExecutionError) => {
                 resolve({
                     stdout,
                     stderr: stderr ? `${stderr}\n${error.message}` : error.message,
                     exitCode: null,
-                    errorCode: (error as NodeJS.ErrnoException).code
+                    errorCode: error.code
                 });
             });
 
@@ -287,7 +301,7 @@ export class ClaudeHeadlessService {
             return null;
         }
 
-        const pathMod = require('path') as typeof import('path');
+        const pathMod = this.getPathModule();
         const manifestDir = this.plugin.manifest.dir;
         const pluginFolderName = manifestDir ? manifestDir.split('/').pop() || manifestDir : '';
 
@@ -335,5 +349,29 @@ export class ClaudeHeadlessService {
         }
 
         return null;
+    }
+
+    private getChildProcessModule(): typeof import('child_process') {
+        // Desktop-only runtime dependency; keep loading deferred behind desktop guards.
+        // eslint-disable-next-line import/no-nodejs-modules, @typescript-eslint/no-require-imports
+        return require('child_process') as typeof import('child_process');
+    }
+
+    private getFsPromisesModule(): typeof import('fs/promises') {
+        // Desktop-only runtime dependency; keep loading deferred behind desktop guards.
+        // eslint-disable-next-line import/no-nodejs-modules, @typescript-eslint/no-require-imports
+        return require('fs/promises') as typeof import('fs/promises');
+    }
+
+    private getOsModule(): typeof import('os') {
+        // Desktop-only runtime dependency; keep loading deferred behind desktop guards.
+        // eslint-disable-next-line import/no-nodejs-modules, @typescript-eslint/no-require-imports
+        return require('os') as typeof import('os');
+    }
+
+    private getPathModule(): typeof import('path') {
+        // Desktop-only runtime dependency; keep loading deferred behind desktop guards.
+        // eslint-disable-next-line import/no-nodejs-modules, @typescript-eslint/no-require-imports
+        return require('path') as typeof import('path');
     }
 }

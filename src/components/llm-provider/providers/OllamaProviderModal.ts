@@ -12,6 +12,49 @@ import {
   ProviderModalDependencies,
 } from '../types';
 
+interface OllamaModelInfo {
+  name: string;
+}
+
+interface OllamaTagsResponse {
+  models: OllamaModelInfo[];
+}
+
+interface OllamaGenerateResponse {
+  response: string;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function parseOllamaTagsResponse(value: unknown): OllamaTagsResponse | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const modelsValue = value.models;
+  if (!Array.isArray(modelsValue)) {
+    return { models: [] };
+  }
+
+  const models = modelsValue
+    .filter(isRecord)
+    .map(model => model.name)
+    .filter((name): name is string => typeof name === 'string')
+    .map(name => ({ name }));
+
+  return { models };
+}
+
+function parseOllamaGenerateResponse(value: unknown): OllamaGenerateResponse | null {
+  if (!isRecord(value) || typeof value.response !== 'string') {
+    return null;
+  }
+
+  return { response: value.response };
+}
+
 export class OllamaProviderModal implements IProviderModal {
   private config: ProviderModalConfig;
   private deps: ProviderModalDependencies;
@@ -105,7 +148,7 @@ export class OllamaProviderModal implements IProviderModal {
       // Auto-validate after delay
       this.validationTimeout = setTimeout(() => {
         if (this.modelName.trim()) {
-          this.testConnection();
+          void this.testConnection();
         }
       }, 2000);
 
@@ -223,12 +266,16 @@ export class OllamaProviderModal implements IProviderModal {
       }
 
       // Check if model is available
-      const serverData = serverResponse.json;
-      const availableModels = serverData.models || [];
+      const serverData = parseOllamaTagsResponse(serverResponse.json);
+      if (!serverData) {
+        throw new Error('Server returned an invalid model list response');
+      }
+
+      const availableModels = serverData.models;
       const modelExists = availableModels.some((model: { name: string }) => model.name === modelName);
 
       if (!modelExists) {
-        const modelList = availableModels.map((m: { name: string }) => m.name).join(', ') || 'none';
+        const modelList = availableModels.map(model => model.name).join(', ') || 'none';
         new Notice(`Model '${modelName}' not found. Available: ${modelList}`);
         return;
       }
@@ -250,8 +297,8 @@ export class OllamaProviderModal implements IProviderModal {
         throw new Error(`Model test failed: ${testResponse.status}`);
       }
 
-      const testData = testResponse.json;
-      if (testData.response) {
+      const testData = parseOllamaGenerateResponse(testResponse.json);
+      if (testData) {
         new Notice(`Ollama connection successful! Model '${modelName}' is working.`);
 
         this.isValidated = true;

@@ -23,7 +23,7 @@ export class ConfigModal extends Modal {
     /**
      * Called when the modal is opened
      */
-    onOpen() {
+    onOpen(): void {
         const { contentEl } = this;
         contentEl.empty();
         
@@ -143,7 +143,7 @@ export class ConfigModal extends Modal {
             href: '#'
         });
 
-        configLink.addEventListener('click', async (e) => {
+        configLink.addEventListener('click', (e) => {
             e.preventDefault();
             // Try to open the file with system's default program
             const actualPath = this.getWindowsConfigPath();
@@ -164,7 +164,7 @@ export class ConfigModal extends Modal {
             cls: 'mod-cta'
         });
         
-        this.populateTabConfig('windows', codeEl, copyButton);
+        void this.populateTabConfig('windows', codeEl, copyButton);
         
         // Remaining steps
         steps.createEl('li', { text: this.isFirstTimeSetup
@@ -207,7 +207,7 @@ export class ConfigModal extends Modal {
             href: '#'
         });
 
-        configLink.addEventListener('click', async (e) => {
+        configLink.addEventListener('click', (e) => {
             e.preventDefault();
             // Try to open the file with system's default program
             const actualPath = this.getMacConfigPath();
@@ -228,7 +228,7 @@ export class ConfigModal extends Modal {
             cls: 'mod-cta'
         });
         
-        this.populateTabConfig('mac', codeEl, copyButton);
+        void this.populateTabConfig('mac', codeEl, copyButton);
         
         // Remaining steps
         steps.createEl('li', { text: this.isFirstTimeSetup
@@ -271,7 +271,7 @@ export class ConfigModal extends Modal {
             href: '#'
         });
 
-        configLink.addEventListener('click', async (e) => {
+        configLink.addEventListener('click', (e) => {
             e.preventDefault();
             // Try to open the file with system's default program
             const actualPath = this.getLinuxConfigPath();
@@ -292,7 +292,7 @@ export class ConfigModal extends Modal {
             cls: 'mod-cta'
         });
         
-        this.populateTabConfig('linux', codeEl, copyButton);
+        void this.populateTabConfig('linux', codeEl, copyButton);
         
         // Remaining steps
         steps.createEl('li', { text: this.isFirstTimeSetup
@@ -334,7 +334,7 @@ export class ConfigModal extends Modal {
     /**
      * Add CSS styles for the modal (now implemented in styles.css)
      */
-    private addStyles() {
+    private addStyles(): void {
         // All styles are now in the global styles.css file
     }
     
@@ -350,9 +350,9 @@ export class ConfigModal extends Modal {
         // Update all tab contents with new configuration
         for (const tabId of Object.keys(this.tabContents)) {
             const content = this.tabContents[tabId];
-            const codeBlock = content.querySelector('pre code') as HTMLElement | null;
-            const copyButton = content.querySelector('button.mod-cta') as HTMLButtonElement | null;
-            if (codeBlock && copyButton) {
+            const codeBlock = content.querySelector('pre code');
+            const copyButton = content.querySelector('button.mod-cta');
+            if (codeBlock instanceof HTMLElement && copyButton instanceof HTMLButtonElement) {
                 await this.populateTabConfig(tabId, codeBlock, copyButton);
             }
         }
@@ -413,7 +413,7 @@ export class ConfigModal extends Modal {
                     }
                     return relativeConnectorPath;
                 }
-            } catch (error) {
+            } catch {
                 // Fall through and try next folder
             }
         }
@@ -430,7 +430,7 @@ export class ConfigModal extends Modal {
      * Get a placeholder config synchronously for initial render
      * Updated asynchronously once paths resolve
      */
-    private getConfigurationSyncPlaceholder() {
+    private getConfigurationSyncPlaceholder(): { mcpServers: Record<string, { command: string; args: string[] }> } {
         const serverKey = getPrimaryServerKey(this.app.vault.getName());
         return {
             mcpServers: {
@@ -450,7 +450,7 @@ export class ConfigModal extends Modal {
             const config = await this.getConfiguration(tabId);
             codeEl.textContent = JSON.stringify(config, null, 2);
             copyButton.onclick = () => {
-                navigator.clipboard.writeText(JSON.stringify(config, null, 2));
+                void navigator.clipboard.writeText(JSON.stringify(config, null, 2));
                 copyButton.setText('Copied!');
                 setTimeout(() => copyButton.setText('Copy configuration'), 2000);
             };
@@ -507,7 +507,7 @@ export class ConfigModal extends Modal {
     /**
      * Called when the modal is closed
      */
-    onClose() {
+    onClose(): void {
         const { contentEl } = this;
         contentEl.empty();
     }

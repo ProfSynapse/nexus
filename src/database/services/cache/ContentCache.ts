@@ -8,10 +8,20 @@
  * Dependencies: BaseCacheStrategy, CacheEvictionPolicy
  */
 
-import { Events, Plugin, TFile } from 'obsidian';
+import { App, Events, Plugin, TFile } from 'obsidian';
 import { BaseCacheStrategy } from './strategies/BaseCacheStrategy';
 import { CachedEntry } from './strategies/CacheStrategy';
 import { CacheEvictionPolicy } from './CacheEvictionPolicy';
+
+type FileCacheMetadata = ReturnType<App['metadataCache']['getFileCache']>;
+
+interface MetadataCacheEntry extends CachedEntry {
+  data: FileCacheMetadata;
+}
+
+interface ComputedCacheEntry extends CachedEntry {
+  data: unknown;
+}
 
 export interface ContentCacheOptions {
   enableFileContentCache?: boolean;
@@ -26,7 +36,7 @@ export interface ContentCacheOptions {
 export interface FileContent extends CachedEntry {
   filePath: string;
   content: string;
-  metadata?: any;
+  metadata?: FileCacheMetadata;
   hash?: string;
 }
 
@@ -39,7 +49,7 @@ export interface EmbeddingContent extends CachedEntry {
 
 export interface SearchResult extends CachedEntry {
   query: string;
-  results: any[];
+  results: unknown[];
   type: string;
 }
 
@@ -74,7 +84,7 @@ class SearchCacheStrategy extends BaseCacheStrategy<SearchResult> {}
 /**
  * Generic cached content strategy
  */
-class GenericCacheStrategy extends BaseCacheStrategy<CachedEntry> {}
+class GenericCacheStrategy<T extends CachedEntry> extends BaseCacheStrategy<T> {}
 
 /**
  * Content Cache Service
@@ -84,10 +94,10 @@ class GenericCacheStrategy extends BaseCacheStrategy<CachedEntry> {}
 export class ContentCache extends Events {
   // Cache strategies
   private fileContentStrategy: FileContentCacheStrategy;
-  private metadataStrategy: GenericCacheStrategy;
+  private metadataStrategy: GenericCacheStrategy<MetadataCacheEntry>;
   private embeddingStrategy: EmbeddingCacheStrategy;
   private searchResultsStrategy: SearchCacheStrategy;
-  private computedStrategy: GenericCacheStrategy;
+  private computedStrategy: GenericCacheStrategy<ComputedCacheEntry>;
 
   // Cache statistics
   private hits = 0;
@@ -100,7 +110,7 @@ export class ContentCache extends Events {
   private readonly maxMemoryMB: number;
 
   // Cleanup timer
-  private cleanupInterval: NodeJS.Timeout | null = null;
+  private cleanupInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor(
     private plugin: Plugin,
@@ -115,10 +125,10 @@ export class ContentCache extends Events {
 
     // Initialize cache strategies
     this.fileContentStrategy = new FileContentCacheStrategy();
-    this.metadataStrategy = new GenericCacheStrategy();
+    this.metadataStrategy = new GenericCacheStrategy<MetadataCacheEntry>();
     this.embeddingStrategy = new EmbeddingCacheStrategy();
     this.searchResultsStrategy = new SearchCacheStrategy();
-    this.computedStrategy = new GenericCacheStrategy();
+    this.computedStrategy = new GenericCacheStrategy<ComputedCacheEntry>();
 
     // Start periodic cleanup
     this.startCleanupTimer();
@@ -134,7 +144,7 @@ export class ContentCache extends Events {
   async cacheFileContent(
     filePath: string,
     content: string,
-    metadata?: any,
+    metadata?: FileCacheMetadata,
     ttl?: number
   ): Promise<void> {
     if (!this.options.enableFileContentCache) {
@@ -261,7 +271,7 @@ export class ContentCache extends Events {
    */
   cacheSearchResults(
     query: string,
-    results: any[],
+    results: unknown[],
     searchType: string,
     ttl?: number
   ): void {
@@ -314,10 +324,10 @@ export class ContentCache extends Events {
   /**
    * Cache computed value with custom key
    */
-  cacheValue(key: string, value: any, ttl?: number): void {
+  cacheValue<T>(key: string, value: T, ttl?: number): void {
     const size = this.estimateSize(value);
 
-    const cacheEntry: CachedEntry = {
+    const cacheEntry: ComputedCacheEntry = {
       data: value,
       timestamp: Date.now(),
       size,
@@ -336,7 +346,7 @@ export class ContentCache extends Events {
   /**
    * Get cached computed value
    */
-  getCachedValue(key: string): any | null {
+  getCachedValue<T>(key: string): T | null {
     const cached = this.computedStrategy.get(key);
 
     if (!cached) {
@@ -345,7 +355,7 @@ export class ContentCache extends Events {
     }
 
     this.hits++;
-    return cached.data;
+    return cached.data as T;
   }
 
   // =============================================================================
@@ -489,7 +499,7 @@ export class ContentCache extends Events {
            this.metadataStrategy.getStatistics().count;
   }
 
-  private estimateSize(data: any): number {
+  private estimateSize(data: unknown): number {
     // Rough estimation of object size in bytes
     try {
       const jsonString = JSON.stringify(data);

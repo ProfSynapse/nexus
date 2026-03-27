@@ -3,7 +3,7 @@
  * Extracted from WorkspacesTab to keep the tab under 600 lines.
  */
 
-import { ButtonComponent, Component, DropdownComponent, Notice, TextAreaComponent, TextComponent } from 'obsidian';
+import { App, ButtonComponent, Component, DropdownComponent, Modal, Notice, Setting, TextAreaComponent, TextComponent } from 'obsidian';
 import { BreadcrumbNav, BreadcrumbNavItem } from '../../settings/components/BreadcrumbNav';
 import { WorkspaceFormRenderer } from './WorkspaceFormRenderer';
 import { CardItem } from '../CardManager';
@@ -40,6 +40,19 @@ interface TaskEditorState {
     parentTaskId: string;
 }
 
+export interface TaskServiceLike {
+    updateTask(taskId: string, updates: Partial<TaskMetadata>): Promise<void>;
+    createTask(...args: unknown[]): Promise<unknown>;
+    moveTask(...args: unknown[]): Promise<unknown>;
+    deleteProject(projectId: string): Promise<void>;
+    deleteTask(taskId: string): Promise<void>;
+    listTasks(...args: unknown[]): Promise<unknown>;
+}
+
+interface ConfirmDialogHost {
+    confirm(message: string): Promise<boolean>;
+}
+
 export interface DetailCallbacks {
     onNavigateList: () => void;
     onNavigateDetail: () => void;
@@ -52,18 +65,62 @@ export interface DetailCallbacks {
     onOpenFilePicker: (index: number) => void;
     onRefreshDetail: () => void;
     getAvailableAgents: () => CustomPrompt[];
-    getTaskService: () => Promise<{ updateTask: Function; createTask: Function; moveTask: Function; deleteProject: Function; deleteTask: Function; listTasks: Function } | null>;
+    getTaskService: () => Promise<TaskServiceLike | null>;
     onRefreshProjects: () => Promise<void>;
     onOpenProjectDetail: (project: ProjectMetadata) => void;
     safeRegisterDomEvent: <K extends keyof HTMLElementEventMap>(el: HTMLElement, eventName: K, handler: (event: HTMLElementEventMap[K]) => void) => void;
 }
 
+class ConfirmActionModal extends Modal {
+    constructor(
+        app: App,
+        private readonly message: string,
+        private readonly onConfirm: () => void,
+        private readonly onCancel: () => void
+    ) {
+        super(app);
+    }
+
+    onOpen(): void {
+        const { contentEl } = this;
+        contentEl.empty();
+        contentEl.createEl('h3', { text: 'Confirm action' });
+        contentEl.createEl('p', { text: this.message });
+
+        new Setting(contentEl)
+            .addButton((button) => button.setButtonText('Cancel').onClick(() => {
+                this.onCancel();
+                this.close();
+            }))
+            .addButton((button) => button.setButtonText('Delete').setWarning().onClick(() => {
+                this.onConfirm();
+                this.close();
+            }));
+    }
+
+    onClose(): void {
+        this.contentEl.empty();
+    }
+}
+
+class ConfirmDialog implements ConfirmDialogHost {
+    constructor(private readonly app: App) {}
+
+    confirm(message: string): Promise<boolean> {
+        return new Promise((resolve) => {
+            new ConfirmActionModal(this.app, message, () => resolve(true), () => resolve(false)).open();
+        });
+    }
+}
+
 export class WorkspaceDetailRenderer {
     private formRenderer?: WorkspaceFormRenderer;
     private component?: Component;
+    private confirmDialog: ConfirmDialogHost;
 
-    constructor(component?: Component) {
+    constructor(app: App, component?: Component) {
         this.component = component;
+        this.confirmDialog = new ConfirmDialog(app);
     }
 
     renderDetail(
@@ -493,9 +550,13 @@ export class WorkspaceDetailRenderer {
         if (includeEmpty && !options.some(([optionValue]) => optionValue === '')) {
             dropdown.addOption('', 'None');
         }
-        options.forEach(([optionValue, optionLabel]) => dropdown.addOption(optionValue, optionLabel));
+        options.forEach(([optionValue, optionLabel]) => {
+            dropdown.addOption(optionValue, optionLabel);
+        });
         dropdown.setValue(value || '');
-        dropdown.onChange(onChange);
+        dropdown.onChange((nextValue) => {
+            onChange(nextValue);
+        });
     }
 
     private renderTaskTextField(
@@ -574,7 +635,7 @@ export class WorkspaceDetailRenderer {
     }
 
     private async deleteProject(projectId: string, callbacks: DetailCallbacks): Promise<void> {
-        const confirmed = confirm('Delete this project and all its tasks? This cannot be undone.');
+        const confirmed = await this.confirmDialog.confirm('Delete this project and all its tasks? This cannot be undone.');
         if (!confirmed) return;
 
         const taskService = await callbacks.getTaskService();
@@ -595,7 +656,7 @@ export class WorkspaceDetailRenderer {
     }
 
     private async deleteTask(taskId: string, callbacks: DetailCallbacks): Promise<void> {
-        const confirmed = confirm('Delete this task? This cannot be undone.');
+        const confirmed = await this.confirmDialog.confirm('Delete this task? This cannot be undone.');
         if (!confirmed) return;
 
         const taskService = await callbacks.getTaskService();

@@ -5,8 +5,7 @@ import {
   TraceLegacyMetadata,
   TraceOutcomeMetadata,
   TraceToolMetadata,
-  isLegacyTraceContextFormat,
-  LegacyTraceContextMetadata
+  isLegacyTraceContextFormat
 } from '../../database/types/memory/MemoryTypes';
 
 export interface TraceMetadataBuilderOptions {
@@ -25,6 +24,10 @@ export interface TraceMetadataBuilderOptions {
 export class TraceMetadataBuilder {
   public static readonly CURRENT_SCHEMA_VERSION = 1;
 
+  private static isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+  }
+
   static create(options: TraceMetadataBuilderOptions): TraceMetadata {
     const context = TraceMetadataBuilder.ensureContext(options.context);
 
@@ -42,8 +45,8 @@ export class TraceMetadataBuilder {
    * Extracts legacy params/result blobs from existing metadata structures so
    * we can persist them under metadata.legacy for backward compatibility.
    */
-  static extractLegacyFromMetadata(rawMetadata: any): TraceLegacyMetadata | undefined {
-    if (!rawMetadata) {
+  static extractLegacyFromMetadata(rawMetadata: unknown): TraceLegacyMetadata | undefined {
+    if (!TraceMetadataBuilder.isRecord(rawMetadata)) {
       return undefined;
     }
 
@@ -55,12 +58,17 @@ export class TraceMetadataBuilder {
 
     if (rawMetadata.result !== undefined) {
       legacy.result = rawMetadata.result;
-    } else if (rawMetadata.response?.result !== undefined) {
-      legacy.result = rawMetadata.response.result;
+    } else {
+      const response = rawMetadata.response;
+      if (TraceMetadataBuilder.isRecord(response) && response.result !== undefined) {
+        legacy.result = response.result;
+      }
     }
 
     if (Array.isArray(rawMetadata.relatedFiles) && rawMetadata.relatedFiles.length > 0) {
-      legacy.relatedFiles = rawMetadata.relatedFiles;
+      legacy.relatedFiles = rawMetadata.relatedFiles.filter(
+        (file): file is string => typeof file === 'string'
+      );
     }
 
     return TraceMetadataBuilder.normalizeLegacy(legacy);
@@ -77,10 +85,9 @@ export class TraceMetadataBuilder {
 
     // Handle both legacy and V2 context formats
     if (isLegacyTraceContextFormat(context)) {
-      const legacyContext = context as LegacyTraceContextMetadata;
       return {
-        ...legacyContext,
-        additionalContext: legacyContext.additionalContext ? { ...legacyContext.additionalContext } : undefined
+        ...context,
+        additionalContext: context.additionalContext ? { ...context.additionalContext } : undefined
       };
     }
 
@@ -103,7 +110,7 @@ export class TraceMetadataBuilder {
 
     return {
       arguments: input.arguments,
-      files: hasFiles ? [...(input.files as string[])] : undefined,
+      files: hasFiles ? [...input.files] : undefined,
       notes: input.notes
     };
   }
@@ -124,7 +131,7 @@ export class TraceMetadataBuilder {
     return {
       params: legacy.params,
       result: legacy.result,
-      relatedFiles: hasFiles ? [...(legacy.relatedFiles as string[])] : undefined
+      relatedFiles: hasFiles ? [...legacy.relatedFiles] : undefined
     };
   }
 }

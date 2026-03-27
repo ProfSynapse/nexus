@@ -16,10 +16,14 @@
  * console.log(safeStringify(obj)); // {"a":1,"self":"[Circular Reference]"}
  * ```
  */
-export function safeStringify(obj: any): string {
-    const seen = new WeakSet();
-    return JSON.stringify(obj, (_, value) => {
-        if (typeof value === 'object' && value !== null) {
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null;
+}
+
+export function safeStringify(obj: unknown): string {
+    const seen = new WeakSet<object>();
+    const stringified: string | undefined = JSON.stringify(obj, (_key, value: unknown): unknown => {
+        if (isRecord(value)) {
             if (seen.has(value)) {
                 return '[Circular Reference]';
             }
@@ -27,6 +31,7 @@ export function safeStringify(obj: any): string {
         }
         return value;
     }, 2);
+    return stringified ?? 'null';
 }
 
 /**
@@ -43,12 +48,12 @@ export function safeStringify(obj: any): string {
  * console.log(parsed.paths); // ['file1.txt', 'file2.txt']
  * ```
  */
-export function parseJsonArrays(args: any): any {
-    if (!args || typeof args !== 'object') {
+export function parseJsonArrays(args: unknown): unknown {
+    if (!isRecord(args)) {
         return args;
     }
 
-    const result: any = {};
+    const result: Record<string, unknown> = {};
     
     // Process each property in the arguments object
     for (const [key, value] of Object.entries(args)) {
@@ -59,7 +64,7 @@ export function parseJsonArrays(args: any): any {
             try {
                 // Attempt to parse the string as JSON
                 result[key] = JSON.parse(value);
-            } catch (error) {
+            } catch {
                 // If parsing fails, keep the original string value
                 result[key] = value;
             }

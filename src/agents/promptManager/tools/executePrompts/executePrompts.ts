@@ -14,7 +14,7 @@ import {
   BatchExecutePromptParams,
   BatchExecutePromptResult,
   PromptConfig,
-  ExecutionContext
+  InternalExecutionResult
 } from './types';
 import {
   BudgetValidator,
@@ -249,9 +249,9 @@ export class ExecutePromptsTool extends BaseTool<BatchExecutePromptParams, Batch
    * Process content actions for results that specify them
    */
   private async processResultActions(
-    results: any[],
+    results: InternalExecutionResult[],
     promptConfigs: PromptConfig[],
-    params: BatchExecutePromptParams
+    _params: BatchExecutePromptParams
   ): Promise<void> {
     for (let i = 0; i < results.length; i++) {
       const result = results[i];

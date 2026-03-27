@@ -5,7 +5,6 @@
 
 import { Notice, Platform } from 'obsidian';
 import { CommandContext } from './CommandDefinitions';
-import type NexusPlugin from '../../main';
 
 export class MaintenanceCommandManager {
   constructor(private context: CommandContext) {}
@@ -13,7 +12,7 @@ export class MaintenanceCommandManager {
   /**
    * Execute maintenance command
    */
-  async executeMaintenanceCommand(commandId: string): Promise<void> {
+  async executeMaintenanceCommand(_commandId: string): Promise<void> {
     // Basic maintenance operations
   }
 
@@ -111,15 +110,16 @@ export class MaintenanceCommandManager {
           results.push(`❌ ${serviceName}: Not initialized`);
           failed++;
         }
-      } catch (error: any) {
-        console.error(`❌ ${serviceName}: Error -`, error.message);
-        results.push(`❌ ${serviceName}: ${error.message}`);
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        console.error(`❌ ${serviceName}: Error -`, errorMessage);
+        results.push(`❌ ${serviceName}: ${errorMessage}`);
         failed++;
       }
     }
 
     // Check plugin.services getter
-    const services = (this.context.plugin as NexusPlugin).services;
+    const services = this.context.plugin.services;
     const expectedServices = ['memoryService', 'workspaceService', 'sessionService', 'conversationService', 'customPromptStorageService'];
 
     for (const name of expectedServices) {
