@@ -21,10 +21,45 @@ import {
   CostDetails
 } from '../types';
 
+type OpenAIImageToolSize = '1024x1024' | '1536x1024' | '1024x1536' | 'auto';
+
+interface OpenAIImageGenerationTool {
+  type: 'image_generation';
+  size: OpenAIImageToolSize;
+}
+
+interface OpenAIImageResponsesRequest {
+  model: 'gpt-5.2';
+  input: string;
+  tools: [OpenAIImageGenerationTool];
+}
+
+interface OpenAIImageResponsesOutputItem {
+  type?: string;
+}
+
+interface OpenAIImageGenerationCallOutput extends OpenAIImageResponsesOutputItem {
+  type: 'image_generation_call';
+  result?: string;
+  revised_prompt?: string;
+}
+
+interface OpenAIImageResponsesApiResponse {
+  id?: string;
+  output?: OpenAIImageResponsesOutputItem[];
+}
+
+function isOpenAIImageGenerationCallOutput(
+  output: OpenAIImageResponsesOutputItem
+): output is OpenAIImageGenerationCallOutput {
+  return output.type === 'image_generation_call';
+}
+
 export class OpenAIImageAdapter extends BaseImageAdapter {
   
   // Image adapters don't support streaming in the same way as text
   async* generateStreamAsync(): AsyncGenerator<never, void, unknown> {
+    yield* [];
     // Image generation is not streamable - it's a single result
     // This method should not be called for image adapters
     throw new Error('Image generation does not support streaming');
@@ -45,6 +80,14 @@ export class OpenAIImageAdapter extends BaseImageAdapter {
     this.initializeCache();
   }
 
+  private getRequestedSize(size: string | undefined): OpenAIImageToolSize {
+    if (size === '1024x1024' || size === '1536x1024' || size === '1024x1536' || size === 'auto') {
+      return size;
+    }
+
+    return '1024x1024';
+  }
+
   /**
    * Generate images using OpenAI's gpt-image-1 model via Responses API
    */
@@ -54,17 +97,17 @@ export class OpenAIImageAdapter extends BaseImageAdapter {
 
       const response = await this.withRetry(async () => {
         // Use a supported model for Responses API (gpt-5.2 supports image_generation tool)
-        const requestParams = {
+        const requestParams: OpenAIImageResponsesRequest = {
           model: 'gpt-5.2', // Model that supports image_generation tool
           input: params.prompt,
           tools: [{
-            type: 'image_generation' as const,
-            size: params.size as 'auto' | '1024x1024' | '1536x1024' | '1024x1536' || '1024x1024'
+            type: 'image_generation',
+            size: this.getRequestedSize(params.size)
             // quality and background removed - not in new interface
           }]
         };
 
-        const result = await this.request<any>({
+        const result = await this.request<OpenAIImageResponsesApiResponse>({
           url: `${this.baseUrl}/responses`,
           operation: 'image generation',
           method: 'POST',
@@ -77,6 +120,11 @@ export class OpenAIImageAdapter extends BaseImageAdapter {
         });
 
         this.assertOk(result, `OpenAI image generation failed: HTTP ${result.status}`);
+
+        if (!result.json) {
+          throw new Error('OpenAI image generation returned an empty response body');
+        }
+
         return result.json;
       }, 2); // Reduced retry count for faster failure detection
 
@@ -160,7 +208,7 @@ export class OpenAIImageAdapter extends BaseImageAdapter {
   /**
    * Get pricing for gpt-image-1 image generation
    */
-  async getImageModelPricing(model: string = 'gpt-image-1'): Promise<CostDetails> {
+  async getImageModelPricing(_model: string = 'gpt-image-1'): Promise<CostDetails> {
     // gpt-image-1 pricing is token-based, approximate base price
     const basePrice = 0.015; // Approximate cost per image
 
@@ -202,20 +250,22 @@ export class OpenAIImageAdapter extends BaseImageAdapter {
   // Private helper methods
 
   private async buildImageResponse(
-    response: any, // Responses API response format
+    response: OpenAIImageResponsesApiResponse,
     params: ImageGenerationParams
   ): Promise<ImageGenerationResponse> {
     // Extract image data from Responses API format
-    const imageData = response.output
-      .filter((output: { type: string; result?: string }) => output.type === "image_generation_call")
-      .map((output: { result?: string }) => output.result);
+    const outputs = response.output ?? [];
+    const imageOutputs = outputs.filter(isOpenAIImageGenerationCallOutput);
+    const imageData = imageOutputs
+      .map((output) => output.result)
+      .filter((result): result is string => typeof result === 'string' && result.length > 0);
 
-    if (!imageData || imageData.length === 0) {
+    if (imageData.length === 0) {
       throw new Error('No image data received from OpenAI Responses API');
     }
 
     const imageBase64 = imageData[0];
-    if (!imageBase64) {
+    if (typeof imageBase64 !== 'string' || imageBase64.length === 0) {
       throw new Error('No base64 image data received from OpenAI');
     }
 
@@ -229,7 +279,7 @@ export class OpenAIImageAdapter extends BaseImageAdapter {
     const usage: ImageUsage = this.buildImageUsage(1, size, this.imageModel);
 
     // Extract revised prompt from image generation call
-    const imageGenerationCall = response.output.find((output: { type: string; result?: string }) => output.type === "image_generation_call");
+    const imageGenerationCall = imageOutputs[0];
     const revisedPrompt = imageGenerationCall?.revised_prompt;
 
     return {
@@ -245,12 +295,12 @@ export class OpenAIImageAdapter extends BaseImageAdapter {
         originalPrompt: params.prompt,
         responseId: response.id,
         apiResponse: {
-          outputCount: response.output.length,
+          outputCount: outputs.length,
           imageOutputCount: imageData.length
         }
       },
       usage,
-      revisedPrompt: revisedPrompt
+      revisedPrompt
     };
   }
 }

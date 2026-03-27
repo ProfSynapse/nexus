@@ -9,28 +9,162 @@ import {
   GenerateOptions,
   StreamChunk,
   LLMResponse,
+  TokenUsage,
   ModelInfo,
   ProviderCapabilities,
   ModelPricing
 } from '../types';
 import { REQUESTY_MODELS, REQUESTY_DEFAULT_MODEL } from './RequestyModels';
-import { MCPToolExecution } from '../shared/ToolExecutionUtils';
 
 /**
  * Requesty API response structure (OpenAI-compatible)
  */
+interface RequestyToolFunction {
+  name?: string;
+  arguments?: string;
+}
+
+interface RequestyToolCallDelta {
+  index?: number;
+  id?: string;
+  type?: string;
+  function?: RequestyToolFunction;
+}
+
+interface RequestyMessagePayload {
+  content?: string;
+  tool_calls?: RequestyToolCallDelta[];
+}
+
+interface RequestyChoice {
+  message?: RequestyMessagePayload;
+  delta?: RequestyMessagePayload;
+  finish_reason?: string;
+}
+
+interface RequestyUsagePayload {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+}
+
 interface RequestyChatCompletionResponse {
-  choices: Array<{
-    message?: {
-      content?: string;
-      toolCalls?: any[];
-    };
-    finish_reason?: string;
-  }>;
-  usage?: {
-    prompt_tokens?: number;
-    completion_tokens?: number;
-    total_tokens?: number;
+  choices: RequestyChoice[];
+  usage?: RequestyUsagePayload;
+}
+
+interface RequestyChatCompletionRequest {
+  model: string;
+  messages: ReturnType<BaseAdapter['buildMessages']>;
+  temperature?: number;
+  max_tokens?: number;
+  response_format?: { type: 'json_object' };
+  stop?: string[];
+  tools?: GenerateOptions['tools'];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function toOptionalNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function getRequestyToolCalls(source: RequestyMessagePayload | undefined): RequestyToolCallDelta[] {
+  return source?.tool_calls ?? [];
+}
+
+function extractRequestyToolCalls(value: unknown): RequestyToolCallDelta[] | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const rawToolCalls = value.tool_calls ?? value.toolCalls;
+  if (!Array.isArray(rawToolCalls)) {
+    return undefined;
+  }
+
+  const toolCalls: RequestyToolCallDelta[] = [];
+  for (const rawToolCall of rawToolCalls) {
+    if (!isRecord(rawToolCall)) {
+      continue;
+    }
+
+    const functionPayload = isRecord(rawToolCall.function)
+      ? {
+          name: typeof rawToolCall.function.name === 'string' ? rawToolCall.function.name : undefined,
+          arguments: typeof rawToolCall.function.arguments === 'string' ? rawToolCall.function.arguments : undefined
+        }
+      : undefined;
+
+    toolCalls.push({
+      index: toOptionalNumber(rawToolCall.index),
+      id: typeof rawToolCall.id === 'string' ? rawToolCall.id : undefined,
+      type: typeof rawToolCall.type === 'string' ? rawToolCall.type : undefined,
+      function: functionPayload
+    });
+  }
+
+  return toolCalls;
+}
+
+function extractRequestyMessage(value: unknown): RequestyMessagePayload | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const content = typeof value.content === 'string' ? value.content : undefined;
+  const toolCalls = extractRequestyToolCalls(value);
+
+  if (content === undefined && toolCalls === undefined) {
+    return undefined;
+  }
+
+  return {
+    content,
+    tool_calls: toolCalls
+  };
+}
+
+function extractRequestyChoices(value: unknown): RequestyChoice[] {
+  if (!isRecord(value) || !Array.isArray(value.choices)) {
+    return [];
+  }
+
+  const choices: RequestyChoice[] = [];
+  for (const rawChoice of value.choices) {
+    if (!isRecord(rawChoice)) {
+      continue;
+    }
+
+    choices.push({
+      message: extractRequestyMessage(rawChoice.message),
+      delta: extractRequestyMessage(rawChoice.delta),
+      finish_reason: typeof rawChoice.finish_reason === 'string' ? rawChoice.finish_reason : undefined
+    });
+  }
+
+  return choices;
+}
+
+function extractRequestyUsagePayload(value: unknown): RequestyUsagePayload | undefined {
+  if (!isRecord(value) || !isRecord(value.usage)) {
+    return undefined;
+  }
+
+  const usage = value.usage;
+  return {
+    prompt_tokens: toOptionalNumber(usage.prompt_tokens),
+    completion_tokens: toOptionalNumber(usage.completion_tokens),
+    total_tokens: toOptionalNumber(usage.total_tokens)
+  };
+}
+
+function parseRequestyChatCompletionResponse(value: unknown): RequestyChatCompletionResponse {
+  return {
+    choices: extractRequestyChoices(value),
+    usage: extractRequestyUsagePayload(value)
   };
 }
 
@@ -45,8 +179,6 @@ export class RequestyAdapter extends BaseAdapter {
 
   async generateUncached(prompt: string, options?: GenerateOptions): Promise<LLMResponse> {
     try {
-      const model = options?.model || this.currentModel;
-      
       // Tool execution requires streaming - use generateStreamAsync instead
       if (options?.tools && options.tools.length > 0) {
         throw new Error('Tool execution requires streaming. Use generateStreamAsync() instead.');
@@ -55,7 +187,7 @@ export class RequestyAdapter extends BaseAdapter {
       // Use basic chat completions
       return await this.generateWithChatCompletions(prompt, options);
     } catch (error) {
-      throw this.handleError(error, 'generation');
+      this.handleError(error, 'generation');
     }
   }
 
@@ -91,10 +223,13 @@ export class RequestyAdapter extends BaseAdapter {
 
       yield* this.processNodeStream(nodeStream, {
         debugLabel: 'Requesty',
-        extractContent: (parsed) => parsed.choices[0]?.delta?.content || null,
-        extractToolCalls: (parsed) => parsed.choices[0]?.delta?.tool_calls || null,
-        extractFinishReason: (parsed) => parsed.choices[0]?.finish_reason || null,
-        extractUsage: (parsed) => parsed.usage || null,
+        extractContent: (parsed) => extractRequestyChoices(parsed)[0]?.delta?.content ?? null,
+        extractToolCalls: (parsed) => {
+          const toolCalls = getRequestyToolCalls(extractRequestyChoices(parsed)[0]?.delta);
+          return toolCalls.length > 0 ? toolCalls : null;
+        },
+        extractFinishReason: (parsed) => extractRequestyChoices(parsed)[0]?.finish_reason ?? null,
+        extractUsage: (parsed) => extractRequestyUsagePayload(parsed) ?? null,
         accumulateToolCalls: true,
         toolCallThrottling: {
           initialYield: true,
@@ -103,7 +238,7 @@ export class RequestyAdapter extends BaseAdapter {
       });
     } catch (error) {
       console.error('[RequestyAdapter] Streaming error:', error);
-      throw error;
+        throw error instanceof Error ? error : new Error(String(error));
     }
   }
 
@@ -163,20 +298,16 @@ export class RequestyAdapter extends BaseAdapter {
    */
   private async generateWithChatCompletions(prompt: string, options?: GenerateOptions): Promise<LLMResponse> {
     const model = options?.model || this.currentModel;
-    
-    const requestBody: any = {
+
+    const requestBody: RequestyChatCompletionRequest = {
       model,
       messages: this.buildMessages(prompt, options?.systemPrompt),
       temperature: options?.temperature,
       max_tokens: options?.maxTokens,
       response_format: options?.jsonMode ? { type: 'json_object' } : undefined,
-      stop: options?.stopSequences
+      stop: options?.stopSequences,
+      ...(options?.tools ? { tools: options.tools } : {})
     };
-
-    // Add tools if provided
-    if (options?.tools) {
-      requestBody.tools = options.tools;
-    }
 
     const response = await this.request<RequestyChatCompletionResponse>({
       url: `${this.baseUrl}/chat/completions`,
@@ -195,19 +326,19 @@ export class RequestyAdapter extends BaseAdapter {
 
     this.assertOk(response, `Requesty generation failed: HTTP ${response.status}`);
 
-    const data = response.json as RequestyChatCompletionResponse;
+    const data = parseRequestyChatCompletionResponse(response.json);
     const choice = data.choices[0];
-    
+
     if (!choice) {
       throw new Error('No response from Requesty');
     }
-    
-    let text = choice.message?.content || '';
+
+    let text = choice.message?.content ?? '';
     const usage = this.extractUsage(data);
-    const finishReason = this.mapFinishReason(choice.finish_reason || null);
+    const finishReason = this.mapFinishReason(choice.finish_reason ?? null);
 
     // If tools were provided and we got tool calls, return placeholder text
-    if (options?.tools && choice.message?.toolCalls && choice.message.toolCalls.length > 0) {
+    if (options?.tools && getRequestyToolCalls(choice.message).length > 0) {
       text = text || '[AI requested tool calls but tool execution not available]';
     }
 
@@ -218,11 +349,6 @@ export class RequestyAdapter extends BaseAdapter {
       { provider: 'requesty' },
       finishReason
     );
-  }
-
-  // Private methods
-  private extractToolCalls(message: any): any[] {
-    return message?.toolCalls || [];
   }
 
   private mapFinishReason(reason: string | null): 'stop' | 'length' | 'tool_calls' | 'content_filter' {
@@ -237,15 +363,16 @@ export class RequestyAdapter extends BaseAdapter {
     return reasonMap[reason] || 'stop';
   }
 
-  protected extractUsage(response: any): any {
-    const usage = response.usage;
+  protected extractUsage(response: unknown): TokenUsage | undefined {
+    const usage = extractRequestyUsagePayload(response);
     if (usage) {
       return {
-        promptTokens: usage.prompt_tokens || 0,
-        completionTokens: usage.completion_tokens || 0,
-        totalTokens: usage.total_tokens || 0
+        promptTokens: usage.prompt_tokens ?? 0,
+        completionTokens: usage.completion_tokens ?? 0,
+        totalTokens: usage.total_tokens ?? 0
       };
     }
+
     return undefined;
   }
 

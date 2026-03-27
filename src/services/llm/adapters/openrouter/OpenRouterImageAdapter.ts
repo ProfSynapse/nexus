@@ -6,7 +6,7 @@
  * API: POST /api/v1/chat/completions with modalities: ['image', 'text']
  */
 
-import { Vault } from 'obsidian';
+import { TFile, Vault } from 'obsidian';
 import { BaseImageAdapter } from '../BaseImageAdapter';
 import {
   ImageGenerationParams,
@@ -14,8 +14,7 @@ import {
   ImageValidationResult,
   ImageModel,
   ImageUsage,
-  AspectRatio,
-  NanoBananaImageSize
+  AspectRatio
 } from '../../types/ImageTypes';
 import {
   ProviderConfig,
@@ -25,21 +24,138 @@ import {
 } from '../types';
 import { BRAND_NAME } from '../../../../constants/branding';
 
+interface OpenRouterImageUrlPayload {
+  url?: string;
+}
+
+interface OpenRouterRequestTextContentPart {
+  type: 'text';
+  text: string;
+}
+
+interface OpenRouterRequestImageContentPart {
+  type: 'image_url';
+  image_url: {
+    url: string;
+  };
+}
+
+type OpenRouterRequestContentPart = OpenRouterRequestTextContentPart | OpenRouterRequestImageContentPart;
+
+interface OpenRouterImageGenerationRequest {
+  model: string;
+  messages: Array<{
+    role: 'user';
+    content: string | OpenRouterRequestContentPart[];
+  }>;
+  modalities: ['image', 'text'];
+  image_config?: {
+    aspect_ratio: AspectRatio;
+  };
+}
+
+interface OpenRouterResponseImage {
+  type?: string;
+  image_url?: OpenRouterImageUrlPayload;
+  imageUrl?: OpenRouterImageUrlPayload;
+}
+
+interface OpenRouterResponseMessage {
+  content?: string;
+  images?: OpenRouterResponseImage[];
+}
+
+interface OpenRouterResponseChoice {
+  message?: OpenRouterResponseMessage;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function getImageUrlPayload(value: unknown): OpenRouterImageUrlPayload | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  return typeof value.url === 'string' ? { url: value.url } : undefined;
+}
+
+function getResponseImage(value: unknown): OpenRouterResponseImage | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const imageUrl = getImageUrlPayload(value.image_url);
+  const camelImageUrl = getImageUrlPayload(value.imageUrl);
+
+  return {
+    type: typeof value.type === 'string' ? value.type : undefined,
+    image_url: imageUrl,
+    imageUrl: camelImageUrl
+  };
+}
+
+function getResponseImages(value: unknown): OpenRouterResponseImage[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const images: OpenRouterResponseImage[] = [];
+  for (const item of value) {
+    const image = getResponseImage(item);
+    if (image) {
+      images.push(image);
+    }
+  }
+
+  return images;
+}
+
+function getResponseMessage(value: unknown): OpenRouterResponseMessage | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  return {
+    content: typeof value.content === 'string' ? value.content : undefined,
+    images: getResponseImages(value.images)
+  };
+}
+
+function getResponseChoices(value: unknown): OpenRouterResponseChoice[] {
+  if (!isRecord(value) || !Array.isArray(value.choices)) {
+    return [];
+  }
+
+  const choices: OpenRouterResponseChoice[] = [];
+  for (const item of value.choices) {
+    if (isRecord(item)) {
+      choices.push({
+        message: getResponseMessage(item.message)
+      });
+    }
+  }
+
+  return choices;
+}
+
 export class OpenRouterImageAdapter extends BaseImageAdapter {
 
   async* generateStreamAsync(): AsyncGenerator<never, void, unknown> {
+    yield* [];
     throw new Error('Image generation does not support streaming');
   }
 
   readonly name = 'openrouter-image';
   readonly baseUrl = 'https://openrouter.ai/api/v1';
   readonly supportedModels: ImageModel[] = [
-    'gemini-2.5-flash-image' as ImageModel,
-    'gemini-3-pro-image-preview' as ImageModel,
-    'gemini-3.1-flash-image-preview' as ImageModel,
-    'gpt-5-image' as ImageModel,
-    'flux-2-pro' as ImageModel,
-    'flux-2-flex' as ImageModel
+    'gemini-2.5-flash-image',
+    'gemini-3-pro-image-preview',
+    'gemini-3.1-flash-image-preview',
+    'gpt-5-image',
+    'flux-2-pro',
+    'flux-2-flex'
   ];
   readonly supportedSizes: string[] = ['1024x1024', '1536x1024', '1024x1536', '1792x1024', '1024x1792'];
   readonly supportedFormats: string[] = ['png', 'jpeg', 'webp'];
@@ -59,10 +175,10 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
     'flux-2-flex': 'black-forest-labs/flux.2-flex'
   };
 
-  private readonly defaultModel = 'gemini-2.5-flash-image';
+  private readonly defaultModel: ImageModel = 'gemini-2.5-flash-image';
 
   // Supported aspect ratios per OpenRouter docs
-  private readonly openRouterAspectRatios = [
+  private readonly openRouterAspectRatios: AspectRatio[] = [
     '1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9',
     '1:4', '4:1', '1:8', '8:1'
   ];
@@ -101,7 +217,7 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
 
       const response = await this.withRetry(async () => {
         // Build message content with prompt and reference images
-        const content: any[] = [{ type: 'text', text: params.prompt }];
+        const content: OpenRouterRequestContentPart[] = [{ type: 'text', text: params.prompt }];
 
         // Add reference images if provided
         if (params.referenceImages && params.referenceImages.length > 0) {
@@ -110,7 +226,7 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
         }
 
         // Build request body per OpenRouter docs
-        const requestBody: any = {
+        const requestBody: OpenRouterImageGenerationRequest = {
           model: openRouterModel,
           messages: [
             {
@@ -128,7 +244,7 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
           };
         }
 
-        const result = await this.request({
+        const result = await this.request<unknown>({
           url: `${this.baseUrl}/chat/completions`,
           operation: 'image generation',
           method: 'POST',
@@ -155,12 +271,12 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
   /**
    * Load reference images from vault and convert to OpenRouter format
    */
-  private async loadReferenceImages(paths: string[]): Promise<any[]> {
+  private async loadReferenceImages(paths: string[]): Promise<OpenRouterRequestImageContentPart[]> {
     if (!this.vault) {
       throw new Error('Vault not configured - cannot load reference images');
     }
 
-    const parts: any[] = [];
+    const parts: OpenRouterRequestImageContentPart[] = [];
 
     for (const path of paths) {
       try {
@@ -169,8 +285,12 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
           throw new Error(`Reference image not found: ${path}`);
         }
 
+        if (!(file instanceof TFile)) {
+          throw new Error(`Reference path is not a file: ${path}`);
+        }
+
         // Read file as binary
-        const arrayBuffer = await this.vault.readBinary(file as import('obsidian').TFile);
+        const arrayBuffer = await this.vault.readBinary(file);
         const buffer = Buffer.from(arrayBuffer);
         const base64 = buffer.toString('base64');
 
@@ -466,23 +586,25 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
   // Private helper methods
 
   private buildImageResponse(
-    response: any,
+    response: unknown,
     params: ImageGenerationParams
   ): ImageGenerationResponse {
     // OpenRouter response format:
     // { choices: [{ message: { content: "...", images: [{ type: "image_url", image_url: { url: "data:image/png;base64,..." } }] } }] }
 
-    if (!response.choices || response.choices.length === 0) {
+    const choices = getResponseChoices(response);
+    if (choices.length === 0) {
       throw new Error('No response choices received from OpenRouter');
     }
 
-    const message = response.choices[0].message;
-    if (!message?.images || message.images.length === 0) {
+    const message = choices[0].message;
+    const images = message?.images ?? [];
+    if (images.length === 0) {
       throw new Error('No images found in OpenRouter response');
     }
 
-    const imageData = message.images[0];
-    const imageUrl = imageData.image_url?.url || imageData.imageUrl?.url;
+    const imageData = images[0];
+    const imageUrl = imageData.image_url?.url ?? imageData.imageUrl?.url;
 
     if (!imageUrl) {
       throw new Error('No image URL found in OpenRouter response');
@@ -494,16 +616,19 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
       throw new Error('Invalid image data URL format from OpenRouter');
     }
 
-    const format = matches[1] as 'png' | 'jpeg' | 'webp';
+    const formatMatch = matches[1];
+    if (formatMatch !== 'png' && formatMatch !== 'jpeg' && formatMatch !== 'webp') {
+      throw new Error(`Unsupported image format from OpenRouter: ${formatMatch}`);
+    }
+
+    const format = formatMatch;
     const base64Data = matches[2];
     const buffer = Buffer.from(base64Data, 'base64');
 
     // Extract dimensions from aspectRatio
-    let width = 1024, height = 1024;
-    let aspectRatio: AspectRatio = params.aspectRatio || AspectRatio.SQUARE;
-
     // Map aspect ratios to dimensions per OpenRouter docs
-    const aspectRatioToDimensions: Record<string, [number, number]> = {
+    const aspectRatio = params.aspectRatio ?? AspectRatio.SQUARE;
+    const aspectRatioToDimensions: Record<AspectRatio, [number, number]> = {
       '1:1': [1024, 1024],
       '2:3': [832, 1248],
       '3:2': [1248, 832],
@@ -520,9 +645,7 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
       '8:1': [1024, 128]
     };
 
-    if (params.aspectRatio && aspectRatioToDimensions[params.aspectRatio]) {
-      [width, height] = aspectRatioToDimensions[params.aspectRatio];
-    }
+    const [width, height] = aspectRatioToDimensions[aspectRatio];
 
     const usage: ImageUsage = this.buildImageUsage(1, `${width}x${height}`, params.model || this.defaultModel);
 

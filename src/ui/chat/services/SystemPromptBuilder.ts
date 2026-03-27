@@ -15,6 +15,43 @@ import { WorkspaceContext } from '../../../database/types/workspace/WorkspaceTyp
 import { MessageEnhancement } from '../components/suggesters/base/SuggesterInterfaces';
 import { CompactedContext } from '../../../services/chat/ContextCompactionService';
 import { CompactionFrontierRecord } from '../../../services/chat/CompactionFrontierService';
+import type { LoadWorkspaceResult } from '../../../database/types/workspace/ParameterTypes';
+
+type WorkspaceLoaderResult = Record<string, unknown>;
+type LoadedWorkspaceContextSection = LoadWorkspaceResult['data']['context'];
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function getStringProperty(record: Record<string, unknown>, key: string): string | undefined {
+  const value = record[key];
+  return typeof value === 'string' ? value : undefined;
+}
+
+function isWorkspaceContext(value: unknown): value is WorkspaceContext {
+  return isRecord(value);
+}
+
+function getWorkspaceContextProperty(
+  record: Record<string, unknown>,
+  key: string
+): WorkspaceContext | undefined {
+  const value = record[key];
+  return isWorkspaceContext(value) ? value : undefined;
+}
+
+function isLoadedWorkspaceContextSection(value: unknown): value is LoadedWorkspaceContextSection {
+  return isRecord(value) && typeof value.name === 'string';
+}
+
+function getLoadedWorkspaceContextSection(
+  record: Record<string, unknown>,
+  key: string
+): LoadedWorkspaceContextSection | undefined {
+  const value = record[key];
+  return isLoadedWorkspaceContextSection(value) ? value : undefined;
+}
 
 /**
  * Vault structure for system prompt context
@@ -71,7 +108,7 @@ export interface SystemPromptOptions {
   customPrompt?: string | null;
   workspaceContext?: WorkspaceContext | null;
   // Full comprehensive workspace data from LoadWorkspaceTool (when workspace selected in settings)
-  loadedWorkspaceData?: any | null;
+  loadedWorkspaceData?: WorkspaceLoaderResult | null;
   // Dynamic context (always loaded fresh)
   vaultStructure?: VaultStructure | null;
   availableWorkspaces?: WorkspaceSummary[];
@@ -93,7 +130,7 @@ export interface SystemPromptOptions {
 export class SystemPromptBuilder {
   constructor(
     private readNoteContent: (notePath: string) => Promise<string>,
-    private loadWorkspace?: (workspaceId: string) => Promise<any>
+    private loadWorkspace?: (workspaceId: string) => Promise<WorkspaceLoaderResult | null>
   ) {}
 
   /**
@@ -244,8 +281,9 @@ Prefer targeted context gathering over large dumps.
     contextNotes: string[],
     messageEnhancement?: MessageEnhancement | null
   ): Promise<string | null> {
+    const enhancementNotes = messageEnhancement?.notes ?? [];
     const hasContextNotes = contextNotes.length > 0;
-    const hasEnhancementNotes = messageEnhancement && messageEnhancement.notes.length > 0;
+    const hasEnhancementNotes = enhancementNotes.length > 0;
 
     if (!hasContextNotes && !hasEnhancementNotes) {
       return null;
@@ -266,7 +304,7 @@ Prefer targeted context gathering over large dumps.
 
     // Add enhancement notes from [[suggester]]
     if (hasEnhancementNotes) {
-      for (const note of messageEnhancement!.notes) {
+      for (const note of enhancementNotes) {
         const xmlTag = this.normalizePathToXmlTag(note.path);
         prompt += `<${xmlTag}>\n`;
         prompt += `${this.escapeXmlContent(note.path)}\n\n`;
@@ -358,12 +396,11 @@ Prefer targeted context gathering over large dumps.
       try {
         const workspaceData = await this.loadWorkspace(workspaceRef.id);
         if (workspaceData) {
-          // Check if this is comprehensive data from LoadWorkspaceTool or basic workspace object
-          const isComprehensive = workspaceData.context && typeof workspaceData.context === 'object' && 'name' in workspaceData.context;
+          const contextSection = getLoadedWorkspaceContextSection(workspaceData, 'context');
+          const workspaceName = contextSection?.name ?? getStringProperty(workspaceData, 'name') ?? workspaceRef.name;
 
-          if (isComprehensive) {
+          if (contextSection) {
             // Comprehensive workspace data from LoadWorkspaceTool
-            const workspaceName = workspaceData.context?.name || workspaceRef.name;
             prompt += `<workspace name="${this.escapeXmlAttribute(workspaceName)}" id="${this.escapeXmlAttribute(workspaceRef.id)}">\n`;
 
             prompt += this.escapeXmlContent(JSON.stringify(workspaceData, null, 2));
@@ -371,13 +408,13 @@ Prefer targeted context gathering over large dumps.
             prompt += `\n</workspace>\n\n`;
           } else {
             // Basic workspace object (fallback)
-            prompt += `<workspace name="${this.escapeXmlAttribute(workspaceData.name || workspaceRef.name)}" id="${this.escapeXmlAttribute(workspaceRef.id)}">\n`;
+            prompt += `<workspace name="${this.escapeXmlAttribute(workspaceName)}" id="${this.escapeXmlAttribute(workspaceRef.id)}">\n`;
 
             prompt += this.escapeXmlContent(JSON.stringify({
-              name: workspaceData.name,
-              description: workspaceData.description,
-              rootFolder: workspaceData.rootFolder,
-              context: workspaceData.context
+              name: getStringProperty(workspaceData, 'name'),
+              description: getStringProperty(workspaceData, 'description'),
+              rootFolder: getStringProperty(workspaceData, 'rootFolder'),
+              context: getWorkspaceContextProperty(workspaceData, 'context')
             }, null, 2));
 
             prompt += `\n</workspace>\n\n`;
@@ -410,15 +447,16 @@ Prefer targeted context gathering over large dumps.
    * (same rich context as the #workspace suggester)
    */
   private buildSelectedWorkspaceSection(
-    loadedWorkspaceData?: any | null,
+    loadedWorkspaceData?: WorkspaceLoaderResult | null,
     workspaceContext?: WorkspaceContext | null
   ): string | null {
     // If we have full workspace data, include the complete object
     if (loadedWorkspaceData) {
-      const workspaceName = loadedWorkspaceData.context?.name ||
-                           loadedWorkspaceData.name ||
-                           'Selected Workspace';
-      const workspaceId = loadedWorkspaceData.id || 'unknown';
+      const contextSection = getLoadedWorkspaceContextSection(loadedWorkspaceData, 'context');
+      const workspaceName = contextSection?.name
+        ?? getStringProperty(loadedWorkspaceData, 'name')
+        ?? 'Selected Workspace';
+      const workspaceId = getStringProperty(loadedWorkspaceData, 'id') ?? 'unknown';
 
       let prompt = `<selected_workspace name="${this.escapeXmlAttribute(workspaceName)}" id="${this.escapeXmlAttribute(workspaceId)}">\n`;
       prompt += 'This workspace is currently selected. Use it as the primary context.\n\n';

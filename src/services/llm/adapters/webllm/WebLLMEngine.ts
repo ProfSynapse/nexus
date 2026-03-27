@@ -84,6 +84,8 @@ import { prefetchModel, isModelPrefetched } from './WebLLMCachePrefetcher';
 // Type imports for TypeScript (these are erased at runtime)
 import type * as WebLLMTypes from '@mlc-ai/web-llm';
 
+type WebLLMModule = typeof import('@mlc-ai/web-llm');
+
 export interface EngineProgress {
   progress: number;
   stage: 'downloading' | 'loading' | 'compiling';
@@ -115,6 +117,37 @@ let sharedEngineInstance: WebLLMEngine | null = null;
 // Extend Window interface to include our patch tracking flag
 interface NexusWindow extends Window {
   __nexus_wasm_patched?: boolean;
+}
+
+function isWebLLMModule(moduleValue: unknown): moduleValue is WebLLMModule {
+  if (typeof moduleValue !== 'object' || moduleValue === null) {
+    return false;
+  }
+
+  const candidate = moduleValue as { CreateMLCEngine?: unknown };
+  return typeof candidate.CreateMLCEngine === 'function';
+}
+
+function getProgressStage(text: string | undefined): EngineProgress['stage'] {
+  if (text?.includes('Loading')) {
+    return 'loading';
+  }
+
+  if (text?.includes('Download')) {
+    return 'downloading';
+  }
+
+  return 'compiling';
+}
+
+function mapUsage(
+  usage: WebLLMTypes.CompletionUsage | null | undefined
+): GenerationResult['usage'] {
+  return {
+    promptTokens: usage?.prompt_tokens ?? 0,
+    completionTokens: usage?.completion_tokens ?? 0,
+    totalTokens: usage?.total_tokens ?? 0,
+  };
 }
 
 /**
@@ -225,13 +258,13 @@ async function loadWebLLM(): Promise<typeof WebLLMTypes> {
     // Dynamic import from jsDelivr's esm.run service
     // This serves ESM modules that work in browser contexts
     // @ts-ignore - TypeScript doesn't understand CDN URLs, but Electron's renderer can import them
-    const module = await import('https://esm.run/@mlc-ai/web-llm');
+    const importedModule: unknown = await import('https://esm.run/@mlc-ai/web-llm');
 
-    webllm = module as typeof WebLLMTypes;
-
-    if (!webllm.CreateMLCEngine) {
+    if (!isWebLLMModule(importedModule)) {
       throw new Error('CreateMLCEngine not found in module');
     }
+
+    webllm = importedModule;
 
     return webllm;
   } catch (error) {
@@ -269,7 +302,7 @@ const STOCK_TEST_MODEL_ID = 'Mistral-7B-Instruct-v0.3-q4f16_1-MLC';
  * ║  allowing runtime selection between them.                                  ║
  * ╚═══════════════════════════════════════════════════════════════════════════╝
  */
-function createNexusAppConfig(selectedModel?: WebLLMModelSpec): WebLLMTypes.AppConfig | undefined {
+function createNexusAppConfig(): WebLLMTypes.AppConfig | undefined {
   if (USE_STOCK_MODEL_FOR_TESTING) {
     // Return undefined to use WebLLM's built-in model list
     return undefined;
@@ -291,8 +324,6 @@ function createNexusAppConfig(selectedModel?: WebLLMModelSpec): WebLLMTypes.AppC
     console.error('[WebLLMEngine] No valid models found in WEBLLM_MODELS');
     return undefined;
   }
-
-  const targetModel = selectedModel || WEBLLM_MODELS[0];
 
   return { model_list: modelList };
 }
@@ -363,7 +394,7 @@ export class WebLLMEngine {
     if (this.engine && this.currentModelId !== modelSpec.apiName) {
       try {
         await this.unloadModel();
-      } catch (unloadError) {
+      } catch {
         // Ignore unload errors
       }
     }
@@ -404,15 +435,13 @@ export class WebLLMEngine {
       const progressCallback = (report: WebLLMTypes.InitProgressReport) => {
         try {
           if (options?.onProgress) {
-            const stage = report.text?.includes('Loading') ? 'loading' :
-                          report.text?.includes('Download') ? 'downloading' : 'compiling';
             options.onProgress({
               progress: report.progress || 0,
-              stage: stage as EngineProgress['stage'],
+              stage: getProgressStage(report.text),
               message: report.text || '',
             });
           }
-        } catch (progressError) {
+        } catch {
           // Ignore progress callback errors
         }
       };
@@ -516,26 +545,23 @@ export class WebLLMEngine {
       // Clear KV cache before generation to prevent OOM
       await this.resetChat();
 
-      const response = await this.engine.chat.completions.create({
+      const request: WebLLMTypes.ChatCompletionRequestNonStreaming = {
         messages: messages as WebLLMTypes.ChatCompletionMessageParam[],
         temperature: options?.temperature ?? 0.5,
         max_tokens: options?.maxTokens ?? 2048,
         top_p: options?.topP ?? 0.95,
         stop: options?.stopSequences,
         stream: false,
-      });
+      };
+
+      const response = await this.engine.chat.completions.create(request);
 
       const choice = response.choices[0];
-      const usage = response.usage || { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
 
       return {
-        content: choice.message?.content || '',
-        usage: {
-          promptTokens: usage.prompt_tokens || 0,
-          completionTokens: usage.completion_tokens || 0,
-          totalTokens: usage.total_tokens || 0,
-        },
-        finishReason: choice.finish_reason || 'stop',
+        content: choice?.message.content ?? '',
+        usage: mapUsage(response.usage),
+        finishReason: choice?.finish_reason ?? 'stop',
       };
     } finally {
       this.isGenerating = false;
@@ -552,7 +578,7 @@ export class WebLLMEngine {
       try {
         // Single reset call - double reset can corrupt WebGPU state on Apple Silicon
         await this.engine.resetChat();
-      } catch (error) {
+      } catch {
         // Non-fatal - continue anyway
       }
     }
@@ -585,10 +611,10 @@ export class WebLLMEngine {
     // If there's a lingering generation flag, force cleanup
     if (this.isGenerating) {
       try {
-        this.engine.interruptGenerate();
+        await this.engine.interruptGenerate();
         // Longer wait for interrupt to take effect
         await new Promise(resolve => setTimeout(resolve, 500));
-      } catch (e) {
+      } catch {
         // Ignore interrupt errors
       }
       this.isGenerating = false;
@@ -600,8 +626,8 @@ export class WebLLMEngine {
     try {
       // Ensure any previous generation is fully stopped
       try {
-        this.engine.interruptGenerate();
-      } catch (e) {
+        await this.engine.interruptGenerate();
+      } catch {
         // Ignore - might not have anything to interrupt
       }
 
@@ -615,14 +641,14 @@ export class WebLLMEngine {
         await this.resetChat();
         // Longer delay after reset for GPU to fully process
         await new Promise(resolve => setTimeout(resolve, 300));
-      } catch (e) {
+      } catch {
         // Ignore reset errors
       }
 
       // Wrap stream creation in try-catch to capture WebGPU errors
-      let stream: any;
+      let stream: AsyncIterable<WebLLMTypes.ChatCompletionChunk>;
       try {
-        stream = await this.engine.chat.completions.create({
+        const request: WebLLMTypes.ChatCompletionRequestStreaming = {
           messages: messages as WebLLMTypes.ChatCompletionMessageParam[],
           temperature: options?.temperature ?? 0.5,
           max_tokens: options?.maxTokens ?? 2048,
@@ -630,7 +656,9 @@ export class WebLLMEngine {
           stop: options?.stopSequences,
           stream: true,
           stream_options: { include_usage: true },
-        });
+        };
+
+        stream = await this.engine.chat.completions.create(request);
       } catch (streamError) {
         console.error('[NEXUS_DEBUG] Stream creation FAILED:', streamError);
         throw streamError;
@@ -639,42 +667,33 @@ export class WebLLMEngine {
       let fullContent = '';
       let usage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
       let finishReason = 'stop';
-      let chunkCount = 0;
 
       try {
         for await (const chunk of stream) {
-        chunkCount++;
+          // Check for abort
+          if (this.abortController?.signal.aborted) {
+            finishReason = 'abort';
+            break;
+          }
 
-        // Check for abort
-        if (this.abortController?.signal.aborted) {
-          finishReason = 'abort';
-          break;
-        }
+          const choice = chunk.choices[0];
+          const content = choice?.delta.content ?? '';
 
-        const delta = chunk.choices[0]?.delta;
-        const content = delta?.content || '';
+          if (content) {
+            fullContent += content;
+            yield {
+              content,
+              tokenCount: fullContent.length,
+            };
+          }
 
-        if (content) {
-          fullContent += content;
-          yield {
-            content,
-            tokenCount: fullContent.length, // Approximate
-          } as StreamChunk;
-        }
+          if (choice?.finish_reason) {
+            finishReason = choice.finish_reason;
+          }
 
-        // Capture finish reason
-        if (chunk.choices[0]?.finish_reason) {
-          finishReason = chunk.choices[0].finish_reason;
-        }
-
-        // Capture usage from final chunk
-        if (chunk.usage) {
-          usage = {
-            promptTokens: chunk.usage.prompt_tokens || 0,
-            completionTokens: chunk.usage.completion_tokens || 0,
-            totalTokens: chunk.usage.total_tokens || 0,
-          };
-        }
+          if (chunk.usage) {
+            usage = mapUsage(chunk.usage);
+          }
         }
       } catch (streamIterError) {
         // CRITICAL: Capture the actual WebGPU/WebLLM error
@@ -697,7 +716,7 @@ export class WebLLMEngine {
         content: fullContent,
         usage,
         finishReason,
-      } as GenerationResult;
+      };
     } finally {
       this.isGenerating = false;
       this.abortController = null;
@@ -720,7 +739,7 @@ export class WebLLMEngine {
       this.abortController.abort();
     }
     if (this.engine && this.isGenerating) {
-      this.engine.interruptGenerate();
+      void this.engine.interruptGenerate();
       this.isGenerating = false;
     }
   }
