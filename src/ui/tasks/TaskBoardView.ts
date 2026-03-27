@@ -275,7 +275,7 @@ export class TaskBoardView extends ItemView {
     const shell = container.createDiv('nexus-task-board-shell');
     this.renderHeader(shell);
     this.renderToolbar(shell);
-    this.columnsContainer = shell.createDiv();
+    this.columnsContainer = shell.createDiv('nexus-task-board-columns-wrapper');
     this.renderColumns();
   }
 
