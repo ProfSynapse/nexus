@@ -105,6 +105,8 @@ export interface TaskListOptions {
   assignee?: string;
   parentTaskId?: string;
   includeSubtasks?: boolean;
+  sortBy?: 'created' | 'updated' | 'priority' | 'title' | 'dueDate';
+  sortOrder?: 'asc' | 'desc';
 }
 
 export interface ProjectListOptions {

@@ -7505,6 +7505,65 @@ body.is-mobile .chat-loading-overlay {
     border-radius: var(--radius-s);
 }
 
+/* ── Swimlane grouping ── */
+
+.nexus-task-board-swimlane {
+    margin-top: var(--space-m);
+}
+
+.nexus-task-board-swimlane:first-child {
+    margin-top: 0;
+}
+
+.nexus-task-board-swimlane-header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-s);
+    padding: var(--space-xs) 0;
+    border-bottom: 1px dashed var(--background-modifier-border);
+    margin-bottom: var(--space-s);
+    cursor: default;
+    user-select: none;
+}
+
+.nexus-task-board-swimlane-toggle {
+    flex: 0 0 auto;
+}
+
+.nexus-task-board-swimlane-title {
+    font-weight: 600;
+    font-size: var(--font-small);
+    color: var(--text-muted);
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.nexus-task-board-swimlane-progress {
+    font-size: var(--font-smaller);
+    color: var(--text-faint);
+    white-space: nowrap;
+}
+
+.nexus-task-board-swimlane-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-s);
+}
+
+.nexus-task-board-swimlane.is-collapsed .nexus-task-board-swimlane-body {
+    display: none;
+}
+
+.nexus-task-board-swimlane-ungrouped .nexus-task-board-swimlane-title {
+    font-weight: normal;
+    color: var(--text-faint);
+}
+
+/* ── End swimlane grouping ── */
+
 .nexus-task-board-empty-column,
 .nexus-task-board-loading-text,
 .nexus-task-board-error p {
