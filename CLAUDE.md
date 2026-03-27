@@ -3,7 +3,7 @@ Last Updated: 2026-03-25
 
 ## Project Overview
 - **Name**: Claudesidian MCP
-- **Version**: 5.5.4
+- **Version**: 5.5.5
 - **Type**: Obsidian Community Plugin
 - **Purpose**: MCP integration for Obsidian with AI-powered vault operations
 - **Architecture**: Agent-Tool pattern with domain-driven design
