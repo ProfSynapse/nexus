@@ -8,7 +8,10 @@
  * Used by: ResultFormatter for STATE type results
  */
 
-import { MemorySearchResult } from '../../../../types/memory/MemorySearchTypes';
+import {
+  MemorySearchResult,
+  MemoryResultMetadata
+} from '../../../../types/memory/MemorySearchTypes';
 import { BaseResultFormatter } from './BaseResultFormatter';
 
 /**
@@ -19,7 +22,7 @@ export class StateResultFormatter extends BaseResultFormatter {
     return `State: ${result.id}`;
   }
 
-  protected addTypeSpecificMetadata(formatted: Record<string, string>, metadata: any): void {
+  protected addTypeSpecificMetadata(formatted: Record<string, string>, metadata: MemoryResultMetadata): void {
     // Support both legacy and new property names
     if (metadata.stateId || metadata.snapshotId) {
       formatted['State ID'] = metadata.stateId || metadata.snapshotId;

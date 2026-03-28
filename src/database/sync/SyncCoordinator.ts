@@ -50,7 +50,7 @@ export interface ISQLiteCacheManager {
   updateSyncState(deviceId: string, lastEventTimestamp: number, fileTimestamps: Record<string, number>): Promise<void>;
   isEventApplied(eventId: string): Promise<boolean>;
   markEventApplied(eventId: string): Promise<void>;
-  run(sql: string, params?: any[]): Promise<any>;
+  run(sql: string, params?: unknown[]): Promise<unknown>;
   clearAllData(): Promise<void>;
   rebuildFTSIndexes(): Promise<void>;
   save(): Promise<void>;
@@ -76,6 +76,10 @@ export interface SyncOptions {
   forceRebuild?: boolean;
   onProgress?: (phase: string, progress: number, total: number) => void;
   batchSize?: number;
+}
+
+function formatError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 // ============================================================================
@@ -134,8 +138,8 @@ export class SyncCoordinator {
       options.onProgress?.('Complete', 1, 1);
 
       return this.createResult(errors.length === 0, eventsApplied, eventsSkipped, errors, startTime, filesProcessed);
-    } catch (error) {
-      return this.createResult(false, eventsApplied, eventsSkipped, [...errors, `Sync failed: ${error}`], startTime, filesProcessed);
+    } catch (error: unknown) {
+      return this.createResult(false, eventsApplied, eventsSkipped, [...errors, `Sync failed: ${formatError(error)}`], startTime, filesProcessed);
     }
   }
 
@@ -176,16 +180,16 @@ export class SyncCoordinator {
       options.onProgress?.('Complete', 1, 1);
 
       return this.createResult(errors.length === 0, eventsApplied, 0, errors, startTime, filesProcessed);
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('[SyncCoordinator] Full rebuild failed:', error);
       // Still save sync state so we don't rebuild again on next restart
       try {
         await this.sqliteCache.updateSyncState(this.deviceId, Date.now(), {});
         await this.sqliteCache.save();
-      } catch (saveError) {
+      } catch (saveError: unknown) {
         console.error('[SyncCoordinator] Failed to save sync state:', saveError);
       }
-      return this.createResult(false, eventsApplied, 0, [...errors, `Rebuild failed: ${error}`], startTime, filesProcessed);
+      return this.createResult(false, eventsApplied, 0, [...errors, `Rebuild failed: ${formatError(error)}`], startTime, filesProcessed);
     }
   }
 
@@ -231,8 +235,8 @@ export class SyncCoordinator {
 
         files.push(file);
         options.onProgress?.('Processing workspaces', i + 1, workspaceFiles.length);
-      } catch (e) {
-        errors.push(`Failed to process ${file}: ${e}`);
+      } catch (error: unknown) {
+        errors.push(`Failed to process ${file}: ${formatError(error)}`);
       }
     }
 
@@ -270,8 +274,8 @@ export class SyncCoordinator {
 
         files.push(file);
         options.onProgress?.('Processing conversations', i + 1, conversationFiles.length);
-      } catch (e) {
-        errors.push(`Failed to process ${file}: ${e}`);
+      } catch (error: unknown) {
+        errors.push(`Failed to process ${file}: ${formatError(error)}`);
       }
     }
 
@@ -328,8 +332,8 @@ export class SyncCoordinator {
 
         // Save after each file to prevent memory accumulation (OOM prevention)
         await this.sqliteCache.save();
-      } catch (e) {
-        errors.push(`Failed to process ${file}: ${e}`);
+      } catch (error: unknown) {
+        errors.push(`Failed to process ${file}: ${formatError(error)}`);
       }
     }
 
@@ -372,8 +376,8 @@ export class SyncCoordinator {
 
         // Save after each file to prevent memory accumulation (OOM prevention)
         await this.sqliteCache.save();
-      } catch (e) {
-        errors.push(`Failed to process ${file}: ${e}`);
+      } catch (error: unknown) {
+        errors.push(`Failed to process ${file}: ${formatError(error)}`);
       }
     }
 

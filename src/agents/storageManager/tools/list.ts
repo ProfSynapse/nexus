@@ -5,6 +5,29 @@ import { ListParams, ListResult } from '../types';
 import { createErrorMessage } from '../../../utils/errorUtils';
 import { filterByName, FILTER_DESCRIPTION } from '../../../utils/filterUtils';
 
+interface ListedFile {
+  name: string;
+  path: string;
+  size: number;
+  created: number;
+  modified: number;
+}
+
+interface ListedFolder {
+  name: string;
+  path: string;
+}
+
+interface ListData {
+  files: ListedFile[];
+  folders: ListedFolder[];
+  summary: {
+    fileCount: number;
+    folderCount: number;
+    totalItems: number;
+  };
+}
+
 /**
  * Location: src/agents/storageManager/tools/list.ts
  * Purpose: List files and folders in a directory with optional filtering
@@ -58,7 +81,15 @@ export class ListTool extends BaseDirectoryTool<ListParams, ListResult> {
       }
 
       // Prepare result data
-      const result: any = {};
+      const result: ListData = {
+        files: [],
+        folders: [],
+        summary: {
+          fileCount: 0,
+          folderCount: 0,
+          totalItems: 0
+        }
+      };
 
       // Map files to required format
       const fileData = filteredFiles.map(file => ({
@@ -114,12 +145,12 @@ export class ListTool extends BaseDirectoryTool<ListParams, ListResult> {
     const result: TFile[] = [];
 
     // Get direct children that are files
-    const childFiles = (folder.children || []).filter(child => child instanceof TFile) as TFile[];
+    const childFiles = (folder.children || []).filter((child): child is TFile => child instanceof TFile);
     result.push(...childFiles);
 
     // If depth > 0, recursively get files from subfolders
     if (depth > 0) {
-      const childFolders = (folder.children || []).filter(child => child instanceof TFolder) as TFolder[];
+      const childFolders = (folder.children || []).filter((child): child is TFolder => child instanceof TFolder);
       for (const childFolder of childFolders) {
         const subFiles = this.getFilesRecursively(childFolder, depth - 1);
         result.push(...subFiles);
@@ -139,7 +170,7 @@ export class ListTool extends BaseDirectoryTool<ListParams, ListResult> {
     const result: TFolder[] = [];
 
     // Get direct children that are folders
-    const childFolders = (folder.children || []).filter(child => child instanceof TFolder) as TFolder[];
+    const childFolders = (folder.children || []).filter((child): child is TFolder => child instanceof TFolder);
     result.push(...childFolders);
 
     // If depth > 0, recursively get subfolders

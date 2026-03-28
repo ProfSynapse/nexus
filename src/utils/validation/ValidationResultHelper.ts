@@ -119,8 +119,10 @@ export interface ValidationMetadata {
   /**
    * Additional context-specific metadata
    */
-  [key: string]: any;
+  [key: string]: unknown;
 }
+
+type ErrorDetails = Record<string, unknown>;
 
 /**
  * Interface for CompatibilityMonitor if available on globalThis
@@ -177,12 +179,12 @@ export class ValidationResultHelper {
 
     try {
       // Extract context information
-      const contextResult = this.extractAndValidateContext(params, tool);
+      this.extractAndValidateContext(params, tool);
 
       // Format error message
       let errorMessage: string;
-      let errorCode: string = 'VALIDATION_ERROR';
-      let errorDetails: any = {};
+      let errorCode = 'VALIDATION_ERROR';
+      let errorDetails: ErrorDetails = {};
       
       if (Array.isArray(error)) {
         // Handle ValidationError array
@@ -266,7 +268,7 @@ export class ValidationResultHelper {
    */
   static createSuccessResult<TResult extends CommonResult>(
     tool: ToolInterface,
-    data: any,
+    data: TResult['data'],
     params?: CommonParameters,
     additionalData?: Record<string, unknown>
   ): TResult {
@@ -274,7 +276,7 @@ export class ValidationResultHelper {
 
     try {
       // Extract context information
-      const contextResult = this.extractAndValidateContext(params, tool);
+      this.extractAndValidateContext(params, tool);
 
       // Track success result creation performance
       this.trackPerformance(
@@ -348,7 +350,7 @@ export class ValidationResultHelper {
    */
   private static extractAndValidateContext(
     params?: CommonParameters,
-    tool?: ToolInterface
+    _tool?: ToolInterface
   ): ContextExtractionResult {
     const result: ContextExtractionResult = {};
     
@@ -370,7 +372,8 @@ export class ValidationResultHelper {
         if (typeof params.workspaceContext === 'object') {
           result.workspaceContext = params.workspaceContext;
         }
-      } catch (error) {
+      } catch {
+        // Ignore invalid workspace context values and continue extracting other context fields.
       }
     }
     
@@ -415,6 +418,9 @@ export class ValidationResultHelper {
     metadata?: Record<string, unknown>
   ): void {
     const duration = performance.now() - startTime;
+    const endTime = startTime + duration;
+
+    void metadata;
 
     // Integration with existing CompatibilityMonitor if available
     // Type-safe access using defined interface
@@ -424,7 +430,7 @@ export class ValidationResultHelper {
         `ValidationResultHelper_${toolName}`,
         operation,
         startTime,
-        performance.now(),
+        endTime,
         success
       );
     }

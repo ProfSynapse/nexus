@@ -24,7 +24,7 @@ export interface GenerateOptions {
   webSearch?: boolean;
   fileSearch?: boolean;
   // Tool event callback for live UI updates
-  onToolEvent?: (event: 'started' | 'completed', data: any) => void;
+  onToolEvent?: (event: 'started' | 'completed', data: unknown) => void;
   // Usage callback for async cost calculation (e.g., OpenRouter streaming)
   onUsageAvailable?: (usage: TokenUsage, cost?: CostDetails) => void;
   // Cache options
@@ -34,9 +34,9 @@ export interface GenerateOptions {
   frequencyPenalty?: number;
   presencePenalty?: number;
   // Pre-detected tool calls for post-stream execution
-  detectedToolCalls?: any[];
+  detectedToolCalls?: ToolCall[];
   // Conversation history for pingpong pattern (overrides prompt-based message building)
-  conversationHistory?: any[];
+  conversationHistory?: unknown[];
   // OpenAI Responses API: Previous response ID for stateful continuations
   previousResponseId?: string;
 }
@@ -113,6 +113,10 @@ export interface ModelInfo {
   supportsStreaming: boolean;
   supportsThinking?: boolean;
   supportsImageGeneration?: boolean;
+  costPer1kTokens?: {
+    input: number;
+    output: number;
+  };
   pricing: {
     inputPerMillion: number;
     outputPerMillion: number;
@@ -150,7 +154,7 @@ export interface ToolCall {
   error?: string;
   providerExecuted?: boolean;
   // OpenRouter: reasoning_details for Gemini models (must be preserved in continuations)
-  reasoning_details?: any[];
+  reasoning_details?: unknown[];
   // Google Gemini: thought_signature for thinking models
   thought_signature?: string;
   /** Format the model used: 'bracket' = [TOOL_CALLS], 'xml' = <tool_call>, 'native' = OpenAI */

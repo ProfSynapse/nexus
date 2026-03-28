@@ -5,7 +5,6 @@
  * non-streaming (JSON output) mode and parses the result.
  */
 import { Vault } from 'obsidian';
-import type { ChildProcess } from 'child_process';
 import { BaseAdapter } from '../BaseAdapter';
 import {
   GenerateOptions,
@@ -26,6 +25,26 @@ import {
   resolveGeminiCliRuntime
 } from '../../../../utils/geminiCli';
 
+type ChildProcessHandle = {
+  kill(): boolean;
+};
+
+type FsPromisesModule = typeof import('fs/promises');
+type OsModule = typeof import('os');
+type PathModule = typeof import('path');
+
+type GeminiCliModuleMap = {
+  'fs/promises': FsPromisesModule;
+  os: OsModule;
+  path: PathModule;
+};
+
+type RuntimeRequire = <K extends keyof GeminiCliModuleMap>(moduleName: K) => GeminiCliModuleMap[K];
+
+type ModuleWithRequire = {
+  require: RuntimeRequire;
+};
+
 interface GeminiCliJsonResponse {
   response?: string;
   text?: string;
@@ -44,7 +63,7 @@ interface GeminiCliJsonResponse {
 export class GoogleGeminiCliAdapter extends BaseAdapter {
   readonly name = 'google-gemini-cli';
   readonly baseUrl = 'gemini-cli://local';
-  private activeProcess: ChildProcess | null = null;
+  private activeProcess: ChildProcessHandle | null = null;
 
   constructor(private vault: Vault) {
     super('gemini-cli-local-auth', GOOGLE_GEMINI_CLI_DEFAULT_MODEL, 'gemini-cli://local', false);
@@ -66,12 +85,10 @@ export class GoogleGeminiCliAdapter extends BaseAdapter {
       throw new LLMProviderError('Vault filesystem path is unavailable.', this.name, 'CONFIGURATION_ERROR');
     }
 
-    const fsPromises = require('fs/promises') as typeof import('fs/promises');
-    const osMod = require('os') as typeof import('os');
-    const pathMod = require('path') as typeof import('path');
+    const { fsPromises, osModule, pathModule } = this.getNodeRuntime();
 
-    const tempDir = await fsPromises.mkdtemp(pathMod.join(osMod.tmpdir(), 'nexus-gemini-cli-'));
-    const settingsPath = pathMod.join(tempDir, 'system-settings.json');
+    const tempDir = await fsPromises.mkdtemp(pathModule.join(osModule.tmpdir(), 'nexus-gemini-cli-'));
+    const settingsPath = pathModule.join(tempDir, 'system-settings.json');
 
     try {
       await fsPromises.writeFile(
@@ -149,7 +166,7 @@ export class GoogleGeminiCliAdapter extends BaseAdapter {
   }
 
   async listModels(): Promise<ModelInfo[]> {
-    return ModelRegistry.getProviderModels('google-gemini-cli').map(model => ModelRegistry.toModelInfo(model));
+    return ModelRegistry.getProviderModels('google-gemini-cli').map((model) => ModelRegistry.toModelInfo(model));
   }
 
   getCapabilities(): ProviderCapabilities {
@@ -220,6 +237,48 @@ export class GoogleGeminiCliAdapter extends BaseAdapter {
     }
   }
 
+  private getNodeRuntime(): {
+    fsPromises: FsPromisesModule;
+    osModule: OsModule;
+    pathModule: PathModule;
+  } {
+    const runtimeRequire = this.getRuntimeRequire();
+
+    return {
+      fsPromises: runtimeRequire('fs/promises'),
+      osModule: runtimeRequire('os'),
+      pathModule: runtimeRequire('path')
+    };
+  }
+
+  private getRuntimeRequire(): RuntimeRequire {
+    const globalRequire = this.getGlobalValue('require');
+    if (typeof globalRequire === 'function') {
+      return globalRequire as RuntimeRequire;
+    }
+
+    const runtimeModule = this.getGlobalValue('module');
+    if (this.isModuleWithRequire(runtimeModule)) {
+      return runtimeModule.require;
+    }
+
+    throw new LLMProviderError('Node runtime is unavailable for Gemini CLI execution.', this.name, 'CONFIGURATION_ERROR');
+  }
+
+  private getGlobalValue(propertyName: string): unknown {
+    return Reflect.get(globalThis as object, propertyName);
+  }
+
+  private isModuleWithRequire(value: unknown): value is ModuleWithRequire {
+    return typeof value === 'object'
+      && value !== null
+      && typeof Reflect.get(value, 'require') === 'function';
+  }
+
+  private isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+  }
+
   private extractText(parsed: GeminiCliJsonResponse): string {
     if (typeof parsed.response === 'string') return parsed.response;
     if (typeof parsed.text === 'string') return parsed.text;
@@ -287,24 +346,24 @@ export class GoogleGeminiCliAdapter extends BaseAdapter {
   ): Record<string, unknown> | undefined {
     if (Array.isArray(modelStats)) {
       const firstEntry = modelStats[0];
-      return firstEntry && typeof firstEntry === 'object' ? firstEntry as Record<string, unknown> : undefined;
+      return this.isRecord(firstEntry) ? firstEntry : undefined;
     }
 
-    if (!modelStats || typeof modelStats !== 'object') {
+    if (!this.isRecord(modelStats)) {
       return undefined;
     }
 
     const firstEntry = Object.values(modelStats).find(
-      (value) => value && typeof value === 'object' && !Array.isArray(value)
+      (value) => this.isRecord(value)
     );
 
-    return firstEntry ? firstEntry as Record<string, unknown> : undefined;
+    return this.isRecord(firstEntry) ? firstEntry : undefined;
   }
 
   private extractTokenStats(modelStats: Record<string, unknown>): Record<string, unknown> {
     const tokens = modelStats.tokens;
-    if (tokens && typeof tokens === 'object' && !Array.isArray(tokens)) {
-      return tokens as Record<string, unknown>;
+    if (this.isRecord(tokens)) {
+      return tokens;
     }
 
     return modelStats;

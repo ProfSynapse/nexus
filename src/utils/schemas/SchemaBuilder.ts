@@ -22,17 +22,21 @@ import {
   SchemaValidationResult,
   SchemaStatistics
 } from './SchemaTypes';
-import { JSONSchema } from '../../types/schema/JSONSchemaTypes';
+import { JSONSchema, JSONSchemaObject } from '../../types/schema/JSONSchemaTypes';
 
 // Re-export SchemaType for consumers
 export { SchemaType } from './SchemaTypes';
 import { LLMProviderManager } from '../../services/llm/providers/ProviderManager';
-import { mergeWithCommonSchema } from '../schemaUtils';
 import { ProviderInfoService } from './services/ProviderInfoService';
 import { BatchExecuteSchemaBuilder } from './builders/BatchExecuteSchemaBuilder';
 import { ExecuteSchemaBuilder } from './builders/ExecuteSchemaBuilder';
 import { ContentBatchSchemaBuilder } from './builders/ContentBatchSchemaBuilder';
 import { SessionSchemaBuilder } from './builders/SessionSchemaBuilder';
+
+type BuiltSchemaResult = {
+  parameterSchema: JSONSchema;
+  resultSchema: JSONSchema;
+};
 
 /**
  * Unified schema builder that handles all schema generation across the application
@@ -50,33 +54,30 @@ export class SchemaBuilder {
   /**
    * Main entry point - builds schema based on type and context
    */
-  static buildSchema(type: SchemaType, context: SchemaContext): {
-    parameterSchema: any;
-    resultSchema: any;
-  } {
+  static buildSchema(type: SchemaType, context: SchemaContext): BuiltSchemaResult {
     const builder = new SchemaBuilder(context.providerManager);
     const concreteBuilder = builder.getBuilder(type);
 
     return {
-      parameterSchema: concreteBuilder.buildParameterSchema(context),
-      resultSchema: concreteBuilder.buildResultSchema(context)
+      parameterSchema: builder.toJSONSchema(concreteBuilder.buildParameterSchema(context)),
+      resultSchema: builder.toJSONSchema(concreteBuilder.buildResultSchema(context))
     };
   }
 
   /**
    * Instance method for parameter schema building
    */
-  buildParameterSchema(type: SchemaType, context: SchemaContext): any {
+  buildParameterSchema(type: SchemaType, context: SchemaContext): JSONSchema {
     const builder = this.getBuilder(type);
-    return builder.buildParameterSchema(context);
+    return this.toJSONSchema(builder.buildParameterSchema(context));
   }
 
   /**
    * Instance method for result schema building
    */
-  buildResultSchema(type: SchemaType, context: SchemaContext): any {
+  buildResultSchema(type: SchemaType, context: SchemaContext): JSONSchema {
     const builder = this.getBuilder(type);
-    return builder.buildResultSchema(context);
+    return this.toJSONSchema(builder.buildResultSchema(context));
   }
 
   /**
@@ -146,7 +147,6 @@ export class SchemaBuilder {
     const properties: CommonSchemaProperties = {};
 
     if (options.includeProviders) {
-      const providerInfo = this.getProviderInfo();
       const defaultModel = this.providerInfoService.getDefaultModel();
 
       properties.provider = {
@@ -172,7 +172,7 @@ export class SchemaBuilder {
   /**
    * Build action schema for content operations
    */
-  private buildActionSchema(): any {
+  private buildActionSchema(): JSONSchemaObject {
     return {
       type: 'object',
       description: 'Optional action to perform with the LLM response',
@@ -212,6 +212,17 @@ export class SchemaBuilder {
       },
       required: ['type', 'targetPath']
     };
+  }
+
+  /**
+   * Normalize concrete builder output to the shared JSON schema type used by tool definitions.
+   */
+  private toJSONSchema(schema: unknown): JSONSchema {
+    if (!schema || typeof schema !== 'object' || Array.isArray(schema)) {
+      throw new Error('Schema builders must return a JSON schema object');
+    }
+
+    return schema as JSONSchema;
   }
 
   /**

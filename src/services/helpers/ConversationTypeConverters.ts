@@ -8,6 +8,36 @@ import { ConversationMetadata, MessageData } from '../../types/storage/HybridSto
 import type { ConversationBranch, SubagentBranchMetadata, HumanBranchMetadata } from '../../types/branch/BranchTypes';
 import type { ToolCall as ChatToolCall } from '../../types/chat/ChatTypes';
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function parseToolArguments(argumentsValue: unknown): unknown {
+  if (typeof argumentsValue !== 'string') {
+    return argumentsValue;
+  }
+
+  try {
+    return JSON.parse(argumentsValue) as unknown;
+  } catch {
+    return argumentsValue;
+  }
+}
+
+function getStringValue(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
+function getNumberValue(value: unknown): number | undefined {
+  return typeof value === 'number' ? value : undefined;
+}
+
+function getRunTriggerValue(value: unknown): 'manual' | 'scheduled' | 'catch_up' | undefined {
+  return value === 'manual' || value === 'scheduled' || value === 'catch_up'
+    ? value
+    : undefined;
+}
+
 /**
  * Convert new ConversationMetadata to legacy format
  */
@@ -64,6 +94,7 @@ export function convertToLegacyConversation(
 ): IndividualConversation {
   // Type assertion for metadata - structure matches IndividualConversation.metadata
   const meta = (metadata.metadata || {}) as IndividualConversation['metadata'] & Record<string, unknown>;
+  const chatSettings = isRecord(meta.chatSettings) ? meta.chatSettings : undefined;
   const metaCost = meta?.cost;
   const metaTotalCost = meta?.totalCost;
   const metaCurrency = meta?.currency;
@@ -87,18 +118,9 @@ export function convertToLegacyConversation(
         // 2. Result format from buildToolMetadata: { name, result, success, error }
         const hasFunction = tc.function && typeof tc.function === 'object';
         const name = (hasFunction ? tc.function.name : tc.name) || 'unknown_tool';
-        let parameters: any;
+        let parameters: unknown;
         if (hasFunction && tc.function.arguments) {
-          if (typeof tc.function.arguments === 'string') {
-            try {
-              parameters = JSON.parse(tc.function.arguments);
-            } catch {
-              // Malformed JSON in arguments — preserve raw string as-is
-              parameters = tc.function.arguments;
-            }
-          } else {
-            parameters = tc.function.arguments;
-          }
+          parameters = parseToolArguments(tc.function.arguments);
         } else {
           parameters = tc.parameters;
         }
@@ -124,15 +146,15 @@ export function convertToLegacyConversation(
     metadata: {
       ...meta,  // Spread stored metadata first (parentConversationId, branchType, subagent, etc.)
       chatSettings: {
-        ...meta.chatSettings,
+        ...chatSettings,
         workspaceId: metadata.workspaceId,
         sessionId: metadata.sessionId,
-        promptId: (meta.chatSettings as { promptId?: string } | undefined)?.promptId ?? (meta.promptId as string | undefined)
+        promptId: getStringValue(chatSettings?.promptId) ?? getStringValue(meta.promptId)
       },
-      workflowId: metadata.workflowId ?? (meta.workflowId as string | undefined),
-      runTrigger: metadata.runTrigger ?? (meta.runTrigger as 'manual' | 'scheduled' | 'catch_up' | undefined),
-      scheduledFor: metadata.scheduledFor ?? (meta.scheduledFor as number | undefined),
-      runKey: metadata.runKey ?? (meta.runKey as string | undefined),
+      workflowId: metadata.workflowId ?? getStringValue(meta.workflowId),
+      runTrigger: metadata.runTrigger ?? getRunTriggerValue(meta.runTrigger),
+      scheduledFor: metadata.scheduledFor ?? getNumberValue(meta.scheduledFor),
+      runKey: metadata.runKey ?? getStringValue(meta.runKey),
       cost: resolvedCost
     },
     cost: resolvedCost

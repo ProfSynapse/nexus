@@ -14,11 +14,43 @@
  */
 
 import { ChatService } from '../../../services/chat/ChatService';
-import { ConversationData } from '../../../types/chat/ChatTypes';
+import { ConversationData, ToolCall } from '../../../types/chat/ChatTypes';
+
+interface ChatServiceStreamingChunk {
+  chunk: string;
+  complete: boolean;
+  messageId: string;
+  toolCalls?: ToolCall[];
+  reasoning?: string;
+  reasoningComplete?: boolean;
+  usage?: {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+  };
+}
+
+interface ReasoningToolCall {
+  id: string;
+  type: 'reasoning';
+  name: string;
+  displayName: string;
+  technicalName: string;
+  function: {
+    name: string;
+    arguments: string;
+  };
+  result: string;
+  status: 'completed' | 'streaming';
+  success: true;
+  isVirtual: true;
+}
+
+type DisplayToolCall = ToolCall | ReasoningToolCall;
 
 export interface StreamHandlerEvents {
   onStreamingUpdate: (messageId: string, content: string, isComplete: boolean, isIncremental?: boolean) => void;
-  onToolCallsDetected: (messageId: string, toolCalls: any[]) => void;
+  onToolCallsDetected: (messageId: string, toolCalls: DisplayToolCall[]) => void;
 }
 
 export interface StreamOptions {
@@ -36,7 +68,7 @@ export interface StreamOptions {
 
 export interface StreamResult {
   streamedContent: string;
-  toolCalls?: any[];
+  toolCalls?: ToolCall[];
   reasoning?: string;  // Accumulated reasoning text
   usage?: {            // Token usage for context tracking
     promptTokens: number;
@@ -49,7 +81,7 @@ export interface StreamResult {
  * Create a synthetic tool call to represent reasoning/thinking in the UI
  * This allows reasoning to be displayed in the ProgressiveToolAccordion
  */
-function createReasoningToolCall(messageId: string, reasoningText: string, isComplete: boolean): any {
+function createReasoningToolCall(messageId: string, reasoningText: string, isComplete: boolean): ReasoningToolCall {
   return {
     id: `reasoning_${messageId}`,
     type: 'reasoning',  // Special type for reasoning display
@@ -87,7 +119,7 @@ export class MessageStreamHandler {
     options: StreamOptions
   ): Promise<StreamResult> {
     let streamedContent = '';
-    let toolCalls: any[] | undefined = undefined;
+    let toolCalls: ToolCall[] | undefined = undefined;
     let hasStartedStreaming = false;
     let finalUsage: StreamResult['usage'] | undefined = undefined;
 
@@ -103,9 +135,9 @@ export class MessageStreamHandler {
         ...options,
         messageId: aiMessageId
       }
-    )) {
+    ) as AsyncIterable<ChatServiceStreamingChunk>) {
       // Handle token chunks
-      if (chunk.chunk) {
+      if (typeof chunk.chunk === 'string' && chunk.chunk.length > 0) {
         streamedContent += chunk.chunk;
 
         // Update message in conversation object progressively
@@ -127,7 +159,7 @@ export class MessageStreamHandler {
       }
 
       // Handle reasoning/thinking content (Claude, GPT-5, Gemini)
-      if (chunk.reasoning) {
+      if (typeof chunk.reasoning === 'string' && chunk.reasoning.length > 0) {
         reasoningAccumulator += chunk.reasoning;
 
         // Emit reasoning as a synthetic tool call for UI display

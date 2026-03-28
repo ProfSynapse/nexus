@@ -16,6 +16,22 @@ import { ConfigStatus, getClaudeDesktopConfigPath, getConfigStatus } from '../ge
 
 type GetStartedView = 'paths' | 'internal-chat' | 'mcp-setup';
 
+interface ClaudeDesktopServerConfig {
+    command: string;
+    args: string[];
+}
+
+type ClaudeDesktopServerEntry = ClaudeDesktopServerConfig | Record<string, unknown>;
+
+interface ClaudeDesktopConfig extends Record<string, unknown> {
+    mcpServers: Record<string, ClaudeDesktopServerEntry>;
+}
+
+interface ElectronShell {
+    openPath: (path: string) => Promise<string>;
+    showItemInFolder: (fullPath: string) => void;
+}
+
 export interface GetStartedTabServices {
     app: App;
     pluginPath: string;
@@ -354,7 +370,7 @@ export class GetStartedTab {
                 setTimeout(() => {
                     copyBtn.textContent = 'Copy configuration';
                 }, 2000);
-            } catch (error) {
+            } catch {
                 new Notice('Failed to copy to clipboard');
             }
         };
@@ -382,8 +398,8 @@ export class GetStartedTab {
             return '';
         }
         try {
-            const { execSync: nodeExecSync } = require('child_process') as typeof import('child_process');
-            const nodeFs = require('fs') as typeof import('fs');
+            const { execSync: nodeExecSync } = this.getChildProcessModule();
+            const nodeFs = this.getFsModule();
             const cmd = Platform.isWin ? 'where node' : 'which node';
             const result = nodeExecSync(cmd, { encoding: 'utf-8', timeout: 5000 }).trim();
             // `where` on Windows may return multiple lines; take the first
@@ -403,7 +419,7 @@ export class GetStartedTab {
      * Generate the configuration JSON string
      */
     private getConfigJson(): string {
-        const pathMod = require('path') as typeof import('path');
+        const pathMod = this.getPathModule();
         const vaultName = this.services.app.vault.getName();
         const serverKey = getPrimaryServerKey(vaultName);
         const connectorPath = pathMod.normalize(pathMod.join(this.services.pluginPath, 'connector.js'));
@@ -432,20 +448,17 @@ export class GetStartedTab {
      * Auto-configure Nexus in Claude Desktop config
      */
     private async autoConfigureNexus(configPath: string): Promise<void> {
-        const nodeFs = require('fs') as typeof import('fs');
-        const pathMod = require('path') as typeof import('path');
+        const nodeFs = this.getFsModule();
+        const pathMod = this.getPathModule();
         try {
-            let config: any = { mcpServers: {} };
+            let config: ClaudeDesktopConfig = { mcpServers: {} };
 
             // Read existing config if it exists
             if (nodeFs.existsSync(configPath)) {
                 const content = nodeFs.readFileSync(configPath, 'utf-8');
                 try {
-                    config = JSON.parse(content);
-                    if (!config.mcpServers) {
-                        config.mcpServers = {};
-                    }
-                } catch (e) {
+                    config = this.parseClaudeDesktopConfig(content);
+                } catch {
                     // Invalid JSON, start fresh but warn user
                     new Notice('Existing config was invalid JSON. Creating new config.');
                     config = { mcpServers: {} };
@@ -492,9 +505,8 @@ export class GetStartedTab {
      */
     private openConfigFile(configPath: string): void {
         try {
-            // Use Electron's shell to open the file
-            const { shell } = require('electron');
-            shell.openPath(configPath);
+            const shell = this.getElectronShell();
+            void shell.openPath(configPath);
         } catch (error) {
             console.error('[GetStartedTab] Error opening config file:', error);
             new Notice('Failed to open config file. Please open it manually.');
@@ -506,12 +518,63 @@ export class GetStartedTab {
      */
     private revealInFolder(configPath: string): void {
         try {
-            const { shell } = require('electron');
+            const shell = this.getElectronShell();
             shell.showItemInFolder(configPath);
         } catch (error) {
             console.error('[GetStartedTab] Error revealing in folder:', error);
             new Notice('Failed to reveal in folder. Please navigate manually.');
         }
+    }
+
+    private parseClaudeDesktopConfig(content: string): ClaudeDesktopConfig {
+        const parsed = JSON.parse(content) as unknown;
+
+        if (!this.isRecord(parsed)) {
+            return { mcpServers: {} };
+        }
+
+        const mcpServers = this.isRecord(parsed.mcpServers)
+            ? { ...parsed.mcpServers }
+            : {};
+
+        return {
+            ...parsed,
+            mcpServers
+        };
+    }
+
+    private isRecord(value: unknown): value is Record<string, unknown> {
+        return typeof value === 'object' && value !== null && !Array.isArray(value);
+    }
+
+    private getChildProcessModule(): typeof import('child_process') {
+        // Desktop-only runtime dependency; keep loading deferred behind desktop guards.
+        // eslint-disable-next-line import/no-nodejs-modules, @typescript-eslint/no-require-imports
+        return require('child_process') as typeof import('child_process');
+    }
+
+    private getFsModule(): typeof import('fs') {
+        // Desktop-only runtime dependency; keep loading deferred behind desktop guards.
+        // eslint-disable-next-line import/no-nodejs-modules, @typescript-eslint/no-require-imports
+        return require('fs') as typeof import('fs');
+    }
+
+    private getPathModule(): typeof import('path') {
+        // Desktop-only runtime dependency; keep loading deferred behind desktop guards.
+        // eslint-disable-next-line import/no-nodejs-modules, @typescript-eslint/no-require-imports
+        return require('path') as typeof import('path');
+    }
+
+    private getElectronShell(): ElectronShell {
+        // Desktop-only runtime dependency; keep loading deferred behind desktop guards.
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const electronModule = require('electron') as { shell?: ElectronShell };
+
+        if (!electronModule.shell) {
+            throw new Error('Electron shell is unavailable.');
+        }
+
+        return electronModule.shell;
     }
 
     /**

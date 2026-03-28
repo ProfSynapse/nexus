@@ -6,11 +6,52 @@
 import { FileSystemService } from '../storage/FileSystemService';
 import { IndexManager } from '../storage/IndexManager';
 import { MemoryTrace, StateData } from '../../types/storage/StorageTypes';
-import { IStorageAdapter } from '../../database/interfaces/IStorageAdapter';
 import * as HybridTypes from '../../types/storage/HybridStorageTypes';
 import { TraceMetadata } from '../../database/types/memory/MemoryTypes';
 import { WorkspaceState } from '../../database/types/session/SessionTypes';
 import { StorageAdapterOrGetter, resolveAdapter, withDualBackend } from '../helpers/DualBackendExecutor';
+
+interface AutoCreatedSessionData {
+  id: string;
+  name: string;
+  description: string;
+  startTime: number;
+  isActive: boolean;
+}
+
+type LegacyStateData = Partial<StateData> & {
+  snapshot?: WorkspaceState;
+};
+
+function createAutoCreatedSession(sessionId: string, description: string): AutoCreatedSessionData {
+  return {
+    id: sessionId,
+    name: `Session ${new Date().toLocaleString()}`,
+    description,
+    startTime: Date.now(),
+    isActive: true
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function toTraceMetadata(value: unknown): TraceMetadata | undefined {
+  return isRecord(value) ? (value as TraceMetadata) : undefined;
+}
+
+function toWorkspaceState(value: unknown): WorkspaceState {
+  return isRecord(value) ? (value as WorkspaceState) : {} as WorkspaceState;
+}
+
+function resolveStateContent(stateData: LegacyStateData): WorkspaceState {
+  return stateData.state ?? stateData.snapshot ?? ({} as WorkspaceState);
+}
+
+function buildEntityId(prefix: 'trace' | 'state'): string {
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+}
 
 /**
  * Dependencies injected from WorkspaceService to avoid circular references.
@@ -18,8 +59,8 @@ import { StorageAdapterOrGetter, resolveAdapter, withDualBackend } from '../help
  * (e.g., ensuring session exists before creating a state or trace).
  */
 export interface WorkspaceStateDeps {
-  getSession: (workspaceId: string, sessionId: string) => Promise<any>;
-  addSession: (workspaceId: string, sessionData: any) => Promise<any>;
+  getSession: (workspaceId: string, sessionId: string) => Promise<unknown>;
+  addSession: (workspaceId: string, sessionData: AutoCreatedSessionData) => Promise<unknown>;
 }
 
 export class WorkspaceStateService {
@@ -40,13 +81,10 @@ export class WorkspaceStateService {
       // Ensure session exists before saving trace (referential integrity)
       const existingSession = await this.sessionDeps.getSession(workspaceId, sessionId);
       if (!existingSession) {
-        await this.sessionDeps.addSession(workspaceId, {
-          id: sessionId,
-          name: `Session ${new Date().toLocaleString()}`,
-          description: `Auto-created session for trace storage`,
-          startTime: Date.now(),
-          isActive: true
-        });
+        await this.sessionDeps.addSession(
+          workspaceId,
+          createAutoCreatedSession(sessionId, 'Auto-created session for trace storage')
+        );
       }
 
       const hybridTrace: Omit<HybridTypes.MemoryTraceData, 'id' | 'workspaceId' | 'sessionId'> = {
@@ -67,7 +105,7 @@ export class WorkspaceStateService {
         // Safe conversion: HybridTypes.MemoryTraceData.metadata (Record<string, unknown>)
         // is cast to TraceMetadata which is the expected type for MemoryTrace.metadata
         // Note: This metadata may be either TraceMetadata or legacy trace metadata at runtime
-        metadata: hybridTrace.metadata as TraceMetadata | undefined
+        metadata: toTraceMetadata(hybridTrace.metadata)
       };
     }
 
@@ -81,7 +119,7 @@ export class WorkspaceStateService {
       throw new Error(`Session ${sessionId} not found in workspace ${workspaceId}`);
     }
 
-    const traceId = traceData.id || `trace_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const traceId = traceData.id || buildEntityId('trace');
     const trace: MemoryTrace = {
       id: traceId,
       timestamp: traceData.timestamp || Date.now(),
@@ -113,7 +151,7 @@ export class WorkspaceStateService {
           content: t.content,
           // Safe conversion: HybridTypes.MemoryTraceData.metadata (Record<string, unknown>)
           // is cast to TraceMetadata which is the expected type for MemoryTrace.metadata
-          metadata: t.metadata as TraceMetadata | undefined
+          metadata: toTraceMetadata(t.metadata)
         }));
       },
       async () => {
@@ -136,19 +174,14 @@ export class WorkspaceStateService {
       // Ensure session exists before saving state (referential integrity)
       const existingSession = await this.sessionDeps.getSession(workspaceId, sessionId);
       if (!existingSession) {
-        await this.sessionDeps.addSession(workspaceId, {
-          id: sessionId,
-          name: `Session ${new Date().toLocaleString()}`,
-          description: `Auto-created session for state storage`,
-          startTime: Date.now(),
-          isActive: true
-        });
+        await this.sessionDeps.addSession(
+          workspaceId,
+          createAutoCreatedSession(sessionId, 'Auto-created session for state storage')
+        );
       }
 
       // Support both new 'state' property and legacy 'snapshot' property
-      const stateContent = stateData.state ||
-        (stateData as Partial<StateData> & { snapshot?: WorkspaceState }).snapshot ||
-        {};
+      const stateContent = resolveStateContent(stateData);
 
       const hybridState: Omit<HybridTypes.StateData, 'id' | 'workspaceId' | 'sessionId'> = {
         name: stateData.name || 'Untitled State',
@@ -165,7 +198,7 @@ export class WorkspaceStateService {
         id: stateId,
         name: hybridState.name,
         created: hybridState.created,
-        state: hybridState.content
+        state: toWorkspaceState(hybridState.content)
       };
     }
 
@@ -179,12 +212,10 @@ export class WorkspaceStateService {
       throw new Error(`Session ${sessionId} not found in workspace ${workspaceId}`);
     }
 
-    const stateId = stateData.id || `state_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const stateId = stateData.id || buildEntityId('state');
 
     // Support both new 'state' property and legacy 'snapshot' property
-    const stateContent = stateData.state ||
-      (stateData as Partial<StateData> & { snapshot?: WorkspaceState }).snapshot ||
-      {} as WorkspaceState;
+    const stateContent = resolveStateContent(stateData);
 
     const state: StateData = {
       id: stateId,
@@ -216,7 +247,7 @@ export class WorkspaceStateService {
           id: state.id,
           name: state.name,
           created: state.created,
-          state: state.content
+          state: toWorkspaceState(state.content)
         };
       },
       async () => {
@@ -248,7 +279,7 @@ export class WorkspaceStateService {
       async (adapter) => {
         const result = await adapter.getStates(workspaceId, sessionId, { pageSize: 100 });
         const match = result.items.find(
-          state => state.name?.toLowerCase() === identifier.toLowerCase()
+          (state: HybridTypes.StateData) => state.name?.toLowerCase() === identifier.toLowerCase()
         );
         if (!match) {
           return null;

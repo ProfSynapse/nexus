@@ -81,6 +81,76 @@ interface ProviderResponse {
   usageMetadata?: GoogleUsageMetadata;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+function parseNumberRecord(value: unknown): Record<string, number> | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const entries = Object.entries(value);
+  if (entries.some(([, entryValue]) => !isFiniteNumber(entryValue))) {
+    return undefined;
+  }
+
+  return Object.fromEntries(entries) as Record<string, number>;
+}
+
+function parseImportedCostTracker(data: string): Partial<CostTracker> {
+  const parsed: unknown = JSON.parse(data);
+  if (!isRecord(parsed)) {
+    return {};
+  }
+
+  const imported: Partial<CostTracker> = {};
+
+  if (isFiniteNumber(parsed.totalRequests)) {
+    imported.totalRequests = parsed.totalRequests;
+  }
+
+  if (isFiniteNumber(parsed.totalInputTokens)) {
+    imported.totalInputTokens = parsed.totalInputTokens;
+  }
+
+  if (isFiniteNumber(parsed.totalOutputTokens)) {
+    imported.totalOutputTokens = parsed.totalOutputTokens;
+  }
+
+  if (isFiniteNumber(parsed.totalCost)) {
+    imported.totalCost = parsed.totalCost;
+  }
+
+  const costByProvider = parseNumberRecord(parsed.costByProvider);
+  if (costByProvider) {
+    imported.costByProvider = costByProvider;
+  }
+
+  const costByModel = parseNumberRecord(parsed.costByModel);
+  if (costByModel) {
+    imported.costByModel = costByModel;
+  }
+
+  if (isFiniteNumber(parsed.averageCostPerRequest)) {
+    imported.averageCostPerRequest = parsed.averageCostPerRequest;
+  }
+
+  if (typeof parsed.currency === 'string') {
+    imported.currency = parsed.currency;
+  }
+
+  if (typeof parsed.lastUpdated === 'string') {
+    imported.lastUpdated = parsed.lastUpdated;
+  }
+
+  return imported;
+}
+
 /**
  * Detailed token usage information from provider APIs or fallback tokenization
  */
@@ -162,7 +232,8 @@ export class TokenCounter {
         const data = response.json as OpenAITokenizeResponse;
         return data.token_count || 0;
       }
-    } catch (error) {
+    } catch {
+      return this.fallbackTokenCount(text);
     }
 
     return this.fallbackTokenCount(text);
@@ -194,7 +265,8 @@ export class TokenCounter {
         const data = response.json as GoogleCountTokensResponse;
         return data.totalTokens || 0;
       }
-    } catch (error) {
+    } catch {
+      return this.fallbackTokenCount(text);
     }
 
     return this.fallbackTokenCount(text);
@@ -227,7 +299,8 @@ export class TokenCounter {
         const data = response.json as AnthropicCountTokensResponse;
         return data.input_tokens || 0;
       }
-    } catch (error) {
+    } catch {
+      return this.fallbackTokenCount(text);
     }
 
     return this.fallbackTokenCount(text);
@@ -277,7 +350,7 @@ export class TokenCounter {
           tokenCount = this.fallbackTokenCount(text);
           break;
       }
-    } catch (error) {
+    } catch {
       tokenCount = this.fallbackTokenCount(text);
     }
 
@@ -399,7 +472,8 @@ export class CostCalculator {
           }
           break;
       }
-    } catch (error) {
+    } catch {
+      return null;
     }
 
     return null;
@@ -543,7 +617,7 @@ export class CostAnalyzer {
 
   importData(data: string): void {
     try {
-      const imported = JSON.parse(data);
+      const imported = parseImportedCostTracker(data);
       this.tracker = { ...this.tracker, ...imported };
     } catch (error) {
       console.error('Failed to import cost tracking data:', error);

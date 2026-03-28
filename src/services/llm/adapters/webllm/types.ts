@@ -133,7 +133,7 @@ export interface ErrorResponse extends BaseWorkerResponse {
   payload: {
     code: WebLLMErrorCode;
     message: string;
-    details?: any;
+    details?: unknown;
   };
 }
 
@@ -281,7 +281,7 @@ export class WebLLMError extends Error {
   constructor(
     message: string,
     public code: WebLLMErrorCode,
-    public details?: any
+    public details?: unknown
   ) {
     super(message);
     this.name = 'WebLLMError';

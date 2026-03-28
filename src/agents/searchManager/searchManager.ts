@@ -10,7 +10,6 @@ import { MemoryService } from "../memoryManager/services/MemoryService";
 import { WorkspaceService } from '../../services/WorkspaceService';
 import { IStorageAdapter } from '../../database/interfaces/IStorageAdapter';
 import { EmbeddingService } from '../../services/embeddings/EmbeddingService';
-import { getErrorMessage } from '../../utils/errorUtils';
 import { getNexusPlugin } from '../../utils/pluginLocator';
 import { ServiceManager } from '../../core/ServiceManager';
 
@@ -49,7 +48,7 @@ export class SearchManagerAgent extends BaseAgent {
    */
   constructor(
     app: App,
-    enableVectorModes = false,
+    _enableVectorModes = false,
     memoryService?: MemoryService | null,
     workspaceService?: WorkspaceService | null
   ) {
@@ -99,7 +98,8 @@ export class SearchManagerAgent extends BaseAgent {
             }
           }
         }
-      } catch (error) {
+      } catch (_error) {
+        void _error;
       }
     }
 
@@ -109,7 +109,8 @@ export class SearchManagerAgent extends BaseAgent {
       if (app.plugins) {
         pluginRef = getNexusPlugin(app);
       }
-    } catch (error) {
+    } catch (_error) {
+      void _error;
     }
 
     // Create minimal plugin fallback if plugin not found
@@ -219,7 +220,8 @@ export class SearchManagerAgent extends BaseAgent {
     await super.initialize();
 
     // Initialize search service in background - non-blocking
-    this.initializeSearchService().catch(error => {
+    this.initializeSearchService().catch((_error) => {
+      void _error;
     });
   }
 
@@ -238,7 +240,8 @@ export class SearchManagerAgent extends BaseAgent {
     try {
       // Call parent class onunload if it exists
       super.onunload?.();
-    } catch (error) {
+    } catch (_error) {
+      void _error;
     }
   }
 }

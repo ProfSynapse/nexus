@@ -6,6 +6,7 @@ import { CustomPromptStorageService } from "../promptManager/services/CustomProm
 import { sanitizeVaultName } from '../../utils/vaultUtils';
 import { getNexusPlugin } from '../../utils/pluginLocator';
 import { NexusPluginWithServices } from './tools/utils/pluginTypes';
+import type { WorkspaceTaskSummary } from '../taskManager/types';
 
 // Import consolidated tools
 import { CreateStateTool } from './tools/states/createState';
@@ -28,6 +29,8 @@ import { RunWorkflowTool } from './tools/workspaces/runWorkflow';
  * - 3 services: ValidationService/ContextBuilder/MemoryTraceService
  */
 export class MemoryManagerAgent extends BaseAgent {
+  private taskService: WorkspaceTaskService | null = null;
+
   /**
    * Memory service instance
    */
@@ -46,8 +49,7 @@ export class MemoryManagerAgent extends BaseAgent {
   /**
    * TaskService reference for loadWorkspace integration (optional, set during plugin init)
    */
-  private taskService: { getWorkspaceSummary(workspaceId: string): Promise<any> } | null = null;
-  
+
   /**
    * App instance
    */
@@ -73,7 +75,7 @@ export class MemoryManagerAgent extends BaseAgent {
    */
   constructor(
     app: App,
-    public plugin: any,
+    public plugin: NexusPluginWithServices,
     memoryService: MemoryService,
     workspaceService: WorkspaceService,
     customPromptStorage?: CustomPromptStorageService
@@ -210,7 +212,7 @@ export class MemoryManagerAgent extends BaseAgent {
   /**
    * Get the Obsidian app instance
    */
-  getApp() {
+  getApp(): App {
     return this.app;
   }
 
@@ -218,21 +220,21 @@ export class MemoryManagerAgent extends BaseAgent {
    * Set the TaskService reference for loadWorkspace task summary integration.
    * Called during plugin init after TaskManagerAgent is created.
    */
-  setTaskService(service: { getWorkspaceSummary(workspaceId: string): Promise<any> }): void {
+  setTaskService(service: WorkspaceTaskService): void {
     this.taskService = service;
   }
 
   /**
    * Get the TaskService reference (may be null if TaskManager not initialized).
    */
-  getTaskService(): { getWorkspaceSummary(workspaceId: string): Promise<any> } | null {
+  getTaskService(): WorkspaceTaskService | null {
     return this.taskService;
   }
 
   /**
    * Get the CacheManager service instance
    */
-  getCacheManager() {
+  getCacheManager(): unknown {
     const plugin = getNexusPlugin<NexusPluginWithServices>(this.app);
     return plugin?.getServiceIfReady('cacheManager') || null;
   }
@@ -253,8 +255,13 @@ export class MemoryManagerAgent extends BaseAgent {
       // Service is available - return success message
       return `🏗️ Workspaces: Available (use listWorkspaces tool to see details)`;
       
-    } catch (error) {
-      return `🏗️ Workspaces: Error loading workspace information (${error})`;
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      return `🏗️ Workspaces: Error loading workspace information (${message})`;
     }
   }
+}
+
+interface WorkspaceTaskService {
+  getWorkspaceSummary(workspaceId: string): Promise<WorkspaceTaskSummary | null>;
 }

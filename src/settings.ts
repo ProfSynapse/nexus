@@ -1,6 +1,18 @@
 import { Plugin } from 'obsidian';
 import { MCPSettings, DEFAULT_SETTINGS } from './types';
 
+type LoadedProviderSettings = Partial<Omit<NonNullable<MCPSettings['llmProviders']>, 'providers'>> & {
+    providers?: Record<string, Partial<NonNullable<NonNullable<MCPSettings['llmProviders']>['providers'][string]>>>;
+};
+
+type LoadedStartupSettings = Partial<Omit<MCPSettings, 'llmProviders'>> & {
+    llmProviders?: LoadedProviderSettings;
+};
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 /**
  * Settings manager
  * Handles loading and saving plugin settings
@@ -22,11 +34,11 @@ export class Settings {
      * Load settings from plugin data
      * Now synchronous with minimal validation for fast startup
      */
-    async loadSettings() {
+    async loadSettings(): Promise<void> {
         try {
-            const loadedData = await this.plugin.loadData();
+            const loadedData = (await this.plugin.loadData()) as unknown;
             this.applyLoadedData(loadedData);
-        } catch (error) {
+        } catch {
             // Continue with defaults - plugin should still function
         }
     }
@@ -34,17 +46,26 @@ export class Settings {
     /**
      * Apply loaded data with minimal validation for fast startup
      */
-    private applyLoadedData(loadedData: any) {
-        if (!loadedData) {
+    private applyLoadedData(loadedData: unknown): void {
+        if (!isPlainObject(loadedData)) {
             return; // Use defaults
         }
+
+        const typedLoadedData = loadedData as LoadedStartupSettings;
         
         // Start with default settings (includes memory)
         this.settings = Object.assign({}, DEFAULT_SETTINGS);
         
         // Quick shallow merge for startup - detailed validation deferred
         try {
-            const { memory, llmProviders, ...otherSettings } = loadedData;
+            const { llmProviders } = typedLoadedData;
+            const otherSettings: Partial<Omit<MCPSettings, 'memory' | 'llmProviders'>> = {
+                ...typedLoadedData
+            };
+
+            delete otherSettings.memory;
+            delete otherSettings.llmProviders;
+
             Object.assign(this.settings, otherSettings);
             
             // Ensure memory settings exist
@@ -62,7 +83,7 @@ export class Settings {
                     }
                 };
             }
-        } catch (error) {
+        } catch {
             // Continue with defaults - plugin should still function
         }
     }
@@ -70,7 +91,7 @@ export class Settings {
     /**
      * Save settings to plugin data
      */
-    async saveSettings() {
+    async saveSettings(): Promise<void> {
         // Simple JSON-based storage
         await this.plugin.saveData(this.settings);
     }

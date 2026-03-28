@@ -9,17 +9,14 @@
 import {
   WorkerMessage,
   WorkerResponse,
-  ChunkResponse,
-  CompleteResponse,
-  ErrorResponse,
-  InitProgressResponse,
-  ReadyResponse,
   WebLLMError,
   WebLLMModelSpec,
 } from './types';
 
+type OutgoingWorkerMessage = Omit<WorkerMessage, 'id'>;
+
 /** Promise resolver for pending requests */
-interface PendingRequest<T = any> {
+interface PendingRequest<T = unknown> {
   resolve: (value: T) => void;
   reject: (error: Error) => void;
   onProgress?: (progress: number, stage: string) => void;
@@ -368,31 +365,30 @@ async function handleUnload(message) {
       switch (response.type) {
         case 'init_progress':
           if (pending.onProgress) {
-            const progress = response as InitProgressResponse;
-            pending.onProgress(progress.payload.progress, progress.payload.stage);
+            pending.onProgress(response.payload.progress, response.payload.stage);
           }
           break;
 
         case 'ready':
           this.pendingRequests.delete(requestId);
-          this.currentModelId = (response as ReadyResponse).payload.modelId;
+          this.currentModelId = response.payload.modelId;
           pending.resolve(response.payload);
           break;
 
         case 'complete':
           this.pendingRequests.delete(requestId);
-          pending.resolve((response as CompleteResponse).payload);
+          pending.resolve(response.payload);
           break;
 
-        case 'error':
+        case 'error': {
           this.pendingRequests.delete(requestId);
-          const error = response as ErrorResponse;
           pending.reject(new WebLLMError(
-            error.payload.message,
-            error.payload.code,
-            error.payload.details
+            response.payload.message,
+            response.payload.code,
+            response.payload.details
           ));
           break;
+        }
       }
     };
 
@@ -400,7 +396,7 @@ async function handleUnload(message) {
       console.error('[WebLLMWorkerService] Worker error:', event);
 
       // Reject all pending requests
-      for (const [id, pending] of this.pendingRequests) {
+      for (const [, pending] of this.pendingRequests) {
         pending.reject(new WebLLMError(
           'Worker error: ' + event.message,
           'WORKER_ERROR',
@@ -415,7 +411,7 @@ async function handleUnload(message) {
   /**
    * Send a message to the worker and wait for response
    */
-  private async sendMessage<T>(message: { type: string; payload?: any }, options?: {
+  private async sendMessage<T>(message: OutgoingWorkerMessage, options?: {
     onProgress?: (progress: number, stage: string) => void;
   }): Promise<T> {
     if (!this.worker) {

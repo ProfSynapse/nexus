@@ -59,7 +59,7 @@ export interface MemorySearchContext {
 
 // Raw memory result from searches
 export interface RawMemoryResult {
-  trace: any; // MemoryTrace or ToolCallMemoryTrace
+  trace: unknown; // MemoryTrace or ToolCallMemoryTrace
   similarity?: number;
 }
 
@@ -75,7 +75,7 @@ export interface MemorySearchResult {
 
 // Enriched memory search result with raw trace attached
 export interface EnrichedMemorySearchResult extends MemorySearchResult {
-  _rawTrace: any;
+  _rawTrace: unknown;
 }
 
 // Memory result metadata
@@ -83,7 +83,11 @@ export interface MemoryResultMetadata {
   created: string;
   updated?: string;
   sessionId?: string;
+  purpose?: string;
+  tags?: string[];
   workspaceId?: string;
+  workspacePath?: string[];
+  activeWorkspace?: boolean;
   primaryGoal?: string;
   filesReferenced?: string[];
   toolUsed?: string;
@@ -97,6 +101,10 @@ export interface MemoryResultMetadata {
   success?: boolean;
   errorMessage?: string;
   affectedResources?: string[];
+  // State-specific metadata
+  stateId?: string;
+  snapshotId?: string;
+  version?: string | number;
 }
 
 // Search result context
@@ -341,8 +349,8 @@ export interface ToolCallInfo {
   mode: string;
   executionTime?: number;
   success: boolean;
-  input?: any;
-  output?: any;
+  input?: unknown;
+  output?: unknown;
   error?: string;
 }
 

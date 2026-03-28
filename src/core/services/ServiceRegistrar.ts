@@ -7,12 +7,11 @@
  * making it data-driven and easily extensible for new services.
  */
 
-import type { ServiceManager } from '../ServiceManager';
 import { FileSystemService } from '../../services/storage/FileSystemService';
 import { IndexManager } from '../../services/storage/IndexManager';
 import { DataMigrationService } from '../../services/migration/DataMigrationService';
 import { TraceSchemaMigrationService } from '../../services/migration/TraceSchemaMigrationService';
-import { normalizePath } from 'obsidian';
+import type { MemorySettings } from '../../types';
 import { CORE_SERVICE_DEFINITIONS, ADDITIONAL_SERVICE_FACTORIES } from './ServiceDefinitions';
 import type { ServiceCreationContext, AdditionalServiceFactory } from './ServiceDefinitions';
 import type { VaultOperations } from '../VaultOperations';
@@ -96,8 +95,55 @@ export class ServiceRegistrar {
     /**
      * Get default memory settings
      */
-    static getDefaultMemorySettings(dataDir: string) {
+    static getDefaultMemorySettings(_dataDir: string): MemorySettings {
         return {};
+    }
+
+    private async runDeferredMigrations(): Promise<void> {
+        const { plugin, serviceManager } = this.context;
+
+        try {
+            // Re-get vaultOperations in case it changed
+            const vaultOps = await serviceManager.getService<VaultOperations>('vaultOperations');
+            const fileSystem = new FileSystemService(plugin, vaultOps);
+            const indexManager = new IndexManager(fileSystem);
+
+            // Check migration status BEFORE creating directories
+            const migrationService = new DataMigrationService(plugin, fileSystem, indexManager);
+            const status = await migrationService.checkMigrationStatus();
+
+            if (status.isRequired) {
+                // Migrate from legacy ChromaDB data
+                const result = await migrationService.performMigration();
+
+                if (!result.success) {
+                    console.error('[ServiceRegistrar] Migration failed:', result.errors);
+                }
+            } else if (!status.migrationComplete) {
+                // No legacy data and directories don't exist - initialize fresh structure
+                await migrationService.initializeFreshDirectories();
+            }
+
+            // Ensure all conversations have metadata field (idempotent)
+            try {
+                const metadataResult = await migrationService.ensureConversationMetadata();
+                if (metadataResult.errors.length > 0) {
+                    console.error('[ServiceRegistrar] Metadata migration errors:', metadataResult.errors);
+                }
+            } catch (error: unknown) {
+                console.error('[ServiceRegistrar] Metadata migration failed:', error);
+            }
+
+            // Normalize memory trace schema across all workspaces (idempotent)
+            try {
+                const traceMigrationService = new TraceSchemaMigrationService(plugin, fileSystem, vaultOps);
+                await traceMigrationService.migrateIfNeeded();
+            } catch (error: unknown) {
+                console.error('[ServiceRegistrar] Trace schema migration failed:', error);
+            }
+        } catch (error: unknown) {
+            console.error('[ServiceRegistrar] Background migration failed:', error);
+        }
     }
 
     /**
@@ -107,14 +153,10 @@ export class ServiceRegistrar {
      */
     async initializeDataDirectories(): Promise<void> {
         try {
-            const { app, plugin, settings, manifest, serviceManager } = this.context;
+            const { settings, manifest } = this.context;
 
             // Get vaultOperations service with proper typing
-            const vaultOperations = await serviceManager.getService<VaultOperations>('vaultOperations');
-
-            // Initialize storage services (needed for directory creation)
-            const fileSystem = new FileSystemService(plugin, vaultOperations);
-            const indexManager = new IndexManager(fileSystem);
+            const vaultOperations = await this.context.serviceManager.getService<VaultOperations>('vaultOperations');
 
             // Legacy data directory handling - quick directory creation
             const pluginDir = `.obsidian/plugins/${manifest.id}`;
@@ -124,7 +166,7 @@ export class ServiceRegistrar {
             try {
                 await vaultOperations.ensureDirectory(dataDir);
                 await vaultOperations.ensureDirectory(storageDir);
-            } catch (error) {
+            } catch {
                 // Directories may already exist
             }
 
@@ -134,57 +176,15 @@ export class ServiceRegistrar {
             }
 
             // Save settings in background
-            settings.saveSettings().catch(error => {
-            });
+            settings.saveSettings().catch((): void => {});
 
             // DEFER heavy migration work to background (2 second delay)
             // This allows the UI to appear immediately while migrations run later
-            this.migrationTimer = setTimeout(async () => {
-                try {
-                    // Re-get vaultOperations in case it changed
-                    const vaultOps = await serviceManager.getService<VaultOperations>('vaultOperations');
-                    const fs = new FileSystemService(plugin, vaultOps);
-                    const idx = new IndexManager(fs);
-
-                    // Check migration status BEFORE creating directories
-                    const migrationService = new DataMigrationService(plugin, fs, idx);
-                    const status = await migrationService.checkMigrationStatus();
-
-                    if (status.isRequired) {
-                        // Migrate from legacy ChromaDB data
-                        const result = await migrationService.performMigration();
-
-                        if (!result.success) {
-                            console.error('[ServiceRegistrar] Migration failed:', result.errors);
-                        }
-                    } else if (!status.migrationComplete) {
-                        // No legacy data and directories don't exist - initialize fresh structure
-                        await migrationService.initializeFreshDirectories();
-                    }
-
-                    // Ensure all conversations have metadata field (idempotent)
-                    try {
-                        const metadataResult = await migrationService.ensureConversationMetadata();
-                        if (metadataResult.errors.length > 0) {
-                            console.error('[ServiceRegistrar] Metadata migration errors:', metadataResult.errors);
-                        }
-                    } catch (error) {
-                        console.error('[ServiceRegistrar] Metadata migration failed:', error);
-                    }
-
-                    // Normalize memory trace schema across all workspaces (idempotent)
-                    try {
-                        const traceMigrationService = new TraceSchemaMigrationService(plugin, fs, vaultOps);
-                        await traceMigrationService.migrateIfNeeded();
-                    } catch (error) {
-                        console.error('[ServiceRegistrar] Trace schema migration failed:', error);
-                    }
-                } catch (error) {
-                    console.error('[ServiceRegistrar] Background migration failed:', error);
-                }
+            this.migrationTimer = setTimeout((): void => {
+                void this.runDeferredMigrations();
             }, 2000);
 
-        } catch (error) {
+        } catch (error: unknown) {
             console.error('[ServiceRegistrar] Failed to initialize data directories:', error);
             // Don't throw - plugin should function without directories for now
         }
@@ -265,14 +265,14 @@ export class ServiceRegistrar {
     /**
      * Get service helper method with timeout
      */
-    async getService<T>(name: string, timeoutMs: number = 10000): Promise<T | null> {
+    async getService<T>(name: string, _timeoutMs: number = 10000): Promise<T | null> {
         if (!this.context.serviceManager) {
             return null;
         }
         
         try {
             return await this.context.serviceManager.getService<T>(name);
-        } catch (error) {
+        } catch {
             return null;
         }
     }
@@ -290,7 +290,7 @@ export class ServiceRegistrar {
                 if (service) {
                     return service;
                 }
-            } catch (error) {
+            } catch {
                 // Service not ready yet, continue waiting
             }
 

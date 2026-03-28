@@ -29,6 +29,9 @@ import { JSONLWriter } from '../../storage/JSONLWriter';
 import { QueryCache } from '../../optimizations/QueryCache';
 import { BaseStorageEvent } from '../../interfaces/StorageEvents';
 
+type RepositoryQueryParams = NonNullable<Parameters<SQLiteCacheManager['query']>[1]>;
+type RepositoryEntityType = CacheableEntityType | (string & {});
+
 /**
  * Valid entity types for type-specific cache invalidation
  * Must match the types supported by QueryCache.invalidateByType/invalidateById
@@ -53,8 +56,9 @@ export interface RepositoryDependencies {
  * Base repository with shared functionality
  *
  * @template T - The entity type this repository manages
+ * @template TRow - Raw SQLite row shape consumed by rowToEntity
  */
-export abstract class BaseRepository<T> implements IRepository<T> {
+export abstract class BaseRepository<T, TRow = Record<string, unknown>> implements IRepository<T> {
   protected readonly sqliteCache: SQLiteCacheManager;
   protected readonly jsonlWriter: JSONLWriter;
   protected readonly queryCache: QueryCache;
@@ -67,7 +71,7 @@ export abstract class BaseRepository<T> implements IRepository<T> {
   /**
    * Entity type identifier for logging and cache keys
    */
-  protected abstract readonly entityType: string;
+  protected abstract readonly entityType: RepositoryEntityType;
 
   /**
    * JSONL file path generator (must be overridden by subclasses)
@@ -91,7 +95,7 @@ export abstract class BaseRepository<T> implements IRepository<T> {
    * @param row - Raw SQLite row data
    * @returns Typed entity instance
    */
-  protected abstract rowToEntity(row: any): T;
+  protected abstract rowToEntity(row: TRow): T;
 
   /**
    * Get entity by ID (subclasses implement with entity-specific logic)
@@ -106,12 +110,12 @@ export abstract class BaseRepository<T> implements IRepository<T> {
   /**
    * Create a new entity
    */
-  abstract create(data: any): Promise<string>;
+  abstract create(data: unknown): Promise<string>;
 
   /**
    * Update an existing entity
    */
-  abstract update(id: string, data: any): Promise<void>;
+  abstract update(id: string, data: unknown): Promise<void>;
 
   /**
    * Delete an entity
@@ -167,7 +171,7 @@ export abstract class BaseRepository<T> implements IRepository<T> {
     baseQuery: string,
     countQuery: string,
     options: PaginationParams = {},
-    params: any[] = []
+    params: RepositoryQueryParams = []
   ): Promise<PaginatedResult<R>> {
     const page = options.page ?? 0;
     const pageSize = Math.min(options.pageSize ?? 25, 200);
@@ -180,7 +184,8 @@ export abstract class BaseRepository<T> implements IRepository<T> {
 
     // Get paginated results
     const paginatedQuery = `${baseQuery} LIMIT ? OFFSET ?`;
-    const items = await this.sqliteCache.query<R>(paginatedQuery, [...params, pageSize, offset]);
+    const paginatedParams: RepositoryQueryParams = [...params, pageSize, offset];
+    const items = await this.sqliteCache.query<R>(paginatedQuery, paginatedParams);
 
     return {
       items,
@@ -215,7 +220,7 @@ export abstract class BaseRepository<T> implements IRepository<T> {
    * @param type - Entity type to check
    * @returns True if type supports QueryCache.invalidateByType/invalidateById
    */
-  private isCacheableEntityType(type: string): type is CacheableEntityType {
+  private isCacheableEntityType(type: RepositoryEntityType): type is CacheableEntityType {
     return ['workspace', 'session', 'state', 'conversation', 'message', 'project', 'task'].includes(type);
   }
 
@@ -258,7 +263,7 @@ export abstract class BaseRepository<T> implements IRepository<T> {
    * @param operation - Operation name
    * @param details - Optional details
    */
-  protected log(_operation: string, _details?: any): void {
+  protected log(_operation: string, _details?: unknown): void {
   }
 
   /**
@@ -267,7 +272,7 @@ export abstract class BaseRepository<T> implements IRepository<T> {
    * @param operation - Operation name
    * @param error - Error object
    */
-  protected logError(operation: string, error: any): void {
+  protected logError(operation: string, error: unknown): void {
     console.error(`[${this.entityType}Repository] ${operation} failed:`, error);
   }
 }

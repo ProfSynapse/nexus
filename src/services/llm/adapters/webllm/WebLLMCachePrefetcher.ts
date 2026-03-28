@@ -28,6 +28,47 @@ export interface PrefetchProgress {
 
 const CACHE_NAME = 'webllm-prefetch-cache';
 
+interface TensorCacheRecord {
+  dataPath: string;
+  nbytes?: number;
+}
+
+interface TensorCacheConfig {
+  records: TensorCacheRecord[];
+}
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function parseTensorCacheRecord(value: unknown): TensorCacheRecord | null {
+  if (!isObjectRecord(value) || typeof value.dataPath !== 'string') {
+    return null;
+  }
+
+  const parsedRecord: TensorCacheRecord = {
+    dataPath: value.dataPath,
+  };
+
+  if (typeof value.nbytes === 'number' && Number.isFinite(value.nbytes)) {
+    parsedRecord.nbytes = value.nbytes;
+  }
+
+  return parsedRecord;
+}
+
+function parseTensorCacheConfig(value: unknown): TensorCacheConfig | null {
+  if (!isObjectRecord(value) || !Array.isArray(value.records)) {
+    return null;
+  }
+
+  const records = value.records
+    .map((record) => parseTensorCacheRecord(record))
+    .filter((record): record is TensorCacheRecord => record !== null);
+
+  return { records };
+}
+
 /**
  * Get list of files to prefetch for a model
  */
@@ -50,23 +91,21 @@ async function getModelFileList(modelSpec: WebLLMModelSpec): Promise<Array<{ nam
     const tensorCacheUrl = `${basePath}/tensor-cache.json`;
     const resp = await requestUrl({ url: tensorCacheUrl, method: 'GET' });
     if (resp.status === 200) {
-      const tensorConfig = resp.json;
+      const tensorConfig = parseTensorCacheConfig(resp.json);
       files.push({ name: 'tensor-cache.json', url: tensorCacheUrl, size: 0 });
 
       // Add all shards from tensor-cache
-      if (tensorConfig.records && Array.isArray(tensorConfig.records)) {
+      if (tensorConfig !== null) {
         for (const record of tensorConfig.records) {
-          if (record.dataPath) {
-            files.push({
-              name: record.dataPath,
-              url: `${basePath}/${record.dataPath}`,
-              size: record.nbytes || 0,
-            });
-          }
+          files.push({
+            name: record.dataPath,
+            url: `${basePath}/${record.dataPath}`,
+            size: record.nbytes ?? 0,
+          });
         }
       }
     }
-  } catch (err) {
+  } catch {
     // Fall back to probing for shards
     for (let i = 0; i < 200; i++) {
       const shardName = `params_shard_${i}.bin`;
@@ -130,8 +169,6 @@ async function isFileCached(url: string): Promise<boolean> {
  * Uses Obsidian's requestUrl which handles CORS and follows redirects
  */
 async function prefetchFile(url: string, cache: Cache): Promise<number> {
-  const fileName = url.split('/').pop() || url;
-
   // Check if already cached
   const cached = await cache.match(url);
   if (cached) {

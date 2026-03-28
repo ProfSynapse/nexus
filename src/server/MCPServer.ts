@@ -11,7 +11,6 @@ import { CustomPromptStorageService } from "../agents/promptManager/services/Cus
 import { Server as MCPSDKServer } from '@modelcontextprotocol/sdk/server/index.js';
 import { RequestRouter } from '../handlers/RequestRouter';
 import { logger } from '../utils/logger';
-import { getErrorMessage } from '../utils/errorUtils';
 
 // Import specialized services
 import { ServerConfiguration } from './services/ServerConfiguration';
@@ -22,6 +21,56 @@ import { StdioTransportManager } from './transport/StdioTransportManager';
 import { RequestHandlerFactory } from './handlers/RequestHandlerFactory';
 import { ServerLifecycleManager } from './lifecycle/ServerLifecycleManager';
 import { AgentExecutionManager } from './execution/AgentExecutionManager';
+
+type ToolCallCallback = (toolName: string, params: unknown) => Promise<void>;
+type ToolResponseCallback = (
+    toolName: string,
+    params: unknown,
+    response: unknown,
+    success: boolean,
+    executionTime: number
+) => Promise<void>;
+
+type ServerConfigurationSummary = ReturnType<ServerConfiguration['getConfigurationSummary']>;
+type ServerDiagnostics = Awaited<ReturnType<ServerLifecycleManager['getDiagnostics']>>;
+type ServerHealthCheck = Awaited<ReturnType<ServerLifecycleManager['performHealthCheck']>>;
+type ExecutionStatistics = ReturnType<AgentExecutionManager['getExecutionStatistics']>;
+type RequestHandlerStatistics = ReturnType<RequestHandlerFactory['getHandlerStatistics']>;
+type DetailedServerStatus = ReturnType<ServerLifecycleManager['getDetailedStatus']>;
+type AgentStatistics = ReturnType<AgentRegistry['getAgentStatistics']>;
+type HttpTransportStatus = ReturnType<HttpTransportManager['getTransportStatus']>;
+type IpcTransportStatus = ReturnType<IPCTransportManager['getTransportStatus']>;
+type ExecutionValidationParameters = Parameters<AgentExecutionManager['validateExecutionParameters']>[2];
+type ExecutionValidationResult = ReturnType<AgentExecutionManager['validateExecutionParameters']>;
+type ExecutionContextInfo = ReturnType<AgentExecutionManager['getExecutionContextInfo']>;
+
+type ConfigurationUpdates = {
+    capabilities?: Record<string, unknown>;
+};
+
+type MCPServerInfo = {
+    configuration: ServerConfigurationSummary;
+    status: DetailedServerStatus;
+    agents: AgentStatistics;
+    transports: {
+        http: HttpTransportStatus;
+        ipc: IpcTransportStatus;
+    };
+    handlers: RequestHandlerStatistics;
+    execution: ExecutionStatistics;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null;
+}
+
+function isConfigurationUpdates(value: unknown): value is ConfigurationUpdates {
+    if (!isRecord(value)) {
+        return false;
+    }
+
+    return value.capabilities === undefined || isRecord(value.capabilities);
+}
 
 /**
  * Refactored MCP Server following SOLID principles
@@ -51,8 +100,8 @@ export class MCPServer implements IMCPServer {
         private sessionContextManager?: SessionContextManager,
         serverName?: string,
         private customPromptStorage?: CustomPromptStorageService,
-        private onToolCall?: (toolName: string, params: any) => Promise<void>,
-        private onToolResponse?: (toolName: string, params: any, response: any, success: boolean, executionTime: number) => Promise<void>
+        private onToolCall?: ToolCallCallback,
+        private onToolResponse?: ToolResponseCallback
     ) {
         // Initialize configuration service
         this.configuration = new ServerConfiguration(app, { serverName });
@@ -201,35 +250,35 @@ export class MCPServer implements IMCPServer {
     /**
      * Get server configuration summary
      */
-    getConfigurationSummary(): any {
+    getConfigurationSummary(): ServerConfigurationSummary {
         return this.configuration.getConfigurationSummary();
     }
 
     /**
      * Get server diagnostics
      */
-    async getDiagnostics(): Promise<any> {
-        return await this.lifecycleManager.getDiagnostics();
+    getDiagnostics(): Promise<ServerDiagnostics> {
+        return this.lifecycleManager.getDiagnostics();
     }
 
     /**
      * Perform health check
      */
-    async performHealthCheck(): Promise<any> {
-        return await this.lifecycleManager.performHealthCheck();
+    performHealthCheck(): Promise<ServerHealthCheck> {
+        return this.lifecycleManager.performHealthCheck();
     }
 
     /**
      * Get execution statistics
      */
-    getExecutionStatistics(): any {
+    getExecutionStatistics(): ExecutionStatistics {
         return this.executionManager.getExecutionStatistics();
     }
 
     /**
      * Get request handler statistics
      */
-    getRequestHandlerStatistics(): any {
+    getRequestHandlerStatistics(): RequestHandlerStatistics {
         return this.requestHandlerFactory.getHandlerStatistics();
     }
 
@@ -250,14 +299,14 @@ export class MCPServer implements IMCPServer {
     /**
      * Get detailed server status
      */
-    getDetailedStatus(): any {
+    getDetailedStatus(): DetailedServerStatus {
         return this.lifecycleManager.getDetailedStatus();
     }
 
     /**
      * Get agent statistics
      */
-    getAgentStatistics(): any {
+    getAgentStatistics(): AgentStatistics {
         return this.agentRegistry.getAgentStatistics();
     }
 
@@ -265,8 +314,8 @@ export class MCPServer implements IMCPServer {
      * Get transport status
      */
     getTransportStatus(): {
-        http: any;
-        ipc: any;
+        http: HttpTransportStatus;
+        ipc: IpcTransportStatus;
     } {
         return {
             http: this.httpTransportManager.getTransportStatus(),
@@ -284,22 +333,30 @@ export class MCPServer implements IMCPServer {
     /**
      * Validate execution parameters
      */
-    validateExecutionParameters(agentName: string, mode: string, params: any): any {
+    validateExecutionParameters(
+        agentName: string,
+        mode: string,
+        params: ExecutionValidationParameters
+    ): ExecutionValidationResult {
         return this.executionManager.validateExecutionParameters(agentName, mode, params);
     }
 
     /**
      * Get execution context info
      */
-    getExecutionContextInfo(sessionId?: string): any {
+    getExecutionContextInfo(sessionId?: string): ExecutionContextInfo {
         return this.executionManager.getExecutionContextInfo(sessionId);
     }
 
     /**
      * Update server configuration
      */
-    updateConfiguration(updates: any): void {
-        if (updates.capabilities) {
+    updateConfiguration(updates: unknown): void {
+        if (!isConfigurationUpdates(updates) || updates.capabilities === undefined) {
+            return;
+        }
+
+        if (isRecord(updates.capabilities)) {
             this.configuration.updateCapabilities(updates.capabilities);
         }
     }
@@ -341,7 +398,7 @@ export class MCPServer implements IMCPServer {
     /**
      * Get server info
      */
-    getServerInfo(): any {
+    getServerInfo(): MCPServerInfo {
         return {
             configuration: this.configuration.getConfigurationSummary(),
             status: this.getDetailedStatus(),

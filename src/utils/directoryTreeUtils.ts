@@ -83,6 +83,13 @@ export interface DirectoryTreeOptions {
   relatedFiles?: string[];
 }
 
+interface DirectoryTreeStats {
+  totalFiles: number;
+  totalFolders: number;
+  relatedFiles: number;
+  maxDepth: number;
+}
+
 /**
  * Build a directory tree structure for a given root folder
  */
@@ -183,7 +190,7 @@ export class DirectoryTreeBuilder {
             node.description = descMatch[1].trim();
           }
         }
-      } catch (error) {
+      } catch {
         // Ignore errors reading file
       }
     }
@@ -326,8 +333,7 @@ export class DirectoryTreeUtils {
    */
   static treeToText(tree: DirectoryTreeNode, indent = ''): string {
     let result = '';
-    const _isLast = true; // We'll handle this in the caller
-    
+
     const prefix = tree.type === 'folder' ? '📁 ' : '📄 ';
     const keyIndicator = '';
     const relatedIndicator = tree.isRelatedFile ? ' 🔗' : '';
@@ -352,13 +358,8 @@ export class DirectoryTreeUtils {
   /**
    * Get statistics about a directory tree
    */
-  static getTreeStats(tree: DirectoryTreeNode): {
-    totalFiles: number;
-    totalFolders: number;
-    relatedFiles: number;
-    maxDepth: number;
-  } {
-    const stats = {
+  static getTreeStats(tree: DirectoryTreeNode): DirectoryTreeStats {
+    const stats: DirectoryTreeStats = {
       totalFiles: 0,
       totalFolders: 0,
       relatedFiles: 0,
@@ -372,7 +373,7 @@ export class DirectoryTreeUtils {
   
   private static calculateStats(
     node: DirectoryTreeNode, 
-    stats: any, 
+    stats: DirectoryTreeStats,
     currentDepth: number
   ): void {
     stats.maxDepth = Math.max(stats.maxDepth, currentDepth);

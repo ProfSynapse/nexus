@@ -8,7 +8,10 @@
  * Used by: ResultFormatter for SESSION type results
  */
 
-import { MemorySearchResult } from '../../../../types/memory/MemorySearchTypes';
+import {
+  MemoryResultMetadata,
+  MemorySearchResult
+} from '../../../../types/memory/MemorySearchTypes';
 import { BaseResultFormatter } from './BaseResultFormatter';
 
 /**
@@ -19,7 +22,7 @@ export class SessionResultFormatter extends BaseResultFormatter {
     return `Session: ${result.metadata.sessionId || 'Unknown'}`;
   }
 
-  protected addTypeSpecificMetadata(formatted: Record<string, string>, metadata: any): void {
+  protected addTypeSpecificMetadata(formatted: Record<string, string>, metadata: MemoryResultMetadata): void {
     if (metadata.purpose) {
       formatted['Purpose'] = metadata.purpose;
     }

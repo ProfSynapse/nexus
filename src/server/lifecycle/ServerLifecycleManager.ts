@@ -10,6 +10,47 @@ import { IPCTransportManager } from '../transport/IPCTransportManager';
 import { ServerStatus } from '../../types';
 import { logger } from '../../utils/logger';
 
+type AgentStatistics = ReturnType<AgentRegistry['getAgentStatistics']>;
+type HttpTransportStatus = ReturnType<HttpTransportManager['getTransportStatus']>;
+type IpcTransportStatus = ReturnType<IPCTransportManager['getTransportStatus']>;
+type IpcDiagnostics = ReturnType<IPCTransportManager['getDiagnostics']>;
+
+interface DetailedServerStatus {
+    status: ServerStatus;
+    isRunning: boolean;
+    agentCount: number;
+    httpTransportStatus: HttpTransportStatus;
+    ipcTransportStatus: IpcTransportStatus;
+    uptime?: number;
+}
+
+interface ServerHealthCheck {
+    isHealthy: boolean;
+    status: ServerStatus;
+    agentStatus: AgentStatistics;
+    transportStatus: {
+        http: HttpTransportStatus;
+        ipc: IpcTransportStatus;
+    };
+    issues: string[];
+}
+
+interface ServerDiagnostics {
+    lifecycle: {
+        status: ServerStatus;
+        isRunning: boolean;
+        isInError: boolean;
+    };
+    agents: AgentStatistics;
+    transports: {
+        http: HttpTransportStatus;
+        ipc: IpcDiagnostics;
+    };
+    events: {
+        hasEvents: boolean;
+    };
+}
+
 /**
  * Service responsible for server lifecycle management
  * Follows SRP by focusing only on lifecycle operations
@@ -107,7 +148,7 @@ export class ServerLifecycleManager {
     private async startTransports(): Promise<void> {
         try {
             // Start IPC transport only (used by both external clients and internal chatbot)
-            const ipcResult = await this.ipcTransportManager.startTransport();
+            await this.ipcTransportManager.startTransport();
             logger.systemLog('IPC transport started successfully');
         } catch (error) {
             logger.systemError(error as Error, 'Transport Start');
@@ -154,14 +195,7 @@ export class ServerLifecycleManager {
     /**
      * Get detailed server status
      */
-    getDetailedStatus(): {
-        status: ServerStatus;
-        isRunning: boolean;
-        agentCount: number;
-        httpTransportStatus: any;
-        ipcTransportStatus: any;
-        uptime?: number;
-    } {
+    getDetailedStatus(): DetailedServerStatus {
         return {
             status: this.status,
             isRunning: this.isRunning(),
@@ -183,13 +217,7 @@ export class ServerLifecycleManager {
     /**
      * Perform health check
      */
-    async performHealthCheck(): Promise<{
-        isHealthy: boolean;
-        status: ServerStatus;
-        agentStatus: any;
-        transportStatus: any;
-        issues: string[];
-    }> {
+    async performHealthCheck(): Promise<ServerHealthCheck> {
         const issues: string[] = [];
 
         // Check status
@@ -230,12 +258,7 @@ export class ServerLifecycleManager {
     /**
      * Get server diagnostics
      */
-    async getDiagnostics(): Promise<{
-        lifecycle: any;
-        agents: any;
-        transports: any;
-        events: any;
-    }> {
+    async getDiagnostics(): Promise<ServerDiagnostics> {
         return {
             lifecycle: {
                 status: this.status,

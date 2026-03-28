@@ -3,6 +3,60 @@ import type { LLMProviderConfig, LLMProviderSettings } from '../types/llm/Provid
 import { getPrimaryServerKey } from '../constants/branding';
 import { supportsMCPBridge } from '../utils/platform';
 
+type FsModule = typeof import('fs');
+type PathModule = typeof import('path');
+
+type NodeModuleMap = {
+  fs: FsModule;
+  path: PathModule;
+};
+
+type RuntimeRequire = <K extends keyof NodeModuleMap>(moduleName: K) => NodeModuleMap[K];
+
+type ModuleWithRequire = {
+  require: RuntimeRequire;
+};
+
+interface ClaudeDesktopConfig {
+  mcpServers?: Record<string, unknown>;
+}
+
+function getGlobalValue(propertyName: string): unknown {
+  return Reflect.get(globalThis as object, propertyName);
+}
+
+function isModuleWithRequire(value: unknown): value is ModuleWithRequire {
+  return typeof value === 'object'
+    && value !== null
+    && typeof Reflect.get(value, 'require') === 'function';
+}
+
+function getRuntimeRequire(): RuntimeRequire {
+  const globalRequire = getGlobalValue('require');
+  if (typeof globalRequire === 'function') {
+    return globalRequire as RuntimeRequire;
+  }
+
+  const runtimeModule = getGlobalValue('module');
+  if (isModuleWithRequire(runtimeModule)) {
+    return runtimeModule.require;
+  }
+
+  throw new Error('Node runtime is unavailable');
+}
+
+function getPathModule(): PathModule {
+  return getRuntimeRequire()('path');
+}
+
+function getFsModule(): FsModule {
+  return getRuntimeRequire()('fs');
+}
+
+function isClaudeDesktopConfig(value: unknown): value is ClaudeDesktopConfig {
+  return typeof value === 'object' && value !== null;
+}
+
 export type ConfigStatus =
   | 'unsupported'
   | 'no-claude-folder'
@@ -38,7 +92,7 @@ export function getClaudeDesktopConfigPath(): string | null {
     return null;
   }
 
-  const pathMod = require('path') as typeof import('path');
+  const pathMod = getPathModule();
 
   if (Platform.isWin) {
     return pathMod.join(process.env.APPDATA || '', 'Claude', 'claude_desktop_config.json');
@@ -67,8 +121,8 @@ export function getConfigStatus(app: App): ConfigStatus {
     return 'unsupported';
   }
 
-  const nodeFs = require('fs') as typeof import('fs');
-  const pathMod = require('path') as typeof import('path');
+  const nodeFs = getFsModule();
+  const pathMod = getPathModule();
   const configDir = pathMod.dirname(configPath);
 
   if (!nodeFs.existsSync(configDir)) {
@@ -85,10 +139,10 @@ export function getConfigStatus(app: App): ConfigStatus {
       return 'invalid-config';
     }
 
-    const config = JSON.parse(content);
+    const config: unknown = JSON.parse(content);
     const serverKey = getPrimaryServerKey(app.vault.getName());
 
-    if (config.mcpServers && config.mcpServers[serverKey]) {
+    if (isClaudeDesktopConfig(config) && config.mcpServers?.[serverKey]) {
       return 'nexus-configured';
     }
 

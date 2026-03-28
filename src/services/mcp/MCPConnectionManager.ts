@@ -1,18 +1,72 @@
-import { App, Plugin, Events } from 'obsidian';
-import { MCPServer } from '../../server';
-import { SessionContextManager } from '../SessionContextManager';
-import { CustomPromptStorageService } from "../../agents/promptManager/services/CustomPromptStorageService";
+import { App, Events, Plugin } from 'obsidian';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
+import { CustomPromptStorageService } from '../../agents/promptManager/services/CustomPromptStorageService';
+import { MCPServer } from '../../server';
 import { logger } from '../../utils/logger';
+import { SessionContextManager } from '../SessionContextManager';
+
+type TraceRecord = Record<string, unknown>;
+
+type ToolCallParamsPayload = TraceRecord;
+
+type ToolCallResponsePayload = TraceRecord;
+
+interface ServiceManagerLike {
+    getServiceIfReady(serviceName: string): unknown;
+}
+
+interface ToolCallTraceServiceLike {
+    captureToolCall(
+        toolName: string,
+        params: ToolCallParamsPayload,
+        response: ToolCallResponsePayload,
+        success: boolean,
+        executionTime: number
+    ): Promise<void>;
+}
+
+interface PluginWithServices extends Plugin {
+    getService?(name: string): Promise<unknown>;
+}
+
+function toError(error: unknown, fallbackMessage: string): Error {
+    if (error instanceof Error) {
+        return error;
+    }
+
+    if (typeof error === 'string' && error.length > 0) {
+        return new Error(error);
+    }
+
+    return new Error(fallbackMessage);
+}
+
+function isSessionContextManager(value: unknown): value is SessionContextManager {
+    return value instanceof SessionContextManager;
+}
+
+function isToolCallTraceService(value: unknown): value is ToolCallTraceServiceLike {
+    return typeof value === 'object'
+        && value !== null
+        && typeof Reflect.get(value, 'captureToolCall') === 'function';
+}
+
+function isTraceRecord(value: unknown): value is TraceRecord {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function toTraceRecord(value: unknown): TraceRecord {
+    return isTraceRecord(value) ? value : {};
+}
 
 /**
  * Location: src/services/mcp/MCPConnectionManager.ts
- * 
+ *
  * This service manages the MCP server connection lifecycle, including:
  * - Server creation and initialization
  * - Connection handling and management
  * - Server lifecycle (start/stop/shutdown)
- * 
+ *
  * Used by: MCPConnector
  * Dependencies: MCPServer, Obsidian Events, SessionContextManager
  */
@@ -70,13 +124,13 @@ export interface MCPConnectionManagerInterface {
 export interface MCPConnectionStatus {
     /** Whether manager is initialized */
     isInitialized: boolean;
-    
+
     /** Whether server is running */
     isServerRunning: boolean;
-    
+
     /** Server creation timestamp */
     serverCreatedAt?: Date;
-    
+
     /** Last error encountered */
     lastError?: {
         message: string;
@@ -91,16 +145,22 @@ export class MCPConnectionManager implements MCPConnectionManagerInterface {
     private serverCreatedAt?: Date;
     private lastError?: { message: string; timestamp: Date };
     private sessionContextManager: SessionContextManager | null = null;
-    private serviceManager: any = null;
+    private serviceManager: ServiceManagerLike | null = null;
 
     constructor(
         private app: App,
         private plugin: Plugin,
         private events: Events,
-        serviceManager: any,
+        serviceManager: ServiceManagerLike | null,
         private customPromptStorage?: CustomPromptStorageService,
-        private onToolCall?: (toolName: string, params: any) => Promise<void>,
-        private onToolResponse?: (toolName: string, params: any, response: any, success: boolean, executionTime: number) => Promise<void>
+        private onToolCall?: (toolName: string, params: unknown) => Promise<void>,
+        private onToolResponse?: (
+            toolName: string,
+            params: unknown,
+            response: unknown,
+            success: boolean,
+            executionTime: number
+        ) => Promise<void>
     ) {
         this.serviceManager = serviceManager;
     }
@@ -115,12 +175,14 @@ export class MCPConnectionManager implements MCPConnectionManagerInterface {
                 throw new Error('[MCPConnectionManager] ServiceManager not available - cannot get SessionContextManager');
             }
 
-            this.sessionContextManager = this.serviceManager.getServiceIfReady('sessionContextManager');
-
-            if (!this.sessionContextManager) {
+            const sessionContextManager = this.serviceManager.getServiceIfReady('sessionContextManager');
+            if (!isSessionContextManager(sessionContextManager)) {
                 throw new Error('[MCPConnectionManager] SessionContextManager not available from ServiceManager');
             }
+
+            this.sessionContextManager = sessionContextManager;
         }
+
         return this.sessionContextManager;
     }
 
@@ -129,25 +191,23 @@ export class MCPConnectionManager implements MCPConnectionManagerInterface {
      */
     async initialize(): Promise<void> {
         if (this.isInitialized) {
-            return; // Already initialized
+            return;
         }
 
         try {
-            // Wire up ToolCallTraceService to onToolResponse callback
             await this.initializeToolCallTracing();
-
-            // Create the MCP server
             this.server = await this.createServer();
             this.isInitialized = true;
 
             logger.systemLog('MCP Connection Manager initialized successfully');
         } catch (error) {
+            const normalizedError = toError(error, 'Failed to initialize MCP connection manager');
             this.lastError = {
-                message: (error as Error).message,
+                message: normalizedError.message,
                 timestamp: new Date()
             };
 
-            logger.systemError(error as Error, 'MCP Connection Manager Initialization');
+            logger.systemError(normalizedError, 'MCP Connection Manager Initialization');
             throw new McpError(
                 ErrorCode.InternalError,
                 'Failed to initialize MCP connection manager',
@@ -161,35 +221,39 @@ export class MCPConnectionManager implements MCPConnectionManagerInterface {
      */
     private async initializeToolCallTracing(): Promise<void> {
         try {
-            // Get ToolCallTraceService from service manager
-            const pluginWithServices = this.plugin as Plugin & { getService?: (name: string) => Promise<unknown> };
+            const pluginWithServices = this.plugin as PluginWithServices;
             if (!pluginWithServices.getService) {
                 logger.systemWarn('Plugin does not support getService - tool call tracing disabled');
                 return;
             }
 
-            const toolCallTraceService = await pluginWithServices.getService('toolCallTraceService') as { captureToolCall: (toolName: string, params: unknown, response: unknown, success: boolean, executionTime: number) => Promise<void> } | null;
-            if (!toolCallTraceService) {
+            const toolCallTraceService = await pluginWithServices.getService('toolCallTraceService');
+            if (!isToolCallTraceService(toolCallTraceService)) {
                 logger.systemWarn('ToolCallTraceService not available - tool call tracing disabled');
                 return;
             }
 
-            // Wrap the existing onToolResponse callback to include tracing
             const originalOnToolResponse = this.onToolResponse;
             this.onToolResponse = async (toolName, params, response, success, executionTime) => {
-                // Call original callback first (if exists)
                 if (originalOnToolResponse) {
                     await originalOnToolResponse(toolName, params, response, success, executionTime);
                 }
 
-                // Capture tool call trace (non-blocking, errors handled internally)
-                await toolCallTraceService.captureToolCall(toolName, params, response, success, executionTime);
+                await toolCallTraceService.captureToolCall(
+                    toolName,
+                    toTraceRecord(params),
+                    toTraceRecord(response),
+                    success,
+                    executionTime
+                );
             };
 
             logger.systemLog('Tool call tracing initialized successfully');
         } catch (error) {
-            // Don't throw - tracing is optional
-            logger.systemWarn('Failed to initialize tool call tracing: ' + (error as Error).message);
+            logger.systemWarn(
+                'Failed to initialize tool call tracing: '
+                + toError(error, 'Unknown tracing initialization error').message
+            );
         }
     }
 
@@ -203,23 +267,24 @@ export class MCPConnectionManager implements MCPConnectionManagerInterface {
                 this.plugin,
                 this.events,
                 this.getSessionContextManagerFromService(),
-                undefined, // serviceContainer will be set later if needed
+                undefined,
                 this.customPromptStorage,
                 this.onToolCall,
                 this.onToolResponse
             );
 
             this.serverCreatedAt = new Date();
-            
             logger.systemLog('MCP Server created successfully');
+
             return server;
         } catch (error) {
+            const normalizedError = toError(error, 'Failed to create MCP server');
             this.lastError = {
-                message: (error as Error).message,
+                message: normalizedError.message,
                 timestamp: new Date()
             };
-            
-            logger.systemError(error as Error, 'MCP Server Creation');
+
+            logger.systemError(normalizedError, 'MCP Server Creation');
             throw new McpError(
                 ErrorCode.InternalError,
                 'Failed to create MCP server',
@@ -243,15 +308,16 @@ export class MCPConnectionManager implements MCPConnectionManagerInterface {
         try {
             await this.server.start();
             this.isServerRunning = true;
-            
+
             logger.systemLog('MCP Server started successfully');
         } catch (error) {
+            const normalizedError = toError(error, 'Failed to start MCP server');
             this.lastError = {
-                message: (error as Error).message,
+                message: normalizedError.message,
                 timestamp: new Date()
             };
-            
-            logger.systemError(error as Error, 'MCP Server Start');
+
+            logger.systemError(normalizedError, 'MCP Server Start');
             throw new McpError(
                 ErrorCode.InternalError,
                 'Failed to start MCP server',
@@ -265,21 +331,22 @@ export class MCPConnectionManager implements MCPConnectionManagerInterface {
      */
     async stop(): Promise<void> {
         if (!this.server) {
-            return; // No server to stop
+            return;
         }
 
         try {
             await this.server.stop();
             this.isServerRunning = false;
-            
+
             logger.systemLog('MCP Server stopped successfully');
         } catch (error) {
+            const normalizedError = toError(error, 'Failed to stop MCP server');
             this.lastError = {
-                message: (error as Error).message,
+                message: normalizedError.message,
                 timestamp: new Date()
             };
-            
-            logger.systemError(error as Error, 'MCP Server Stop');
+
+            logger.systemError(normalizedError, 'MCP Server Stop');
             throw new McpError(
                 ErrorCode.InternalError,
                 'Failed to stop MCP server',
@@ -302,15 +369,16 @@ export class MCPConnectionManager implements MCPConnectionManagerInterface {
             this.isServerRunning = false;
             this.serverCreatedAt = undefined;
             this.lastError = undefined;
-            
+
             logger.systemLog('MCP Connection Manager shut down successfully');
         } catch (error) {
+            const normalizedError = toError(error, 'Failed to shutdown MCP connection manager');
             this.lastError = {
-                message: (error as Error).message,
+                message: normalizedError.message,
                 timestamp: new Date()
             };
-            
-            logger.systemError(error as Error, 'MCP Connection Manager Shutdown');
+
+            logger.systemError(normalizedError, 'MCP Connection Manager Shutdown');
             throw new McpError(
                 ErrorCode.InternalError,
                 'Failed to shutdown MCP connection manager',
@@ -351,7 +419,7 @@ export class MCPConnectionManager implements MCPConnectionManagerInterface {
             this.server.reinitializeRequestRouter();
             logger.systemLog('Request router reinitialized successfully');
         } catch (error) {
-            logger.systemError(error as Error, 'Request Router Reinitialization');
+            logger.systemError(toError(error, 'Failed to reinitialize request router'), 'Request Router Reinitialization');
             throw new McpError(
                 ErrorCode.InternalError,
                 'Failed to reinitialize request router',

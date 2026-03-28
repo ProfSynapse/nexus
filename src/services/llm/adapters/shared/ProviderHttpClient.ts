@@ -13,6 +13,23 @@ import { requestUrl } from 'obsidian';
 import { LLMProviderError } from '../types';
 import { hasNodeRuntime } from '../../../../utils/platform';
 
+type HttpModule = typeof import('http');
+type HttpsModule = typeof import('https');
+type StreamModule = typeof import('stream');
+type ReadableStream = import('stream').Readable;
+
+type NodeModuleMap = {
+  http: HttpModule;
+  https: HttpsModule;
+  stream: StreamModule;
+};
+
+type RuntimeRequire = <K extends keyof NodeModuleMap>(moduleName: K) => NodeModuleMap[K];
+
+type ModuleWithRequire = {
+  require: RuntimeRequire;
+};
+
 export interface ProviderHttpRequest {
   url: string;
   provider: string;
@@ -177,7 +194,7 @@ export class ProviderHttpClient {
    */
   static async requestStream(
     config: ProviderStreamRequest
-  ): Promise<NodeJS.ReadableStream> {
+  ): Promise<ReadableStream> {
     enforceHttps(config.url);
 
     if (!hasNodeRuntime()) {
@@ -189,13 +206,11 @@ export class ProviderHttpClient {
     const isHttps = parsed.protocol === 'https:';
 
     // Dynamically require Node.js modules (available in Electron)
-    const nodeModule = isHttps
-      ? require('https') as typeof import('https')
-      : require('http') as typeof import('http');
+    const nodeModule = isHttps ? this.getRuntimeRequire()('https') : this.getRuntimeRequire()('http');
 
     const timeoutMs = config.timeoutMs ?? 120_000;
 
-    return new Promise<NodeJS.ReadableStream>((resolve, reject) => {
+    return new Promise<ReadableStream>((resolve, reject) => {
       const requestOptions = {
         hostname: parsed.hostname,
         port: parsed.port || (isHttps ? 443 : 80),
@@ -226,7 +241,7 @@ export class ProviderHttpClient {
               }
             ));
           });
-          res.on('error', (err) => reject(err));
+          res.on('error', (err) => reject(this.toError(err, 'Streaming response failed')));
           return;
         }
 
@@ -268,7 +283,7 @@ export class ProviderHttpClient {
    */
   private static async requestStreamBufferedFallback(
     config: ProviderStreamRequest
-  ): Promise<NodeJS.ReadableStream> {
+  ): Promise<ReadableStream> {
     const response = await requestUrl({
       url: config.url,
       method: config.method ?? 'POST',
@@ -295,7 +310,7 @@ export class ProviderHttpClient {
     }
 
     // Wrap the buffered text as a minimal readable stream
-    const { Readable } = require('stream') as typeof import('stream');
+    const { Readable } = this.getRuntimeRequire()('stream');
     const readable = new Readable({
       read() {
         this.push(Buffer.from(response.text, 'utf-8'));
@@ -349,9 +364,45 @@ export class ProviderHttpClient {
         })
         .catch((error) => {
           clearTimeout(timeoutId);
-          reject(error);
+          reject(this.toError(error, 'HTTP request failed'));
         });
     });
+  }
+
+  private static getRuntimeRequire(): RuntimeRequire {
+    const globalRequire = this.getGlobalValue('require');
+    if (typeof globalRequire === 'function') {
+      return globalRequire as RuntimeRequire;
+    }
+
+    const runtimeModule = this.getGlobalValue('module');
+    if (this.isModuleWithRequire(runtimeModule)) {
+      return runtimeModule.require;
+    }
+
+    throw new LLMProviderError('Node runtime is unavailable for streaming HTTP requests.', 'shared', 'CONFIGURATION_ERROR');
+  }
+
+  private static getGlobalValue(propertyName: string): unknown {
+    return Reflect.get(globalThis as object, propertyName);
+  }
+
+  private static isModuleWithRequire(value: unknown): value is ModuleWithRequire {
+    return typeof value === 'object'
+      && value !== null
+      && typeof Reflect.get(value, 'require') === 'function';
+  }
+
+  private static toError(error: unknown, fallbackMessage: string): Error {
+    if (error instanceof Error) {
+      return error;
+    }
+
+    if (typeof error === 'string' && error.length > 0) {
+      return new Error(error);
+    }
+
+    return new Error(fallbackMessage);
   }
 
   private static sleep(ms: number): Promise<void> {

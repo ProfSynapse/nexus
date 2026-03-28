@@ -65,13 +65,86 @@
  */
 export interface MigratableDatabase {
   /** Execute SQL and return results */
-  exec(sql: string): { values: any[][] }[];
+  exec(sql: string): SQLiteExecResult[];
   /** Run a statement (INSERT/UPDATE/DELETE) with optional parameters */
-  run(sql: string, params?: any[]): void;
+  run(sql: string, params?: SQLiteValue[]): void;
 }
 
 // Alias for backward compatibility
 type Database = MigratableDatabase;
+
+type SQLiteValue = string | number | null | Uint8Array;
+type SQLiteRow = SQLiteValue[];
+
+interface SQLiteExecResult {
+  values: SQLiteRow[];
+}
+
+interface ConversationMetadata {
+  chatSettings?: {
+    workspaceId?: string;
+    sessionId?: string;
+  };
+  workspaceId?: string;
+  sessionId?: string;
+  workflowId?: string;
+  runTrigger?: string;
+  scheduledFor?: number;
+  runKey?: string;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function getStringProperty(record: Record<string, unknown>, key: string): string | undefined {
+  const value = record[key];
+  return typeof value === 'string' ? value : undefined;
+}
+
+function getNumberProperty(record: Record<string, unknown>, key: string): number | undefined {
+  const value = record[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function getStringCell(row: SQLiteRow, index: number): string | undefined {
+  const value = row[index];
+  return typeof value === 'string' ? value : undefined;
+}
+
+function getNumberCell(row: SQLiteRow, index: number): number | undefined {
+  const value = row[index];
+  return typeof value === 'number' ? value : undefined;
+}
+
+function parseConversationMetadata(metadataJson: string): ConversationMetadata | null {
+  try {
+    const parsed: unknown = JSON.parse(metadataJson);
+    if (!isRecord(parsed)) {
+      return null;
+    }
+
+    const chatSettingsValue = parsed.chatSettings;
+    const chatSettings = isRecord(chatSettingsValue)
+      ? {
+          workspaceId: getStringProperty(chatSettingsValue, 'workspaceId'),
+          sessionId: getStringProperty(chatSettingsValue, 'sessionId'),
+        }
+      : undefined;
+
+    return {
+      chatSettings,
+      workspaceId: getStringProperty(parsed, 'workspaceId'),
+      sessionId: getStringProperty(parsed, 'sessionId'),
+      workflowId: getStringProperty(parsed, 'workflowId'),
+      runTrigger: getStringProperty(parsed, 'runTrigger'),
+      scheduledFor: getNumberProperty(parsed, 'scheduledFor'),
+      runKey: getStringProperty(parsed, 'runKey'),
+    };
+  } catch {
+    return null;
+  }
+}
 
 export const CURRENT_SCHEMA_VERSION = 11;
 
@@ -211,40 +284,43 @@ export const MIGRATIONS: Migration[] = [
         errorMessage TEXT
       )`,
     ],
-    migrationFn: (db: MigratableDatabase) => {
+    migrationFn: (db: MigratableDatabase): void => {
       // Backfill denormalized workspaceId/sessionId from metadataJson
       // Cannot use json_extract() — may not be available in WASM SQLite
       const rows = db.exec('SELECT id, metadataJson FROM conversations WHERE metadataJson IS NOT NULL');
       if (rows.length === 0) return;
 
       for (const row of rows[0].values) {
-        const id = row[0] as string;
-        const metadataJson = row[1] as string;
+        const id = getStringCell(row, 0);
+        const metadataJson = getStringCell(row, 1);
+
+        if (!id || !metadataJson) {
+          continue;
+        }
 
         let workspaceId: string | null = null;
         let sessionId: string | null = null;
 
-        try {
-          const metadata = JSON.parse(metadataJson);
-
-          // Try chatSettings path first (ConversationManager-created conversations)
-          if (metadata?.chatSettings?.workspaceId) {
-            workspaceId = metadata.chatSettings.workspaceId;
-          }
-          if (metadata?.chatSettings?.sessionId) {
-            sessionId = metadata.chatSettings.sessionId;
-          }
-
-          // Fall back to top-level path (directly-created conversations)
-          if (!workspaceId && metadata?.workspaceId) {
-            workspaceId = metadata.workspaceId;
-          }
-          if (!sessionId && metadata?.sessionId) {
-            sessionId = metadata.sessionId;
-          }
-        } catch {
+        const metadata = parseConversationMetadata(metadataJson);
+        if (!metadata) {
           // Skip conversations with unparseable metadataJson
           continue;
+        }
+
+        // Try chatSettings path first (ConversationManager-created conversations)
+        if (metadata.chatSettings?.workspaceId) {
+          workspaceId = metadata.chatSettings.workspaceId;
+        }
+        if (metadata.chatSettings?.sessionId) {
+          sessionId = metadata.chatSettings.sessionId;
+        }
+
+        // Fall back to top-level path (directly-created conversations)
+        if (!workspaceId && metadata.workspaceId) {
+          workspaceId = metadata.workspaceId;
+        }
+        if (!sessionId && metadata.sessionId) {
+          sessionId = metadata.sessionId;
         }
 
         if (workspaceId || sessionId) {
@@ -354,29 +430,34 @@ export const MIGRATIONS: Migration[] = [
       'CREATE INDEX IF NOT EXISTS idx_conversations_scheduledFor ON conversations(scheduledFor)',
       'CREATE INDEX IF NOT EXISTS idx_conversations_runKey ON conversations(runKey)'
     ],
-    migrationFn: (db: MigratableDatabase) => {
+    migrationFn: (db: MigratableDatabase): void => {
       const rows = db.exec('SELECT id, metadataJson FROM conversations WHERE metadataJson IS NOT NULL');
       if (rows.length === 0) return;
 
       for (const row of rows[0].values) {
-        const id = row[0] as string;
-        const metadataJson = row[1] as string;
+        const id = getStringCell(row, 0);
+        const metadataJson = getStringCell(row, 1);
 
-        try {
-          const metadata = JSON.parse(metadataJson);
-          const workflowId = metadata?.workflowId;
-          const runTrigger = metadata?.runTrigger;
-          const scheduledFor = metadata?.scheduledFor;
-          const runKey = metadata?.runKey;
+        if (!id || !metadataJson) {
+          continue;
+        }
 
-          if (workflowId || runTrigger || scheduledFor || runKey) {
-            db.run(
-              'UPDATE conversations SET workflowId = ?, runTrigger = ?, scheduledFor = ?, runKey = ? WHERE id = ?',
-              [workflowId ?? null, runTrigger ?? null, scheduledFor ?? null, runKey ?? null, id]
-            );
-          }
-        } catch {
+        const metadata = parseConversationMetadata(metadataJson);
+        if (!metadata) {
           // Ignore unparseable metadata rows.
+          continue;
+        }
+
+        const workflowId = metadata.workflowId ?? null;
+        const runTrigger = metadata.runTrigger ?? null;
+        const scheduledFor = metadata.scheduledFor ?? null;
+        const runKey = metadata.runKey ?? null;
+
+        if (workflowId || runTrigger || scheduledFor || runKey) {
+          db.run(
+            'UPDATE conversations SET workflowId = ?, runTrigger = ?, scheduledFor = ?, runKey = ? WHERE id = ?',
+            [workflowId, runTrigger, scheduledFor, runKey, id]
+          );
         }
       }
     }
@@ -439,7 +520,8 @@ export class SchemaMigrator {
         return 1;
       }
 
-      return result[0].values[0][0] as number;
+      const version = getNumberCell(result[0].values[0], 0);
+      return version ?? 1;
     } catch (error) {
       console.error('[SchemaMigrator] Error getting current version:', error);
       return 0;
@@ -457,7 +539,9 @@ export class SchemaMigrator {
 
       // PRAGMA table_info returns: cid, name, type, notnull, dflt_value, pk
       // Column name is at index 1
-      const columns = result[0].values.map(row => row[1] as string);
+      const columns = result[0].values
+        .map((row) => getStringCell(row, 1))
+        .filter((column): column is string => column !== undefined);
       return columns.includes(columnName);
     } catch (error) {
       console.error(`[SchemaMigrator] Error checking column ${tableName}.${columnName}:`, error);

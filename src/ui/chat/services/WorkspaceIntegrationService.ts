@@ -9,14 +9,34 @@
  */
 
 import { App, TFile, TFolder } from 'obsidian';
-import { WorkspaceContext } from '../../../database/types/workspace/WorkspaceTypes';
 import { VaultStructure, WorkspaceSummary } from './SystemPromptBuilder';
 import { getNexusPlugin } from '../../../utils/pluginLocator';
 import type NexusPlugin from '../../../main';
 import type { WorkspaceService } from '../../../services/WorkspaceService';
 import type { SessionContextManager } from '../../../services/SessionContextManager';
 import type { AgentManager } from '../../../services/AgentManager';
-import type { IAgent } from '../../../agents/interfaces/IAgent';
+
+interface WorkspaceToolResult {
+  success?: boolean;
+  data?: Record<string, unknown>;
+  workspaceContext?: unknown;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function isWorkspaceToolResult(value: unknown): value is WorkspaceToolResult {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  const success = value.success;
+  const data = value.data;
+
+  return (success === undefined || typeof success === 'boolean')
+    && (data === undefined || isRecord(data));
+}
 
 /**
  * Service for workspace integration with chat
@@ -55,12 +75,12 @@ export class WorkspaceIntegrationService {
 
           if (memoryManager) {
             // Execute loadWorkspace tool to get comprehensive workspace data
-            const result = await memoryManager.executeTool('loadWorkspace', {
+            const result: unknown = await memoryManager.executeTool('loadWorkspace', {
               id: resolvedWorkspaceId,
               limit: 3 // Get recent sessions, states, and activity
             });
 
-            if (result.success && result.data) {
+            if (isWorkspaceToolResult(result) && result.success && result.data) {
               // Return the comprehensive workspace data from the tool
               return {
                 id: resolvedWorkspaceId,
@@ -117,7 +137,7 @@ export class WorkspaceIntegrationService {
       }
 
       return '[File not found]';
-    } catch (error) {
+    } catch {
       return '[Error reading file]';
     }
   }

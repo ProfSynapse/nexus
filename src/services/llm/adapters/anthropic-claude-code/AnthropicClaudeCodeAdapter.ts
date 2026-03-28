@@ -1,5 +1,4 @@
 import { Platform, Vault } from 'obsidian';
-import type { ChildProcess } from 'child_process';
 import { BaseAdapter } from '../BaseAdapter';
 import { resolveDesktopBinaryPath } from '../../../../utils/binaryDiscovery';
 import { getVaultBasePath, getConnectorPath } from '../../../../utils/cliPathUtils';
@@ -15,15 +14,56 @@ import {
   LLMProviderError
 } from '../types';
 import { ModelRegistry } from '../ModelRegistry';
+import type { ModelSpec } from '../ModelRegistry';
 import { getPrimaryServerKey } from '../../../../constants/branding';
 
+type JsonRecord = Record<string, unknown>;
 type ClaudeCodeToolCall = NonNullable<StreamChunk['toolCalls']>[number];
+type DesktopChildProcess = ReturnType<typeof spawnDesktopProcess>;
+type DesktopChildProcessModule = Parameters<typeof spawnDesktopProcess>[0];
+type DesktopSpawnOptions = Parameters<typeof spawnDesktopProcess>[3];
+type ProcessStdout = NonNullable<DesktopChildProcess['stdout']>;
+
+interface FsPromisesModule {
+  mkdtemp(prefix: string): Promise<string>;
+  writeFile(path: string, data: string, encoding: string): Promise<void>;
+  rm(path: string, options: { recursive: boolean; force: boolean }): Promise<void>;
+}
+
+interface OsModule {
+  tmpdir(): string;
+}
+
+interface PathModule {
+  join(...paths: string[]): string;
+}
+
+interface ReadlineInterfaceLike extends AsyncIterable<string> {
+  close(): void;
+}
+
+interface ReadlineModule {
+  createInterface(options: { input: ProcessStdout }): ReadlineInterfaceLike;
+}
+
+interface ProcessError extends Error {
+  code?: string;
+}
+
+type BuiltinModuleMap = {
+  'fs/promises': FsPromisesModule;
+  os: OsModule;
+  path: PathModule;
+  child_process: DesktopChildProcessModule;
+  readline: ReadlineModule;
+};
+
 const MAX_SAFE_WINDOWS_ARGV_CHARS = 24_000;
 
 export class AnthropicClaudeCodeAdapter extends BaseAdapter {
   readonly name = 'anthropic-claude-code';
   readonly baseUrl = 'claude-code://local';
-  private activeProcess: ChildProcess | null = null;
+  private activeProcess: DesktopChildProcess | null = null;
 
   constructor(private vault: Vault) {
     super('claude-code-local-auth', 'claude-sonnet-4-6', 'claude-code://local', false);
@@ -76,11 +116,11 @@ export class AnthropicClaudeCodeAdapter extends BaseAdapter {
       );
     }
 
-    const fsPromises = require('fs/promises') as typeof import('fs/promises');
-    const osMod = require('os') as typeof import('os');
-    const pathMod = require('path') as typeof import('path');
-    const childProcess = require('child_process') as typeof import('child_process');
-    const readline = require('readline') as typeof import('readline');
+    const fsPromises = this.loadNodeBuiltin('fs/promises');
+    const osMod = this.loadNodeBuiltin('os');
+    const pathMod = this.loadNodeBuiltin('path');
+    const childProcess = this.loadNodeBuiltin('child_process');
+    const readline = this.loadNodeBuiltin('readline');
 
     const tempDir = await fsPromises.mkdtemp(pathMod.join(osMod.tmpdir(), 'nexus-claude-code-adapter-'));
     const mcpConfigPath = pathMod.join(tempDir, 'mcp.json');
@@ -140,78 +180,83 @@ export class AnthropicClaudeCodeAdapter extends BaseAdapter {
       delete env.ANTHROPIC_API_KEY;
       delete env.ANTHROPIC_AUTH_TOKEN;
 
-      const child = spawnDesktopProcess(childProcess, runtime.claudePath, args, {
+      const spawnOptions: DesktopSpawnOptions = {
         cwd: runtime.vaultPath,
         env,
         stdio: ['pipe', 'pipe', 'pipe']
-      });
+      };
+      const child = spawnDesktopProcess(childProcess, runtime.claudePath, args, spawnOptions);
       this.activeProcess = child;
 
       if (!child.stdin || !child.stdout || !child.stderr) {
         throw new LLMProviderError('Failed to capture Claude Code process output.', this.name, 'CONFIGURATION_ERROR');
       }
 
-      const closePromise = new Promise<{ exitCode: number | null; signal: NodeJS.Signals | null }>((resolve, reject) => {
-        child.once('error', (error: NodeJS.ErrnoException) => {
+      const closePromise = new Promise<{ exitCode: number | null; signal: string | null }>((resolve, reject) => {
+        child.once('error', (error: ProcessError) => {
           reject(this.mapProcessError(error));
         });
-        child.once('close', (exitCode: number | null, signal: NodeJS.Signals | null) => {
+        child.once('close', (exitCode: number | null, signal: string | null) => {
           resolve({ exitCode, signal });
         });
       });
 
-      child.stderr.on('data', (chunk: Buffer | string) => {
-        stderr += chunk.toString();
+      child.stderr.on('data', (chunk: unknown) => {
+        stderr += this.coerceChunkToString(chunk);
       });
 
       await this.writePromptToStdin(child, prompt);
 
       const stdoutReader = readline.createInterface({ input: child.stdout });
 
-      for await (const line of stdoutReader) {
-        const parsed = this.parseStreamJsonLine(line);
-        if (!parsed) {
-          continue;
+      try {
+        for await (const line of stdoutReader) {
+          const parsed = this.parseStreamJsonLine(line);
+          if (!parsed) {
+            continue;
+          }
+
+          if (parsed.type === 'assistant') {
+            const contentBlocks = this.extractContentBlocks(this.extractMessagePayload(parsed));
+            const reasoningDelta = this.collectReasoningText(contentBlocks);
+            if (reasoningDelta) {
+              yield {
+                content: '',
+                complete: false,
+                reasoning: reasoningDelta,
+                reasoningComplete: true
+              };
+            }
+
+            const toolUses = this.collectToolUses(contentBlocks);
+            for (const toolUse of toolUses) {
+              toolCalls.set(toolUse.id, toolUse);
+            }
+
+            const textDelta = this.collectAssistantText(contentBlocks);
+            if (textDelta) {
+              accumulatedText += textDelta;
+              yield {
+                content: textDelta,
+                complete: false
+              };
+            }
+          } else if (parsed.type === 'user') {
+            const contentBlocks = this.extractContentBlocks(this.extractMessagePayload(parsed));
+            this.applyToolResults(contentBlocks, toolCalls);
+          } else if (parsed.type === 'result') {
+            const resultText = typeof parsed.result === 'string' ? parsed.result : '';
+            if (!accumulatedText && resultText) {
+              accumulatedText = resultText;
+              yield {
+                content: resultText,
+                complete: false
+              };
+            }
         }
-
-        if (parsed.type === 'assistant') {
-          const contentBlocks = this.extractContentBlocks(this.extractMessagePayload(parsed));
-          const reasoningDelta = this.collectReasoningText(contentBlocks);
-          if (reasoningDelta) {
-            yield {
-              content: '',
-              complete: false,
-              reasoning: reasoningDelta,
-              reasoningComplete: true
-            };
-          }
-
-          const toolUses = this.collectToolUses(contentBlocks);
-          for (const toolUse of toolUses) {
-            toolCalls.set(toolUse.id, toolUse);
-          }
-
-          const textDelta = this.collectAssistantText(contentBlocks);
-          if (textDelta) {
-            accumulatedText += textDelta;
-            yield {
-              content: textDelta,
-              complete: false
-            };
-          }
-        } else if (parsed.type === 'user') {
-          const contentBlocks = this.extractContentBlocks(this.extractMessagePayload(parsed));
-          this.applyToolResults(contentBlocks, toolCalls);
-        } else if (parsed.type === 'result') {
-          const resultText = typeof parsed.result === 'string' ? parsed.result : '';
-          if (!accumulatedText && resultText) {
-            accumulatedText = resultText;
-            yield {
-              content: resultText,
-              complete: false
-            };
-          }
         }
+      } finally {
+        stdoutReader.close();
       }
 
       const closeResult = await closePromise;
@@ -251,8 +296,8 @@ export class AnthropicClaudeCodeAdapter extends BaseAdapter {
   }
 
   async listModels(): Promise<ModelInfo[]> {
-    const models = ModelRegistry.getProviderModels('anthropic-claude-code');
-    return models.map(model => ModelRegistry.toModelInfo(model));
+    const models: ModelSpec[] = ModelRegistry.getProviderModels('anthropic-claude-code');
+    return models.map((model) => this.toModelInfo(model));
   }
 
   getCapabilities(): ProviderCapabilities {
@@ -303,49 +348,102 @@ export class AnthropicClaudeCodeAdapter extends BaseAdapter {
     };
   }
 
-  private parseStreamJsonLine(line: string): Record<string, unknown> | null {
-    const trimmed = line.trim();
-    if (!trimmed) {
-      return null;
+  private loadNodeBuiltin<K extends keyof BuiltinModuleMap>(moduleName: K): BuiltinModuleMap[K] {
+    const processWithBuiltinLoader = process as typeof process & {
+      getBuiltinModule?: (id: string) => unknown;
+    };
+    const builtinLoader = processWithBuiltinLoader.getBuiltinModule;
+    if (typeof builtinLoader === 'function') {
+      const loadedModule = builtinLoader(moduleName) as BuiltinModuleMap[K] | undefined;
+      if (loadedModule) {
+        return loadedModule;
+      }
     }
 
+    const globalScope = globalThis as typeof globalThis & {
+      require?: (id: string) => unknown;
+    };
+    const globalRequire = globalScope.require;
+    if (typeof globalRequire === 'function') {
+      const loadedModule = globalRequire(moduleName) as BuiltinModuleMap[K];
+      return loadedModule;
+    }
+
+    throw new LLMProviderError(
+      `Node builtin module "${moduleName}" is unavailable in this runtime.`,
+      this.name,
+      'CONFIGURATION_ERROR'
+    );
+  }
+
+  private isJsonRecord(value: unknown): value is JsonRecord {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+  }
+
+  private isUnknownArray(value: unknown): value is unknown[] {
+    return Array.isArray(value);
+  }
+
+  private coerceChunkToString(chunk: unknown): string {
+    if (typeof chunk === 'string') {
+      return chunk;
+    }
+
+    if (chunk instanceof Uint8Array) {
+      return new TextDecoder().decode(chunk);
+    }
+
+    return String(chunk);
+  }
+
+  private parseJsonRecord(value: string): JsonRecord | null {
     try {
-      return JSON.parse(trimmed) as Record<string, unknown>;
+      const parsed: unknown = JSON.parse(value);
+      return this.isJsonRecord(parsed) ? parsed : null;
     } catch {
       return null;
     }
   }
 
-  private extractMessagePayload(parsed: Record<string, unknown>): Record<string, unknown> | null {
+  private parseStreamJsonLine(line: string): JsonRecord | null {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    return this.parseJsonRecord(trimmed);
+  }
+
+  private extractMessagePayload(parsed: JsonRecord): JsonRecord | null {
     const message = parsed.message;
-    if (message && typeof message === 'object' && !Array.isArray(message)) {
-      return message as Record<string, unknown>;
+    if (this.isJsonRecord(message)) {
+      return message;
     }
 
     return parsed;
   }
 
-  private extractContentBlocks(messagePayload: Record<string, unknown> | null): Record<string, unknown>[] {
+  private extractContentBlocks(messagePayload: JsonRecord | null): JsonRecord[] {
     if (!messagePayload) {
       return [];
     }
 
     const content = messagePayload.content;
-    if (!Array.isArray(content)) {
+    if (!this.isUnknownArray(content)) {
       return [];
     }
 
-    return content.filter((block): block is Record<string, unknown> => typeof block === 'object' && block !== null && !Array.isArray(block));
+    return content.filter((block): block is JsonRecord => this.isJsonRecord(block));
   }
 
-  private collectAssistantText(contentBlocks: Record<string, unknown>[]): string {
+  private collectAssistantText(contentBlocks: JsonRecord[]): string {
     return contentBlocks
       .filter((block) => block.type === 'text')
       .map((block) => typeof block.text === 'string' ? block.text : '')
       .join('');
   }
 
-  private collectReasoningText(contentBlocks: Record<string, unknown>[]): string {
+  private collectReasoningText(contentBlocks: JsonRecord[]): string {
     return contentBlocks
       .filter((block) => block.type === 'thinking' || block.type === 'reasoning')
       .map((block) => {
@@ -363,7 +461,7 @@ export class AnthropicClaudeCodeAdapter extends BaseAdapter {
       .join('');
   }
 
-  private collectToolUses(contentBlocks: Record<string, unknown>[]): ClaudeCodeToolCall[] {
+  private collectToolUses(contentBlocks: JsonRecord[]): ClaudeCodeToolCall[] {
     return contentBlocks
       .filter((block) => block.type === 'tool_use')
       .map((block, index) => {
@@ -388,7 +486,7 @@ export class AnthropicClaudeCodeAdapter extends BaseAdapter {
   }
 
   private applyToolResults(
-    contentBlocks: Record<string, unknown>[],
+    contentBlocks: JsonRecord[],
     toolCalls: Map<string, ClaudeCodeToolCall>
   ): void {
     for (const block of contentBlocks) {
@@ -427,8 +525,8 @@ export class AnthropicClaudeCodeAdapter extends BaseAdapter {
   }
 
   private normalizeToolInput(input: unknown): Record<string, unknown> {
-    if (input && typeof input === 'object' && !Array.isArray(input)) {
-      return input as Record<string, unknown>;
+    if (this.isJsonRecord(input)) {
+      return input;
     }
 
     return {};
@@ -439,7 +537,7 @@ export class AnthropicClaudeCodeAdapter extends BaseAdapter {
       return content;
     }
 
-    if (!Array.isArray(content)) {
+    if (!this.isUnknownArray(content)) {
       return content;
     }
 
@@ -448,7 +546,11 @@ export class AnthropicClaudeCodeAdapter extends BaseAdapter {
         return block;
       }
 
-      const typedBlock = block as Record<string, unknown>;
+      const typedBlock = this.isJsonRecord(block) ? block : null;
+      if (!typedBlock) {
+        return block;
+      }
+
       if (typedBlock.type === 'text' && typeof typedBlock.text === 'string') {
         return typedBlock.text;
       }
@@ -479,10 +581,10 @@ export class AnthropicClaudeCodeAdapter extends BaseAdapter {
     const handle = runCliProcess(claudePath, ['auth', 'status'], { cwd, env });
     const result = await handle.result;
     try {
-      const parsed = JSON.parse(result.stdout) as { loggedIn?: boolean; authMethod?: string };
+      const parsed = this.parseJsonRecord(result.stdout);
       return {
-        loggedIn: !!parsed.loggedIn,
-        authMethod: parsed.authMethod || 'unknown'
+        loggedIn: parsed?.loggedIn === true,
+        authMethod: typeof parsed?.authMethod === 'string' ? parsed.authMethod : 'unknown'
       };
     } catch {
       return {
@@ -494,6 +596,26 @@ export class AnthropicClaudeCodeAdapter extends BaseAdapter {
 
   private estimateArgvChars(command: string, args: string[]): number {
     return [command, ...args].reduce((total, value) => total + value.length + 1, 0);
+  }
+
+  private toModelInfo(model: ModelSpec): ModelInfo {
+    return {
+      id: model.apiName,
+      name: model.name,
+      contextWindow: model.contextWindow,
+      maxOutputTokens: model.maxTokens,
+      supportsJSON: model.capabilities.supportsJSON,
+      supportsImages: model.capabilities.supportsImages,
+      supportsFunctions: model.capabilities.supportsFunctions,
+      supportsStreaming: model.capabilities.supportsStreaming,
+      supportsThinking: model.capabilities.supportsThinking,
+      pricing: {
+        inputPerMillion: model.inputCostPerMillion,
+        outputPerMillion: model.outputCostPerMillion,
+        currency: 'USD',
+        lastUpdated: new Date().toISOString()
+      }
+    };
   }
 
   private assertSafeWindowsArgv(command: string, args: string[]): void {
@@ -511,7 +633,7 @@ export class AnthropicClaudeCodeAdapter extends BaseAdapter {
     }
   }
 
-  private async writePromptToStdin(child: ChildProcess, prompt: string): Promise<void> {
+  private async writePromptToStdin(child: DesktopChildProcess, prompt: string): Promise<void> {
     const stdin = child.stdin;
     if (!stdin) {
       throw new LLMProviderError('Failed to open Claude Code stdin for prompt input.', this.name, 'CONFIGURATION_ERROR');
@@ -532,8 +654,8 @@ export class AnthropicClaudeCodeAdapter extends BaseAdapter {
   }
 
   private mapProcessError(error: Error): LLMProviderError {
-    const errnoError = error as NodeJS.ErrnoException;
-    if (errnoError.code === 'ENAMETOOLONG' || errnoError.code === 'E2BIG') {
+    const errorCode = this.getProcessErrorCode(error);
+    if (errorCode === 'ENAMETOOLONG' || errorCode === 'E2BIG') {
       return new LLMProviderError(
         'Claude Code could not start because the local CLI command was too long for this platform. Reduce attached context files or shorten the prompt and try again.',
         this.name,
@@ -548,5 +670,11 @@ export class AnthropicClaudeCodeAdapter extends BaseAdapter {
       'PROVIDER_ERROR',
       error
     );
+  }
+
+  private getProcessErrorCode(error: Error): string | undefined {
+    const errorWithCode = error as Error & { code?: unknown };
+    const maybeCode = errorWithCode.code;
+    return typeof maybeCode === 'string' ? maybeCode : undefined;
   }
 }

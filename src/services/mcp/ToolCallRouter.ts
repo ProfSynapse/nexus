@@ -36,14 +36,42 @@ export interface ToolCallResponse {
     content: Array<{
         type: 'text' | 'resource';
         text?: string;
-        resource?: any;
+        resource?: unknown;
     }>;
     isError?: boolean;
     error?: {
         code: string;
         message: string;
-        data?: any;
+        data?: unknown;
     };
+}
+
+interface AgentToolExecutor {
+    executeAgentTool(agent: string, tool: string, params: Record<string, unknown>): Promise<unknown>;
+}
+
+interface BatchOperation {
+    type?: unknown;
+    params?: {
+        filePath?: unknown;
+    };
+    path?: unknown;
+}
+
+function isBatchOperation(value: unknown): value is BatchOperation {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function toError(error: unknown, fallbackMessage: string): Error {
+    if (error instanceof Error) {
+        return error;
+    }
+
+    if (typeof error === 'string' && error.length > 0) {
+        return new Error(error);
+    }
+
+    return new Error(fallbackMessage);
 }
 
 export interface ToolCallRouterInterface {
@@ -92,7 +120,7 @@ export interface ValidationResult {
 }
 
 export class ToolCallRouter implements ToolCallRouterInterface {
-    private server: { executeAgentTool: (agent: string, tool: string, params: Record<string, unknown>) => Promise<unknown> } | null = null;
+    private server: AgentToolExecutor | null = null;
 
     constructor() {}
 
@@ -158,7 +186,7 @@ export class ToolCallRouter implements ToolCallRouterInterface {
                 throw error;
             }
             
-            logger.systemError(error as Error, 'Agent Tool Execution');
+            logger.systemError(toError(error, 'Agent tool execution failed'), 'Agent Tool Execution');
             throw new McpError(
                 ErrorCode.InternalError,
                 `Failed to execute ${agent}_${tool}`,
@@ -186,7 +214,7 @@ export class ToolCallRouter implements ToolCallRouterInterface {
             try {
                 this.parseToolName(request.params.name);
             } catch (error) {
-                errors.push((error as Error).message);
+                errors.push(toError(error, 'Invalid tool name').message);
             }
         }
 
@@ -198,9 +226,10 @@ export class ToolCallRouter implements ToolCallRouterInterface {
      */
     validateBatchOperations(params: Record<string, unknown>): void {
         // Validate batch operations if they exist
-        if (params && params.operations && Array.isArray(params.operations)) {
-            params.operations.forEach((operation: any, index: number) => {
-                if (!operation || typeof operation !== 'object') {
+        const operations = params.operations;
+        if (Array.isArray(operations)) {
+            operations.forEach((operation, index: number) => {
+                if (!isBatchOperation(operation)) {
                     throw new McpError(
                         ErrorCode.InvalidParams,
                         `Invalid operation at index ${index} in batch operations: operation must be an object`
@@ -215,7 +244,7 @@ export class ToolCallRouter implements ToolCallRouterInterface {
                 }
 
                 // Check for either filePath in params or path at the operation level
-                if ((!operation.params || !operation.params.filePath) && !operation.path) {
+                if (!operation.params?.filePath && !operation.path) {
                     throw new McpError(
                         ErrorCode.InvalidParams,
                         `Invalid operation at index ${index} in batch operations: missing 'filePath' property in params`
@@ -225,8 +254,9 @@ export class ToolCallRouter implements ToolCallRouterInterface {
         }
 
         // Validate batch read paths if they exist
-        if (params && params.paths && Array.isArray(params.paths)) {
-            params.paths.forEach((path: any, index: number) => {
+        const paths = params.paths;
+        if (Array.isArray(paths)) {
+            paths.forEach((path, index: number) => {
                 if (typeof path !== 'string') {
                     throw new McpError(
                         ErrorCode.InvalidParams,
@@ -240,7 +270,7 @@ export class ToolCallRouter implements ToolCallRouterInterface {
     /**
      * Sets the server reference for agent tool execution
      */
-    setServer(server: { executeAgentTool: (agent: string, tool: string, params: Record<string, unknown>) => Promise<unknown> }): void {
+    setServer(server: AgentToolExecutor): void {
         this.server = server;
     }
 
@@ -260,7 +290,7 @@ export class ToolCallRouter implements ToolCallRouterInterface {
      * Builds successful response
      * @private
      */
-    private buildSuccessResponse(result: any): ToolCallResponse {
+    private buildSuccessResponse(result: unknown): ToolCallResponse {
         return {
             content: [{
                 type: 'text',
@@ -274,7 +304,7 @@ export class ToolCallRouter implements ToolCallRouterInterface {
      * Builds error response
      * @private
      */
-    private buildErrorResponse(error: any): ToolCallResponse {
+    private buildErrorResponse(error: unknown): ToolCallResponse {
         const errorMessage = error instanceof Error ? error.message : String(error);
         const errorCode = error instanceof McpError ? error.code : ErrorCode.InternalError;
 

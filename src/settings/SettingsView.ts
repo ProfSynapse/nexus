@@ -1,4 +1,4 @@
-import { App, Plugin, PluginSettingTab, Notice, ButtonComponent, FileSystemAdapter } from 'obsidian';
+import { App, Plugin, PluginSettingTab, Notice, ButtonComponent, FileSystemAdapter, Setting } from 'obsidian';
 import { Settings } from '../settings';
 import { UnifiedTabs, UnifiedTabConfig } from '../components/UnifiedTabs';
 import { SettingsRouter, RouterState, SettingsTab } from './SettingsRouter';
@@ -6,6 +6,7 @@ import { UpdateManager } from '../utils/UpdateManager';
 import { supportsMCPBridge } from '../utils/platform';
 import { Accordion } from '../components/Accordion';
 import { getConfigStatus, hasConfiguredProviders } from './getStartedStatus';
+import type { ProjectWorkspace } from '../database/workspace-types';
 
 // Type to access private method (should be refactored to make fetchLatestRelease public in UpdateManager)
 type UpdateManagerWithFetchRelease = {
@@ -24,14 +25,20 @@ import { MemoryManagerAgent } from '../agents/memoryManager/memoryManager';
 import type { AppManager } from '../services/apps/AppManager';
 
 // Tab implementations
-import { DefaultsTab } from './tabs/DefaultsTab';
-import { WorkspacesTab } from './tabs/WorkspacesTab';
-import { PromptsTab } from './tabs/PromptsTab';
+import { DefaultsTab, type DefaultsTabServices } from './tabs/DefaultsTab';
+import { WorkspacesTab, type WorkspacesTabServices } from './tabs/WorkspacesTab';
+import { PromptsTab, type PromptsTabServices } from './tabs/PromptsTab';
 import { ProvidersTab } from './tabs/ProvidersTab';
 import { AppsTab } from './tabs/AppsTab';
 // GetStartedTab is dynamically imported (desktop-only, requires Node.js)
 type GetStartedTabType = import('./tabs/GetStartedTab').GetStartedTab;
 // import { DataTab } from './tabs/DataTab'; // TODO: Re-enable when Data tab is ready
+
+type SettingsViewServices = {
+    memoryService?: MemoryService;
+    workspaceService?: WorkspacesTabServices['workspaceService'];
+    customPromptStorage?: PromptsTabServices['customPromptStorage'];
+};
 
 /**
  * SettingsView - New unified settings interface with tab-based navigation
@@ -52,7 +59,6 @@ export class SettingsView extends PluginSettingTab {
 
     // Managers
     private serviceManager: ServiceManager | undefined;
-    private pluginLifecycleManager: any;
     private appManager: AppManager | undefined;
 
     // UI Components
@@ -71,8 +77,8 @@ export class SettingsView extends PluginSettingTab {
     // private dataTab: DataTab | undefined; // TODO: Re-enable when Data tab is ready
 
     // Prefetched data cache
-    private prefetchedWorkspaces: any[] | null = null;
-    private isPrefetching: boolean = false;
+    private prefetchedWorkspaces: ProjectWorkspace[] | null = null;
+    private isPrefetching = false;
 
     constructor(
         app: App,
@@ -85,7 +91,7 @@ export class SettingsView extends PluginSettingTab {
         searchManager?: SearchManagerAgent,
         memoryManager?: MemoryManagerAgent,
         serviceManager?: ServiceManager,
-        pluginLifecycleManager?: any,
+        _pluginLifecycleManager?: unknown,
         appManager?: AppManager
     ) {
         super(app, plugin);
@@ -104,7 +110,6 @@ export class SettingsView extends PluginSettingTab {
 
         // Store managers
         this.serviceManager = serviceManager;
-        this.pluginLifecycleManager = pluginLifecycleManager;
         this.appManager = appManager;
 
         // Initialize router
@@ -168,7 +173,7 @@ export class SettingsView extends PluginSettingTab {
                     workspaceService = await Promise.race([
                         this.serviceManager.getService<WorkspaceService>('workspaceService'),
                         new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), 5000))
-                    ]) as WorkspaceService | undefined;
+                    ]);
                 }
             }
 
@@ -198,7 +203,7 @@ export class SettingsView extends PluginSettingTab {
         this.getStartedAccordion?.unload();
 
         // Start prefetching workspaces in background (non-blocking)
-        this.prefetchWorkspaces();
+        void this.prefetchWorkspaces();
 
         // 1. Render header (About + Update button)
         this.renderHeader(containerEl);
@@ -262,27 +267,31 @@ export class SettingsView extends PluginSettingTab {
         });
 
         // Conditionally show update UI (hidden when plugin is in the community store)
-        UpdateManager.isStoreAvailable(this.plugin.manifest.id).then((storeAvailable) => {
-            if (storeAvailable) return;
+        void UpdateManager.isStoreAvailable(this.plugin.manifest.id)
+            .then((storeAvailable) => {
+                if (storeAvailable) return;
 
-            // Update notification if available
-            if (this.settingsManager.settings.availableUpdateVersion) {
-                const updateBadge = versionRow.createSpan({ cls: 'nexus-update-badge' });
-                updateBadge.setText(`Update available: v${this.settingsManager.settings.availableUpdateVersion}`);
-            }
+                // Update notification if available
+                if (this.settingsManager.settings.availableUpdateVersion) {
+                    const updateBadge = versionRow.createSpan({ cls: 'nexus-update-badge' });
+                    updateBadge.setText(`Update available: v${this.settingsManager.settings.availableUpdateVersion}`);
+                }
 
-            // Update button
-            const updateBtn = new ButtonComponent(versionRow);
-            updateBtn
-                .setButtonText(
-                    this.settingsManager.settings.availableUpdateVersion
-                        ? `Install v${this.settingsManager.settings.availableUpdateVersion}`
-                        : 'Check for Updates'
-                )
-                .onClick(async () => {
-                    await this.handleUpdateCheck(updateBtn);
-                });
-        });
+                // Update button
+                const updateBtn = new ButtonComponent(versionRow);
+                updateBtn
+                    .setButtonText(
+                        this.settingsManager.settings.availableUpdateVersion
+                            ? `Install v${this.settingsManager.settings.availableUpdateVersion}`
+                            : 'Check for Updates'
+                    )
+                    .onClick(async () => {
+                        await this.handleUpdateCheck(updateBtn);
+                    });
+            })
+            .catch((error: unknown) => {
+                console.error('[SettingsView] Failed to determine plugin store availability:', error);
+            });
     }
 
     /**
@@ -343,10 +352,10 @@ export class SettingsView extends PluginSettingTab {
                 this.renderPromptsTab(pane, state, services);
                 break;
             case 'providers':
-                this.renderProvidersTab(pane, state, services);
+                this.renderProvidersTab(pane);
                 break;
             case 'apps':
-                this.renderAppsTab(pane, state, services);
+                this.renderAppsTab(pane);
                 break;
             // case 'data': // TODO: Re-enable when Data tab is ready
             //     this.renderDataTab(pane);
@@ -357,11 +366,7 @@ export class SettingsView extends PluginSettingTab {
     /**
      * Get current service instances from ServiceManager or stored references
      */
-    private getCurrentServices(): {
-        memoryService?: MemoryService;
-        workspaceService?: WorkspaceService;
-        customPromptStorage?: CustomPromptStorageService;
-    } {
+    private getCurrentServices(): SettingsViewServices {
         let memoryService = this.memoryService;
         let workspaceService = this.workspaceService;
 
@@ -400,8 +405,8 @@ export class SettingsView extends PluginSettingTab {
      */
     private renderDefaultsTab(
         container: HTMLElement,
-        state: RouterState,
-        services: { workspaceService?: WorkspaceService; customPromptStorage?: CustomPromptStorageService }
+        _state: RouterState,
+        services: Pick<DefaultsTabServices, 'workspaceService' | 'customPromptStorage'>
     ): void {
         // Destroy previous tab instance if exists
         this.defaultsTab?.destroy();
@@ -425,8 +430,8 @@ export class SettingsView extends PluginSettingTab {
      */
     private renderWorkspacesTab(
         container: HTMLElement,
-        state: RouterState,
-        services: { workspaceService?: WorkspaceService; memoryService?: MemoryService }
+        _state: RouterState,
+        services: Pick<WorkspacesTabServices, 'workspaceService' | 'customPromptStorage'>
     ): void {
         // Destroy previous tab instance if exists
         this.workspacesTab?.destroy();
@@ -440,7 +445,7 @@ export class SettingsView extends PluginSettingTab {
             {
                 app: this.app,
                 workspaceService: services.workspaceService,
-                customPromptStorage: this.customPromptStorage,
+                customPromptStorage: services.customPromptStorage,
                 prefetchedWorkspaces: null,
                 serviceManager: this.serviceManager,
                 component: this.plugin
@@ -453,8 +458,8 @@ export class SettingsView extends PluginSettingTab {
      */
     private renderPromptsTab(
         container: HTMLElement,
-        state: RouterState,
-        services: { customPromptStorage?: CustomPromptStorageService }
+        _state: RouterState,
+        services: Pick<PromptsTabServices, 'customPromptStorage'>
     ): void {
         // Destroy previous tab instance if exists
         this.promptsTab?.destroy();
@@ -473,11 +478,7 @@ export class SettingsView extends PluginSettingTab {
     /**
      * Render Providers tab content
      */
-    private renderProvidersTab(
-        container: HTMLElement,
-        state: RouterState,
-        services: any
-    ): void {
+    private renderProvidersTab(container: HTMLElement): void {
         // Destroy previous tab instance if exists
         this.providersTab?.destroy();
 
@@ -496,11 +497,7 @@ export class SettingsView extends PluginSettingTab {
     /**
      * Render Apps tab content
      */
-    private renderAppsTab(
-        container: HTMLElement,
-        state: RouterState,
-        services: any
-    ): void {
+    private renderAppsTab(container: HTMLElement): void {
         this.appsTab?.destroy();
         this.appsTab = new AppsTab(
             container,

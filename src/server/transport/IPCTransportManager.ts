@@ -3,20 +3,24 @@
  * Follows Single Responsibility Principle by focusing only on IPC transport
  */
 
-import { Server as NetServer, Socket, createServer } from 'net';
-import { promises as fs } from 'fs';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { Server as MCPSDKServer } from '@modelcontextprotocol/sdk/server/index.js';
 import { ServerConfiguration } from '../services/ServerConfiguration';
 import { StdioTransportManager } from './StdioTransportManager';
 import { logger } from '../../utils/logger';
 
+type IPCServer = import('net').Server;
+type IPCSocket = import('net').Socket;
+type NetModule = typeof import('net');
+type FsPromisesModule = typeof import('fs/promises');
+type RejectHandler = (error: Error) => void;
+
 /**
  * Service responsible for IPC transport management
  * Follows SRP by focusing only on IPC transport operations
  */
 export class IPCTransportManager {
-    private ipcServer: NetServer | null = null;
+    private ipcServer: IPCServer | null = null;
     private isRunning: boolean = false;
     /** Per-connection MCPSDKServer instances for multi-client support. */
     private activeConnections: Set<MCPSDKServer> = new Set();
@@ -29,10 +33,43 @@ export class IPCTransportManager {
         private serverFactory?: () => MCPSDKServer
     ) {}
 
+    private getNetModule(): NetModule {
+        // Desktop-only runtime dependency; keep loading deferred until transport startup.
+        // eslint-disable-next-line import/no-nodejs-modules, @typescript-eslint/no-require-imports
+        return require('net') as NetModule;
+    }
+
+    private getFsPromisesModule(): FsPromisesModule {
+        // Desktop-only runtime dependency; keep loading deferred until transport startup.
+        // eslint-disable-next-line import/no-nodejs-modules, @typescript-eslint/no-require-imports
+        return require('fs/promises') as FsPromisesModule;
+    }
+
+    private toError(error: unknown, fallbackMessage: string): Error {
+        if (error instanceof Error) {
+            return error;
+        }
+
+        if (typeof error === 'string' && error.length > 0) {
+            return new Error(error);
+        }
+
+        return new Error(fallbackMessage);
+    }
+
+    private getErrorCode(error: unknown): string | undefined {
+        if (typeof error !== 'object' || error === null) {
+            return undefined;
+        }
+
+        const code: unknown = Reflect.get(error, 'code');
+        return typeof code === 'string' ? code : undefined;
+    }
+
     /**
      * Start the IPC transport server
      */
-    async startTransport(): Promise<NetServer> {
+    async startTransport(): Promise<IPCServer> {
         if (this.ipcServer) {
             return this.ipcServer;
         }
@@ -44,21 +81,26 @@ export class IPCTransportManager {
             await this.cleanupSocket();
         }
 
+        const { createServer } = this.getNetModule();
+
         return new Promise((resolve, reject) => {
             try {
                 const server = createServer((socket) => {
                     this.handleSocketConnection(socket).catch(error => {
-                        logger.systemError(error as Error, 'IPC Socket Handling');
-                        const netSocket = socket as Socket;
-                        if (!netSocket.destroyed) netSocket.destroy();
+                        const socketError = this.toError(error, 'Failed to handle IPC socket connection');
+                        logger.systemError(socketError, 'IPC Socket Handling');
+                        if (!socket.destroyed) {
+                            socket.destroy();
+                        }
                     });
                 });
 
                 this.setupServerErrorHandling(server, ipcPath, isWindows, reject);
                 this.startListening(server, ipcPath, isWindows, resolve, reject);
             } catch (error) {
-                logger.systemError(error as Error, 'IPC Server Creation');
-                reject(error);
+                const creationError = this.toError(error, 'Failed to create IPC server');
+                logger.systemError(creationError, 'IPC Server Creation');
+                reject(creationError);
             }
         });
     }
@@ -78,21 +120,23 @@ export class IPCTransportManager {
      * new one, preventing a race where the old transport's onclose fires after
      * the new connect and nullifies Protocol._transport.
      */
-    private async handleSocketConnection(socket: NodeJS.ReadWriteStream): Promise<void> {
-        if (this.serverFactory) {
-            this.handleMultiClientConnection(socket as Socket);
-        } else {
-            await this.handleSingleClientConnection(socket);
+    private async handleSocketConnection(socket: IPCSocket): Promise<void> {
+        const createServerInstance = this.serverFactory;
+        if (createServerInstance) {
+            this.handleMultiClientConnection(socket, createServerInstance);
+            return;
         }
+
+        await this.handleSingleClientConnection(socket);
     }
 
     /**
      * Per-connection server path: create a dedicated MCPSDKServer for this
      * socket so that multiple clients can coexist.
      */
-    private handleMultiClientConnection(socket: Socket): void {
+    private handleMultiClientConnection(socket: IPCSocket, createServerInstance: () => MCPSDKServer): void {
         try {
-            const server = this.serverFactory!();
+            const server = createServerInstance();
             const transport = new StdioServerTransport(socket, socket);
 
             const netSocket = socket;
@@ -115,11 +159,11 @@ export class IPCTransportManager {
                     logger.systemLog(`IPC socket connected successfully (${this.activeConnections.size} active)`);
                 })
                 .catch(error => {
-                    logger.systemError(error as Error, 'IPC Socket Connection');
+                    logger.systemError(this.toError(error, 'Failed to connect IPC socket'), 'IPC Socket Connection');
                     if (!netSocket.destroyed) netSocket.destroy();
                 });
         } catch (error) {
-            logger.systemError(error as Error, 'IPC Socket Handling');
+            logger.systemError(this.toError(error, 'Failed to create per-connection IPC server'), 'IPC Socket Handling');
             if (!socket.destroyed) socket.destroy();
         }
     }
@@ -129,8 +173,8 @@ export class IPCTransportManager {
      * Wires the raw socket's lifecycle events to the MCP transport
      * so that Protocol._transport is cleared when a client disconnects.
      */
-    private async handleSingleClientConnection(socket: NodeJS.ReadWriteStream): Promise<void> {
-        const netSocket = socket as Socket;
+    private async handleSingleClientConnection(socket: IPCSocket): Promise<void> {
+        const netSocket = socket;
         try {
             const transport = this.stdioTransportManager.createSocketTransport(socket, socket);
             let closed = false;
@@ -155,7 +199,7 @@ export class IPCTransportManager {
                         new Promise(resolve => setTimeout(resolve, 500))
                     ]);
                 } catch (err) {
-                    logger.systemError(err as Error, 'Proactive Transport Cleanup');
+                    logger.systemError(this.toError(err, 'Failed during proactive transport cleanup'), 'Proactive Transport Cleanup');
                 }
                 this.currentTransport = null;
             }
@@ -164,7 +208,7 @@ export class IPCTransportManager {
             this.currentTransport = transport;
             logger.systemLog('IPC socket connected successfully');
         } catch (error) {
-            logger.systemError(error as Error, 'IPC Socket Connection');
+            logger.systemError(this.toError(error, 'Failed to connect IPC socket transport'), 'IPC Socket Connection');
             if (!netSocket.destroyed) netSocket.destroy();
         }
     }
@@ -173,18 +217,19 @@ export class IPCTransportManager {
      * Setup server error handling
      */
     private setupServerErrorHandling(
-        server: NetServer,
+        server: IPCServer,
         ipcPath: string,
         isWindows: boolean,
-        reject: (error: Error) => void
+        reject: RejectHandler
     ): void {
         server.on('error', (error) => {
-            logger.systemError(error as Error, 'IPC Server');
-            
-            if (!isWindows && (error as NodeJS.ErrnoException).code === 'EADDRINUSE') {
+            const serverError = this.toError(error, 'IPC server error');
+            logger.systemError(serverError, 'IPC Server');
+
+            if (!isWindows && this.getErrorCode(error) === 'EADDRINUSE') {
                 this.handleAddressInUse(server, ipcPath, reject);
             } else {
-                reject(error);
+                reject(serverError);
             }
         });
     }
@@ -193,22 +238,24 @@ export class IPCTransportManager {
      * Handle address in use error
      */
     private handleAddressInUse(
-        server: NetServer,
+        server: IPCServer,
         ipcPath: string,
-        reject: (error: Error) => void
+        reject: RejectHandler
     ): void {
         this.cleanupSocket()
             .then(() => {
                 try {
                     server.listen(ipcPath);
                 } catch (listenError) {
-                    logger.systemError(listenError as Error, 'Server Listen Retry');
-                    reject(listenError as Error);
+                    const retryError = this.toError(listenError, 'Failed to retry IPC server listen');
+                    logger.systemError(retryError, 'Server Listen Retry');
+                    reject(retryError);
                 }
             })
             .catch(cleanupError => {
-                logger.systemError(cleanupError as Error, 'Socket Cleanup');
-                reject(cleanupError);
+                const socketCleanupError = this.toError(cleanupError, 'Failed to clean up IPC socket');
+                logger.systemError(socketCleanupError, 'Socket Cleanup');
+                reject(socketCleanupError);
             });
     }
 
@@ -216,14 +263,13 @@ export class IPCTransportManager {
      * Start listening on the IPC path
      */
     private startListening(
-        server: NetServer,
+        server: IPCServer,
         ipcPath: string,
         isWindows: boolean,
-        resolve: (server: NetServer) => void,
-        reject: (error: Error) => void
+        resolve: (server: IPCServer) => void
     ): void {
         server.listen(ipcPath, () => {
-            this.handleListeningStarted(server, ipcPath, isWindows, resolve, reject);
+            this.handleListeningStarted(server, ipcPath, isWindows, resolve);
         });
     }
 
@@ -231,15 +277,16 @@ export class IPCTransportManager {
      * Handle successful listening start
      */
     private handleListeningStarted(
-        server: NetServer,
+        server: IPCServer,
         ipcPath: string,
         isWindows: boolean,
-        resolve: (server: NetServer) => void,
-        reject: (error: Error) => void
+        resolve: (server: IPCServer) => void
     ): void {
+        const fsPromises = this.getFsPromisesModule();
+
         if (!isWindows) {
-            fs.chmod(ipcPath, 0o666).catch(error => {
-                logger.systemError(error as Error, 'Socket Permissions');
+            fsPromises.chmod(ipcPath, 0o666).catch(error => {
+                logger.systemError(this.toError(error, 'Failed to set IPC socket permissions'), 'Socket Permissions');
             });
         }
 
@@ -273,7 +320,7 @@ export class IPCTransportManager {
                 try {
                     await this.currentTransport.close();
                 } catch (err) {
-                    logger.systemError(err as Error, 'Transport Cleanup on Stop');
+                    logger.systemError(this.toError(err, 'Failed to clean up current IPC transport'), 'Transport Cleanup on Stop');
                 }
                 this.currentTransport = null;
             }
@@ -286,8 +333,9 @@ export class IPCTransportManager {
 
             logger.systemLog('IPC transport stopped successfully');
         } catch (error) {
-            logger.systemError(error as Error, 'IPC Transport Stop');
-            throw error;
+            const stopError = this.toError(error, 'Failed to stop IPC transport');
+            logger.systemError(stopError, 'IPC Transport Stop');
+            throw stopError;
         }
     }
 
@@ -299,12 +347,14 @@ export class IPCTransportManager {
             return;
         }
 
+        const fsPromises = this.getFsPromisesModule();
+
         try {
-            await fs.unlink(this.configuration.getIPCPath());
+            await fsPromises.unlink(this.configuration.getIPCPath());
         } catch (error) {
             // Ignore if file doesn't exist
-            if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-                logger.systemError(error as Error, 'Socket Cleanup');
+            if (this.getErrorCode(error) !== 'ENOENT') {
+                logger.systemError(this.toError(error, 'Failed to clean up IPC socket'), 'Socket Cleanup');
             }
         }
     }
@@ -319,14 +369,14 @@ export class IPCTransportManager {
     /**
      * Get the server instance
      */
-    getServer(): NetServer | null {
+    getServer(): IPCServer | null {
         return this.ipcServer;
     }
 
     /**
      * Restart the transport
      */
-    async restartTransport(): Promise<NetServer> {
+    async restartTransport(): Promise<IPCServer> {
         await this.stopTransport();
         return await this.startTransport();
     }
@@ -379,17 +429,14 @@ export class IPCTransportManager {
 
         // Check if socket exists (for Unix systems)
         if (!this.configuration.isWindows()) {
-            try {
-                fs.access(this.configuration.getIPCPath())
-                    .then(() => {
-                        diagnostics.socketExists = true;
-                    })
-                    .catch(() => {
-                        diagnostics.socketExists = false;
-                    });
-            } catch (error) {
-                diagnostics.socketExists = false;
-            }
+            const fsPromises = this.getFsPromisesModule();
+            void fsPromises.access(this.configuration.getIPCPath())
+                .then(() => {
+                    diagnostics.socketExists = true;
+                })
+                .catch(() => {
+                    diagnostics.socketExists = false;
+                });
         }
 
         return diagnostics;
@@ -404,10 +451,10 @@ export class IPCTransportManager {
         }
 
         try {
-            await fs.unlink(this.configuration.getIPCPath());
+            await this.getFsPromisesModule().unlink(this.configuration.getIPCPath());
             logger.systemLog('Socket force cleaned up successfully');
         } catch (error) {
-            logger.systemError(error as Error, 'Force Socket Cleanup');
+            logger.systemError(this.toError(error, 'Failed to force-clean IPC socket'), 'Force Socket Cleanup');
         }
     }
 }

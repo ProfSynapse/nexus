@@ -13,7 +13,7 @@
 
 import { ConversationContextBuilder } from '../../chat/ConversationContextBuilder';
 import { ToolResult } from '../adapters/shared/ToolExecutionUtils';
-import { Tool, ToolCall as AdapterToolCall } from '../adapters/types';
+import { CostDetails, TokenUsage, Tool, ToolCall as AdapterToolCall } from '../adapters/types';
 import { ToolCall as ChatToolCall } from '../../../types/chat/ChatTypes';
 
 // Union type for tool calls from different sources
@@ -26,20 +26,28 @@ export interface ConversationMessage {
   tool_calls?: ToolCallUnion[];
 }
 
+type OpenAIResponsesInputItem =
+  | { role: Exclude<ConversationMessage['role'], 'system'>; content: string }
+  | { type: 'function_call'; call_id: string; name: string; arguments: string }
+  | { type: 'function_call_output'; call_id: string; output: string };
+
+type GoogleFunctionCallPart = Record<string, unknown>;
+type GoogleFunctionResponsePart = Record<string, unknown>;
+
 // Google-specific message format
 export interface GoogleMessage {
   role: 'user' | 'model' | 'function';
-  parts: Array<{ text?: string; functionCall?: any; functionResponse?: any }>;
+  parts: Array<{ text?: string; functionCall?: GoogleFunctionCallPart; functionResponse?: GoogleFunctionResponsePart }>;
 }
 
 // Internal options type used during streaming orchestration
 export interface GenerateOptionsInternal {
   model: string;
   systemPrompt?: string;
-  conversationHistory?: GoogleMessage[] | ConversationMessage[] | any[]; // any[] for OpenAI Responses API
+  conversationHistory?: GoogleMessage[] | ConversationMessage[] | OpenAIResponsesInputItem[];
   tools?: Tool[];
-  onToolEvent?: (event: 'started' | 'completed', data: any) => void;
-  onUsageAvailable?: (usage: any, cost?: any) => void;
+  onToolEvent?: (event: 'started' | 'completed', data: unknown) => void;
+  onUsageAvailable?: (usage: TokenUsage, cost?: CostDetails) => void;
   enableThinking?: boolean;
   thinkingEffort?: 'low' | 'medium' | 'high';
   previousResponseId?: string; // OpenAI Responses API
@@ -50,8 +58,8 @@ export interface StreamingOptions {
   model?: string;
   systemPrompt?: string;
   tools?: Tool[];
-  onToolEvent?: (event: 'started' | 'completed', data: any) => void;
-  onUsageAvailable?: (usage: any, cost?: any) => void;
+  onToolEvent?: (event: 'started' | 'completed', data: unknown) => void;
+  onUsageAvailable?: (usage: TokenUsage, cost?: CostDetails) => void;
   sessionId?: string;
   workspaceId?: string;
   conversationId?: string;
@@ -191,7 +199,7 @@ export class ProviderMessageBuilder {
     } else if (provider === 'openai-codex') {
       // Codex uses stateless Responses API — no previous_response_id.
       // Build a full input array: prior messages + user prompt + function_call + function_call_output items.
-      const inputItems: Array<Record<string, unknown>> = [];
+      const inputItems: OpenAIResponsesInputItem[] = [];
 
       // Add prior conversation messages
       for (const msg of previousMessages) {
@@ -206,7 +214,7 @@ export class ProviderMessageBuilder {
 
       // Add function_call items (what the model called)
       for (const tc of toolCalls) {
-        const name = ('name' in tc && tc.name) ? tc.name as string : tc.function?.name || '';
+        const name = ('name' in tc && tc.name) ? tc.name : tc.function?.name || '';
         const args = tc.function?.arguments || '{}';
         inputItems.push({
           type: 'function_call',

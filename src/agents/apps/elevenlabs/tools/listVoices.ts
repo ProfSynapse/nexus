@@ -24,6 +24,46 @@ interface VoiceInfo {
   preview_url?: string;
 }
 
+interface VoicesResponse {
+  voices?: VoiceInfo[];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function isVoiceInfo(value: unknown): value is VoiceInfo {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return typeof value.voice_id === 'string'
+    && typeof value.name === 'string'
+    && typeof value.category === 'string';
+}
+
+function parseVoicesResponse(value: unknown): VoicesResponse {
+  if (!isRecord(value) || !Array.isArray(value.voices)) {
+    return {};
+  }
+
+  return {
+    voices: value.voices.filter(isVoiceInfo)
+  };
+}
+
+function formatUnknown(value: unknown): string {
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  if (value instanceof Error) {
+    return value.message;
+  }
+
+  return String(value);
+}
+
 export class ListVoicesTool extends BaseTool<ListVoicesParams, CommonResult> {
   private agent: BaseAppAgent;
 
@@ -60,8 +100,8 @@ export class ListVoicesTool extends BaseTool<ListVoicesParams, CommonResult> {
           `ElevenLabs API error (${response.status}): ${response.text || 'Unknown error'}`);
       }
 
-      const data = response.json;
-      let voices: VoiceInfo[] = data.voices || [];
+      const data = parseVoicesResponse(response.json);
+      let voices: VoiceInfo[] = data.voices ?? [];
 
       // Filter by category if specified
       if (params.category) {
@@ -82,12 +122,13 @@ export class ListVoicesTool extends BaseTool<ListVoicesParams, CommonResult> {
         total: voiceList.length,
       });
     } catch (error: unknown) {
-      const status = (error as Record<string, unknown>)?.status;
-      const body = (error as Record<string, unknown>)?.text
-        ?? (error as Record<string, unknown>)?.message
-        ?? String(error);
+      const errorRecord = isRecord(error) ? error : undefined;
+      const status = errorRecord?.status;
+      const body = errorRecord?.text
+        ?? errorRecord?.message
+        ?? error;
       return this.prepareResult(false, undefined,
-        `Failed to list voices${status ? ` (${status})` : ''}: ${body}`);
+        `Failed to list voices${status !== undefined ? ` (${formatUnknown(status)})` : ''}: ${formatUnknown(body)}`);
     }
   }
 

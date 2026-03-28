@@ -6,6 +6,7 @@ import { isGlobPattern, globToRegex, normalizePath } from '../../../utils/pathUt
 import { EmbeddingService } from '../../../services/embeddings/EmbeddingService';
 import { EmbeddingManager } from '../../../services/embeddings/EmbeddingManager';
 import { CommonParameters } from '../../../types';
+import { JSONSchema } from '../../../types/schema/JSONSchemaTypes';
 
 /**
  * Extended plugin interface that includes optional embedding manager
@@ -91,15 +92,14 @@ export class SearchContentTool extends BaseTool<ContentSearchParams, ContentSear
           return service;
         }
       }
-    } catch (error) {
+    } catch {
+      // Ignore plugin timing/access issues and fall back to keyword search.
     }
 
     return null;
   }
 
   async execute(params: ContentSearchParams): Promise<ContentSearchResult> {
-    const startTime = performance.now();
-
     try {
       if (!params.query || params.query.trim().length === 0) {
         return this.prepareResult(false, undefined, 'Query parameter is required and cannot be empty');
@@ -116,11 +116,11 @@ export class SearchContentTool extends BaseTool<ContentSearchParams, ContentSear
 
       // Use semantic search if requested
       if (searchParams.semantic) {
-        return await this.performSemanticSearch(searchParams, startTime);
+        return await this.performSemanticSearch(searchParams);
       }
 
       // Otherwise use keyword/fuzzy search
-      return await this.performKeywordFuzzySearch(searchParams, startTime);
+      return await this.performKeywordFuzzySearch(searchParams);
 
     } catch (error) {
       console.error(`[${BRAND_NAME}] Content search failed:`, error);
@@ -132,8 +132,7 @@ export class SearchContentTool extends BaseTool<ContentSearchParams, ContentSear
    * Perform semantic (vector) search using embeddings
    */
   private async performSemanticSearch(
-    searchParams: { query: string; limit: number; paths: string[]; includeContent: boolean; snippetLength: number },
-    startTime: number
+    searchParams: { query: string; limit: number; paths: string[]; includeContent: boolean; snippetLength: number }
   ): Promise<ContentSearchResult> {
     // Lazily get the embedding service (handles timing issues)
     const embeddingService = this.getEmbeddingService();
@@ -204,9 +203,6 @@ export class SearchContentTool extends BaseTool<ContentSearchParams, ContentSear
           results.push(entry);
         }
       }
-
-      const executionTime = performance.now() - startTime;
-
       return this.prepareResult(true, {
         results
       });
@@ -221,8 +217,7 @@ export class SearchContentTool extends BaseTool<ContentSearchParams, ContentSear
    * Perform keyword/fuzzy search (original behavior)
    */
   private async performKeywordFuzzySearch(
-    searchParams: { query: string; limit: number; paths: string[]; includeContent: boolean; snippetLength: number },
-    startTime: number
+    searchParams: { query: string; limit: number; paths: string[]; includeContent: boolean; snippetLength: number }
   ): Promise<ContentSearchResult> {
     // Get all markdown files
     let allFiles = this.plugin.app.vault.getMarkdownFiles();
@@ -256,9 +251,6 @@ export class SearchContentTool extends BaseTool<ContentSearchParams, ContentSear
       searchParams.includeContent,
       searchParams.snippetLength
     );
-
-    const executionTime = performance.now() - startTime;
-
     return this.prepareResult(true, {
       results: searchResults
     });
@@ -293,8 +285,9 @@ export class SearchContentTool extends BaseTool<ContentSearchParams, ContentSear
     // Sort by internal score (higher is better) and take top results
     allResults.sort((a, b) => (b._score || 0) - (a._score || 0));
     // Strip internal score before returning
-    const finalResults = allResults.slice(0, limit).map(r => {
-      const { _score, ...rest } = r;
+    const finalResults = allResults.slice(0, limit).map(result => {
+      const { _score, ...rest } = result;
+      void _score;
       return rest;
     });
     return finalResults;
@@ -352,7 +345,8 @@ export class SearchContentTool extends BaseTool<ContentSearchParams, ContentSear
             maxScore = keywordScore;
           }
         }
-      } catch (error) {
+      } catch {
+        // Ignore read/cache failures for individual files and continue searching.
       }
     } else {
       // Even if not including content, still extract frontmatter
@@ -362,7 +356,8 @@ export class SearchContentTool extends BaseTool<ContentSearchParams, ContentSear
           frontmatter = { ...fileCache.frontmatter };
           delete frontmatter.position;
         }
-      } catch (error) {
+      } catch {
+        // Ignore metadata cache failures for individual files and continue searching.
       }
     }
 
@@ -457,7 +452,7 @@ export class SearchContentTool extends BaseTool<ContentSearchParams, ContentSear
   /**
    * Get parameter schema for MCP tool definition
    */
-  getParameterSchema() {
+  getParameterSchema(): JSONSchema {
     const toolSchema = {
       type: 'object',
       title: 'Content Search Params',
@@ -507,7 +502,7 @@ export class SearchContentTool extends BaseTool<ContentSearchParams, ContentSear
   /**
    * Get result schema for MCP tool definition
    */
-  getResultSchema() {
+  getResultSchema(): JSONSchema {
     return {
       type: 'object',
       properties: {

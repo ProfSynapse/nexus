@@ -3,6 +3,10 @@ import { BaseTool } from '../../baseTool';
 import { SetPropertyParams, SetPropertyResult } from '../types';
 import { createErrorMessage } from '../../../utils/errorUtils';
 
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string');
+}
+
 /**
  * Location: src/agents/contentManager/tools/setProperty.ts
  *
@@ -56,19 +60,21 @@ export class SetPropertyTool extends BaseTool<SetPropertyParams, SetPropertyResu
       let mergeError: string | null = null;
 
       await this.app.fileManager.processFrontMatter(file, (frontmatter) => {
+        const frontmatterRecord = frontmatter as Record<string, unknown>;
+
         if (mode === 'merge') {
-          const existing = frontmatter[property];
+          const existing = frontmatterRecord[property];
 
           if (existing === undefined || existing === null) {
-            frontmatter[property] = value;
-          } else if (Array.isArray(existing) && Array.isArray(value)) {
+            frontmatterRecord[property] = value;
+          } else if (isStringArray(existing) && Array.isArray(value)) {
             const merged = [...existing];
             for (const item of value) {
               if (!merged.includes(item)) {
                 merged.push(item);
               }
             }
-            frontmatter[property] = merged;
+            frontmatterRecord[property] = merged;
           } else if (Array.isArray(existing) !== Array.isArray(value)) {
             mergeError =
               `Cannot merge: existing value is ${Array.isArray(existing) ? 'array' : 'scalar'} ` +
@@ -77,10 +83,10 @@ export class SetPropertyTool extends BaseTool<SetPropertyParams, SetPropertyResu
             return;
           } else {
             // Scalar + Scalar: equivalent to replace
-            frontmatter[property] = value;
+            frontmatterRecord[property] = value;
           }
         } else {
-          frontmatter[property] = value;
+          frontmatterRecord[property] = value;
         }
       });
 

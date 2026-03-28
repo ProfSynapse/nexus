@@ -18,6 +18,7 @@ import { WorkspaceService } from '../../../services/WorkspaceService';
 import { getErrorMessage } from '../../../utils/errorUtils';
 import { getAllPluginIds } from '../../../constants/branding';
 import { getNexusPlugin } from '../../../utils/pluginLocator';
+import { logger } from '../../../utils/logger';
 import type { NexusPluginBridge } from '../services/ServiceAccessor';
 
 /**
@@ -58,6 +59,13 @@ export interface ServiceAccessResult<T> {
     methodUsed: string;
     duration: number;
   };
+}
+
+type ServiceDiagnostics = NonNullable<ServiceAccessResult<unknown>['diagnostics']>;
+
+function getDirectPluginService<T>(plugin: NexusPluginBridge, serviceName: string): T | null {
+  const service = plugin.services?.[serviceName];
+  return service ? (service as T) : null;
 }
 
 /**
@@ -150,7 +158,7 @@ export class ServiceIntegration {
           break;
         }
 
-        const diagnostics = {
+        const diagnostics: ServiceDiagnostics = {
           pluginFound: true,
           serviceContainerAvailable: false,
           serviceFound: false,
@@ -197,19 +205,17 @@ export class ServiceIntegration {
         }
 
         // Try direct services access (fallback)
-        if (plugin.services && plugin.services[serviceName as keyof typeof plugin.services]) {
+        const directService = getDirectPluginService<T>(plugin, serviceName);
+        if (directService) {
           this.log('debug', `[ServiceIntegration] Trying direct services access for ${displayName}`);
           diagnostics.methodUsed = diagnostics.methodUsed ? `${diagnostics.methodUsed}+direct` : 'direct';
 
-          const service = plugin.services[serviceName as keyof typeof plugin.services] as T;
-          if (service) {
-            this.log('debug', `[ServiceIntegration] Successfully got ${displayName} via direct access`);
-            diagnostics.serviceFound = true;
-            diagnostics.duration = Date.now() - startTime;
-            
-            const successStatus = this.updateServiceStatus(serviceName, true, undefined);
-            return this.createResult<T>(true, service, undefined, successStatus, diagnostics);
-          }
+          this.log('debug', `[ServiceIntegration] Successfully got ${displayName} via direct access`);
+          diagnostics.serviceFound = true;
+          diagnostics.duration = Date.now() - startTime;
+
+          const successStatus = this.updateServiceStatus(serviceName, true, undefined);
+          return this.createResult<T>(true, directService, undefined, successStatus, diagnostics);
         }
 
         lastError = `${displayName} not available through any access method`;
@@ -231,7 +237,7 @@ export class ServiceIntegration {
 
     // All attempts failed
     const failureStatus = this.updateServiceStatus(serviceName, false, lastError);
-    const diagnostics = {
+    const diagnostics: ServiceDiagnostics = {
       pluginFound: false,
       serviceContainerAvailable: false,
       serviceFound: false,
@@ -264,7 +270,7 @@ export class ServiceIntegration {
         });
       }
 
-      const diagnostics = {
+      const diagnostics: ServiceDiagnostics = {
         pluginFound: true,
         serviceContainerAvailable: !!plugin.serviceContainer,
         serviceFound: false,
@@ -284,15 +290,13 @@ export class ServiceIntegration {
       }
 
       // Try direct access
-      if (plugin.services && plugin.services[serviceName as keyof typeof plugin.services]) {
-        const service = plugin.services[serviceName as keyof typeof plugin.services] as T;
-        if (service) {
-          diagnostics.serviceFound = true;
-          diagnostics.methodUsed = 'direct';
-          diagnostics.duration = Date.now() - startTime;
-          const status = this.updateServiceStatus(serviceName, true, undefined);
-          return this.createResult<T>(true, service, undefined, status, diagnostics);
-        }
+      const directService = getDirectPluginService<T>(plugin, serviceName);
+      if (directService) {
+        diagnostics.serviceFound = true;
+        diagnostics.methodUsed = 'direct';
+        diagnostics.duration = Date.now() - startTime;
+        const status = this.updateServiceStatus(serviceName, true, undefined);
+        return this.createResult<T>(true, directService, undefined, status, diagnostics);
       }
 
       const error = `${displayName} not available synchronously`;
@@ -356,7 +360,7 @@ export class ServiceIntegration {
     service: T | null,
     error?: string,
     status?: ServiceStatus,
-    diagnostics?: any
+    diagnostics?: ServiceDiagnostics
   ): ServiceAccessResult<T> {
     return {
       success,
@@ -414,13 +418,22 @@ export class ServiceIntegration {
   /**
    * Configurable logging
    */
-  private log(level: 'debug' | 'info' | 'warn' | 'error', message: string, ...args: any[]): void {
+  private log(level: 'debug' | 'info' | 'warn' | 'error', message: string, ...args: unknown[]): void {
     const levels = { debug: 0, info: 1, warn: 2, error: 3 };
     const configLevel = levels[this.config.logLevel];
     const messageLevel = levels[level];
     
     if (messageLevel >= configLevel) {
-      console[level](message, ...args);
+      const details = args.map((arg) => getErrorMessage(arg)).join(' ');
+      const fullMessage = details ? `${message} ${details}` : message;
+
+      if (level === 'error') {
+        logger.systemError(new Error(fullMessage), 'ServiceIntegration');
+      } else if (level === 'warn') {
+        logger.systemWarn(fullMessage, 'ServiceIntegration');
+      } else {
+        logger.systemLog(fullMessage, 'ServiceIntegration');
+      }
     }
   }
 
