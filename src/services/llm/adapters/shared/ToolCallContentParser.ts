@@ -44,6 +44,25 @@ export interface RawToolCall {
   id?: string;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function isRawToolCall(value: unknown): value is RawToolCall {
+  return isRecord(value)
+    && typeof value.name === 'string'
+    && (typeof value.arguments === 'string' || isRecord(value.arguments))
+    && (value.id === undefined || typeof value.id === 'string');
+}
+
+function toRawToolCalls(value: unknown): RawToolCall[] {
+  if (Array.isArray(value)) {
+    return value.filter(isRawToolCall);
+  }
+
+  return isRawToolCall(value) ? [value] : [];
+}
+
 export class ToolCallContentParser {
   /** Pattern to detect [TOOL_CALLS] prefix */
   private static readonly TOOL_CALLS_PATTERN = /\[TOOL_CALLS\]/;
@@ -145,9 +164,9 @@ export class ToolCallContentParser {
       const jsonString = jsonMatch[1];
 
       // Parse the JSON array
-      const rawToolCalls: RawToolCall[] = JSON.parse(jsonString);
+      const rawToolCalls = toRawToolCalls(JSON.parse(jsonString) as unknown);
 
-      if (!Array.isArray(rawToolCalls)) {
+      if (rawToolCalls.length === 0) {
         return result;
       }
 
@@ -200,7 +219,6 @@ export class ToolCallContentParser {
       // Reset regex lastIndex for multiple uses
       const regex = new RegExp(this.XML_TOOL_CALL_JSON_PATTERN.source, 'gi');
       let match;
-      let lastMatchEnd = 0;
       const toolCallMatches: { json: string; start: number; end: number }[] = [];
 
       while ((match = regex.exec(content)) !== null) {
@@ -209,7 +227,6 @@ export class ToolCallContentParser {
           start: match.index,
           end: match.index + match[0].length
         });
-        lastMatchEnd = match.index + match[0].length;
       }
 
       if (toolCallMatches.length === 0) {
@@ -221,15 +238,14 @@ export class ToolCallContentParser {
         const jsonString = toolCallMatches[i].json.trim();
 
         try {
-          const parsed = JSON.parse(jsonString);
-
-          // Handle both single object and array formats
-          const toolCallsArray = Array.isArray(parsed) ? parsed : [parsed];
+          const parsed = JSON.parse(jsonString) as unknown;
+          const toolCallsArray = toRawToolCalls(parsed);
 
           for (const rawCall of toolCallsArray) {
             result.toolCalls.push(this.convertToToolCall(rawCall, result.toolCalls.length, 'xml'));
           }
-        } catch (parseError) {
+        } catch {
+          // Ignore invalid tool-call blocks and continue parsing the rest.
         }
       }
 

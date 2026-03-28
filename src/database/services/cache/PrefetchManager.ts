@@ -2,7 +2,6 @@ import { Events } from 'obsidian';
 import { CacheManager } from './CacheManager';
 import { WorkspaceService } from '../../../services/WorkspaceService';
 import { MemoryService } from '../../../agents/memoryManager/services/MemoryService';
-import { WorkspaceSession, WorkspaceState } from '../../types/session/SessionTypes';
 
 export interface PrefetchOptions {
     maxConcurrentPrefetches?: number;
@@ -50,7 +49,7 @@ export class PrefetchManager extends Events {
             }
 
             // Start processing the queue
-            this.processPrefetchQueue();
+            void this.processPrefetchQueue();
         } catch (error) {
             console.error('Error in onWorkspaceLoaded prefetch:', error);
         }
@@ -90,7 +89,7 @@ export class PrefetchManager extends Events {
             }
 
             // Start processing the queue
-            this.processPrefetchQueue();
+            void this.processPrefetchQueue();
         } catch (error) {
             console.error('Error in onSessionLoaded prefetch:', error);
         }
@@ -127,7 +126,7 @@ export class PrefetchManager extends Events {
             }
 
             // Start processing the queue
-            this.processPrefetchQueue();
+            void this.processPrefetchQueue();
         } catch (error) {
             console.error('Error in onStateLoaded prefetch:', error);
         }
@@ -196,7 +195,7 @@ export class PrefetchManager extends Events {
             if (this.prefetchQueue.length > 0) {
                 setTimeout(() => {
                     this.isPrefetching = false;
-                    this.processPrefetchQueue();
+                    void this.processPrefetchQueue();
                 }, this.options.prefetchDelay || this.defaultPrefetchDelay);
             } else {
                 this.isPrefetching = false;
@@ -219,7 +218,12 @@ export class PrefetchManager extends Events {
     /**
      * Get prefetch statistics
      */
-    getStats() {
+    getStats(): {
+        queueLength: number;
+        isPrefetching: boolean;
+        historySize: number;
+        recentPrefetches: Array<{ key: string; timestamp: number; age: number }>;
+    } {
         return {
             queueLength: this.prefetchQueue.length,
             isPrefetching: this.isPrefetching,

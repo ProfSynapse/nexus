@@ -52,7 +52,7 @@ export class ConversationManager {
       if (this.conversations.length > 0 && !this.currentConversation) {
         await this.selectConversation(this.conversations[0]);
       }
-    } catch (error) {
+    } catch {
       this.events.onError('Failed to load conversations');
     }
   }
@@ -71,7 +71,7 @@ export class ConversationManager {
         this.currentConversation = fullConversation;
         this.events.onConversationSelected(fullConversation);
       }
-    } catch (error) {
+    } catch {
       this.events.onError('Failed to load conversation');
     }
   }
@@ -97,7 +97,7 @@ export class ConversationManager {
       } else {
         this.events.onError(result.error || 'Failed to create conversation');
       }
-    } catch (error) {
+    } catch {
       this.events.onError('Failed to create conversation');
     }
   }
@@ -145,7 +145,7 @@ export class ConversationManager {
       } else {
         this.events.onError(result.error || 'Failed to create conversation');
       }
-    } catch (error) {
+    } catch {
       this.events.onError('Failed to create conversation');
     }
   }
@@ -168,7 +168,7 @@ export class ConversationManager {
       } else {
         this.events.onError('Failed to delete conversation');
       }
-    } catch (error) {
+    } catch {
       this.events.onError('Failed to delete conversation');
     }
   }
@@ -197,7 +197,7 @@ export class ConversationManager {
       } else {
         this.events.onError('Failed to rename conversation');
       }
-    } catch (error) {
+    } catch {
       this.events.onError('Failed to rename conversation');
     }
   }

@@ -15,13 +15,13 @@
 /**
  * Options for batch processing operations
  */
-export interface BatchOptions<T> {
+export interface BatchOptions<R> {
   /** Number of items to process per batch */
   batchSize: number;
   /** Callback for progress updates */
   onProgress?: (completed: number, total: number, currentBatch: number) => void;
   /** Callback when a batch completes */
-  onBatchComplete?: (batchNumber: number, batchResults: any[]) => void;
+  onBatchComplete?: (batchNumber: number, batchResults: R[]) => void;
   /** Whether to stop on first error */
   stopOnError?: boolean;
   /** Delay between batches in ms (for rate limiting) */
@@ -31,13 +31,17 @@ export interface BatchOptions<T> {
 /**
  * Result of a batch operation
  */
-export interface BatchResult<R> {
+export interface BatchResult<T, R> {
   success: boolean;
   totalProcessed: number;
   totalFailed: number;
   results: R[];
-  errors: Array<{ index: number; item: any; error: Error }>;
+  errors: Array<{ index: number; item: T; error: Error }>;
   duration: number;
+}
+
+function isDefined<T>(value: T | undefined): value is T {
+  return value !== undefined;
 }
 
 /**
@@ -90,8 +94,8 @@ export class BatchOperations {
   static async executeBatch<T, R>(
     items: T[],
     operation: (item: T, index: number) => Promise<R>,
-    options: BatchOptions<T>
-  ): Promise<BatchResult<R>> {
+    options: BatchOptions<R>
+  ): Promise<BatchResult<T, R>> {
     const startTime = Date.now();
     const {
       batchSize,
@@ -185,9 +189,9 @@ export class BatchOperations {
     items: T[],
     operation: (item: T, index: number) => Promise<R>,
     concurrency: number = 5
-  ): Promise<BatchResult<R>> {
+  ): Promise<BatchResult<T, R>> {
     const startTime = Date.now();
-    const results: R[] = new Array(items.length);
+    const results = Array.from({ length: items.length }, (): R | undefined => undefined);
     const errors: Array<{ index: number; item: T; error: Error }> = [];
     let totalProcessed = 0;
     let totalFailed = 0;
@@ -218,7 +222,7 @@ export class BatchOperations {
       success: errors.length === 0,
       totalProcessed,
       totalFailed,
-      results: results.filter(r => r !== undefined),
+      results: results.filter(isDefined),
       errors,
       duration: Date.now() - startTime
     };
@@ -239,9 +243,9 @@ export class BatchOperations {
   static async executeBatchWithRetry<T, R>(
     items: T[],
     operation: (item: T, index: number) => Promise<R>,
-    options: BatchOptions<T>,
+    options: BatchOptions<R>,
     maxRetries: number = 3
-  ): Promise<BatchResult<R>> {
+  ): Promise<BatchResult<T, R>> {
     let result = await this.executeBatch(items, operation, options);
     let retryCount = 0;
 

@@ -24,9 +24,9 @@ export interface JSONSchema {
   maximum?: number;
   pattern?: string;
   format?: string;
-  examples?: any[];
+  examples?: unknown[];
   items?: JSONSchema;
-  enum?: any[];
+  enum?: unknown[];
   oneOf?: JSONSchema[];
   allOf?: JSONSchema[];
   not?: JSONSchema;
@@ -35,7 +35,7 @@ export interface JSONSchema {
   anyOf?: JSONSchema[];
   dependencies?: Record<string, string[]>;
   additionalProperties?: boolean;
-  default?: any;
+  default?: unknown;
   title?: string;
   
   // Custom extensions for tooling
@@ -53,6 +53,13 @@ export interface SchemaBlockOptions {
   examples?: string[];
   constraints?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
+}
+
+interface FilePathExampleOptions {
+  allowGlobs?: boolean;
+  allowDirectories?: boolean;
+  requiredExtension?: string;
+  examples?: string[];
 }
 
 /**
@@ -463,7 +470,7 @@ export class SchemaBlocks {
    */
   private static generateFilePathExamples(
     context: 'read' | 'write' | 'search',
-    options: any
+    options: FilePathExampleOptions
   ): string[] {
     const baseExamples = {
       read: ['path/to/file.md', 'notes/daily-notes.txt', 'docs/README.md'],

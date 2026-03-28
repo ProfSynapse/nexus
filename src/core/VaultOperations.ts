@@ -254,7 +254,7 @@ export class VaultOperations {
       const file = await this.getFile(normalizedPath);
       
       if (file) {
-        await this.pathManager.getApp().fileManager.trashFile(file);
+        await this.vault.adapter.remove(normalizedPath);
         this.fileCache.delete(normalizedPath);
         this.logger.debug(`Deleted file: ${normalizedPath}`);
         return true;
@@ -277,7 +277,7 @@ export class VaultOperations {
       const folder = await this.getFolder(normalizedPath);
       
       if (folder) {
-        await this.pathManager.getApp().fileManager.trashFile(folder);
+        await this.vault.adapter.rmdir(normalizedPath, true);
         this.logger.debug(`Deleted folder: ${normalizedPath}`);
         return true;
       }
@@ -299,11 +299,12 @@ export class VaultOperations {
       const stat = await this.vault.adapter.stat(normalizedPath);
       
       if (stat) {
+        const type = stat.type === 'folder' ? 'folder' : 'file';
         return {
           size: stat.size || 0,
           mtime: stat.mtime || 0,
           ctime: stat.ctime || 0,
-          type: stat.type as 'file' | 'folder'
+          type
         };
       }
       

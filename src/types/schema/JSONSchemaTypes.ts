@@ -17,7 +17,7 @@ export type JSONSchemaType = 'string' | 'number' | 'integer' | 'boolean' | 'arra
  * Note: `type` accepts `string` to handle TypeScript's inference of literal types in object literals
  */
 export interface JSONSchemaBase {
-  type?: JSONSchemaType | JSONSchemaType[] | string;
+  type?: string | JSONSchemaType[];
   description?: string;
   default?: unknown;
   enum?: unknown[];
@@ -32,7 +32,7 @@ export interface JSONSchemaString extends JSONSchemaBase {
   minLength?: number;
   maxLength?: number;
   pattern?: string;
-  format?: 'date' | 'date-time' | 'email' | 'uri' | 'uuid' | string;
+  format?: string;
 }
 
 export interface JSONSchemaNumber extends JSONSchemaBase {

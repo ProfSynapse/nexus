@@ -68,7 +68,7 @@ export interface ToolCallRequest {
  * Tool call response information for capture
  */
 export interface ToolCallResponse {
-    result: any;
+    result: unknown;
     success: boolean;
     executionTime: number;
     timestamp: number;
@@ -86,12 +86,12 @@ export interface ToolCallResponse {
 /**
  * Agent factory function type
  */
-export type AgentFactory = () => Promise<any> | any;
+export type AgentFactory = () => unknown;
 
 /**
  * Agent constructor type
  */
-export type AgentConstructor = new (...args: any[]) => any;
+export type AgentConstructor = new (...args: unknown[]) => unknown;
 
 /**
  * Agent configuration options

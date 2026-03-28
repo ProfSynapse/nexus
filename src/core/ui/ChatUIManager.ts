@@ -7,7 +7,6 @@
  * providing a focused interface for chat UI operations.
  */
 
-import { Notice } from 'obsidian';
 import type { App, Plugin } from 'obsidian';
 import type { Settings } from '../../settings';
 import type { ChatService } from '../../services/chat/ChatService';
@@ -88,7 +87,7 @@ export class ChatUIManager {
      */
     async registerChatUI(): Promise<void> {
         try {
-            const { plugin, app } = this.config;
+            const { plugin } = this.config;
 
             // Skip if already registered
             if (this.chatUIRegistered) {
@@ -100,7 +99,7 @@ export class ChatUIManager {
 
             // Add ribbon icon for chat
             plugin.addRibbonIcon('message-square', 'Open chat', () => {
-                this.activateChatView();
+                void this.activateChatView();
             });
 
             // Add command to open chat
@@ -108,7 +107,7 @@ export class ChatUIManager {
                 id: 'open-chat',
                 name: 'Open chat',
                 callback: () => {
-                    this.activateChatView();
+                    void this.activateChatView();
                 }
             });
 
@@ -131,7 +130,7 @@ export class ChatUIManager {
         // Check if chat view already exists
         const existingLeaf = app.workspace.getLeavesOfType(CHAT_VIEW_TYPE)[0];
         if (existingLeaf) {
-            app.workspace.revealLeaf(existingLeaf);
+            await app.workspace.revealLeaf(existingLeaf);
             return;
         }
         
@@ -144,7 +143,7 @@ export class ChatUIManager {
             active: true
         });
 
-        app.workspace.revealLeaf(leaf);
+        await app.workspace.revealLeaf(leaf);
     }
 
     /**
@@ -159,5 +158,6 @@ export class ChatUIManager {
      */
     resetRegistrationState(): void {
         this.chatUIRegistered = false;
+        this.viewRegistered = false;
     }
 }

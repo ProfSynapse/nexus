@@ -55,7 +55,7 @@ export class PromptExecutor {
         };
       }
 
-      const textConfig = promptConfig as TextPromptConfig;
+      const textConfig = promptConfig;
 
       // Validate and determine provider and model
       const { provider, model, validationError } = await this.validateAndSelectProviderModel(textConfig);
@@ -139,7 +139,7 @@ export class PromptExecutor {
         error: getErrorMessage(error),
         provider: promptConfig.provider,
         model: promptConfig.model,
-        promptName: promptConfig.type === 'text' ? (promptConfig as TextPromptConfig).customPrompt || 'default' : 'default',
+        promptName: promptConfig.type === 'text' ? promptConfig.customPrompt || 'default' : 'default',
         executionTime: 0,
         sequence: currentSequence,
         parallelGroup: promptConfig.parallelGroup
@@ -258,12 +258,13 @@ export class PromptExecutor {
     if (promptIdentifier && this.promptStorage) {
       try {
         // Use unified lookup (tries ID first, then name)
-        const customPrompt = await this.promptStorage.getPromptByNameOrId(promptIdentifier);
+        const customPrompt = this.promptStorage.getPromptByNameOrId(promptIdentifier);
         if (customPrompt && customPrompt.isEnabled) {
           systemPrompt = customPrompt.prompt;
           promptUsed = customPrompt.name;
         }
-      } catch (error) {
+      } catch {
+        // Fall back to the default prompt when lookup fails.
       }
     }
 

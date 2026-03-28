@@ -84,7 +84,7 @@ export class MemorySearchFilters implements MemorySearchFiltersInterface {
       try {
         const resultTime = new Date(result.metadata.created).getTime();
         return resultTime >= startTime && resultTime <= endTime;
-      } catch (error) {
+      } catch {
         // If date parsing fails, include result unless strict filtering is enabled
         return !this.configuration.strictFiltering;
       }
@@ -123,7 +123,7 @@ export class MemorySearchFilters implements MemorySearchFiltersInterface {
         
         return searchableContent.includes(searchPattern);
       });
-    } catch (error) {
+    } catch {
       return this.configuration.strictFiltering ? [] : results;
     }
   }
@@ -134,7 +134,7 @@ export class MemorySearchFilters implements MemorySearchFiltersInterface {
   applyToolCallFilter(results: MemorySearchResult[], filter: ToolCallFilter): MemorySearchResult[] {
     return results.filter(result => {
       // Only apply to tool call results
-      if (result.type !== MemoryType.TOOL_CALL) return true;
+      if (result.type !== 'toolCall') return true;
 
       return this.matchesToolCallFilter(result, filter);
     });
@@ -179,7 +179,9 @@ export class MemorySearchFilters implements MemorySearchFiltersInterface {
   applyTypeFilter(results: MemorySearchResult[], types: MemoryType[]): MemorySearchResult[] {
     if (!types || types.length === 0) return results;
 
-    return results.filter(result => types.includes(result.type as MemoryType));
+    const allowedTypes = new Set<string>(types);
+
+    return results.filter(result => allowedTypes.has(result.type));
   }
 
   /**
@@ -200,7 +202,7 @@ export class MemorySearchFilters implements MemorySearchFiltersInterface {
   applySuccessFilter(results: MemorySearchResult[], successStatus: boolean): MemorySearchResult[] {
     return results.filter(result => {
       // Only apply to tool call results
-      if (result.type !== MemoryType.TOOL_CALL) return true;
+      if (result.type !== 'toolCall') return true;
 
       return result.metadata.success === successStatus;
     });
@@ -218,7 +220,7 @@ export class MemorySearchFilters implements MemorySearchFiltersInterface {
 
     return results.filter(result => {
       // Only apply to tool call results
-      if (result.type !== MemoryType.TOOL_CALL) return true;
+      if (result.type !== 'toolCall') return true;
 
       const executionTime = result.metadata.executionTime;
       if (executionTime === undefined) return !this.configuration.strictFiltering;

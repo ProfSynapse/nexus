@@ -25,6 +25,19 @@ export interface MigrationResult {
   migrationTime: number;
 }
 
+interface ChromaDataSummary {
+  totalItems: number;
+  collections: Record<string, number>;
+  oldestItem?: number;
+  newestItem?: number;
+}
+
+interface ChromaAccessTest {
+  accessible: string[];
+  missing: string[];
+  errors: string[];
+}
+
 export class DataMigrationService {
   private chromaLoader: ChromaDataLoader;
   private transformer: DataTransformer;
@@ -115,7 +128,7 @@ export class DataMigrationService {
       await this.fileSystem.ensureWorkspacesDirectory();
 
       // Step 2: Get data summary for reporting
-      const dataSummary = await this.chromaLoader.getDataSummary();
+      await this.chromaLoader.getDataSummary();
 
       // Step 3: Load all ChromaDB collections
       const chromaData = await this.chromaLoader.loadAllCollections();
@@ -215,17 +228,17 @@ export class DataMigrationService {
    * Get detailed information about the migration for debugging
    */
   async getMigrationInfo(): Promise<{
-    chromaDataSummary?: any;
+    chromaDataSummary?: ChromaDataSummary;
     conversationsExist: boolean;
     workspacesExist: boolean;
-    accessTest?: any;
+    accessTest?: ChromaAccessTest;
     errors: string[];
   }> {
     const info: {
-      chromaDataSummary?: any;
+      chromaDataSummary?: ChromaDataSummary;
       conversationsExist: boolean;
       workspacesExist: boolean;
-      accessTest?: any;
+      accessTest?: ChromaAccessTest;
       errors: string[];
     } = {
       conversationsExist: false,

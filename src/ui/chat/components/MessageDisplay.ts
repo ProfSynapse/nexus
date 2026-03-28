@@ -21,7 +21,7 @@ export class MessageDisplay {
     private branchManager: BranchManager,
     private onRetryMessage?: (messageId: string) => void,
     private onEditMessage?: (messageId: string, newContent: string) => void,
-    private onToolEvent?: (messageId: string, event: 'detected' | 'updated' | 'started' | 'completed', data: any) => void,
+    private onToolEvent?: (messageId: string, event: 'detected' | 'updated' | 'started' | 'completed', data: unknown) => void,
     private onMessageAlternativeChanged?: (messageId: string, alternativeIndex: number) => void,
     private onViewBranch?: (branchId: string) => void
   ) {
@@ -144,7 +144,7 @@ export class MessageDisplay {
   addMessage(message: ConversationMessage): void {
     const bubble = this.createMessageBubble(message);
     this.container.querySelector('.messages-container')?.appendChild(bubble);
-    this.ensureTransientEventRowPosition(this.container.querySelector('.messages-container') as HTMLElement | null);
+    this.ensureTransientEventRowPosition(this.container.querySelector('.messages-container'));
     this.scrollToBottom();
   }
 
@@ -154,7 +154,7 @@ export class MessageDisplay {
   addAIMessage(message: ConversationMessage): void {
     const bubble = this.createMessageBubble(message);
     this.container.querySelector('.messages-container')?.appendChild(bubble);
-    this.ensureTransientEventRowPosition(this.container.querySelector('.messages-container') as HTMLElement | null);
+    this.ensureTransientEventRowPosition(this.container.querySelector('.messages-container'));
     this.scrollToBottom();
   }
 
@@ -267,7 +267,7 @@ export class MessageDisplay {
       }
     }
 
-    this.ensureTransientEventRowPosition(this.container.querySelector('.messages-container') as HTMLElement | null);
+    this.ensureTransientEventRowPosition(this.container.querySelector('.messages-container'));
     this.scrollToBottom();
   }
 
@@ -343,7 +343,7 @@ export class MessageDisplay {
     if (message) {
       navigator.clipboard.writeText(message.content).then(() => {
         // Message copied to clipboard
-      }).catch(err => {
+      }).catch(() => {
         // Failed to copy message
       });
     }

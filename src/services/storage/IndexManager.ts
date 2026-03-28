@@ -13,6 +13,12 @@ import {
   WorkspaceMetadata
 } from '../../types/storage/StorageTypes';
 
+interface ConversationDateBucket {
+  start: number;
+  end: number;
+  conversationIds: string[];
+}
+
 export class IndexManager {
   constructor(private fileSystem: FileSystemService) {}
 
@@ -407,8 +413,8 @@ export class IndexManager {
   /**
    * Create monthly date range buckets for the last 12 months
    */
-  private createDateRangeBuckets(): Array<{ start: number; end: number; conversationIds: string[] }> {
-    const buckets = [];
+  private createDateRangeBuckets(): ConversationDateBucket[] {
+    const buckets: ConversationDateBucket[] = [];
     const now = Date.now();
     const oneMonth = 30 * 24 * 60 * 60 * 1000;
 
@@ -428,7 +434,7 @@ export class IndexManager {
   /**
    * Add conversation to appropriate date range bucket
    */
-  private addToDateRangeBucket(buckets: any[], timestamp: number, id: string): void {
+  private addToDateRangeBucket(buckets: ConversationDateBucket[], timestamp: number, id: string): void {
     for (const bucket of buckets) {
       if (timestamp >= bucket.start && timestamp < bucket.end) {
         if (!bucket.conversationIds.includes(id)) {

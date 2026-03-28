@@ -1,4 +1,25 @@
-import { Events, Vault, TFile, TFolder, FileStats, MetadataCache, App, EventRef } from 'obsidian';
+import { Events, Vault, TFile, App, EventRef } from 'obsidian';
+
+function toRecord(value: unknown): Record<string, unknown> | undefined {
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+        return undefined;
+    }
+
+    return value as Record<string, unknown>;
+}
+
+function getAliases(frontmatter: Record<string, unknown> | undefined): string[] {
+    const aliases = frontmatter?.aliases;
+    if (Array.isArray(aliases)) {
+        return aliases.filter((alias): alias is string => typeof alias === 'string');
+    }
+
+    if (typeof aliases === 'string') {
+        return [aliases];
+    }
+
+    return [];
+}
 
 export interface IndexedFile {
     path: string;
@@ -12,7 +33,7 @@ export interface IndexedFile {
     isKeyFile: boolean;
     tags?: string[];
     aliases?: string[];
-    frontmatter?: any;
+    frontmatter?: Record<string, unknown>;
     backlinks?: string[];
     forwardLinks?: string[];
 }
@@ -138,9 +159,10 @@ export class VaultFileIndex extends Events {
             // Load frontmatter - Note: getFileCache may not be available in all vault types
             const cache = this.app?.metadataCache?.getFileCache(file);
             if (cache) {
-                indexed.frontmatter = cache.frontmatter;
+                const frontmatter = toRecord(cache.frontmatter);
+                indexed.frontmatter = frontmatter;
                 indexed.tags = cache.tags?.map((t: { tag: string }) => t.tag) || [];
-                indexed.aliases = cache.frontmatter?.aliases || [];
+                indexed.aliases = getAliases(frontmatter);
 
                 // Update tag index
                 if (indexed.tags) {
@@ -343,7 +365,7 @@ export class VaultFileIndex extends Events {
 
         // Listen for metadata changes (tags, frontmatter, links)
         const metadataChangedRef = metadataCache.on('changed', (file: TFile) => {
-            this.handleMetadataChanged(file);
+            void this.handleMetadataChanged(file);
         });
 
         // Listen for resolved metadata (when a file's metadata is fully processed)

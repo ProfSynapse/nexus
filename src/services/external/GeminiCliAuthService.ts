@@ -10,6 +10,52 @@ import { App, Platform } from 'obsidian';
 import { CliProcessResult } from '../../utils/cliProcessRunner';
 import { resolveGeminiCliRuntime } from '../../utils/geminiCli';
 
+type FsModule = typeof import('fs');
+type OsModule = typeof import('os');
+type PathModule = typeof import('path');
+
+interface RuntimeRequire {
+    <T>(moduleName: string): T;
+}
+
+interface ModuleWithRequire {
+    require?: RuntimeRequire;
+}
+
+function getGlobalValue(propertyName: string): unknown {
+    return Reflect.get(globalThis as object, propertyName);
+}
+
+function isModuleWithRequire(value: unknown): value is ModuleWithRequire {
+    return typeof value === 'object' && value !== null;
+}
+
+function getRuntimeRequire(): RuntimeRequire {
+    const directRequire = getGlobalValue('require');
+    if (typeof directRequire === 'function') {
+        return directRequire as RuntimeRequire;
+    }
+
+    const moduleValue = getGlobalValue('module');
+    if (isModuleWithRequire(moduleValue) && typeof moduleValue.require === 'function') {
+        return moduleValue.require;
+    }
+
+    throw new Error('Node require is not available in this environment');
+}
+
+function getFsModule(): FsModule {
+    return getRuntimeRequire()<FsModule>('fs');
+}
+
+function getOsModule(): OsModule {
+    return getRuntimeRequire()<OsModule>('os');
+}
+
+function getPathModule(): PathModule {
+    return getRuntimeRequire()<PathModule>('path');
+}
+
 export interface GeminiCliAuthStatus {
     available: boolean;
     loggedIn: boolean;
@@ -95,9 +141,9 @@ export class GeminiCliAuthService {
      * non-zero otherwise.
      */
     private async runAuthProbe(): Promise<CliProcessResult> {
-        const fs = require('fs') as typeof import('fs');
-        const osMod = require('os') as typeof import('os');
-        const pathMod = require('path') as typeof import('path');
+        const fs = getFsModule();
+        const osMod = getOsModule();
+        const pathMod = getPathModule();
 
         const credsPath = pathMod.join(osMod.homedir(), '.gemini', 'oauth_creds.json');
 
@@ -135,7 +181,8 @@ export class GeminiCliAuthService {
         // Parse and confirm an access token is present
         try {
             const creds = JSON.parse(raw) as Record<string, unknown>;
-            const hasToken = typeof creds['access_token'] === 'string' && (creds['access_token'] as string).length > 0;
+            const accessToken = creds['access_token'];
+            const hasToken = typeof accessToken === 'string' && accessToken.length > 0;
             if (!hasToken) {
                 return {
                     stdout: '',

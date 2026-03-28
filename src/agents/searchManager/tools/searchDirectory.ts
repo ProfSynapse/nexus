@@ -16,6 +16,7 @@ import { BaseTool } from '../../baseTool';
 import { getErrorMessage } from '../../../utils/errorUtils';
 import { CommonParameters } from '../../../types/mcp/AgentTypes';
 import { WorkspaceService, GLOBAL_WORKSPACE_ID } from '../../../services/WorkspaceService';
+import type { JSONSchema } from '../../../types/schema/JSONSchemaTypes';
 
 // Import refactored services
 import { DirectoryItemCollector } from '../services/DirectoryItemCollector';
@@ -177,9 +178,9 @@ export class SearchDirectoryTool extends BaseTool<SearchDirectoryParams, SearchD
    * @returns Items (potentially boosted if workspace context available)
    */
   private async applyWorkspaceContext(
-    items: any[],
+    items: DirectoryItem[],
     workspaceId?: string
-  ): Promise<any[]> {
+  ): Promise<DirectoryItem[]> {
     if (!this.workspaceService || !workspaceId || workspaceId === GLOBAL_WORKSPACE_ID) {
       return items;
     }
@@ -194,12 +195,12 @@ export class SearchDirectoryTool extends BaseTool<SearchDirectoryParams, SearchD
       // This maintains the explicit directory paths while adding workspace awareness
       return items;
 
-    } catch (error) {
+    } catch {
       return items;
     }
   }
 
-  getParameterSchema() {
+  getParameterSchema(): JSONSchema {
     const toolSchema = {
       type: 'object',
       title: 'Search Directory',
@@ -284,7 +285,7 @@ export class SearchDirectoryTool extends BaseTool<SearchDirectoryParams, SearchD
     return this.getMergedSchema(toolSchema);
   }
 
-  getResultSchema() {
+  getResultSchema(): JSONSchema {
     return {
       type: 'object',
       properties: {

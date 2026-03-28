@@ -330,15 +330,18 @@ export class ToolBatchExecutionService {
       }
 
       if (toolResult.success) {
-        const {
-          success: _success,
-          error: _error,
-          data,
-          workspaceContext: _workspaceContext,
-          context: _context,
-          sessionId: _sessionId,
-          ...extra
-        } = toolResult as unknown as Record<string, unknown>;
+        const toolResultRecord = toolResult as unknown as Record<string, unknown>;
+        const data = toolResultRecord.data;
+        const extra = Object.fromEntries(
+          Object.entries(toolResultRecord).filter(([key]) => ![
+            'success',
+            'error',
+            'data',
+            'workspaceContext',
+            'context',
+            'sessionId',
+          ].includes(key))
+        );
 
         if (data !== undefined && data !== null) {
           result.data = data;

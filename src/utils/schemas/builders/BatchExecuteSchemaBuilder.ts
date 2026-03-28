@@ -12,6 +12,15 @@ import { ISchemaBuilder, SchemaContext } from '../SchemaTypes';
 import { LLMProviderManager } from '../../../services/llm/providers/ProviderManager';
 import { mergeWithCommonSchema } from '../../schemaUtils';
 import { SchemaBuilder } from '../SchemaBuilder';
+import type { JSONSchema } from '../../../types/schema/JSONSchemaTypes';
+
+function toJSONSchema(value: unknown): JSONSchema | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+
+  return value as JSONSchema;
+}
 
 /**
  * Batch Execute Schema Builder - Handles complex batch LLM execution schemas
@@ -19,7 +28,7 @@ import { SchemaBuilder } from '../SchemaBuilder';
 export class BatchExecuteSchemaBuilder implements ISchemaBuilder {
   constructor(private providerManager: LLMProviderManager | null) {}
 
-  buildParameterSchema(context: SchemaContext): any {
+  buildParameterSchema(_context: SchemaContext): JSONSchema {
     const builder = new SchemaBuilder(this.providerManager);
     const commonProps = builder.buildCommonProperties({
       includeProviders: true,
@@ -48,8 +57,8 @@ export class BatchExecuteSchemaBuilder implements ISchemaBuilder {
                   'Explain this concept in simple terms'
                 ]
               },
-              provider: commonProps.provider,
-              model: commonProps.model,
+              ...(commonProps.provider ? { provider: toJSONSchema(commonProps.provider) } : {}),
+              ...(commonProps.model ? { model: toJSONSchema(commonProps.model) } : {}),
               contextFiles: {
                 type: 'array',
                 description: 'Optional context files to include with this prompt',
@@ -84,7 +93,7 @@ export class BatchExecuteSchemaBuilder implements ISchemaBuilder {
                 description: 'Specific IDs of previous steps to include as context (if not specified, includes all previous results when includePreviousResults is true)',
                 items: { type: 'string' }
               },
-              action: commonProps.action,
+              ...(commonProps.action ? { action: toJSONSchema(commonProps.action) } : {}),
               agent: {
                 type: 'string',
                 description: 'Optional custom agent/prompt to use for this prompt'
@@ -105,10 +114,10 @@ export class BatchExecuteSchemaBuilder implements ISchemaBuilder {
       additionalProperties: false
     };
 
-    return mergeWithCommonSchema(batchSchema);
+    return mergeWithCommonSchema(batchSchema) as JSONSchema;
   }
 
-  buildResultSchema(context: SchemaContext): any {
+  buildResultSchema(_context: SchemaContext): JSONSchema {
     return {
       type: 'object',
       properties: {
@@ -180,7 +189,7 @@ export class BatchExecuteSchemaBuilder implements ISchemaBuilder {
     };
   }
 
-  private buildPromptResultSchema(): any {
+  private buildPromptResultSchema(): JSONSchema {
     return {
       type: 'object',
       properties: {

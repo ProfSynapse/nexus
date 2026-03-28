@@ -4,8 +4,54 @@
  * Shared CLI process runner for spawn-collect-resolve pattern.
  * Used by AnthropicClaudeCodeAdapter, GoogleGeminiCliAdapter, and GeminiCliAuthService.
  */
-import type { ChildProcess, SpawnOptions } from 'child_process';
 import { spawnDesktopProcess } from './desktopProcess';
+
+type ChildProcessModuleLike = Parameters<typeof spawnDesktopProcess>[0];
+type SpawnOptionsLike = Parameters<typeof spawnDesktopProcess>[3];
+type SpawnedProcess = ReturnType<typeof spawnDesktopProcess>;
+
+interface RuntimeRequire {
+  <T>(moduleName: string): T;
+}
+
+interface ModuleWithRequire {
+  require?: RuntimeRequire;
+}
+
+interface ProcessEnvLike {
+  [key: string]: string | undefined;
+}
+
+interface ProcessErrorLike {
+  message: string;
+  code?: string;
+}
+
+function getGlobalValue(propertyName: string): unknown {
+  return Reflect.get(globalThis as object, propertyName);
+}
+
+function isModuleWithRequire(value: unknown): value is ModuleWithRequire {
+  return typeof value === 'object' && value !== null;
+}
+
+function getRuntimeRequire(): RuntimeRequire {
+  const directRequire = getGlobalValue('require');
+  if (typeof directRequire === 'function') {
+    return directRequire as RuntimeRequire;
+  }
+
+  const moduleValue = getGlobalValue('module');
+  if (isModuleWithRequire(moduleValue) && typeof moduleValue.require === 'function') {
+    return moduleValue.require;
+  }
+
+  throw new Error('Node require is not available in this environment');
+}
+
+function getChildProcessModule(): ChildProcessModuleLike {
+  return getRuntimeRequire()<ChildProcessModuleLike>('child_process');
+}
 
 export interface CliProcessResult {
   stdout: string;
@@ -15,7 +61,7 @@ export interface CliProcessResult {
 }
 
 export interface CliProcessHandle {
-  child: ChildProcess;
+  child: SpawnedProcess;
   result: Promise<CliProcessResult>;
 }
 
@@ -32,13 +78,13 @@ export function runCliProcess(
   args: string[],
   options?: {
     cwd?: string;
-    env?: NodeJS.ProcessEnv;
+    env?: ProcessEnvLike;
     stdinText?: string;
   }
 ): CliProcessHandle {
-  const childProcess = require('child_process') as typeof import('child_process');
+  const childProcess = getChildProcessModule();
 
-  const spawnOptions: SpawnOptions = {
+  const spawnOptions: SpawnOptionsLike = {
     cwd: options?.cwd,
     env: options?.env,
     stdio: options?.stdinText !== undefined ? ['pipe', 'pipe', 'pipe'] : ['ignore', 'pipe', 'pipe']
@@ -76,7 +122,7 @@ export function runCliProcess(
       stderr += chunk.toString();
     });
 
-    child.on('error', (error: NodeJS.ErrnoException) => {
+    child.on('error', (error: ProcessErrorLike) => {
       resolveOnce({
         stdout,
         stderr: stderr ? `${stderr}\n${error.message}` : error.message,
@@ -100,7 +146,7 @@ export function runCliProcess(
         return;
       }
 
-      const handleStdinError = (error: NodeJS.ErrnoException) => {
+      const handleStdinError = (error: ProcessErrorLike) => {
         resolveOnce({
           stdout,
           stderr: stderr ? `${stderr}\n${error.message}` : error.message,

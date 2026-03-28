@@ -12,6 +12,42 @@ import {
   ProviderModalDependencies,
 } from '../types';
 
+interface LMStudioModelRecord {
+  id: string;
+}
+
+interface LMStudioModelsResponse {
+  data: LMStudioModelRecord[];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function parseLMStudioModelsResponse(value: unknown): LMStudioModelsResponse | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const { data } = value;
+  if (!Array.isArray(data)) {
+    return null;
+  }
+
+  const models = data
+    .filter((item): item is Record<string, unknown> => isRecord(item))
+    .map((item) => item.id)
+    .filter((id): id is string => typeof id === 'string');
+
+  if (models.length !== data.length) {
+    return null;
+  }
+
+  return {
+    data: models.map((id) => ({ id })),
+  };
+}
+
 export class LMStudioProviderModal implements IProviderModal {
   private config: ProviderModalConfig;
   private deps: ProviderModalDependencies;
@@ -103,7 +139,7 @@ export class LMStudioProviderModal implements IProviderModal {
 
       // Auto-discover after delay
       this.validationTimeout = setTimeout(() => {
-        this.discoverModels();
+        void this.discoverModels();
       }, 2000);
 
       // Auto-enable
@@ -212,9 +248,9 @@ export class LMStudioProviderModal implements IProviderModal {
         throw new Error(`Server not responding: ${modelsResponse.status}. Make sure LM Studio server is running.`);
       }
 
-      const modelsData = modelsResponse.json;
+      const modelsData = parseLMStudioModelsResponse(modelsResponse.json);
 
-      if (!modelsData.data || !Array.isArray(modelsData.data)) {
+      if (!modelsData) {
         throw new Error('Invalid response format from LM Studio server');
       }
 

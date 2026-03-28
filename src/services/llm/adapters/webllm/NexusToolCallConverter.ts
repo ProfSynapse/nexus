@@ -49,6 +49,31 @@ interface UseToolParams {
   strategy?: 'serial' | 'parallel';
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function isUseToolCall(value: unknown): value is UseToolCall {
+  return isRecord(value)
+    && typeof value.agent === 'string'
+    && typeof value.tool === 'string'
+    && isRecord(value.params);
+}
+
+function parseRecordJson(json: string): Record<string, unknown> {
+  const parsed: unknown = JSON.parse(json);
+  return isRecord(parsed) ? parsed : {};
+}
+
+function parseUseToolCalls(json: string): UseToolCall[] {
+  const parsed: unknown = JSON.parse(json);
+  if (!isRecord(parsed) || !Array.isArray(parsed.calls)) {
+    return [];
+  }
+
+  return parsed.calls.filter(isUseToolCall);
+}
+
 
 export class NexusToolCallConverter {
   private defaultContext: NexusDefaultContext;
@@ -164,7 +189,7 @@ export class NexusToolCallConverter {
     let originalParams: Record<string, unknown> = {};
     try {
       const argsStr = toolCall.function?.arguments || '{}';
-      originalParams = JSON.parse(argsStr);
+      originalParams = parseRecordJson(argsStr);
     } catch {
       // Invalid JSON - use empty params
     }
@@ -223,10 +248,7 @@ export class NexusToolCallConverter {
       // If already useTool format, extract its calls
       if (this.isUseToolFormat(toolCall)) {
         try {
-          const params = JSON.parse(toolCall.function?.arguments || '{}');
-          if (params.calls && Array.isArray(params.calls)) {
-            allCalls.push(...params.calls);
-          }
+          allCalls.push(...parseUseToolCalls(toolCall.function?.arguments || '{}'));
         } catch {
           // Invalid JSON - skip
         }
@@ -240,7 +262,7 @@ export class NexusToolCallConverter {
       if (parsed) {
         let originalParams: Record<string, unknown> = {};
         try {
-          originalParams = JSON.parse(toolCall.function?.arguments || '{}');
+          originalParams = parseRecordJson(toolCall.function?.arguments || '{}');
         } catch {
           // Invalid JSON
         }

@@ -7,7 +7,7 @@ export const logger = {
     /**
      * Log fatal system errors that prevent core functionality
      */
-    systemError(error: Error, context?: string) {
+    systemError(error: Error, context?: string): void {
         console.error(
             `SYSTEM ERROR${context ? ` [${context}]` : ''}: ${error.message}`
         );
@@ -16,14 +16,14 @@ export const logger = {
     /**
      * Log system warnings that don't prevent functionality but indicate issues
      */
-    systemWarn(message: string, context?: string) {
+    systemWarn(_message: string, _context?: string): void {
         // No-op
     },
     
     /**
      * Log informational messages during development
      */
-    systemLog(message: string, context?: string) {
+    systemLog(_message: string, _context?: string): void {
         // No-op
     }
     

@@ -19,7 +19,6 @@ import {
     CreateWorkspaceResult
 } from '../../../../database/types/workspace/ParameterTypes';
 import { ProjectWorkspace, WorkspaceContext } from '../../../../database/types/workspace/WorkspaceTypes';
-import { WorkspaceService } from '../../../../services/WorkspaceService';
 import { createErrorMessage } from '../../../../utils/errorUtils';
 
 /**
@@ -75,7 +74,7 @@ export class CreateWorkspaceTool extends BaseTool<CreateWorkspaceParameters, Cre
                 if (!folder) {
                     await this.app.vault.createFolder(params.rootFolder);
                 }
-            } catch (folderError) {
+            } catch {
                 // Ignore folder creation errors
             }
             
@@ -130,7 +129,7 @@ export class CreateWorkspaceTool extends BaseTool<CreateWorkspaceParameters, Cre
                 if (existing) {
                     return this.prepareResult(false, undefined, `Workspace "${params.name}" already exists. Use listWorkspaces to see existing workspaces.`);
                 }
-            } catch (error) {
+            } catch {
                 // Ignore lookup errors
             }
 
@@ -168,7 +167,7 @@ export class CreateWorkspaceTool extends BaseTool<CreateWorkspaceParameters, Cre
                             if ('cachedData' in child && child.cachedData?.frontmatter?.key === true) {
                                 detectedFiles.push(child.path);
                             }
-                        } catch (error) {
+                        } catch {
                             // Ignore frontmatter parsing errors
                         }
                     }
@@ -177,7 +176,7 @@ export class CreateWorkspaceTool extends BaseTool<CreateWorkspaceParameters, Cre
 
             return detectedFiles;
 
-        } catch (error) {
+        } catch {
             return [];
         }
     }

@@ -507,14 +507,15 @@ export class ProvidersTab {
                     description: 'Connect your ChatGPT Plus/Pro account to use GPT-5 models via OAuth.',
                     config: { ...codexConfig },
                     oauthConfig: codexDisplay.oauthConfig,
-                    onConfigChange: async (updatedCodexConfig: LLMProviderConfig) => {
-                        settings.providers['openai-codex'] = updatedCodexConfig;
-                        await this.saveSettings();
+                    onConfigChange: (updatedCodexConfig: LLMProviderConfig) => {
+                        void (async () => {
+                            settings.providers['openai-codex'] = updatedCodexConfig;
+                            await this.saveSettings();
+                        })();
                     },
                 };
             }
         } else if (providerId === 'anthropic') {
-            const claudeCodeDisplay = this.providerConfigs['anthropic-claude-code'];
             const claudeCodeConfig = settings.providers['anthropic-claude-code'] || {
                 apiKey: '',
                 enabled: false,
@@ -529,9 +530,11 @@ export class ProvidersTab {
                     providerLabel: 'Claude Code',
                     startFlow: () => this.startClaudeCodeConnectFlow(),
                 },
-                onConfigChange: async (updatedClaudeCodeConfig: LLMProviderConfig) => {
-                    settings.providers['anthropic-claude-code'] = updatedClaudeCodeConfig;
-                    await this.saveSettings();
+                onConfigChange: (updatedClaudeCodeConfig: LLMProviderConfig) => {
+                    void (async () => {
+                        settings.providers['anthropic-claude-code'] = updatedClaudeCodeConfig;
+                        await this.saveSettings();
+                    })();
                 },
                 statusOnly: true,
                 statusHint: 'run `claude auth login` in your terminal',
@@ -551,9 +554,11 @@ export class ProvidersTab {
                     providerLabel: 'Gemini CLI',
                     startFlow: () => this.startGeminiCliConnectFlow(),
                 },
-                onConfigChange: async (updatedGeminiCliConfig: LLMProviderConfig) => {
-                    settings.providers['google-gemini-cli'] = updatedGeminiCliConfig;
-                    await this.saveSettings();
+                onConfigChange: (updatedGeminiCliConfig: LLMProviderConfig) => {
+                    void (async () => {
+                        settings.providers['google-gemini-cli'] = updatedGeminiCliConfig;
+                        await this.saveSettings();
+                    })();
                 },
                 statusOnly: true,
                 statusHint: 'run `gemini auth` in your terminal',
@@ -569,23 +574,25 @@ export class ProvidersTab {
             oauthConfig: displayConfig.oauthConfig,
             secondaryOAuthProvider,
             oauthOnly: providerId === 'github-copilot',
-            onSave: async (updatedConfig: LLMProviderConfig) => {
-                settings.providers[providerId] = updatedConfig;
+            onSave: (updatedConfig: LLMProviderConfig) => {
+                void (async () => {
+                    settings.providers[providerId] = updatedConfig;
 
-                // Handle Ollama model update
-                if (providerId === 'ollama' && '__ollamaModel' in updatedConfig) {
-                    const ollamaModel = (updatedConfig as LLMProviderConfig & { __ollamaModel: string }).__ollamaModel;
-                    if (ollamaModel) {
-                        delete (updatedConfig as LLMProviderConfig & { __ollamaModel?: string }).__ollamaModel;
-                        if (settings.defaultModel.provider === 'ollama') {
-                            settings.defaultModel.model = ollamaModel;
+                    // Handle Ollama model update
+                    if (providerId === 'ollama' && '__ollamaModel' in updatedConfig) {
+                        const ollamaModel = (updatedConfig as LLMProviderConfig & { __ollamaModel: string }).__ollamaModel;
+                        if (ollamaModel) {
+                            delete (updatedConfig as LLMProviderConfig & { __ollamaModel?: string }).__ollamaModel;
+                            if (settings.defaultModel.provider === 'ollama') {
+                                settings.defaultModel.model = ollamaModel;
+                            }
                         }
                     }
-                }
 
-                await this.saveSettings();
-                this.render(); // Refresh the view
-                new Notice(`${displayConfig.name} settings saved`);
+                    await this.saveSettings();
+                    this.render(); // Refresh the view
+                    new Notice(`${displayConfig.name} settings saved`);
+                })();
             }
         };
 

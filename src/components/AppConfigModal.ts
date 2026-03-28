@@ -43,6 +43,10 @@ export interface AppConfigModalConfig {
   settingsSections?: AppSettingsSection[];
 }
 
+function formatError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 export class AppConfigModal extends Modal {
   private config: AppConfigModalConfig;
   private currentCredentials: Record<string, string>;
@@ -118,7 +122,8 @@ export class AppConfigModal extends Modal {
     // Validate button
     if (this.config.onValidate) {
       const validateBtn = buttonContainer.createEl('button', { text: 'Validate' });
-      validateBtn.addEventListener('click', async () => {
+      validateBtn.addEventListener('click', () => {
+        void (async () => {
         validateBtn.disabled = true;
         validateBtn.setText('Validating...');
         try {
@@ -145,11 +150,12 @@ export class AppConfigModal extends Modal {
             statusEl.className = 'app-config-status app-config-status-error';
           }
         } catch (error) {
-          new Notice(`Validation error: ${error}`);
+          new Notice(`Validation error: ${formatError(error)}`);
         } finally {
           validateBtn.disabled = false;
           validateBtn.setText('Validate');
         }
+        })();
       });
     }
 
@@ -159,9 +165,11 @@ export class AppConfigModal extends Modal {
         text: 'Uninstall',
         cls: 'mod-warning'
       });
-      uninstallBtn.addEventListener('click', async () => {
-        await this.config.onUninstall!();
-        this.close();
+      uninstallBtn.addEventListener('click', () => {
+        void (async () => {
+          await this.config.onUninstall!();
+          this.close();
+        })();
       });
     }
   }
@@ -180,7 +188,7 @@ export class AppConfigModal extends Modal {
       dropdown.setDisabled(true);
 
       // Load options asynchronously
-      section.loadOptions().then(result => {
+      void section.loadOptions().then(result => {
         // Clear loading option
         dropdown.selectEl.empty();
 
@@ -204,6 +212,10 @@ export class AppConfigModal extends Modal {
           this.currentSettings[section.key] = value;
           this.debounceSaveSettings();
         });
+      }).catch((error: unknown) => {
+        dropdown.selectEl.empty();
+        dropdown.addOption('', `Load failed: ${formatError(error)}`);
+        dropdown.setDisabled(true);
       });
     });
   }
@@ -212,13 +224,15 @@ export class AppConfigModal extends Modal {
     if (this.saveTimeout) {
       clearTimeout(this.saveTimeout);
     }
-    this.saveTimeout = setTimeout(async () => {
-      try {
-        await this.config.onSave(this.currentCredentials);
-        this.updateStatusEl('Saved');
-      } catch {
-        // Save failed silently
-      }
+    this.saveTimeout = setTimeout(() => {
+      void (async () => {
+        try {
+          await this.config.onSave(this.currentCredentials);
+          this.updateStatusEl('Saved');
+        } catch {
+          // Save failed silently
+        }
+      })();
     }, 500);
   }
 
@@ -226,15 +240,17 @@ export class AppConfigModal extends Modal {
     if (this.saveTimeout) {
       clearTimeout(this.saveTimeout);
     }
-    this.saveTimeout = setTimeout(async () => {
-      try {
-        if (this.config.onSaveSettings) {
-          await this.config.onSaveSettings(this.currentSettings);
+    this.saveTimeout = setTimeout(() => {
+      void (async () => {
+        try {
+          if (this.config.onSaveSettings) {
+            await this.config.onSaveSettings(this.currentSettings);
+          }
+          this.updateStatusEl('Saved');
+        } catch {
+          // Save failed silently
         }
-        this.updateStatusEl('Saved');
-      } catch {
-        // Save failed silently
-      }
+      })();
     }, 500);
   }
 

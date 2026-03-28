@@ -31,14 +31,26 @@ function getConversationFields(result: MemorySearchResult): Record<string, unkno
   return {};
 }
 
+function getDisplayString(value: unknown): string | undefined {
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+
+  return undefined;
+}
+
 /**
  * Formatter for conversation search results (semantic QA pair matches)
  */
 export class ConversationResultFormatter extends BaseResultFormatter {
   protected generateTitle(result: MemorySearchResult): string {
     const fields = getConversationFields(result);
-    const conversationTitle = fields.conversationTitle ?? 'Untitled';
-    return `Conversation: ${String(conversationTitle)}`;
+    const conversationTitle = getDisplayString(fields.conversationTitle) ?? 'Untitled';
+    return `Conversation: ${conversationTitle}`;
   }
 
   protected generateSubtitle(result: MemorySearchResult): string | undefined {
@@ -49,24 +61,28 @@ export class ConversationResultFormatter extends BaseResultFormatter {
       parts.push(fields.pairType === 'trace_pair' ? 'Tool Trace' : 'QA Turn');
     }
 
-    if (fields.matchedSide) {
-      parts.push(`Matched: ${String(fields.matchedSide)}`);
+    const matchedSide = getDisplayString(fields.matchedSide);
+    if (matchedSide) {
+      parts.push(`Matched: ${matchedSide}`);
     }
 
     return parts.length > 0 ? parts.join(' | ') : undefined;
   }
 
   protected addTypeSpecificMetadata(formatted: Record<string, string>, metadata: Record<string, unknown>): void {
-    if (metadata.conversationId) {
-      formatted['Conversation ID'] = String(metadata.conversationId);
+    const conversationId = getDisplayString(metadata.conversationId);
+    if (conversationId) {
+      formatted['Conversation ID'] = conversationId;
     }
 
-    if (metadata.pairType) {
-      formatted['Pair Type'] = String(metadata.pairType);
+    const pairType = getDisplayString(metadata.pairType);
+    if (pairType) {
+      formatted['Pair Type'] = pairType;
     }
 
-    if (metadata.matchedSide) {
-      formatted['Matched Side'] = String(metadata.matchedSide);
+    const metadataMatchedSide = getDisplayString(metadata.matchedSide);
+    if (metadataMatchedSide) {
+      formatted['Matched Side'] = metadataMatchedSide;
     }
   }
 }

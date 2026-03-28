@@ -12,6 +12,15 @@ import { ISchemaBuilder, SchemaContext } from '../SchemaTypes';
 import { LLMProviderManager } from '../../../services/llm/providers/ProviderManager';
 import { mergeWithCommonSchema } from '../../schemaUtils';
 import { SchemaBuilder } from '../SchemaBuilder';
+import type { JSONSchema } from '../../../types/schema/JSONSchemaTypes';
+
+function toJSONSchema(value: unknown): JSONSchema | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+
+  return value as JSONSchema;
+}
 
 /**
  * Execute Schema Builder - Handles single prompt execution schemas
@@ -19,14 +28,14 @@ import { SchemaBuilder } from '../SchemaBuilder';
 export class ExecuteSchemaBuilder implements ISchemaBuilder {
   constructor(private providerManager: LLMProviderManager | null) {}
 
-  buildParameterSchema(context: SchemaContext): any {
+  buildParameterSchema(_context: SchemaContext): JSONSchema {
     const builder = new SchemaBuilder(this.providerManager);
     const commonProps = builder.buildCommonProperties({
       includeProviders: true,
       includeActions: true
     });
 
-    return mergeWithCommonSchema({
+    const executeSchema = {
       properties: {
         agent: {
           type: 'string',
@@ -41,8 +50,8 @@ export class ExecuteSchemaBuilder implements ISchemaBuilder {
           type: 'string',
           description: 'User prompt/question to send to the LLM'
         },
-        provider: commonProps.provider,
-        model: commonProps.model,
+        ...(commonProps.provider ? { provider: toJSONSchema(commonProps.provider) } : {}),
+        ...(commonProps.model ? { model: toJSONSchema(commonProps.model) } : {}),
         temperature: {
           type: 'number',
           minimum: 0,
@@ -53,13 +62,15 @@ export class ExecuteSchemaBuilder implements ISchemaBuilder {
           type: 'number',
           description: 'Maximum tokens to generate'
         },
-        action: commonProps.action
+        ...(commonProps.action ? { action: toJSONSchema(commonProps.action) } : {})
       },
       required: ['prompt']
-    });
+    };
+
+    return mergeWithCommonSchema(executeSchema) as JSONSchema;
   }
 
-  buildResultSchema(context: SchemaContext): any {
+  buildResultSchema(_context: SchemaContext): JSONSchema {
     return {
       type: 'object',
       properties: {

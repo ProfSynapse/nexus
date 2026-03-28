@@ -30,7 +30,8 @@ import type {
 } from '../../types/branch/BranchTypes';
 import type { BranchService } from './BranchService';
 import type { MessageQueueService } from './MessageQueueService';
-import type { DirectToolExecutor } from './DirectToolExecutor';
+import type { DirectToolExecutor, DirectToolResult } from './DirectToolExecutor';
+import { formatWorkspaceDataForPrompt } from '../../utils/WorkspaceDataFormatter';
 
 export interface SubagentExecutorDependencies {
   branchService: BranchService;
@@ -129,7 +130,7 @@ export class SubagentExecutor {
     this.events.onSubagentStarted?.(subagentId, params.task, branchId);
 
     // Fire and forget - don't await
-    this.runSubagentLoop(subagentId, branchId, params, abortController.signal)
+    void this.runSubagentLoop(subagentId, branchId, params, abortController.signal)
       .then(result => {
         this.activeSubagents.delete(subagentId);
         this.updateStatus(subagentId, { state: result.success ? 'complete' : 'max_iterations' });
@@ -557,9 +558,7 @@ BEGIN - Start by calling getTools to discover available tools.`);
    * Format workspace data for inclusion in system prompt
    * Uses shared utility for consistency with SystemPromptBuilder
    */
-  private formatWorkspaceData(workspaceData: Record<string, unknown>): string {
-    // Import dynamically to avoid circular dependencies
-    const { formatWorkspaceDataForPrompt } = require('../../utils/WorkspaceDataFormatter');
+  private formatWorkspaceData(workspaceData: unknown): string {
     return formatWorkspaceDataForPrompt(workspaceData, { maxStates: 3 });
   }
 
@@ -628,10 +627,11 @@ BEGIN - Start by calling getTools to discover available tools.`);
             arguments: JSON.stringify({ filePath: file }),
           },
         }]);
-        const result = results[0];
+        const result: DirectToolResult | undefined = results[0];
+        const toolResult = result?.result;
 
-        if (result?.success && (result.result as { content?: string })?.content) {
-          contents.push(`--- ${file} ---\n${(result.result as { content: string }).content}`);
+        if (result?.success && this.hasStringContent(toolResult)) {
+          contents.push(`--- ${file} ---\n${toolResult.content}`);
         } else {
           contents.push(`--- ${file} --- (failed to read)`);
         }
@@ -668,7 +668,11 @@ BEGIN - Start by calling getTools to discover available tools.`);
       queuedAt: Date.now(),
     };
 
-    this.dependencies.messageQueueService.enqueue(message);
+    void this.dependencies.messageQueueService.enqueue(message);
+  }
+
+  private hasStringContent(value: unknown): value is { content: string } {
+    return typeof value === 'object' && value !== null && 'content' in value && typeof value.content === 'string';
   }
 
   /**

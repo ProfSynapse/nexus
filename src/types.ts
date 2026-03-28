@@ -33,9 +33,7 @@ export {
 } from './types/llm';
 
 // Memory management settings
-export interface MemorySettings {
-  // Workspace management interface
-}
+export type MemorySettings = Record<string, never>;
 
 export const DEFAULT_MEMORY_SETTINGS: MemorySettings = {
 };
@@ -77,6 +75,7 @@ export type {
 } from './types/common';
 
 // Create default settings object
+import type { Command } from 'obsidian';
 import { DEFAULT_CUSTOM_PROMPTS_SETTINGS } from './types/mcp';
 import { DEFAULT_LLM_PROVIDER_SETTINGS } from './types/llm';
 import { MCPSettings } from './types/plugin';

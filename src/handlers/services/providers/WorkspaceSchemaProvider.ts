@@ -205,7 +205,7 @@ export class WorkspaceSchemaProvider implements ISchemaProvider {
    */
   private applyEnhancement(originalSchema: EnhancedJSONSchema, enhancementData: WorkspaceEnhancementData): EnhancedJSONSchema {
     // Deep clone the original schema
-    const enhancedSchema = JSON.parse(JSON.stringify(originalSchema));
+    const enhancedSchema: EnhancedJSONSchema = structuredClone(originalSchema);
 
     // Ensure properties exist
     if (!enhancedSchema.properties) {

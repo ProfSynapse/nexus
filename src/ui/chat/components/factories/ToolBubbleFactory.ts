@@ -14,6 +14,7 @@
 import { setIcon, Component } from 'obsidian';
 import { ConversationMessage } from '../../../../types/chat/ChatTypes';
 import { ProgressiveToolAccordion } from '../ProgressiveToolAccordion';
+import type { MessageBranchNavigator } from '../MessageBranchNavigator';
 import { normalizeToolCallsForDisplay } from '../../utils/toolDisplayNormalizer';
 
 export interface ToolBubbleFactoryOptions {
@@ -92,7 +93,7 @@ export class ToolBubbleFactory {
     renderContentCallback: (content: HTMLElement, text: string) => Promise<void>,
     onCopy: (messageId: string) => void,
     showCopyFeedback: (button: HTMLElement) => void,
-    messageBranchNavigator: any | null,
+    messageBranchNavigator: MessageBranchNavigator | null,
     onMessageAlternativeChanged?: (messageId: string, alternativeIndex: number) => void,
     component?: Component
   ): HTMLElement {
@@ -134,15 +135,6 @@ export class ToolBubbleFactory {
 
     // Message branch navigator for messages with branches
     if (message.branches && message.branches.length > 0 && messageBranchNavigator) {
-      const navigatorEvents = {
-        onAlternativeChanged: (messageId: string, alternativeIndex: number) => {
-          if (onMessageAlternativeChanged) {
-            onMessageAlternativeChanged(messageId, alternativeIndex);
-          }
-        },
-        onError: (errorMessage: string) => console.error('[ToolBubbleFactory] Branch navigation error:', errorMessage)
-      };
-
       messageBranchNavigator.updateMessage(message);
     }
 

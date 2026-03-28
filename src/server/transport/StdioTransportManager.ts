@@ -8,6 +8,9 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import { logger } from '../../utils/logger';
 
+type StdioInputStream = ConstructorParameters<typeof StdioServerTransport>[0];
+type StdioOutputStream = ConstructorParameters<typeof StdioServerTransport>[1];
+
 /**
  * Service responsible for STDIO transport management
  * Follows SRP by focusing only on STDIO transport operations
@@ -113,7 +116,7 @@ export class StdioTransportManager {
     /**
      * Create a new transport instance (for socket connections)
      */
-    createSocketTransport(inputStream: any, outputStream: any): StdioServerTransport {
+    createSocketTransport(inputStream: StdioInputStream, outputStream: StdioOutputStream): StdioServerTransport {
         return new StdioServerTransport(inputStream, outputStream);
     }
 

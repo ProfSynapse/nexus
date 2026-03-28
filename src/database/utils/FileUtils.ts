@@ -6,7 +6,7 @@
  * repeated file existence checking logic into reusable methods.
  */
 
-import { TAbstractFile, TFile } from 'obsidian';
+import { App, TAbstractFile, TFile } from 'obsidian';
 
 export class FileUtils {
   /**
@@ -24,7 +24,7 @@ export class FileUtils {
    * @param filePath Path to check
    * @returns True if path points to a valid file
    */
-  static isValidFilePath(app: any, filePath: string): boolean {
+  static isValidFilePath(app: App, filePath: string): boolean {
     const file = app.vault.getAbstractFileByPath(filePath);
     return this.isValidFile(file);
   }
