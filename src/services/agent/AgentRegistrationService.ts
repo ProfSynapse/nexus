@@ -182,7 +182,7 @@ export class AgentRegistrationService implements AgentRegistrationServiceInterfa
           appsSettings,
           (agent) => this.agentManager.registerAgent(agent),
           (name) => this.agentManager.unregisterAgent(name),
-          this.app.vault
+          this.app
         );
         await appManager.loadInstalledApps();
         this.appManagerInstance = appManager;
