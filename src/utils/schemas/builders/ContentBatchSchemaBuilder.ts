@@ -9,12 +9,13 @@
  */
 
 import { ISchemaBuilder, SchemaContext } from '../SchemaTypes';
+import { JSONSchema } from '../../../types/schema/JSONSchemaTypes';
 
 /**
  * Content Batch Schema Builder - Handles batch content operations
  */
 export class ContentBatchSchemaBuilder implements ISchemaBuilder {
-  buildParameterSchema(context: SchemaContext): any {
+  buildParameterSchema(_context: SchemaContext): JSONSchema {
     return {
       type: 'object',
       properties: {
@@ -50,7 +51,7 @@ export class ContentBatchSchemaBuilder implements ISchemaBuilder {
     };
   }
 
-  buildResultSchema(context: SchemaContext): any {
+  buildResultSchema(_context: SchemaContext): JSONSchema {
     return {
       type: 'object',
       properties: {

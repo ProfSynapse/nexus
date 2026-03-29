@@ -3,6 +3,21 @@ import { getPrimaryServerKey } from '../constants/branding';
 import { resolveDesktopBinaryPath } from './binaryDiscovery';
 import { getVaultBasePath, getConnectorPath } from './cliPathUtils';
 
+type ProcessEnvironment = Record<string, string | undefined>;
+
+function getPathModule(): typeof import('path') | null {
+    const processWithBuiltinLoader = process as typeof process & {
+        getBuiltinModule?: (id: string) => unknown;
+    };
+    const builtinLoader = processWithBuiltinLoader.getBuiltinModule;
+    if (!builtinLoader) {
+        return null;
+    }
+
+    const pathModule = builtinLoader('path');
+    return pathModule as typeof import('path') | null;
+}
+
 export interface GeminiCliRuntime {
     geminiPath: string | null;
     nodePath: string | null;
@@ -37,8 +52,8 @@ export function resolveGeminiCliRuntime(vault: Vault): GeminiCliRuntime {
     };
 }
 
-export function buildGeminiCliEnv(systemSettingsPath?: string, nodePath?: string | null): NodeJS.ProcessEnv {
-    const env = { ...process.env };
+export function buildGeminiCliEnv(systemSettingsPath?: string, nodePath?: string | null): ProcessEnvironment {
+    const env: ProcessEnvironment = { ...process.env };
 
     delete env.GEMINI_API_KEY;
     delete env.GOOGLE_API_KEY;
@@ -56,10 +71,12 @@ export function buildGeminiCliEnv(systemSettingsPath?: string, nodePath?: string
     // (e.g. `node connector.js`) succeed when Obsidian runs with a restricted
     // PATH that omits nvm/homebrew/system node locations.
     if (nodePath) {
-        const pathMod = require('path') as typeof import('path');
-        const nodeDir = pathMod.dirname(nodePath);
-        const separator = process.platform === 'win32' ? ';' : ':';
-        env.PATH = nodeDir + separator + (env.PATH || '');
+        const pathMod = getPathModule();
+        if (pathMod) {
+            const nodeDir = pathMod.dirname(nodePath);
+            const separator = process.platform === 'win32' ? ';' : ':';
+            env.PATH = nodeDir + separator + (env.PATH || '');
+        }
     }
 
     return env;

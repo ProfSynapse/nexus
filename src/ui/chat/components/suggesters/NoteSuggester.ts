@@ -9,8 +9,7 @@ import {
   SuggestionItem,
   EditorSuggestContext,
   NoteSuggestionItem,
-  NoteReference,
-  EnhancementType
+  NoteReference
 } from './base/SuggesterInterfaces';
 import { MessageEnhancer } from '../../services/MessageEnhancer';
 import { TokenCalculator } from '../../utils/TokenCalculator';
@@ -134,49 +133,51 @@ export class NoteSuggester extends BaseSuggester<NoteSuggestionItem> {
    * @param item - Selected note
    * @param evt - Selection event
    */
-  async selectSuggestion(
+  selectSuggestion(
     item: SuggestionItem<NoteSuggestionItem>,
-    evt: MouseEvent | KeyboardEvent
-  ): Promise<void> {
+    _evt: MouseEvent | KeyboardEvent
+  ): void {
 
-    const context = this.context;
-    if (!context) return;
+    void (async () => {
+      const context = this.context;
+      if (!context) return;
 
-    const { editor, start, end } = context;
+      const { editor, start, end } = context;
 
-    // Read note content
-    const content = await this.app.vault.read(item.data.file);
+      // Read note content
+      const content = await this.app.vault.read(item.data.file);
 
-    // Calculate actual tokens
-    const tokens = TokenCalculator.estimateTextTokens(content);
+      // Calculate actual tokens
+      const tokens = TokenCalculator.estimateTextTokens(content);
 
-    // Create note reference
-    const noteRef: NoteReference = {
-      path: item.data.path,
-      name: item.data.name,
-      content: content,
-      tokens: tokens
-    };
+      // Create note reference
+      const noteRef: NoteReference = {
+        path: item.data.path,
+        name: item.data.name,
+        content: content,
+        tokens: tokens
+      };
 
-    // Add to message enhancer
-    this.messageEnhancer.addNote(noteRef);
+      // Add to message enhancer
+      this.messageEnhancer.addNote(noteRef);
 
-    // Replace trigger + query with wikilink
-    const replacement = `[[${item.data.name}]]`;
+      // Replace trigger + query with wikilink
+      const replacement = `[[${item.data.name}]]`;
 
-    // Replace text in editor
-    editor.replaceRange(
-      replacement,
-      start,
-      end
-    );
+      // Replace text in editor
+      editor.replaceRange(
+        replacement,
+        start,
+        end
+      );
 
-    // Move cursor after the wikilink
-    const newCursor = {
-      line: start.line,
-      ch: start.ch + replacement.length
-    };
-    editor.setCursor(newCursor);
+      // Move cursor after the wikilink
+      const newCursor = {
+        line: start.line,
+        ch: start.ch + replacement.length
+      };
+      editor.setCursor(newCursor);
+    })();
   }
 
   /**

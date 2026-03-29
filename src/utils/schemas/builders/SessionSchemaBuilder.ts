@@ -9,12 +9,13 @@
  */
 
 import { ISchemaBuilder, SchemaContext } from '../SchemaTypes';
+import { JSONSchema } from '../../../types/schema/JSONSchemaTypes';
 
 /**
  * Session Schema Builder - Handles session creation schemas
  */
 export class SessionSchemaBuilder implements ISchemaBuilder {
-  buildParameterSchema(context: SchemaContext): any {
+  buildParameterSchema(_context: SchemaContext): JSONSchema {
     return {
       type: 'object',
       properties: {
@@ -68,7 +69,7 @@ export class SessionSchemaBuilder implements ISchemaBuilder {
     };
   }
 
-  buildResultSchema(context: SchemaContext): any {
+  buildResultSchema(_context: SchemaContext): JSONSchema {
     return {
       type: 'object',
       properties: {

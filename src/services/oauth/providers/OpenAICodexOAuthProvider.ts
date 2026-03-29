@@ -63,7 +63,7 @@ function parseJwtClaims(token: string): IdTokenClaims | undefined {
     const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
     const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
     const decoded = atob(padded);
-    return JSON.parse(decoded);
+    return JSON.parse(decoded) as IdTokenClaims;
   } catch {
     return undefined;
   }
@@ -200,7 +200,7 @@ export class OpenAICodexOAuthProvider implements IOAuthProvider {
       );
     }
 
-    const tokens = response.json as TokenResponse | null;
+    const tokens = response.json;
     if (!tokens) {
       throw new Error('Codex token exchange returned no tokens');
     }
@@ -235,7 +235,7 @@ export class OpenAICodexOAuthProvider implements IOAuthProvider {
         return null;
       }
 
-      const tokens = response.json as TokenResponse | null;
+      const tokens = response.json;
       if (!tokens) {
         return null;
       }
