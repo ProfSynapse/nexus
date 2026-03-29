@@ -338,13 +338,13 @@ export class OllamaAdapter extends BaseAdapter {
 
   protected buildMessages(prompt: string, systemPrompt?: string): any[] {
     const messages = [];
-    
+
     if (systemPrompt) {
       messages.push({ role: 'system', content: systemPrompt });
     }
-    
+
     messages.push({ role: 'user', content: prompt });
-    
+
     return messages;
   }
 

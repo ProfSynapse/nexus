@@ -28,6 +28,7 @@ export interface ChatLayoutElements {
   sidebarContainer: HTMLElement;
   loadingOverlay: HTMLElement;
   branchHeaderContainer: HTMLElement;
+  ingestBannerContainer: HTMLElement;
 }
 
 export class ChatLayoutBuilder {
@@ -47,6 +48,9 @@ export class ChatLayoutBuilder {
 
     // Header
     const { chatTitle, hamburgerButton, settingsButton } = this.createHeader(mainContainer);
+
+    // Ingest progress banners (above branch header)
+    const ingestBannerContainer = mainContainer.createDiv('nexus-ingest-banner-container');
 
     // Branch header container (above messages, separate from message container)
     // This ensures BranchHeader isn't clobbered when MessageDisplay.setConversation() empties the message container
@@ -76,7 +80,8 @@ export class ChatLayoutBuilder {
       backdrop,
       sidebarContainer,
       loadingOverlay,
-      branchHeaderContainer
+      branchHeaderContainer,
+      ingestBannerContainer
     };
   }
 
