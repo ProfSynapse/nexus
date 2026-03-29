@@ -100,7 +100,7 @@ export class TaskManagerAgent extends BaseAgent {
     });
     this.registerLazyTool({
       slug: 'updateTask', name: 'Update Task',
-      description: 'Update task fields (title, description, status, priority, dueDate, assignee, tags) and manage DAG dependencies (addDependencies/removeDependencies). Dependency additions are validated for cycles. Requires a taskId (from createTask or listTasks).',
+      description: 'Update task fields (title, description, status, priority, dueDate, assignee, tags), manage DAG dependencies (addDependencies/removeDependencies), and manage note links (addNoteLinks/removeNoteLinks). Dependency additions are validated for cycles. Requires a taskId (from createTask or listTasks).',
       version: '1.0.0',
       factory: () => new UpdateTaskTool(this.taskService),
     });

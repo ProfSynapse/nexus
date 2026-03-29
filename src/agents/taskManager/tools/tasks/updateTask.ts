@@ -17,7 +17,7 @@ export class UpdateTaskTool extends BaseTool<UpdateTaskParameters, UpdateTaskRes
     super(
       'updateTask',
       'Update Task',
-      'Update task fields (title, description, status, priority, dueDate, assignee, tags) and manage DAG dependencies (addDependencies/removeDependencies). Dependency additions are validated for cycles. Requires a taskId (from createTask or listTasks).',
+      'Update task fields (title, description, status, priority, dueDate, assignee, tags), manage DAG dependencies (addDependencies/removeDependencies), and manage note links (addNoteLinks/removeNoteLinks). Dependency additions are validated for cycles. Requires a taskId (from createTask or listTasks).',
       '1.0.0'
     );
   }
@@ -60,6 +60,20 @@ export class UpdateTaskTool extends BaseTool<UpdateTaskParameters, UpdateTaskRes
         }
       }
 
+      // Add note links
+      if (params.addNoteLinks && params.addNoteLinks.length > 0) {
+        for (const link of params.addNoteLinks) {
+          await this.taskService.linkNote(params.taskId, link.notePath, link.linkType ?? 'reference');
+        }
+      }
+
+      // Remove note links
+      if (params.removeNoteLinks && params.removeNoteLinks.length > 0) {
+        for (const notePath of params.removeNoteLinks) {
+          await this.taskService.unlinkNote(params.taskId, notePath);
+        }
+      }
+
       return { success: true };
     } catch (error) {
       return { success: false, error: createErrorMessage('Failed to update task: ', error) };
@@ -80,6 +94,19 @@ export class UpdateTaskTool extends BaseTool<UpdateTaskParameters, UpdateTaskRes
         tags: { type: 'array', items: { type: 'string' }, description: 'Replace entire tags array with these values' },
         addDependencies: { type: 'array', items: { type: 'string' }, description: 'Task IDs to add as DAG dependencies — this task cannot start until these are done. Cycles are rejected with an error.' },
         removeDependencies: { type: 'array', items: { type: 'string' }, description: 'Task IDs to remove from this task\'s dependencies' },
+        addNoteLinks: {
+          type: 'array',
+          description: 'Vault notes to link to this task',
+          items: {
+            type: 'object',
+            properties: {
+              notePath: { type: 'string', description: 'Vault note path, e.g. "folder/note.md"' },
+              linkType: { type: 'string', enum: ['reference', 'output', 'input'], description: 'Type of link (default: reference)' }
+            },
+            required: ['notePath']
+          }
+        },
+        removeNoteLinks: { type: 'array', items: { type: 'string' }, description: 'Vault note paths to unlink from this task' },
         metadata: { type: 'object', description: 'Custom metadata to merge (keys are merged, not replaced)', additionalProperties: true }
       },
       required: ['taskId']

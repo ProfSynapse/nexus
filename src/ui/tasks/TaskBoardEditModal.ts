@@ -1,5 +1,6 @@
 import { ButtonComponent, DropdownComponent, Modal, Notice, TextAreaComponent, TextComponent } from 'obsidian';
 import type { App } from 'obsidian';
+import type { NoteLink } from '../../database/repositories/interfaces/ITaskRepository';
 
 export interface TaskBoardProjectOption {
   id: string;
@@ -24,6 +25,7 @@ export interface TaskBoardEditableTask {
   assignee: string;
   tags: string;
   parentTaskId: string;
+  noteLinks: NoteLink[];
 }
 
 interface TaskBoardEditModalOptions {
@@ -129,6 +131,9 @@ export class TaskBoardEditModal extends Modal {
     tagsInput.setValue(this.draft.tags);
     tagsInput.onChange((value) => { this.draft.tags = value; });
 
+    // Linked notes
+    this.renderLinkedNotesSection(details);
+
     // Actions
     const actions = contentEl.createDiv('nexus-form-actions');
 
@@ -218,6 +223,68 @@ export class TaskBoardEditModal extends Modal {
     input.addEventListener('input', () => {
       onChange(input.value);
     });
+  }
+
+  private renderLinkedNotesSection(container: HTMLElement): void {
+    const subsection = container.createDiv('nexus-form-field');
+    subsection.createEl('label', { text: 'Linked notes', cls: 'nexus-form-label' });
+
+    const listContainer = subsection.createDiv('nexus-item-list');
+
+    const updateList = () => {
+      listContainer.empty();
+
+      if (this.draft.noteLinks.length === 0) {
+        listContainer.createEl('span', { text: 'None', cls: 'nexus-form-hint' });
+      } else {
+        this.draft.noteLinks.forEach((link, index) => {
+          const item = listContainer.createDiv('nexus-item-row');
+
+          const input = new TextComponent(item);
+          input.setPlaceholder('path/to/note.md');
+          input.setValue(link.notePath);
+          input.onChange((value) => {
+            this.draft.noteLinks[index] = { ...this.draft.noteLinks[index], notePath: value };
+          });
+
+          const actions = item.createDiv('nexus-item-actions');
+
+          const typeDropdown = new DropdownComponent(actions);
+          typeDropdown.addOption('reference', 'Reference');
+          typeDropdown.addOption('input', 'Input');
+          typeDropdown.addOption('output', 'Output');
+          typeDropdown.setValue(link.linkType || 'reference');
+          typeDropdown.onChange((value) => {
+            this.draft.noteLinks[index] = {
+              ...this.draft.noteLinks[index],
+              linkType: value as NoteLink['linkType']
+            };
+          });
+
+          new ButtonComponent(actions)
+            .setButtonText('×')
+            .setWarning()
+            .onClick(() => {
+              this.draft.noteLinks.splice(index, 1);
+              updateList();
+            });
+        });
+      }
+    };
+
+    updateList();
+
+    new ButtonComponent(subsection)
+      .setButtonText('+ Add note link')
+      .onClick(() => {
+        this.draft.noteLinks.push({
+          taskId: this.draft.id,
+          notePath: '',
+          linkType: 'reference',
+          created: Date.now()
+        });
+        updateList();
+      });
   }
 
   private async handleSave(): Promise<void> {

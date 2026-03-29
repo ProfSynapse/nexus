@@ -7499,6 +7499,46 @@ body.is-mobile .chat-loading-overlay {
     margin-top: var(--space-xs);
 }
 
+.nexus-task-board-card-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-xs);
+    margin-top: var(--space-xs);
+}
+
+.nexus-task-board-card-link {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px var(--space-xs);
+    font-size: var(--font-smaller);
+    color: var(--text-accent);
+    background: var(--background-secondary);
+    border-radius: var(--radius-s);
+    cursor: pointer;
+    text-decoration: none;
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.nexus-task-board-card-link::before {
+    content: '[[';
+    color: var(--text-faint);
+    margin-right: 1px;
+}
+
+.nexus-task-board-card-link::after {
+    content: ']]';
+    color: var(--text-faint);
+    margin-left: 1px;
+}
+
+.nexus-task-board-card-link:hover {
+    color: var(--interactive-accent-hover);
+    background: var(--background-modifier-hover);
+}
+
 .nexus-task-board-icon-button {
     width: 28px;
     height: 28px;
@@ -7609,6 +7649,11 @@ body.is-mobile .chat-loading-overlay {
 
 .nexus-task-edit-modal .nexus-detail-title {
     margin-top: 0;
+}
+
+.nexus-task-edit-modal .nexus-item-actions select {
+    font-size: var(--font-smaller);
+    padding: var(--space-xs);
 }
 
 body.is-mobile .nexus-task-board-shell {

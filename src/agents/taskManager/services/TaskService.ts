@@ -488,6 +488,10 @@ export class TaskService {
     await this.taskRepo.removeNoteLink(taskId, notePath);
   }
 
+  async getNoteLinks(taskId: string): Promise<NoteLink[]> {
+    return this.taskRepo.getNoteLinks(taskId);
+  }
+
   async getTasksForNote(notePath: string): Promise<TaskMetadata[]> {
     return this.taskRepo.getByLinkedNote(notePath);
   }
