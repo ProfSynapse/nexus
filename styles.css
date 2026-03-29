@@ -7685,3 +7685,159 @@ body.is-mobile .nexus-task-board-shell {
         min-width: 0;
     }
 }
+
+/* ── Data Dashboard ────────────────────────────────────────────── */
+
+.nexus-data-section {
+    margin-bottom: var(--space-xl);
+}
+
+.nexus-data-section h4 {
+    margin: 0 0 var(--space-s) 0;
+    font-size: 1em;
+    font-weight: 600;
+    color: var(--text-normal);
+}
+
+/* Budget meter */
+.nexus-budget-meter {
+    margin-bottom: var(--space-m);
+}
+
+.nexus-budget-summary {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: var(--space-xs);
+}
+
+.nexus-budget-spent {
+    font-size: 1.25em;
+    font-weight: 600;
+    color: var(--text-normal);
+}
+
+.nexus-budget-limit {
+    font-size: 0.85em;
+    color: var(--text-muted);
+}
+
+.nexus-budget-bar-track {
+    height: 8px;
+    background: var(--background-modifier-border);
+    border-radius: var(--radius-s);
+    overflow: hidden;
+}
+
+.nexus-budget-bar-fill {
+    height: 100%;
+    border-radius: var(--radius-s);
+    transition: width 0.3s ease;
+}
+
+.nexus-budget-bar-fill.ok {
+    background: var(--interactive-accent);
+}
+
+.nexus-budget-bar-fill.warning {
+    background: var(--text-accent);
+}
+
+.nexus-budget-bar-fill.over {
+    background: var(--background-modifier-error);
+}
+
+.nexus-budget-alltime {
+    margin-top: var(--space-xs);
+}
+
+.nexus-text-muted {
+    color: var(--text-muted);
+    font-size: 0.85em;
+}
+
+/* Provider spending chart */
+.nexus-chart-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--space-s);
+}
+
+.nexus-chart-header h4 {
+    margin: 0;
+}
+
+.nexus-chart-toggle {
+    display: flex;
+    gap: 2px;
+    background: var(--background-modifier-border);
+    border-radius: var(--radius-s);
+    padding: 2px;
+}
+
+.nexus-toggle-btn {
+    padding: var(--space-xxs) var(--space-s);
+    border: none;
+    border-radius: var(--radius-s);
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 0.8em;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.nexus-toggle-btn.active {
+    background: var(--background-primary);
+    color: var(--text-normal);
+    font-weight: 500;
+}
+
+.nexus-toggle-btn:hover:not(.active) {
+    color: var(--text-normal);
+}
+
+.nexus-provider-chart {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-s);
+}
+
+.nexus-chart-empty {
+    color: var(--text-muted);
+    font-size: 0.9em;
+    padding: var(--space-l) 0;
+    text-align: center;
+}
+
+.nexus-bar-row {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xxs);
+}
+
+.nexus-bar-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.85em;
+    color: var(--text-normal);
+}
+
+.nexus-bar-cost {
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
+}
+
+.nexus-bar-track {
+    height: 6px;
+    background: var(--background-modifier-border);
+    border-radius: var(--radius-s);
+    overflow: hidden;
+}
+
+.nexus-bar-fill {
+    height: 100%;
+    background: var(--interactive-accent);
+    border-radius: var(--radius-s);
+    transition: width 0.3s ease;
+}

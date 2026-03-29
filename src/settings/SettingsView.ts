@@ -31,7 +31,7 @@ import { ProvidersTab } from './tabs/ProvidersTab';
 import { AppsTab } from './tabs/AppsTab';
 // GetStartedTab is dynamically imported (desktop-only, requires Node.js)
 type GetStartedTabType = import('./tabs/GetStartedTab').GetStartedTab;
-// import { DataTab } from './tabs/DataTab'; // TODO: Re-enable when Data tab is ready
+import { DataTab } from './tabs/DataTab';
 
 /**
  * SettingsView - New unified settings interface with tab-based navigation
@@ -68,7 +68,7 @@ export class SettingsView extends PluginSettingTab {
     private appsTab: AppsTab | undefined;
     private getStartedTab: GetStartedTabType | undefined;
     private getStartedAccordion: Accordion | undefined;
-    // private dataTab: DataTab | undefined; // TODO: Re-enable when Data tab is ready
+    private dataTab: DataTab | undefined;
 
     // Prefetched data cache
     private prefetchedWorkspaces: any[] | null = null;
@@ -142,6 +142,7 @@ export class SettingsView extends PluginSettingTab {
         this.promptsTab?.destroy();
         this.providersTab?.destroy();
         this.appsTab?.destroy();
+        this.dataTab?.destroy();
         this.getStartedTab?.destroy();
         this.getStartedAccordion?.unload();
         // Clear prefetch cache
@@ -213,7 +214,7 @@ export class SettingsView extends PluginSettingTab {
             { key: 'prompts', label: 'Prompts' },
             { key: 'providers', label: 'Providers' },
             { key: 'apps', label: 'Apps' },
-            // { key: 'data', label: 'Data' }, // TODO: Re-enable when Data tab is ready
+            { key: 'data', label: 'Data' },
         ];
 
         this.tabs = new UnifiedTabs({
@@ -346,9 +347,9 @@ export class SettingsView extends PluginSettingTab {
             case 'apps':
                 this.renderAppsTab(pane, state, services);
                 break;
-            // case 'data': // TODO: Re-enable when Data tab is ready
-            //     this.renderDataTab(pane);
-            //     break;
+            case 'data':
+                this.renderDataTab(pane);
+                break;
         }
     }
 
@@ -511,18 +512,15 @@ export class SettingsView extends PluginSettingTab {
         );
     }
 
-    // TODO: Re-enable when Data tab is ready
-    // /**
-    //  * Render Data tab content
-    //  */
-    // private renderDataTab(container: HTMLElement): void {
-    //     if (!this.serviceManager) {
-    //         container.createEl('div', { text: 'Service Manager not available.' });
-    //         return;
-    //     }
-    //     this.dataTab = new DataTab(container, this.router, this.serviceManager);
-    //     this.dataTab.render();
-    // }
+    private renderDataTab(container: HTMLElement): void {
+        this.dataTab?.destroy();
+        if (!this.serviceManager) {
+            container.createEl('div', { text: 'Service manager not available.' });
+            return;
+        }
+        this.dataTab = new DataTab(container, this.router, this.serviceManager);
+        this.dataTab.render();
+    }
 
     private renderGetStartedAccordion(containerEl: HTMLElement): void {
         if (!supportsMCPBridge()) {
