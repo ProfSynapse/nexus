@@ -11,6 +11,7 @@ import { AppManifest, AppConfig, AppsSettings } from '../../types/apps/AppTypes'
 import { IAgent } from '../../agents/interfaces/IAgent';
 import { logger } from '../../utils/logger';
 import { ElevenLabsAgent } from '../../agents/apps/elevenlabs/ElevenLabsAgent';
+import { ComposerAgent } from '../../agents/apps/composer/ComposerAgent';
 import { Vault } from 'obsidian';
 
 export class AppManager {
@@ -232,6 +233,7 @@ export class AppManager {
 
     // === ADD NEW APPS HERE ===
     registry.set('elevenlabs', () => new ElevenLabsAgent());
+    registry.set('composer', () => new ComposerAgent());
 
     return registry;
   }
