@@ -99,7 +99,7 @@ export class WorkspacesTab {
         this.container = container;
         this.router = router;
         this.services = services;
-        this.listRenderer = new WorkspaceListRenderer();
+        this.listRenderer = new WorkspaceListRenderer(services.app);
         this.detailRenderer = new WorkspaceDetailRenderer(services.app, services.component);
         this.projectsManager = new ProjectsManagerView(
             this.detailRenderer,

@@ -112,7 +112,7 @@ export class WebLLMVRAMDetector {
       }
 
       return !!adapter;
-    } catch (error) {
+    } catch {
       return false;
     }
   }
@@ -171,7 +171,7 @@ export class WebLLMVRAMDetector {
           const adapterInfo = await adapter.requestAdapterInfo();
           gpuDescription = adapterInfo.description || adapterInfo.device || 'Unknown GPU';
         }
-      } catch (infoError) {
+      } catch {
         // Ignore error getting adapter info
       }
       info.gpuName = gpuDescription;
@@ -195,7 +195,7 @@ export class WebLLMVRAMDetector {
 
       this.cachedInfo = info;
       return info;
-    } catch (error) {
+    } catch {
       this.cachedInfo = info;
       return info;
     }

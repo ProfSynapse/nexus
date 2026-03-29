@@ -72,7 +72,8 @@ To execute tasks: User must explicitly request promptManager_executePrompts`;
 
       return createResult<GetPromptResult>(true, resultWithMessage, undefined);
     } catch (error) {
-      return createResult<GetPromptResult>(false, null, `Failed to get prompt: ${error}`);
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      return createResult<GetPromptResult>(false, null, `Failed to get prompt: ${message}`);
     }
   }
 

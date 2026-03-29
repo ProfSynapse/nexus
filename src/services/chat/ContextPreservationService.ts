@@ -348,7 +348,7 @@ export class ContextPreservationService {
     // Try function.arguments format (OpenAI style)
     if (toolCall.function?.arguments) {
       try {
-        const args =
+        const args: unknown =
           typeof toolCall.function.arguments === 'string'
             ? JSON.parse(toolCall.function.arguments)
             : toolCall.function.arguments;

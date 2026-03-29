@@ -11,7 +11,6 @@ import { BaseSchemaProvider } from '../BaseSchemaProvider';
 import { EnhancedJSONSchema } from '../../interfaces/ISchemaProvider';
 import { IAgent } from '../../../agents/interfaces/IAgent';
 import { CustomPromptStorageService } from '../../../agents/promptManager/services/CustomPromptStorageService';
-import { CustomPrompt } from '../../../types';
 import { logger } from '../../../utils/logger';
 
 interface AgentInfo {

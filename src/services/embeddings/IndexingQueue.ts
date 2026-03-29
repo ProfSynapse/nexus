@@ -23,8 +23,7 @@
  * - Emits progress events for UI updates (consumed by EmbeddingStatusBar)
  */
 
-import { App, TFile } from 'obsidian';
-import { EventEmitter } from 'events';
+import { App, Events, TFile } from 'obsidian';
 import { EmbeddingService } from './EmbeddingService';
 import { preprocessContent, hashContent } from './EmbeddingUtils';
 import { TraceIndexer } from './TraceIndexer';
@@ -46,7 +45,7 @@ export interface IndexingProgress {
  * Processes notes one at a time with UI yielding to keep Obsidian responsive.
  * Emits 'progress' events that can be consumed by UI components.
  */
-export class IndexingQueue extends EventEmitter {
+export class IndexingQueue extends Events {
   private app: App;
   private embeddingService: EmbeddingService;
   private db: SQLiteCacheManager;
@@ -291,7 +290,6 @@ export class IndexingQueue extends EventEmitter {
    */
   destroy(): void {
     this.cancel();
-    this.removeAllListeners();
   }
 
   // ---------------------------------------------------------------------------
@@ -492,6 +490,6 @@ export class IndexingQueue extends EventEmitter {
    * Emit progress event
    */
   private emitProgress(progress: IndexingProgress): void {
-    this.emit('progress', progress);
+    this.trigger('progress', progress);
   }
 }

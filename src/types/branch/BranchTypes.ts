@@ -103,7 +103,7 @@ export interface SubagentParams {
   agentPrompt?: string;  // Custom agent's full system prompt (merged into subagent prompt)
   agentName?: string;    // Custom agent name for reference
   // Inherited from parent conversation - Workspace data
-  workspaceData?: any;   // Full comprehensive workspace data (sessions, states, files, etc.)
+  workspaceData?: unknown;   // Full comprehensive workspace data (sessions, states, files, etc.)
   // Inherited from parent conversation - Context notes (file paths)
   inheritedContextNotes?: string[];  // Note paths from parent's context notes
   // Inherited from parent conversation - Thinking settings
@@ -191,7 +191,7 @@ export interface SubagentExecutorEvents {
    * Tool calls detected - SAME event as parent chat uses
    * Routes to ToolEventCoordinator.handleToolCallsDetected() for dynamic tool bubble creation
    */
-  onToolCallsDetected: (branchId: string, messageId: string, toolCalls: any[]) => void;
+  onToolCallsDetected: (branchId: string, messageId: string, toolCalls: unknown[]) => void;
 }
 
 /**

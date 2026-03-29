@@ -77,7 +77,8 @@ export class UpdatePromptTool extends BaseTool<UpdatePromptParams, UpdatePromptR
       // Success - LLM already knows what it passed
       return this.prepareResult(true);
     } catch (error) {
-      return this.prepareResult(false, undefined, `Failed to update prompt: ${error}`);
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      return this.prepareResult(false, undefined, `Failed to update prompt: ${message}`);
     }
   }
 

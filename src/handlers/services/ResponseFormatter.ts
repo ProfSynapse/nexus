@@ -3,6 +3,12 @@ import { safeStringify } from '../../utils/jsonUtils';
 
 export class ResponseFormatter implements IResponseFormatter {
 
+    private formatParameterHints(parameterHints: unknown): string {
+        return typeof parameterHints === 'string'
+            ? parameterHints
+            : safeStringify(parameterHints);
+    }
+
     formatToolExecutionResponse(result: ToolExecutionResult, sessionInfo?: SessionInfo, _context?: { tool?: string }): MCPContentResponse {
         // Check if result contains an error and format it appropriately
         if (result && !result.success && result.error) {
@@ -53,7 +59,7 @@ export class ResponseFormatter implements IResponseFormatter {
         
         // Add parameter-specific hints if available
         if (result.parameterHints) {
-            errorText += `💡 Parameter Help:\n${result.parameterHints}\n\n`;
+            errorText += `💡 Parameter Help:\n${this.formatParameterHints(result.parameterHints)}\n\n`;
         }
         
         // Add what was provided vs what was expected

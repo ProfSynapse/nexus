@@ -51,7 +51,7 @@ export function getToolNameMetadata(name?: string): ToolNameMetadata {
 
 function toTitleCase(value: string): string {
   return value
-    .replace(/[_\-]/g, ' ')
+    .replace(/[_-]/g, ' ')
     .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
     .replace(/\s+/g, ' ')
     .trim()

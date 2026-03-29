@@ -19,7 +19,7 @@ type MCPConnectorType = import('../../connector').MCPConnector;
 
 // Extended interface for PluginLifecycleManager with optional methods
 interface LifecycleManager {
-    [key: string]: any;
+    [key: string]: unknown;
 }
 
 export interface SettingsTabManagerConfig {

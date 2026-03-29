@@ -193,7 +193,7 @@ export class EmbeddingStatusBar {
   destroy(): void {
     // Remove progress listener from IndexingQueue
     if (this.progressHandler) {
-      this.indexingQueue.removeListener('progress', this.progressHandler);
+      this.indexingQueue.off('progress', this.progressHandler);
       this.progressHandler = null;
     }
 

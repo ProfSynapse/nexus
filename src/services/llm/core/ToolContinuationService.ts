@@ -37,6 +37,13 @@ export interface StreamYield {
 }
 
 export class ToolContinuationService {
+  private parseToolParameters(argumentsText: string | undefined): Record<string, unknown> {
+    const parsed: unknown = JSON.parse(argumentsText || '{}');
+    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {};
+  }
+
   // Safety limit for recursive tool calls
   private readonly TOOL_ITERATION_LIMIT = 15;
 
@@ -180,7 +187,7 @@ export class ToolContinuationService {
           id: originalCall.id,
           type: originalCall.type || 'function',
           name: originalCall.function?.name || originalCall.name,
-          parameters: JSON.parse(originalCall.function?.arguments || '{}'),
+          parameters: this.parseToolParameters(originalCall.function?.arguments),
           result: result?.result,
           success: result?.success || false,
           error: result?.error,
@@ -506,7 +513,7 @@ export class ToolContinuationService {
         );
       }
 
-    } catch (recursiveError) {
+    } catch {
       // Swallow expected errors during streaming (incomplete JSON)
     }
   }

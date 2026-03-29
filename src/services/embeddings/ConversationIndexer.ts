@@ -15,8 +15,17 @@
 
 import { EmbeddingService } from './EmbeddingService';
 import { buildQAPairs } from './QAPairBuilder';
-import type { MessageData } from '../../types/storage/HybridStorageTypes';
+import type { AlternativeMessage, MessageData, ToolCall } from '../../types/storage/HybridStorageTypes';
 import type { SQLiteCacheManager } from '../../database/storage/SQLiteCacheManager';
+
+function parseJsonArray<T>(value: string | null | undefined): T[] | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const parsed: unknown = JSON.parse(value);
+  return Array.isArray(parsed) ? (parsed as T[]) : undefined;
+}
 
 /**
  * Row shape for the embedding_backfill_state table.
@@ -301,10 +310,10 @@ export class ConversationIndexer {
       timestamp: row.timestamp,
       state: (row.state ?? 'complete') as MessageData['state'],
       sequenceNumber: row.sequenceNumber,
-      toolCalls: row.toolCallsJson ? JSON.parse(row.toolCallsJson) : undefined,
+      toolCalls: parseJsonArray<ToolCall>(row.toolCallsJson),
       toolCallId: row.toolCallId ?? undefined,
       reasoning: row.reasoningContent ?? undefined,
-      alternatives: row.alternativesJson ? JSON.parse(row.alternativesJson) : undefined,
+      alternatives: parseJsonArray<AlternativeMessage>(row.alternativesJson),
       activeAlternativeIndex: row.activeAlternativeIndex ?? 0,
     }));
 

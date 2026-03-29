@@ -17,7 +17,7 @@ interface searchRecord {
                 displayText: string;
             }>;
         };
-        [key: string]: any;
+        [key: string]: unknown;
     };
 }
 
@@ -289,7 +289,7 @@ export class GraphOperations {
             // Extract potential link mentions from content (using a mock implementation)
             const potentialLinks: string[] = [];
             // This is a simple regex to find potential links in markdown/wikilinks syntax
-            const linkRegex = /\[\[([^\]]+)\]\]|\[([^\]]+)\]\([^\)]+\)/g;
+            const linkRegex = /\[\[([^\]]+)\]\]|\[([^\]]+)\]\([^)]+\)/g;
             let match;
             while ((match = linkRegex.exec(content)) !== null) {
                 potentialLinks.push(match[1] || match[2]);

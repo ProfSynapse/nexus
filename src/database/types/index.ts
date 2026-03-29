@@ -31,10 +31,7 @@ export type {
   WorkspaceSession,
   StateContext,
   State,
-  WorkspaceState,
-  // Deprecated aliases for backward compatibility
-  StateSnapshot,
-  WorkspaceStateSnapshot
+  WorkspaceState
 } from './session/SessionTypes';
 
 // Memory types

@@ -9,9 +9,7 @@ import { CommonParameters, CommonResult } from '../../types';
  * Note: Graph boost is now hardcoded into the RRF calculation with sensible defaults
  * These options are maintained for internal use but no longer exposed to users
  */
-export interface GraphBoostOptions {
-  // Internal parameters - no longer user-facing since graph boost is hardcoded
-}
+export type GraphBoostOptions = Record<string, never>;
 
 
 /**

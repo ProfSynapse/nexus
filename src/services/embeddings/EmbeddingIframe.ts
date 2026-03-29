@@ -31,6 +31,10 @@ interface EmbeddingResponse {
   ready?: boolean;
 }
 
+function isEmbeddingResponse(data: unknown): data is EmbeddingResponse {
+  return typeof data === 'object' && data !== null && 'id' in data && 'success' in data;
+}
+
 /**
  * Iframe-based embedding engine
  *
@@ -84,6 +88,7 @@ export class EmbeddingIframe {
     // Set up message listener before loading iframe
     this.messageHandler = (event: MessageEvent) => {
       if (event.source !== this.iframe?.contentWindow) return;
+      if (!isEmbeddingResponse(event.data)) return;
       this.handleMessage(event.data);
     };
     window.addEventListener('message', this.messageHandler);
@@ -300,7 +305,7 @@ export class EmbeddingIframe {
     if (this.iframe) {
       try {
         await this.sendRequest({ method: 'dispose' });
-      } catch (e) {
+      } catch {
         // Ignore errors during disposal
       }
       this.iframe.remove();

@@ -22,7 +22,7 @@ export interface ToolCall {
   /**
    * Parameters to pass to the tool
    */
-  parameters: any;
+  parameters: unknown;
 
   /**
    * Whether to return results to original agent

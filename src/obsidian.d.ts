@@ -14,7 +14,7 @@ declare module 'obsidian' {
 
 declare global {
   interface Window {
-    app: App;
+    app: ObsidianApp;
     mcpProgressHandlers?: {
       updateProgress: (data: ProgressUpdateData) => void;
       completeProgress: (data: ProgressCompleteData) => void;

@@ -60,7 +60,8 @@ export class ArchivePromptTool extends BaseTool<ArchivePromptParams, ArchiveProm
       // Success - LLM already knows what it archived
       return this.prepareResult(true);
     } catch (error) {
-      return this.prepareResult(false, undefined, `Failed to archive prompt: ${error}`);
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      return this.prepareResult(false, undefined, `Failed to archive prompt: ${message}`);
     }
   }
 

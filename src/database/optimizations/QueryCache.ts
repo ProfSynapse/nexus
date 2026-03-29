@@ -79,7 +79,7 @@ export interface CacheStats {
  * ```
  */
 export class QueryCache {
-  private cache = new Map<string, CacheEntry<any>>();
+  private cache = new Map<string, CacheEntry<unknown>>();
   private hits = 0;
   private misses = 0;
   private maxSize: number;

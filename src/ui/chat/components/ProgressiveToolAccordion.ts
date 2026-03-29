@@ -38,6 +38,10 @@ export interface ProgressiveToolAccordionCallbacks {
   onViewBranch?: (branchId: string) => void;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 export class ProgressiveToolAccordion {
   private element: HTMLElement | null = null;
   private isExpanded = false;
@@ -433,12 +437,12 @@ export class ProgressiveToolAccordion {
 
     let branchId: string | null = null;
     try {
-      const result = typeof step.result === 'string' ? JSON.parse(step.result) : step.result;
-      if (result && typeof result === 'object') {
-        const payload = result as Record<string, unknown>;
+      const result: unknown = typeof step.result === 'string' ? JSON.parse(step.result) : step.result;
+      if (isRecord(result)) {
+        const payload = result;
         const data = payload.data;
-        if (data && typeof data === 'object') {
-          const dataObject = data as Record<string, unknown>;
+        if (isRecord(data)) {
+          const dataObject = data;
           if (typeof dataObject.branchId === 'string') {
             branchId = dataObject.branchId;
           }
@@ -483,21 +487,23 @@ export class ProgressiveToolAccordion {
     setIcon(copyBtn, 'copy');
     copyBtn.setAttribute('aria-label', 'Copy to clipboard');
 
-    const copyHandler = async (e: MouseEvent) => {
+    const copyHandler = (e: MouseEvent) => {
       e.stopPropagation();
-      try {
-        await navigator.clipboard.writeText(getContent());
-        copyBtn.empty();
-        setIcon(copyBtn, 'check');
-        copyBtn.addClass('tool-copy-success');
-        setTimeout(() => {
+      void (async () => {
+        try {
+          await navigator.clipboard.writeText(getContent());
           copyBtn.empty();
-          setIcon(copyBtn, 'copy');
-          copyBtn.removeClass('tool-copy-success');
-        }, 1500);
-      } catch (err) {
-        console.error('Failed to copy:', err);
-      }
+          setIcon(copyBtn, 'check');
+          copyBtn.addClass('tool-copy-success');
+          setTimeout(() => {
+            copyBtn.empty();
+            setIcon(copyBtn, 'copy');
+            copyBtn.removeClass('tool-copy-success');
+          }, 1500);
+        } catch (err) {
+          console.error('Failed to copy:', err);
+        }
+      })();
     };
 
     if (this.component) {
@@ -527,17 +533,17 @@ export class ProgressiveToolAccordion {
 
     if (typeof parameters === 'string') {
       try {
-        const parsed = JSON.parse(parameters);
-        return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-          ? parsed as Record<string, unknown>
+        const parsed: unknown = JSON.parse(parameters);
+        return isRecord(parsed)
+          ? parsed
           : undefined;
       } catch {
         return undefined;
       }
     }
 
-    if (typeof parameters === 'object' && !Array.isArray(parameters)) {
-      return parameters as Record<string, unknown>;
+    if (isRecord(parameters)) {
+      return parameters;
     }
 
     return undefined;

@@ -96,22 +96,24 @@ export class EmbeddingManager {
 
       // Start background indexing after a brief delay
       // This ensures the plugin is fully loaded before we start heavy processing
-      setTimeout(async () => {
-        if (this.queue) {
-          try {
-            // Phase 1: Index all notes
-            await this.queue.startFullIndex();
+      setTimeout(() => {
+        void (async () => {
+          if (this.queue) {
+            try {
+              // Phase 1: Index all notes
+              await this.queue.startFullIndex();
 
-            // Phase 2: Backfill existing traces (from migration)
-            await this.queue.startTraceIndex();
+              // Phase 2: Backfill existing traces (from migration)
+              await this.queue.startTraceIndex();
 
-            // Phase 3: Backfill existing conversations
-            // Runs after notes and traces; idempotent and resumable on interrupt
-            await this.queue.startConversationIndex();
-          } catch (error) {
-            console.error('[EmbeddingManager] Background indexing failed:', error);
+              // Phase 3: Backfill existing conversations
+              // Runs after notes and traces; idempotent and resumable on interrupt
+              await this.queue.startConversationIndex();
+            } catch (error) {
+              console.error('[EmbeddingManager] Background indexing failed:', error);
+            }
           }
-        }
+        })();
       }, 3000); // 3-second delay
 
       this.isInitialized = true;

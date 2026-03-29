@@ -749,7 +749,7 @@ export class OpenAIAdapter extends BaseAdapter {
     try {
       // Use centralized model registry instead of API call
       const openaiModels = ModelRegistry.getProviderModels('openai');
-      return openaiModels.map(model => ModelRegistry.toModelInfo(model) as ModelInfo);
+      return openaiModels.map(model => ModelRegistry.toModelInfo(model));
     } catch (error: unknown) {
       this.handleError(error, 'listing models');
       return [];

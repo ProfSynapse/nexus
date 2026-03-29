@@ -1,4 +1,4 @@
-import { Setting, Notice, ButtonComponent } from 'obsidian';
+import { Setting, Notice } from 'obsidian';
 import { SettingsRouter } from '../SettingsRouter';
 import { IStorageAdapter } from '../../database/interfaces/IStorageAdapter';
 import { ServiceManager } from '../../core/ServiceManager';

@@ -141,7 +141,13 @@ export class SequenceManager {
   /**
    * Get execution statistics from results (internal use only)
    */
-  getExecutionStatistics(results: InternalExecutionResult[]) {
+  getExecutionStatistics(results: InternalExecutionResult[]): {
+    totalPrompts: number;
+    successfulPrompts: number;
+    failedPrompts: number;
+    totalExecutionTimeMS: number;
+    avgExecutionTimeMS: number;
+  } {
     const successful = results.filter(r => r.success);
     const failed = results.filter(r => !r.success);
     const totalExecutionTime = results.reduce((sum, r) => sum + (r.executionTime || 0), 0);

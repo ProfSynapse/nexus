@@ -4,7 +4,6 @@
  */
 
 import { App, Editor, EditorPosition, EditorSuggest, TFile } from 'obsidian';
-import { TokenCalculator } from '../../../utils/TokenCalculator';
 import {
   SuggesterConfig,
   SuggestionItem,
@@ -83,7 +82,7 @@ export abstract class BaseSuggester<T> extends EditorSuggest<SuggestionItem<T>> 
   onTrigger(
     cursor: EditorPosition,
     editor: Editor,
-    file: TFile | null
+    _file: TFile | null
   ): EditorSuggestContext | null {
 
     const line = editor.getLine(cursor.line);

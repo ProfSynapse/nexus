@@ -1,4 +1,4 @@
-import { App, TFile, TFolder } from 'obsidian';
+import { App, TFolder } from 'obsidian';
 import { BaseAgent } from '../baseAgent';
 import {
   ListTool,
@@ -135,7 +135,8 @@ export class StorageManagerAgent extends BaseAgent {
 
       return summary.join('\n');
     } catch (error) {
-      return `📁 Storage Structure: Unable to load storage information (${error})`;
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      return `📁 Storage Structure: Unable to load storage information (${errorMessage})`;
     }
   }
 }

@@ -147,7 +147,7 @@ export class AdapterRegistry implements IAdapterRegistry {
         lifecycleManager.setAdapter(null);
       }).catch(() => {});
 
-      this.webllmAdapter.dispose().catch((error) => {
+      this.webllmAdapter.dispose().catch((_error) => {
       });
       this.webllmAdapter = undefined;
     }

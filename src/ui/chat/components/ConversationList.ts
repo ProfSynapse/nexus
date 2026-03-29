@@ -4,8 +4,56 @@
  * Displays list of conversations with create/delete/rename functionality
  */
 
-import { setIcon, Component } from 'obsidian';
+import { setIcon, App, Component, Modal } from 'obsidian';
 import { ConversationData } from '../../../types/chat/ChatTypes';
+
+class ConfirmConversationDeleteModal extends Modal {
+  private resolvePromise: ((confirmed: boolean) => void) | null = null;
+
+  constructor(app: App) {
+    super(app);
+  }
+
+  openAndWait(): Promise<boolean> {
+    return new Promise(resolve => {
+      this.resolvePromise = resolve;
+      this.open();
+    });
+  }
+
+  onOpen(): void {
+    const { contentEl } = this;
+    contentEl.empty();
+    this.titleEl.setText('Delete conversation');
+    contentEl.createEl('p', { text: 'Delete this conversation?' });
+
+    const actions = contentEl.createDiv('modal-button-container');
+    const cancelButton = actions.createEl('button', { text: 'Cancel' });
+    const deleteButton = actions.createEl('button', { text: 'Delete', cls: 'mod-warning' });
+
+    cancelButton.onclick = () => {
+      this.resolve(false);
+      this.close();
+    };
+    deleteButton.onclick = () => {
+      this.resolve(true);
+      this.close();
+    };
+  }
+
+  onClose(): void {
+    const { contentEl } = this;
+    contentEl.empty();
+    this.resolve(false);
+  }
+
+  private resolve(confirmed: boolean): void {
+    if (this.resolvePromise) {
+      this.resolvePromise(confirmed);
+      this.resolvePromise = null;
+    }
+  }
+}
 
 export class ConversationList {
   private conversations: ConversationData[] = [];
@@ -35,6 +83,11 @@ export class ConversationList {
   setActiveConversation(conversationId: string): void {
     this.activeConversationId = conversationId;
     this.updateActiveState();
+  }
+
+  private getComponentApp(): App | null {
+    const componentWithApp = this.component as (Component & { app?: App }) | undefined;
+    return componentWithApp?.app ?? null;
   }
 
   /**
@@ -107,9 +160,16 @@ export class ConversationList {
       deleteBtn.setAttribute('aria-label', 'Delete conversation');
       const deleteHandler = (e: MouseEvent) => {
         e.stopPropagation();
-        if (confirm('Delete this conversation?')) {
-          this.onConversationDelete(conversation.id);
+          const app = this.getComponentApp();
+        if (!app) {
+          return;
         }
+        void (async () => {
+          const confirmed = await new ConfirmConversationDeleteModal(app).openAndWait();
+          if (confirmed) {
+            this.onConversationDelete(conversation.id);
+          }
+        })();
       };
       this.component!.registerDomEvent(deleteBtn, 'click', deleteHandler);
     });

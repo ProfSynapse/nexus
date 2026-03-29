@@ -3,10 +3,42 @@
  * Extracted from WorkspacesTab to keep the tab under 600 lines.
  */
 
-import { Notice } from 'obsidian';
+import { App, Modal, Notice, Setting } from 'obsidian';
 import { CardItem } from '../CardManager';
 import { SearchableCardManager } from '../SearchableCardManager';
 import { ProjectWorkspace } from '../../database/workspace-types';
+
+class ConfirmWorkspaceDeleteModal extends Modal {
+    constructor(
+        app: App,
+        private readonly message: string,
+        private readonly onConfirm: () => void,
+        private readonly onCancel: () => void
+    ) {
+        super(app);
+    }
+
+    onOpen(): void {
+        const { contentEl } = this;
+        contentEl.empty();
+        contentEl.createEl('h3', { text: 'Confirm action' });
+        contentEl.createEl('p', { text: this.message });
+
+        new Setting(contentEl)
+            .addButton((button) => button.setButtonText('Cancel').onClick(() => {
+                this.onCancel();
+                this.close();
+            }))
+            .addButton((button) => button.setButtonText('Delete').setWarning().onClick(() => {
+                this.onConfirm();
+                this.close();
+            }));
+    }
+
+    onClose(): void {
+        this.contentEl.empty();
+    }
+}
 
 export interface WorkspaceListCallbacks {
     onCreateNew: () => void;
@@ -17,6 +49,14 @@ export interface WorkspaceListCallbacks {
 
 export class WorkspaceListRenderer {
     private cardManager?: SearchableCardManager<CardItem>;
+
+    constructor(private readonly app: App) {}
+
+    private confirmDelete(message: string): Promise<boolean> {
+        return new Promise((resolve) => {
+            new ConfirmWorkspaceDeleteModal(this.app, message, () => resolve(true), () => resolve(false)).open();
+        });
+    }
 
     render(
         container: HTMLElement,
@@ -62,23 +102,27 @@ export class WorkspaceListRenderer {
                 emptyStateText: 'No workspaces yet. Create one to get started.',
                 showToggle: true,
                 onAdd: () => callbacks.onCreateNew(),
-                onToggle: async (item, enabled) => {
-                    await callbacks.onToggle(item.id, enabled);
+                onToggle: (item, enabled) => {
+                    void callbacks.onToggle(item.id, enabled);
                 },
                 onEdit: (item) => {
                     callbacks.onEdit(item.id);
                 },
-                onDelete: async (item) => {
-                    const confirmed = confirm(`Delete workspace "${item.name}"? This cannot be undone.`);
-                    if (!confirmed) return;
+                onDelete: (item) => {
+                    void (async () => {
+                        const confirmed = await this.confirmDelete(`Delete workspace "${item.name}"? This cannot be undone.`);
+                        if (!confirmed) {
+                            return;
+                        }
 
-                    try {
-                        await callbacks.onDelete(item.id, item.name);
-                        new Notice('Workspace deleted');
-                    } catch (error) {
-                        console.error('[WorkspaceListRenderer] Failed to delete workspace:', error);
-                        new Notice('Failed to delete workspace');
-                    }
+                        try {
+                            await callbacks.onDelete(item.id, item.name);
+                            new Notice('Workspace deleted');
+                        } catch (error) {
+                            console.error('[WorkspaceListRenderer] Failed to delete workspace:', error);
+                            new Notice('Failed to delete workspace');
+                        }
+                    })();
                 }
             },
             items: cardItems,

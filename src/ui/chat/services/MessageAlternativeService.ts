@@ -27,7 +27,7 @@ import { filterCompletedToolCalls } from '../utils/toolCallUtils';
 export interface MessageAlternativeServiceEvents {
   onStreamingUpdate: (messageId: string, content: string, isComplete: boolean, isIncremental?: boolean) => void;
   onConversationUpdated: (conversation: ConversationData) => void;
-  onToolCallsDetected: (messageId: string, toolCalls: any[]) => void;
+  onToolCallsDetected: (messageId: string, toolCalls: unknown[]) => void;
   onLoadingStateChanged: (isLoading: boolean) => void;
   onError: (message: string) => void;
 }

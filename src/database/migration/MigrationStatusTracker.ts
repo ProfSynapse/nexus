@@ -8,6 +8,10 @@
 import { App } from 'obsidian';
 import { MigrationStatus, MigrationCategory } from './types';
 
+function isMigrationStatus(value: unknown): value is MigrationStatus {
+  return typeof value === 'object' && value !== null;
+}
+
 export class MigrationStatusTracker {
   private app: App;
   private statusPath = '.nexus/migration-status.json';
@@ -28,8 +32,8 @@ export class MigrationStatusTracker {
       }
 
       const content = await this.app.vault.adapter.read(this.statusPath);
-      const status = JSON.parse(content);
-      return status;
+      const status: unknown = JSON.parse(content);
+      return isMigrationStatus(status) ? status : null;
     } catch (error) {
       console.error('[MigrationStatusTracker] Failed to load status:', error);
       return null;

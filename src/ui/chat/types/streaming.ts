@@ -17,5 +17,5 @@ export interface StreamingState {
  * Extended Element interface to support legacy loading interval storage
  */
 export interface ElementWithLoadingInterval extends Element {
-  _loadingInterval?: NodeJS.Timeout;
+  _loadingInterval?: ReturnType<typeof setInterval>;
 }

@@ -41,6 +41,20 @@ import {
 } from '../interfaces/StorageEvents';
 import { PaginatedResult, PaginationParams } from '../../types/pagination/PaginationTypes';
 
+function parseStringArrayJson(value: string): string[] | undefined {
+  const parsed: unknown = JSON.parse(value);
+  return Array.isArray(parsed) && parsed.every(item => typeof item === 'string')
+    ? parsed
+    : undefined;
+}
+
+function parseRecordJson(value: string): Record<string, unknown> | undefined {
+  const parsed: unknown = JSON.parse(value);
+  return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+    ? (parsed as Record<string, unknown>)
+    : undefined;
+}
+
 /**
  * Repository for task entities
  */
@@ -548,7 +562,7 @@ export class TaskRepository
     let tags: string[] | undefined;
     if (row.tagsJson) {
       try {
-        tags = JSON.parse(row.tagsJson as string);
+        tags = parseStringArrayJson(row.tagsJson as string);
       } catch {
         // Skip unparseable tags
       }
@@ -557,7 +571,7 @@ export class TaskRepository
     let metadata: Record<string, unknown> | undefined;
     if (row.metadataJson) {
       try {
-        metadata = JSON.parse(row.metadataJson as string);
+        metadata = parseRecordJson(row.metadataJson as string);
       } catch {
         // Skip unparseable metadata
       }

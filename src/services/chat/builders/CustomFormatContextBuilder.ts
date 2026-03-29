@@ -19,6 +19,19 @@ import { ConversationData, ChatMessage, ToolCall, ToolCallFormat } from '../../.
 export class CustomFormatContextBuilder implements IContextBuilder {
   readonly provider = 'custom';
 
+  private parseToolArguments(args: unknown): Record<string, unknown> {
+    if (typeof args !== 'string') {
+      return typeof args === 'object' && args !== null && !Array.isArray(args)
+        ? (args as Record<string, unknown>)
+        : {};
+    }
+
+    const parsed: unknown = JSON.parse(args);
+    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {};
+  }
+
   /**
    * Format tool calls using the format the model originally used
    * Preserves bracket format for Mistral-based, XML format for Qwen-based models
@@ -210,10 +223,10 @@ export class CustomFormatContextBuilder implements IContextBuilder {
     const normalizedToolCalls = toolCalls.map(toolCall => {
       const toolName = toolCall.function?.name || 'unknown';
       const args = toolCall.function?.arguments || '{}';
-      const parsedArgs = typeof args === 'string' ? JSON.parse(args) : args;
+      const parsedArgs = this.parseToolArguments(args);
       return {
         name: toolName,
-        parameters: parsedArgs as Record<string, unknown>,
+        parameters: parsedArgs,
         sourceFormat: toolCall.sourceFormat
       };
     });
@@ -258,10 +271,10 @@ export class CustomFormatContextBuilder implements IContextBuilder {
     const normalizedToolCalls = toolCalls.map(toolCall => {
       const toolName = toolCall.function?.name || 'unknown';
       const args = toolCall.function?.arguments || '{}';
-      const parsedArgs = typeof args === 'string' ? JSON.parse(args) : args;
+      const parsedArgs = this.parseToolArguments(args);
       return {
         name: toolName,
-        parameters: parsedArgs as Record<string, unknown>,
+        parameters: parsedArgs,
         sourceFormat: toolCall.sourceFormat
       };
     });

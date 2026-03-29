@@ -45,7 +45,11 @@ export class AgentStatusModal extends Modal {
     this.callbacks = callbacks;
   }
 
-  async onOpen(): Promise<void> {
+  onOpen(): void {
+    void this.initializeModal();
+  }
+
+  private async initializeModal(): Promise<void> {
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass('nexus-agent-status-modal');

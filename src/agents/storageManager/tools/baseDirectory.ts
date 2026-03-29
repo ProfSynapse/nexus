@@ -56,7 +56,7 @@ export abstract class BaseDirectoryTool<T extends CommonParameters, R extends Co
    * Get standardized directory path schema for JSON schema
    * @returns Schema object for directory path parameter
    */
-  protected getDirectoryPathSchema(): any {
+  protected getDirectoryPathSchema(): Record<string, unknown> {
     return {
       type: 'string',
       description: 'Directory path (required). Use empty string (""), "/" or "." for root directory',

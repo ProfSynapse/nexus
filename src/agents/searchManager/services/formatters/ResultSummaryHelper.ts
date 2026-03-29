@@ -44,7 +44,7 @@ export class ResultSummaryHelper {
         if (timestamp > newestTimestamp) {
           newestTimestamp = timestamp;
         }
-      } catch (error) {
+      } catch {
         // Ignore invalid dates
       }
     }

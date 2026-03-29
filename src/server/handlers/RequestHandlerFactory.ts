@@ -49,7 +49,7 @@ function getToolCallRequest(request: unknown): ToolCallRequest {
 }
 
 function parseToolArguments(args: unknown): unknown {
-    return parseJsonArrays(args) as unknown;
+    return parseJsonArrays(args);
 }
 
 function asToolArguments(args: unknown): ToolArguments | undefined {

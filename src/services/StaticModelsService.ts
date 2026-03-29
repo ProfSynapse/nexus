@@ -74,7 +74,7 @@ export class StaticModelsService {
       { provider: 'github-copilot', models: GITHUB_COPILOT_MODELS }
     ];
 
-    providerModels.forEach(({ provider, models }) => {
+    providerModels.forEach(({ provider: _provider, models }) => {
       models.forEach(model => {
         allModels.push(this.convertModelSpec(model));
       });

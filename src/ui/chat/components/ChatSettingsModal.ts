@@ -39,27 +39,31 @@ export class ChatSettingsModal extends Modal {
     this.modelAgentManager = modelAgentManager;
   }
 
-  async onOpen() {
-    const { contentEl } = this;
-    contentEl.empty();
-    contentEl.addClass('chat-settings-modal');
+  onOpen(): void {
+    void (async () => {
+      const { contentEl } = this;
+      contentEl.empty();
+      contentEl.addClass('chat-settings-modal');
 
-    // Header with buttons
-    const header = contentEl.createDiv('chat-settings-header');
-    header.createEl('h2', { text: 'Chat settings' });
+      // Header with buttons
+      const header = contentEl.createDiv('chat-settings-header');
+      header.createEl('h2', { text: 'Chat settings' });
 
-    const buttonContainer = header.createDiv('chat-settings-buttons');
-    new ButtonComponent(buttonContainer)
-      .setButtonText('Cancel')
-      .onClick(() => this.close());
+      const buttonContainer = header.createDiv('chat-settings-buttons');
+      new ButtonComponent(buttonContainer)
+        .setButtonText('Cancel')
+        .onClick(() => this.close());
 
-    new ButtonComponent(buttonContainer)
-      .setButtonText('Save')
-      .setCta()
-      .onClick(() => this.handleSave());
+      new ButtonComponent(buttonContainer)
+        .setButtonText('Save')
+        .setCta()
+        .onClick(() => {
+          void this.handleSave();
+        });
 
-    // Load data and render
-    await this.loadAndRender(contentEl);
+      // Load data and render
+      await this.loadAndRender(contentEl);
+    })();
   }
 
   private async loadAndRender(contentEl: HTMLElement): Promise<void> {
@@ -216,7 +220,7 @@ export class ChatSettingsModal extends Modal {
     }
   }
 
-  onClose() {
+  onClose(): void {
     this.renderer?.destroy();
     this.renderer = null;
     this.pendingSettings = null;

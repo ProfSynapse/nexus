@@ -37,7 +37,7 @@ export class NexusLoadingController extends Component {
     this.overlayEl.removeClass('chat-loading-overlay-hidden');
     this.overlayEl.addClass('chat-loading-overlay-visible');
     // Trigger reflow for animation
-    this.overlayEl.offsetHeight;
+    void this.overlayEl.offsetHeight;
     this.overlayEl.addClass('is-visible');
   }
 
@@ -103,7 +103,7 @@ export class NexusLoadingController extends Component {
     // Remove hidden class first (it has display:none !important which overrides visible)
     this.overlayEl.removeClass('chat-loading-overlay-hidden');
     this.overlayEl.addClass('chat-loading-overlay-visible');
-    this.overlayEl.offsetHeight; // Trigger reflow
+    void this.overlayEl.offsetHeight; // Trigger reflow
     this.overlayEl.addClass('is-visible');
   }
 
@@ -148,7 +148,7 @@ export class NexusLoadingController extends Component {
 
       // Hide overlay
       this.hideDatabaseLoadingOverlay();
-    } catch (error) {
+    } catch {
       this.hideDatabaseLoadingOverlay();
     }
   }

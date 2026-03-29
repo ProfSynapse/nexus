@@ -12,7 +12,7 @@
  * - GenericProviderModal (API-key providers)
  */
 
-import { Modal, App, Notice } from 'obsidian';
+import { Modal, App } from 'obsidian';
 import { LLMProviderConfig } from '../types';
 import { LLMProviderManager } from '../services/llm/providers/ProviderManager';
 import { StaticModelsService } from '../services/StaticModelsService';

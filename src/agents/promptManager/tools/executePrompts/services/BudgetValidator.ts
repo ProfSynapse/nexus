@@ -1,4 +1,4 @@
-import { UsageTracker } from '../../../../../services/UsageTracker';
+import { UsageTracker, type BudgetStatus } from '../../../../../services/UsageTracker';
 
 /**
  * Service responsible for validating budget constraints before prompt execution
@@ -47,7 +47,7 @@ export class BudgetValidator {
   /**
    * Get current budget status for reporting
    */
-  async getBudgetStatus() {
+  async getBudgetStatus(): Promise<BudgetStatus | null> {
     if (!this.usageTracker) {
       return null;
     }

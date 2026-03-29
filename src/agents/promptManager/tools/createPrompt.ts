@@ -57,7 +57,8 @@ export class CreatePromptTool extends BaseTool<CreatePromptParams, CreatePromptR
       // Success - LLM already knows what it passed
       return this.prepareResult(true);
     } catch (error) {
-      return this.prepareResult(false, undefined, `Failed to create prompt: ${error}`);
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      return this.prepareResult(false, undefined, `Failed to create prompt: ${message}`);
     }
   }
 

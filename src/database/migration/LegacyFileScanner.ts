@@ -27,7 +27,7 @@ export class LegacyFileScanner {
       const listing = await this.app.vault.adapter.list(this.legacyWorkspacesPath);
       const jsonFiles = listing.files.filter(f => f.endsWith('.json') && !f.endsWith('index.json'));
       return jsonFiles.length > 0;
-    } catch (error) {
+    } catch {
       return false;
     }
   }
@@ -43,7 +43,7 @@ export class LegacyFileScanner {
       const listing = await this.app.vault.adapter.list(this.legacyConversationsPath);
       const jsonFiles = listing.files.filter(f => f.endsWith('.json') && !f.endsWith('index.json'));
       return jsonFiles.length > 0;
-    } catch (error) {
+    } catch {
       return false;
     }
   }

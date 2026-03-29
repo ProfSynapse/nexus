@@ -50,7 +50,8 @@ export class ConversationMigrator extends BaseMigrator<ConversationMigrationResu
   ): Promise<void> {
     // Read legacy conversation JSON via adapter
     const content = await this.app.vault.adapter.read(filePath);
-    const conversation: IndividualConversation = JSON.parse(content);
+    const parsedConversation: unknown = JSON.parse(content);
+    const conversation: IndividualConversation = parsedConversation as IndividualConversation;
 
     // Collect all events for this conversation
     const events: Array<Omit<ConversationEvent, 'id' | 'deviceId' | 'timestamp'>> = [];

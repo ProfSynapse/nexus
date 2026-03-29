@@ -30,7 +30,13 @@ import {
   ProjectDeletedEvent
 } from '../interfaces/StorageEvents';
 import { PaginatedResult, PaginationParams } from '../../types/pagination/PaginationTypes';
-import { QueryCache } from '../optimizations/QueryCache';
+
+function parseRecordJson(value: string): Record<string, unknown> | undefined {
+  const parsed: unknown = JSON.parse(value);
+  return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+    ? (parsed as Record<string, unknown>)
+    : undefined;
+}
 
 /**
  * Repository for project entities
@@ -293,7 +299,7 @@ export class ProjectRepository
     let metadata: Record<string, unknown> | undefined;
     if (row.metadataJson) {
       try {
-        metadata = JSON.parse(row.metadataJson as string);
+        metadata = parseRecordJson(row.metadataJson as string);
       } catch {
         // Skip unparseable metadata
       }

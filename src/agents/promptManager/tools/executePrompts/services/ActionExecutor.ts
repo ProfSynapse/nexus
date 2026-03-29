@@ -56,7 +56,7 @@ export class ActionExecutor {
         case 'findReplace':
           return await this.executeFindReplaceAction(actionParams, action);
         default:
-          return { success: false, error: `Unknown action type: ${action.type}` };
+          return { success: false, error: 'Unknown action type' };
       }
     } catch (error) {
       return {

@@ -26,6 +26,9 @@ import { NoteEmbeddingService } from './NoteEmbeddingService';
 import { TraceEmbeddingService } from './TraceEmbeddingService';
 import { ConversationEmbeddingService } from './ConversationEmbeddingService';
 import type { QAPair } from './QAPairBuilder';
+import type { SimilarNote } from './NoteEmbeddingService';
+import type { TraceSearchResult } from './TraceEmbeddingService';
+import type { ConversationSearchResult } from './ConversationEmbeddingService';
 import type { SQLiteCacheManager } from '../../database/storage/SQLiteCacheManager';
 
 // Re-export types so existing callers importing from EmbeddingService still work
@@ -88,12 +91,12 @@ export class EmbeddingService {
     return this.noteService.embedNote(notePath);
   }
 
-  async findSimilarNotes(notePath: string, limit = 10) {
+  async findSimilarNotes(notePath: string, limit = 10): Promise<SimilarNote[]> {
     if (!this.isEnabled) return [];
     return this.noteService.findSimilarNotes(notePath, limit);
   }
 
-  async semanticSearch(query: string, limit = 10) {
+  async semanticSearch(query: string, limit = 10): Promise<SimilarNote[]> {
     if (!this.isEnabled) return [];
     return this.noteService.semanticSearch(query, limit);
   }
@@ -120,7 +123,7 @@ export class EmbeddingService {
     return this.traceService.embedTrace(traceId, workspaceId, sessionId, content);
   }
 
-  async semanticTraceSearch(query: string, workspaceId: string, limit = 20) {
+  async semanticTraceSearch(query: string, workspaceId: string, limit = 20): Promise<TraceSearchResult[]> {
     if (!this.isEnabled) return [];
     return this.traceService.semanticTraceSearch(query, workspaceId, limit);
   }
@@ -147,7 +150,7 @@ export class EmbeddingService {
     workspaceId: string,
     sessionId?: string,
     limit = 20
-  ) {
+  ): Promise<ConversationSearchResult[]> {
     if (!this.isEnabled) return [];
     return this.conversationService.semanticConversationSearch(query, workspaceId, sessionId, limit);
   }

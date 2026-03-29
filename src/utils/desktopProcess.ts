@@ -17,7 +17,7 @@ export function spawnDesktopProcess(
     command: string,
     args: string[],
     options: SpawnOptions
-) {
+): ReturnType<ChildProcessModule['spawn']> {
     return childProcess.spawn(command, args, {
         ...options,
         shell: options.shell ?? isWindowsCommandWrapper(command),

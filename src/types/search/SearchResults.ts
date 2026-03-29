@@ -63,7 +63,7 @@ export interface SearchResultMetadata {
   scoreMethod?: string;
   
   /** Additional metadata */
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface HybridSearchResult extends SearchResult {

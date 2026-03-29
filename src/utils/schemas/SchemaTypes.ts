@@ -27,7 +27,7 @@ export type SchemaType = typeof SchemaType[keyof typeof SchemaType];
  */
 export interface SchemaContext {
   mode: string;
-  parameters?: any;
+  parameters?: unknown;
   options?: SchemaOptions;
   providerManager?: LLMProviderManager | null;
 }
@@ -48,8 +48,8 @@ export interface SchemaOptions {
  * Base interface for all schema builders
  */
 export interface ISchemaBuilder {
-  buildParameterSchema(context: SchemaContext): any;
-  buildResultSchema(context: SchemaContext): any;
+  buildParameterSchema(context: SchemaContext): unknown;
+  buildResultSchema(context: SchemaContext): unknown;
 }
 
 /**
@@ -139,7 +139,7 @@ export interface CommonSchemaProperties {
   };
   
   // Action properties
-  action?: any;
+  action?: unknown;
   
   // Session properties
   sessionId?: {
@@ -148,10 +148,10 @@ export interface CommonSchemaProperties {
   };
   
   // Workspace properties
-  workspaceContext?: any;
+  workspaceContext?: unknown;
   
   // Context properties
-  context?: any;
+  context?: unknown;
 }
 
 /**

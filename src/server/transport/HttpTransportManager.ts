@@ -7,18 +7,66 @@ import { Server as MCPSDKServer } from '@modelcontextprotocol/sdk/server/index.j
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { McpError, ErrorCode, isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { logger } from '../../utils/logger';
-import { randomUUID } from 'node:crypto';
-import http from 'http';
 import express from 'express';
 import cors from 'cors';
 import { SERVER_LABELS } from '../../constants/branding';
+
+interface HttpServerErrorLike {
+    code?: string;
+    message: string;
+}
+
+interface HttpServerLike {
+    listen(port: number, host: string, callback: () => void): void;
+    on(event: 'error', listener: (error: HttpServerErrorLike) => void): void;
+    close(callback: (error?: Error | null) => void): void;
+}
+
+interface HttpModuleLike {
+    createServer(app: express.Application): HttpServerLike;
+}
+
+interface CryptoModuleLike {
+    randomUUID(): string;
+}
+
+function getBuiltinModule<T>(moduleName: string): T | null {
+    const processWithBuiltinLoader = process as typeof process & {
+        getBuiltinModule?: (id: string) => unknown;
+    };
+    const builtinLoader = processWithBuiltinLoader.getBuiltinModule;
+    if (!builtinLoader) {
+        return null;
+    }
+
+    const module = builtinLoader(moduleName);
+    return module as T | null;
+}
+
+function getHttpModule(): HttpModuleLike {
+    const httpModule = getBuiltinModule<HttpModuleLike>('http');
+    if (!httpModule) {
+        throw new Error('HTTP module is not available in this environment');
+    }
+
+    return httpModule;
+}
+
+function generateSessionId(): string {
+    const cryptoModule = getBuiltinModule<CryptoModuleLike>('crypto');
+    if (!cryptoModule) {
+        throw new Error('Crypto module is not available in this environment');
+    }
+
+    return cryptoModule.randomUUID();
+}
 
 /**
  * Modern HTTP transport manager using StreamableHTTP
  * Supports both JSON response mode and streaming
  */
 export class HttpTransportManager {
-    private httpServer: http.Server | null = null;
+    private httpServer: HttpServerLike | null = null;
     private app: express.Application;
     private isRunning: boolean = false;
     private port: number;
@@ -127,7 +175,7 @@ export class HttpTransportManager {
             logger.systemLog(`[HTTP Transport] Creating new session for initialization`);
             
             transport = new StreamableHTTPServerTransport({
-                sessionIdGenerator: () => randomUUID(),
+                sessionIdGenerator: () => generateSessionId(),
                 enableJsonResponse: true, // Enable JSON response mode for OpenAI MCP
                 onsessioninitialized: (newSessionId: string) => {
                     logger.systemLog(`[HTTP Transport] Session initialized: ${newSessionId}`);
@@ -162,13 +210,13 @@ export class HttpTransportManager {
     /**
      * Start the HTTP transport
      */
-    async startTransport(): Promise<{ httpServer: http.Server; app: express.Application }> {
+    async startTransport(): Promise<{ httpServer: HttpServerLike; app: express.Application }> {
         if (this.httpServer) {
             return { httpServer: this.httpServer, app: this.app };
         }
         try {
             // Create HTTP server with Express app
-            this.httpServer = http.createServer(this.app);
+            this.httpServer = getHttpModule().createServer(this.app);
             
             // Start HTTP server
             await new Promise<void>((resolve, reject) => {
@@ -179,13 +227,13 @@ export class HttpTransportManager {
                     resolve();
                 });
                 
-                this.httpServer!.on('error', (error: NodeJS.ErrnoException) => {
+                this.httpServer!.on('error', (error: HttpServerErrorLike) => {
                     if (error.code === 'EADDRINUSE') {
                         logger.systemError(error, `Port ${this.port} is already in use`);
                     } else {
                         logger.systemError(error, 'HTTP Server Start');
                     }
-                    reject(error);
+                    reject(new Error(error.message));
                 });
             });
 

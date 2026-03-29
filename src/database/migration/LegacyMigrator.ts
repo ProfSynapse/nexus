@@ -28,7 +28,7 @@ import { MigrationStatusTracker } from './MigrationStatusTracker';
 import { WorkspaceMigrator } from './WorkspaceMigrator';
 import { ConversationMigrator } from './ConversationMigrator';
 import { LegacyArchiver } from './LegacyArchiver';
-import { MigrationResult, MigrationStats, MigrationStatus } from './types';
+import { MigrationResult, MigrationStats } from './types';
 
 // Re-export types for backward compatibility
 export type { MigrationStatus, MigrationResult } from './types';
@@ -192,7 +192,6 @@ export class LegacyMigrator {
         await this.archiver.archiveFoldersExist();
       await this.recordCompletion(startTime, stats, errors, wasArchived);
 
-      const duration = Date.now() - startTime;
       const success = errors.length === 0;
 
       return this.createResult(true, success, stats, errors, startTime,

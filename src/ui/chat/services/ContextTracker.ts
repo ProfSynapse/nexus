@@ -6,8 +6,6 @@
  * Delegates token calculation to TokenCalculator utility.
  */
 
-import { ConversationData } from '../../../types/chat/ChatTypes';
-import { ModelOption } from '../types/SelectionTypes';
 import { ContextUsage } from '../components/ContextProgressBar';
 import { TokenCalculator } from '../utils/TokenCalculator';
 import type { ModelAgentManager } from './ModelAgentManager';

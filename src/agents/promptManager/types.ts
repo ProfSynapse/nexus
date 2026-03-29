@@ -55,9 +55,7 @@ export interface ArchivePromptParams extends CommonParameters {
   name: string;
 }
 
-export interface ArchivePromptResult extends CommonResult {
-  // Lean result - no data needed, LLM knows what it archived
-}
+export type ArchivePromptResult = CommonResult;
 
 // Delete Prompt Tool (deprecated - replaced by archivePrompt)
 export interface DeletePromptParams extends CommonParameters {

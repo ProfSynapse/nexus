@@ -151,12 +151,12 @@ export class WorkflowEditorRenderer {
     new ButtonComponent(actions)
       .setButtonText('Save workflow')
       .setCta()
-      .onClick(async () => {
+      .onClick(() => {
         const nextWorkflow = this.validateAndBuildWorkflow();
         if (!nextWorkflow) {
           return;
         }
-        await this.onSave(nextWorkflow);
+        void this.onSave(nextWorkflow);
       });
 
     new ButtonComponent(actions)
@@ -213,7 +213,9 @@ export class WorkflowEditorRenderer {
         new Setting(container)
           .setName('Day of week')
           .addDropdown(dropdown => {
-            DAY_OPTIONS.forEach(option => dropdown.addOption(option.value, option.label));
+            DAY_OPTIONS.forEach(option => {
+              dropdown.addOption(option.value, option.label);
+            });
             dropdown.setValue(String(schedule.dayOfWeek ?? 0));
             dropdown.onChange(value => {
               schedule.dayOfWeek = Number(value);

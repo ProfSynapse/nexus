@@ -481,6 +481,6 @@ export class CreateStateTool extends BaseTool<CreateStateParams, StateResult> {
     getResultSchema(): JSONSchema {
         return this.schemaBuilder.buildResultSchema(SchemaType.State, {
             mode: 'createState'
-        }) as JSONSchema;
+        });
     }
 }

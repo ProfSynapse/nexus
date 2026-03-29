@@ -35,13 +35,13 @@ export abstract class BaseSchemaProvider implements ISchemaProvider {
         }
     }
 
-    abstract enhanceSchema(toolName: string, baseSchema: EnhancedJSONSchema): Promise<EnhancedJSONSchema>;
+    abstract enhanceSchema(_toolName: string, baseSchema: EnhancedJSONSchema): Promise<EnhancedJSONSchema>;
 
     /**
      * Common utility: Check if tool name should be enhanced by this provider
      * Override this method to define tool name patterns for enhancement
      */
-    protected shouldEnhanceToolName(toolName: string): boolean {
+    protected shouldEnhanceToolName(_toolName: string): boolean {
         // Default: enhance all tools (override in subclasses for specific patterns)
         return true;
     }

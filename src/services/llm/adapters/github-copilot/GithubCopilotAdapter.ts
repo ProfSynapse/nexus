@@ -370,7 +370,7 @@ export class GithubCopilotAdapter extends BaseAdapter {
 
   private buildRequestMessages(prompt: string, options?: GenerateOptions): unknown[] {
     if (Array.isArray(options?.conversationHistory) && options.conversationHistory.length > 0) {
-      return options.conversationHistory as unknown[];
+      return options.conversationHistory;
     }
 
     return this.buildMessages(prompt, options?.systemPrompt);

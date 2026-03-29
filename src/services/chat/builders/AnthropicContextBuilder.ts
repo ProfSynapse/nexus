@@ -75,7 +75,7 @@ export class AnthropicContextBuilder implements IContextBuilder {
               type: 'tool_use',
               id: toolCall.id,
               name: toolCall.name,
-              input: (toolCall.parameters || {}) as Record<string, unknown>
+              input: toolCall.parameters || {}
             });
           });
 

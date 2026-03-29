@@ -71,7 +71,7 @@ export function renderOAuthBanner(
     connectButton.setAttribute('aria-label', `Connect with ${config.providerLabel} via OAuth`);
     connectButton.onclick = () => config.onConnect();
 
-    return { connectButton: connectButton as HTMLButtonElement };
+    return { connectButton };
   }
 }
 

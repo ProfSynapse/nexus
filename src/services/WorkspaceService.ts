@@ -307,7 +307,7 @@ export class WorkspaceService {
     }
 
     // Fall back to legacy implementation
-    const id = data.id || `ws_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const id = data.id || `ws_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
 
     const workspace: IndividualWorkspace = {
       id,

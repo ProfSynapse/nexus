@@ -442,6 +442,6 @@ export class LoadStateTool extends BaseTool<LoadStateParams, StateResult> {
     getResultSchema(): JSONSchema {
         return this.schemaBuilder.buildResultSchema(SchemaType.State, {
             mode: 'loadState'
-        }) as JSONSchema;
+        });
     }
 }

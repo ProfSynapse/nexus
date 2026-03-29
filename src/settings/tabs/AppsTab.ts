@@ -87,14 +87,16 @@ export class AppsTab {
         icon: 'download',
         label: 'Install',
         onClick: () => {
-          const result = this.services.appManager!.installApp(a.id);
-          if (result.success) {
-            new Notice(`${a.manifest.name} installed`);
-            this.saveSettings();
-            this.render();
-          } else {
-            new Notice(`Install failed: ${result.error}`);
-          }
+          void (async () => {
+            const result = this.services.appManager!.installApp(a.id);
+            if (result.success) {
+              new Notice(`${a.manifest.name} installed`);
+              await this.saveSettings();
+              this.render();
+            } else {
+              new Notice(`Install failed: ${result.error}`);
+            }
+          })();
         }
       }]
     }));

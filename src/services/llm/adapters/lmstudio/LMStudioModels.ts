@@ -120,7 +120,7 @@ export const LM_STUDIO_MODEL_FAMILIES = {
 /**
  * Get model family information if available
  */
-export function getModelFamily(modelId: string) {
+export function getModelFamily(modelId: string): (typeof LM_STUDIO_MODEL_FAMILIES)[keyof typeof LM_STUDIO_MODEL_FAMILIES] | undefined {
   const lowerModelId = modelId.toLowerCase();
 
   for (const [familyKey, familyInfo] of Object.entries(LM_STUDIO_MODEL_FAMILIES)) {

@@ -38,7 +38,7 @@ export class ToolListStrategy implements IRequestStrategy<ToolListRequest, ToolL
         return request.method === 'tools/list';
     }
 
-    async handle(request: ToolListRequest): Promise<ToolListResponse> {
+    async handle(_request: ToolListRequest): Promise<ToolListResponse> {
         try {
             // Two-Tool Architecture: Return only toolManager tools
             const toolManagerAgent = this.agents.get('toolManager');

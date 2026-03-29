@@ -245,7 +245,7 @@ export class LMStudioAdapter extends BaseAdapter {
 
     let messages: readonly unknown[];
     if (Array.isArray(options?.conversationHistory) && options.conversationHistory.length > 0) {
-      messages = options.conversationHistory as unknown[];
+      messages = options.conversationHistory;
     } else {
       messages = this.buildMessages(prompt, options?.systemPrompt);
     }
@@ -350,7 +350,7 @@ export class LMStudioAdapter extends BaseAdapter {
     // Check for pre-built conversation history (tool continuations)
     let messages: readonly unknown[];
     if (Array.isArray(options?.conversationHistory) && options.conversationHistory.length > 0) {
-      messages = options.conversationHistory as unknown[];
+      messages = options.conversationHistory;
     } else {
       messages = this.buildMessages(prompt, options?.systemPrompt);
     }

@@ -47,7 +47,7 @@ export interface IRepository<T> {
    * @param data - Entity data
    * @returns ID of the created entity
    */
-  create(data: any): Promise<string>;
+  create(data: unknown): Promise<string>;
 
   /**
    * Update an existing entity
@@ -55,7 +55,7 @@ export interface IRepository<T> {
    * @param id - Entity ID
    * @param data - Partial entity data to update
    */
-  update(id: string, data: any): Promise<void>;
+  update(id: string, data: unknown): Promise<void>;
 
   /**
    * Delete an entity

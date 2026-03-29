@@ -1,5 +1,5 @@
 import { IAgent } from '../agents/interfaces/IAgent';
-import { App, Events } from 'obsidian';
+import { App, Events, Plugin } from 'obsidian';
 
 /**
  * Agent management service
@@ -16,7 +16,7 @@ export class AgentManager {
    */
   constructor(
     _app: App,
-    _plugin: any,
+    _plugin: Plugin,
     _events: Events
   ) {
     // We're not currently using these parameters but they might be needed in the future

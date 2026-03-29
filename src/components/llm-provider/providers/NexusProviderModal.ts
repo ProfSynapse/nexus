@@ -74,7 +74,7 @@ export class NexusProviderModal implements IProviderModal {
     this.modelSection.addClass('llm-provider-hidden');
 
     // Start device detection
-    this.detectDevice();
+    void this.detectDevice();
   }
 
   /**

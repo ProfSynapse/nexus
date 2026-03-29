@@ -25,7 +25,7 @@ import {
   TaskStatus
 } from '../types';
 import type { IProjectRepository, ProjectMetadata } from '../../../database/repositories/interfaces/IProjectRepository';
-import type { ITaskRepository, TaskMetadata, NoteLink } from '../../../database/repositories/interfaces/ITaskRepository';
+import type { ITaskRepository, TaskMetadata } from '../../../database/repositories/interfaces/ITaskRepository';
 import { PaginatedResult } from '../../../types/pagination/PaginationTypes';
 import { TaskBoardEvents } from '../../../services/task/TaskBoardEvents';
 
@@ -47,7 +47,6 @@ export class TaskService {
       throw new Error(`Project "${data.name}" already exists in this workspace`);
     }
 
-    const now = Date.now();
     const projectId = await this.projectRepo.create({
       name: data.name,
       description: data.description,
@@ -307,7 +306,7 @@ export class TaskService {
       entity: 'task',
       action: 'moved',
       taskId,
-      projectId: (updateData.projectId as string | undefined) || task.projectId
+      projectId: updateData.projectId || task.projectId
     });
   }
 

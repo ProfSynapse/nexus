@@ -9,8 +9,7 @@ import {
   SuggestionItem,
   EditorSuggestContext,
   PromptSuggestionItem,
-  PromptReference,
-  EnhancementType
+  PromptReference
 } from './base/SuggesterInterfaces';
 import { MessageEnhancer } from '../../services/MessageEnhancer';
 import { CustomPromptStorageService } from '../../../../agents/promptManager/services/CustomPromptStorageService';
@@ -143,7 +142,7 @@ export class PromptSuggester extends BaseSuggester<PromptSuggestionItem> {
    */
   selectSuggestion(
     item: SuggestionItem<PromptSuggestionItem>,
-    evt: MouseEvent | KeyboardEvent
+    _evt: MouseEvent | KeyboardEvent
   ): void {
 
     // Access the context property from EditorSuggest base class

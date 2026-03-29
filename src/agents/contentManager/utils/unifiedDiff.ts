@@ -16,7 +16,10 @@
 function computeLCSTable(oldLines: string[], newLines: string[]): number[][] {
   const n = oldLines.length;
   const m = newLines.length;
-  const table: number[][] = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
+  const table: number[][] = Array.from(
+    { length: n + 1 },
+    () => Array<number>(m + 1).fill(0)
+  );
 
   for (let i = 1; i <= n; i++) {
     for (let j = 1; j <= m; j++) {

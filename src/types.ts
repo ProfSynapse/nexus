@@ -75,7 +75,7 @@ export type {
 } from './types/common';
 
 // Create default settings object
-import type { Command } from 'obsidian';
+import type { Command, Plugin } from 'obsidian';
 import { DEFAULT_CUSTOM_PROMPTS_SETTINGS } from './types/mcp';
 import { DEFAULT_LLM_PROVIDER_SETTINGS } from './types/llm';
 import { MCPSettings } from './types/plugin';
@@ -109,10 +109,10 @@ declare module 'obsidian' {
       commands: { [id: string]: Command };
     };
     plugins: {
-      getPlugin(id: string): any;
+      getPlugin(id: string): Plugin | undefined;
       enablePlugin(id: string): Promise<void>;
       disablePlugin(id: string): Promise<void>;
-      plugins: { [id: string]: any };
+      plugins: { [id: string]: Plugin };
     };
   }
 }

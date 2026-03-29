@@ -10,7 +10,7 @@
 
 import { ValidationError } from './ValidationTypes';
 
-type StateCreationParams = {
+export type StateCreationParams = {
   name?: unknown;
   conversationContext?: unknown;
   activeTask?: unknown;

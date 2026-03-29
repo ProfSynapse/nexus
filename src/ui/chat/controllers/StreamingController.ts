@@ -27,7 +27,7 @@ export interface StreamingControllerEvents {
 }
 
 export class StreamingController {
-  private activeAnimations = new Map<string, NodeJS.Timeout>(); // messageId -> intervalId
+  private activeAnimations = new Map<string, ReturnType<typeof setInterval>>(); // messageId -> intervalId
   private streamingStates = new Map<string, StreamingState>(); // messageId -> streaming-markdown state
 
   constructor(

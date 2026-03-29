@@ -34,7 +34,7 @@ function getBaseName(value: string | undefined): string | undefined {
 
 function toTitleCase(value: string): string {
   return value
-    .replace(/[_\-]/g, ' ')
+    .replace(/[_-]/g, ' ')
     .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
     .replace(/\s+/g, ' ')
     .trim()
@@ -105,7 +105,7 @@ export function formatToolStepLabel(step: Partial<Pick<ToolDisplayStep, 'technic
     action === 'Use Tools';
 
   if (technicalName === 'getTools' || technicalName.endsWith('.getTools')) {
-    return formatDiscoveryLabel((step.status || 'executing') as ToolDisplayStatus);
+    return formatDiscoveryLabel(step.status || 'executing');
   }
 
   if (isUseToolsWrapper) {

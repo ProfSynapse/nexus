@@ -135,7 +135,7 @@ export class ToolHelpService implements IToolHelpService {
                         type: "text",
                         text: "\n---\n"
                     });
-                } catch (error) {
+                } catch {
                     logger.systemWarn(`ToolHelpService: Failed to generate help for tool ${toolSlug}`);
                 }
             }
@@ -190,7 +190,7 @@ export class ToolHelpService implements IToolHelpService {
 
             const toolInstance = agent.getTool(toolSlug);
             return toolInstance !== undefined;
-        } catch (error) {
+        } catch {
             logger.systemWarn(`ToolHelpService: Tool validation failed for ${toolName}.${toolSlug}`);
             return false;
         }

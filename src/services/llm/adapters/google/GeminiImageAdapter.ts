@@ -18,8 +18,7 @@ import {
   ImageValidationResult,
   ImageModel,
   ImageUsage,
-  AspectRatio,
-  NanoBananaImageSize
+  AspectRatio
 } from '../../types/ImageTypes';
 import {
   ProviderConfig,
@@ -69,6 +68,7 @@ export class GeminiImageAdapter extends BaseImageAdapter {
 
   // Image adapters don't support streaming in the same way as text
   async* generateStreamAsync(): AsyncGenerator<never, void, unknown> {
+    yield* [];
     throw new Error('Image generation does not support streaming');
   }
 

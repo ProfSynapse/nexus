@@ -90,25 +90,27 @@ export class InlineEditModal extends Modal {
     });
   }
 
-  async onOpen(): Promise<void> {
-    const { contentEl } = this;
-    contentEl.empty();
-    contentEl.addClass('claudesidian-inline-edit-modal');
+  onOpen(): void {
+    void (async () => {
+      const { contentEl } = this;
+      contentEl.empty();
+      contentEl.addClass('claudesidian-inline-edit-modal');
 
-    // Load available models
-    await this.loadAvailableModels();
+      // Load available models
+      await this.loadAvailableModels();
 
-    // Set default model from settings
-    this.setDefaultModel();
+      // Set default model from settings
+      this.setDefaultModel();
 
-    // Initialize service with selected text
-    this.service.initialize(this.selectionContext.selectedText);
+      // Initialize service with selected text
+      this.service.initialize(this.selectionContext.selectedText);
 
-    // Create container for dynamic content
-    this.contentContainer = contentEl.createDiv('claudesidian-inline-edit-content');
+      // Create container for dynamic content
+      this.contentContainer = contentEl.createDiv('claudesidian-inline-edit-content');
 
-    // Render initial state
-    this.renderState(this.service.getState());
+      // Render initial state
+      this.renderState(this.service.getState());
+    })();
   }
 
   /**
@@ -212,7 +214,7 @@ export class InlineEditModal extends Modal {
         this.plugin.registerDomEvent(textarea.inputEl, 'keydown', (e) => {
           if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
-            this.handleGenerate();
+            void this.handleGenerate();
           }
         });
 
@@ -257,7 +259,9 @@ export class InlineEditModal extends Modal {
     new ButtonComponent(buttonContainer)
       .setButtonText('Generate')
       .setCta()
-      .onClick(() => this.handleGenerate());
+      .onClick(() => {
+        void this.handleGenerate();
+      });
   }
 
   /**
@@ -269,7 +273,7 @@ export class InlineEditModal extends Modal {
 
     // Header with spinner
     const header = container.createDiv('claudesidian-inline-edit-loading-header');
-    const spinner = header.createDiv('claudesidian-inline-edit-spinner');
+    header.createDiv('claudesidian-inline-edit-spinner');
     header.createEl('h2', { text: progress || 'Generating...' });
 
     // Streaming preview

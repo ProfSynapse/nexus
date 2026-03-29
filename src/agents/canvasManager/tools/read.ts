@@ -1,6 +1,6 @@
-import { App, TFile } from 'obsidian';
+import { App } from 'obsidian';
 import { BaseTool } from '../../baseTool';
-import { ReadCanvasParams, ReadCanvasResult, CanvasData } from '../types';
+import { ReadCanvasParams, ReadCanvasResult } from '../types';
 import { CanvasOperations } from '../utils/CanvasOperations';
 import { createErrorMessage } from '../../../utils/errorUtils';
 import { JSONSchema } from '../../../types/schema/JSONSchemaTypes';

@@ -440,44 +440,50 @@ export class ChatSettingsRenderer {
           });
         }
 
-        providers.forEach(p => dropdown.addOption(p.id, p.name));
+        providers.forEach(p => {
+          dropdown.addOption(p.id, p.name);
+        });
 
         dropdown.setValue(this.settings.imageProvider);
-        dropdown.onChange(async (value) => {
-          this.settings.imageProvider = value as 'google' | 'openrouter';
-          const models = await this.imageService.getModelsForProvider(value as 'google' | 'openrouter');
-          this.settings.imageModel = models[0]?.id || '';
-          this.notifyChange();
-          this.render();
+        dropdown.onChange((value) => {
+          void (async () => {
+            this.settings.imageProvider = value as 'google' | 'openrouter';
+            const models = await this.imageService.getModelsForProvider(value as 'google' | 'openrouter');
+            this.settings.imageModel = models[0]?.id || '';
+            this.notifyChange();
+            this.render();
+          })();
         });
       });
 
     // Model (async — populate from adapter)
     new Setting(content)
       .setName('Model')
-      .addDropdown(async dropdown => {
-        const models = await this.imageService.getModelsForProvider(this.settings.imageProvider);
+      .addDropdown(dropdown => {
+        void (async () => {
+          const models = await this.imageService.getModelsForProvider(this.settings.imageProvider);
 
-        if (models.length === 0) {
-          dropdown.addOption('', 'No models available');
-        } else {
-          models.forEach(m => {
-            dropdown.addOption(m.id, m.name);
-          });
+          if (models.length === 0) {
+            dropdown.addOption('', 'No models available');
+          } else {
+            models.forEach(m => {
+              dropdown.addOption(m.id, m.name);
+            });
 
-          const exists = models.some(m => m.id === this.settings.imageModel);
-          if (exists) {
-            dropdown.setValue(this.settings.imageModel);
-          } else if (models.length > 0) {
-            this.settings.imageModel = models[0].id;
-            dropdown.setValue(this.settings.imageModel);
+            const exists = models.some(m => m.id === this.settings.imageModel);
+            if (exists) {
+              dropdown.setValue(this.settings.imageModel);
+            } else if (models.length > 0) {
+              this.settings.imageModel = models[0].id;
+              dropdown.setValue(this.settings.imageModel);
+            }
           }
-        }
 
-        dropdown.onChange((value) => {
-          this.settings.imageModel = value;
-          this.notifyChange();
-        });
+          dropdown.onChange((value) => {
+            this.settings.imageModel = value;
+            this.notifyChange();
+          });
+        })();
       });
   }
 
@@ -502,7 +508,7 @@ export class ChatSettingsRenderer {
         dropdown.onChange((value) => {
           this.settings.workspaceId = value || null;
           this.notifyChange();
-          this.syncWorkspacePrompt(value);
+          void this.syncWorkspacePrompt(value);
         });
       });
 

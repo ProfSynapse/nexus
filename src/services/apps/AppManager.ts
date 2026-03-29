@@ -155,7 +155,7 @@ export class AppManager {
       if (factory) {
         const agent = factory();
         agent.setCredentials(this.appConfigs[appId].credentials);
-        if (this.appConfigs[appId].settings) agent.setSettings(this.appConfigs[appId].settings!);
+        if (this.appConfigs[appId].settings) agent.setSettings(this.appConfigs[appId].settings);
         if (this.vault) agent.setVault(this.vault);
         this.apps.set(appId, agent);
         this.registerCallback(agent);

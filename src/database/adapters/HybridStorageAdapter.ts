@@ -83,7 +83,7 @@ export class HybridStorageAdapter implements IStorageAdapter {
   private app: App;
   private basePath: string;
   private initialized = false;
-  private syncInterval?: NodeJS.Timeout;
+  private syncInterval?: ReturnType<typeof setInterval>;
 
   // Deferred initialization support
   private initPromise: Promise<void> | null = null;
@@ -194,8 +194,9 @@ export class HybridStorageAdapter implements IStorageAdapter {
 
     // Start initialization in background
     this.performInitialization().catch(error => {
-      this.initError = error;
-      console.error('[HybridStorageAdapter] Background initialization failed:', error);
+      const normalizedError = error instanceof Error ? error : new Error(String(error));
+      this.initError = normalizedError;
+      console.error('[HybridStorageAdapter] Background initialization failed:', normalizedError);
     });
 
     // If blocking mode, wait for completion

@@ -46,12 +46,12 @@ export interface IAgent {
    * @param params Parameters to pass to the tool
    * @returns Promise that resolves with the tool's result
    */
-  executeTool(toolSlug: string, params: any): Promise<any>;
+  executeTool(toolSlug: string, params: unknown): Promise<unknown>;
 
   /**
    * Set the agent manager reference
    * @param agentManager Agent manager instance
    */
-  setAgentManager(agentManager: any): void;
+  setAgentManager(agentManager: unknown): void;
 
 }

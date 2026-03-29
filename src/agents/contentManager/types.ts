@@ -21,9 +21,7 @@ export interface SetPropertyParams extends CommonParameters {
 /**
  * Result of setting a frontmatter property
  */
-export interface SetPropertyResult extends CommonResult {
-  // No data returned - LLM already knows the property and value it passed
-}
+export type SetPropertyResult = CommonResult;
 
 /**
  * Params for reading content from a file
@@ -95,9 +93,7 @@ export interface WriteParams extends CommonParameters {
 /**
  * Result of writing content to a file
  */
-export interface WriteResult extends CommonResult {
-  // No data returned - LLM already knows the path and content it passed
-}
+export type WriteResult = CommonResult;
 
 /**
  * Params for replacing or deleting content in a file
@@ -561,7 +557,7 @@ export interface BatchContentResult extends CommonResult {
       /**
        * Operation-specific result data
        */
-      data?: any;
+      data?: unknown;
       
       /**
        * Type of operation

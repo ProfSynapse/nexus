@@ -19,7 +19,7 @@ export function getErrorMessage(error: unknown): string {
   } else if (error === undefined) {
     return 'Undefined error';
   } else {
-    return String(error);
+    return Object.prototype.toString.call(error);
   }
 }
 

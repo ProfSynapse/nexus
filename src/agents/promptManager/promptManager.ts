@@ -345,7 +345,8 @@ export class PromptManagerAgent extends BaseAgent {
 
       return promptSummary.join('\n');
     } catch (error) {
-      return `Custom Prompts: Error loading custom prompts (${error})`;
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      return `Custom Prompts: Error loading custom prompts (${message})`;
     }
   }
 }

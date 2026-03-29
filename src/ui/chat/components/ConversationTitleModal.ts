@@ -15,7 +15,7 @@ export class ConversationTitleModal extends Modal {
     super(app);
   }
 
-  onOpen() {
+  onOpen(): void {
     const { contentEl } = this;
     contentEl.addClass('chat-conversation-title-modal');
 
@@ -81,7 +81,7 @@ export class ConversationTitleModal extends Modal {
     this.close();
   }
 
-  onClose() {
+  onClose(): void {
     // Release focus from modal elements before cleanup
     this.inputEl?.blur();
 
@@ -96,6 +96,6 @@ export class ConversationTitleModal extends Modal {
     }
 
     // Restore focus to workspace so cursor is not trapped
-    activeWindow.document.body.focus();
+    window.document.body.focus();
   }
 }

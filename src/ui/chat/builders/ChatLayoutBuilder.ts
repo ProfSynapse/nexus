@@ -96,10 +96,10 @@ export class ChatLayoutBuilder {
       attr: { cx: '25', cy: '25', r: '20', fill: 'none', stroke: 'currentColor', 'stroke-width': '4', 'stroke-linecap': 'round' }
     });
     // Add animations via DOM
-    const animate1 = circle.createSvg('animate', {
+    circle.createSvg('animate', {
       attr: { attributeName: 'stroke-dasharray', values: '1,150;90,150;90,150', dur: '1.5s', repeatCount: 'indefinite' }
     });
-    const animate2 = circle.createSvg('animate', {
+    circle.createSvg('animate', {
       attr: { attributeName: 'stroke-dashoffset', values: '0;-35;-125', dur: '1.5s', repeatCount: 'indefinite' }
     });
 

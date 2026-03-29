@@ -74,7 +74,8 @@ export class ListPromptsTool extends BaseTool<ListPromptsParams, ListPromptsResu
 
       return nudges.length > 0 ? addRecommendations(result, nudges) : result;
     } catch (error) {
-      return createResult<ListPromptsResult>(false, null, `Failed to list prompts: ${error}`);
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      return createResult<ListPromptsResult>(false, null, `Failed to list prompts: ${message}`);
     }
   }
 

@@ -85,7 +85,8 @@ export class TraceSchemaMigrationService {
       if (!content) {
         return null;
       }
-      return JSON.parse(content);
+      const parsedStatus: unknown = JSON.parse(content);
+      return parsedStatus as TraceSchemaStatus;
     } catch {
       return null;
     }

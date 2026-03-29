@@ -135,7 +135,7 @@ export class MarkdownRenderer {
   private static hasAdvancedMarkdownFeatures(content: string): boolean {
     const advancedPatterns = [
       /^-\s\[[x\s]\]/m, // Checkboxes
-      /^\>/m, // Blockquotes  
+      /^>/m, // Blockquotes  
       /\[\[.*\]\]/m, // Internal links
       /!\[\[.*\]\]/m, // Embedded files
       /^\|.*\|/m, // Tables
@@ -171,7 +171,7 @@ export class MarkdownRenderer {
     const markdownPatterns = [
       /^#{1,6}\s/, // Headers
       /^\*\s|\d+\.\s/, // Lists
-      /^\>\s/, // Blockquotes
+      /^>\s/, // Blockquotes
       /^-\s\[[\sx]\]\s/, // Checkboxes
       /\*\*.*\*\*/, // Bold
       /\*.*\*/, // Italic

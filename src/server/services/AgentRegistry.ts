@@ -130,7 +130,7 @@ export class AgentRegistry {
                     description: agent.description,
                     toolCount: tools.length
                 };
-            } catch (error) {
+            } catch {
                 return {
                     name: agent.name,
                     description: agent.description,
@@ -192,7 +192,7 @@ export class AgentRegistry {
         try {
             const agent = this.getAgent(agentName);
             return agent.getTool(toolName) !== undefined;
-        } catch (error) {
+        } catch {
             return false;
         }
     }

@@ -10,7 +10,7 @@
  * Follows Facade Pattern - simple interface to complex subsystem.
  */
 
-import { ConversationData, ToolCall } from '../../types/chat/ChatTypes';
+import { ConversationData } from '../../types/chat/ChatTypes';
 import {
   getContextBuilder,
   getProviderCategory as getProviderCategoryFromFactory,

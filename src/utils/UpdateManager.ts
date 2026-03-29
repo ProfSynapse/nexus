@@ -11,6 +11,14 @@ interface GitHubRelease {
     assets: ReleaseAsset[];
 }
 
+function isPluginRegistryEntry(value: unknown): value is { id: string } {
+    return typeof value === 'object' && value !== null && 'id' in value && typeof value.id === 'string';
+}
+
+function isGitHubRelease(value: unknown): value is GitHubRelease {
+    return typeof value === 'object' && value !== null && 'tag_name' in value && Array.isArray((value as { assets?: unknown }).assets);
+}
+
 /**
  * UpdateManager handles checking for and applying plugin updates from GitHub releases
  * Fetches the latest release info and downloads required files:
@@ -38,7 +46,9 @@ export class UpdateManager {
                 method: 'GET',
             });
             if (response.status === 200) {
-                const plugins: Array<{ id: string }> = response.json;
+                const plugins = Array.isArray(response.json)
+                    ? response.json.filter(isPluginRegistryEntry)
+                    : [];
                 UpdateManager._isStoreAvailable = plugins.some(p => p.id === pluginId);
                 return UpdateManager._isStoreAvailable;
             }
@@ -186,7 +196,11 @@ export class UpdateManager {
                 });
 
                 if (response.status === 200) {
-                    return response.json;
+                    if (isGitHubRelease(response.json)) {
+                        return response.json;
+                    }
+                    errors.push(new Error(`Invalid GitHub release payload (${endpoint})`));
+                    continue;
                 }
 
                 errors.push(new Error(`GitHub API error: ${response.status} (${endpoint})`));

@@ -2,7 +2,7 @@
  * UIStateController - Manages all UI state transitions and visual feedback
  */
 
-import { setIcon, ButtonComponent, Component } from 'obsidian';
+import { setIcon, Component } from 'obsidian';
 
 export interface UIStateControllerEvents {
   onSidebarToggled: (visible: boolean) => void;
@@ -160,7 +160,7 @@ export class UIStateController {
    * Note: ChatInput component now manages its own loading state and stop button
    * This method is kept for backward compatibility but does nothing
    */
-  setInputLoading(loading: boolean): void {
+  setInputLoading(_loading: boolean): void {
     // ChatInput component handles its own state now
     // No-op to avoid conflicts with ChatInput's updateUI()
   }

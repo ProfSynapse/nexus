@@ -82,7 +82,6 @@ export class StreamingOrchestrator {
     messages: ConversationMessage[],
     options?: StreamingOptions
   ): AsyncGenerator<StreamYield, void, unknown> {
-    try {
       // Validate settings
       if (!this.settings || !this.settings.defaultModel) {
         throw new Error('LLM service not properly configured - missing settings');
@@ -303,9 +302,5 @@ export class StreamingOrchestrator {
         options,
         finalUsage
       );
-
-    } catch (error) {
-      throw error;
-    }
   }
 }

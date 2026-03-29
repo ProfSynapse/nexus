@@ -22,7 +22,7 @@ export interface SaveStateData {
   name: string;
   description?: string;
   created?: number;
-  content: any;
+  content: unknown;
   tags?: string[];
 }
 

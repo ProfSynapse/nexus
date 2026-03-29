@@ -4,7 +4,7 @@
  * Provides text input, send button, and model selection
  */
 
-import { setIcon, App, Platform, Component } from 'obsidian';
+import { setIcon, App, Component } from 'obsidian';
 import { initializeSuggesters, SuggesterInstances } from './suggesters/initializeSuggesters';
 import { ContentEditableHelper } from '../utils/ContentEditableHelper';
 import { ReferenceExtractor, ReferenceMetadata } from '../utils/ReferenceExtractor';
@@ -352,7 +352,7 @@ export class ChatInput {
   /**
    * Get message enhancer (for accessing enhancements before sending)
    */
-  getMessageEnhancer() {
+  getMessageEnhancer(): SuggesterInstances['messageEnhancer'] | null {
     return this.suggesters?.messageEnhancer || null;
   }
 

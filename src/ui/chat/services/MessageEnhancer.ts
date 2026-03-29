@@ -12,7 +12,6 @@ import {
   EnhancementType,
   EnhancementData
 } from '../components/suggesters/base/SuggesterInterfaces';
-import { TokenCalculator } from '../utils/TokenCalculator';
 
 /**
  * Service for building message enhancements from suggester selections
