@@ -21,7 +21,7 @@ import { generateUnifiedDiff } from '../utils/unifiedDiff';
  * Normalize line endings to LF for consistent comparison.
  */
 function normalizeCRLF(text: string): string {
-  return text.replace(/\r\n/g, '\n');
+  return text.replace(/\r/g, '');
 }
 
 /**
@@ -117,7 +117,7 @@ export class ReplaceTool extends BaseTool<ReplaceParams, ReplaceResult> {
         );
       }
 
-      const existingContent = await this.app.vault.read(file);
+      const existingContent = normalizeCRLF(await this.app.vault.read(file));
       const fileLines = existingContent.split('\n');
       const totalLines = fileLines.length;
 

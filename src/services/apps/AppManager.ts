@@ -11,25 +11,27 @@ import { AppManifest, AppConfig, AppsSettings } from '../../types/apps/AppTypes'
 import { IAgent } from '../../agents/interfaces/IAgent';
 import { logger } from '../../utils/logger';
 import { ElevenLabsAgent } from '../../agents/apps/elevenlabs/ElevenLabsAgent';
-import { Vault } from 'obsidian';
+import { ComposerAgent } from '../../agents/apps/composer/ComposerAgent';
+import { WebToolsAgent } from '../../agents/apps/webTools/WebToolsAgent';
+import { App } from 'obsidian';
 
 export class AppManager {
   private apps: Map<string, BaseAppAgent> = new Map();
   private appConfigs: Record<string, AppConfig>;
   private registerCallback: (agent: IAgent) => void;
   private unregisterCallback: (agentName: string) => void;
-  private vault: Vault | null;
+  private app: App | null;
 
   constructor(
     appsSettings: AppsSettings,
     onRegister: (agent: IAgent) => void,
     onUnregister: (agentName: string) => void,
-    vault?: Vault
+    app?: App
   ) {
     this.appConfigs = appsSettings.apps || {};
     this.registerCallback = onRegister;
     this.unregisterCallback = onUnregister;
-    this.vault = vault || null;
+    this.app = app || null;
   }
 
   /**
@@ -52,7 +54,7 @@ export class AppManager {
         const agent = factory();
         agent.setCredentials(config.credentials);
         if (config.settings) agent.setSettings(config.settings);
-        if (this.vault) agent.setVault(this.vault);
+        if (this.app) agent.setApp(this.app);
         this.apps.set(appId, agent);
         this.registerCallback(agent);
         logger.systemLog(`App loaded: ${appId}`);
@@ -85,7 +87,7 @@ export class AppManager {
       installedVersion: agent.manifest.version
     };
 
-    if (this.vault) agent.setVault(this.vault);
+    if (this.app) agent.setApp(this.app);
     this.apps.set(appId, agent);
     this.registerCallback(agent);
 
@@ -156,7 +158,7 @@ export class AppManager {
         const agent = factory();
         agent.setCredentials(this.appConfigs[appId].credentials);
         if (this.appConfigs[appId].settings) agent.setSettings(this.appConfigs[appId].settings!);
-        if (this.vault) agent.setVault(this.vault);
+        if (this.app) agent.setApp(this.app);
         this.apps.set(appId, agent);
         this.registerCallback(agent);
       }
@@ -232,6 +234,8 @@ export class AppManager {
 
     // === ADD NEW APPS HERE ===
     registry.set('elevenlabs', () => new ElevenLabsAgent());
+    registry.set('composer', () => new ComposerAgent());
+    registry.set('web-tools', () => new WebToolsAgent());
 
     return registry;
   }
