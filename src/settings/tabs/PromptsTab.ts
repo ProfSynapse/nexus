@@ -8,7 +8,7 @@
  * - Auto-save on all changes
  */
 
-import { Notice, TextComponent, TextAreaComponent, ButtonComponent, Component } from 'obsidian';
+import { App, Notice, TextComponent, TextAreaComponent, ButtonComponent, Component, Modal, Setting } from 'obsidian';
 import { SettingsRouter } from '../SettingsRouter';
 import { BackButton } from '../components/BackButton';
 import { CustomPrompt } from '../../types/mcp/CustomPromptTypes';
@@ -22,6 +22,37 @@ export interface PromptsTabServices {
 }
 
 type PromptsView = 'list' | 'detail';
+
+class ConfirmActionModal extends Modal {
+    constructor(
+        app: App,
+        private readonly message: string,
+        private readonly onConfirm: () => void,
+        private readonly onCancel: () => void
+    ) {
+        super(app);
+    }
+
+    onOpen(): void {
+        const { contentEl } = this;
+        contentEl.empty();
+        contentEl.createEl('h3', { text: 'Confirm action' });
+        contentEl.createEl('p', { text: this.message });
+        new Setting(contentEl)
+            .addButton((button) => button.setButtonText('Cancel').onClick(() => {
+                this.onCancel();
+                this.close();
+            }))
+            .addButton((button) => button.setButtonText('Delete').setWarning().onClick(() => {
+                this.onConfirm();
+                this.close();
+            }));
+    }
+
+    onClose(): void {
+        this.contentEl.empty();
+    }
+}
 
 export class PromptsTab {
     private container: HTMLElement;
@@ -57,6 +88,23 @@ export class PromptsTab {
     private loadPrompts(): void {
         if (!this.services.customPromptStorage) return;
         this.prompts = this.services.customPromptStorage.getAllPrompts();
+    }
+
+    private getApp(): App | null {
+        const componentWithApp = this.services.component as (Component & { app?: App }) | undefined;
+        return componentWithApp?.app ?? null;
+    }
+
+    private async confirmAction(message: string): Promise<boolean> {
+        const app = this.getApp();
+        if (!app) {
+            new Notice('Unable to confirm action right now');
+            return false;
+        }
+
+        return await new Promise<boolean>((resolve) => {
+            new ConfirmActionModal(app, message, () => resolve(true), () => resolve(false)).open();
+        });
     }
 
     /**
@@ -133,26 +181,28 @@ export class PromptsTab {
                 onEdit: (item) => {
                     this.router.showDetail(item.id);
                 },
-                onDelete: async (item) => {
-                    const confirmed = confirm(`Delete prompt "${item.name}"? This cannot be undone.`);
-                    if (!confirmed) return;
+                onDelete: (item) => {
+                    void (async () => {
+                        const confirmed = await this.confirmAction(`Delete prompt "${item.name}"? This cannot be undone.`);
+                        if (!confirmed) return;
 
-                    try {
-                        if (this.services.customPromptStorage) {
-                            await this.services.customPromptStorage.deletePrompt(item.id);
-                            this.prompts = this.prompts.filter(p => p.id !== item.id);
-                            this.searchableCardManager?.updateItems(this.prompts.map(p => ({
-                                id: p.id,
-                                name: p.name,
-                                description: p.description || 'No description',
-                                isEnabled: p.isEnabled
-                            })));
-                            new Notice('Prompt deleted');
+                        try {
+                            if (this.services.customPromptStorage) {
+                                await this.services.customPromptStorage.deletePrompt(item.id);
+                                this.prompts = this.prompts.filter(p => p.id !== item.id);
+                                this.searchableCardManager?.updateItems(this.prompts.map(p => ({
+                                    id: p.id,
+                                    name: p.name,
+                                    description: p.description || 'No description',
+                                    isEnabled: p.isEnabled
+                                })));
+                                new Notice('Prompt deleted');
+                            }
+                        } catch (error) {
+                            console.error('[PromptsTab] Failed to delete prompt:', error);
+                            new Notice('Failed to delete prompt');
                         }
-                    } catch (error) {
-                        console.error('[PromptsTab] Failed to delete prompt:', error);
-                        new Notice('Failed to delete prompt');
-                    }
+                    })();
                 }
             },
             items: cardItems,
@@ -253,7 +303,7 @@ export class PromptsTab {
             new ButtonComponent(actions)
                 .setButtonText('Delete')
                 .setWarning()
-                .onClick(() => this.deleteCurrentPrompt());
+                .onClick(() => { void this.deleteCurrentPrompt(); });
         }
     }
 
@@ -325,7 +375,7 @@ export class PromptsTab {
     private async deleteCurrentPrompt(): Promise<void> {
         if (!this.currentPrompt?.id || !this.services.customPromptStorage) return;
 
-        const confirmed = confirm(`Delete prompt "${this.currentPrompt.name}"? This cannot be undone.`);
+        const confirmed = await this.confirmAction(`Delete prompt "${this.currentPrompt.name}"? This cannot be undone.`);
         if (!confirmed) return;
 
         try {
@@ -349,7 +399,7 @@ export class PromptsTab {
         }
 
         this.saveTimeout = setTimeout(() => {
-            this.saveCurrentPrompt();
+            void this.saveCurrentPrompt();
         }, 500);
     }
 

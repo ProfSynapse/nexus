@@ -14,7 +14,7 @@
  * - Get recently modified files in workspace
  */
 
-import { App, TFolder, TAbstractFile, TFile } from 'obsidian';
+import { App, TFolder } from 'obsidian';
 
 /**
  * Interface for workspace data
@@ -91,7 +91,7 @@ export class WorkspaceFileCollector {
         failed: false
       };
 
-    } catch (error) {
+    } catch {
       return { path: { folder: rootFolder, files: [] }, failed: true };
     }
   }
@@ -176,7 +176,7 @@ export class WorkspaceFileCollector {
         modified: file.modified
       }));
 
-    } catch (error) {
+    } catch {
       return [];
     }
   }

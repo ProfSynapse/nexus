@@ -10,6 +10,7 @@
 
 import { App, Plugin } from 'obsidian';
 import { getErrorMessage } from '../../../utils/errorUtils';
+import { logger } from '../../../utils/logger';
 import { getAllPluginIds } from '../../../constants/branding';
 import { getNexusPlugin } from '../../../utils/pluginLocator';
 
@@ -309,7 +310,7 @@ export class ServiceAccessor {
     service: T | null,
     error?: string,
     status?: ServiceStatus,
-    diagnostics?: any
+    diagnostics?: ServiceAccessResult<T>['diagnostics']
   ): ServiceAccessResult<T> {
     return {
       success,
@@ -367,13 +368,26 @@ export class ServiceAccessor {
   /**
    * Configurable logging
    */
-  private log(level: 'debug' | 'info' | 'warn' | 'error', message: string, ...args: any[]): void {
+  private log(level: 'debug' | 'info' | 'warn' | 'error', message: string, ...args: unknown[]): void {
     const levels = { debug: 0, info: 1, warn: 2, error: 3 };
     const configLevel = levels[this.config.logLevel];
     const messageLevel = levels[level];
 
     if (messageLevel >= configLevel) {
-      console[level](message, ...args);
+      const formattedArgs = args.length > 0 ? ` ${args.map(arg => String(arg)).join(' ')}` : '';
+      const fullMessage = `${message}${formattedArgs}`;
+
+      switch (level) {
+        case 'error':
+          logger.systemError(new Error(fullMessage), 'ServiceAccessor');
+          break;
+        case 'warn':
+          logger.systemWarn(fullMessage, 'ServiceAccessor');
+          break;
+        default:
+          logger.systemLog(fullMessage, 'ServiceAccessor');
+          break;
+      }
     }
   }
 

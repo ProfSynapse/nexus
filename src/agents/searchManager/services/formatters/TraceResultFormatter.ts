@@ -10,6 +10,10 @@
 import { MemorySearchResult } from '../../../../types/memory/MemorySearchTypes';
 import { BaseResultFormatter } from './BaseResultFormatter';
 
+function getTraceType(metadata: Record<string, unknown>): string | undefined {
+  return typeof metadata.traceType === 'string' ? metadata.traceType : undefined;
+}
+
 /**
  * Formatter for trace results (default formatter)
  */
@@ -18,9 +22,10 @@ export class TraceResultFormatter extends BaseResultFormatter {
     return `Memory Trace: ${result.id}`;
   }
 
-  protected addTypeSpecificMetadata(formatted: Record<string, string>, metadata: any): void {
-    if (metadata.traceType) {
-      formatted['Trace Type'] = metadata.traceType;
+  protected addTypeSpecificMetadata(formatted: Record<string, string>, metadata: Record<string, unknown>): void {
+    const traceType = getTraceType(metadata);
+    if (traceType) {
+      formatted['Trace Type'] = traceType;
     }
   }
 }

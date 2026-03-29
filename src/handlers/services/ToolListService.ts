@@ -4,20 +4,6 @@ import { EnhancedJSONSchema } from '../interfaces/ISchemaProvider';
 import { IAgent } from '../../agents/interfaces/IAgent';
 import { logger } from '../../utils/logger';
 
-interface InternalAgentSchema {
-    type: string;
-    properties: {
-        tool: {
-            type: string;
-            enum: string[];
-            description: string;
-        };
-        [key: string]: unknown;
-    };
-    required: string[];
-    allOf: unknown[];
-}
-
 export class ToolListService implements IToolListService {
     private schemaEnhancementService?: ISchemaEnhancementService;
     async generateToolList(
@@ -41,7 +27,7 @@ export class ToolListService implements IToolListService {
                 const toolName = agent.name;
                 
                 // Enhance the schema and description if enhancement service is available
-                let finalInputSchema = agentSchema.inputSchema as EnhancedJSONSchema;
+                let finalInputSchema = agentSchema.inputSchema;
                 let finalDescription = agent.description;
 
                 if (this.schemaEnhancementService) {
@@ -52,7 +38,7 @@ export class ToolListService implements IToolListService {
                         // Enhance schema with agent context - pass the inputSchema
                         finalInputSchema = await this.schemaEnhancementService.enhanceToolSchema(
                             toolName,
-                            agentSchema.inputSchema as EnhancedJSONSchema
+                            agentSchema.inputSchema
                         );
 
                         // Enhance description if the service supports it
@@ -62,7 +48,7 @@ export class ToolListService implements IToolListService {
                     } catch (error) {
                         logger.systemError(error as Error, `Error enhancing schema for ${toolName}`);
                         // Use original schema and description on enhancement failure
-                        finalInputSchema = agentSchema.inputSchema as EnhancedJSONSchema;
+                        finalInputSchema = agentSchema.inputSchema;
                         finalDescription = agent.description;
                     }
                 }

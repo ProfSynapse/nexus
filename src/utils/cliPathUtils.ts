@@ -7,6 +7,24 @@
 import { FileSystemAdapter, Vault } from 'obsidian';
 import { getAllPluginIds } from '../constants/branding';
 
+interface CliBuiltinModuleMap {
+  path: typeof import('path');
+  fs: typeof import('fs');
+}
+
+function getBuiltinModule<K extends keyof CliBuiltinModuleMap>(moduleName: K): CliBuiltinModuleMap[K] | null {
+  const processWithBuiltinLoader = process as typeof process & {
+    getBuiltinModule?: (id: string) => unknown;
+  };
+  const builtinLoader = processWithBuiltinLoader.getBuiltinModule;
+  if (!builtinLoader) {
+    return null;
+  }
+
+  const module = builtinLoader(moduleName);
+  return module as CliBuiltinModuleMap[K] | null;
+}
+
 /**
  * Returns the filesystem base path for the vault, or null on mobile.
  */
@@ -27,8 +45,11 @@ export function getConnectorPath(vaultPath: string | null): string | null {
     return null;
   }
 
-  const pathMod = require('path') as typeof import('path');
-  const nodeFs = require('fs') as typeof import('fs');
+  const pathMod = getBuiltinModule('path');
+  const nodeFs = getBuiltinModule('fs');
+  if (!pathMod || !nodeFs) {
+    return null;
+  }
 
   const configFolders = nodeFs
     .readdirSync(vaultPath, { withFileTypes: true })

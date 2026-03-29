@@ -10,7 +10,7 @@
  */
 
 import { ChatService } from '../../../services/chat/ChatService';
-import { ConversationData, ConversationMessage } from '../../../types/chat/ChatTypes';
+import { ConversationData, ConversationMessage, ToolCall } from '../../../types/chat/ChatTypes';
 import { BranchManager } from './BranchManager';
 import { ReferenceMetadata } from '../utils/ReferenceExtractor';
 import { MessageAlternativeService } from './MessageAlternativeService';
@@ -29,9 +29,9 @@ export interface MessageManagerEvents {
   onConversationUpdated: (conversation: ConversationData | null) => void;
   onLoadingStateChanged: (isLoading: boolean) => void;
   onError: (message: string) => void;
-  onToolCallsDetected: (messageId: string, toolCalls: any[]) => void;
-  onToolExecutionStarted: (messageId: string, toolCall: { id: string; name: string; parameters?: any }) => void;
-  onToolExecutionCompleted: (messageId: string, toolId: string, result: any, success: boolean, error?: string) => void;
+  onToolCallsDetected: (messageId: string, toolCalls: ToolCall[]) => void;
+  onToolExecutionStarted: (messageId: string, toolCall: { id: string; name: string; parameters?: Record<string, unknown> }) => void;
+  onToolExecutionCompleted: (messageId: string, toolId: string, result: unknown, success: boolean, error?: string) => void;
   onMessageIdUpdated: (oldId: string, newId: string, updatedMessage: ConversationMessage) => void;
   onGenerationAborted: (messageId: string, partialContent: string) => void;
   // Token usage for context tracking (optional - for local models)
@@ -227,7 +227,7 @@ export class MessageManager {
         // Notify that conversation was updated
         this.events.onConversationUpdated(conversation);
 
-      } catch (error) {
+      } catch {
         this.events.onError('Failed to retry message');
       }
     });
@@ -338,7 +338,7 @@ export class MessageManager {
     conversation: ConversationData,
     messageId: string,
     newContent: string,
-    options?: {
+    _options?: {
       provider?: string;
       model?: string;
       systemPrompt?: string;

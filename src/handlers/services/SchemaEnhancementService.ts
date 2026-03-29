@@ -12,6 +12,10 @@ import { ISchemaProvider, EnhancedJSONSchema } from '../interfaces/ISchemaProvid
 import { logger } from '../../utils/logger';
 import { getErrorMessage } from '../../utils/errorUtils';
 
+function cloneSchema(schema: EnhancedJSONSchema): EnhancedJSONSchema {
+    return JSON.parse(JSON.stringify(schema)) as EnhancedJSONSchema;
+}
+
 export class SchemaEnhancementService implements ISchemaEnhancementService {
     private providers: ISchemaProvider[] = [];
 
@@ -78,7 +82,7 @@ export class SchemaEnhancementService implements ISchemaEnhancementService {
             }
 
             // Start with a deep clone of the base schema to avoid mutations
-            let enhancedSchema = JSON.parse(JSON.stringify(baseSchema));
+            let enhancedSchema = cloneSchema(baseSchema);
 
             // Track which providers were applied for debugging
             const appliedProviders: string[] = [];

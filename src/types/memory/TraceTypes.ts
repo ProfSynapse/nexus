@@ -7,8 +7,6 @@
  */
 
 import { WorkspaceMemoryTrace, TraceMetadata, LegacyWorkspaceTraceMetadata } from '../../database/workspace-types';
-// import type { PendingToolCallCapture } from '../../services/toolcall-capture/ToolCallCaptureService';
-type PendingToolCallCapture = any;
 
 /**
  * Search options for memory trace queries
@@ -203,9 +201,9 @@ export interface MemoryTraceSearchResult {
  * Tool call processing context
  */
 export interface ToolCallProcessingContext {
-  request: any;
-  response: any;
-  sessionContext: any;
+  request: unknown;
+  response: unknown;
+  sessionContext: unknown;
   shouldIndex: boolean;
   searchContent: string;
   relationships: ToolCallRelationships;

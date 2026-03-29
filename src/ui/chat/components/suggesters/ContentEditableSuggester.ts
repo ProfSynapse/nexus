@@ -16,7 +16,7 @@ export abstract class ContentEditableSuggester<T> {
   protected suggestionContainer: HTMLDivElement | null = null;
   protected selectedIndex = 0;
   protected currentSuggestions: SuggestionItem<T>[] = [];
-  protected debounceTimer: NodeJS.Timeout | null = null;
+  protected debounceTimer: ReturnType<typeof setTimeout> | null = null;
   protected isActive = false;
   protected component?: Component;
   private clickOutsideHandler?: (e: MouseEvent) => void;
@@ -49,7 +49,7 @@ export abstract class ContentEditableSuggester<T> {
    * Setup event listeners
    */
   private setupEventListeners(): void {
-    const inputHandler = () => this.onInput();
+    const inputHandler = () => { void this.onInput(); };
     const keydownHandler = (e: KeyboardEvent) => this.onKeyDown(e);
 
     this.component!.registerDomEvent(this.element, 'input', inputHandler);
@@ -59,7 +59,9 @@ export abstract class ContentEditableSuggester<T> {
     this.clickOutsideHandler = (e: MouseEvent) => {
       if (!this.suggestionContainer?.contains(e.target as Node) &&
           e.target !== this.element) {
-        setTimeout(() => this.closeSuggestions(), 100);
+        setTimeout(() => {
+          this.closeSuggestions();
+        }, 100);
       }
     };
     if (this.component) {
@@ -94,17 +96,19 @@ export abstract class ContentEditableSuggester<T> {
     const query = match[1] || '';
 
     // Debounce the suggestion fetch
-    this.debounceTimer = setTimeout(async () => {
-      const suggestions = await this.getSuggestions(query);
+    this.debounceTimer = setTimeout(() => {
+      void (async () => {
+        const suggestions = await this.getSuggestions(query);
 
-      if (suggestions.length === 0) {
-        this.closeSuggestions();
-        return;
-      }
+        if (suggestions.length === 0) {
+          this.closeSuggestions();
+          return;
+        }
 
-      this.currentSuggestions = suggestions;
-      this.selectedIndex = 0;
-      this.showSuggestions();
+        this.currentSuggestions = suggestions;
+        this.selectedIndex = 0;
+        this.showSuggestions();
+      })();
     }, this.config.debounceDelay || 100);
   }
 
@@ -134,7 +138,7 @@ export abstract class ContentEditableSuggester<T> {
         if (this.currentSuggestions.length > 0) {
           e.preventDefault();
           e.stopPropagation();
-          this.selectCurrentSuggestion();
+          void this.selectCurrentSuggestion();
         }
         break;
 
@@ -172,7 +176,7 @@ export abstract class ContentEditableSuggester<T> {
         e.preventDefault();
         e.stopPropagation();
         this.selectedIndex = index;
-        this.selectCurrentSuggestion();
+        void this.selectCurrentSuggestion();
       };
 
       this.component!.registerDomEvent(item, 'click', clickHandler);

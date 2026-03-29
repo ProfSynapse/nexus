@@ -28,6 +28,11 @@ import { StorageEvent, BaseStorageEvent } from '../interfaces/StorageEvents';
 import { v4 as uuidv4 } from '../../utils/uuid';
 import { NamedLocks } from '../../utils/AsyncLock';
 
+interface AppWithTypedLocalStorage extends App {
+  loadLocalStorage(key: string): unknown;
+  saveLocalStorage(key: string, value: string): void;
+}
+
 /**
  * Configuration options for JSONLWriter
  */
@@ -79,6 +84,10 @@ export class JSONLWriter {
     this.locks = new NamedLocks();
   }
 
+  private getTypedApp(): AppWithTypedLocalStorage {
+    return this.app as AppWithTypedLocalStorage;
+  }
+
   // ============================================================================
   // Device Management
   // ============================================================================
@@ -93,11 +102,14 @@ export class JSONLWriter {
    */
   private getOrCreateDeviceId(): string {
     const storageKey = 'claudesidian-device-id';
-    let deviceId = localStorage.getItem(storageKey);
+    const storedDeviceId = this.getTypedApp().loadLocalStorage(storageKey);
+    let deviceId = typeof storedDeviceId === 'string' ? storedDeviceId : null;
+
     if (!deviceId) {
       deviceId = uuidv4();
-      localStorage.setItem(storageKey, deviceId);
+      this.getTypedApp().saveLocalStorage(storageKey, deviceId);
     }
+
     return deviceId;
   }
 
@@ -310,7 +322,8 @@ export class JSONLWriter {
         try {
           const event = JSON.parse(lines[i]) as T;
           events.push(event);
-        } catch (e) {
+        } catch {
+          // Skip malformed lines and continue reading the remaining events.
         }
       }
 

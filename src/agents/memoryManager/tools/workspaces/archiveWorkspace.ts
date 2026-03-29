@@ -72,10 +72,12 @@ export class ArchiveWorkspaceTool extends BaseTool<ArchiveWorkspaceParameters, A
                 return this.prepareResult(false, undefined, `Workspace "${params.name}" is already archived.`);
             }
 
-            // Create a copy and toggle isArchived flag
-            const workspaceCopy = JSON.parse(JSON.stringify(existingWorkspace));
-            workspaceCopy.isArchived = !isRestore;
-            workspaceCopy.lastAccessed = Date.now();
+            // Create a typed copy and toggle the archive flag.
+            const workspaceCopy = {
+                ...existingWorkspace,
+                isArchived: !isRestore,
+                lastAccessed: Date.now()
+            };
 
             // Perform the update
             await workspaceService.updateWorkspace(existingWorkspace.id, workspaceCopy);

@@ -4,7 +4,7 @@
 // Dependencies: Defines the target structure for migration from ChromaDB collections
 
 import { WorkspaceContext } from '../../database/types/workspace/WorkspaceTypes';
-import { WorkspaceStateSnapshot } from '../../database/types/session/SessionTypes';
+import { WorkspaceState } from '../../database/types/session/SessionTypes';
 
 export interface WorkspaceDataStructure {
   workspaces: {
@@ -38,8 +38,8 @@ export interface WorkspaceDataStructure {
               content: string;
               metadata?: {
                 tool?: string;
-                params?: any;
-                result?: any;
+                params?: unknown;
+                result?: unknown;
                 relatedFiles?: string[];
               };
             };
@@ -51,7 +51,7 @@ export interface WorkspaceDataStructure {
               id: string;
               name: string;
               created: number;
-              snapshot: WorkspaceStateSnapshot;
+              snapshot: WorkspaceState;
             };
           };
         };
@@ -82,8 +82,8 @@ export interface ConversationDataStructure {
         content: string;
         timestamp: number;
         toolName?: string;
-        toolParams?: any;
-        toolResult?: any;
+        toolParams?: unknown;
+        toolResult?: unknown;
       }>;
     };
   };
