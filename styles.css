@@ -7732,7 +7732,7 @@ body.is-mobile .nexus-task-board-shell {
     display: flex;
     align-items: center;
     justify-content: center;
-    background-color: rgba(var(--background-primary-rgb, 0, 0, 0), 0.85);
+    background-color: color-mix(in srgb, var(--background-primary) 85%, transparent);
     border: 3px dashed var(--interactive-accent);
     border-radius: var(--radius-l);
     pointer-events: none;

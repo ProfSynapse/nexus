@@ -96,7 +96,8 @@ async function transcribeChunk(
 ): Promise<TranscriptionSegment[]> {
   // Determine file extension from MIME type
   const ext = mimeToExtension(chunk.mimeType);
-  const chunkFileName = `${fileName}${ext}`;
+  const baseName = fileName.replace(/\.[^.]+$/, '');
+  const chunkFileName = `${baseName}${ext}`;
 
   const { body, contentType } = buildMultipartFormData([
     { name: 'file', value: chunk.data, filename: chunkFileName, contentType: chunk.mimeType },

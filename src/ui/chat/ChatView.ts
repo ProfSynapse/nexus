@@ -533,11 +533,23 @@ export class ChatView extends ItemView {
       const isAudio = ['.mp3', '.wav', '.ogg', '.flac', '.m4a', '.aac', '.webm', '.opus'].includes(ext);
       if (!isPdf && !isAudio) continue;
 
+      // Resolve vault-relative path from dropped filename
+      const vaultFile = this.app.vault.getFiles().find(f => f.name === file.name);
+      if (!vaultFile) {
+        this.ingestProgressBanner?.update({
+          filePath: file.name,
+          stage: 'error',
+          error: 'File not found in vault. Try dragging from the Obsidian file explorer.'
+        });
+        continue;
+      }
+      const vaultPath = vaultFile.path;
+
       const fileType = isPdf ? 'pdf' as const : 'audio' as const;
 
       // Build confirm modal options
       const confirmOptions: IngestConfirmOptions = {
-        filePath: file.name,
+        filePath: vaultPath,
         fileType,
         defaultPdfMode: (llmSettings?.defaultPdfMode as 'text' | 'vision') || 'text',
         defaultOcrProvider: llmSettings?.defaultOcrModel?.provider,
@@ -555,7 +567,7 @@ export class ChatView extends ItemView {
 
       // Show progress banner
       this.ingestProgressBanner?.update({
-        filePath: file.name,
+        filePath: vaultPath,
         stage: 'queued',
         progress: 0
       });
@@ -565,7 +577,7 @@ export class ChatView extends ItemView {
         const agentManager = await plugin.getService<AgentManager>('agentManager');
         if (!agentManager) {
           this.ingestProgressBanner?.update({
-            filePath: file.name,
+            filePath: vaultPath,
             stage: 'error',
             error: 'Agent manager not available'
           });
@@ -575,7 +587,7 @@ export class ChatView extends ItemView {
         const ingestAgent = agentManager.getAgent('ingestManager');
         if (!ingestAgent) {
           this.ingestProgressBanner?.update({
-            filePath: file.name,
+            filePath: vaultPath,
             stage: 'error',
             error: 'Ingest agent not available'
           });
@@ -585,7 +597,7 @@ export class ChatView extends ItemView {
         const ingestTool = ingestAgent.getTool('ingest');
         if (!ingestTool) {
           this.ingestProgressBanner?.update({
-            filePath: file.name,
+            filePath: vaultPath,
             stage: 'error',
             error: 'Ingest tool not available'
           });
@@ -594,13 +606,13 @@ export class ChatView extends ItemView {
 
         // Update banner to active processing stage
         this.ingestProgressBanner?.update({
-          filePath: file.name,
+          filePath: vaultPath,
           stage: isPdf ? 'extracting' : 'transcribing',
           progress: 10
         });
 
         const ingestResult = await ingestTool.execute({
-          filePath: file.name,
+          filePath: vaultPath,
           mode: isPdf ? result.pdfMode : undefined,
           ocrProvider: result.ocrProvider,
           ocrModel: result.ocrModel,
@@ -610,7 +622,7 @@ export class ChatView extends ItemView {
 
         if (ingestResult.success) {
           this.ingestProgressBanner?.update({
-            filePath: file.name,
+            filePath: vaultPath,
             stage: 'complete',
             progress: 100
           });
@@ -620,14 +632,14 @@ export class ChatView extends ItemView {
           }
         } else {
           this.ingestProgressBanner?.update({
-            filePath: file.name,
+            filePath: vaultPath,
             stage: 'error',
             error: ingestResult.error || 'Ingestion failed'
           });
         }
       } catch (err) {
         this.ingestProgressBanner?.update({
-          filePath: file.name,
+          filePath: vaultPath,
           stage: 'error',
           error: err instanceof Error ? err.message : 'Unexpected error during ingestion'
         });
