@@ -555,7 +555,7 @@ Instead of 50+ tools, MCP exposes just 2: `getTools` (discovery) and `useTools` 
 
 **Key Files**: `src/agents/toolManager/` (agent + tools), `src/services/trace/ToolCallTraceService.ts`
 
-**Tool Count**: 55 tools across 8 agents (not counting ToolManager meta-tools)
+**Tool Count**: 60 tools across 9 agents (not counting ToolManager meta-tools)
 
 ## Memory & Workspace System
 
@@ -591,7 +591,7 @@ Key files: `src/ui/chat/components/suggesters/`, `MessageEnhancer.ts`, `SystemPr
 - **Subagents**: Branch → stream via LLMService → save result. `chunk.toolCalls` are display-only.
 - **WebLLM/Nexus**: Nexus Quark (4B, 4K context), `<tool_call>` format. May crash on Apple Silicon.
 - **Storage**: Branches as JSONL events, SQLite v4 schema, tool names use `agent_tool` format.
-- **Apps & Vault Access**: App agents that produce files (binary or text) must have vault access wired through `BaseAppAgent`. Use `vault.createBinary()` for binary outputs (audio, images) and `vault.create()` for text files. Always ensure parent directories exist before writing. Follow the pattern established by ElevenLabs audio tools and `ImageFileManager`. Future apps will likely need the same vault integration for saving their outputs.
+- **Apps & Vault Access**: App agents now receive the full Obsidian `App` via `BaseAppAgent.setApp()`, which also wires in `Vault`. Use `getVault()` for file writes and `getApp()` when a tool needs workspace, command, or Web Viewer access. Use `vault.createBinary()` for binary outputs (audio, images, PDFs) and `vault.create()` for text files. Always ensure parent directories exist before writing. Follow the patterns established by ElevenLabs audio tools and the `webTools` app. For generated artifacts where the caller must choose the destination, prefer a required `outputPath` parameter.
 
 ## Working Memory
 <!-- Auto-managed by pact-memory skill. Last 5 memories shown. Full history searchable via pact-memory skill. -->

@@ -307,7 +307,14 @@ export class ProjectsManagerView {
 
         try {
             const adapter = await this.serviceManager.getService<HybridStorageAdapter>('hybridStorageAdapter');
-            this.taskService = new TaskService(adapter.projects, adapter.tasks, new DAGService());
+            const { TaskBoardEvents } = await import('../../services/task/TaskBoardEvents');
+            this.taskService = new TaskService(
+                adapter.projects,
+                adapter.tasks,
+                new DAGService(),
+                undefined,
+                TaskBoardEvents
+            );
             return this.taskService;
         } catch {
             this.taskService = null;

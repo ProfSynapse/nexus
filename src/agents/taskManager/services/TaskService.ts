@@ -27,7 +27,18 @@ import {
 import type { IProjectRepository, ProjectMetadata } from '../../../database/repositories/interfaces/IProjectRepository';
 import type { ITaskRepository, TaskMetadata, NoteLink } from '../../../database/repositories/interfaces/ITaskRepository';
 import { PaginatedResult } from '../../../types/pagination/PaginationTypes';
-import { TaskBoardEvents } from '../../../services/task/TaskBoardEvents';
+
+export interface TaskBoardEventPayload {
+  workspaceId: string;
+  entity: 'task' | 'project';
+  action: 'created' | 'updated' | 'deleted' | 'moved' | 'archived';
+  taskId?: string;
+  projectId?: string;
+}
+
+export interface TaskBoardNotifier {
+  notify(event: TaskBoardEventPayload): void;
+}
 
 /**
  * Function type for resolving a workspace identifier (UUID or name) to a UUID.
@@ -42,7 +53,8 @@ export class TaskService {
     private projectRepo: IProjectRepository,
     private taskRepo: ITaskRepository,
     private dagService: IDAGService,
-    resolveWorkspace?: WorkspaceResolver
+    resolveWorkspace?: WorkspaceResolver,
+    private taskBoardNotifier?: TaskBoardNotifier
   ) {
     this.resolveWorkspace = resolveWorkspace ?? null;
   }
@@ -62,6 +74,10 @@ export class TaskService {
       );
     }
     return resolvedId;
+  }
+
+  private notifyTaskBoard(event: TaskBoardEventPayload): void {
+    this.taskBoardNotifier?.notify(event);
   }
 
   // ────────────────────────────────────────────────────────────────
@@ -86,7 +102,7 @@ export class TaskService {
       metadata: data.metadata
     });
 
-    TaskBoardEvents.notify({
+    this.notifyTaskBoard({
       workspaceId,
       entity: 'project',
       action: 'created',
@@ -124,7 +140,7 @@ export class TaskService {
       updated: Date.now()
     });
 
-    TaskBoardEvents.notify({
+    this.notifyTaskBoard({
       workspaceId: project.workspaceId,
       entity: 'project',
       action: 'updated',
@@ -143,7 +159,7 @@ export class TaskService {
       updated: Date.now()
     });
 
-    TaskBoardEvents.notify({
+    this.notifyTaskBoard({
       workspaceId: project.workspaceId,
       entity: 'project',
       action: 'archived',
@@ -159,7 +175,7 @@ export class TaskService {
 
     await this.projectRepo.delete(projectId);
 
-    TaskBoardEvents.notify({
+    this.notifyTaskBoard({
       workspaceId: project.workspaceId,
       entity: 'project',
       action: 'deleted',
@@ -230,7 +246,7 @@ export class TaskService {
       }
     }
 
-    TaskBoardEvents.notify({
+    this.notifyTaskBoard({
       workspaceId: project.workspaceId,
       entity: 'task',
       action: 'created',
@@ -291,7 +307,7 @@ export class TaskService {
 
     await this.taskRepo.update(taskId, updateData);
 
-    TaskBoardEvents.notify({
+    this.notifyTaskBoard({
       workspaceId: task.workspaceId,
       entity: 'task',
       action: 'updated',
@@ -339,7 +355,7 @@ export class TaskService {
 
     await this.taskRepo.update(taskId, updateData);
 
-    TaskBoardEvents.notify({
+    this.notifyTaskBoard({
       workspaceId: task.workspaceId,
       entity: 'task',
       action: 'moved',
@@ -356,7 +372,7 @@ export class TaskService {
 
     await this.taskRepo.delete(taskId);
 
-    TaskBoardEvents.notify({
+    this.notifyTaskBoard({
       workspaceId: task.workspaceId,
       entity: 'task',
       action: 'deleted',

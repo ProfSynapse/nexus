@@ -766,17 +766,29 @@ export class ModelAgentManager {
    * Check if message should trigger compaction before sending
    */
   shouldCompactBeforeSending(
-    conversation: ConversationData,
-    message: string,
+    conversationOrMessage: ConversationData | string,
+    message?: string,
     systemPrompt?: string | null,
     providerOverride?: string
   ): boolean {
+    const messageText = typeof conversationOrMessage === 'string'
+      ? conversationOrMessage
+      : (message || '');
+
+    if (this.contextTokenTracker) {
+      return this.contextTokenTracker.shouldCompactBeforeSending(messageText);
+    }
+
+    if (typeof conversationOrMessage === 'string') {
+      return false;
+    }
+
     const provider = providerOverride || this.selectedModel?.providerId || null;
     const budget = ContextBudgetService.estimateBudget(
       provider,
-      conversation,
+      conversationOrMessage,
       systemPrompt,
-      message
+      messageText
     );
 
     return budget.shouldCompact;

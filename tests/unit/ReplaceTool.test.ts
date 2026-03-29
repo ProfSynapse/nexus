@@ -262,6 +262,90 @@ describe('ReplaceTool', () => {
       expect(result.success).toBe(true);
       expect(mockFileContent).toBe('X\nY\nc');
     });
+
+    it('handles CRLF file content — single-line match succeeds', async () => {
+      // Simulate vault.read() returning CRLF content (Windows-style line endings)
+      mockFileContent = 'line 1\r\nline 2\r\nline 3';
+      const result = await tool.execute({
+        ...baseParams,
+        path: 'test/note.md',
+        oldContent: 'line 2',
+        newContent: 'CHANGED',
+        startLine: 2,
+        endLine: 2,
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.linesDelta).toBe(0);
+      // Write-back content should be LF-only (CRLF stripped on read)
+      expect(mockFileContent).toBe('line 1\nCHANGED\nline 3');
+    });
+
+    it('handles CRLF file content — multi-line match succeeds', async () => {
+      mockFileContent = 'a\r\nb\r\nc\r\nd';
+      const result = await tool.execute({
+        ...baseParams,
+        path: 'test/note.md',
+        oldContent: 'b\nc',
+        newContent: 'X\nY\nZ',
+        startLine: 2,
+        endLine: 3,
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.linesDelta).toBe(1);
+      expect(mockFileContent).toBe('a\nX\nY\nZ\nd');
+    });
+
+    it('handles CRLF file content — findContentInLines fallback reports correct location', async () => {
+      // Content at wrong startLine triggers sliding-window search
+      mockFileContent = 'header\r\nTARGET\r\nfooter';
+      const result = await tool.execute({
+        ...baseParams,
+        path: 'test/note.md',
+        oldContent: 'TARGET',
+        newContent: 'REPLACED',
+        startLine: 1,  // Wrong line — content is actually at line 2
+        endLine: 1,
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Found at lines 2-2');
+      expect(result.error).toContain('Retry with the correct line numbers');
+    });
+
+    it('strips lone CR characters from file content', async () => {
+      // CR-only files (old Mac OS 9) have no \n at all — after stripping \r,
+      // content collapses to a single line. This verifies CRs are removed so
+      // they don't pollute line comparisons (the same mechanism that fixes CRLF).
+      mockFileContent = 'abc\rdef';
+      const result = await tool.execute({
+        ...baseParams,
+        path: 'test/note.md',
+        oldContent: 'abcdef',  // CRs stripped → single line
+        newContent: 'REPLACED',
+        startLine: 1,
+        endLine: 1,
+      });
+
+      expect(result.success).toBe(true);
+      expect(mockFileContent).toBe('REPLACED');
+    });
+
+    it('LF file content — baseline behavior unchanged', async () => {
+      mockFileContent = 'line 1\nline 2\nline 3';
+      const result = await tool.execute({
+        ...baseParams,
+        path: 'test/note.md',
+        oldContent: 'line 2',
+        newContent: 'CHANGED',
+        startLine: 2,
+        endLine: 2,
+      });
+
+      expect(result.success).toBe(true);
+      expect(mockFileContent).toBe('line 1\nCHANGED\nline 3');
+    });
   });
 
   // ========================================================================

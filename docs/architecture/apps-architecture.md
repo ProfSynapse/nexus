@@ -2,7 +2,7 @@
 
 ## Overview
 
-Apps are installable tool modules that extend Nexus with external service integrations (e.g., ElevenLabs, GitHub, Notion). Each app is a self-contained agent with credentials, tools, and a manifest — that plugs directly into the existing `getTools`/`useTools` two-tool architecture.
+Apps are installable tool modules that extend Nexus with external service integrations or desktop capabilities (e.g., ElevenLabs for audio, Web Tools for Obsidian Web Viewer automation). Each app is a self-contained agent with credentials, tools, and a manifest — that plugs directly into the existing `getTools`/`useTools` two-tool architecture.
 
 **Key principle:** An installed app is just another agent in the registry. No changes to `getTools` or `useTools` are needed — apps automatically become discoverable and executable through the existing infrastructure.
 
@@ -22,6 +22,7 @@ Apps are installable tool modules that extend Nexus with external service integr
    │ Core Agents │ │ToolMgr   │  │   App Agents     │
    │ contentMgr  │ │ getTools │  │  elevenLabs      │
    │ storageMgr  │ │ useTools │  │  github          │
+   │ taskMgr     │ │          │  │  webTools        │
    │ searchMgr   │ │          │  │  notion          │
    │ memoryMgr   │ │          │  │  (any installed) │
    │ promptMgr   │ │          │  │                  │
@@ -159,7 +160,7 @@ export interface AppToolDeclaration {
 
 ## BaseAppAgent
 
-Apps extend a new `BaseAppAgent` that adds credential management on top of `BaseAgent`:
+Apps extend `BaseAppAgent`, which adds credential management plus injected Obsidian runtime access on top of `BaseAgent`:
 
 ```typescript
 // src/agents/apps/BaseAppAgent.ts
@@ -179,6 +180,9 @@ import { CommonResult } from '../../types';
 export abstract class BaseAppAgent extends BaseAgent {
   readonly manifest: AppManifest;
   protected credentials: Record<string, string> = {};
+  protected appSettings: Record<string, string> = {};
+  private _app: App | null = null;
+  private _vault: Vault | null = null;
 
   constructor(manifest: AppManifest) {
     super(
@@ -222,6 +226,19 @@ export abstract class BaseAppAgent extends BaseAgent {
   getMissingCredentials(): AppCredentialField[] {
     return this.manifest.credentials
       .filter(c => c.required && !this.credentials[c.key]?.trim());
+  }
+
+  setApp(app: App): void {
+    this._app = app;
+    this._vault = app.vault;
+  }
+
+  getApp(): App | null {
+    return this._app;
+  }
+
+  getVault(): Vault | null {
+    return this._vault;
   }
 
   /**
@@ -445,6 +462,7 @@ export class AppManager {
       try {
         const agent = factory();
         agent.setCredentials(config.credentials);
+        agent.setApp(this.app);
         this.apps.set(appId, agent);
         this.agentRegistryCallback(agent);
         logger.systemLog(`App loaded: ${appId}`);
@@ -478,6 +496,7 @@ export class AppManager {
       installedVersion: agent.manifest.version
     };
 
+    agent.setApp(this.app);
     this.apps.set(appId, agent);
     this.agentRegistryCallback(agent);
 
@@ -587,6 +606,7 @@ export class AppManager {
 
     // === ADD NEW APPS HERE ===
     // registry.set('elevenlabs', () => new ElevenLabsAgent());
+    // registry.set('web-tools', () => new WebToolsAgent());
     // registry.set('github', () => new GitHubAgent());
     // registry.set('notion', () => new NotionAgent());
     // registry.set('slack', () => new SlackAgent());
@@ -656,6 +676,7 @@ Since apps are registered as standard agents, `GetToolsTool` already iterates `a
 LLM calls getTools → sees all agents including:
   contentManager: [read, write, update]
   elevenlabs: [textToSpeech, listVoices, soundEffects]   ← app!
+  webTools: [openWebpage, captureToMarkdown, capturePagePng, capturePagePdf, extractLinks]  ← app!
   github: [createIssue, listPRs, searchCode]              ← app!
 ```
 
@@ -668,6 +689,10 @@ LLM calls useTools({
     agent: "elevenlabs",          ← routes to ElevenLabsAgent
     tool: "textToSpeech",
     arguments: { text: "Hello world" }
+  }, {
+    agent: "webTools",
+    tool: "captureToMarkdown",
+    arguments: { url: "https://example.com", outputPath: "web/example.md" }
   }]
 })
 ```
@@ -758,6 +783,29 @@ That's it. The app will:
 - Appear in `getTools` discovery when installed & enabled
 - Be executable via `useTools` with full context support
 - Show "[SETUP REQUIRED]" in description if credentials are missing
+
+---
+
+## Built-in Desktop App Example: Web Tools
+
+`webTools` is the reference app for desktop-only, Obsidian-native workflows that do not depend on third-party credentials.
+
+Current tools:
+
+| Tool | Purpose | Notes |
+|------|---------|-------|
+| `openWebpage` | Open a URL in Obsidian Web Viewer | Desktop-only |
+| `captureToMarkdown` | Save the active or specified page into the vault as Markdown | Uses Obsidian's built-in `webviewer:save-to-vault` command, then moves the note to the requested `outputPath` |
+| `capturePagePng` | Capture the rendered page to PNG | Requires `outputPath` |
+| `capturePagePdf` | Print the rendered page to PDF | Requires `outputPath` |
+| `extractLinks` | Extract deduplicated page links from the rendered DOM | Read-only |
+
+Important conventions established by `webTools`:
+
+- Apps can be useful even with `credentials: []`
+- `BaseAppAgent` now injects the full `App` object so tools can use workspace and command APIs safely
+- File-producing app tools should prefer `outputPath` when they generate artifacts
+- `outputPath` should be required when the caller must decide the save location explicitly
 
 ---
 

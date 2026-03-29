@@ -32,6 +32,7 @@ import { VaultOperations } from '../../core/VaultOperations';
 import { UsageTracker } from '../UsageTracker';
 import type { IStorageAdapter } from '../../database/interfaces/IStorageAdapter';
 import type { MigratableDatabase } from '../../database/schema/SchemaMigrator';
+import { TaskBoardEvents } from '../task/TaskBoardEvents';
 
 /**
  * Type guard to check if plugin has Settings
@@ -323,7 +324,13 @@ export class AgentInitializationService {
       return result.id;
     };
 
-    const taskService = new TaskService(adapter.projects, adapter.tasks, dagService, validateWorkspace);
+    const taskService = new TaskService(
+      adapter.projects,
+      adapter.tasks,
+      dagService,
+      validateWorkspace,
+      TaskBoardEvents
+    );
     const taskManagerAgent = new TaskManagerAgent(this.app, this.plugin, taskService);
 
     this.agentManager.registerAgent(taskManagerAgent);

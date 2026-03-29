@@ -12,7 +12,7 @@ You are building a new **App** for [Nexus MCP for Obsidian](https://github.com/P
 
 An app is a self-contained agent that:
 - Declares its identity, credentials, and tools via a **manifest**
-- Extends `BaseAppAgent` for credential management and vault access
+- Extends `BaseAppAgent` for credential management, vault access, and optional full `App` access
 - Registers tools that extend `BaseTool` for execution
 - Gets auto-discovered via `getTools` and executed via `useTools` (the two-tool architecture)
 - Has its own settings modal for API key entry and validation
@@ -31,6 +31,9 @@ Understand the patterns before writing any code:
 | `src/agents/apps/elevenlabs/ElevenLabsAgent.ts` | **Reference app**: manifest, constructor, `validateCredentials()` |
 | `src/agents/apps/elevenlabs/tools/listVoices.ts` | **Reference tool**: simple GET request, parameter schema, error handling |
 | `src/agents/apps/elevenlabs/tools/textToSpeech.ts` | **Reference tool**: POST with binary response, vault file saving |
+| `src/agents/apps/webTools/WebToolsAgent.ts` | **Reference app**: desktop-only app with no credentials |
+| `src/agents/apps/webTools/tools/captureToMarkdown.ts` | **Reference tool**: command-driven Obsidian integration using `App`, `WorkspaceLeaf`, and required `outputPath` |
+| `src/agents/apps/webTools/tools/extractLinks.ts` | **Reference tool**: Web Viewer DOM extraction using `executeJavaScript()` |
 | `src/services/apps/AppManager.ts` | App lifecycle: registry, install, credential injection |
 | `src/components/AppConfigModal.ts` | Settings UI: auto-generated from manifest credentials |
 
@@ -137,7 +140,7 @@ import { requestUrl, normalizePath } from 'obsidian';
 
 interface MyToolParams extends CommonParameters {
   query: string;
-  outputPath?: string;  // Optional: for tools that save files
+  outputPath?: string;  // Use for generated artifacts written into the vault
 }
 
 export class MyTool extends BaseTool<MyToolParams, CommonResult> {
@@ -245,6 +248,21 @@ return this.prepareResult(true, {
 
 For text files, use `vault.create(path, content)` instead of `vault.createBinary()`.
 
+If your tool must let the LLM choose exactly where to save the result, make `outputPath` required in the schema. The new Web Tools app uses this pattern for Markdown, PNG, and PDF capture tools so callers must decide the destination explicitly.
+
+##### Desktop-only apps that need the full Obsidian app
+
+Some apps need workspace, command, or Web Viewer access rather than just raw vault writes. In those cases:
+
+- call `this.agent.getApp()` inside the tool
+- guard with desktop/Electron checks when the feature depends on Web Viewer or Electron APIs
+- keep `outputPath` for file-producing tools so the save destination remains explicit
+
+The `webTools` app is the reference example for this pattern:
+- `openWebpage` opens Obsidian Web Viewer tabs
+- `captureToMarkdown` uses the built-in `webviewer:save-to-vault` command, then moves the note to the required `outputPath`
+- `capturePagePng`, `capturePagePdf`, and `extractLinks` operate on the warmed-up embedded webview directly
+
 #### 6. Register Your App
 
 In `src/services/apps/AppManager.ts`, add your app to the registry:
@@ -261,6 +279,7 @@ That's it. The app system handles everything else automatically:
 - Credentials are stored in plugin settings
 - Tools are discoverable via `getTools` and executable via `useTools`
 - Vault access is injected automatically
+- Full `App` access is injected automatically for apps that need workspace or command APIs
 
 #### 7. Build and Test
 
@@ -289,6 +308,8 @@ Test in Obsidian:
 | **Handle errors** | Extract status and body from caught errors |
 | **Credential safety** | Never log API key values — only log `'present'` or `'missing'` |
 | **File saving** | Use `vault.createBinary()` / `vault.create()` — never `vault.adapter` |
+| **Artifact paths** | Prefer `outputPath` for generated files. Make it required when the caller must choose the save location explicitly |
+| **Desktop-only features** | Guard Electron/Web Viewer behavior with desktop checks and keep mobile-safe fallbacks or clear errors |
 | **Validate credentials** | Override `validateCredentials()` to test the API key works |
 
 ### Submitting Your App

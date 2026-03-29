@@ -2,7 +2,7 @@
 Last Updated: 2026-03-29
 
 ## Project Overview
-- **Name**: Claudesidian MCP
+- **Name**: Nexus (package: claudesidian-mcp)
 - **Version**: 5.5.7
 - **Type**: Obsidian Community Plugin
 - **Purpose**: MCP integration for Obsidian with AI-powered vault operations
@@ -259,6 +259,25 @@ onCreate(file: TFile) {
 
 ### March 2026
 
+**Mar 29**: Nexus Ingester ✅ (PR #83)
+- New `IngestManagerAgent` with `ingest` + `listCapabilities` tools
+- Drag PDF/audio files onto chat → confirmation modal → extraction/transcription → `.md` note alongside original
+- PDF modes: text (pdfjs-dist `getTextContent()`) + vision (pdfjs-dist page render → OCR via vision API); default 20-page limit
+- Audio: Whisper API via OpenAI + Groq only (Ollama/LM Studio excluded — no endpoint; Google deferred to v2)
+- pdfjs-dist bundled via LoopbackPort (no worker file needed); `decodeAudioData` try-catch fallback + >25MB size guard
+- VisionMessageFormatter: 4 provider families (OpenAI, Anthropic, Google, Ollama format)
+- UI: IngestDropOverlay, IngestProgressBanner, IngestConfirmModal, IngestEventBinder + DefaultsTab settings
+- 175 tests across 9 test files
+- Plan: `docs/plans/nexus-ingester-plan.md`
+
+**Mar 29**: Composer App ✅ (PR #81)
+- New `ComposerAgent` with `compose` + `listFormats` tools following BaseAppAgent pattern
+- IFormatComposer strategy pattern: markdown concat, PDF merge (pdf-lib 1.17.1), audio concat/mix (OfflineAudioContext)
+- Audio output: WAV (native PCM), WebM/Opus (MediaRecorder), MP3 (wasm-media-encoders 0.7.0, MIT)
+- Audio mixing: multi-track with per-track volume, offset, fadeIn/fadeOut via Web Audio API
+- Security: isValidPath() path traversal prevention, aggregate file size limit (default 200MB), atomic overwrite, bounds validation
+- 87 tests (7 files); pdf-lib + wasm-media-encoders pinned to exact versions
+
 **Mar 25**: v5.5.0 — Task Board, Compaction Frontier, Tool Refactors, Provider Updates ✅ (PRs #65–72)
 - **CLI providers stdin** (PR #65): Claude Code + Gemini CLI now pass prompts via stdin; Windows argv safety guard (24K limit)
 - **SystemPromptBuilder refactor** (PR #66): Cleaner composition pipeline, `CompactionFrontierRecord` injection, new guide
@@ -498,13 +517,14 @@ agents/
 ## Current Context
 
 ### Active Branch
-`main` — all v5.5.0 work merged. Active working branch: `feat/context-budget-service` (in progress, not yet merged to main as of this session).
+`main`
 
 ### Open PRs
-None — all v5.5.0 PRs (#65–72) merged to main.
+- **PR #85** `fix/crlf-replace-normalization` — Fix CRLF line ending bug in contentManager.replace (issue #84)
 
 ### Current Work
-**Semantic Note Suggester** — ✅ Complete (Mar 29, uncommitted). `src/utils/noteSearch.ts` is the shared `searchNotes()` utility (semantic → fuzzy → recent). Both `NoteInputSuggester` (task board modal) and `TextAreaNoteSuggester` (chat `[[` picker) now delegate to it — giving both semantic search when embeddings are available. New files: `src/ui/tasks/NoteInputSuggester.ts`, `src/utils/noteSearch.ts`.
+
+**Semantic Note Suggester** — ✅ Complete (Mar 29, uncommitted). `src/utils/noteSearch.ts` is the shared `searchNotes()` utility (semantic → fuzzy → recent). Both `NoteInputSuggester` (task board modal) and `TextAreaNoteSuggester` (chat `[[` picker) now delegate to it. New files: `src/ui/tasks/NoteInputSuggester.ts`, `src/utils/noteSearch.ts`.
 
 **GitHub Copilot Responses API** — ✅ Implemented. `gpt-5.4` now routes to `https://api.githubcopilot.com/responses` via dual-endpoint routing in `GithubCopilotAdapter.ts`. Changes uncommitted on `main` branch — pending test + PR.
 
@@ -532,6 +552,8 @@ A branch IS a conversation with parent metadata:
 - `src/ui/chat/services/ContextTracker.ts` - Token/cost tracking
 
 ### Known Issues
+
+**contentManager.replace CRLF bug** — ✅ Fixed in PR #85 (branch `fix/crlf-replace-normalization`). `normalizeCRLF` now strips all `\r` (not just `\r\n` pairs); `existingContent` normalized at read time. 27 tests pass. Awaiting merge.
 
 **Task Board: No JSONL→SQLite sync for tasks** (Mar 26 — fix in progress, branch `fix/task-board-sync`):
 - Fix implemented: `TaskEventApplier.ts` (new), `SyncCoordinator.rebuildTasks()`, `clearAllData()` now clears task tables, `reconcileMissingTasks()` in HybridStorageAdapter, workspace name→UUID resolution in TaskService
@@ -686,13 +708,53 @@ Key files: `src/ui/chat/components/suggesters/`, `MessageEnhancer.ts`, `SystemPr
 - **Storage**: Branches as JSONL events, SQLite v9 schema (4 task tables added in v9), tool names use `agent_tool` format.
 - **Apps & Vault Access**: App agents that produce files (binary or text) must have vault access wired through `BaseAppAgent`. Use `vault.createBinary()` for binary outputs (audio, images) and `vault.create()` for text files. Always ensure parent directories exist before writing. Follow the pattern established by ElevenLabs audio tools and `ImageFileManager`. Future apps will likely need the same vault integration for saving their outputs.
 
-## Working Memory
-<!-- Auto-managed by pact-memory skill. Last 5 memories shown. Full history searchable via pact-memory skill. -->
+## Pinned Context
 
-<!-- SESSION_START -->
+<!-- pinned: 2026-03-29 -->
+### pdfjs-dist LoopbackPort bundling (Obsidian/Electron)
+To use pdfjs-dist in Obsidian without a separate worker file (which esbuild can't bundle):
+```typescript
+import * as pdfjsLib from 'pdfjs-dist';
+import { LoopbackPort } from 'pdfjs-dist';
+pdfjsLib.GlobalWorkerOptions.workerSrc = ''; // disable external worker
+const doc = await pdfjsLib.getDocument({ data: uint8Array, worker: new LoopbackPort() }).promise;
+```
+No esbuild config changes needed. ~1.5-2MB bundle impact. Used in `PdfTextExtractor.ts` and `PdfPageRenderer.ts`.
+
+<!-- pinned: 2026-03-29 -->
+### IngestManagerAgent — audio transcription provider scope (v1)
+Whisper API (OpenAI + Groq) only. Excluded in v1:
+- **Ollama / LM Studio**: No audio transcription endpoint — vision-only
+- **Google multimodal audio**: Deferred to v2 (requires different API path)
+- **Drag-drop file path**: Browser `File.name` is basename only — use `vault.getFiles().find(f => f.name === file.name)` to get vault-relative path in `handleIngestFiles`.
+
+## Working Memory
+<!-- Auto-managed by pact-memory skill. Last 3 memories shown. Full history searchable via pact-memory skill. -->
+
+### 2026-03-29 18:54
+**Context**: Orchestration retrospective for the Nexus Ingester feature in claudesidian-mcp. Full PACT cycle: PREPARE, concurrent CODE (backend + frontend), TEST, REVIEW (5 reviewers), REMEDIATION (3 concurrent fixers). PR #83 on feat/nexus-ingester branch. Variety scored 13 (Novelty:3, Scope:4, Uncertainty:3, Risk:3). Zero imPACT cycles triggered. All phases completed on first pass. 16 specialist tasks total across the workflow. The orchestration pattern was: sequential phases with concurrent specialists within each phase, plus a planned follow-up wiring task to bridge concurrent CODE outputs.
+**Goal**: Calibrate orchestration judgment via second-order observation -- track variety scoring accuracy and dispatch strategy effectiveness for the ingester domain. This data feeds Learning II pattern matching for future new-agent implementations.
+**Decisions**: Variety scored 13 (Novelty:3, Scope:4, Uncertainty:3, Risk:3), actual was close -- zero imPACT cycles, Concurrent frontend+backend CODE dispatch with planned wiring task, Concurrent remediation dispatch (3 fixers in parallel) with test-reviewer reuse
+**Lessons**: Concurrent agent dispatch consistently produces shared constant duplication (DRY findings in review) -- consider injecting shared constants explicitly in dispatch prompts for cross-domain parallel work. The ingester had ACCEPTED_EXTENSIONS duplicated 4x and provider lists duplicated in ChatView and DefaultsTab., PREPARE phase investment pays off: pdfjs-dist LoopbackPort approach and decodeAudioData crash risk identified upfront prevented blocking issues during CODE. Without PREPARE, these would have been imPACT-triggering blockers., Reviewer reuse as fixer (test-reviewer stayed for test alignment fixes after review) is efficient -- no context loss. The reviewer already understood the codebase and the issues, so fixing was faster than spawning a fresh agent., Variety score of 13 was accurate -- actual difficulty matched prediction. Zero imPACT cycles, all phases ran as planned. The high Scope dimension (4) was justified by the cross-cutting nature (new agent + adapter extensions + UI + settings + tests)., Concurrent remediation dispatch caused test/implementation alignment gap: TranscriptionService error format and AudioChunkingService >25MB behavior were changed by backend fixer but tests were written against the pre-fix behavior. Resolved by reusing test-reviewer to align tests with fixes. For future concurrent remediation, consider sequencing test updates after implementation fixes., The wiring task pattern (task #14) for bridging concurrent CODE outputs worked well and was planned upfront. This should be the standard pattern when frontend and backend are dispatched concurrently with a shared integration point.
+**Reasoning chains**: Variety calibration: predicted 13 -> actual ~13 (no imPACTs, no phase reruns) -> scoring was accurate for new-agent implementations with PREPARE investment -> future new-agent tasks in this project can use 12-14 as baseline variety, DRY duplication from concurrent dispatch: parallel agents independently define same constants -> review catches it -> remediation consolidates -> prevention: inject shared constants in dispatch prompts or define types.ts contents upfront in architecture phase, PREPARE ROI: 1 preparer task upfront -> 0 imPACT cycles during CODE -> saved at least 2 potential blockers (pdfjs-dist bundling, decodeAudioData crash) -> PREPARE is justified for variety 10+ tasks
+**Memory ID**: 6ecbd511caced58995c91472df49c955
+
+### 2026-03-29 18:46
+**Summary**: Post-review remediation for Nexus Ingester PR #83 in claudesidian-mcp.
+
+### 2026-03-29 16:10
+**Summary**: Completed full PACT cycle (PREPARE → CODE → TEST → REVIEW in progress) for the Nexus Ingester feature in claudesidian-mc...
 ## Current Session
 <!-- Auto-managed by session_init hook. Overwritten each session. -->
 - Resume: `claude --resume 53b8cd78-df63-4a32-b113-132dde8d14df`
 - Team: `pact-53b8cd78`
-- Started: 2026-03-29 12:19:48 UTC
+- Started: 2026-03-29 13:26:59 UTC
+<!-- SESSION_END -->
+
+<!-- SESSION_START -->
+## Current Session
+<!-- Auto-managed by session_init hook. Overwritten each session. -->
+- Resume: `claude --resume 3a831b09-2738-4a1b-b245-c65642ee664d`
+- Team: `pact-3a831b09`
+- Started: 2026-03-29 17:47:19 UTC
 <!-- SESSION_END -->
