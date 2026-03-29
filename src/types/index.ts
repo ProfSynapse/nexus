@@ -4,6 +4,8 @@
  * Organized by domain for better maintainability
  */
 
+import type { Command } from 'obsidian';
+
 // LLM-related types
 export type {
   ModelConfig,
@@ -142,10 +144,10 @@ declare module 'obsidian' {
       commands: { [id: string]: Command };
     };
     plugins: {
-      getPlugin(id: string): any;
+      getPlugin(id: string): unknown;
       enablePlugin(id: string): Promise<void>;
       disablePlugin(id: string): Promise<void>;
-      plugins: { [id: string]: any };
+      plugins: { [id: string]: unknown };
     };
   }
 }

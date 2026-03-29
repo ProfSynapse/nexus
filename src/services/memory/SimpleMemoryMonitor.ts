@@ -34,7 +34,7 @@ interface MemoryPressureLevel {
 export class SimpleMemoryMonitor {
   private static instance: SimpleMemoryMonitor | null = null;
   private isMonitoring = false;
-  private checkInterval: NodeJS.Timeout | null = null;
+  private checkInterval: ReturnType<typeof setInterval> | null = null;
   
   // Hardcoded balanced thresholds
   private readonly thresholds = {
@@ -114,18 +114,10 @@ export class SimpleMemoryMonitor {
   }
 
   private checkMemoryPressure(): void {
-    const memInfo = this.getCurrentMemoryInfo();
     const pressure = this.getPressureLevel();
 
-    // Log memory stats periodically
-    if (pressure.level !== 'normal') {
-      const usedMB = Math.round(memInfo.used / (1024 * 1024));
-      const totalMB = Math.round(memInfo.total / (1024 * 1024));
-      
-      
-      // Basic cleanup recommendations
-      if (pressure.level === 'critical') {
-      }
+    if (pressure.level === 'critical') {
+      return;
     }
   }
 

@@ -70,6 +70,23 @@ interface MCPTool {
   inputSchema?: JSONSchema;
 }
 
+function isOpenAITool(tool: MCPTool | OpenAITool): tool is OpenAITool {
+  return 'type' in tool && tool.type === 'function' && 'function' in tool;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function parseToolArguments(argumentsValue: string | Record<string, unknown> | undefined): Record<string, unknown> {
+  if (typeof argumentsValue === 'string') {
+    const parsed = JSON.parse(argumentsValue) as unknown;
+    return isRecord(parsed) ? parsed : {};
+  }
+
+  return argumentsValue ?? {};
+}
+
 export interface ToolExecutionContext {
   sessionId?: string;
   workspaceId?: string;
@@ -125,7 +142,7 @@ export class ToolCallService {
       if (this.mcpConnector && typeof this.mcpConnector.getAvailableTools === 'function') {
         // MCP connector returns tools in MCP or OpenAI format
         const tools = this.mcpConnector.getAvailableTools();
-        this.availableTools = (tools || []) as (MCPTool | OpenAITool)[];
+        this.availableTools = tools || [];
         return;
       }
 
@@ -150,18 +167,17 @@ export class ToolCallService {
   private convertMCPToolsToOpenAIFormat(mcpTools: (MCPTool | OpenAITool)[]): OpenAITool[] {
     return mcpTools.map(tool => {
       // Check if already in OpenAI format (has type: 'function' and function object)
-      if ('type' in tool && tool.type === 'function' && 'function' in tool) {
-        return tool as OpenAITool; // Already converted, return as-is
+      if (isOpenAITool(tool)) {
+        return tool;
       }
 
       // Convert from MCP format (name, description, inputSchema) to OpenAI format
-      const mcpTool = tool as MCPTool;
       return {
         type: 'function' as const,
         function: {
-          name: mcpTool.name,
-          description: mcpTool.description,
-          parameters: mcpTool.inputSchema // MCP's inputSchema maps to OpenAI's parameters
+          name: tool.name,
+          description: tool.description,
+          parameters: tool.inputSchema // MCP's inputSchema maps to OpenAI's parameters
         }
       };
     });
@@ -270,12 +286,10 @@ export class ToolCallService {
         }
 
         // Extract parameters
-        const args = typeof toolCall.function?.arguments === 'string'
-          ? JSON.parse(toolCall.function.arguments)
-          : (toolCall.function?.arguments || {});
+        const args = parseToolArguments(toolCall.function?.arguments ?? toolCall.arguments);
 
         // Enrich with context
-        const enrichedArgs = this.enrichWithContext(args as Record<string, unknown>, context);
+        const enrichedArgs = this.enrichWithContext(args, context);
 
         // Get the tool name (ensure it's defined)
         const toolName = toolCall.function?.name || toolCall.name || 'unknown';
@@ -329,9 +343,7 @@ export class ToolCallService {
             name: toolName,
             arguments: toolCall.function?.arguments || JSON.stringify({})
           },
-          parameters: typeof toolCall.function?.arguments === 'string'
-            ? JSON.parse(toolCall.function.arguments)
-            : (toolCall.function?.arguments || {}),
+          parameters: parseToolArguments(toolCall.function?.arguments ?? toolCall.arguments),
           error: error instanceof Error ? error.message : String(error),
           success: false
         };

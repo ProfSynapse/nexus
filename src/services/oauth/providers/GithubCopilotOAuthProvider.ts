@@ -59,6 +59,22 @@ interface TokenPollResponse {
   interval?: number;
 }
 
+interface ElectronShell {
+  openExternal(url: string): void;
+}
+
+function getElectronShell(): ElectronShell {
+  // Desktop-only runtime dependency; keep loading deferred until the device-flow browser handoff.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const electronModule = require('electron') as { shell?: ElectronShell };
+
+  if (!electronModule.shell) {
+    throw new Error('Electron shell is unavailable.');
+  }
+
+  return electronModule.shell;
+}
+
 export class GithubCopilotOAuthProvider implements IOAuthProvider {
   config: OAuthProviderConfig = {
     providerId: 'github-copilot',
@@ -182,8 +198,7 @@ export class GithubCopilotOAuthProvider implements IOAuthProvider {
 
     // Step 2: Open verification URL in browser
     try {
-      const { shell } = require('electron');
-      shell.openExternal(deviceData.verification_uri || VERIFICATION_URL);
+      getElectronShell().openExternal(deviceData.verification_uri || VERIFICATION_URL);
     } catch {
       window.open(deviceData.verification_uri || VERIFICATION_URL, '_blank');
     }

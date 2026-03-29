@@ -19,7 +19,7 @@ export default class NexusPlugin extends Plugin {
     /**
      * Get a service asynchronously
      */
-    public async getService<T>(name: string, timeoutMs?: number): Promise<T | null> {
+    public async getService<T>(name: string, _timeoutMs?: number): Promise<T | null> {
         if (!this.serviceManager) {
             return null;
         }
@@ -57,7 +57,7 @@ export default class NexusPlugin extends Plugin {
         return services;
     }
 
-    async onload() {
+    async onload(): Promise<void> {
         try {
             // Ensure sqlite3.wasm exists (desktop only - SQLite not used on mobile)
             if (Platform.isDesktop) {
@@ -130,28 +130,30 @@ export default class NexusPlugin extends Plugin {
         }
     }
 
-    async onunload() {
-        // Shutdown lifecycle manager first (handles UI cleanup)
-        if (this.lifecycleManager) {
-            await this.lifecycleManager.shutdown();
-        }
-
-        // Stop connector
-        if (this.connector) {
-            await this.connector.stop();
-        }
-
-        // Clean up OAuth singleton (cancels any in-flight flow, releases callback server)
-        if (Platform.isDesktop) {
-            try {
-                const { OAuthService } = await import('./services/oauth/OAuthService');
-                OAuthService.resetInstance();
-            } catch {
-                // OAuth may not have been loaded; ignore
+    onunload(): void {
+        void (async () => {
+            // Shutdown lifecycle manager first (handles UI cleanup)
+            if (this.lifecycleManager) {
+                await this.lifecycleManager.shutdown();
             }
-        }
 
-        // Service manager cleanup handled by lifecycle manager
+            // Stop connector
+            if (this.connector) {
+                await this.connector.stop();
+            }
+
+            // Clean up OAuth singleton (cancels any in-flight flow, releases callback server)
+            if (Platform.isDesktop) {
+                try {
+                    const { OAuthService } = await import('./services/oauth/OAuthService');
+                    OAuthService.resetInstance();
+                } catch {
+                    // OAuth may not have been loaded; ignore
+                }
+            }
+
+            // Service manager cleanup handled by lifecycle manager
+        })();
     }
 
     /**

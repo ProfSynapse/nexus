@@ -14,6 +14,19 @@ interface ClaudeAuthStatusJson {
     authMethod?: string;
 }
 
+function getChildProcessModule(): typeof import('child_process') | null {
+    const processWithBuiltinLoader = process as typeof process & {
+        getBuiltinModule?: (id: string) => unknown;
+    };
+    const builtinLoader = processWithBuiltinLoader.getBuiltinModule;
+    if (!builtinLoader) {
+        return null;
+    }
+
+    const childProcessModule = builtinLoader('child_process');
+    return childProcessModule as typeof import('child_process') | null;
+}
+
 export class ClaudeCodeAuthService {
     constructor(private app: App) {}
 
@@ -72,7 +85,10 @@ export class ClaudeCodeAuthService {
             };
         }
 
-        const childProcess = require('child_process') as typeof import('child_process');
+        const childProcess = getChildProcessModule();
+        if (!childProcess) {
+            return { success: false, error: 'Unable to load desktop process support for Claude Code auth.' };
+        }
         const child = childProcess.spawn(
             initialStatus.claudePath,
             ['auth', 'login', '--claudeai'],
@@ -119,7 +135,15 @@ export class ClaudeCodeAuthService {
         args: string[],
         cwd?: string
     ): Promise<{ stdout: string; stderr: string; exitCode: number | null }> {
-        const childProcess = require('child_process') as typeof import('child_process');
+        const childProcess = getChildProcessModule();
+
+        if (!childProcess) {
+            return {
+                stdout: '',
+                stderr: 'Unable to load desktop process support.',
+                exitCode: null
+            };
+        }
 
         return await new Promise((resolve) => {
             const child = childProcess.spawn(command, args, {

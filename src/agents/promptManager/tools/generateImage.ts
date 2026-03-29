@@ -9,11 +9,9 @@ import { CommonResult, CommonParameters } from '../../../types';
 import { createResult } from '../../../utils/schemaUtils';
 import { ImageGenerationService } from '../../../services/llm/ImageGenerationService';
 import { 
-  ImageGenerationParams,
-  ImageGenerationResult,
   AspectRatio
 } from '../../../services/llm/types/ImageTypes';
-import { SchemaBuilder, SchemaType } from '../../../utils/schemas/SchemaBuilder';
+import { SchemaBuilder } from '../../../utils/schemas/SchemaBuilder';
 import { Vault } from 'obsidian';
 import { LLMProviderSettings } from '../../../types/llm/ProviderTypes';
 
@@ -203,7 +201,7 @@ export class GenerateImageTool extends BaseTool<GenerateImageParams, GenerateIma
       if (initializedProviders.length > 0 && !initializedProviders.includes(provider)) {
         const available = initializedProviders.find(p => p === 'google' || p === 'openrouter');
         if (available) {
-          provider = available as 'google' | 'openrouter';
+          provider = available;
         }
       }
     }

@@ -25,19 +25,6 @@ export interface WebLLMLifecycleCallbacks {
 }
 
 /**
- * Helper function to safely get instanceId from adapter
- * Uses 'in' operator type guard and Record<string, unknown> for type safety
- * instead of 'as any' cast
- */
-function getAdapterInstanceId(adapter: WebLLMAdapter | null): number | undefined {
-  if (adapter && 'instanceId' in adapter) {
-    const value = (adapter as unknown as Record<string, unknown>).instanceId;
-    return typeof value === 'number' ? value : undefined;
-  }
-  return undefined;
-}
-
-/**
  * Helper function to safely get plugin registry from window
  * Uses Record<string, unknown> for type-safe nested property access
  * instead of 'as any' cast
@@ -136,7 +123,7 @@ export class WebLLMLifecycleManager {
       }
 
       return false;
-    } catch (error) {
+    } catch {
       return false;
     }
   }
@@ -292,15 +279,17 @@ export class WebLLMLifecycleManager {
   private startIdleTimer(): void {
     if (this.idleTimer) return;
 
-    this.idleTimer = setTimeout(async () => {
-      this.idleTimer = null;
+    this.idleTimer = setTimeout(() => {
+      void (async () => {
+        this.idleTimer = null;
 
-      if (!this.adapter?.isModelLoaded()) return;
+        if (!this.adapter?.isModelLoaded()) return;
 
-      const idleTime = Date.now() - this.lastActivityTime;
-      if (idleTime >= WebLLMLifecycleManager.IDLE_TIMEOUT_MS) {
-        await this.unloadModel();
-      }
+        const idleTime = Date.now() - this.lastActivityTime;
+        if (idleTime >= WebLLMLifecycleManager.IDLE_TIMEOUT_MS) {
+          await this.unloadModel();
+        }
+      })();
     }, WebLLMLifecycleManager.IDLE_TIMEOUT_MS);
   }
 
@@ -331,7 +320,7 @@ export class WebLLMLifecycleManager {
   /**
    * Get the current adapter state
    */
-  getState() {
+  getState(): ReturnType<WebLLMAdapter['getState']> | undefined {
     return this.adapter?.getState();
   }
 

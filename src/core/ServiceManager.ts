@@ -30,7 +30,7 @@ import { ServiceContainer, IServiceContainer, ServiceFactory, LazyFactory, IServ
 // All service management now handled through ServiceContainer - no external dependencies needed
 
 // Core interfaces for unified service management
-export interface IServiceDescriptor<T = any> {
+export interface IServiceDescriptor<T = unknown> {
     name: string;
     dependencies?: string[];
     stage?: ServiceStage;
@@ -132,7 +132,7 @@ export class ServiceManager implements IServiceManager {
         // Register with ServiceContainer using factory pattern
         this.container.register<T>(
             descriptor.name,
-            async (dependencies: Record<string, unknown>) => {
+            async (_dependencies: Record<string, unknown>) => {
                 // Resolve dependencies if needed
                 if (descriptor.dependencies && descriptor.dependencies.length > 0) {
                     const resolvedDeps: Record<string, unknown> = {};
@@ -261,7 +261,6 @@ export class ServiceManager implements IServiceManager {
             return;
         }
 
-        const stageStartTime = Date.now();
         // Initializing services for stage
         
         // Initialize services in parallel within stage, but respect dependencies
@@ -277,7 +276,6 @@ export class ServiceManager implements IServiceManager {
         
         await Promise.all(initPromises);
         
-        const stageDuration = Date.now() - stageStartTime;
         // Stage initialization completed
     }
 
@@ -431,7 +429,7 @@ export class ServiceManager implements IServiceManager {
     /**
      * Get container statistics
      */
-    getStats() {
+    getStats(): ReturnType<IServiceContainer['getStats']> {
         return this.container.getStats();
     }
 

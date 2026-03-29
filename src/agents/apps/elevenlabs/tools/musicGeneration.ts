@@ -10,6 +10,7 @@ import { CommonParameters, CommonResult } from '../../../../types';
 import { JSONSchema } from '../../../../types/schema/JSONSchemaTypes';
 import { BaseAppAgent } from '../../BaseAppAgent';
 import { requestUrl, normalizePath, TFolder } from 'obsidian';
+import { getErrorBody, getErrorStatusSuffix } from './elevenLabsToolErrors';
 
 interface MusicGenerationParams extends CommonParameters {
   prompt: string;
@@ -98,12 +99,8 @@ export class MusicGenerationTool extends BaseTool<MusicGenerationParams, CommonR
         audioSize: response.arrayBuffer.byteLength,
       });
     } catch (error: unknown) {
-      const status = (error as Record<string, unknown>)?.status;
-      const body = (error as Record<string, unknown>)?.text
-        ?? (error as Record<string, unknown>)?.message
-        ?? String(error);
       return this.prepareResult(false, undefined,
-        `Music generation failed${status ? ` (${status})` : ''}: ${body}`);
+        `Music generation failed${getErrorStatusSuffix(error)}: ${getErrorBody(error)}`);
     }
   }
 

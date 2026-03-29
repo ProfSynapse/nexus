@@ -11,9 +11,46 @@
  * waits for callback, then shuts down).
  */
 
-import { createServer, IncomingMessage, ServerResponse, Server } from 'node:http';
-import { URL } from 'node:url';
-import { timingSafeEqual } from 'node:crypto';
+interface HttpRequestLike {
+  url?: string;
+}
+
+interface HttpResponseLike {
+  writeHead(statusCode: number, headers: Record<string, string>): void;
+  end(content?: string): void;
+}
+
+interface ServerErrorLike {
+  code?: string;
+  message: string;
+}
+
+interface HttpServerLike {
+  close(): void;
+  on(event: 'error', listener: (error: ServerErrorLike) => void): void;
+  listen(port: number, hostname: string, listeningListener: () => void): void;
+}
+
+interface HttpModuleLike {
+  createServer(listener: (req: HttpRequestLike, res: HttpResponseLike) => void): HttpServerLike;
+}
+
+interface CryptoModuleLike {
+  timingSafeEqual(left: Uint8Array, right: Uint8Array): boolean;
+}
+
+function getBuiltinModule<T>(moduleName: string): T | null {
+  const processWithBuiltinLoader = process as typeof process & {
+    getBuiltinModule?: (id: string) => unknown;
+  };
+  const builtinLoader = processWithBuiltinLoader.getBuiltinModule;
+  if (!builtinLoader) {
+    return null;
+  }
+
+  const module = builtinLoader(moduleName);
+  return module as T | null;
+}
 
 /** Common no-cache headers for all callback responses (prevents browser caching auth codes) */
 const NO_CACHE_HEADERS: Record<string, string> = {
@@ -108,11 +145,18 @@ export function startCallbackServer(options: CallbackServerOptions): Promise<Cal
   } = options;
 
   return new Promise<CallbackServerHandle>((resolveStart, rejectStart) => {
+    const httpModule = getBuiltinModule<HttpModuleLike>('http');
+    const cryptoModule = getBuiltinModule<CryptoModuleLike>('crypto');
+    if (!httpModule || !cryptoModule) {
+      rejectStart(new Error('OAuth callback server requires desktop Node builtin support.'));
+      return;
+    }
+
     let settled = false;
     let callbackResolve: ((result: CallbackResult) => void) | null = null;
     let callbackReject: ((error: Error) => void) | null = null;
     let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
-    let server: Server | null = null;
+    let server: HttpServerLike | null = null;
 
     const cleanup = () => {
       if (timeoutHandle) {
@@ -145,7 +189,7 @@ export function startCallbackServer(options: CallbackServerOptions): Promise<Cal
       callbackReject = reject;
     });
 
-    server = createServer((req: IncomingMessage, res: ServerResponse) => {
+    server = httpModule.createServer((req: HttpRequestLike, res: HttpResponseLike) => {
       // Only handle GET requests to the callback path
       const url = new URL(req.url || '/', `http://127.0.0.1:${port}`);
 
@@ -174,7 +218,7 @@ export function startCallbackServer(options: CallbackServerOptions): Promise<Cal
       const state = url.searchParams.get('state') || '';
       const stateValid =
         state.length === expectedState.length &&
-        timingSafeEqual(Buffer.from(state), Buffer.from(expectedState));
+        cryptoModule.timingSafeEqual(Buffer.from(state), Buffer.from(expectedState));
       if (!stateValid) {
         res.writeHead(400, { 'Content-Type': 'text/html', ...NO_CACHE_HEADERS });
         res.end(HTML_ERROR);
@@ -211,7 +255,7 @@ export function startCallbackServer(options: CallbackServerOptions): Promise<Cal
     });
 
     // Handle server errors (including EADDRINUSE)
-    server.on('error', (err: NodeJS.ErrnoException) => {
+    server.on('error', (err: ServerErrorLike) => {
       cleanup();
       if (err.code === 'EADDRINUSE') {
         rejectStart(new Error(

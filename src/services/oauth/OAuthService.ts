@@ -18,6 +18,22 @@ import { IOAuthProvider, OAuthProviderConfig, OAuthResult } from './IOAuthProvid
 import { generateCodeVerifier, generateCodeChallenge, generateState } from './PKCEUtils';
 import { startCallbackServer, CallbackServerHandle } from './OAuthCallbackServer';
 
+interface ElectronShell {
+  openExternal(url: string): void;
+}
+
+function getElectronShell(): ElectronShell {
+  // Desktop-only runtime dependency; keep loading deferred until the OAuth flow opens a browser.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const electronModule = require('electron') as { shell?: ElectronShell };
+
+  if (!electronModule.shell) {
+    throw new Error('Electron shell is unavailable.');
+  }
+
+  return electronModule.shell;
+}
+
 /** Current state of the OAuth service */
 export type OAuthFlowState = 'idle' | 'authorizing' | 'exchanging';
 
@@ -127,8 +143,7 @@ export class OAuthService {
 
       // Open in system browser via Electron shell (preferred) or window.open (fallback)
       try {
-        const { shell } = require('electron');
-        shell.openExternal(authUrl);
+        getElectronShell().openExternal(authUrl);
       } catch {
         window.open(authUrl, '_blank');
       }
