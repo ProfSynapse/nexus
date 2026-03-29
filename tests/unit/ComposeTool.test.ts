@@ -61,9 +61,17 @@ function makeAgent(vault: Vault): BaseAppAgent {
   return agent;
 }
 
+// Use fake timers to prevent the 30s Promise.race timeout in compose.ts from leaking
+beforeAll(() => jest.useFakeTimers());
+afterAll(() => jest.useRealTimers());
+
 describe('ComposeTool', () => {
   let vault: Vault;
   let tool: ComposeTool;
+
+  afterEach(() => {
+    jest.runOnlyPendingTimers();
+  });
 
   beforeEach(() => {
     const file1 = makeTFile('notes/a.md', 'notes/a.md', 500);
