@@ -43,6 +43,12 @@ import { ToolEventCoordinator } from './coordinators/ToolEventCoordinator';
 import { ChatLayoutBuilder, ChatLayoutElements } from './builders/ChatLayoutBuilder';
 import { ChatEventBinder } from './utils/ChatEventBinder';
 
+// Ingest UI
+import { IngestEventBinder } from '../../agents/ingestManager/ui/IngestEventBinder';
+import { IngestProgressBanner, IngestProgress } from '../../agents/ingestManager/ui/IngestProgressBanner';
+import { IngestConfirmModal, IngestConfirmOptions } from '../../agents/ingestManager/ui/IngestConfirmModal';
+import type { IngestToolResult } from '../../agents/ingestManager/types';
+
 // Utils
 import { ReferenceMetadata } from './utils/ReferenceExtractor';
 import { CHAT_VIEW_TYPES } from '../../constants/branding';
@@ -109,6 +115,10 @@ export class ChatView extends ItemView {
 
   // Layout elements
   private layoutElements!: ChatLayoutElements;
+
+  // Ingest UI
+  private ingestEventBinder: IngestEventBinder | null = null;
+  private ingestProgressBanner: IngestProgressBanner | null = null;
 
   constructor(leaf: WorkspaceLeaf, private chatService: ChatService) {
     super(leaf);
@@ -476,6 +486,178 @@ export class ChatView extends ItemView {
     );
 
     this.uiStateController.initializeEventListeners();
+
+    // Ingest drag-and-drop
+    this.initializeIngestUI();
+  }
+
+  /**
+   * Initialize ingest drag-and-drop UI and progress banner
+   */
+  private initializeIngestUI(): void {
+    const plugin = getNexusPlugin<NexusPlugin>(this.app);
+    if (!plugin) return;
+
+    // Progress banner (always visible container, banners appear inside on ingest)
+    this.ingestProgressBanner = new IngestProgressBanner(
+      this.layoutElements.ingestBannerContainer
+    );
+
+    // Drag-and-drop event binding
+    const mainContainer = this.containerEl.querySelector('.chat-main') as HTMLElement;
+    if (mainContainer) {
+      this.ingestEventBinder = new IngestEventBinder(
+        mainContainer,
+        plugin,
+        (files) => this.handleIngestFiles(files)
+      );
+      this.ingestEventBinder.bind();
+    }
+  }
+
+  /**
+   * Handle files dropped onto the chat view for ingestion
+   */
+  private async handleIngestFiles(files: FileList): Promise<void> {
+    const plugin = getNexusPlugin<NexusPlugin>(this.app);
+    if (!plugin) return;
+
+    const settings = plugin.settings?.settings;
+    const llmSettings = settings?.llmProviders;
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+
+      const isPdf = ext === '.pdf';
+      const isAudio = ['.mp3', '.wav', '.ogg', '.flac', '.m4a', '.aac', '.webm', '.opus'].includes(ext);
+      if (!isPdf && !isAudio) continue;
+
+      const fileType = isPdf ? 'pdf' as const : 'audio' as const;
+
+      // Build confirm modal options
+      const confirmOptions: IngestConfirmOptions = {
+        filePath: file.name,
+        fileType,
+        defaultPdfMode: (llmSettings?.defaultPdfMode as 'text' | 'vision') || 'text',
+        defaultOcrProvider: llmSettings?.defaultOcrModel?.provider,
+        defaultOcrModel: llmSettings?.defaultOcrModel?.model,
+        defaultTranscriptionProvider: llmSettings?.defaultTranscriptionModel?.provider,
+        defaultTranscriptionModel: llmSettings?.defaultTranscriptionModel?.model,
+        ocrProviders: this.getVisionProviders(),
+        transcriptionProviders: this.getTranscriptionProviders()
+      };
+
+      const modal = new IngestConfirmModal(this.app, confirmOptions);
+      const result = await modal.prompt();
+
+      if (!result.confirmed) continue;
+
+      // Show progress banner
+      this.ingestProgressBanner?.update({
+        filePath: file.name,
+        stage: 'queued',
+        progress: 0
+      });
+
+      // Get the IngestManager agent and run ingestion
+      try {
+        const agentManager = await plugin.getService<AgentManager>('agentManager');
+        if (!agentManager) {
+          this.ingestProgressBanner?.update({
+            filePath: file.name,
+            stage: 'error',
+            error: 'Agent manager not available'
+          });
+          continue;
+        }
+
+        const ingestAgent = agentManager.getAgent('ingestManager');
+        if (!ingestAgent) {
+          this.ingestProgressBanner?.update({
+            filePath: file.name,
+            stage: 'error',
+            error: 'Ingest agent not available'
+          });
+          continue;
+        }
+
+        const ingestTool = ingestAgent.getTool('ingest');
+        if (!ingestTool) {
+          this.ingestProgressBanner?.update({
+            filePath: file.name,
+            stage: 'error',
+            error: 'Ingest tool not available'
+          });
+          continue;
+        }
+
+        // Update banner to active processing stage
+        this.ingestProgressBanner?.update({
+          filePath: file.name,
+          stage: isPdf ? 'extracting' : 'transcribing',
+          progress: 10
+        });
+
+        const ingestResult = await ingestTool.execute({
+          filePath: file.name,
+          mode: isPdf ? result.pdfMode : undefined,
+          ocrProvider: result.ocrProvider,
+          ocrModel: result.ocrModel,
+          transcriptionProvider: result.transcriptionProvider,
+          transcriptionModel: result.transcriptionModel,
+        }) as IngestToolResult;
+
+        if (ingestResult.success) {
+          this.ingestProgressBanner?.update({
+            filePath: file.name,
+            stage: 'complete',
+            progress: 100
+          });
+
+          if (ingestResult.outputPath) {
+            new Notice(`Ingested: ${ingestResult.outputPath}`);
+          }
+        } else {
+          this.ingestProgressBanner?.update({
+            filePath: file.name,
+            stage: 'error',
+            error: ingestResult.error || 'Ingestion failed'
+          });
+        }
+      } catch (err) {
+        this.ingestProgressBanner?.update({
+          filePath: file.name,
+          stage: 'error',
+          error: err instanceof Error ? err.message : 'Unexpected error during ingestion'
+        });
+      }
+    }
+  }
+
+  /**
+   * Get list of providers that support vision/image input for OCR
+   */
+  private getVisionProviders(): Array<{ id: string; name: string }> {
+    return [
+      { id: 'openai', name: 'OpenAI' },
+      { id: 'anthropic', name: 'Anthropic' },
+      { id: 'google', name: 'Google AI' },
+      { id: 'groq', name: 'Groq' },
+      { id: 'ollama', name: 'Ollama' },
+      { id: 'lmstudio', name: 'LM Studio' },
+      { id: 'openrouter', name: 'OpenRouter' }
+    ];
+  }
+
+  /**
+   * Get list of providers that support audio transcription
+   */
+  private getTranscriptionProviders(): Array<{ id: string; name: string }> {
+    return [
+      { id: 'openai', name: 'OpenAI' },
+      { id: 'groq', name: 'Groq' }
+    ];
   }
 
   /**
@@ -1350,5 +1532,7 @@ export class ChatView extends ItemView {
     this.nexusLoadingController?.unload();
     this.subagentController?.cleanup();
     this.branchHeader?.cleanup();
+    this.ingestEventBinder?.destroy();
+    this.ingestProgressBanner?.destroy();
   }
 }

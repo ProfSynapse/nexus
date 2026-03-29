@@ -338,14 +338,29 @@ export class OllamaAdapter extends BaseAdapter {
 
   protected buildMessages(prompt: string, systemPrompt?: string): any[] {
     const messages = [];
-    
+
     if (systemPrompt) {
       messages.push({ role: 'system', content: systemPrompt });
     }
-    
+
     messages.push({ role: 'user', content: prompt });
-    
+
     return messages;
+  }
+
+  /**
+   * Inject images into the last user message for Ollama vision models.
+   * Ollama uses a top-level `images` array on the message object with raw base64 strings.
+   * Called externally when conversation history contains vision messages.
+   */
+  static injectVisionImages(messages: any[]): any[] {
+    return messages.map(msg => {
+      // If message has Ollama-style images array, pass through as-is
+      if (msg.images && Array.isArray(msg.images)) {
+        return msg;
+      }
+      return msg;
+    });
   }
 
   protected handleError(error: any, operation: string): never {

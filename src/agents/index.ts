@@ -7,4 +7,5 @@ export * from './promptManager/promptManager';
 export * from './toolManager/toolManager';
 export * from './canvasManager/canvasManager';
 export * from './taskManager/taskManager';
+export * from './ingestManager/ingestManager';
 // Chat agent removed - using native chatbot UI instead

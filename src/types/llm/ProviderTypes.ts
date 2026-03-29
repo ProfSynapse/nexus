@@ -82,6 +82,10 @@ export interface LLMProviderSettings {
   defaultThinking?: DefaultThinkingSettings; // Default thinking settings for chat model
   defaultTemperature?: number; // Default temperature (0.0-1.0, default 0.5)
   monthlyBudget?: number; // Monthly budget in USD for LLM usage
+  // Ingestion defaults
+  defaultPdfMode?: 'text' | 'vision'; // Default PDF processing mode
+  defaultOcrModel?: DefaultModelSettings; // Default provider+model for vision OCR
+  defaultTranscriptionModel?: DefaultModelSettings; // Default provider+model for audio transcription
 }
 
 /**

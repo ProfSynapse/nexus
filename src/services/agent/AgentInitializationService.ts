@@ -19,7 +19,8 @@ import {
   MemoryManagerAgent,
   PromptManagerAgent,
   ToolManagerAgent,
-  CanvasManagerAgent
+  CanvasManagerAgent,
+  IngestManagerAgent
 } from '../../agents';
 import { logger } from '../../utils/logger';
 import { CustomPromptStorageService } from "../../agents/promptManager/services/CustomPromptStorageService";
@@ -328,6 +329,30 @@ export class AgentInitializationService {
 
     this.agentManager.registerAgent(taskManagerAgent);
     logger.systemLog('TaskManager agent initialized successfully');
+  }
+
+  /**
+   * Initialize IngestManager agent
+   */
+  async initializeIngestManager(): Promise<void> {
+    // Lazy getter — resolves LLMProviderManager via PromptManager at call time
+    const getProviderManager = (): LLMProviderManager | null => {
+      try {
+        const promptAgent = this.agentManager.getAgent('promptManager') as
+          | { getProviderManager?: () => LLMProviderManager }
+          | undefined;
+        if (promptAgent?.getProviderManager) {
+          return promptAgent.getProviderManager();
+        }
+      } catch {
+        // PromptManager not available
+      }
+      return null;
+    };
+
+    const ingestManagerAgent = new IngestManagerAgent(this.app.vault, getProviderManager);
+    this.agentManager.registerAgent(ingestManagerAgent);
+    logger.systemLog('IngestManager agent initialized successfully');
   }
 
   /**

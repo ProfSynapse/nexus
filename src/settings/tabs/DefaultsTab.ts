@@ -223,6 +223,105 @@ export class DefaultsTab {
         rendererContainer.appendChild(embeddingsSection);
       }
     }
+
+    // Ingestion defaults section (always visible)
+    this.renderIngestionSection(rendererContainer);
+  }
+
+  /**
+   * Render the ingestion defaults section
+   */
+  private renderIngestionSection(parentEl: HTMLElement): void {
+    const llmSettings = this.services.llmProviderSettings;
+    if (!llmSettings) return;
+
+    const section = createDiv({ cls: 'csr-section' });
+    const header = section.createDiv({ cls: 'csr-section-header' });
+    header.setText('Ingestion');
+    const content = section.createDiv({ cls: 'csr-section-content' });
+
+    // PDF processing mode
+    let ocrProviderSetting: HTMLElement | null = null;
+
+    new Setting(content)
+      .setName('Default PDF mode')
+      .setDesc('Text extraction is free. Vision OCR uses an LLM for scanned documents.')
+      .addDropdown(dropdown => {
+        dropdown
+          .addOption('text', 'Text extraction')
+          .addOption('vision', 'Vision OCR')
+          .setValue(llmSettings.defaultPdfMode || 'text')
+          .onChange(async (value) => {
+            llmSettings.defaultPdfMode = value as 'text' | 'vision';
+            await this.services.settings.saveSettings();
+            // Toggle OCR provider visibility
+            if (ocrProviderSetting) {
+              if (value === 'vision') {
+                ocrProviderSetting.removeClass('nexus-ingest-confirm-hidden');
+              } else {
+                ocrProviderSetting.addClass('nexus-ingest-confirm-hidden');
+              }
+            }
+          });
+      });
+
+    // OCR provider/model (conditionally shown)
+    ocrProviderSetting = content.createDiv();
+    if (llmSettings.defaultPdfMode !== 'vision') {
+      ocrProviderSetting.addClass('nexus-ingest-confirm-hidden');
+    }
+
+    new Setting(ocrProviderSetting)
+      .setName('Default OCR provider')
+      .setDesc('Provider for vision OCR when using vision mode.')
+      .addDropdown(dropdown => {
+        const visionProviders = [
+          { id: 'openai', name: 'OpenAI' },
+          { id: 'anthropic', name: 'Anthropic' },
+          { id: 'google', name: 'Google AI' },
+          { id: 'groq', name: 'Groq' },
+          { id: 'ollama', name: 'Ollama' },
+          { id: 'lmstudio', name: 'LM Studio' },
+          { id: 'openrouter', name: 'OpenRouter' }
+        ];
+        for (const p of visionProviders) {
+          dropdown.addOption(p.id, p.name);
+        }
+        dropdown.setValue(llmSettings.defaultOcrModel?.provider || 'openai');
+        dropdown.onChange(async (value) => {
+          if (!llmSettings.defaultOcrModel) {
+            llmSettings.defaultOcrModel = { provider: value, model: '' };
+          } else {
+            llmSettings.defaultOcrModel.provider = value;
+          }
+          await this.services.settings.saveSettings();
+        });
+      });
+
+    // Transcription provider/model
+    new Setting(content)
+      .setName('Default transcription provider')
+      .setDesc('Provider for audio transcription (Whisper API).')
+      .addDropdown(dropdown => {
+        const transcriptionProviders = [
+          { id: 'openai', name: 'OpenAI' },
+          { id: 'groq', name: 'Groq' }
+        ];
+        for (const p of transcriptionProviders) {
+          dropdown.addOption(p.id, p.name);
+        }
+        dropdown.setValue(llmSettings.defaultTranscriptionModel?.provider || 'openai');
+        dropdown.onChange(async (value) => {
+          if (!llmSettings.defaultTranscriptionModel) {
+            llmSettings.defaultTranscriptionModel = { provider: value, model: '' };
+          } else {
+            llmSettings.defaultTranscriptionModel.provider = value;
+          }
+          await this.services.settings.saveSettings();
+        });
+      });
+
+    parentEl.appendChild(section);
   }
 
   /**

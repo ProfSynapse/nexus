@@ -7720,3 +7720,250 @@ body.is-mobile .nexus-task-board-shell {
     overflow: hidden;
     text-overflow: ellipsis;
 }
+
+/* ============================================
+   Ingest Drop Overlay
+   ============================================ */
+
+.nexus-ingest-drop-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(var(--background-primary-rgb, 0, 0, 0), 0.85);
+    border: 3px dashed var(--interactive-accent);
+    border-radius: var(--radius-l);
+    pointer-events: none;
+    transition: opacity 150ms ease;
+}
+
+.nexus-ingest-drop-overlay-hidden {
+    opacity: 0;
+    visibility: hidden;
+}
+
+.nexus-ingest-drop-overlay-visible {
+    opacity: 1;
+    visibility: visible;
+}
+
+.nexus-ingest-drop-overlay-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-3, 12px);
+}
+
+.nexus-ingest-drop-overlay-icon {
+    color: var(--interactive-accent);
+    width: 48px;
+    height: 48px;
+}
+
+.nexus-ingest-drop-overlay-icon svg {
+    width: 48px;
+    height: 48px;
+}
+
+.nexus-ingest-drop-overlay-text {
+    color: var(--text-normal);
+    font-size: var(--font-ui-medium);
+    font-weight: var(--font-semibold);
+}
+
+.nexus-ingest-drop-overlay-hint {
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+}
+
+/* ============================================
+   Ingest Progress Banner
+   ============================================ */
+
+.nexus-ingest-progress-container {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1, 4px);
+}
+
+.nexus-ingest-progress-banner {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2, 8px);
+    padding: var(--space-2, 8px) var(--space-3, 12px);
+    background-color: var(--background-secondary);
+    border-bottom: 1px solid var(--background-modifier-border);
+    min-height: 44px;
+}
+
+.nexus-ingest-progress-icon {
+    flex-shrink: 0;
+    width: 20px;
+    height: 20px;
+    color: var(--text-muted);
+}
+
+.nexus-ingest-progress-icon svg {
+    width: 20px;
+    height: 20px;
+}
+
+.nexus-ingest-progress-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.nexus-ingest-progress-filename {
+    font-size: var(--font-ui-small);
+    font-weight: var(--font-semibold);
+    color: var(--text-normal);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.nexus-ingest-progress-stage {
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+}
+
+.nexus-ingest-progress-bar-container {
+    height: 4px;
+    background-color: var(--background-modifier-border);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-top: 2px;
+}
+
+.nexus-ingest-progress-bar-fill {
+    height: 100%;
+    background-color: var(--interactive-accent);
+    border-radius: 2px;
+    width: 0%;
+    transition: width 300ms ease;
+}
+
+.nexus-ingest-progress-dismiss {
+    flex-shrink: 0;
+    min-width: 28px;
+    min-height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    border-radius: var(--radius-s);
+    padding: 2px;
+}
+
+.nexus-ingest-progress-dismiss:hover {
+    color: var(--text-normal);
+    background-color: var(--background-modifier-hover);
+}
+
+.nexus-ingest-progress-dismiss-hidden {
+    display: none;
+}
+
+/* Stage-specific banner styles */
+.nexus-ingest-progress-complete .nexus-ingest-progress-stage {
+    color: var(--text-accent);
+}
+
+.nexus-ingest-progress-complete .nexus-ingest-progress-bar-fill {
+    background-color: var(--text-accent);
+}
+
+.nexus-ingest-progress-error .nexus-ingest-progress-stage {
+    color: var(--background-modifier-error);
+}
+
+.nexus-ingest-progress-error .nexus-ingest-progress-bar-fill {
+    background-color: var(--background-modifier-error);
+}
+
+/* ============================================
+   Ingest Confirm Modal
+   ============================================ */
+
+.nexus-ingest-confirm-modal {
+    max-width: 480px;
+}
+
+.nexus-ingest-confirm-file-info {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3, 12px);
+    padding: var(--space-3, 12px);
+    background-color: var(--background-secondary);
+    border-radius: var(--radius-m);
+    margin-bottom: var(--space-4, 16px);
+}
+
+.nexus-ingest-confirm-file-icon {
+    flex-shrink: 0;
+    width: 36px;
+    height: 36px;
+    color: var(--text-accent);
+}
+
+.nexus-ingest-confirm-file-icon svg {
+    width: 36px;
+    height: 36px;
+}
+
+.nexus-ingest-confirm-file-details {
+    min-width: 0;
+}
+
+.nexus-ingest-confirm-filename {
+    font-weight: var(--font-semibold);
+    color: var(--text-normal);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.nexus-ingest-confirm-filetype {
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+}
+
+.nexus-ingest-confirm-options {
+    margin-bottom: var(--space-4, 16px);
+}
+
+.nexus-ingest-confirm-hidden {
+    display: none;
+}
+
+.nexus-ingest-confirm-vision-settings {
+    padding-left: var(--space-3, 12px);
+    border-left: 2px solid var(--background-modifier-border);
+    margin-top: var(--space-2, 8px);
+}
+
+.nexus-ingest-confirm-buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-2, 8px);
+    padding-top: var(--space-3, 12px);
+    border-top: 1px solid var(--background-modifier-border);
+}
+
+.nexus-ingest-confirm-cancel {
+    min-width: 80px;
+    min-height: 44px;
+}
+
+.nexus-ingest-confirm-submit {
+    min-width: 80px;
+    min-height: 44px;
+}
