@@ -26,6 +26,14 @@ export class WorkspaceEventApplier {
   }
 
   /**
+   * Validate workspace ID to prevent ghost/orphan workspaces.
+   * Rejects "undefined", "null", and empty/whitespace-only IDs.
+   */
+  private isValidWorkspaceId(id: string | undefined): boolean {
+    return !!id && id !== 'undefined' && id !== 'null' && id.trim().length > 0;
+  }
+
+  /**
    * Apply a workspace-related event to SQLite cache.
    */
   async apply(event: WorkspaceEvent): Promise<void> {
@@ -61,11 +69,14 @@ export class WorkspaceEventApplier {
     if (!event.data?.id || !event.data?.name) {
       return;
     }
+    if (!this.isValidWorkspaceId(event.data.id)) {
+      return;
+    }
 
     await this.sqliteCache.run(
       `INSERT OR REPLACE INTO workspaces
-       (id, name, description, rootFolder, created, lastAccessed, isActive, contextJson, dedicatedAgentId)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (id, name, description, rootFolder, created, lastAccessed, isActive, isArchived, contextJson, dedicatedAgentId)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         event.data.id,
         event.data.name,
@@ -75,6 +86,7 @@ export class WorkspaceEventApplier {
         event.data.created ?? Date.now(),
         // Default to 1 (active) if not specified
         event.data.isActive !== undefined ? (event.data.isActive ? 1 : 0) : 1,
+        event.data.isArchived !== undefined ? (event.data.isArchived ? 1 : 0) : 0,
         event.data.contextJson ?? null,
         event.data.dedicatedAgentId ?? null
       ]
@@ -82,6 +94,10 @@ export class WorkspaceEventApplier {
   }
 
   private async applyWorkspaceUpdated(event: WorkspaceUpdatedEvent): Promise<void> {
+    if (!this.isValidWorkspaceId(event.workspaceId)) {
+      return;
+    }
+
     const updates: string[] = [];
     const values: any[] = [];
 
@@ -90,6 +106,7 @@ export class WorkspaceEventApplier {
     if (event.data.rootFolder !== undefined) { updates.push('rootFolder = ?'); values.push(event.data.rootFolder); }
     if (event.data.lastAccessed !== undefined) { updates.push('lastAccessed = ?'); values.push(event.data.lastAccessed); }
     if (event.data.isActive !== undefined) { updates.push('isActive = ?'); values.push(event.data.isActive ? 1 : 0); }
+    if (event.data.isArchived !== undefined) { updates.push('isArchived = ?'); values.push(event.data.isArchived ? 1 : 0); }
     if (event.data.contextJson !== undefined) { updates.push('contextJson = ?'); values.push(event.data.contextJson); }
     if (event.data.dedicatedAgentId !== undefined) { updates.push('dedicatedAgentId = ?'); values.push(event.data.dedicatedAgentId); }
 
@@ -103,11 +120,17 @@ export class WorkspaceEventApplier {
   }
 
   private async applyWorkspaceDeleted(event: WorkspaceDeletedEvent): Promise<void> {
+    if (!this.isValidWorkspaceId(event.workspaceId)) {
+      return;
+    }
     await this.sqliteCache.run('DELETE FROM workspaces WHERE id = ?', [event.workspaceId]);
   }
 
   private async applySessionCreated(event: SessionCreatedEvent): Promise<void> {
     if (!event.data?.id || !event.workspaceId) {
+      return;
+    }
+    if (!this.isValidWorkspaceId(event.workspaceId)) {
       return;
     }
 
@@ -148,6 +171,9 @@ export class WorkspaceEventApplier {
     if (!event.data?.id || !event.sessionId || !event.workspaceId) {
       return;
     }
+    if (!this.isValidWorkspaceId(event.workspaceId)) {
+      return;
+    }
 
     await this.sqliteCache.run(
       `INSERT OR REPLACE INTO states
@@ -172,6 +198,9 @@ export class WorkspaceEventApplier {
 
   private async applyTraceAdded(event: TraceAddedEvent): Promise<void> {
     if (!event.data?.id || !event.sessionId || !event.workspaceId) {
+      return;
+    }
+    if (!this.isValidWorkspaceId(event.workspaceId)) {
       return;
     }
 

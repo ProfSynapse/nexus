@@ -10,12 +10,15 @@ export class ProviderUtils {
     const displayNames: Record<string, string> = {
       'openai': 'OpenAI',
       'anthropic': 'Anthropic',
+      'anthropic-claude-code': 'Anthropic (Claude Code)',
+      'google-gemini-cli': 'Google (Gemini CLI)',
       'mistral': 'Mistral AI',
       'ollama': 'Ollama',
       'lmstudio': 'LM Studio',
       'webllm': 'Nexus (Local)',
       'openrouter': 'OpenRouter',
       'google': 'Google',
+      'github-copilot': 'GitHub Copilot',
       'cohere': 'Cohere',
       'huggingface': 'Hugging Face',
       'groq': 'Groq',
@@ -73,12 +76,15 @@ export class ProviderUtils {
     const colors: Record<string, string> = {
       'openai': '#10a37f',
       'anthropic': '#d97757',
+      'anthropic-claude-code': '#d97757',
+      'google-gemini-cli': '#4285f4',
       'mistral': '#ff6b35',
       'ollama': '#000000',
       'lmstudio': '#4A90E2',
       'webllm': '#00d4aa',  // WebGPU green
       'openrouter': '#8b5cf6',
       'google': '#4285f4',
+      'github-copilot': '#1f6feb',
       'cohere': '#39c6b9',
       'huggingface': '#ff9a00'
     };
@@ -92,12 +98,15 @@ export class ProviderUtils {
     const icons: Record<string, string> = {
       'openai': '🤖',
       'anthropic': '🧠',
+      'anthropic-claude-code': '🧠',
+      'google-gemini-cli': '🔍',
       'mistral': '🌪️',
       'ollama': '🦙',
       'lmstudio': '🖥️',
       'webllm': '🌐',
       'openrouter': '🔀',
       'google': '🔍',
+      'github-copilot': '✈️',
       'cohere': '🧬',
       'huggingface': '🤗'
     };
@@ -124,12 +133,15 @@ export class ProviderUtils {
     const abbreviations: Record<string, string> = {
       'openai': 'OAI',
       'anthropic': 'ANT',
+      'anthropic-claude-code': 'ACC',
+      'google-gemini-cli': 'GCL',
       'mistral': 'MST',
       'ollama': 'OLL',
       'lmstudio': 'LMS',
       'webllm': 'WEB',
       'openrouter': 'OR',
       'google': 'GGL',
+      'github-copilot': 'GHC',
       'cohere': 'COH',
       'huggingface': 'HF'
     };
@@ -143,13 +155,16 @@ export class ProviderUtils {
     const streamingProviders = [
       'openai',
       'anthropic',
+      'anthropic-claude-code',
+      'google-gemini-cli',
       'mistral',
       'ollama',
       'lmstudio',    // ✅ LM Studio streaming via OpenAI-compatible API
       'webllm',      // ✅ WebLLM streaming via MLC.ai WebGPU
       'openrouter',
       'google',      // ✅ Google Gemini streaming via generateContentStream
-      'groq'         // ✅ Groq streaming support
+      'groq',        // ✅ Groq streaming support
+      'github-copilot' // ✅ GitHub Copilot streaming via OpenAI-compatible SSE
     ];
     return streamingProviders.includes(providerId);
   }
@@ -168,7 +183,10 @@ export class ProviderUtils {
       'mistral',     // ✅ Native Mistral function calling
       'requesty',    // ✅ OpenAI-compatible function calling
       'anthropic',   // ✅ Native Claude tool calling
-      'google'       // ✅ Native Google Gemini function calling (functionDeclarations)
+      'anthropic-claude-code',
+      'google-gemini-cli',
+      'google',      // ✅ Native Google Gemini function calling (functionDeclarations)
+      'github-copilot' // ✅ OpenAI-compatible function calling via Copilot proxy
     ];
     // Note: Perplexity does NOT support function calling (web search focused)
     return functionCallingProviders.includes(providerId);
@@ -221,7 +239,7 @@ export class ProviderUtils {
     return {
       streaming: this.supportsStreaming(providerId),
       functionCalling: this.supportsFunctionCalling(providerId),
-      imageInput: ['openai', 'anthropic', 'google'].includes(providerId),
+      imageInput: ['openai', 'anthropic', 'anthropic-claude-code', 'google', 'google-gemini-cli', 'github-copilot'].includes(providerId),
       jsonMode: ['openai', 'mistral'].includes(providerId)
     };
   }

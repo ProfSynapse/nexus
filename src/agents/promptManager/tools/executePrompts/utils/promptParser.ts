@@ -62,12 +62,8 @@ export class PromptParser {
         errors.push(`${prefix}: savePath must be relative to vault root`);
       }
 
-      if (imageConfig.provider && imageConfig.provider !== 'google') {
-        errors.push(`${prefix}: only 'google' provider is currently supported for image generation`);
-      }
-
-      if (imageConfig.model && !['gemini-2.5-flash-image', 'gemini-3-pro-image-preview', 'flux-2-pro', 'flux-2-flex'].includes(imageConfig.model)) {
-        errors.push(`${prefix}: invalid model for image generation. Supported: gemini-2.5-flash-image, gemini-3-pro-image-preview, flux-2-pro, flux-2-flex`);
+      if (imageConfig.provider && !['google', 'openrouter'].includes(imageConfig.provider)) {
+        errors.push(`${prefix}: provider must be 'google' or 'openrouter'`);
       }
 
     }
@@ -142,8 +138,8 @@ export class PromptParser {
         return {
           type: 'image',
           ...baseConfig,
-          provider: request.provider || 'google',
-          model: request.model || 'gemini-2.5-flash-image',
+          provider: request.provider, // Resolved by generateImage.resolveDefaults() at execution time
+          model: request.model, // Resolved by generateImage.resolveDefaults() at execution time
           aspectRatio: request.aspectRatio,
           size: request.size,
           quality: request.quality,

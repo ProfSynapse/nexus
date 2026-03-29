@@ -3,7 +3,9 @@ import { BaseAgent } from '../baseAgent';
 import {
   ReadTool,
   WriteTool,
-  UpdateTool
+  ReplaceTool,
+  InsertTool,
+  SetPropertyTool
 } from './tools';
 import NexusPlugin from '../../main';
 import { WorkspaceService } from '../../services/WorkspaceService';
@@ -11,12 +13,13 @@ import { MemoryService } from '../memoryManager/services/MemoryService';
 
 /**
  * Agent for content operations in the vault
- * Simplified from 8 tools to 3 tools following CRUA pattern
  *
  * Tools:
  * - read: Read content from files with explicit line ranges
  * - write: Create new files or overwrite existing files
- * - update: Insert, replace, delete, append, or prepend content
+ * - replace: Replace or delete existing content with validation
+ * - insert: Insert new content at a specific position
+ * - setProperty: Set frontmatter properties with optional merge mode
  */
 export class ContentManagerAgent extends BaseAgent {
   protected app: App;
@@ -60,10 +63,37 @@ export class ContentManagerAgent extends BaseAgent {
       this.workspaceService = plugin.services.workspaceService;
     }
 
-    // Register simplified tools (3 tools replacing 8)
-    this.registerTool(new ReadTool(app));
-    this.registerTool(new WriteTool(app));
-    this.registerTool(new UpdateTool(app));
+    // Register tools (5 tools) - lazy loaded
+    this.registerLazyTool({
+      slug: 'read', name: 'Read',
+      description: 'Read content from a file with line range',
+      version: '1.0.0',
+      factory: () => new ReadTool(app),
+    });
+    this.registerLazyTool({
+      slug: 'write', name: 'Write',
+      description: 'Create a new file or overwrite existing file',
+      version: '1.0.0',
+      factory: () => new WriteTool(app),
+    });
+    this.registerLazyTool({
+      slug: 'replace', name: 'Replace',
+      description: 'Replace or delete existing content in a note. Validates that the content at the specified lines matches before making changes. If the content has moved, returns the new line numbers.',
+      version: '1.0.0',
+      factory: () => new ReplaceTool(app),
+    });
+    this.registerLazyTool({
+      slug: 'insert', name: 'Insert',
+      description: 'Insert new content into a note at a specific position. Does not modify existing content — use replace for that.',
+      version: '1.0.0',
+      factory: () => new InsertTool(app),
+    });
+    this.registerLazyTool({
+      slug: 'setProperty', name: 'Set property',
+      description: 'Set a frontmatter property on a note. Supports "replace" (default) and "merge" (array union with dedup) modes.',
+      version: '1.0.0',
+      factory: () => new SetPropertyTool(app),
+    });
   }
   
   

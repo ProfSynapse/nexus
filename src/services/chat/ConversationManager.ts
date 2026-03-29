@@ -71,8 +71,15 @@ export class ConversationManager {
           modelId: params.model,
           systemPrompt: params.systemPrompt,
           workspaceId: params.workspaceId,
-          sessionId: params.sessionId || generateSessionId()
-        }
+          sessionId: params.sessionId || generateSessionId(),
+          promptId: params.promptId
+        },
+        promptId: params.promptId,
+        workflowId: params.workflowId,
+        workflowName: params.workflowName,
+        runTrigger: params.runTrigger,
+        scheduledFor: params.scheduledFor,
+        runKey: params.runKey
       }
     };
 

@@ -1,12 +1,6 @@
 /**
  * Google Gemini Adapter with true streaming support
- * Implements Google Gemini streaming protocol using generateContentStream
- * Based on official Google Gemini JavaScript SDK documentation
- *
- * MOBILE COMPATIBILITY (Dec 2025):
- * The @google/genai SDK uses gaxios which requires Node.js 'os' module.
- * SDK import is now lazy (dynamic) to avoid bundling Node.js dependencies.
- * This allows the plugin to load on mobile, but Google provider won't work there.
+ * Implements Google Gemini REST requests with buffered SSE replay.
  */
 
 import { BaseAdapter } from '../BaseAdapter';
@@ -25,40 +19,15 @@ import { ReasoningPreserver } from '../shared/ReasoningPreserver';
 import { SchemaValidator } from '../../utils/SchemaValidator';
 import { ThinkingEffortMapper } from '../../utils/ThinkingEffortMapper';
 import { MCPToolExecution } from '../shared/ToolExecutionUtils';
-
-// Type-only import for TypeScript (doesn't affect bundling)
-import type { GoogleGenAI as GoogleGenAIType } from '@google/genai';
+import { ProviderHttpError } from '../shared/ProviderHttpClient';
 
 export class GoogleAdapter extends BaseAdapter {
   readonly name = 'google';
-  readonly baseUrl = 'https://generativelanguage.googleapis.com/v1';
-
-  private client: GoogleGenAIType | null = null;
-  private clientPromise: Promise<GoogleGenAIType> | null = null;
+  readonly baseUrl = 'https://generativelanguage.googleapis.com/v1beta';
 
   constructor(apiKey: string, model?: string) {
     super(apiKey, model || GOOGLE_DEFAULT_MODEL);
     this.initializeCache();
-  }
-
-  /**
-   * Lazy-load the Google GenAI SDK to avoid bundling Node.js dependencies
-   * This allows the plugin to load on mobile (though Google won't work there)
-   */
-  private async getClient(): Promise<GoogleGenAIType> {
-    if (this.client) {
-      return this.client;
-    }
-
-    if (!this.clientPromise) {
-      this.clientPromise = (async () => {
-        const { GoogleGenAI } = await import('@google/genai');
-        this.client = new GoogleGenAI({ apiKey: this.apiKey });
-        return this.client;
-      })();
-    }
-
-    return this.clientPromise;
   }
 
   async generateUncached(prompt: string, options?: GenerateOptions): Promise<LLMResponse> {
@@ -78,7 +47,7 @@ export class GoogleAdapter extends BaseAdapter {
   }
 
   async* generateStreamAsync(prompt: string, options?: GenerateOptions): AsyncGenerator<StreamChunk, void, unknown> {
-    let request: any;
+    let requestSummary: Record<string, unknown> | undefined;
     try {
       // Validate web search support
       if (options?.webSearch) {
@@ -116,7 +85,7 @@ export class GoogleAdapter extends BaseAdapter {
           // Enable thinking mode when tools are present or explicitly requested
           // Gemini 2.5 Flash supports 0-24576 token thinking budget
           ...((options?.enableThinking || (options?.tools && options.tools.length > 0)) && {
-            thinkingBudget
+            thinkingConfig: { thinkingBudget }
           })
         }
       };
@@ -182,102 +151,106 @@ export class GoogleAdapter extends BaseAdapter {
         config: config
       };
 
-      let response;
-      try {
-        const client = await this.getClient();
-        response = await client.models.generateContentStream(request);
-      } catch (error: any) {
-        throw error;
-      }
+      requestSummary = this.buildStreamingRequestSummary(request, options);
 
-      let usage: any = undefined;
-      const toolCallAccumulator: Map<string, any> = new Map();
+      const nodeStream = await this.requestStream({
+        url: this.buildGenerateContentUrl(request.model, true),
+        operation: 'streaming generation',
+        method: 'POST',
+        headers: this.buildGoogleHeaders(),
+        body: JSON.stringify(this.buildGenerateContentBody(request)),
+        timeoutMs: 120_000
+      });
 
-      for await (const chunk of response) {
-        // Extract text from parts
-        const parts = chunk.candidates?.[0]?.content?.parts || [];
-        const finishReason = chunk.candidates?.[0]?.finishReason;
-
-        // Handle malformed function call
-        if (finishReason === 'MALFORMED_FUNCTION_CALL') {
-          console.error('[Google Adapter] ❌ MALFORMED_FUNCTION_CALL detected!');
-          console.error('[Google Adapter] This means one or more tool schemas violate Google\'s JSON Schema requirements');
-          console.error('[Google Adapter] Common causes:');
-          console.error('[Google Adapter]   1. Schema contains "default", "examples", "minLength", "maxLength", "pattern", or other unsupported properties');
-          console.error('[Google Adapter]   2. Schema is too deeply nested (max depth: 10 levels)');
-          console.error('[Google Adapter]   3. "required" array references properties that don\'t exist in "properties"');
-          console.error('[Google Adapter]   4. Too many tools provided (Google recommends max 10-20)');
-          console.error('[Google Adapter] Check schema validation warnings above for specific issues');
-          console.error('[Google Adapter] Full response:', JSON.stringify(chunk, null, 2));
-
-          // Provide helpful error message to user
-          yield {
-            content: '\n\n⚠️ **Google Gemini Schema Error**\n\nGoogle returned `MALFORMED_FUNCTION_CALL` - this means one or more tool schemas contain unsupported properties.\n\nCheck the console for detailed validation errors. Common issues:\n- Tool schemas contain `default` values (not supported by Google)\n- Schemas use `minLength`, `maxLength`, or `pattern` properties\n- Too many tools provided at once\n\nThe schemas have been automatically sanitized, but some tools may need schema updates.',
-            complete: true
-          };
-          return;
-        }
-
-        for (const part of parts) {
-          // Handle thinking/reasoning content (Gemini 2.0+ with thinking enabled)
-          if (part.thought || part.thinking) {
-            const thinkingText = part.thought || part.thinking;
-            yield {
-              content: '',
-              complete: false,
-              reasoning: thinkingText,
-              reasoningComplete: false
-            };
+      yield* this.processNodeStream(nodeStream, {
+        debugLabel: 'Google',
+        extractContent: (chunk) => {
+          // Surface error finish reasons as user-facing content before the stream ends
+          const finishReason = chunk.candidates?.[0]?.finishReason;
+          if (finishReason === 'MALFORMED_FUNCTION_CALL') {
+            return '\n\n[Error: MALFORMED_FUNCTION_CALL — Google rejected a tool call due to a ' +
+              'schema mismatch. The model generated arguments that don\'t match the tool\'s ' +
+              'parameter schema. Common causes: required fields missing from schema, unsupported ' +
+              'JSON Schema features (e.g. oneOf, $ref), or overly complex nested objects. ' +
+              'Check tool definitions and simplify schemas if needed.]';
+          }
+          if (finishReason === 'SAFETY') {
+            return '\n\n[Error: SAFETY — Google blocked this response due to safety filters. ' +
+              'The content was flagged as potentially harmful. Try rephrasing your request.]';
+          }
+          if (finishReason === 'RECITATION') {
+            return '\n\n[Error: RECITATION — Google blocked this response because it contained ' +
+              'text too similar to copyrighted material.]';
           }
 
-          if (part.text) {
-            yield {
-              content: part.text,
-              complete: false
-            };
-          }
+          const parts = chunk.candidates?.[0]?.content?.parts || [];
+          return this.extractTextFromParts(parts) || null;
+        },
+        extractToolCalls: (chunk) => {
+          const parts = chunk.candidates?.[0]?.content?.parts || [];
+          const toolCalls = parts
+            .filter((part: any) => part.functionCall)
+            .map((part: any, index: number) => {
+              const toolCall: any = {
+                index,
+                id: `${part.functionCall.name}_${index}`,
+                type: 'function',
+                function: {
+                  name: part.functionCall.name,
+                  arguments: JSON.stringify(part.functionCall.args || {})
+                }
+              };
 
-          // Accumulate function calls with thought signature preservation (Gemini 3.0+)
-          if (part.functionCall) {
-            const toolId = part.functionCall.name + '_' + Date.now();
-            const toolCall: any = {
-              id: toolId,
-              type: 'function',
-              function: {
-                name: part.functionCall.name,
-                arguments: JSON.stringify(part.functionCall.args || {})
+              const thoughtSignature = ReasoningPreserver.extractThoughtSignatureFromPart(part);
+              if (thoughtSignature) {
+                toolCall.thought_signature = thoughtSignature;
               }
-            };
 
-            // Preserve thought signature using centralized utility
-            const thoughtSignature = ReasoningPreserver.extractThoughtSignatureFromPart(part);
-            if (thoughtSignature) {
-              toolCall.thought_signature = thoughtSignature;
-            }
+              return toolCall;
+            });
 
-            toolCallAccumulator.set(toolId, toolCall);
+          return toolCalls.length > 0 ? toolCalls : null;
+        },
+        extractFinishReason: (chunk) => {
+          const finishReason = chunk.candidates?.[0]?.finishReason;
+          if (!finishReason) return null;
+
+          // M4: Map Google finish reasons properly.
+          // Error content for MALFORMED_FUNCTION_CALL, SAFETY, RECITATION is
+          // surfaced in extractContent above; here we signal stream completion.
+          switch (finishReason) {
+            case 'STOP':
+              return 'stop';
+            case 'MAX_TOKENS':
+              return 'length';
+            case 'MALFORMED_FUNCTION_CALL':
+            case 'SAFETY':
+            case 'RECITATION':
+            case 'OTHER':
+            default:
+              return 'stop';
           }
+        },
+        extractUsage: (chunk) => chunk.usageMetadata || null,
+        extractReasoning: (chunk) => {
+          const parts = chunk.candidates?.[0]?.content?.parts || [];
+          const thinkingText = parts
+            .map((part: any) => part.thought || part.thinking || '')
+            .filter(Boolean)
+            .join('');
+          if (thinkingText) {
+            return { text: thinkingText, complete: false };
+          }
+          return null;
+        },
+        accumulateToolCalls: true,
+        toolCallThrottling: {
+          initialYield: true,
+          progressInterval: 50
         }
-
-        // Extract usage information if available
-        if (chunk.usageMetadata) {
-          usage = chunk.usageMetadata;
-        }
-      }
-
-      // Final chunk with usage information and tool calls
-      const finalToolCalls = toolCallAccumulator.size > 0
-        ? Array.from(toolCallAccumulator.values())
-        : undefined;
-
-      yield {
-        content: '',
-        complete: true,
-        usage: this.extractUsage({ usageMetadata: usage }),
-        toolCalls: finalToolCalls,
-        toolCallsReady: finalToolCalls && finalToolCalls.length > 0 ? true : undefined
-      };
+      });
     } catch (error: any) {
+      this.logStreamingFailure(error, requestSummary);
       console.error('[Google Adapter] ❌❌❌ STREAMING ERROR:', error);
       console.error('[Google Adapter] Error details:', {
         name: error?.name,
@@ -320,6 +293,7 @@ export class GoogleAdapter extends BaseAdapter {
   getCapabilities(): ProviderCapabilities {
     return {
       supportsStreaming: true,
+      streamingMode: 'streaming',
       supportsJSON: true,
       supportsImages: true,
       supportsFunctions: true,
@@ -372,19 +346,27 @@ export class GoogleAdapter extends BaseAdapter {
       request.tools = [{ googleSearch: {} }];
     }
 
-    const client = await this.getClient();
-    const response = await client.models.generateContent(request);
+    const response = await this.request<any>({
+      url: this.buildGenerateContentUrl(request.model, false),
+      operation: 'generation',
+      method: 'POST',
+      headers: this.buildGoogleHeaders(),
+      body: JSON.stringify(this.buildGenerateContentBody(request)),
+      timeoutMs: 60_000
+    });
+    this.assertOk(response, `Google generation failed: HTTP ${response.status}`);
+    const responseJson = response.json;
 
-    const extractedUsage = this.extractUsage(response);
-    const finishReason = this.mapFinishReason(response.candidates?.[0]?.finishReason);
-    const toolCalls = this.extractToolCalls(response);
+    const extractedUsage = this.extractUsage(responseJson);
+    const finishReason = this.mapFinishReason(responseJson.candidates?.[0]?.finishReason);
+    const toolCalls = this.extractToolCalls(responseJson);
 
     // Extract web search results if web search was enabled
     const webSearchResults = options?.webSearch
-      ? this.extractGoogleSources(response)
+      ? this.extractGoogleSources(responseJson)
       : undefined;
 
-    const textContent = this.extractTextFromParts(response.candidates?.[0]?.content?.parts || []);
+    const textContent = this.extractTextFromParts(responseJson.candidates?.[0]?.content?.parts || []);
 
     return await this.buildLLMResponse(
       textContent,
@@ -421,6 +403,131 @@ export class GoogleAdapter extends BaseAdapter {
    */
   private sanitizeSchemaForGoogle(schema: any): any {
     return SchemaValidator.sanitizeSchemaForGoogle(schema);
+  }
+
+  private buildGoogleHeaders(): Record<string, string> {
+    return {
+      'Content-Type': 'application/json',
+      'x-goog-api-key': this.apiKey
+    };
+  }
+
+  private buildGenerateContentUrl(model: string, stream: boolean): string {
+    const encodedModel = encodeURIComponent(model);
+    return stream
+      ? `${this.baseUrl}/models/${encodedModel}:streamGenerateContent?alt=sse`
+      : `${this.baseUrl}/models/${encodedModel}:generateContent`;
+  }
+
+  private buildGenerateContentBody(request: any): Record<string, unknown> {
+    return {
+      contents: request.contents,
+      generationConfig: request.config?.generationConfig || request.generationConfig,
+      systemInstruction: request.config?.systemInstruction || request.systemInstruction,
+      tools: request.config?.tools || request.tools,
+      toolConfig: request.config?.toolConfig || request.toolConfig
+    };
+  }
+
+  private buildStreamingRequestSummary(
+    request: { model: string; contents: any[]; config?: Record<string, unknown> },
+    options?: GenerateOptions
+  ): Record<string, unknown> {
+    const contents = Array.isArray(request.contents) ? request.contents : [];
+    const contentSummary = contents.map((message: any, index: number) => {
+      const parts = Array.isArray(message?.parts) ? message.parts : [];
+      const functionCallNames = parts
+        .map((part: any) => part?.functionCall?.name)
+        .filter((name: unknown): name is string => typeof name === 'string');
+      const functionResponseNames = parts
+        .map((part: any) => part?.functionResponse?.name)
+        .filter((name: unknown): name is string => typeof name === 'string');
+
+      return {
+        index,
+        role: message?.role,
+        partTypes: parts.map((part: any) => {
+          if (part?.functionCall) return 'functionCall';
+          if (part?.functionResponse) return 'functionResponse';
+          if (part?.text) return 'text';
+          if (part?.thought || part?.thinking || part?.thoughtSignature) return 'thinking';
+          return 'unknown';
+        }),
+        functionCallNames,
+        functionResponseNames,
+        textLength: parts
+          .map((part: any) => typeof part?.text === 'string' ? part.text.length : 0)
+          .reduce((sum: number, len: number) => sum + len, 0)
+      };
+    });
+
+    const toolNames = Array.isArray(request.config?.tools)
+      ? (request.config?.tools as Array<any>).flatMap((toolWrapper: any) =>
+          Array.isArray(toolWrapper?.functionDeclarations)
+            ? toolWrapper.functionDeclarations
+                .map((tool: any) => typeof tool?.name === 'string' ? tool.name : undefined)
+                .filter((name: unknown): name is string => typeof name === 'string')
+            : []
+        )
+      : [];
+
+    return {
+      model: request.model,
+      hasSystemPrompt: Boolean(options?.systemPrompt),
+      systemPromptLength: options?.systemPrompt?.length || 0,
+      promptLength: promptLengthFromContents(contents),
+      continuation: Boolean(options?.conversationHistory && options.conversationHistory.length > 0),
+      messageCount: contents.length,
+      messages: contentSummary,
+      toolCount: toolNames.length,
+      toolNames,
+      thinkingEnabled: Boolean(
+        isRecord(request.config?.generationConfig) &&
+        isRecord((request.config?.generationConfig as Record<string, unknown>).thinkingConfig)
+      ),
+      functionCallingMode: isRecord(request.config?.toolConfig) &&
+        isRecord((request.config?.toolConfig as Record<string, unknown>).functionCallingConfig)
+        ? ((request.config?.toolConfig as Record<string, any>).functionCallingConfig?.mode as string | undefined)
+        : undefined
+    };
+  }
+
+  private logStreamingFailure(error: unknown, requestSummary?: Record<string, unknown>): void {
+    if (!(error instanceof ProviderHttpError)) {
+      return;
+    }
+
+    console.error('[Google Adapter] Streaming request failed', {
+      status: error.response.status,
+      statusText: error.response.statusText,
+      request: requestSummary,
+      responseJson: this.sanitizeForLogging(error.response.json),
+      responseText: typeof error.response.text === 'string' ? error.response.text.slice(0, 2000) : undefined
+    });
+  }
+
+  private sanitizeForLogging(value: unknown): unknown {
+    if (Array.isArray(value)) {
+      return value.slice(0, 10).map(item => this.sanitizeForLogging(item));
+    }
+
+    if (!isRecord(value)) {
+      if (typeof value === 'string') {
+        return value.length > 500 ? `${value.slice(0, 500)}...` : value;
+      }
+      return value;
+    }
+
+    return Object.fromEntries(
+      Object.entries(value)
+        .slice(0, 20)
+        .map(([key, entryValue]) => [
+          key,
+          typeof entryValue === 'string'
+            ? (entryValue.length > 500 ? `${entryValue.slice(0, 500)}...` : entryValue)
+            : this.sanitizeForLogging(entryValue)
+        ])
+    );
   }
 
   private extractToolCalls(response: any): any[] {
@@ -501,6 +608,7 @@ export class GoogleAdapter extends BaseAdapter {
       'MAX_TOKENS': 'length',
       'SAFETY': 'content_filter',
       'RECITATION': 'content_filter',
+      'MALFORMED_FUNCTION_CALL': 'stop',
       'OTHER': 'stop'
     };
     return reasonMap[reason] || 'stop';
@@ -538,4 +646,18 @@ export class GoogleAdapter extends BaseAdapter {
       currency: 'USD'
     };
   }
+}
+
+function isRecord(value: unknown): value is Record<string, any> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function promptLengthFromContents(contents: any[]): number {
+  return contents.reduce((total, message) => {
+    const parts = Array.isArray(message?.parts) ? message.parts : [];
+    const partLength = parts.reduce((sum: number, part: any) => {
+      return sum + (typeof part?.text === 'string' ? part.text.length : 0);
+    }, 0);
+    return total + partLength;
+  }, 0);
 }

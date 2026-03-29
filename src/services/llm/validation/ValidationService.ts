@@ -8,8 +8,11 @@
  * - All validation uses Obsidian's requestUrl (no SDK imports)
  */
 
-import { requestUrl } from 'obsidian';
 import { BRAND_NAME } from '../../../constants/branding';
+import {
+  ProviderHttpClient,
+  ProviderHttpResponse
+} from '../adapters/shared/ProviderHttpClient';
 
 // Browser-compatible hash function (djb2 algorithm)
 // Not cryptographically secure but sufficient for cache key validation
@@ -59,23 +62,23 @@ export class LLMValidationService {
   }
 
   /**
-   * Wrapper for requestUrl with timeout support
+   * Wrapper for provider HTTP requests with timeout support
    */
-  private static async requestWithTimeout(config: any): Promise<any> {
-    return new Promise((resolve, reject) => {
-      const timeoutId = setTimeout(() => {
-        reject(new Error('Request timeout'));
-      }, this.VALIDATION_TIMEOUT);
-
-      requestUrl(config)
-        .then(response => {
-          clearTimeout(timeoutId);
-          resolve(response);
-        })
-        .catch(error => {
-          clearTimeout(timeoutId);
-          reject(error);
-        });
+  private static async requestWithTimeout(
+    provider: string,
+    operation: string,
+    config: {
+      url: string;
+      method?: string;
+      headers?: Record<string, string>;
+      body?: string;
+    }
+  ): Promise<ProviderHttpResponse<any>> {
+    return ProviderHttpClient.request({
+      provider,
+      operation,
+      timeoutMs: this.VALIDATION_TIMEOUT,
+      ...config
     });
   }
 
@@ -153,7 +156,7 @@ export class LLMValidationService {
   private static async validateOpenAI(apiKey: string): Promise<{ success: boolean; error?: string }> {
     try {
       // Use Obsidian's requestUrl instead of SDK for mobile compatibility
-      const response = await this.requestWithTimeout({
+      const response = await this.requestWithTimeout('openai', 'OpenAI validation', {
         url: 'https://api.openai.com/v1/chat/completions',
         method: 'POST',
         headers: {
@@ -163,7 +166,7 @@ export class LLMValidationService {
         body: JSON.stringify({
           model: 'gpt-5-nano',
           messages: [{ role: 'user', content: 'Hi' }],
-          max_tokens: 5
+          max_completion_tokens: 5
         })
       });
 
@@ -187,7 +190,7 @@ export class LLMValidationService {
   private static async validateAnthropic(apiKey: string): Promise<{ success: boolean; error?: string }> {
     try {
       // Use Obsidian's requestUrl to bypass CORS restrictions
-      const response = await this.requestWithTimeout({
+      const response = await this.requestWithTimeout('anthropic', 'Anthropic validation', {
         url: 'https://api.anthropic.com/v1/messages',
         method: 'POST',
         headers: {
@@ -196,7 +199,7 @@ export class LLMValidationService {
           'anthropic-version': '2023-06-01'
         },
         body: JSON.stringify({
-          model: 'claude-3-5-haiku-latest',
+          model: 'claude-haiku-4-5-20251001',
           max_tokens: 5,
           messages: [{ role: 'user', content: 'Hi' }]
         })
@@ -221,7 +224,7 @@ export class LLMValidationService {
 
   private static async validateGoogle(apiKey: string): Promise<{ success: boolean; error?: string }> {
     try {
-      const response = await this.requestWithTimeout({
+      const response = await this.requestWithTimeout('google', 'Google validation', {
         url: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent',
         method: 'POST',
         headers: {
@@ -253,7 +256,7 @@ export class LLMValidationService {
 
   private static async validateMistral(apiKey: string): Promise<{ success: boolean; error?: string }> {
     try {
-      const response = await this.requestWithTimeout({
+      const response = await this.requestWithTimeout('mistral', 'Mistral validation', {
         url: 'https://api.mistral.ai/v1/chat/completions',
         method: 'POST',
         headers: {
@@ -286,7 +289,7 @@ export class LLMValidationService {
 
   private static async validateGroq(apiKey: string): Promise<{ success: boolean; error?: string }> {
     try {
-      const response = await this.requestWithTimeout({
+      const response = await this.requestWithTimeout('groq', 'Groq validation', {
         url: 'https://api.groq.com/openai/v1/chat/completions',
         method: 'POST',
         headers: {
@@ -325,7 +328,7 @@ export class LLMValidationService {
         max_tokens: 1
       };
       
-      const response = await this.requestWithTimeout({
+      const response = await this.requestWithTimeout('openrouter', 'OpenRouter validation', {
         url: 'https://openrouter.ai/api/v1/chat/completions',
         method: 'POST',
         headers: {
@@ -359,7 +362,7 @@ export class LLMValidationService {
 
   private static async validatePerplexity(apiKey: string): Promise<{ success: boolean; error?: string }> {
     try {
-      const response = await this.requestWithTimeout({
+      const response = await this.requestWithTimeout('perplexity', 'Perplexity validation', {
         url: 'https://api.perplexity.ai/chat/completions',
         method: 'POST',
         headers: {
@@ -392,7 +395,7 @@ export class LLMValidationService {
 
   private static async validateRequesty(apiKey: string): Promise<{ success: boolean; error?: string }> {
     try {
-      const response = await this.requestWithTimeout({
+      const response = await this.requestWithTimeout('requesty', 'Requesty validation', {
         url: 'https://router.requesty.ai/v1/chat/completions',
         method: 'POST',
         headers: {
@@ -402,7 +405,7 @@ export class LLMValidationService {
         body: JSON.stringify({
           model: 'openai/gpt-5-nano',
           messages: [{ role: 'user', content: 'Hi' }],
-          max_tokens: 5
+          max_completion_tokens: 5
         })
       });
 

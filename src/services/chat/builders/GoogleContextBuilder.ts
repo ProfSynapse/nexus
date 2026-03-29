@@ -16,6 +16,15 @@ import { ReasoningPreserver } from '../../llm/adapters/shared/ReasoningPreserver
 export class GoogleContextBuilder implements IContextBuilder {
   readonly provider = 'google';
 
+  private endsWithClientTurn(messages: LLMMessage[] | undefined): boolean {
+    if (!messages || messages.length === 0) {
+      return false;
+    }
+
+    const lastMessage = messages[messages.length - 1] as GoogleMessage;
+    return lastMessage.role === 'user' || lastMessage.role === 'function';
+  }
+
   /**
    * Validate if a message should be included in LLM context
    */
@@ -148,8 +157,11 @@ export class GoogleContextBuilder implements IContextBuilder {
       }
     }
 
-    // Add the original user message
-    if (userPrompt) {
+    // Gemini requires functionCall turns to come immediately after a client turn.
+    // During recursive tool continuations, previousMessages may already end with the
+    // function response turn, so re-appending the original user prompt would create
+    // consecutive client turns and break Gemini's turn ordering.
+    if (userPrompt && !this.endsWithClientTurn(previousMessages)) {
       messages.push({
         role: 'user',
         parts: [{ text: userPrompt }]

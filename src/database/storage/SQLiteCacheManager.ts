@@ -326,13 +326,10 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
     if (!this.db) return;
 
     try {
+      // Temporarily suppress console.log during WASM export to avoid "Heap resize" noise
       const originalLog = console.log;
-      console.log = (...args: any[]) => {
-        const msg = args[0]?.toString() || '';
-        if (!/Heap resize call/.test(msg)) {
-          originalLog.apply(console, args);
-        }
-      };
+      // eslint-disable-next-line @typescript-eslint/no-empty-function
+      console.log = () => {};
 
       let data: any;
       try {
@@ -642,6 +639,10 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
   async clearAllData(): Promise<void> {
     await this.transaction(async () => {
       this.db.exec(`
+        DELETE FROM task_note_links;
+        DELETE FROM task_dependencies;
+        DELETE FROM tasks;
+        DELETE FROM projects;
         DELETE FROM messages;
         DELETE FROM conversations;
         DELETE FROM memory_traces;

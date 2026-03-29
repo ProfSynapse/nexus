@@ -1,8 +1,29 @@
 import { CommonParameters, CommonResult } from '../../types';
 
 // ============================================================================
-// NEW SIMPLIFIED TOOLS (3 tools replacing 8)
+// ContentManager tools (5 tools: read, write, replace, insert, setProperty)
 // ============================================================================
+
+/**
+ * Params for setting a frontmatter property on a note
+ */
+export interface SetPropertyParams extends CommonParameters {
+  /** Path to the note file */
+  path: string;
+  /** Frontmatter property name */
+  property: string;
+  /** Value to set (scalar or array) */
+  value: string | number | boolean | string[];
+  /** How to apply the value: 'replace' (default) or 'merge' (array union with dedup) */
+  mode?: 'replace' | 'merge';
+}
+
+/**
+ * Result of setting a frontmatter property
+ */
+export interface SetPropertyResult extends CommonResult {
+  // No data returned - LLM already knows the property and value it passed
+}
 
 /**
  * Params for reading content from a file
@@ -79,45 +100,65 @@ export interface WriteResult extends CommonResult {
 }
 
 /**
- * Params for updating content in a file (insert, replace, delete, append)
+ * Params for replacing or deleting content in a file
  */
-export interface UpdateParams extends CommonParameters {
-  /**
-   * Path to the file to modify
-   */
+export interface ReplaceParams extends CommonParameters {
+  /** Path to the file to modify */
   path: string;
 
-  /**
-   * Content to insert/replace (empty string to delete lines)
-   */
-  content: string;
+  /** The exact text currently at lines startLine through endLine that you want to replace */
+  oldContent: string;
 
-  /**
-   * Start line (1-based). Use -1 to append to end of file.
-   */
+  /** The text to replace oldContent with. Set to empty string to delete the content. */
+  newContent: string;
+
+  /** The line number (1-indexed) where oldContent begins */
   startLine: number;
 
-  /**
-   * End line (1-based, inclusive). Omit to INSERT at startLine. Provide to REPLACE range.
-   */
-  endLine?: number;
+  /** The line number (1-indexed) where oldContent ends (inclusive) */
+  endLine: number;
 }
 
 /**
- * Result of updating content in a file
+ * Result of replacing or deleting content in a file
  */
-export interface UpdateResult extends CommonResult {
-  /**
-   * Net change in line count after the operation.
-   * Positive = lines added, Negative = lines removed, Zero = no change.
-   * Use this to adjust subsequent line numbers in multi-operation workflows.
-   */
+export interface ReplaceResult extends CommonResult {
+  /** Net change in line count. Positive = lines added, negative = lines removed. */
   linesDelta?: number;
 
-  /**
-   * Recommendations for follow-up actions (uses standard nudge system)
-   */
-  recommendations?: Array<{ type: string; message: string }>;
+  /** Total line count of the file after the operation. */
+  totalLines?: number;
+
+  /** Unified diff showing what changed with context lines. */
+  diff?: string;
+}
+
+/**
+ * Params for inserting new content into a file
+ */
+export interface InsertParams extends CommonParameters {
+  /** Path to the file to modify */
+  path: string;
+
+  /** The text to insert into the note */
+  content: string;
+
+  /** Where to insert (1-indexed). Use -1 to append, 1 to prepend, N to insert before line N. */
+  startLine: number;
+}
+
+/**
+ * Result of inserting content into a file
+ */
+export interface InsertResult extends CommonResult {
+  /** Net change in line count (always positive for insert). */
+  linesDelta?: number;
+
+  /** Total line count of the file after the operation. */
+  totalLines?: number;
+
+  /** Unified diff showing what changed with context lines. */
+  diff?: string;
 }
 
 // ============================================================================

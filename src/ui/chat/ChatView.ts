@@ -26,6 +26,7 @@ import { MessageManager, MessageManagerEvents } from './services/MessageManager'
 import { ModelAgentManager, ModelAgentManagerEvents } from './services/ModelAgentManager';
 import { BranchManager, BranchManagerEvents } from './services/BranchManager';
 import { ContextCompactionService } from '../../services/chat/ContextCompactionService';
+import { CompactionTranscriptRecoveryService } from '../../services/chat/CompactionTranscriptRecoveryService';
 import { ContextPreservationService } from '../../services/chat/ContextPreservationService';
 import { ContextTracker } from './services/ContextTracker';
 
@@ -104,6 +105,7 @@ export class ChatView extends ItemView {
   private parentConversationId: string | null = null;
   // Scroll position to restore when returning from branch
   private parentScrollPosition: number = 0;
+  private pendingConversationId: string | null = null;
 
   // Layout elements
   private layoutElements!: ChatLayoutElements;
@@ -620,6 +622,66 @@ export class ChatView extends ItemView {
         this.wireWelcomeButton();
       }
     }
+
+    if (this.pendingConversationId) {
+      const pendingId = this.pendingConversationId;
+      this.pendingConversationId = null;
+      await this.openConversationById(pendingId);
+    }
+  }
+
+  async openConversationById(conversationId: string): Promise<void> {
+    if (!this.conversationManager) {
+      this.pendingConversationId = conversationId;
+      return;
+    }
+
+    const conversation = await this.chatService.getConversation(conversationId);
+    if (!conversation) {
+      return;
+    }
+
+    await this.conversationManager.loadConversations();
+    const listedConversation = this.conversationManager
+      .getConversations()
+      .find(item => item.id === conversationId);
+
+    await this.conversationManager.selectConversation(listedConversation || conversation);
+  }
+
+  async sendMessageToConversation(
+    conversationId: string,
+    message: string,
+    options?: {
+      provider?: string;
+      model?: string;
+      systemPrompt?: string;
+      workspaceId?: string;
+      sessionId?: string;
+      enableThinking?: boolean;
+      thinkingEffort?: 'low' | 'medium' | 'high';
+    }
+  ): Promise<void> {
+    if (!this.conversationManager || !this.messageManager) {
+      this.pendingConversationId = conversationId;
+      throw new Error('Chat view is not ready');
+    }
+
+    await this.openConversationById(conversationId);
+
+    const currentConversation = this.conversationManager.getCurrentConversation();
+    if (!currentConversation || currentConversation.id !== conversationId) {
+      throw new Error('Failed to focus workflow conversation');
+    }
+
+    if (this.messageManager.getIsLoading()) {
+      await this.messageManager.interruptCurrentGeneration();
+    }
+
+    void this.messageManager.sendMessage(currentConversation, message, options).catch(error => {
+      console.error('[ChatView] Failed to send workflow message:', error);
+      new Notice('Failed to start workflow run');
+    });
   }
 
   /**
@@ -710,7 +772,7 @@ export class ChatView extends ItemView {
 
   private handleConversationUpdated(conversation: ConversationData | null): void {
     if (!conversation) {
-      // null signals a force-refresh; reload from current state
+      // Null signals a forced UI refresh (e.g., subagent completion)
       this.updateChatTitle();
       this.updateContextProgress();
       return;
@@ -727,24 +789,39 @@ export class ChatView extends ItemView {
     enhancement?: MessageEnhancement,
     metadata?: ReferenceMetadata
   ): Promise<void> {
-    const currentConversation = this.conversationManager.getCurrentConversation();
-
-    if (!currentConversation) {
-      return;
-    }
-
     try {
+      if (this.messageManager.getIsLoading()) {
+        await this.messageManager.interruptCurrentGeneration();
+      }
+
+      const currentConversation = this.conversationManager.getCurrentConversation();
+
+      if (!currentConversation) {
+        return;
+      }
+
       if (enhancement) {
         this.modelAgentManager.setMessageEnhancement(enhancement);
       }
 
-      // Check if context compaction is needed (local models with limited context)
-      // Triggered at 90% context usage - uses LLM to save state before compacting
-      if (this.modelAgentManager.shouldCompactBeforeSending(message)) {
-        await this.performContextCompaction(currentConversation);
-      }
+      let messageOptions = await this.modelAgentManager.getMessageOptions();
 
-      const messageOptions = await this.modelAgentManager.getMessageOptions();
+      // Check if context compaction is needed before sending.
+      // Uses shared provider policy with conservative soft caps.
+      if (this.modelAgentManager.shouldCompactBeforeSending(
+        currentConversation,
+        message,
+        messageOptions.systemPrompt || null,
+        messageOptions.provider
+      )) {
+        this.setPreSendCompactionState(true);
+        try {
+          await this.performContextCompaction(currentConversation);
+          messageOptions = await this.modelAgentManager.getMessageOptions();
+        } finally {
+          this.setPreSendCompactionState(false);
+        }
+      }
 
       await this.messageManager.sendMessage(
         currentConversation,
@@ -753,6 +830,7 @@ export class ChatView extends ItemView {
         metadata
       );
     } finally {
+      this.setPreSendCompactionState(false);
       this.modelAgentManager.clearMessageEnhancement();
       this.chatInput?.clearMessageEnhancer();
     }
@@ -769,6 +847,7 @@ export class ChatView extends ItemView {
    * 4. Update storage and progress bar
    */
   private async performContextCompaction(conversation: ConversationData): Promise<void> {
+    const originalMessages = [...conversation.messages];
     let stateContent: string | undefined;
     let usedLLM = false;
 
@@ -817,14 +896,33 @@ export class ChatView extends ItemView {
         compactedContext.summary = stateContent;
       }
 
-      // Set previous context for injection into system prompt
-      this.modelAgentManager.setPreviousContext(compactedContext);
+      compactedContext.transcriptCoverage = await this.buildCompactionTranscriptCoverage(
+        conversation.id,
+        originalMessages,
+        conversation.messages
+      ) ?? undefined;
+
+      // Append the new compaction record so the active frontier is projected into the system prompt.
+      this.modelAgentManager.appendCompactionRecord(compactedContext);
+      conversation.metadata = this.modelAgentManager.buildMetadataWithCompactionRecord(
+        conversation.metadata,
+        compactedContext
+      );
 
       // Reset token tracker for fresh accounting with compacted conversation
       this.modelAgentManager.resetTokenTracker();
 
-      // Update conversation in storage with compacted messages
-      await this.chatService.updateConversation(conversation);
+      // Update conversation in storage with compacted messages and metadata.
+      const conversationService = this.chatService.getConversationService();
+      if (conversationService?.updateConversation) {
+        await conversationService.updateConversation(conversation.id, {
+          title: conversation.title,
+          messages: conversation.messages,
+          metadata: conversation.metadata
+        });
+      } else {
+        await this.chatService.updateConversation(conversation);
+      }
 
       // Update progress bar immediately to reflect new token count
       this.updateContextProgress();
@@ -835,6 +933,33 @@ export class ChatView extends ItemView {
         : `Context compacted (${compactedContext.messagesRemoved} messages)`;
       new Notice(savedMsg, 2500);
     }
+  }
+
+  private async buildCompactionTranscriptCoverage(
+    conversationId: string,
+    originalMessages: ConversationMessage[],
+    keptMessages: ConversationMessage[]
+  ) {
+    const plugin = getNexusPlugin<NexusPlugin>(this.app);
+    const storageAdapter = plugin?.getServiceIfReady<HybridStorageAdapter>('hybridStorageAdapter');
+    if (!storageAdapter) {
+      return null;
+    }
+
+    const keptIds = new Set(keptMessages.map(message => message.id));
+    const compactedMessageIds = originalMessages
+      .filter(message => !keptIds.has(message.id))
+      .map(message => message.id);
+
+    if (compactedMessageIds.length === 0) {
+      return null;
+    }
+
+    const transcriptRecoveryService = new CompactionTranscriptRecoveryService(
+      storageAdapter.messages,
+      this.app
+    );
+    return transcriptRecoveryService.buildCoverageRef(conversationId, compactedMessageIds);
   }
 
   private async handleRetryMessage(messageId: string): Promise<void> {
@@ -863,7 +988,7 @@ export class ChatView extends ItemView {
   }
 
   private handleStopGeneration(): void {
-    this.messageManager.cancelCurrentGeneration();
+    void this.messageManager.cancelCurrentGeneration();
   }
 
   private handleGenerationAborted(messageId: string, _partialContent: string): void {
@@ -894,7 +1019,20 @@ export class ChatView extends ItemView {
 
   private handleLoadingStateChanged(loading: boolean): void {
     if (this.chatInput) {
+      if (loading) {
+        this.chatInput.setPreSendCompacting(false);
+        this.messageDisplay.clearTransientEventRow();
+      }
       this.chatInput.setLoading(loading);
+    }
+  }
+
+  private setPreSendCompactionState(compacting: boolean): void {
+    this.chatInput?.setPreSendCompacting(compacting);
+    if (compacting) {
+      this.messageDisplay.showTransientEventRow('Compacting context before sending...');
+    } else {
+      this.messageDisplay.clearTransientEventRow();
     }
   }
 
@@ -1168,7 +1306,7 @@ export class ChatView extends ItemView {
    */
   private openAgentStatusModal(): void {
     if (!this.subagentController?.isInitialized()) {
-      // SubagentController not initialized - cannot open modal
+      console.warn('[ChatView] SubagentController not initialized - cannot open modal');
       return;
     }
 

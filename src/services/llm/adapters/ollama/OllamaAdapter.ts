@@ -4,7 +4,6 @@
  * Local LLM provider for text generation
  */
 
-import { requestUrl } from 'obsidian';
 import { BaseAdapter } from '../BaseAdapter';
 import {
   GenerateOptions,
@@ -61,9 +60,11 @@ export class OllamaAdapter extends BaseAdapter {
         }
       });
 
-      // Note: Using fetch() instead of requestUrl() because Obsidian's requestUrl()
-      // does not support streaming responses (ReadableStream) needed for LLM streaming.
-      const response = await fetch(`${this.ollamaUrl}/api/chat`, {
+      // Use /api/chat endpoint (supports messages array and tool calling)
+      // requestStream() throws on HTTP errors; no assertOk needed
+      const nodeStream = await this.requestStream({
+        url: `${this.ollamaUrl}/api/chat`,
+        operation: 'streaming generation',
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -71,68 +72,19 @@ export class OllamaAdapter extends BaseAdapter {
           messages: messages,
           stream: true,
           options: ollamaOptions
-        })
+        }),
+        timeoutMs: 120_000
       });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new LLMProviderError(
-          `Ollama API error: ${response.status} ${response.statusText} - ${errorText}`,
-          'streaming',
-          'API_ERROR'
-        );
-      }
-
-      const reader = response.body?.getReader();
-      if (!reader) {
-        throw new LLMProviderError(
-          'No response body available for streaming',
-          'streaming',
-          'NO_RESPONSE_BODY'
-        );
-      }
-
-      const decoder = new TextDecoder();
-      let fullContent = '';
-
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          const chunk = decoder.decode(value);
-          const lines = chunk.split('\n').filter(line => line.trim());
-
-          for (const line of lines) {
-            try {
-              const data = JSON.parse(line);
-
-              // /api/chat returns message.content instead of response
-              if (data.message?.content) {
-                fullContent += data.message.content;
-                yield { content: data.message.content, complete: false };
-              }
-
-              if (data.done) {
-                yield {
-                  content: '',
-                  complete: true,
-                  usage: {
-                    promptTokens: data.prompt_eval_count || 0,
-                    completionTokens: data.eval_count || 0,
-                    totalTokens: (data.prompt_eval_count || 0) + (data.eval_count || 0)
-                  }
-                };
-              }
-            } catch (parseError) {
-              // Skip invalid JSON lines
-              continue;
-            }
+      yield* this.processNodeStreamJsonLines(nodeStream, {
+        extractChunk: (parsed) => {
+          if (parsed.message?.content) {
+            return { content: parsed.message.content, complete: false };
           }
-        }
-      } finally {
-        reader.releaseLock();
-      }
+          return null;
+        },
+        extractDone: (parsed) => !!parsed.done
+      });
     } catch (error) {
       if (error instanceof LLMProviderError) {
         throw error;
@@ -175,8 +127,9 @@ export class OllamaAdapter extends BaseAdapter {
       });
 
       // Use /api/chat endpoint (supports messages array and tool calling)
-      const response = await requestUrl({
+      const response = await this.request<any>({
         url: `${this.ollamaUrl}/api/chat`,
+        operation: 'generation',
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -186,8 +139,11 @@ export class OllamaAdapter extends BaseAdapter {
           messages: messages,
           stream: false,
           options: ollamaOptions
-        })
+        }),
+        timeoutMs: 60_000
       });
+
+      this.assertOk(response, `Ollama API error: ${response.status} - ${response.text || 'Unknown error'}`);
 
       const data = response.json;
 
@@ -263,94 +219,21 @@ export class OllamaAdapter extends BaseAdapter {
         }
       });
 
-      // Note: Using fetch() instead of requestUrl() because Obsidian's requestUrl()
-      // does not support streaming responses (ReadableStream) needed for LLM streaming.
-      const response = await fetch(`${this.ollamaUrl}/api/chat`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: model,
-          messages: messages,
-          stream: true,
-          options: ollamaOptions
-        })
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new LLMProviderError(
-          `Ollama API error: ${response.status} ${response.statusText} - ${errorText}`,
-          'streaming',
-          'API_ERROR'
-        );
-      }
-
-      const reader = response.body?.getReader();
-      if (!reader) {
-        throw new LLMProviderError(
-          'No response body available for streaming',
-          'streaming',
-          'NO_RESPONSE_BODY'
-        );
-      }
-
+      // Collect streaming chunks into a complete response
       let fullText = '';
       let usage: TokenUsage = {
         promptTokens: 0,
         completionTokens: 0,
         totalTokens: 0
       };
-      let finishReason: 'stop' | 'length' = 'stop';
-      let metadata: Record<string, unknown> = {};
 
-      try {
-        const decoder = new TextDecoder();
-
-        while (true) {
-          const { done, value } = await reader.read();
-
-          if (done) break;
-
-          const chunk = decoder.decode(value);
-          const lines = chunk.split('\n').filter(line => line.trim());
-
-          for (const line of lines) {
-            try {
-              const data = JSON.parse(line);
-
-              // /api/chat returns message.content instead of response
-              if (data.message?.content) {
-                fullText += data.message.content;
-              }
-
-              if (data.done) {
-                usage = {
-                  promptTokens: data.prompt_eval_count || 0,
-                  completionTokens: data.eval_count || 0,
-                  totalTokens: (data.prompt_eval_count || 0) + (data.eval_count || 0)
-                };
-
-                metadata = {
-                  modelDetails: data.model,
-                  totalDuration: data.total_duration,
-                  loadDuration: data.load_duration,
-                  promptEvalDuration: data.prompt_eval_duration,
-                  evalDuration: data.eval_duration
-                };
-
-                finishReason = 'stop';
-                break;
-              }
-            } catch (parseError) {
-              // Skip invalid JSON lines
-              continue;
-            }
-          }
+      for await (const chunk of this.generateStreamAsync(prompt, options)) {
+        if (chunk.content) {
+          fullText += chunk.content;
         }
-      } finally {
-        reader.releaseLock();
+        if (chunk.usage) {
+          usage = chunk.usage;
+        }
       }
 
       const result: LLMResponse = {
@@ -366,9 +249,8 @@ export class OllamaAdapter extends BaseAdapter {
           rateInputPerMillion: 0,
           rateOutputPerMillion: 0
         },
-        finishReason: finishReason,
+        finishReason: 'stop',
         metadata: {
-          ...metadata,
           cached: false,
           streamed: true
         }
@@ -413,6 +295,7 @@ export class OllamaAdapter extends BaseAdapter {
   getCapabilities(): ProviderCapabilities {
     return {
       supportsStreaming: true,
+      streamingMode: 'streaming',
       supportsJSON: false, // Ollama doesn't have built-in JSON mode
       supportsImages: false, // Depends on specific model
       supportsFunctions: false, // Standard Ollama doesn't support function calling
@@ -433,9 +316,11 @@ export class OllamaAdapter extends BaseAdapter {
 
   async isAvailable(): Promise<boolean> {
     try {
-      const response = await requestUrl({
+      const response = await this.request({
         url: `${this.ollamaUrl}/api/tags`,
-        method: 'GET'
+        operation: 'availability check',
+        method: 'GET',
+        timeoutMs: 10_000
       });
       return response.status === 200;
     } catch (error) {

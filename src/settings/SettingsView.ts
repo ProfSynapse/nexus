@@ -4,6 +4,8 @@ import { UnifiedTabs, UnifiedTabConfig } from '../components/UnifiedTabs';
 import { SettingsRouter, RouterState, SettingsTab } from './SettingsRouter';
 import { UpdateManager } from '../utils/UpdateManager';
 import { supportsMCPBridge } from '../utils/platform';
+import { Accordion } from '../components/Accordion';
+import { getConfigStatus, hasConfiguredProviders } from './getStartedStatus';
 
 // Type to access private method (should be refactored to make fetchLatestRelease public in UpdateManager)
 type UpdateManagerWithFetchRelease = {
@@ -19,12 +21,14 @@ import type { ServiceManager } from '../core/ServiceManager';
 // Agents
 import { SearchManagerAgent } from '../agents/searchManager/searchManager';
 import { MemoryManagerAgent } from '../agents/memoryManager/memoryManager';
+import type { AppManager } from '../services/apps/AppManager';
 
 // Tab implementations
 import { DefaultsTab } from './tabs/DefaultsTab';
 import { WorkspacesTab } from './tabs/WorkspacesTab';
 import { PromptsTab } from './tabs/PromptsTab';
 import { ProvidersTab } from './tabs/ProvidersTab';
+import { AppsTab } from './tabs/AppsTab';
 // GetStartedTab is dynamically imported (desktop-only, requires Node.js)
 type GetStartedTabType = import('./tabs/GetStartedTab').GetStartedTab;
 // import { DataTab } from './tabs/DataTab'; // TODO: Re-enable when Data tab is ready
@@ -49,6 +53,7 @@ export class SettingsView extends PluginSettingTab {
     // Managers
     private serviceManager: ServiceManager | undefined;
     private pluginLifecycleManager: any;
+    private appManager: AppManager | undefined;
 
     // UI Components
     private tabs: UnifiedTabs | undefined;
@@ -60,7 +65,9 @@ export class SettingsView extends PluginSettingTab {
     private workspacesTab: WorkspacesTab | undefined;
     private promptsTab: PromptsTab | undefined;
     private providersTab: ProvidersTab | undefined;
+    private appsTab: AppsTab | undefined;
     private getStartedTab: GetStartedTabType | undefined;
+    private getStartedAccordion: Accordion | undefined;
     // private dataTab: DataTab | undefined; // TODO: Re-enable when Data tab is ready
 
     // Prefetched data cache
@@ -78,7 +85,8 @@ export class SettingsView extends PluginSettingTab {
         searchManager?: SearchManagerAgent,
         memoryManager?: MemoryManagerAgent,
         serviceManager?: ServiceManager,
-        pluginLifecycleManager?: any
+        pluginLifecycleManager?: any,
+        appManager?: AppManager
     ) {
         super(app, plugin);
         this.plugin = plugin;
@@ -97,6 +105,7 @@ export class SettingsView extends PluginSettingTab {
         // Store managers
         this.serviceManager = serviceManager;
         this.pluginLifecycleManager = pluginLifecycleManager;
+        this.appManager = appManager;
 
         // Initialize router
         this.router = new SettingsRouter();
@@ -132,7 +141,9 @@ export class SettingsView extends PluginSettingTab {
         this.workspacesTab?.destroy();
         this.promptsTab?.destroy();
         this.providersTab?.destroy();
+        this.appsTab?.destroy();
         this.getStartedTab?.destroy();
+        this.getStartedAccordion?.unload();
         // Clear prefetch cache
         this.prefetchedWorkspaces = null;
     }
@@ -146,14 +157,27 @@ export class SettingsView extends PluginSettingTab {
             return; // Already prefetching or already cached
         }
 
-        const services = this.getCurrentServices();
-        if (!services.workspaceService) {
-            return;
-        }
-
         this.isPrefetching = true;
         try {
-            this.prefetchedWorkspaces = await services.workspaceService.getAllWorkspaces();
+            let workspaceService = this.workspaceService;
+            if (!workspaceService && this.serviceManager) {
+                const syncService = this.serviceManager.getServiceIfReady<WorkspaceService>('workspaceService');
+                if (syncService) {
+                    workspaceService = syncService;
+                } else {
+                    workspaceService = await Promise.race([
+                        this.serviceManager.getService<WorkspaceService>('workspaceService'),
+                        new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), 5000))
+                    ]) as WorkspaceService | undefined;
+                }
+            }
+
+            if (!workspaceService) {
+                this.prefetchedWorkspaces = null;
+                return;
+            }
+
+            this.prefetchedWorkspaces = await workspaceService.getAllWorkspaces();
         } catch (error) {
             console.error('[SettingsView] Failed to prefetch workspaces:', error);
             this.prefetchedWorkspaces = null;
@@ -170,25 +194,27 @@ export class SettingsView extends PluginSettingTab {
         containerEl.empty();
         containerEl.addClass('nexus-settings');
 
+        this.getStartedTab?.destroy();
+        this.getStartedAccordion?.unload();
+
         // Start prefetching workspaces in background (non-blocking)
         this.prefetchWorkspaces();
 
         // 1. Render header (About + Update button)
         this.renderHeader(containerEl);
 
-        // 2. Create tabs
+        // 2. Render get started accordion above the tabs
+        this.renderGetStartedAccordion(containerEl);
+
+        // 3. Create tabs
         const tabConfigs: UnifiedTabConfig[] = [
             { key: 'defaults', label: 'Defaults' },
             { key: 'workspaces', label: 'Workspaces' },
             { key: 'prompts', label: 'Prompts' },
             { key: 'providers', label: 'Providers' },
+            { key: 'apps', label: 'Apps' },
             // { key: 'data', label: 'Data' }, // TODO: Re-enable when Data tab is ready
         ];
-
-        // Get Started tab is desktop-only (MCP setup requires Node.js)
-        if (supportsMCPBridge()) {
-            tabConfigs.push({ key: 'getstarted', label: 'Get Started' });
-        }
 
         this.tabs = new UnifiedTabs({
             containerEl,
@@ -200,7 +226,7 @@ export class SettingsView extends PluginSettingTab {
             component: this.plugin
         });
 
-        // 3. Subscribe to router changes
+        // 4. Subscribe to router changes
         if (this.unsubscribeRouter) {
             this.unsubscribeRouter();
         }
@@ -208,7 +234,7 @@ export class SettingsView extends PluginSettingTab {
             this.renderTabContent(state);
         });
 
-        // 4. Render initial content
+        // 5. Render initial content
         this.renderTabContent(this.router.getState());
     }
 
@@ -233,23 +259,28 @@ export class SettingsView extends PluginSettingTab {
             cls: 'nexus-settings-version'
         });
 
-        // Update notification if available
-        if (this.settingsManager.settings.availableUpdateVersion) {
-            const updateBadge = versionRow.createSpan({ cls: 'nexus-update-badge' });
-            updateBadge.setText(`Update available: v${this.settingsManager.settings.availableUpdateVersion}`);
-        }
+        // Conditionally show update UI (hidden when plugin is in the community store)
+        UpdateManager.isStoreAvailable(this.plugin.manifest.id).then((storeAvailable) => {
+            if (storeAvailable) return;
 
-        // Update button
-        const updateBtn = new ButtonComponent(versionRow);
-        updateBtn
-            .setButtonText(
-                this.settingsManager.settings.availableUpdateVersion
-                    ? `Install v${this.settingsManager.settings.availableUpdateVersion}`
-                    : 'Check for Updates'
-            )
-            .onClick(async () => {
-                await this.handleUpdateCheck(updateBtn);
-            });
+            // Update notification if available
+            if (this.settingsManager.settings.availableUpdateVersion) {
+                const updateBadge = versionRow.createSpan({ cls: 'nexus-update-badge' });
+                updateBadge.setText(`Update available: v${this.settingsManager.settings.availableUpdateVersion}`);
+            }
+
+            // Update button
+            const updateBtn = new ButtonComponent(versionRow);
+            updateBtn
+                .setButtonText(
+                    this.settingsManager.settings.availableUpdateVersion
+                        ? `Install v${this.settingsManager.settings.availableUpdateVersion}`
+                        : 'Check for Updates'
+                )
+                .onClick(async () => {
+                    await this.handleUpdateCheck(updateBtn);
+                });
+        });
     }
 
     /**
@@ -312,12 +343,12 @@ export class SettingsView extends PluginSettingTab {
             case 'providers':
                 this.renderProvidersTab(pane, state, services);
                 break;
+            case 'apps':
+                this.renderAppsTab(pane, state, services);
+                break;
             // case 'data': // TODO: Re-enable when Data tab is ready
             //     this.renderDataTab(pane);
             //     break;
-            case 'getstarted':
-                this.renderGetStartedTab(pane, services);
-                break;
         }
     }
 
@@ -342,8 +373,17 @@ export class SettingsView extends PluginSettingTab {
 
         // Initialize custom prompt storage if needed
         if (!this.customPromptStorage) {
-            // Pass null for db - SettingsView doesn't have access to database
-            this.customPromptStorage = new CustomPromptStorageService(null, this.settingsManager);
+            // Try ServiceManager first (has db, writes to SQLite + data.json)
+            if (this.serviceManager) {
+                const storageFromManager = this.serviceManager.getServiceIfReady<CustomPromptStorageService>('customPromptStorageService');
+                if (storageFromManager) {
+                    this.customPromptStorage = storageFromManager;
+                }
+            }
+            // Fallback: create without db (writes to data.json only)
+            if (!this.customPromptStorage) {
+                this.customPromptStorage = new CustomPromptStorageService(null, this.settingsManager);
+            }
         }
 
         return {
@@ -389,7 +429,9 @@ export class SettingsView extends PluginSettingTab {
         // Destroy previous tab instance if exists
         this.workspacesTab?.destroy();
 
-        // Create new WorkspacesTab with prefetched data if available
+        // Always pass null so WorkspacesTab takes the async loading path
+        // (skeleton → loadWorkspaces() with adapter wait → re-render).
+        // This avoids using stale prefetch data from before SQLite was ready.
         this.workspacesTab = new WorkspacesTab(
             container,
             this.router,
@@ -397,7 +439,8 @@ export class SettingsView extends PluginSettingTab {
                 app: this.app,
                 workspaceService: services.workspaceService,
                 customPromptStorage: this.customPromptStorage,
-                prefetchedWorkspaces: this.prefetchedWorkspaces,
+                prefetchedWorkspaces: null,
+                serviceManager: this.serviceManager,
                 component: this.plugin
             }
         );
@@ -419,7 +462,8 @@ export class SettingsView extends PluginSettingTab {
             container,
             this.router,
             {
-                customPromptStorage: services.customPromptStorage
+                customPromptStorage: services.customPromptStorage,
+                component: this.plugin
             }
         );
     }
@@ -447,6 +491,26 @@ export class SettingsView extends PluginSettingTab {
         );
     }
 
+    /**
+     * Render Apps tab content
+     */
+    private renderAppsTab(
+        container: HTMLElement,
+        state: RouterState,
+        services: any
+    ): void {
+        this.appsTab?.destroy();
+        this.appsTab = new AppsTab(
+            container,
+            this.router,
+            {
+                app: this.app,
+                settings: this.settingsManager,
+                appManager: this.appManager,
+            }
+        );
+    }
+
     // TODO: Re-enable when Data tab is ready
     // /**
     //  * Render Data tab content
@@ -460,17 +524,32 @@ export class SettingsView extends PluginSettingTab {
     //     this.dataTab.render();
     // }
 
-    /**
-     * Render Get Started tab content
-     * Uses dynamic import to avoid loading Node.js modules on mobile
-     */
-    private async renderGetStartedTab(container: HTMLElement, services: any): Promise<void> {
-        // Desktop-only - don't render on mobile
+    private renderGetStartedAccordion(containerEl: HTMLElement): void {
         if (!supportsMCPBridge()) {
-            container.createEl('p', { text: 'MCP setup is only available on desktop.' });
             return;
         }
 
+        const hasProviders = hasConfiguredProviders(this.settingsManager.settings.llmProviders);
+        const mcpConfigured = getConfigStatus(this.app) === 'nexus-configured';
+
+        this.getStartedAccordion = new Accordion(
+            containerEl,
+            'Get Started',
+            !hasProviders || !mcpConfigured
+        );
+        this.getStartedAccordion.rootEl.addClass('nexus-settings-accordion');
+
+        const accordionContent = this.getStartedAccordion.getContentEl();
+        accordionContent.addClass('nexus-settings-accordion-content');
+
+        void this.renderGetStartedContent(accordionContent);
+    }
+
+    /**
+     * Render Get Started accordion content
+     * Uses dynamic import to avoid loading Node.js modules on mobile
+     */
+    private async renderGetStartedContent(container: HTMLElement): Promise<void> {
         // Destroy previous tab instance if exists
         this.getStartedTab?.destroy();
 
@@ -501,7 +580,7 @@ export class SettingsView extends PluginSettingTab {
                         this.tabs.activateTab('providers');
                     }
                 },
-                component: this.plugin
+                component: this.getStartedAccordion
             }
         );
     }

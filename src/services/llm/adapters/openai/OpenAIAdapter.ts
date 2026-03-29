@@ -1,15 +1,12 @@
 /**
  * OpenAI Adapter - Clean implementation focused on streaming
- * Supports both regular chat completions and deep research models
+ * Location: src/services/llm/adapters/openai/OpenAIAdapter.ts
+ *
+ * Supports both regular chat completions and deep research models.
+ * Uses OpenAI's REST API over requestUrl with buffered SSE replay.
  */
 
-import OpenAI from 'openai';
-import { Stream } from 'openai/streaming';
 import { BaseAdapter } from '../BaseAdapter';
-
-// OpenAI Responses API types - using namespace for proper type access
-type OpenAIResponse = OpenAI.Responses.Response;
-type OpenAIStreamEvent = OpenAI.Responses.ResponseStreamEvent;
 import {
   GenerateOptions,
   StreamChunk,
@@ -24,23 +21,17 @@ import { DeepResearchHandler } from './DeepResearchHandler';
 import { WebSearchUtils } from '../../utils/WebSearchUtils';
 import { OPENAI_MODELS } from './OpenAIModels';
 import { MCPToolExecution } from '../shared/ToolExecutionUtils';
+import { ProviderHttpError } from '../shared/ProviderHttpClient';
 
 export class OpenAIAdapter extends BaseAdapter {
   readonly name = 'openai';
   readonly baseUrl = 'https://api.openai.com/v1';
 
-  private client: OpenAI;
   private deepResearch: DeepResearchHandler;
 
   constructor(apiKey: string) {
-    super(apiKey, 'gpt-5');
-
-    this.client = new OpenAI({
-      apiKey: this.apiKey,
-      dangerouslyAllowBrowser: true, // Required for Obsidian plugin environment
-    });
-
-    this.deepResearch = new DeepResearchHandler(this.client);
+    super(apiKey, 'gpt-5.4');
+    this.deepResearch = new DeepResearchHandler(this.apiKey, this.baseUrl);
     this.initializeCache();
   }
 
@@ -78,6 +69,8 @@ export class OpenAIAdapter extends BaseAdapter {
    * Uses OpenAI Responses API for stateful conversations with tool support
    */
   async* generateStreamAsync(prompt: string, options?: GenerateOptions): AsyncGenerator<StreamChunk, void, unknown> {
+    let lastRequestSummary: Record<string, unknown> | undefined;
+
     try {
       const model = options?.model || this.currentModel;
 
@@ -150,28 +143,156 @@ export class OpenAIAdapter extends BaseAdapter {
           responseParams.include.push('reasoning.encrypted_content');
         }
 
-        // Create Responses API stream
-        // TypeScript can't narrow the overloaded create() return type based on params,
-        // so we cast to the expected streaming type
-        return await this.client.responses.create(responseParams) as unknown as Stream<OpenAIStreamEvent>;
+        lastRequestSummary = this.buildStreamingRequestSummary(responseParams, options, prompt);
+
+        const nodeStream = await this.requestStream({
+          url: `${this.baseUrl}/responses`,
+          operation: 'streaming generation',
+          method: 'POST',
+          headers: this.buildOpenAIHeaders(),
+          body: JSON.stringify(responseParams),
+          timeoutMs: 120_000
+        });
+
+        return nodeStream;
       });
 
-      // Process Responses API stream events
-      yield* this.processResponsesStream(stream);
+      yield* this.processResponsesNodeStream(stream);
 
     } catch (error) {
+      this.logStreamingFailure(error, lastRequestSummary);
       console.error('[OpenAIAdapter] Streaming error:', error);
       throw this.handleError(error, 'streaming generation');
     }
   }
 
+  private buildStreamingRequestSummary(
+    responseParams: Record<string, unknown>,
+    options: GenerateOptions | undefined,
+    prompt: string
+  ): Record<string, unknown> {
+    const input = responseParams.input;
+    const inputItems = Array.isArray(input) ? input : null;
+    const toolNames = Array.isArray(responseParams.tools)
+      ? (responseParams.tools as Array<Record<string, unknown>>)
+          .map(tool => typeof tool.name === 'string' ? tool.name : undefined)
+          .filter((name): name is string => Boolean(name))
+      : [];
+
+    return {
+      model: responseParams.model,
+      previousResponseId: responseParams.previous_response_id,
+      hasSystemPrompt: Boolean(options?.systemPrompt),
+      systemPromptLength: options?.systemPrompt?.length || 0,
+      promptLength: prompt.length,
+      inputMode: inputItems ? 'continuation' : 'prompt',
+      continuationItemCount: inputItems?.length || 0,
+      continuationItemTypes: inputItems?.map(item => {
+        if (item && typeof item === 'object' && 'type' in item && typeof item.type === 'string') {
+          return item.type;
+        }
+        if (item && typeof item === 'object' && 'role' in item && typeof item.role === 'string') {
+          return `role:${item.role}`;
+        }
+        return typeof item;
+      }) || [],
+      continuationCallIds: inputItems?.flatMap(item => {
+        if (item && typeof item === 'object' && 'call_id' in item && typeof item.call_id === 'string') {
+          return [item.call_id];
+        }
+        return [];
+      }) || [],
+      toolCount: toolNames.length,
+      toolNames,
+      temperature: responseParams.temperature,
+      maxOutputTokens: responseParams.max_output_tokens,
+      thinkingEnabled: Boolean(responseParams.reasoning),
+      thinkingEffort: isRecord(responseParams.reasoning) ? responseParams.reasoning.effort : undefined
+    };
+  }
+
+  private logStreamingFailure(error: unknown, requestSummary?: Record<string, unknown>): void {
+    if (!(error instanceof ProviderHttpError)) {
+      return;
+    }
+
+    const responseJson = this.sanitizeForLogging(error.response.json);
+    const responseText = typeof error.response.text === 'string'
+      ? error.response.text.slice(0, 2000)
+      : undefined;
+    const missingCallId = this.extractMissingToolCallId(error.response);
+    const continuationCallIds = Array.isArray(requestSummary?.continuationCallIds)
+      ? requestSummary?.continuationCallIds
+      : [];
+
+    console.error('[OpenAIAdapter] Streaming request failed', {
+      status: error.response.status,
+      statusText: error.response.statusText,
+      request: requestSummary,
+      diagnostics: missingCallId ? {
+        missingCallId,
+        requestIncludesMissingCallId: continuationCallIds.includes(missingCallId),
+        continuationCallIds
+      } : undefined,
+      responseJson,
+      responseText
+    });
+  }
+
+  private extractMissingToolCallId(response: { json?: unknown; text?: string }): string | undefined {
+    const messageFromJson = isRecord(response.json) &&
+      isRecord(response.json.error) &&
+      typeof response.json.error.message === 'string'
+      ? response.json.error.message
+      : undefined;
+
+    const message = messageFromJson || response.text;
+    if (typeof message !== 'string') {
+      return undefined;
+    }
+
+    const match = message.match(/function call ([A-Za-z0-9_-]+)/);
+    return match?.[1];
+  }
+
+  private sanitizeForLogging(value: unknown): unknown {
+    if (Array.isArray(value)) {
+      return value.slice(0, 10).map(item => this.sanitizeForLogging(item));
+    }
+
+    if (!isRecord(value)) {
+      if (typeof value === 'string') {
+        return value.length > 500 ? `${value.slice(0, 500)}...` : value;
+      }
+      return value;
+    }
+
+    const sanitizedEntries = Object.entries(value).slice(0, 20).map(([key, entryValue]) => {
+      if (typeof entryValue === 'string') {
+        return [key, entryValue.length > 500 ? `${entryValue.slice(0, 500)}...` : entryValue];
+      }
+
+      if (Array.isArray(entryValue)) {
+        return [key, entryValue.slice(0, 10).map(item => this.sanitizeForLogging(item))];
+      }
+
+      if (isRecord(entryValue)) {
+        return [key, this.sanitizeForLogging(entryValue)];
+      }
+
+      return [key, entryValue];
+    });
+
+    return Object.fromEntries(sanitizedEntries);
+  }
+
   /**
-   * Process Responses API stream events
-   * Handles ResponseStreamEvent format from OpenAI Responses API
-   * Includes reasoning/thinking support for GPT-5 and o-series models
-   * @private
+   * Process Responses API events from a Node.js readable stream.
+   * Reads SSE events incrementally as they arrive from the wire.
    */
-  private async* processResponsesStream(stream: any): AsyncGenerator<StreamChunk, void, unknown> {
+  private async* processResponsesNodeStream(nodeStream: NodeJS.ReadableStream): AsyncGenerator<StreamChunk, void, unknown> {
+    const { createParser } = await import('eventsource-parser');
+
     let fullContent = '';
     let currentResponseId: string | null = null;
     const toolCallsMap = new Map<number, any>();
@@ -181,202 +302,171 @@ export class OpenAIAdapter extends BaseAdapter {
     let currentReasoningId: string | null = null;
     let currentReasoningEncryptedContent: string | null = null;
     let isInReasoningPart = false;
+    let isCompleted = false;
 
-    try {
-      for await (const event of stream) {
-        // Extract response ID from events
-        if (event.response?.id && !currentResponseId) {
-          currentResponseId = event.response.id;
-        }
+    const eventQueue: StreamChunk[] = [];
 
-        // Handle different event types
-        switch (event.type) {
-          case 'response.output_text.delta':
-            // Text content delta
-            if (event.delta) {
-              fullContent += event.delta;
-              yield {
-                content: event.delta,
-                complete: false,
-                usage: undefined
-              };
-            }
-            break;
+    const parser = createParser((sseEvent) => {
+      if (sseEvent.type === 'reconnect-interval' || isCompleted) return;
+      if (sseEvent.data === '[DONE]') {
+        isCompleted = true;
+        return;
+      }
 
-          case 'response.output_item.added':
-            // New output item added (could be message, function call, or reasoning)
-            if (event.item) {
-              const item = event.item;
+      let event: Record<string, any>;
+      try {
+        event = JSON.parse(sseEvent.data);
+      } catch {
+        return;
+      }
 
-              // Handle reasoning item (GPT-5/o-series chain-of-thought)
-              if (item.type === 'reasoning') {
-                currentReasoningId = item.id;
-                yield {
-                  content: '',
-                  complete: false,
-                  reasoning: '',  // Initial empty to signal reasoning started
-                  reasoningComplete: false,
-                  reasoningId: item.id
-                };
-              }
-              // Handle message with text content (only for messages, not function calls)
-              else if (item.type === 'message' && item.content) {
-                for (const content of item.content) {
-                  if (content.type === 'text' && content.text) {
-                    fullContent += content.text;
-                    yield {
-                      content: content.text,
-                      complete: false,
-                      usage: undefined
-                    };
-                  }
+      if (event.response?.id && !currentResponseId) {
+        currentResponseId = event.response.id;
+      }
+
+      switch (event.type) {
+        case 'response.output_text.delta':
+          if (event.delta) {
+            fullContent += event.delta;
+            eventQueue.push({ content: event.delta, complete: false });
+          }
+          break;
+
+        case 'response.output_item.added':
+          if (event.item) {
+            const item = event.item;
+            if (item.type === 'reasoning') {
+              currentReasoningId = item.id;
+              eventQueue.push({
+                content: '', complete: false, reasoning: '',
+                reasoningComplete: false, reasoningId: item.id
+              });
+            } else if (item.type === 'message' && item.content) {
+              for (const c of item.content) {
+                if (c.type === 'text' && c.text) {
+                  fullContent += c.text;
+                  eventQueue.push({ content: c.text, complete: false });
                 }
               }
             }
-            break;
+          }
+          break;
 
-          case 'response.content_part.added':
-            // Content part added - check for reasoning_text
-            if (event.part?.type === 'reasoning_text') {
-              isInReasoningPart = true;
-              if (event.part.text) {
-                yield {
-                  content: '',
-                  complete: false,
-                  reasoning: event.part.text,
-                  reasoningComplete: false,
-                  reasoningId: currentReasoningId || undefined
-                };
-              }
+        case 'response.content_part.added':
+          if (event.part?.type === 'reasoning_text') {
+            isInReasoningPart = true;
+            if (event.part.text) {
+              eventQueue.push({
+                content: '', complete: false, reasoning: event.part.text,
+                reasoningComplete: false, reasoningId: currentReasoningId || undefined
+              });
             }
-            break;
+          }
+          break;
 
-          case 'response.content_part.delta':
-            // Incremental content delta - check if we're in a reasoning part
-            if (isInReasoningPart && event.delta) {
-              yield {
-                content: '',
-                complete: false,
-                reasoning: event.delta,
-                reasoningComplete: false,
-                reasoningId: currentReasoningId || undefined
-              };
+        case 'response.content_part.delta':
+          if (isInReasoningPart && event.delta) {
+            eventQueue.push({
+              content: '', complete: false, reasoning: event.delta,
+              reasoningComplete: false, reasoningId: currentReasoningId || undefined
+            });
+          }
+          break;
+
+        case 'response.content_part.done':
+          if (event.part?.type === 'reasoning_text') isInReasoningPart = false;
+          break;
+
+        case 'response.output_item.done':
+          if (event.item) {
+            const item = event.item;
+            if (item.type === 'function_call') {
+              toolCallsMap.set(event.output_index || 0, {
+                id: item.call_id || item.id,
+                type: 'function',
+                function: { name: item.name || '', arguments: item.arguments || '{}' }
+              });
+            } else if (item.type === 'reasoning') {
+              currentReasoningEncryptedContent = item.encrypted_content || null;
+              eventQueue.push({
+                content: '', complete: false, reasoning: '', reasoningComplete: true,
+                reasoningId: item.id,
+                reasoningEncryptedContent: currentReasoningEncryptedContent || undefined
+              });
+              currentReasoningId = null;
             }
-            break;
+          }
+          break;
 
-          case 'response.content_part.done':
-            // Content part finished
-            if (event.part?.type === 'reasoning_text') {
-              isInReasoningPart = false;
-            }
-            break;
+        case 'response.function_call_arguments.delta':
+          break;
 
-          case 'response.output_item.done':
-            // Output item complete - capture function calls or reasoning completion
-            if (event.item) {
-              const item = event.item;
+        case 'response.reasoning_summary_text.delta':
+          if (event.delta) {
+            eventQueue.push({
+              content: '', complete: false, reasoning: event.delta,
+              reasoningComplete: false, reasoningId: event.item_id || currentReasoningId || undefined
+            });
+          }
+          break;
 
-              if (item.type === 'function_call') {
-                const index = event.output_index || 0;
-
-                toolCallsMap.set(index, {
-                  id: item.call_id || item.id,
-                  type: 'function',
-                  function: {
-                    name: item.name || '',
-                    arguments: item.arguments || '{}'
-                  }
-                });
-              } else if (item.type === 'reasoning') {
-                // Reasoning item complete - capture encrypted_content for multi-turn
-                currentReasoningEncryptedContent = item.encrypted_content || null;
-                yield {
-                  content: '',
-                  complete: false,
-                  reasoning: '',
-                  reasoningComplete: true,
-                  reasoningId: item.id,
-                  reasoningEncryptedContent: currentReasoningEncryptedContent || undefined
-                };
-                currentReasoningId = null;
-              }
-            }
-            break;
-
-          case 'response.function_call_arguments.delta':
-            // Arguments are streamed but we capture the complete call in output_item.done
-            // No action needed here - just let the deltas flow
-            break;
-
-          // Handle reasoning summary events (GPT-5 sends these instead of reasoning_text)
-          case 'response.reasoning_summary_text.delta':
-            // Incremental reasoning summary text
-            if (event.delta) {
-              yield {
-                content: '',
-                complete: false,
-                reasoning: event.delta,
-                reasoningComplete: false,
-                reasoningId: event.item_id || currentReasoningId || undefined
-              };
-            }
-            break;
-
-          case 'response.reasoning_summary_text.done':
-            // Reasoning summary text complete - yield the full text
-            if (event.text) {
-              yield {
-                content: '',
-                complete: false,
-                reasoning: '', // Already streamed via delta events
-                reasoningComplete: true,
-                reasoningId: event.item_id || currentReasoningId || undefined
-              };
-            }
-            break;
-
-          case 'response.reasoning_summary_part.done':
-            // Reasoning summary part complete - mark reasoning as done
-            yield {
-              content: '',
-              complete: false,
-              reasoning: '',
-              reasoningComplete: true,
+        case 'response.reasoning_summary_text.done':
+          if (event.text) {
+            eventQueue.push({
+              content: '', complete: false, reasoning: '', reasoningComplete: true,
               reasoningId: event.item_id || currentReasoningId || undefined
+            });
+          }
+          break;
+
+        case 'response.reasoning_summary_part.done':
+          eventQueue.push({
+            content: '', complete: false, reasoning: '', reasoningComplete: true,
+            reasoningId: event.item_id || currentReasoningId || undefined
+          });
+          break;
+
+        case 'response.done':
+        case 'response.completed':
+          if (event.response?.usage) {
+            usage = {
+              promptTokens: event.response.usage.input_tokens || 0,
+              completionTokens: event.response.usage.output_tokens || 0,
+              totalTokens: event.response.usage.total_tokens || 0
             };
-            break;
+          }
+          const metadata = currentResponseId ? { responseId: currentResponseId } : undefined;
+          const toolCallsArray = Array.from(toolCallsMap.values());
+          eventQueue.push({
+            content: '', complete: true, usage,
+            toolCalls: toolCallsArray.length > 0 ? toolCallsArray : undefined,
+            toolCallsReady: toolCallsArray.length > 0,
+            metadata
+          });
+          isCompleted = true;
+          break;
+      }
+    });
 
-          case 'response.done':
-          case 'response.completed':
-            // Final event - extract usage if available
-            if (event.response?.usage) {
-              usage = {
-                promptTokens: event.response.usage.input_tokens || 0,
-                completionTokens: event.response.usage.output_tokens || 0,
-                totalTokens: event.response.usage.total_tokens || 0
-              };
-            }
+    try {
+      for await (const chunk of nodeStream as AsyncIterable<Buffer>) {
+        if (isCompleted) break;
+        const text = typeof chunk === 'string' ? chunk : chunk.toString('utf-8');
+        parser.feed(text);
 
-            // Store response ID in metadata for continuation
-            const metadata = currentResponseId ? { responseId: currentResponseId } : undefined;
-
-            // Final yield with tool calls if any
-            const toolCallsArray = Array.from(toolCallsMap.values());
-            yield {
-              content: '',
-              complete: true,
-              usage,
-              toolCalls: toolCallsArray.length > 0 ? toolCallsArray : undefined,
-              toolCallsReady: toolCallsArray.length > 0,
-              metadata // Include response ID for tracking
-            };
-
-            break;
-
-          default:
-            // Ignore other event types
-            break;
+        while (eventQueue.length > 0) {
+          const evt = eventQueue.shift()!;
+          yield evt;
+          if (evt.complete) { isCompleted = true; break; }
         }
+      }
+
+      while (eventQueue.length > 0) {
+        yield eventQueue.shift()!;
+      }
+
+      if (!isCompleted) {
+        yield { content: '', complete: true, usage };
       }
     } catch (error) {
       console.error('[OpenAIAdapter] Error processing Responses API stream:', error);
@@ -408,17 +498,25 @@ export class OpenAIAdapter extends BaseAdapter {
     if (options?.frequencyPenalty !== undefined) responseParams.frequency_penalty = options.frequencyPenalty;
     if (options?.presencePenalty !== undefined) responseParams.presence_penalty = options.presencePenalty;
 
-    // TypeScript can't narrow the overloaded create() return type based on params,
-    // so we cast to the expected non-streaming Response type
-    const response = await this.client.responses.create(responseParams) as unknown as OpenAIResponse;
+    const response = await this.request<any>({
+      url: `${this.baseUrl}/responses`,
+      operation: 'generation',
+      method: 'POST',
+      headers: this.buildOpenAIHeaders(),
+      body: JSON.stringify(responseParams),
+      timeoutMs: 60_000
+    });
+    this.assertOk(response, `OpenAI generation failed: HTTP ${response.status}`);
 
-    if (!response.output || response.output.length === 0) {
+    const responseJson = response.json;
+
+    if (!responseJson.output || responseJson.output.length === 0) {
       throw new Error('No output from OpenAI Responses API');
     }
 
     // Extract text content from output array
     let text = '';
-    for (const item of response.output) {
+    for (const item of responseJson.output) {
       if (item.type === 'message' && item.content) {
         for (const content of item.content) {
           if (content.type === 'output_text') {
@@ -428,19 +526,63 @@ export class OpenAIAdapter extends BaseAdapter {
       }
     }
 
-    const usage = response.usage ? {
-      promptTokens: response.usage.input_tokens || 0,
-      completionTokens: response.usage.output_tokens || 0,
-      totalTokens: response.usage.total_tokens || 0
+    const usage = responseJson.usage ? {
+      promptTokens: responseJson.usage.input_tokens || 0,
+      completionTokens: responseJson.usage.output_tokens || 0,
+      totalTokens: responseJson.usage.total_tokens || 0
     } : undefined;
 
     return this.buildLLMResponse(
       text,
       model,
       usage,
-      { responseId: response.id }, // Store response ID
+      { responseId: responseJson.id },
       'stop'
     );
+  }
+
+  private buildOpenAIHeaders(): Record<string, string> {
+    return {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${this.apiKey}`
+    };
+  }
+
+  /**
+   * Parse SSE event blocks from buffered text.
+   * Per the SSE spec, an event block can contain multiple `data:` lines
+   * which must be concatenated with newlines to form the complete payload.
+   */
+  private *parseSSEEvents(sseText: string): Generator<Record<string, any>, void, unknown> {
+    const events = sseText.split('\n\n');
+
+    for (const eventBlock of events) {
+      const lines = eventBlock.split('\n');
+
+      // Collect all data: lines in this event block and concatenate per SSE spec
+      const dataLines: string[] = [];
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed.startsWith('data:')) {
+          dataLines.push(trimmed.replace(/^data:\s*/, ''));
+        }
+      }
+
+      if (dataLines.length === 0) {
+        continue;
+      }
+
+      const payload = dataLines.join('\n').trim();
+      if (!payload || payload === '[DONE]') {
+        continue;
+      }
+
+      try {
+        yield JSON.parse(payload);
+      } catch {
+        continue;
+      }
+    }
   }
 
   /**
@@ -514,12 +656,13 @@ export class OpenAIAdapter extends BaseAdapter {
   getCapabilities(): ProviderCapabilities {
     const baseCapabilities = {
       supportsStreaming: true,
+      streamingMode: 'streaming' as const,
       supportsJSON: true,
       supportsImages: true,
       supportsFunctions: true,
       supportsThinking: true,
       supportsImageGeneration: true,
-      maxContextWindow: 2000000, // GPT-5 context window
+      maxContextWindow: 1050000, // GPT-5.4/GPT-5.4 Pro context window
       supportedFeatures: [
         'streaming',
         'json_mode',
@@ -554,4 +697,8 @@ export class OpenAIAdapter extends BaseAdapter {
       return null;
     }
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

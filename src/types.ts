@@ -95,7 +95,10 @@ export const DEFAULT_SETTINGS: MCPSettings = {
   lastUpdateVersion: undefined,
   lastUpdateDate: undefined,
   availableUpdateVersion: undefined,
-  lastUpdateCheckDate: undefined
+  lastUpdateCheckDate: undefined,
+  workflowScheduler: {
+    lastCheckAt: undefined
+  }
 };
 
 // Extend Obsidian App interface (module augmentation)

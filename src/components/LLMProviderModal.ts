@@ -20,6 +20,8 @@ import {
   IProviderModal,
   ProviderModalConfig,
   ProviderModalDependencies,
+  OAuthModalConfig,
+  SecondaryOAuthProviderConfig,
 } from './llm-provider/types';
 import { NexusProviderModal } from './llm-provider/providers/NexusProviderModal';
 import { OllamaProviderModal } from './llm-provider/providers/OllamaProviderModal';
@@ -36,7 +38,11 @@ export interface LLMProviderModalConfig {
   keyFormat: string;
   signupUrl: string;
   config: LLMProviderConfig;
+  oauthConfig?: OAuthModalConfig;
+  secondaryOAuthProvider?: SecondaryOAuthProviderConfig;
   onSave: (config: LLMProviderConfig) => void;
+  /** If true, hide the API key input — provider uses OAuth exclusively */
+  oauthOnly?: boolean;
 }
 
 /**
@@ -147,6 +153,9 @@ export class LLMProviderModal extends Modal {
       signupUrl: this.config.signupUrl,
       config: { ...this.config.config },
       onConfigChange: (config: LLMProviderConfig) => this.handleConfigChange(config),
+      oauthConfig: this.config.oauthConfig,
+      secondaryOAuthProvider: this.config.secondaryOAuthProvider,
+      oauthOnly: this.config.oauthOnly,
     };
   }
 
@@ -154,11 +163,20 @@ export class LLMProviderModal extends Modal {
    * Handle configuration changes from provider modals
    */
   private handleConfigChange(config: LLMProviderConfig): void {
-    // Update local config
     this.config.config = config;
 
-    // Auto-save with debouncing
-    this.autoSave();
+    // OAuth connections must save immediately — debounce gets cancelled by onClose
+    if (config.oauth?.connected) {
+      if (this.autoSaveTimeout) {
+        clearTimeout(this.autoSaveTimeout);
+        this.autoSaveTimeout = null;
+      }
+      this.config.onSave(config);
+      this.showSaveStatus('Saved');
+      setTimeout(() => this.showSaveStatus('Ready'), 2000);
+    } else {
+      this.autoSave();
+    }
   }
 
   /**

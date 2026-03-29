@@ -12,12 +12,13 @@ import { App, Plugin, Events } from 'obsidian';
 import NexusPlugin from '../../main';
 import { AgentManager } from '../AgentManager';
 import type { ServiceManager } from '../../core/ServiceManager';
-import { AgentFactoryRegistry } from '../../core/ServiceFactory';
 import { NexusError, NexusErrorCode } from '../../utils/errors';
 import { logger } from '../../utils/logger';
 import { CustomPromptStorageService } from "../../agents/promptManager/services/CustomPromptStorageService";
 import { AgentInitializationService } from './AgentInitializationService';
 import { AgentValidationService } from './AgentValidationService';
+import type { AppManager } from '../apps/AppManager';
+import type { IAgent } from '../../agents/interfaces/IAgent';
 
 export interface AgentRegistrationServiceInterface {
   /**
@@ -44,6 +45,11 @@ export interface AgentRegistrationServiceInterface {
    * Gets agent registration status
    */
   getRegistrationStatus(): AgentRegistrationStatus;
+
+  /**
+   * Gets the AppManager instance (available after PHASE 3 initialization)
+   */
+  getAppManager(): any | null;
 }
 
 export interface AgentRegistrationStatus {
@@ -55,15 +61,22 @@ export interface AgentRegistrationStatus {
   registrationDuration: number;
 }
 
+/**
+ * Type guard to check if plugin has Settings
+ */
+function hasSettings(plugin: Plugin | NexusPlugin): plugin is NexusPlugin {
+  return 'settings' in plugin && plugin.settings !== undefined;
+}
+
 export class AgentRegistrationService implements AgentRegistrationServiceInterface {
   private agentManager: AgentManager;
   private registrationStatus: AgentRegistrationStatus;
   private initializationErrors: Record<string, Error> = {};
-  private factoryRegistry: AgentFactoryRegistry;
   private initializationService: AgentInitializationService;
   private validationService: AgentValidationService;
   private isInitialized: boolean = false;
   private initializationPromise: Promise<Map<string, any>> | null = null;
+  private appManagerInstance: AppManager | null = null;
 
   constructor(
     private app: App,
@@ -75,7 +88,6 @@ export class AgentRegistrationService implements AgentRegistrationServiceInterfa
   ) {
     // Use shared AgentManager if provided, otherwise create a new one
     this.agentManager = sharedAgentManager ?? new AgentManager(app, plugin, events);
-    this.factoryRegistry = new AgentFactoryRegistry();
     this.registrationStatus = {
       totalAgents: 0,
       initializedAgents: 0,
@@ -97,92 +109,7 @@ export class AgentRegistrationService implements AgentRegistrationServiceInterfa
   }
 
   /**
-   * Initializes all configured agents using ServiceManager and constructor injection
-   */
-  async initializeAllAgentsWithServiceManager(): Promise<Map<string, any>> {
-    if (!this.serviceManager) {
-      throw new Error('ServiceManager is required for dependency injection');
-    }
-
-    const startTime = Date.now();
-    this.registrationStatus.registrationTime = new Date();
-    this.initializationErrors = {};
-
-    try {
-      logger.systemLog('Initializing agents with ServiceManager dependency injection...');
-
-      const agentNames = ['contentManager', 'storageManager', 'searchManager', 'memoryManager', 'promptManager', 'canvasManager'];
-      const initializedAgents = new Map<string, any>();
-
-      for (const agentName of agentNames) {
-        try {
-          await this.initializeAgentWithFactory(agentName);
-          const agent = this.agentManager.getAgent(agentName);
-          if (agent) {
-            initializedAgents.set(agentName, agent);
-          }
-        } catch (error) {
-          this.initializationErrors[agentName] = error as Error;
-          logger.systemError(error as Error, `${agentName} Agent Initialization`);
-        }
-      }
-
-      // Calculate final statistics
-      this.registrationStatus = {
-        totalAgents: agentNames.length,
-        initializedAgents: initializedAgents.size,
-        failedAgents: Object.keys(this.initializationErrors).length,
-        initializationErrors: this.initializationErrors,
-        registrationTime: this.registrationStatus.registrationTime,
-        registrationDuration: Date.now() - startTime
-      };
-
-      logger.systemLog(`ServiceManager-based agent initialization completed - ${this.registrationStatus.initializedAgents}/${this.registrationStatus.totalAgents} agents initialized`);
-
-      return initializedAgents;
-
-    } catch (error) {
-      this.registrationStatus.registrationDuration = Date.now() - startTime;
-      logger.systemError(error as Error, 'Agent Registration with ServiceManager');
-      throw new NexusError(
-        NexusErrorCode.InternalError,
-        'Failed to initialize agents with ServiceManager',
-        error
-      );
-    }
-  }
-
-  /**
-   * Initialize single agent using factory pattern with dependency injection
-   */
-  private async initializeAgentWithFactory(agentName: string): Promise<void> {
-    const factory = this.factoryRegistry.getFactory(agentName);
-    if (!factory) {
-      throw new Error(`No factory found for agent: ${agentName}`);
-    }
-
-    // Resolve dependencies using ServiceManager
-    const dependencies = new Map<string, any>();
-    for (const depName of factory.dependencies) {
-      try {
-        const dependency = await this.serviceManager!.getService(depName);
-        dependencies.set(depName, dependency);
-      } catch (error) {
-        logger.systemWarn(`Optional dependency '${depName}' not available for agent '${agentName}': ${error}`);
-        // For optional dependencies, continue without them
-        dependencies.set(depName, null);
-      }
-    }
-
-    // Create agent with injected dependencies
-    const agent = await factory.create(dependencies, this.app, this.plugin);
-    this.agentManager.registerAgent(agent);
-
-    logger.systemLog(`${agentName} agent initialized successfully with dependency injection`);
-  }
-
-  /**
-   * Initializes all configured agents (legacy method - maintain backward compatibility)
+   * Initializes all configured agents.
    * Supports lazy initialization - can be called multiple times safely.
    */
   async initializeAllAgents(): Promise<Map<string, any>> {
@@ -233,9 +160,36 @@ export class AgentRegistrationService implements AgentRegistrationServiceInterfa
         this.safeInitialize('promptManager', () => this.initializationService.initializePromptManager(enableLLMModes)),
         this.safeInitialize('searchManager', () => this.initializationService.initializeSearchManager(enableSearchModes, memorySettings)),
         this.safeInitialize('memoryManager', () => this.initializationService.initializeMemoryManager()),
+        this.safeInitialize('taskManager', () => this.initializationService.initializeTaskManager()),
       ]);
 
-      // PHASE 3: ToolManager MUST be last (needs all other agents)
+      // Wire cross-agent dependencies (after Phase 2, both agents are available)
+      try {
+        const memoryAgent = this.agentManager.getAgent('memoryManager') as IAgent & { setTaskService?: (s: unknown) => void };
+        const taskAgent = this.agentManager.getAgent('taskManager') as IAgent & { getTaskService?: () => unknown };
+        if (memoryAgent?.setTaskService && taskAgent?.getTaskService) {
+          memoryAgent.setTaskService(taskAgent.getTaskService());
+          logger.systemLog('Wired TaskService into MemoryManager for loadWorkspace task summaries');
+        }
+      } catch { /* Either agent failed to init — skip wiring */ }
+
+      // PHASE 3: Load app agents (must be after core agents, before ToolManager)
+      await this.safeInitialize('apps', async () => {
+        const { AppManager: AppManagerClass } = await import('../apps/AppManager');
+        const pluginSettings = hasSettings(this.plugin) ? this.plugin.settings.settings : undefined;
+        const appsSettings = pluginSettings?.apps || { apps: {} };
+        const appManager = new AppManagerClass(
+          appsSettings,
+          (agent) => this.agentManager.registerAgent(agent),
+          (name) => this.agentManager.unregisterAgent(name),
+          this.app
+        );
+        await appManager.loadInstalledApps();
+        this.appManagerInstance = appManager;
+        logger.systemLog('App agents loaded');
+      });
+
+      // PHASE 4: ToolManager MUST be last (needs all other agents including apps)
       await this.safeInitialize('toolManager', () => this.initializationService.initializeToolManager());
 
       logger.systemLog('Using native chatbot UI instead of ChatAgent');
@@ -406,5 +360,12 @@ export class AgentRegistrationService implements AgentRegistrationServiceInterfa
    */
   getRegistrationStatus(): AgentRegistrationStatus {
     return { ...this.registrationStatus };
+  }
+
+  /**
+   * Gets the AppManager instance (available after PHASE 3 initialization)
+   */
+  getAppManager(): AppManager | null {
+    return this.appManagerInstance;
   }
 }

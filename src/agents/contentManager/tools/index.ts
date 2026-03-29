@@ -1,4 +1,6 @@
-// ContentManager tools (3 tools)
+// ContentManager tools (5 tools)
 export { ReadTool } from './read';
 export { WriteTool } from './write';
-export { UpdateTool } from './update';
+export { ReplaceTool } from './replace';
+export { InsertTool } from './insert';
+export { SetPropertyTool } from './setProperty';

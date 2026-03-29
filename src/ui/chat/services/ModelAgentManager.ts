@@ -11,20 +11,57 @@ import { ContextNotesManager } from './ContextNotesManager';
 import { ModelSelectionUtility } from '../utils/ModelSelectionUtility';
 import { PromptConfigurationUtility } from '../utils/PromptConfigurationUtility';
 import { WorkspaceIntegrationService } from './WorkspaceIntegrationService';
+import { StaticModelsService } from '../../../services/StaticModelsService';
 import { getWebLLMLifecycleManager } from '../../../services/llm/adapters/webllm/WebLLMLifecycleManager';
 import { ThinkingSettings } from '../../../types/llm/ProviderTypes';
 import { ContextTokenTracker, ContextStatus } from '../../../services/chat/ContextTokenTracker';
 import { CompactedContext } from '../../../services/chat/ContextCompactionService';
+import {
+  CompactionFrontierBudgetPolicy,
+  CompactionFrontierRecord,
+  CompactionFrontierService
+} from '../../../services/chat/CompactionFrontierService';
+import { ContextBudgetService } from '../../../services/chat/ContextBudgetService';
+import { ConversationData } from '../../../types/chat/ChatTypes';
 import type NexusPlugin from '../../../main';
 import type { App } from 'obsidian';
 
-// Context window sizes for providers that need auto-compaction
-// Only WebLLM/Nexus needs this - it crashes on context overflow (WebGPU hard limit)
-// Ollama/LM Studio handle overflow gracefully and have variable context sizes
+// Context window sizes for providers that participate in app-level pre-send compaction.
+// WebLLM uses a small hard-ish limit; selected CLI/API-backed providers use a conservative
+// 200k soft cap so long-running conversations compact before provider-side overflow/degradation.
 const LOCAL_PROVIDER_CONTEXT_WINDOWS: Record<string, number> = {
   webllm: 4096,   // Nexus Quark uses 4K context - NEEDS compaction or crashes
+  'anthropic-claude-code': 200000,
+  'google-gemini-cli': 200000,
+  'openai-codex': 200000,
+  'github-copilot': 200000,
   // ollama and lmstudio omitted - they handle overflow gracefully
 };
+
+const PRE_SEND_ESTIMATE_MULTIPLIERS: Record<string, number> = {
+  'anthropic-claude-code': 1.15,
+  'google-gemini-cli': 1.15,
+  'openai-codex': 1.15,
+  'github-copilot': 1.15
+};
+
+interface ConversationCompactionMetadata {
+  // Legacy single-record metadata still restored for backward compatibility.
+  previousContext?: CompactedContext;
+  frontier?: CompactionFrontierRecord[];
+}
+
+interface ConversationMetadataWithCompaction {
+  chatSettings?: {
+    providerId?: string;
+    modelId?: string;
+    promptId?: string;
+    workspaceId?: string;
+    sessionId?: string;
+  };
+  compaction?: ConversationCompactionMetadata;
+  [key: string]: unknown;
+}
 
 /**
  * App type with plugin registry access
@@ -43,6 +80,7 @@ interface PluginWithSettings {
     settings?: {
       llmProviders?: {
         defaultThinking?: ThinkingSettings;
+        defaultTemperature?: number;
         agentModel?: { provider: string; model: string };
         agentThinking?: ThinkingSettings;
       };
@@ -68,6 +106,8 @@ export interface ModelAgentManagerEvents {
 }
 
 export class ModelAgentManager {
+  static readonly COMPACTION_FRONTIER_CAP = CompactionFrontierService.DEFAULT_POLICY.maxRecords;
+  private staticModelsService = StaticModelsService.getInstance();
   private selectedModel: ModelOption | null = null;
   private selectedPrompt: PromptOption | null = null;
   private currentSystemPrompt: string | null = null;
@@ -85,7 +125,8 @@ export class ModelAgentManager {
   private thinkingSettings: ThinkingSettings = { enabled: false, effort: 'medium' };
   private temperature: number = 0.5;
   private contextTokenTracker: ContextTokenTracker | null = null; // For token-limited models
-  private previousContext: CompactedContext | null = null; // Context from compacted conversation
+  private compactionFrontier: CompactionFrontierRecord[] = []; // Active bounded compaction frontier
+  private compactionFrontierService = new CompactionFrontierService();
 
   constructor(
     private app: any, // Obsidian App
@@ -109,6 +150,7 @@ export class ModelAgentManager {
    * Call this when no conversation exists (e.g., welcome state)
    */
   async initializeDefaults(): Promise<void> {
+    this.clearCompactionFrontier();
     await this.initializeDefaultModel();
   }
 
@@ -117,81 +159,103 @@ export class ModelAgentManager {
    */
   async initializeFromConversation(conversationId: string): Promise<void> {
     try {
-      // Try to load from conversation metadata first
+      let chatSettings: Record<string, unknown> | undefined;
+      let conversationMetadata: ConversationMetadataWithCompaction | undefined;
+
       if (this.conversationService) {
         const conversation = await this.conversationService.getConversation(conversationId);
-        const chatSettings = conversation?.metadata?.chatSettings;
-
-        // Check if chatSettings has meaningful content (not just empty object)
-        const hasMeaningfulSettings = chatSettings && (
-          chatSettings.providerId ||
-          chatSettings.modelId ||
-          chatSettings.promptId ||
-          chatSettings.workspaceId
-        );
-
-        if (hasMeaningfulSettings) {
-          await this.restoreFromConversationMetadata(chatSettings);
-          return; // Successfully loaded from metadata
-        }
+        conversationMetadata = conversation?.metadata as ConversationMetadataWithCompaction | undefined;
+        chatSettings = conversation?.metadata?.chatSettings as Record<string, unknown> | undefined;
       }
 
-      // Fall back to plugin default if no meaningful metadata
+      this.clearCompactionFrontier();
       await this.initializeDefaultModel();
+      this.restoreCompactionFrontierFromMetadata(conversationMetadata);
+
+      if (this.hasStoredChatSettings(chatSettings)) {
+        await this.restoreFromConversationMetadata(chatSettings);
+      }
     } catch (error) {
+      this.clearCompactionFrontier();
       await this.initializeDefaultModel();
     }
+  }
+
+  private hasStoredChatSettings(settings: Record<string, unknown> | undefined): boolean {
+    if (!settings) {
+      return false;
+    }
+
+    return Object.keys(settings).length > 0;
   }
 
   /**
    * Restore settings from conversation metadata
    */
   private async restoreFromConversationMetadata(settings: any): Promise<void> {
-    const availableModels = await this.getAvailableModels();
-    const availablePrompts = await this.getAvailablePrompts();
-
     // Restore model
     if (settings.providerId && settings.modelId) {
-      const model = availableModels.find(
-        m => m.providerId === settings.providerId && m.modelId === settings.modelId
-      );
+      try {
+        const model = await this.resolveModelOption(settings.providerId, settings.modelId);
 
-      if (model) {
-        this.selectedModel = model;
-        this.events.onModelChanged(model);
-      } else {
-        await this.initializeDefaultModel();
+        if (model) {
+          this.selectedModel = model;
+          this.updateCompactionFrontierPolicy(model);
+          this.events.onModelChanged(model);
+        } else {
+          await this.initializeDefaultModel();
+        }
+      } catch (error) {
+        console.error('[ModelAgentManager] Failed to restore chat model:', error);
       }
     }
 
     // Restore prompt
-    if (settings.promptId) {
-      const prompt = availablePrompts.find(p => p.id === settings.promptId);
-      if (prompt) {
-        this.selectedPrompt = prompt;
-        this.currentSystemPrompt = prompt.systemPrompt || null;
-        this.events.onPromptChanged(prompt);
+    if ('promptId' in settings) {
+      if (!settings.promptId) {
+        this.selectedPrompt = null;
+        this.currentSystemPrompt = null;
+        this.events.onPromptChanged(null);
+        this.events.onSystemPromptChanged(null);
+      } else {
+        try {
+          const availablePrompts = await this.getAvailablePrompts();
+          const prompt = availablePrompts.find(p => p.id === settings.promptId || p.name === settings.promptId);
+          if (prompt) {
+            this.selectedPrompt = prompt;
+            this.currentSystemPrompt = prompt.systemPrompt || null;
+            this.events.onPromptChanged(prompt);
+          }
+        } catch (error) {
+          console.error('[ModelAgentManager] Failed to restore prompt selection:', error);
+        }
       }
     }
 
     // Restore workspace
-    if (settings.workspaceId) {
-      await this.restoreWorkspace(settings.workspaceId, settings.sessionId);
+    if ('workspaceId' in settings) {
+      if (settings.workspaceId) {
+        await this.restoreWorkspace(settings.workspaceId, settings.sessionId);
+      } else {
+        this.selectedWorkspaceId = null;
+        this.workspaceContext = null;
+        this.loadedWorkspaceData = null;
+      }
     }
 
     // Restore context notes
-    if (settings.contextNotes && Array.isArray(settings.contextNotes)) {
-      this.contextNotesManager.setNotes(settings.contextNotes);
+    if ('contextNotes' in settings) {
+      this.contextNotesManager.setNotes(Array.isArray(settings.contextNotes) ? settings.contextNotes : []);
     }
 
     // Restore agent model
-    if (settings.agentProvider) {
-      this.agentProvider = settings.agentProvider;
+    if ('agentProvider' in settings || 'agentModel' in settings) {
+      this.agentProvider = settings.agentProvider || null;
       this.agentModel = settings.agentModel || null;
     }
 
     // Restore agent thinking settings
-    if (settings.agentThinking) {
+    if ('agentThinking' in settings && settings.agentThinking) {
       this.agentThinkingSettings = {
         enabled: settings.agentThinking.enabled ?? false,
         effort: settings.agentThinking.effort ?? 'medium'
@@ -199,7 +263,7 @@ export class ModelAgentManager {
     }
 
     // Restore thinking settings
-    if (settings.thinking) {
+    if ('thinking' in settings && settings.thinking) {
       this.thinkingSettings = {
         enabled: settings.thinking.enabled ?? false,
         effort: settings.thinking.effort ?? 'medium'
@@ -216,23 +280,29 @@ export class ModelAgentManager {
    * Restore workspace from settings - loads full comprehensive data
    */
   private async restoreWorkspace(workspaceId: string, sessionId?: string): Promise<void> {
-    this.selectedWorkspaceId = workspaceId;
-
     try {
       // Load full comprehensive workspace data (same as #workspace suggester)
       const fullWorkspaceData = await this.workspaceIntegration.loadWorkspace(workspaceId);
 
-      if (fullWorkspaceData) {
-        this.loadedWorkspaceData = fullWorkspaceData;
-        // Also extract basic context for backward compatibility
-        this.workspaceContext = fullWorkspaceData.context || fullWorkspaceData.workspaceContext || null;
+      if (!fullWorkspaceData) {
+        this.selectedWorkspaceId = null;
+        this.loadedWorkspaceData = null;
+        this.workspaceContext = null;
+        return;
       }
 
+      this.selectedWorkspaceId = (fullWorkspaceData.id as string) || workspaceId;
+
+      this.loadedWorkspaceData = fullWorkspaceData;
+      // Also extract basic context for backward compatibility
+      this.workspaceContext = fullWorkspaceData.context || fullWorkspaceData.workspaceContext || null;
+
       // Bind session to workspace
-      await this.workspaceIntegration.bindSessionToWorkspace(sessionId, workspaceId);
+      await this.workspaceIntegration.bindSessionToWorkspace(sessionId, this.selectedWorkspaceId);
     } catch (error) {
       console.error('[ModelAgentManager] Failed to restore workspace:', error);
       // Clear workspace data on failure
+      this.selectedWorkspaceId = null;
       this.loadedWorkspaceData = null;
       this.workspaceContext = null;
     }
@@ -249,7 +319,10 @@ export class ModelAgentManager {
 
       if (defaultModel) {
         this.selectedModel = defaultModel;
+        this.updateCompactionFrontierPolicy(defaultModel);
         this.events.onModelChanged(defaultModel);
+      } else {
+        this.updateCompactionFrontierPolicy(null);
       }
 
       // Clear state first
@@ -289,6 +362,11 @@ export class ModelAgentManager {
           enabled: llmProviders.agentThinking.enabled ?? false,
           effort: llmProviders.agentThinking.effort ?? 'medium'
         };
+      }
+
+      // Load default temperature if set
+      if (llmProviders?.defaultTemperature !== undefined) {
+        this.temperature = llmProviders.defaultTemperature;
       }
 
       // Load default context notes if set
@@ -347,7 +425,7 @@ export class ModelAgentManager {
         chatSettings: {
           providerId: this.selectedModel?.providerId,
           modelId: this.selectedModel?.modelId,
-          promptId: this.selectedPrompt?.id,
+          promptId: this.selectedPrompt?.id ?? null,
           workspaceId: this.selectedWorkspaceId,
           contextNotes: this.contextNotesManager.getNotes(),
           sessionId: existingSessionId, // Preserve the session ID
@@ -385,6 +463,54 @@ export class ModelAgentManager {
     const defaultModel = await ModelSelectionUtility.findDefaultModelOption(this.app, availableModels);
 
     return defaultModel;
+  }
+
+  /**
+   * Resolve a provider/model pair to a ModelOption.
+   * Falls back to static registry data, then to a minimal placeholder option
+   * so per-conversation model settings are not silently lost when discovery is incomplete.
+   */
+  async resolveModelOption(providerId: string, modelId: string): Promise<ModelOption | null> {
+    if (!providerId || !modelId) {
+      return null;
+    }
+
+    const availableModels = await this.getAvailableModels();
+    const discoveredModel = availableModels.find(
+      model => model.providerId === providerId && model.modelId === modelId
+    );
+    if (discoveredModel) {
+      return discoveredModel;
+    }
+
+    const staticModel = this.staticModelsService.findModel(providerId, modelId);
+    if (staticModel) {
+      return {
+        providerId,
+        providerName: ModelSelectionUtility.getProviderDisplayName(providerId),
+        modelId,
+        modelName: staticModel.name,
+        contextWindow: staticModel.contextWindow,
+        supportsThinking: staticModel.capabilities.supportsThinking
+      };
+    }
+
+    return {
+      providerId,
+      providerName: ModelSelectionUtility.getProviderDisplayName(providerId),
+      modelId,
+      modelName: modelId,
+      contextWindow: 128000,
+      supportsThinking: false
+    };
+  }
+
+  /**
+   * Resolve and apply a provider/model selection.
+   */
+  async setSelectedModelById(providerId: string, modelId: string): Promise<void> {
+    const model = await this.resolveModelOption(providerId, modelId);
+    this.handleModelChange(model);
   }
 
   /**
@@ -431,6 +557,7 @@ export class ModelAgentManager {
     const newProvider = model?.providerId || '';
 
     this.selectedModel = model;
+    this.updateCompactionFrontierPolicy(model);
     this.events.onModelChanged(model);
 
     // Initialize or clear context token tracker based on provider
@@ -451,13 +578,15 @@ export class ModelAgentManager {
    */
   private updateContextTokenTracker(provider: string): void {
     const contextWindow = LOCAL_PROVIDER_CONTEXT_WINDOWS[provider];
+    const preSendEstimateMultiplier = PRE_SEND_ESTIMATE_MULTIPLIERS[provider] ?? 1;
 
     if (contextWindow) {
       // Initialize or update tracker for local provider
       if (!this.contextTokenTracker) {
-        this.contextTokenTracker = new ContextTokenTracker(contextWindow);
+        this.contextTokenTracker = new ContextTokenTracker(contextWindow, preSendEstimateMultiplier);
       } else {
         this.contextTokenTracker.setMaxTokens(contextWindow);
+        this.contextTokenTracker.setPreSendEstimateMultiplier(preSendEstimateMultiplier);
         this.contextTokenTracker.reset();
       }
     } else {
@@ -614,7 +743,7 @@ export class ModelAgentManager {
     this.temperature = Math.max(0, Math.min(1, temperature));
   }
 
-  // ========== Context Token Tracking (for local providers) ==========
+  // ========== Context Token Tracking (status display for WebLLM) ==========
 
   /**
    * Record token usage from a generation response
@@ -636,8 +765,21 @@ export class ModelAgentManager {
   /**
    * Check if message should trigger compaction before sending
    */
-  shouldCompactBeforeSending(message: string): boolean {
-    return this.contextTokenTracker?.shouldCompactBeforeSending(message) || false;
+  shouldCompactBeforeSending(
+    conversation: ConversationData,
+    message: string,
+    systemPrompt?: string | null,
+    providerOverride?: string
+  ): boolean {
+    const provider = providerOverride || this.selectedModel?.providerId || null;
+    const budget = ContextBudgetService.estimateBudget(
+      provider,
+      conversation,
+      systemPrompt,
+      message
+    );
+
+    return budget.shouldCompact;
   }
 
   /**
@@ -661,36 +803,119 @@ export class ModelAgentManager {
     return this.contextTokenTracker;
   }
 
-  // ========== Previous Context (from compaction) ==========
+  // ========== Compaction Frontier ==========
 
   /**
-   * Set previous context from compaction
-   * This will be injected into the system prompt as <previous_context>
+   * Append a compaction record to the bounded frontier.
    */
-  setPreviousContext(context: CompactedContext): void {
-    this.previousContext = context;
+  appendCompactionRecord(context: CompactedContext): void {
+    this.compactionFrontier = this.compactionFrontierService.appendRecord(this.compactionFrontier, context);
+  }
+
+  private updateCompactionFrontierPolicy(model: ModelOption | null): void {
+    const policy = CompactionFrontierService.createPolicyForContextWindow(model?.contextWindow);
+    this.compactionFrontierService = new CompactionFrontierService(policy);
+    this.compactionFrontier = this.compactionFrontierService.normalizeFrontier(this.compactionFrontier);
+  }
+
+  getCompactionFrontierBudgetPolicy(): CompactionFrontierBudgetPolicy {
+    return CompactionFrontierService.createPolicyForContextWindow(this.selectedModel?.contextWindow);
   }
 
   /**
-   * Get the current previous context
+   * Append a record to metadata-backed frontier and return updated metadata.
    */
-  getPreviousContext(): CompactedContext | null {
-    return this.previousContext;
+  buildMetadataWithCompactionRecord(
+    metadata: Record<string, unknown> | undefined,
+    compactionRecord: CompactedContext
+  ): Record<string, unknown> {
+    const frontier = this.compactionFrontierService.appendRecord(
+      this.getFrontierFromMetadata((metadata ?? {}) as ConversationMetadataWithCompaction),
+      compactionRecord
+    );
+    return this.buildMetadataWithCompactionFrontier(metadata, frontier);
+  }
+
+  buildMetadataWithCompactionFrontier(
+    metadata: Record<string, unknown> | undefined,
+    frontier: CompactedContext[]
+  ): Record<string, unknown> {
+    const existingMetadata = (metadata ?? {}) as ConversationMetadataWithCompaction;
+    const existingCompaction = existingMetadata.compaction ?? {};
+    const { previousContext: _legacyPreviousContext, ...remainingCompaction } = existingCompaction;
+    const normalizedFrontier = this.compactionFrontierService.normalizeFrontier(frontier);
+
+    return {
+      ...existingMetadata,
+      compaction: {
+        ...remainingCompaction,
+        frontier: normalizedFrontier
+      }
+    };
   }
 
   /**
-   * Clear previous context (on new conversation or manual clear)
+   * Get the latest active compaction record.
    */
-  clearPreviousContext(): void {
-    this.previousContext = null;
+  getLatestCompactionRecord(): CompactedContext | null {
+    return this.compactionFrontier.length > 0
+      ? this.compactionFrontier[this.compactionFrontier.length - 1]
+      : null;
   }
 
   /**
-   * Check if there is previous context from compaction
+   * Get the current active compaction frontier.
    */
-  hasPreviousContext(): boolean {
-    return this.previousContext !== null && this.previousContext.summary.length > 0;
+  getCompactionFrontier(): CompactionFrontierRecord[] {
+    return [...this.compactionFrontier];
   }
+
+  /**
+   * Clear compaction frontier (on new conversation or manual clear)
+   */
+  clearCompactionFrontier(): void {
+    this.compactionFrontier = [];
+  }
+
+  /**
+   * Check if there is compacted context in the frontier.
+   */
+  hasCompactionFrontier(): boolean {
+    return this.compactionFrontier.some(record => record.summary.length > 0);
+  }
+
+  private restoreCompactionFrontierFromMetadata(
+    metadata: ConversationMetadataWithCompaction | undefined
+  ): void {
+    this.compactionFrontier = this.getFrontierFromMetadata(metadata);
+  }
+
+  private getFrontierFromMetadata(
+    metadata: ConversationMetadataWithCompaction | undefined
+  ): CompactionFrontierRecord[] {
+    const frontier = metadata?.compaction?.frontier;
+    if (Array.isArray(frontier)) {
+      return this.compactionFrontierService.normalizeFrontier(
+        frontier.filter(this.isValidCompactedContext)
+      );
+    }
+
+    const legacyCompactionRecord = metadata?.compaction?.previousContext;
+    if (this.isValidCompactedContext(legacyCompactionRecord)) {
+      return this.compactionFrontierService.normalizeFrontier([legacyCompactionRecord]);
+    }
+
+    return [];
+  }
+
+  private isValidCompactedContext = (
+    value: unknown
+  ): value is CompactedContext => {
+    return !!value &&
+      typeof value === 'object' &&
+      typeof (value as CompactedContext).summary === 'string' &&
+      (value as CompactedContext).summary.length > 0;
+  };
 
   /**
    * Set message enhancement from suggesters
@@ -800,9 +1025,48 @@ export class ModelAgentManager {
       skipToolsSection: isNexusModel,
       // Context status for token-limited models
       contextStatus,
-      // Previous context from compaction (if any)
-      previousContext: this.previousContext
+      // Active compaction frontier (if any), plus legacy single-record fallback for older callers
+      compactionFrontier: this.compactionFrontier,
+      legacyCompactionRecord: this.getLatestCompactionRecord()
     });
+  }
+
+  /**
+   * @deprecated Use appendCompactionRecord().
+   */
+  setPreviousContext(context: CompactedContext): void {
+    this.appendCompactionRecord(context);
+  }
+
+  /**
+   * @deprecated Use buildMetadataWithCompactionRecord().
+   */
+  buildMetadataWithPreviousContext(
+    metadata: Record<string, unknown> | undefined,
+    previousContext: CompactedContext
+  ): Record<string, unknown> {
+    return this.buildMetadataWithCompactionRecord(metadata, previousContext);
+  }
+
+  /**
+   * @deprecated Use getLatestCompactionRecord().
+   */
+  getPreviousContext(): CompactedContext | null {
+    return this.getLatestCompactionRecord();
+  }
+
+  /**
+   * @deprecated Use clearCompactionFrontier().
+   */
+  clearPreviousContext(): void {
+    this.clearCompactionFrontier();
+  }
+
+  /**
+   * @deprecated Use hasCompactionFrontier().
+   */
+  hasPreviousContext(): boolean {
+    return this.hasCompactionFrontier();
   }
 
   /**

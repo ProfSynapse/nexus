@@ -184,6 +184,76 @@ export class LLMProviderManager {
         } catch (error) {
           console.error('[ProviderManager] Failed to load WebLLM models:', error);
         }
+      } else if (provider.id === 'github-copilot') {
+        // Special handling for GitHub Copilot - prefer live model discovery from /models
+        // so chat settings persist real Copilot model IDs instead of static fallback IDs.
+        try {
+          await this.llmService.waitForInit();
+
+          const adapter = this.llmService.getAdapter('github-copilot');
+          if (adapter && typeof adapter.listModels === 'function') {
+            const copilotModels = await adapter.listModels();
+
+            if (copilotModels.length > 0) {
+              for (const model of copilotModels) {
+                allModels.push({
+                  provider: 'github-copilot',
+                  id: model.id,
+                  name: model.name,
+                  contextWindow: model.contextWindow,
+                  maxOutputTokens: model.maxOutputTokens || 16000,
+                  supportsJSON: model.supportsJSON,
+                  supportsImages: model.supportsImages,
+                  supportsFunctions: model.supportsFunctions,
+                  supportsStreaming: model.supportsStreaming,
+                  supportsThinking: model.supportsThinking,
+                  pricing: {
+                    inputPerMillion: 0,
+                    outputPerMillion: 0,
+                    currency: 'USD',
+                    lastUpdated: new Date().toISOString()
+                  },
+                  isDefault: defaultModel.provider === 'github-copilot' && defaultModel.model === model.id,
+                  userDescription: this.settings.providers['github-copilot']?.userDescription
+                });
+              }
+
+              continue;
+            }
+          }
+        } catch {
+          // Fall back to static Copilot model registry below if live discovery fails.
+        }
+
+        const providerModels = staticModelsService.getModelsForProvider(provider.id);
+        const modelsWithProviderInfo = providerModels
+          .filter(model => {
+            const modelConfig = this.settings.providers[model.provider]?.models?.[model.id];
+            return modelConfig?.enabled !== false;
+          })
+          .map(model => ({
+            provider: model.provider,
+            id: model.id,
+            name: model.name,
+            contextWindow: model.contextWindow,
+            maxOutputTokens: model.maxTokens,
+            supportsJSON: model.capabilities.supportsJSON,
+            supportsImages: model.capabilities.supportsImages,
+            supportsFunctions: model.capabilities.supportsFunctions,
+            supportsStreaming: model.capabilities.supportsStreaming,
+            supportsThinking: model.capabilities.supportsThinking,
+            pricing: {
+              inputPerMillion: model.pricing.inputPerMillion,
+              outputPerMillion: model.pricing.outputPerMillion,
+              currency: model.pricing.currency,
+              lastUpdated: new Date().toISOString()
+            },
+            isDefault: model.provider === defaultModel.provider && model.id === defaultModel.model,
+            userDescription: this.settings.providers[model.provider]?.userDescription,
+            modelDescription: this.settings.providers[model.provider]?.models?.[model.id]?.description
+          }));
+
+        allModels.push(...modelsWithProviderInfo);
       } else {
         // For other providers, use static models
         const providerModels = staticModelsService.getModelsForProvider(provider.id);
@@ -241,9 +311,19 @@ export class LLMProviderManager {
         description: 'Claude models with strong reasoning and safety features'
       },
       {
+        id: 'anthropic-claude-code',
+        name: 'Claude Code',
+        description: 'Claude models via your local Claude Code subscription login — desktop only'
+      },
+      {
         id: 'google',
         name: 'Google',
         description: 'Gemini models with multimodal capabilities and thinking mode'
+      },
+      {
+        id: 'google-gemini-cli',
+        name: 'Gemini CLI',
+        description: 'Gemini models via your local Gemini CLI Google login — desktop only'
       },
       {
         id: 'mistral',
@@ -271,6 +351,16 @@ export class LLMProviderManager {
         description: 'Web search-enabled models with real-time information and citations'
       },
       {
+        id: 'openai-codex',
+        name: 'ChatGPT (Codex)',
+        description: 'GPT models via ChatGPT subscription — free inference, requires OAuth sign-in'
+      },
+      {
+        id: 'github-copilot',
+        name: 'GitHub Copilot',
+        description: 'AI models via GitHub Copilot subscription — free inference, requires OAuth device flow'
+      },
+      {
         id: 'webllm',
         name: 'Nexus (Local)',
         description: 'Local AI via WebGPU - runs in browser, completely private, no API costs'
@@ -295,6 +385,15 @@ export class LLMProviderManager {
       let hasApiKey = false;
       if (provider.id === 'webllm') {
         hasApiKey = true; // WebLLM doesn't need an API key
+      } else if (provider.id === 'openai-codex') {
+        // Codex uses OAuth — check for connected OAuth state with access token
+        hasApiKey = !!(config?.oauth?.connected && config?.apiKey);
+      } else if (provider.id === 'anthropic-claude-code') {
+        hasApiKey = !!config?.oauth?.connected;
+      } else if (provider.id === 'google-gemini-cli') {
+        hasApiKey = !!config?.oauth?.connected;
+      } else if (provider.id === 'github-copilot') {
+        hasApiKey = !!(config?.oauth?.connected && config?.apiKey);
       } else if (provider.id === 'ollama' || provider.id === 'lmstudio') {
         hasApiKey = !!(config?.apiKey && config.apiKey.trim());
       } else {

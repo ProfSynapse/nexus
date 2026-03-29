@@ -55,6 +55,7 @@ export interface SSEStreamOptions {
   extractToolCalls: (parsed: any) => any[] | null;
   extractFinishReason: (parsed: any) => string | null;
   extractUsage?: (parsed: any) => any;
+  extractMetadata?: (parsed: any) => Record<string, unknown> | null;
   // Reasoning/thinking extraction for models that support it
   extractReasoning?: (parsed: any) => { text: string; complete: boolean } | null;
   onParseError?: (error: Error, rawData: string) => void;
@@ -83,6 +84,7 @@ export class SSEStreamProcessor {
     const debugLabel = options.debugLabel || 'SSE';
     let tokenCount = 0;
     let usage: any = undefined;
+    let metadata: Record<string, unknown> | undefined = undefined;
 
     // Tool call accumulation system
     const toolCallsAccumulator: Map<number, any> = new Map();
@@ -121,7 +123,8 @@ export class SSEStreamProcessor {
           complete: true,
           usage: finalUsage,
           toolCalls: finalToolCalls,
-          toolCallsReady: finalToolCalls && finalToolCalls.length > 0 ? true : undefined
+          toolCallsReady: finalToolCalls && finalToolCalls.length > 0 ? true : undefined,
+          metadata
         });
 
         isCompleted = true;
@@ -130,6 +133,13 @@ export class SSEStreamProcessor {
 
       try {
         const parsed = JSON.parse(event.data);
+
+        if (options.extractMetadata) {
+          metadata = {
+            ...(metadata || {}),
+            ...(options.extractMetadata(parsed) || {})
+          };
+        }
 
         // Extract content using adapter-specific logic
         const content = options.extractContent(parsed);
@@ -246,7 +256,8 @@ export class SSEStreamProcessor {
             complete: true,
             toolCalls: finalToolCalls,
             usage: finalUsageFormatted,
-            toolCallsReady: finalToolCalls && finalToolCalls.length > 0 ? true : undefined
+            toolCallsReady: finalToolCalls && finalToolCalls.length > 0 ? true : undefined,
+            metadata
           });
 
           isCompleted = true;

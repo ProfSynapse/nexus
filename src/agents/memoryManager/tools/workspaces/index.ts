@@ -3,3 +3,4 @@ export * from './listWorkspaces';
 export * from './loadWorkspace';
 export * from './updateWorkspace';
 export * from './archiveWorkspace';
+export * from './runWorkflow';

@@ -42,6 +42,10 @@ import {
 } from '../../types/storage/HybridStorageTypes';
 import { RepositoryDependencies } from '../repositories/base/BaseRepository';
 import { LegacyMigrator } from '../migration/LegacyMigrator';
+import { WorkspaceEvent, TaskEvent } from '../interfaces/StorageEvents';
+import { WorkspaceEventApplier } from '../sync/WorkspaceEventApplier';
+import { TaskEventApplier } from '../sync/TaskEventApplier';
+import { resolveWorkspaceId } from '../sync/resolveWorkspaceId';
 
 // Import all repositories
 import { WorkspaceRepository } from '../repositories/WorkspaceRepository';
@@ -50,6 +54,8 @@ import { StateRepository } from '../repositories/StateRepository';
 import { TraceRepository } from '../repositories/TraceRepository';
 import { ConversationRepository } from '../repositories/ConversationRepository';
 import { MessageRepository } from '../repositories/MessageRepository';
+import { ProjectRepository } from '../repositories/ProjectRepository';
+import { TaskRepository } from '../repositories/TaskRepository';
 // Import services
 import { ExportService } from '../services/ExportService';
 
@@ -99,6 +105,8 @@ export class HybridStorageAdapter implements IStorageAdapter {
   private traceRepo!: TraceRepository;
   private conversationRepo!: ConversationRepository;
   private messageRepo!: MessageRepository;
+  private projectRepo!: ProjectRepository;
+  private taskRepo!: TaskRepository;
 
   // Services
   private exportService!: ExportService;
@@ -142,6 +150,8 @@ export class HybridStorageAdapter implements IStorageAdapter {
     this.traceRepo = new TraceRepository(deps);
     this.conversationRepo = new ConversationRepository(deps);
     this.messageRepo = new MessageRepository(deps);
+    this.projectRepo = new ProjectRepository(deps);
+    this.taskRepo = new TaskRepository(deps);
 
     // Initialize services
     this.exportService = new ExportService({
@@ -210,6 +220,7 @@ export class HybridStorageAdapter implements IStorageAdapter {
       // 2. Ensure JSONL directories exist
       await this.jsonlWriter.ensureDirectory('workspaces');
       await this.jsonlWriter.ensureDirectory('conversations');
+      await this.jsonlWriter.ensureDirectory('tasks');
 
       const migrator = new LegacyMigrator(this.app);
       const migrationNeeded = await migrator.isMigrationNeeded();
@@ -222,15 +233,22 @@ export class HybridStorageAdapter implements IStorageAdapter {
           (migrationResult.stats.workspacesMigrated > 0 || migrationResult.stats.conversationsMigrated > 0);
       }
 
-      // 4. Perform initial sync (rebuild cache from JSONL)
-      // Only full rebuild if no sync state OR if we actually migrated new data
+      // Mark as initialized BEFORE sync so the UI isn't blocked.
+      // SQLite schema is ready — sync populates data in the background.
+      this.initialized = true;
+      if (this.initResolve) {
+        this.initResolve();
+      }
+
+      // 4. Perform initial sync (rebuild cache from JSONL) in background
+      // This can take a long time for large vaults (168MB+ JSONL files).
+      // The UI will show incrementally as data syncs in.
       const syncState = await this.sqliteCache.getSyncState(this.jsonlWriter.getDeviceId());
       if (!syncState || actuallyMigrated) {
         try {
           await this.syncCoordinator.fullRebuild();
         } catch (rebuildError) {
           console.error('[HybridStorageAdapter] Full rebuild failed:', rebuildError);
-          // Continue anyway - partial data is better than no data
         }
       } else {
         try {
@@ -238,13 +256,20 @@ export class HybridStorageAdapter implements IStorageAdapter {
         } catch (syncError) {
           console.error('[HybridStorageAdapter] Incremental sync failed:', syncError);
         }
-      }
 
-      this.initialized = true;
+        // 5. Reconcile JSONL workspaces missing from SQLite
+        try {
+          await this.reconcileMissingWorkspaces();
+        } catch (reconcileError) {
+          console.error('[HybridStorageAdapter] Workspace reconciliation failed:', reconcileError);
+        }
 
-      // Resolve the ready promise
-      if (this.initResolve) {
-        this.initResolve();
+        // 6. Reconcile JSONL tasks missing from SQLite
+        try {
+          await this.reconcileMissingTasks();
+        } catch (reconcileError) {
+          console.error('[HybridStorageAdapter] Task reconciliation failed:', reconcileError);
+        }
       }
 
     } catch (error) {
@@ -254,6 +279,110 @@ export class HybridStorageAdapter implements IStorageAdapter {
         this.initResolve(); // Resolve even on error so waiters don't hang
       }
       throw error;
+    }
+  }
+
+  /**
+   * Reconcile JSONL workspace files that are missing from SQLite.
+   * This handles the case where incremental sync skips same-device events,
+   * leaving workspaces in JSONL but absent from the SQLite cache.
+   */
+  private async reconcileMissingWorkspaces(): Promise<void> {
+    const workspaceFiles = await this.jsonlWriter.listFiles('workspaces');
+    if (workspaceFiles.length === 0) return;
+
+    // Extract workspace IDs from filenames (pattern: workspaces/ws_{id}.jsonl)
+    const jsonlWorkspaceIds: { id: string; file: string }[] = [];
+    for (const file of workspaceFiles) {
+      const match = file.match(/workspaces\/ws_(.+)\.jsonl$/);
+      if (match) {
+        jsonlWorkspaceIds.push({ id: match[1], file });
+      }
+    }
+
+    if (jsonlWorkspaceIds.length === 0) return;
+
+    // Check which IDs are missing from SQLite
+    const workspaceApplier = new WorkspaceEventApplier(this.sqliteCache);
+    let reconciled = 0;
+
+    for (const { id, file } of jsonlWorkspaceIds) {
+      const existing = await this.workspaceRepo.getById(id);
+      if (existing) continue;
+
+      // Missing from SQLite — replay all events from this JSONL file
+      try {
+        const events = await this.jsonlWriter.readEvents<WorkspaceEvent>(file);
+        events.sort((a, b) => a.timestamp - b.timestamp);
+        // Skip deleted workspaces — no need to create then immediately delete
+        const hasDeleteEvent = events.some(e => e.type === 'workspace_deleted');
+        if (hasDeleteEvent) continue;
+
+        // Skip files with no workspace_created event (corrupt/incomplete)
+        const hasCreateEvent = events.some(e => e.type === 'workspace_created');
+        if (!hasCreateEvent) continue;
+
+        for (const event of events) {
+          await workspaceApplier.apply(event);
+        }
+        reconciled++;
+      } catch (e) {
+        console.error(`[HybridStorageAdapter] Failed to reconcile workspace ${id}:`, e);
+      }
+    }
+
+    if (reconciled > 0) {
+      await this.sqliteCache.save();
+    }
+  }
+
+  /**
+   * Reconcile JSONL task files that are missing from SQLite.
+   * Handles the case where incremental sync skips same-device events,
+   * leaving tasks in JSONL but absent from the SQLite cache.
+   */
+  private async reconcileMissingTasks(): Promise<void> {
+    const taskFiles = await this.jsonlWriter.listFiles('tasks');
+    if (taskFiles.length === 0) return;
+
+    const taskApplier = new TaskEventApplier(this.sqliteCache);
+    let reconciled = 0;
+
+    for (const file of taskFiles) {
+      // Extract workspaceId from filename (pattern: tasks/tasks_{workspaceId}.jsonl)
+      const match = file.match(/tasks\/tasks_(.+)\.jsonl$/);
+      if (!match) continue;
+
+      const fileWorkspaceId = match[1];
+
+      // Resolve workspace ID (handles name → UUID transparently)
+      const resolved = await resolveWorkspaceId(fileWorkspaceId, this.sqliteCache);
+      const effectiveId = resolved.id ?? fileWorkspaceId;
+
+      // Check if any projects already exist for this workspace in SQLite
+      const existingProjects = await this.sqliteCache.query<{ id: string }>(
+        'SELECT id FROM projects WHERE workspaceId = ? LIMIT 1',
+        [effectiveId]
+      );
+
+      if (existingProjects.length > 0) continue;
+
+      // No projects found for this workspace — replay all events from JSONL
+      try {
+        const events = await this.jsonlWriter.readEvents<TaskEvent>(file);
+        events.sort((a, b) => a.timestamp - b.timestamp);
+
+        for (const event of events) {
+          await taskApplier.apply(event);
+        }
+        reconciled++;
+      } catch (e) {
+        console.error(`[HybridStorageAdapter] Failed to reconcile tasks from ${file}:`, e);
+      }
+    }
+
+    if (reconciled > 0) {
+      await this.sqliteCache.save();
     }
   }
 
@@ -299,6 +428,22 @@ export class HybridStorageAdapter implements IStorageAdapter {
    */
   get messages(): MessageRepository {
     return this.messageRepo;
+  }
+
+  /**
+   * Get the project repository instance.
+   * Used by TaskService for project operations.
+   */
+  get projects(): ProjectRepository {
+    return this.projectRepo;
+  }
+
+  /**
+   * Get the task repository instance.
+   * Used by TaskService for task operations.
+   */
+  get tasks(): TaskRepository {
+    return this.taskRepo;
   }
 
   async close(): Promise<void> {

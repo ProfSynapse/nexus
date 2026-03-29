@@ -16,6 +16,7 @@
  */
 
 import { ProjectWorkspace } from '../../../database/types/workspace/WorkspaceTypes';
+import { formatWorkflowScheduleSummary } from '../../../services/workflows/types';
 
 /** Trace item shape for context building */
 interface TraceItem {
@@ -101,7 +102,17 @@ export class WorkspaceContextBuilder {
     }
 
     return workspace.context.workflows.map(workflow => {
-      return `**${workflow.name}** (${workflow.when}):\n${workflow.steps}`;
+      const details: string[] = [];
+      if (workflow.promptName) {
+        details.push(`Prompt: ${workflow.promptName}`);
+      }
+      if (workflow.schedule?.enabled) {
+        details.push(`Schedule: ${formatWorkflowScheduleSummary(workflow.schedule)}`);
+      }
+
+      const header = `**${workflow.name}** (${workflow.when})`;
+      const metadata = details.length > 0 ? `\n${details.join('\n')}` : '';
+      return `${header}${metadata}:\n${workflow.steps}`;
     });
   }
 

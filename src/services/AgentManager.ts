@@ -64,6 +64,15 @@ export class AgentManager {
   }
   
   /**
+   * Unregister an agent by name
+   * @param name Name of the agent to remove
+   * @returns true if agent was removed, false if not found
+   */
+  unregisterAgent(name: string): boolean {
+    return this.agents.delete(name);
+  }
+
+  /**
    * Execute a tool on an agent
    * @param agentName Name of the agent
    * @param tool Tool to execute

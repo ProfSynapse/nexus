@@ -5,6 +5,7 @@
 
 import { CustomPromptsSettings } from '../mcp/CustomPromptTypes';
 import { LLMProviderSettings } from '../llm/ProviderTypes';
+import { AppsSettings } from '../apps/AppTypes';
 
 // Forward declarations for service types to avoid circular imports
 // Actual types are imported where needed
@@ -61,6 +62,7 @@ export interface MCPSettings {
   memory?: MemorySettings;
   customPrompts?: CustomPromptsSettings;
   llmProviders?: LLMProviderSettings;
+  apps?: AppsSettings;
   // Default selections for chat
   defaultWorkspaceId?: string;
   defaultPromptId?: string;
@@ -71,4 +73,7 @@ export interface MCPSettings {
   availableUpdateVersion?: string;
   lastUpdateCheckDate?: string;
   processedFiles?: ProcessedFilesData;
+  workflowScheduler?: {
+    lastCheckAt?: number;
+  };
 }

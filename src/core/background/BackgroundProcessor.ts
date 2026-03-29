@@ -50,6 +50,11 @@ export class BackgroundProcessor {
                 
                 this.hasRunBackgroundStartup = true;
 
+                const workflowScheduleService = await this.config.getService<{ start: () => Promise<void> }>('workflowScheduleService');
+                if (workflowScheduleService) {
+                    await workflowScheduleService.start();
+                }
+
                 // Background startup processing completed
             } catch (error) {
                 console.error('Error in background startup processing:', error);
@@ -66,6 +71,10 @@ export class BackgroundProcessor {
         // Run in background to avoid blocking startup
         setTimeout(async () => {
             try {
+                // Skip custom update check if plugin is available in the community store
+                const storeAvailable = await UpdateManager.isStoreAvailable(this.config.plugin.manifest.id);
+                if (storeAvailable) return;
+
                 const { settings } = this.config;
                 const lastCheck = settings.settings.lastUpdateCheckDate;
                 if (lastCheck) {

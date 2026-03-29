@@ -81,11 +81,23 @@ export class ConversationRepository
    * Get all conversations with pagination and filtering
    */
   async getConversations(options?: QueryOptions): Promise<PaginatedResult<ConversationMetadata>> {
+    const ALLOWED_SORT_COLUMNS = ['id', 'title', 'created', 'updated', 'vaultName', 'messageCount', 'workspaceId', 'sessionId'] as const;
+    const ALLOWED_SORT_ORDERS = ['asc', 'desc'] as const;
+
     const page = options?.page ?? 0;
     const pageSize = Math.min(options?.pageSize ?? 25, 200);
-    const sortBy = options?.sortBy ?? 'updated';
-    const sortOrder = options?.sortOrder ?? 'desc';
+    const requestedSort = options?.sortBy ?? 'updated';
+    const requestedOrder = options?.sortOrder ?? 'desc';
     const includeBranches = options?.includeBranches ?? false;
+
+    if (!ALLOWED_SORT_COLUMNS.includes(requestedSort as typeof ALLOWED_SORT_COLUMNS[number])) {
+      throw new Error(`Invalid sort column: ${requestedSort}`);
+    }
+    if (!ALLOWED_SORT_ORDERS.includes(requestedOrder as typeof ALLOWED_SORT_ORDERS[number])) {
+      throw new Error(`Invalid sort order: ${requestedOrder}`);
+    }
+    const sortBy = requestedSort;
+    const sortOrder = requestedOrder;
 
     // Build WHERE clause
     const filters: string[] = [];
@@ -101,7 +113,26 @@ export class ConversationRepository
         filters.push('vaultName = ?');
         params.push(options.filter.vaultName);
       }
-      // Note: workspaceId filter not supported - column not in schema
+      if (options.filter.workspaceId) {
+        filters.push('workspaceId = ?');
+        params.push(options.filter.workspaceId);
+      }
+      if (options.filter.sessionId) {
+        filters.push('sessionId = ?');
+        params.push(options.filter.sessionId);
+      }
+      if (options.filter.workflowId) {
+        filters.push('workflowId = ?');
+        params.push(options.filter.workflowId);
+      }
+      if (options.filter.runKey) {
+        filters.push('runKey = ?');
+        params.push(options.filter.runKey);
+      }
+      if (options.filter.runTrigger) {
+        filters.push('runTrigger = ?');
+        params.push(options.filter.runTrigger);
+      }
     }
 
     const whereClause = filters.length > 0 ? `WHERE ${filters.join(' AND ')}` : '';
@@ -194,9 +225,15 @@ export class ConversationRepository
       );
 
       // 2. Update SQLite cache
+      const workspaceId = this.getWorkspaceId(data);
+      const sessionId = this.getSessionId(data);
+      const workflowId = this.getWorkflowId(data);
+      const runTrigger = this.getRunTrigger(data);
+      const scheduledFor = this.getScheduledFor(data);
+      const runKey = this.getRunKey(data);
       await this.sqliteCache.run(
-        `INSERT INTO ${this.tableName} (id, title, created, updated, vaultName, messageCount, metadataJson)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO ${this.tableName} (id, title, created, updated, vaultName, messageCount, metadataJson, workspaceId, sessionId, workflowId, runTrigger, scheduledFor, runKey)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           id,
           data.title,
@@ -204,7 +241,13 @@ export class ConversationRepository
           data.updated ?? now,
           data.vaultName,
           0,
-          data.metadata ? JSON.stringify(data.metadata) : null
+          data.metadata ? JSON.stringify(data.metadata) : null,
+          workspaceId ?? null,
+          sessionId ?? null,
+          workflowId ?? null,
+          runTrigger ?? null,
+          scheduledFor ?? null,
+          runKey ?? null
         ]
       );
 
@@ -247,8 +290,30 @@ export class ConversationRepository
         setClauses.push('title = ?');
         params.push(data.title);
       }
-      // Note: workspaceId and sessionId are not in SQLite schema
-      // They are stored in metadataJson if needed
+      if (data.workspaceId !== undefined || this.getWorkspaceId(data) !== undefined) {
+        setClauses.push('workspaceId = ?');
+        params.push(this.getWorkspaceId(data) ?? null);
+      }
+      if (data.sessionId !== undefined || this.getSessionId(data) !== undefined) {
+        setClauses.push('sessionId = ?');
+        params.push(this.getSessionId(data) ?? null);
+      }
+      if (data.workflowId !== undefined || this.getWorkflowId(data) !== undefined) {
+        setClauses.push('workflowId = ?');
+        params.push(this.getWorkflowId(data) ?? null);
+      }
+      if (data.runTrigger !== undefined || this.getRunTrigger(data) !== undefined) {
+        setClauses.push('runTrigger = ?');
+        params.push(this.getRunTrigger(data) ?? null);
+      }
+      if (data.scheduledFor !== undefined || this.getScheduledFor(data) !== undefined) {
+        setClauses.push('scheduledFor = ?');
+        params.push(this.getScheduledFor(data) ?? null);
+      }
+      if (data.runKey !== undefined || this.getRunKey(data) !== undefined) {
+        setClauses.push('runKey = ?');
+        params.push(this.getRunKey(data) ?? null);
+      }
       if (data.metadata !== undefined) {
         setClauses.push('metadataJson = ?');
         params.push(data.metadata ? JSON.stringify(data.metadata) : null);
@@ -337,6 +402,13 @@ export class ConversationRepository
    */
   private rowToConversation(row: any): ConversationMetadata {
     const metadata = row.metadataJson ? JSON.parse(row.metadataJson) : undefined;
+    const chatSettings = metadata?.chatSettings;
+    const workspaceId = row.workspaceId ?? metadata?.workspaceId ?? chatSettings?.workspaceId;
+    const sessionId = row.sessionId ?? metadata?.sessionId ?? chatSettings?.sessionId;
+    const workflowId = row.workflowId ?? metadata?.workflowId;
+    const runTrigger = row.runTrigger ?? metadata?.runTrigger;
+    const scheduledFor = row.scheduledFor ?? metadata?.scheduledFor;
+    const runKey = row.runKey ?? metadata?.runKey;
     return {
       id: row.id,
       title: row.title,
@@ -344,10 +416,37 @@ export class ConversationRepository
       updated: row.updated,
       vaultName: row.vaultName,
       messageCount: row.messageCount,
-      // workspaceId and sessionId stored in metadata if needed
-      workspaceId: metadata?.workspaceId,
-      sessionId: metadata?.sessionId,
+      workspaceId,
+      sessionId,
+      workflowId,
+      runTrigger,
+      scheduledFor,
+      runKey,
       metadata
     };
+  }
+
+  private getWorkspaceId(data: Partial<ConversationMetadata>): string | undefined {
+    return data.workspaceId ?? (data.metadata?.chatSettings as { workspaceId?: string } | undefined)?.workspaceId;
+  }
+
+  private getSessionId(data: Partial<ConversationMetadata>): string | undefined {
+    return data.sessionId ?? (data.metadata?.chatSettings as { sessionId?: string } | undefined)?.sessionId;
+  }
+
+  private getWorkflowId(data: Partial<ConversationMetadata>): string | undefined {
+    return data.workflowId ?? (data.metadata?.workflowId as string | undefined);
+  }
+
+  private getRunTrigger(data: Partial<ConversationMetadata>): string | undefined {
+    return data.runTrigger ?? (data.metadata?.runTrigger as string | undefined);
+  }
+
+  private getScheduledFor(data: Partial<ConversationMetadata>): number | undefined {
+    return data.scheduledFor ?? (data.metadata?.scheduledFor as number | undefined);
+  }
+
+  private getRunKey(data: Partial<ConversationMetadata>): string | undefined {
+    return data.runKey ?? (data.metadata?.runKey as string | undefined);
   }
 }

@@ -3,7 +3,7 @@
  * Handles maintenance and troubleshooting commands
  */
 
-import { Notice } from 'obsidian';
+import { Notice, Platform } from 'obsidian';
 import { CommandContext } from './CommandDefinitions';
 import type NexusPlugin from '../../main';
 
@@ -29,6 +29,7 @@ export class MaintenanceCommandManager {
    */
   registerMaintenanceCommands(): void {
     this.registerDiagnosticsCommand();
+    this.registerClaudeHeadlessExperimentCommand();
   }
 
   /**
@@ -46,6 +47,26 @@ export class MaintenanceCommandManager {
       name: 'Run Service Diagnostics',
       callback: async () => {
         await this.runServiceDiagnostics();
+      }
+    });
+  }
+
+  /**
+   * Register an experimental command that launches the user's local Claude CLI
+   * in print mode against this vault's Nexus MCP connector.
+   */
+  private registerClaudeHeadlessExperimentCommand(): void {
+    this.context.plugin.addCommand({
+      id: 'experimental-run-claude-headless-session',
+      name: 'Experimental: Run Claude Headless Session',
+      callback: async () => {
+        if (!Platform.isDesktop) {
+          new Notice('This experiment is only available on desktop.');
+          return;
+        }
+
+        const { ClaudeHeadlessModal } = await import('../../ui/experimental/ClaudeHeadlessModal');
+        new ClaudeHeadlessModal(this.context.plugin.app, this.context.plugin).open();
       }
     });
   }

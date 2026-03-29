@@ -11,13 +11,10 @@
 
 import { App, Setting, Notice, Platform, Component } from 'obsidian';
 import { BackButton } from '../components/BackButton';
-import { BRAND_NAME, getPrimaryServerKey } from '../../constants/branding';
-import * as path from 'path';
-import * as fs from 'fs';
-import { execSync } from 'child_process';
+import { getPrimaryServerKey } from '../../constants/branding';
+import { ConfigStatus, getClaudeDesktopConfigPath, getConfigStatus } from '../getStartedStatus';
 
 type GetStartedView = 'paths' | 'internal-chat' | 'mcp-setup';
-type ConfigStatus = 'no-claude-folder' | 'no-config-file' | 'nexus-configured' | 'config-exists' | 'invalid-config';
 
 export interface GetStartedTabServices {
     app: App;
@@ -134,10 +131,15 @@ export class GetStartedTab {
      * Render Internal Chat setup view
      */
     private renderInternalChatSetup(): void {
-        new BackButton(this.container, 'Back', () => {
-            this.currentView = 'paths';
-            this.render();
-        }, this.services.component);
+        new BackButton(
+            this.container,
+            'Back to get started',
+            () => {
+                this.currentView = 'paths';
+                this.render();
+            },
+            this.services.component
+        );
 
         this.container.createEl('h3', { text: 'Internal Chat Setup' });
         this.container.createEl('p', {
@@ -187,12 +189,26 @@ export class GetStartedTab {
      * Render MCP Integration setup view
      */
     private renderMCPSetup(): void {
-        new BackButton(this.container, 'Back', () => {
-            this.currentView = 'paths';
-            this.render();
-        }, this.services.component);
+        new BackButton(
+            this.container,
+            'Back to get started',
+            () => {
+                this.currentView = 'paths';
+                this.render();
+            },
+            this.services.component
+        );
 
         this.container.createEl('h3', { text: 'Claude Desktop Setup' });
+
+        // MCP setup requires Node.js modules (path, fs, child_process) — desktop only
+        if (!Platform.isDesktop) {
+            this.container.createEl('p', {
+                text: 'MCP integration requires a desktop environment.',
+                cls: 'setting-item-description'
+            });
+            return;
+        }
 
         // Check for Node.js availability
         const nodePath = this.resolveNodePath();
@@ -215,9 +231,16 @@ export class GetStartedTab {
             });
         }
 
-        const configPath = this.getClaudeDesktopConfigPath();
-        const configDir = path.dirname(configPath);
-        const configStatus = this.checkConfigStatus(configPath, configDir);
+        const configPath = getClaudeDesktopConfigPath();
+        if (!configPath) {
+            this.container.createEl('p', {
+                text: 'MCP setup is only available on desktop.',
+                cls: 'setting-item-description'
+            });
+            return;
+        }
+
+        const configStatus = this.checkConfigStatus();
 
         // Compact status + action in one row
         if (configStatus === 'no-claude-folder') {
@@ -354,12 +377,18 @@ export class GetStartedTab {
         if (this.cachedNodePath !== null) {
             return this.cachedNodePath;
         }
+        if (!Platform.isDesktop) {
+            this.cachedNodePath = '';
+            return '';
+        }
         try {
+            const { execSync: nodeExecSync } = require('child_process') as typeof import('child_process');
+            const nodeFs = require('fs') as typeof import('fs');
             const cmd = Platform.isWin ? 'where node' : 'which node';
-            const result = execSync(cmd, { encoding: 'utf-8', timeout: 5000 }).trim();
+            const result = nodeExecSync(cmd, { encoding: 'utf-8', timeout: 5000 }).trim();
             // `where` on Windows may return multiple lines; take the first
             const firstLine = result.split('\n')[0].trim();
-            if (firstLine && fs.existsSync(firstLine)) {
+            if (firstLine && nodeFs.existsSync(firstLine)) {
                 this.cachedNodePath = firstLine;
                 return firstLine;
             }
@@ -374,9 +403,10 @@ export class GetStartedTab {
      * Generate the configuration JSON string
      */
     private getConfigJson(): string {
+        const pathMod = require('path') as typeof import('path');
         const vaultName = this.services.app.vault.getName();
         const serverKey = getPrimaryServerKey(vaultName);
-        const connectorPath = path.normalize(path.join(this.services.pluginPath, 'connector.js'));
+        const connectorPath = pathMod.normalize(pathMod.join(this.services.pluginPath, 'connector.js'));
         const nodePath = this.resolveNodePath() || 'node';
 
         const config = {
@@ -394,52 +424,22 @@ export class GetStartedTab {
     /**
      * Check the status of the Claude config
      */
-    private checkConfigStatus(configPath: string, configDir: string): ConfigStatus {
-        // Check if Claude folder exists
-        if (!fs.existsSync(configDir)) {
-            return 'no-claude-folder';
-        }
-
-        // Check if config file exists
-        if (!fs.existsSync(configPath)) {
-            return 'no-config-file';
-        }
-
-        // Try to read and parse the config
-        try {
-            const content = fs.readFileSync(configPath, 'utf-8');
-
-            // Handle empty file
-            if (!content.trim()) {
-                return 'invalid-config';
-            }
-
-            const config = JSON.parse(content);
-            const vaultName = this.services.app.vault.getName();
-            const serverKey = getPrimaryServerKey(vaultName);
-
-            if (config.mcpServers && config.mcpServers[serverKey]) {
-                return 'nexus-configured';
-            }
-
-            return 'config-exists';
-        } catch (error) {
-            // JSON parse error - config file exists but is invalid
-            console.error('[GetStartedTab] Error parsing config:', error);
-            return 'invalid-config';
-        }
+    private checkConfigStatus(): ConfigStatus {
+        return getConfigStatus(this.services.app);
     }
 
     /**
      * Auto-configure Nexus in Claude Desktop config
      */
     private async autoConfigureNexus(configPath: string): Promise<void> {
+        const nodeFs = require('fs') as typeof import('fs');
+        const pathMod = require('path') as typeof import('path');
         try {
             let config: any = { mcpServers: {} };
 
             // Read existing config if it exists
-            if (fs.existsSync(configPath)) {
-                const content = fs.readFileSync(configPath, 'utf-8');
+            if (nodeFs.existsSync(configPath)) {
+                const content = nodeFs.readFileSync(configPath, 'utf-8');
                 try {
                     config = JSON.parse(content);
                     if (!config.mcpServers) {
@@ -455,7 +455,7 @@ export class GetStartedTab {
             // Add Nexus server config
             const vaultName = this.services.app.vault.getName();
             const serverKey = getPrimaryServerKey(vaultName);
-            const connectorPath = path.normalize(path.join(this.services.pluginPath, 'connector.js'));
+            const connectorPath = pathMod.normalize(pathMod.join(this.services.pluginPath, 'connector.js'));
             const nodePath = this.resolveNodePath();
 
             if (!nodePath) {
@@ -469,13 +469,13 @@ export class GetStartedTab {
             };
 
             // Ensure directory exists
-            const configDir = path.dirname(configPath);
-            if (!fs.existsSync(configDir)) {
-                fs.mkdirSync(configDir, { recursive: true });
+            const configDir = pathMod.dirname(configPath);
+            if (!nodeFs.existsSync(configDir)) {
+                nodeFs.mkdirSync(configDir, { recursive: true });
             }
 
             // Write config
-            fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8');
+            nodeFs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf-8');
 
             new Notice('✅ Nexus has been added to Claude Desktop config! Please restart Claude Desktop.');
 
@@ -524,20 +524,6 @@ export class GetStartedTab {
             return 'Reveal in Finder';
         } else {
             return 'Reveal in Files';
-        }
-    }
-
-    /**
-     * Get Claude Desktop config file path based on platform
-     */
-    private getClaudeDesktopConfigPath(): string {
-        if (Platform.isWin) {
-            return path.join(process.env.APPDATA || '', 'Claude', 'claude_desktop_config.json');
-        } else if (Platform.isMacOS) {
-            return path.join(process.env.HOME || '', 'Library', 'Application Support', 'Claude', 'claude_desktop_config.json');
-        } else {
-            // Linux
-            return path.join(process.env.HOME || '', '.config', 'Claude', 'claude_desktop_config.json');
         }
     }
 

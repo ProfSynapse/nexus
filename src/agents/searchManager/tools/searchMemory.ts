@@ -204,7 +204,7 @@ export class SearchMemoryTool extends BaseTool<SearchMemoryParams, SearchMemoryR
       properties: {
         query: {
           type: 'string',
-          description: "What to search for. Use natural language for conversations ('how did we handle auth?') or specific terms for tool history ('contentManager readContent'). Examples: 'authentication implementation', 'database migration error', 'what tools were used for file editing'",
+          description: "What to search for. Use natural language for conversations ('how did we handle auth?') or specific terms for tool history ('contentManager read'). Examples: 'authentication implementation', 'database migration error', 'what tools were used for file editing'",
           minLength: 1
         },
         workspaceId: {

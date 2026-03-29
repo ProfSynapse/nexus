@@ -1,6 +1,7 @@
 import { IAgent } from './interfaces/IAgent';
 import { ITool } from './interfaces/ITool';
 import { CommonResult } from '../types';
+import { LazyTool, LazyToolDescriptor } from './LazyTool';
 
 /**
  * Base class for all agents in the MCP plugin
@@ -68,6 +69,16 @@ export abstract class BaseAgent implements IAgent {
    */
   registerTool(tool: ITool): void {
     this.tools.set(tool.slug, tool);
+  }
+
+  /**
+   * Register a lazy-loaded tool with this agent.
+   * The tool instance is created on first use (getParameterSchema, execute, etc.)
+   * while metadata (slug, name, description, version) is available immediately.
+   * @param descriptor Tool metadata and factory function
+   */
+  registerLazyTool(descriptor: LazyToolDescriptor): void {
+    this.tools.set(descriptor.slug, new LazyTool(descriptor));
   }
 
   /**
@@ -167,7 +178,7 @@ export abstract class BaseAgent implements IAgent {
     if (!this.agentManager) return null;
 
     // Search known agent names for exact tool match
-    const agentNames = ['storageManager', 'contentManager', 'searchManager', 'memoryManager', 'promptManager', 'canvasManager'];
+    const agentNames = ['storageManager', 'contentManager', 'searchManager', 'memoryManager', 'promptManager', 'canvasManager', 'taskManager'];
 
     for (const agentName of agentNames) {
       if (agentName === this.name) continue;

@@ -3,18 +3,10 @@ import { Settings } from '../../../settings';
 import type { MigratableDatabase } from '../../../database/schema/SchemaMigrator';
 
 /**
- * Extension of MigratableDatabase that adds parameterized query support.
- * Used internally by DatabaseAdapter for SELECT operations with parameters.
- */
-interface QueryableDatabase extends MigratableDatabase {
-    query(sql: string, params?: unknown[]): { values: unknown[][] }[];
-}
-
-/**
- * Database-like wrapper that adapts raw sqlite db to QueryableDatabase interface
+ * Database-like wrapper that adapts raw sqlite db to MigratableDatabase interface
  * Adds query() method for parameterized SELECT queries
  */
-class DatabaseAdapter implements QueryableDatabase {
+class DatabaseAdapter implements MigratableDatabase {
     constructor(private rawDb: any) {}
 
     exec(sql: string): { values: any[][] }[] {
@@ -56,7 +48,7 @@ class DatabaseAdapter implements QueryableDatabase {
  * Migrated to SQLite-based storage with data.json fallback for backward compatibility
  */
 export class CustomPromptStorageService {
-    private db: QueryableDatabase | null;
+    private db: MigratableDatabase | null;
     private settings: Settings;
     private migrated: boolean = false;
 
@@ -193,8 +185,9 @@ export class CustomPromptStorageService {
         // Try SQLite first if available
         if (this.db && this.migrated) {
             try {
-                const result = this.db.query
-                    ? this.db.query('SELECT * FROM custom_prompts WHERE id = ? OR name = ? LIMIT 1', [identifier, identifier])
+                const dbWithQuery = this.db as MigratableDatabase & { query?: (sql: string, params?: unknown[]) => { values: unknown[][] }[] };
+                const result = dbWithQuery.query
+                    ? dbWithQuery.query('SELECT * FROM custom_prompts WHERE id = ? OR name = ? LIMIT 1', [identifier, identifier])
                     : [];
 
                 if (result.length > 0 && result[0].values.length > 0) {

@@ -3,6 +3,8 @@
  * Extracted from types.ts for better organization and maintainability
  */
 
+import type { OAuthState } from '../../services/oauth/IOAuthProvider';
+
 /**
  * Thinking effort levels - unified across all providers
  */
@@ -46,6 +48,8 @@ export interface LLMProviderConfig {
   // WebLLM-specific settings
   webllmModel?: string; // Selected WebLLM model (e.g., 'nexus-tools-q4f16')
   webllmQuantization?: 'q4f16' | 'q5f16' | 'q8f16'; // Quantization level
+  // OAuth connection state (set when provider connected via OAuth flow)
+  oauth?: OAuthState;
 }
 
 /**
@@ -93,6 +97,14 @@ export const DEFAULT_LLM_PROVIDER_SETTINGS: LLMProviderSettings = {
       apiKey: '',
       enabled: false
     },
+    'anthropic-claude-code': {
+      apiKey: '',
+      enabled: false
+    },
+    'google-gemini-cli': {
+      apiKey: '',
+      enabled: false
+    },
     google: {
       apiKey: '',
       enabled: false
@@ -116,6 +128,14 @@ export const DEFAULT_LLM_PROVIDER_SETTINGS: LLMProviderSettings = {
       enabled: false
     },
     perplexity: {
+      apiKey: '',
+      enabled: false
+    },
+    'openai-codex': {
+      apiKey: '',
+      enabled: false
+    },
+    'github-copilot': {
       apiKey: '',
       enabled: false
     },

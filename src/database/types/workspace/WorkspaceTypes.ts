@@ -3,6 +3,29 @@
  * Simple, clean workspace types focused on LLM usability
  */
 
+export type WorkflowFrequency = 'hourly' | 'daily' | 'weekly' | 'monthly';
+export type WorkflowCatchUpPolicy = 'skip' | 'latest' | 'all';
+
+export interface WorkflowSchedule {
+  enabled: boolean;
+  frequency: WorkflowFrequency;
+  intervalHours?: number;
+  hour?: number;
+  minute?: number;
+  dayOfWeek?: number;
+  dayOfMonth?: number;
+  catchUp: WorkflowCatchUpPolicy;
+}
+
+export interface WorkspaceWorkflow {
+  id: string;
+  name: string;
+  when: string;
+  steps: string;
+  promptId?: string;
+  promptName?: string;
+  schedule?: WorkflowSchedule;
+}
 
 /**
  * Status types for individual items within a workspace
@@ -22,11 +45,7 @@ export interface WorkspaceContext {
   /**
    * Workflows for different situations
    */
-  workflows?: Array<{
-    name: string;           // "New Application", "Follow-up", "Interview Prep"
-    when: string;           // "When applying to new position"
-    steps: string;          // "Research company\nCustomize cover letter\nApply\nTrack"
-  }>;
+  workflows?: WorkspaceWorkflow[];
 
   /**
    * Simple key files list for quick reference

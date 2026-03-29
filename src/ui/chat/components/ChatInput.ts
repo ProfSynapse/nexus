@@ -16,6 +16,7 @@ export class ChatInput {
   private inputElement: HTMLElement | null = null;
   private sendButton: HTMLButtonElement | null = null;
   private isLoading = false;
+  private isPreSendCompacting = false;
   private hasConversation = false;
   private suggesters: SuggesterInstances | null = null;
 
@@ -40,6 +41,14 @@ export class ChatInput {
    */
   setLoading(loading: boolean): void {
     this.isLoading = loading;
+    this.updateUI();
+  }
+
+  /**
+   * Set pre-send compaction state.
+   */
+  setPreSendCompacting(compacting: boolean): void {
+    this.isPreSendCompacting = compacting;
     this.updateUI();
   }
 
@@ -96,6 +105,7 @@ export class ChatInput {
     // Auto-resize on input
     const inputHandler = () => {
       this.autoResizeInput();
+      this.updateUI();
     };
 
     // iOS: Scroll input into view when keyboard opens
@@ -147,8 +157,9 @@ export class ChatInput {
    */
   private handleSendOrStop(): void {
     const actuallyLoading = this.isLoading || this.getLoadingState();
+    const hasPendingInput = this.hasPendingInput();
 
-    if (actuallyLoading) {
+    if (actuallyLoading && !hasPendingInput) {
       // Stop generation
       if (this.onStopGeneration) {
         this.onStopGeneration();
@@ -232,6 +243,14 @@ export class ChatInput {
 
     const actuallyLoading = this.isLoading || this.getLoadingState();
     const hasConversation = this.getHasConversation ? this.getHasConversation() : this.hasConversation;
+    const hasPendingInput = this.hasPendingInput();
+    this.inputElement.setAttribute('aria-busy', this.isPreSendCompacting ? 'true' : 'false');
+
+    if (this.isPreSendCompacting) {
+      this.container.addClass('chat-input-compacting');
+    } else {
+      this.container.removeClass('chat-input-compacting');
+    }
 
     if (!hasConversation) {
       // No conversation selected - disable everything
@@ -243,15 +262,34 @@ export class ChatInput {
       this.sendButton.setAttribute('aria-label', 'No conversation selected');
       this.inputElement.contentEditable = 'false';
       this.inputElement.setAttribute('data-placeholder', 'Select or create a conversation to begin');
-    } else if (actuallyLoading) {
-      // Show stop button (keep enabled so user can click to stop)
-      this.sendButton.disabled = false;
-      this.sendButton.classList.add('stop-mode');
-      this.sendButton.classList.remove('disabled-mode');
+    } else if (this.isPreSendCompacting) {
+      this.sendButton.disabled = true;
+      this.sendButton.classList.remove('stop-mode');
+      this.sendButton.classList.add('disabled-mode');
       this.sendButton.empty();
-      setIcon(this.sendButton, 'square');
-      this.sendButton.setAttribute('aria-label', 'Stop generation');
+      setIcon(this.sendButton, 'arrow-up');
+      this.sendButton.setAttribute('aria-label', 'Compacting context before sending');
       this.inputElement.contentEditable = 'false';
+      this.inputElement.setAttribute('data-placeholder', 'Compacting context before sending...');
+    } else if (actuallyLoading) {
+      // Keep the input active so a new message can interrupt the current turn.
+      this.sendButton.disabled = false;
+      this.sendButton.empty();
+      this.inputElement.contentEditable = 'true';
+
+      if (hasPendingInput) {
+        this.sendButton.classList.remove('stop-mode');
+        this.sendButton.classList.remove('disabled-mode');
+        setIcon(this.sendButton, 'arrow-up');
+        this.sendButton.setAttribute('aria-label', 'Interrupt and send message');
+        this.inputElement.setAttribute('data-placeholder', 'Send a steering message...');
+      } else {
+        this.sendButton.classList.add('stop-mode');
+        this.sendButton.classList.remove('disabled-mode');
+        setIcon(this.sendButton, 'square');
+        this.sendButton.setAttribute('aria-label', 'Stop generation');
+        this.inputElement.setAttribute('data-placeholder', 'Type to interrupt, or stop generation');
+      }
     } else {
       // Show normal send button
       this.sendButton.disabled = false;
@@ -263,6 +301,14 @@ export class ChatInput {
       this.inputElement.contentEditable = 'true';
       this.inputElement.setAttribute('data-placeholder', 'Type your message...');
     }
+  }
+
+  private hasPendingInput(): boolean {
+    if (!this.inputElement) {
+      return false;
+    }
+
+    return ContentEditableHelper.getPlainText(this.inputElement).trim().length > 0;
   }
 
   /**
@@ -281,6 +327,7 @@ export class ChatInput {
     if (this.inputElement) {
       ContentEditableHelper.clear(this.inputElement);
       this.autoResizeInput();
+      this.updateUI();
     }
   }
 
@@ -298,6 +345,7 @@ export class ChatInput {
     if (this.inputElement) {
       ContentEditableHelper.setPlainText(this.inputElement, value);
       this.autoResizeInput();
+      this.updateUI();
     }
   }
 

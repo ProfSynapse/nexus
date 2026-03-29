@@ -23,6 +23,7 @@ import { ConversationContextBuilder } from './ConversationContextBuilder';
 import { ToolCallService } from './ToolCallService';
 import { CostTrackingService } from './CostTrackingService';
 import type { MessageQueueService } from './MessageQueueService';
+import { ContextBudgetService } from './ContextBudgetService';
 
 export interface StreamingOptions {
   provider?: string;
@@ -205,7 +206,10 @@ export class StreamingResponseService {
 
         // Extract usage for cost calculation
         if (chunk.usage) {
-          finalUsage = chunk.usage;
+          const normalizedUsage = ContextBudgetService.normalizeUsage(chunk.usage);
+          if (normalizedUsage) {
+            finalUsage = normalizedUsage;
+          }
         }
 
         // Extract tool calls when available and handle progressive display
@@ -303,7 +307,8 @@ export class StreamingResponseService {
       }
 
     } catch (error) {
-      console.error('Error in generateResponse:', error);
+      const extra = (error as any)?.response?.data ?? (error as any)?.response?.json ?? (error as any)?.response?.text;
+      console.error('Error in generateResponse:', error, extra ? JSON.stringify(extra) : '');
       throw error;
     } finally {
       // Notify queue service that generation is complete (resumes processing)

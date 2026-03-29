@@ -58,15 +58,15 @@ export interface ImageGenerationRequest extends BaseBatchRequest {
   type: 'image';
   /** The prompt text describing the image to generate */
   prompt: string;
-  /** Image generation provider (google for Imagen, openai disabled for now) */
-  provider: 'google'; // Only Google supported currently due to OpenAI speed issues
-  /** Optional model to use (imagen-4, imagen-4-ultra) */
-  model?: 'imagen-4' | 'imagen-4-ultra';
+  /** Image generation provider — defaults to user settings or first available */
+  provider?: 'google' | 'openrouter';
+  /** Image generation model — defaults to user settings or first available for provider */
+  model?: string;
   /** Image aspect ratio */
   aspectRatio?: AspectRatio;
   /** Vault-relative path where the image should be saved */
   savePath: string;
-  /** Reference images for style/composition guidance (vault-relative paths). Max 3 for gemini-2.5-flash-image, max 14 for gemini-3-pro-image-preview */
+  /** Reference images for style/composition guidance (vault-relative paths) */
   referenceImages?: string[];
 }
 
@@ -105,8 +105,8 @@ export interface TextPromptConfig {
 export interface ImagePromptConfig {
   type: 'image';
   prompt: string;
-  provider: 'google';
-  model?: 'imagen-4' | 'imagen-4-ultra';
+  provider?: 'google' | 'openrouter';
+  model?: string;
   aspectRatio?: AspectRatio;
   savePath: string;
   /** Reference images for style/composition guidance (vault-relative paths) */

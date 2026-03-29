@@ -73,6 +73,7 @@ export interface ToolCall {
   error?: string;
   parameters?: Record<string, unknown>;
   executionTime?: number;
+  providerExecuted?: boolean;
   /** Format the model used: 'bracket' = [TOOL_CALLS], 'xml' = <tool_call>, 'native' = OpenAI tool_calls */
   sourceFormat?: ToolCallFormat;
 }
@@ -108,7 +109,26 @@ export interface Conversation {
       systemPrompt?: string;
       workspaceId?: string;
       sessionId?: string;
+      promptId?: string;
+      contextNotes?: string[];
+      thinking?: {
+        enabled: boolean;
+        effort: 'low' | 'medium' | 'high';
+      };
+      temperature?: number;
+      agentProvider?: string;
+      agentModel?: string;
+      agentThinking?: {
+        enabled: boolean;
+        effort: 'low' | 'medium' | 'high';
+      };
     };
+    promptId?: string;
+    workflowId?: string;
+    workflowName?: string;
+    runTrigger?: 'manual' | 'scheduled' | 'catch_up';
+    scheduledFor?: number;
+    runKey?: string;
     [key: string]: unknown;
   };
 }
@@ -167,6 +187,12 @@ export interface CreateConversationParams {
   systemPrompt?: string;
   workspaceId?: string;
   sessionId?: string;
+  promptId?: string;
+  workflowId?: string;
+  workflowName?: string;
+  runTrigger?: 'manual' | 'scheduled' | 'catch_up';
+  scheduledFor?: number;
+  runKey?: string;
 }
 
 export interface AddMessageParams {

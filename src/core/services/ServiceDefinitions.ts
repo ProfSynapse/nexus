@@ -228,6 +228,11 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
                 llmService.setToolExecutor(directToolExecutor);
             }
 
+            // Wire settings persistence so token refresh is saved to disk immediately
+            llmService.setOnSettingsDirty(() => {
+                context.settings.saveSettings().catch(() => {});
+            });
+
             return llmService;
         }
     },
@@ -244,15 +249,14 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
             const storageAdapter = context.serviceManager.getServiceIfReady<IStorageAdapter | null>('hybridStorageAdapter');
 
             // Access underlying SQLite database via adapter's cache property
-            // Cast to HybridStorageAdapter which exposes the cache getter
             let db = null;
             if (storageAdapter && 'cache' in storageAdapter) {
-                const { HybridStorageAdapter } = await import('../../database/adapters/HybridStorageAdapter');
-                if (storageAdapter instanceof HybridStorageAdapter) {
-                    const cache = storageAdapter.cache;
-                    if (cache && typeof cache.exec === 'function' && typeof cache.run === 'function') {
-                        db = cache;
-                    }
+                const cache = (storageAdapter as unknown as { cache: unknown }).cache;
+                // Check if cache has the necessary methods for MigratableDatabase
+                if (cache && typeof cache === 'object'
+                    && 'exec' in cache && typeof (cache as Record<string, unknown>).exec === 'function'
+                    && 'run' in cache && typeof (cache as Record<string, unknown>).run === 'function') {
+                    db = cache;
                 }
             }
 
@@ -429,6 +433,50 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
             chatService.setDirectToolExecutor(directToolExecutor as DirectToolExecutor);
 
             return chatService;
+        }
+    },
+
+    {
+        name: 'workflowRunService',
+        dependencies: ['chatService', 'workspaceService', 'customPromptStorageService'],
+        create: async (context) => {
+            const { WorkflowRunService } = await import('../../services/workflows/WorkflowRunService');
+            const { ChatService } = await import('../../services/chat/ChatService');
+            const { WorkspaceService } = await import('../../services/WorkspaceService');
+            const { CustomPromptStorageService } = await import('../../agents/promptManager/services/CustomPromptStorageService');
+            const chatService = await context.serviceManager.getService<InstanceType<typeof ChatService>>('chatService');
+            const workspaceService = await context.serviceManager.getService<InstanceType<typeof WorkspaceService>>('workspaceService');
+            const customPromptStorage = await context.serviceManager.getService<InstanceType<typeof CustomPromptStorageService>>('customPromptStorageService');
+
+            return new WorkflowRunService({
+                app: context.app,
+                plugin: context.plugin,
+                chatService,
+                workspaceService,
+                customPromptStorage
+            });
+        }
+    },
+
+    {
+        name: 'workflowScheduleService',
+        dependencies: ['workspaceService', 'conversationService', 'workflowRunService'],
+        create: async (context) => {
+            const { WorkflowScheduleService } = await import('../../services/workflows/WorkflowScheduleService');
+            const { WorkspaceService } = await import('../../services/WorkspaceService');
+            const { ConversationService } = await import('../../services/ConversationService');
+            const { WorkflowRunService } = await import('../../services/workflows/WorkflowRunService');
+            const workspaceService = await context.serviceManager.getService<InstanceType<typeof WorkspaceService>>('workspaceService');
+            const conversationService = await context.serviceManager.getService<InstanceType<typeof ConversationService>>('conversationService');
+            const workflowRunService = await context.serviceManager.getService<InstanceType<typeof WorkflowRunService>>('workflowRunService');
+
+            return new WorkflowScheduleService({
+                plugin: context.plugin,
+                settings: context.settings,
+                workspaceService,
+                conversationService,
+                workflowRunService
+            });
         }
     }
 ];

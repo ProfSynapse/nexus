@@ -17,6 +17,10 @@ import { WorkspaceService } from '../WorkspaceService';
 import { EmbeddingService } from '../embeddings/EmbeddingService';
 import { TraceMetadata } from '../../database/types/memory/MemoryTypes';
 
+const DEFAULT_WORKSPACE_ID = 'default';
+const DEFAULT_WORKSPACE_NAME = 'Default Workspace';
+const DEFAULT_WORKSPACE_DESCRIPTION = 'Default workspace for chat conversations';
+
 export interface TraceContext {
   workspaceId: string;
   sessionId: string;
@@ -54,6 +58,35 @@ export class ChatTraceService {
   }
 
   /**
+   * Resolve a workspace ID for trace storage.
+   * Reuses legacy default workspaces by name to avoid duplicate creation.
+   */
+  private async resolveWorkspaceId(workspaceId: string): Promise<string> {
+    const existingWorkspace = await this.workspaceService.getWorkspace(workspaceId);
+    if (existingWorkspace) {
+      return existingWorkspace.id;
+    }
+
+    if (workspaceId !== DEFAULT_WORKSPACE_ID) {
+      throw new Error(`Workspace ${workspaceId} not found`);
+    }
+
+    const legacyDefaultWorkspace = await this.workspaceService.getWorkspaceByNameOrId(DEFAULT_WORKSPACE_NAME);
+    if (legacyDefaultWorkspace) {
+      return legacyDefaultWorkspace.id;
+    }
+
+    const createdWorkspace = await this.workspaceService.createWorkspace({
+      id: DEFAULT_WORKSPACE_ID,
+      name: DEFAULT_WORKSPACE_NAME,
+      description: DEFAULT_WORKSPACE_DESCRIPTION,
+      rootFolder: '/'
+    });
+
+    return createdWorkspace.id;
+  }
+
+  /**
    * Initialize a session for a conversation
    * Creates the session in the workspace system if it doesn't exist
    *
@@ -63,7 +96,7 @@ export class ChatTraceService {
    */
   async initializeSession(
     conversationId: string,
-    workspaceId: string = 'default',
+    workspaceId: string = DEFAULT_WORKSPACE_ID,
     sessionId?: string
   ): Promise<TraceContext> {
     // Check if we already have a context for this conversation
@@ -74,28 +107,14 @@ export class ChatTraceService {
 
     // Generate session ID if not provided
     const finalSessionId = sessionId || this.generateSessionId();
-    const sessionKey = `${workspaceId}:${finalSessionId}`;
+    const effectiveWorkspaceId = await this.resolveWorkspaceId(workspaceId);
+    const sessionKey = `${effectiveWorkspaceId}:${finalSessionId}`;
 
     // Create session in workspace if not already created
     if (!this.createdSessions.has(sessionKey)) {
       try {
-        // Check if workspace exists, create if not
-        let workspace = await this.workspaceService.getWorkspace(workspaceId);
-        if (!workspace) {
-          // Create default workspace if it doesn't exist
-          if (workspaceId === 'default') {
-            workspace = await this.workspaceService.createWorkspace({
-              name: 'Default Workspace',
-              description: 'Default workspace for chat conversations',
-              rootFolder: '/'
-            });
-          } else {
-            throw new Error(`Workspace ${workspaceId} not found`);
-          }
-        }
-
         // Create session in workspace
-        await this.workspaceService.addSession(workspaceId, {
+        await this.workspaceService.addSession(effectiveWorkspaceId, {
           id: finalSessionId,
           name: `Chat Session ${new Date().toLocaleString()}`,
           description: `Session for conversation ${conversationId}`,
@@ -112,7 +131,7 @@ export class ChatTraceService {
 
     // Store context
     const context: TraceContext = {
-      workspaceId,
+      workspaceId: effectiveWorkspaceId,
       sessionId: finalSessionId,
       conversationId
     };

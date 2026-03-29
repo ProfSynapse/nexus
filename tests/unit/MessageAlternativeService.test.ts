@@ -412,6 +412,33 @@ describe('MessageAlternativeService', () => {
       expect(mockEvents.onError).not.toHaveBeenCalled();
     });
 
+    it('should restore the original message when abort happens before any content streams', async () => {
+      const abortError = Object.assign(new Error('Aborted'), { name: 'AbortError' });
+      mockStreamHandler.streamResponse.mockRejectedValue(abortError);
+
+      const conversation = createConversation({
+        messages: [
+          createUserMessage({ id: 'msg_user' }),
+          createAssistantMessage({
+            id: 'msg_ai',
+            content: 'Original content',
+            toolCalls: TOOL_CALLS.allCompleted,
+            reasoning: 'Original reasoning'
+          })
+        ]
+      });
+
+      await service.createAlternativeResponse(conversation, 'msg_ai');
+
+      const aiMsg = conversation.messages[1];
+      expect(aiMsg.content).toBe('Original content');
+      expect(aiMsg.toolCalls).toEqual(TOOL_CALLS.allCompleted);
+      expect(aiMsg.reasoning).toBe('Original reasoning');
+      expect(aiMsg.state).toBe('complete');
+      expect(aiMsg.isLoading).toBe(false);
+      expect(mockEvents.onConversationUpdated).toHaveBeenCalledWith(conversation);
+    });
+
     it('should keep partial content on abort and save conversation', async () => {
       const abortError = Object.assign(new Error('Aborted'), { name: 'AbortError' });
 
@@ -446,6 +473,34 @@ describe('MessageAlternativeService', () => {
 
       // UI should be updated
       expect(mockEvents.onConversationUpdated).toHaveBeenCalledWith(conversation);
+    });
+
+    it('should restore the original message after a non-abort retry failure', async () => {
+      mockStreamHandler.streamResponse.mockRejectedValue(new Error('Network failure'));
+
+      const conversation = createConversation({
+        messages: [
+          createUserMessage({ id: 'msg_user' }),
+          createAssistantMessage({
+            id: 'msg_ai',
+            content: 'Original content',
+            toolCalls: TOOL_CALLS.allCompleted,
+            reasoning: 'Original reasoning'
+          })
+        ]
+      });
+
+      await service.createAlternativeResponse(conversation, 'msg_ai');
+
+      const aiMsg = conversation.messages[1];
+      expect(aiMsg.content).toBe('Original content');
+      expect(aiMsg.toolCalls).toEqual(TOOL_CALLS.allCompleted);
+      expect(aiMsg.reasoning).toBe('Original reasoning');
+      expect(aiMsg.state).toBe('complete');
+      expect(aiMsg.isLoading).toBe(false);
+      expect(mockChatService.updateConversation).toHaveBeenCalledWith(conversation);
+      expect(mockEvents.onConversationUpdated).toHaveBeenCalledWith(conversation);
+      expect(mockEvents.onError).toHaveBeenCalledWith('Failed to generate alternative response');
     });
 
     it('should clear retry guard on error', async () => {

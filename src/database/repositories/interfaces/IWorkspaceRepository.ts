@@ -27,6 +27,7 @@ export interface CreateWorkspaceData {
   rootFolder: string;
   created?: number;
   isActive?: boolean;
+  isArchived?: boolean;
   dedicatedAgentId?: string;
   /** Workspace context (purpose, workflows, keyFiles, etc.) */
   context?: WorkspaceContext;
@@ -41,6 +42,7 @@ export interface UpdateWorkspaceData {
   rootFolder?: string;
   lastAccessed?: number;
   isActive?: boolean;
+  isArchived?: boolean;
   dedicatedAgentId?: string;
   /** Workspace context (purpose, workflows, keyFiles, etc.) */
   context?: WorkspaceContext;

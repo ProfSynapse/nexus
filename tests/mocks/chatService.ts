@@ -29,6 +29,11 @@ export function createMockChatService(config: MockChatServiceConfig = {}) {
       }
     }),
 
+    addMessage: jest.fn(async (params: { id?: string }) => ({
+      success: true,
+      messageId: params.id || `msg_${Date.now()}`
+    })),
+
     createConversation: jest.fn(async () => ({
       id: 'conv_new',
       title: 'New Conversation',

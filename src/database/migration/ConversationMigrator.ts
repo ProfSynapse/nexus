@@ -63,7 +63,7 @@ export class ConversationMigrator extends BaseMigrator<ConversationMigrationResu
         title: conversation.title,
         created: conversation.created,
         vault: conversation.vault_name,
-        settings: conversation.metadata?.chatSettings,
+        settings: conversation.metadata,
       },
     } as Omit<ConversationCreatedEvent, 'id' | 'deviceId' | 'timestamp'>);
     result.conversations++;

@@ -4,7 +4,6 @@
  * Based on Requesty streaming documentation
  */
 
-import { requestUrl } from 'obsidian';
 import { BaseAdapter } from '../BaseAdapter';
 import {
   GenerateOptions,
@@ -66,9 +65,9 @@ export class RequestyAdapter extends BaseAdapter {
    */
   async* generateStreamAsync(prompt: string, options?: GenerateOptions): AsyncGenerator<StreamChunk, void, unknown> {
     try {
-      // Note: Using fetch() instead of requestUrl() because Obsidian's requestUrl()
-      // does not support streaming responses (ReadableStream) needed for LLM streaming.
-      const response = await fetch(`${this.baseUrl}/chat/completions`, {
+      const nodeStream = await this.requestStream({
+        url: `${this.baseUrl}/chat/completions`,
+        operation: 'streaming generation',
         method: 'POST',
         headers: {
           ...this.buildHeaders(),
@@ -86,21 +85,21 @@ export class RequestyAdapter extends BaseAdapter {
           stop: options?.stopSequences,
           tools: options?.tools,
           stream: true
-        })
+        }),
+        timeoutMs: 120_000
       });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`HTTP ${response.status}: ${errorText}`);
-      }
-
-      // Use unified stream processing with automatic SSE parsing and tool call accumulation
-      yield* this.processStream(response, {
+      yield* this.processNodeStream(nodeStream, {
         debugLabel: 'Requesty',
         extractContent: (parsed) => parsed.choices[0]?.delta?.content || null,
         extractToolCalls: (parsed) => parsed.choices[0]?.delta?.tool_calls || null,
         extractFinishReason: (parsed) => parsed.choices[0]?.finish_reason || null,
-        extractUsage: (parsed) => parsed.usage || null
+        extractUsage: (parsed) => parsed.usage || null,
+        accumulateToolCalls: true,
+        toolCallThrottling: {
+          initialYield: true,
+          progressInterval: 50
+        }
       });
     } catch (error) {
       console.error('[RequestyAdapter] Streaming error:', error);
@@ -140,6 +139,7 @@ export class RequestyAdapter extends BaseAdapter {
   getCapabilities(): ProviderCapabilities {
     const baseCapabilities = {
       supportsStreaming: true,
+      streamingMode: 'streaming' as const,
       supportsJSON: true,
       supportsImages: true,
       supportsFunctions: true,
@@ -178,8 +178,9 @@ export class RequestyAdapter extends BaseAdapter {
       requestBody.tools = options.tools;
     }
 
-    const response = await requestUrl({
+    const response = await this.request<RequestyChatCompletionResponse>({
       url: `${this.baseUrl}/chat/completions`,
+      operation: 'generation',
       method: 'POST',
       headers: {
         ...this.buildHeaders(),
@@ -188,8 +189,11 @@ export class RequestyAdapter extends BaseAdapter {
         'X-Title': 'Synaptic Lab Kit',
         'User-Agent': 'Synaptic-Lab-Kit/1.0.0'
       },
-      body: JSON.stringify(requestBody)
+      body: JSON.stringify(requestBody),
+      timeoutMs: 60_000
     });
+
+    this.assertOk(response, `Requesty generation failed: HTTP ${response.status}`);
 
     const data = response.json as RequestyChatCompletionResponse;
     const choice = data.choices[0];

@@ -6,6 +6,7 @@ import { Component } from 'obsidian';
  */
 export class Accordion extends Component {
     containerEl: HTMLElement;
+    rootEl: HTMLElement;
     contentEl: HTMLElement;
     isOpen: boolean;
 
@@ -25,6 +26,7 @@ export class Accordion extends Component {
         const accordionEl = this.containerEl.createEl('div', {
             cls: 'mcp-accordion'
         });
+        this.rootEl = accordionEl;
 
         // Create container to scope selectors
         const accordionContainer = accordionEl.createEl('div', {

@@ -4,8 +4,14 @@
  */
 
 import { CommonParameters, CommonResult } from '../../../types/mcp';
-import { ProjectWorkspace, WorkspaceContext } from './WorkspaceTypes';
+import {
+  ProjectWorkspace,
+  WorkspaceContext,
+  WorkspaceWorkflow
+} from './WorkspaceTypes';
 import { StateContext } from '../session/SessionTypes';
+
+export interface WorkspaceWorkflowDefinition extends WorkspaceWorkflow {}
 
 /**
  * Create workspace parameters - LLM must provide complete WorkspaceContext structure
@@ -38,11 +44,7 @@ export interface CreateWorkspaceParameters extends CommonParameters {
    * Provide an array of workflows with name, when to use, and steps as a single string
    * Example: [{"name": "New Application", "when": "When applying to new position", "steps": "Research company\nCustomize cover letter\nApply\nTrack"}]
    */
-  workflows?: Array<{
-    name: string;
-    when: string;
-    steps: string;
-  }>;
+  workflows?: WorkspaceWorkflowDefinition[];
 
   /**
    * Simple key files list for quick reference (optional)
@@ -95,6 +97,7 @@ export interface LoadWorkspaceResult extends CommonResult {
       recentActivity: string[];
     };
     workflows: string[];
+    workflowDefinitions?: WorkspaceWorkflowDefinition[];
     workspaceStructure: string[];
     recentFiles: Array<{
       path: string;
@@ -116,6 +119,12 @@ export interface LoadWorkspaceResult extends CommonResult {
       created: number;
       tags?: string[];
     }>;
+    prompt?: {
+      id: string;
+      name: string;
+      systemPrompt: string;
+    };
+    taskSummary?: import('../../../agents/taskManager/types').WorkspaceTaskSummary;
   };
   pagination?: {
     sessions: {

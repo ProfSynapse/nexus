@@ -5,6 +5,7 @@
 import { ConversationData } from '../../../types/chat/ChatTypes';
 import { ModelOption } from '../types/SelectionTypes';
 import { ContextUsage } from '../components/ContextProgressBar';
+import { ContextBudgetService, NormalizedTokenUsage } from '../../../services/chat/ContextBudgetService';
 
 export class TokenCalculator {
   /**
@@ -20,7 +21,6 @@ export class TokenCalculator {
         return { used: 0, total: 0, percentage: 0 };
       }
 
-      // Estimate token count for current conversation
       const totalTokens = this.estimateTokenCount(currentConversation, currentSystemPrompt);
       const contextWindow = selectedModel.contextWindow;
       const percentage = (totalTokens / contextWindow) * 100;
@@ -43,58 +43,21 @@ export class TokenCalculator {
     conversation: ConversationData,
     currentSystemPrompt?: string | null
   ): number {
-    let totalTokens = 0;
-    let hasActualUsageData = false;
-
-    // Add system prompt tokens if provided (always estimated)
-    if (currentSystemPrompt) {
-      const systemPromptTokens = this.estimateTextTokens(currentSystemPrompt);
-      totalTokens += systemPromptTokens;
-    }
-
-    // Add message tokens - USE ACTUAL USAGE DATA when available
-    conversation.messages.forEach((message: any, index) => {
-      // Check if message has actual usage data from API response
-      if (message.usage) {
-        hasActualUsageData = true;
-        // Use actual token counts from OpenAI/Anthropic/etc API
-        const promptTokens = message.usage.prompt_tokens || message.usage.input_tokens || 0;
-        const completionTokens = message.usage.completion_tokens || message.usage.output_tokens || 0;
-        const totalMessageTokens = message.usage.total_tokens || (promptTokens + completionTokens);
-
-        totalTokens += totalMessageTokens;
-      } else {
-        // Fallback to estimation if no usage data
-        const messageTokens = this.estimateTextTokens(message.content);
-        totalTokens += messageTokens;
-
-        // Add tokens for tool calls if present (estimated)
-        if (message.toolCalls) {
-          message.toolCalls.forEach((toolCall: { function?: { name?: string; arguments?: string }; parameters?: unknown; result?: unknown }) => {
-            if (toolCall.parameters) {
-              const paramTokens = this.estimateTextTokens(JSON.stringify(toolCall.parameters));
-              totalTokens += paramTokens;
-            }
-            if (toolCall.result) {
-              const resultText = typeof toolCall.result === 'string'
-                ? toolCall.result
-                : JSON.stringify(toolCall.result);
-              const resultTokens = this.estimateTextTokens(resultText);
-              totalTokens += resultTokens;
-            }
-          });
-        }
-      }
-    });
-    return totalTokens;
+    return ContextBudgetService.estimateConversationTokens(conversation, currentSystemPrompt);
   }
 
   /**
    * Rough estimation of token count for text (4 chars ≈ 1 token)
    */
   static estimateTextTokens(text: string | null | undefined): number {
-    if (!text) return 0;
-    return Math.ceil(text.length / 4);
+    return ContextBudgetService.estimateTextTokens(text);
+  }
+
+  /**
+   * Normalize provider usage into the internal camelCase shape.
+   */
+  static normalizeUsage(usage: unknown): NormalizedTokenUsage | null {
+    return ContextBudgetService.normalizeUsage(usage);
   }
 
   /**

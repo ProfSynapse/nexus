@@ -1,4 +1,18 @@
 /* =========================== */
+/* SPACING TOKENS              */
+/* =========================== */
+
+:root {
+    --space-xxs: 2px;
+    --space-xs: 4px;
+    --space-s: 8px;
+    --space-m: 12px;
+    --space-l: 16px;
+    --space-xl: 24px;
+    --space-xxl: 32px;
+}
+
+/* =========================== */
 /* NATIVE CHATBOT STYLES      */
 /* =========================== */
 
@@ -49,7 +63,7 @@
     left: 0;
     right: 0;
     bottom: 0;
-    background: var(--background-modifier-cover);
+    background: rgba(0, 0, 0, 0.3);
     opacity: 0;
     visibility: hidden;
     transition: all 0.3s ease;
@@ -214,6 +228,68 @@
     color: var(--text-on-accent);
 }
 
+/* =========================== */
+/* CLAUDE HEADLESS EXPERIMENT  */
+/* =========================== */
+
+.nexus-claude-headless-modal textarea.nexus-claude-headless-prompt {
+    width: 100%;
+    min-height: 10rem;
+    resize: vertical;
+}
+
+.nexus-claude-headless-status {
+    margin-bottom: var(--space-m);
+    padding: var(--space-s) var(--space-m);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-m);
+    white-space: pre-wrap;
+    font-size: 0.9rem;
+}
+
+.nexus-claude-headless-status-muted {
+    color: var(--text-muted);
+    background: var(--background-secondary);
+}
+
+.nexus-claude-headless-status-success {
+    color: var(--text-normal);
+    background: var(--background-secondary);
+}
+
+.nexus-claude-headless-status-warning {
+    color: var(--text-normal);
+    background: var(--background-secondary);
+}
+
+.nexus-claude-headless-status-error {
+    color: var(--text-normal);
+    background: color-mix(in srgb, var(--background-modifier-error) 20%, var(--background-primary));
+    border-color: var(--background-modifier-error);
+}
+
+.nexus-claude-headless-output {
+    max-height: 18rem;
+    overflow: auto;
+    margin: 0 0 var(--space-m);
+    padding: var(--space-m);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-m);
+    background: var(--background-secondary);
+    color: var(--text-normal);
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: var(--font-monospace);
+    font-size: 0.85rem;
+}
+
+.nexus-claude-headless-buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-s);
+    flex-wrap: wrap;
+}
+
 /* Inline rename input */
 .conversation-rename-input {
     width: 100%;
@@ -358,7 +434,7 @@
 }
 
 .chat-welcome-hotkeys-container {
-    background: var(--interactive-accent);
+    background: #8b5cf6;
     border-radius: 8px;
     padding: 0.75rem 1rem;
     margin-bottom: 1rem;
@@ -437,6 +513,39 @@
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
+}
+
+.message-display-event-row {
+    display: flex;
+    justify-content: center;
+    padding: 0.45rem 0;
+}
+
+.message-display-event-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    max-width: min(100%, 32rem);
+    padding: 0.5rem 0.85rem;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 999px;
+    background: var(--background-secondary);
+    color: var(--text-accent);
+    font-size: 0.82rem;
+    line-height: 1.35;
+}
+
+.message-display-event-dot {
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    background: var(--interactive-accent);
+    flex: 0 0 auto;
+    animation: chat-pre-send-pulse 1.2s ease-in-out infinite;
+}
+
+.message-display-event-text {
+    font-weight: 600;
 }
 
 /* Message Container (wrapper for bubble + external actions) */
@@ -676,7 +785,7 @@
 
 .message-action-btn.copy-success {
     background: var(--text-success);
-    color: var(--text-on-accent);
+    color: white;
     transform: scale(1.1);
 }
 
@@ -998,12 +1107,12 @@
 
 /* Success state - green checkmark */
 .tool-icon.tool-success {
-    color: var(--color-green);
+    color: #22c55e;
 }
 
 /* Failure state - orange hazard */
 .tool-icon.tool-failed {
-    color: var(--color-orange);
+    color: #f59e0b;
 }
 
 @keyframes toolSpin {
@@ -1242,6 +1351,11 @@
     box-sizing: border-box;
 }
 
+.chat-input-compacting .chat-textarea {
+    border-color: var(--text-accent);
+    box-shadow: 0 0 0 1px rgba(var(--interactive-accent-rgb), 0.12);
+}
+
 
 .chat-textarea {
     width: 100%;
@@ -1305,23 +1419,39 @@
 
 /* Tool reference (green) */
 .chat-reference-tool {
-    background: rgba(var(--color-green-rgb), 0.15);
-    color: var(--color-green);
-    border: 1px solid rgba(var(--color-green-rgb), 0.3);
+    background: rgba(76, 175, 80, 0.15);
+    color: rgb(76, 175, 80);
+    border: 1px solid rgba(76, 175, 80, 0.3);
 }
 
 /* Agent reference (purple) */
 .chat-reference-agent {
-    background: rgba(var(--color-purple-rgb), 0.15);
-    color: var(--color-purple);
-    border: 1px solid rgba(var(--color-purple-rgb), 0.3);
+    background: rgba(156, 39, 176, 0.15);
+    color: rgb(156, 39, 176);
+    border: 1px solid rgba(156, 39, 176, 0.3);
 }
 
 /* Note reference (blue) */
 .chat-reference-note {
-    background: rgba(var(--color-blue-rgb), 0.15);
-    color: var(--color-blue);
-    border: 1px solid rgba(var(--color-blue-rgb), 0.3);
+    background: rgba(33, 150, 243, 0.15);
+    color: rgb(33, 150, 243);
+    border: 1px solid rgba(33, 150, 243, 0.3);
+}
+
+/* Dark mode adjustments */
+.theme-dark .chat-reference-tool {
+    background: rgba(76, 175, 80, 0.25);
+    color: rgb(129, 199, 132);
+}
+
+.theme-dark .chat-reference-agent {
+    background: rgba(156, 39, 176, 0.25);
+    color: rgb(186, 104, 200);
+}
+
+.theme-dark .chat-reference-note {
+    background: rgba(33, 150, 243, 0.25);
+    color: rgb(100, 181, 246);
 }
 
 /* Send button - circular, embedded and vertically centered in input */
@@ -1372,7 +1502,7 @@
 /* Stop button mode - red circular button */
 .chat-send-button.stop-mode {
     background: var(--text-error);
-    color: var(--text-on-accent);
+    color: white;
     animation: pulse-stop 1.5s ease-in-out infinite;
 }
 
@@ -1388,6 +1518,17 @@
 @keyframes pulse-stop {
     0%, 100% { box-shadow: 0 0 0 0 rgba(var(--text-error-rgb, 239, 68, 68), 0.4); }
     50% { box-shadow: 0 0 0 4px rgba(var(--text-error-rgb, 239, 68, 68), 0); }
+}
+
+@keyframes chat-pre-send-pulse {
+    0%, 100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 0.6;
+        transform: scale(0.88);
+    }
 }
 
 .chat-loading-spinner {
@@ -1892,6 +2033,12 @@
     margin-bottom: 15px;
 }
 
+.nexus-settings-tabs {
+    gap: 8px;
+    flex-wrap: wrap;
+    border-bottom: none;
+}
+
 .memory-tab {
     padding: 8px 15px;
     cursor: pointer;
@@ -1901,12 +2048,39 @@
     border-radius: 4px 4px 0 0;
 }
 
+.nexus-settings-tab {
+    flex: 1 1 120px;
+    min-width: 120px;
+    margin-right: 0;
+    text-align: center;
+    justify-content: center;
+    display: flex;
+    align-items: center;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-m);
+    background: var(--background-primary);
+}
+
 .memory-tab.active {
     border-bottom: 2px solid var(--text-accent);
     color: var(--text-accent);
     background-color: var(--background-secondary);
     border: 1px solid var(--background-modifier-border);
     border-bottom: none;
+}
+
+.nexus-settings-tab.active {
+    border: 1px solid var(--interactive-accent);
+    background: var(--background-secondary);
+    border-bottom: 1px solid var(--interactive-accent);
+}
+
+.nexus-settings-accordion {
+    margin-bottom: 16px;
+}
+
+.nexus-settings-accordion-content {
+    padding: 0;
 }
 
 .memory-tab-content {
@@ -2349,34 +2523,50 @@ a:hover {
     line-height: 1.4;
 }
 
-/* Card Manager Styles - Unified for all card-based UIs */
-.card-manager-add-button,
-.agent-management-add-button {
-    margin-bottom: 16px;
+/* Searchable Card Manager */
+.searchable-card-manager-search {
+    margin-bottom: var(--space-m);
 }
 
-.card-manager-add-button button,
-.agent-management-add-button button {
+.searchable-card-manager-input {
+    width: 100%;
+    padding: var(--space-s) var(--space-m);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s);
+    background: var(--background-primary);
+    color: var(--text-normal);
+    font-size: var(--font-ui-small);
+}
+
+.searchable-card-manager-input:focus {
+    border-color: var(--interactive-accent);
+    outline: none;
+}
+
+.searchable-card-manager-group {
+    margin-bottom: var(--space-l);
+}
+
+.searchable-card-manager-group--hidden {
+    display: none;
+}
+
+/* Card Manager Styles - Unified for all card-based UIs */
+.card-manager-add-button {
+    margin-bottom: var(--space-l);
+}
+
+.card-manager-add-button button {
     width: 100%;
 }
 
-.card-manager-grid,
-.agent-management-cards,
-.llm-provider-cards {
+.card-manager-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 16px;
+    gap: var(--space-l);
 }
 
-.agent-management-disabled {
-    text-align: center;
-    color: var(--text-muted);
-    font-style: italic;
-    padding: 20px;
-}
-
-.card-manager-empty,
-.agent-management-empty {
+.card-manager-empty {
     text-align: center;
     color: var(--text-muted);
     padding: 20px;
@@ -2395,7 +2585,7 @@ a:hover {
 
 .agent-management-card:hover {
     border-color: var(--interactive-accent);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    background-color: var(--background-modifier-hover);
 }
 
 .agent-management-card-header {
@@ -2421,32 +2611,6 @@ a:hover {
 .agent-management-toggle {
     display: flex;
     align-items: center;
-}
-
-/* Ensure proper spacing for Obsidian toggle component */
-.agent-management-toggle .checkbox-container {
-    margin-right: 8px;
-}
-
-.agent-management-edit-btn,
-.agent-management-delete-btn {
-    width: 32px;
-    height: 32px;
-    border: 1px solid var(--background-modifier-border);
-    background-color: var(--background-primary);
-    border-radius: 4px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s ease;
-    color: var(--text-muted);
-}
-
-.agent-management-edit-btn:hover {
-    background-color: var(--interactive-accent);
-    color: var(--text-on-accent);
-    border-color: var(--interactive-accent);
 }
 
 .agent-management-delete-btn:hover {
@@ -2787,20 +2951,20 @@ a:hover {
 }
 
 .llm-provider-input.validating {
-    border-color: var(--color-yellow) !important;
-    background-color: rgba(var(--color-yellow-rgb), 0.2) !important;
+    border-color: #fbbf24 !important;
+    background-color: rgba(251, 191, 36, 0.2) !important;
     border-width: 2px !important;
 }
 
 .llm-provider-input.success {
-    border-color: var(--color-green) !important;
-    background-color: rgba(var(--color-green-rgb), 0.1) !important;
+    border-color: #22c55e !important;
+    background-color: rgba(34, 197, 94, 0.1) !important;
     border-width: 2px !important;
 }
 
 .llm-provider-input.error {
-    border-color: var(--color-red) !important;
-    background-color: rgba(var(--color-red-rgb), 0.1) !important;
+    border-color: #ef4444 !important;
+    background-color: rgba(239, 68, 68, 0.1) !important;
     border-width: 2px !important;
 }
 
@@ -2867,11 +3031,11 @@ a:hover {
 
 /* Diff styles for main.js compiled code */
 .diff-insert {
-    background: rgba(var(--color-green-rgb), 0.15);
+    background: #e6ffe6;
 }
 
 .diff-delete {
-    background: rgba(var(--color-red-rgb), 0.15);
+    background: #ffe6e6;
 }
 
 /* =============================================================================
@@ -3095,7 +3259,7 @@ a:hover {
   left: 0;
   right: 0;
   bottom: 0;
-  background: var(--background-modifier-cover);
+  background: rgba(0, 0, 0, 0.6);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -3214,9 +3378,7 @@ a:hover {
 
 /* Responsive design for cards */
 @media (max-width: 768px) {
-    .card-manager-grid,
-    .agent-management-cards,
-    .llm-provider-cards {
+    .card-manager-grid {
         grid-template-columns: 1fr;
         gap: 12px;
     }
@@ -3855,7 +4017,7 @@ a:hover {
 
 .token-badge-info {
     background-color: var(--color-cyan);
-    color: var(--text-on-accent);
+    color: white;
 }
 
 .token-badge-warning {
@@ -3865,7 +4027,7 @@ a:hover {
 
 .token-badge-error {
     background-color: var(--color-red);
-    color: var(--text-on-accent);
+    color: white;
 }
 
 /* Specific suggester type styles */
@@ -4093,19 +4255,19 @@ a:hover {
 .chat-settings-renderer {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: var(--space-m);
 }
 
 /* Section boxes */
 .csr-section {
     background: var(--background-secondary);
-    border-radius: 8px;
+    border-radius: var(--radius-m);
     overflow: hidden;
 }
 
 .csr-section-header {
     background: var(--background-modifier-hover);
-    padding: 8px 12px;
+    padding: var(--space-s) var(--space-m);
     font-weight: 600;
     font-size: 12px;
     text-transform: uppercase;
@@ -4114,12 +4276,12 @@ a:hover {
 }
 
 .csr-section-desc {
-    padding: 4px 12px 0;
+    padding: var(--space-xs) var(--space-m) 0;
     font-size: 12px;
     color: var(--text-muted);
     display: flex;
     align-items: center;
-    gap: 2px;
+    gap: var(--space-xxs);
 }
 
 .csr-info-icon {
@@ -4133,16 +4295,16 @@ a:hover {
 }
 
 .csr-section-content {
-    padding: 8px 12px 12px;
+    padding: var(--space-s) var(--space-m) var(--space-m);
 }
 
 .csr-section-content .setting-item {
     border: none;
-    padding: 6px 0;
+    padding: var(--space-xs) 0;
 }
 
 .csr-section-content .setting-item:first-child {
-    padding-top: 4px;
+    padding-top: var(--space-xs);
 }
 
 .csr-section-content .setting-item:last-child {
@@ -4151,9 +4313,9 @@ a:hover {
 
 /* Effort slider row */
 .csr-effort-row {
-    padding-left: 8px;
+    padding-left: var(--space-s);
     border-left: 2px solid var(--background-modifier-border);
-    margin-top: 4px;
+    margin-top: var(--space-xs);
 }
 
 .csr-effort-value {
@@ -4162,7 +4324,7 @@ a:hover {
     font-weight: 500;
     font-size: 12px;
     color: var(--text-muted);
-    margin-left: 8px;
+    margin-left: var(--space-s);
 }
 
 /* Context notes */
@@ -4170,8 +4332,8 @@ a:hover {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 8px 0 4px;
-    margin-top: 4px;
+    padding: var(--space-s) 0 var(--space-xs);
+    margin-top: var(--space-xs);
     border-top: 1px solid var(--background-modifier-border);
 }
 
@@ -4183,8 +4345,8 @@ a:hover {
 .csr-add-btn {
     background: transparent;
     border: 1px solid var(--background-modifier-border);
-    border-radius: 4px;
-    padding: 2px 8px;
+    border-radius: var(--radius-s);
+    padding: var(--space-xxs) var(--space-s);
     font-size: 11px;
     color: var(--text-muted);
     cursor: pointer;
@@ -4196,23 +4358,23 @@ a:hover {
 }
 
 .csr-notes-list {
-    margin-top: 6px;
+    margin-top: var(--space-xs);
 }
 
 .csr-notes-empty {
     font-size: 12px;
     color: var(--text-faint);
-    padding: 4px 0;
+    padding: var(--space-xs) 0;
 }
 
 .csr-note-item {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 4px 8px;
+    padding: var(--space-xs) var(--space-s);
     background: var(--background-primary);
-    border-radius: 4px;
-    margin-bottom: 4px;
+    border-radius: var(--radius-s);
+    margin-bottom: var(--space-xs);
 }
 
 .csr-note-path {
@@ -4229,7 +4391,7 @@ a:hover {
     border: none;
     color: var(--text-muted);
     cursor: pointer;
-    padding: 0 4px;
+    padding: 0 var(--space-xs);
     font-size: 16px;
     line-height: 1;
 }
@@ -4288,12 +4450,12 @@ a:hover {
 .nexus-back-button {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--space-xs);
     color: var(--text-normal);
     cursor: pointer;
-    margin-bottom: 16px;
-    padding: 8px 14px;
-    border-radius: 6px;
+    margin-bottom: var(--space-l);
+    padding: var(--space-s) var(--space-m);
+    border-radius: var(--radius-s);
     background: var(--background-modifier-hover);
     border: 1px solid var(--background-modifier-border);
     font-size: 0.9em;
@@ -4745,10 +4907,10 @@ a:hover {
 /* Form actions container */
 .nexus-form-actions {
     display: flex;
-    gap: 12px;
+    gap: var(--space-m);
     justify-content: flex-end;
-    margin-top: 24px;
-    padding-top: 20px;
+    margin-top: var(--space-xl);
+    padding-top: var(--space-xl);
     border-top: 1px solid var(--background-modifier-border);
 }
 
@@ -4756,21 +4918,21 @@ a:hover {
 .nexus-modern-form {
     display: flex;
     flex-direction: column;
-    gap: 20px;
+    gap: var(--space-xl);
     max-width: 560px;
 }
 
 .nexus-form-field {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: var(--space-xs);
 }
 
 .nexus-form-field-inline {
     flex-direction: row;
     align-items: center;
     justify-content: space-between;
-    padding: 12px 0;
+    padding: var(--space-m) 0;
     border-top: 1px solid var(--background-modifier-border);
 }
 
@@ -4783,15 +4945,15 @@ a:hover {
 .nexus-form-hint {
     font-size: var(--font-ui-smaller);
     color: var(--text-muted);
-    margin-top: -2px;
+    margin-top: calc(-1 * var(--space-xxs));
 }
 
 .nexus-form-input,
 .nexus-form-textarea {
     width: 100%;
-    padding: 10px 12px;
+    padding: var(--space-m) var(--space-m);
     border: 1px solid var(--background-modifier-border);
-    border-radius: 6px;
+    border-radius: var(--radius-s);
     background: var(--background-primary);
     color: var(--text-normal);
     font-size: var(--font-ui-small);
@@ -4825,7 +4987,7 @@ a:hover {
 .nexus-toggle-label-group {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: var(--space-xxs);
 }
 
 .nexus-toggle-wrapper {
@@ -4868,9 +5030,9 @@ a:hover {
 /* Form select dropdown */
 .nexus-form-select {
     width: 100%;
-    padding: 10px 12px;
+    padding: var(--space-m) var(--space-m);
     border: 1px solid var(--background-modifier-border);
-    border-radius: 6px;
+    border-radius: var(--radius-s);
     background: var(--background-primary);
     color: var(--text-normal);
     font-size: var(--font-ui-small);
@@ -4900,8 +5062,8 @@ a:hover {
 .nexus-workflow-header {
     display: flex;
     align-items: center;
-    gap: 16px;
-    margin-bottom: 20px;
+    gap: var(--space-l);
+    margin-bottom: var(--space-xl);
 }
 
 .nexus-workflow-title {
@@ -4910,6 +5072,56 @@ a:hover {
 
 .nexus-workflow-form {
     max-width: 600px;
+}
+
+.nexus-workflow-form .setting-item {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-m);
+    padding: var(--space-l) 0;
+}
+
+.nexus-workflow-form .setting-item-info {
+    width: 100%;
+}
+
+.nexus-workflow-form .setting-item-control {
+    width: 100%;
+    justify-content: flex-start;
+}
+
+.nexus-workflow-form .setting-item-control input[type="text"],
+.nexus-workflow-form .setting-item-control textarea,
+.nexus-workflow-form .setting-item-control .dropdown {
+    width: 100%;
+    max-width: none;
+}
+
+.nexus-workflow-form .setting-item-control textarea {
+    min-height: 180px;
+}
+
+.nexus-workflow-form .setting-item-description {
+    margin-top: var(--space-xs);
+}
+
+.nexus-workflow-section-title {
+    margin: var(--space-l) 0 var(--space-s);
+    font-size: var(--font-ui-medium);
+    color: var(--text-normal);
+}
+
+.nexus-workflow-schedule {
+    margin-top: var(--space-s);
+    padding-top: var(--space-s);
+    border-top: 1px solid var(--background-modifier-border);
+}
+
+.nexus-workflow-schedule-fields {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-s);
 }
 
 /* Item row with native input component */
@@ -4922,15 +5134,15 @@ a:hover {
 .nexus-workspace-form {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: var(--space-s);
 }
 
 /* Form section with header */
 .nexus-form-section {
     display: flex;
     flex-direction: column;
-    gap: 12px;
-    padding: 16px 0;
+    gap: var(--space-m);
+    padding: var(--space-l) 0;
     border-bottom: 1px solid var(--background-modifier-border);
 }
 
@@ -4943,7 +5155,7 @@ a:hover {
 }
 
 .nexus-section-header {
-    margin: 0 0 4px 0;
+    margin: 0 0 var(--space-xs) 0;
     font-size: 0.9em;
     font-weight: 600;
     color: var(--text-muted);
@@ -4955,17 +5167,17 @@ a:hover {
 .nexus-item-list {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: var(--space-s);
 }
 
 /* Item row (workflow or file entry) */
 .nexus-item-row {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 10px 12px;
+    gap: var(--space-m);
+    padding: var(--space-m) var(--space-m);
     background: var(--background-secondary);
-    border-radius: 6px;
+    border-radius: var(--radius-s);
 }
 
 /* Item info section */
@@ -4973,7 +5185,7 @@ a:hover {
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: var(--space-xxs);
     min-width: 0;
 }
 
@@ -4999,16 +5211,17 @@ a:hover {
 /* Item actions */
 .nexus-item-actions {
     display: flex;
-    gap: 8px;
+    gap: var(--space-s);
     flex-shrink: 0;
+    align-items: center;
 }
 
 /* Small buttons for item actions */
 .nexus-btn-small {
-    padding: 4px 10px;
+    padding: var(--space-xs) var(--space-m);
     font-size: var(--font-ui-smaller);
     border: 1px solid var(--background-modifier-border);
-    border-radius: 4px;
+    border-radius: var(--radius-s);
     background: var(--background-primary);
     color: var(--text-muted);
     cursor: pointer;
@@ -5018,6 +5231,14 @@ a:hover {
 .nexus-btn-small:hover {
     background: var(--background-modifier-hover);
     color: var(--text-normal);
+}
+
+.nexus-item-actions .clickable-icon {
+    min-width: 32px;
+    min-height: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .nexus-btn-danger {
@@ -5033,15 +5254,15 @@ a:hover {
 /* Add button */
 .nexus-btn-add {
     align-self: flex-start;
-    padding: 6px 12px;
+    padding: var(--space-xs) var(--space-m);
     font-size: var(--font-ui-small);
     border: 1px dashed var(--background-modifier-border);
-    border-radius: 6px;
+    border-radius: var(--radius-s);
     background: transparent;
     color: var(--text-muted);
     cursor: pointer;
     transition: all 0.15s ease;
-    margin-top: 4px;
+    margin-top: var(--space-xs);
 }
 
 .nexus-btn-add:hover {
@@ -5050,18 +5271,122 @@ a:hover {
     background: var(--background-modifier-hover);
 }
 
+.nexus-task-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 12px;
+}
+
+.nexus-task-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--font-ui-small);
+}
+
+.nexus-task-table th,
+.nexus-task-table td {
+    padding: 10px 8px;
+    border-bottom: 1px solid var(--background-modifier-border);
+    text-align: left;
+    vertical-align: middle;
+}
+
+.nexus-task-table th {
+    color: var(--text-muted);
+    font-weight: var(--font-semibold);
+}
+
+.nexus-task-title-cell {
+    min-width: 220px;
+}
+
+.nexus-task-title {
+    color: var(--text-normal);
+}
+
+.nexus-task-actions {
+    display: flex;
+    gap: 8px;
+    white-space: nowrap;
+}
+
+.nexus-task-checkbox-cell {
+    width: 48px;
+}
+
+.nexus-task-checkbox {
+    width: 16px;
+    height: 16px;
+}
+
+.nexus-task-form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+}
+
+.nexus-breadcrumb {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 12px;
+    font-size: var(--font-ui-small);
+}
+
+.nexus-breadcrumb .nexus-breadcrumb-link {
+    background: none;
+    border: none;
+    box-shadow: none;
+    padding: 0;
+    margin: 0;
+    border-radius: 0;
+    min-height: unset;
+    appearance: none;
+    font: inherit;
+    color: var(--text-accent);
+    cursor: pointer;
+}
+
+.nexus-breadcrumb .nexus-breadcrumb-link:hover {
+    color: var(--interactive-accent);
+    text-decoration: underline;
+}
+
+.nexus-breadcrumb-current {
+    color: var(--text-normal);
+    font-weight: var(--font-medium);
+}
+
+.nexus-breadcrumb-separator {
+    display: flex;
+    align-items: center;
+    color: var(--text-muted);
+}
+
+.nexus-breadcrumb-separator svg {
+    width: 14px;
+    height: 14px;
+}
+
+.nexus-settings-page-content {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
 /* File Picker */
 .nexus-file-picker-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 20px;
+    margin-bottom: var(--space-xl);
 }
 
 .nexus-file-picker-left {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: var(--space-m);
 }
 
 .nexus-file-picker-left h3 {
@@ -5070,22 +5395,22 @@ a:hover {
 
 .nexus-file-picker-actions {
     display: flex;
-    gap: 8px;
+    gap: var(--space-s);
 }
 
 .nexus-file-picker-list {
     max-height: 400px;
     overflow-y: auto;
     border: 1px solid var(--background-modifier-border);
-    border-radius: 6px;
-    margin-top: 12px;
+    border-radius: var(--radius-s);
+    margin-top: var(--space-m);
 }
 
 .nexus-file-item {
     display: flex;
     align-items: baseline;
-    gap: 8px;
-    padding: 10px 12px;
+    gap: var(--space-s);
+    padding: var(--space-m) var(--space-m);
     cursor: pointer;
     border-bottom: 1px solid var(--background-modifier-border);
     transition: background 0.1s ease;
@@ -5124,20 +5449,20 @@ a:hover {
 .nexus-file-hint {
     font-size: var(--font-ui-smaller);
     color: var(--text-muted);
-    margin-left: 8px;
+    margin-left: var(--space-s);
 }
 
 .nexus-file-picker-hint,
 .nexus-file-picker-empty,
 .nexus-file-picker-more {
-    padding: 20px;
+    padding: var(--space-xl);
     text-align: center;
     color: var(--text-muted);
     font-size: var(--font-ui-small);
 }
 
 .nexus-file-picker-more {
-    padding: 12px;
+    padding: var(--space-m);
     background: var(--background-secondary);
     border-top: 1px solid var(--background-modifier-border);
 }
@@ -5147,16 +5472,16 @@ a:hover {
     max-height: 400px;
     overflow-y: auto;
     border: 1px solid var(--background-modifier-border);
-    border-radius: 6px;
-    margin-top: 12px;
-    padding: 8px 0;
+    border-radius: var(--radius-s);
+    margin-top: var(--space-m);
+    padding: var(--space-s) 0;
 }
 
 .nexus-tree-row {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 6px 16px;
+    gap: var(--space-s);
+    padding: var(--space-xs) var(--space-l);
     cursor: pointer;
     transition: background 0.1s ease;
 }
@@ -5247,16 +5572,16 @@ a:hover {
 .nexus-tree-empty[data-depth="11"] { padding-left: 216px; }
 
 .nexus-tree-empty {
-    padding-top: 8px;
-    padding-bottom: 8px;
-    padding-right: 12px;
+    padding-top: var(--space-s);
+    padding-bottom: var(--space-s);
+    padding-right: var(--space-m);
     color: var(--text-faint);
     font-size: var(--font-ui-smaller);
     font-style: italic;
 }
 
 .nexus-file-picker-info {
-    margin-bottom: 8px;
+    margin-bottom: var(--space-s);
 }
 
 .nexus-selected-count {
@@ -6784,3 +7109,621 @@ body.is-mobile .chat-loading-overlay {
     overflow-y: hidden;
 }
 
+/* ═══════════════════════════════════════════════════════════════════════
+   OAuth Connect UI
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* Connected banner above API key input */
+.oauth-banner-container {
+    margin-bottom: 4px;
+}
+
+.oauth-connected-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    border-radius: var(--radius-s);
+    background-color: rgba(34, 197, 94, 0.1);
+    border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.oauth-connected-status {
+    color: var(--text-normal);
+    font-size: var(--font-ui-small);
+    font-weight: 500;
+}
+
+.oauth-connected-status::before {
+    content: "\2713 ";
+    color: #22c55e;
+    font-weight: bold;
+}
+
+.oauth-disconnect-btn {
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+    background: none;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s);
+    padding: 2px 8px;
+    cursor: pointer;
+}
+
+.oauth-disconnect-btn:hover {
+    color: var(--text-normal);
+    border-color: var(--text-muted);
+}
+
+/* Connecting state */
+.oauth-connecting {
+    opacity: 0.6;
+    cursor: wait;
+}
+
+/* CLI status banner (for statusOnly secondary providers like Gemini CLI, Claude Code) */
+.cli-status-banner {
+    margin-bottom: var(--space-sm, 8px);
+}
+
+.cli-status-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-xs, 4px) var(--space-sm, 8px);
+    border-radius: var(--radius-s);
+    background-color: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+}
+
+.cli-status-text {
+    font-size: var(--font-ui-small);
+}
+
+.cli-status-authenticated {
+    color: var(--text-success, var(--interactive-accent));
+}
+
+.cli-status-not-authenticated {
+    color: var(--text-muted);
+}
+
+.cli-status-check-btn {
+    font-size: var(--font-ui-smaller);
+    padding: var(--space-xs, 4px) var(--space-sm, 8px);
+    cursor: pointer;
+}
+
+.cli-status-checking {
+    opacity: 0.6;
+    cursor: wait;
+}
+
+/* Device code inline display */
+.oauth-device-code-container {
+    margin: var(--space-3) 0;
+    padding: var(--space-3);
+    background: var(--background-secondary);
+    border-radius: var(--radius-m);
+    border: 1px solid var(--background-modifier-border);
+}
+
+.oauth-device-code-hidden {
+    display: none;
+}
+
+.oauth-device-code-instruction {
+    color: var(--text-muted);
+    font-size: 0.85em;
+    margin: 0 0 var(--space-2) 0;
+}
+
+.oauth-device-code-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin-bottom: var(--space-2);
+}
+
+.oauth-device-code-value {
+    font-family: var(--font-monospace);
+    font-size: 1.4em;
+    font-weight: bold;
+    letter-spacing: 0.1em;
+    color: var(--text-normal);
+    flex: 1;
+}
+
+.oauth-device-code-url {
+    color: var(--text-faint);
+    font-size: 0.8em;
+    margin: 0;
+}
+
+/* Consent modal */
+.oauth-consent-modal,
+.oauth-preauth-modal {
+    max-width: 480px;
+}
+
+.oauth-consent-warning {
+    color: var(--text-muted);
+    line-height: 1.5;
+    margin-bottom: 16px;
+}
+
+.oauth-consent-fields,
+.oauth-preauth-fields {
+    margin-bottom: 16px;
+}
+
+.oauth-consent-buttons,
+.oauth-preauth-buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 16px;
+}
+
+.app-config-status-warning {
+    color: var(--text-accent);
+}
+
+.app-config-settings-divider {
+    border-top: 1px solid var(--background-modifier-border);
+    margin-top: 16px;
+    padding-top: 8px;
+}
+
+.app-config-settings-heading {
+    margin: 8px 0 4px;
+    color: var(--text-normal);
+    font-size: var(--font-ui-medium);
+}
+
+/* =========================== */
+/* TASK BOARD VIEW            */
+/* =========================== */
+
+.nexus-task-board-view {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.nexus-task-board-shell {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    gap: var(--space-l);
+    min-height: 0;
+    padding: var(--space-l);
+    overflow: hidden;
+}
+
+.nexus-task-board-columns-wrapper {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.nexus-task-board-header,
+.nexus-task-board-toolbar,
+.nexus-task-board-column {
+    background: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-m);
+}
+
+.nexus-task-board-header,
+.nexus-task-board-toolbar {
+    padding: var(--space-l);
+}
+
+.nexus-task-board-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-l);
+}
+
+.nexus-task-board-header h2,
+.nexus-task-board-column-header h3 {
+    margin: 0;
+}
+
+.nexus-task-board-kicker,
+.nexus-task-board-field-label,
+.nexus-task-board-card-meta,
+.nexus-task-board-stat {
+    color: var(--text-faint);
+    font-size: 0.75rem;
+}
+
+.nexus-task-board-subtitle {
+    margin: var(--space-xs) 0 0;
+    color: var(--text-muted);
+}
+
+.nexus-task-board-actions {
+    display: flex;
+    gap: var(--space-s);
+}
+
+.nexus-task-board-button {
+    min-height: 34px;
+    padding: 0 var(--space-m);
+    border-radius: var(--radius-s);
+}
+
+.nexus-task-board-button-secondary {
+    background: var(--background-primary);
+    color: var(--text-normal);
+    border: 1px solid var(--background-modifier-border);
+}
+
+.nexus-task-board-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-m);
+    align-items: end;
+}
+
+.nexus-task-board-field {
+    display: flex;
+    flex-direction: column;
+    flex: 0 1 220px;
+    gap: var(--space-xs);
+}
+
+.nexus-task-board-field-search {
+    flex: 1 1 280px;
+    min-width: 0;
+}
+
+.nexus-task-board-input {
+    width: 100%;
+    min-height: 36px;
+    padding: 0 var(--space-m);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s);
+    background: var(--background-primary);
+    color: var(--text-normal);
+}
+
+.nexus-task-board-textarea {
+    padding: var(--space-s) var(--space-m);
+    min-height: 96px;
+    resize: vertical;
+}
+
+.nexus-task-board-stats {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--space-m);
+    margin-left: auto;
+    white-space: nowrap;
+}
+
+.nexus-task-board-columns {
+    display: flex;
+    flex: 1 1 auto;
+    gap: var(--space-m);
+    min-height: 0;
+    align-items: stretch;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: 2px;
+}
+
+.nexus-task-board-column {
+    flex: 1 0 260px;
+    min-width: 260px;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    padding: var(--space-m);
+}
+
+.nexus-task-board-column-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-s);
+    margin-bottom: var(--space-m);
+}
+
+.nexus-task-board-column-header h3 {
+    font-size: 0.95rem;
+}
+
+.nexus-task-board-column-count {
+    min-width: 24px;
+    height: 24px;
+    padding: 0 var(--space-s);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    color: var(--text-muted);
+    font-size: 0.75rem;
+}
+
+.nexus-task-board-column-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-s);
+    padding: 2px;
+    border-radius: var(--radius-s);
+    overflow-y: auto;
+}
+
+.nexus-task-board-column-body.is-drop-target {
+    background: var(--background-modifier-hover);
+    outline: 1px dashed var(--interactive-accent);
+}
+
+.nexus-task-board-card {
+    padding: var(--space-m);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s);
+    background: var(--background-primary);
+    cursor: grab;
+}
+
+.nexus-task-board-card:hover {
+    background: var(--background-modifier-hover);
+}
+
+.nexus-task-board-card.is-dragging {
+    opacity: 0.5;
+}
+
+.nexus-task-board-card-row {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-s);
+}
+
+.nexus-task-board-card-title {
+    color: var(--text-normal);
+    font-weight: 600;
+    line-height: 1.35;
+}
+
+.nexus-task-board-card-meta {
+    margin-top: var(--space-xs);
+}
+
+.nexus-task-board-card-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-xs);
+    margin-top: var(--space-xs);
+}
+
+.nexus-task-board-card-link {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px var(--space-xs);
+    font-size: var(--font-smaller);
+    color: var(--text-accent);
+    background: var(--background-secondary);
+    border-radius: var(--radius-s);
+    cursor: pointer;
+    text-decoration: none;
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.nexus-task-board-card-link::before {
+    content: '[[';
+    color: var(--text-faint);
+    margin-right: 1px;
+}
+
+.nexus-task-board-card-link::after {
+    content: ']]';
+    color: var(--text-faint);
+    margin-left: 1px;
+}
+
+.nexus-task-board-card-link:hover {
+    color: var(--interactive-accent-hover);
+    background: var(--background-modifier-hover);
+}
+
+.nexus-task-board-icon-button {
+    width: 28px;
+    height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-s);
+}
+
+/* ── Swimlane grouping ── */
+
+.nexus-task-board-swimlane {
+    margin-top: var(--space-m);
+}
+
+.nexus-task-board-swimlane:first-child {
+    margin-top: 0;
+}
+
+.nexus-task-board-swimlane-header {
+    display: flex;
+    align-items: center;
+    gap: var(--space-s);
+    padding: var(--space-xs) 0;
+    border-bottom: 1px dashed var(--background-modifier-border);
+    margin-bottom: var(--space-s);
+    cursor: default;
+    user-select: none;
+}
+
+.nexus-task-board-swimlane-toggle {
+    flex: 0 0 auto;
+}
+
+.nexus-task-board-swimlane-title {
+    font-weight: 600;
+    font-size: var(--font-small);
+    color: var(--text-muted);
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.nexus-task-board-swimlane-progress {
+    font-size: var(--font-smaller);
+    color: var(--text-faint);
+    white-space: nowrap;
+}
+
+.nexus-task-board-swimlane-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-s);
+}
+
+.nexus-task-board-swimlane.is-collapsed .nexus-task-board-swimlane-body {
+    display: none;
+}
+
+.nexus-task-board-swimlane-ungrouped .nexus-task-board-swimlane-title {
+    font-weight: normal;
+    color: var(--text-faint);
+}
+
+/* ── End swimlane grouping ── */
+
+.nexus-task-board-empty-column,
+.nexus-task-board-loading-text,
+.nexus-task-board-error p {
+    color: var(--text-muted);
+}
+
+.nexus-task-board-loading,
+.nexus-task-board-error {
+    padding: var(--space-xl);
+}
+
+.nexus-task-board-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-m);
+}
+
+.nexus-task-board-spinner {
+    width: 24px;
+    height: 24px;
+    border: 3px solid var(--background-modifier-border);
+    border-top-color: var(--interactive-accent);
+    border-radius: 50%;
+    animation: nexus-spin 0.8s linear infinite;
+}
+
+@keyframes nexus-spin {
+    to { transform: rotate(360deg); }
+}
+
+.nexus-task-board-error h3 {
+    margin-top: 0;
+}
+
+/* Task edit modal — reuses nexus-form-* and nexus-workspace-form classes */
+.nexus-task-edit-modal {
+    padding: var(--space-l);
+}
+
+.nexus-task-edit-modal .nexus-detail-title {
+    margin-top: 0;
+}
+
+.nexus-task-edit-modal .nexus-item-actions select {
+    font-size: var(--font-smaller);
+    padding: var(--space-xs);
+}
+
+body.is-mobile .nexus-task-board-shell {
+    padding: var(--space-m);
+}
+
+@media (max-width: 1100px) {
+    .nexus-task-board-stats {
+        justify-content: flex-start;
+        margin-left: 0;
+    }
+}
+
+@media (max-width: 760px) {
+    .nexus-task-board-header {
+        flex-direction: column;
+    }
+
+    .nexus-task-board-toolbar {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .nexus-task-board-field,
+    .nexus-task-board-field-search,
+    .nexus-task-board-stats,
+    .nexus-task-board-column {
+        flex-basis: auto;
+        min-width: 0;
+    }
+}
+
+/* =========================== */
+/* NOTE INPUT SUGGESTER        */
+/* =========================== */
+
+.nexus-note-suggester-item {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-2);
+}
+
+.nexus-note-suggester-icon {
+    flex-shrink: 0;
+    color: var(--text-muted);
+}
+
+.nexus-note-suggester-content {
+    min-width: 0;
+    flex: 1;
+}
+
+.nexus-note-suggester-name {
+    font-weight: var(--font-semibold);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.nexus-note-suggester-path {
+    font-size: var(--font-smaller);
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}

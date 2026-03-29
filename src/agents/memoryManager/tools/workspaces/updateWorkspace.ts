@@ -14,6 +14,7 @@ import { MemoryManagerAgent } from '../../memoryManager';
 import { createServiceIntegration } from '../../services/ValidationService';
 import { createErrorMessage } from '../../../../utils/errorUtils';
 import { CommonResult, CommonParameters } from '../../../../types/mcp/AgentTypes';
+import type { WorkspaceWorkflow } from '../../../../database/types/workspace/WorkspaceTypes';
 
 // Define parameter and result types for workspace updates
 export interface UpdateWorkspaceParameters extends CommonParameters {
@@ -24,7 +25,7 @@ export interface UpdateWorkspaceParameters extends CommonParameters {
     rootFolder?: string;
     // Context fields (all optional) - merged individually
     purpose?: string;
-    workflows?: Array<{ name: string; when: string; steps: string }>;
+    workflows?: WorkspaceWorkflow[];
     keyFiles?: string[];
     preferences?: string;
     dedicatedAgentId?: string;
@@ -148,8 +149,6 @@ export class UpdateWorkspaceTool extends BaseTool<UpdateWorkspaceParameters, Upd
             // Update timestamp
             workspaceCopy.lastAccessed = now;
 
-            console.error('[UpdateWorkspace] Updated dedicatedAgentId:', workspaceCopy.dedicatedAgentId);
-
             // Perform the update
             await workspaceService.updateWorkspace(existingWorkspace.id, workspaceCopy);
 
@@ -193,9 +192,27 @@ export class UpdateWorkspaceTool extends BaseTool<UpdateWorkspaceParameters, Upd
                     items: {
                         type: 'object',
                         properties: {
+                            id: { type: 'string', description: 'Stable workflow ID. Provide to update an existing workflow.' },
                             name: { type: 'string' },
                             when: { type: 'string' },
-                            steps: { type: 'string' }
+                            steps: { type: 'string' },
+                            promptId: { type: 'string', description: 'Optional custom prompt ID bound to this workflow.' },
+                            promptName: { type: 'string', description: 'Optional cached prompt name for display.' },
+                            schedule: {
+                                type: 'object',
+                                description: 'Optional workflow schedule.',
+                                properties: {
+                                    enabled: { type: 'boolean' },
+                                    frequency: { type: 'string', enum: ['hourly', 'daily', 'weekly', 'monthly'] },
+                                    intervalHours: { type: 'number' },
+                                    hour: { type: 'number' },
+                                    minute: { type: 'number' },
+                                    dayOfWeek: { type: 'number' },
+                                    dayOfMonth: { type: 'number' },
+                                    catchUp: { type: 'string', enum: ['skip', 'latest', 'all'] }
+                                },
+                                required: ['enabled', 'frequency', 'catchUp']
+                            }
                         },
                         required: ['name', 'when', 'steps']
                     }

@@ -1,10 +1,11 @@
 /**
  * OpenAI Image Generation Adapter
- * Supports OpenAI's gpt-image-1 model via Responses API for image generation
- * Based on 2025 API documentation
+ * Location: src/services/llm/adapters/openai/OpenAIImageAdapter.ts
+ *
+ * Supports OpenAI's gpt-image-1 model via Responses API for image generation.
+ * Uses the OpenAI Responses API directly over requestUrl.
  */
 
-import OpenAI from 'openai';
 import { BaseImageAdapter } from '../BaseImageAdapter';
 import { 
   ImageGenerationParams, 
@@ -35,20 +36,11 @@ export class OpenAIImageAdapter extends BaseImageAdapter {
   readonly supportedSizes: string[] = ['1024x1024', '1536x1024', '1024x1536', 'auto'];
   readonly supportedFormats: string[] = ['png'];
   
-  private client: OpenAI;
   private readonly imageModel = 'gpt-image-1'; // Use gpt-image-1 via Responses API
 
   constructor(config?: ProviderConfig) {
     const apiKey = config?.apiKey || '';
     super(apiKey, 'gpt-image-1', config?.baseUrl);
-    
-    this.client = new OpenAI({
-      apiKey: apiKey,
-      organization: process.env.OPENAI_ORG_ID,
-      project: process.env.OPENAI_PROJECT_ID,
-      baseURL: config?.baseUrl || this.baseUrl,
-      dangerouslyAllowBrowser: true // Required for Obsidian plugin environment
-    });
 
     this.initializeCache();
   }
@@ -72,8 +64,20 @@ export class OpenAIImageAdapter extends BaseImageAdapter {
           }]
         };
 
-        const result = await this.client.responses.create(requestParams);
-        return result;
+        const result = await this.request<any>({
+          url: `${this.baseUrl}/responses`,
+          operation: 'image generation',
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${this.apiKey}`
+          },
+          body: JSON.stringify(requestParams),
+          timeoutMs: 120_000
+        });
+
+        this.assertOk(result, `OpenAI image generation failed: HTTP ${result.status}`);
+        return result.json;
       }, 2); // Reduced retry count for faster failure detection
 
       return await this.buildImageResponse(response, params);

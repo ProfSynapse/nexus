@@ -1,13 +1,9 @@
 /**
  * Groq Adapter with true streaming support and Ultra-Fast Inference
  * Leverages Groq's high-performance LLM serving infrastructure
- * Uses OpenAI-compatible streaming API with extended usage metrics
- * Based on official Groq SDK streaming documentation
+ * Uses Groq's OpenAI-compatible REST API with buffered SSE replay.
  */
 
-import Groq from 'groq-sdk';
-import type { ChatCompletion, ChatCompletionChunk, ChatCompletionMessageToolCall, ChatCompletionMessageParam } from 'groq-sdk/resources/chat/completions';
-import type { CompletionUsage } from 'groq-sdk/resources/completions';
 import { BaseAdapter } from '../BaseAdapter';
 import {
   GenerateOptions,
@@ -26,12 +22,23 @@ import { MCPToolExecution } from '../shared/ToolExecutionUtils';
  * Extended Groq chunk type with x_groq metadata
  * x_groq contains timing information (queue_time, prompt_time, completion_time)
  */
-interface GroqChatCompletionChunk extends ChatCompletionChunk {
-  usage?: CompletionUsage;
+interface GroqChatCompletionChunk {
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    total_tokens?: number;
+    queue_time?: number;
+    prompt_time?: number;
+    completion_time?: number;
+  };
   x_groq?: {
     id?: string;
     error?: string;
-    usage?: CompletionUsage;
+    usage?: {
+      prompt_tokens?: number;
+      completion_tokens?: number;
+      total_tokens?: number;
+    };
   };
 }
 
@@ -39,15 +46,8 @@ export class GroqAdapter extends BaseAdapter {
   readonly name = 'groq';
   readonly baseUrl = 'https://api.groq.com/openai/v1';
 
-  private client: Groq;
-
   constructor(apiKey: string, model?: string) {
     super(apiKey, model || GROQ_DEFAULT_MODEL);
-
-    this.client = new Groq({
-      apiKey: this.apiKey,
-      dangerouslyAllowBrowser: true
-    });
     this.initializeCache();
   }
 
@@ -73,20 +73,29 @@ export class GroqAdapter extends BaseAdapter {
    */
   async* generateStreamAsync(prompt: string, options?: GenerateOptions): AsyncGenerator<StreamChunk, void, unknown> {
     try {
-      const stream = await this.client.chat.completions.create({
-        model: options?.model || this.currentModel,
-        messages: this.buildMessages(prompt, options?.systemPrompt),
-        temperature: options?.temperature,
-        max_completion_tokens: options?.maxTokens,
-        top_p: options?.topP,
-        stop: options?.stopSequences,
-        tools: options?.tools ? this.convertTools(options.tools) : undefined,
-        response_format: options?.jsonMode ? { type: 'json_object' } : undefined,
-        stream: true
+      const nodeStream = await this.requestStream({
+        url: `${this.baseUrl}/chat/completions`,
+        operation: 'streaming generation',
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: options?.model || this.currentModel,
+          messages: this.buildMessages(prompt, options?.systemPrompt),
+          temperature: options?.temperature,
+          max_completion_tokens: options?.maxTokens,
+          top_p: options?.topP,
+          stop: options?.stopSequences,
+          tools: options?.tools ? this.convertTools(options.tools) : undefined,
+          response_format: options?.jsonMode ? { type: 'json_object' } : undefined,
+          stream: true
+        }),
+        timeoutMs: 120_000
       });
 
-      // Use unified stream processing with automatic tool call accumulation
-      yield* this.processStream(stream, {
+      yield* this.processNodeStream(nodeStream, {
         debugLabel: 'Groq',
         extractContent: (chunk) => chunk.choices[0]?.delta?.content || null,
         extractToolCalls: (chunk) => chunk.choices[0]?.delta?.tool_calls || null,
@@ -95,12 +104,14 @@ export class GroqAdapter extends BaseAdapter {
           // Groq has both standard usage and x_groq metadata
           const groqChunk = chunk as GroqChatCompletionChunk;
           if (groqChunk.usage || groqChunk.x_groq) {
-            return {
-              usage: groqChunk.usage,
-              x_groq: groqChunk.x_groq
-            };
+            return groqChunk.usage || groqChunk.x_groq?.usage || null;
           }
           return null;
+        },
+        accumulateToolCalls: true,
+        toolCallThrottling: {
+          initialYield: true,
+          progressInterval: 50
         }
       });
     } catch (error) {
@@ -141,6 +152,7 @@ export class GroqAdapter extends BaseAdapter {
   getCapabilities(): ProviderCapabilities {
     const baseCapabilities = {
       supportsStreaming: true,
+      streamingMode: 'streaming' as const,
       supportsJSON: true,
       supportsImages: true,
       supportsFunctions: true,
@@ -168,7 +180,7 @@ export class GroqAdapter extends BaseAdapter {
 
     interface ChatCompletionParams {
       model: string;
-      messages: ChatCompletionMessageParam[];
+      messages: any[];
       temperature?: number;
       max_completion_tokens?: number;
       top_p?: number;
@@ -179,8 +191,7 @@ export class GroqAdapter extends BaseAdapter {
 
     const chatParams: ChatCompletionParams = {
       model,
-      // Safe cast: buildMessages creates objects compatible with ChatCompletionMessageParam
-      messages: this.buildMessages(prompt, options?.systemPrompt) as ChatCompletionMessageParam[],
+      messages: this.buildMessages(prompt, options?.systemPrompt),
       temperature: options?.temperature,
       max_completion_tokens: options?.maxTokens,
       top_p: options?.topP,
@@ -193,15 +204,27 @@ export class GroqAdapter extends BaseAdapter {
       chatParams.tools = this.convertTools(options.tools);
     }
 
-    const response = await this.client.chat.completions.create(chatParams);
-    const choice = response.choices[0];
+    const response = await this.request<any>({
+      url: `${this.baseUrl}/chat/completions`,
+      operation: 'generation',
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${this.apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(chatParams),
+      timeoutMs: 60_000
+    });
+    this.assertOk(response, `Groq generation failed: HTTP ${response.status}`);
+    const responseJson = response.json;
+    const choice = responseJson.choices[0];
     
     if (!choice) {
       throw new Error('No response from Groq');
     }
     
     let text = choice.message?.content || '';
-    const usage = this.extractUsage(response);
+    const usage = this.extractUsage(responseJson);
     const finishReason = this.mapFinishReason(choice.finish_reason);
 
     // If tools were provided and we got tool calls, we need to handle them
@@ -237,7 +260,7 @@ export class GroqAdapter extends BaseAdapter {
     });
   }
 
-  private extractToolCalls(message: ChatCompletion['choices'][0]['message']): ChatCompletionMessageToolCall[] {
+  private extractToolCalls(message: any): any[] {
     return message?.tool_calls || [];
   }
 
@@ -253,7 +276,7 @@ export class GroqAdapter extends BaseAdapter {
     return reasonMap[reason] || 'stop';
   }
 
-  protected extractUsage(response: ChatCompletion | GroqChatCompletionChunk): TokenUsage | undefined {
+  protected extractUsage(response: GroqChatCompletionChunk | any): TokenUsage | undefined {
     const usage = response?.usage;
     if (usage) {
       const groqResponse = response as GroqChatCompletionChunk;

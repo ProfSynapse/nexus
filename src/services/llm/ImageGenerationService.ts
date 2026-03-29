@@ -17,6 +17,7 @@ import {
   ImageGenerationError
 } from './types/ImageTypes';
 import { BaseImageAdapter } from './adapters/BaseImageAdapter';
+import { ModelInfo } from './adapters/types';
 import { LLMProviderSettings } from '../../types/llm/ProviderTypes';
 
 export class ImageGenerationService {
@@ -244,6 +245,30 @@ export class ImageGenerationService {
   }
 
   /**
+   * Get detailed model info for a provider (includes id, name, pricing)
+   */
+  async getModelsForProvider(provider: ImageProvider): Promise<ModelInfo[]> {
+    const adapter = this.getAdapter(provider);
+    if (!adapter) {
+      return [];
+    }
+
+    try {
+      return await adapter.listModels();
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Get supported model IDs for a provider (synchronous — reads adapter property)
+   */
+  getSupportedModelIds(provider: ImageProvider): string[] {
+    const adapter = this.getAdapter(provider);
+    return adapter ? [...adapter.supportedModels] : [];
+  }
+
+  /**
    * Get supported sizes for a provider
    */
   getSupportedSizes(provider: ImageProvider): string[] {
@@ -303,6 +328,13 @@ export class ImageGenerationService {
    */
   hasAvailableProviders(): boolean {
     return this.adapters.size > 0;
+  }
+
+  /**
+   * Get list of initialized (configured + enabled) provider names
+   */
+  getInitializedProviders(): ImageProvider[] {
+    return Array.from(this.adapters.keys());
   }
 
   /**

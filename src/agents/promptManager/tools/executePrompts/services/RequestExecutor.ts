@@ -55,10 +55,7 @@ export class RequestExecutor {
         id: config.id,
         prompt: config.prompt,
         success: false,
-        error: this.executionErrorService.normalizeExecutionError(error, {
-          provider: config.provider,
-          model: config.model
-        }),
+        error: error instanceof Error ? error.message : 'Unknown execution error',
         executionTime,
         sequence: config.sequence,
         parallelGroup: config.parallelGroup
@@ -94,10 +91,7 @@ export class RequestExecutor {
         id: config.id,
         prompt: config.prompt,
         success: false,
-        error: this.executionErrorService.normalizeExecutionError(error, {
-          provider: config.provider,
-          model: config.model
-        }),
+        error: error instanceof Error ? error.message : 'Unknown text execution error',
         executionTime,
         sequence: config.sequence,
         parallelGroup: config.parallelGroup
@@ -134,7 +128,7 @@ export class RequestExecutor {
         imagePath: result.imagePath,
         error: result.error,
         provider: config.provider,
-        model: config.model || 'imagen-4',
+        model: config.model,
         executionTime,
         sequence: config.sequence,
         parallelGroup: config.parallelGroup
@@ -151,7 +145,7 @@ export class RequestExecutor {
           model: config.model
         }),
         provider: config.provider,
-        model: config.model || 'imagen-4',
+        model: config.model,
         executionTime,
         sequence: config.sequence,
         parallelGroup: config.parallelGroup
@@ -197,11 +191,7 @@ export class RequestExecutor {
         return { valid: false, error: 'Save path must be relative to vault root' };
       }
 
-      // If provider is explicitly specified and it's not 'google', error
-      // If provider is not specified, that's OK - it will default to 'google' in the image generation tool
-      if (imageConfig.provider && imageConfig.provider !== 'google') {
-        return { valid: false, error: 'Only Google provider is currently supported for image generation' };
-      }
+      // Provider and model validation is handled downstream by ImageGenerationService.validateParams()
     }
 
     return { valid: true };

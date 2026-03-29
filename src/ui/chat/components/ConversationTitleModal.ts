@@ -20,13 +20,6 @@ export class ConversationTitleModal extends Modal {
     const { contentEl } = this;
     this.component.load();
     contentEl.addClass('chat-conversation-title-modal');
-    
-    // Simulate a click on the modal to ensure Obsidian's keyboard scope is activated.
-    // This is necessary when the modal opens after a native confirm() dialog,
-    // which can leave the scope in an uninitialized state.
-    setTimeout(() => {
-      this.modalEl.click();
-    }, 10);
 
     contentEl.createEl('h2', { text: 'New Conversation' });
     contentEl.createEl('p', { text: 'Enter a title for your new conversation:' });
@@ -35,29 +28,18 @@ export class ConversationTitleModal extends Modal {
       .setName('Conversation Title')
       .addText((text) => {
         this.inputEl = text.inputEl;
-        
+
         text
           .setPlaceholder('e.g., "Help with React project"')
           .onChange((value) => {
             this.result = value;
           });
-          
+
         this.component.registerDomEvent(text.inputEl, 'keydown', (e: KeyboardEvent) => {
           if (e.key === 'Enter') {
             e.preventDefault();
             this.submit();
           }
-        });
-
-        // Focus the input after modal activation click
-        requestAnimationFrame(() => {
-          setTimeout(() => {
-            if (this.inputEl) {
-              this.inputEl.click();
-              this.inputEl.focus();
-              this.inputEl.select();
-            }
-          }, 50);
         });
       });
 
@@ -76,6 +58,11 @@ export class ConversationTitleModal extends Modal {
       cls: 'mod-cta'
     });
     this.component.registerDomEvent(createBtn, 'click', () => this.submit());
+
+    // Focus the input after modal is fully rendered
+    setTimeout(() => {
+      this.inputEl?.focus();
+    }, 0);
   }
 
   private submit() {
@@ -97,7 +84,10 @@ export class ConversationTitleModal extends Modal {
   }
 
   onClose() {
+    // Release focus from modal elements before cleanup
+    this.inputEl?.blur();
     this.component.unload();
+
     const { contentEl } = this;
     contentEl.empty();
 
@@ -107,5 +97,8 @@ export class ConversationTitleModal extends Modal {
     } else {
       this.onSubmit(null);
     }
+
+    // Restore focus to workspace so cursor is not trapped
+    activeWindow.document.body.focus();
   }
 }

@@ -213,6 +213,30 @@ describe('MessageDisplay', () => {
     });
   });
 
+  describe('transient event row', () => {
+    it('shows a non-persisted transcript event row and clears it cleanly', () => {
+      const conversation = createConversation({
+        messages: [createUserMessage({ id: 'u1' })]
+      });
+
+      display.setConversation(conversation);
+      jest.clearAllMocks();
+
+      display.showTransientEventRow('Compacting context before sending...');
+
+      const eventRow = (display as any).transientEventRow;
+      expect(eventRow).toBeDefined();
+      expect(eventRow.setAttribute).toHaveBeenCalledWith('role', 'status');
+      expect(eventRow.setAttribute).toHaveBeenCalledWith('aria-live', 'polite');
+      expect(messagesContainer.appendChild).toHaveBeenCalledWith(eventRow);
+
+      display.clearTransientEventRow();
+
+      expect(eventRow.remove).toHaveBeenCalled();
+      expect((display as any).transientEventRow).toBeNull();
+    });
+  });
+
   // ==========================================================================
   // findMessageBubble
   // ==========================================================================

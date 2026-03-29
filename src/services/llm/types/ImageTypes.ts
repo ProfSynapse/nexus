@@ -31,7 +31,7 @@ export interface ImageGenerationParams {
 }
 
 // Nano Banana image resolution sizes
-export type NanoBananaImageSize = '1K' | '2K' | '4K';
+export type NanoBananaImageSize = '512px' | '1K' | '2K' | '4K';
 
 // Image generation response from adapters
 export interface ImageGenerationResponse {
@@ -164,20 +164,24 @@ export namespace OpenAI {
 
 // Google Nano Banana specific types
 export namespace Google {
-  // Content part for reference images
-  export interface InlineDataPart {
-    inlineData: {
-      mimeType: string;
+  // Raw REST request part for reference images
+  export interface RequestInlineDataPart {
+    inline_data: {
+      mime_type: string;
       data: string; // base64
     };
   }
 
-  // Content part for text
-  export interface TextPart {
+  // Raw REST request part for text
+  export interface RequestTextPart {
     text: string;
   }
 
-  export type ContentPart = InlineDataPart | TextPart;
+  export type RequestPart = RequestInlineDataPart | RequestTextPart;
+
+  export interface RequestContent {
+    parts: RequestPart[];
+  }
 
   // Nano Banana image generation config
   export interface ImageConfig {
@@ -187,9 +191,9 @@ export namespace Google {
 
   // Request for generateContent with image generation
   export interface ImageGenerationRequest {
-    model: 'gemini-2.5-flash-image' | 'gemini-3-pro-image-preview';
-    contents: ContentPart[];
-    config?: {
+    model: 'gemini-2.5-flash-image' | 'gemini-3-pro-image-preview' | 'gemini-3.1-flash-image-preview';
+    contents: RequestContent[];
+    generationConfig?: {
       responseModalities?: ('TEXT' | 'IMAGE')[];
       imageConfig?: ImageConfig;
     };
@@ -245,7 +249,11 @@ export type ImageProvider = 'openai' | 'google' | 'openrouter'; // OpenAI availa
 export type ImageModel =
   | 'gpt-image-1'              // OpenAI (available but not active)
   | 'gemini-2.5-flash-image'   // Google Nano Banana (fast)
-  | 'gemini-3-pro-image-preview'; // Google Nano Banana Pro (advanced)
+  | 'gemini-3-pro-image-preview' // Google Nano Banana Pro (advanced)
+  | 'gemini-3.1-flash-image-preview' // Google Nano Banana 2 (flash speed, pro quality)
+  | 'gpt-5-image'                    // OpenAI GPT-5 Image (OpenRouter only)
+  | 'flux-2-pro'                     // Black Forest Labs FLUX.2 Pro (OpenRouter only)
+  | 'flux-2-flex';                   // Black Forest Labs FLUX.2 Flex (OpenRouter only)
 
 // Aspect ratio constants for Nano Banana models
 export enum AspectRatio {
@@ -258,7 +266,11 @@ export enum AspectRatio {
   LANDSCAPE_5_4 = '5:4',
   PORTRAIT_9_16 = '9:16',
   LANDSCAPE_16_9 = '16:9',
-  ULTRAWIDE_21_9 = '21:9'
+  ULTRAWIDE_21_9 = '21:9',
+  NARROW_1_4 = '1:4',
+  WIDE_4_1 = '4:1',
+  ULTRA_NARROW_1_8 = '1:8',
+  ULTRA_WIDE_8_1 = '8:1'
 }
 
 // Image size presets

@@ -1,10 +1,8 @@
 /**
  * Mistral AI Adapter with true streaming support
- * Implements Mistral's native streaming using client.chat.stream()
- * Based on official Mistral TypeScript SDK documentation
+ * Implements Mistral's REST API directly over requestUrl.
  */
 
-import { Mistral } from '@mistralai/mistralai';
 import { BaseAdapter } from '../BaseAdapter';
 import { 
   GenerateOptions, 
@@ -21,12 +19,8 @@ export class MistralAdapter extends BaseAdapter {
   readonly name = 'mistral';
   readonly baseUrl = 'https://api.mistral.ai';
 
-  private client: Mistral;
-
   constructor(apiKey: string, model?: string) {
     super(apiKey, model || MISTRAL_DEFAULT_MODEL);
-
-    this.client = new Mistral({ apiKey: this.apiKey });
     this.initializeCache();
   }
 
@@ -52,24 +46,38 @@ export class MistralAdapter extends BaseAdapter {
    */
   async* generateStreamAsync(prompt: string, options?: GenerateOptions): AsyncGenerator<StreamChunk, void, unknown> {
     try {
-      const result = await this.client.chat.stream({
-        model: options?.model || this.currentModel,
-        messages: this.buildMessages(prompt, options?.systemPrompt),
-        temperature: options?.temperature,
-        maxTokens: options?.maxTokens,
-        topP: options?.topP,
-        stop: options?.stopSequences,
-        tools: options?.tools ? this.convertTools(options.tools) : undefined
+      const nodeStream = await this.requestStream({
+        url: `${this.baseUrl}/v1/chat/completions`,
+        operation: 'streaming generation',
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: options?.model || this.currentModel,
+          messages: this.buildMessages(prompt, options?.systemPrompt),
+          temperature: options?.temperature,
+          max_tokens: options?.maxTokens,
+          top_p: options?.topP,
+          stop: options?.stopSequences,
+          tools: options?.tools ? this.convertTools(options.tools) : undefined,
+          stream: true
+        }),
+        timeoutMs: 120_000
       });
 
-      // Use unified stream processing with automatic tool call accumulation
-      // Note: Mistral SDK wraps chunks in .data property
-      yield* this.processStream(result, {
+      yield* this.processNodeStream(nodeStream, {
         debugLabel: 'Mistral',
-        extractContent: (chunk) => chunk.data?.choices[0]?.delta?.content || null,
-        extractToolCalls: (chunk) => chunk.data?.choices[0]?.delta?.tool_calls || null,
-        extractFinishReason: (chunk) => chunk.data?.choices[0]?.finish_reason || null,
-        extractUsage: (chunk) => chunk.data?.usage || null
+        extractContent: (chunk) => chunk.choices?.[0]?.delta?.content || null,
+        extractToolCalls: (chunk) => chunk.choices?.[0]?.delta?.tool_calls || null,
+        extractFinishReason: (chunk) => chunk.choices?.[0]?.finish_reason || null,
+        extractUsage: (chunk) => chunk.usage || null,
+        accumulateToolCalls: true,
+        toolCallThrottling: {
+          initialYield: true,
+          progressInterval: 50
+        }
       });
     } catch (error) {
       console.error('[MistralAdapter] Streaming error:', error);
@@ -109,6 +117,7 @@ export class MistralAdapter extends BaseAdapter {
   getCapabilities(): ProviderCapabilities {
     const baseCapabilities = {
       supportsStreaming: true,
+      streamingMode: 'streaming' as const,
       supportsJSON: true,
       supportsImages: false,
       supportsFunctions: true,
@@ -130,34 +139,47 @@ export class MistralAdapter extends BaseAdapter {
    */
   private async generateWithChatCompletions(prompt: string, options?: GenerateOptions): Promise<LLMResponse> {
     const model = options?.model || this.currentModel;
-    
-    const chatParams: any = {
+
+    // Build request body with snake_case keys matching the Mistral REST API
+    const requestBody: Record<string, unknown> = {
       model,
       messages: this.buildMessages(prompt, options?.systemPrompt),
       temperature: options?.temperature,
-      maxTokens: options?.maxTokens,
-      topP: options?.topP,
+      max_tokens: options?.maxTokens,
+      top_p: options?.topP,
       stop: options?.stopSequences
     };
 
     // Add tools if provided
     if (options?.tools) {
-      chatParams.tools = this.convertTools(options.tools);
+      requestBody.tools = this.convertTools(options.tools);
     }
 
-    const response = await this.client.chat.complete(chatParams);
-    const choice = response.choices[0];
+    const response = await this.request<any>({
+      url: `${this.baseUrl}/v1/chat/completions`,
+      operation: 'generation',
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${this.apiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(requestBody),
+      timeoutMs: 60_000
+    });
+    this.assertOk(response, `Mistral generation failed: HTTP ${response.status}`);
+    const responseJson = response.json;
+    const choice = responseJson.choices[0];
     
     if (!choice) {
       throw new Error('No response from Mistral');
     }
     
     let text = this.extractMessageContent(choice.message?.content) || '';
-    const usage = this.extractUsage(response);
-    let finishReason = choice.finishReason || 'stop';
+    const usage = this.extractUsage(responseJson);
+    const finishReason = choice.finish_reason || choice.finishReason || 'stop';
 
     // If tools were provided and we got tool calls, return placeholder text
-    if (options?.tools && choice.message?.toolCalls && choice.message.toolCalls.length > 0) {
+    if (options?.tools && (choice.message?.toolCalls || choice.message?.tool_calls)?.length > 0) {
       text = text || '[AI requested tool calls but tool execution not available]';
     }
 

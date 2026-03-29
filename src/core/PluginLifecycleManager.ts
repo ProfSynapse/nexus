@@ -16,6 +16,7 @@ import { ServiceRegistrar } from './services/ServiceRegistrar';
 import { MaintenanceCommandManager } from './commands/MaintenanceCommandManager';
 import { InlineEditCommandManager } from './commands/InlineEditCommandManager';
 import { ChatUIManager } from './ui/ChatUIManager';
+import { TaskBoardUIManager } from './ui/TaskBoardUIManager';
 import { BackgroundProcessor } from './background/BackgroundProcessor';
 import { SettingsTabManager } from './settings/SettingsTabManager';
 import { EmbeddingManager } from '../services/embeddings/EmbeddingManager';
@@ -67,6 +68,7 @@ export class PluginLifecycleManager {
     private serviceRegistrar: ServiceRegistrar;
     private commandManager: MaintenanceCommandManager;
     private chatUIManager: ChatUIManager;
+    private taskBoardUIManager: TaskBoardUIManager;
     private backgroundProcessor: BackgroundProcessor;
     private settingsTabManager: SettingsTabManager;
     private inlineEditCommandManager: InlineEditCommandManager;
@@ -103,6 +105,11 @@ export class PluginLifecycleManager {
             app: config.app,
             settings: config.settings,
             getService: (name, timeoutMs) => this.serviceRegistrar.getService(name, timeoutMs)
+        });
+
+        this.taskBoardUIManager = new TaskBoardUIManager({
+            plugin: config.plugin,
+            app: config.app
         });
 
         // Create background processor
@@ -149,13 +156,10 @@ export class PluginLifecycleManager {
             await this.serviceRegistrar.registerCoreServices();
 
             // PHASE 3: Register ChatView EARLY so Obsidian can restore it during layout restoration
-            // The view will show a loading state until chatService becomes available
             await this.chatUIManager.registerViewEarly();
+            await this.taskBoardUIManager.registerViewEarly();
 
-            // PHASE 4: Start background initialization immediately via setTimeout(0)
-            // This yields back to Obsidian's event loop so onload() returns quickly,
-            // but does NOT wait for onLayoutReady (which can take 13+ seconds).
-            // ChatView handles null chatService gracefully with a loading spinner.
+            // PHASE 4: Start background initialization via setTimeout(0)
             const bgInitTimer = setTimeout(() => {
                 this.startBackgroundInitialization().catch(error => {
                     console.error('[PluginLifecycleManager] Background initialization failed:', error);
@@ -174,22 +178,10 @@ export class PluginLifecycleManager {
      */
     private async startBackgroundInitialization(): Promise<void> {
         try {
-            // Load settings first
             await this.config.settings.loadSettings();
-
-            // Initialize data directories
             await this.serviceRegistrar.initializeDataDirectories();
-
-            // Initialize services directly - no delay needed since they only take ~10ms
-            // Previously gated behind setTimeout(1000) but diagnostics showed services are fast
-
-            // Initialize core services in proper dependency order
             await this.serviceRegistrar.initializeBusinessServices();
-
-            // Pre-initialize UI-critical services to avoid long loading times
             await this.serviceRegistrar.preInitializeUICriticalServices();
-
-            // Validate search functionality
             await this.backgroundProcessor.validateSearchFunctionality();
 
             // Start MCP server AFTER services are ready (registers agents)
@@ -209,8 +201,8 @@ export class PluginLifecycleManager {
                 console.error('[PluginLifecycleManager] ChatService init failed:', error);
             }
 
-            // Register chat UI components AFTER ChatService is initialized
             await this.chatUIManager.registerChatUI();
+            await this.taskBoardUIManager.registerTaskBoardUI();
 
             // Initialize settings tab AFTER business services are ready
             // This prevents race condition where settings tab tries to access agents before services are initialized

@@ -206,10 +206,14 @@ export class CreateWorkspaceTool extends BaseTool<CreateWorkspaceParameters, Cre
                 },
                 workflows: {
                     type: 'array',
-                    description: 'Workflows for different situations. Each workflow has name, when (trigger), and steps (newline-separated string).',
+                    description: 'Workflows for different situations. Each workflow may also bind a prompt and schedule.',
                     items: {
                         type: 'object',
                         properties: {
+                            id: {
+                                type: 'string',
+                                description: 'Optional stable workflow ID. If omitted, one will be generated.'
+                            },
                             name: {
                                 type: 'string',
                                 description: 'Workflow name'
@@ -221,6 +225,29 @@ export class CreateWorkspaceTool extends BaseTool<CreateWorkspaceParameters, Cre
                             steps: {
                                 type: 'string',
                                 description: 'Steps separated by newline characters (\\n)'
+                            },
+                            promptId: {
+                                type: 'string',
+                                description: 'Optional custom prompt ID bound to this workflow.'
+                            },
+                            promptName: {
+                                type: 'string',
+                                description: 'Optional cached prompt name for display.'
+                            },
+                            schedule: {
+                                type: 'object',
+                                description: 'Optional workflow schedule.',
+                                properties: {
+                                    enabled: { type: 'boolean' },
+                                    frequency: { type: 'string', enum: ['hourly', 'daily', 'weekly', 'monthly'] },
+                                    intervalHours: { type: 'number' },
+                                    hour: { type: 'number' },
+                                    minute: { type: 'number' },
+                                    dayOfWeek: { type: 'number' },
+                                    dayOfMonth: { type: 'number' },
+                                    catchUp: { type: 'string', enum: ['skip', 'latest', 'all'] }
+                                },
+                                required: ['enabled', 'frequency', 'catchUp']
                             }
                         },
                         required: ['name', 'when', 'steps']

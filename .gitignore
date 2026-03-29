@@ -71,3 +71,4 @@ local-models/
 *.wasm
 agentic-flow-main/
 local-models/
+.worktrees/

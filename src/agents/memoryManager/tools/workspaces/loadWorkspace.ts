@@ -18,7 +18,7 @@ import {
   LoadWorkspaceParameters,
   LoadWorkspaceResult
 } from '../../../../database/types/workspace/ParameterTypes';
-import { ProjectWorkspace } from '../../../../database/types/workspace/WorkspaceTypes';
+import { ProjectWorkspace, WorkspaceWorkflow } from '../../../../database/types/workspace/WorkspaceTypes';
 import { parseWorkspaceContext } from '../../../../utils/contextUtils';
 import { createErrorMessage } from '../../../../utils/errorUtils';
 import { PaginationParams } from '../../../../types/pagination/PaginationTypes';
@@ -63,7 +63,7 @@ export class LoadWorkspaceTool extends BaseTool<LoadWorkspaceParameters, LoadWor
 
     // Initialize composed services
     this.dataFetcher = new WorkspaceDataFetcher();
-    this.promptResolver = new WorkspacePromptResolver(agent.app, agent.plugin);
+    this.promptResolver = new WorkspacePromptResolver(agent.app, agent.plugin, agent.customPromptStorage);
     this.contextBuilder = new WorkspaceContextBuilder();
     this.fileCollector = new WorkspaceFileCollector();
   }
@@ -122,6 +122,9 @@ export class LoadWorkspaceTool extends BaseTool<LoadWorkspaceParameters, LoadWor
       );
 
       const workflows = this.contextBuilder.buildWorkflows(workspace);
+      const workflowDefinitions = (workspace.context?.workflows || []).map((workflow: WorkspaceWorkflow) => ({
+        ...workflow
+      }));
       const keyFiles = this.contextBuilder.extractKeyFiles(workspace);
       const preferences = this.contextBuilder.buildPreferences(workspace);
 
@@ -150,6 +153,15 @@ export class LoadWorkspaceTool extends BaseTool<LoadWorkspaceParameters, LoadWor
       const app = this.agent.getApp();
       const workspacePrompt = await this.promptResolver.fetchWorkspacePrompt(workspace, app);
 
+      // Fetch task summary if TaskManager is available
+      let taskSummary = null;
+      try {
+        const taskService = this.agent.getTaskService?.();
+        if (taskService) {
+          taskSummary = await taskService.getWorkspaceSummary(workspace.id);
+        }
+      } catch { /* TaskManager not initialized — skip */ }
+
       // Collect files using file collector
       const cacheManager = this.agent.getCacheManager();
       const recentFiles = await this.fileCollector.getRecentFilesInWorkspace(workspace, cacheManager);
@@ -173,13 +185,15 @@ export class LoadWorkspaceTool extends BaseTool<LoadWorkspaceParameters, LoadWor
         data: {
           context: context,
           workflows: workflows,
+          workflowDefinitions,
           workspaceStructure: workspaceStructure,
           recentFiles: recentFiles,
           keyFiles: keyFiles,
           preferences: preferences,
           sessions: limitedSessions,
           states: limitedStates,
-          ...(workspacePrompt && { prompt: workspacePrompt })
+          ...(workspacePrompt && { prompt: workspacePrompt }),
+          ...(taskSummary && { taskSummary })
         },
         pagination: {
           sessions: {
@@ -240,6 +254,7 @@ export class LoadWorkspaceTool extends BaseTool<LoadWorkspaceParameters, LoadWor
           recentActivity: [errorMessage]
         },
         workflows: [],
+        workflowDefinitions: [],
         workspaceStructure: [],
         recentFiles: [],
         keyFiles: {},
@@ -310,6 +325,35 @@ export class LoadWorkspaceTool extends BaseTool<LoadWorkspaceParameters, LoadWor
               type: 'array',
               items: { type: 'string' },
               description: 'Workflow strings'
+            },
+            workflowDefinitions: {
+              type: 'array',
+              description: 'Structured workflow definitions including prompt bindings and schedules.',
+              items: {
+                type: 'object',
+                properties: {
+                  id: { type: 'string' },
+                  name: { type: 'string' },
+                  when: { type: 'string' },
+                  steps: { type: 'string' },
+                  promptId: { type: 'string' },
+                  promptName: { type: 'string' },
+                  schedule: {
+                    type: 'object',
+                    properties: {
+                      enabled: { type: 'boolean' },
+                      frequency: { type: 'string', enum: ['hourly', 'daily', 'weekly', 'monthly'] },
+                      intervalHours: { type: 'number' },
+                      hour: { type: 'number' },
+                      minute: { type: 'number' },
+                      dayOfWeek: { type: 'number' },
+                      dayOfMonth: { type: 'number' },
+                      catchUp: { type: 'string', enum: ['skip', 'latest', 'all'] }
+                    }
+                  }
+                },
+                required: ['id', 'name', 'when', 'steps']
+              }
             },
             workspaceStructure: {
               type: 'array',
@@ -424,6 +468,14 @@ export class LoadWorkspaceTool extends BaseTool<LoadWorkspaceParameters, LoadWor
               },
               required: ['id', 'name', 'systemPrompt'],
               description: 'Associated workspace prompt (if available)'
+            },
+            taskSummary: {
+              type: 'object',
+              properties: {
+                projects: { type: 'object', description: 'Project counts and summaries' },
+                tasks: { type: 'object', description: 'Task counts by status, overdue count, next actions, recently completed' }
+              },
+              description: 'Task management summary (if TaskManager is available)'
             }
           }
         },

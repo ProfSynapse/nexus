@@ -60,11 +60,12 @@ export class UnifiedTabs {
   private createTabStructure(tabConfigs: UnifiedTabConfig[]): void {
     // Create tabs container with exact same class as Memory Manager
     this.tabContainer = this.containerEl.createDiv({ cls: 'memory-settings-tabs' });
+    this.tabContainer.addClass('nexus-settings-tabs');
     
     // Create individual tab elements exactly like Memory Manager
     tabConfigs.forEach(config => {
       this.tabs[config.key] = this.tabContainer.createDiv({ 
-        cls: 'memory-tab', 
+        cls: 'memory-tab nexus-settings-tab',
         text: config.label 
       });
     });

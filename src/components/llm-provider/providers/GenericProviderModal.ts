@@ -2,7 +2,10 @@
  * GenericProviderModal
  *
  * Provider modal for API-key based providers (OpenAI, Anthropic, Google, etc.).
- * Handles API key input, validation, and model toggles.
+ * Handles API key input, validation, model toggles, and optional OAuth connect.
+ *
+ * OAuth banner rendering is delegated to OAuthBannerComponent.
+ * OAuth connect/disconnect flows are delegated to OAuthFlowManager.
  */
 
 import { Setting, Notice } from 'obsidian';
@@ -13,6 +16,8 @@ import {
 } from '../types';
 import { LLMValidationService } from '../../../services/llm/validation/ValidationService';
 import { ModelWithProvider } from '../../../services/StaticModelsService';
+import { renderOAuthBanner, updateConnectButtonState, renderCliStatusBanner, updateCheckStatusButtonState } from '../../shared/OAuthBannerComponent';
+import { OAuthFlowManager } from '../../../services/oauth/OAuthFlowManager';
 
 export class GenericProviderModal implements IProviderModal {
   private config: ProviderModalConfig;
@@ -22,6 +27,14 @@ export class GenericProviderModal implements IProviderModal {
   private container: HTMLElement | null = null;
   private apiKeyInput: HTMLInputElement | null = null;
   private modelsContainer: HTMLElement | null = null;
+  private oauthBannerContainer: HTMLElement | null = null;
+  private deviceCodeEl: HTMLElement | null = null;
+  private connectButton: HTMLButtonElement | null = null;
+
+  // Secondary OAuth UI elements
+  private secondaryBannerContainer: HTMLElement | null = null;
+  private secondaryConnectButton: HTMLButtonElement | null = null;
+  private secondaryCheckStatusButton: HTMLButtonElement | null = null;
 
   // State
   private apiKey: string = '';
@@ -29,12 +42,113 @@ export class GenericProviderModal implements IProviderModal {
   private isValidated: boolean = false;
   private validationTimeout: ReturnType<typeof setTimeout> | null = null;
 
+  // OAuth flow managers
+  private primaryFlowManager: OAuthFlowManager | null = null;
+  private secondaryFlowManager: OAuthFlowManager | null = null;
+
   constructor(config: ProviderModalConfig, deps: ProviderModalDependencies) {
     this.config = config;
     this.deps = deps;
 
     // Initialize from existing config
     this.apiKey = config.config.apiKey || '';
+
+    // Set up primary OAuth flow manager
+    if (config.oauthConfig) {
+      this.primaryFlowManager = new OAuthFlowManager({
+        oauthConfig: config.oauthConfig,
+        providerId: config.providerId,
+        app: deps.app,
+        callbacks: {
+          onConnect: (result) => {
+            this.apiKey = result.apiKey;
+            this.config.config.apiKey = result.apiKey;
+
+            if (this.apiKeyInput) {
+              this.apiKeyInput.value = result.apiKey;
+            }
+
+            this.config.config.oauth = {
+              connected: true,
+              providerId: this.config.providerId,
+              connectedAt: Date.now(),
+              refreshToken: result.refreshToken,
+              expiresAt: result.expiresAt,
+              metadata: result.metadata,
+            };
+
+            this.config.config.enabled = true;
+            this.saveConfig();
+            this.refreshPrimaryBanner();
+          },
+          onDisconnect: () => {
+            this.apiKey = '';
+            this.config.config.apiKey = '';
+            this.config.config.oauth = undefined;
+
+            if (this.apiKeyInput) {
+              this.apiKeyInput.value = '';
+            }
+
+            this.saveConfig();
+            this.refreshPrimaryBanner();
+          },
+          onConnectingChange: (connecting) => {
+            updateConnectButtonState(
+              this.connectButton,
+              connecting,
+              this.config.oauthConfig!.providerLabel,
+            );
+            // Hide device code display when flow ends
+            if (!connecting) {
+              this.hideDeviceCode();
+            }
+          },
+          onDeviceCode: (userCode, verificationUri) => {
+            this.showDeviceCode(userCode, verificationUri);
+          },
+        },
+      });
+    }
+
+    // Set up secondary OAuth flow manager (skip for statusOnly — handled via direct startFlow)
+    if (config.secondaryOAuthProvider && !config.secondaryOAuthProvider.statusOnly) {
+      const secondary = config.secondaryOAuthProvider;
+      this.secondaryFlowManager = new OAuthFlowManager({
+        oauthConfig: secondary.oauthConfig,
+        providerId: secondary.providerId,
+        app: deps.app,
+        callbacks: {
+          onConnect: (result) => {
+            secondary.config.apiKey = result.apiKey;
+            secondary.config.oauth = {
+              connected: true,
+              providerId: secondary.providerId,
+              connectedAt: Date.now(),
+              refreshToken: result.refreshToken,
+              expiresAt: result.expiresAt,
+              metadata: result.metadata,
+            };
+            secondary.config.enabled = true;
+            secondary.onConfigChange(secondary.config);
+            this.refreshSecondaryBanner();
+          },
+          onDisconnect: () => {
+            secondary.config.apiKey = '';
+            secondary.config.oauth = undefined;
+            secondary.onConfigChange(secondary.config);
+            this.refreshSecondaryBanner();
+          },
+          onConnectingChange: (connecting) => {
+            updateConnectButtonState(
+              this.secondaryConnectButton,
+              connecting,
+              secondary.oauthConfig.providerLabel,
+            );
+          },
+        },
+      });
+    }
   }
 
   /**
@@ -46,15 +160,30 @@ export class GenericProviderModal implements IProviderModal {
 
     this.renderApiKeySection(container);
     this.renderModelsSection(container);
+
+    if (this.config.secondaryOAuthProvider) {
+      this.renderSecondaryOAuthSection(container);
+    }
   }
 
   /**
-   * Render API key input section
+   * Render API key input section, with optional OAuth connect button and connected banner
    */
   private renderApiKeySection(container: HTMLElement): void {
-    container.createEl('h2', { text: 'API Key' });
+    container.createEl('h2', { text: this.config.oauthOnly ? 'Authentication' : 'API key' });
 
-    new Setting(container)
+    // OAuth connected banner (shown above the key input when connected)
+    this.oauthBannerContainer = container.createDiv('oauth-banner-container');
+    this.refreshPrimaryBanner();
+
+    // Device code inline display (hidden until a device flow fires onDeviceCode)
+    this.deviceCodeEl = container.createDiv('oauth-device-code-container');
+    this.deviceCodeEl.addClass('oauth-device-code-hidden');
+
+    // OAuth-only providers (e.g. GitHub Copilot) don't have a manual key input
+    if (this.config.oauthOnly) return;
+
+    const setting = new Setting(container)
       .setDesc(`Enter your ${this.config.providerName} API key (format: ${this.config.keyFormat})`)
       .addText(text => {
         this.apiKeyInput = text.inputEl;
@@ -71,12 +200,161 @@ export class GenericProviderModal implements IProviderModal {
       })
       .addButton(button => {
         button
-          .setButtonText('Get Key')
+          .setButtonText('Get key')
           .setTooltip(`Open ${this.config.providerName} API key page`)
           .onClick(() => {
             window.open(this.config.signupUrl, '_blank');
           });
       });
+  }
+
+  /**
+   * Show the device code inline for the user to copy and enter
+   */
+  private showDeviceCode(userCode: string, verificationUri: string): void {
+    if (!this.deviceCodeEl) return;
+
+    this.deviceCodeEl.empty();
+    this.deviceCodeEl.removeClass('oauth-device-code-hidden');
+
+    this.deviceCodeEl.createEl('p', {
+      text: 'Enter this code at github.com/login/device:',
+      cls: 'oauth-device-code-instruction',
+    });
+
+    const row = this.deviceCodeEl.createDiv('oauth-device-code-row');
+    row.createSpan({ text: userCode, cls: 'oauth-device-code-value' });
+
+    const copyBtn = row.createEl('button', { text: 'Copy' });
+    copyBtn.addEventListener('click', () => {
+      navigator.clipboard.writeText(userCode);
+      copyBtn.textContent = 'Copied!';
+      setTimeout(() => {
+        copyBtn.textContent = 'Copy';
+      }, 2000);
+    });
+
+    this.deviceCodeEl.createEl('p', {
+      text: `Browser opened to ${verificationUri}`,
+      cls: 'oauth-device-code-url',
+    });
+  }
+
+  /**
+   * Hide and clear the device code display
+   */
+  private hideDeviceCode(): void {
+    if (!this.deviceCodeEl) return;
+    this.deviceCodeEl.addClass('oauth-device-code-hidden');
+    this.deviceCodeEl.empty();
+  }
+
+  /**
+   * Refresh the primary OAuth banner
+   */
+  private refreshPrimaryBanner(): void {
+    if (!this.oauthBannerContainer || !this.config.oauthConfig) return;
+
+    this.hideDeviceCode();
+
+    const result = renderOAuthBanner(this.oauthBannerContainer, {
+      providerLabel: this.config.oauthConfig.providerLabel,
+      isConnected: !!this.config.config.oauth?.connected,
+      onConnect: () => this.primaryFlowManager?.connect(),
+      onDisconnect: () => this.primaryFlowManager?.disconnect(),
+    });
+    this.connectButton = result.connectButton;
+  }
+
+  /**
+   * Render a secondary OAuth provider sub-section (e.g., Codex inside OpenAI modal)
+   */
+  private renderSecondaryOAuthSection(container: HTMLElement): void {
+    const secondary = this.config.secondaryOAuthProvider;
+    if (!secondary) return;
+
+    const section = container.createDiv('secondary-oauth-section');
+
+    section.createEl('h2', { text: secondary.providerLabel });
+    section.createEl('p', {
+      text: secondary.description,
+      cls: 'setting-item-description',
+    });
+
+    // Banner container for connected/disconnected or status indicator
+    this.secondaryBannerContainer = section.createDiv('oauth-banner-container');
+    this.refreshSecondaryBanner();
+  }
+
+  /**
+   * Refresh the secondary OAuth/CLI status banner
+   */
+  private refreshSecondaryBanner(): void {
+    if (!this.secondaryBannerContainer) return;
+
+    const secondary = this.config.secondaryOAuthProvider;
+    if (!secondary) return;
+
+    if (secondary.statusOnly) {
+      // CLI status indicator: shows authenticated/not-authenticated + "Check status" button
+      const result = renderCliStatusBanner(this.secondaryBannerContainer, {
+        providerLabel: secondary.oauthConfig.providerLabel,
+        isAuthenticated: !!secondary.config.oauth?.connected,
+        notAuthenticatedHint: secondary.statusHint,
+        onCheckStatus: () => this.checkSecondaryCliStatus(),
+      });
+      this.secondaryCheckStatusButton = result.checkStatusButton;
+    } else {
+      // Standard OAuth connect/disconnect banner
+      const result = renderOAuthBanner(this.secondaryBannerContainer, {
+        providerLabel: secondary.oauthConfig.providerLabel,
+        isConnected: !!secondary.config.oauth?.connected,
+        onConnect: () => this.secondaryFlowManager?.connect(),
+        onDisconnect: () => this.secondaryFlowManager?.disconnect(),
+      });
+      this.secondaryConnectButton = result.connectButton;
+    }
+  }
+
+  /**
+   * Run a CLI status check for a statusOnly secondary provider.
+   * Calls startFlow (which is check-only), updates config on success,
+   * and refreshes the status banner.
+   */
+  private async checkSecondaryCliStatus(): Promise<void> {
+    const secondary = this.config.secondaryOAuthProvider;
+    if (!secondary) return;
+
+    updateCheckStatusButtonState(this.secondaryCheckStatusButton, true);
+
+    try {
+      const result = await secondary.oauthConfig.startFlow({});
+
+      if (result.success && result.apiKey) {
+        secondary.config.apiKey = result.apiKey;
+        secondary.config.oauth = {
+          connected: true,
+          providerId: secondary.providerId,
+          connectedAt: Date.now(),
+          metadata: result.metadata,
+        };
+        secondary.config.enabled = true;
+        secondary.onConfigChange(secondary.config);
+        new Notice(`${secondary.oauthConfig.providerLabel} authenticated`);
+      } else {
+        secondary.config.apiKey = '';
+        secondary.config.oauth = undefined;
+        secondary.config.enabled = false;
+        secondary.onConfigChange(secondary.config);
+        new Notice(result.error || `${secondary.oauthConfig.providerLabel} not authenticated`);
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      new Notice(`Status check failed: ${errorMessage}`);
+    } finally {
+      updateCheckStatusButtonState(this.secondaryCheckStatusButton, false);
+      this.refreshSecondaryBanner();
+    }
   }
 
   /**
@@ -93,6 +371,12 @@ export class GenericProviderModal implements IProviderModal {
     // Clear validation cache
     this.config.config.lastValidated = undefined;
     this.config.config.validationHash = undefined;
+
+    // Clear OAuth badge if user manually types a key
+    if (this.config.config.oauth?.connected) {
+      this.config.config.oauth = undefined;
+      this.refreshPrimaryBanner();
+    }
 
     // Clear existing timeout
     if (this.validationTimeout) {
@@ -122,7 +406,7 @@ export class GenericProviderModal implements IProviderModal {
    * Render models section
    */
   private renderModelsSection(container: HTMLElement): void {
-    container.createEl('h2', { text: 'Available Models' });
+    container.createEl('h2', { text: 'Available models' });
     this.modelsContainer = container.createDiv('models-container');
 
     this.loadModels();
@@ -279,8 +563,18 @@ export class GenericProviderModal implements IProviderModal {
       this.validationTimeout = null;
     }
 
+    // Cancel any in-progress OAuth flow so the callback server shuts down
+    this.primaryFlowManager?.cancelIfActive();
+    this.secondaryFlowManager?.cancelIfActive();
+
     this.container = null;
     this.apiKeyInput = null;
     this.modelsContainer = null;
+    this.oauthBannerContainer = null;
+    this.deviceCodeEl = null;
+    this.connectButton = null;
+    this.secondaryBannerContainer = null;
+    this.secondaryConnectButton = null;
+    this.secondaryCheckStatusButton = null;
   }
 }

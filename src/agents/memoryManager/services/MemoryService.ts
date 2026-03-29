@@ -14,6 +14,7 @@ import {
 import { MemoryTraceData, SessionMetadata } from '../../../types/storage/HybridStorageTypes';
 import { PaginatedResult, PaginationParams, calculatePaginationMetadata } from '../../../types/pagination/PaginationTypes';
 import { normalizeLegacyTraceMetadata } from '../../../services/memory/LegacyTraceMetadataNormalizer';
+import { StorageAdapterOrGetter, resolveAdapter, withDualBackend } from '../../../services/helpers/DualBackendExecutor';
 
 /**
  * MemoryService provides agent-specific logic for memory management
@@ -21,15 +22,6 @@ import { normalizeLegacyTraceMetadata } from '../../../services/memory/LegacyTra
  * - IStorageAdapter (new hybrid JSONL+SQLite backend with pagination)
  * - WorkspaceService (legacy JSON file backend)
  */
-/**
- * Type for the storage adapter parameter: either a direct adapter instance
- * or a getter function that lazily resolves the adapter.
- * The getter pattern ensures services pick up the adapter after SQLite
- * finishes initializing in the background, rather than capturing a
- * one-time null reference at construction time.
- */
-type StorageAdapterOrGetter = IStorageAdapter | (() => IStorageAdapter | undefined) | undefined;
-
 export class MemoryService {
   private storageAdapterOrGetter: StorageAdapterOrGetter;
 
@@ -42,24 +34,11 @@ export class MemoryService {
   }
 
   /**
-   * Resolve the storage adapter, supporting both direct references and getter functions.
-   * Returns the adapter only if it is ready (SQLite initialized). Falls back to undefined
-   * so callers use legacy WorkspaceService path.
+   * Resolve the storage adapter if available and ready.
+   * Delegates to shared DualBackendExecutor helper.
    */
   private getReadyAdapter(): IStorageAdapter | undefined {
-    let adapter: IStorageAdapter | undefined;
-
-    if (typeof this.storageAdapterOrGetter === 'function') {
-      adapter = this.storageAdapterOrGetter();
-    } else {
-      adapter = this.storageAdapterOrGetter;
-    }
-
-    if (adapter && adapter.isReady()) {
-      return adapter;
-    }
-
-    return undefined;
+    return resolveAdapter(this.storageAdapterOrGetter);
   }
 
   /**
@@ -74,49 +53,43 @@ export class MemoryService {
     sessionId?: string,
     options?: PaginationParams
   ): Promise<PaginatedResult<WorkspaceMemoryTrace>> {
-    // Use new storage adapter if available and ready (avoids blocking on SQLite initialization)
-    const adapterForTraces = this.getReadyAdapter();
-    if (adapterForTraces) {
-      const result = await adapterForTraces.getTraces(workspaceId, sessionId, options);
+    return withDualBackend(
+      this.storageAdapterOrGetter,
+      async (adapter) => {
+        const result = await adapter.getTraces(workspaceId, sessionId, options);
+        const convertedItems = result.items.map(trace => this.convertToLegacyTrace(trace));
+        return {
+          ...result,
+          items: convertedItems
+        };
+      },
+      async () => {
+        let allTraces: WorkspaceMemoryTrace[] = [];
 
-      // Convert MemoryTraceData to WorkspaceMemoryTrace format
-      const convertedItems = result.items.map(trace => this.convertToLegacyTrace(trace));
-
-      return {
-        ...result,
-        items: convertedItems
-      };
-    }
-
-    // Legacy path: use WorkspaceService
-    let allTraces: WorkspaceMemoryTrace[] = [];
-
-    if (sessionId) {
-      // Get traces from specific session
-      const traces = await this.workspaceService.getMemoryTraces(workspaceId, sessionId);
-      allTraces = traces.map(trace => ({
-        ...trace,
-        workspaceId,
-        sessionId
-      }));
-    } else {
-      // Get all traces from all sessions in workspace
-      const workspace = await this.workspaceService.getWorkspace(workspaceId);
-
-      if (workspace) {
-        for (const [sid, session] of Object.entries(workspace.sessions)) {
-          const sessionTraces = Object.values(session.memoryTraces).map(trace => ({
+        if (sessionId) {
+          const traces = await this.workspaceService.getMemoryTraces(workspaceId, sessionId);
+          allTraces = traces.map(trace => ({
             ...trace,
             workspaceId,
-            sessionId: sid
+            sessionId
           }));
-          allTraces.push(...sessionTraces);
+        } else {
+          const workspace = await this.workspaceService.getWorkspace(workspaceId);
+          if (workspace) {
+            for (const [sid, session] of Object.entries(workspace.sessions)) {
+              const sessionTraces = Object.values(session.memoryTraces).map(trace => ({
+                ...trace,
+                workspaceId,
+                sessionId: sid
+              }));
+              allTraces.push(...sessionTraces);
+            }
+          }
         }
-      }
-    }
 
-    // Wrap in PaginatedResult for consistent return type
-    return this.wrapInPaginatedResult(allTraces, options);
+        return this.wrapInPaginatedResult(allTraces, options);
+      }
+    );
   }
 
   /**
@@ -173,72 +146,9 @@ export class MemoryService {
    */
   async recordActivityTrace(trace: Omit<WorkspaceMemoryTrace, 'id'>): Promise<string> {
     const workspaceId = trace.workspaceId;
-    let sessionId = trace.sessionId || 'default-session';
+    const sessionId = trace.sessionId || 'default-session';
 
-    // Use new storage adapter if available and ready (avoids blocking on SQLite initialization)
-    const adapterForRecord = this.getReadyAdapter();
-    if (adapterForRecord) {
-      try {
-        const traceId = await adapterForRecord.addTrace(workspaceId, sessionId, {
-          timestamp: trace.timestamp || Date.now(),
-          type: trace.type || 'generic',
-          content: trace.content || '',
-          metadata: normalizeLegacyTraceMetadata({
-            workspaceId,
-            sessionId,
-            traceType: trace.type,
-            metadata: trace.metadata
-          })
-        });
-        return traceId;
-      } catch (error) {
-        // If session doesn't exist, try to create it first
-        if ((error as Error).message?.includes('session')) {
-          await adapterForRecord.createSession(workspaceId, {
-            name: 'Default Session',
-            description: 'Auto-created session',
-            startTime: Date.now(),
-            isActive: true
-          });
-          // Retry adding trace
-          return await adapterForRecord.addTrace(workspaceId, sessionId, {
-            timestamp: trace.timestamp || Date.now(),
-            type: trace.type || 'generic',
-            content: trace.content || '',
-            metadata: normalizeLegacyTraceMetadata({
-              workspaceId,
-              sessionId,
-              traceType: trace.type,
-              metadata: trace.metadata
-            })
-          });
-        }
-        throw error;
-      }
-    }
-
-    // Legacy path: use WorkspaceService
-    // Ensure workspace exists
-    const workspace = await this.workspaceService.getWorkspace(workspaceId);
-
-    if (!workspace) {
-      throw new Error(`Workspace ${workspaceId} not found`);
-    }
-
-    // Create session if it doesn't exist
-    if (!workspace.sessions[sessionId]) {
-      await this.workspaceService.addSession(workspaceId, {
-        id: sessionId,
-        name: 'Default Session',
-        startTime: Date.now(),
-        isActive: true,
-        memoryTraces: {},
-        states: {}
-      });
-    }
-
-    // Add trace to session
-    const createdTrace = await this.workspaceService.addMemoryTrace(workspaceId, sessionId, {
+    const tracePayload = {
       timestamp: trace.timestamp || Date.now(),
       type: trace.type || 'generic',
       content: trace.content || '',
@@ -248,9 +158,47 @@ export class MemoryService {
         traceType: trace.type,
         metadata: trace.metadata
       })
-    });
+    };
 
-    return createdTrace.id;
+    return withDualBackend(
+      this.storageAdapterOrGetter,
+      async (adapter) => {
+        try {
+          return await adapter.addTrace(workspaceId, sessionId, tracePayload);
+        } catch (error) {
+          if ((error as Error).message?.includes('session')) {
+            await adapter.createSession(workspaceId, {
+              name: 'Default Session',
+              description: 'Auto-created session',
+              startTime: Date.now(),
+              isActive: true
+            });
+            return await adapter.addTrace(workspaceId, sessionId, tracePayload);
+          }
+          throw error;
+        }
+      },
+      async () => {
+        const workspace = await this.workspaceService.getWorkspace(workspaceId);
+        if (!workspace) {
+          throw new Error(`Workspace ${workspaceId} not found`);
+        }
+
+        if (!workspace.sessions[sessionId]) {
+          await this.workspaceService.addSession(workspaceId, {
+            id: sessionId,
+            name: 'Default Session',
+            startTime: Date.now(),
+            isActive: true,
+            memoryTraces: {},
+            states: {}
+          });
+        }
+
+        const createdTrace = await this.workspaceService.addMemoryTrace(workspaceId, sessionId, tracePayload);
+        return createdTrace.id;
+      }
+    );
   }
 
   /**
@@ -286,34 +234,28 @@ export class MemoryService {
     workspaceId: string,
     options?: PaginationParams
   ): Promise<PaginatedResult<WorkspaceSession>> {
-    // Use new storage adapter if available and ready (avoids blocking on SQLite initialization)
-    const adapterForSessions = this.getReadyAdapter();
-    if (adapterForSessions) {
-      const result = await adapterForSessions.getSessions(workspaceId, options);
-
-      // Convert SessionMetadata to WorkspaceSession format
-      const convertedItems = result.items.map(session => this.convertSessionMetadataToWorkspaceSession(session));
-
-      return {
-        ...result,
-        items: convertedItems
-      };
-    }
-
-    // Legacy path: use WorkspaceService
-    const workspace = await this.workspaceService.getWorkspace(workspaceId);
-
-    if (!workspace) {
-      return this.wrapInPaginatedResult([], options);
-    }
-
-    const sessions = Object.values(workspace.sessions).map(session => ({
-      ...session,
-      workspaceId
-    }));
-
-    // Wrap in PaginatedResult for consistent return type
-    return this.wrapInPaginatedResult(sessions, options);
+    return withDualBackend(
+      this.storageAdapterOrGetter,
+      async (adapter) => {
+        const result = await adapter.getSessions(workspaceId, options);
+        const convertedItems = result.items.map(session => this.convertSessionMetadataToWorkspaceSession(session));
+        return {
+          ...result,
+          items: convertedItems
+        };
+      },
+      async () => {
+        const workspace = await this.workspaceService.getWorkspace(workspaceId);
+        if (!workspace) {
+          return this.wrapInPaginatedResult([], options);
+        }
+        const sessions = Object.values(workspace.sessions).map(session => ({
+          ...session,
+          workspaceId
+        }));
+        return this.wrapInPaginatedResult(sessions, options);
+      }
+    );
   }
 
   /**
@@ -488,45 +430,40 @@ export class MemoryService {
   }>> {
     type StateItem = { id: string; name: string; created: number; state: WorkspaceState };
 
-    // Use new storage adapter if available and ready (avoids blocking on SQLite initialization)
-    const adapterForStates = this.getReadyAdapter();
-    if (adapterForStates) {
-      const result = await adapterForStates.getStates(workspaceId, sessionId, options);
+    return withDualBackend(
+      this.storageAdapterOrGetter,
+      async (adapter) => {
+        const result = await adapter.getStates(workspaceId, sessionId, options);
+        const convertedItems: StateItem[] = result.items.map(stateMeta => ({
+          id: stateMeta.id,
+          name: stateMeta.name,
+          created: stateMeta.created,
+          state: {} as WorkspaceState
+        }));
+        return {
+          ...result,
+          items: convertedItems
+        };
+      },
+      async () => {
+        const workspace = await this.workspaceService.getWorkspace(workspaceId);
+        let allStates: StateItem[] = [];
 
-      // Convert StateMetadata to legacy format
-      const convertedItems: StateItem[] = result.items.map(stateMeta => ({
-        id: stateMeta.id,
-        name: stateMeta.name,
-        created: stateMeta.created,
-        state: {} as WorkspaceState // Metadata doesn't include full content
-      }));
-
-      return {
-        ...result,
-        items: convertedItems
-      };
-    }
-
-    // Legacy path: use WorkspaceService
-    const workspace = await this.workspaceService.getWorkspace(workspaceId);
-    let allStates: StateItem[] = [];
-
-    if (workspace) {
-      // If sessionId provided, get states for that session only
-      if (sessionId) {
-        if (workspace.sessions[sessionId]) {
-          allStates = Object.values(workspace.sessions[sessionId].states);
+        if (workspace) {
+          if (sessionId) {
+            if (workspace.sessions[sessionId]) {
+              allStates = Object.values(workspace.sessions[sessionId].states);
+            }
+          } else {
+            for (const session of Object.values(workspace.sessions)) {
+              allStates.push(...Object.values(session.states));
+            }
+          }
         }
-      } else {
-        // Get all states from all sessions in workspace
-        for (const session of Object.values(workspace.sessions)) {
-          allStates.push(...Object.values(session.states));
-        }
+
+        return this.wrapInPaginatedResult(allStates, options);
       }
-    }
-
-    // Wrap in PaginatedResult for consistent return type
-    return this.wrapInPaginatedResult(allStates, options);
+    );
   }
 
   /**

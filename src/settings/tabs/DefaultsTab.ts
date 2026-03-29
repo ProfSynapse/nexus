@@ -78,7 +78,7 @@ export class DefaultsTab {
     const llmSettings = this.services.llmProviderSettings;
     const pluginSettings = this.services.settings.settings;
 
-    return {
+    const result = {
       provider: llmSettings?.defaultModel?.provider || '',
       model: llmSettings?.defaultModel?.model || '',
       agentProvider: llmSettings?.agentModel?.provider || undefined,
@@ -98,6 +98,7 @@ export class DefaultsTab {
       promptId: pluginSettings.defaultPromptId || null,
       contextNotes: pluginSettings.defaultContextNotes || []
     };
+    return result;
   }
 
   /**
@@ -228,6 +229,7 @@ export class DefaultsTab {
    * Cleanup
    */
   destroy(): void {
+    this.renderer?.destroy();
     this.renderer = null;
   }
 }

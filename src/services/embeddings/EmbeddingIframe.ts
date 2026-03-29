@@ -241,17 +241,25 @@ export class EmbeddingIframe {
     const id = ++this.requestId;
 
     return new Promise((resolve, reject) => {
-      // Cast resolve to accept void for Map compatibility (init uses void, regular requests use EmbeddingResponse)
-      this.pendingRequests.set(id, { resolve: resolve as (value: EmbeddingResponse | void) => void, reject });
-      this.iframe!.contentWindow!.postMessage({ id, ...request }, '*');
-
-      // Timeout after 30 seconds
-      setTimeout(() => {
+      const timeoutId = setTimeout(() => {
         if (this.pendingRequests.has(id)) {
           this.pendingRequests.delete(id);
           reject(new Error('Request timeout'));
         }
       }, 30000);
+
+      // Cast resolve to accept void for Map compatibility (init uses void, regular requests use EmbeddingResponse)
+      this.pendingRequests.set(id, {
+        resolve: ((value: EmbeddingResponse | void) => {
+          clearTimeout(timeoutId);
+          resolve(value as EmbeddingResponse);
+        }),
+        reject: ((error: Error) => {
+          clearTimeout(timeoutId);
+          reject(error);
+        })
+      });
+      this.iframe!.contentWindow!.postMessage({ id, ...request }, '*');
     });
   }
 

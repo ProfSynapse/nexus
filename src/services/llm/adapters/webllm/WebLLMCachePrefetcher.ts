@@ -67,7 +67,6 @@ async function getModelFileList(modelSpec: WebLLMModelSpec): Promise<Array<{ nam
       }
     }
   } catch (err) {
-    // tensor-cache.json not available, probe for shards
     // Fall back to probing for shards
     for (let i = 0; i < 200; i++) {
       const shardName = `params_shard_${i}.bin`;
@@ -100,7 +99,6 @@ async function getModelFileList(modelSpec: WebLLMModelSpec): Promise<Array<{ nam
       // Skip missing files
     }
   }
-
   // Add WASM library
   if (modelSpec.modelLibUrl) {
     files.push({

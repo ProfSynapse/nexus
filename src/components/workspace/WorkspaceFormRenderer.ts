@@ -1,6 +1,8 @@
-import { App, DropdownComponent, TextComponent, TextAreaComponent, ButtonComponent } from 'obsidian';
+import { DropdownComponent, TextComponent, TextAreaComponent, ButtonComponent } from 'obsidian';
 import { ProjectWorkspace } from '../../database/workspace-types';
+import type { WorkspaceWorkflow } from '../../database/types/workspace/WorkspaceTypes';
 import { CustomPrompt } from '../../types/mcp/CustomPromptTypes';
+import { formatWorkflowScheduleSummary } from '../../services/workflows/types';
 
 /**
  * WorkspaceFormRenderer - Single scrollable workspace form
@@ -15,10 +17,10 @@ import { CustomPrompt } from '../../types/mcp/CustomPromptTypes';
  */
 export class WorkspaceFormRenderer {
   constructor(
-    private app: App,
     private formData: Partial<ProjectWorkspace>,
     private availableAgents: CustomPrompt[],
     private onWorkflowEdit: (index?: number) => void,
+    private onWorkflowRun: (index: number) => void,
     private onFilePick: (index: number) => void,
     private onRefresh: () => void
   ) {}
@@ -207,8 +209,16 @@ export class WorkspaceFormRenderer {
         const info = item.createDiv('nexus-item-info');
         const workflowName = workflow.name || `Workflow ${index + 1}`;
         info.createEl('span', { text: workflowName, cls: 'nexus-item-title' });
+        const summary = this.buildWorkflowSummary(workflow);
+        if (summary) {
+          info.createEl('span', { text: summary, cls: 'nexus-item-subtitle' });
+        }
 
         const actions = item.createDiv('nexus-item-actions');
+        const runButton = new ButtonComponent(actions).setIcon('play');
+        runButton.buttonEl.addClass('clickable-icon');
+        runButton.buttonEl.setAttribute('aria-label', `Run ${workflowName} now`);
+        runButton.onClick(() => this.onWorkflowRun(index));
         new ButtonComponent(actions)
           .setButtonText('Edit')
           .onClick(() => this.onWorkflowEdit(index));
@@ -224,10 +234,7 @@ export class WorkspaceFormRenderer {
 
     new ButtonComponent(subsection)
       .setButtonText('+ Add Workflow')
-      .onClick(() => {
-        this.formData.context!.workflows!.push({ name: '', when: '', steps: '' });
-        this.onWorkflowEdit(this.formData.context!.workflows!.length - 1);
-      });
+      .onClick(() => this.onWorkflowEdit());
   }
 
   /**
@@ -286,5 +293,24 @@ export class WorkspaceFormRenderer {
         this.formData.context!.keyFiles!.push('');
         this.onFilePick(newIndex);
       });
+  }
+
+  private buildWorkflowSummary(workflow: WorkspaceWorkflow): string {
+    const details: string[] = [];
+
+    if (workflow.when) {
+      details.push(workflow.when);
+    }
+
+    if (workflow.promptName) {
+      details.push(`Prompt: ${workflow.promptName}`);
+    }
+
+    const scheduleSummary = formatWorkflowScheduleSummary(workflow.schedule);
+    if (scheduleSummary) {
+      details.push(`Schedule: ${scheduleSummary}`);
+    }
+
+    return details.join(' • ');
   }
 }

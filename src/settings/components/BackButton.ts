@@ -16,7 +16,7 @@ export class BackButton {
      * @param component Optional Component for registerDomEvent
      */
     constructor(container: HTMLElement, label: string, onClick: () => void, component?: Component) {
-        this.element = container.createDiv('nexus-back-button');
+        this.element = container.createEl('button', { cls: 'clickable-icon nexus-back-button' });
 
         const iconSpan = this.element.createSpan({ cls: 'nexus-back-button-icon' });
         setIcon(iconSpan, 'chevron-left');

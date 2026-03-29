@@ -48,13 +48,14 @@ export class SettingsTabManager {
             // Get agent references - may not be available yet
             const searchManager = this.config.connector?.getSearchManager();
             const memoryManager = this.config.connector?.getMemoryManager();
-            
+            const appManager = this.config.connector?.getAppManager();
+
             // Get services from container
             const services: Record<string, unknown> = {};
             for (const serviceName of this.config.serviceManager.getReadyServices()) {
                 services[serviceName] = this.config.serviceManager.getServiceIfReady(serviceName);
             }
-            
+
             // Create settings tab with current state (using new tab-based SettingsView)
             this.settingsTab = new SettingsView(
                 this.config.app,
@@ -64,7 +65,8 @@ export class SettingsTabManager {
                 searchManager || undefined,
                 memoryManager || undefined,
                 this.config.serviceManager, // Pass service manager for compatibility
-                this.config.lifecycleManager // Pass lifecycle manager for ChatView activation
+                this.config.lifecycleManager, // Pass lifecycle manager for ChatView activation
+                appManager || undefined
             );
             this.config.plugin.addSettingTab(this.settingsTab);
             

@@ -20,6 +20,7 @@ import { AbortHandler } from '../utils/AbortHandler';
 import { getWebLLMLifecycleManager } from '../../../services/llm/adapters/webllm/WebLLMLifecycleManager';
 import type { MessageQueueService } from '../../../services/chat/MessageQueueService';
 import type { QueuedMessage } from '../../../types/branch/BranchTypes';
+import { getErrorMessage } from '../../../utils/errorUtils';
 
 export interface MessageManagerEvents {
   onMessageAdded: (message: ConversationMessage) => void;
@@ -41,6 +42,7 @@ export class MessageManager {
   private isLoading = false;
   private currentAbortController: AbortController | null = null;
   private currentStreamingMessageId: string | null = null;
+  private activeGeneration: Promise<void> | null = null;
 
   // Extracted services
   private streamHandler: MessageStreamHandler;
@@ -131,62 +133,65 @@ export class MessageManager {
     },
     metadata?: ReferenceMetadata
   ): Promise<void> {
-    let aiMessageId: string | null = null;
+    return this.trackGeneration(async () => {
+      let aiMessageId: string | null = null;
 
-    try {
-      this.setLoading(true);
+      try {
+        this.setLoading(true);
 
-      // Record activity for Nexus lifecycle manager (resets idle timer)
-      getWebLLMLifecycleManager().recordActivity();
+        // Record activity for Nexus lifecycle manager (resets idle timer)
+        getWebLLMLifecycleManager().recordActivity();
 
-      // Add user message and get real ID from storage
-      await this.stateManager.addUserMessage(conversation, message, metadata);
+        // Add user message and get real ID from storage
+        await this.stateManager.addUserMessage(conversation, message, metadata);
 
-      // Create placeholder AI message
-      const placeholderMessage = this.stateManager.createPlaceholderAIMessage(conversation);
-      aiMessageId = placeholderMessage.id;
+        // Create placeholder AI message
+        const placeholderMessage = this.stateManager.createPlaceholderAIMessage(conversation);
+        aiMessageId = placeholderMessage.id;
 
-      // Setup abort controller
-      this.currentAbortController = new AbortController();
-      this.currentStreamingMessageId = aiMessageId;
+        // Setup abort controller
+        this.currentAbortController = new AbortController();
+        this.currentStreamingMessageId = aiMessageId;
 
-      // Stream AI response
-      const streamResult = await this.streamHandler.streamAndSave(
-        conversation,
-        message,
-        aiMessageId,
-        {
-          ...options,
-          abortSignal: this.currentAbortController.signal
+        // Stream AI response
+        const streamResult = await this.streamHandler.streamAndSave(
+          conversation,
+          message,
+          aiMessageId,
+          {
+            ...options,
+            abortSignal: this.currentAbortController.signal
+          }
+        );
+
+        // Report usage for context tracking (e.g., for local models with limited context)
+        if (streamResult.usage && this.events.onUsageAvailable) {
+          this.events.onUsageAvailable(streamResult.usage);
         }
-      );
 
-      // Report usage for context tracking (e.g., for local models with limited context)
-      if (streamResult.usage && this.events.onUsageAvailable) {
-        this.events.onUsageAvailable(streamResult.usage);
+        // Reload conversation from storage to sync
+        await this.stateManager.reloadConversation(conversation);
+
+        // Notify that conversation has been updated
+        this.events.onConversationUpdated(conversation);
+
+      } catch (error) {
+        // Handle abort scenario
+        const wasAborted = await this.abortHandler.handleIfAbortError(
+          error,
+          conversation,
+          aiMessageId
+        );
+
+        if (!wasAborted) {
+          this.events.onError(this.getUserVisibleErrorMessage(error, 'Failed to send message'));
+        }
+      } finally {
+        this.currentAbortController = null;
+        this.currentStreamingMessageId = null;
+        this.setLoading(false);
       }
-
-      // Reload conversation from storage to sync
-      await this.stateManager.reloadConversation(conversation);
-
-      // Notify that conversation has been updated
-      this.events.onConversationUpdated(conversation);
-
-    } catch (error) {
-      // Handle abort scenario
-      const wasAborted = await this.abortHandler.handleIfAbortError(
-        error,
-        conversation,
-        aiMessageId
-      );
-
-      if (!wasAborted) {
-        this.events.onError('Failed to send message');
-      }
-    } finally {
-      this.currentAbortController = null;
-      this.setLoading(false);
-    }
+    });
   }
 
   /**
@@ -205,25 +210,27 @@ export class MessageManager {
       thinkingEffort?: 'low' | 'medium' | 'high';
     }
   ): Promise<void> {
-    const message = conversation.messages.find(msg => msg.id === messageId);
-    if (!message) return;
+    return this.trackGeneration(async () => {
+      const message = conversation.messages.find(msg => msg.id === messageId);
+      if (!message) return;
 
-    try {
-      // For user messages, regenerate the AI response
-      if (message.role === 'user') {
-        await this.regenerateAIResponse(conversation, messageId, options);
+      try {
+        // For user messages, regenerate the AI response
+        if (message.role === 'user') {
+          await this.regenerateAIResponse(conversation, messageId, options);
+        }
+        // For AI messages, create an alternative response
+        else if (message.role === 'assistant') {
+          await this.alternativeService.createAlternativeResponse(conversation, messageId, options);
+        }
+
+        // Notify that conversation was updated
+        this.events.onConversationUpdated(conversation);
+
+      } catch (error) {
+        this.events.onError('Failed to retry message');
       }
-      // For AI messages, create an alternative response
-      else if (message.role === 'assistant') {
-        await this.alternativeService.createAlternativeResponse(conversation, messageId, options);
-      }
-
-      // Notify that conversation was updated
-      this.events.onConversationUpdated(conversation);
-
-    } catch (error) {
-      this.events.onError('Failed to retry message');
-    }
+    });
   }
 
   /**
@@ -315,7 +322,7 @@ export class MessageManager {
       );
 
       if (!wasAborted) {
-        this.events.onError('Failed to generate AI response');
+        this.events.onError(this.getUserVisibleErrorMessage(error, 'Failed to generate AI response'));
       }
     } finally {
       this.currentAbortController = null;
@@ -362,8 +369,9 @@ export class MessageManager {
    * Cancel current generation (abort streaming)
    * Always resets loading state even if no active abort controller
    */
-  cancelCurrentGeneration(): void {
+  async cancelCurrentGeneration(): Promise<void> {
     const messageId = this.currentStreamingMessageId;
+    const activeGeneration = this.activeGeneration;
 
     // Abort the stream if active
     if (this.currentAbortController) {
@@ -384,6 +392,19 @@ export class MessageManager {
     if (messageId) {
       this.events.onGenerationAborted(messageId, '');
     }
+
+    if (activeGeneration) {
+      await activeGeneration.catch(() => {});
+    }
+  }
+
+  /**
+   * Interrupt the current generation and wait for abort cleanup to finish.
+   * This ensures any partial assistant output is persisted before a steering
+   * user message is appended as the next turn.
+   */
+  async interruptCurrentGeneration(): Promise<void> {
+    await this.cancelCurrentGeneration();
   }
 
   /**
@@ -392,5 +413,27 @@ export class MessageManager {
   private setLoading(loading: boolean): void {
     this.isLoading = loading;
     this.events.onLoadingStateChanged(loading);
+  }
+
+  private getUserVisibleErrorMessage(error: unknown, fallbackMessage: string): string {
+    const message = getErrorMessage(error).trim();
+    return message || fallbackMessage;
+  }
+
+  /**
+   * Track the currently active generation so interrupt flows can wait for the
+   * abort handler to persist any partial assistant output before continuing.
+   */
+  private async trackGeneration(task: () => Promise<void>): Promise<void> {
+    const generationPromise = task();
+    this.activeGeneration = generationPromise;
+
+    try {
+      await generationPromise;
+    } finally {
+      if (this.activeGeneration === generationPromise) {
+        this.activeGeneration = null;
+      }
+    }
   }
 }

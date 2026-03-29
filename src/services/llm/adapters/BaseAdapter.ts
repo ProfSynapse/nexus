@@ -26,7 +26,16 @@ import { LLMCostCalculator } from '../utils/LLMCostCalculator';
 import { TokenUsageExtractor } from '../utils/TokenUsageExtractor';
 import { SchemaValidator } from '../utils/SchemaValidator';
 import { SSEStreamProcessor } from '../streaming/SSEStreamProcessor';
+import { BufferedSSEStreamProcessor } from '../streaming/BufferedSSEStreamProcessor';
 import { StreamChunkProcessor } from '../streaming/StreamChunkProcessor';
+import {
+  ProviderHttpClient,
+  ProviderHttpError,
+  ProviderHttpRequest,
+  ProviderHttpResponse,
+  ProviderStreamRequest
+} from './shared/ProviderHttpClient';
+import { SSEStreamOptions } from '../streaming/SSEStreamProcessor';
 
 // Browser-compatible hash function (djb2 algorithm)
 // Not cryptographically secure but sufficient for cache keys
@@ -97,6 +106,283 @@ export abstract class BaseAdapter {
     }
   ): AsyncGenerator<StreamChunk, void, unknown> {
     yield* SSEStreamProcessor.processSSEStream(response, options);
+  }
+
+  protected async* processBufferedSSEText(
+    sseText: string,
+    options: {
+      extractContent: (parsed: any) => string | null;
+      extractToolCalls: (parsed: any) => any[] | null;
+      extractFinishReason: (parsed: any) => string | null;
+      extractUsage?: (parsed: any) => any;
+      extractMetadata?: (parsed: any) => Record<string, unknown> | null;
+      extractReasoning?: (parsed: any) => { text: string; complete: boolean } | null;
+      onParseError?: (error: Error, rawData: string) => void;
+      debugLabel?: string;
+      accumulateToolCalls?: boolean;
+      toolCallThrottling?: {
+        initialYield: boolean;
+        progressInterval: number;
+      };
+    }
+  ): AsyncGenerator<StreamChunk, void, unknown> {
+    yield* BufferedSSEStreamProcessor.processSSEText(sseText, options);
+  }
+
+  /**
+   * Make a streaming HTTP request via ProviderHttpClient.requestStream().
+   * Returns a Node.js ReadableStream that yields chunks as they arrive from the wire.
+   * On mobile, falls back to a single-chunk buffered stream.
+   */
+  protected requestStream(
+    config: Omit<ProviderStreamRequest, 'provider'>
+  ): Promise<NodeJS.ReadableStream> {
+    return ProviderHttpClient.requestStream({
+      provider: this.name,
+      ...config
+    });
+  }
+
+  /**
+   * Process a Node.js readable stream as SSE, yielding StreamChunks incrementally.
+   * Bridges Node.js IncomingMessage → eventsource-parser → adapter SSE options → StreamChunk.
+   * This is the real-streaming replacement for processBufferedSSEText.
+   */
+  protected async* processNodeStream(
+    nodeStream: NodeJS.ReadableStream,
+    options: SSEStreamOptions
+  ): AsyncGenerator<StreamChunk, void, unknown> {
+    const { createParser } = await import('eventsource-parser');
+
+    const eventQueue: StreamChunk[] = [];
+    let isCompleted = false;
+    let usage: any = undefined;
+    let metadata: Record<string, unknown> | undefined = undefined;
+    const toolCallsAccumulator: Map<number, any> = new Map();
+
+    const parser = createParser((event) => {
+      if (event.type === 'reconnect-interval' || isCompleted) return;
+
+      if (event.data === '[DONE]') {
+        const finalToolCalls = this.getFinalToolCallsFromAccumulator(toolCallsAccumulator, options);
+        eventQueue.push({
+          content: '',
+          complete: true,
+          usage: this.formatStreamUsage(usage),
+          toolCalls: finalToolCalls,
+          toolCallsReady: finalToolCalls && finalToolCalls.length > 0 ? true : undefined,
+          metadata
+        });
+        isCompleted = true;
+        return;
+      }
+
+      try {
+        const parsed = JSON.parse(event.data);
+
+        if (options.extractMetadata) {
+          metadata = { ...(metadata || {}), ...(options.extractMetadata(parsed) || {}) };
+        }
+
+        const content = options.extractContent(parsed);
+        if (content) {
+          eventQueue.push({ content, complete: false });
+        }
+
+        if (options.extractReasoning) {
+          const reasoning = options.extractReasoning(parsed);
+          if (reasoning) {
+            eventQueue.push({
+              content: '',
+              complete: false,
+              reasoning: reasoning.text,
+              reasoningComplete: reasoning.complete
+            });
+          }
+        }
+
+        const toolCalls = options.extractToolCalls(parsed);
+        if (toolCalls && options.accumulateToolCalls) {
+          let shouldYieldToolCalls = false;
+          for (const toolCall of toolCalls) {
+            const index = toolCall.index || 0;
+            if (!toolCallsAccumulator.has(index)) {
+              const accumulated: any = {
+                id: toolCall.id || '',
+                type: toolCall.type || 'function',
+                function: {
+                  name: toolCall.function?.name || '',
+                  arguments: toolCall.function?.arguments || ''
+                }
+              };
+              if (toolCall.reasoning_details) accumulated.reasoning_details = toolCall.reasoning_details;
+              if (toolCall.thought_signature) accumulated.thought_signature = toolCall.thought_signature;
+              toolCallsAccumulator.set(index, accumulated);
+              shouldYieldToolCalls = options.toolCallThrottling?.initialYield !== false;
+            } else {
+              const existing = toolCallsAccumulator.get(index);
+              if (toolCall.id) existing.id = toolCall.id;
+              if (toolCall.function?.name) existing.function.name = toolCall.function.name;
+              if (toolCall.function?.arguments) {
+                existing.function.arguments += toolCall.function.arguments;
+                const interval = options.toolCallThrottling?.progressInterval || 50;
+                shouldYieldToolCalls = existing.function.arguments.length > 0 &&
+                  existing.function.arguments.length % interval === 0;
+              }
+              if (toolCall.reasoning_details && !existing.reasoning_details) {
+                existing.reasoning_details = toolCall.reasoning_details;
+              }
+              if (toolCall.thought_signature && !existing.thought_signature) {
+                existing.thought_signature = toolCall.thought_signature;
+              }
+            }
+          }
+          if (shouldYieldToolCalls) {
+            eventQueue.push({
+              content: '',
+              complete: false,
+              toolCalls: Array.from(toolCallsAccumulator.values())
+            });
+          }
+        }
+
+        if (options.extractUsage) {
+          const extractedUsage = options.extractUsage(parsed);
+          if (extractedUsage) usage = extractedUsage;
+        }
+
+        const finishReason = options.extractFinishReason(parsed);
+        if (finishReason === 'stop' || finishReason === 'length' || finishReason === 'tool_calls') {
+          const finalToolCalls = this.getFinalToolCallsFromAccumulator(toolCallsAccumulator, options);
+          eventQueue.push({
+            content: '',
+            complete: true,
+            usage: this.formatStreamUsage(usage),
+            toolCalls: finalToolCalls,
+            toolCallsReady: finalToolCalls && finalToolCalls.length > 0 ? true : undefined,
+            metadata
+          });
+          isCompleted = true;
+        }
+      } catch (parseError) {
+        if (options.onParseError) {
+          options.onParseError(parseError as Error, event.data);
+        }
+      }
+    });
+
+    // Read from the Node.js stream and feed to the SSE parser
+    try {
+      for await (const chunk of nodeStream as AsyncIterable<Buffer>) {
+        if (isCompleted) break;
+
+        const text = typeof chunk === 'string' ? chunk : chunk.toString('utf-8');
+        parser.feed(text);
+
+        // Yield queued events
+        while (eventQueue.length > 0) {
+          const event = eventQueue.shift()!;
+          yield event;
+          if (event.complete) {
+            isCompleted = true;
+            break;
+          }
+        }
+      }
+
+      // Yield remaining events after stream ends
+      while (eventQueue.length > 0) {
+        yield eventQueue.shift()!;
+      }
+
+      // If stream ended without a completion event, yield one
+      if (!isCompleted) {
+        yield {
+          content: '',
+          complete: true,
+          usage: this.formatStreamUsage(usage)
+        };
+      }
+    } catch (error) {
+      // If stream was destroyed (abort), yield completion
+      if (!isCompleted) {
+        yield { content: '', complete: true };
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Process a Node.js readable stream as newline-delimited JSON (NDJSON).
+   * Used by Ollama which returns one JSON object per line instead of SSE.
+   */
+  protected async* processNodeStreamJsonLines(
+    nodeStream: NodeJS.ReadableStream,
+    options: {
+      extractChunk: (parsed: any) => StreamChunk | null;
+      extractDone: (parsed: any) => boolean;
+    }
+  ): AsyncGenerator<StreamChunk, void, unknown> {
+    let buffer = '';
+    let isCompleted = false;
+
+    try {
+      for await (const chunk of nodeStream as AsyncIterable<Buffer>) {
+        if (isCompleted) break;
+
+        buffer += typeof chunk === 'string' ? chunk : chunk.toString('utf-8');
+
+        // Process complete lines
+        let newlineIdx: number;
+        while ((newlineIdx = buffer.indexOf('\n')) !== -1) {
+          const line = buffer.substring(0, newlineIdx).trim();
+          buffer = buffer.substring(newlineIdx + 1);
+
+          if (!line) continue;
+
+          try {
+            const parsed = JSON.parse(line);
+            if (options.extractDone(parsed)) {
+              isCompleted = true;
+              const streamChunk = options.extractChunk(parsed);
+              if (streamChunk) yield streamChunk;
+              yield { content: '', complete: true };
+              break;
+            }
+            const streamChunk = options.extractChunk(parsed);
+            if (streamChunk) yield streamChunk;
+          } catch {
+            // Skip malformed JSON lines
+          }
+        }
+      }
+
+      if (!isCompleted) {
+        yield { content: '', complete: true };
+      }
+    } catch (error) {
+      if (!isCompleted) {
+        yield { content: '', complete: true };
+      }
+      throw error;
+    }
+  }
+
+  private getFinalToolCallsFromAccumulator(
+    accumulator: Map<number, any>,
+    options: SSEStreamOptions
+  ): any[] | undefined {
+    if (!options.accumulateToolCalls || accumulator.size === 0) return undefined;
+    return Array.from(accumulator.values());
+  }
+
+  private formatStreamUsage(usage: any): StreamChunk['usage'] {
+    if (!usage) return undefined;
+    return {
+      promptTokens: usage.prompt_tokens || usage.promptTokenCount || usage.promptTokens || usage.input_tokens || 0,
+      completionTokens: usage.completion_tokens || usage.candidatesTokenCount || usage.completionTokens || usage.output_tokens || 0,
+      totalTokens: usage.total_tokens || usage.totalTokenCount || usage.totalTokens || 0
+    };
   }
 
   /**
@@ -338,6 +624,22 @@ export abstract class BaseAdapter {
     return headers;
   }
 
+  protected async request<TJson = unknown>(
+    config: Omit<ProviderHttpRequest, 'provider'>
+  ): Promise<ProviderHttpResponse<TJson>> {
+    return ProviderHttpClient.request<TJson>({
+      provider: this.name,
+      ...config
+    });
+  }
+
+  protected assertOk<TJson = unknown>(
+    response: ProviderHttpResponse<TJson>,
+    message?: string
+  ): ProviderHttpResponse<TJson> {
+    return ProviderHttpClient.assertOk(response, message);
+  }
+
   /**
    * Retry operation with exponential backoff
    * Used for handling OpenAI Responses API race conditions (previous_response_not_found)
@@ -380,6 +682,31 @@ export abstract class BaseAdapter {
   protected handleError(error: any, operation: string): never {
     if (error instanceof LLMProviderError) {
       throw error;
+    }
+
+    if (error instanceof ProviderHttpError) {
+      const status = error.response.status;
+      const responseData = error.response.data as Record<string, unknown> | null;
+      const errorObj = responseData?.error as Record<string, unknown> | undefined;
+      const message =
+        (errorObj?.message as string) ||
+        (responseData?.message as string) ||
+        error.response.text ||
+        error.message;
+
+      let errorCode = 'HTTP_ERROR';
+      if (status === 400) errorCode = 'INVALID_REQUEST';
+      if (status === 401) errorCode = 'AUTHENTICATION_ERROR';
+      if (status === 403) errorCode = 'PERMISSION_ERROR';
+      if (status === 429) errorCode = 'RATE_LIMIT_ERROR';
+      if (status >= 500) errorCode = 'SERVER_ERROR';
+
+      throw new LLMProviderError(
+        `${operation} failed: ${message}`,
+        this.name,
+        errorCode,
+        error
+      );
     }
 
     if (error.response) {

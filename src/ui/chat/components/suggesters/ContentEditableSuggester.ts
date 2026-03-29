@@ -62,7 +62,11 @@ export abstract class ContentEditableSuggester<T> {
         setTimeout(() => this.closeSuggestions(), 100);
       }
     };
-    this.component!.registerDomEvent(document, 'click', this.clickOutsideHandler);
+    if (this.component) {
+      this.component.registerDomEvent(document, 'click', this.clickOutsideHandler);
+    } else {
+      document.addEventListener('click', this.clickOutsideHandler);
+    }
   }
 
   /**
@@ -260,7 +264,10 @@ export abstract class ContentEditableSuggester<T> {
       clearTimeout(this.debounceTimer);
     }
 
-    // Note: document click listener cleanup handled by component.registerDomEvent
+    // Remove document click listener
+    if (this.clickOutsideHandler) {
+      document.removeEventListener('click', this.clickOutsideHandler);
+    }
 
     if (this.suggestionContainer) {
       this.suggestionContainer.remove();

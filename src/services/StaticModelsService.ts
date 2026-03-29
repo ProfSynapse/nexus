@@ -12,6 +12,10 @@ import { GROQ_MODELS } from './llm/adapters/groq/GroqModels';
 import { OPENROUTER_MODELS } from './llm/adapters/openrouter/OpenRouterModels';
 import { REQUESTY_MODELS } from './llm/adapters/requesty/RequestyModels';
 import { PERPLEXITY_MODELS } from './llm/adapters/perplexity/PerplexityModels';
+import { OPENAI_CODEX_MODELS } from './llm/adapters/openai-codex/OpenAICodexModels';
+import { ANTHROPIC_CLAUDE_CODE_MODELS } from './llm/adapters/anthropic-claude-code/AnthropicClaudeCodeModels';
+import { GOOGLE_GEMINI_CLI_MODELS } from './llm/adapters/google-gemini-cli/GoogleGeminiCliModels';
+import { GITHUB_COPILOT_MODELS } from './llm/adapters/github-copilot/GithubCopilotModels';
 
 export interface ModelWithProvider {
   provider: string;
@@ -59,11 +63,15 @@ export class StaticModelsService {
       { provider: 'openai', models: OPENAI_MODELS },
       { provider: 'anthropic', models: ANTHROPIC_MODELS },
       { provider: 'google', models: GOOGLE_MODELS },
+      { provider: 'google-gemini-cli', models: GOOGLE_GEMINI_CLI_MODELS },
       { provider: 'mistral', models: MISTRAL_MODELS },
       { provider: 'groq', models: GROQ_MODELS },
       { provider: 'openrouter', models: OPENROUTER_MODELS },
       { provider: 'requesty', models: REQUESTY_MODELS },
-      { provider: 'perplexity', models: PERPLEXITY_MODELS }
+      { provider: 'perplexity', models: PERPLEXITY_MODELS },
+      { provider: 'openai-codex', models: OPENAI_CODEX_MODELS },
+      { provider: 'anthropic-claude-code', models: ANTHROPIC_CLAUDE_CODE_MODELS },
+      { provider: 'github-copilot', models: GITHUB_COPILOT_MODELS }
     ];
 
     providerModels.forEach(({ provider, models }) => {
@@ -95,6 +103,9 @@ export class StaticModelsService {
       case 'google':
         providerModels = GOOGLE_MODELS;
         break;
+      case 'google-gemini-cli':
+        providerModels = GOOGLE_GEMINI_CLI_MODELS;
+        break;
       case 'mistral':
         providerModels = MISTRAL_MODELS;
         break;
@@ -109,6 +120,15 @@ export class StaticModelsService {
         break;
       case 'perplexity':
         providerModels = PERPLEXITY_MODELS;
+        break;
+      case 'openai-codex':
+        providerModels = OPENAI_CODEX_MODELS;
+        break;
+      case 'anthropic-claude-code':
+        providerModels = ANTHROPIC_CLAUDE_CODE_MODELS;
+        break;
+      case 'github-copilot':
+        providerModels = GITHUB_COPILOT_MODELS;
         break;
       default:
         return [];
@@ -149,7 +169,7 @@ export class StaticModelsService {
    * Get provider information
    */
   getAvailableProviders(): string[] {
-    return ['openai', 'anthropic', 'google', 'mistral', 'groq', 'openrouter', 'requesty', 'perplexity'];
+    return ['openai', 'anthropic', 'anthropic-claude-code', 'google', 'google-gemini-cli', 'github-copilot', 'mistral', 'groq', 'openrouter', 'requesty', 'perplexity', 'openai-codex'];
   }
 
   /**

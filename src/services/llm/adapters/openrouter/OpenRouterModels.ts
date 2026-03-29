@@ -1,7 +1,7 @@
 /**
  * OpenRouter Model Specifications
  * OpenRouter provides access to multiple providers through a unified API
- * Updated February 5, 2026 with Claude Opus 4.6
+ * Updated March 2026 with GPT-5.3, Claude Sonnet 4.6, and Gemini 3.1 models
  */
 
 import { ModelSpec } from '../modelTypes';
@@ -9,6 +9,74 @@ import { ModelSpec } from '../modelTypes';
 // OpenRouter provides access to models from other providers
 // Each model has its own specific API name in OpenRouter
 export const OPENROUTER_MODELS: ModelSpec[] = [
+  // OpenAI GPT-5.4 models via OpenRouter
+  {
+    provider: 'openrouter',
+    name: 'GPT-5.4 Mini',
+    apiName: 'openai/gpt-5.4-mini',
+    contextWindow: 400000,
+    maxTokens: 128000,
+    inputCostPerMillion: 0.75,
+    outputCostPerMillion: 4.50,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    provider: 'openrouter',
+    name: 'GPT-5.4 Nano',
+    apiName: 'openai/gpt-5.4-nano',
+    contextWindow: 400000,
+    maxTokens: 128000,
+    inputCostPerMillion: 0.20,
+    outputCostPerMillion: 1.25,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+
+  // OpenAI GPT-5.3 models via OpenRouter
+  {
+    provider: 'openrouter',
+    name: 'GPT-5.3 Chat',
+    apiName: 'openai/gpt-5.3-chat-latest',
+    contextWindow: 128000,
+    maxTokens: 16384,
+    inputCostPerMillion: 1.75,
+    outputCostPerMillion: 14.00,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    provider: 'openrouter',
+    name: 'GPT-5.3 Codex',
+    apiName: 'openai/gpt-5.3-codex',
+    contextWindow: 128000,
+    maxTokens: 16384,
+    inputCostPerMillion: 1.75,
+    outputCostPerMillion: 14.00,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+
   // OpenAI GPT-5.2 models via OpenRouter
   {
     provider: 'openrouter',
@@ -112,6 +180,38 @@ export const OPENROUTER_MODELS: ModelSpec[] = [
   // Google models via OpenRouter
   {
     provider: 'openrouter',
+    name: 'Gemini 3.1 Pro Preview',
+    apiName: 'google/gemini-3.1-pro-preview',
+    contextWindow: 1048576,
+    maxTokens: 65536,
+    inputCostPerMillion: 2.00,
+    outputCostPerMillion: 12.00,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    provider: 'openrouter',
+    name: 'Gemini 3.1 Flash Lite Preview',
+    apiName: 'google/gemini-3.1-flash-lite-preview',
+    contextWindow: 1048576,
+    maxTokens: 64000,
+    inputCostPerMillion: 0.25,
+    outputCostPerMillion: 1.50,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    provider: 'openrouter',
     name: 'Gemini 3.0 Pro Preview',
     apiName: 'google/gemini-3-pro-preview',
     contextWindow: 1048576,
@@ -171,7 +271,7 @@ export const OPENROUTER_MODELS: ModelSpec[] = [
       supportsImages: true,
       supportsFunctions: true,
       supportsStreaming: true,
-      supportsThinking: false
+      supportsThinking: true
     }
   },
 
@@ -200,6 +300,38 @@ export const OPENROUTER_MODELS: ModelSpec[] = [
     maxTokens: 128000,
     inputCostPerMillion: 5.00,
     outputCostPerMillion: 25.00,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    provider: 'openrouter',
+    name: 'Claude Sonnet 4.6',
+    apiName: 'anthropic/claude-sonnet-4.6',
+    contextWindow: 200000,
+    maxTokens: 64000,
+    inputCostPerMillion: 3.00,
+    outputCostPerMillion: 15.00,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    provider: 'openrouter',
+    name: 'Claude Sonnet 4.6 (1M)',
+    apiName: 'anthropic/claude-sonnet-4.6',
+    contextWindow: 1000000,
+    maxTokens: 64000,
+    inputCostPerMillion: 3.00,
+    outputCostPerMillion: 15.00,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,

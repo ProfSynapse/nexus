@@ -90,6 +90,7 @@ export class WorkspaceMigrator extends BaseMigrator<WorkspaceMigrationResult> {
         created: workspace.created,
         // Default to true if not specified (workspaces should be active by default)
         isActive: workspace.isActive !== undefined ? workspace.isActive : true,
+        isArchived: workspace.isArchived,
         contextJson: workspace.context ? JSON.stringify(workspace.context) : undefined,
       },
     } as Omit<WorkspaceCreatedEvent, 'id' | 'deviceId' | 'timestamp'>);

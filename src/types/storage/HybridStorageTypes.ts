@@ -11,6 +11,13 @@
  * - All storage lives in `.nexus/` folder in the vault
  */
 
+import type {
+  WorkflowCatchUpPolicy,
+  WorkflowFrequency,
+  WorkflowSchedule,
+  WorkspaceWorkflow
+} from '../../database/types/workspace/WorkspaceTypes';
+
 // ============================================================================
 // Device and Sync Types
 // ============================================================================
@@ -53,19 +60,7 @@ export interface SyncState {
 // Workspace Types
 // ============================================================================
 
-/**
- * Workflow definition for workspace automation
- */
-export interface WorkspaceWorkflow {
-  /** Workflow name (e.g., "New Application", "Follow-up") */
-  name: string;
-
-  /** When to use this workflow (e.g., "When applying to new position") */
-  when: string;
-
-  /** Steps in the workflow (newline-separated) */
-  steps: string;
-}
+export type { WorkflowCatchUpPolicy, WorkflowFrequency, WorkflowSchedule, WorkspaceWorkflow };
 
 /**
  * Workspace context for LLM understanding and workflow automation
@@ -244,6 +239,18 @@ export interface ConversationMetadata {
 
   /** Optional session association */
   sessionId?: string;
+
+  /** Optional workflow association */
+  workflowId?: string;
+
+  /** Optional workflow run trigger */
+  runTrigger?: 'manual' | 'scheduled' | 'catch_up';
+
+  /** Optional scheduled execution timestamp */
+  scheduledFor?: number;
+
+  /** Optional unique run key for dedupe */
+  runKey?: string;
 
   /** Optional additional metadata (stored as JSON) */
   metadata?: Record<string, unknown>;

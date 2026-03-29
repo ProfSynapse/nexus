@@ -114,6 +114,13 @@ export class ChatService {
       model?: string;
       systemPrompt?: string;
       workspaceId?: string;
+      sessionId?: string;
+      promptId?: string;
+      workflowId?: string;
+      workflowName?: string;
+      runTrigger?: 'manual' | 'scheduled' | 'catch_up';
+      scheduledFor?: number;
+      runKey?: string;
     }
   ): Promise<{
     success: boolean;
@@ -128,7 +135,14 @@ export class ChatService {
         provider: options?.provider,
         model: options?.model,
         systemPrompt: options?.systemPrompt,
-        workspaceId: options?.workspaceId
+        workspaceId: options?.workspaceId,
+        sessionId: options?.sessionId,
+        promptId: options?.promptId,
+        workflowId: options?.workflowId,
+        workflowName: options?.workflowName,
+        runTrigger: options?.runTrigger,
+        scheduledFor: options?.scheduledFor,
+        runKey: options?.runKey
       });
 
       const sessionId = conversation.metadata?.chatSettings?.sessionId;

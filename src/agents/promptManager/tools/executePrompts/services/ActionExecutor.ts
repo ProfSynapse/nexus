@@ -1,6 +1,8 @@
+import { App } from 'obsidian';
 import { AgentManager } from '../../../../../services/AgentManager';
 import { ContentAction, ImagePromptConfig } from '../types';
 import { CommonResult } from '../../../../../types';
+import { ContentOperations } from '../../../../contentManager/utils/ContentOperations';
 
 /**
  * Type guard to verify a value conforms to CommonResult interface
@@ -20,7 +22,7 @@ function isCommonResult(value: unknown): value is CommonResult {
  * Follows SRP by focusing only on action execution logic
  */
 export class ActionExecutor {
-  constructor(private agentManager?: AgentManager) {}
+  constructor(private agentManager?: AgentManager, private appGetter?: () => App | null | undefined) {}
 
   /**
    * Execute a ContentManager action with the LLM response
@@ -65,65 +67,70 @@ export class ActionExecutor {
   }
 
   /**
-   * Execute create content action
+   * Execute create content action — uses ContentManager 'write' with overwrite: false
    */
   private async executeCreateAction(
     actionParams: Record<string, unknown>,
     action: ContentAction
   ): Promise<{ success: boolean; error?: string }> {
-    actionParams.filePath = action.targetPath;
-    const createResult = await this.agentManager!.executeAgentTool('contentManager', 'createContent', actionParams);
+    actionParams.path = action.targetPath;
+    actionParams.overwrite = false;
+    const createResult = await this.agentManager!.executeAgentTool('contentManager', 'write', actionParams);
     if (!isCommonResult(createResult)) {
-      return { success: false, error: 'Invalid response from createContent tool' };
+      return { success: false, error: 'Invalid response from write tool' };
     }
     return { success: createResult.success, error: createResult.error };
   }
 
   /**
-   * Execute append content action
+   * Execute append content action — uses ContentManager 'update' with startLine: -1
    */
   private async executeAppendAction(
     actionParams: Record<string, unknown>,
     action: ContentAction
   ): Promise<{ success: boolean; error?: string }> {
-    actionParams.filePath = action.targetPath;
-    const appendResult = await this.agentManager!.executeAgentTool('contentManager', 'appendContent', actionParams);
+    actionParams.path = action.targetPath;
+    actionParams.startLine = -1;
+    const appendResult = await this.agentManager!.executeAgentTool('contentManager', 'update', actionParams);
     if (!isCommonResult(appendResult)) {
-      return { success: false, error: 'Invalid response from appendContent tool' };
+      return { success: false, error: 'Invalid response from update tool' };
     }
     return { success: appendResult.success, error: appendResult.error };
   }
 
   /**
-   * Execute prepend content action
+   * Execute prepend content action — uses ContentManager 'update' with startLine: 1
    */
   private async executePrependAction(
     actionParams: Record<string, unknown>,
     action: ContentAction
   ): Promise<{ success: boolean; error?: string }> {
-    actionParams.filePath = action.targetPath;
-    const prependResult = await this.agentManager!.executeAgentTool('contentManager', 'prependContent', actionParams);
+    actionParams.path = action.targetPath;
+    actionParams.startLine = 1;
+    const prependResult = await this.agentManager!.executeAgentTool('contentManager', 'update', actionParams);
     if (!isCommonResult(prependResult)) {
-      return { success: false, error: 'Invalid response from prependContent tool' };
+      return { success: false, error: 'Invalid response from update tool' };
     }
     return { success: prependResult.success, error: prependResult.error };
   }
 
   /**
-   * Execute replace content action
+   * Execute replace content action — line-based uses 'update', full-file uses 'write'
    */
   private async executeReplaceAction(
     actionParams: Record<string, unknown>,
     action: ContentAction
   ): Promise<{ success: boolean; error?: string }> {
-    actionParams.filePath = action.targetPath;
+    actionParams.path = action.targetPath;
     let replaceResult: unknown;
 
     if (action.position !== undefined) {
-      actionParams.line = action.position;
-      replaceResult = await this.agentManager!.executeAgentTool('contentManager', 'replaceByLine', actionParams);
+      actionParams.startLine = action.position;
+      actionParams.endLine = action.position;
+      replaceResult = await this.agentManager!.executeAgentTool('contentManager', 'update', actionParams);
     } else {
-      replaceResult = await this.agentManager!.executeAgentTool('contentManager', 'replaceContent', actionParams);
+      actionParams.overwrite = true;
+      replaceResult = await this.agentManager!.executeAgentTool('contentManager', 'write', actionParams);
     }
 
     if (!isCommonResult(replaceResult)) {
@@ -133,7 +140,9 @@ export class ActionExecutor {
   }
 
   /**
-   * Execute find and replace content action
+   * Execute find and replace content action.
+   * Uses ContentOperations.readContent() for raw file access (no line numbers),
+   * applies regex replacement, then writes back via ContentManager 'write' tool.
    */
   private async executeFindReplaceAction(
     actionParams: Record<string, unknown>,
@@ -143,18 +152,50 @@ export class ActionExecutor {
       return { success: false, error: 'findText is required for findReplace action' };
     }
 
-    actionParams.filePath = action.targetPath;
-    actionParams.findText = action.findText;
-    actionParams.replaceText = actionParams.content; // LLM response becomes the replacement text
-    actionParams.replaceAll = action.replaceAll ?? false;
-    actionParams.caseSensitive = action.caseSensitive ?? true;
-    actionParams.wholeWord = action.wholeWord ?? false;
-
-    const findReplaceResult = await this.agentManager!.executeAgentTool('contentManager', 'findReplaceContent', actionParams);
-    if (!isCommonResult(findReplaceResult)) {
-      return { success: false, error: 'Invalid response from findReplaceContent tool' };
+    const app = this.appGetter?.();
+    if (!app) {
+      return { success: false, error: 'App instance not available for findReplace' };
     }
-    return { success: findReplaceResult.success, error: findReplaceResult.error };
+
+    const targetPath = action.targetPath;
+    const replaceText = actionParams.content as string;
+    const replaceAll = action.replaceAll ?? false;
+    const caseSensitive = action.caseSensitive ?? true;
+    const wholeWord = action.wholeWord ?? false;
+
+    // Step 1: Read raw file content via ContentOperations (no line numbers)
+    let fileContent: string;
+    try {
+      fileContent = await ContentOperations.readContent(app, targetPath);
+    } catch (error) {
+      return { success: false, error: `Failed to read file for findReplace: ${error instanceof Error ? error.message : String(error)}` };
+    }
+
+    // Step 2: Build regex with proper escaping
+    const escapedFind = action.findText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const pattern = wholeWord ? `\\b${escapedFind}\\b` : escapedFind;
+    const flags = (replaceAll ? 'g' : '') + (caseSensitive ? '' : 'i');
+    const regex = new RegExp(pattern, flags);
+
+    if (!regex.test(fileContent)) {
+      return { success: false, error: `findText "${action.findText}" not found in file` };
+    }
+    regex.lastIndex = 0;
+    const modifiedContent = fileContent.replace(regex, replaceText);
+
+    // Step 3: Write modified content back via ContentManager 'write' tool
+    const writeResult = await this.agentManager!.executeAgentTool('contentManager', 'write', {
+      path: targetPath,
+      content: modifiedContent,
+      overwrite: true,
+      sessionId: actionParams.sessionId,
+      context: actionParams.context
+    });
+
+    if (!isCommonResult(writeResult)) {
+      return { success: false, error: 'Invalid response from write tool after findReplace' };
+    }
+    return { success: writeResult.success, error: writeResult.error };
   }
 
   /**

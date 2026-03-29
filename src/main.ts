@@ -92,6 +92,24 @@ export default class NexusPlugin extends Plugin {
                 }
             }
 
+            // Register OAuth providers (desktop only — needs local callback server)
+            if (Platform.isDesktop) {
+                try {
+                    const { OAuthService } = await import('./services/oauth/OAuthService');
+                    const { OpenRouterOAuthProvider } = await import('./services/oauth/providers/OpenRouterOAuthProvider');
+                    const { OpenAICodexOAuthProvider } = await import('./services/oauth/providers/OpenAICodexOAuthProvider');
+            const { GithubCopilotOAuthProvider } = await import('./services/oauth/providers/GithubCopilotOAuthProvider');
+
+                    const oauthService = OAuthService.getInstance();
+                    oauthService.registerProvider(new OpenRouterOAuthProvider());
+                    oauthService.registerProvider(new OpenAICodexOAuthProvider());
+            oauthService.registerProvider(new GithubCopilotOAuthProvider());
+                } catch (error) {
+                    console.error(`[${BRAND_NAME}] Failed to initialize OAuth providers:`, error);
+                    // Continue without OAuth — manual API key entry still works
+                }
+            }
+
             // Create and initialize lifecycle manager
             const lifecycleConfig: PluginLifecycleConfig = {
                 plugin: this,
@@ -121,6 +139,16 @@ export default class NexusPlugin extends Plugin {
         // Stop connector
         if (this.connector) {
             await this.connector.stop();
+        }
+
+        // Clean up OAuth singleton (cancels any in-flight flow, releases callback server)
+        if (Platform.isDesktop) {
+            try {
+                const { OAuthService } = await import('./services/oauth/OAuthService');
+                OAuthService.resetInstance();
+            } catch {
+                // OAuth may not have been loaded; ignore
+            }
         }
 
         // Service manager cleanup handled by lifecycle manager

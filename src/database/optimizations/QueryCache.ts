@@ -243,7 +243,7 @@ export class QueryCache {
    * cache.invalidateByType('conversation');
    * ```
    */
-  invalidateByType(type: 'workspace' | 'session' | 'state' | 'conversation' | 'message'): number {
+  invalidateByType(type: 'workspace' | 'session' | 'state' | 'conversation' | 'message' | 'project' | 'task'): number {
     return this.invalidate(`^${type}:`);
   }
 
@@ -261,10 +261,10 @@ export class QueryCache {
    * ```
    */
   invalidateById(
-    type: 'workspace' | 'session' | 'state' | 'conversation' | 'message',
+    type: 'workspace' | 'session' | 'state' | 'conversation' | 'message' | 'project' | 'task',
     id: string
   ): number {
-    return this.invalidate(`^${type}:.*:${id}`);
+    return this.invalidate(new RegExp(`^${type}:(?:.*:)?${id}$`));
   }
 
   /**
@@ -422,6 +422,34 @@ export class QueryCache {
    */
   static messageKey(conversationId: string, queryType: string = 'get'): string {
     return `message:${queryType}:${conversationId}`;
+  }
+
+  /**
+   * Generate cache key for project queries.
+   *
+   * @param workspaceId - Parent workspace ID
+   * @param projectId - Project ID (omit for list queries)
+   * @param queryType - Type of query (default: 'get')
+   * @returns Formatted cache key
+   */
+  static projectKey(workspaceId: string, projectId?: string, queryType: string = 'get'): string {
+    return projectId
+      ? `project:${queryType}:${workspaceId}:${projectId}`
+      : `project:${queryType}:${workspaceId}:all`;
+  }
+
+  /**
+   * Generate cache key for task queries.
+   *
+   * @param projectId - Parent project ID
+   * @param taskId - Task ID (omit for list queries)
+   * @param queryType - Type of query (default: 'get')
+   * @returns Formatted cache key
+   */
+  static taskKey(projectId: string, taskId?: string, queryType: string = 'get'): string {
+    return taskId
+      ? `task:${queryType}:${projectId}:${taskId}`
+      : `task:${queryType}:${projectId}:all`;
   }
 
   /**

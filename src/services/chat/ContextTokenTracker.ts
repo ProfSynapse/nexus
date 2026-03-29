@@ -40,9 +40,11 @@ export class ContextTokenTracker {
   private systemPromptTokens: number = 0;
   private conversationTokens: number = 0;
   private usageHistory: TokenUsageRecord[] = [];
+  private preSendEstimateMultiplier: number;
 
-  constructor(maxContextWindow: number = 4096) {
+  constructor(maxContextWindow: number = 4096, preSendEstimateMultiplier: number = 1) {
     this.maxTokens = maxContextWindow;
+    this.preSendEstimateMultiplier = preSendEstimateMultiplier;
   }
 
   /**
@@ -94,7 +96,7 @@ export class ContextTokenTracker {
    */
   estimateWithNewMessage(newMessage: string): number {
     const newMessageTokens = this.estimateTokens(newMessage);
-    return this.getTotalUsed() + newMessageTokens;
+    return this.getTotalUsed() + Math.ceil(newMessageTokens * this.preSendEstimateMultiplier);
   }
 
   /**
@@ -186,6 +188,13 @@ export class ContextTokenTracker {
    */
   setMaxTokens(maxTokens: number): void {
     this.maxTokens = maxTokens;
+  }
+
+  /**
+   * Update the safety multiplier applied to new-message estimates before send.
+   */
+  setPreSendEstimateMultiplier(multiplier: number): void {
+    this.preSendEstimateMultiplier = multiplier > 0 ? multiplier : 1;
   }
 
   /**

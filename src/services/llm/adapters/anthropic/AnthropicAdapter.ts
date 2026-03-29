@@ -1,17 +1,9 @@
 /**
  * Anthropic Claude Adapter with true streaming support
  * Implements Anthropic's SSE streaming protocol
- * Based on official Anthropic streaming documentation
+ * Uses Anthropic's Messages REST API with buffered SSE replay.
  */
 
-import Anthropic from '@anthropic-ai/sdk';
-import type {
-  MessageStartEvent,
-  ContentBlockStartEvent,
-  ContentBlockDeltaEvent,
-  ContentBlockStopEvent,
-  MessageDeltaEvent
-} from '@anthropic-ai/sdk/resources/messages';
 import { BaseAdapter } from '../BaseAdapter';
 import {
   GenerateOptions,
@@ -29,17 +21,8 @@ export class AnthropicAdapter extends BaseAdapter {
   readonly name = 'anthropic';
   readonly baseUrl = 'https://api.anthropic.com';
 
-  private client: Anthropic;
-
   constructor(apiKey: string, model?: string) {
     super(apiKey, model || ANTHROPIC_DEFAULT_MODEL);
-
-    this.client = new Anthropic({
-      apiKey: this.apiKey,
-      baseURL: this.baseUrl,
-      dangerouslyAllowBrowser: true
-    });
-
     this.initializeCache();
   }
 
@@ -117,127 +100,94 @@ export class AnthropicAdapter extends BaseAdapter {
         });
       }
 
-      // Add beta headers if model requires them (for 1M context window)
+      // Look up model spec for beta headers (sent via HTTP header, not body field)
       const modelSpec = ANTHROPIC_MODELS.find(m => m.apiName === this.normalizeModelId(options?.model || this.currentModel));
-      if (modelSpec?.betaHeaders && modelSpec.betaHeaders.length > 0) {
-        requestParams.betas = modelSpec.betaHeaders;
-      }
-
-      const stream = this.client.messages.stream(requestParams);
 
       let usage: any = undefined;
-      const toolCalls: Map<number, any> = new Map();
       let thinkingBlockIndex: number | null = null;  // Track thinking block for completion
+      const nodeStream = await this.requestStream({
+        url: `${this.baseUrl}/v1/messages`,
+        operation: 'streaming generation',
+        method: 'POST',
+        headers: this.buildAnthropicHeaders(modelSpec?.betaHeaders),
+        body: JSON.stringify(requestParams),
+        timeoutMs: 120_000
+      });
 
-      for await (const event of stream) {
-        if ('type' in event) {
-          switch (event.type) {
-            case 'message_start': {
-              const msgStartEvent = event as MessageStartEvent;
-              usage = msgStartEvent.message.usage;
-              break;
-            }
-
-            case 'content_block_start': {
-              const startEvent = event as ContentBlockStartEvent;
-              if (startEvent.content_block?.type === 'tool_use') {
-                // Initialize tool call tracking
-                const index = startEvent.index;
-                toolCalls.set(index, {
-                  id: startEvent.content_block.id,
-                  type: 'function',
-                  function: {
-                    name: startEvent.content_block.name,
-                    arguments: ''
-                  }
-                });
-              } else if (startEvent.content_block?.type === 'thinking') {
-                // Track thinking block index for completion signaling
-                thinkingBlockIndex = startEvent.index;
-              }
-              break;
-            }
-
-            case 'content_block_delta': {
-              const deltaEvent = event as ContentBlockDeltaEvent;
-              const delta = deltaEvent.delta;
-              const deltaIndex = deltaEvent.index;
-
-              if (delta.type === 'text_delta' && 'text' in delta) {
-                yield {
-                  content: delta.text,
-                  complete: false
-                };
-              } else if (delta.type === 'thinking_delta' && 'thinking' in delta) {
-                // Stream thinking content as reasoning (displayed in Reasoning accordion)
-                yield {
-                  content: '',  // Don't mix with regular content
-                  reasoning: delta.thinking,
-                  reasoningComplete: false,
-                  complete: false
-                };
-              } else if (delta.type === 'input_json_delta' && 'partial_json' in delta) {
-                // Accumulate tool input JSON
-                const toolCall = toolCalls.get(deltaIndex);
-                if (toolCall) {
-                  toolCall.function.arguments += delta.partial_json;
-                }
-              }
-              break;
-            }
-
-            case 'message_delta': {
-              const msgDeltaEvent = event as MessageDeltaEvent;
-              if (msgDeltaEvent.usage) {
-                usage = msgDeltaEvent.usage;
-              }
-              break;
-            }
-
-            case 'message_stop':
-              // Convert accumulated tool calls to array
-              const finalToolCalls = toolCalls.size > 0 ? Array.from(toolCalls.values()) : undefined;
-
-              yield {
-                content: '',
-                complete: true,
-                usage: this.extractUsage({ usage }),
-                toolCalls: finalToolCalls,
-                toolCallsReady: finalToolCalls ? true : undefined
-              };
-              break;
-
-            case 'content_block_stop': {
-              // Check if this is the thinking block completing
-              const stopEvent = event as ContentBlockStopEvent;
-              if (thinkingBlockIndex !== null && stopEvent.index === thinkingBlockIndex) {
-                yield {
-                  content: '',
-                  reasoning: '',  // No new content, just signaling completion
-                  reasoningComplete: true,
-                  complete: false
-                };
-                thinkingBlockIndex = null;  // Reset for potential next thinking block
-              }
-              // Tool call blocks already tracked in our map
-              break;
-            }
-
-            default: {
-              // Handle ping, error, and other events not covered by the switch
-              // Use type assertion since TypeScript sees this as 'never' after exhaustive switch
-              const unknownEvent = event as { type: string; error?: { message: string } };
-              if (unknownEvent.type === 'ping') {
-                // Ignore ping events
-              } else if (unknownEvent.type === 'error' && unknownEvent.error) {
-                console.error('[AnthropicAdapter] Stream error:', unknownEvent.error);
-                throw new Error(`Anthropic stream error: ${unknownEvent.error.message}`);
-              }
-              break;
-            }
+      yield* this.processNodeStream(nodeStream, {
+        debugLabel: 'Anthropic',
+        extractContent: (event) => {
+          if (event.type === 'message_start' && event.message?.usage) {
+            usage = event.message.usage;
+          } else if (event.type === 'message_delta' && event.usage) {
+            usage = event.usage;
+          } else if (event.type === 'content_block_start' && event.content_block?.type === 'thinking') {
+            thinkingBlockIndex = event.index;
           }
+
+          if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
+            return event.delta.text || null;
+          }
+          return null;
+        },
+        extractToolCalls: (event) => {
+          if (event.type === 'content_block_start' && event.content_block?.type === 'tool_use') {
+            return [{
+              index: event.index,
+              id: event.content_block.id,
+              type: 'function',
+              function: {
+                name: event.content_block.name,
+                arguments: ''
+              }
+            }];
+          }
+
+          if (event.type === 'content_block_delta' && event.delta?.type === 'input_json_delta') {
+            return [{
+              index: event.index,
+              function: {
+                arguments: event.delta.partial_json || ''
+              }
+            }];
+          }
+
+          return null;
+        },
+        extractFinishReason: (event) => {
+          if (event.type === 'message_stop') {
+            return 'stop';
+          }
+          if (event.type === 'error' && event.error?.message) {
+            throw new Error(`Anthropic stream error: ${event.error.message}`);
+          }
+          return null;
+        },
+        extractUsage: () => usage,
+        extractReasoning: (event) => {
+          if (event.type === 'content_block_delta' && event.delta?.type === 'thinking_delta') {
+            return {
+              text: event.delta.thinking || '',
+              complete: false
+            };
+          }
+
+          if (event.type === 'content_block_stop' && thinkingBlockIndex !== null && event.index === thinkingBlockIndex) {
+            thinkingBlockIndex = null;
+            return {
+              text: '',
+              complete: true
+            };
+          }
+
+          return null;
+        },
+        accumulateToolCalls: true,
+        toolCallThrottling: {
+          initialYield: true,
+          progressInterval: 50
         }
-      }
+      });
     } catch (error) {
       console.error('[AnthropicAdapter] Streaming error:', error);
       throw error;
@@ -277,6 +227,7 @@ export class AnthropicAdapter extends BaseAdapter {
   getCapabilities(): ProviderCapabilities {
     return {
       supportsStreaming: true,
+      streamingMode: 'streaming',
       supportsJSON: true,
       supportsImages: true,
       supportsFunctions: true,
@@ -344,25 +295,31 @@ export class AnthropicAdapter extends BaseAdapter {
       });
     }
 
-    // Add beta headers if model requires them (for 1M context window)
+    // Look up model spec for beta headers (sent via HTTP header, not body field)
     const modelSpec = ANTHROPIC_MODELS.find(m => m.apiName === this.normalizeModelId(options?.model || this.currentModel));
-    if (modelSpec?.betaHeaders && modelSpec.betaHeaders.length > 0) {
-      requestParams.betas = modelSpec.betaHeaders;
-    }
 
-    const response = await this.client.messages.create(requestParams);
+    const response = await this.request<any>({
+      url: `${this.baseUrl}/v1/messages`,
+      operation: 'generation',
+      method: 'POST',
+      headers: this.buildAnthropicHeaders(modelSpec?.betaHeaders),
+      body: JSON.stringify(requestParams),
+      timeoutMs: 60_000
+    });
+    this.assertOk(response, `Anthropic generation failed: HTTP ${response.status}`);
+    const responseJson = response.json;
     
-    const extractedUsage = this.extractUsage(response);
-    const finishReason = this.mapStopReason(response.stop_reason);
-    const toolCalls = this.extractToolCalls(response.content);
+    const extractedUsage = this.extractUsage(responseJson);
+    const finishReason = this.mapStopReason(responseJson.stop_reason);
+    const toolCalls = this.extractToolCalls(responseJson.content);
     const metadata = {
-      thinking: this.extractThinking(response),
-      stopSequence: response.stop_sequence
+      thinking: this.extractThinking(responseJson),
+      stopSequence: responseJson.stop_sequence
     };
 
     return await this.buildLLMResponse(
-      this.extractTextFromContent(response.content),
-      response.model,
+      this.extractTextFromContent(responseJson.content),
+      responseJson.model,
       extractedUsage,
       metadata,
       finishReason,
@@ -384,6 +341,20 @@ export class AnthropicAdapter extends BaseAdapter {
   private supportsThinking(modelId: string): boolean {
     const model = ANTHROPIC_MODELS.find(m => m.apiName === this.normalizeModelId(modelId));
     return model?.capabilities.supportsThinking || false;
+  }
+
+  private buildAnthropicHeaders(betaHeaders?: string[]): Record<string, string> {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'x-api-key': this.apiKey,
+      'anthropic-version': '2023-06-01'
+    };
+
+    if (betaHeaders && betaHeaders.length > 0) {
+      headers['anthropic-beta'] = betaHeaders.join(',');
+    }
+
+    return headers;
   }
 
   private convertTools(tools: any[]): any[] {

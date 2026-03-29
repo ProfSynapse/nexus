@@ -46,3 +46,24 @@ export { WorkspaceRepository } from './WorkspaceRepository';
 export { SessionRepository } from './SessionRepository';
 export { StateRepository } from './StateRepository';
 export { TraceRepository } from './TraceRepository';
+export { ProjectRepository } from './ProjectRepository';
+export { TaskRepository } from './TaskRepository';
+
+// Task management interfaces
+export type {
+  IProjectRepository,
+  ProjectMetadata,
+  CreateProjectData,
+  UpdateProjectData
+} from './interfaces/IProjectRepository';
+export type {
+  ITaskRepository,
+  TaskMetadata,
+  CreateTaskData,
+  UpdateTaskData,
+  NoteLink,
+  TaskStatus,
+  TaskPriority,
+  LinkType,
+  TaskListOptions
+} from './interfaces/ITaskRepository';

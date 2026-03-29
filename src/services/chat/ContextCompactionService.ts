@@ -16,6 +16,15 @@
 
 import { ConversationMessage, ConversationData } from '../../types/chat/ChatTypes';
 
+export interface CompactedTranscriptCoverageRef {
+  /** Conversation whose transcript range was compacted */
+  conversationId: string;
+  /** Inclusive start of the covered transcript range */
+  startSequenceNumber: number;
+  /** Inclusive end of the covered transcript range */
+  endSequenceNumber: number;
+}
+
 /**
  * Summary of compacted conversation context
  */
@@ -32,6 +41,8 @@ export interface CompactedContext {
   topics: string[];
   /** Timestamp of compaction */
   compactedAt: number;
+  /** Exact transcript coverage for the compacted range, when available */
+  transcriptCoverage?: CompactedTranscriptCoverageRef;
 }
 
 /**

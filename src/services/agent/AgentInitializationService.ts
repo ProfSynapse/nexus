@@ -30,7 +30,8 @@ import { MemoryService } from '../../agents/memoryManager/services/MemoryService
 import { WorkspaceService } from '../WorkspaceService';
 import { VaultOperations } from '../../core/VaultOperations';
 import { UsageTracker } from '../UsageTracker';
-import { HybridStorageAdapter } from '../../database/adapters/HybridStorageAdapter';
+import type { IStorageAdapter } from '../../database/interfaces/IStorageAdapter';
+import type { MigratableDatabase } from '../../database/schema/SchemaMigrator';
 
 /**
  * Type guard to check if plugin has Settings
@@ -148,20 +149,18 @@ export class AgentInitializationService {
     }
 
     // Get database for SQLite-based prompt storage (non-blocking - uses data.json fallback if not ready)
-    let db = null;
+    let db: MigratableDatabase | null = null;
     if (this.serviceManager) {
       try {
         // Use getServiceIfReady to avoid blocking on SQLite WASM loading during startup
-        // Cast to HybridStorageAdapter which exposes the cache getter
-        const storageAdapter = this.serviceManager.getServiceIfReady('hybridStorageAdapter');
+        const storageAdapter = this.serviceManager.getServiceIfReady<IStorageAdapter>('hybridStorageAdapter');
         // Only use SQLite if adapter exists AND is fully ready (WASM loaded)
-        if (storageAdapter instanceof HybridStorageAdapter) {
-          // Check isReady() to ensure SQLite WASM is loaded before accessing cache
-          if (storageAdapter.isReady()) {
-            const cache = storageAdapter.cache;
-            if (typeof cache.exec === 'function' && typeof cache.run === 'function') {
-              db = cache;
-            }
+        if (storageAdapter && storageAdapter.isReady() && 'cache' in storageAdapter) {
+          const cache = (storageAdapter as unknown as { cache: unknown }).cache;
+          if (cache && typeof cache === 'object'
+              && 'exec' in cache && typeof (cache as Record<string, unknown>).exec === 'function'
+              && 'run' in cache && typeof (cache as Record<string, unknown>).run === 'function') {
+            db = cache as MigratableDatabase;
           }
         }
       } catch (error) {
@@ -176,6 +175,7 @@ export class AgentInitializationService {
         llmProviderManager,
         this.agentManager,
         usageTracker,
+        this.app,
         this.app.vault,
         db
       );
@@ -202,6 +202,7 @@ export class AgentInitializationService {
           minimalProviderManager,
           this.agentManager,
           minimalUsageTracker,
+          this.app,
           this.app.vault,
           db
         );
@@ -274,11 +275,59 @@ export class AgentInitializationService {
       this.app,
       this.plugin,
       memoryService,
-      workspaceService
+      workspaceService,
+      this.customPromptStorage
     );
 
     this.agentManager.registerAgent(memoryManagerAgent);
     logger.systemLog('MemoryManager agent initialized successfully');
+  }
+
+  /**
+   * Initialize TaskManager agent
+   */
+  async initializeTaskManager(): Promise<void> {
+    if (!this.serviceManager) {
+      logger.systemWarn('TaskManager requires ServiceManager — skipping');
+      return;
+    }
+
+    const { TaskManagerAgent } = await import('../../agents/taskManager/taskManager');
+    const { TaskService } = await import('../../agents/taskManager/services/TaskService');
+    const { DAGService } = await import('../../agents/taskManager/services/DAGService');
+
+    // Get adapter — may need to await if not yet ready
+    let adapter = this.serviceManager.getServiceIfReady<any>('hybridStorageAdapter');
+    if (!adapter) {
+      adapter = await this.serviceManager.getService('hybridStorageAdapter');
+    }
+    if (!adapter) {
+      logger.systemWarn('HybridStorageAdapter not available — TaskManager skipped');
+      return;
+    }
+
+    const dagService = new DAGService();
+
+    // Workspace resolver: checks by ID first, then by name, returns resolved UUID or null
+    const { resolveWorkspaceId } = await import('../../database/sync/resolveWorkspaceId');
+    const sqliteCache = adapter.cache;
+    const validateWorkspace = async (workspaceId: string): Promise<string | null> => {
+      const result = await resolveWorkspaceId(workspaceId, sqliteCache);
+      if (result.warning) {
+        console.error(`[TaskService] ${result.warning}`);
+      }
+      // Ambiguous name — fail with nudge listing all matching UUIDs
+      if (result.matchingIds && result.matchingIds.length > 1) {
+        throw new Error(result.warning);
+      }
+      return result.id;
+    };
+
+    const taskService = new TaskService(adapter.projects, adapter.tasks, dagService, validateWorkspace);
+    const taskManagerAgent = new TaskManagerAgent(this.app, this.plugin, taskService);
+
+    this.agentManager.registerAgent(taskManagerAgent);
+    logger.systemLog('TaskManager agent initialized successfully');
   }
 
   /**
@@ -310,8 +359,8 @@ export class AgentInitializationService {
    */
   private isSQLiteReady(): boolean {
     if (!this.serviceManager) return false;
-    const storageAdapter = this.serviceManager.getServiceIfReady('hybridStorageAdapter');
-    if (storageAdapter instanceof HybridStorageAdapter) {
+    const storageAdapter = this.serviceManager.getServiceIfReady<IStorageAdapter>('hybridStorageAdapter');
+    if (storageAdapter) {
       return storageAdapter.isReady();
     }
     return false;

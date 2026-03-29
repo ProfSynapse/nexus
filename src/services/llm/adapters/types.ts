@@ -6,7 +6,7 @@
 /**
  * Supported LLM providers
  */
-export type SupportedProvider = 'openai' | 'openrouter' | 'anthropic' | 'google' | 'groq' | 'mistral' | 'perplexity' | 'requesty';
+export type SupportedProvider = 'openai' | 'openai-codex' | 'openrouter' | 'anthropic' | 'anthropic-claude-code' | 'google' | 'google-gemini-cli' | 'github-copilot' | 'groq' | 'mistral' | 'perplexity' | 'requesty';
 
 export interface GenerateOptions {
   model?: string;
@@ -137,10 +137,18 @@ export type ToolCallFormat = 'bracket' | 'xml' | 'native';
 export interface ToolCall {
   id: string;
   type: 'function';
+  name?: string;
+  displayName?: string;
+  technicalName?: string;
   function: {
     name: string;
     arguments: string;
   };
+  parameters?: Record<string, unknown>;
+  result?: unknown;
+  success?: boolean;
+  error?: string;
+  providerExecuted?: boolean;
   // OpenRouter: reasoning_details for Gemini models (must be preserved in continuations)
   reasoning_details?: any[];
   // Google Gemini: thought_signature for thinking models
@@ -159,6 +167,7 @@ export interface ProviderConfig {
 
 export interface ProviderCapabilities {
   supportsStreaming: boolean;
+  streamingMode?: 'streaming' | 'live' | 'buffered' | 'none';
   supportsJSON: boolean;
   supportsImages: boolean;
   supportsFunctions: boolean;

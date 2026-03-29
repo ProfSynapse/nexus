@@ -8,10 +8,9 @@
  * - Providing adapter availability checks
  * - Handling adapter cleanup
  *
- * MOBILE COMPATIBILITY (Dec 2025):
- * - SDK-based providers (OpenAI, Anthropic, Google, Mistral, Groq) are SKIPPED on mobile
- * - Only fetch-based providers (OpenRouter, Requesty, Perplexity) work on mobile
- * - These make direct HTTP requests without Node.js SDK dependencies
+ * MOBILE COMPATIBILITY:
+ * - Remote HTTP providers initialize on both desktop and mobile
+ * - Desktop-only providers are limited to local runtimes and desktop OAuth flows
  * - Use platform.ts `isProviderCompatible()` to check before initializing
  */
 
@@ -22,6 +21,7 @@ import { isMobile } from '../../../utils/platform';
 
 // Type imports for TypeScript (don't affect bundling)
 import type { WebLLMAdapter as WebLLMAdapterType } from '../adapters/webllm/WebLLMAdapter';
+import type { CodexOAuthTokens } from '../adapters/openai-codex/OpenAICodexAdapter';
 
 /**
  * Interface for adapter registry operations
@@ -71,6 +71,7 @@ export class AdapterRegistry implements IAdapterRegistry {
   private vault?: Vault;
   private webllmAdapter?: WebLLMAdapterType;
   private initPromise?: Promise<void>;
+  private _onSettingsDirty?: () => void;
 
   constructor(settings: LLMProviderSettings, vault?: Vault) {
     this.settings = settings;
@@ -96,6 +97,14 @@ export class AdapterRegistry implements IAdapterRegistry {
     if (this.initPromise) {
       await this.initPromise;
     }
+  }
+
+  /**
+   * Set a callback invoked when adapter-level changes (e.g. token refresh) dirty the settings.
+   * The callback should persist settings to disk.
+   */
+  setOnSettingsDirty(cb: () => void): void {
+    this._onSettingsDirty = cb;
   }
 
   /**
@@ -167,7 +176,7 @@ export class AdapterRegistry implements IAdapterRegistry {
     const onMobile = isMobile();
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // MOBILE-COMPATIBLE PROVIDERS (use fetch, no SDK dependencies)
+    // REMOTE HTTP PROVIDERS (available on desktop and mobile)
     // These work on all platforms
     // ═══════════════════════════════════════════════════════════════════════════
     await this.initializeProviderAsync('openrouter', providers.openrouter, async (config) => {
@@ -188,41 +197,40 @@ export class AdapterRegistry implements IAdapterRegistry {
       return new PerplexityAdapter(config.apiKey);
     });
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // DESKTOP-ONLY PROVIDERS (use Node.js SDKs)
-    // Skip on mobile to avoid crashes from SDK Node.js dependencies
-    // ═══════════════════════════════════════════════════════════════════════════
-    if (!onMobile) {
-      await this.initializeProviderAsync('openai', providers.openai, async (config) => {
-        const { OpenAIAdapter } = await import('../adapters/openai/OpenAIAdapter');
-        return new OpenAIAdapter(config.apiKey);
-      });
+    await this.initializeProviderAsync('openai', providers.openai, async (config) => {
+      const { OpenAIAdapter } = await import('../adapters/openai/OpenAIAdapter');
+      return new OpenAIAdapter(config.apiKey);
+    });
 
-      await this.initializeProviderAsync('anthropic', providers.anthropic, async (config) => {
-        const { AnthropicAdapter } = await import('../adapters/anthropic/AnthropicAdapter');
-        return new AnthropicAdapter(config.apiKey);
-      });
+    await this.initializeProviderAsync('anthropic', providers.anthropic, async (config) => {
+      const { AnthropicAdapter } = await import('../adapters/anthropic/AnthropicAdapter');
+      return new AnthropicAdapter(config.apiKey);
+    });
 
-      await this.initializeProviderAsync('google', providers.google, async (config) => {
-        const { GoogleAdapter } = await import('../adapters/google/GoogleAdapter');
-        return new GoogleAdapter(config.apiKey);
-      });
+    await this.initializeProviderAsync('google', providers.google, async (config) => {
+      const { GoogleAdapter } = await import('../adapters/google/GoogleAdapter');
+      return new GoogleAdapter(config.apiKey);
+    });
 
-      await this.initializeProviderAsync('mistral', providers.mistral, async (config) => {
-        const { MistralAdapter } = await import('../adapters/mistral/MistralAdapter');
-        return new MistralAdapter(config.apiKey);
-      });
+    await this.initializeProviderAsync('mistral', providers.mistral, async (config) => {
+      const { MistralAdapter } = await import('../adapters/mistral/MistralAdapter');
+      return new MistralAdapter(config.apiKey);
+    });
 
-      await this.initializeProviderAsync('groq', providers.groq, async (config) => {
-        const { GroqAdapter } = await import('../adapters/groq/GroqAdapter');
-        return new GroqAdapter(config.apiKey);
-      });
-    }
+    await this.initializeProviderAsync('groq', providers.groq, async (config) => {
+      const { GroqAdapter } = await import('../adapters/groq/GroqAdapter');
+      return new GroqAdapter(config.apiKey);
+    });
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // LOCAL PROVIDERS (require localhost servers - desktop only)
+    // DESKTOP-ONLY PROVIDERS
     // ═══════════════════════════════════════════════════════════════════════════
     if (!onMobile) {
+      await this.initializeCodexAdapter(providers['openai-codex']);
+      await this.initializeClaudeCodeAdapter(providers['anthropic-claude-code']);
+      await this.initializeGeminiCliAdapter(providers['google-gemini-cli']);
+      await this.initializeGithubCopilotAdapter(providers['github-copilot']);
+
       // Ollama - apiKey is actually the server URL
       if (providers.ollama?.enabled && providers.ollama.apiKey) {
         try {
@@ -276,6 +284,114 @@ export class AdapterRegistry implements IAdapterRegistry {
         console.error('AdapterRegistry: Failed to create WebLLM adapter:', error);
         this.logError('webllm', error);
       }
+    }
+  }
+
+  /**
+   * Initialize the OpenAI Codex adapter from OAuth state.
+   * Unlike API-key providers, Codex uses OAuth tokens stored in config.oauth.
+   * The adapter handles proactive token refresh and calls back to persist new tokens.
+   */
+  private async initializeCodexAdapter(config: LLMProviderConfig | undefined): Promise<void> {
+    if (!config?.enabled) return;
+
+    const oauth = config.oauth;
+    if (!oauth?.connected || !config.apiKey || !oauth.refreshToken || !oauth.metadata?.accountId) {
+      return; // Not connected via OAuth — skip initialization
+    }
+
+    try {
+      const { OpenAICodexAdapter } = await import('../adapters/openai-codex/OpenAICodexAdapter');
+
+      const tokens: CodexOAuthTokens = {
+        accessToken: config.apiKey, // OAuth access token is stored as apiKey
+        refreshToken: oauth.refreshToken,
+        expiresAt: oauth.expiresAt || 0,
+        accountId: oauth.metadata.accountId
+      };
+
+      // Token refresh callback: updates the settings so refreshed tokens
+      // persist across plugin restarts, then triggers a settings save.
+      const onTokenRefresh = (newTokens: CodexOAuthTokens): void => {
+        // Update the config object in-place (settings reference)
+        config.apiKey = newTokens.accessToken;
+        const oauthState = config.oauth;
+        if (oauthState) {
+          oauthState.refreshToken = newTokens.refreshToken;
+          oauthState.expiresAt = newTokens.expiresAt;
+        }
+        // Persist to disk immediately so rotated tokens survive a crash
+        this._onSettingsDirty?.();
+      };
+
+      const adapter = new OpenAICodexAdapter(tokens, onTokenRefresh);
+      this.adapters.set('openai-codex', adapter);
+    } catch (error) {
+      console.error('AdapterRegistry: Failed to initialize OpenAI Codex adapter:', error);
+      this.logError('openai-codex', error);
+    }
+  }
+
+  /**
+   * Initialize the Claude Code adapter from local CLI auth state.
+   */
+  private async initializeClaudeCodeAdapter(config: LLMProviderConfig | undefined): Promise<void> {
+    if (!config?.enabled) return;
+
+    const oauth = config.oauth;
+    if (!oauth?.connected || !this.vault) {
+      return;
+    }
+
+    try {
+      const { AnthropicClaudeCodeAdapter } = await import('../adapters/anthropic-claude-code/AnthropicClaudeCodeAdapter');
+      const adapter = new AnthropicClaudeCodeAdapter(this.vault);
+      this.adapters.set('anthropic-claude-code', adapter);
+    } catch (error) {
+      console.error('AdapterRegistry: Failed to initialize Claude Code adapter:', error);
+      this.logError('anthropic-claude-code', error);
+    }
+  }
+
+  /**
+   * Initialize the Gemini CLI adapter from local CLI auth state.
+   */
+  private async initializeGeminiCliAdapter(config: LLMProviderConfig | undefined): Promise<void> {
+    if (!config?.enabled) return;
+
+    const oauth = config.oauth;
+    if (!oauth?.connected || !this.vault) {
+      return;
+    }
+
+    try {
+      const { GoogleGeminiCliAdapter } = await import('../adapters/google-gemini-cli/GoogleGeminiCliAdapter');
+      const adapter = new GoogleGeminiCliAdapter(this.vault);
+      this.adapters.set('google-gemini-cli', adapter);
+    } catch (error) {
+      console.error('AdapterRegistry: Failed to initialize Gemini CLI adapter:', error);
+      this.logError('google-gemini-cli', error);
+    }
+  }
+
+  /**
+   * Initialize the GitHub Copilot adapter.
+   */
+  private async initializeGithubCopilotAdapter(config: LLMProviderConfig | undefined): Promise<void> {
+    if (!config?.enabled) return;
+
+    const oauth = config.oauth;
+    if (!oauth?.connected || !config.apiKey) {
+      return; // Not connected via OAuth or no token — skip initialization
+    }
+
+    try {
+      const { GithubCopilotAdapter } = await import('../adapters/github-copilot/GithubCopilotAdapter');
+      const adapter = new GithubCopilotAdapter(config.apiKey);
+      this.adapters.set('github-copilot', adapter);
+    } catch (error) {
+      console.error('AdapterRegistry: Failed to initialize GitHub Copilot adapter:', error);
+      this.logError('github-copilot', error);
     }
   }
 

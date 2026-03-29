@@ -16,19 +16,10 @@ import { IndividualConversation, ConversationMetadata as LegacyConversationMetad
 // Re-export for consumers
 export type { IndividualConversation, ConversationMessage } from '../types/storage/StorageTypes';
 import { IStorageAdapter } from '../database/interfaces/IStorageAdapter';
-import { ConversationMetadata, MessageData } from '../types/storage/HybridStorageTypes';
+import { ConversationMetadata } from '../types/storage/HybridStorageTypes';
 import { PaginationParams, PaginatedResult, calculatePaginationMetadata } from '../types/pagination/PaginationTypes';
-import type { ConversationBranch, SubagentBranchMetadata, HumanBranchMetadata } from '../types/branch/BranchTypes';
-import type { ToolCall as ChatToolCall } from '../types/chat/ChatTypes';
-
-/**
- * Type for the storage adapter parameter: either a direct adapter instance
- * or a getter function that lazily resolves the adapter.
- * The getter pattern ensures services pick up the adapter after SQLite
- * finishes initializing in the background, rather than capturing a
- * one-time null reference at construction time.
- */
-type StorageAdapterOrGetter = IStorageAdapter | (() => IStorageAdapter | undefined) | undefined;
+import { StorageAdapterOrGetter, resolveAdapter, withDualBackend } from './helpers/DualBackendExecutor';
+import { convertToLegacyMetadata, convertToLegacyConversation, populateMessageBranches } from './helpers/ConversationTypeConverters';
 
 export class ConversationService {
   private storageAdapterOrGetter: StorageAdapterOrGetter;
@@ -43,62 +34,42 @@ export class ConversationService {
   }
 
   /**
-   * Resolve the storage adapter, supporting both direct references and getter functions.
-   * Returns the adapter only if it is ready (SQLite initialized). Falls back to undefined
-   * so callers use JSONL-only storage.
+   * Resolve the storage adapter if available and ready.
+   * Delegates to shared DualBackendExecutor helper.
    */
   private getReadyAdapter(): IStorageAdapter | undefined {
-    let adapter: IStorageAdapter | undefined;
-
-    if (typeof this.storageAdapterOrGetter === 'function') {
-      adapter = this.storageAdapterOrGetter();
-    } else {
-      adapter = this.storageAdapterOrGetter;
-    }
-
-    if (adapter && adapter.isReady()) {
-      return adapter;
-    }
-
-    return undefined;
+    return resolveAdapter(this.storageAdapterOrGetter);
   }
 
   /**
    * List conversations (uses index only - lightweight and fast)
    */
   async listConversations(vaultName?: string, limit?: number): Promise<LegacyConversationMetadata[]> {
-    // Use adapter if available and ready (avoids blocking on SQLite initialization)
-    const adapterForList = this.getReadyAdapter();
-    if (adapterForList) {
-      const result = await adapterForList.getConversations({
-        filter: vaultName ? { vaultName } : undefined,
-        pageSize: limit ?? 100,
-        page: 0,
-        sortBy: 'updated',
-        sortOrder: 'desc'
-      });
-      // Convert new format to legacy format
-      return result.items.map(this.convertToLegacyMetadata);
-    }
-
-    // Fall back to legacy storage
-    const index = await this.indexManager.loadConversationIndex();
-    let conversations = Object.values(index.conversations);
-
-    // Filter by vault if specified
-    if (vaultName) {
-      conversations = conversations.filter(conv => conv.vault_name === vaultName);
-    }
-
-    // Sort by updated timestamp (most recent first)
-    conversations.sort((a, b) => b.updated - a.updated);
-
-    // Apply limit if specified
-    if (limit) {
-      conversations = conversations.slice(0, limit);
-    }
-
-    return conversations;
+    return withDualBackend(
+      this.storageAdapterOrGetter,
+      async (adapter) => {
+        const result = await adapter.getConversations({
+          filter: vaultName ? { vaultName } : undefined,
+          pageSize: limit ?? 100,
+          page: 0,
+          sortBy: 'updated',
+          sortOrder: 'desc'
+        });
+        return result.items.map(convertToLegacyMetadata);
+      },
+      async () => {
+        const index = await this.indexManager.loadConversationIndex();
+        let conversations = Object.values(index.conversations);
+        if (vaultName) {
+          conversations = conversations.filter(conv => conv.vault_name === vaultName);
+        }
+        conversations.sort((a, b) => b.updated - a.updated);
+        if (limit) {
+          conversations = conversations.slice(0, limit);
+        }
+        return conversations;
+      }
+    );
   }
 
   /**
@@ -114,81 +85,67 @@ export class ConversationService {
     id: string,
     paginationOptions?: PaginationParams
   ): Promise<IndividualConversation | null> {
-    // Use adapter if available and ready (avoids blocking on SQLite initialization)
-    const adapterForGet = this.getReadyAdapter();
-    if (adapterForGet) {
-      const metadata = await adapterForGet.getConversation(id);
-      if (!metadata) {
-        return null;
-      }
-
-      // Apply pagination or load all messages (default: first 1000 for backward compatibility)
-      const messagesResult = await adapterForGet.getMessages(id, {
-        page: paginationOptions?.page ?? 0,
-        pageSize: paginationOptions?.pageSize ?? 1000
-      });
-
-      // Convert to legacy format
-      const conversation = this.convertToLegacyConversation(metadata, messagesResult.items);
-
-      // Populate message.branches from branch storage (unified model)
-      // Branch conversations have parentConversationId and parentMessageId in metadata
-      await this.populateMessageBranches(id, conversation.messages);
-
-      // Attach pagination metadata if pagination was requested
-      if (paginationOptions) {
-        // Convert MessageData pagination to ConversationMessage pagination
-        conversation.messagePagination = {
-          ...messagesResult,
-          items: conversation.messages // Already converted by convertToLegacyConversation
-        };
-      }
-
-      return conversation;
-    }
-
-    // Fall back to legacy storage
-    const conversation = await this.fileSystem.readConversation(id);
-
-    if (!conversation) {
-      return null;
-    }
-
-    // Migration: Add state field to messages that don't have it
-    if (conversation.messages && conversation.messages.length > 0) {
-      conversation.messages = conversation.messages.map(msg => {
-        if (!msg.state) {
-          // Default existing messages to 'complete' state
-          // They were saved, so they must be complete
-          msg.state = 'complete';
+    return withDualBackend(
+      this.storageAdapterOrGetter,
+      async (adapter) => {
+        const metadata = await adapter.getConversation(id);
+        if (!metadata) {
+          return null;
         }
-        return msg;
-      });
-    }
 
-    // Note: Old alternatives[] migration removed - unified branch model uses
-    // separate conversations with parent metadata, not embedded branches
+        const messagesResult = await adapter.getMessages(id, {
+          page: paginationOptions?.page ?? 0,
+          pageSize: paginationOptions?.pageSize ?? 1000
+        });
 
-    // If pagination was requested for legacy storage, slice the messages array
-    if (paginationOptions) {
-      const page = paginationOptions.page ?? 0;
-      const pageSize = paginationOptions.pageSize ?? 50;
-      const totalMessages = conversation.messages.length;
-      const startIndex = page * pageSize;
-      const endIndex = startIndex + pageSize;
+        const conversation = convertToLegacyConversation(metadata, messagesResult.items);
+        const allBranches = await this.getBranchConversations(id);
+        populateMessageBranches(allBranches, conversation.messages);
 
-      const paginatedMessages = conversation.messages.slice(startIndex, endIndex);
-      const paginationMetadata = calculatePaginationMetadata(page, pageSize, totalMessages);
+        if (paginationOptions) {
+          conversation.messagePagination = {
+            ...messagesResult,
+            items: conversation.messages
+          };
+        }
 
-      // Store original messages count but return paginated subset
-      conversation.messagePagination = {
-        ...paginationMetadata,
-        items: paginatedMessages
-      };
-      conversation.messages = paginatedMessages;
-    }
+        return conversation;
+      },
+      async () => {
+        const conversation = await this.fileSystem.readConversation(id);
+        if (!conversation) {
+          return null;
+        }
 
-    return conversation;
+        if (conversation.messages && conversation.messages.length > 0) {
+          conversation.messages = conversation.messages.map(msg => {
+            if (!msg.state) {
+              msg.state = 'complete';
+            }
+            return msg;
+          });
+        }
+
+        if (paginationOptions) {
+          const page = paginationOptions.page ?? 0;
+          const pageSize = paginationOptions.pageSize ?? 50;
+          const totalMessages = conversation.messages.length;
+          const startIndex = page * pageSize;
+          const endIndex = startIndex + pageSize;
+
+          const paginatedMessages = conversation.messages.slice(startIndex, endIndex);
+          const paginationMetadata = calculatePaginationMetadata(page, pageSize, totalMessages);
+
+          conversation.messagePagination = {
+            ...paginationMetadata,
+            items: paginatedMessages
+          };
+          conversation.messages = paginatedMessages;
+        }
+
+        return conversation;
+      }
+    );
   }
 
   /**
@@ -205,81 +162,87 @@ export class ConversationService {
     conversationId: string,
     options?: PaginationParams
   ): Promise<PaginatedResult<any>> {
-    // Use adapter if available and ready (avoids blocking on SQLite initialization)
-    const adapterForMsgs = this.getReadyAdapter();
-    if (adapterForMsgs) {
-      const messagesResult = await adapterForMsgs.getMessages(conversationId, {
-        page: options?.page ?? 0,
-        pageSize: options?.pageSize ?? 50
-      });
+    return withDualBackend<PaginatedResult<any>>(
+      this.storageAdapterOrGetter,
+      async (adapter) => {
+        const messagesResult = await adapter.getMessages(conversationId, {
+          page: options?.page ?? 0,
+          pageSize: options?.pageSize ?? 50
+        });
 
-      // Convert MessageData to legacy message format
-      return {
-        ...messagesResult,
-        items: messagesResult.items.map(msg => ({
-          id: msg.id,
-          role: msg.role as 'user' | 'assistant' | 'tool',
-          content: msg.content || '',
-          timestamp: msg.timestamp,
-          state: msg.state,
-          toolCalls: msg.toolCalls?.map(tc => {
-            // Handle both formats:
-            // 1. Standard OpenAI format: { function: { name, arguments } }
-            // 2. Result format from buildToolMetadata: { name, result, success, error }
-            const hasFunction = tc.function && typeof tc.function === 'object';
-            const name = (hasFunction ? tc.function.name : tc.name) || 'unknown_tool';
-            const parameters = hasFunction && tc.function.arguments
-              ? (typeof tc.function.arguments === 'string'
-                  ? JSON.parse(tc.function.arguments)
-                  : tc.function.arguments)
-              : tc.parameters;
-            return {
-              id: tc.id,
-              type: tc.type || 'function',
-              name,
-              function: tc.function || { name, arguments: JSON.stringify(parameters || {}) },
-              parameters: parameters || {},
-              result: tc.result,
-              success: tc.success,
-              error: tc.error
-            };
-          }),
-          reasoning: msg.reasoning,
-          metadata: msg.metadata,
-          // Branching support
-          alternatives: msg.alternatives,
-          activeAlternativeIndex: msg.activeAlternativeIndex
-        }))
-      };
-    }
+        return {
+          ...messagesResult,
+          items: messagesResult.items.map(msg => ({
+            id: msg.id,
+            role: msg.role as 'user' | 'assistant' | 'tool',
+            content: msg.content || '',
+            timestamp: msg.timestamp,
+            state: msg.state,
+            toolCalls: msg.toolCalls?.map(tc => {
+              const hasFunction = tc.function && typeof tc.function === 'object';
+              const name = (hasFunction ? tc.function.name : tc.name) || 'unknown_tool';
+              let parameters: any;
+              if (hasFunction && tc.function.arguments) {
+                if (typeof tc.function.arguments === 'string') {
+                  try {
+                    parameters = JSON.parse(tc.function.arguments);
+                  } catch {
+                    // Malformed JSON in arguments — preserve raw string as-is
+                    parameters = tc.function.arguments;
+                  }
+                } else {
+                  parameters = tc.function.arguments;
+                }
+              } else {
+                parameters = tc.parameters;
+              }
+              return {
+                id: tc.id,
+                type: tc.type || 'function',
+                name,
+                function: tc.function || { name, arguments: JSON.stringify(parameters || {}) },
+                parameters: parameters || {},
+                result: tc.result,
+                success: tc.success,
+                error: tc.error
+              };
+            }),
+            reasoning: msg.reasoning,
+            metadata: msg.metadata,
+            alternatives: msg.alternatives,
+            activeAlternativeIndex: msg.activeAlternativeIndex
+          }))
+        };
+      },
+      async () => {
+        const conversation = await this.fileSystem.readConversation(conversationId);
+        if (!conversation) {
+          return {
+            items: [],
+            page: 0,
+            pageSize: options?.pageSize ?? 50,
+            totalItems: 0,
+            totalPages: 0,
+            hasNextPage: false,
+            hasPreviousPage: false
+          };
+        }
 
-    // Fall back to legacy storage - load full conversation and slice messages
-    const conversation = await this.fileSystem.readConversation(conversationId);
-    if (!conversation) {
-      return {
-        items: [],
-        page: 0,
-        pageSize: options?.pageSize ?? 50,
-        totalItems: 0,
-        totalPages: 0,
-        hasNextPage: false,
-        hasPreviousPage: false
-      };
-    }
+        const page = options?.page ?? 0;
+        const pageSize = options?.pageSize ?? 50;
+        const totalMessages = conversation.messages.length;
+        const startIndex = page * pageSize;
+        const endIndex = startIndex + pageSize;
 
-    const page = options?.page ?? 0;
-    const pageSize = options?.pageSize ?? 50;
-    const totalMessages = conversation.messages.length;
-    const startIndex = page * pageSize;
-    const endIndex = startIndex + pageSize;
+        const paginatedMessages = conversation.messages.slice(startIndex, endIndex);
+        const paginationMetadata = calculatePaginationMetadata(page, pageSize, totalMessages);
 
-    const paginatedMessages = conversation.messages.slice(startIndex, endIndex);
-    const paginationMetadata = calculatePaginationMetadata(page, pageSize, totalMessages);
-
-    return {
-      ...paginationMetadata,
-      items: paginatedMessages
-    };
+        return {
+          ...paginationMetadata,
+          items: paginatedMessages
+        };
+      }
+    );
   }
 
   /**
@@ -299,176 +262,206 @@ export class ConversationService {
     return conversations;
   }
 
+  async hasRunKey(runKey: string): Promise<boolean> {
+    return withDualBackend(
+      this.storageAdapterOrGetter,
+      async (adapter) => {
+        const result = await adapter.getConversations({
+          page: 0,
+          pageSize: 1,
+          filter: { runKey },
+          includeBranches: true
+        });
+        return result.items.length > 0;
+      },
+      async () => {
+        const conversations = await this.getAllConversations();
+        return conversations.some(conversation => conversation.metadata?.runKey === runKey);
+      }
+    );
+  }
+
   /**
    * Create new conversation (writes to adapter or legacy storage)
    */
   async createConversation(data: Partial<IndividualConversation>): Promise<IndividualConversation> {
     const id = data.id || `conv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-    // Use adapter if available and ready (avoids blocking on SQLite initialization)
-    const adapterForCreate = this.getReadyAdapter();
-    if (adapterForCreate) {
-      const conversationId = await adapterForCreate.createConversation({
-        title: data.title || 'Untitled Conversation',
-        created: data.created ?? Date.now(),
-        updated: data.updated ?? Date.now(),
-        vaultName: data.vault_name || this.plugin.app.vault.getName(),
-        workspaceId: data.metadata?.chatSettings?.workspaceId,
-        sessionId: data.metadata?.chatSettings?.sessionId,
-        metadata: data.metadata  // Pass full metadata for branch support (parentConversationId, branchType, etc.)
-      });
+    return withDualBackend(
+      this.storageAdapterOrGetter,
+      async (adapter) => {
+        const conversationId = await adapter.createConversation({
+          title: data.title || 'Untitled Conversation',
+          created: data.created ?? Date.now(),
+          updated: data.updated ?? Date.now(),
+          vaultName: data.vault_name || this.plugin.app.vault.getName(),
+          workspaceId: data.metadata?.chatSettings?.workspaceId,
+          sessionId: data.metadata?.chatSettings?.sessionId,
+          workflowId: data.metadata?.workflowId as string | undefined,
+          runTrigger: data.metadata?.runTrigger as 'manual' | 'scheduled' | 'catch_up' | undefined,
+          scheduledFor: data.metadata?.scheduledFor as number | undefined,
+          runKey: data.metadata?.runKey as string | undefined,
+          metadata: data.metadata
+        });
 
-      // Get created conversation
-      const metadata = await adapterForCreate.getConversation(conversationId);
-      if (!metadata) {
-        throw new Error('Failed to retrieve created conversation');
+        const metadata = await adapter.getConversation(conversationId);
+        if (!metadata) {
+          throw new Error('Failed to retrieve created conversation');
+        }
+
+        return convertToLegacyConversation(metadata, []);
+      },
+      async () => {
+        const conversation: IndividualConversation = {
+          id,
+          title: data.title || 'Untitled Conversation',
+          created: data.created || Date.now(),
+          updated: data.updated || Date.now(),
+          vault_name: data.vault_name || this.plugin.app.vault.getName(),
+          message_count: data.messages?.length || 0,
+          messages: data.messages || [],
+          metadata: data.metadata
+        };
+
+        await this.fileSystem.writeConversation(id, conversation);
+        await this.indexManager.updateConversationInIndex(conversation);
+        return conversation;
       }
-
-      // Convert to legacy format
-      return this.convertToLegacyConversation(metadata, []);
-    }
-
-    // Fall back to legacy storage
-    const conversation: IndividualConversation = {
-      id,
-      title: data.title || 'Untitled Conversation',
-      created: data.created || Date.now(),
-      updated: data.updated || Date.now(),
-      vault_name: data.vault_name || this.plugin.app.vault.getName(),
-      message_count: data.messages?.length || 0,
-      messages: data.messages || [],
-      metadata: data.metadata // ⚠️ CRITICAL: Preserve metadata including sessionId!
-    };
-
-    // Write conversation file
-    await this.fileSystem.writeConversation(id, conversation);
-
-    // Update index
-    await this.indexManager.updateConversationInIndex(conversation);
-
-    return conversation;
+    );
   }
 
   /**
    * Update conversation (updates adapter or legacy storage)
    */
   async updateConversation(id: string, updates: Partial<IndividualConversation>): Promise<void> {
-    // Use adapter if available and ready (avoids blocking on SQLite initialization)
-    const adapterForUpdate = this.getReadyAdapter();
-    if (adapterForUpdate) {
-      // Merge existing metadata so we don't lose chat settings when only cost is updated
-      const existing = await adapterForUpdate.getConversation(id);
-      // Type assertion for metadata structure
-      type ChatSettingsType = NonNullable<IndividualConversation['metadata']>['chatSettings'];
-      const existingMetadata = (existing?.metadata ?? {}) as IndividualConversation['metadata'];
-      const existingChatSettings = (existingMetadata?.chatSettings ?? {}) as ChatSettingsType;
-      const updatesChatSettings = (updates.metadata?.chatSettings ?? {}) as ChatSettingsType;
+    return withDualBackend(
+      this.storageAdapterOrGetter,
+      async (adapter) => {
+        // Merge existing metadata so we don't lose chat settings when only cost is updated
+        const existing = await adapter.getConversation(id);
+        type ChatSettingsType = NonNullable<IndividualConversation['metadata']>['chatSettings'];
+        const existingMetadata = (existing?.metadata ?? {}) as IndividualConversation['metadata'];
+        const existingChatSettings = (existingMetadata?.chatSettings ?? {}) as ChatSettingsType;
+        const updatesChatSettings = (updates.metadata?.chatSettings ?? {}) as ChatSettingsType;
 
-      // IMPORTANT: Preserve ALL existing metadata fields (parentConversationId, parentMessageId, branchType, etc.)
-      // Then apply updates on top, with special handling for nested chatSettings
-      const mergedMetadata = {
-        ...existingMetadata,
-        ...updates.metadata,
-        chatSettings: {
-          ...existingChatSettings,
-          ...updatesChatSettings,
-          workspaceId: updatesChatSettings?.workspaceId ?? existingChatSettings?.workspaceId,
-          sessionId: updatesChatSettings?.sessionId ?? existingChatSettings?.sessionId
-        },
-        cost: updates.cost || updates.metadata?.cost || existingMetadata?.cost
-      };
+        const mergedMetadata = {
+          ...existingMetadata,
+          ...updates.metadata,
+          chatSettings: {
+            ...existingChatSettings,
+            ...updatesChatSettings,
+            workspaceId: updatesChatSettings?.workspaceId ?? existingChatSettings?.workspaceId,
+            sessionId: updatesChatSettings?.sessionId ?? existingChatSettings?.sessionId
+          },
+          cost: updates.cost || updates.metadata?.cost || existingMetadata?.cost
+        };
 
-      // If messages are provided, persist message-level updates through the adapter
-      if (updates.messages && updates.messages.length > 0) {
-        // Update each message's persisted content/state/reasoning
-        for (const msg of updates.messages) {
-          const convertedToolCalls = msg.toolCalls?.map(tc => ({
-            id: tc.id,
-            type: 'function' as const,
-            function: tc.function || {
-              name: tc.name || 'unknown_tool',
-              arguments: JSON.stringify(tc.parameters || {})
-            },
-            result: tc.result,
-            success: tc.success,
-            error: tc.error,
-            executionTime: tc.executionTime
-          }));
+        if (updates.messages !== undefined) {
+          const existingMessages = await this.getAllAdapterMessages(adapter, id);
+          const nextMessages = updates.messages;
+          const nextMessageIds = new Set(nextMessages.map(msg => msg.id));
 
-          await adapterForUpdate.updateMessage(id, msg.id, {
-            content: msg.content ?? null,
-            state: msg.state,
-            reasoning: msg.reasoning,
-            toolCalls: convertedToolCalls,
-            toolCallId: msg.toolCallId,
-            // Branching support - cast needed due to type differences between storage layers
-            alternatives: msg.alternatives as unknown as import('../types/storage/HybridStorageTypes').AlternativeMessage[] | undefined,
-            activeAlternativeIndex: msg.activeAlternativeIndex
-          });
+          for (const existingMessage of existingMessages) {
+            if (!nextMessageIds.has(existingMessage.id)) {
+              await adapter.deleteMessage(id, existingMessage.id);
+            }
+          }
+
+          for (const msg of nextMessages) {
+            const convertedToolCalls = msg.toolCalls?.map(tc => ({
+              id: tc.id,
+              type: 'function' as const,
+              function: tc.function || {
+                name: tc.name || 'unknown_tool',
+                arguments: JSON.stringify(tc.parameters || {})
+              },
+              result: tc.result,
+              success: tc.success,
+              error: tc.error,
+              executionTime: tc.executionTime
+            }));
+
+            await adapter.updateMessage(id, msg.id, {
+              content: msg.content ?? null,
+              state: msg.state,
+              reasoning: msg.reasoning,
+              toolCalls: convertedToolCalls,
+              toolCallId: msg.toolCallId,
+              alternatives: msg.alternatives as unknown as import('../types/storage/HybridStorageTypes').AlternativeMessage[] | undefined,
+              activeAlternativeIndex: msg.activeAlternativeIndex
+            });
+          }
         }
 
-        // Also bump the conversation's updated timestamp to keep listings fresh
-        await adapterForUpdate.updateConversation(id, {
+        await adapter.updateConversation(id, {
           title: updates.title,
           updated: updates.updated ?? Date.now(),
           workspaceId: updates.metadata?.chatSettings?.workspaceId,
           sessionId: updates.metadata?.chatSettings?.sessionId,
+          workflowId: updates.metadata?.workflowId as string | undefined,
+          runTrigger: updates.metadata?.runTrigger as 'manual' | 'scheduled' | 'catch_up' | undefined,
+          scheduledFor: updates.metadata?.scheduledFor as number | undefined,
+          runKey: updates.metadata?.runKey as string | undefined,
           metadata: mergedMetadata
         });
-      } else {
-        // Metadata-only update
-        await adapterForUpdate.updateConversation(id, {
-          title: updates.title,
-          updated: updates.updated ?? Date.now(),
-          workspaceId: updates.metadata?.chatSettings?.workspaceId,
-          sessionId: updates.metadata?.chatSettings?.sessionId,
-          metadata: mergedMetadata
-        });
+      },
+      async () => {
+        const conversation = await this.fileSystem.readConversation(id);
+        if (!conversation) {
+          throw new Error(`Conversation ${id} not found`);
+        }
+
+        const updatedConversation: IndividualConversation = {
+          ...conversation,
+          ...updates,
+          id,
+          updated: Date.now(),
+          message_count: updates.messages?.length ?? conversation.message_count
+        };
+
+        await this.fileSystem.writeConversation(id, updatedConversation);
+        await this.indexManager.updateConversationInIndex(updatedConversation);
       }
-      return;
+    );
+  }
+
+  /**
+   * Load all adapter-backed messages for a conversation so updateConversation()
+   * can reconcile deletions as well as updates.
+   */
+  private async getAllAdapterMessages(adapter: IStorageAdapter, conversationId: string): Promise<Array<{ id: string }>> {
+    const messages: Array<{ id: string }> = [];
+    let page = 0;
+    let hasNextPage = true;
+
+    while (hasNextPage) {
+      const result = await adapter.getMessages(conversationId, {
+        page,
+        pageSize: 200
+      });
+
+      messages.push(...result.items.map(message => ({ id: message.id })));
+      hasNextPage = !!result.hasNextPage;
+      page += 1;
     }
 
-    // Fall back to legacy storage
-    // Load existing conversation
-    const conversation = await this.fileSystem.readConversation(id);
-
-    if (!conversation) {
-      throw new Error(`Conversation ${id} not found`);
-    }
-
-    // Apply updates
-    const updatedConversation: IndividualConversation = {
-      ...conversation,
-      ...updates,
-      id, // Preserve ID
-      updated: Date.now(),
-      message_count: updates.messages?.length ?? conversation.message_count
-    };
-
-    // Write updated conversation
-    await this.fileSystem.writeConversation(id, updatedConversation);
-
-    // Update index
-    await this.indexManager.updateConversationInIndex(updatedConversation);
+    return messages;
   }
 
   /**
    * Delete conversation (deletes from adapter or legacy storage)
    */
   async deleteConversation(id: string): Promise<void> {
-    // Use adapter if available and ready (avoids blocking on SQLite initialization)
-    const adapterForDelete = this.getReadyAdapter();
-    if (adapterForDelete) {
-      await adapterForDelete.deleteConversation(id);
-      return;
-    }
-
-    // Fall back to legacy storage
-    // Delete conversation file
-    await this.fileSystem.deleteConversation(id);
-
-    // Remove from index
-    await this.indexManager.removeConversationFromIndex(id);
+    return withDualBackend(
+      this.storageAdapterOrGetter,
+      async (adapter) => {
+        await adapter.deleteConversation(id);
+      },
+      async () => {
+        await this.fileSystem.deleteConversation(id);
+        await this.indexManager.removeConversationFromIndex(id);
+      }
+    );
   }
 
   /**
@@ -492,98 +485,77 @@ export class ConversationService {
     usage?: { promptTokens: number; completionTokens: number; totalTokens: number };
     provider?: string;
     model?: string;
-    id?: string; // Optional: specify messageId for placeholder messages
+    id?: string;
     metadata?: any;
   }): Promise<{ success: boolean; messageId?: string; error?: string }> {
     try {
-      // Use adapter if available and ready (avoids blocking on SQLite initialization)
-      const adapterForAddMsg = this.getReadyAdapter();
-      if (adapterForAddMsg) {
-        // Determine initial state based on role and content
-        let initialState: 'draft' | 'complete' = 'complete';
-        if (params.role === 'assistant' && (!params.content || params.content.trim() === '')) {
-          // Empty assistant messages are placeholders for streaming
-          initialState = 'draft';
+      return await withDualBackend(
+        this.storageAdapterOrGetter,
+        async (adapter) => {
+          let initialState: 'draft' | 'complete' = 'complete';
+          if (params.role === 'assistant' && (!params.content || params.content.trim() === '')) {
+            initialState = 'draft';
+          }
+
+          const messageId = await adapter.addMessage(params.conversationId, {
+            id: params.id,
+            role: params.role,
+            content: params.content,
+            timestamp: Date.now(),
+            state: initialState,
+            toolCalls: params.toolCalls,
+            metadata: params.metadata
+          });
+
+          return { success: true, messageId } as { success: boolean; messageId?: string; error?: string };
+        },
+        async () => {
+          const conversation = await this.fileSystem.readConversation(params.conversationId);
+          if (!conversation) {
+            return { success: false, error: `Conversation ${params.conversationId} not found` };
+          }
+
+          const messageId = params.id || `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+          let initialState: 'draft' | 'complete' = 'complete';
+          if (params.role === 'assistant' && (!params.content || params.content.trim() === '')) {
+            initialState = 'draft';
+          }
+
+          const message = {
+            id: messageId,
+            role: params.role,
+            content: params.content,
+            timestamp: Date.now(),
+            state: initialState,
+            toolCalls: params.toolCalls || undefined,
+            cost: params.cost,
+            usage: params.usage,
+            provider: params.provider,
+            model: params.model,
+            metadata: params.metadata
+          };
+
+          conversation.messages.push(message);
+          conversation.message_count = conversation.messages.length;
+          conversation.updated = Date.now();
+
+          if (params.cost) {
+            conversation.metadata = conversation.metadata || {};
+            conversation.metadata.totalCost = (conversation.metadata.totalCost || 0) + params.cost.totalCost;
+            conversation.metadata.currency = params.cost.currency;
+          }
+
+          if (params.usage) {
+            conversation.metadata = conversation.metadata || {};
+            conversation.metadata.totalTokens = (conversation.metadata.totalTokens || 0) + params.usage.totalTokens;
+          }
+
+          await this.fileSystem.writeConversation(params.conversationId, conversation);
+          await this.indexManager.updateConversationInIndex(conversation);
+
+          return { success: true, messageId };
         }
-
-        const messageId = await adapterForAddMsg.addMessage(params.conversationId, {
-          id: params.id,
-          role: params.role,
-          content: params.content,
-          timestamp: Date.now(),
-          state: initialState,
-          toolCalls: params.toolCalls,
-          metadata: params.metadata
-        });
-
-        return {
-          success: true,
-          messageId
-        };
-      }
-
-      // Fall back to legacy storage
-      // Load conversation
-      const conversation = await this.fileSystem.readConversation(params.conversationId);
-
-      if (!conversation) {
-        return {
-          success: false,
-          error: `Conversation ${params.conversationId} not found`
-        };
-      }
-
-      // Create message (use provided ID if available, otherwise generate new one)
-      const messageId = params.id || `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
-      // Determine initial state based on role and content
-      let initialState: 'draft' | 'complete' = 'complete';
-      if (params.role === 'assistant' && (!params.content || params.content.trim() === '')) {
-        // Empty assistant messages are placeholders for streaming
-        initialState = 'draft';
-      }
-
-      const message = {
-        id: messageId,
-        role: params.role,
-        content: params.content,
-        timestamp: Date.now(),
-        state: initialState,
-        toolCalls: params.toolCalls || undefined,
-        cost: params.cost,
-        usage: params.usage,
-        provider: params.provider,
-        model: params.model,
-        metadata: params.metadata
-      };
-
-      // Append message
-      conversation.messages.push(message);
-      conversation.message_count = conversation.messages.length;
-      conversation.updated = Date.now();
-
-      // Update conversation-level cost summary
-      if (params.cost) {
-        conversation.metadata = conversation.metadata || {};
-        conversation.metadata.totalCost = (conversation.metadata.totalCost || 0) + params.cost.totalCost;
-        conversation.metadata.currency = params.cost.currency;
-      }
-
-      if (params.usage) {
-        conversation.metadata = conversation.metadata || {};
-        conversation.metadata.totalTokens = (conversation.metadata.totalTokens || 0) + params.usage.totalTokens;
-      }
-
-      // Save conversation
-      await this.fileSystem.writeConversation(params.conversationId, conversation);
-
-      // Update index metadata
-      await this.indexManager.updateConversationInIndex(conversation);
-
-      return {
-        success: true,
-        messageId
-      };
+      );
     } catch (error) {
       return {
         success: false,
@@ -607,35 +579,34 @@ export class ConversationService {
     }
   ): Promise<{ success: boolean; error?: string }> {
     try {
-      // Use adapter if available and ready (avoids blocking on SQLite initialization)
-      const adapterForUpdateMsg = this.getReadyAdapter();
-      if (adapterForUpdateMsg) {
-        await adapterForUpdateMsg.updateMessage(conversationId, messageId, updates);
-        return { success: true };
-      }
+      return await withDualBackend(
+        this.storageAdapterOrGetter,
+        async (adapter) => {
+          await adapter.updateMessage(conversationId, messageId, updates);
+          return { success: true } as { success: boolean; error?: string };
+        },
+        async () => {
+          const conversation = await this.fileSystem.readConversation(conversationId);
+          if (!conversation) {
+            return { success: false, error: `Conversation ${conversationId} not found` };
+          }
 
-      // Fall back to legacy storage
-      const conversation = await this.fileSystem.readConversation(conversationId);
-      if (!conversation) {
-        return { success: false, error: `Conversation ${conversationId} not found` };
-      }
+          const messageIndex = conversation.messages.findIndex(m => m.id === messageId);
+          if (messageIndex === -1) {
+            return { success: false, error: `Message ${messageId} not found` };
+          }
 
-      const messageIndex = conversation.messages.findIndex(m => m.id === messageId);
-      if (messageIndex === -1) {
-        return { success: false, error: `Message ${messageId} not found` };
-      }
+          const message = conversation.messages[messageIndex];
+          if (updates.content !== undefined) message.content = updates.content;
+          if (updates.state !== undefined) message.state = updates.state;
+          if (updates.toolCalls !== undefined) message.toolCalls = updates.toolCalls;
+          if (updates.reasoning !== undefined) message.reasoning = updates.reasoning;
 
-      // Apply updates
-      const message = conversation.messages[messageIndex];
-      if (updates.content !== undefined) message.content = updates.content;
-      if (updates.state !== undefined) message.state = updates.state;
-      if (updates.toolCalls !== undefined) message.toolCalls = updates.toolCalls;
-      if (updates.reasoning !== undefined) message.reasoning = updates.reasoning;
-
-      conversation.updated = Date.now();
-
-      await this.fileSystem.writeConversation(conversationId, conversation);
-      return { success: true };
+          conversation.updated = Date.now();
+          await this.fileSystem.writeConversation(conversationId, conversation);
+          return { success: true };
+        }
+      );
     } catch (error) {
       return {
         success: false,
@@ -652,43 +623,35 @@ export class ConversationService {
       return this.listConversations(undefined, limit);
     }
 
-    // Use adapter if available and ready (avoids blocking on SQLite initialization)
-    const adapterForSearch = this.getReadyAdapter();
-    if (adapterForSearch) {
-      const results = await adapterForSearch.searchConversations(query);
-      // Convert and apply limit
-      const converted = results.map(this.convertToLegacyMetadata);
-      return limit ? converted.slice(0, limit) : converted;
-    }
+    return withDualBackend(
+      this.storageAdapterOrGetter,
+      async (adapter) => {
+        const results = await adapter.searchConversations(query);
+        const converted = results.map(convertToLegacyMetadata);
+        return limit ? converted.slice(0, limit) : converted;
+      },
+      async () => {
+        const index = await this.indexManager.loadConversationIndex();
+        const words = query.toLowerCase().split(/\s+/).filter(word => word.length > 2);
+        const matchedIds = new Set<string>();
 
-    // Fall back to legacy storage
-    const index = await this.indexManager.loadConversationIndex();
-    const words = query.toLowerCase().split(/\s+/).filter(word => word.length > 2);
-    const matchedIds = new Set<string>();
+        for (const word of words) {
+          if (index.byTitle[word]) {
+            index.byTitle[word].forEach((id: string) => matchedIds.add(id));
+          }
+          if (index.byContent[word]) {
+            index.byContent[word].forEach((id: string) => matchedIds.add(id));
+          }
+        }
 
-    // Search title and content indices
-    for (const word of words) {
-      // Search titles
-      if (index.byTitle[word]) {
-        index.byTitle[word].forEach(id => matchedIds.add(id));
+        const results = Array.from(matchedIds)
+          .map(id => index.conversations[id])
+          .filter(conv => conv !== undefined)
+          .sort((a, b) => b.updated - a.updated);
+
+        return limit ? results.slice(0, limit) : results;
       }
-
-      // Search content
-      if (index.byContent[word]) {
-        index.byContent[word].forEach(id => matchedIds.add(id));
-      }
-    }
-
-    // Get metadata for matched conversations
-    const results = Array.from(matchedIds)
-      .map(id => index.conversations[id])
-      .filter(conv => conv !== undefined)
-      .sort((a, b) => b.updated - a.updated);
-
-    // Apply limit
-    const limited = limit ? results.slice(0, limit) : results;
-
-    return limited;
+    );
   }
 
   /**
@@ -775,177 +738,6 @@ export class ConversationService {
     return stats;
   }
 
-  // ============================================================================
-  // Type Conversion Helpers (New Format <-> Legacy Format)
-  // ============================================================================
-
-  /**
-   * Convert new ConversationMetadata to legacy format
-   */
-  private convertToLegacyMetadata = (metadata: ConversationMetadata): LegacyConversationMetadata => {
-    return {
-      id: metadata.id,
-      title: metadata.title,
-      created: metadata.created,
-      updated: metadata.updated,
-      vault_name: metadata.vaultName,
-      message_count: metadata.messageCount
-    };
-  };
-
-  /**
-   * Populate message.branches from unified branch storage
-   *
-   * With unified model, branches are separate conversations with parentConversationId
-   * and parentMessageId in metadata. This method queries those and converts them
-   * to the embedded ConversationBranch format for UI compatibility.
-   *
-   * Required for MessageBranchNavigator to show branch navigation on messages.
-   * Works for both human branches and subagent branches.
-   */
-  private async populateMessageBranches(
-    conversationId: string,
-    messages: ConversationMessage[]
-  ): Promise<void> {
-    // Get all branch conversations for this parent
-    const allBranchConversations = await this.getBranchConversations(conversationId);
-
-    if (allBranchConversations.length === 0) {
-      return;
-    }
-
-    // Group branches by parent message ID
-    const branchesByMessage = new Map<string, IndividualConversation[]>();
-    for (const branch of allBranchConversations) {
-      const parentMessageId = branch.metadata?.parentMessageId;
-      if (parentMessageId) {
-        const existing = branchesByMessage.get(parentMessageId) || [];
-        existing.push(branch);
-        branchesByMessage.set(parentMessageId, existing);
-      }
-    }
-
-    // Attach branches to their parent messages
-    for (const message of messages) {
-      const branchConversations = branchesByMessage.get(message.id);
-
-      if (branchConversations && branchConversations.length > 0) {
-        // Convert each branch conversation to embedded ConversationBranch format
-        const branches: ConversationBranch[] = branchConversations.map(bc =>
-          this.convertToConversationBranch(bc)
-        );
-
-        message.branches = branches;
-        // Initialize activeAlternativeIndex if not set (0 = original message)
-        if (message.activeAlternativeIndex === undefined) {
-          message.activeAlternativeIndex = 0;
-        }
-      }
-    }
-  }
-
-  /**
-   * Convert a branch conversation to embedded ConversationBranch format
-   * Used for UI compatibility with message.branches[]
-   */
-  private convertToConversationBranch(branchConversation: IndividualConversation): ConversationBranch {
-    const meta = branchConversation.metadata || {};
-    const branchType = meta.branchType === 'subagent' ? 'subagent' : 'human';
-
-    // Extract subagent-specific metadata if present
-    const subagentMeta = meta.subagent as SubagentBranchMetadata | undefined;
-
-    return {
-      id: branchConversation.id,
-      type: branchType,
-      inheritContext: meta.inheritContext ?? (branchType === 'human'),
-      messages: branchConversation.messages.map(m => ({
-        id: m.id,
-        role: m.role,
-        content: m.content,
-        timestamp: m.timestamp,
-        conversationId: branchConversation.id,
-        state: m.state,
-        toolCalls: m.toolCalls as ChatToolCall[] | undefined, // StorageTypes.ToolCall[] is structurally compatible
-        reasoning: m.reasoning,
-      })),
-      created: branchConversation.created,
-      updated: branchConversation.updated,
-      metadata: branchType === 'subagent' && subagentMeta
-        ? subagentMeta
-        : { description: branchConversation.title } as HumanBranchMetadata,
-    };
-  }
-
-  /**
-   * Convert new ConversationMetadata + MessageData[] to legacy IndividualConversation
-   */
-  private convertToLegacyConversation(
-    metadata: ConversationMetadata,
-    messages: MessageData[]
-  ): IndividualConversation {
-    // Type assertion for metadata - structure matches IndividualConversation.metadata
-    const meta = (metadata.metadata || {}) as IndividualConversation['metadata'] & Record<string, unknown>;
-    const metaCost = meta?.cost;
-    const metaTotalCost = meta?.totalCost;
-    const metaCurrency = meta?.currency;
-    const resolvedCost = metaCost || (metaTotalCost !== undefined ? { totalCost: metaTotalCost, currency: metaCurrency || 'USD' } : undefined);
-    return {
-      id: metadata.id,
-      title: metadata.title,
-      created: metadata.created,
-      updated: metadata.updated,
-      vault_name: metadata.vaultName,
-      message_count: metadata.messageCount,
-      messages: messages.map(msg => ({
-        id: msg.id,
-        role: msg.role as 'user' | 'assistant' | 'tool',
-        content: msg.content || '',
-        timestamp: msg.timestamp,
-        state: msg.state,
-        toolCalls: msg.toolCalls?.map(tc => {
-          // Handle both formats:
-          // 1. Standard OpenAI format: { function: { name, arguments } }
-          // 2. Result format from buildToolMetadata: { name, result, success, error }
-          const hasFunction = tc.function && typeof tc.function === 'object';
-          const name = (hasFunction ? tc.function.name : tc.name) || 'unknown_tool';
-          const parameters = hasFunction && tc.function.arguments
-            ? (typeof tc.function.arguments === 'string'
-                ? JSON.parse(tc.function.arguments)
-                : tc.function.arguments)
-            : tc.parameters;
-          return {
-            id: tc.id,
-            type: tc.type || 'function',
-            name,
-            function: tc.function || { name, arguments: JSON.stringify(parameters || {}) },
-            parameters: parameters || {},
-            result: tc.result,
-            success: tc.success,
-            error: tc.error
-          };
-        }),
-        reasoning: msg.reasoning,
-        metadata: msg.metadata,
-        // Branching support - cast needed due to AlternativeMessage vs ConversationMessage type differences
-        alternatives: msg.alternatives as unknown as import('../types/storage/StorageTypes').ConversationMessage[] | undefined,
-        activeAlternativeIndex: msg.activeAlternativeIndex
-      })),
-      // Preserve ALL metadata from storage (parentConversationId, branchType, subagent, etc.)
-      // while ensuring chatSettings structure is maintained for compatibility
-      metadata: {
-        ...meta,  // Spread stored metadata first (parentConversationId, branchType, subagent, etc.)
-        chatSettings: {
-          ...meta.chatSettings,
-          workspaceId: metadata.workspaceId,
-          sessionId: metadata.sessionId
-        },
-        cost: resolvedCost
-      },
-      cost: resolvedCost
-    };
-  }
-
   // ========================================
   // Branch Query Methods (Phase 1.2)
   // Branches are conversations with parentConversationId metadata
@@ -957,39 +749,38 @@ export class ConversationService {
    * @returns Array of branch conversations
    */
   async getBranchConversations(parentConversationId: string): Promise<IndividualConversation[]> {
-    // Use adapter if available and ready (avoids blocking on SQLite initialization)
-    const adapterForBranches = this.getReadyAdapter();
-    if (adapterForBranches) {
-      // Query for conversations with this parent (must include branches!)
-      const result = await adapterForBranches.getConversations({
-        pageSize: 100,
-        page: 0,
-        sortBy: 'created',
-        sortOrder: 'asc',
-        includeBranches: true  // Required - we're specifically looking for branches
-      });
+    return withDualBackend(
+      this.storageAdapterOrGetter,
+      async (adapter) => {
+        const result = await adapter.getConversations({
+          pageSize: 100,
+          page: 0,
+          sortBy: 'created',
+          sortOrder: 'asc',
+          includeBranches: true
+        });
 
-      // Filter by parent metadata
-      const branches: IndividualConversation[] = [];
-      for (const item of result.items) {
-        if (item.metadata?.parentConversationId === parentConversationId) {
-          const conv = await this.getConversation(item.id);
-          if (conv) branches.push(conv);
+        const branches: IndividualConversation[] = [];
+        for (const item of result.items) {
+          if (item.metadata?.parentConversationId === parentConversationId) {
+            const conv = await this.getConversation(item.id);
+            if (conv) branches.push(conv);
+          }
         }
+        return branches;
+      },
+      async () => {
+        const allConvs = await this.listConversations();
+        const branches: IndividualConversation[] = [];
+        for (const meta of allConvs) {
+          const conv = await this.getConversation(meta.id);
+          if (conv?.metadata?.parentConversationId === parentConversationId) {
+            branches.push(conv);
+          }
+        }
+        return branches;
       }
-      return branches;
-    }
-
-    // Legacy fallback: scan all conversations
-    const allConvs = await this.listConversations();
-    const branches: IndividualConversation[] = [];
-    for (const meta of allConvs) {
-      const conv = await this.getConversation(meta.id);
-      if (conv?.metadata?.parentConversationId === parentConversationId) {
-        branches.push(conv);
-      }
-    }
-    return branches;
+    );
   }
 
   /**

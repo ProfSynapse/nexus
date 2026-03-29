@@ -19,12 +19,12 @@ import { AgentStatusMenu, createSubagentEventHandlers, getSubagentEventBus } fro
 import { AgentStatusModal } from '../components/AgentStatusModal';
 import type { ChatService } from '../../../services/chat/ChatService';
 import type { DirectToolExecutor } from '../../../services/chat/DirectToolExecutor';
+import type { Tool } from '../../../services/llm/adapters/types';
 import type { PromptManagerAgent } from '../../../agents/promptManager/promptManager';
 import type { HybridStorageAdapter } from '../../../database/adapters/HybridStorageAdapter';
 import type { LLMService } from '../../../services/llm/core/LLMService';
 import type { ToolSchemaInfo, AgentStatusItem, BranchViewContext } from '../../../types/branch/BranchTypes';
 import type { ConversationData } from '../../../types/chat/ChatTypes';
-import type { Tool } from '../../../services/llm/adapters/types';
 import type { StreamingController } from './StreamingController';
 import type { ToolEventCoordinator } from '../coordinators/ToolEventCoordinator';
 import { isSubagentMetadata } from '../../../types/branch/BranchTypes';

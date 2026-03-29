@@ -12,6 +12,7 @@ import { CustomPromptStorageService } from '../../../../agents/promptManager/ser
 import { WorkspaceService } from '../../../../services/WorkspaceService';
 import { getNexusPlugin } from '../../../../utils/pluginLocator';
 import type { Settings } from '../../../../settings';
+import type { EmbeddingService } from '../../../../services/embeddings/EmbeddingService';
 
 /**
  * Interface for NexusPlugin with settings and services
@@ -20,6 +21,7 @@ interface NexusPluginWithServices extends Plugin {
   settings?: Settings;
   services?: Record<string, unknown>;
   workspaceService?: WorkspaceService;
+  getServiceIfReady?: <T>(name: string) => T | null;
 }
 
 export interface SuggesterInstances {
@@ -39,7 +41,14 @@ export function initializeSuggesters(
   const messageEnhancer = new MessageEnhancer();
 
   // Create suggesters
-  const noteSuggester = new TextAreaNoteSuggester(app, element, messageEnhancer, component);
+  let embeddingService: EmbeddingService | null = null;
+  try {
+    const pluginForEmbeddings = getNexusPlugin<NexusPluginWithServices>(app);
+    embeddingService = pluginForEmbeddings?.getServiceIfReady?.<EmbeddingService>('embeddingService') ?? null;
+  } catch {
+    // Embedding service unavailable — fuzzy-only
+  }
+  const noteSuggester = new TextAreaNoteSuggester(app, element, messageEnhancer, component, embeddingService);
   const toolSuggester = new TextAreaToolSuggester(app, element, messageEnhancer, component);
 
   // Try to get CustomPromptStorageService for prompt suggester

@@ -19,6 +19,7 @@ import { setIcon, Component, App } from 'obsidian';
 import { ReferenceBadgeRenderer } from './renderers/ReferenceBadgeRenderer';
 import { ToolBubbleFactory } from './factories/ToolBubbleFactory';
 import { ToolEventParser } from '../utils/ToolEventParser';
+import { normalizeToolCallForDisplay } from '../utils/toolDisplayNormalizer';
 import { MessageContentRenderer } from './renderers/MessageContentRenderer';
 import { MessageEditController } from '../controllers/MessageEditController';
 
@@ -50,10 +51,8 @@ export class MessageBubble extends Component {
    */
   createElement(): HTMLElement {
     const activeToolCalls = this.getActiveToolCalls(this.message);
-    const hasToolCalls = this.message.role === 'assistant' && activeToolCalls && activeToolCalls.length > 0;
     const activeReasoning = this.getActiveReasoning(this.message);
-    const hasReasoning = this.message.role === 'assistant' && activeReasoning;
-    const showToolBubble = hasToolCalls || hasReasoning;
+    const showToolBubble = this.getRenderMode(this.message) === 'group';
     const activeContent = this.getActiveMessageContent(this.message);
 
     if (showToolBubble) {
@@ -67,8 +66,6 @@ export class MessageBubble extends Component {
       // Create tool bubble using factory
       this.toolBubbleElement = ToolBubbleFactory.createToolBubble({
         message: renderMessage,
-        parseParameterValue: ToolEventParser.parseParameterValue,
-        getToolCallArguments: ToolEventParser.getToolCallArguments,
         progressiveToolAccordions: this.progressiveToolAccordions,
         component: this
       });
@@ -94,8 +91,7 @@ export class MessageBubble extends Component {
       }
 
       // Create text bubble if there's content OR if streaming (need element for StreamingController)
-      const isStreaming = this.message.state === 'streaming';
-      if ((activeContent && activeContent.trim()) || isStreaming) {
+      if (this.shouldRenderTextBubble(this.message)) {
         this.textBubbleElement = ToolBubbleFactory.createTextBubble(
           renderMessage,
           (container, content) => this.renderContent(container, content),
@@ -123,6 +119,11 @@ export class MessageBubble extends Component {
             this.messageBranchNavigator = new MessageBranchNavigator(actions, navigatorEvents, this);
             this.messageBranchNavigator.updateMessage(renderMessage);
           }
+        }
+
+        const contentElement = this.textBubbleElement.querySelector('.message-content');
+        if (contentElement instanceof HTMLElement && this.message.isLoading && !activeContent.trim()) {
+          this.appendLoadingIndicator(contentElement);
         }
       }
 
@@ -343,6 +344,11 @@ export class MessageBubble extends Component {
    * Update MessageBubble with new message data
    */
   updateWithNewMessage(newMessage: ConversationMessage): void {
+    const previousRenderMode = this.getRenderMode(this.message);
+    const nextRenderMode = this.getRenderMode(newMessage);
+    const previousHadTextBubble = this.shouldRenderTextBubble(this.message);
+    const nextNeedsTextBubble = this.shouldRenderTextBubble(newMessage);
+
     // Handle progressive accordion transition to static
     const activeToolCalls = this.getActiveToolCalls(newMessage);
     if (this.progressiveToolAccordions.size > 0 && activeToolCalls) {
@@ -357,6 +363,12 @@ export class MessageBubble extends Component {
         }
         return;
       }
+    }
+
+    if (previousRenderMode !== nextRenderMode || previousHadTextBubble !== nextNeedsTextBubble) {
+      this.message = newMessage;
+      this.rebuildElement();
+      return;
     }
 
     this.message = newMessage;
@@ -399,7 +411,10 @@ export class MessageBubble extends Component {
 
     if (!this.element) return;
     const contentElement = this.element.querySelector('.message-content');
-    if (!contentElement) return;
+    if (!(contentElement instanceof HTMLElement)) {
+      this.rebuildElement();
+      return;
+    }
 
     contentElement.empty();
 
@@ -409,11 +424,7 @@ export class MessageBubble extends Component {
     });
 
     if (newMessage.isLoading && newMessage.role === 'assistant') {
-      const loadingDiv = contentElement.createDiv('ai-loading-continuation');
-      const loadingSpan = loadingDiv.createEl('span', { cls: 'ai-loading' });
-      loadingSpan.appendText('Thinking');
-      loadingSpan.createEl('span', { cls: 'dots', text: '...' });
-      this.startLoadingAnimation(loadingDiv);
+      this.appendLoadingIndicator(contentElement);
     }
   }
 
@@ -421,15 +432,15 @@ export class MessageBubble extends Component {
    * Handle tool events from MessageManager
    */
   handleToolEvent(event: 'detected' | 'updated' | 'started' | 'completed', data: any): void {
-    const info = ToolEventParser.getToolEventInfo(data);
-    const toolId = info.toolId;
+    const info = ToolEventParser.getToolEventInfo(data, event);
+    const toolId = info.toolId || info.batchId || info.parentToolCallId || info.stepId;
     if (!toolId) {
       return;
     }
 
     let accordion = this.progressiveToolAccordions.get(toolId);
 
-    if (!accordion && (event === 'detected' || event === 'started')) {
+    if (!accordion && (event === 'detected' || event === 'started' || event === 'completed')) {
       accordion = new ProgressiveToolAccordion(this);
       const accordionElement = accordion.createElement();
 
@@ -454,48 +465,52 @@ export class MessageBubble extends Component {
       return;
     }
 
-    switch (event) {
-      case 'detected':
-        accordion.detectTool({
-          id: toolId,
-          name: info.displayName,
-          technicalName: info.technicalName,
-          parameters: info.parameters,
-          isComplete: info.isComplete,
-          // Pass reasoning-specific properties
-          type: info.type,
-          result: info.result,
-          status: info.status,
-          isVirtual: info.isVirtual
-        });
-        break;
+    const hasToolMetadata =
+      Boolean(data?.toolCall) ||
+      Boolean(data?.name) ||
+      Boolean(data?.technicalName) ||
+      Boolean(data?.displayName);
 
-      case 'updated':
-        accordion.updateToolParameters(toolId, info.parameters, info.isComplete);
-        break;
+    const isLiveBatchStep = Boolean(info.isBatchStepEvent);
 
-      case 'started':
-        accordion.startTool({
-          id: toolId,
-          name: info.displayName,
-          technicalName: info.technicalName,
-          parameters: info.parameters
-        });
-        break;
+    if (event === 'completed' && !hasToolMetadata) {
+      accordion.completeTool(toolId, data.result, data.success !== false, data.error);
+    } else {
+      const currentGroup = accordion.getDisplayGroup();
+      const nextDisplayGroup = isLiveBatchStep
+        ? normalizeToolCallForDisplay({
+            ...data,
+            id: toolId,
+            toolId,
+            parentToolCallId: info.parentToolCallId ?? info.batchId ?? toolId,
+            batchId: info.batchId ?? toolId,
+            callIndex: info.callIndex,
+            totalCalls: info.totalCalls,
+            strategy: info.strategy,
+            stepId: info.stepId,
+            status: info.status
+          }, currentGroup)
+        : info.displayGroup;
 
-      case 'completed':
-        accordion.completeTool(
-          toolId,
-          data.result,
-          data.success,
-          data.error
+      const shouldPreserveCurrentBatch =
+        !isLiveBatchStep &&
+        Boolean(currentGroup) &&
+        currentGroup?.kind === 'batch' &&
+        currentGroup.steps.length > 0 &&
+        nextDisplayGroup.kind === 'batch' &&
+        nextDisplayGroup.steps.length === 0 &&
+        (
+          nextDisplayGroup.technicalName === 'useTools' ||
+          nextDisplayGroup.technicalName?.endsWith('.useTools')
         );
 
-        // Check if this is an image generation result
-        if (data.success && data.result) {
-          this.checkAndRenderImageResult(data.result);
-        }
-        break;
+      const displayGroup = shouldPreserveCurrentBatch ? currentGroup! : nextDisplayGroup;
+
+      accordion.setDisplayGroup(displayGroup);
+    }
+
+    if (event === 'completed' && data.success && data.result) {
+      this.checkAndRenderImageResult(data.result);
     }
   }
 
@@ -610,6 +625,70 @@ export class MessageBubble extends Component {
    */
   getProgressiveToolAccordions(): Map<string, ProgressiveToolAccordion> {
     return this.progressiveToolAccordions;
+  }
+
+  /**
+   * Determine which DOM structure this message needs.
+   */
+  private getRenderMode(message: ConversationMessage): 'group' | 'standard' {
+    const activeToolCalls = this.getActiveToolCalls(message);
+    const hasToolCalls = message.role === 'assistant' && !!activeToolCalls && activeToolCalls.length > 0;
+    const activeReasoning = this.getActiveReasoning(message);
+    const hasReasoning = message.role === 'assistant' && !!activeReasoning;
+    return hasToolCalls || hasReasoning ? 'group' : 'standard';
+  }
+
+  /**
+   * Tool/reasoning messages still need a text bubble while loading so streaming
+   * updates always have a content container to target.
+   */
+  private shouldRenderTextBubble(message: ConversationMessage): boolean {
+    if (message.role !== 'assistant') {
+      return false;
+    }
+
+    const activeContent = this.getActiveMessageContent(message);
+    return !!activeContent.trim() || message.state === 'streaming' || !!message.isLoading;
+  }
+
+  /**
+   * Replace the current DOM node when the message switches between incompatible
+   * layouts, such as tool-only -> plain loading bubble during retry.
+   */
+  private rebuildElement(): void {
+    const previousElement = this.element;
+    const parentElement = previousElement?.parentElement ?? null;
+
+    this.stopLoadingAnimation();
+    this.cleanupProgressiveAccordions();
+
+    if (this.messageBranchNavigator) {
+      this.messageBranchNavigator.destroy();
+      this.messageBranchNavigator = null;
+    }
+
+    this.toolBubbleElement = null;
+    this.textBubbleElement = null;
+    this.imageBubbleElement = null;
+
+    const nextElement = this.createElement();
+
+    if (previousElement && parentElement) {
+      previousElement.replaceWith(nextElement);
+    } else {
+      this.element = nextElement;
+    }
+  }
+
+  /**
+   * Render the inline loading indicator used after the initial bubble is on screen.
+   */
+  private appendLoadingIndicator(contentElement: HTMLElement): void {
+    const loadingDiv = contentElement.createDiv('ai-loading-continuation');
+    const loadingSpan = loadingDiv.createEl('span', { cls: 'ai-loading' });
+    loadingSpan.appendText('Thinking');
+    loadingSpan.createEl('span', { cls: 'dots', text: '...' });
+    this.startLoadingAnimation(loadingDiv);
   }
 
   /**

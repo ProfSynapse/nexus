@@ -42,3 +42,19 @@ export type { UpdateConversationData } from './IConversationRepository';
 export type { IMessageRepository } from './IMessageRepository';
 export type { CreateMessageData } from './IMessageRepository';
 export type { UpdateMessageData } from './IMessageRepository';
+
+// Task management repository interfaces
+export type { IProjectRepository } from './IProjectRepository';
+export type { ProjectMetadata } from './IProjectRepository';
+export type { CreateProjectData } from './IProjectRepository';
+export type { UpdateProjectData } from './IProjectRepository';
+
+export type { ITaskRepository } from './ITaskRepository';
+export type { TaskMetadata } from './ITaskRepository';
+export type { CreateTaskData } from './ITaskRepository';
+export type { UpdateTaskData } from './ITaskRepository';
+export type { NoteLink } from './ITaskRepository';
+export type { TaskStatus } from './ITaskRepository';
+export type { TaskPriority } from './ITaskRepository';
+export type { LinkType } from './ITaskRepository';
+export type { TaskListOptions } from './ITaskRepository';
