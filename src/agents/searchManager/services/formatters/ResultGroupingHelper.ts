@@ -13,8 +13,7 @@ import {
   MemoryGroupOption,
   GroupedMemoryResults,
   MemoryResultGroup,
-  GroupStatistics,
-  MemoryType
+  GroupStatistics
 } from '../../../../types/memory/MemorySearchTypes';
 
 /**
@@ -123,7 +122,7 @@ export class ResultGroupingHelper {
         return result.metadata.mode || 'No Mode';
 
       case 'success':
-        if (result.type === MemoryType.TOOL_CALL && result.metadata.success !== undefined) {
+        if (result.type === 'toolCall' && result.metadata.success !== undefined) {
           return result.metadata.success ? 'Success' : 'Failed';
         }
         return 'N/A';
@@ -136,7 +135,7 @@ export class ResultGroupingHelper {
   /**
    * Get display name for a group
    */
-  private getDisplayName(key: string, groupBy: MemoryGroupOption): string {
+  private getDisplayName(key: string, _groupBy: MemoryGroupOption): string {
     // Handle sub-grouped keys
     if (key.includes(':')) {
       const [primary, secondary] = key.split(':');
@@ -149,7 +148,7 @@ export class ResultGroupingHelper {
   /**
    * Build metadata for a group
    */
-  private buildGroupMetadata(results: MemorySearchResult[], key: string): Record<string, unknown> {
+  private buildGroupMetadata(results: MemorySearchResult[], _key: string): Record<string, unknown> {
     const metadata: Record<string, unknown> = {};
 
     // Calculate group-specific statistics

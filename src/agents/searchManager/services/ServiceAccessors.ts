@@ -38,7 +38,7 @@ export class ServiceAccessors {
   getMemoryService(): MemoryService | undefined {
     try {
       const app: App = this.plugin.app;
-      const plugin = getNexusPlugin(app) as NexusPlugin | null;
+      const plugin = getNexusPlugin<NexusPlugin>(app);
       if (plugin) {
         return plugin.getServiceIfReady<MemoryService>('memoryService') || undefined;
       }
@@ -54,7 +54,7 @@ export class ServiceAccessors {
   getWorkspaceService(): WorkspaceService | undefined {
     try {
       const app: App = this.plugin.app;
-      const plugin = getNexusPlugin(app) as NexusPlugin | null;
+      const plugin = getNexusPlugin<NexusPlugin>(app);
       if (plugin) {
         return plugin.getServiceIfReady<WorkspaceService>('workspaceService') || undefined;
       }
@@ -70,7 +70,7 @@ export class ServiceAccessors {
   getEmbeddingService(): EmbeddingService | undefined {
     try {
       const app: App = this.plugin.app;
-      const plugin = getNexusPlugin(app) as NexusPlugin | null;
+      const plugin = getNexusPlugin<NexusPlugin>(app);
       if (plugin) {
         return plugin.getServiceIfReady<EmbeddingService>('embeddingService') || undefined;
       }

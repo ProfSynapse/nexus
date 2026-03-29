@@ -36,7 +36,7 @@ export class DefaultsTab {
     this.router = router;
     this.services = services;
 
-    this.loadDataAndRender();
+    void this.loadDataAndRender();
   }
 
   /**
@@ -180,7 +180,9 @@ export class DefaultsTab {
       initialSettings: this.getCurrentSettings(),
       options: { workspaces, prompts },
       callbacks: {
-        onSettingsChange: (settings) => this.saveSettings(settings)
+        onSettingsChange: (settings) => {
+          void this.saveSettings(settings);
+        }
       }
     });
 
@@ -198,7 +200,7 @@ export class DefaultsTab {
         }
       }
 
-      const embeddingsSection = createDiv({ cls: 'csr-section' });
+      const embeddingsSection = rendererContainer.createDiv({ cls: 'csr-section' });
       const embeddingsHeader = embeddingsSection.createDiv({ cls: 'csr-section-header' });
       embeddingsHeader.setText('Embeddings');
       const embeddingsContent = embeddingsSection.createDiv({ cls: 'csr-section-content' });
@@ -209,10 +211,12 @@ export class DefaultsTab {
         .addToggle(toggle => {
           toggle
             .setValue(this.services.settings.settings.enableEmbeddings ?? true)
-            .onChange(async (value) => {
-              this.services.settings.settings.enableEmbeddings = value;
-              await this.services.settings.saveSettings();
-              new Notice(`Embeddings ${value ? 'enabled' : 'disabled'}. Restart Obsidian to apply.`);
+            .onChange((value) => {
+              void (async () => {
+                this.services.settings.settings.enableEmbeddings = value;
+                await this.services.settings.saveSettings();
+                new Notice(`Embeddings ${value ? 'enabled' : 'disabled'}. Restart Obsidian to apply.`);
+              })();
             });
         });
 

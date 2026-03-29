@@ -11,23 +11,19 @@
  * - src/types/storage/HybridStorageTypes.ts - Data types
  */
 
-import { PaginatedResult, PaginationParams } from '../../../types/pagination/PaginationTypes';
+import { PaginatedResult } from '../../../types/pagination/PaginationTypes';
 import { ConversationMetadata } from '../../../types/storage/HybridStorageTypes';
 import { QueryOptions } from '../../interfaces/IStorageAdapter';
 
 /**
  * Data for creating a new conversation
  */
-export interface CreateConversationData extends Omit<ConversationMetadata, 'id' | 'messageCount'> {
-  // All fields from ConversationMetadata except id and messageCount
-}
+export type CreateConversationData = Omit<ConversationMetadata, 'id' | 'messageCount'>;
 
 /**
  * Data for updating an existing conversation
  */
-export interface UpdateConversationData extends Partial<ConversationMetadata> {
-  // Partial updates allowed for all fields
-}
+export type UpdateConversationData = Partial<ConversationMetadata>;
 
 /**
  * Conversation repository interface
