@@ -9,7 +9,7 @@
 import { BaseAgent } from '../baseAgent';
 import { AppManifest, AppCredentialField, ElevenLabsModel } from '../../types/apps/AppTypes';
 import { CommonResult } from '../../types';
-import { Vault } from 'obsidian';
+import { App, Vault } from 'obsidian';
 
 /**
  * Result type for fetchTTSModels. Defined here so subclasses and consumers
@@ -25,6 +25,7 @@ export abstract class BaseAppAgent extends BaseAgent {
   readonly manifest: AppManifest;
   protected credentials: Record<string, string> = {};
   protected appSettings: Record<string, string> = {};
+  private _app: App | null = null;
   private _vault: Vault | null = null;
 
   constructor(manifest: AppManifest) {
@@ -91,6 +92,23 @@ export abstract class BaseAppAgent extends BaseAgent {
   getMissingCredentials(): AppCredentialField[] {
     return this.manifest.credentials
       .filter(c => c.required && !this.credentials[c.key]?.trim());
+  }
+
+  /**
+   * Inject the Obsidian App instance. Called by AppManager after construction.
+   * Tools that need workspace or command access can use getApp().
+   */
+  setApp(app: App): void {
+    this._app = app;
+    this._vault = app.vault;
+  }
+
+  /**
+   * Get the App instance for workspace and command operations.
+   * Returns null if the app has not been injected yet.
+   */
+  getApp(): App | null {
+    return this._app;
   }
 
   /**
