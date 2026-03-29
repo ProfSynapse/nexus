@@ -8,13 +8,8 @@
  */
 
 import { setIcon } from 'obsidian';
-
-export interface IngestProgress {
-  filePath: string;
-  stage: 'queued' | 'extracting' | 'transcribing' | 'building' | 'complete' | 'error';
-  progress?: number; // 0-100
-  error?: string;
-}
+import type { IngestProgress } from '../types';
+import { ACCEPTED_AUDIO_EXTENSIONS } from '../types';
 
 const STAGE_LABELS: Record<IngestProgress['stage'], string> = {
   queued: 'Queued',
@@ -28,6 +23,7 @@ const STAGE_LABELS: Record<IngestProgress['stage'], string> = {
 export class IngestProgressBanner {
   private containerEl: HTMLElement;
   private banners: Map<string, HTMLElement> = new Map();
+  private dismissHandlers: Map<string, { el: HTMLElement; handler: () => void }> = new Map();
 
   constructor(parentEl: HTMLElement) {
     this.containerEl = parentEl.createDiv({ cls: 'nexus-ingest-progress-container' });
@@ -53,6 +49,11 @@ export class IngestProgressBanner {
    * Remove a specific banner
    */
   remove(filePath: string): void {
+    const entry = this.dismissHandlers.get(filePath);
+    if (entry) {
+      entry.el.removeEventListener('click', entry.handler);
+      this.dismissHandlers.delete(filePath);
+    }
     const bannerEl = this.banners.get(filePath);
     if (bannerEl) {
       bannerEl.remove();
@@ -64,6 +65,8 @@ export class IngestProgressBanner {
    * Remove all banners
    */
   clear(): void {
+    this.dismissHandlers.forEach(entry => entry.el.removeEventListener('click', entry.handler));
+    this.dismissHandlers.clear();
     this.banners.forEach(el => el.remove());
     this.banners.clear();
   }
@@ -99,7 +102,9 @@ export class IngestProgressBanner {
     const dismissBtn = banner.createEl('button', { cls: 'nexus-ingest-progress-dismiss' });
     dismissBtn.setAttribute('aria-label', 'Dismiss');
     setIcon(dismissBtn, 'x');
-    dismissBtn.addEventListener('click', () => this.remove(progress.filePath));
+    const dismissHandler = () => this.remove(progress.filePath);
+    dismissBtn.addEventListener('click', dismissHandler);
+    this.dismissHandlers.set(progress.filePath, { el: dismissBtn, handler: dismissHandler });
 
     return banner;
   }
@@ -146,7 +151,7 @@ export class IngestProgressBanner {
 
   private getIconForExtension(ext: string): string {
     if (ext === '.pdf') return 'file-text';
-    if (['.mp3', '.wav', '.ogg', '.flac', '.m4a', '.aac', '.webm', '.opus'].includes(ext)) {
+    if ((ACCEPTED_AUDIO_EXTENSIONS as readonly string[]).includes(ext)) {
       return 'headphones';
     }
     return 'file';

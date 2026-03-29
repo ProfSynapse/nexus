@@ -12,6 +12,7 @@ import { Settings } from '../../settings';
 import { WorkspaceService } from '../../services/WorkspaceService';
 import { CustomPromptStorageService } from '../../agents/promptManager/services/CustomPromptStorageService';
 import { ChatSettingsRenderer, ChatSettings } from '../../components/shared/ChatSettingsRenderer';
+import { VISION_PROVIDERS, TRANSCRIPTION_PROVIDERS } from '../../agents/ingestManager/types';
 
 export interface DefaultsTabServices {
   app: App;
@@ -275,16 +276,7 @@ export class DefaultsTab {
       .setName('Default OCR provider')
       .setDesc('Provider for vision OCR when using vision mode.')
       .addDropdown(dropdown => {
-        const visionProviders = [
-          { id: 'openai', name: 'OpenAI' },
-          { id: 'anthropic', name: 'Anthropic' },
-          { id: 'google', name: 'Google AI' },
-          { id: 'groq', name: 'Groq' },
-          { id: 'ollama', name: 'Ollama' },
-          { id: 'lmstudio', name: 'LM Studio' },
-          { id: 'openrouter', name: 'OpenRouter' }
-        ];
-        for (const p of visionProviders) {
+        for (const p of VISION_PROVIDERS) {
           dropdown.addOption(p.id, p.name);
         }
         dropdown.setValue(llmSettings.defaultOcrModel?.provider || 'openai');
@@ -303,11 +295,7 @@ export class DefaultsTab {
       .setName('Default transcription provider')
       .setDesc('Provider for audio transcription (Whisper API).')
       .addDropdown(dropdown => {
-        const transcriptionProviders = [
-          { id: 'openai', name: 'OpenAI' },
-          { id: 'groq', name: 'Groq' }
-        ];
-        for (const p of transcriptionProviders) {
+        for (const p of TRANSCRIPTION_PROVIDERS) {
           dropdown.addOption(p.id, p.name);
         }
         dropdown.setValue(llmSettings.defaultTranscriptionModel?.provider || 'openai');

@@ -23,19 +23,28 @@ export interface OcrServiceDeps {
   ) => Promise<string>;
 }
 
+/** Maximum pages to OCR by default (each page = 1 LLM vision call) */
+const DEFAULT_MAX_PAGES = 20;
+
 /**
  * Process a PDF through vision-based OCR.
  * Renders each page to PNG, sends to a vision-capable LLM, and collects extracted text.
+ * If the PDF exceeds maxPages, only the first N pages are processed and a
+ * truncation note is appended.
  */
 export async function ocrPdf(
   pdfData: ArrayBuffer,
   provider: string,
   model: string,
   deps: OcrServiceDeps,
-  onProgress?: (current: number, total: number) => void
+  onProgress?: (current: number, total: number) => void,
+  maxPages: number = DEFAULT_MAX_PAGES
 ): Promise<PdfPageContent[]> {
   // Render all pages to PNG images
-  const images: PdfPageImage[] = await renderPdfPages(pdfData, onProgress);
+  const allImages: PdfPageImage[] = await renderPdfPages(pdfData, onProgress);
+
+  const truncated = allImages.length > maxPages;
+  const images = truncated ? allImages.slice(0, maxPages) : allImages;
 
   const providerFamily = getProviderFamily(provider);
   const pages: PdfPageContent[] = [];
@@ -55,6 +64,14 @@ export async function ocrPdf(
     pages.push({
       pageNumber: image.pageNumber,
       text: extractedText.trim(),
+    });
+  }
+
+  if (truncated) {
+    pages.push({
+      pageNumber: maxPages + 1,
+      text: `[Vision OCR truncated: processed ${maxPages} of ${allImages.length} pages. ` +
+        `Re-run with a higher page limit or use text mode for the full document.]`,
     });
   }
 

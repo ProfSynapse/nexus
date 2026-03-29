@@ -45,9 +45,10 @@ import { ChatEventBinder } from './utils/ChatEventBinder';
 
 // Ingest UI
 import { IngestEventBinder } from '../../agents/ingestManager/ui/IngestEventBinder';
-import { IngestProgressBanner, IngestProgress } from '../../agents/ingestManager/ui/IngestProgressBanner';
+import { IngestProgressBanner } from '../../agents/ingestManager/ui/IngestProgressBanner';
 import { IngestConfirmModal, IngestConfirmOptions } from '../../agents/ingestManager/ui/IngestConfirmModal';
-import type { IngestToolResult } from '../../agents/ingestManager/types';
+import type { IngestProgress, IngestToolResult } from '../../agents/ingestManager/types';
+import { ACCEPTED_AUDIO_EXTENSIONS, VISION_PROVIDERS, TRANSCRIPTION_PROVIDERS } from '../../agents/ingestManager/types';
 
 // Utils
 import { ReferenceMetadata } from './utils/ReferenceExtractor';
@@ -530,7 +531,7 @@ export class ChatView extends ItemView {
       const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
 
       const isPdf = ext === '.pdf';
-      const isAudio = ['.mp3', '.wav', '.ogg', '.flac', '.m4a', '.aac', '.webm', '.opus'].includes(ext);
+      const isAudio = (ACCEPTED_AUDIO_EXTENSIONS as readonly string[]).includes(ext);
       if (!isPdf && !isAudio) continue;
 
       // Resolve vault-relative path from dropped filename
@@ -651,25 +652,14 @@ export class ChatView extends ItemView {
    * Get list of providers that support vision/image input for OCR
    */
   private getVisionProviders(): Array<{ id: string; name: string }> {
-    return [
-      { id: 'openai', name: 'OpenAI' },
-      { id: 'anthropic', name: 'Anthropic' },
-      { id: 'google', name: 'Google AI' },
-      { id: 'groq', name: 'Groq' },
-      { id: 'ollama', name: 'Ollama' },
-      { id: 'lmstudio', name: 'LM Studio' },
-      { id: 'openrouter', name: 'OpenRouter' }
-    ];
+    return VISION_PROVIDERS.map(p => ({ id: p.id, name: p.name }));
   }
 
   /**
    * Get list of providers that support audio transcription
    */
   private getTranscriptionProviders(): Array<{ id: string; name: string }> {
-    return [
-      { id: 'openai', name: 'OpenAI' },
-      { id: 'groq', name: 'Groq' }
-    ];
+    return TRANSCRIPTION_PROVIDERS.map(p => ({ id: p.id, name: p.name }));
   }
 
   /**

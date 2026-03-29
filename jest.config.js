@@ -38,6 +38,9 @@ module.exports = {
     'src/components/Card.ts',
     'src/components/CardManager.ts',
     'src/settings/components/BackButton.ts',
+    // Nexus Ingester services
+    'src/agents/ingestManager/tools/services/TranscriptionService.ts',
+    'src/agents/ingestManager/tools/services/OcrService.ts',
     '!src/**/*.d.ts'
   ],
   coverageThreshold: {
@@ -212,6 +215,20 @@ module.exports = {
       functions: 100,
       lines: 100,
       statements: 100
+    },
+    // Nexus Ingester: TranscriptionService — HTTP orchestration with mocked deps
+    './src/agents/ingestManager/tools/services/TranscriptionService.ts': {
+      branches: 80,
+      functions: 85,
+      lines: 85,
+      statements: 85
+    },
+    // Nexus Ingester: OcrService — orchestration loop with mocked deps
+    './src/agents/ingestManager/tools/services/OcrService.ts': {
+      branches: 80,
+      functions: 100,
+      lines: 85,
+      statements: 85
     }
   },
   coverageDirectory: 'coverage',

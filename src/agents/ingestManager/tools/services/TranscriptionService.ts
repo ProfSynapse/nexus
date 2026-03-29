@@ -117,8 +117,8 @@ async function transcribeChunk(
   });
 
   if (response.status !== 200) {
-    const errorText = typeof response.text === 'string' ? response.text.slice(0, 200) : '';
-    throw new Error(`Whisper API error (${response.status}): ${errorText}`);
+    console.error('[TranscriptionService] API error:', response.status, typeof response.text === 'string' ? response.text.slice(0, 200) : '');
+    throw new Error(`Transcription failed: HTTP ${response.status}`);
   }
 
   const data = response.json;

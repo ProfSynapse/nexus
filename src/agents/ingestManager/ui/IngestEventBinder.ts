@@ -9,10 +9,9 @@
 
 import { Plugin } from 'obsidian';
 import { IngestDropOverlay } from './IngestDropOverlay';
+import { ACCEPTED_EXTENSIONS } from '../types';
 
-const ACCEPTED_EXTENSIONS = new Set([
-  '.pdf', '.mp3', '.wav', '.ogg', '.flac', '.m4a', '.aac', '.webm', '.opus'
-]);
+const ACCEPTED_EXTENSIONS_SET = new Set<string>(ACCEPTED_EXTENSIONS);
 
 export class IngestEventBinder {
   private containerEl: HTMLElement;
@@ -51,7 +50,9 @@ export class IngestEventBinder {
   }
 
   unbind(): void {
-    // registerDomEvent auto-cleans on plugin unload, but we hide the overlay
+    // Note: registerDomEvent listeners are only removed on plugin unload,
+    // not here. This method resets local state and hides the overlay.
+    // Re-calling bind() after unbind() is safe due to the `this.bound` guard.
     this.overlay.hide();
     this.dragCounter = 0;
     this.bound = false;
@@ -72,7 +73,7 @@ export class IngestEventBinder {
     for (let i = 0; i < files.length; i++) {
       const name = files[i].name.toLowerCase();
       const ext = name.substring(name.lastIndexOf('.'));
-      if (ACCEPTED_EXTENSIONS.has(ext)) return true;
+      if (ACCEPTED_EXTENSIONS_SET.has(ext)) return true;
     }
     return false;
   }

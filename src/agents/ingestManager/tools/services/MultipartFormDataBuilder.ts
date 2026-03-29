@@ -23,7 +23,8 @@ export function buildMultipartFormData(fields: MultipartField[]): MultipartResul
     let header = `--${boundary}${CRLF}`;
 
     if (field.filename) {
-      header += `Content-Disposition: form-data; name="${field.name}"; filename="${field.filename}"${CRLF}`;
+      const safeName = field.filename.replace(/["\r\n]/g, '');
+      header += `Content-Disposition: form-data; name="${field.name}"; filename="${safeName}"${CRLF}`;
       header += `Content-Type: ${field.contentType || 'application/octet-stream'}${CRLF}`;
     } else {
       header += `Content-Disposition: form-data; name="${field.name}"${CRLF}`;

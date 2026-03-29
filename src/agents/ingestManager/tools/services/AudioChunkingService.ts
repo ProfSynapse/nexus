@@ -49,9 +49,16 @@ export async function chunkAudio(
     return await decodeAndChunk(audioData, mimeType);
   } catch (error) {
     // decodeAudioData can crash in Electron with contextIsolation.
-    // Fall back to sending the original file unsplit.
-    // The Whisper API will reject files >25MB, so surface a warning.
-    console.error('[AudioChunkingService] decodeAudioData failed, returning unsplit:', error);
+    // If the file exceeds the Whisper limit, we cannot send it unsplit.
+    console.error('[AudioChunkingService] decodeAudioData failed:', error);
+    if (audioData.byteLength > MAX_CHUNK_SIZE_BYTES) {
+      const sizeMb = (audioData.byteLength / (1024 * 1024)).toFixed(1);
+      throw new Error(
+        `Audio file is ${sizeMb}MB (limit: 25MB) and chunking failed. ` +
+        `Try converting to a smaller file or a different format (e.g. MP3).`
+      );
+    }
+    // Under 25MB — safe to send unsplit even without chunking
     return [{
       data: audioData,
       mimeType,

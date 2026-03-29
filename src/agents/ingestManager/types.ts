@@ -8,6 +8,27 @@
 
 import { CommonParameters, CommonResult } from '../../types';
 
+// ─── Shared Constants ───────────────────────────────────────────────────────
+
+export const ACCEPTED_PDF_EXTENSIONS = ['.pdf'] as const;
+export const ACCEPTED_AUDIO_EXTENSIONS = ['.mp3', '.wav', '.ogg', '.flac', '.m4a', '.aac', '.webm', '.opus'] as const;
+export const ACCEPTED_EXTENSIONS = [...ACCEPTED_PDF_EXTENSIONS, ...ACCEPTED_AUDIO_EXTENSIONS] as const;
+
+export const VISION_PROVIDERS = [
+  { id: 'openai', name: 'OpenAI' },
+  { id: 'anthropic', name: 'Anthropic' },
+  { id: 'google', name: 'Google AI' },
+  { id: 'groq', name: 'Groq' },
+  { id: 'ollama', name: 'Ollama' },
+  { id: 'lmstudio', name: 'LM Studio' },
+  { id: 'openrouter', name: 'OpenRouter' }
+] as const;
+
+export const TRANSCRIPTION_PROVIDERS = [
+  { id: 'openai', name: 'OpenAI' },
+  { id: 'groq', name: 'Groq' }
+] as const;
+
 // ─── File Detection ──────────────────────────────────────────────────────────
 
 export type IngestFileType = 'pdf' | 'audio';

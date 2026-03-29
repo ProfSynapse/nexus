@@ -7,8 +7,7 @@
  */
 
 import { setIcon } from 'obsidian';
-
-const ACCEPTED_EXTENSIONS = ['.pdf', '.mp3', '.wav', '.ogg', '.flac', '.m4a', '.aac', '.webm', '.opus'];
+import { ACCEPTED_EXTENSIONS } from '../types';
 
 export class IngestDropOverlay {
   private overlayEl: HTMLElement;
