@@ -3,7 +3,7 @@ Last Updated: 2026-03-29
 
 ## Project Overview
 - **Name**: Nexus (package: claudesidian-mcp)
-- **Version**: 5.6.0
+- **Version**: 5.6.1
 - **Type**: Obsidian Community Plugin
 - **Purpose**: MCP integration for Obsidian with AI-powered vault operations
 - **Architecture**: Agent-Tool pattern with domain-driven design
@@ -258,6 +258,11 @@ onCreate(file: TFile) {
 ## Recent Milestones
 
 ### March 2026
+
+**Mar 29**: v5.6.1 — Ingestion multi-provider, app UX fixes, Mistral multi-turn
+- **Ingestion**: `IngestModelCatalog` + `IngestCapabilityService` — explicit catalog of OCR/transcription models; UI now shows provider+model dropdowns; supports OpenAI (Whisper, GPT-4o Transcribe), Groq (Whisper), Google Gemini multimodal audio, OpenRouter (Mistral OCR, Gemini); `enableIngestion` toggle in settings
+- **App UX**: `AppManager` refactored — config is source of truth; apps install as disabled (credentials first); `BaseAppAgent.supportsValidation()` + `getValidationActionLabel()`; `AppsTab` shows real manifest descriptions
+- **Mistral**: passes `conversationHistory` for multi-turn; `supportsImages: true`
 
 **Mar 29**: Web Tools Agent ✅ (PR #82)
 - New `WebToolsAgent` with 5 desktop-only tools: `openWebpage`, `capturePagePdf`, `capturePagePng`, `captureToMarkdown`, `extractLinks`

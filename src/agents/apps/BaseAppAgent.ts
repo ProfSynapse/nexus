@@ -95,6 +95,28 @@ export abstract class BaseAppAgent extends BaseAgent {
   }
 
   /**
+   * Whether this app exposes a validation action in settings.
+   * Defaults to showing validation for apps with credential fields.
+   */
+  supportsValidation(): boolean {
+    const mode = this.manifest.validation?.mode;
+    if (mode === 'none') {
+      return false;
+    }
+    if (mode === 'manual') {
+      return true;
+    }
+    return this.manifest.credentials.length > 0;
+  }
+
+  /**
+   * Label for the validation action shown in settings.
+   */
+  getValidationActionLabel(): string {
+    return this.manifest.validation?.actionLabel || 'Validate';
+  }
+
+  /**
    * Inject the Obsidian App instance. Called by AppManager after construction.
    * Tools that need workspace or command access can use getApp().
    */

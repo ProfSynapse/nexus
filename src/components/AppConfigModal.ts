@@ -40,6 +40,7 @@ export interface AppConfigModalConfig {
   onSaveSettings?: (settings: Record<string, string>) => Promise<void>;
   onUninstall?: () => Promise<void>;
   onValidate?: () => Promise<{ success: boolean; error?: string; data?: unknown }>;
+  validateLabel?: string;
   settingsSections?: AppSettingsSection[];
 }
 
@@ -117,7 +118,8 @@ export class AppConfigModal extends Modal {
 
     // Validate button
     if (this.config.onValidate) {
-      const validateBtn = buttonContainer.createEl('button', { text: 'Validate' });
+      const validateLabel = this.config.validateLabel || 'Validate';
+      const validateBtn = buttonContainer.createEl('button', { text: validateLabel });
       validateBtn.addEventListener('click', async () => {
         validateBtn.disabled = true;
         validateBtn.setText('Validating...');
@@ -148,7 +150,7 @@ export class AppConfigModal extends Modal {
           new Notice(`Validation error: ${error}`);
         } finally {
           validateBtn.disabled = false;
-          validateBtn.setText('Validate');
+          validateBtn.setText(validateLabel);
         }
       });
     }

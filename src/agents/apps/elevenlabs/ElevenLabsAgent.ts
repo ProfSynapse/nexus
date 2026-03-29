@@ -23,6 +23,10 @@ const ELEVENLABS_MANIFEST: AppManifest = {
   version: '1.0.0',
   author: 'Nexus',
   docsUrl: 'https://elevenlabs.io/docs',
+  validation: {
+    mode: 'manual',
+    actionLabel: 'Validate access',
+  },
   credentials: [
     {
       key: 'apiKey',

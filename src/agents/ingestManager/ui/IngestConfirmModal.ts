@@ -11,6 +11,10 @@
  */
 
 import { App, Modal, Setting, setIcon } from 'obsidian';
+import {
+  IngestProviderOption,
+  normalizeIngestSelection
+} from '../tools/services/IngestCapabilityService';
 
 export interface IngestConfirmOptions {
   filePath: string;
@@ -20,10 +24,10 @@ export interface IngestConfirmOptions {
   defaultOcrModel?: string;
   defaultTranscriptionProvider?: string;
   defaultTranscriptionModel?: string;
-  /** Provider names available for vision OCR */
-  ocrProviders: Array<{ id: string; name: string }>;
-  /** Provider names available for transcription */
-  transcriptionProviders: Array<{ id: string; name: string }>;
+  /** Provider + model options available for vision OCR */
+  ocrProviders: IngestProviderOption[];
+  /** Provider + model options available for transcription */
+  transcriptionProviders: IngestProviderOption[];
 }
 
 export interface IngestConfirmResult {
@@ -39,17 +43,28 @@ export class IngestConfirmModal extends Modal {
   private options: IngestConfirmOptions;
   private resolvePromise: ((result: IngestConfirmResult) => void) | null = null;
   private result: IngestConfirmResult;
+  private submitButton: HTMLButtonElement | null = null;
 
   constructor(app: App, options: IngestConfirmOptions) {
     super(app);
     this.options = options;
+    const normalizedOcrSelection = normalizeIngestSelection(
+      options.ocrProviders,
+      options.defaultOcrProvider,
+      options.defaultOcrModel
+    );
+    const normalizedTranscriptionSelection = normalizeIngestSelection(
+      options.transcriptionProviders,
+      options.defaultTranscriptionProvider,
+      options.defaultTranscriptionModel
+    );
     this.result = {
       confirmed: false,
       pdfMode: options.defaultPdfMode,
-      ocrProvider: options.defaultOcrProvider,
-      ocrModel: options.defaultOcrModel,
-      transcriptionProvider: options.defaultTranscriptionProvider,
-      transcriptionModel: options.defaultTranscriptionModel
+      ocrProvider: normalizedOcrSelection.provider,
+      ocrModel: normalizedOcrSelection.model,
+      transcriptionProvider: normalizedTranscriptionSelection.provider,
+      transcriptionModel: normalizedTranscriptionSelection.model
     };
   }
 
@@ -132,6 +147,7 @@ export class IngestConfirmModal extends Modal {
                 visionSettingsContainer.addClass('nexus-ingest-confirm-hidden');
               }
             }
+            this.updateSubmitButtonState();
           });
       });
 
@@ -141,38 +157,39 @@ export class IngestConfirmModal extends Modal {
       visionSettingsContainer.addClass('nexus-ingest-confirm-hidden');
     }
 
-    new Setting(visionSettingsContainer)
-      .setName('OCR provider')
-      .addDropdown(dropdown => {
-        for (const provider of this.options.ocrProviders) {
-          dropdown.addOption(provider.id, provider.name);
-        }
-        if (this.result.ocrProvider) {
-          dropdown.setValue(this.result.ocrProvider);
-        }
-        dropdown.onChange(value => {
-          this.result.ocrProvider = value;
-        });
-      });
+    this.renderProviderModelSettings(
+      visionSettingsContainer,
+      'OCR',
+      this.options.ocrProviders,
+      () => ({
+        provider: this.result.ocrProvider,
+        model: this.result.ocrModel
+      }),
+      (provider, model) => {
+        this.result.ocrProvider = provider;
+        this.result.ocrModel = model;
+        this.updateSubmitButtonState();
+      }
+    );
   }
 
   private renderAudioOptions(container: HTMLElement): void {
     const section = container.createDiv({ cls: 'nexus-ingest-confirm-options' });
 
-    new Setting(section)
-      .setName('Transcription provider')
-      .setDesc('Select the provider for audio transcription.')
-      .addDropdown(dropdown => {
-        for (const provider of this.options.transcriptionProviders) {
-          dropdown.addOption(provider.id, provider.name);
-        }
-        if (this.result.transcriptionProvider) {
-          dropdown.setValue(this.result.transcriptionProvider);
-        }
-        dropdown.onChange(value => {
-          this.result.transcriptionProvider = value;
-        });
-      });
+    this.renderProviderModelSettings(
+      section,
+      'Transcription',
+      this.options.transcriptionProviders,
+      () => ({
+        provider: this.result.transcriptionProvider,
+        model: this.result.transcriptionModel
+      }),
+      (provider, model) => {
+        this.result.transcriptionProvider = provider;
+        this.result.transcriptionModel = model;
+        this.updateSubmitButtonState();
+      }
+    );
   }
 
   private renderButtons(container: HTMLElement): void {
@@ -186,11 +203,11 @@ export class IngestConfirmModal extends Modal {
       this.close();
     });
 
-    const ingestBtn = buttonRow.createEl('button', {
+    this.submitButton = buttonRow.createEl('button', {
       text: 'Ingest',
       cls: 'nexus-ingest-confirm-submit mod-cta'
     });
-    ingestBtn.addEventListener('click', () => {
+    this.submitButton.addEventListener('click', () => {
       this.result.confirmed = true;
       if (this.resolvePromise) {
         this.resolvePromise(this.result);
@@ -198,6 +215,110 @@ export class IngestConfirmModal extends Modal {
       }
       this.close();
     });
+
+    this.updateSubmitButtonState();
+  }
+
+  private renderProviderModelSettings(
+    container: HTMLElement,
+    labelPrefix: string,
+    providers: IngestProviderOption[],
+    getSelection: () => { provider?: string; model?: string },
+    onSelectionChange: (provider?: string, model?: string) => void
+  ): void {
+    let modelSelectEl: HTMLSelectElement | null = null;
+
+    const updateModelOptions = (): void => {
+      if (!modelSelectEl) {
+        return;
+      }
+
+      const selection = getSelection();
+      const provider = providers.find(option => option.id === selection.provider);
+
+      modelSelectEl.empty();
+
+      if (!provider || provider.models.length === 0) {
+        modelSelectEl.createEl('option', {
+          value: '',
+          text: providers.length === 0 ? `No ${labelPrefix.toLowerCase()} models available` : 'Select a provider first'
+        });
+        modelSelectEl.disabled = true;
+        return;
+      }
+
+      provider.models.forEach(model => {
+        modelSelectEl!.createEl('option', {
+          value: model.id,
+          text: model.name
+        });
+      });
+
+      const normalized = normalizeIngestSelection(providers, selection.provider, selection.model);
+      modelSelectEl.value = normalized.model || provider.models[0].id;
+      modelSelectEl.disabled = false;
+    };
+
+    new Setting(container)
+      .setName(`${labelPrefix} provider`)
+      .addDropdown(dropdown => {
+        if (providers.length === 0) {
+          dropdown.addOption('', `No ${labelPrefix.toLowerCase()} providers available`);
+          dropdown.setDisabled(true);
+          onSelectionChange(undefined, undefined);
+          return;
+        }
+
+        providers.forEach(provider => {
+          dropdown.addOption(provider.id, provider.name);
+        });
+
+        const normalized = normalizeIngestSelection(
+          providers,
+          getSelection().provider,
+          getSelection().model
+        );
+        dropdown.setValue(normalized.provider || providers[0].id);
+
+        dropdown.onChange(value => {
+          const nextSelection = normalizeIngestSelection(providers, value, undefined);
+          onSelectionChange(nextSelection.provider, nextSelection.model);
+          updateModelOptions();
+        });
+      });
+
+    new Setting(container)
+      .setName(`${labelPrefix} model`)
+      .addDropdown(dropdown => {
+        modelSelectEl = dropdown.selectEl;
+        updateModelOptions();
+
+        dropdown.onChange(value => {
+          const selection = getSelection();
+          onSelectionChange(selection.provider, value || undefined);
+          updateModelOptions();
+        });
+      });
+  }
+
+  private updateSubmitButtonState(): void {
+    if (!this.submitButton) {
+      return;
+    }
+
+    this.submitButton.disabled = !this.canSubmit();
+  }
+
+  private canSubmit(): boolean {
+    if (this.options.fileType === 'audio') {
+      return !!(this.result.transcriptionProvider && this.result.transcriptionModel);
+    }
+
+    if (this.result.pdfMode === 'vision') {
+      return !!(this.result.ocrProvider && this.result.ocrModel);
+    }
+
+    return true;
   }
 
   private getFilename(filePath: string): string {

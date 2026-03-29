@@ -25,7 +25,7 @@ export class IngestTool extends BaseTool<IngestToolParameters, IngestToolResult>
       'Ingest File',
       'Ingest a PDF or audio file into a structured markdown note. ' +
       'PDF supports text extraction (default, free) or vision-based OCR (requires provider/model). ' +
-      'Audio supports transcription via OpenAI or Groq Whisper. ' +
+      'Audio supports transcription via OpenAI, Groq, Google Gemini, and OpenRouter audio-capable models. ' +
       'The output note is created alongside the original file with an ![[embed]] link.',
       '1.0.0'
     );
@@ -59,13 +59,31 @@ export class IngestTool extends BaseTool<IngestToolParameters, IngestToolResult>
             });
             return response.text;
           },
+          getApiKey: (provider) => {
+            const settings = providerManager.getSettings();
+            return settings?.providers?.[provider]?.apiKey;
+          },
+          getOpenRouterHeaders: () => {
+            const openRouterConfig = providerManager.getSettings()?.providers?.openrouter;
+            return {
+              httpReferer: openRouterConfig?.httpReferer,
+              xTitle: openRouterConfig?.xTitle
+            };
+          }
         },
         transcriptionDeps: {
           getApiKey: (provider) => {
             const settings = providerManager.getSettings();
             return settings?.providers?.[provider]?.apiKey;
           },
-        },
+          getOpenRouterHeaders: () => {
+            const openRouterConfig = providerManager.getSettings()?.providers?.openrouter;
+            return {
+              httpReferer: openRouterConfig?.httpReferer,
+              xTitle: openRouterConfig?.xTitle
+            };
+          }
+        }
       };
 
       const result = await processFile(params, deps);
@@ -101,11 +119,11 @@ export class IngestTool extends BaseTool<IngestToolParameters, IngestToolResult>
         },
         transcriptionProvider: {
           type: 'string',
-          description: 'Provider for audio transcription. Supported: "openai", "groq". Required for audio files.',
+          description: 'Provider for audio transcription. Supported: "openai", "groq", "google", "openrouter". Required for audio files.',
         },
         transcriptionModel: {
           type: 'string',
-          description: 'Model for audio transcription (e.g., "whisper-1"). Optional — defaults to provider\'s best model.',
+          description: 'Model for audio transcription (e.g., "gpt-4o-transcribe", "whisper-large-v3-turbo", "gemini-2.5-flash"). Optional — defaults to the provider\'s first supported transcription model.',
         },
       },
       required: ['filePath'],

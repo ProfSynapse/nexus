@@ -18,6 +18,7 @@ import { LLMValidationService } from '../../../services/llm/validation/Validatio
 import { ModelWithProvider } from '../../../services/StaticModelsService';
 import { renderOAuthBanner, updateConnectButtonState, renderCliStatusBanner, updateCheckStatusButtonState } from '../../shared/OAuthBannerComponent';
 import { OAuthFlowManager } from '../../../services/oauth/OAuthFlowManager';
+import { getNexusPlugin } from '../../../utils/pluginLocator';
 
 export class GenericProviderModal implements IProviderModal {
   private config: ProviderModalConfig;
@@ -419,7 +420,12 @@ export class GenericProviderModal implements IProviderModal {
     if (!this.modelsContainer) return;
 
     try {
-      this.models = this.deps.staticModelsService.getModelsForProvider(this.config.providerId);
+      const plugin = getNexusPlugin(this.deps.app) as { settings?: { settings?: { enableIngestion?: boolean } } } | null;
+      const includeIngestionModels = plugin?.settings?.settings?.enableIngestion !== false;
+      this.models = this.deps.staticModelsService.getConfigurableModelsForProvider(
+        this.config.providerId,
+        { includeIngestionModels }
+      );
       this.displayModels();
     } catch (error) {
       console.error('[GenericProvider] Error loading models:', error);

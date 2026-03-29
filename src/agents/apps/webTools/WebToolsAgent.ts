@@ -15,6 +15,9 @@ const WEB_TOOLS_MANIFEST: AppManifest = {
   author: 'Nexus',
   docsUrl: 'https://help.obsidian.md/plugins/web-viewer',
   credentials: [],
+  validation: {
+    mode: 'none',
+  },
   tools: [
     { slug: 'openWebpage', description: 'Open a webpage in Obsidian Web Viewer' },
     { slug: 'captureToMarkdown', description: 'Save a Web Viewer page into the vault as Markdown' },

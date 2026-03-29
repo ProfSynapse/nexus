@@ -24,9 +24,9 @@ jest.mock(
 import { __setRequestUrlMock } from 'obsidian';
 import {
   transcribeAudio,
-  getTranscriptionProviders,
   TranscriptionServiceDeps,
 } from '../../src/agents/ingestManager/tools/services/TranscriptionService';
+import { getIngestionProvidersForKind } from '../../src/agents/ingestManager/tools/services/IngestModelCatalog';
 import { chunkAudio } from '../../src/agents/ingestManager/tools/services/AudioChunkingService';
 import { buildMultipartFormData } from '../../src/agents/ingestManager/tools/services/MultipartFormDataBuilder';
 import { AudioChunk } from '../../src/agents/ingestManager/types';
@@ -73,15 +73,18 @@ describe('TranscriptionService', () => {
 
   describe('provider validation', () => {
     it('throws for unsupported provider', async () => {
+      // Provide a fake API key so we get past the key check to the provider/model check
+      const deps = makeDeps({ getApiKey: () => 'fake-key' });
       await expect(
-        transcribeAudio(new ArrayBuffer(10), 'audio/mpeg', 'test.mp3', 'deepgram', undefined, makeDeps())
-      ).rejects.toThrow(/Provider "deepgram" does not support audio transcription/);
+        transcribeAudio(new ArrayBuffer(10), 'audio/mpeg', 'test.mp3', 'deepgram', undefined, deps)
+      ).rejects.toThrow(/Provider "deepgram" does not support/);
     });
 
-    it('error message lists supported providers', async () => {
+    it('error message includes provider name', async () => {
+      const deps = makeDeps({ getApiKey: () => 'fake-key' });
       await expect(
-        transcribeAudio(new ArrayBuffer(10), 'audio/mpeg', 'test.mp3', 'unknown', undefined, makeDeps())
-      ).rejects.toThrow(/openai, groq/);
+        transcribeAudio(new ArrayBuffer(10), 'audio/mpeg', 'test.mp3', 'unknown', undefined, deps)
+      ).rejects.toThrow(/Provider "unknown"/);
     });
 
     it('accepts openai provider', async () => {
@@ -111,12 +114,12 @@ describe('TranscriptionService', () => {
   // ── Default model selection ───────────────────────────────────────────
 
   describe('model selection', () => {
-    it('uses whisper-1 as default for openai', async () => {
-      __setRequestUrlMock(async () => ({ status: 200, json: { segments: [] } }));
+    it('uses gpt-4o-transcribe as default for openai', async () => {
+      __setRequestUrlMock(async () => ({ status: 200, json: { text: '' } }));
       await transcribeAudio(new ArrayBuffer(10), 'audio/mpeg', 'test.mp3', 'openai', undefined, makeDeps());
       expect(buildMultipartMock).toHaveBeenCalledWith(
         expect.arrayContaining([
-          expect.objectContaining({ name: 'model', value: 'whisper-1' }),
+          expect.objectContaining({ name: 'model', value: 'gpt-4o-transcribe' }),
         ])
       );
     });
@@ -133,10 +136,10 @@ describe('TranscriptionService', () => {
 
     it('uses explicit model when provided', async () => {
       __setRequestUrlMock(async () => ({ status: 200, json: { segments: [] } }));
-      await transcribeAudio(new ArrayBuffer(10), 'audio/mpeg', 'test.mp3', 'openai', 'whisper-large-v3', makeDeps());
+      await transcribeAudio(new ArrayBuffer(10), 'audio/mpeg', 'test.mp3', 'openai', 'whisper-1', makeDeps());
       expect(buildMultipartMock).toHaveBeenCalledWith(
         expect.arrayContaining([
-          expect.objectContaining({ name: 'model', value: 'whisper-large-v3' }),
+          expect.objectContaining({ name: 'model', value: 'whisper-1' }),
         ])
       );
     });
@@ -155,14 +158,15 @@ describe('TranscriptionService', () => {
           ],
         },
       }));
-      const result = await transcribeAudio(new ArrayBuffer(10), 'audio/mpeg', 'test.mp3', 'openai', undefined, makeDeps());
+      // Use whisper-1 explicitly to get speech-api-segmented execution path
+      const result = await transcribeAudio(new ArrayBuffer(10), 'audio/mpeg', 'test.mp3', 'openai', 'whisper-1', makeDeps());
       expect(result).toEqual([
         { startSeconds: 0, endSeconds: 5.2, text: 'Hello world' },
         { startSeconds: 5.2, endSeconds: 10.1, text: 'Second segment' },
       ]);
     });
 
-    it('falls back to full text when no segments array', async () => {
+    it('falls back to full text when no segments array (segmented path)', async () => {
       __setRequestUrlMock(async () => ({
         status: 200,
         json: {
@@ -170,20 +174,22 @@ describe('TranscriptionService', () => {
           duration: 42.5,
         },
       }));
-      const result = await transcribeAudio(new ArrayBuffer(10), 'audio/mpeg', 'test.mp3', 'openai', undefined, makeDeps());
+      // Use whisper-1 for speech-api-segmented — falls back to text+duration when no segments
+      const result = await transcribeAudio(new ArrayBuffer(10), 'audio/mpeg', 'test.mp3', 'openai', 'whisper-1', makeDeps());
       expect(result).toEqual([
         { startSeconds: 0, endSeconds: 42.5, text: 'Full transcript text' },
       ]);
     });
 
-    it('uses duration 0 when text fallback has no duration', async () => {
+    it('uses chunk duration when text fallback has no response duration (segmented path)', async () => {
       __setRequestUrlMock(async () => ({
         status: 200,
         json: { text: 'No duration' },
       }));
-      const result = await transcribeAudio(new ArrayBuffer(10), 'audio/mpeg', 'test.mp3', 'openai', undefined, makeDeps());
+      // Use whisper-1 for speech-api-segmented — falls back to chunk.durationSeconds when no response duration
+      const result = await transcribeAudio(new ArrayBuffer(10), 'audio/mpeg', 'test.mp3', 'openai', 'whisper-1', makeDeps());
       expect(result).toEqual([
-        { startSeconds: 0, endSeconds: 0, text: 'No duration' },
+        { startSeconds: 0, endSeconds: 30, text: 'No duration' },
       ]);
     });
 
@@ -262,7 +268,8 @@ describe('TranscriptionService', () => {
         };
       });
 
-      const result = await transcribeAudio(new ArrayBuffer(10), 'audio/mpeg', 'test.mp3', 'openai', undefined, makeDeps());
+      // Use whisper-1 explicitly for speech-api-segmented (parses segments array)
+      const result = await transcribeAudio(new ArrayBuffer(10), 'audio/mpeg', 'test.mp3', 'openai', 'whisper-1', makeDeps());
       expect(result).toEqual([
         { startSeconds: 0, endSeconds: 10, text: 'Chunk 1' },
         { startSeconds: 30, endSeconds: 38, text: 'Chunk 2' },
@@ -276,7 +283,8 @@ describe('TranscriptionService', () => {
         json: { segments: [{ start: 2, end: 5, text: 'Mid-chunk' }] },
       }));
 
-      const result = await transcribeAudio(new ArrayBuffer(10), 'audio/mpeg', 'test.mp3', 'openai', undefined, makeDeps());
+      // Use whisper-1 explicitly for speech-api-segmented
+      const result = await transcribeAudio(new ArrayBuffer(10), 'audio/mpeg', 'test.mp3', 'openai', 'whisper-1', makeDeps());
       expect(result).toEqual([
         { startSeconds: 2, endSeconds: 5, text: 'Mid-chunk' },
       ]);
@@ -286,9 +294,9 @@ describe('TranscriptionService', () => {
   // ── Multipart form construction ───────────────────────────────────────
 
   describe('multipart form data', () => {
-    it('passes correct fields to buildMultipartFormData', async () => {
+    it('passes correct fields for speech-api-segmented model', async () => {
       __setRequestUrlMock(async () => ({ status: 200, json: { segments: [] } }));
-      await transcribeAudio(new ArrayBuffer(10), 'audio/mpeg', 'test.mp3', 'openai', undefined, makeDeps());
+      await transcribeAudio(new ArrayBuffer(10), 'audio/mpeg', 'test.mp3', 'openai', 'whisper-1', makeDeps());
 
       expect(buildMultipartMock).toHaveBeenCalledWith([
         expect.objectContaining({ name: 'file', filename: 'test.mp3', contentType: 'audio/mpeg' }),
@@ -354,14 +362,16 @@ describe('TranscriptionService', () => {
     });
   });
 
-  // ── getTranscriptionProviders ─────────────────────────────────────────
+  // ── getIngestionProvidersForKind (transcription) ──────────────────────
 
-  describe('getTranscriptionProviders', () => {
-    it('returns openai and groq', () => {
-      const providers = getTranscriptionProviders();
+  describe('getIngestionProvidersForKind (transcription)', () => {
+    it('returns all transcription-capable providers', () => {
+      const providers = getIngestionProvidersForKind('transcription');
       expect(providers).toContain('openai');
       expect(providers).toContain('groq');
-      expect(providers).toHaveLength(2);
+      expect(providers).toContain('google');
+      expect(providers).toContain('openrouter');
+      expect(providers).toHaveLength(4);
     });
   });
 });

@@ -70,8 +70,10 @@ export class AppsTab {
     const installedItems: AppCardItem[] = installed.map(a => ({
       id: a.id,
       name: a.manifest.name,
-      description: a.configured ? 'Configured' : 'Setup required',
+      description: a.manifest.description,
       isEnabled: a.enabled,
+      showToggle: true,
+      showEdit: true,
       appId: a.id,
       installed: true
     }));
@@ -81,6 +83,8 @@ export class AppsTab {
       name: a.manifest.name,
       description: a.manifest.description,
       isEnabled: false,
+      showToggle: false,
+      showEdit: false,
       appId: a.id,
       installed: false,
       additionalActions: [{
@@ -146,17 +150,20 @@ export class AppsTab {
       credentials: { ...config.credentials },
       settings: { ...(config.settings || {}) },
       onSave: async (credentials) => {
+        agent.setCredentials(credentials);
         appManager.setAppCredentials(appId, credentials);
         await this.saveSettings();
         this.render();
       },
       onSaveSettings: async (settings) => {
+        agent.setSettings(settings);
         appManager.setAppSettings(appId, settings);
         await this.saveSettings();
       },
-      onValidate: async () => {
-        return agent.validateCredentials();
-      },
+      onValidate: agent.supportsValidation()
+        ? async () => agent.validateCredentials()
+        : undefined,
+      validateLabel: agent.getValidationActionLabel(),
       onUninstall: async () => {
         appManager.uninstallApp(appId);
         await this.saveSettings();

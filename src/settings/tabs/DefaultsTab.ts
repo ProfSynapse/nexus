@@ -12,7 +12,12 @@ import { Settings } from '../../settings';
 import { WorkspaceService } from '../../services/WorkspaceService';
 import { CustomPromptStorageService } from '../../agents/promptManager/services/CustomPromptStorageService';
 import { ChatSettingsRenderer, ChatSettings } from '../../components/shared/ChatSettingsRenderer';
-import { VISION_PROVIDERS, TRANSCRIPTION_PROVIDERS } from '../../agents/ingestManager/types';
+import { LLMProviderManager } from '../../services/llm/providers/ProviderManager';
+import {
+  getIngestCapabilityOptions,
+  normalizeIngestSelection,
+  IngestProviderOption
+} from '../../agents/ingestManager/tools/services/IngestCapabilityService';
 
 export interface DefaultsTabServices {
   app: App;
@@ -47,7 +52,7 @@ export class DefaultsTab {
     const workspaces = await this.loadWorkspaces();
     const prompts = this.loadPrompts();
 
-    this.render(workspaces, prompts);
+    await this.render(workspaces, prompts);
   }
 
   private async loadWorkspaces(): Promise<Array<{ id: string; name: string }>> {
@@ -154,10 +159,10 @@ export class DefaultsTab {
   /**
    * Main render method
    */
-  private render(
+  private async render(
     workspaces: Array<{ id: string; name: string }>,
     prompts: Array<{ id: string; name: string }>
-  ): void {
+  ): Promise<void> {
     this.container.empty();
 
     if (!this.services.llmProviderSettings) {
@@ -186,6 +191,8 @@ export class DefaultsTab {
     });
 
     this.renderer.render();
+
+    await this.renderIngestionSection(rendererContainer);
 
     // Embeddings section (desktop only) - insert before Temperature
     if (!Platform.isMobile) {
@@ -224,27 +231,75 @@ export class DefaultsTab {
         rendererContainer.appendChild(embeddingsSection);
       }
     }
-
-    // Ingestion defaults section (always visible)
-    this.renderIngestionSection(rendererContainer);
   }
 
   /**
    * Render the ingestion defaults section
    */
-  private renderIngestionSection(parentEl: HTMLElement): void {
+  private async renderIngestionSection(parentEl: HTMLElement): Promise<void> {
     const llmSettings = this.services.llmProviderSettings;
     if (!llmSettings) return;
+    const pluginSettings = this.services.settings.settings;
+
+    const providerManager = new LLMProviderManager(llmSettings, this.services.app.vault);
+    const capabilities = await getIngestCapabilityOptions(providerManager);
+    const normalizedOcrSelection = normalizeIngestSelection(
+      capabilities.ocrProviders,
+      llmSettings.defaultOcrModel?.provider,
+      llmSettings.defaultOcrModel?.model
+    );
+    const normalizedTranscriptionSelection = normalizeIngestSelection(
+      capabilities.transcriptionProviders,
+      llmSettings.defaultTranscriptionModel?.provider,
+      llmSettings.defaultTranscriptionModel?.model
+    );
+
+    if (normalizedOcrSelection.provider && normalizedOcrSelection.model) {
+      llmSettings.defaultOcrModel = {
+        provider: normalizedOcrSelection.provider,
+        model: normalizedOcrSelection.model
+      };
+    }
+
+    if (normalizedTranscriptionSelection.provider && normalizedTranscriptionSelection.model) {
+      llmSettings.defaultTranscriptionModel = {
+        provider: normalizedTranscriptionSelection.provider,
+        model: normalizedTranscriptionSelection.model
+      };
+    }
 
     const section = createDiv({ cls: 'csr-section' });
     const header = section.createDiv({ cls: 'csr-section-header' });
     header.setText('Ingestion');
     const content = section.createDiv({ cls: 'csr-section-content' });
-
-    // PDF processing mode
-    let ocrProviderSetting: HTMLElement | null = null;
+    const ingestionSettingsContainer = content.createDiv();
+    const isEnabled = pluginSettings.enableIngestion !== false;
 
     new Setting(content)
+      .setName('Enable ingestion')
+      .setDesc('Show PDF/audio ingestion settings and enable drag-and-drop ingestion in chat.')
+      .addToggle(toggle => {
+        toggle
+          .setValue(isEnabled)
+          .onChange(async (value) => {
+            pluginSettings.enableIngestion = value;
+            if (value) {
+              ingestionSettingsContainer.removeClass('nexus-ingest-confirm-hidden');
+            } else {
+              ingestionSettingsContainer.addClass('nexus-ingest-confirm-hidden');
+            }
+            await this.services.settings.saveSettings();
+          });
+      });
+
+    if (!isEnabled) {
+      ingestionSettingsContainer.addClass('nexus-ingest-confirm-hidden');
+    }
+
+    // PDF processing mode
+    let ocrSettingsContainer: HTMLElement | null = null;
+
+    new Setting(ingestionSettingsContainer)
       .setName('Default PDF mode')
       .setDesc('Text extraction is free. Vision OCR uses an LLM for scanned documents.')
       .addDropdown(dropdown => {
@@ -256,60 +311,157 @@ export class DefaultsTab {
             llmSettings.defaultPdfMode = value as 'text' | 'vision';
             await this.services.settings.saveSettings();
             // Toggle OCR provider visibility
-            if (ocrProviderSetting) {
+            if (ocrSettingsContainer) {
               if (value === 'vision') {
-                ocrProviderSetting.removeClass('nexus-ingest-confirm-hidden');
+                ocrSettingsContainer.removeClass('nexus-ingest-confirm-hidden');
               } else {
-                ocrProviderSetting.addClass('nexus-ingest-confirm-hidden');
+                ocrSettingsContainer.addClass('nexus-ingest-confirm-hidden');
               }
             }
           });
       });
 
     // OCR provider/model (conditionally shown)
-    ocrProviderSetting = content.createDiv();
+    ocrSettingsContainer = ingestionSettingsContainer.createDiv();
     if (llmSettings.defaultPdfMode !== 'vision') {
-      ocrProviderSetting.addClass('nexus-ingest-confirm-hidden');
+      ocrSettingsContainer.addClass('nexus-ingest-confirm-hidden');
     }
 
-    new Setting(ocrProviderSetting)
-      .setName('Default OCR provider')
-      .setDesc('Provider for vision OCR when using vision mode.')
-      .addDropdown(dropdown => {
-        for (const p of VISION_PROVIDERS) {
-          dropdown.addOption(p.id, p.name);
-        }
-        dropdown.setValue(llmSettings.defaultOcrModel?.provider || 'openai');
-        dropdown.onChange(async (value) => {
-          if (!llmSettings.defaultOcrModel) {
-            llmSettings.defaultOcrModel = { provider: value, model: '' };
-          } else {
-            llmSettings.defaultOcrModel.provider = value;
-          }
-          await this.services.settings.saveSettings();
+    this.renderProviderModelDefaults(
+      ocrSettingsContainer,
+      'Default OCR',
+      'Model for vision OCR when using vision mode.',
+      capabilities.ocrProviders,
+      () => llmSettings.defaultOcrModel,
+      async (provider, model) => {
+        llmSettings.defaultOcrModel = provider && model
+          ? { provider, model }
+          : undefined;
+        await this.services.settings.saveSettings();
+      }
+    );
+
+    this.renderProviderModelDefaults(
+      ingestionSettingsContainer,
+      'Default transcription',
+      'Model for audio transcription.',
+      capabilities.transcriptionProviders,
+      () => llmSettings.defaultTranscriptionModel,
+      async (provider, model) => {
+        llmSettings.defaultTranscriptionModel = provider && model
+          ? { provider, model }
+          : undefined;
+        await this.services.settings.saveSettings();
+      }
+    );
+
+    const temperatureSection = this.findSectionByHeader(parentEl, 'Temperature');
+    if (temperatureSection) {
+      parentEl.insertBefore(section, temperatureSection);
+    } else {
+      parentEl.appendChild(section);
+    }
+  }
+
+  private findSectionByHeader(parentEl: HTMLElement, headerText: string): HTMLElement | null {
+    const headers = parentEl.querySelectorAll('.csr-section-header');
+    for (const header of Array.from(headers)) {
+      if (header.textContent === headerText && header.parentElement instanceof HTMLElement) {
+        return header.parentElement;
+      }
+    }
+
+    return null;
+  }
+
+  private renderProviderModelDefaults(
+    container: HTMLElement,
+    labelPrefix: string,
+    description: string,
+    providers: IngestProviderOption[],
+    getSelection: () => { provider: string; model: string } | undefined,
+    onChange: (provider: string | undefined, model: string | undefined) => Promise<void>
+  ): void {
+    let modelDropdown: HTMLSelectElement | null = null;
+
+    const updateModelOptions = (): void => {
+      if (!modelDropdown) {
+        return;
+      }
+
+      const selection = getSelection();
+      const providerId = selection?.provider;
+      const provider = providers.find(option => option.id === providerId);
+      const normalizedSelection = normalizeIngestSelection(
+        providers,
+        selection?.provider,
+        selection?.model
+      );
+
+      modelDropdown.empty();
+
+      if (!providerId || !provider || provider.models.length === 0) {
+        modelDropdown.createEl('option', {
+          value: '',
+          text: providers.length === 0 ? `No ${labelPrefix.toLowerCase()} models available` : 'Select a provider first'
+        });
+        modelDropdown.disabled = true;
+        return;
+      }
+
+      provider.models.forEach(model => {
+        modelDropdown!.createEl('option', {
+          value: model.id,
+          text: model.name
         });
       });
 
-    // Transcription provider/model
-    new Setting(content)
-      .setName('Default transcription provider')
-      .setDesc('Provider for audio transcription (Whisper API).')
+      modelDropdown.disabled = false;
+      modelDropdown.value = provider.models.some(model => model.id === normalizedSelection.model)
+        ? normalizedSelection.model || provider.models[0].id
+        : provider.models[0].id;
+    };
+
+    new Setting(container)
+      .setName(`${labelPrefix} provider`)
+      .setDesc(description)
       .addDropdown(dropdown => {
-        for (const p of TRANSCRIPTION_PROVIDERS) {
-          dropdown.addOption(p.id, p.name);
+        if (providers.length === 0) {
+          dropdown.addOption('', `No ${labelPrefix.toLowerCase()} providers available`);
+          dropdown.setDisabled(true);
+          return;
         }
-        dropdown.setValue(llmSettings.defaultTranscriptionModel?.provider || 'openai');
+
+        providers.forEach(provider => {
+          dropdown.addOption(provider.id, provider.name);
+        });
+
+        const normalizedSelection = normalizeIngestSelection(
+          providers,
+          getSelection()?.provider,
+          getSelection()?.model
+        );
+
+        dropdown.setValue(normalizedSelection.provider || providers[0].id);
         dropdown.onChange(async (value) => {
-          if (!llmSettings.defaultTranscriptionModel) {
-            llmSettings.defaultTranscriptionModel = { provider: value, model: '' };
-          } else {
-            llmSettings.defaultTranscriptionModel.provider = value;
-          }
-          await this.services.settings.saveSettings();
+          const nextSelection = normalizeIngestSelection(providers, value, undefined);
+          await onChange(nextSelection.provider, nextSelection.model);
+          updateModelOptions();
         });
       });
 
-    parentEl.appendChild(section);
+    new Setting(container)
+      .setName(`${labelPrefix} model`)
+      .addDropdown(dropdown => {
+        modelDropdown = dropdown.selectEl;
+        updateModelOptions();
+
+        dropdown.onChange(async (value) => {
+          const selection = getSelection();
+          await onChange(selection?.provider, value || undefined);
+          updateModelOptions();
+        });
+      });
   }
 
   /**

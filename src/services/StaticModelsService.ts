@@ -16,6 +16,7 @@ import { OPENAI_CODEX_MODELS } from './llm/adapters/openai-codex/OpenAICodexMode
 import { ANTHROPIC_CLAUDE_CODE_MODELS } from './llm/adapters/anthropic-claude-code/AnthropicClaudeCodeModels';
 import { GOOGLE_GEMINI_CLI_MODELS } from './llm/adapters/google-gemini-cli/GoogleGeminiCliModels';
 import { GITHUB_COPILOT_MODELS } from './llm/adapters/github-copilot/GithubCopilotModels';
+import { getIngestionModelsForProvider } from '../agents/ingestManager/tools/services/IngestModelCatalog';
 
 export interface ModelWithProvider {
   provider: string;
@@ -138,6 +139,49 @@ export class StaticModelsService {
     this.modelCache.set(providerId, convertedModels);
     
     return convertedModels;
+  }
+
+  /**
+   * Get all configurable models for a provider, including ingest-only OCR and
+   * transcription models that do not appear in chat model pickers.
+   */
+  getConfigurableModelsForProvider(
+    providerId: string,
+    options?: { includeIngestionModels?: boolean }
+  ): ModelWithProvider[] {
+    const chatModels = this.getModelsForProvider(providerId);
+    if (options?.includeIngestionModels === false) {
+      return chatModels;
+    }
+
+    const ingestionModels = getIngestionModelsForProvider(providerId).map(model => ({
+      provider: model.provider,
+      id: model.id,
+      name: model.name,
+      contextWindow: 0,
+      maxTokens: 0,
+      pricing: {
+        inputPerMillion: 0,
+        outputPerMillion: 0,
+        currency: 'USD'
+      },
+      capabilities: {
+        supportsJSON: false,
+        supportsImages: model.kind === 'ocr',
+        supportsFunctions: false,
+        supportsStreaming: false,
+        supportsThinking: false
+      }
+    }));
+
+    const mergedModels = [...chatModels];
+    for (const model of ingestionModels) {
+      if (!mergedModels.some(existingModel => existingModel.id === model.id)) {
+        mergedModels.push(model);
+      }
+    }
+
+    return mergedModels;
   }
 
   /**

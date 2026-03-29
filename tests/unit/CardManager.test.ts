@@ -178,6 +178,26 @@ describe('CardManager', () => {
       const emptyState = findChildByClass(cardsContainer, 'card-manager-empty');
       expect(emptyState).toBeNull();
     });
+
+    it('should hide the toggle for items that override showToggle to false', () => {
+      const container = createMockContainer();
+      const items = [{ ...makeItem('1', 'Install only'), showToggle: false }];
+      new CardManager(makeConfig(container, items, { showToggle: true }));
+
+      const cardEl = findChildByClass(container, 'agent-management-card');
+      const toggleEl = findChildByClass(cardEl, 'agent-management-toggle');
+      expect(toggleEl).toBeNull();
+    });
+
+    it('should hide the edit button for items that override showEdit to false', () => {
+      const container = createMockContainer();
+      const items = [{ ...makeItem('1', 'No edit'), showEdit: false }];
+      new CardManager(makeConfig(container, items));
+
+      const cardEl = findChildByClass(container, 'agent-management-card');
+      const editBtn = findChildByClass(cardEl, 'agent-management-edit-btn');
+      expect(editBtn).toBeNull();
+    });
   });
 
   // --------------------------------------------------------------------------

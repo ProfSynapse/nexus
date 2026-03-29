@@ -22,6 +22,9 @@ const COMPOSER_MANIFEST: AppManifest = {
   version: '1.0.0',
   author: 'Nexus',
   credentials: [],
+  validation: {
+    mode: 'none',
+  },
   tools: [
     { slug: 'compose', description: 'Merge multiple files of the same type into one output' },
     { slug: 'listFormats', description: 'List supported composition formats and their extensions' },

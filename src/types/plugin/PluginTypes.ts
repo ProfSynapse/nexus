@@ -58,6 +58,7 @@ export interface ProcessedFilesData {
 export interface MCPSettings {
   enabledVault: boolean;
   enableEmbeddings?: boolean; // Enable/disable local embeddings for semantic search (desktop only)
+  enableIngestion?: boolean; // Enable/disable PDF/audio ingestion UI and ingest-only model settings
   configFilePath?: string;
   memory?: MemorySettings;
   customPrompts?: CustomPromptsSettings;

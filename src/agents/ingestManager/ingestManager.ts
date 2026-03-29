@@ -24,7 +24,7 @@ import type { LLMProviderManager } from '../../services/llm/providers/ProviderMa
  * - text (default, free): pdfjs-dist text extraction via getTextContent()
  * - vision: Renders pages to PNG → sends to vision LLM for OCR
  *
- * Audio: Transcription via OpenAI/Groq Whisper API with timestamped segments.
+ * Audio: Transcription via explicit speech and multimodal-audio models.
  */
 export class IngestManagerAgent extends BaseAgent {
   private vault: Vault;
@@ -37,7 +37,7 @@ export class IngestManagerAgent extends BaseAgent {
     super(
       'ingestManager',
       'File ingestion — PDF and audio. Two modes for PDF: text extraction (free, default) or ' +
-      'vision-based OCR (uses LLM). Audio transcription via Whisper (OpenAI/Groq). ' +
+      'vision-based OCR (uses LLM). Audio transcription via OpenAI, Groq, Google Gemini, and OpenRouter. ' +
       'Creates markdown notes alongside source files with ![[embed]] links. ' +
       '2 tools: ingest (process file → markdown note), listCapabilities (available providers).',
       '1.0.0'
@@ -52,7 +52,7 @@ export class IngestManagerAgent extends BaseAgent {
       description:
         'Ingest a PDF or audio file into a structured markdown note. ' +
         'PDF: text extraction (default) or vision OCR. ' +
-        'Audio: Whisper transcription with timestamps. ' +
+        'Audio: speech transcription using explicit ingest-supported models. ' +
         'Output note created alongside the original file.',
       version: '1.0.0',
       factory: () => new IngestTool(this.vault, this.getProviderManager),
@@ -62,8 +62,8 @@ export class IngestManagerAgent extends BaseAgent {
       slug: 'listCapabilities',
       name: 'List Ingest Capabilities',
       description:
-        'List available OCR providers (vision-capable models) and ' +
-        'transcription providers (Whisper API). Use before ingest to discover options.',
+        'List available OCR models and audio transcription models that the ingest pipeline supports. ' +
+        'Use before ingest to discover valid provider/model options.',
       version: '1.0.0',
       factory: () => new ListCapabilitiesTool(this.getProviderManager),
     });

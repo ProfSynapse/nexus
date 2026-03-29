@@ -48,7 +48,11 @@ import { IngestEventBinder } from '../../agents/ingestManager/ui/IngestEventBind
 import { IngestProgressBanner } from '../../agents/ingestManager/ui/IngestProgressBanner';
 import { IngestConfirmModal, IngestConfirmOptions } from '../../agents/ingestManager/ui/IngestConfirmModal';
 import type { IngestProgress, IngestToolResult } from '../../agents/ingestManager/types';
-import { ACCEPTED_AUDIO_EXTENSIONS, VISION_PROVIDERS, TRANSCRIPTION_PROVIDERS } from '../../agents/ingestManager/types';
+import { ACCEPTED_AUDIO_EXTENSIONS } from '../../agents/ingestManager/types';
+import {
+  getIngestCapabilityOptions,
+  IngestCapabilityOptions
+} from '../../agents/ingestManager/tools/services/IngestCapabilityService';
 
 // Utils
 import { ReferenceMetadata } from './utils/ReferenceExtractor';
@@ -63,6 +67,7 @@ import type { AgentManager } from '../../services/AgentManager';
 import type { DirectToolExecutor } from '../../services/chat/DirectToolExecutor';
 import type { PromptManagerAgent } from '../../agents/promptManager/promptManager';
 import type { HybridStorageAdapter } from '../../database/adapters/HybridStorageAdapter';
+import { LLMProviderManager } from '../../services/llm/providers/ProviderManager';
 
 // Branch UI components
 import { BranchHeader, BranchViewContext } from './components/BranchHeader';
@@ -497,7 +502,7 @@ export class ChatView extends ItemView {
    */
   private initializeIngestUI(): void {
     const plugin = getNexusPlugin<NexusPlugin>(this.app);
-    if (!plugin) return;
+    if (!plugin || plugin.settings?.settings?.enableIngestion === false) return;
 
     // Progress banner (always visible container, banners appear inside on ingest)
     this.ingestProgressBanner = new IngestProgressBanner(
@@ -522,9 +527,14 @@ export class ChatView extends ItemView {
   private async handleIngestFiles(files: FileList): Promise<void> {
     const plugin = getNexusPlugin<NexusPlugin>(this.app);
     if (!plugin) return;
+    if (plugin.settings?.settings?.enableIngestion === false) {
+      new Notice('Ingestion is disabled in settings.');
+      return;
+    }
 
     const settings = plugin.settings?.settings;
     const llmSettings = settings?.llmProviders;
+    const ingestCapabilities = await this.getIngestCapabilities();
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
@@ -557,8 +567,8 @@ export class ChatView extends ItemView {
         defaultOcrModel: llmSettings?.defaultOcrModel?.model,
         defaultTranscriptionProvider: llmSettings?.defaultTranscriptionModel?.provider,
         defaultTranscriptionModel: llmSettings?.defaultTranscriptionModel?.model,
-        ocrProviders: this.getVisionProviders(),
-        transcriptionProviders: this.getTranscriptionProviders()
+        ocrProviders: ingestCapabilities.ocrProviders,
+        transcriptionProviders: ingestCapabilities.transcriptionProviders
       };
 
       const modal = new IngestConfirmModal(this.app, confirmOptions);
@@ -648,18 +658,25 @@ export class ChatView extends ItemView {
     }
   }
 
-  /**
-   * Get list of providers that support vision/image input for OCR
-   */
-  private getVisionProviders(): Array<{ id: string; name: string }> {
-    return VISION_PROVIDERS.map(p => ({ id: p.id, name: p.name }));
-  }
+  private async getIngestCapabilities(): Promise<IngestCapabilityOptions> {
+    const plugin = getNexusPlugin<NexusPlugin>(this.app);
+    if (plugin?.settings?.settings?.enableIngestion === false) {
+      return {
+        ocrProviders: [],
+        transcriptionProviders: []
+      };
+    }
+    const llmSettings = plugin?.settings?.settings?.llmProviders;
 
-  /**
-   * Get list of providers that support audio transcription
-   */
-  private getTranscriptionProviders(): Array<{ id: string; name: string }> {
-    return TRANSCRIPTION_PROVIDERS.map(p => ({ id: p.id, name: p.name }));
+    if (!llmSettings) {
+      return {
+        ocrProviders: [],
+        transcriptionProviders: []
+      };
+    }
+
+    const providerManager = new LLMProviderManager(llmSettings, this.app.vault);
+    return getIngestCapabilityOptions(providerManager);
   }
 
   /**

@@ -11,6 +11,10 @@ export interface CardItem {
     name: string;
     description?: string;
     isEnabled: boolean;
+    /** Optional per-item override for toggle visibility */
+    showToggle?: boolean;
+    /** Optional per-item override for edit visibility */
+    showEdit?: boolean;
     /** Optional CSS class applied to the card's root element */
     cssClass?: string;
     /** Optional per-card action buttons (e.g., install, download) */
@@ -88,11 +92,13 @@ export class CardManager<T extends CardItem> {
      * Create a card for a single item
      */
     private createCard(item: T): void {
+        const showToggle = item.showToggle ?? this.config.showToggle !== false;
+        const showEdit = item.showEdit ?? true;
         const cardConfig: CardConfig = {
             title: item.name,
             description: item.description || '',
             isEnabled: item.isEnabled,
-            showToggle: this.config.showToggle !== false,
+            showToggle,
             onToggle: async (enabled: boolean) => {
                 // Update the item's enabled state BEFORE calling the callback
                 // This prevents race conditions where refreshCards() uses stale data
@@ -101,7 +107,7 @@ export class CardManager<T extends CardItem> {
                 // Don't call refreshCards() - the toggle already reflects the new state
                 // and the item is already updated in place
             },
-            onEdit: () => this.config.onEdit(item),
+            onEdit: showEdit ? () => this.config.onEdit(item) : undefined,
             onDelete: this.config.onDelete ? () => this.config.onDelete!(item) : undefined,
             additionalActions: item.additionalActions
         };

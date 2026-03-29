@@ -36,6 +36,16 @@ export interface AppToolDeclaration {
 }
 
 /**
+ * Controls whether and how an app exposes a validation action in settings.
+ */
+export interface AppValidationDeclaration {
+  /** Whether the app should show a validation action in the UI */
+  mode: 'none' | 'manual';
+  /** Optional custom button label */
+  actionLabel?: string;
+}
+
+/**
  * App manifest — declares identity, credentials, and tools.
  * Every app agent provides this as a static declaration.
  */
@@ -56,6 +66,8 @@ export interface AppManifest {
   credentials: AppCredentialField[];
   /** Tools this app provides */
   tools: AppToolDeclaration[];
+  /** Optional validation behavior for the settings UI */
+  validation?: AppValidationDeclaration;
   /** Optional: URL for documentation/help */
   docsUrl?: string;
 }

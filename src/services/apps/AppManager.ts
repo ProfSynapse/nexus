@@ -39,22 +39,15 @@ export class AppManager {
    * Called during plugin initialization after core agents are registered.
    */
   async loadInstalledApps(): Promise<void> {
-    const registry = this.getBuiltInAppRegistry();
-
     for (const [appId, config] of Object.entries(this.appConfigs)) {
       if (!config.enabled) continue;
 
-      const factory = registry.get(appId);
-      if (!factory) {
-        logger.systemWarn(`App "${appId}" is installed but no factory found — skipping`);
-        continue;
-      }
-
       try {
-        const agent = factory();
-        agent.setCredentials(config.credentials);
-        if (config.settings) agent.setSettings(config.settings);
-        if (this.app) agent.setApp(this.app);
+        const agent = this.createConfiguredAgent(appId, config);
+        if (!agent) {
+          logger.systemWarn(`App "${appId}" is installed but no factory found — skipping`);
+          continue;
+        }
         this.apps.set(appId, agent);
         this.registerCallback(agent);
         logger.systemLog(`App loaded: ${appId}`);
@@ -68,28 +61,21 @@ export class AppManager {
    * Install an app by ID. Creates config entry and registers the agent.
    */
   installApp(appId: string): { success: boolean; error?: string } {
-    if (this.apps.has(appId)) {
+    if (this.appConfigs[appId]) {
       return { success: false, error: `App "${appId}" is already installed` };
     }
 
-    const registry = this.getBuiltInAppRegistry();
-    const factory = registry.get(appId);
-    if (!factory) {
+    const agent = this.createConfiguredAgent(appId);
+    if (!agent) {
       return { success: false, error: `Unknown app: "${appId}"` };
     }
 
-    const agent = factory();
-
     this.appConfigs[appId] = {
-      enabled: true,
+      enabled: false,
       credentials: {},
       installedAt: new Date().toISOString(),
       installedVersion: agent.manifest.version
     };
-
-    if (this.app) agent.setApp(this.app);
-    this.apps.set(appId, agent);
-    this.registerCallback(agent);
 
     logger.systemLog(`App installed: ${appId}`);
     return { success: true };
@@ -99,14 +85,16 @@ export class AppManager {
    * Uninstall an app. Removes from registry and clears config.
    */
   uninstallApp(appId: string): { success: boolean; error?: string } {
-    const agent = this.apps.get(appId);
-    if (!agent) {
+    if (!this.appConfigs[appId]) {
       return { success: false, error: `App "${appId}" is not installed` };
     }
 
-    agent.onunload();
-    this.unregisterCallback(agent.name);
-    this.apps.delete(appId);
+    const loadedAgent = this.apps.get(appId);
+    if (loadedAgent) {
+      loadedAgent.onunload();
+      this.unregisterCallback(loadedAgent.name);
+      this.apps.delete(appId);
+    }
     delete this.appConfigs[appId];
 
     logger.systemLog(`App uninstalled: ${appId}`);
@@ -117,13 +105,12 @@ export class AppManager {
    * Update credentials for an installed app.
    */
   setAppCredentials(appId: string, credentials: Record<string, string>): boolean {
+    if (!this.appConfigs[appId]) return false;
+
+    this.appConfigs[appId].credentials = { ...credentials };
     const agent = this.apps.get(appId);
-    if (!agent) return false;
-
-    agent.setCredentials(credentials);
-
-    if (this.appConfigs[appId]) {
-      this.appConfigs[appId].credentials = { ...credentials };
+    if (agent) {
+      agent.setCredentials(credentials);
     }
     return true;
   }
@@ -132,13 +119,12 @@ export class AppManager {
    * Update settings for an installed app (e.g., default model).
    */
   setAppSettings(appId: string, settings: Record<string, string>): boolean {
+    if (!this.appConfigs[appId]) return false;
+
+    this.appConfigs[appId].settings = { ...settings };
     const agent = this.apps.get(appId);
-    if (!agent) return false;
-
-    agent.setSettings(settings);
-
-    if (this.appConfigs[appId]) {
-      this.appConfigs[appId].settings = { ...settings };
+    if (agent) {
+      agent.setSettings(settings);
     }
     return true;
   }
@@ -151,14 +137,8 @@ export class AppManager {
     this.appConfigs[appId].enabled = enabled;
 
     if (enabled && !this.apps.has(appId)) {
-      // Re-register
-      const registry = this.getBuiltInAppRegistry();
-      const factory = registry.get(appId);
-      if (factory) {
-        const agent = factory();
-        agent.setCredentials(this.appConfigs[appId].credentials);
-        if (this.appConfigs[appId].settings) agent.setSettings(this.appConfigs[appId].settings!);
-        if (this.app) agent.setApp(this.app);
+      const agent = this.createConfiguredAgent(appId, this.appConfigs[appId]);
+      if (agent) {
         this.apps.set(appId, agent);
         this.registerCallback(agent);
       }
@@ -177,7 +157,17 @@ export class AppManager {
    * Get a loaded app agent by ID.
    */
   getApp(appId: string): BaseAppAgent | undefined {
-    return this.apps.get(appId);
+    const loaded = this.apps.get(appId);
+    if (loaded) {
+      return loaded;
+    }
+
+    const config = this.appConfigs[appId];
+    if (!config) {
+      return undefined;
+    }
+
+    return this.createConfiguredAgent(appId, config);
   }
 
   /**
@@ -200,16 +190,15 @@ export class AppManager {
     }> = [];
 
     for (const [appId, factory] of registry) {
-      const agent = this.apps.get(appId);
       const config = this.appConfigs[appId];
-      const tempAgent = agent || factory();
+      const tempAgent = this.apps.get(appId) || this.createConfiguredAgent(appId, config) || factory();
 
       results.push({
         id: appId,
         manifest: tempAgent.manifest,
         installed: !!config,
         enabled: config?.enabled ?? false,
-        configured: agent ? agent.hasRequiredCredentials() : false,
+        configured: tempAgent.hasRequiredCredentials(),
       });
     }
 
@@ -238,5 +227,24 @@ export class AppManager {
     registry.set('web-tools', () => new WebToolsAgent());
 
     return registry;
+  }
+
+  private createConfiguredAgent(appId: string, config?: AppConfig): BaseAppAgent | undefined {
+    const factory = this.getBuiltInAppRegistry().get(appId);
+    if (!factory) {
+      return undefined;
+    }
+
+    const agent = factory();
+    if (config) {
+      agent.setCredentials(config.credentials);
+      if (config.settings) {
+        agent.setSettings(config.settings);
+      }
+    }
+    if (this.app) {
+      agent.setApp(this.app);
+    }
+    return agent;
   }
 }

@@ -23,6 +23,7 @@ import { extractPdfText } from './PdfTextExtractor';
 import { ocrPdf, OcrServiceDeps } from './OcrService';
 import { transcribeAudio, TranscriptionServiceDeps } from './TranscriptionService';
 import { buildPdfNote, buildAudioNote } from './OutputNoteBuilder';
+import { getIngestionProvidersForKind } from './IngestModelCatalog';
 
 export interface PipelineDeps {
   vault: Vault;
@@ -180,7 +181,7 @@ async function processAudio(
   if (!provider) {
     throw new Error(
       'Audio transcription requires a transcriptionProvider. ' +
-      'Supported: openai, groq'
+      `Supported: ${getIngestionProvidersForKind('transcription').join(', ')}`
     );
   }
 

@@ -56,7 +56,9 @@ export class MistralAdapter extends BaseAdapter {
         },
         body: JSON.stringify({
           model: options?.model || this.currentModel,
-          messages: this.buildMessages(prompt, options?.systemPrompt),
+          messages: options?.conversationHistory && options.conversationHistory.length > 0
+            ? options.conversationHistory
+            : this.buildMessages(prompt, options?.systemPrompt),
           temperature: options?.temperature,
           max_tokens: options?.maxTokens,
           top_p: options?.topP,
@@ -119,7 +121,7 @@ export class MistralAdapter extends BaseAdapter {
       supportsStreaming: true,
       streamingMode: 'streaming' as const,
       supportsJSON: true,
-      supportsImages: false,
+      supportsImages: true,
       supportsFunctions: true,
       supportsThinking: false,
       maxContextWindow: 128000,
@@ -143,7 +145,9 @@ export class MistralAdapter extends BaseAdapter {
     // Build request body with snake_case keys matching the Mistral REST API
     const requestBody: Record<string, unknown> = {
       model,
-      messages: this.buildMessages(prompt, options?.systemPrompt),
+      messages: options?.conversationHistory && options.conversationHistory.length > 0
+        ? options.conversationHistory
+        : this.buildMessages(prompt, options?.systemPrompt),
       temperature: options?.temperature,
       max_tokens: options?.maxTokens,
       top_p: options?.topP,

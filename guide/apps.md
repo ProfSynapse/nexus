@@ -6,7 +6,7 @@ Apps are downloadable tool domains that extend Nexus with third-party integratio
 
 ## Setup
 
-Configure apps in **Settings &rarr; Nexus &rarr; Apps**. Enter your API key, hit **Validate**, and the modal will confirm which capabilities your key supports (and flag any missing permissions).
+Configure apps in **Settings &rarr; Nexus &rarr; Apps**. Install an app, enter your API key, hit **Validate**, then toggle it on. Apps install as disabled so you can configure credentials before enabling them.
 
 ---
 
@@ -17,7 +17,7 @@ Configure apps in **Settings &rarr; Nexus &rarr; Apps**. Enter your API key, hit
 | App | Tools | What It Does |
 |-----|-------|--------------|
 | **ElevenLabs** | textToSpeech, listVoices, soundEffects, generateMusic | AI audio generation — convert text to speech, create sound effects, and generate music. Audio files save directly to your vault. |
-| **Nexus Ingester** *(experimental)* | ingest, listCapabilities | Drag a PDF or audio file onto the chat window to convert it into a Markdown note. PDF extraction uses text mode (pdfjs-dist) or vision OCR. Audio transcription uses Whisper via OpenAI or Groq. The resulting note is saved alongside the original file in your vault. |
+| **Nexus Ingester** *(experimental)* | ingest, listCapabilities | Drag a PDF or audio file onto the chat window to convert it into a Markdown note. PDF extraction uses text mode (pdfjs-dist) or vision OCR. Audio transcription supports OpenAI (Whisper, GPT-4o Transcribe), Groq (Whisper), and Google Gemini multimodal audio. The resulting note is saved alongside the original file in your vault. |
 | **Composer** *(experimental)* | compose, listFormats | Combine multiple files into one. Merge PDFs, concatenate Markdown files, or mix and concat audio tracks. Audio output supports WAV, WebM/Opus, and MP3 (via WASM). Supports per-track volume, offset, and fade controls for audio mixing. |
 | **Web Tools** *(experimental, desktop only)* | openWebpage, capturePagePdf, capturePagePng, captureToMarkdown, extractLinks | Open any webpage in a headless browser and capture it as a PDF, PNG, or clean Markdown (boilerplate stripped). Also extracts all links with their text and type. Requires desktop — not available on mobile. |
 
