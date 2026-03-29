@@ -2,7 +2,7 @@
  * TextAreaNoteSuggester - Note suggester for textarea
  */
 
-import { App, TFile, prepareFuzzySearch, setIcon, Component } from 'obsidian';
+import { App, TFile, setIcon, Component } from 'obsidian';
 import { ContentEditableSuggester } from './ContentEditableSuggester';
 import { ContentEditableHelper } from '../../utils/ContentEditableHelper';
 import {
@@ -12,12 +12,15 @@ import {
 } from './base/SuggesterInterfaces';
 import { MessageEnhancer } from '../../services/MessageEnhancer';
 import { TokenCalculator } from '../../utils/TokenCalculator';
+import type { EmbeddingService } from '../../../../services/embeddings/EmbeddingService';
+import { searchNotes } from '../../../../utils/noteSearch';
 
 export class TextAreaNoteSuggester extends ContentEditableSuggester<NoteSuggestionItem> {
   private messageEnhancer: MessageEnhancer;
+  private embeddingService: EmbeddingService | null;
   private maxTokensPerNote = 10000;
 
-  constructor(app: App, element: HTMLElement, messageEnhancer: MessageEnhancer, component?: Component) {
+  constructor(app: App, element: HTMLElement, messageEnhancer: MessageEnhancer, component?: Component, embeddingService?: EmbeddingService | null) {
     super(app, element, {
       trigger: /\[\[([^\]]*?)$/,
       maxSuggestions: 50,
@@ -26,37 +29,12 @@ export class TextAreaNoteSuggester extends ContentEditableSuggester<NoteSuggesti
     }, component);
 
     this.messageEnhancer = messageEnhancer;
+    this.embeddingService = embeddingService ?? null;
   }
 
   async getSuggestions(query: string): Promise<SuggestionItem<NoteSuggestionItem>[]> {
-    const files = this.app.vault.getMarkdownFiles();
-
-    if (!query || query.trim().length === 0) {
-      return files
-        .sort((a, b) => b.stat.mtime - a.stat.mtime)
-        .slice(0, this.config.maxSuggestions)
-        .map(file => this.createSuggestion(file, 1.0));
-    }
-
-    const fuzzySearch = prepareFuzzySearch(query.toLowerCase());
-    const suggestions: SuggestionItem<NoteSuggestionItem>[] = [];
-
-    for (const file of files) {
-      const basenameMatch = fuzzySearch(file.basename);
-      if (basenameMatch) {
-        suggestions.push(this.createSuggestion(file, basenameMatch.score));
-        continue;
-      }
-
-      const pathMatch = fuzzySearch(file.path);
-      if (pathMatch) {
-        suggestions.push(this.createSuggestion(file, pathMatch.score * 0.8));
-      }
-    }
-
-    return suggestions
-      .sort((a, b) => b.score - a.score)
-      .slice(0, this.config.maxSuggestions);
+    const files = await searchNotes(this.app, query, this.embeddingService, this.config.maxSuggestions);
+    return files.map(file => this.createSuggestion(file, 1.0));
   }
 
   renderSuggestion(item: SuggestionItem<NoteSuggestionItem>, el: HTMLElement): void {

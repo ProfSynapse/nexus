@@ -11,6 +11,7 @@ import type { AgentRegistrationService } from '../../services/agent/AgentRegistr
 import type { AgentManager } from '../../services/AgentManager';
 import type { WorkspaceMetadata } from '../../types/storage/StorageTypes';
 import type { TaskService } from '../../agents/taskManager/services/TaskService';
+import type { EmbeddingService } from '../../services/embeddings/EmbeddingService';
 import type { ProjectMetadata } from '../../database/repositories/interfaces/IProjectRepository';
 import type { TaskMetadata, TaskStatus, NoteLink, LinkType } from '../../database/repositories/interfaces/ITaskRepository';
 import { TaskBoardEditModal, type TaskBoardEditableTask, type TaskBoardParentTaskOption, type TaskBoardProjectOption } from './TaskBoardEditModal';
@@ -807,10 +808,13 @@ export class TaskBoardView extends ItemView {
         projectId: candidate.projectId
       }));
 
+    const embeddingService = this.plugin.getServiceIfReady<EmbeddingService>('embeddingService') ?? undefined;
+
     new TaskBoardEditModal(this.app, {
       task: taskData,
       projects,
       parentTasks,
+      embeddingService,
       onSave: async (updatedTask) => {
         await this.saveTaskChanges(task, updatedTask);
       },

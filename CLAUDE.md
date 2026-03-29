@@ -1,9 +1,9 @@
 # Claude Code Context Document
-Last Updated: 2026-03-25
+Last Updated: 2026-03-29
 
 ## Project Overview
 - **Name**: Claudesidian MCP
-- **Version**: 5.5.6
+- **Version**: 5.5.7
 - **Type**: Obsidian Community Plugin
 - **Purpose**: MCP integration for Obsidian with AI-powered vault operations
 - **Architecture**: Agent-Tool pattern with domain-driven design
@@ -504,6 +504,8 @@ agents/
 None — all v5.5.0 PRs (#65–72) merged to main.
 
 ### Current Work
+**Semantic Note Suggester** — ✅ Complete (Mar 29, uncommitted). `src/utils/noteSearch.ts` is the shared `searchNotes()` utility (semantic → fuzzy → recent). Both `NoteInputSuggester` (task board modal) and `TextAreaNoteSuggester` (chat `[[` picker) now delegate to it — giving both semantic search when embeddings are available. New files: `src/ui/tasks/NoteInputSuggester.ts`, `src/utils/noteSearch.ts`.
+
 **GitHub Copilot Responses API** — ✅ Implemented. `gpt-5.4` now routes to `https://api.githubcopilot.com/responses` via dual-endpoint routing in `GithubCopilotAdapter.ts`. Changes uncommitted on `main` branch — pending test + PR.
 
 **Copilot API gotchas (CRITICAL — same as Codex)**:
@@ -690,7 +692,7 @@ Key files: `src/ui/chat/components/suggesters/`, `MessageEnhancer.ts`, `SystemPr
 <!-- SESSION_START -->
 ## Current Session
 <!-- Auto-managed by session_init hook. Overwritten each session. -->
-- Resume: `claude --resume 38afcced-d4b5-4845-8e03-765bead255e0`
-- Team: `pact-38afcced`
-- Started: 2026-03-26 20:32:26 UTC
+- Resume: `claude --resume 53b8cd78-df63-4a32-b113-132dde8d14df`
+- Team: `pact-53b8cd78`
+- Started: 2026-03-29 12:19:48 UTC
 <!-- SESSION_END -->

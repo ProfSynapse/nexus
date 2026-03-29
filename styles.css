@@ -7685,3 +7685,38 @@ body.is-mobile .nexus-task-board-shell {
         min-width: 0;
     }
 }
+
+/* =========================== */
+/* NOTE INPUT SUGGESTER        */
+/* =========================== */
+
+.nexus-note-suggester-item {
+    display: flex;
+    align-items: center;
+    gap: var(--size-4-2);
+}
+
+.nexus-note-suggester-icon {
+    flex-shrink: 0;
+    color: var(--text-muted);
+}
+
+.nexus-note-suggester-content {
+    min-width: 0;
+    flex: 1;
+}
+
+.nexus-note-suggester-name {
+    font-weight: var(--font-semibold);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.nexus-note-suggester-path {
+    font-size: var(--font-smaller);
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}

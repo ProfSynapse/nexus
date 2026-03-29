@@ -1,6 +1,8 @@
 import { ButtonComponent, DropdownComponent, Modal, Notice, TextAreaComponent, TextComponent } from 'obsidian';
-import type { App } from 'obsidian';
+import type { App, TFile } from 'obsidian';
 import type { NoteLink } from '../../database/repositories/interfaces/ITaskRepository';
+import type { EmbeddingService } from '../../services/embeddings/EmbeddingService';
+import { NoteInputSuggester } from './NoteInputSuggester';
 
 export interface TaskBoardProjectOption {
   id: string;
@@ -32,6 +34,7 @@ interface TaskBoardEditModalOptions {
   task: TaskBoardEditableTask;
   projects: TaskBoardProjectOption[];
   parentTasks: TaskBoardParentTaskOption[];
+  embeddingService?: EmbeddingService;
   onSave: (task: TaskBoardEditableTask) => Promise<void>;
   onClose?: () => void;
 }
@@ -39,6 +42,7 @@ interface TaskBoardEditModalOptions {
 export class TaskBoardEditModal extends Modal {
   private draft: TaskBoardEditableTask;
   private parentTaskDropdown: DropdownComponent | null = null;
+  private noteSuggesters: NoteInputSuggester[] = [];
   private isSaving = false;
 
   constructor(app: App, private options: TaskBoardEditModalOptions) {
@@ -152,6 +156,8 @@ export class TaskBoardEditModal extends Modal {
   }
 
   onClose(): void {
+    this.noteSuggesters.forEach(s => s.close());
+    this.noteSuggesters = [];
     this.options.onClose?.();
   }
 
@@ -232,6 +238,8 @@ export class TaskBoardEditModal extends Modal {
     const listContainer = subsection.createDiv('nexus-item-list');
 
     const updateList = () => {
+      this.noteSuggesters.forEach(s => s.close());
+      this.noteSuggesters = [];
       listContainer.empty();
 
       if (this.draft.noteLinks.length === 0) {
@@ -246,6 +254,16 @@ export class TaskBoardEditModal extends Modal {
           input.onChange((value) => {
             this.draft.noteLinks[index] = { ...this.draft.noteLinks[index], notePath: value };
           });
+
+          const suggester = new NoteInputSuggester(
+            this.app,
+            input.inputEl,
+            this.options.embeddingService ?? null,
+            (file: TFile) => {
+              this.draft.noteLinks[index] = { ...this.draft.noteLinks[index], notePath: file.path };
+            }
+          );
+          this.noteSuggesters.push(suggester);
 
           const actions = item.createDiv('nexus-item-actions');
 
