@@ -6,11 +6,6 @@
  * pipeline routing, output path construction, and progress callbacks.
  */
 
-// Mock pdfjs-dist (used transitively by PdfTextExtractor)
-jest.mock('pdfjs-dist', () => ({
-  getDocument: jest.fn(),
-}));
-
 // Mock PdfTextExtractor
 jest.mock(
   '../../src/agents/ingestManager/tools/services/PdfTextExtractor',
@@ -19,11 +14,36 @@ jest.mock(
   })
 );
 
+// Mock DocxExtractionService
+jest.mock(
+  '../../src/agents/ingestManager/tools/services/DocxExtractionService',
+  () => ({
+    extractDocxMarkdown: jest.fn(),
+  })
+);
+
+jest.mock(
+  '../../src/agents/ingestManager/tools/services/PptxExtractionService',
+  () => ({
+    extractPptxContent: jest.fn(),
+  })
+);
+
 // Mock OcrService
 jest.mock(
   '../../src/agents/ingestManager/tools/services/OcrService',
   () => ({
     ocrPdf: jest.fn(),
+  })
+);
+
+// Mock SpreadsheetExtractionService
+jest.mock(
+  '../../src/agents/ingestManager/tools/services/SpreadsheetExtractionService',
+  () => ({
+    extractSpreadsheetSheets: jest.fn(),
+    MAX_SHEET_COLUMNS: 50,
+    MAX_SHEET_ROWS: 1500,
   })
 );
 
@@ -36,19 +56,26 @@ jest.mock(
 );
 
 import { processFile } from '../../src/agents/ingestManager/tools/services/IngestionPipelineService';
+import { extractDocxMarkdown } from '../../src/agents/ingestManager/tools/services/DocxExtractionService';
 import { extractPdfText } from '../../src/agents/ingestManager/tools/services/PdfTextExtractor';
+import { extractPptxContent } from '../../src/agents/ingestManager/tools/services/PptxExtractionService';
 import { ocrPdf } from '../../src/agents/ingestManager/tools/services/OcrService';
+import { extractSpreadsheetSheets } from '../../src/agents/ingestManager/tools/services/SpreadsheetExtractionService';
 import { transcribeAudio } from '../../src/agents/ingestManager/tools/services/TranscriptionService';
 import {
   IngestFileRequest,
   IngestProgress,
   PdfPageContent,
+  SpreadsheetSheetContent,
   TranscriptionSegment,
 } from '../../src/agents/ingestManager/types';
 import { TFile, Vault } from 'obsidian';
 
+const extractDocxMarkdownMock = extractDocxMarkdown as jest.MockedFunction<typeof extractDocxMarkdown>;
 const extractPdfTextMock = extractPdfText as jest.MockedFunction<typeof extractPdfText>;
+const extractPptxContentMock = extractPptxContent as jest.MockedFunction<typeof extractPptxContent>;
 const ocrPdfMock = ocrPdf as jest.MockedFunction<typeof ocrPdf>;
+const extractSpreadsheetSheetsMock = extractSpreadsheetSheets as jest.MockedFunction<typeof extractSpreadsheetSheets>;
 const transcribeAudioMock = transcribeAudio as jest.MockedFunction<typeof transcribeAudio>;
 
 /** Create a mock Vault with configurable getFileByPath, readBinary, create, modify */
@@ -65,6 +92,9 @@ function createMockVault(options: {
     getFileByPath: jest.fn((path: string) => {
       if (path === 'notes/report.pdf' && mockFile) return mockFile;
       if (path === 'notes/report.md' && outputFile) return outputFile;
+      if (path === 'notes/proposal.docx') return new TFile('proposal.docx', 'notes/proposal.docx');
+      if (path === 'notes/deck.pptx') return new TFile('deck.pptx', 'notes/deck.pptx');
+      if (path === 'notes/finance.xlsx') return new TFile('finance.xlsx', 'notes/finance.xlsx');
       if (path === 'notes/recording.mp3') return new TFile('recording.mp3', 'notes/recording.mp3');
       return null;
     }),
@@ -165,8 +195,9 @@ describe('IngestionPipelineService', () => {
 
       expect(result.success).toBe(true);
       expect(result.warnings).toBeDefined();
-      expect(result.warnings![0]).toContain('1 page(s) had no extractable text');
-      expect(result.warnings![0]).toContain('vision mode');
+      const [firstWarning = ''] = result.warnings ?? [];
+      expect(firstWarning).toContain('1 page(s) had no extractable text');
+      expect(firstWarning).toContain('vision mode');
     });
 
     it('should create output .md note', async () => {
@@ -273,6 +304,120 @@ describe('IngestionPipelineService', () => {
   });
 
   // ==========================================================================
+  // DOCX/XLSX routing
+  // ==========================================================================
+
+  describe('office document conversion', () => {
+    it('should route DOCX files to extractDocxMarkdown', async () => {
+      extractDocxMarkdownMock.mockResolvedValue({
+        markdown: '# Proposal\n\nBody',
+        warnings: []
+      });
+      const deps = createMockDeps();
+      const request: IngestFileRequest = { filePath: 'notes/proposal.docx' };
+
+      const result = await processFile(request, deps);
+
+      expect(extractDocxMarkdownMock).toHaveBeenCalled();
+      expect(result.success).toBe(true);
+      expect(result.outputPath).toBe('notes/proposal.md');
+      expect(deps.vault.create).toHaveBeenCalledWith(
+        'notes/proposal.md',
+        expect.stringContaining('![[proposal.docx]]')
+      );
+    });
+
+    it('should route PPTX files to extractPptxContent', async () => {
+      extractPptxContentMock.mockResolvedValue({
+        slides: [
+          { slideNumber: 1, text: 'Executive summary' },
+          { slideNumber: 2, text: 'Roadmap', notes: 'Keep this slide short' }
+        ],
+        warnings: []
+      });
+      const deps = createMockDeps();
+      const request: IngestFileRequest = { filePath: 'notes/deck.pptx' };
+
+      const result = await processFile(request, deps);
+
+      expect(extractPptxContentMock).toHaveBeenCalled();
+      expect(result.success).toBe(true);
+      expect(result.outputPath).toBe('notes/deck.md');
+      expect(deps.vault.create).toHaveBeenCalledWith(
+        'notes/deck.md',
+        expect.stringContaining('## Slide 1')
+      );
+    });
+
+    it('should route XLSX files to extractSpreadsheetSheets', async () => {
+      const sheets: SpreadsheetSheetContent[] = [
+        { sheetName: 'Sheet1', rows: [['A', 'B']], totalRows: 1, totalColumns: 2 }
+      ];
+      extractSpreadsheetSheetsMock.mockReturnValue(sheets);
+      const deps = createMockDeps();
+      const request: IngestFileRequest = { filePath: 'notes/finance.xlsx' };
+
+      const result = await processFile(request, deps);
+
+      expect(extractSpreadsheetSheetsMock).toHaveBeenCalled();
+      expect(result.success).toBe(true);
+      expect(result.outputPath).toBe('notes/finance - Sheet1.md');
+      expect(result.outputPaths).toEqual(['notes/finance - Sheet1.md']);
+      expect(deps.vault.create).toHaveBeenCalledWith(
+        'notes/finance - Sheet1.md',
+        expect.stringContaining('![[finance.xlsx]]')
+      );
+    });
+
+    it('should skip oversized sheets and warn', async () => {
+      extractSpreadsheetSheetsMock.mockReturnValue([
+        {
+          sheetName: 'Large',
+          rows: [['A']],
+          totalRows: 1600,
+          totalColumns: 60
+        },
+        {
+          sheetName: 'Valid',
+          rows: [['A']],
+          totalRows: 10,
+          totalColumns: 2
+        }
+      ]);
+      const deps = createMockDeps();
+      const request: IngestFileRequest = { filePath: 'notes/finance.xlsx' };
+
+      const result = await processFile(request, deps);
+
+      expect(result.success).toBe(true);
+      expect(result.warnings).toEqual([
+        'Skipped sheet "Large" because it exceeds the spreadsheet limit (60 columns x 1600 rows; max 50 x 1500).'
+      ]);
+      expect(deps.vault.create).toHaveBeenCalledWith(
+        'notes/finance - Valid.md',
+        expect.any(String)
+      );
+    });
+
+    it('should fail when all sheets exceed the spreadsheet limit', async () => {
+      extractSpreadsheetSheetsMock.mockReturnValue([
+        {
+          sheetName: 'Large',
+          rows: [['A']],
+          totalRows: 1600,
+          totalColumns: 60
+        }
+      ]);
+      const deps = createMockDeps();
+      const request: IngestFileRequest = { filePath: 'notes/finance.xlsx' };
+
+      await expect(processFile(request, deps)).rejects.toThrow(
+        'No sheets were converted. All sheets exceed the spreadsheet limit (max 50 columns x 1500 rows).'
+      );
+    });
+  });
+
+  // ==========================================================================
   // Output path and existing file handling
   // ==========================================================================
 
@@ -298,7 +443,7 @@ describe('IngestionPipelineService', () => {
 
       expect(result.processingTimeMs).toBeDefined();
       expect(typeof result.processingTimeMs).toBe('number');
-      expect(result.processingTimeMs!).toBeGreaterThanOrEqual(0);
+      expect(result.processingTimeMs ?? -1).toBeGreaterThanOrEqual(0);
     });
   });
 
