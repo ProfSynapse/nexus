@@ -125,8 +125,9 @@ export function startCallbackServer(options: CallbackServerOptions): Promise<Cal
         server = null;
         try {
           serverToClose.close();
-          if (typeof serverToClose.closeAllConnections === 'function') {
-            serverToClose.closeAllConnections();
+          const serverWithCloseAll = serverToClose as unknown as { closeAllConnections?: () => void };
+          if (typeof serverWithCloseAll.closeAllConnections === 'function') {
+            serverWithCloseAll.closeAllConnections();
           }
         } catch {
           // Ignore close errors during cleanup

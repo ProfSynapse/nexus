@@ -1,6 +1,6 @@
 {
     "name": "nexus",
-    "version": "5.6.3",
+    "version": "5.6.4",
     "description": "Agentic AI for your vault. Use Claude, ChatGPT, Gemini, and local models to chat, search, create, and manage your notes with semantic memory, image generation, and MCP server integration.",
     "main": "main.js",
     "scripts": {
