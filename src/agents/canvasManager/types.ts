@@ -114,9 +114,7 @@ export interface WriteCanvasParams extends CommonParameters {
   edges?: CanvasEdge[];
 }
 
-export interface WriteCanvasResult extends CommonResult {
-  // Lean result - just success: true
-}
+export type WriteCanvasResult = CommonResult
 
 // 3. Update Canvas (modify EXISTING)
 export interface UpdateCanvasParams extends CommonParameters {
@@ -128,9 +126,7 @@ export interface UpdateCanvasParams extends CommonParameters {
   edges?: CanvasEdge[];
 }
 
-export interface UpdateCanvasResult extends CommonResult {
-  // Lean result - just success: true
-}
+export type UpdateCanvasResult = CommonResult
 
 // 4. List Canvases
 export interface ListCanvasParams extends CommonParameters {

@@ -56,7 +56,7 @@ export class ActionExecutor {
         case 'findReplace':
           return await this.executeFindReplaceAction(actionParams, action);
         default:
-          return { success: false, error: `Unknown action type: ${action.type}` };
+          return { success: false, error: 'Unknown action type' };
       }
     } catch (error) {
       return {
@@ -73,9 +73,14 @@ export class ActionExecutor {
     actionParams: Record<string, unknown>,
     action: ContentAction
   ): Promise<{ success: boolean; error?: string }> {
+    const agentManager = this.agentManager;
+    if (!agentManager) {
+      return { success: false, error: 'Agent manager not available' };
+    }
+
     actionParams.path = action.targetPath;
     actionParams.overwrite = false;
-    const createResult = await this.agentManager!.executeAgentTool('contentManager', 'write', actionParams);
+    const createResult = await agentManager.executeAgentTool('contentManager', 'write', actionParams);
     if (!isCommonResult(createResult)) {
       return { success: false, error: 'Invalid response from write tool' };
     }
@@ -89,9 +94,14 @@ export class ActionExecutor {
     actionParams: Record<string, unknown>,
     action: ContentAction
   ): Promise<{ success: boolean; error?: string }> {
+    const agentManager = this.agentManager;
+    if (!agentManager) {
+      return { success: false, error: 'Agent manager not available' };
+    }
+
     actionParams.path = action.targetPath;
     actionParams.startLine = -1;
-    const appendResult = await this.agentManager!.executeAgentTool('contentManager', 'update', actionParams);
+    const appendResult = await agentManager.executeAgentTool('contentManager', 'update', actionParams);
     if (!isCommonResult(appendResult)) {
       return { success: false, error: 'Invalid response from update tool' };
     }
@@ -105,9 +115,14 @@ export class ActionExecutor {
     actionParams: Record<string, unknown>,
     action: ContentAction
   ): Promise<{ success: boolean; error?: string }> {
+    const agentManager = this.agentManager;
+    if (!agentManager) {
+      return { success: false, error: 'Agent manager not available' };
+    }
+
     actionParams.path = action.targetPath;
     actionParams.startLine = 1;
-    const prependResult = await this.agentManager!.executeAgentTool('contentManager', 'update', actionParams);
+    const prependResult = await agentManager.executeAgentTool('contentManager', 'update', actionParams);
     if (!isCommonResult(prependResult)) {
       return { success: false, error: 'Invalid response from update tool' };
     }
@@ -121,16 +136,21 @@ export class ActionExecutor {
     actionParams: Record<string, unknown>,
     action: ContentAction
   ): Promise<{ success: boolean; error?: string }> {
+    const agentManager = this.agentManager;
+    if (!agentManager) {
+      return { success: false, error: 'Agent manager not available' };
+    }
+
     actionParams.path = action.targetPath;
     let replaceResult: unknown;
 
     if (action.position !== undefined) {
       actionParams.startLine = action.position;
       actionParams.endLine = action.position;
-      replaceResult = await this.agentManager!.executeAgentTool('contentManager', 'update', actionParams);
+      replaceResult = await agentManager.executeAgentTool('contentManager', 'update', actionParams);
     } else {
       actionParams.overwrite = true;
-      replaceResult = await this.agentManager!.executeAgentTool('contentManager', 'write', actionParams);
+      replaceResult = await agentManager.executeAgentTool('contentManager', 'write', actionParams);
     }
 
     if (!isCommonResult(replaceResult)) {
@@ -184,7 +204,12 @@ export class ActionExecutor {
     const modifiedContent = fileContent.replace(regex, replaceText);
 
     // Step 3: Write modified content back via ContentManager 'write' tool
-    const writeResult = await this.agentManager!.executeAgentTool('contentManager', 'write', {
+    const agentManager = this.agentManager;
+    if (!agentManager) {
+      return { success: false, error: 'Agent manager not available' };
+    }
+
+    const writeResult = await agentManager.executeAgentTool('contentManager', 'write', {
       path: targetPath,
       content: modifiedContent,
       overwrite: true,
@@ -234,6 +259,7 @@ export class ActionExecutor {
     }
 
     try {
+      const agentManager = this.agentManager;
       const imageParams: Record<string, unknown> = {
         prompt: imageConfig.prompt,
         provider: imageConfig.provider,
@@ -245,7 +271,7 @@ export class ActionExecutor {
         context: context || ''
       };
 
-      const imageResult = await this.agentManager.executeAgentTool('promptManager', 'generateImage', imageParams);
+      const imageResult = await agentManager.executeAgentTool('promptManager', 'generateImage', imageParams);
 
       if (!isCommonResult(imageResult)) {
         return { success: false, error: 'Invalid response from generateImage tool' };

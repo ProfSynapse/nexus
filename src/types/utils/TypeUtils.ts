@@ -42,7 +42,7 @@ export function hasProperties<K extends string>(
  */
 export function getString(obj: unknown, key: string): string | undefined {
   if (hasProperty(obj, key) && typeof obj[key] === 'string') {
-    return obj[key] as string;
+    return obj[key];
   }
   return undefined;
 }
@@ -52,7 +52,7 @@ export function getString(obj: unknown, key: string): string | undefined {
  */
 export function getNumber(obj: unknown, key: string): number | undefined {
   if (hasProperty(obj, key) && typeof obj[key] === 'number') {
-    return obj[key] as number;
+    return obj[key];
   }
   return undefined;
 }
@@ -62,7 +62,7 @@ export function getNumber(obj: unknown, key: string): number | undefined {
  */
 export function getBoolean(obj: unknown, key: string): boolean | undefined {
   if (hasProperty(obj, key) && typeof obj[key] === 'boolean') {
-    return obj[key] as boolean;
+    return obj[key];
   }
   return undefined;
 }
@@ -82,7 +82,7 @@ export function getArray<T = unknown>(obj: unknown, key: string): T[] | undefine
  */
 export function getObject(obj: unknown, key: string): Record<string, unknown> | undefined {
   if (hasProperty(obj, key) && isObject(obj[key])) {
-    return obj[key] as Record<string, unknown>;
+    return obj[key];
   }
   return undefined;
 }

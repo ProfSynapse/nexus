@@ -12,6 +12,7 @@ import { ISchemaBuilder, SchemaContext } from '../SchemaTypes';
 import { LLMProviderManager } from '../../../services/llm/providers/ProviderManager';
 import { mergeWithCommonSchema } from '../../schemaUtils';
 import { SchemaBuilder } from '../SchemaBuilder';
+import type { ValidationSchema } from '../../validationUtils';
 
 /**
  * Execute Schema Builder - Handles single prompt execution schemas
@@ -19,12 +20,15 @@ import { SchemaBuilder } from '../SchemaBuilder';
 export class ExecuteSchemaBuilder implements ISchemaBuilder {
   constructor(private providerManager: LLMProviderManager | null) {}
 
-  buildParameterSchema(context: SchemaContext): any {
+  buildParameterSchema(_context: SchemaContext): ValidationSchema {
     const builder = new SchemaBuilder(this.providerManager);
     const commonProps = builder.buildCommonProperties({
       includeProviders: true,
       includeActions: true
     });
+    const providerSchema = commonProps.provider as ValidationSchema;
+    const modelSchema = commonProps.model as ValidationSchema;
+    const actionSchema = commonProps.action as ValidationSchema;
 
     return mergeWithCommonSchema({
       properties: {
@@ -41,8 +45,8 @@ export class ExecuteSchemaBuilder implements ISchemaBuilder {
           type: 'string',
           description: 'User prompt/question to send to the LLM'
         },
-        provider: commonProps.provider,
-        model: commonProps.model,
+        provider: providerSchema,
+        model: modelSchema,
         temperature: {
           type: 'number',
           minimum: 0,
@@ -53,13 +57,13 @@ export class ExecuteSchemaBuilder implements ISchemaBuilder {
           type: 'number',
           description: 'Maximum tokens to generate'
         },
-        action: commonProps.action
+        action: actionSchema
       },
       required: ['prompt']
-    });
+    } satisfies ValidationSchema);
   }
 
-  buildResultSchema(context: SchemaContext): any {
+  buildResultSchema(_context: SchemaContext): ValidationSchema {
     return {
       type: 'object',
       properties: {
@@ -112,6 +116,6 @@ export class ExecuteSchemaBuilder implements ISchemaBuilder {
         context: { type: 'string' }
       },
       required: ['success', 'sessionId']
-    };
+    } satisfies ValidationSchema;
   }
 }

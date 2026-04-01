@@ -18,7 +18,7 @@ export class FileReader {
   private readonly vault: Vault;
   private readonly maxFileSizeMb: number;
 
-  constructor(vault: Vault, maxFileSizeMb: number = 50) {
+  constructor(vault: Vault, maxFileSizeMb = 50) {
     this.vault = vault;
     this.maxFileSizeMb = maxFileSizeMb;
   }

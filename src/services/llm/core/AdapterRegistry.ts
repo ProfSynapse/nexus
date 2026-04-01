@@ -145,10 +145,9 @@ export class AdapterRegistry implements IAdapterRegistry {
       import('../adapters/webllm/WebLLMLifecycleManager').then(({ getWebLLMLifecycleManager }) => {
         const lifecycleManager = getWebLLMLifecycleManager();
         lifecycleManager.setAdapter(null);
-      }).catch(() => {});
+      }).catch(() => undefined);
 
-      this.webllmAdapter.dispose().catch((error) => {
-      });
+      this.webllmAdapter.dispose().catch((_error) => undefined);
       this.webllmAdapter = undefined;
     }
     this.adapters.clear();
@@ -273,16 +272,18 @@ export class AdapterRegistry implements IAdapterRegistry {
       // Model will be loaded on-demand when user sends first message
       // We still need to register a placeholder so the provider shows in UI
       // but we won't actually load the model until it's used
-      try {
-        const { WebLLMAdapter } = await import('../adapters/webllm/WebLLMAdapter');
-        const adapter = new WebLLMAdapter(this.vault!);
-        // DON'T call adapter.initialize() here - it blocks on WebGPU detection
-        // The adapter will auto-initialize on first generate() call
-        this.webllmAdapter = adapter;
-        this.adapters.set('webllm', adapter);
-      } catch (error) {
-        console.error('AdapterRegistry: Failed to create WebLLM adapter:', error);
-        this.logError('webllm', error);
+      if (this.vault) {
+        try {
+          const { WebLLMAdapter } = await import('../adapters/webllm/WebLLMAdapter');
+          const adapter = new WebLLMAdapter(this.vault);
+          // DON'T call adapter.initialize() here - it blocks on WebGPU detection
+          // The adapter will auto-initialize on first generate() call
+          this.webllmAdapter = adapter;
+          this.adapters.set('webllm', adapter);
+        } catch (error) {
+          console.error('AdapterRegistry: Failed to create WebLLM adapter:', error);
+          this.logError('webllm', error);
+        }
       }
     }
   }

@@ -16,6 +16,25 @@ import { requestUrl } from 'obsidian';
 
 const DEFAULT_TTS_MODEL = 'eleven_multilingual_v2';
 
+type UnknownRecord = Record<string, unknown>;
+
+const isRecord = (value: unknown): value is UnknownRecord =>
+  typeof value === 'object' && value !== null;
+
+const getRecord = (value: unknown): UnknownRecord | undefined =>
+  isRecord(value) ? value : undefined;
+
+const getString = (value: unknown, fallback = 'unknown'): string =>
+  typeof value === 'string' ? value : fallback;
+
+const getNumber = (value: unknown): number | undefined =>
+  typeof value === 'number' ? value : undefined;
+
+const getStatusCode = (value: unknown): number | undefined => {
+  const record = getRecord(value);
+  return getNumber(record?.status);
+};
+
 const ELEVENLABS_MANIFEST: AppManifest = {
   id: 'elevenlabs',
   name: 'ElevenLabs',
@@ -70,7 +89,10 @@ export class ElevenLabsAgent extends BaseAppAgent {
     const baseValidation = await super.validateCredentials();
     if (!baseValidation.success) return baseValidation;
 
-    const apiKey = this.getCredential('apiKey')!;
+    const apiKey = this.getCredential('apiKey');
+    if (!apiKey) {
+      return { success: false, error: 'API key not configured' };
+    }
     const headers = { 'xi-api-key': apiKey, 'Content-Type': 'application/json' };
 
     // --- 1. Voices (GET) — core validation ---
@@ -82,11 +104,14 @@ export class ElevenLabsAgent extends BaseAppAgent {
         method: 'GET',
         headers,
       });
-      const voices: unknown[] = response.json?.voices || [];
+      const responseJson = response.json as unknown;
+      const responseRecord = getRecord(responseJson);
+      const voicesValue = responseRecord?.voices;
+      const voices = Array.isArray(voicesValue) ? voicesValue : [];
       voiceCount = voices.length;
       voicesOk = true;
     } catch (error: unknown) {
-      const status = (error as Record<string, unknown>)?.status;
+      const status = getStatusCode(error);
       if (status === 401) {
         return {
           success: false,
@@ -112,18 +137,18 @@ export class ElevenLabsAgent extends BaseAppAgent {
         // 200 would be unexpected with empty payloads, but means auth passed
         return { ok: true };
       } catch (error: unknown) {
-        const status = (error as Record<string, unknown>)?.status;
+        const status = getStatusCode(error);
         if (status === 401) {
           // Try to extract permission name from error body
           let missingPermission: string | undefined;
           try {
-            const errText = (error as Record<string, unknown>)?.text;
+            const errText = isRecord(error) ? error.text : undefined;
             if (typeof errText === 'string') {
-              const parsed = JSON.parse(errText);
-              const detail = parsed?.detail;
-              if (typeof detail === 'object' && detail?.message) {
+              const parsed: unknown = JSON.parse(errText);
+              const detail = getRecord(getRecord(parsed)?.detail);
+              if (typeof detail?.message === 'string') {
                 // e.g. "...permission text_to_speech..."
-                const match = String(detail.message).match(/permission\s+(\S+)/i);
+                const match = detail.message.match(/permission\s+(\S+)/i);
                 if (match) missingPermission = match[1];
               }
             }
@@ -167,10 +192,11 @@ export class ElevenLabsAgent extends BaseAppAgent {
       });
       if (userResponse.status === 200) {
         userInfoOk = true;
-        const userData = userResponse.json;
-        subscription = userData.subscription?.tier || 'unknown';
-        characterCount = userData.subscription?.character_count;
-        characterLimit = userData.subscription?.character_limit;
+        const userData = getRecord(userResponse.json as unknown);
+        const subscriptionData = getRecord(userData?.subscription);
+        subscription = getString(subscriptionData?.tier, 'unknown');
+        characterCount = getNumber(subscriptionData?.character_count);
+        characterLimit = getNumber(subscriptionData?.character_limit);
       }
     } catch {
       // Key lacks user permission — not critical
@@ -213,7 +239,10 @@ export class ElevenLabsAgent extends BaseAppAgent {
       return { success: false, error: 'API key not configured' };
     }
 
-    const apiKey = this.getCredential('apiKey')!;
+    const apiKey = this.getCredential('apiKey');
+    if (!apiKey) {
+      return { success: false, error: 'API key not configured' };
+    }
 
     try {
       const response = await requestUrl({
@@ -222,17 +251,18 @@ export class ElevenLabsAgent extends BaseAppAgent {
         headers: { 'xi-api-key': apiKey },
       });
 
-      const allModels: ElevenLabsModel[] = response.json || [];
+      const responseJson = response.json as unknown;
+      const allModels = Array.isArray(responseJson) ? responseJson as ElevenLabsModel[] : [];
       const ttsModels = allModels.filter(
         m => m.can_do_text_to_speech && !m.requires_alpha_access
       );
 
       return { success: true, models: ttsModels };
     } catch (error: unknown) {
-      const status = (error as Record<string, unknown>)?.status;
+      const status = getStatusCode(error);
       return {
         success: false,
-        error: `Failed to fetch models${status ? ` (${status})` : ''}`
+        error: `Failed to fetch models${status !== undefined ? ` (${status})` : ''}`
       };
     }
   }

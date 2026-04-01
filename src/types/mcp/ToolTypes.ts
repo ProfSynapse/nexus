@@ -27,13 +27,13 @@ export interface MCPToolCallResponse {
     content: Array<{
         type: 'text' | 'resource';
         text?: string;
-        resource?: any;
+        resource?: unknown;
     }>;
     isError?: boolean;
     error?: {
         code: string;
         message: string;
-        data?: any;
+        data?: unknown;
     };
 }
 
@@ -48,10 +48,10 @@ export interface ToolDescriptor {
     description: string;
     
     /** Input parameter schema */
-    inputSchema?: any;
+    inputSchema?: Record<string, unknown>;
     
     /** Output result schema */
-    outputSchema?: any;
+    outputSchema?: Record<string, unknown>;
     
     /** Tool metadata */
     metadata?: ToolMetadata;

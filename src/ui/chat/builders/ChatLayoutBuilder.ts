@@ -96,16 +96,16 @@ export class ChatLayoutBuilder {
       attr: { cx: '25', cy: '25', r: '20', fill: 'none', stroke: 'currentColor', 'stroke-width': '4', 'stroke-linecap': 'round' }
     });
     // Add animations via DOM
-    const animate1 = circle.createSvg('animate', {
+    circle.createSvg('animate', {
       attr: { attributeName: 'stroke-dasharray', values: '1,150;90,150;90,150', dur: '1.5s', repeatCount: 'indefinite' }
     });
-    const animate2 = circle.createSvg('animate', {
+    circle.createSvg('animate', {
       attr: { attributeName: 'stroke-dashoffset', values: '0;-35;-125', dur: '1.5s', repeatCount: 'indefinite' }
     });
 
     // Status text
     const statusText = content.createDiv('nexus-loading-status');
-    statusText.textContent = 'Loading Nexus model...';
+    statusText.textContent = 'Loading model...';
     statusText.dataset.statusEl = 'true';
 
     // Progress bar
@@ -129,12 +129,12 @@ export class ChatLayoutBuilder {
     const warningBanner = container.createDiv('chat-experimental-warning');
 
     warningBanner.createEl('span', { cls: 'warning-icon', text: '⚠️' });
-    warningBanner.createEl('span', { cls: 'warning-text', text: 'Experimental Feature: Nexus Chat is in beta.' });
+    warningBanner.createEl('span', { cls: 'warning-text', text: 'This chat is in beta.' });
     const link = warningBanner.createEl('a', { cls: 'warning-link', text: 'Report issues' });
     link.href = 'https://github.com/ProfSynapse/nexus/issues';
     link.target = '_blank';
     link.rel = 'noopener noreferrer';
-    warningBanner.createEl('span', { cls: 'warning-text', text: '• Use at your own risk' });
+    warningBanner.createEl('span', { cls: 'warning-text', text: 'Use at your own risk.' });
 
     // Auto-hide warning after 5 seconds
     setTimeout(() => {
@@ -161,7 +161,7 @@ export class ChatLayoutBuilder {
 
     // Center: Title
     const chatTitle = chatHeader.createDiv('chat-title');
-    chatTitle.textContent = 'Nexus Chat';
+    chatTitle.textContent = 'Chat';
 
     // Right: Settings gear icon
     const settingsButton = chatHeader.createEl('button', { cls: 'chat-settings-button' });
@@ -186,7 +186,7 @@ export class ChatLayoutBuilder {
     sidebarHeader.createEl('h3', { text: 'Conversations' });
     const newChatButton = sidebarHeader.createEl('button', {
       cls: 'chat-new-button',
-      text: '+ New Chat'
+      text: 'New chat'
     });
 
     const conversationListContainer = sidebarContainer.createDiv('conversation-list-container');

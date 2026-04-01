@@ -5,7 +5,8 @@
 
 import { Vault } from 'obsidian';
 import { ModelInfo } from '../adapters/types';
-import { LLMProviderSettings, LLMProviderConfig } from '../../../types';
+import { LLMProviderSettings } from '../../../types';
+import { VaultOperations } from '../../../core/VaultOperations';
 import { LLMService } from '../core/LLMService';
 
 export interface ModelWithProvider extends ModelInfo {
@@ -47,7 +48,7 @@ export class LLMProviderManager {
   /**
    * Set VaultOperations for file reading
    */
-  setVaultOperations(vaultOperations: any): void {
+  setVaultOperations(vaultOperations: VaultOperations): void {
     this.llmService.setVaultOperations(vaultOperations);
   }
 
@@ -55,7 +56,8 @@ export class LLMProviderManager {
    * @deprecated Use setVaultOperations instead
    * Kept for backward compatibility
    */
-  setVaultAdapter(adapter: any): void {
+  setVaultAdapter(adapter: VaultOperations): void {
+    void adapter;
   }
 
   /**

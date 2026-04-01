@@ -6,7 +6,7 @@ import {
   TraceOutcomeMetadata,
   TraceToolMetadata,
   isLegacyTraceContextFormat,
-  LegacyTraceContextMetadata
+  LegacyWorkspaceTraceMetadata
 } from '../../database/types/memory/MemoryTypes';
 
 export interface TraceMetadataBuilderOptions {
@@ -42,25 +42,27 @@ export class TraceMetadataBuilder {
    * Extracts legacy params/result blobs from existing metadata structures so
    * we can persist them under metadata.legacy for backward compatibility.
    */
-  static extractLegacyFromMetadata(rawMetadata: any): TraceLegacyMetadata | undefined {
-    if (!rawMetadata) {
+  static extractLegacyFromMetadata(rawMetadata: unknown): TraceLegacyMetadata | undefined {
+    if (!rawMetadata || typeof rawMetadata !== 'object') {
       return undefined;
     }
 
+    const metadata = rawMetadata as LegacyWorkspaceTraceMetadata;
+
     const legacy: TraceLegacyMetadata = {};
 
-    if (rawMetadata.params !== undefined) {
-      legacy.params = rawMetadata.params;
+    if (metadata.params !== undefined) {
+      legacy.params = metadata.params;
     }
 
-    if (rawMetadata.result !== undefined) {
-      legacy.result = rawMetadata.result;
-    } else if (rawMetadata.response?.result !== undefined) {
-      legacy.result = rawMetadata.response.result;
+    if (metadata.result !== undefined) {
+      legacy.result = metadata.result;
+    } else if (metadata.response?.result !== undefined) {
+      legacy.result = metadata.response.result;
     }
 
-    if (Array.isArray(rawMetadata.relatedFiles) && rawMetadata.relatedFiles.length > 0) {
-      legacy.relatedFiles = rawMetadata.relatedFiles;
+    if (Array.isArray(metadata.relatedFiles) && metadata.relatedFiles.length > 0) {
+      legacy.relatedFiles = metadata.relatedFiles;
     }
 
     return TraceMetadataBuilder.normalizeLegacy(legacy);
@@ -77,7 +79,7 @@ export class TraceMetadataBuilder {
 
     // Handle both legacy and V2 context formats
     if (isLegacyTraceContextFormat(context)) {
-      const legacyContext = context as LegacyTraceContextMetadata;
+      const legacyContext = context;
       return {
         ...legacyContext,
         additionalContext: legacyContext.additionalContext ? { ...legacyContext.additionalContext } : undefined

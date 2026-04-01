@@ -45,7 +45,11 @@ export class AgentStatusModal extends Modal {
     this.callbacks = callbacks;
   }
 
-  async onOpen(): Promise<void> {
+  onOpen(): void {
+    void this.initializeModal();
+  }
+
+  private async initializeModal(): Promise<void> {
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass('nexus-agent-status-modal');
@@ -69,13 +73,14 @@ export class AgentStatusModal extends Modal {
    * These persist across conversation switches and app restarts
    */
   private async loadCompletedAgentsFromStorage(): Promise<void> {
-    if (!this.branchService || !this.conversationId) {
+    const conversationId = this.conversationId;
+    if (!this.branchService || !conversationId) {
       this.cachedCompletedAgents = [];
       return;
     }
 
     try {
-      const subagentBranches = await this.branchService.getSubagentBranches(this.conversationId);
+      const subagentBranches = await this.branchService.getSubagentBranches(conversationId);
 
       this.cachedCompletedAgents = subagentBranches
         .filter(info => {
@@ -88,7 +93,7 @@ export class AgentStatusModal extends Modal {
           return {
             subagentId: metadata.subagentId,
             branchId: info.branch.id,
-            conversationId: this.conversationId!,
+            conversationId,
             parentMessageId: info.parentMessageId,
             task: metadata.task,
             state: metadata.state,

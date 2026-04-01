@@ -15,12 +15,10 @@ import {
   createConversation,
   createUserMessage,
   createAssistantMessage,
-  createStreamingMessage,
-  TOOL_CALLS,
-  createCompletedToolCall,
-  createIncompleteToolCall
+  TOOL_CALLS
 } from '../fixtures/chatBugs';
 import { createMockChatService } from '../mocks/chatService';
+import { ChatService } from '../../src/services/chat/ChatService';
 
 describe('AbortHandler', () => {
   let handler: AbortHandler;
@@ -33,7 +31,7 @@ describe('AbortHandler', () => {
       onStreamingUpdate: jest.fn(),
       onConversationUpdated: jest.fn()
     };
-    handler = new AbortHandler(mockChatService as any, events);
+    handler = new AbortHandler(mockChatService as unknown as ChatService, events);
   });
 
   // ==========================================================================
@@ -57,12 +55,16 @@ describe('AbortHandler', () => {
 
       await handler.handleAbort(conversation, 'msg_ai');
 
-      const aiMessage = conversation.messages.find(m => m.id === 'msg_ai')!;
+      const aiMessage = conversation.messages.find(m => m.id === 'msg_ai');
+      expect(aiMessage).toBeDefined();
+      if (!aiMessage) {
+        throw new Error('Expected AI message to exist');
+      }
 
       // Should only keep completed tool calls (those with result or success defined)
       expect(aiMessage.toolCalls).toBeDefined();
-      expect(aiMessage.toolCalls!.length).toBe(2); // tc_mix_c1 and tc_mix_c2
-      expect(aiMessage.toolCalls!.every(tc => tc.result !== undefined || tc.success !== undefined)).toBe(true);
+      expect(aiMessage.toolCalls?.length).toBe(2); // tc_mix_c1 and tc_mix_c2
+      expect(aiMessage.toolCalls?.every(tc => tc.result !== undefined || tc.success !== undefined)).toBe(true);
     });
 
     it('should set tool calls to undefined when all are incomplete', async () => {
@@ -80,7 +82,11 @@ describe('AbortHandler', () => {
 
       await handler.handleAbort(conversation, 'msg_ai');
 
-      const aiMessage = conversation.messages.find(m => m.id === 'msg_ai')!;
+      const aiMessage = conversation.messages.find(m => m.id === 'msg_ai');
+      expect(aiMessage).toBeDefined();
+      if (!aiMessage) {
+        throw new Error('Expected AI message to exist');
+      }
       expect(aiMessage.toolCalls).toBeUndefined();
     });
 
@@ -99,7 +105,11 @@ describe('AbortHandler', () => {
 
       await handler.handleAbort(conversation, 'msg_ai');
 
-      const aiMessage = conversation.messages.find(m => m.id === 'msg_ai')!;
+      const aiMessage = conversation.messages.find(m => m.id === 'msg_ai');
+      expect(aiMessage).toBeDefined();
+      if (!aiMessage) {
+        throw new Error('Expected AI message to exist');
+      }
       expect(aiMessage.state).toBe('aborted');
       expect(aiMessage.isLoading).toBe(false);
     });

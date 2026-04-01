@@ -10,8 +10,10 @@ import { CardItem } from '../CardManager';
 import { SearchableCardManager } from '../SearchableCardManager';
 import { ProjectWorkspace } from '../../database/workspace-types';
 import { CustomPrompt } from '../../types/mcp/CustomPromptTypes';
+import type { CreateTaskData, TaskListOptions, UpdateTaskData } from '../../agents/taskManager/types';
 import type { ProjectMetadata } from '../../database/repositories/interfaces/IProjectRepository';
 import type { TaskMetadata, TaskPriority, TaskStatus } from '../../database/repositories/interfaces/ITaskRepository';
+import type { PaginatedResult } from '../../types/pagination/PaginationTypes';
 
 type ProjectStatus = ProjectMetadata['status'];
 
@@ -40,6 +42,20 @@ interface TaskEditorState {
     parentTaskId: string;
 }
 
+type WorkspaceTaskMoveTarget = {
+    projectId?: string;
+    parentTaskId?: string | null;
+};
+
+interface WorkspaceDetailTaskService {
+    updateTask: (taskId: string, data: UpdateTaskData) => Promise<void>;
+    createTask: (projectId: string, data: CreateTaskData) => Promise<string>;
+    moveTask: (taskId: string, target: WorkspaceTaskMoveTarget) => Promise<void>;
+    deleteProject: (projectId: string) => Promise<void>;
+    deleteTask: (taskId: string) => Promise<void>;
+    listTasks: (projectId: string, options?: TaskListOptions) => Promise<PaginatedResult<TaskMetadata>>;
+}
+
 export interface DetailCallbacks {
     onNavigateList: () => void;
     onNavigateDetail: () => void;
@@ -52,7 +68,7 @@ export interface DetailCallbacks {
     onOpenFilePicker: (index: number) => void;
     onRefreshDetail: () => void;
     getAvailableAgents: () => CustomPrompt[];
-    getTaskService: () => Promise<{ updateTask: Function; createTask: Function; moveTask: Function; deleteProject: Function; deleteTask: Function; listTasks: Function } | null>;
+    getTaskService: () => Promise<WorkspaceDetailTaskService | null>;
     onRefreshProjects: () => Promise<void>;
     onOpenProjectDetail: (project: ProjectMetadata) => void;
     safeRegisterDomEvent: <K extends keyof HTMLElementEventMap>(el: HTMLElement, eventName: K, handler: (event: HTMLElementEventMap[K]) => void) => void;
@@ -64,6 +80,40 @@ export class WorkspaceDetailRenderer {
 
     constructor(component?: Component) {
         this.component = component;
+    }
+
+    private async confirmDangerousAction(message: string): Promise<boolean> {
+        return await new Promise<boolean>((resolve) => {
+            const overlay = document.body.createDiv('modal-container');
+            const modal = overlay.createDiv('modal nexus-workspace-confirm-modal');
+            const content = modal.createDiv('modal-content');
+
+            content.createEl('h2', { text: 'Confirm action' });
+            content.createEl('p', { text: message });
+
+            const buttons = content.createDiv('modal-button-container');
+            const cancelButton = buttons.createEl('button', {
+                text: 'Cancel',
+                cls: 'mod-cancel'
+            });
+            const confirmButton = buttons.createEl('button', {
+                text: 'Delete',
+                cls: 'mod-warning'
+            });
+
+            const cleanup = (result: boolean) => {
+                overlay.remove();
+                resolve(result);
+            };
+
+            cancelButton.addEventListener('click', () => cleanup(false));
+            confirmButton.addEventListener('click', () => cleanup(true));
+            overlay.addEventListener('click', (event) => {
+                if (event.target === overlay) {
+                    cleanup(false);
+                }
+            });
+        });
     }
 
     renderDetail(
@@ -111,12 +161,16 @@ export class WorkspaceDetailRenderer {
         new ButtonComponent(actions)
             .setButtonText('Save')
             .setCta()
-            .onClick(async () => {
-                const savedWorkspace = await callbacks.onSaveWorkspace();
-                if (savedWorkspace) {
-                    new Notice('Workspace saved');
-                    callbacks.onNavigateList();
-                }
+            .onClick(() => {
+                void callbacks.onSaveWorkspace().then(savedWorkspace => {
+                    if (savedWorkspace) {
+                        new Notice('Workspace saved');
+                        callbacks.onNavigateList();
+                    }
+                }).catch(error => {
+                    console.error('[WorkspaceDetailRenderer] Failed to save workspace:', error);
+                    new Notice('Failed to save workspace');
+                });
             });
 
         if (workspace.id && workspaces.some(w => w.id === workspace.id)) {
@@ -149,7 +203,7 @@ export class WorkspaceDetailRenderer {
         });
 
         new ButtonComponent(section)
-            .setButtonText('Manage Projects')
+            .setButtonText('Manage projects')
             .onClick(() => {
                 callbacks.onNavigateProjects();
             });
@@ -174,7 +228,7 @@ export class WorkspaceDetailRenderer {
         ]);
 
         container.createEl('h3', {
-            text: `${workspace.name || 'Workspace'} Projects`,
+            text: `${workspace.name || 'Workspace'} projects`,
             cls: 'nexus-detail-title'
         });
 
@@ -203,7 +257,7 @@ export class WorkspaceDetailRenderer {
             containerEl: contentContainer,
             cardManagerConfig: {
                 title: 'Projects',
-                addButtonText: '+ New Project',
+                addButtonText: '+ New project',
                 emptyStateText: 'No projects yet. Create one to get started.',
                 showToggle: false,
                 onAdd: () => {
@@ -258,20 +312,20 @@ export class WorkspaceDetailRenderer {
 
         const formContainer = container.createDiv('nexus-workspace-form');
         const section = formContainer.createDiv('nexus-form-section');
-        section.createEl('h4', { text: 'Project Details', cls: 'nexus-section-header' });
+        section.createEl('h4', { text: 'Project details', cls: 'nexus-section-header' });
 
         const nameField = section.createDiv('nexus-form-field');
         nameField.createEl('label', { text: 'Name', cls: 'nexus-form-label' });
         const nameInput = new TextComponent(nameField);
         nameInput.setPlaceholder('Project name');
-        nameInput.setValue(project.name);
+        nameInput.setValue(project.name ?? '');
         nameInput.onChange((value) => { project.name = value; });
 
         const descField = section.createDiv('nexus-form-field');
         descField.createEl('label', { text: 'Description', cls: 'nexus-form-label' });
         const descInput = new TextAreaComponent(descField);
         descInput.setPlaceholder('Optional project description');
-        descInput.setValue(project.description);
+        descInput.setValue(project.description ?? '');
         descInput.onChange((value) => { project.description = value; });
         descInput.inputEl.rows = 3;
 
@@ -281,18 +335,18 @@ export class WorkspaceDetailRenderer {
         statusDropdown.addOption('active', 'Active');
         statusDropdown.addOption('completed', 'Completed');
         statusDropdown.addOption('archived', 'Archived');
-        statusDropdown.setValue(project.status);
+        statusDropdown.setValue(project.status ?? '');
         statusDropdown.onChange((value) => { project.status = value as ProjectStatus; });
 
         const actions = container.createDiv('nexus-form-actions');
         new ButtonComponent(actions)
-            .setButtonText('Save Project')
+            .setButtonText('Save project')
             .setCta()
             .onClick(() => void onSaveProject());
 
         if (project.id) {
             new ButtonComponent(actions)
-                .setButtonText('Delete Project')
+                .setButtonText('Delete project')
                 .setWarning()
                 .onClick(() => {
                     if (project.id) {
@@ -308,7 +362,7 @@ export class WorkspaceDetailRenderer {
 
         const taskToolbar = tasksSection.createDiv('nexus-task-toolbar');
         new ButtonComponent(taskToolbar)
-            .setButtonText('+ New Task')
+            .setButtonText('+ new task')
             .onClick(() => onOpenTaskDetail());
 
         if (tasks.length === 0) {
@@ -390,26 +444,26 @@ export class WorkspaceDetailRenderer {
         ]);
 
         container.createEl('h3', {
-            text: task.id ? 'Edit Task' : 'New Task',
+            text: task.id ? 'Edit task' : 'New task',
             cls: 'nexus-detail-title'
         });
 
         const form = container.createDiv('nexus-workspace-form');
         const details = form.createDiv('nexus-form-section');
-        details.createEl('h4', { text: 'Task Details', cls: 'nexus-section-header' });
+        details.createEl('h4', { text: 'Task details', cls: 'nexus-section-header' });
 
         const titleField = details.createDiv('nexus-form-field');
         titleField.createEl('label', { text: 'Title', cls: 'nexus-form-label' });
         const titleInput = new TextComponent(titleField);
         titleInput.setPlaceholder('Task title');
-        titleInput.setValue(task.title);
+        titleInput.setValue(task.title ?? '');
         titleInput.onChange((value) => { task.title = value; });
 
         const descriptionField = details.createDiv('nexus-form-field');
         descriptionField.createEl('label', { text: 'Description', cls: 'nexus-form-label' });
         const descriptionInput = new TextAreaComponent(descriptionField);
         descriptionInput.setPlaceholder('Optional task description');
-        descriptionInput.setValue(task.description);
+        descriptionInput.setValue(task.description ?? '');
         descriptionInput.onChange((value) => { task.description = value; });
         descriptionInput.inputEl.rows = 4;
 
@@ -452,18 +506,18 @@ export class WorkspaceDetailRenderer {
         tagsField.createEl('label', { text: 'Tags', cls: 'nexus-form-label' });
         const tagsInput = new TextComponent(tagsField);
         tagsInput.setPlaceholder('Comma-separated tags');
-        tagsInput.setValue(task.tags);
+        tagsInput.setValue(task.tags ?? '');
         tagsInput.onChange((value) => { task.tags = value; });
 
         const actions = container.createDiv('nexus-form-actions');
         new ButtonComponent(actions)
-            .setButtonText('Save Task')
+            .setButtonText('Save task')
             .setCta()
             .onClick(() => void onSaveTask());
 
         if (task.id) {
             new ButtonComponent(actions)
-                .setButtonText('Delete Task')
+                .setButtonText('Delete task')
                 .setWarning()
                 .onClick(() => {
                     if (task.id) {
@@ -493,8 +547,10 @@ export class WorkspaceDetailRenderer {
         if (includeEmpty && !options.some(([optionValue]) => optionValue === '')) {
             dropdown.addOption('', 'None');
         }
-        options.forEach(([optionValue, optionLabel]) => dropdown.addOption(optionValue, optionLabel));
-        dropdown.setValue(value || '');
+        for (const [optionValue, optionLabel] of options) {
+            dropdown.addOption(optionValue, optionLabel);
+        }
+        dropdown.setValue(value ?? '');
         dropdown.onChange(onChange);
     }
 
@@ -574,7 +630,7 @@ export class WorkspaceDetailRenderer {
     }
 
     private async deleteProject(projectId: string, callbacks: DetailCallbacks): Promise<void> {
-        const confirmed = confirm('Delete this project and all its tasks? This cannot be undone.');
+        const confirmed = await this.confirmDangerousAction('Delete this project and all its tasks? This cannot be undone.');
         if (!confirmed) return;
 
         const taskService = await callbacks.getTaskService();
@@ -595,7 +651,7 @@ export class WorkspaceDetailRenderer {
     }
 
     private async deleteTask(taskId: string, callbacks: DetailCallbacks): Promise<void> {
-        const confirmed = confirm('Delete this task? This cannot be undone.');
+        const confirmed = await this.confirmDangerousAction('Delete this task? This cannot be undone.');
         if (!confirmed) return;
 
         const taskService = await callbacks.getTaskService();

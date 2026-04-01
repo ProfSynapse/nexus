@@ -45,7 +45,11 @@ export class DAGService implements IDAGService {
     const stack = [dependsOnTaskId];
 
     while (stack.length > 0) {
-      const current = stack.pop()!;
+      const current = stack.pop();
+      if (!current) {
+        continue;
+      }
+
       if (current === taskId) {
         return false; // Cycle detected
       }
@@ -110,7 +114,11 @@ export class DAGService implements IDAGService {
 
     const sorted: TaskNode[] = [];
     while (queue.length > 0) {
-      const id = queue.shift()!;
+      const id = queue.shift();
+      if (!id) {
+        continue;
+      }
+
       const task = taskMap.get(id);
       if (task) {
         sorted.push(task);
@@ -237,7 +245,11 @@ export class DAGService implements IDAGService {
 
     const toVisit = [...stack];
     while (toVisit.length > 0) {
-      const current = toVisit.pop()!;
+      const current = toVisit.pop();
+      if (!current) {
+        continue;
+      }
+
       if (visited.has(current)) continue;
       visited.add(current);
       result.push(current);

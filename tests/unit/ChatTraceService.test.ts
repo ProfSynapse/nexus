@@ -1,5 +1,19 @@
 import { ChatTraceService } from '../../src/services/chat/ChatTraceService';
 
+type WorkspaceServiceLike = {
+  getWorkspace: jest.Mock;
+  getWorkspaceByNameOrId: jest.Mock;
+  createWorkspace: jest.Mock;
+  addSession: jest.Mock;
+};
+
+type WorkspaceServiceLike = {
+  getWorkspace: jest.Mock;
+  getWorkspaceByNameOrId: jest.Mock;
+  createWorkspace: jest.Mock;
+  addSession: jest.Mock;
+};
+
 describe('ChatTraceService', () => {
   it('creates the default workspace with the canonical id when it is missing', async () => {
     const workspaceService = {
@@ -12,7 +26,7 @@ describe('ChatTraceService', () => {
       addSession: jest.fn().mockResolvedValue({
         id: 'session-1'
       })
-    } as any;
+    } as WorkspaceServiceLike;
 
     const service = new ChatTraceService({ workspaceService });
     const context = await service.initializeSession('conv-1', 'default', 'session-1');
@@ -41,7 +55,7 @@ describe('ChatTraceService', () => {
       addSession: jest.fn().mockResolvedValue({
         id: 'session-1'
       })
-    } as any;
+    } as WorkspaceServiceLike;
 
     const service = new ChatTraceService({ workspaceService });
     const context = await service.initializeSession('conv-1', 'default', 'session-1');

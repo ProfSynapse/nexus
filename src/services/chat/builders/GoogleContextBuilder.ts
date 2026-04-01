@@ -13,8 +13,33 @@ import { IContextBuilder, LLMMessage, LLMToolCall, ToolExecutionResult, GoogleMe
 import { ConversationData, ChatMessage, ToolCall } from '../../../types/chat/ChatTypes';
 import { ReasoningPreserver } from '../../llm/adapters/shared/ReasoningPreserver';
 
+type GoogleReasoningToolCall = Parameters<typeof ReasoningPreserver.buildGoogleModelMessageWithThinking>[0][number];
+
 export class GoogleContextBuilder implements IContextBuilder {
   readonly provider = 'google';
+
+  private toReasoningToolCalls(
+    toolCalls: Array<{
+      id: string;
+      function: {
+        name: string;
+        arguments: string;
+      };
+      name?: string;
+      thoughtSignature?: string;
+    }>
+  ): GoogleReasoningToolCall[] {
+    return toolCalls.map(tc => ({
+      id: tc.id,
+      type: 'function',
+      name: tc.name,
+      function: {
+        name: tc.function.name,
+        arguments: tc.function.arguments
+      },
+      thought_signature: tc.thoughtSignature
+    }));
+  }
 
   private endsWithClientTurn(messages: LLMMessage[] | undefined): boolean {
     if (!messages || messages.length === 0) {
@@ -79,12 +104,12 @@ export class GoogleContextBuilder implements IContextBuilder {
         if (msg.toolCalls && msg.toolCalls.length > 0) {
           // Build model message with thought signatures preserved
           const modelMessage = ReasoningPreserver.buildGoogleModelMessageWithThinking(
-            msg.toolCalls.map((tc: ToolCall) => ({
+            this.toReasoningToolCalls(msg.toolCalls.map((tc: ToolCall) => ({
               ...tc,
               function: { name: tc.name || '', arguments: JSON.stringify(tc.parameters || {}) }
-            }))
+            })))
           );
-          messages.push(modelMessage as GoogleMessage);
+          messages.push(modelMessage as unknown as GoogleMessage);
 
           // Function response parts
           const functionResponseParts: GooglePart[] = msg.toolCalls.map((tc: ToolCall) => ({
@@ -169,8 +194,8 @@ export class GoogleContextBuilder implements IContextBuilder {
     }
 
     // Build model message with thought signatures preserved
-    const modelMessage = ReasoningPreserver.buildGoogleModelMessageWithThinking(toolCalls);
-    messages.push(modelMessage as GoogleMessage);
+    const modelMessage = ReasoningPreserver.buildGoogleModelMessageWithThinking(this.toReasoningToolCalls(toolCalls));
+    messages.push(modelMessage as unknown as GoogleMessage);
 
     // Add function response parts
     const functionResponseParts: GooglePart[] = toolResults.map(result => ({
@@ -201,8 +226,8 @@ export class GoogleContextBuilder implements IContextBuilder {
     const messages: GoogleMessage[] = [...(previousMessages as GoogleMessage[])];
 
     // Build model message with thought signatures preserved
-    const modelMessage = ReasoningPreserver.buildGoogleModelMessageWithThinking(toolCalls);
-    messages.push(modelMessage as GoogleMessage);
+    const modelMessage = ReasoningPreserver.buildGoogleModelMessageWithThinking(this.toReasoningToolCalls(toolCalls));
+    messages.push(modelMessage as unknown as GoogleMessage);
 
     // Add function response parts
     const functionResponseParts: GooglePart[] = toolResults.map(result => ({

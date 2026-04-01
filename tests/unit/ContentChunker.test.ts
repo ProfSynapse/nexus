@@ -8,7 +8,7 @@
  * Stride = maxChunkSize - overlap = 400
  */
 
-import { chunkContent, ContentChunk, ChunkOptions } from '../../src/services/embeddings/ContentChunker';
+import { chunkContent, ChunkOptions } from '../../src/services/embeddings/ContentChunker';
 import { CHUNK_CONTENT } from '../fixtures/conversationSearch';
 
 describe('ContentChunker', () => {

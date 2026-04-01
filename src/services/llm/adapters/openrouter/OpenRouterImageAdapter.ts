@@ -14,20 +14,59 @@ import {
   ImageValidationResult,
   ImageModel,
   ImageUsage,
-  AspectRatio,
-  NanoBananaImageSize
+  AspectRatio
 } from '../../types/ImageTypes';
 import {
   ProviderConfig,
   ProviderCapabilities,
   ModelInfo,
-  CostDetails
+  CostDetails,
+  GenerateOptions,
+  StreamChunk
 } from '../types';
 import { BRAND_NAME } from '../../../../constants/branding';
 
+interface OpenRouterImageContentPart {
+  type: 'text' | 'image_url';
+  text?: string;
+  image_url?: {
+    url: string;
+  };
+}
+
+interface OpenRouterImageChatMessage {
+  role: 'user';
+  content: string | OpenRouterImageContentPart[];
+}
+
+interface OpenRouterImageRequestBody {
+  model: string;
+  messages: OpenRouterImageChatMessage[];
+  modalities: ['image', 'text'];
+  image_config?: {
+    aspect_ratio: AspectRatio;
+  };
+}
+
+interface OpenRouterImageResponse {
+  choices?: Array<{
+    message?: {
+      images?: Array<{
+        image_url?: {
+          url?: string;
+        };
+        imageUrl?: {
+          url?: string;
+        };
+      }>;
+    };
+  }>;
+}
+
 export class OpenRouterImageAdapter extends BaseImageAdapter {
 
-  async* generateStreamAsync(): AsyncGenerator<never, void, unknown> {
+  async* generateStreamAsync(_prompt: string, _options?: GenerateOptions): AsyncGenerator<StreamChunk, void, unknown> {
+    yield* [] as StreamChunk[];
     throw new Error('Image generation does not support streaming');
   }
 
@@ -101,7 +140,7 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
 
       const response = await this.withRetry(async () => {
         // Build message content with prompt and reference images
-        const content: any[] = [{ type: 'text', text: params.prompt }];
+        const content: OpenRouterImageContentPart[] = [{ type: 'text', text: params.prompt }];
 
         // Add reference images if provided
         if (params.referenceImages && params.referenceImages.length > 0) {
@@ -110,7 +149,7 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
         }
 
         // Build request body per OpenRouter docs
-        const requestBody: any = {
+        const requestBody: OpenRouterImageRequestBody = {
           model: openRouterModel,
           messages: [
             {
@@ -146,6 +185,10 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
         return result.json;
       }, 2);
 
+      if (!response) {
+        throw new Error('No response returned from OpenRouter image generation');
+      }
+
       return this.buildImageResponse(response, params);
     } catch (error) {
       this.handleImageError(error, 'image generation', params);
@@ -155,12 +198,12 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
   /**
    * Load reference images from vault and convert to OpenRouter format
    */
-  private async loadReferenceImages(paths: string[]): Promise<any[]> {
+  private async loadReferenceImages(paths: string[]): Promise<OpenRouterImageContentPart[]> {
     if (!this.vault) {
       throw new Error('Vault not configured - cannot load reference images');
     }
 
-    const parts: any[] = [];
+    const parts: OpenRouterImageContentPart[] = [];
 
     for (const path of paths) {
       try {
@@ -317,7 +360,7 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
    * Get pricing for OpenRouter image models
    * Note: OpenRouter pricing varies by underlying model
    */
-  async getImageModelPricing(model: string = 'gemini-2.5-flash-image'): Promise<CostDetails> {
+  async getImageModelPricing(model = 'gemini-2.5-flash-image'): Promise<CostDetails> {
     // OpenRouter pricing is model-dependent
     // These are approximate prices - actual cost from OpenRouter API response
     const pricing: Record<string, number> = {
@@ -466,7 +509,7 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
   // Private helper methods
 
   private buildImageResponse(
-    response: any,
+    response: OpenRouterImageResponse,
     params: ImageGenerationParams
   ): ImageGenerationResponse {
     // OpenRouter response format:
@@ -500,7 +543,7 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
 
     // Extract dimensions from aspectRatio
     let width = 1024, height = 1024;
-    let aspectRatio: AspectRatio = params.aspectRatio || AspectRatio.SQUARE;
+    const aspectRatio: AspectRatio = params.aspectRatio || AspectRatio.SQUARE;
 
     // Map aspect ratios to dimensions per OpenRouter docs
     const aspectRatioToDimensions: Record<string, [number, number]> = {

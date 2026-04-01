@@ -274,7 +274,16 @@ export class ChatSettingsRenderer {
       this.settings.agentThinking = { enabled: false, effort: 'medium' };
     }
 
-    const getThinking = () => isAgent ? this.settings.agentThinking! : this.settings.thinking;
+    const getThinking = () => {
+      if (isAgent) {
+        if (!this.settings.agentThinking) {
+          this.settings.agentThinking = { enabled: false, effort: 'medium' };
+        }
+        return this.settings.agentThinking;
+      }
+
+      return this.settings.thinking;
+    };
 
     // Reasoning toggle
     new Setting(content)
@@ -373,7 +382,7 @@ export class ChatSettingsRenderer {
     // Create container for slider row with value display
     const tempSetting = new Setting(content)
       .setName('Creativity')
-      .setDesc('Lower = more focused, Higher = more creative');
+      .setDesc('Lower is more focused, higher is more creative.');
 
     // Add value display span
     const valueDisplay = tempSetting.controlEl.createSpan({ cls: 'csr-temp-value' });
@@ -413,7 +422,7 @@ export class ChatSettingsRenderer {
 
   private renderImageSection(parent: HTMLElement): void {
     const section = parent.createDiv('csr-section');
-    section.createDiv('csr-section-header').setText('Image Model');
+    section.createDiv('csr-section-header').setText('Image model');
     const content = section.createDiv('csr-section-content');
 
     // Provider
@@ -440,15 +449,18 @@ export class ChatSettingsRenderer {
           });
         }
 
-        providers.forEach(p => dropdown.addOption(p.id, p.name));
+        for (const provider of providers) {
+          dropdown.addOption(provider.id, provider.name);
+        }
 
         dropdown.setValue(this.settings.imageProvider);
-        dropdown.onChange(async (value) => {
+        dropdown.onChange((value) => {
           this.settings.imageProvider = value as 'google' | 'openrouter';
-          const models = await this.imageService.getModelsForProvider(value as 'google' | 'openrouter');
-          this.settings.imageModel = models[0]?.id || '';
-          this.notifyChange();
-          this.render();
+          void this.imageService.getModelsForProvider(value as 'google' | 'openrouter').then(models => {
+            this.settings.imageModel = models[0]?.id || '';
+            this.notifyChange();
+            this.render();
+          });
         });
       });
 
@@ -502,7 +514,7 @@ export class ChatSettingsRenderer {
         dropdown.onChange((value) => {
           this.settings.workspaceId = value || null;
           this.notifyChange();
-          this.syncWorkspacePrompt(value);
+          void this.syncWorkspacePrompt(value);
         });
       });
 
@@ -525,9 +537,9 @@ export class ChatSettingsRenderer {
 
     // Context Notes header with Add button
     const notesHeader = content.createDiv('csr-notes-header');
-    notesHeader.createSpan().setText('Context Notes');
+    notesHeader.createSpan().setText('Context notes');
     const addBtn = notesHeader.createEl('button', { cls: 'csr-add-btn' });
-    addBtn.setText('+ Add');
+    addBtn.setText('Add');
     addBtn.onclick = () => this.openNotePicker();
 
     this.contextNotesListEl = content.createDiv('csr-notes-list');
@@ -551,16 +563,17 @@ export class ChatSettingsRenderer {
   }
 
   private renderContextNotesList(): void {
-    if (!this.contextNotesListEl) return;
-    this.contextNotesListEl.empty();
+    const contextNotesListEl = this.contextNotesListEl;
+    if (!contextNotesListEl) return;
+    contextNotesListEl.empty();
 
     if (this.settings.contextNotes.length === 0) {
-      this.contextNotesListEl.createDiv({ cls: 'csr-notes-empty', text: 'No files added' });
+      contextNotesListEl.createDiv({ cls: 'csr-notes-empty', text: 'No files added' });
       return;
     }
 
     this.settings.contextNotes.forEach((notePath, index) => {
-      const item = this.contextNotesListEl!.createDiv('csr-note-item');
+      const item = contextNotesListEl.createDiv('csr-note-item');
       item.createSpan({ cls: 'csr-note-path', text: notePath });
       const removeBtn = item.createEl('button', { cls: 'csr-note-remove', text: '×' });
       removeBtn.onclick = () => {

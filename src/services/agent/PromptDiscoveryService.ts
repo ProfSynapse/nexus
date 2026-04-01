@@ -20,27 +20,41 @@ export interface PromptInfo {
   updatedAt?: number;
 }
 
+interface PromptRecord {
+  id: string;
+  name: string;
+  description?: string;
+  prompt?: string;
+  isEnabled?: boolean;
+  createdAt?: number;
+  updatedAt?: number;
+}
+
+interface PromptStorageServiceLike {
+  getAllPrompts(): Promise<PromptRecord[]>;
+}
+
 export class PromptDiscoveryService {
   constructor(
-    private customPromptStorageService: any
+    private customPromptStorageService: PromptStorageServiceLike
   ) {}
 
   /**
    * Get all available prompts
    * @param enabledOnly - If true, only return enabled prompts
    */
-  async getAvailablePrompts(enabledOnly: boolean = false): Promise<PromptInfo[]> {
+  async getAvailablePrompts(enabledOnly = false): Promise<PromptInfo[]> {
     try {
       // Get all prompts from storage
       const allPrompts = await this.customPromptStorageService.getAllPrompts();
 
       // Filter by enabled status if requested
       const prompts = enabledOnly
-        ? allPrompts.filter((prompt: any) => prompt.isEnabled)
+        ? allPrompts.filter((prompt) => prompt.isEnabled)
         : allPrompts;
 
       // Map to PromptInfo format
-      return prompts.map((prompt: any) => this.mapToPromptInfo(prompt));
+      return prompts.map((prompt) => this.mapToPromptInfo(prompt));
     } catch (error) {
       console.error('[PromptDiscoveryService] Failed to get prompts:', error);
       return [];
@@ -70,7 +84,7 @@ export class PromptDiscoveryService {
   /**
    * Map custom prompt to PromptInfo format
    */
-  private mapToPromptInfo(promptData: any): PromptInfo {
+  private mapToPromptInfo(promptData: PromptRecord): PromptInfo {
     return {
       id: promptData.id,
       name: promptData.name,

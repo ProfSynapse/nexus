@@ -17,12 +17,51 @@ import { MessageBranchNavigator, MessageBranchNavigatorEvents } from '../../src/
 import { Component } from '../mocks/obsidian';
 import { createAssistantMessage, createBranch } from '../fixtures/chatBugs';
 
+type MockElementOptions = {
+  cls?: string;
+  attr?: Record<string, string>;
+};
+
+type MockButton = {
+  tagName: string;
+  disabled: boolean;
+  classList: {
+    add(cls: string): void;
+    remove(cls: string): void;
+    contains(cls: string): boolean;
+    toggle(): void;
+  };
+  addClass(cls: string): void;
+  removeClass(cls: string): void;
+  hasClass(cls: string): boolean;
+  toggleClass(cls: string, force: boolean): void;
+  createEl(tag?: string, opts?: MockElementOptions): MockButton;
+  createDiv(cls?: string): MockButton;
+  createSpan(): MockButton;
+  empty(): void;
+  appendChild(): void;
+  addEventListener(): void;
+  removeEventListener(): void;
+  setAttribute(k: string, v: string): void;
+  getAttribute(k: string): string | undefined;
+  querySelector(): null;
+  querySelectorAll(): never[];
+  textContent: string;
+  innerHTML: string;
+  style: Record<string, never>;
+  focus(): void;
+};
+
+type MockContainer = MockButton & {
+  children: MockButton[];
+};
+
 // Helper to create a mock container element with Obsidian-style methods
-function createMockContainer() {
-  const children: any[] = [];
+function createMockContainer(): MockContainer {
+  const children: MockButton[] = [];
   const classes = new Set<string>();
 
-  const container: any = {
+  const container: MockContainer = {
     tagName: 'DIV',
     children,
     classList: {
@@ -35,7 +74,7 @@ function createMockContainer() {
     removeClass: jest.fn((cls: string) => classes.delete(cls)),
     hasClass: jest.fn((cls: string) => classes.has(cls)),
     empty: jest.fn(() => { children.length = 0; }),
-    createEl: jest.fn((tag: string, opts?: any) => {
+    createEl: jest.fn((tag: string, opts?: MockElementOptions) => {
       const el = createMockButton(tag);
       if (opts?.cls) {
         if (typeof opts.cls === 'string') el.classList.add(opts.cls);
@@ -76,8 +115,8 @@ function createMockContainer() {
   return container;
 }
 
-function createMockButton(tag = 'button') {
-  const attrs = new Map<string, any>();
+function createMockButton(tag = 'button'): MockButton {
+  const attrs = new Map<string, string>();
   const classes = new Set<string>();
 
   return {
@@ -102,7 +141,7 @@ function createMockButton(tag = 'button') {
     appendChild: jest.fn(),
     addEventListener: jest.fn(),
     removeEventListener: jest.fn(),
-    setAttribute: jest.fn((k: string, v: any) => attrs.set(k, v)),
+    setAttribute: jest.fn((k: string, v: string) => attrs.set(k, v)),
     getAttribute: jest.fn((k: string) => attrs.get(k)),
     querySelector: jest.fn(),
     querySelectorAll: jest.fn(() => []),
@@ -114,7 +153,7 @@ function createMockButton(tag = 'button') {
 }
 
 describe('MessageBranchNavigator', () => {
-  let container: ReturnType<typeof createMockContainer>;
+  let container: MockContainer;
   let events: MessageBranchNavigatorEvents;
   let component: Component;
 
@@ -133,7 +172,7 @@ describe('MessageBranchNavigator', () => {
 
   describe('construction', () => {
     it('should create navigator and hide by default', () => {
-      const nav = new MessageBranchNavigator(container, events, component as any);
+      new MessageBranchNavigator(container, events, component);
 
       // Should be hidden by default
       expect(container.addClass).toHaveBeenCalledWith('message-branch-navigator');
@@ -141,7 +180,7 @@ describe('MessageBranchNavigator', () => {
     });
 
     it('should create prev/next buttons and indicator', () => {
-      const nav = new MessageBranchNavigator(container, events, component as any);
+      new MessageBranchNavigator(container, events, component);
 
       // Should have called createEl for buttons and createDiv for indicator
       expect(container.createEl).toHaveBeenCalledTimes(2); // prev + next buttons
@@ -155,7 +194,7 @@ describe('MessageBranchNavigator', () => {
 
   describe('destroy (Bug #6)', () => {
     it('should clean up without calling removeEventListener directly', () => {
-      const nav = new MessageBranchNavigator(container, events, component as any);
+      const nav = new MessageBranchNavigator(container, events, component);
 
       // Event listeners are registered via component.registerDomEvent
       // destroy() should NOT call removeEventListener directly
@@ -166,7 +205,7 @@ describe('MessageBranchNavigator', () => {
     });
 
     it('should nullify currentMessage on destroy', () => {
-      const nav = new MessageBranchNavigator(container, events, component as any);
+      const nav = new MessageBranchNavigator(container, events, component);
       const message = createAssistantMessage({
         branches: [createBranch()],
         activeAlternativeIndex: 0
@@ -186,7 +225,7 @@ describe('MessageBranchNavigator', () => {
 
   describe('updateMessage', () => {
     it('should show navigator when message has branches', () => {
-      const nav = new MessageBranchNavigator(container, events, component as any);
+      const nav = new MessageBranchNavigator(container, events, component);
       const message = createAssistantMessage({
         branches: [createBranch(), createBranch({ id: 'branch_2' })],
         activeAlternativeIndex: 0
@@ -198,7 +237,7 @@ describe('MessageBranchNavigator', () => {
     });
 
     it('should hide navigator when message has no branches', () => {
-      const nav = new MessageBranchNavigator(container, events, component as any);
+      const nav = new MessageBranchNavigator(container, events, component);
       const message = createAssistantMessage({ branches: undefined });
 
       nav.updateMessage(message);
@@ -213,13 +252,13 @@ describe('MessageBranchNavigator', () => {
 
   describe('getCurrentAlternativeInfo', () => {
     it('should return null when no message is set', () => {
-      const nav = new MessageBranchNavigator(container, events, component as any);
+      const nav = new MessageBranchNavigator(container, events, component);
 
       expect(nav.getCurrentAlternativeInfo()).toBeNull();
     });
 
     it('should return correct info for message with branches', () => {
-      const nav = new MessageBranchNavigator(container, events, component as any);
+      const nav = new MessageBranchNavigator(container, events, component);
       const message = createAssistantMessage({
         branches: [createBranch(), createBranch({ id: 'b2' })],
         activeAlternativeIndex: 1
@@ -229,22 +268,22 @@ describe('MessageBranchNavigator', () => {
       const info = nav.getCurrentAlternativeInfo();
 
       expect(info).not.toBeNull();
-      expect(info!.current).toBe(2); // 1-based: index 1 => display 2
-      expect(info!.total).toBe(3); // 2 branches + original
-      expect(info!.hasAlternatives).toBe(true);
+      expect(info?.current).toBe(2); // 1-based: index 1 => display 2
+      expect(info?.total).toBe(3); // 2 branches + original
+      expect(info?.hasAlternatives).toBe(true);
     });
 
     it('should return correct info for message without branches', () => {
-      const nav = new MessageBranchNavigator(container, events, component as any);
+      const nav = new MessageBranchNavigator(container, events, component);
       const message = createAssistantMessage({ branches: undefined });
       nav.updateMessage(message);
 
       const info = nav.getCurrentAlternativeInfo();
 
       expect(info).not.toBeNull();
-      expect(info!.current).toBe(1);
-      expect(info!.total).toBe(1);
-      expect(info!.hasAlternatives).toBe(false);
+      expect(info?.current).toBe(1);
+      expect(info?.total).toBe(1);
+      expect(info?.hasAlternatives).toBe(false);
     });
   });
 });

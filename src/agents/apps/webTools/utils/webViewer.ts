@@ -44,9 +44,9 @@ export function getLeafForMode(app: App, mode: WebViewerOpenMode): WorkspaceLeaf
 }
 
 export function getWebViewerLeaf(app: App): WorkspaceLeaf | null {
-  const activeLeaf = app.workspace.activeLeaf;
-  if (activeLeaf?.view.getViewType() === WEB_VIEWER_VIEW_TYPE) {
-    return activeLeaf;
+  const recentLeaf = app.workspace.getMostRecentLeaf();
+  if (recentLeaf?.view.getViewType() === WEB_VIEWER_VIEW_TYPE) {
+    return recentLeaf;
   }
 
   return app.workspace.getLeavesOfType(WEB_VIEWER_VIEW_TYPE)[0] ?? null;
@@ -182,13 +182,13 @@ export function resolveUniqueFilePath(vault: Vault, outputPath: string, extensio
   }
 
   let counter = 1;
-  while (true) {
-    const candidate = `${withoutExtension} ${counter}.${extension}`;
-    if (!vault.getAbstractFileByPath(candidate)) {
-      return candidate;
-    }
+  let candidate = `${withoutExtension} ${counter}.${extension}`;
+  while (vault.getAbstractFileByPath(candidate)) {
     counter += 1;
+    candidate = `${withoutExtension} ${counter}.${extension}`;
   }
+
+  return candidate;
 }
 
 export function hasWebViewerSaveCommand(app: App): boolean {

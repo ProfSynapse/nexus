@@ -1,22 +1,26 @@
 import { ContextBudgetService } from '../../src/services/chat/ContextBudgetService';
 import { ConversationData } from '../../src/types/chat/ChatTypes';
 
+type MessageWithUsage = ConversationData['messages'][number] & {
+  usage?: unknown;
+};
+
 function createConversationWithContent(content: string, usage?: unknown): ConversationData {
+  const message: MessageWithUsage = {
+    id: 'msg_1',
+    role: 'assistant',
+    content,
+    timestamp: Date.now(),
+    conversationId: 'conv_1',
+    usage
+  };
+
   return {
     id: 'conv_1',
     title: 'Test',
     created: Date.now(),
     updated: Date.now(),
-    messages: [
-      {
-        id: 'msg_1',
-        role: 'assistant',
-        content,
-        timestamp: Date.now(),
-        conversationId: 'conv_1',
-        usage: usage as any
-      }
-    ]
+    messages: [message]
   };
 }
 

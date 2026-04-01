@@ -5,8 +5,7 @@ import type { ServiceManager } from './core/ServiceManager';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { logger } from './utils/logger';
 import { CustomPromptStorageService } from "./agents/promptManager/services/CustomPromptStorageService";
-import { generateSessionId, formatSessionInstructions, isStandardSessionId } from './utils/sessionUtils';
-import { getContextSchema } from './utils/schemaUtils';
+import { generateSessionId, isStandardSessionId } from './utils/sessionUtils';
 // ToolCallCaptureService removed in simplified architecture
 
 // Extracted services
@@ -14,6 +13,8 @@ import { MCPConnectionManager, MCPConnectionManagerInterface } from './services/
 import { ToolCallRouter, ToolCallRouterInterface } from './services/mcp/ToolCallRouter';
 import { AgentRegistrationService, AgentRegistrationServiceInterface } from './services/agent/AgentRegistrationService';
 import { ToolCallTraceService } from './services/trace/ToolCallTraceService';
+import type { AppManager } from './services/apps/AppManager';
+import type { MCPServer } from './server/MCPServer';
 
 // Type definitions
 import { AgentToolParams } from './types/agent/AgentTypes';
@@ -27,6 +28,24 @@ import { ITool } from './agents/interfaces/ITool';
  */
 function isNexusPlugin(plugin: Plugin | NexusPlugin): plugin is NexusPlugin {
     return 'getServiceContainer' in plugin && 'settings' in plugin;
+}
+
+interface ToolExecutionParams extends Record<string, unknown> {
+    context?: Record<string, unknown>;
+    workspaceContext?: { workspaceId?: string };
+    sessionId?: string;
+    workspaceId?: string;
+    workspace?: string;
+    params?: {
+        workspaceId?: string;
+        workspace?: string;
+        [key: string]: unknown;
+    };
+}
+
+interface ToolSchemaLike extends Record<string, unknown> {
+    properties?: Record<string, unknown>;
+    required?: string[];
 }
 
 /**
@@ -73,6 +92,14 @@ export class MCPConnector {
         } else {
             logger.systemWarn('Plugin settings not available during MCPConnector construction - will retry during initialization');
         }
+
+        const sessionContextServiceManager = this.serviceManager
+            ? {
+                getServiceIfReady: (name: string): SessionContextManager | null => {
+                    return this.serviceManager?.getServiceIfReady<SessionContextManager>(name) ?? null;
+                }
+            }
+            : null;
         
         // Initialize extracted services
         // Note: SessionContextManager will be retrieved lazily from ServiceManager when needed
@@ -80,10 +107,10 @@ export class MCPConnector {
             this.app,
             this.plugin,
             this.events,
-            this.serviceManager,
+            sessionContextServiceManager,
             this.customPromptStorage,
-            (toolName: string, params: any) => this.onToolCall(toolName, params),
-            (toolName: string, params: any, response: any, success: boolean, executionTime: number) => this.onToolResponse(toolName, params, response, success, executionTime)
+            (toolName: string, params: unknown) => this.onToolCall(toolName, params),
+            (toolName: string, params: unknown, response: unknown, success: boolean, executionTime: number) => this.onToolResponse(toolName, params, response, success, executionTime)
         );
 
         this.toolRouter = new ToolCallRouter();
@@ -119,7 +146,7 @@ export class MCPConnector {
     /**
      * Handle tool call responses - now handled by ToolCallTraceService via MCPConnectionManager
      */
-    private async onToolResponse(toolName: string, params: any, response: any, success: boolean, executionTime: number): Promise<void> {
+    private async onToolResponse(_toolName: string, _params: unknown, _response: unknown, _success: boolean, _executionTime: number): Promise<void> {
         // Tool call tracing is now handled by ToolCallTraceService
         // This callback is kept for backward compatibility
     }
@@ -127,7 +154,7 @@ export class MCPConnector {
     /**
      * Handle tool calls - now handled by ToolCallTraceService via MCPConnectionManager
      */
-    private async onToolCall(toolName: string, params: any): Promise<void> {
+    private async onToolCall(_toolName: string, _params: unknown): Promise<void> {
         // Tool call tracing is now handled by ToolCallTraceService
         // This callback is kept for backward compatibility
     }
@@ -135,7 +162,7 @@ export class MCPConnector {
     /**
      * Check if this tool call is workspace-related
      */
-    private isWorkspaceOperation(toolName: string, params: any): boolean {
+    private isWorkspaceOperation(toolName: string, params: ToolExecutionParams | null | undefined): boolean {
         const workspaceTools = [
             'memoryManager.switchWorkspace',
             'memoryManager.createWorkspace',
@@ -143,17 +170,18 @@ export class MCPConnector {
             'searchManager.search'
         ];
         
-        return workspaceTools.some(tool => toolName.includes(tool)) || 
-               (params && (params.workspaceId || params.workspace));
+        return workspaceTools.some(tool => toolName.includes(tool)) ||
+            Boolean(params && (params.workspaceId || params.workspace));
     }
     
     /**
      * Extract workspace ID from tool parameters
      */
-    private extractWorkspaceId(params: any): string | null {
-        if (params?.workspaceId) return params.workspaceId;
-        if (params?.workspace) return params.workspace;
-        if (params?.params?.workspaceId) return params.params.workspaceId;
+    private extractWorkspaceId(params: ToolExecutionParams | null | undefined): string | null {
+        if (typeof params?.workspaceId === 'string' && params.workspaceId.length > 0) return params.workspaceId;
+        if (typeof params?.workspace === 'string' && params.workspace.length > 0) return params.workspace;
+        if (typeof params?.params?.workspaceId === 'string' && params.params.workspaceId.length > 0) return params.params.workspaceId;
+        if (typeof params?.params?.workspace === 'string' && params.params.workspace.length > 0) return params.params.workspace;
         return null;
     }
     
@@ -358,13 +386,16 @@ export class MCPConnector {
                     // Strip common parameters to reduce context bloat
                     // The instruction in get_tools result will tell LLM to add them
                     const cleanSchema = this.stripCommonParameters(paramSchema);
+                    if (!cleanSchema) {
+                        continue;
+                    }
 
                     toolSchemas.push({
                         name: toolName,
                         description: toolInstance.description || `Execute ${toolSlug} on ${agentName}`,
-                        inputSchema: cleanSchema
+                        inputSchema: cleanSchema as Record<string, unknown>
                     });
-                } catch (error) {
+                } catch {
                     // Skip tools with invalid schemas
                 }
             }
@@ -377,12 +408,15 @@ export class MCPConnector {
      * Strip common parameters from tool schema to reduce context bloat
      * Common parameters (context, workspaceContext, sessionId) are documented in get_tools instruction
      */
-    private stripCommonParameters(schema: any): any {
+    private stripCommonParameters(schema: ToolSchemaLike | null | undefined): ToolSchemaLike | null | undefined {
         if (!schema || !schema.properties) {
             return schema;
         }
 
-        const { context, workspaceContext, sessionId, ...cleanProperties } = schema.properties;
+        const cleanProperties = { ...schema.properties };
+        delete cleanProperties.context;
+        delete cleanProperties.workspaceContext;
+        delete cleanProperties.sessionId;
         const cleanRequired = (schema.required || []).filter(
             (field: string) => field !== 'context' && field !== 'workspaceContext' && field !== 'sessionId'
         );
@@ -403,7 +437,7 @@ export class MCPConnector {
             // ========================================
             if (agent === 'get' && tool === 'tools') {
                 // This is a call to the get_tools meta-tool
-                const toolParamsTyped = toolParams as Record<string, unknown>;
+                const toolParamsTyped = toolParams;
                 const contextTyped = toolParamsTyped.context as Record<string, unknown> | undefined;
                 const toolNames = (toolParamsTyped.tools || contextTyped?.tools || []) as string[];
 
@@ -485,14 +519,10 @@ Keep workspaceId and sessionId values EXACTLY as shown above throughout the conv
             // 1. SESSION ID VALIDATION: Extract and validate/generate sessionId first
             const providedSessionId = (typedParams.context?.sessionId || typedParams.sessionId) as string | undefined;
             let validatedSessionId: string;
-            let isNewSession = false;
-            let isNonStandardId = false;
 
             if (!providedSessionId || !isStandardSessionId(providedSessionId)) {
                 // No sessionId or non-standard format - generate a new one
                 validatedSessionId = generateSessionId();
-                isNewSession = true;
-                isNonStandardId = !!providedSessionId; // True if they provided a friendly name
             } else {
                 // Valid standard sessionId - use it
                 validatedSessionId = providedSessionId;
@@ -547,7 +577,7 @@ Keep workspaceId and sessionId values EXACTLY as shown above throughout the conv
                     result,
                     success,
                     executionTime
-                ).catch((err: Error) => {
+                ).catch(() => {
                     // Silent error handling for tool trace capture
                 });
             }
@@ -614,7 +644,7 @@ Keep workspaceId and sessionId values EXACTLY as shown above throughout the conv
     /**
      * Get the MCP server instance - delegates to MCPConnectionManager
      */
-    getServer(): any {
+    getServer(): MCPServer | null {
         return this.connectionManager.getServer();
     }
     
@@ -663,7 +693,7 @@ Keep workspaceId and sessionId values EXACTLY as shown above throughout the conv
     /**
      * Get the AppManager instance - delegates to AgentRegistrationService
      */
-    getAppManager(): any | null {
+    getAppManager(): AppManager | null {
         return this.agentRegistry.getAppManager();
     }
 

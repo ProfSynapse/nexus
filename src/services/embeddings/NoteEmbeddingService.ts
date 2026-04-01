@@ -24,6 +24,9 @@ import { App, TFile } from 'obsidian';
 import type { EmbeddingEngine } from './EmbeddingEngine';
 import { preprocessContent, hashContent } from './EmbeddingUtils';
 import type { SQLiteCacheManager } from '../../database/storage/SQLiteCacheManager';
+import type { QueryParams } from '../../database/repositories/base/BaseRepository';
+
+const asQueryParams = (params: unknown[]): QueryParams => params as unknown as QueryParams;
 
 export interface SimilarNote {
   notePath: string;
@@ -93,7 +96,7 @@ export class NoteEmbeddingService {
         // Update existing - vec0 tables need direct buffer, no vec_f32() function
         await this.db.run(
           'UPDATE note_embeddings SET embedding = ? WHERE rowid = ?',
-          [embeddingBuffer, existing.rowid]
+          asQueryParams([embeddingBuffer, existing.rowid])
         );
         await this.db.run(
           'UPDATE embedding_metadata SET contentHash = ?, updated = ?, model = ? WHERE rowid = ?',
@@ -103,7 +106,7 @@ export class NoteEmbeddingService {
         // Insert new - vec0 auto-generates rowid, we get it after insert
         await this.db.run(
           'INSERT INTO note_embeddings(embedding) VALUES (?)',
-          [embeddingBuffer]
+          asQueryParams([embeddingBuffer])
         );
         const result = await this.db.queryOne<{ id: number }>('SELECT last_insert_rowid() as id');
         const rowid = result?.id ?? 0;
@@ -151,7 +154,7 @@ export class NoteEmbeddingService {
         WHERE em.notePath != ?
         ORDER BY distance
         LIMIT ?
-      `, [sourceEmbed.embedding, notePath, limit]);
+      `, asQueryParams([sourceEmbed.embedding, notePath, limit]));
 
       return results;
     } catch (error) {
@@ -187,7 +190,7 @@ export class NoteEmbeddingService {
         JOIN embedding_metadata em ON em.rowid = ne.rowid
         ORDER BY distance
         LIMIT ?
-      `, [queryBuffer, candidateLimit]);
+      `, asQueryParams([queryBuffer, candidateLimit]));
 
       // 2. RE-RANKING LOGIC
       const now = Date.now();

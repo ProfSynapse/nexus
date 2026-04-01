@@ -15,6 +15,11 @@
 
 import { getToolNameMetadata } from '../../../utils/toolNameUtils';
 import { MessageDisplay } from '../components/MessageDisplay';
+import { ToolEventParser } from '../utils/ToolEventParser';
+
+type ToolEventPayload = NonNullable<Parameters<typeof ToolEventParser.getToolEventInfo>[0]>;
+type ToolCallLike = NonNullable<ToolEventPayload['toolCall']>;
+type ToolEventData = ToolEventPayload;
 
 export class ToolEventCoordinator {
   constructor(private messageDisplay: MessageDisplay) {}
@@ -22,7 +27,7 @@ export class ToolEventCoordinator {
   /**
    * Handle tool calls detected event
    */
-  handleToolCallsDetected(messageId: string, toolCalls: any[]): void {
+  handleToolCallsDetected(messageId: string, toolCalls: ToolCallLike[]): void {
     const messageBubble = this.messageDisplay.findMessageBubble(messageId);
 
     if (messageBubble && toolCalls && toolCalls.length > 0) {
@@ -32,7 +37,7 @@ export class ToolEventCoordinator {
           toolCall.function?.name || toolCall.name
         );
 
-        let parameters = toolCall.parameters || toolCall.arguments;
+        let parameters: unknown = toolCall.parameters || toolCall.arguments;
         if (!parameters && toolCall.function?.arguments) {
           parameters = toolCall.function.arguments;
         }
@@ -63,7 +68,7 @@ export class ToolEventCoordinator {
           success: toolCall.success
         };
 
-        messageBubble.handleToolEvent('detected', toolData);
+        messageBubble.handleToolEvent('detected', toolData as ToolEventData);
 
         if (
           toolCall.providerExecuted &&
@@ -87,7 +92,7 @@ export class ToolEventCoordinator {
   /**
    * Handle tool execution started event
    */
-  handleToolExecutionStarted(messageId: string, toolCall: { id: string; name: string; parameters?: any }): void {
+  handleToolExecutionStarted(messageId: string, toolCall: { id: string; name: string; parameters?: unknown }): void {
     const messageBubble = this.messageDisplay.findMessageBubble(messageId);
     messageBubble?.handleToolEvent('started', toolCall);
   }
@@ -95,7 +100,7 @@ export class ToolEventCoordinator {
   /**
    * Handle tool execution completed event
    */
-  handleToolExecutionCompleted(messageId: string, toolId: string, result: any, success: boolean, error?: string): void {
+  handleToolExecutionCompleted(messageId: string, toolId: string, result: unknown, success: boolean, error?: string): void {
     const messageBubble = this.messageDisplay.findMessageBubble(messageId);
     messageBubble?.handleToolEvent('completed', { toolId, result, success, error });
   }
@@ -103,7 +108,7 @@ export class ToolEventCoordinator {
   /**
    * Handle generic tool event with data enrichment
    */
-  handleToolEvent(messageId: string, event: 'detected' | 'updated' | 'started' | 'completed', data: any): void {
+  handleToolEvent(messageId: string, event: 'detected' | 'updated' | 'started' | 'completed', data: ToolEventData): void {
     const messageBubble = this.messageDisplay.findMessageBubble(messageId);
     if (!messageBubble) {
       return;
@@ -116,20 +121,21 @@ export class ToolEventCoordinator {
   /**
    * Enrich tool event data with metadata
    */
-  private enrichToolEventData(data: any): any {
+  private enrichToolEventData(data: ToolEventData): ToolEventData {
     if (!data) {
       return data;
     }
 
     const toolCall = data.toolCall;
-    const rawName =
-      data.rawName ||
-      data.technicalName ||
-      data.name ||
-      toolCall?.function?.name ||
-      toolCall?.name;
+    const rawName = [
+      data.rawName,
+      data.technicalName,
+      data.name,
+      toolCall?.function?.name,
+      toolCall?.name
+    ].find((value): value is string => typeof value === 'string' && value.trim().length > 0);
 
-    const metadata = getToolNameMetadata(rawName);
+    const metadata = getToolNameMetadata(rawName || '');
     const parameters =
       data.parameters !== undefined
         ? data.parameters
@@ -150,7 +156,7 @@ export class ToolEventCoordinator {
   /**
    * Extract tool parameters from tool call data
    */
-  private extractToolParameters(toolCall: any): any {
+  private extractToolParameters(toolCall: ToolCallLike | undefined): unknown {
     if (!toolCall) {
       return undefined;
     }

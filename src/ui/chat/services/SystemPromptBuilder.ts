@@ -63,6 +63,16 @@ export interface ContextStatusInfo {
   statusMessage: string;
 }
 
+export interface LoadedWorkspaceData {
+  id?: string;
+  name?: string;
+  context?: {
+    name?: string;
+    [key: string]: unknown;
+  } | null;
+  [key: string]: unknown;
+}
+
 export interface SystemPromptOptions {
   sessionId?: string;
   workspaceId?: string;
@@ -71,7 +81,7 @@ export interface SystemPromptOptions {
   customPrompt?: string | null;
   workspaceContext?: WorkspaceContext | null;
   // Full comprehensive workspace data from LoadWorkspaceTool (when workspace selected in settings)
-  loadedWorkspaceData?: any | null;
+  loadedWorkspaceData?: LoadedWorkspaceData | null;
   // Dynamic context (always loaded fresh)
   vaultStructure?: VaultStructure | null;
   availableWorkspaces?: WorkspaceSummary[];
@@ -93,7 +103,7 @@ export interface SystemPromptOptions {
 export class SystemPromptBuilder {
   constructor(
     private readNoteContent: (notePath: string) => Promise<string>,
-    private loadWorkspace?: (workspaceId: string) => Promise<any>
+    private loadWorkspace?: (workspaceId: string) => Promise<LoadedWorkspaceData | null>
   ) {}
 
   /**
@@ -266,7 +276,7 @@ Prefer targeted context gathering over large dumps.
 
     // Add enhancement notes from [[suggester]]
     if (hasEnhancementNotes) {
-      for (const note of messageEnhancement!.notes) {
+      for (const note of messageEnhancement?.notes || []) {
         const xmlTag = this.normalizePathToXmlTag(note.path);
         prompt += `<${xmlTag}>\n`;
         prompt += `${this.escapeXmlContent(note.path)}\n\n`;
@@ -410,7 +420,7 @@ Prefer targeted context gathering over large dumps.
    * (same rich context as the #workspace suggester)
    */
   private buildSelectedWorkspaceSection(
-    loadedWorkspaceData?: any | null,
+    loadedWorkspaceData?: LoadedWorkspaceData | null,
     workspaceContext?: WorkspaceContext | null
   ): string | null {
     // If we have full workspace data, include the complete object

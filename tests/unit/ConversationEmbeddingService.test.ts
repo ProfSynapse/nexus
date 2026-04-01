@@ -14,7 +14,7 @@
  * Uses mocked SQLiteCacheManager and EmbeddingEngine for isolation.
  */
 
-import { ConversationEmbeddingService, ConversationSearchResult } from '../../src/services/embeddings/ConversationEmbeddingService';
+import { ConversationEmbeddingService } from '../../src/services/embeddings/ConversationEmbeddingService';
 import type { EmbeddingEngine } from '../../src/services/embeddings/EmbeddingEngine';
 import type { SQLiteCacheManager } from '../../src/database/storage/SQLiteCacheManager';
 import type { QAPair } from '../../src/services/embeddings/QAPairBuilder';
@@ -24,6 +24,11 @@ import type { QAPair } from '../../src/services/embeddings/QAPairBuilder';
 // ============================================================================
 
 const ONE_DAY_MS = 1000 * 60 * 60 * 24;
+
+function expectDefined<T>(value: T | null | undefined): T {
+  expect(value).toBeDefined();
+  return value as T;
+}
 
 // ============================================================================
 // Mock Factory
@@ -453,7 +458,7 @@ describe('ConversationEmbeddingService', () => {
 
       // Dense items should have lower score (better) than sparse item
       for (const dr of denseResults) {
-        expect(dr.score).toBeLessThan(sparseResult!.score);
+        expect(dr.score).toBeLessThan(expectDefined(sparseResult).score);
       }
     });
 
@@ -562,9 +567,9 @@ describe('ConversationEmbeddingService', () => {
       expect(withRefs).toBeDefined();
       expect(withoutRefs).toBeDefined();
       // Result with matching refs should have lower score (boosted by 10%)
-      expect(withRefs!.score).toBeLessThan(withoutRefs!.score);
-      expect(withRefs!.score).toBeCloseTo(0.5 * 0.9, 2); // 10% boost
-      expect(withoutRefs!.score).toBeCloseTo(0.5, 2);      // no boost
+      expect(expectDefined(withRefs).score).toBeLessThan(expectDefined(withoutRefs).score);
+      expect(expectDefined(withRefs).score).toBeCloseTo(0.5 * 0.9, 2); // 10% boost
+      expect(expectDefined(withoutRefs).score).toBeCloseTo(0.5, 2);      // no boost
     });
 
     it('should not boost when query terms are too short (<=2 chars)', async () => {
@@ -666,11 +671,11 @@ describe('ConversationEmbeddingService', () => {
       expect(partiallyBoosted).toBeDefined();
 
       // Fully boosted should have lower score than partially boosted
-      expect(fullyBoosted!.score).toBeLessThan(partiallyBoosted!.score);
+      expect(expectDefined(fullyBoosted).score).toBeLessThan(expectDefined(partiallyBoosted).score);
 
       // Both should be less than raw distance (1.0)
-      expect(fullyBoosted!.score).toBeLessThan(1.0);
-      expect(partiallyBoosted!.score).toBeLessThan(1.0);
+      expect(expectDefined(fullyBoosted).score).toBeLessThan(1.0);
+      expect(expectDefined(partiallyBoosted).score).toBeLessThan(1.0);
     });
   });
 

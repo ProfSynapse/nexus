@@ -69,7 +69,7 @@ export class WorkflowEditorRenderer {
       .setName('Workflow name')
       .setDesc('Name this workflow.')
       .addText(text => text
-        .setPlaceholder('e.g. Weekly blog planning')
+        .setPlaceholder('For example, weekly blog planning')
         .setValue(this.workflow.name)
         .onChange(value => {
           this.workflow.name = value;
@@ -79,7 +79,7 @@ export class WorkflowEditorRenderer {
       .setName('When')
       .setDesc('Describe when this workflow should be used.')
       .addText(text => text
-        .setPlaceholder('e.g. When I want help outlining next week\'s posts')
+        .setPlaceholder('Plan next week\'s posts.')
         .setValue(this.workflow.when)
         .onChange(value => {
           this.workflow.when = value;
@@ -105,7 +105,7 @@ export class WorkflowEditorRenderer {
       .setName('Steps')
       .setDesc('These instructions are sent as the workflow-specific extra context.')
       .addTextArea(text => {
-        text.setPlaceholder('Research topic\nDraft outline\nWrite first section');
+        text.setPlaceholder('Research the topic, draft an outline, and write the first section.');
         text.setValue(this.workflow.steps);
         text.inputEl.rows = 8;
         text.onChange(value => {
@@ -145,18 +145,18 @@ export class WorkflowEditorRenderer {
       if (!nextWorkflow) {
         return;
       }
-      void Promise.resolve(this.onRunNow(nextWorkflow));
+      void this.onRunNow(nextWorkflow);
     });
 
     new ButtonComponent(actions)
       .setButtonText('Save workflow')
       .setCta()
-      .onClick(async () => {
+      .onClick(() => {
         const nextWorkflow = this.validateAndBuildWorkflow();
         if (!nextWorkflow) {
           return;
         }
-        await this.onSave(nextWorkflow);
+        void this.onSave(nextWorkflow);
       });
 
     new ButtonComponent(actions)
@@ -184,9 +184,9 @@ export class WorkflowEditorRenderer {
     new Setting(container)
       .setName('Frequency')
       .addDropdown(dropdown => {
-        Object.entries(FREQUENCY_LABELS).forEach(([value, label]) => {
+        for (const [value, label] of Object.entries(FREQUENCY_LABELS)) {
           dropdown.addOption(value, label);
-        });
+        }
         dropdown.setValue(schedule.frequency);
         dropdown.onChange(value => {
           schedule.frequency = value as WorkflowFrequency;
@@ -213,7 +213,9 @@ export class WorkflowEditorRenderer {
         new Setting(container)
           .setName('Day of week')
           .addDropdown(dropdown => {
-            DAY_OPTIONS.forEach(option => dropdown.addOption(option.value, option.label));
+            for (const option of DAY_OPTIONS) {
+              dropdown.addOption(option.value, option.label);
+            }
             dropdown.setValue(String(schedule.dayOfWeek ?? 0));
             dropdown.onChange(value => {
               schedule.dayOfWeek = Number(value);

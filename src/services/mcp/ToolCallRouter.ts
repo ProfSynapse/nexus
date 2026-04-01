@@ -36,13 +36,13 @@ export interface ToolCallResponse {
     content: Array<{
         type: 'text' | 'resource';
         text?: string;
-        resource?: any;
+        resource?: unknown;
     }>;
     isError?: boolean;
     error?: {
         code: string;
         message: string;
-        data?: any;
+        data?: unknown;
     };
 }
 
@@ -93,8 +93,6 @@ export interface ValidationResult {
 
 export class ToolCallRouter implements ToolCallRouterInterface {
     private server: { executeAgentTool: (agent: string, tool: string, params: Record<string, unknown>) => Promise<unknown> } | null = null;
-
-    constructor() {}
 
     /**
      * Routes tool call request to appropriate agent/tool
@@ -198,16 +196,19 @@ export class ToolCallRouter implements ToolCallRouterInterface {
      */
     validateBatchOperations(params: Record<string, unknown>): void {
         // Validate batch operations if they exist
-        if (params && params.operations && Array.isArray(params.operations)) {
-            params.operations.forEach((operation: any, index: number) => {
-                if (!operation || typeof operation !== 'object') {
+        const operations = params.operations;
+        if (params && Array.isArray(operations)) {
+            operations.forEach((operation: unknown, index: number) => {
+                if (!operation || typeof operation !== 'object' || Array.isArray(operation)) {
                     throw new McpError(
                         ErrorCode.InvalidParams,
                         `Invalid operation at index ${index} in batch operations: operation must be an object`
                     );
                 }
 
-                if (!operation.type) {
+                const operationRecord = operation as Record<string, unknown>;
+
+                if (!operationRecord.type) {
                     throw new McpError(
                         ErrorCode.InvalidParams,
                         `Invalid operation at index ${index} in batch operations: missing 'type' property`
@@ -215,7 +216,9 @@ export class ToolCallRouter implements ToolCallRouterInterface {
                 }
 
                 // Check for either filePath in params or path at the operation level
-                if ((!operation.params || !operation.params.filePath) && !operation.path) {
+                const operationParams = operationRecord.params;
+                const hasFilePath = !!operationParams && typeof operationParams === 'object' && !Array.isArray(operationParams) && !!(operationParams as Record<string, unknown>).filePath;
+                if (!hasFilePath && !operationRecord.path) {
                     throw new McpError(
                         ErrorCode.InvalidParams,
                         `Invalid operation at index ${index} in batch operations: missing 'filePath' property in params`
@@ -225,8 +228,9 @@ export class ToolCallRouter implements ToolCallRouterInterface {
         }
 
         // Validate batch read paths if they exist
-        if (params && params.paths && Array.isArray(params.paths)) {
-            params.paths.forEach((path: any, index: number) => {
+        const paths = params.paths;
+        if (params && Array.isArray(paths)) {
+            paths.forEach((path: unknown, index: number) => {
                 if (typeof path !== 'string') {
                     throw new McpError(
                         ErrorCode.InvalidParams,
@@ -260,7 +264,7 @@ export class ToolCallRouter implements ToolCallRouterInterface {
      * Builds successful response
      * @private
      */
-    private buildSuccessResponse(result: any): ToolCallResponse {
+    private buildSuccessResponse(result: unknown): ToolCallResponse {
         return {
             content: [{
                 type: 'text',
@@ -274,7 +278,7 @@ export class ToolCallRouter implements ToolCallRouterInterface {
      * Builds error response
      * @private
      */
-    private buildErrorResponse(error: any): ToolCallResponse {
+    private buildErrorResponse(error: unknown): ToolCallResponse {
         const errorMessage = error instanceof Error ? error.message : String(error);
         const errorCode = error instanceof McpError ? error.code : ErrorCode.InternalError;
 
@@ -290,5 +294,9 @@ export class ToolCallRouter implements ToolCallRouterInterface {
                 data: error instanceof McpError ? error.data : undefined
             }
         };
+    }
+
+    private isRecord(value: unknown): value is Record<string, unknown> {
+        return !!value && typeof value === 'object' && !Array.isArray(value);
     }
 }

@@ -12,7 +12,7 @@ export function createFilterRegex(pattern: string, flags = 'i'): RegExp {
   try {
     // First, try to use the pattern as-is (might be a valid regex)
     return new RegExp(pattern, flags);
-  } catch (error) {
+  } catch {
     // If it fails, treat it as a simple glob pattern and convert to regex
     // Convert glob patterns to regex: * becomes .*, ? becomes .
     const escapedPattern = pattern

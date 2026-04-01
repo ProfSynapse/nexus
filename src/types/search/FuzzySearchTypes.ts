@@ -134,32 +134,35 @@ export type StemCache = Map<string, string>;
 export type SoundexMapping = Record<string, string>;
 
 // Type guards
-export function isFuzzySearchResult(obj: any): obj is FuzzySearchResult {
-  return obj && 
-    typeof obj.id === 'string' && 
-    typeof obj.title === 'string' && 
-    typeof obj.snippet === 'string' && 
-    typeof obj.score === 'number' && 
-    obj.searchMethod === 'fuzzy' &&
-    obj.metadata &&
-    Array.isArray(obj.metadata.fuzzyMatches);
+export function isFuzzySearchResult(obj: unknown): obj is FuzzySearchResult {
+  const candidate = obj as Partial<FuzzySearchResult> | null;
+  return !!candidate &&
+    typeof candidate.id === 'string' &&
+    typeof candidate.title === 'string' &&
+    typeof candidate.snippet === 'string' &&
+    typeof candidate.score === 'number' &&
+    candidate.searchMethod === 'fuzzy' &&
+    !!candidate.metadata &&
+    Array.isArray(candidate.metadata.fuzzyMatches);
 }
 
-export function isFuzzyMatch(obj: any): obj is FuzzyMatch {
-  return obj &&
-    typeof obj.original === 'string' &&
-    typeof obj.matched === 'string' &&
-    typeof obj.distance === 'number' &&
-    typeof obj.similarity === 'number' &&
-    ['typo', 'stem', 'synonym', 'phonetic'].includes(obj.matchType);
+export function isFuzzyMatch(obj: unknown): obj is FuzzyMatch {
+  const candidate = obj as Partial<FuzzyMatch> | null;
+  return !!candidate &&
+    typeof candidate.original === 'string' &&
+    typeof candidate.matched === 'string' &&
+    typeof candidate.distance === 'number' &&
+    typeof candidate.similarity === 'number' &&
+    ['typo', 'stem', 'synonym', 'phonetic'].includes(candidate.matchType ?? '');
 }
 
-export function isFuzzyDocument(obj: any): obj is FuzzyDocument {
-  return obj &&
-    typeof obj.id === 'string' &&
-    typeof obj.title === 'string' &&
-    typeof obj.content === 'string' &&
-    typeof obj.filePath === 'string' &&
-    obj.metadata &&
-    typeof obj.metadata === 'object';
+export function isFuzzyDocument(obj: unknown): obj is FuzzyDocument {
+  const candidate = obj as Partial<FuzzyDocument> | null;
+  return !!candidate &&
+    typeof candidate.id === 'string' &&
+    typeof candidate.title === 'string' &&
+    typeof candidate.content === 'string' &&
+    typeof candidate.filePath === 'string' &&
+    !!candidate.metadata &&
+    typeof candidate.metadata === 'object';
 }

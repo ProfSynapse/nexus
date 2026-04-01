@@ -20,6 +20,14 @@ import { ANTHROPIC_CLAUDE_CODE_MODELS, ANTHROPIC_CLAUDE_CODE_DEFAULT_MODEL } fro
 import { GOOGLE_GEMINI_CLI_MODELS, GOOGLE_GEMINI_CLI_DEFAULT_MODEL } from './google-gemini-cli/GoogleGeminiCliModels';
 import { GITHUB_COPILOT_MODELS, GITHUB_COPILOT_DEFAULT_MODEL } from './github-copilot/GithubCopilotModels';
 import type { LLMProviderSettings } from '../../../types';
+import type { ModelInfo } from './types';
+
+type LegacyModelInfo = ModelInfo & {
+  costPer1kTokens: {
+    input: number;
+    output: number;
+  };
+};
 
 // Re-export ModelSpec for convenience
 export type { ModelSpec };
@@ -186,7 +194,7 @@ export class ModelRegistry {
   /**
    * Convert ModelSpec to the legacy ModelInfo format
    */
-  static toModelInfo(modelSpec: ModelSpec): any {
+  static toModelInfo(modelSpec: ModelSpec): LegacyModelInfo {
     return {
       id: modelSpec.apiName,
       name: modelSpec.name,

@@ -13,7 +13,30 @@ export interface ValidationError {
     hint?: string;     // Optional hint for fixing the issue
     expectedType?: string; // Expected type or format
     receivedType?: string; // Received type or format
-    allowedValues?: any[]; // Allowed values if enum
+    allowedValues?: unknown[]; // Allowed values if enum
+}
+
+type ValidationPrimitiveType = 'string' | 'number' | 'integer' | 'boolean' | 'array' | 'object' | 'null';
+
+export interface ValidationSchema {
+    type?: ValidationPrimitiveType | ValidationPrimitiveType[];
+    required?: string[];
+    properties?: Record<string, ValidationSchema>;
+    allOf?: ValidationSchema[];
+    anyOf?: ValidationSchema[];
+    oneOf?: ValidationSchema[];
+    minimum?: number;
+    maximum?: number;
+    minLength?: number;
+    maxLength?: number;
+    pattern?: string;
+    patternHint?: string;
+    enum?: unknown[];
+    items?: ValidationSchema;
+    minItems?: number;
+    maxItems?: number;
+    description?: string;
+    [key: string]: unknown;
 }
 
 /**
@@ -23,7 +46,7 @@ export interface ValidationError {
  * @param schema Schema to validate against
  * @returns An array of validation errors, empty if validation passed
  */
-export function validateParams(params: any, schema: any): ValidationError[] {
+export function validateParams(params: unknown, schema: unknown): ValidationError[] {
     const errors: ValidationError[] = [];
     
     // Check if schema exists
@@ -34,9 +57,10 @@ export function validateParams(params: any, schema: any): ValidationError[] {
             code: 'INVALID_SCHEMA'
         }];
     }
+    const typedSchema = schema as ValidationSchema;
     
     // Handle required properties
-    const requiredProps = Array.isArray(schema.required) ? schema.required : [];
+    const requiredProps = Array.isArray(typedSchema.required) ? typedSchema.required : [];
     for (const prop of requiredProps) {
         if (!hasProperty(params, prop)) {
             errors.push({
@@ -49,21 +73,21 @@ export function validateParams(params: any, schema: any): ValidationError[] {
     }
     
     // Validate properties that are provided
-    if (schema.properties) {
-        validateObjectProperties(params, schema.properties, [], errors);
+    if (typedSchema.properties) {
+        validateObjectProperties(params, typedSchema.properties, [], errors);
     }
     
     // Check for conditional validations (allOf, anyOf, oneOf)
-    if (schema.allOf && Array.isArray(schema.allOf)) {
-        validateAllOf(params, schema.allOf, errors);
+    if (typedSchema.allOf && Array.isArray(typedSchema.allOf)) {
+        validateAllOf(params, typedSchema.allOf, errors);
     }
     
-    if (schema.anyOf && Array.isArray(schema.anyOf)) {
-        validateAnyOf(params, schema.anyOf, errors);
+    if (typedSchema.anyOf && Array.isArray(typedSchema.anyOf)) {
+        validateAnyOf(params, typedSchema.anyOf, errors);
     }
     
-    if (schema.oneOf && Array.isArray(schema.oneOf)) {
-        validateOneOf(params, schema.oneOf, errors);
+    if (typedSchema.oneOf && Array.isArray(typedSchema.oneOf)) {
+        validateOneOf(params, typedSchema.oneOf, errors);
     }
     
     return errors;
@@ -73,8 +97,8 @@ export function validateParams(params: any, schema: any): ValidationError[] {
  * Validate object properties against schema
  */
 function validateObjectProperties(
-    obj: any, 
-    propSchemas: Record<string, unknown>, 
+    obj: unknown,
+    propSchemas: Record<string, ValidationSchema>,
     path: string[], 
     errors: ValidationError[]
 ): void {
@@ -88,8 +112,9 @@ function validateObjectProperties(
         });
         return;
     }
+    const typedObj = obj as Record<string, unknown>;
     
-    for (const [propName, propValue] of Object.entries(obj)) {
+    for (const [propName, propValue] of Object.entries(typedObj)) {
         const propPath = [...path, propName];
         const propSchema = propSchemas[propName];
         
@@ -105,8 +130,8 @@ function validateObjectProperties(
  * Validate a specific property value against its schema
  */
 function validateProperty(
-    value: any, 
-    schema: any, 
+    value: unknown,
+    schema: ValidationSchema,
     path: string[], 
     errors: ValidationError[]
 ): void {
@@ -118,7 +143,7 @@ function validateProperty(
                 path,
                 message: `Invalid type for ${path.join('.')}`,
                 code: 'TYPE_ERROR',
-                expectedType: schema.type,
+                expectedType: stringifyValidationType(schema.type),
                 receivedType: Array.isArray(value) ? 'array' : typeof value,
                 hint: `This parameter expects ${getTypeDescription(schema.type)}`
             });
@@ -128,7 +153,7 @@ function validateProperty(
     }
     
     // Handle minimum/maximum for numbers
-    if (schema.type === 'number' || schema.type === 'integer') {
+    if ((schema.type === 'number' || schema.type === 'integer') && typeof value === 'number') {
         if (schema.minimum !== undefined && value < schema.minimum) {
             errors.push({
                 path,
@@ -149,7 +174,7 @@ function validateProperty(
     }
     
     // Handle minLength/maxLength for strings
-    if (schema.type === 'string') {
+    if (schema.type === 'string' && typeof value === 'string') {
         if (schema.minLength !== undefined && value.length < schema.minLength) {
             errors.push({
                 path,
@@ -233,7 +258,7 @@ function validateProperty(
 /**
  * Validate all conditions in allOf must be satisfied
  */
-function validateAllOf(obj: any, schemas: any[], errors: ValidationError[]): void {
+function validateAllOf(obj: unknown, schemas: ValidationSchema[], errors: ValidationError[]): void {
     for (const schema of schemas) {
         const subErrors = validateParams(obj, schema);
         errors.push(...subErrors);
@@ -243,7 +268,7 @@ function validateAllOf(obj: any, schemas: any[], errors: ValidationError[]): voi
 /**
  * Validate at least one condition in anyOf must be satisfied
  */
-function validateAnyOf(obj: any, schemas: any[], errors: ValidationError[]): void {
+function validateAnyOf(obj: unknown, schemas: ValidationSchema[], errors: ValidationError[]): void {
     const allSubErrors: ValidationError[][] = [];
     
     // Check if at least one schema is valid
@@ -280,7 +305,7 @@ function validateAnyOf(obj: any, schemas: any[], errors: ValidationError[]): voi
 /**
  * Validate exactly one condition in oneOf must be satisfied
  */
-function validateOneOf(obj: any, schemas: any[], errors: ValidationError[]): void {
+function validateOneOf(obj: unknown, schemas: ValidationSchema[], errors: ValidationError[]): void {
     const validSchemas = schemas.filter(schema => validateParams(obj, schema).length === 0);
     
     if (validSchemas.length === 0) {
@@ -317,14 +342,14 @@ function validateOneOf(obj: any, schemas: any[], errors: ValidationError[]): voi
 /**
  * Check if an object has a given property
  */
-function hasProperty(obj: any, prop: string): boolean {
-    return obj && typeof obj === 'object' && prop in obj;
+function hasProperty(obj: unknown, prop: string): boolean {
+    return obj !== null && typeof obj === 'object' && prop in obj;
 }
 
 /**
  * Validate a value against a JSON Schema type
  */
-function validateType(value: any, type: string | string[]): boolean {
+function validateType(value: unknown, type: ValidationPrimitiveType | ValidationPrimitiveType[]): boolean {
     const types = Array.isArray(type) ? type : [type];
     
     return types.some(t => {
@@ -352,7 +377,11 @@ function validateType(value: any, type: string | string[]): boolean {
 /**
  * Get a human-readable description of a type
  */
-function getTypeDescription(type: string | string[]): string {
+function stringifyValidationType(type: ValidationPrimitiveType | ValidationPrimitiveType[]): string {
+    return Array.isArray(type) ? type.join(' | ') : type;
+}
+
+function getTypeDescription(type: ValidationPrimitiveType | ValidationPrimitiveType[]): string {
     if (Array.isArray(type)) {
         if (type.length === 1) {
             return getTypeDescription(type[0]);
@@ -373,7 +402,7 @@ function getTypeDescription(type: string | string[]): string {
         case 'array': return 'an array';
         case 'object': return 'an object';
         case 'null': return 'null';
-        default: return `a ${type}`;
+        default: return 'a value';
     }
 }
 
@@ -417,16 +446,17 @@ export function formatValidationErrors(errors: ValidationError[]): string {
  * @param schema The schema to generate hints from
  * @returns Object with parameter hints
  */
-export function generateParameterHints(schema: any): Record<string, string> {
+export function generateParameterHints(schema: ValidationSchema | undefined): Record<string, string> {
     const hints: Record<string, string> = {};
     
     if (!schema || !schema.properties) {
         return hints;
     }
+    const typedSchema = schema;
     
-    const requiredProps = Array.isArray(schema.required) ? schema.required : [];
+    const requiredProps = Array.isArray(typedSchema.required) ? typedSchema.required : [];
     
-    for (const [propName, propSchema] of Object.entries<any>(schema.properties)) {
+    for (const [propName, propSchema] of Object.entries(typedSchema.properties ?? {})) {
         const isRequired = requiredProps.includes(propName);
         const typeInfo = getTypeInfo(propSchema);
         const constraints = getConstraints(propSchema);
@@ -450,7 +480,7 @@ export function generateParameterHints(schema: any): Record<string, string> {
 /**
  * Get type information from a schema property
  */
-function getTypeInfo(schema: any): string {
+function getTypeInfo(schema: ValidationSchema | undefined): string {
     if (!schema) return '';
     
     if (schema.enum && Array.isArray(schema.enum)) {
@@ -459,10 +489,10 @@ function getTypeInfo(schema: any): string {
     
     if (schema.type) {
         if (schema.type === 'array' && schema.items) {
-            const itemType = schema.items.type || 'any';
+            const itemType = schema.items.type ? getTypeDescription(schema.items.type) : 'any';
             return `Array of ${itemType}`;
         }
-        return Array.isArray(schema.type) ? schema.type.join(' | ') : schema.type;
+        return stringifyValidationType(schema.type);
     }
     
     return '';
@@ -471,7 +501,7 @@ function getTypeInfo(schema: any): string {
 /**
  * Get constraints information from a schema property
  */
-function getConstraints(schema: any): string {
+function getConstraints(schema: ValidationSchema | undefined): string {
     if (!schema) return '';
     
     const constraints: string[] = [];
@@ -514,16 +544,16 @@ function getConstraints(schema: any): string {
  * @param schema The schema to enhance
  * @returns The enhanced schema
  */
-export function enhanceSchemaDocumentation(schema: any): any {
+export function enhanceSchemaDocumentation<T extends ValidationSchema>(schema: T): T {
     if (!schema || !schema.properties) {
         return schema;
     }
     
     // Create a deep copy to avoid modifying the original
-    const enhancedSchema = JSON.parse(JSON.stringify(schema));
+    const enhancedSchema = JSON.parse(JSON.stringify(schema)) as T;
     const requiredProps = Array.isArray(enhancedSchema.required) ? enhancedSchema.required : [];
     
-    for (const [propName, propSchema] of Object.entries<any>(enhancedSchema.properties)) {
+    for (const [propName, propSchema] of Object.entries(enhancedSchema.properties ?? {})) {
         const isRequired = requiredProps.includes(propName);
         const requirementMarker = isRequired ? '[REQUIRED] ' : '[OPTIONAL] ';
         
@@ -548,7 +578,10 @@ export function enhanceSchemaDocumentation(schema: any): any {
         
         // Recursively enhance nested objects
         if (propSchema.type === 'object' && propSchema.properties) {
-            enhancedSchema.properties[propName] = enhanceSchemaDocumentation(propSchema);
+            const enhancedProperties = enhancedSchema.properties;
+            if (enhancedProperties) {
+                enhancedProperties[propName] = enhanceSchemaDocumentation(propSchema);
+            }
         }
         
         // Enhance array item schemas

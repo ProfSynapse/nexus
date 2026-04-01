@@ -8,7 +8,47 @@
  */
 
 import { filterItems, SearchableCardManager, CardGroup } from '../../src/components/SearchableCardManager';
-import { CardItem } from '../../src/components/CardManager';
+import { CardItem, CardManagerConfig } from '../../src/components/CardManager';
+
+type MockElementOptions = {
+  cls?: string;
+  text?: string;
+};
+
+type MockElement = {
+  tagName: string;
+  className: string;
+  classList: {
+    add: jest.Mock<void, [string]>;
+    remove: jest.Mock<void, [string]>;
+    toggle: jest.Mock<void, [string]>;
+    contains: jest.Mock<boolean, [string]>;
+  };
+  addClass: jest.Mock<MockElement, [string]>;
+  removeClass: jest.Mock<void, [string]>;
+  hasClass: jest.Mock<boolean, [string]>;
+  toggleClass: jest.Mock<void, [string, boolean?]>;
+  setText: jest.Mock<void, [string]>;
+  createEl: jest.Mock<MockElement, [string, MockElementOptions?]>;
+  createDiv: jest.Mock<MockElement, [string | MockElementOptions?]>;
+  createSpan: jest.Mock<MockElement, [MockElementOptions?]>;
+  empty: jest.Mock<void, []>;
+  remove: jest.Mock<void, []>;
+  appendChild: jest.Mock<void, [MockElement]>;
+  addEventListener: jest.Mock<void, [string, EventListenerOrEventListenerObject]>;
+  removeEventListener: jest.Mock<void, [string, EventListenerOrEventListenerObject]>;
+  setAttribute: jest.Mock<void, [string, string]>;
+  getAttribute: jest.Mock<string | null, [string]>;
+  querySelector: jest.Mock<MockElement | null, [string]>;
+  querySelectorAll: jest.Mock<MockElement[], [string]>;
+  style: Record<string, unknown>;
+  textContent: string;
+  innerHTML: string;
+  focus: jest.Mock<void, []>;
+  _children: MockElement[];
+};
+
+type MockContainer = MockElement & HTMLElement;
 
 // ============================================================================
 // Fixture Factories
@@ -262,9 +302,9 @@ describe('filterItems', () => {
 // ============================================================================
 
 /** Creates a mock container element for class-level tests */
-function createMockContainer(): any {
-  const createElement = (cls?: string): any => {
-    const el: any = {
+function createMockContainer(): MockContainer {
+  const createElement = (cls?: string): MockElement => {
+    const el: MockElement = {
       tagName: 'DIV',
       className: cls || '',
       classList: { add: jest.fn(), remove: jest.fn(), toggle: jest.fn(), contains: jest.fn(() => false) },
@@ -273,18 +313,18 @@ function createMockContainer(): any {
       hasClass: jest.fn(),
       toggleClass: jest.fn(),
       setText: jest.fn((text: string) => { el.textContent = text; }),
-      createEl: jest.fn((_tag: string, _opts?: any) => {
+      createEl: jest.fn((_tag: string, _opts?: MockElementOptions) => {
         const child = createElement(_opts?.cls || '');
         el._children.push(child);
         return child;
       }),
-      createDiv: jest.fn((cls2?: string | Record<string, any>) => {
-        const c = typeof cls2 === 'string' ? cls2 : (cls2 as any)?.cls || '';
+      createDiv: jest.fn((cls2?: string | MockElementOptions) => {
+        const c = typeof cls2 === 'string' ? cls2 : cls2?.cls || '';
         const child = createElement(c);
         el._children.push(child);
         return child;
       }),
-      createSpan: jest.fn((opts?: any) => {
+      createSpan: jest.fn((opts?: MockElementOptions) => {
         const child = createElement(opts?.cls || '');
         if (opts?.text) child.textContent = opts.text;
         el._children.push(child);
@@ -303,11 +343,11 @@ function createMockContainer(): any {
       textContent: '',
       innerHTML: '',
       focus: jest.fn(),
-      _children: [] as any[],
+      _children: [],
     };
     return el;
   };
-  return createElement('');
+  return createElement('') as MockContainer;
 }
 
 function makeItems(count: number): CardItem[] {
@@ -319,7 +359,7 @@ function makeItems(count: number): CardItem[] {
   }));
 }
 
-function baseCardManagerConfig(): any {
+function baseCardManagerConfig(): Omit<CardManagerConfig<CardItem>, 'containerEl' | 'items'> {
   return {
     title: 'Test',
     addButtonText: '',
@@ -332,8 +372,11 @@ function baseCardManagerConfig(): any {
   };
 }
 
-function findAllByClass(el: any, cls: string): any[] {
-  const results: any[] = [];
+function findAllByClass(el: MockElement | null, cls: string): MockElement[] {
+  const results: MockElement[] = [];
+  if (!el) {
+    return results;
+  }
   if (el.className && el.className.includes(cls)) results.push(el);
   for (const child of (el._children || [])) {
     results.push(...findAllByClass(child, cls));

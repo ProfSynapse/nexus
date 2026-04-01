@@ -20,15 +20,21 @@ export interface SchemaValidationRule {
   min?: number;
   max?: number;
   pattern?: RegExp;
-  allowedValues?: any[];
-  customValidator?: (value: any) => string | null;
+  allowedValues?: unknown[];
+  customValidator?: (value: unknown) => string | null;
+}
+
+type JsonObject = Record<string, unknown>;
+
+function isJsonObject(value: unknown): value is JsonObject {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 export class ValidationUtils {
   /**
    * Validate test configuration
    */
-  static validateTestConfig(config: any): ValidationResult {
+  static validateTestConfig(config: JsonObject): ValidationResult {
     const result: ValidationResult = {
       isValid: true,
       errors: [],
@@ -53,7 +59,7 @@ export class ValidationUtils {
 
     // Validate scenarios
     if (config.scenarios && Array.isArray(config.scenarios)) {
-      config.scenarios.forEach((scenario: any, index: number) => {
+      config.scenarios.forEach((scenario: unknown, index: number) => {
         const scenarioResult = this.validateTestScenario(scenario);
         if (!scenarioResult.isValid) {
           result.errors.push(...scenarioResult.errors.map(err => `Scenario ${index + 1}: ${err}`));
@@ -79,12 +85,18 @@ export class ValidationUtils {
   /**
    * Validate test scenario
    */
-  static validateTestScenario(scenario: any): ValidationResult {
+  static validateTestScenario(scenario: unknown): ValidationResult {
     const result: ValidationResult = {
       isValid: true,
       errors: [],
       warnings: []
     };
+
+    if (!isJsonObject(scenario)) {
+      result.errors.push('Scenario must be an object');
+      result.isValid = false;
+      return result;
+    }
 
     if (!scenario.id || typeof scenario.id !== 'string') {
       result.errors.push('Scenario ID is required and must be a string');
@@ -108,7 +120,7 @@ export class ValidationUtils {
     }
 
     // Check for overly long inputs
-    if (scenario.userInput && scenario.userInput.length > 10000) {
+    if (typeof scenario.userInput === 'string' && scenario.userInput.length > 10000) {
       result.warnings.push('User input is very long (>10,000 characters) - may affect performance');
     }
 
@@ -118,12 +130,18 @@ export class ValidationUtils {
   /**
    * Validate evaluation configuration
    */
-  static validateEvaluationConfig(evaluation: any): ValidationResult {
+  static validateEvaluationConfig(evaluation: unknown): ValidationResult {
     const result: ValidationResult = {
       isValid: true,
       errors: [],
       warnings: []
     };
+
+    if (!isJsonObject(evaluation)) {
+      result.errors.push('Evaluation configuration must be an object');
+      result.isValid = false;
+      return result;
+    }
 
     if (!evaluation.criteria || !Array.isArray(evaluation.criteria)) {
       result.errors.push('Evaluation criteria must be an array');
@@ -131,19 +149,20 @@ export class ValidationUtils {
       return result;
     }
 
-    evaluation.criteria.forEach((criterion: any, index: number) => {
-      if (!criterion.name || typeof criterion.name !== 'string') {
+    evaluation.criteria.forEach((criterion: unknown, index: number) => {
+      const criterionObj = criterion as JsonObject;
+      if (!criterionObj.name || typeof criterionObj.name !== 'string') {
         result.errors.push(`Criterion ${index + 1}: name is required and must be a string`);
         result.isValid = false;
       }
 
-      if (!criterion.type || typeof criterion.type !== 'string') {
+      if (!criterionObj.type || typeof criterionObj.type !== 'string') {
         result.errors.push(`Criterion ${index + 1}: type is required and must be a string`);
         result.isValid = false;
       }
 
-      if (criterion.weight !== undefined) {
-        if (typeof criterion.weight !== 'number' || criterion.weight < 0 || criterion.weight > 1) {
+      if (criterionObj.weight !== undefined) {
+        if (typeof criterionObj.weight !== 'number' || criterionObj.weight < 0 || criterionObj.weight > 1) {
           result.errors.push(`Criterion ${index + 1}: weight must be a number between 0 and 1`);
           result.isValid = false;
         }
@@ -156,7 +175,7 @@ export class ValidationUtils {
   /**
    * Validate optimization configuration
    */
-  static validateOptimizationConfig(config: any): ValidationResult {
+  static validateOptimizationConfig(config: JsonObject): ValidationResult {
     const result: ValidationResult = {
       isValid: true,
       errors: [],
@@ -194,20 +213,20 @@ export class ValidationUtils {
   /**
    * Validate provider configuration
    */
-  static validateProviderConfig(provider: string, config: any): ValidationResult {
+  static validateProviderConfig(provider: string, config: JsonObject): ValidationResult {
     const result: ValidationResult = {
       isValid: true,
       errors: [],
       warnings: []
     };
 
-    const providerValidators: Record<string, (config: any) => ValidationResult> = {
-      openai: this.validateOpenAIConfig,
-      google: this.validateGoogleConfig,
-      anthropic: this.validateAnthropicConfig,
-      mistral: this.validateMistralConfig,
-      openrouter: this.validateOpenRouterConfig,
-      requesty: this.validateRequestyConfig
+    const providerValidators: Record<string, (config: JsonObject) => ValidationResult> = {
+      openai: (config) => this.validateOpenAIConfig(config),
+      google: (config) => this.validateGoogleConfig(config),
+      anthropic: (config) => this.validateAnthropicConfig(config),
+      mistral: (config) => this.validateMistralConfig(config),
+      openrouter: (config) => this.validateOpenRouterConfig(config),
+      requesty: (config) => this.validateRequestyConfig(config)
     };
 
     const validator = providerValidators[provider.toLowerCase()];
@@ -223,7 +242,7 @@ export class ValidationUtils {
   /**
    * Validate using custom schema
    */
-  static validateSchema(data: any, rules: SchemaValidationRule[]): ValidationResult {
+  static validateSchema(data: unknown, rules: SchemaValidationRule[]): ValidationResult {
     const result: ValidationResult = {
       isValid: true,
       errors: [],
@@ -250,7 +269,7 @@ export class ValidationUtils {
   /**
    * Validate API response format
    */
-  static validateAPIResponse(response: any, expectedFields: string[]): ValidationResult {
+  static validateAPIResponse(response: JsonObject, expectedFields: string[]): ValidationResult {
     const result: ValidationResult = {
       isValid: true,
       errors: [],
@@ -276,7 +295,7 @@ export class ValidationUtils {
   /**
    * Validate test result
    */
-  static validateTestResult(result: any): ValidationResult {
+  static validateTestResult(result: JsonObject): ValidationResult {
     const validationResult: ValidationResult = {
       isValid: true,
       errors: [],
@@ -292,26 +311,34 @@ export class ValidationUtils {
     }
 
     // Validate response structure
-    if (result.response) {
-      if (!result.response.content || typeof result.response.content !== 'string') {
+    const response = isJsonObject(result.response) ? result.response : null;
+    if (result.response && !response) {
+      validationResult.errors.push('Response must be an object');
+      validationResult.isValid = false;
+    } else if (response) {
+      if (!response.content || typeof response.content !== 'string') {
         validationResult.errors.push('Response content is required and must be a string');
         validationResult.isValid = false;
       }
 
-      if (result.response.tokens && typeof result.response.tokens !== 'number') {
+      if (response.tokens && typeof response.tokens !== 'number') {
         validationResult.errors.push('Response tokens must be a number');
         validationResult.isValid = false;
       }
     }
 
     // Validate evaluation structure
-    if (result.evaluation) {
-      if (typeof result.evaluation.overall !== 'number' || result.evaluation.overall < 0 || result.evaluation.overall > 1) {
+    const evaluation = isJsonObject(result.evaluation) ? result.evaluation : null;
+    if (result.evaluation && !evaluation) {
+      validationResult.errors.push('Evaluation must be an object');
+      validationResult.isValid = false;
+    } else if (evaluation) {
+      if (typeof evaluation.overall !== 'number' || evaluation.overall < 0 || evaluation.overall > 1) {
         validationResult.errors.push('Evaluation overall score must be a number between 0 and 1');
         validationResult.isValid = false;
       }
 
-      if (typeof result.evaluation.passed !== 'boolean') {
+      if (typeof evaluation.passed !== 'boolean') {
         validationResult.errors.push('Evaluation passed must be a boolean');
         validationResult.isValid = false;
       }
@@ -322,7 +349,7 @@ export class ValidationUtils {
 
   // Private validation methods for specific providers
 
-  private static validateOpenAIConfig(config: any): ValidationResult {
+  private static validateOpenAIConfig(config: JsonObject): ValidationResult {
     const result: ValidationResult = { isValid: true, errors: [], warnings: [] };
 
     if (!config.apiKey || typeof config.apiKey !== 'string') {
@@ -338,7 +365,7 @@ export class ValidationUtils {
     return result;
   }
 
-  private static validateGoogleConfig(config: any): ValidationResult {
+  private static validateGoogleConfig(config: JsonObject): ValidationResult {
     const result: ValidationResult = { isValid: true, errors: [], warnings: [] };
 
     if (!config.apiKey || typeof config.apiKey !== 'string') {
@@ -349,7 +376,7 @@ export class ValidationUtils {
     return result;
   }
 
-  private static validateAnthropicConfig(config: any): ValidationResult {
+  private static validateAnthropicConfig(config: JsonObject): ValidationResult {
     const result: ValidationResult = { isValid: true, errors: [], warnings: [] };
 
     if (!config.apiKey || typeof config.apiKey !== 'string') {
@@ -360,7 +387,7 @@ export class ValidationUtils {
     return result;
   }
 
-  private static validateMistralConfig(config: any): ValidationResult {
+  private static validateMistralConfig(config: JsonObject): ValidationResult {
     const result: ValidationResult = { isValid: true, errors: [], warnings: [] };
 
     if (!config.apiKey || typeof config.apiKey !== 'string') {
@@ -371,7 +398,7 @@ export class ValidationUtils {
     return result;
   }
 
-  private static validateOpenRouterConfig(config: any): ValidationResult {
+  private static validateOpenRouterConfig(config: JsonObject): ValidationResult {
     const result: ValidationResult = { isValid: true, errors: [], warnings: [] };
 
     if (!config.apiKey || typeof config.apiKey !== 'string') {
@@ -382,7 +409,7 @@ export class ValidationUtils {
     return result;
   }
 
-  private static validateRequestyConfig(config: any): ValidationResult {
+  private static validateRequestyConfig(config: JsonObject): ValidationResult {
     const result: ValidationResult = { isValid: true, errors: [], warnings: [] };
 
     if (!config.apiKey || typeof config.apiKey !== 'string') {
@@ -395,7 +422,7 @@ export class ValidationUtils {
 
   // Helper methods
 
-  private static validateField(value: any, rule: SchemaValidationRule): { error?: string; warning?: string } {
+  private static validateField(value: unknown, rule: SchemaValidationRule): { error?: string; warning?: string } {
     // Check required
     if (rule.required && (value === undefined || value === null)) {
       return { error: 'is required' };
@@ -408,11 +435,11 @@ export class ValidationUtils {
     // Check type
     const actualType = Array.isArray(value) ? 'array' : typeof value;
     if (rule.type === 'email' && actualType === 'string') {
-      if (!this.isValidEmail(value)) {
+      if (!this.isValidEmail(value as string)) {
         return { error: 'must be a valid email address' };
       }
     } else if (rule.type === 'url' && actualType === 'string') {
-      if (!this.isValidUrl(value)) {
+      if (!this.isValidUrl(value as string)) {
         return { error: 'must be a valid URL' };
       }
     } else if (rule.type !== actualType) {
@@ -458,8 +485,13 @@ export class ValidationUtils {
     return {};
   }
 
-  private static getNestedValue(obj: any, path: string): any {
-    return path.split('.').reduce((current, key) => current?.[key], obj);
+  private static getNestedValue(obj: unknown, path: string): unknown {
+    return path.split('.').reduce<unknown>((current, key) => {
+      if (current && typeof current === 'object' && key in current) {
+        return (current as JsonObject)[key];
+      }
+      return undefined;
+    }, obj);
   }
 
   private static isValidEmail(email: string): boolean {

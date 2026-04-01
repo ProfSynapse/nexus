@@ -101,7 +101,6 @@ async function decodeAndChunk(
       Math.floor((offset + duration) * sampleRate),
       audioBuffer.length
     );
-    const numSamples = endSample - startSample;
 
     // Extract channel data for this chunk
     const channelData: Float32Array[] = [];

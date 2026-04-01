@@ -19,6 +19,17 @@ export interface FormattedWorkspaceData {
   states?: unknown[];
 }
 
+interface WorkspaceDataLike {
+  context?: unknown;
+  workflows?: unknown[];
+  workspaceStructure?: unknown[];
+  recentFiles?: unknown[];
+  keyFiles?: Record<string, unknown>;
+  preferences?: string;
+  sessions?: unknown[];
+  states?: unknown[];
+}
+
 export interface FormatOptions {
   /** Maximum number of states to include (default: all) */
   maxStates?: number;
@@ -35,7 +46,7 @@ export interface FormatOptions {
  * @returns Formatted workspace data object
  */
 export function extractWorkspaceData(
-  workspaceData: any,
+  workspaceData: WorkspaceDataLike | null | undefined,
   options: FormatOptions = {}
 ): FormattedWorkspaceData {
   if (!workspaceData) return {};
@@ -97,7 +108,7 @@ export function extractWorkspaceData(
  * @returns JSON string or empty string if no data
  */
 export function formatWorkspaceDataForPrompt(
-  workspaceData: any,
+  workspaceData: WorkspaceDataLike | null | undefined,
   options: FormatOptions = {}
 ): string {
   const formatted = extractWorkspaceData(workspaceData, options);
@@ -117,7 +128,7 @@ export function formatWorkspaceDataForPrompt(
  * @param workspaceData Raw workspace data
  * @returns true if there's content worth including in a prompt
  */
-export function hasWorkspaceContent(workspaceData: any): boolean {
+export function hasWorkspaceContent(workspaceData: WorkspaceDataLike | null | undefined): boolean {
   if (!workspaceData) return false;
 
   return !!(

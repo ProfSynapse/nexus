@@ -27,11 +27,24 @@ jest.mock('../../src/services/oauth/PKCEUtils', () => ({
 import { startCallbackServer } from '../../src/services/oauth/OAuthCallbackServer';
 
 const mockStartCallbackServer = startCallbackServer as jest.MockedFunction<typeof startCallbackServer>;
-
-// Mock window.open for browser launch fallback (electron require fails in test env)
 const mockWindowOpen = jest.fn();
-const originalWindow = (global as any).window;
-(global as any).window = { open: mockWindowOpen };
+
+type RefreshableMockProvider = IOAuthProvider & {
+  refreshToken: jest.Mock<Promise<{ apiKey: string; refreshToken: string; expiresAt: number } | null>, [string]>;
+};
+
+type WindowWithOpen = {
+  open: jest.Mock;
+};
+
+const globalWithWindow = globalThis as typeof globalThis & { window?: WindowWithOpen };
+const originalWindow = globalWithWindow.window;
+globalWithWindow.window = { open: mockWindowOpen };
+
+function expectDefined<T>(value: T | null | undefined): T {
+  expect(value).toBeDefined();
+  return value as T;
+}
 
 /** Helper to wait for all microtasks and pending callbacks to drain */
 function tick(): Promise<void> {
@@ -64,7 +77,7 @@ function createMockProviderWithRefresh(overrides?: Partial<OAuthProviderConfig>)
     tokenType: 'expiring-token',
     ...overrides,
   });
-  (provider as any).refreshToken = jest.fn(async () => ({
+  (provider as RefreshableMockProvider).refreshToken = jest.fn(async () => ({
     apiKey: 'refreshed-token',
     refreshToken: 'new-refresh-token',
     expiresAt: Date.now() + 3600000,
@@ -73,7 +86,7 @@ function createMockProviderWithRefresh(overrides?: Partial<OAuthProviderConfig>)
 }
 
 /** Simple mock server handle for success-path tests */
-function createSimpleServerHandle(code: string = 'auth-code') {
+function createSimpleServerHandle(code = 'auth-code') {
   const mockShutdown = jest.fn();
   return {
     handle: {
@@ -88,8 +101,8 @@ function createSimpleServerHandle(code: string = 'auth-code') {
 
 /** Controllable mock server handle for cancel/concurrent tests */
 function createControllableServerHandle() {
-  let resolveCallback!: (result: { code: string; state: string }) => void;
-  let rejectCallback!: (error: Error) => void;
+  let resolveCallback: ((result: { code: string; state: string }) => void) | undefined;
+  let rejectCallback: ((error: Error) => void) | undefined;
   let shutdownCalled = false;
   const callbackPromise = new Promise<{ code: string; state: string }>((resolve, reject) => {
     resolveCallback = resolve;
@@ -98,7 +111,7 @@ function createControllableServerHandle() {
   const mockShutdown = jest.fn(() => {
     if (!shutdownCalled) {
       shutdownCalled = true;
-      rejectCallback(new Error('OAuth callback server was shut down'));
+      expectDefined(rejectCallback)(new Error('OAuth callback server was shut down'));
     }
   });
 
@@ -131,9 +144,9 @@ describe('OAuthService', () => {
   afterAll(() => {
     // Restore original window to prevent mock leaking to other test files
     if (originalWindow === undefined) {
-      delete (global as any).window;
+      delete globalWithWindow.window;
     } else {
-      (global as any).window = originalWindow;
+      globalWithWindow.window = originalWindow;
     }
   });
 
@@ -167,7 +180,7 @@ describe('OAuthService', () => {
       service.registerProvider(provider);
       const config = service.getProviderConfig('test-provider');
       expect(config).toBeDefined();
-      expect(config!.displayName).toBe('Test Provider');
+      expect(expectDefined(config).displayName).toBe('Test Provider');
     });
 
     it('should return null config for unregistered provider', () => {
@@ -193,7 +206,8 @@ describe('OAuthService', () => {
       service.registerProvider(provider);
 
       const states: string[] = [];
-      (provider.exchangeCode as jest.Mock).mockImplementation(async () => {
+      const exchangeCode = provider.exchangeCode as jest.MockedFunction<IOAuthProvider['exchangeCode']>;
+      exchangeCode.mockImplementation(async () => {
         states.push(service.getState());
         return { apiKey: 'key-123' };
       });
@@ -228,7 +242,7 @@ describe('OAuthService', () => {
       mockStartCallbackServer.mockResolvedValue(handle);
 
       // Start first flow (won't complete). Eagerly attach catch to prevent unhandled rejection
-      const firstFlow = service.startFlow('test-provider').catch(() => {});
+      const firstFlow = service.startFlow('test-provider').catch(() => undefined);
       await tick();
 
       // Second flow should be rejected
@@ -355,7 +369,7 @@ describe('OAuthService', () => {
       mockStartCallbackServer.mockResolvedValue(handle);
 
       // Start flow, eagerly handle rejection
-      const flowPromise = service.startFlow('test-provider').catch(() => {});
+      const flowPromise = service.startFlow('test-provider').catch(() => undefined);
       await tick();
 
       service.cancelFlow();
@@ -390,8 +404,8 @@ describe('OAuthService', () => {
       const result = await service.refreshToken('test-provider', 'old-rt');
 
       expect(provider.refreshToken).toHaveBeenCalledWith('old-rt');
-      expect(result!.apiKey).toBe('refreshed-token');
-      expect(result!.refreshToken).toBe('new-refresh-token');
+      expect(expectDefined(result).apiKey).toBe('refreshed-token');
+      expect(expectDefined(result).refreshToken).toBe('new-refresh-token');
     });
 
     it('should return null when provider refresh returns null', async () => {
@@ -412,7 +426,7 @@ describe('OAuthService', () => {
       const { handle, mockShutdown } = createControllableServerHandle();
       mockStartCallbackServer.mockResolvedValue(handle);
 
-      const flowPromise = service.startFlow('test-provider').catch(() => {});
+      const flowPromise = service.startFlow('test-provider').catch(() => undefined);
       await tick();
 
       OAuthService.resetInstance();

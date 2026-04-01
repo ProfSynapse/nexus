@@ -22,13 +22,6 @@ import { formatWorkflowScheduleSummary } from '../../../services/workflows/types
 interface TraceItem {
   timestamp?: number;
   content?: string;
-  metadata?: {
-    context?: {
-      memory?: string;
-      sessionMemory?: string;  // Legacy field
-      goal?: string;
-    };
-  };
 }
 
 /**
@@ -36,7 +29,7 @@ interface TraceItem {
  * Returns PaginatedResult with items array
  */
 interface IMemoryServiceForContext {
-  getMemoryTraces(workspaceId: string): Promise<{ items: TraceItem[]; total: number }>;
+  getMemoryTraces(workspaceId: string): Promise<{ items: TraceItem[]; total?: number }>;
 }
 
 /**

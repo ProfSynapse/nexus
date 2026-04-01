@@ -19,6 +19,7 @@
  */
 
 import { BaseRepository, RepositoryDependencies } from './base/BaseRepository';
+import { DatabaseRow } from './base/BaseRepository';
 import {
   ISessionRepository,
   CreateSessionData,
@@ -30,7 +31,18 @@ import {
   SessionUpdatedEvent
 } from '../interfaces/StorageEvents';
 import { PaginatedResult, PaginationParams } from '../../types/pagination/PaginationTypes';
-import { QueryCache } from '../optimizations/QueryCache';
+
+type SqliteValue = string | number | null;
+
+interface SessionRow extends DatabaseRow {
+  id: string;
+  workspaceId: string;
+  name: string;
+  description?: string | null;
+  startTime: number;
+  endTime?: number | null;
+  isActive: number;
+}
 
 /**
  * Repository for session entities
@@ -45,7 +57,7 @@ export class SessionRepository
   protected readonly tableName = 'sessions';
   protected readonly entityType = 'session';
   // Sessions write to workspace JSONL file
-  protected readonly jsonlPath = (workspaceId: string) => `workspaces/ws_${workspaceId}.jsonl`;
+  protected readonly jsonlPath = (workspaceId: string): string => `workspaces/ws_${workspaceId}.jsonl`;
 
   constructor(deps: RepositoryDependencies) {
     super(deps);
@@ -57,7 +69,7 @@ export class SessionRepository
 
   async getById(id: string): Promise<SessionMetadata | null> {
     // First get the session to find its workspaceId
-    const row = await this.sqliteCache.queryOne<any>(
+    const row = await this.sqliteCache.queryOne<SessionRow>(
       'SELECT * FROM sessions WHERE id = ?',
       [id]
     );
@@ -67,7 +79,7 @@ export class SessionRepository
   async getAll(options?: PaginationParams): Promise<PaginatedResult<SessionMetadata>> {
     const baseQuery = 'SELECT * FROM sessions ORDER BY startTime DESC';
     const countQuery = 'SELECT COUNT(*) as count FROM sessions';
-    const result = await this.queryPaginated<any>(baseQuery, countQuery, options);
+    const result = await this.queryPaginated<SessionRow>(baseQuery, countQuery, options);
     return {
       items: result.items.map(row => this.rowToEntity(row)),
       page: result.page,
@@ -147,7 +159,7 @@ export class SessionRepository
 
         // 2. Update SQLite cache
         const setClauses: string[] = [];
-        const params: any[] = [];
+        const params: SqliteValue[] = [];
 
         if (data.name !== undefined) {
           setClauses.push('name = ?');
@@ -208,15 +220,15 @@ export class SessionRepository
 
   async count(criteria?: Record<string, unknown>): Promise<number> {
     let sql = 'SELECT COUNT(*) as count FROM sessions';
-    const params: any[] = [];
+    const params: SqliteValue[] = [];
 
     if (criteria) {
       const conditions: string[] = [];
-      if (criteria.workspaceId) {
+      if (typeof criteria.workspaceId === 'string') {
         conditions.push('workspaceId = ?');
         params.push(criteria.workspaceId);
       }
-      if (criteria.isActive !== undefined) {
+      if (typeof criteria.isActive === 'boolean') {
         conditions.push('isActive = ?');
         params.push(criteria.isActive ? 1 : 0);
       }
@@ -239,7 +251,7 @@ export class SessionRepository
   ): Promise<PaginatedResult<SessionMetadata>> {
     const baseQuery = 'SELECT * FROM sessions WHERE workspaceId = ? ORDER BY startTime DESC';
     const countQuery = 'SELECT COUNT(*) as count FROM sessions WHERE workspaceId = ?';
-    const result = await this.queryPaginated<any>(baseQuery, countQuery, options, [workspaceId]);
+    const result = await this.queryPaginated<SessionRow>(baseQuery, countQuery, options, [workspaceId]);
     return {
       items: result.items.map(row => this.rowToEntity(row)),
       page: result.page,
@@ -252,7 +264,7 @@ export class SessionRepository
   }
 
   async getActiveSession(workspaceId: string): Promise<SessionMetadata | null> {
-    const row = await this.sqliteCache.queryOne<any>(
+    const row = await this.sqliteCache.queryOne<SessionRow>(
       'SELECT * FROM sessions WHERE workspaceId = ? AND isActive = 1 ORDER BY startTime DESC LIMIT 1',
       [workspaceId]
     );
@@ -280,15 +292,16 @@ export class SessionRepository
   // Protected Methods
   // ============================================================================
 
-  protected rowToEntity(row: any): SessionMetadata {
+  protected rowToEntity(row: DatabaseRow): SessionMetadata {
+    const sessionRow = row as SessionRow;
     return {
-      id: row.id,
-      workspaceId: row.workspaceId,
-      name: row.name,
-      description: row.description ?? undefined,
-      startTime: row.startTime,
-      endTime: row.endTime ?? undefined,
-      isActive: row.isActive === 1
+      id: sessionRow.id,
+      workspaceId: sessionRow.workspaceId,
+      name: sessionRow.name,
+      description: sessionRow.description ?? undefined,
+      startTime: sessionRow.startTime,
+      endTime: sessionRow.endTime ?? undefined,
+      isActive: sessionRow.isActive === 1
     };
   }
 }

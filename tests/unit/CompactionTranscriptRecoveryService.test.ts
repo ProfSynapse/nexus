@@ -117,7 +117,7 @@ describe('CompactionTranscriptRecoveryService', () => {
     return {
       adapter,
       repository,
-      service: new CompactionTranscriptRecoveryService(repository, app as any)
+      service: new CompactionTranscriptRecoveryService(repository, app as typeof app)
     };
   }
 

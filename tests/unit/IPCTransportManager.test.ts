@@ -48,6 +48,26 @@ import { Server as MCPSDKServer } from '@modelcontextprotocol/sdk/server/index.j
 import { ServerConfiguration } from '../../src/server/services/ServerConfiguration';
 import { EventEmitter } from 'events';
 
+type MockTransport = { close: jest.Mock<Promise<void>, []> };
+type MockPerConnectionServer = {
+  connect: jest.Mock<Promise<void>, []>;
+  close: jest.Mock<Promise<void>, []>;
+  setRequestHandler: jest.Mock<void, [unknown, unknown]>;
+};
+type StdioTransportManagerAccess = StdioTransportManager & {
+  createSocketTransport: jest.Mock<MockTransport, [MockSocket, MockSocket]>;
+  connectSocketTransport: jest.Mock<Promise<void>, []>;
+};
+type MockSocket = EventEmitter & {
+  destroyed: boolean;
+  destroy: jest.Mock<void, []>;
+  writable: boolean;
+  readable: boolean;
+  write: jest.Mock<unknown, unknown[]>;
+  end: jest.Mock<unknown, unknown[]>;
+  pipe: jest.Mock<unknown, unknown[]>;
+  read: jest.Mock<unknown, unknown[]>;
+};
 // ============================================================================
 // Mock Factories
 // ============================================================================
@@ -63,11 +83,11 @@ function createMockConfiguration() {
 
 function createMockStdioTransportManager() {
   return {
-    createSocketTransport: jest.fn().mockReturnValue({
+    createSocketTransport: jest.fn<MockTransport, [MockSocket, MockSocket]>().mockReturnValue({
       close: jest.fn().mockResolvedValue(undefined),
     }),
     connectSocketTransport: jest.fn().mockResolvedValue(undefined),
-  } as unknown as StdioTransportManager;
+  } as unknown as StdioTransportManagerAccess;
 }
 
 function createMockPerConnectionServer() {
@@ -75,7 +95,7 @@ function createMockPerConnectionServer() {
     connect: jest.fn().mockResolvedValue(undefined),
     close: jest.fn().mockResolvedValue(undefined),
     setRequestHandler: jest.fn(),
-  } as unknown as MCPSDKServer;
+  } as unknown as MockPerConnectionServer as unknown as MCPSDKServer;
 }
 
 /**
@@ -85,7 +105,7 @@ function createMockSocket() {
   const emitter = new EventEmitter();
   return Object.assign(emitter, {
     destroyed: false,
-    destroy: jest.fn(function (this: any) { this.destroyed = true; }),
+    destroy: jest.fn(function (this: { destroyed: boolean }) { this.destroyed = true; }),
     writable: true,
     readable: true,
     // Stubs for ReadWriteStream
@@ -93,7 +113,7 @@ function createMockSocket() {
     end: jest.fn(),
     pipe: jest.fn(),
     read: jest.fn(),
-  });
+  }) as MockSocket;
 }
 
 // ============================================================================
@@ -128,16 +148,16 @@ describe('IPCTransportManager', () => {
       // Simulate two connections
       const socketA = createMockSocket();
       const socketB = createMockSocket();
-      (manager as any).handleSocketConnection(socketA);
-      (manager as any).handleSocketConnection(socketB);
+      manager.handleSocketConnection(socketA);
+      manager.handleSocketConnection(socketB);
 
       // Wait for async connect() calls to resolve
       await flushPromises();
 
       expect(serverFactory).toHaveBeenCalledTimes(2);
       expect(servers).toHaveLength(2);
-      expect((servers[0] as any).connect).toHaveBeenCalledTimes(1);
-      expect((servers[1] as any).connect).toHaveBeenCalledTimes(1);
+      expect(servers[0].connect).toHaveBeenCalledTimes(1);
+      expect(servers[1].connect).toHaveBeenCalledTimes(1);
     });
 
     it('should track active connections and log count', async () => {
@@ -156,12 +176,12 @@ describe('IPCTransportManager', () => {
 
       const socketA = createMockSocket();
       const socketB = createMockSocket();
-      (manager as any).handleSocketConnection(socketA);
-      (manager as any).handleSocketConnection(socketB);
+      manager.handleSocketConnection(socketA);
+      manager.handleSocketConnection(socketB);
       await flushPromises();
 
       // Both should be tracked
-      const activeConnections = (manager as any).activeConnections as Set<MCPSDKServer>;
+      const activeConnections = manager.activeConnections as Set<MCPSDKServer>;
       expect(activeConnections.size).toBe(2);
     });
 
@@ -180,10 +200,10 @@ describe('IPCTransportManager', () => {
       );
 
       const socket = createMockSocket();
-      (manager as any).handleSocketConnection(socket);
+      manager.handleSocketConnection(socket);
       await flushPromises();
 
-      const activeConnections = (manager as any).activeConnections as Set<MCPSDKServer>;
+      const activeConnections = manager.activeConnections as Set<MCPSDKServer>;
       expect(activeConnections.size).toBe(1);
 
       // Simulate socket close
@@ -191,7 +211,7 @@ describe('IPCTransportManager', () => {
       await flushPromises();
 
       expect(activeConnections.size).toBe(0);
-      expect((servers[0] as any).close).toHaveBeenCalledTimes(1);
+      expect(servers[0].close).toHaveBeenCalledTimes(1);
     });
 
     it('should handle socket end event the same as close', async () => {
@@ -209,13 +229,13 @@ describe('IPCTransportManager', () => {
       );
 
       const socket = createMockSocket();
-      (manager as any).handleSocketConnection(socket);
+      manager.handleSocketConnection(socket);
       await flushPromises();
 
       socket.emit('end');
       await flushPromises();
 
-      expect((servers[0] as any).close).toHaveBeenCalledTimes(1);
+      expect(servers[0].close).toHaveBeenCalledTimes(1);
     });
 
     it('should not double-close when both end and close fire', async () => {
@@ -233,7 +253,7 @@ describe('IPCTransportManager', () => {
       );
 
       const socket = createMockSocket();
-      (manager as any).handleSocketConnection(socket);
+      manager.handleSocketConnection(socket);
       await flushPromises();
 
       // Both events fire (common with TCP sockets)
@@ -242,12 +262,12 @@ describe('IPCTransportManager', () => {
       await flushPromises();
 
       // The guard flag should prevent double-close
-      expect((servers[0] as any).close).toHaveBeenCalledTimes(1);
+      expect(servers[0].close).toHaveBeenCalledTimes(1);
     });
 
     it('should destroy socket when server.connect() fails', async () => {
       const failingServer = createMockPerConnectionServer();
-      (failingServer as any).connect.mockRejectedValue(new Error('connect failed'));
+      failingServer.connect.mockRejectedValue(new Error('connect failed'));
       const serverFactory = jest.fn(() => failingServer);
 
       const manager = new IPCTransportManager(
@@ -257,7 +277,7 @@ describe('IPCTransportManager', () => {
       );
 
       const socket = createMockSocket();
-      (manager as any).handleSocketConnection(socket);
+      manager.handleSocketConnection(socket);
       await flushPromises();
 
       expect(socket.destroy).toHaveBeenCalled();
@@ -265,7 +285,7 @@ describe('IPCTransportManager', () => {
 
     it('should not add connection to active set when connect fails', async () => {
       const failingServer = createMockPerConnectionServer();
-      (failingServer as any).connect.mockRejectedValue(new Error('connect failed'));
+      failingServer.connect.mockRejectedValue(new Error('connect failed'));
       const serverFactory = jest.fn(() => failingServer);
 
       const manager = new IPCTransportManager(
@@ -275,10 +295,10 @@ describe('IPCTransportManager', () => {
       );
 
       const socket = createMockSocket();
-      (manager as any).handleSocketConnection(socket);
+      manager.handleSocketConnection(socket);
       await flushPromises();
 
-      const activeConnections = (manager as any).activeConnections as Set<MCPSDKServer>;
+      const activeConnections = manager.activeConnections as Set<MCPSDKServer>;
       expect(activeConnections.size).toBe(0);
     });
   });
@@ -292,11 +312,11 @@ describe('IPCTransportManager', () => {
       );
 
       const socket = createMockSocket();
-      (manager as any).handleSocketConnection(socket);
+      manager.handleSocketConnection(socket);
       await flushPromises();
 
-      expect((mockStdioManager as any).createSocketTransport).toHaveBeenCalledWith(socket, socket);
-      expect((mockStdioManager as any).connectSocketTransport).toHaveBeenCalledTimes(1);
+      expect(mockStdioManager.createSocketTransport).toHaveBeenCalledWith(socket, socket);
+      expect(mockStdioManager.connectSocketTransport).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -316,34 +336,34 @@ describe('IPCTransportManager', () => {
       );
 
       // Simulate starting the IPC server by setting internal state
-      (manager as any).ipcServer = {
+      manager.ipcServer = {
         close: jest.fn(),
       };
-      (manager as any).isRunning = true;
+      manager.isRunning = true;
 
       // Create two connections
       const socketA = createMockSocket();
       const socketB = createMockSocket();
-      (manager as any).handleSocketConnection(socketA);
-      (manager as any).handleSocketConnection(socketB);
+      manager.handleSocketConnection(socketA);
+      manager.handleSocketConnection(socketB);
       await flushPromises();
 
       expect(servers).toHaveLength(2);
-      const activeConnections = (manager as any).activeConnections as Set<MCPSDKServer>;
+      const activeConnections = manager.activeConnections as Set<MCPSDKServer>;
       expect(activeConnections.size).toBe(2);
 
       // Stop the transport
       await manager.stopTransport();
 
       // All per-connection servers should be closed
-      expect((servers[0] as any).close).toHaveBeenCalled();
-      expect((servers[1] as any).close).toHaveBeenCalled();
+      expect(servers[0].close).toHaveBeenCalled();
+      expect(servers[1].close).toHaveBeenCalled();
       expect(activeConnections.size).toBe(0);
     });
 
     it('should handle errors from closing per-connection servers', async () => {
       const failingClose = createMockPerConnectionServer();
-      (failingClose as any).close.mockRejectedValue(new Error('close failed'));
+      failingClose.close.mockRejectedValue(new Error('close failed'));
       const serverFactory = jest.fn(() => failingClose);
 
       const manager = new IPCTransportManager(
@@ -352,11 +372,11 @@ describe('IPCTransportManager', () => {
         serverFactory
       );
 
-      (manager as any).ipcServer = { close: jest.fn() };
-      (manager as any).isRunning = true;
+      manager.ipcServer = { close: jest.fn() };
+      manager.isRunning = true;
 
       const socket = createMockSocket();
-      (manager as any).handleSocketConnection(socket);
+      manager.handleSocketConnection(socket);
       await flushPromises();
 
       // Should not throw even though close() rejects
@@ -380,21 +400,21 @@ describe('IPCTransportManager', () => {
         // no serverFactory — single-client mode
       );
 
-      (manager as any).ipcServer = { close: jest.fn() };
-      (manager as any).isRunning = true;
+      manager.ipcServer = { close: jest.fn() };
+      manager.isRunning = true;
 
       // Simulate a connected single-client transport
       const socket = createMockSocket();
-      (manager as any).handleSocketConnection(socket);
+      manager.handleSocketConnection(socket);
       await flushPromises();
 
       // currentTransport should be set
-      expect((manager as any).currentTransport).toBeDefined();
+      expect(manager.currentTransport).toBeDefined();
 
       await manager.stopTransport();
 
       // currentTransport should be cleaned up
-      expect((manager as any).currentTransport).toBeNull();
+      expect(manager.currentTransport).toBeNull();
     });
   });
 
@@ -406,11 +426,11 @@ describe('IPCTransportManager', () => {
       );
 
       const socket = createMockSocket();
-      (manager as any).handleSocketConnection(socket);
+      manager.handleSocketConnection(socket);
       await flushPromises();
 
-      expect((manager as any).currentTransport).toBeDefined();
-      expect((manager as any).currentTransport).not.toBeNull();
+      expect(manager.currentTransport).toBeDefined();
+      expect(manager.currentTransport).not.toBeNull();
     });
 
     it('should close previous transport before connecting a new one', async () => {
@@ -418,7 +438,7 @@ describe('IPCTransportManager', () => {
       const secondTransport = { close: jest.fn().mockResolvedValue(undefined) };
 
       let callCount = 0;
-      (mockStdioManager as any).createSocketTransport = jest.fn(() => {
+      mockStdioManager.createSocketTransport = jest.fn(() => {
         callCount++;
         return callCount === 1 ? firstTransport : secondTransport;
       });
@@ -430,20 +450,20 @@ describe('IPCTransportManager', () => {
 
       // First connection
       const socket1 = createMockSocket();
-      (manager as any).handleSocketConnection(socket1);
+      manager.handleSocketConnection(socket1);
       await flushPromises();
 
-      expect((manager as any).currentTransport).toBe(firstTransport);
+      expect(manager.currentTransport).toBe(firstTransport);
 
       // Second connection (rapid reconnect)
       const socket2 = createMockSocket();
-      (manager as any).handleSocketConnection(socket2);
+      manager.handleSocketConnection(socket2);
       await flushPromises();
 
       // First transport should have been proactively closed
       expect(firstTransport.close).toHaveBeenCalled();
       // Current transport should now be the second one
-      expect((manager as any).currentTransport).toBe(secondTransport);
+      expect(manager.currentTransport).toBe(secondTransport);
     });
 
     it('should nullify currentTransport on socket disconnect', async () => {
@@ -453,28 +473,28 @@ describe('IPCTransportManager', () => {
       );
 
       const socket = createMockSocket();
-      (manager as any).handleSocketConnection(socket);
+      manager.handleSocketConnection(socket);
       await flushPromises();
 
-      expect((manager as any).currentTransport).not.toBeNull();
+      expect(manager.currentTransport).not.toBeNull();
 
       // Socket disconnects
       socket.emit('close');
       await flushPromises();
 
-      expect((manager as any).currentTransport).toBeNull();
+      expect(manager.currentTransport).toBeNull();
     });
 
     it('should handle timeout on slow transport close during cleanup', async () => {
       // Create a transport whose close() never resolves
       const hangingTransport = {
-        close: jest.fn().mockReturnValue(new Promise(() => {})), // never resolves
+        close: jest.fn().mockReturnValue(new Promise(() => undefined)), // never resolves
       };
 
       const freshTransport = { close: jest.fn().mockResolvedValue(undefined) };
 
       let callCount = 0;
-      (mockStdioManager as any).createSocketTransport = jest.fn(() => {
+      mockStdioManager.createSocketTransport = jest.fn(() => {
         callCount++;
         return callCount === 1 ? hangingTransport : freshTransport;
       });
@@ -486,12 +506,13 @@ describe('IPCTransportManager', () => {
 
       // First connection
       const socket1 = createMockSocket();
-      (manager as any).handleSocketConnection(socket1);
+      manager.handleSocketConnection(socket1);
       await flushPromises();
 
       // Second connection — should not hang forever due to 500ms timeout guard
       const socket2 = createMockSocket();
-      const connectionPromise = (manager as any).handleSingleClientConnection(socket2);
+      const connectionPromise = manager.handleSingleClientConnection(socket2);
+      void connectionPromise;
 
       // Advance timers past the 500ms timeout
       jest.useFakeTimers();
@@ -511,7 +532,7 @@ describe('IPCTransportManager', () => {
       const freshTransport = { close: jest.fn().mockResolvedValue(undefined) };
 
       let callCount = 0;
-      (mockStdioManager as any).createSocketTransport = jest.fn(() => {
+      mockStdioManager.createSocketTransport = jest.fn(() => {
         callCount++;
         return callCount === 1 ? failingTransport : freshTransport;
       });
@@ -523,16 +544,16 @@ describe('IPCTransportManager', () => {
 
       // First connection
       const socket1 = createMockSocket();
-      (manager as any).handleSocketConnection(socket1);
+      manager.handleSocketConnection(socket1);
       await flushPromises();
 
       // Second connection — proactive close of first should fail gracefully
       const socket2 = createMockSocket();
-      (manager as any).handleSocketConnection(socket2);
+      manager.handleSocketConnection(socket2);
       await flushPromises();
 
       // Should not throw; second connection should proceed
-      expect((manager as any).currentTransport).toBe(freshTransport);
+      expect(manager.currentTransport).toBe(freshTransport);
     });
 
     it('should initialize currentTransport as null', () => {
@@ -541,7 +562,7 @@ describe('IPCTransportManager', () => {
         mockStdioManager as unknown as StdioTransportManager
       );
 
-      expect((manager as any).currentTransport).toBeNull();
+      expect(manager.currentTransport).toBeNull();
     });
   });
 });

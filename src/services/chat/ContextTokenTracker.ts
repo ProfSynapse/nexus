@@ -37,12 +37,12 @@ const THRESHOLDS = {
 
 export class ContextTokenTracker {
   private maxTokens: number;
-  private systemPromptTokens: number = 0;
-  private conversationTokens: number = 0;
+  private systemPromptTokens = 0;
+  private conversationTokens = 0;
   private usageHistory: TokenUsageRecord[] = [];
   private preSendEstimateMultiplier: number;
 
-  constructor(maxContextWindow: number = 4096, preSendEstimateMultiplier: number = 1) {
+  constructor(maxContextWindow = 4096, preSendEstimateMultiplier = 1) {
     this.maxTokens = maxContextWindow;
     this.preSendEstimateMultiplier = preSendEstimateMultiplier;
   }
@@ -200,7 +200,7 @@ export class ContextTokenTracker {
   /**
    * Get last N usage records for debugging/analytics
    */
-  getUsageHistory(count: number = 10): TokenUsageRecord[] {
+  getUsageHistory(count = 10): TokenUsageRecord[] {
     return this.usageHistory.slice(-count);
   }
 }

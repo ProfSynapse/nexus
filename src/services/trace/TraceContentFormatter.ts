@@ -8,8 +8,26 @@
 interface TraceFormatParams {
   agent: string;
   mode: string;
-  params: any;
+  params: unknown;
   success: boolean;
+}
+
+function isTraceParamRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function getTraceString(params: unknown, ...path: string[]): string | undefined {
+  let current: unknown = params;
+
+  for (const segment of path) {
+    if (!isTraceParamRecord(current)) {
+      return undefined;
+    }
+
+    current = current[segment];
+  }
+
+  return typeof current === 'string' ? current : undefined;
 }
 
 const modeVerbs: Record<string, { success: string; failure: string }> = {
@@ -66,11 +84,11 @@ const modeVerbs: Record<string, { success: string; failure: string }> = {
 /**
  * Format a tool call into a human-readable activity description
  */
-export function formatTraceContent({ agent, mode, params, success }: TraceFormatParams): string {
-  const filePath = params?.filePath || params?.path || params?.params?.filePath;
-  const query = params?.query || params?.params?.query;
-  const id = params?.id || params?.params?.id;
-  const name = params?.name || params?.params?.name;
+export function formatTraceContent({ mode, params, success }: TraceFormatParams): string {
+  const filePath = getTraceString(params, 'filePath') || getTraceString(params, 'path') || getTraceString(params, 'params', 'filePath');
+  const query = getTraceString(params, 'query') || getTraceString(params, 'params', 'query');
+  const id = getTraceString(params, 'id') || getTraceString(params, 'params', 'id');
+  const name = getTraceString(params, 'name') || getTraceString(params, 'params', 'name');
 
   const verbs = modeVerbs[mode] || { success: 'Executed', failure: 'Failed' };
   const verb = success ? verbs.success : verbs.failure;

@@ -13,11 +13,45 @@ import { CardManager, CardManagerConfig, CardItem } from '../../src/components/C
 // Helpers
 // ============================================================================
 
-function createMockContainer(): any {
-  const createElement = (cls?: string): any => {
-    const el: any = {
+type MockCardElement = {
+  tagName: string;
+  className: string;
+  classList: {
+    add: jest.Mock<void, [string]>;
+    remove: jest.Mock<void, [string]>;
+    toggle: jest.Mock<void, [string]>;
+    contains: jest.Mock<boolean, [string]>;
+  };
+  addClass: jest.Mock<MockCardElement, [string]>;
+  removeClass: jest.Mock<MockCardElement, []>;
+  hasClass: jest.Mock<boolean, []>;
+  createEl: jest.Mock<MockCardElement, [string, { cls?: string; text?: string; attr?: Record<string, string> }?]>;
+  createDiv: jest.Mock<MockCardElement, [string | { cls?: string; text?: string }?]>;
+  createSpan: jest.Mock<MockCardElement, [{ cls?: string; text?: string }?]>;
+  empty: jest.Mock<void, []>;
+  appendChild: jest.Mock<void, [MockCardElement]>;
+  removeChild: jest.Mock<void, [MockCardElement]>;
+  addEventListener: jest.Mock<void, [string, EventListenerOrEventListenerObject]>;
+  removeEventListener: jest.Mock<void, [string, EventListenerOrEventListenerObject]>;
+  setAttribute: jest.Mock<void, [string, string]>;
+  getAttribute: jest.Mock<string | null, [string]>;
+  querySelector: jest.Mock<MockCardElement | null, [string]>;
+  querySelectorAll: jest.Mock<MockCardElement[], [string]>;
+  remove: jest.Mock<void, []>;
+  style: Record<string, unknown>;
+  textContent: string;
+  innerHTML: string;
+  setText: jest.Mock<void, [string]>;
+  focus: jest.Mock<void, []>;
+  _children: MockCardElement[];
+  _attributes: Record<string, string>;
+};
+
+function createMockContainer(): MockCardElement {
+  const createElement = (cls = ''): MockCardElement => {
+    const el: MockCardElement = {
       tagName: 'DIV',
-      className: cls || '',
+      className: cls,
       classList: {
         add: jest.fn(),
         remove: jest.fn(),
@@ -27,7 +61,7 @@ function createMockContainer(): any {
       addClass: jest.fn((c: string) => { el.className += ' ' + c; }),
       removeClass: jest.fn(),
       hasClass: jest.fn(),
-      createEl: jest.fn((tag: string, opts?: any) => {
+      createEl: jest.fn((tag: string, opts?: { cls?: string; text?: string; attr?: Record<string, string> }) => {
         const child = createElement(opts?.cls || '');
         child.tagName = tag.toUpperCase();
         if (opts?.text) child.textContent = opts.text;
@@ -46,7 +80,7 @@ function createMockContainer(): any {
         el._children.push(child);
         return child;
       }),
-      createSpan: jest.fn((opts?: any) => {
+      createSpan: jest.fn((opts?: { cls?: string; text?: string }) => {
         const child = createElement(opts?.cls || '');
         if (opts?.text) child.textContent = opts.text;
         el._children.push(child);
@@ -67,7 +101,7 @@ function createMockContainer(): any {
       innerHTML: '',
       setText: jest.fn((text: string) => { el.textContent = text; }),
       focus: jest.fn(),
-      _children: [] as any[],
+      _children: [],
       _attributes: {} as Record<string, string>,
     };
     return el;
@@ -81,7 +115,7 @@ function makeItem(id: string, name: string, isEnabled = true): CardItem {
 }
 
 function makeConfig(
-  container: any,
+  container: MockCardElement,
   items: CardItem[] = [],
   overrides: Partial<CardManagerConfig<CardItem>> = {}
 ): CardManagerConfig<CardItem> {
@@ -100,7 +134,8 @@ function makeConfig(
 }
 
 /** Find child elements by class name (shallow scan) */
-function findChildByClass(el: any, cls: string): any {
+function findChildByClass(el: MockCardElement | null, cls: string): MockCardElement | null {
+  if (!el) return null;
   for (const child of (el._children || [])) {
     if (child.className && child.className.includes(cls)) return child;
     const found = findChildByClass(child, cls);
@@ -109,7 +144,8 @@ function findChildByClass(el: any, cls: string): any {
   return null;
 }
 
-function countChildrenByClass(el: any, cls: string, exact = false): number {
+function countChildrenByClass(el: MockCardElement | null, cls: string, exact = false): number {
+  if (!el) return 0;
   let count = 0;
   if (el.className) {
     if (exact) {
@@ -123,6 +159,14 @@ function countChildrenByClass(el: any, cls: string, exact = false): number {
     count += countChildrenByClass(child, cls, exact);
   }
   return count;
+}
+
+function expectCard<T extends CardItem>(manager: CardManager<T>, id: string) {
+  const card = manager.getCard(id);
+  if (!card) {
+    throw new Error(`Expected card ${id}`);
+  }
+  return card;
 }
 
 // ============================================================================
@@ -321,10 +365,9 @@ describe('CardManager', () => {
       }];
 
       const manager = new CardManager(makeConfig(container, items));
-      const card = manager.getCard('coming-soon');
-      expect(card).toBeDefined();
+      const card = expectCard(manager, 'coming-soon');
       // Card.getElement().addClass should have been called with the cssClass
-      expect(card!.getElement().addClass).toHaveBeenCalledWith('provider-coming-soon');
+      expect(card.getElement().addClass).toHaveBeenCalledWith('provider-coming-soon');
     });
 
     it('should not call addClass when cssClass is undefined', () => {
@@ -338,15 +381,14 @@ describe('CardManager', () => {
       }];
 
       const manager = new CardManager(makeConfig(container, items));
-      const card = manager.getCard('normal');
-      expect(card).toBeDefined();
+      const card = expectCard(manager, 'normal');
       // Card is created by CardManager.createCard; the parent element will have
       // agent-management-card class, but no extra addClass call for cssClass
-      const el = card!.getElement();
+      const el = card.getElement();
       // addClass is called by Card itself for its own structure, but not with a custom class
       const addClassCalls = (el.addClass as jest.Mock).mock.calls;
       const customClassCalls = addClassCalls.filter(
-        (call: any[]) => call[0] === 'provider-coming-soon'
+        (call: unknown[]) => call[0] === 'provider-coming-soon'
       );
       expect(customClassCalls).toHaveLength(0);
     });
@@ -368,18 +410,18 @@ describe('CardManager', () => {
       const manager = new CardManager(makeConfig(container, items));
 
       // Item A should not have cssClass applied
-      const cardA = manager.getCard('a');
-      const addClassCallsA = (cardA!.getElement().addClass as jest.Mock).mock.calls;
-      expect(addClassCallsA.filter((c: any[]) => c[0] === 'special-class')).toHaveLength(0);
+      const cardA = expectCard(manager, 'a');
+      const addClassCallsA = cardA.getElement().addClass.mock.calls;
+      expect(addClassCallsA.filter((c: unknown[]) => c[0] === 'special-class')).toHaveLength(0);
 
       // Item B should have cssClass applied
-      const cardB = manager.getCard('b');
-      expect(cardB!.getElement().addClass).toHaveBeenCalledWith('special-class');
+      const cardB = expectCard(manager, 'b');
+      expect(cardB.getElement().addClass).toHaveBeenCalledWith('special-class');
 
       // Item C should not have cssClass applied
-      const cardC = manager.getCard('c');
-      const addClassCallsC = (cardC!.getElement().addClass as jest.Mock).mock.calls;
-      expect(addClassCallsC.filter((c: any[]) => c[0] === 'special-class')).toHaveLength(0);
+      const cardC = expectCard(manager, 'c');
+      const addClassCallsC = cardC.getElement().addClass.mock.calls;
+      expect(addClassCallsC.filter((c: unknown[]) => c[0] === 'special-class')).toHaveLength(0);
     });
   });
 });

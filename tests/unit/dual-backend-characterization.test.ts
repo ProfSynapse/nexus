@@ -140,9 +140,9 @@ describe('WorkspaceService dual-backend characterization', () => {
       const result = await service.getWorkspace('ws1');
 
       expect(result).not.toBeNull();
-      expect(result!.id).toBe('ws1');
+      expect(result?.id).toBe('ws1');
       // Characterization: adapter path always returns empty sessions object
-      expect(result!.sessions).toEqual({});
+      expect(result?.sessions).toEqual({});
     });
   });
 
@@ -378,9 +378,14 @@ describe('ConversationService dual-backend characterization', () => {
 describe('MemoryService dual-backend characterization', () => {
   const plugin = createMockPlugin();
 
+  type WorkspaceServiceLike = {
+    getWorkspace: jest.Mock;
+    getMemoryTraces: jest.Mock;
+  };
+
   describe('when adapter IS ready (adapter path)', () => {
     it('getMemoryTraces delegates to adapter.getTraces', async () => {
-      const ws = { getWorkspace: jest.fn(), getMemoryTraces: jest.fn() } as any;
+      const ws = { getWorkspace: jest.fn(), getMemoryTraces: jest.fn() } as WorkspaceServiceLike;
       const adapter = createMockAdapter(true);
       adapter.getTraces.mockResolvedValue({
         items: [
@@ -406,7 +411,7 @@ describe('MemoryService dual-backend characterization', () => {
         getMemoryTraces: jest.fn().mockResolvedValue([
           { id: 't1', timestamp: 1000, type: 'action', content: 'legacy trace' },
         ]),
-      } as any;
+      } as WorkspaceServiceLike;
       const adapter = createMockAdapter(false);
 
       const service = new MemoryService(plugin, ws, adapter);

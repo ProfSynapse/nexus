@@ -72,7 +72,7 @@ export class AudioComposer implements IFormatComposer {
           // .slice(0) creates a copy because decodeAudioData detaches the ArrayBuffer
           const decoded = await audioContext.decodeAudioData(arrayBuffer.slice(0));
           decodedBuffers.push(decoded);
-        } catch (err) {
+        } catch {
           throw new ComposerError(
             `Failed to decode audio: ${file.path} — file may be corrupted or use unsupported codec`,
             [file.path]
@@ -80,7 +80,7 @@ export class AudioComposer implements IFormatComposer {
         }
       }
     } finally {
-      audioContext.close();
+      await audioContext.close();
     }
 
     if (decodedBuffers.length === 0) {

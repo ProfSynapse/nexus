@@ -38,7 +38,7 @@ export class UpdateManager {
                 method: 'GET',
             });
             if (response.status === 200) {
-                const plugins: Array<{ id: string }> = response.json;
+                const plugins: Array<{ id: string }> = response.json as Array<{ id: string }>;
                 UpdateManager._isStoreAvailable = plugins.some(p => p.id === pluginId);
                 return UpdateManager._isStoreAvailable;
             }
@@ -186,7 +186,7 @@ export class UpdateManager {
                 });
 
                 if (response.status === 200) {
-                    return response.json;
+                    return response.json as GitHubRelease;
                 }
 
                 errors.push(new Error(`GitHub API error: ${response.status} (${endpoint})`));

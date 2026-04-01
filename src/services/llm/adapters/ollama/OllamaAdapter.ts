@@ -16,6 +16,36 @@ import {
   LLMProviderError
 } from '../types';
 
+interface OllamaMessage {
+  role: string;
+  content: string;
+  [key: string]: unknown;
+}
+
+interface OllamaOptions {
+  temperature?: number;
+  num_predict?: number;
+  stop?: string[];
+  top_p?: number;
+  frequency_penalty?: number;
+  presence_penalty?: number;
+  [key: string]: unknown;
+}
+
+interface OllamaChatResponse {
+  message?: {
+    content?: string;
+  };
+  prompt_eval_count?: number;
+  eval_count?: number;
+  done?: boolean;
+  model?: string;
+  total_duration?: number;
+  load_duration?: number;
+  prompt_eval_duration?: number;
+  eval_duration?: number;
+}
+
 export class OllamaAdapter extends BaseAdapter {
   readonly name = 'ollama';
   readonly baseUrl: string;
@@ -38,15 +68,15 @@ export class OllamaAdapter extends BaseAdapter {
       const model = options?.model || this.currentModel;
 
       // Check for pre-built conversation history (tool continuations)
-      let messages: any[];
+      let messages: OllamaMessage[];
       if (options?.conversationHistory && options.conversationHistory.length > 0) {
-        messages = options.conversationHistory;
+        messages = options.conversationHistory as OllamaMessage[];
       } else {
         messages = this.buildMessages(prompt, options?.systemPrompt);
       }
 
       // Build options object, removing undefined values
-      const ollamaOptions: any = {
+      const ollamaOptions: OllamaOptions = {
         temperature: options?.temperature,
         num_predict: options?.maxTokens,
         stop: options?.stopSequences,
@@ -78,12 +108,13 @@ export class OllamaAdapter extends BaseAdapter {
 
       yield* this.processNodeStreamJsonLines(nodeStream, {
         extractChunk: (parsed) => {
-          if (parsed.message?.content) {
-            return { content: parsed.message.content, complete: false };
+          const response = parsed as OllamaChatResponse;
+          if (response.message?.content) {
+            return { content: response.message.content, complete: false };
           }
           return null;
         },
-        extractDone: (parsed) => !!parsed.done
+        extractDone: (parsed) => !!(parsed as OllamaChatResponse).done
       });
     } catch (error) {
       if (error instanceof LLMProviderError) {
@@ -102,15 +133,15 @@ export class OllamaAdapter extends BaseAdapter {
       const model = options?.model || this.currentModel;
 
       // Check for pre-built conversation history (tool continuations)
-      let messages: any[];
+      let messages: OllamaMessage[];
       if (options?.conversationHistory && options.conversationHistory.length > 0) {
-        messages = options.conversationHistory;
+        messages = options.conversationHistory as OllamaMessage[];
       } else {
         messages = this.buildMessages(prompt, options?.systemPrompt);
       }
 
       // Build options object
-      const ollamaOptions: any = {
+      const ollamaOptions: OllamaOptions = {
         temperature: options?.temperature,
         num_predict: options?.maxTokens,
         stop: options?.stopSequences,
@@ -127,7 +158,7 @@ export class OllamaAdapter extends BaseAdapter {
       });
 
       // Use /api/chat endpoint (supports messages array and tool calling)
-      const response = await this.request<any>({
+      const response = await this.request<OllamaChatResponse>({
         url: `${this.ollamaUrl}/api/chat`,
         operation: 'generation',
         method: 'POST',
@@ -146,6 +177,13 @@ export class OllamaAdapter extends BaseAdapter {
       this.assertOk(response, `Ollama API error: ${response.status} - ${response.text || 'Unknown error'}`);
 
       const data = response.json;
+      if (!data) {
+        throw new LLMProviderError(
+          'Invalid response format from Ollama API: empty response',
+          'generation',
+          'INVALID_RESPONSE'
+        );
+      }
 
       // /api/chat returns message.content instead of response
       if (!data.message?.content) {
@@ -195,29 +233,6 @@ export class OllamaAdapter extends BaseAdapter {
   async generateStream(prompt: string, options?: GenerateOptions): Promise<LLMResponse> {
     try {
       const model = options?.model || this.currentModel;
-
-      // Check for pre-built conversation history (tool continuations)
-      let messages: any[];
-      if (options?.conversationHistory && options.conversationHistory.length > 0) {
-        messages = options.conversationHistory;
-      } else {
-        messages = this.buildMessages(prompt, options?.systemPrompt);
-      }
-
-      // Build options object
-      const ollamaOptions: any = {
-        temperature: options?.temperature,
-        num_predict: options?.maxTokens,
-        stop: options?.stopSequences,
-        top_p: options?.topP
-      };
-
-      // Remove undefined values
-      Object.keys(ollamaOptions).forEach(key => {
-        if (ollamaOptions[key] === undefined) {
-          delete ollamaOptions[key];
-        }
-      });
 
       // Collect streaming chunks into a complete response
       let fullText = '';
@@ -305,7 +320,7 @@ export class OllamaAdapter extends BaseAdapter {
     };
   }
 
-  async getModelPricing(modelId: string): Promise<ModelPricing | null> {
+  async getModelPricing(_modelId: string): Promise<ModelPricing | null> {
     // Local models are free - zero rates
     return {
       rateInputPerMillion: 0,
@@ -323,7 +338,7 @@ export class OllamaAdapter extends BaseAdapter {
         timeoutMs: 10_000
       });
       return response.status === 200;
-    } catch (error) {
+    } catch {
       return false;
     }
   }
@@ -336,8 +351,8 @@ export class OllamaAdapter extends BaseAdapter {
     return Math.round(bytes / Math.pow(1024, i) * 100) / 100 + ' ' + sizes[i];
   }
 
-  protected buildMessages(prompt: string, systemPrompt?: string): any[] {
-    const messages = [];
+  protected buildMessages(prompt: string, systemPrompt?: string): OllamaMessage[] {
+    const messages: OllamaMessage[] = [];
 
     if (systemPrompt) {
       messages.push({ role: 'system', content: systemPrompt });
@@ -348,7 +363,7 @@ export class OllamaAdapter extends BaseAdapter {
     return messages;
   }
 
-  protected handleError(error: any, operation: string): never {
+  protected handleError(error: unknown, operation: string): never {
     if (error instanceof LLMProviderError) {
       throw error;
     }
@@ -356,18 +371,20 @@ export class OllamaAdapter extends BaseAdapter {
     let message = `Ollama ${operation} failed`;
     let code = 'UNKNOWN_ERROR';
 
-    if (error?.message) {
-      message += `: ${error.message}`;
+    const errorLike = error as { message?: string; code?: string } | null;
+
+    if (errorLike?.message) {
+      message += `: ${errorLike.message}`;
     }
 
-    if (error?.code === 'ECONNREFUSED') {
+    if (errorLike?.code === 'ECONNREFUSED') {
       message = 'Cannot connect to Ollama server. Make sure Ollama is running.';
       code = 'CONNECTION_REFUSED';
-    } else if (error?.code === 'ENOTFOUND') {
+    } else if (errorLike?.code === 'ENOTFOUND') {
       message = 'Ollama server not found. Check the URL configuration.';
       code = 'SERVER_NOT_FOUND';
     }
 
-    throw new LLMProviderError(message, this.name, code, error);
+    throw new LLMProviderError(message, this.name, code, error instanceof Error ? error : undefined);
   }
 }

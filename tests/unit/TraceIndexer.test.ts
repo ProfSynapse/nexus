@@ -63,6 +63,8 @@ function createTraceRow(id: string, overrides: Partial<{
   };
 }
 
+const noOpAsync = async (): Promise<void> => undefined;
+
 // ============================================================================
 // Tests
 // ============================================================================
@@ -94,7 +96,7 @@ describe('TraceIndexer', () => {
     it('should return early if embedding service is disabled', async () => {
       mocks.mockEmbeddingService.isServiceEnabled.mockReturnValue(false);
 
-      const result = await indexer.start(null, () => false, async () => {});
+      const result = await indexer.start(null, () => false, noOpAsync);
 
       expect(result).toEqual({ total: 0, processed: 0 });
       expect(mocks.mockDb.query).not.toHaveBeenCalled();
@@ -106,7 +108,7 @@ describe('TraceIndexer', () => {
         .mockResolvedValueOnce([createTraceRow('trace-1')])  // all traces
         .mockResolvedValueOnce([{ traceId: 'trace-1' }]);    // already embedded
 
-      const result = await indexer.start(null, () => false, async () => {});
+      const result = await indexer.start(null, () => false, noOpAsync);
 
       expect(result).toEqual({ total: 0, processed: 0 });
       expect(mocks.mockEmbeddingService.embedTrace).not.toHaveBeenCalled();
@@ -125,7 +127,7 @@ describe('TraceIndexer', () => {
         .mockResolvedValueOnce(traces)    // all traces
         .mockResolvedValueOnce([]);       // no embedded IDs
 
-      const result = await indexer.start(null, () => false, async () => {});
+      const result = await indexer.start(null, () => false, noOpAsync);
 
       expect(result.total).toBe(2);
       expect(result.processed).toBe(2);
@@ -145,7 +147,7 @@ describe('TraceIndexer', () => {
         .mockResolvedValueOnce(traces)                          // all traces
         .mockResolvedValueOnce([{ traceId: 'trace-already' }]); // already embedded
 
-      const result = await indexer.start(null, () => false, async () => {});
+      const result = await indexer.start(null, () => false, noOpAsync);
 
       expect(result.total).toBe(1);
       expect(result.processed).toBe(1);
@@ -162,7 +164,7 @@ describe('TraceIndexer', () => {
         .mockResolvedValueOnce(traces)    // all traces
         .mockResolvedValueOnce([]);       // no embedded IDs
 
-      await indexer.start(null, () => false, async () => {});
+      await indexer.start(null, () => false, noOpAsync);
 
       expect(mocks.mockEmbeddingService.embedTrace).toHaveBeenCalledWith(
         'trace-1', 'ws-1', undefined, expect.any(String)
@@ -192,7 +194,7 @@ describe('TraceIndexer', () => {
         abortController.abort();
       });
 
-      const result = await indexer.start(abortController.signal, () => false, async () => {});
+      const result = await indexer.start(abortController.signal, () => false, noOpAsync);
 
       expect(result.processed).toBeLessThan(3);
     });
@@ -205,7 +207,7 @@ describe('TraceIndexer', () => {
         .mockResolvedValueOnce([createTraceRow('trace-1')])  // all traces
         .mockResolvedValueOnce([]);                          // no embedded IDs
 
-      await indexer.start(abortController.signal, () => false, async () => {});
+      await indexer.start(abortController.signal, () => false, noOpAsync);
 
       expect(indexer.getIsRunning()).toBe(false);
     });
@@ -246,7 +248,7 @@ describe('TraceIndexer', () => {
         .mockResolvedValueOnce(traces)    // all traces
         .mockResolvedValueOnce([]);       // no embedded IDs
 
-      await indexer.start(null, () => false, async () => {});
+      await indexer.start(null, () => false, noOpAsync);
 
       // Initial + final
       expect(mocks.onProgress).toHaveBeenCalledTimes(2);
@@ -270,7 +272,7 @@ describe('TraceIndexer', () => {
         .mockResolvedValueOnce(traces)    // all traces
         .mockResolvedValueOnce([]);       // no embedded IDs
 
-      await indexer.start(null, () => false, async () => {});
+      await indexer.start(null, () => false, noOpAsync);
 
       // Saves: after 2nd trace (interval) + final save = 2
       expect(mocks.mockDb.save).toHaveBeenCalledTimes(2);
@@ -292,7 +294,7 @@ describe('TraceIndexer', () => {
         .mockRejectedValueOnce(new Error('Embed failed'))
         .mockResolvedValueOnce(undefined);
 
-      const result = await indexer.start(null, () => false, async () => {});
+      const result = await indexer.start(null, () => false, noOpAsync);
 
       // Only trace-ok counted as processed (trace-fail errored before increment)
       expect(result.processed).toBe(1);
@@ -304,7 +306,7 @@ describe('TraceIndexer', () => {
 
       // The initial query at line 84 is NOT inside try/catch, so it propagates
       await expect(
-        indexer.start(null, () => false, async () => {})
+        indexer.start(null, () => false, noOpAsync)
       ).rejects.toThrow('Total failure');
 
       // isRunning was never set to true (error happened before line 108)

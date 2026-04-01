@@ -65,8 +65,8 @@ export interface PaginatedResult<T> {
  * Helper to create an empty paginated result
  */
 export function createEmptyPaginatedResult<T>(
-  page: number = 0,
-  pageSize: number = 10
+  page = 0,
+  pageSize = 10
 ): PaginatedResult<T> {
   return {
     items: [],
@@ -86,7 +86,7 @@ export function calculatePaginationMetadata(
   page: number,
   pageSize: number,
   totalItems: number
-): Omit<PaginatedResult<any>, 'items'> {
+): Omit<PaginatedResult<never>, 'items'> {
   const totalPages = Math.ceil(totalItems / pageSize);
 
   return {
@@ -109,7 +109,7 @@ export function isPaginatedResult<T>(
     typeof value === 'object' &&
     'items' in value &&
     'page' in value &&
-    Array.isArray((value as PaginatedResult<T>).items);
+    Array.isArray((value).items);
 }
 
 /**

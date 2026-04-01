@@ -9,10 +9,12 @@
  * Subagent branches: inheritContext=false (fresh start)
  */
 
-// import { ConversationRepository } from '../../../database/services/chat/ConversationRepository';
-type ConversationRepository = any;
-import { ConversationData, ConversationMessage } from '../../../types/chat/ChatTypes';
+import { ConversationData, ConversationMessage, ToolCall } from '../../../types/chat/ChatTypes';
 import type { ConversationBranch, HumanBranchMetadata } from '../../../types/branch/BranchTypes';
+
+interface ConversationRepository {
+  updateConversation(id: string, updates: Partial<ConversationData>): Promise<void>;
+}
 
 export interface BranchManagerEvents {
   onBranchCreated: (messageId: string, branchId: string) => void;
@@ -230,7 +232,7 @@ export class BranchManager {
   /**
    * Get the currently active message tool calls
    */
-  getActiveMessageToolCalls(message: ConversationMessage): any[] | undefined {
+  getActiveMessageToolCalls(message: ConversationMessage): ToolCall[] | undefined {
     const branch = this.getActiveBranch(message);
     if (branch) {
       if (branch.messages.length > 0) {

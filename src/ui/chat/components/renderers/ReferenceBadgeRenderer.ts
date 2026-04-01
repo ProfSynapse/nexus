@@ -26,7 +26,7 @@ export class ReferenceBadgeRenderer {
   /**
    * Safely read and normalize reference metadata from message
    */
-  static getReferenceMetadata(metadata: any): ReferenceMetadata | undefined {
+  static getReferenceMetadata(metadata: ReferenceMetadata | Record<string, unknown> | undefined): ReferenceMetadata | undefined {
     const typedMetadata = metadata as ReferenceMetadata | undefined;
     if (!typedMetadata || !Array.isArray(typedMetadata.references)) {
       return undefined;

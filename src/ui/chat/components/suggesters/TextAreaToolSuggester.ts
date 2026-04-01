@@ -88,7 +88,7 @@ export class TextAreaToolSuggester extends ContentEditableSuggester<ToolSuggesti
           });
         }
       }
-    } catch (error) {
+    } catch {
       // Failed to load tools
     }
   }

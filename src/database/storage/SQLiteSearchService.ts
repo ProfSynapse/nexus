@@ -6,7 +6,7 @@
  */
 
 export interface IQueryExecutor {
-  query<T>(sql: string, params?: any[]): Promise<T[]>;
+  query<T>(sql: string, params?: unknown[]): Promise<T[]>;
 }
 
 export class SQLiteSearchService {
@@ -19,7 +19,7 @@ export class SQLiteSearchService {
   /**
    * Search workspaces using FTS5
    */
-  async searchWorkspaces(query: string, limit: number = 50): Promise<any[]> {
+  async searchWorkspaces(query: string, limit = 50): Promise<Record<string, unknown>[]> {
     // FTS5 uses double quotes for phrase search, escape special chars
     const ftsQuery = this.escapeFTS5Query(query);
     return this.queryExecutor.query(
@@ -35,7 +35,7 @@ export class SQLiteSearchService {
   /**
    * Search conversations using FTS5
    */
-  async searchConversations(query: string, limit: number = 50): Promise<any[]> {
+  async searchConversations(query: string, limit = 50): Promise<Record<string, unknown>[]> {
     const ftsQuery = this.escapeFTS5Query(query);
     return this.queryExecutor.query(
       `SELECT c.* FROM conversations c
@@ -50,7 +50,7 @@ export class SQLiteSearchService {
   /**
    * Search messages using FTS5
    */
-  async searchMessages(query: string, limit: number = 50): Promise<any[]> {
+  async searchMessages(query: string, limit = 50): Promise<Record<string, unknown>[]> {
     const ftsQuery = this.escapeFTS5Query(query);
     return this.queryExecutor.query(
       `SELECT m.* FROM messages m
@@ -65,7 +65,7 @@ export class SQLiteSearchService {
   /**
    * Search messages within a specific conversation using FTS5
    */
-  async searchMessagesInConversation(conversationId: string, query: string, limit: number = 50): Promise<any[]> {
+  async searchMessagesInConversation(conversationId: string, query: string, limit = 50): Promise<Record<string, unknown>[]> {
     // Use FTS5 column filter syntax
     const ftsQuery = this.escapeFTS5Query(query);
     return this.queryExecutor.query(

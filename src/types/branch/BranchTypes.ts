@@ -7,7 +7,7 @@
  * - Subagent branch: inheritContext=false -> LLM sees only branch messages (fresh start)
  */
 
-import type { ChatMessage } from '../chat/ChatTypes';
+import type { ChatMessage, ToolCall } from '../chat/ChatTypes';
 
 /**
  * Branch state for tracking lifecycle
@@ -103,7 +103,7 @@ export interface SubagentParams {
   agentPrompt?: string;  // Custom agent's full system prompt (merged into subagent prompt)
   agentName?: string;    // Custom agent name for reference
   // Inherited from parent conversation - Workspace data
-  workspaceData?: any;   // Full comprehensive workspace data (sessions, states, files, etc.)
+  workspaceData?: Record<string, unknown>;   // Full comprehensive workspace data (sessions, states, files, etc.)
   // Inherited from parent conversation - Context notes (file paths)
   inheritedContextNotes?: string[];  // Note paths from parent's context notes
   // Inherited from parent conversation - Thinking settings
@@ -191,7 +191,7 @@ export interface SubagentExecutorEvents {
    * Tool calls detected - SAME event as parent chat uses
    * Routes to ToolEventCoordinator.handleToolCallsDetected() for dynamic tool bubble creation
    */
-  onToolCallsDetected: (branchId: string, messageId: string, toolCalls: any[]) => void;
+  onToolCallsDetected: (branchId: string, messageId: string, toolCalls: ToolCall[]) => void;
 }
 
 /**
@@ -273,7 +273,7 @@ export function createSubagentBranch(
   id: string,
   subagentId: string,
   task: string,
-  maxIterations: number = 10
+  maxIterations = 10
 ): ConversationBranch {
   const now = Date.now();
   return {

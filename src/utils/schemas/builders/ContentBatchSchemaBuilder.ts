@@ -9,12 +9,13 @@
  */
 
 import { ISchemaBuilder, SchemaContext } from '../SchemaTypes';
+import type { ValidationSchema } from '../../validationUtils';
 
 /**
  * Content Batch Schema Builder - Handles batch content operations
  */
 export class ContentBatchSchemaBuilder implements ISchemaBuilder {
-  buildParameterSchema(context: SchemaContext): any {
+  buildParameterSchema(_context: SchemaContext): ValidationSchema {
     return {
       type: 'object',
       properties: {
@@ -47,10 +48,10 @@ export class ContentBatchSchemaBuilder implements ISchemaBuilder {
         },
       },
       required: ['operations']
-    };
+    } satisfies ValidationSchema;
   }
 
-  buildResultSchema(context: SchemaContext): any {
+  buildResultSchema(_context: SchemaContext): ValidationSchema {
     return {
       type: 'object',
       properties: {
@@ -91,6 +92,6 @@ export class ContentBatchSchemaBuilder implements ISchemaBuilder {
         },
       },
       required: ['success']
-    };
+    } satisfies ValidationSchema;
   }
 }

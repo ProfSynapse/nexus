@@ -20,6 +20,7 @@
  */
 
 import { BaseRepository, RepositoryDependencies } from './base/BaseRepository';
+import { DatabaseRow, QueryParams } from './base/BaseRepository';
 import {
   ITaskRepository,
   TaskMetadata,
@@ -41,6 +42,29 @@ import {
   TaskNoteUnlinkedEvent
 } from '../interfaces/StorageEvents';
 import { PaginatedResult, PaginationParams } from '../../types/pagination/PaginationTypes';
+
+interface TaskRow extends DatabaseRow {
+  id: string;
+  projectId: string;
+  workspaceId: string;
+  parentTaskId?: string | null;
+  title: string;
+  description?: string | null;
+  status: TaskStatus;
+  priority: TaskMetadata['priority'];
+  created: number;
+  updated: number;
+  completedAt?: number | null;
+  dueDate?: number | null;
+  assignee?: string | null;
+  tagsJson?: string | null;
+  metadataJson?: string | null;
+}
+
+interface TaskDependencyRow extends DatabaseRow {
+  taskId: string;
+  dependsOnTaskId: string;
+}
 
 /**
  * Repository for task entities
@@ -68,7 +92,7 @@ export class TaskRepository
     return this.getCachedOrFetch(
       `task:get:${id}`,
       async () => {
-        const row = await this.sqliteCache.queryOne<Record<string, unknown>>(
+        const row = await this.sqliteCache.queryOne<TaskRow>(
           'SELECT * FROM tasks WHERE id = ?',
           [id]
         );
@@ -81,7 +105,7 @@ export class TaskRepository
     const baseQuery = 'SELECT * FROM tasks ORDER BY updated DESC';
     const countQuery = 'SELECT COUNT(*) as count FROM tasks';
 
-    const result = await this.queryPaginated<Record<string, unknown>>(baseQuery, countQuery, options);
+    const result = await this.queryPaginated<TaskRow>(baseQuery, countQuery, options);
     return {
       ...result,
       items: result.items.map(row => this.rowToEntity(row))
@@ -189,7 +213,7 @@ export class TaskRepository
 
         // 2. Update SQLite cache
         const setClauses: string[] = ['updated = ?'];
-        const params: unknown[] = [now];
+        const params: QueryParams = [now];
 
         if (data.title !== undefined) { setClauses.push('title = ?'); params.push(data.title); }
         if (data.description !== undefined) { setClauses.push('description = ?'); params.push(data.description); }
@@ -252,15 +276,15 @@ export class TaskRepository
 
   async count(criteria?: Record<string, unknown>): Promise<number> {
     let sql = 'SELECT COUNT(*) as count FROM tasks';
-    const params: unknown[] = [];
+    const params: QueryParams = [];
 
     if (criteria) {
       const conditions: string[] = [];
-      if (criteria.projectId !== undefined) { conditions.push('projectId = ?'); params.push(criteria.projectId); }
-      if (criteria.workspaceId !== undefined) { conditions.push('workspaceId = ?'); params.push(criteria.workspaceId); }
-      if (criteria.status !== undefined) { conditions.push('status = ?'); params.push(criteria.status); }
-      if (criteria.priority !== undefined) { conditions.push('priority = ?'); params.push(criteria.priority); }
-      if (criteria.assignee !== undefined) { conditions.push('assignee = ?'); params.push(criteria.assignee); }
+      if (typeof criteria.projectId === 'string') { conditions.push('projectId = ?'); params.push(criteria.projectId); }
+      if (typeof criteria.workspaceId === 'string') { conditions.push('workspaceId = ?'); params.push(criteria.workspaceId); }
+      if (typeof criteria.status === 'string') { conditions.push('status = ?'); params.push(criteria.status); }
+      if (typeof criteria.priority === 'string') { conditions.push('priority = ?'); params.push(criteria.priority); }
+      if (typeof criteria.assignee === 'string') { conditions.push('assignee = ?'); params.push(criteria.assignee); }
       if (conditions.length > 0) {
         sql += ` WHERE ${conditions.join(' AND ')}`;
       }
@@ -296,7 +320,7 @@ export class TaskRepository
 
   async getByProject(projectId: string, options?: TaskListOptions): Promise<PaginatedResult<TaskMetadata>> {
     let whereClause = 'WHERE t.projectId = ?';
-    const params: unknown[] = [projectId];
+    const params: QueryParams = [projectId];
 
     if (options?.status) { whereClause += ' AND t.status = ?'; params.push(options.status); }
     if (options?.priority) { whereClause += ' AND t.priority = ?'; params.push(options.priority); }
@@ -308,7 +332,7 @@ export class TaskRepository
     const baseQuery = `SELECT t.* FROM tasks t ${whereClause} ${orderClause}`;
     const countQuery = `SELECT COUNT(*) as count FROM tasks t ${whereClause}`;
 
-    const result = await this.queryPaginated<Record<string, unknown>>(baseQuery, countQuery, options, params);
+    const result = await this.queryPaginated<TaskRow>(baseQuery, countQuery, options, params);
     return {
       ...result,
       items: result.items.map(row => this.rowToEntity(row))
@@ -317,7 +341,7 @@ export class TaskRepository
 
   async getByWorkspace(workspaceId: string, options?: TaskListOptions): Promise<PaginatedResult<TaskMetadata>> {
     let whereClause = 'WHERE t.workspaceId = ?';
-    const params: unknown[] = [workspaceId];
+    const params: QueryParams = [workspaceId];
 
     if (options?.status) { whereClause += ' AND t.status = ?'; params.push(options.status); }
     if (options?.priority) { whereClause += ' AND t.priority = ?'; params.push(options.priority); }
@@ -327,7 +351,7 @@ export class TaskRepository
     const baseQuery = `SELECT t.* FROM tasks t ${whereClause} ${orderClause}`;
     const countQuery = `SELECT COUNT(*) as count FROM tasks t ${whereClause}`;
 
-    const result = await this.queryPaginated<Record<string, unknown>>(baseQuery, countQuery, options, params);
+    const result = await this.queryPaginated<TaskRow>(baseQuery, countQuery, options, params);
     return {
       ...result,
       items: result.items.map(row => this.rowToEntity(row))
@@ -335,7 +359,7 @@ export class TaskRepository
   }
 
   async getByStatus(projectId: string, status: TaskStatus): Promise<TaskMetadata[]> {
-    const rows = await this.sqliteCache.query<Record<string, unknown>>(
+    const rows = await this.sqliteCache.query<TaskRow>(
       'SELECT * FROM tasks WHERE projectId = ? AND status = ? ORDER BY updated DESC LIMIT 500',
       [projectId, status]
     );
@@ -343,7 +367,7 @@ export class TaskRepository
   }
 
   async getDependencies(taskId: string): Promise<TaskMetadata[]> {
-    const rows = await this.sqliteCache.query<Record<string, unknown>>(
+    const rows = await this.sqliteCache.query<TaskRow>(
       `SELECT t.* FROM tasks t
        JOIN task_dependencies td ON td.dependsOnTaskId = t.id
        WHERE td.taskId = ?
@@ -354,7 +378,7 @@ export class TaskRepository
   }
 
   async getDependents(taskId: string): Promise<TaskMetadata[]> {
-    const rows = await this.sqliteCache.query<Record<string, unknown>>(
+    const rows = await this.sqliteCache.query<TaskRow>(
       `SELECT t.* FROM tasks t
        JOIN task_dependencies td ON td.taskId = t.id
        WHERE td.dependsOnTaskId = ?
@@ -365,7 +389,7 @@ export class TaskRepository
   }
 
   async getChildren(taskId: string): Promise<TaskMetadata[]> {
-    const rows = await this.sqliteCache.query<Record<string, unknown>>(
+    const rows = await this.sqliteCache.query<TaskRow>(
       'SELECT * FROM tasks WHERE parentTaskId = ? ORDER BY created ASC LIMIT 500',
       [taskId]
     );
@@ -373,7 +397,7 @@ export class TaskRepository
   }
 
   async getReadyTasks(projectId: string): Promise<TaskMetadata[]> {
-    const rows = await this.sqliteCache.query<Record<string, unknown>>(
+    const rows = await this.sqliteCache.query<TaskRow>(
       `SELECT t.* FROM tasks t
        WHERE t.projectId = ? AND t.status = 'todo'
          AND NOT EXISTS (
@@ -460,7 +484,7 @@ export class TaskRepository
   }
 
   async getNoteLinks(taskId: string): Promise<NoteLink[]> {
-    const rows = await this.sqliteCache.query<Record<string, unknown>>(
+    const rows = await this.sqliteCache.query<TaskRow>(
       'SELECT * FROM task_note_links WHERE taskId = ?',
       [taskId]
     );
@@ -468,12 +492,12 @@ export class TaskRepository
       taskId: row.taskId as string,
       notePath: row.notePath as string,
       linkType: row.linkType as LinkType,
-      created: row.created as number
+      created: row.created
     }));
   }
 
   async getByLinkedNote(notePath: string): Promise<TaskMetadata[]> {
-    const rows = await this.sqliteCache.query<Record<string, unknown>>(
+    const rows = await this.sqliteCache.query<TaskDependencyRow>(
       `SELECT t.* FROM tasks t
        JOIN task_note_links tnl ON tnl.taskId = t.id
        WHERE tnl.notePath = ?
@@ -549,7 +573,7 @@ export class TaskRepository
   }
 
   async getAllDependencyEdges(projectId: string): Promise<{ taskId: string; dependsOnTaskId: string }[]> {
-    const rows = await this.sqliteCache.query<Record<string, unknown>>(
+    const rows = await this.sqliteCache.query<TaskDependencyRow>(
       `SELECT td.taskId, td.dependsOnTaskId
        FROM task_dependencies td
        JOIN tasks t ON t.id = td.taskId
@@ -558,8 +582,8 @@ export class TaskRepository
       [projectId]
     );
     return rows.map(row => ({
-      taskId: row.taskId as string,
-      dependsOnTaskId: row.dependsOnTaskId as string
+      taskId: row.taskId,
+      dependsOnTaskId: row.dependsOnTaskId
     }));
   }
 
@@ -567,41 +591,50 @@ export class TaskRepository
   // Protected Methods
   // ============================================================================
 
-  protected rowToEntity(row: Record<string, unknown>): TaskMetadata {
+  protected rowToEntity(row: DatabaseRow): TaskMetadata {
+    const taskRow = row as TaskRow;
     let tags: string[] | undefined;
-    if (row.tagsJson) {
+    if (taskRow.tagsJson) {
       try {
-        tags = JSON.parse(row.tagsJson as string);
+        tags = this.parseJsonValue<string[]>(taskRow.tagsJson);
       } catch {
         // Skip unparseable tags
       }
     }
 
     let metadata: Record<string, unknown> | undefined;
-    if (row.metadataJson) {
+    if (taskRow.metadataJson) {
       try {
-        metadata = JSON.parse(row.metadataJson as string);
+        metadata = this.parseJsonValue<Record<string, unknown>>(taskRow.metadataJson);
       } catch {
         // Skip unparseable metadata
       }
     }
 
     return {
-      id: row.id as string,
-      projectId: row.projectId as string,
-      workspaceId: row.workspaceId as string,
-      parentTaskId: (row.parentTaskId as string) ?? undefined,
-      title: row.title as string,
-      description: (row.description as string) ?? undefined,
-      status: row.status as TaskStatus,
-      priority: row.priority as TaskMetadata['priority'],
-      created: row.created as number,
-      updated: row.updated as number,
-      completedAt: (row.completedAt as number) ?? undefined,
-      dueDate: (row.dueDate as number) ?? undefined,
-      assignee: (row.assignee as string) ?? undefined,
+      id: taskRow.id,
+      projectId: taskRow.projectId,
+      workspaceId: taskRow.workspaceId,
+      parentTaskId: taskRow.parentTaskId ?? undefined,
+      title: taskRow.title,
+      description: taskRow.description ?? undefined,
+      status: taskRow.status,
+      priority: taskRow.priority,
+      created: taskRow.created,
+      updated: taskRow.updated,
+      completedAt: taskRow.completedAt ?? undefined,
+      dueDate: taskRow.dueDate ?? undefined,
+      assignee: taskRow.assignee ?? undefined,
       tags,
       metadata
     };
+  }
+
+  private parseJsonValue<T>(json: string): T | undefined {
+    try {
+      return JSON.parse(json) as T;
+    } catch {
+      return undefined;
+    }
   }
 }

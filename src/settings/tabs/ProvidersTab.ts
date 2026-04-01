@@ -380,7 +380,7 @@ export class ProvidersTab {
         if (!isDesktop()) {
             this.container.createEl('p', {
                 cls: 'setting-item-description',
-                text: 'On mobile, only OpenRouter, Requesty, and Perplexity are supported. Configure local providers and SDK-based providers on desktop.'
+                text: 'On mobile, only fetch-based providers are supported. Configure local providers and SDK-based providers on desktop.'
             });
 
             const items = [...MOBILE_COMPATIBLE_PROVIDERS]
@@ -507,14 +507,15 @@ export class ProvidersTab {
                     description: 'Connect your ChatGPT Plus/Pro account to use GPT-5 models via OAuth.',
                     config: { ...codexConfig },
                     oauthConfig: codexDisplay.oauthConfig,
-                    onConfigChange: async (updatedCodexConfig: LLMProviderConfig) => {
+                    onConfigChange: (updatedCodexConfig: LLMProviderConfig) => {
+                        void (async () => {
                         settings.providers['openai-codex'] = updatedCodexConfig;
                         await this.saveSettings();
+                        })();
                     },
                 };
             }
         } else if (providerId === 'anthropic') {
-            const claudeCodeDisplay = this.providerConfigs['anthropic-claude-code'];
             const claudeCodeConfig = settings.providers['anthropic-claude-code'] || {
                 apiKey: '',
                 enabled: false,
@@ -529,9 +530,11 @@ export class ProvidersTab {
                     providerLabel: 'Claude Code',
                     startFlow: () => this.startClaudeCodeConnectFlow(),
                 },
-                onConfigChange: async (updatedClaudeCodeConfig: LLMProviderConfig) => {
+                onConfigChange: (updatedClaudeCodeConfig: LLMProviderConfig) => {
+                    void (async () => {
                     settings.providers['anthropic-claude-code'] = updatedClaudeCodeConfig;
                     await this.saveSettings();
+                    })();
                 },
                 statusOnly: true,
                 statusHint: 'run `claude auth login` in your terminal',
@@ -551,9 +554,11 @@ export class ProvidersTab {
                     providerLabel: 'Gemini CLI',
                     startFlow: () => this.startGeminiCliConnectFlow(),
                 },
-                onConfigChange: async (updatedGeminiCliConfig: LLMProviderConfig) => {
+                onConfigChange: (updatedGeminiCliConfig: LLMProviderConfig) => {
+                    void (async () => {
                     settings.providers['google-gemini-cli'] = updatedGeminiCliConfig;
                     await this.saveSettings();
+                    })();
                 },
                 statusOnly: true,
                 statusHint: 'run `gemini auth` in your terminal',
@@ -569,7 +574,8 @@ export class ProvidersTab {
             oauthConfig: displayConfig.oauthConfig,
             secondaryOAuthProvider,
             oauthOnly: providerId === 'github-copilot',
-            onSave: async (updatedConfig: LLMProviderConfig) => {
+            onSave: (updatedConfig: LLMProviderConfig) => {
+                void (async () => {
                 settings.providers[providerId] = updatedConfig;
 
                 // Handle Ollama model update
@@ -586,6 +592,7 @@ export class ProvidersTab {
                 await this.saveSettings();
                 this.render(); // Refresh the view
                 new Notice(`${displayConfig.name} settings saved`);
+                })();
             }
         };
 

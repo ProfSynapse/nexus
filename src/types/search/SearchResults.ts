@@ -31,6 +31,15 @@ export interface SearchResult {
   filePath?: string;
 }
 
+export type SearchMetadataValue =
+  | string
+  | number
+  | boolean
+  | null
+  | undefined
+  | SearchMetadataValue[]
+  | { [key: string]: SearchMetadataValue };
+
 export interface SearchResultMetadata {
   /** File path */
   filePath: string;
@@ -63,7 +72,7 @@ export interface SearchResultMetadata {
   scoreMethod?: string;
   
   /** Additional metadata */
-  [key: string]: any;
+  [key: string]: SearchMetadataValue;
 }
 
 export interface HybridSearchResult extends SearchResult {
@@ -98,6 +107,7 @@ export interface MethodScores {
   semantic?: number;
   keyword?: number;
   fuzzy?: number;
+  [key: string]: number | undefined;
 }
 
 export interface SearchResultSet {

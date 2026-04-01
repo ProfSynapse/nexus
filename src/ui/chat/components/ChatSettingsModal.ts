@@ -39,14 +39,14 @@ export class ChatSettingsModal extends Modal {
     this.modelAgentManager = modelAgentManager;
   }
 
-  async onOpen() {
+  onOpen(): void {
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass('chat-settings-modal');
 
     // Header with buttons
     const header = contentEl.createDiv('chat-settings-header');
-    header.createEl('h2', { text: 'Chat Settings' });
+    header.createEl('h2', { text: 'Chat settings' });
 
     const buttonContainer = header.createDiv('chat-settings-buttons');
     new ButtonComponent(buttonContainer)
@@ -56,10 +56,12 @@ export class ChatSettingsModal extends Modal {
     new ButtonComponent(buttonContainer)
       .setButtonText('Save')
       .setCta()
-      .onClick(() => this.handleSave());
+      .onClick(() => {
+        void this.handleSave();
+      });
 
     // Load data and render
-    await this.loadAndRender(contentEl);
+    void this.loadAndRender(contentEl);
   }
 
   private async loadAndRender(contentEl: HTMLElement): Promise<void> {
@@ -216,7 +218,7 @@ export class ChatSettingsModal extends Modal {
     }
   }
 
-  onClose() {
+  onClose(): void {
     this.renderer?.destroy();
     this.renderer = null;
     this.pendingSettings = null;

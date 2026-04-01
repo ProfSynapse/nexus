@@ -60,7 +60,7 @@ export interface LogEntry {
   timestamp: string;
   level: LogLevel;
   message: string;
-  data?: any;
+  data?: unknown;
   context?: string;
   plugin: string;
   performance?: {
@@ -86,15 +86,15 @@ export class ContextLogger {
     private context: string
   ) {}
 
-  debug(message: string, data?: any): void {
+  debug(message: string, data?: unknown): void {
     this.logger.debug(message, data, this.context);
   }
 
-  info(message: string, data?: any): void {
+  info(message: string, data?: unknown): void {
     this.logger.info(message, data, this.context);
   }
 
-  warn(message: string, data?: any): void {
+  warn(message: string, data?: unknown): void {
     this.logger.warn(message, data, this.context);
   }
 
@@ -130,12 +130,12 @@ export class StructuredLogger {
       enableExport: true
     };
     
-    this.loadLogSettings();
+    void this.loadLogSettings();
   }
 
   private async loadLogSettings(): Promise<void> {
     try {
-      const settings = await this.plugin.loadData();
+      const settings = await this.plugin.loadData() as { logging?: LoggerConfig } | null;
       const loggingSettings = settings?.logging;
 
       if (loggingSettings) {
@@ -147,7 +147,8 @@ export class StructuredLogger {
           enableExport: loggingSettings.enableExport !== false
         };
       }
-    } catch (error) {
+    } catch {
+      return;
     }
   }
 
@@ -158,7 +159,7 @@ export class StructuredLogger {
     this.config = { ...this.config, ...newConfig };
     
     try {
-      const settings = await this.plugin.loadData() || {};
+      const settings = (await this.plugin.loadData() as { logging?: LoggerConfig } | null) || {};
       settings.logging = this.config;
       await this.plugin.saveData(settings);
     } catch (error) {
@@ -169,7 +170,7 @@ export class StructuredLogger {
   /**
    * Debug level logging
    */
-  debug(message: string, data?: any, context?: string): void {
+  debug(message: string, data?: unknown, context?: string): void {
     if (this.config.debugMode && this.shouldLog(LogLevel.DEBUG)) {
       this.log(LogLevel.DEBUG, message, data, context);
     }
@@ -178,7 +179,7 @@ export class StructuredLogger {
   /**
    * Info level logging
    */
-  info(message: string, data?: any, context?: string): void {
+  info(message: string, data?: unknown, context?: string): void {
     if (this.shouldLog(LogLevel.INFO)) {
       this.log(LogLevel.INFO, message, data, context);
     }
@@ -187,7 +188,7 @@ export class StructuredLogger {
   /**
    * Warning level logging
    */
-  warn(message: string, data?: any, context?: string): void {
+  warn(message: string, data?: unknown, context?: string): void {
     if (this.shouldLog(LogLevel.WARN)) {
       this.log(LogLevel.WARN, message, data, context);
     }
@@ -240,10 +241,14 @@ export class StructuredLogger {
    * Create context-specific logger
    */
   createContextLogger(context: string): ContextLogger {
-    if (!this.contextLoggers.has(context)) {
-      this.contextLoggers.set(context, new ContextLogger(this, context));
+    const existing = this.contextLoggers.get(context);
+    if (existing) {
+      return existing;
     }
-    return this.contextLoggers.get(context)!;
+
+    const logger = new ContextLogger(this, context);
+    this.contextLoggers.set(context, logger);
+    return logger;
   }
 
   /**
@@ -272,7 +277,7 @@ export class StructuredLogger {
     }
   }
 
-  private log(level: LogLevel, message: string, data?: any, context?: string): void {
+  private log(level: LogLevel, message: string, data?: unknown, context?: string): void {
     const timestamp = new Date().toISOString();
     const logEntry: LogEntry = {
       timestamp,

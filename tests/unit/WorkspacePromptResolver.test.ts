@@ -16,7 +16,10 @@ jest.mock('obsidian', () => ({}), { virtual: true });
 // Imports
 // ============================================================================
 
-import { WorkspacePromptResolver, WorkspacePromptInfo } from '../../src/agents/memoryManager/services/WorkspacePromptResolver';
+import type { App } from 'obsidian';
+import { WorkspacePromptResolver } from '../../src/agents/memoryManager/services/WorkspacePromptResolver';
+import type { CustomPromptStorageService } from '../../src/agents/promptManager/services/CustomPromptStorageService';
+import type { ProjectWorkspace } from '../../src/database/types/workspace/WorkspaceTypes';
 
 // ============================================================================
 // Mock Factories
@@ -49,8 +52,11 @@ function createMockCustomPromptStorage(prompts: Map<string, { id: string; name: 
 }
 
 function createMockApp() {
-  return {} as any;
+  return {} as App;
 }
+
+type PromptStorageLike = Pick<CustomPromptStorageService, 'getPromptByNameOrId'>;
+type MockWorkspace = ProjectWorkspace & { dedicatedAgentId?: string };
 
 // ============================================================================
 // Tests
@@ -65,7 +71,7 @@ describe('WorkspacePromptResolver', () => {
 
     it('should accept customPromptStorage when provided', () => {
       const storage = createMockCustomPromptStorage();
-      const resolver = new WorkspacePromptResolver(createMockApp(), createMockPlugin(), storage as any);
+      const resolver = new WorkspacePromptResolver(createMockApp(), createMockPlugin(), storage as unknown as CustomPromptStorageService);
       expect(resolver).toBeDefined();
     });
   });
@@ -76,7 +82,7 @@ describe('WorkspacePromptResolver', () => {
         ['abc', { id: 'abc', name: 'My Prompt', prompt: 'You are helpful.' }],
       ]);
       const storage = createMockCustomPromptStorage(sqlitePrompts);
-      const resolver = new WorkspacePromptResolver(createMockApp(), createMockPlugin(), storage as any);
+      const resolver = new WorkspacePromptResolver(createMockApp(), createMockPlugin(), storage as unknown as CustomPromptStorageService);
 
       const result = await resolver.fetchPromptByNameOrId('abc', createMockApp());
 
@@ -93,7 +99,7 @@ describe('WorkspacePromptResolver', () => {
         ['abc', { id: 'abc', name: 'My Prompt', prompt: 'You are helpful.' }],
       ]);
       const storage = createMockCustomPromptStorage(sqlitePrompts);
-      const resolver = new WorkspacePromptResolver(createMockApp(), createMockPlugin(), storage as any);
+      const resolver = new WorkspacePromptResolver(createMockApp(), createMockPlugin(), storage as unknown as CustomPromptStorageService);
 
       const result = await resolver.fetchPromptByNameOrId('My Prompt', createMockApp());
 
@@ -115,7 +121,7 @@ describe('WorkspacePromptResolver', () => {
         { id: 'abc', name: 'JSON Prompt', prompt: 'From JSON' },
       ]);
 
-      const resolver = new WorkspacePromptResolver(createMockApp(), plugin, storage as any);
+      const resolver = new WorkspacePromptResolver(createMockApp(), plugin, storage as unknown as CustomPromptStorageService);
       const result = await resolver.fetchPromptByNameOrId('abc', createMockApp());
 
       // SQLite takes priority
@@ -146,7 +152,7 @@ describe('WorkspacePromptResolver', () => {
         { id: 'xyz', name: 'Fallback', prompt: 'From JSON' },
       ]);
 
-      const resolver = new WorkspacePromptResolver(createMockApp(), plugin, storage as any);
+      const resolver = new WorkspacePromptResolver(createMockApp(), plugin, storage as unknown as CustomPromptStorageService);
       const result = await resolver.fetchPromptByNameOrId('xyz', createMockApp());
 
       expect(storage.getPromptByNameOrId).toHaveBeenCalledWith('xyz');
@@ -170,7 +176,7 @@ describe('WorkspacePromptResolver', () => {
       const storage = createMockCustomPromptStorage(new Map());
       const plugin = createMockPlugin([]);
 
-      const resolver = new WorkspacePromptResolver(createMockApp(), plugin, storage as any);
+      const resolver = new WorkspacePromptResolver(createMockApp(), plugin, storage as unknown as CustomPromptStorageService);
       const result = await resolver.fetchPromptByNameOrId('nonexistent', createMockApp());
 
       expect(result).toBeNull();
@@ -183,14 +189,14 @@ describe('WorkspacePromptResolver', () => {
         ['agent-1', { id: 'agent-1', name: 'Agent', prompt: 'Prompt content' }],
       ]);
       const storage = createMockCustomPromptStorage(sqlitePrompts);
-      const resolver = new WorkspacePromptResolver(createMockApp(), createMockPlugin(), storage as any);
+      const resolver = new WorkspacePromptResolver(createMockApp(), createMockPlugin(), storage as unknown as CustomPromptStorageService);
 
       const workspace = {
         id: 'ws-1',
         name: 'Test',
         dedicatedAgentId: 'agent-1',
         context: {},
-      } as any;
+      } as MockWorkspace;
 
       const result = await resolver.fetchWorkspacePrompt(workspace, createMockApp());
       expect(result?.id).toBe('agent-1');
@@ -208,7 +214,7 @@ describe('WorkspacePromptResolver', () => {
         context: {
           dedicatedAgent: { agentId: 'old-agent' },
         },
-      } as any;
+      } as MockWorkspace;
 
       const result = await resolver.fetchWorkspacePrompt(workspace, createMockApp());
       expect(result?.id).toBe('old-agent');
@@ -226,7 +232,7 @@ describe('WorkspacePromptResolver', () => {
         context: {
           agents: [{ name: 'Legacy Agent' }],
         },
-      } as any;
+      } as MockWorkspace;
 
       const result = await resolver.fetchWorkspacePrompt(workspace, createMockApp());
       expect(result?.name).toBe('Legacy Agent');
@@ -239,7 +245,7 @@ describe('WorkspacePromptResolver', () => {
         id: 'ws-1',
         name: 'Test',
         context: {},
-      } as any;
+      } as MockWorkspace;
 
       const result = await resolver.fetchWorkspacePrompt(workspace, createMockApp());
       expect(result).toBeNull();
@@ -248,11 +254,11 @@ describe('WorkspacePromptResolver', () => {
 
   describe('error handling', () => {
     it('should return null on exception and not throw', async () => {
-      const storage = {
+      const storage: PromptStorageLike = {
         getPromptByNameOrId: jest.fn(() => { throw new Error('DB crash'); }),
       };
 
-      const resolver = new WorkspacePromptResolver(createMockApp(), createMockPlugin(), storage as any);
+      const resolver = new WorkspacePromptResolver(createMockApp(), createMockPlugin(), storage as unknown as CustomPromptStorageService);
       const result = await resolver.fetchPromptByNameOrId('test', createMockApp());
 
       // Should catch and return null, not throw

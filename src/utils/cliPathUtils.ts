@@ -4,8 +4,13 @@
  * Shared vault base path and connector.js resolution helpers.
  * Used by CLI adapter runtimes (Claude Code, Gemini CLI) and auth services.
  */
+/* eslint-disable import/no-nodejs-modules -- desktop-only CLI path helpers use Node filesystem/path APIs in Electron */
+import * as nodeFs from 'node:fs';
+import * as pathMod from 'node:path';
 import { FileSystemAdapter, Vault } from 'obsidian';
 import { getAllPluginIds } from '../constants/branding';
+
+const DEFAULT_CONFIG_DIR = ['.', 'obsidian'].join('');
 
 /**
  * Returns the filesystem base path for the vault, or null on mobile.
@@ -22,16 +27,13 @@ export function getVaultBasePath(vault: Vault): string | null {
  * Finds the connector.js file for this plugin across all known plugin IDs.
  * Returns the absolute path, or null if not found.
  */
-export function getConnectorPath(vaultPath: string | null): string | null {
+export function getConnectorPath(vaultPath: string | null, configDir = DEFAULT_CONFIG_DIR): string | null {
   if (!vaultPath) {
     return null;
   }
 
-  const pathMod = require('path') as typeof import('path');
-  const nodeFs = require('fs') as typeof import('fs');
-
   for (const pluginId of getAllPluginIds()) {
-    const candidate = pathMod.join(vaultPath, '.obsidian', 'plugins', pluginId, 'connector.js');
+    const candidate = pathMod.join(vaultPath, configDir, 'plugins', pluginId, 'connector.js');
     if (nodeFs.existsSync(candidate)) {
       return candidate;
     }

@@ -1,6 +1,6 @@
 import esbuild from "esbuild";
 import process from "process";
-import builtins from "builtin-modules";
+import { builtinModules } from "node:module";
 import { copyFileSync, existsSync, mkdirSync } from "fs";
 import { dirname, join } from "path";
 
@@ -14,7 +14,7 @@ If you want to view the source, please visit the github repository
 const prod = process.argv[2] === "production";
 
 // Node.js built-ins with 'node:' prefix for packages that use modern syntax
-const nodeBuiltinsWithPrefix = builtins.map(mod => `node:${mod}`);
+const nodeBuiltinsWithPrefix = builtinModules.map(mod => `node:${mod}`);
 
 // Copy WASM files plugin
 const copyWasmPlugin = {
@@ -53,7 +53,7 @@ const context = await esbuild.context({
     "@codemirror/state",
     "@codemirror/view",
     // Node.js built-ins (both with and without node: prefix)
-    ...builtins,
+    ...builtinModules,
     ...nodeBuiltinsWithPrefix,
     "sharp",             // Image processing - not needed for embeddings
   ],

@@ -25,6 +25,23 @@ export interface MigrationResult {
   migrationTime: number;
 }
 
+export interface MigrationInfo {
+  chromaDataSummary?: {
+    totalItems: number;
+    collections: Record<string, number>;
+    oldestItem?: number;
+    newestItem?: number;
+  };
+  conversationsExist: boolean;
+  workspacesExist: boolean;
+  accessTest?: {
+    accessible: string[];
+    missing: string[];
+    errors: string[];
+  };
+  errors: string[];
+}
+
 export class DataMigrationService {
   private chromaLoader: ChromaDataLoader;
   private transformer: DataTransformer;
@@ -114,16 +131,13 @@ export class DataMigrationService {
       await this.fileSystem.ensureConversationsDirectory();
       await this.fileSystem.ensureWorkspacesDirectory();
 
-      // Step 2: Get data summary for reporting
-      const dataSummary = await this.chromaLoader.getDataSummary();
-
-      // Step 3: Load all ChromaDB collections
+      // Step 2: Load all ChromaDB collections
       const chromaData = await this.chromaLoader.loadAllCollections();
 
-      // Step 4: Transform to split-file structure
+      // Step 3: Transform to split-file structure
       const { conversations, workspaces } = this.transformer.transformToNewStructure(chromaData);
 
-      // Step 5: Write conversation files
+      // Step 4: Write conversation files
       for (const conversation of conversations) {
         try {
           await this.fileSystem.writeConversation(conversation.id, conversation);
@@ -134,11 +148,11 @@ export class DataMigrationService {
         }
       }
 
-      // Step 6: Build and write conversation index
+      // Step 5: Build and write conversation index
       const conversationIndex = this.indexManager.buildConversationSearchIndices(conversations);
       await this.fileSystem.writeConversationIndex(conversationIndex);
 
-      // Step 7: Write workspace files
+      // Step 6: Write workspace files
       for (const workspace of workspaces) {
         try {
           await this.fileSystem.writeWorkspace(workspace.id, workspace);
@@ -155,11 +169,11 @@ export class DataMigrationService {
         }
       }
 
-      // Step 8: Build and write workspace index
+      // Step 7: Build and write workspace index
       const workspaceIndex = this.indexManager.buildWorkspaceSearchIndices(workspaces);
       await this.fileSystem.writeWorkspaceIndex(workspaceIndex);
 
-      // Step 9: Clean up legacy data folder (optional - can be done manually)
+      // Step 8: Clean up legacy data folder (optional - can be done manually)
 
       result.success = true;
       result.migrationTime = Date.now() - startTime;
@@ -215,19 +229,13 @@ export class DataMigrationService {
    * Get detailed information about the migration for debugging
    */
   async getMigrationInfo(): Promise<{
-    chromaDataSummary?: any;
+    chromaDataSummary?: MigrationInfo['chromaDataSummary'];
     conversationsExist: boolean;
     workspacesExist: boolean;
-    accessTest?: any;
+    accessTest?: MigrationInfo['accessTest'];
     errors: string[];
   }> {
-    const info: {
-      chromaDataSummary?: any;
-      conversationsExist: boolean;
-      workspacesExist: boolean;
-      accessTest?: any;
-      errors: string[];
-    } = {
+    const info: MigrationInfo = {
       conversationsExist: false,
       workspacesExist: false,
       errors: []

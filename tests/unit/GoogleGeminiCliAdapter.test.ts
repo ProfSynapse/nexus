@@ -1,6 +1,10 @@
 import * as fsPromises from 'fs/promises';
 import { GoogleGeminiCliAdapter } from '../../src/services/llm/adapters/google-gemini-cli/GoogleGeminiCliAdapter';
 
+type VaultLike = {
+  getName: () => string;
+};
+
 jest.mock('../../src/utils/cliProcessRunner', () => ({
   runCliProcess: jest.fn()
 }));
@@ -33,7 +37,7 @@ describe('GoogleGeminiCliAdapter', () => {
     jest.clearAllMocks();
     adapter = new GoogleGeminiCliAdapter({
       getName: () => 'Test Vault'
-    } as any);
+    } as VaultLike);
   });
 
   it('moves the combined prompt to stdin while preserving temp settings and usage extraction', async () => {

@@ -16,7 +16,7 @@ export class FilePickerRenderer {
   private expandedFolders: Set<string> = new Set();
   private treeContainer?: HTMLElement;
   private searchComponent?: TextComponent;
-  private searchQuery: string = '';
+  private searchQuery = '';
   private searchTimeout?: ReturnType<typeof setTimeout>;
   private rootPath: string;
   private title: string;
@@ -71,7 +71,7 @@ export class FilePickerRenderer {
     const leftSection = header.createDiv('nexus-file-picker-left');
     if (this.showBackButton) {
       new ButtonComponent(leftSection)
-        .setButtonText('← Back')
+        .setButtonText('Back')
         .onClick(() => this.onCancel());
     }
     leftSection.createEl('h3', { text: this.title });
@@ -387,16 +387,15 @@ export class FilePickerRenderer {
       const modal = new Modal(app);
       modal.titleEl.setText(options.title || 'Select Files');
       modal.modalEl.addClass('file-picker-modal');
+      const excludePaths = options.excludePaths;
 
-      let pickerInstance: FilePickerRenderer;
-
-      pickerInstance = new FilePickerRenderer(
+      const pickerInstance = new FilePickerRenderer(
         app,
         () => {
           // Done callback - return all selected paths
           const paths = pickerInstance.getSelectedPaths();
-          const filtered = options.excludePaths
-            ? paths.filter(p => !options.excludePaths!.includes(p))
+          const filtered = excludePaths
+            ? paths.filter(p => !excludePaths.includes(p))
             : paths;
           resolve(filtered);
           modal.close();

@@ -1,5 +1,6 @@
 import { IAgent } from '../agents/interfaces/IAgent';
 import { App, Events } from 'obsidian';
+import type NexusPlugin from '../main';
 
 /**
  * Agent management service
@@ -16,7 +17,7 @@ export class AgentManager {
    */
   constructor(
     _app: App,
-    _plugin: any,
+    _plugin: NexusPlugin,
     _events: Events
   ) {
     // We're not currently using these parameters but they might be needed in the future

@@ -83,6 +83,13 @@ export interface DirectoryTreeOptions {
   relatedFiles?: string[];
 }
 
+interface DirectoryTreeStats {
+  totalFiles: number;
+  totalFolders: number;
+  relatedFiles: number;
+  maxDepth: number;
+}
+
 /**
  * Build a directory tree structure for a given root folder
  */
@@ -183,7 +190,7 @@ export class DirectoryTreeBuilder {
             node.description = descMatch[1].trim();
           }
         }
-      } catch (error) {
+      } catch {
         // Ignore errors reading file
       }
     }
@@ -199,11 +206,12 @@ export class DirectoryTreeBuilder {
     options: DirectoryTreeOptions, 
     currentDepth: number
   ): Promise<DirectoryTreeNode> {
+    const children: DirectoryTreeNode[] = [];
     const node: DirectoryTreeNode = {
       name: folder.name,
       path: folder.path,
       type: 'folder',
-      children: []
+      children
     };
     
     // Check depth limit
@@ -226,15 +234,15 @@ export class DirectoryTreeBuilder {
         }
         
         const fileNode = await this.buildFileNode(child, options);
-        node.children!.push(fileNode);
+        children.push(fileNode);
       } else if (child instanceof TFolder) {
         const folderNode = await this.buildFolderNode(child, options, currentDepth + 1);
-        node.children!.push(folderNode);
+        children.push(folderNode);
       }
     }
     
     // Sort children: folders first by name, then files by last modified (newest first)
-    node.children!.sort((a, b) => {
+    children.sort((a, b) => {
       // Folders come before files
       if (a.type === 'folder' && b.type === 'file') return -1;
       if (a.type === 'file' && b.type === 'folder') return 1;
@@ -326,7 +334,6 @@ export class DirectoryTreeUtils {
    */
   static treeToText(tree: DirectoryTreeNode, indent = ''): string {
     let result = '';
-    const _isLast = true; // We'll handle this in the caller
     
     const prefix = tree.type === 'folder' ? '📁 ' : '📄 ';
     const keyIndicator = '';
@@ -358,7 +365,7 @@ export class DirectoryTreeUtils {
     relatedFiles: number;
     maxDepth: number;
   } {
-    const stats = {
+    const stats: DirectoryTreeStats = {
       totalFiles: 0,
       totalFolders: 0,
       relatedFiles: 0,
@@ -372,7 +379,7 @@ export class DirectoryTreeUtils {
   
   private static calculateStats(
     node: DirectoryTreeNode, 
-    stats: any, 
+    stats: DirectoryTreeStats, 
     currentDepth: number
   ): void {
     stats.maxDepth = Math.max(stats.maxDepth, currentDepth);

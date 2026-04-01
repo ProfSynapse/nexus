@@ -1,4 +1,5 @@
 import type { CommonResult } from '../types';
+import type { ValidationSchema } from './validationUtils';
 import { enhanceSchemaDocumentation } from './validationUtils';
 
 /**
@@ -9,36 +10,39 @@ import { enhanceSchemaDocumentation } from './validationUtils';
  * Get schema for workspace context parameters
  * @returns JSON schema for workspace context
  */
-export function getWorkspaceContextSchema(): any {
+export function getWorkspaceContextSchema(): ValidationSchema {
   return enhanceSchemaDocumentation({
-    workspaceContext: {
-      oneOf: [
-        {
-          type: 'object',
-          properties: {
-            workspaceId: { 
-              type: 'string',
-              description: 'Workspace identifier (optional - uses default workspace if not provided)' 
+    type: 'object',
+    properties: {
+      workspaceContext: {
+        oneOf: [
+          {
+            type: 'object',
+            properties: {
+              workspaceId: {
+                type: 'string',
+                description: 'Workspace identifier (optional - uses default workspace if not provided)'
+              },
+              workspacePath: {
+                type: 'array',
+                items: { type: 'string' },
+                description: 'Path from root workspace to specific phase/task'
+              },
+              contextDepth: {
+                type: 'string',
+                enum: ['minimal', 'standard', 'comprehensive'],
+                description: 'Level of context to include in results'
+              }
             },
-            workspacePath: { 
-              type: 'array', 
-              items: { type: 'string' },
-              description: 'Path from root workspace to specific phase/task'
-            },
-            contextDepth: {
-              type: 'string',
-              enum: ['minimal', 'standard', 'comprehensive'],
-              description: 'Level of context to include in results'
-            }
+            description: 'Optional workspace context object - if not provided, uses a default workspace'
           },
-          description: 'Optional workspace context object - if not provided, uses a default workspace'
-        },
-        {
-          type: 'string',
-          description: 'Optional workspace context as JSON string - must contain workspaceId field'
-        }
-      ],
-      description: 'Optional workspace context - if not provided, uses a default workspace'
+          {
+            type: 'string',
+            description: 'Optional workspace context as JSON string - must contain workspaceId field'
+          }
+        ],
+        description: 'Optional workspace context - if not provided, uses a default workspace'
+      }
     }
   });
 }
@@ -51,42 +55,57 @@ export function getWorkspaceContextSchema(): any {
  *
  * @returns JSON schema for context
  */
-export function getContextSchema(): any {
+export function getContextSchema(): ValidationSchema {
   return enhanceSchemaDocumentation({
-    context: {
-      type: 'object',
-      properties: {
-        workspaceId: {
-          type: 'string',
-          description: 'Workspace scope identifier'
+    type: 'object',
+    properties: {
+      context: {
+        type: 'object',
+        properties: {
+          workspaceId: {
+            type: 'string',
+            description: 'Workspace scope identifier'
+          },
+          sessionId: {
+            type: 'string',
+            description: 'Session identifier for tracking'
+          },
+          memory: {
+            type: 'string',
+            description: 'Essence of conversation so far (1-3 sentences)'
+          },
+          goal: {
+            type: 'string',
+            description: 'Current objective (1-3 sentences)'
+          },
+          constraints: {
+            type: 'string',
+            description: 'Rules/limits to follow (1-3 sentences, optional)'
+          }
         },
-        sessionId: {
-          type: 'string',
-          description: 'Session identifier for tracking'
-        },
-        memory: {
-          type: 'string',
-          description: 'Essence of conversation so far (1-3 sentences)'
-        },
-        goal: {
-          type: 'string',
-          description: 'Current objective (1-3 sentences)'
-        },
-        constraints: {
-          type: 'string',
-          description: 'Rules/limits to follow (1-3 sentences, optional)'
-        }
-      },
-      required: ['workspaceId', 'sessionId', 'memory', 'goal'],
-      description: 'Context for this tool call. Use toolManager_useTool for automatic context handling.'
+        required: ['workspaceId', 'sessionId', 'memory', 'goal'],
+        description: 'Context for this tool call. Use toolManager_useTool for automatic context handling.'
+      }
     }
   });
 }
 
-export function getCommonParameterSchema(): any {
+export function getCommonParameterSchema(): ValidationSchema {
+  const workspaceContextSchema = getWorkspaceContextSchema();
+  const contextSchema = getContextSchema();
+
   return {
-    ...getWorkspaceContextSchema(),
-    ...getContextSchema()
+    type: 'object',
+    properties: {
+      ...(workspaceContextSchema.properties ?? {}),
+      ...(contextSchema.properties ?? {})
+    },
+    required: Array.from(
+      new Set([
+        ...(workspaceContextSchema.required ?? []),
+        ...(contextSchema.required ?? [])
+      ])
+    )
   };
 }
 
@@ -94,7 +113,7 @@ export function getCommonParameterSchema(): any {
  * Get schema for common result
  * @returns JSON schema for common result
  */
-export function getCommonResultSchema(): any {
+export function getCommonResultSchema(): ValidationSchema {
   return enhanceSchemaDocumentation({
     type: 'object',
     properties: {
@@ -156,13 +175,13 @@ export function getCommonResultSchema(): any {
  * @param customSchema The mode-specific schema
  * @returns Merged schema with common parameters
  */
-export function mergeWithCommonSchema(customSchema: any): any {
+export function mergeWithCommonSchema(customSchema: ValidationSchema): ValidationSchema {
   const commonSchema = getCommonParameterSchema();
   
   // Merge properties without duplication
   const mergedProperties = {
-    ...customSchema.properties,
-    ...commonSchema
+    ...(customSchema.properties ?? {}),
+    ...(commonSchema.properties ?? {})
   };
   
   // Merge required arrays without duplicates
@@ -190,14 +209,14 @@ export function mergeWithCommonSchema(customSchema: any): any {
  */
 export function createResult<T extends CommonResult>(
   success: boolean,
-  data?: any,
+  data?: unknown,
   error?: string,
   workspaceContext?: CommonResult['workspaceContext'],
   sessionId?: string,
   context?: CommonResult['context'] | string,
   additionalProps?: Record<string, unknown>
 ): T {
-  const result: any = {
+  const result: Record<string, unknown> = {
     success,
     ...(data !== undefined && { data }),
     ...(error !== undefined && { error }),

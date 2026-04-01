@@ -61,7 +61,7 @@ export class ImageFileManager {
       const arrayBuffer = new ArrayBuffer(imageResponse.imageData.length);
       const uint8Array = new Uint8Array(arrayBuffer);
       uint8Array.set(imageResponse.imageData);
-      const file = await this.vault.createBinary(finalPath, arrayBuffer);
+      await this.vault.createBinary(finalPath, arrayBuffer);
 
       return {
         success: true,
@@ -283,7 +283,7 @@ export class ImageFileManager {
           fileSize: buffer.length
         }
       };
-    } catch (error) {
+    } catch {
       return null;
     }
   }

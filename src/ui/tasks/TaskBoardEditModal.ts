@@ -173,8 +173,9 @@ export class TaskBoardEditModal extends Modal {
 
     this.parentTaskDropdown.addOption('', 'None');
     const options = this.getParentTaskOptionsForProject(this.draft.projectId);
+    const parentTaskDropdown = this.parentTaskDropdown;
     options.forEach(task => {
-      this.parentTaskDropdown!.addOption(task.id, task.title);
+      parentTaskDropdown.addOption(task.id, task.title);
     });
     this.parentTaskDropdown.setValue(this.draft.parentTaskId);
   }
@@ -193,9 +194,13 @@ export class TaskBoardEditModal extends Modal {
     if (includeEmpty && !options.some(([optionValue]) => optionValue === '')) {
       dropdown.addOption('', 'None');
     }
-    options.forEach(([optionValue, optionLabel]) => dropdown.addOption(optionValue, optionLabel));
+    for (const [optionValue, optionLabel] of options) {
+      dropdown.addOption(optionValue, optionLabel);
+    }
     dropdown.setValue(value || '');
-    dropdown.onChange(onChange);
+    dropdown.onChange((nextValue) => {
+      void onChange(nextValue);
+    });
   }
 
   private renderTextField(
@@ -210,7 +215,9 @@ export class TaskBoardEditModal extends Modal {
     const input = new TextComponent(field);
     if (placeholder) input.setPlaceholder(placeholder);
     input.setValue(value);
-    input.onChange(onChange);
+    input.onChange((nextValue) => {
+      void onChange(nextValue);
+    });
   }
 
   private renderDateField(
@@ -227,7 +234,7 @@ export class TaskBoardEditModal extends Modal {
     });
     input.value = value;
     input.addEventListener('input', () => {
-      onChange(input.value);
+      void onChange(input.value);
     });
   }
 
@@ -293,7 +300,7 @@ export class TaskBoardEditModal extends Modal {
     updateList();
 
     new ButtonComponent(subsection)
-      .setButtonText('+ Add note link')
+      .setButtonText('Add note link')
       .onClick(() => {
         this.draft.noteLinks.push({
           taskId: this.draft.id,

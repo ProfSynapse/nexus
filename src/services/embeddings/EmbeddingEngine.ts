@@ -47,7 +47,12 @@ export class EmbeddingEngine {
       await this.initialize();
     }
 
-    return this.iframe!.generateEmbedding(text);
+    const iframe = this.iframe;
+    if (!iframe) {
+      throw new Error('Embedding engine failed to initialize');
+    }
+
+    return iframe.generateEmbedding(text);
   }
 
   /**
@@ -61,7 +66,12 @@ export class EmbeddingEngine {
       await this.initialize();
     }
 
-    return this.iframe!.generateEmbeddings(texts);
+    const iframe = this.iframe;
+    if (!iframe) {
+      throw new Error('Embedding engine failed to initialize');
+    }
+
+    return iframe.generateEmbeddings(texts);
   }
 
   /**

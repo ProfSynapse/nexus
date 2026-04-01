@@ -1,8 +1,13 @@
 /**
  * Utilities for generating helpful parameter hints for users
  */
-import { getErrorMessage } from './errorUtils';
-import { ValidationError } from './validationUtils';
+import { ValidationError, ValidationSchema } from './validationUtils';
+
+type HintSchema = ValidationSchema & {
+    default?: unknown;
+    example?: unknown;
+    examples?: unknown[];
+};
 
 /**
  * Parameter hint for a specific tool parameter
@@ -41,7 +46,7 @@ export type ModeHelp = ToolHelp;
  * @param schema JSON schema to generate hints from
  * @returns Parameter hints for all properties in the schema
  */
-export function generateStructuredHints(schema: any): ParameterHint[] {
+export function generateStructuredHints(schema: HintSchema): ParameterHint[] {
     if (!schema || !schema.properties || typeof schema.properties !== 'object') {
         return [];
     }
@@ -49,32 +54,33 @@ export function generateStructuredHints(schema: any): ParameterHint[] {
     const requiredProps = Array.isArray(schema.required) ? schema.required : [];
     const hints: ParameterHint[] = [];
     
-    for (const [propName, propSchema] of Object.entries<any>(schema.properties)) {
+    for (const [propName, propSchema] of Object.entries(schema.properties)) {
         if (!propSchema) continue;
+        const typedPropSchema = propSchema as HintSchema;
         
         const hint: ParameterHint = {
             name: propName,
-            description: propSchema.description || 'No description provided',
-            type: getTypeFromSchema(propSchema),
+            description: typedPropSchema.description || 'No description provided',
+            type: getTypeFromSchema(typedPropSchema),
             required: requiredProps.includes(propName)
         };
         
         // Add default value if present
-        if (propSchema.default !== undefined) {
-            hint.defaultValue = propSchema.default;
+        if (typedPropSchema.default !== undefined) {
+            hint.defaultValue = typedPropSchema.default;
         }
         
         // Add constraints if present
-        const constraints = getConstraintsFromSchema(propSchema);
+        const constraints = getConstraintsFromSchema(typedPropSchema);
         if (constraints) {
             hint.constraints = constraints;
         }
         
         // Add example if present
-        if (propSchema.examples && propSchema.examples.length > 0) {
-            hint.example = propSchema.examples[0];
-        } else if (propSchema.example !== undefined) {
-            hint.example = propSchema.example;
+        if (typedPropSchema.examples && typedPropSchema.examples.length > 0) {
+            hint.example = typedPropSchema.examples[0];
+        } else if (typedPropSchema.example !== undefined) {
+            hint.example = typedPropSchema.example;
         }
         
         hints.push(hint);
@@ -100,7 +106,7 @@ export function generateStructuredHints(schema: any): ParameterHint[] {
 export function generateToolHelp(
     toolName: string,
     description: string,
-    schema: Record<string, unknown>,
+    schema: HintSchema,
     examples?: { description: string; parameters: Record<string, unknown> }[]
 ): ToolHelp {
     return {
@@ -164,7 +170,7 @@ export function formatModeHelp(help: ToolHelp): string {
  * @param schema JSON schema used for validation
  * @returns Array of hint strings for each error
  */
-export function generateHintsForErrors(errors: ValidationError[], schema: any): Record<string, string> {
+export function generateHintsForErrors(errors: ValidationError[], schema: HintSchema): Record<string, string> {
     const hints: Record<string, string> = {};
     
     if (!schema || !schema.properties) {
@@ -180,7 +186,7 @@ export function generateHintsForErrors(errors: ValidationError[], schema: any): 
         if (!paramName || typeof paramName !== 'string') continue;
         
         // Get schema for this parameter
-        const paramSchema = schema.properties[paramName];
+        const paramSchema = schema.properties[paramName] as HintSchema | undefined;
         if (!paramSchema) continue;
         
         // Generate hint based on error code
@@ -243,7 +249,7 @@ export function generateHintsForErrors(errors: ValidationError[], schema: any): 
  * @param schema Schema property to extract type from
  * @returns String representation of the property type
  */
-function getTypeFromSchema(schema: any): string {
+function getTypeFromSchema(schema: HintSchema): string {
     if (!schema) return 'any';
     
     if (schema.enum && Array.isArray(schema.enum)) {
@@ -252,7 +258,8 @@ function getTypeFromSchema(schema: any): string {
     
     if (schema.type) {
         if (schema.type === 'array' && schema.items) {
-            const itemType = schema.items.type || 'any';
+            const rawItemType = (schema.items as HintSchema | undefined)?.type;
+            const itemType = Array.isArray(rawItemType) ? rawItemType.join(' | ') : rawItemType || 'any';
             return `array of ${itemType}`;
         }
         
@@ -276,7 +283,7 @@ function getTypeFromSchema(schema: any): string {
  * @param schema Schema property to extract constraints from
  * @returns String representation of constraints, or undefined if none
  */
-function getConstraintsFromSchema(schema: any): string | undefined {
+function getConstraintsFromSchema(schema: HintSchema): string | undefined {
     if (!schema) return undefined;
     
     const constraints: string[] = [];

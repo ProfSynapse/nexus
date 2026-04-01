@@ -63,6 +63,39 @@ interface ConversationMetadataWithCompaction {
   [key: string]: unknown;
 }
 
+interface ConversationSettingsMetadata {
+  providerId?: string;
+  modelId?: string;
+  promptId?: string | null;
+  workspaceId?: string | null;
+  sessionId?: string | null;
+  contextNotes?: string[];
+  thinking?: ThinkingSettings;
+  temperature?: number;
+  agentProvider?: string | null;
+  agentModel?: string | null;
+  agentThinking?: ThinkingSettings;
+}
+
+interface ConversationServiceLike {
+  getConversation(conversationId: string, pagination?: { page?: number; pageSize?: number }): Promise<{
+    metadata?: ConversationMetadataWithCompaction & {
+      chatSettings?: ConversationSettingsMetadata;
+    };
+  } | null>;
+  updateConversationMetadata(conversationId: string, metadata: Record<string, unknown>): Promise<void>;
+}
+
+interface AgentToolLike {
+  slug?: string;
+  name?: string;
+}
+
+interface AgentLike {
+  description?: string;
+  getTools?: () => AgentToolLike[];
+}
+
 /**
  * App type with plugin registry access
  */
@@ -90,11 +123,11 @@ interface PluginWithSettings {
     };
   };
   serviceManager?: {
-    getServiceIfReady?: (name: string) => any;
+    getServiceIfReady?: (name: string) => unknown;
   };
   connector?: {
     agentRegistry?: {
-      getAllAgents: () => Map<string, any>;
+      getAllAgents: () => Map<string, AgentLike>;
     };
   };
 }
@@ -113,7 +146,7 @@ export class ModelAgentManager {
   private currentSystemPrompt: string | null = null;
   private selectedWorkspaceId: string | null = null;
   private workspaceContext: WorkspaceContext | null = null;
-  private loadedWorkspaceData: any = null; // Full comprehensive workspace data from LoadWorkspaceTool
+  private loadedWorkspaceData: Record<string, unknown> | null = null; // Full comprehensive workspace data from LoadWorkspaceTool
   private contextNotesManager: ContextNotesManager;
   private currentConversationId: string | null = null;
   private messageEnhancement: MessageEnhancement | null = null;
@@ -123,15 +156,15 @@ export class ModelAgentManager {
   private agentModel: string | null = null;
   private agentThinkingSettings: ThinkingSettings = { enabled: false, effort: 'medium' };
   private thinkingSettings: ThinkingSettings = { enabled: false, effort: 'medium' };
-  private temperature: number = 0.5;
+  private temperature = 0.5;
   private contextTokenTracker: ContextTokenTracker | null = null; // For token-limited models
   private compactionFrontier: CompactionFrontierRecord[] = []; // Active bounded compaction frontier
   private compactionFrontierService = new CompactionFrontierService();
 
   constructor(
-    private app: any, // Obsidian App
+    private app: App, // Obsidian App
     private events: ModelAgentManagerEvents,
-    private conversationService?: any, // Optional ConversationService for persistence
+    private conversationService?: ConversationServiceLike, // Optional ConversationService for persistence
     conversationId?: string
   ) {
     this.currentConversationId = conversationId || null;
@@ -159,13 +192,13 @@ export class ModelAgentManager {
    */
   async initializeFromConversation(conversationId: string): Promise<void> {
     try {
-      let chatSettings: Record<string, unknown> | undefined;
+      let chatSettings: ConversationSettingsMetadata | undefined;
       let conversationMetadata: ConversationMetadataWithCompaction | undefined;
 
       if (this.conversationService) {
         const conversation = await this.conversationService.getConversation(conversationId);
         conversationMetadata = conversation?.metadata as ConversationMetadataWithCompaction | undefined;
-        chatSettings = conversation?.metadata?.chatSettings as Record<string, unknown> | undefined;
+        chatSettings = conversation?.metadata?.chatSettings as ConversationSettingsMetadata | undefined;
       }
 
       this.clearCompactionFrontier();
@@ -175,13 +208,13 @@ export class ModelAgentManager {
       if (this.hasStoredChatSettings(chatSettings)) {
         await this.restoreFromConversationMetadata(chatSettings);
       }
-    } catch (error) {
+    } catch {
       this.clearCompactionFrontier();
       await this.initializeDefaultModel();
     }
   }
 
-  private hasStoredChatSettings(settings: Record<string, unknown> | undefined): boolean {
+  private hasStoredChatSettings(settings: ConversationSettingsMetadata | undefined): boolean {
     if (!settings) {
       return false;
     }
@@ -192,7 +225,10 @@ export class ModelAgentManager {
   /**
    * Restore settings from conversation metadata
    */
-  private async restoreFromConversationMetadata(settings: any): Promise<void> {
+  private async restoreFromConversationMetadata(settings: ConversationSettingsMetadata | undefined): Promise<void> {
+    if (!settings) {
+      return;
+    }
     // Restore model
     if (settings.providerId && settings.modelId) {
       try {
@@ -235,7 +271,7 @@ export class ModelAgentManager {
     // Restore workspace
     if ('workspaceId' in settings) {
       if (settings.workspaceId) {
-        await this.restoreWorkspace(settings.workspaceId, settings.sessionId);
+        await this.restoreWorkspace(settings.workspaceId, settings.sessionId ?? undefined);
       } else {
         this.selectedWorkspaceId = null;
         this.workspaceContext = null;
@@ -378,7 +414,7 @@ export class ModelAgentManager {
       if (settings?.defaultWorkspaceId) {
         try {
           await this.restoreWorkspace(settings.defaultWorkspaceId, undefined);
-        } catch (error) {
+        } catch {
           // Failed to load default workspace
         }
       }
@@ -395,7 +431,7 @@ export class ModelAgentManager {
             this.events.onSystemPromptChanged(this.currentSystemPrompt);
             return; // Prompt was set, don't reset
           }
-        } catch (error) {
+        } catch {
           // Failed to load default prompt
         }
       }
@@ -403,7 +439,7 @@ export class ModelAgentManager {
       // Notify listeners about the state (no prompt selected)
       this.events.onPromptChanged(null);
       this.events.onSystemPromptChanged(null);
-    } catch (error) {
+    } catch {
       // Failed to initialize defaults
     }
   }
@@ -438,7 +474,7 @@ export class ModelAgentManager {
       };
 
       await this.conversationService.updateConversationMetadata(conversationId, metadata);
-    } catch (error) {
+    } catch {
       // Failed to save to conversation
     }
   }
@@ -545,7 +581,7 @@ export class ModelAgentManager {
    * Get full loaded workspace data (sessions, states, files, etc.)
    * This is the comprehensive data used in system prompts
    */
-  getLoadedWorkspaceData(): any {
+  getLoadedWorkspaceData(): Record<string, unknown> | null {
     return this.loadedWorkspaceData;
   }
 
@@ -855,6 +891,7 @@ export class ModelAgentManager {
     const existingMetadata = (metadata ?? {}) as ConversationMetadataWithCompaction;
     const existingCompaction = existingMetadata.compaction ?? {};
     const { previousContext: _legacyPreviousContext, ...remainingCompaction } = existingCompaction;
+    void _legacyPreviousContext;
     const normalizedFrontier = this.compactionFrontierService.normalizeFrontier(frontier);
 
     return {
@@ -1101,7 +1138,7 @@ export class ModelAgentManager {
   private getToolAgentInfo(): ToolAgentInfo[] {
     try {
       // Access plugin from app
-      const appWithPlugins = this.app as AppWithPlugins;
+      const appWithPlugins = this.app as unknown as AppWithPlugins;
       const plugin = appWithPlugins.plugins?.plugins?.['claudesidian-mcp'] as unknown as PluginWithSettings | undefined;
       if (!plugin) {
         return [];
@@ -1110,15 +1147,16 @@ export class ModelAgentManager {
       // Try agentRegistrationService first (works on both desktop and mobile)
       const agentService = plugin.serviceManager?.getServiceIfReady?.('agentRegistrationService');
       if (agentService) {
-        const agents = agentService.getAllAgents();
-        const agentMap = agents instanceof Map ? agents : new Map(agents.map((a: { name: string }) => [a.name, a]));
+        const typedAgentService = agentService as { getAllAgents: () => Map<string, AgentLike> | Array<{ name: string } & AgentLike> };
+        const agents = typedAgentService.getAllAgents();
+        const agentMap = agents instanceof Map ? agents : new Map(agents.map((a) => [a.name, a]));
 
-        return Array.from(agentMap.entries()).map(([name, agent]: [string, any]) => {
+        return Array.from(agentMap.entries()).map(([name, agent]) => {
           const agentTools = agent.getTools?.() || [];
           return {
             name,
             description: agent.description || '',
-            tools: agentTools.map((t: { slug?: string; name?: string }) => t.slug || t.name || 'unknown')
+            tools: agentTools.map(t => t.slug || t.name || 'unknown')
           };
         });
       }
@@ -1126,7 +1164,7 @@ export class ModelAgentManager {
       // Fallback to connector's agentRegistry (desktop only)
       const connector = plugin.connector;
       if (connector?.agentRegistry) {
-        const agents = connector.agentRegistry.getAllAgents() as Map<string, any>;
+        const agents = connector.agentRegistry.getAllAgents();
         const result: ToolAgentInfo[] = [];
 
         for (const [name, agent] of agents) {
@@ -1134,7 +1172,7 @@ export class ModelAgentManager {
           result.push({
             name,
             description: agent.description || '',
-            tools: agentTools.map((t: { slug?: string; name?: string }) => t.slug || t.name || 'unknown')
+            tools: agentTools.map(t => t.slug || t.name || 'unknown')
           });
         }
 
@@ -1142,7 +1180,7 @@ export class ModelAgentManager {
       }
 
       return [];
-    } catch (error) {
+    } catch {
       return [];
     }
   }
@@ -1158,7 +1196,7 @@ export class ModelAgentManager {
     try {
       const conversation = await this.conversationService.getConversation(this.currentConversationId);
       return conversation?.metadata?.chatSettings?.sessionId;
-    } catch (error) {
+    } catch {
       return undefined;
     }
   }

@@ -57,11 +57,8 @@ export class ListTool extends BaseDirectoryTool<ListParams, ListResult> {
         filteredFolders = filterByName(allFolders, params.filter);
       }
 
-      // Prepare result data
-      const result: any = {};
-
       // Map files to required format
-      const fileData = filteredFiles.map(file => ({
+      const fileData: NonNullable<ListResult['data']>['files'] = filteredFiles.map(file => ({
         name: file.name,
         path: file.path,
         size: file.stat.size,
@@ -71,23 +68,24 @@ export class ListTool extends BaseDirectoryTool<ListParams, ListResult> {
 
       // Sort files by modified date (newest first)
       fileData.sort((a, b) => b.modified - a.modified);
-      result.files = fileData;
 
       // Map folders to required format
-      const folderData = filteredFolders.map(folder => ({
+      const folderData: NonNullable<ListResult['data']>['folders'] = filteredFolders.map(folder => ({
         name: folder.name,
         path: folder.path
       }));
 
       // Sort folders alphabetically
       folderData.sort((a, b) => a.name.localeCompare(b.name));
-      result.folders = folderData;
 
-      // Add summary
-      result.summary = {
-        fileCount: filteredFiles.length,
-        folderCount: filteredFolders.length,
-        totalItems: filteredFiles.length + filteredFolders.length
+      const result: NonNullable<ListResult['data']> = {
+        files: fileData,
+        folders: folderData,
+        summary: {
+          fileCount: filteredFiles.length,
+          folderCount: filteredFolders.length,
+          totalItems: filteredFiles.length + filteredFolders.length
+        }
       };
 
       // Generate helpful message
@@ -114,12 +112,12 @@ export class ListTool extends BaseDirectoryTool<ListParams, ListResult> {
     const result: TFile[] = [];
 
     // Get direct children that are files
-    const childFiles = (folder.children || []).filter(child => child instanceof TFile) as TFile[];
+    const childFiles = (folder.children || []).filter(child => child instanceof TFile);
     result.push(...childFiles);
 
     // If depth > 0, recursively get files from subfolders
     if (depth > 0) {
-      const childFolders = (folder.children || []).filter(child => child instanceof TFolder) as TFolder[];
+      const childFolders = (folder.children || []).filter(child => child instanceof TFolder);
       for (const childFolder of childFolders) {
         const subFiles = this.getFilesRecursively(childFolder, depth - 1);
         result.push(...subFiles);
@@ -139,7 +137,7 @@ export class ListTool extends BaseDirectoryTool<ListParams, ListResult> {
     const result: TFolder[] = [];
 
     // Get direct children that are folders
-    const childFolders = (folder.children || []).filter(child => child instanceof TFolder) as TFolder[];
+    const childFolders = (folder.children || []).filter(child => child instanceof TFolder);
     result.push(...childFolders);
 
     // If depth > 0, recursively get subfolders

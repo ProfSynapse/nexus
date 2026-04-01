@@ -22,10 +22,22 @@ jest.mock('../../src/services/chat/ConversationContextBuilder', () => ({
 
 describe('ProviderMessageBuilder — openai-codex continuation', () => {
   let builder: ProviderMessageBuilder;
+  type ToolDefinition = NonNullable<GenerateOptionsInternal['tools']>[number];
+  type ToolCallResult = {
+    id: string;
+    success: boolean;
+    name?: string;
+    result?: unknown;
+    error?: string;
+  };
+  type PreviousResponseContext = {
+    conversationId: string;
+    responsesApiId: string;
+  };
   const baseGenerateOptions: GenerateOptionsInternal = {
     model: 'gpt-5.3-codex',
     systemPrompt: 'You are helpful.',
-    tools: [{ type: 'function', name: 'getTools', parameters: {} } as any],
+    tools: [{ type: 'function', name: 'getTools', parameters: {} } as ToolDefinition],
   };
 
   beforeEach(() => {
@@ -46,7 +58,7 @@ describe('ProviderMessageBuilder — openai-codex continuation', () => {
       },
     ];
 
-    const toolResults = [
+    const toolResults: ToolCallResult[] = [
       { id: 'call_abc', name: 'get_weather', success: true, result: { temp: 72 } },
     ];
 
@@ -115,7 +127,7 @@ describe('ProviderMessageBuilder — openai-codex continuation', () => {
       [],
       [],
       baseGenerateOptions,
-      { conversationId: 'conv-1', responsesApiId: 'resp-old' } as any,
+      { conversationId: 'conv-1', responsesApiId: 'resp-old' } as PreviousResponseContext,
     );
 
     expect(result.previousResponseId).toBeUndefined();
@@ -197,10 +209,10 @@ describe('ProviderMessageBuilder — openai-codex continuation', () => {
     );
 
     const input = result.conversationHistory as Array<Record<string, unknown>>;
-    const output = input.find(i => i.type === 'function_call_output');
+    const output = input.find((i): i is { type: 'function_call_output'; output: unknown } => i.type === 'function_call_output');
 
     expect(output).toBeDefined();
-    expect(JSON.parse(output!.output as string)).toEqual({ error: 'Tool timed out' });
+    expect(JSON.parse(String(output?.output))).toEqual({ error: 'Tool timed out' });
   });
 
   it('should extract name from ChatToolCall union type (name property)', () => {
@@ -228,10 +240,10 @@ describe('ProviderMessageBuilder — openai-codex continuation', () => {
     );
 
     const input = result.conversationHistory as Array<Record<string, unknown>>;
-    const fnCall = input.find(i => i.type === 'function_call');
+    const fnCall = input.find((i): i is { type: 'function_call'; name: string } => i.type === 'function_call');
 
     // Should prefer the top-level name (ChatToolCall path)
-    expect(fnCall!.name).toBe('chat_tool_name');
+    expect(fnCall?.name).toBe('chat_tool_name');
   });
 
   it('should omit user prompt from input when empty', () => {

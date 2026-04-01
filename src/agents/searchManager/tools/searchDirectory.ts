@@ -11,7 +11,7 @@
  *             fuzzy searching, and result formatting following SOLID principles
  */
 
-import { Plugin } from 'obsidian';
+import { Plugin, TFile, TFolder } from 'obsidian';
 import { BaseTool } from '../../baseTool';
 import { getErrorMessage } from '../../../utils/errorUtils';
 import { CommonParameters } from '../../../types/mcp/AgentTypes';
@@ -177,9 +177,9 @@ export class SearchDirectoryTool extends BaseTool<SearchDirectoryParams, SearchD
    * @returns Items (potentially boosted if workspace context available)
    */
   private async applyWorkspaceContext(
-    items: any[],
+    items: (TFile | TFolder)[],
     workspaceId?: string
-  ): Promise<any[]> {
+  ): Promise<(TFile | TFolder)[]> {
     if (!this.workspaceService || !workspaceId || workspaceId === GLOBAL_WORKSPACE_ID) {
       return items;
     }
@@ -194,12 +194,12 @@ export class SearchDirectoryTool extends BaseTool<SearchDirectoryParams, SearchD
       // This maintains the explicit directory paths while adding workspace awareness
       return items;
 
-    } catch (error) {
+    } catch {
       return items;
     }
   }
 
-  getParameterSchema() {
+  getParameterSchema(): Record<string, unknown> {
     const toolSchema = {
       type: 'object',
       title: 'Search Directory',
@@ -284,7 +284,7 @@ export class SearchDirectoryTool extends BaseTool<SearchDirectoryParams, SearchD
     return this.getMergedSchema(toolSchema);
   }
 
-  getResultSchema() {
+  getResultSchema(): Record<string, unknown> {
     return {
       type: 'object',
       properties: {

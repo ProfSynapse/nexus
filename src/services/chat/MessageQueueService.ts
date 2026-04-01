@@ -10,14 +10,15 @@
  * Follows Single Responsibility Principle - only handles message queuing.
  */
 
+// eslint-disable-next-line import/no-nodejs-modules -- desktop-only message queue uses Node EventEmitter in Electron
 import { EventEmitter } from 'events';
 import type { QueuedMessage, MessageQueueEvents } from '../../types/branch/BranchTypes';
 
-export interface MessageQueueServiceEvents extends MessageQueueEvents {}
+export type MessageQueueServiceEvents = MessageQueueEvents
 
 export class MessageQueueService extends EventEmitter {
   private queue: QueuedMessage[] = [];
-  private isGenerating: boolean = false;
+  private isGenerating = false;
   private processMessageFn: ((message: QueuedMessage) => Promise<void>) | null = null;
 
   constructor() {
@@ -103,7 +104,11 @@ export class MessageQueueService extends EventEmitter {
    */
   private async processQueue(): Promise<void> {
     while (this.queue.length > 0 && !this.isGenerating) {
-      const message = this.queue.shift()!;
+      const message = this.queue.shift();
+      if (!message) {
+        break;
+      }
+
       await this.processMessage(message);
     }
 

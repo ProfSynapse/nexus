@@ -43,7 +43,9 @@ export class SimpleMemoryMonitor {
     critical: 85   // 85% memory usage
   };
 
-  private constructor() {}
+  private constructor() {
+    // Singleton: construction is intentionally restricted to getInstance().
+  }
 
   static getInstance(): SimpleMemoryMonitor {
     if (!SimpleMemoryMonitor.instance) {
@@ -114,18 +116,11 @@ export class SimpleMemoryMonitor {
   }
 
   private checkMemoryPressure(): void {
-    const memInfo = this.getCurrentMemoryInfo();
     const pressure = this.getPressureLevel();
 
-    // Log memory stats periodically
+    // Non-normal pressure is currently observed without triggering action here.
     if (pressure.level !== 'normal') {
-      const usedMB = Math.round(memInfo.used / (1024 * 1024));
-      const totalMB = Math.round(memInfo.total / (1024 * 1024));
-      
-      
-      // Basic cleanup recommendations
-      if (pressure.level === 'critical') {
-      }
+      return;
     }
   }
 

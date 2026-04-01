@@ -7,6 +7,8 @@ import { Server as MCPSDKServer } from '@modelcontextprotocol/sdk/server/index.j
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import { logger } from '../../utils/logger';
+// eslint-disable-next-line import/no-nodejs-modules -- desktop-only STDIO transport uses Node streams in Electron
+import type { Readable, Writable } from 'node:stream';
 
 /**
  * Service responsible for STDIO transport management
@@ -14,7 +16,7 @@ import { logger } from '../../utils/logger';
  */
 export class StdioTransportManager {
     private stdioTransport: StdioServerTransport | null = null;
-    private isConnected: boolean = false;
+    private isConnected = false;
     /** The most recently connected socket-based transport (IPC connections). */
     private activeSocketTransport: StdioServerTransport | null = null;
 
@@ -113,7 +115,7 @@ export class StdioTransportManager {
     /**
      * Create a new transport instance (for socket connections)
      */
-    createSocketTransport(inputStream: any, outputStream: any): StdioServerTransport {
+    createSocketTransport(inputStream: Readable, outputStream: Writable): StdioServerTransport {
         return new StdioServerTransport(inputStream, outputStream);
     }
 

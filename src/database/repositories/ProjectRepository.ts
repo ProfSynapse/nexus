@@ -18,6 +18,7 @@
  */
 
 import { BaseRepository, RepositoryDependencies } from './base/BaseRepository';
+import { DatabaseRow, QueryParams } from './base/BaseRepository';
 import {
   IProjectRepository,
   ProjectMetadata,
@@ -30,7 +31,17 @@ import {
   ProjectDeletedEvent
 } from '../interfaces/StorageEvents';
 import { PaginatedResult, PaginationParams } from '../../types/pagination/PaginationTypes';
-import { QueryCache } from '../optimizations/QueryCache';
+
+interface ProjectRow extends DatabaseRow {
+  id: string;
+  workspaceId: string;
+  name: string;
+  description?: string | null;
+  status: ProjectMetadata['status'];
+  created: number;
+  updated: number;
+  metadataJson?: string | null;
+}
 
 /**
  * Repository for project entities
@@ -58,7 +69,7 @@ export class ProjectRepository
     return this.getCachedOrFetch(
       `project:get:${id}`,
       async () => {
-        const row = await this.sqliteCache.queryOne<Record<string, unknown>>(
+        const row = await this.sqliteCache.queryOne<ProjectRow>(
           'SELECT * FROM projects WHERE id = ?',
           [id]
         );
@@ -71,7 +82,7 @@ export class ProjectRepository
     const baseQuery = 'SELECT * FROM projects ORDER BY updated DESC';
     const countQuery = 'SELECT COUNT(*) as count FROM projects';
 
-    const result = await this.queryPaginated<Record<string, unknown>>(baseQuery, countQuery, options);
+    const result = await this.queryPaginated<ProjectRow>(baseQuery, countQuery, options);
     return {
       ...result,
       items: result.items.map(row => this.rowToEntity(row))
@@ -160,7 +171,7 @@ export class ProjectRepository
 
         // 2. Update SQLite cache
         const setClauses: string[] = ['updated = ?'];
-        const params: unknown[] = [now];
+        const params: QueryParams = [now];
 
         if (data.name !== undefined) {
           setClauses.push('name = ?');
@@ -230,15 +241,15 @@ export class ProjectRepository
 
   async count(criteria?: Record<string, unknown>): Promise<number> {
     let sql = 'SELECT COUNT(*) as count FROM projects';
-    const params: unknown[] = [];
+    const params: QueryParams = [];
 
     if (criteria) {
       const conditions: string[] = [];
-      if (criteria.workspaceId !== undefined) {
+      if (typeof criteria.workspaceId === 'string') {
         conditions.push('workspaceId = ?');
         params.push(criteria.workspaceId);
       }
-      if (criteria.status !== undefined) {
+      if (typeof criteria.status === 'string') {
         conditions.push('status = ?');
         params.push(criteria.status);
       }
@@ -260,7 +271,7 @@ export class ProjectRepository
     options?: PaginationParams & { status?: string }
   ): Promise<PaginatedResult<ProjectMetadata>> {
     let whereClause = 'WHERE workspaceId = ?';
-    const params: unknown[] = [workspaceId];
+    const params: QueryParams = [workspaceId];
 
     if (options?.status) {
       whereClause += ' AND status = ?';
@@ -270,7 +281,7 @@ export class ProjectRepository
     const baseQuery = `SELECT * FROM projects ${whereClause} ORDER BY updated DESC`;
     const countQuery = `SELECT COUNT(*) as count FROM projects ${whereClause}`;
 
-    const result = await this.queryPaginated<Record<string, unknown>>(baseQuery, countQuery, options, params);
+    const result = await this.queryPaginated<ProjectRow>(baseQuery, countQuery, options, params);
     return {
       ...result,
       items: result.items.map(row => this.rowToEntity(row))
@@ -278,7 +289,7 @@ export class ProjectRepository
   }
 
   async getByName(workspaceId: string, name: string): Promise<ProjectMetadata | null> {
-    const row = await this.sqliteCache.queryOne<Record<string, unknown>>(
+    const row = await this.sqliteCache.queryOne<ProjectRow>(
       'SELECT * FROM projects WHERE workspaceId = ? AND name = ?',
       [workspaceId, name]
     );
@@ -289,24 +300,25 @@ export class ProjectRepository
   // Protected Methods
   // ============================================================================
 
-  protected rowToEntity(row: Record<string, unknown>): ProjectMetadata {
+  protected rowToEntity(row: DatabaseRow): ProjectMetadata {
+    const projectRow = row as ProjectRow;
     let metadata: Record<string, unknown> | undefined;
-    if (row.metadataJson) {
+    if (projectRow.metadataJson) {
       try {
-        metadata = JSON.parse(row.metadataJson as string);
+        metadata = JSON.parse(projectRow.metadataJson) as Record<string, unknown>;
       } catch {
         // Skip unparseable metadata
       }
     }
 
     return {
-      id: row.id as string,
-      workspaceId: row.workspaceId as string,
-      name: row.name as string,
-      description: (row.description as string) ?? undefined,
-      status: row.status as ProjectMetadata['status'],
-      created: row.created as number,
-      updated: row.updated as number,
+      id: projectRow.id,
+      workspaceId: projectRow.workspaceId,
+      name: projectRow.name,
+      description: projectRow.description ?? undefined,
+      status: projectRow.status,
+      created: projectRow.created,
+      updated: projectRow.updated,
       metadata
     };
   }

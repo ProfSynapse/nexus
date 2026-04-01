@@ -2,7 +2,7 @@
  * UIStateController - Manages all UI state transitions and visual feedback
  */
 
-import { setIcon, ButtonComponent, Component } from 'obsidian';
+import { setIcon, Component } from 'obsidian';
 
 export interface UIStateControllerEvents {
   onSidebarToggled: (visible: boolean) => void;
@@ -17,6 +17,14 @@ export class UIStateController {
     private events: UIStateControllerEvents,
     private component?: Component
   ) {}
+
+  private registerClickHandler(element: HTMLElement, handler: () => void): void {
+    if (this.component) {
+      this.component.registerDomEvent(element, 'click', handler);
+    } else {
+      element.addEventListener('click', handler);
+    }
+  }
 
   /**
    * Set callback for opening settings
@@ -36,7 +44,7 @@ export class UIStateController {
    * Show welcome state when no conversation is selected
    * @param hasConfiguredProviders - Whether any LLM providers are set up
    */
-  showWelcomeState(hasConfiguredProviders: boolean = true): void {
+  showWelcomeState(hasConfiguredProviders = true): void {
     const messageDisplay = this.containerEl.querySelector('.message-display-container');
     if (!messageDisplay) return;
 
@@ -53,7 +61,7 @@ export class UIStateController {
       setIcon(welcomeIcon, 'sparkles');
 
       welcomeContent.createEl('div', {
-        text: 'Welcome to Nexus Chat',
+        text: 'Welcome to chat',
         cls: 'chat-welcome-title'
       });
 
@@ -87,13 +95,13 @@ export class UIStateController {
       setIcon(welcomeIcon, 'settings');
 
       welcomeContent.createEl('p', {
-        text: 'Configure an LLM provider to start chatting',
+        text: 'Configure a provider to start chatting.',
         cls: 'chat-welcome-hint'
       });
 
       const settingsBtn = welcomeContent.createEl('button', {
         cls: 'chat-welcome-button',
-        text: 'Open Settings'
+        text: 'Open settings'
       });
       const settingsBtnIcon = settingsBtn.createSpan({ cls: 'chat-welcome-button-icon' });
       setIcon(settingsBtnIcon, 'settings');
@@ -103,7 +111,7 @@ export class UIStateController {
           this.onOpenSettings();
         }
       };
-      this.component!.registerDomEvent(settingsBtn, 'click', settingsHandler);
+      this.registerClickHandler(settingsBtn, settingsHandler);
     }
   }
 
@@ -160,7 +168,7 @@ export class UIStateController {
    * Note: ChatInput component now manages its own loading state and stop button
    * This method is kept for backward compatibility but does nothing
    */
-  setInputLoading(loading: boolean): void {
+  setInputLoading(_loading: boolean): void {
     // ChatInput component handles its own state now
     // No-op to avoid conflicts with ChatInput's updateUI()
   }
@@ -191,7 +199,7 @@ export class UIStateController {
     const hamburgerButton = this.containerEl.querySelector('.chat-hamburger-button');
     if (hamburgerButton) {
       const hamburgerHandler = () => this.toggleConversationList();
-      this.component!.registerDomEvent(hamburgerButton as HTMLElement, 'click', hamburgerHandler);
+      this.registerClickHandler(hamburgerButton as HTMLElement, hamburgerHandler);
     }
 
     // Backdrop click to close sidebar
@@ -202,7 +210,7 @@ export class UIStateController {
           this.toggleConversationList();
         }
       };
-      this.component!.registerDomEvent(backdrop as HTMLElement, 'click', backdropHandler);
+      this.registerClickHandler(backdrop as HTMLElement, backdropHandler);
     }
   }
 

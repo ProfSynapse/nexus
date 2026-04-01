@@ -20,8 +20,6 @@ interface HelpContent {
  * Applies Single Responsibility Principle by focusing solely on help generation
  */
 export class ToolHelpService implements IToolHelpService {
-    constructor() {}
-
     /**
      * Generate help content for a specific agent mode
      * @param getAgent Function to retrieve agent by name
@@ -73,7 +71,7 @@ export class ToolHelpService implements IToolHelpService {
             const help = generateToolHelp(
                 mode,
                 toolInstance.description,
-                schema
+                schema as Parameters<typeof generateToolHelp>[2]
             );
 
             // Format the help text
@@ -135,7 +133,7 @@ export class ToolHelpService implements IToolHelpService {
                         type: "text",
                         text: "\n---\n"
                     });
-                } catch (error) {
+                } catch {
                     logger.systemWarn(`ToolHelpService: Failed to generate help for tool ${toolSlug}`);
                 }
             }
@@ -190,7 +188,7 @@ export class ToolHelpService implements IToolHelpService {
 
             const toolInstance = agent.getTool(toolSlug);
             return toolInstance !== undefined;
-        } catch (error) {
+        } catch {
             logger.systemWarn(`ToolHelpService: Tool validation failed for ${toolName}.${toolSlug}`);
             return false;
         }

@@ -1,4 +1,5 @@
 import { CommonParameters, CommonResult } from '../types';
+import type { ToolContext } from '../types/mcp/AgentTypes';
 
 /**
  * Interface for workspace context
@@ -7,6 +8,23 @@ export interface WorkspaceContext {
   workspaceId: string;
   workspacePath?: string[];
   activeWorkspace?: boolean;
+}
+
+interface ContextParamLike {
+  workspaceId?: string;
+}
+
+function isToolContext(value: unknown): value is ToolContext {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+
+  const candidate = value as Record<string, unknown>;
+  return typeof candidate.workspaceId === 'string'
+    && typeof candidate.sessionId === 'string'
+    && typeof candidate.memory === 'string'
+    && typeof candidate.goal === 'string'
+    && (candidate.constraints === undefined || typeof candidate.constraints === 'string');
 }
 
 /**
@@ -19,7 +37,7 @@ export interface WorkspaceContext {
 export function parseWorkspaceContext(
   workspaceContext: CommonParameters['workspaceContext'] | null | undefined,
   fallbackId = 'default-workspace',
-  contextParam?: any
+  contextParam?: ContextParamLike | null
 ): WorkspaceContext | null {
   // First, try to get workspaceId from context parameter if available
   let workspaceId: string | undefined;
@@ -45,8 +63,11 @@ export function parseWorkspaceContext(
   // Handle string vs object format
   if (typeof workspaceContext === 'string') {
     try {
-      parsedContext = JSON.parse(workspaceContext);
-    } catch (e) {
+      const parsed: unknown = JSON.parse(workspaceContext);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        parsedContext = parsed as Partial<WorkspaceContext>;
+      }
+    } catch {
       return {
         workspaceId: workspaceId || fallbackId,
         workspacePath: [],
@@ -139,8 +160,8 @@ export function mergeWorkspaceContexts(
  * @param params Parameters object that may contain context information
  * @returns Context suitable for prepareResult calls
  */
-export function extractContextFromParams(params: any): CommonResult['context'] {
-  if (params.context !== undefined) {
+export function extractContextFromParams(params: { context?: CommonResult['context'] } | null | undefined): CommonResult['context'] {
+  if (params?.context !== undefined) {
     return normalizeContextForResult(params.context);
   }
   return undefined;
@@ -151,10 +172,10 @@ export function extractContextFromParams(params: any): CommonResult['context'] {
  * @param context Context in either string or enhanced object format
  * @returns Normalized context for result
  */
-export function normalizeContextForResult(context: any): CommonResult['context'] {
+export function normalizeContextForResult(context: unknown): CommonResult['context'] {
   if (typeof context === 'string') {
     return context;
-  } else if (typeof context === 'object' && context !== null) {
+  } else if (isToolContext(context)) {
     // Return the enhanced context object as-is
     return context;
   }

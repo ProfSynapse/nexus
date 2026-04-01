@@ -7,18 +7,26 @@
  */
 
 import { TextComposer } from '../../src/agents/apps/composer/services/TextComposer';
-import { ComposeOptions, ComposerError } from '../../src/agents/apps/composer/types';
+import { ComposerError } from '../../src/agents/apps/composer/types';
 import { TFile, Vault } from 'obsidian';
+
+type MockTFile = TFile & {
+  stat: { size: number; mtime: number; ctime: number };
+};
+
+type VaultWithRead = Vault & {
+  read: jest.Mock<Promise<string>, [TFile]>;
+};
 
 function makeTFile(name: string, path?: string): TFile {
   const file = new TFile(name, path ?? name);
-  (file as any).stat = { size: 100, mtime: Date.now(), ctime: Date.now() };
+  (file as MockTFile).stat = { size: 100, mtime: Date.now(), ctime: Date.now() };
   return file;
 }
 
 function makeVault(contentMap: Record<string, string>): Vault {
   const vault = new Vault();
-  (vault as any).read = jest.fn((file: TFile) => {
+  (vault as VaultWithRead).read = jest.fn((file: TFile) => {
     return Promise.resolve(contentMap[file.path] ?? '');
   });
   return vault;
@@ -40,7 +48,7 @@ describe('TextComposer', () => {
   it('should reject mix mode', async () => {
     const vault = makeVault({});
     await expect(
-      composer.compose({ mode: 'mix', tracks: [] } as any, vault, {})
+      composer.compose({ mode: 'mix', tracks: [] } as Parameters<TextComposer['compose']>[0], vault, {})
     ).rejects.toThrow(ComposerError);
   });
 

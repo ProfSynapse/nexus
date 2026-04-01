@@ -1,3 +1,5 @@
+import type { Command, Plugin } from 'obsidian';
+
 /**
  * Main types export barrel
  * Provides a clean interface for importing types throughout the application
@@ -17,15 +19,9 @@ export {
 } from './llm';
 
 // Simple memory management now uses JSON-based storage
-export interface MemorySettings {
-  enabled: boolean;
-  dataPath?: string;
-}
+export type MemorySettings = Record<string, never>;
 
-export const DEFAULT_MEMORY_SETTINGS: MemorySettings = {
-  enabled: true,
-  dataPath: '.data'
-};
+export const DEFAULT_MEMORY_SETTINGS: MemorySettings = {};
 
 // MCP protocol types
 export {
@@ -142,10 +138,10 @@ declare module 'obsidian' {
       commands: { [id: string]: Command };
     };
     plugins: {
-      getPlugin(id: string): any;
+      getPlugin(id: string): Plugin | undefined;
       enablePlugin(id: string): Promise<void>;
       disablePlugin(id: string): Promise<void>;
-      plugins: { [id: string]: any };
+      plugins: { [id: string]: Plugin | undefined };
     };
   }
 }

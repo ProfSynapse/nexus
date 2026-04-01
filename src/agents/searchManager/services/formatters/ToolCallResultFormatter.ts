@@ -10,8 +10,7 @@
 
 import {
   MemorySearchResult,
-  FormatOptions,
-  MemoryType
+  FormatOptions
 } from '../../../../types/memory/MemorySearchTypes';
 import { BaseResultFormatter } from './BaseResultFormatter';
 
@@ -59,7 +58,10 @@ export class ToolCallResultFormatter extends BaseResultFormatter {
     return `${prefix} ${content} [${status}${timing}]`;
   }
 
-  protected addTypeSpecificMetadata(formatted: Record<string, string>, metadata: any): void {
+  protected addTypeSpecificMetadata(
+    formatted: Record<string, string>,
+    metadata: MemorySearchResult['metadata']
+  ): void {
     if (metadata.agent && metadata.mode) {
       formatted['Tool'] = `${metadata.agent}_${metadata.mode}`;
     }

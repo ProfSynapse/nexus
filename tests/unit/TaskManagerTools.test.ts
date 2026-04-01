@@ -18,6 +18,12 @@ import { MoveTaskTool } from '../../src/agents/taskManager/tools/tasks/moveTask'
 import { QueryTasksTool } from '../../src/agents/taskManager/tools/tasks/queryTasks';
 import { LinkNoteTool } from '../../src/agents/taskManager/tools/links/linkNote';
 import { TaskService } from '../../src/agents/taskManager/services/TaskService';
+import type {
+  DependencyTree,
+  QueryTasksParameters,
+  TaskMetadata,
+  TaskWithBlockers
+} from '../../src/agents/taskManager/types';
 
 // ============================================================================
 // Mock TaskService
@@ -43,6 +49,35 @@ function createMockTaskService(): jest.Mocked<TaskService> {
     getTasksForNote: jest.fn(),
     getWorkspaceSummary: jest.fn()
   } as unknown as jest.Mocked<TaskService>;
+}
+
+function createTaskMetadata(overrides: Partial<TaskMetadata> = {}): TaskMetadata {
+  return {
+    id: 't1',
+    projectId: 'proj-1',
+    workspaceId: 'ws-1',
+    title: 'Task 1',
+    status: 'todo',
+    priority: 'medium',
+    created: 0,
+    updated: 0,
+    ...overrides
+  };
+}
+
+function createTaskWithBlockers(task: TaskMetadata): TaskWithBlockers {
+  return {
+    task,
+    blockedBy: []
+  };
+}
+
+function createDependencyTree(task: TaskMetadata): DependencyTree {
+  return {
+    task,
+    dependencies: [],
+    dependents: []
+  };
 }
 
 // Common params that tools extend
@@ -575,8 +610,9 @@ describe('TaskManager Tools', () => {
     });
 
     it('should query next actions', async () => {
+      const task = createTaskMetadata();
       mockService.getNextActions.mockResolvedValue([
-        { id: 't1', title: 'Task 1' } as any
+        task
       ]);
 
       const result = await tool.execute({
@@ -591,8 +627,9 @@ describe('TaskManager Tools', () => {
     });
 
     it('should query blocked tasks', async () => {
+      const task = createTaskMetadata();
       mockService.getBlockedTasks.mockResolvedValue([
-        { task: { id: 't1' } as any, blockedBy: [] }
+        createTaskWithBlockers(task)
       ]);
 
       const result = await tool.execute({
@@ -607,10 +644,9 @@ describe('TaskManager Tools', () => {
     });
 
     it('should query dependency tree', async () => {
+      const task = createTaskMetadata();
       mockService.getDependencyTree.mockResolvedValue({
-        task: { id: 't1' } as any,
-        dependencies: [],
-        dependents: []
+        ...createDependencyTree(task)
       });
 
       const result = await tool.execute({
@@ -638,7 +674,7 @@ describe('TaskManager Tools', () => {
       const result = await tool.execute({
         ...baseParams,
         projectId: 'proj-1',
-        query: '' as any
+        query: '' as unknown as QueryTasksParameters['query']
       });
       expect(result.success).toBe(false);
     });
@@ -658,7 +694,7 @@ describe('TaskManager Tools', () => {
       const result = await tool.execute({
         ...baseParams,
         projectId: 'proj-1',
-        query: 'unknownQuery' as any
+        query: 'unknownQuery' as unknown as QueryTasksParameters['query']
       });
 
       expect(result.success).toBe(false);

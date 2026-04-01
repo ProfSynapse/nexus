@@ -8,6 +8,11 @@
 import { generateUnifiedDiff } from '../../src/agents/contentManager/utils/unifiedDiff';
 
 describe('generateUnifiedDiff', () => {
+  function expectDefined<T>(value: T | null | undefined): T {
+    expect(value).toBeDefined();
+    return value as T;
+  }
+
   // ========================================================================
   // No changes
   // ========================================================================
@@ -186,7 +191,7 @@ describe('generateUnifiedDiff', () => {
     // Should have two @@ headers since the changes are far apart
     const headers = diff.match(/@@ .+? @@/g);
     expect(headers).not.toBeNull();
-    expect(headers!.length).toBe(2);
+    expect(expectDefined(headers).length).toBe(2);
 
     expect(diff).toContain('-line 2');
     expect(diff).toContain('+CHANGED_2');
@@ -205,7 +210,7 @@ describe('generateUnifiedDiff', () => {
     // Only 1 line gap between changes — should be one hunk
     const headers = diff.match(/@@ .+? @@/g);
     expect(headers).not.toBeNull();
-    expect(headers!.length).toBe(1);
+    expect(expectDefined(headers).length).toBe(1);
   });
 
   // ========================================================================

@@ -1,6 +1,18 @@
 import { ModelAgentManager } from '../../src/ui/chat/services/ModelAgentManager';
 import { ConversationData } from '../../src/types/chat/ChatTypes';
 
+type SelectedModel = {
+  providerId: string;
+  modelId: string;
+  providerName: string;
+  modelName: string;
+  contextWindow: number;
+};
+
+type ModelAgentManagerWithSelectedModel = ModelAgentManager & {
+  selectedModel: SelectedModel;
+};
+
 describe('ModelAgentManager', () => {
   function createConversation(content: string): ConversationData {
     return {
@@ -30,7 +42,7 @@ describe('ModelAgentManager', () => {
       }
     );
 
-    (manager as any).selectedModel = {
+    (manager as ModelAgentManagerWithSelectedModel).selectedModel = {
       providerId: 'github-copilot',
       modelId: 'copilot-model',
       providerName: 'GitHub Copilot',

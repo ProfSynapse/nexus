@@ -516,7 +516,7 @@ export class DirectToolExecutor {
                 const argumentsStr = toolCall.function.arguments || '{}';
 
                 try {
-                    parameters = JSON.parse(argumentsStr);
+                    parameters = JSON.parse(argumentsStr) as Record<string, unknown>;
                 } catch (parseError) {
                     throw new Error(`Invalid tool arguments: ${parseError instanceof Error ? parseError.message : 'Unknown parsing error'}`);
                 }

@@ -1,4 +1,13 @@
 import { ModelAgentManager } from '../../src/ui/chat/services/ModelAgentManager';
+type ManagerWithUpdate = {
+  updateContextTokenTracker(providerId: string): void;
+};
+
+function expectDefined<T>(value: T | null | undefined): T {
+  expect(value).not.toBeNull();
+  return value as T;
+}
+
 function createManager() {
   return new ModelAgentManager(
     {},
@@ -22,12 +31,11 @@ describe('ModelAgentManager context gating rollout', () => {
     'enables pre-send compaction gating for %s',
     (providerId) => {
       const manager = createManager();
-      (manager as any).updateContextTokenTracker(providerId);
+      (manager as unknown as ManagerWithUpdate).updateContextTokenTracker(providerId);
 
-      const tracker = manager.getContextTokenTracker();
-      expect(tracker).not.toBeNull();
-      expect(tracker?.getStatus().maxTokens).toBe(200000);
-      tracker?.setConversationTokens(180000);
+      const tracker = expectDefined(manager.getContextTokenTracker());
+      expect(tracker.getStatus().maxTokens).toBe(200000);
+      tracker.setConversationTokens(180000);
       expect(manager.shouldCompactBeforeSending('short follow-up')).toBe(true);
     }
   );
@@ -36,13 +44,13 @@ describe('ModelAgentManager context gating rollout', () => {
     'applies the 1.15 pre-send estimate buffer for %s',
     (providerId) => {
       const manager = createManager();
-      (manager as any).updateContextTokenTracker(providerId);
+      (manager as unknown as ManagerWithUpdate).updateContextTokenTracker(providerId);
 
-      const tracker = manager.getContextTokenTracker();
+      const tracker = expectDefined(manager.getContextTokenTracker());
       const message = 'deterministic follow-up message for compaction gating';
-      const estimatedTokens = tracker!.estimateTokens(message);
+      const estimatedTokens = tracker.estimateTokens(message);
 
-      tracker!.setConversationTokens(180000 - estimatedTokens - 1);
+      tracker.setConversationTokens(180000 - estimatedTokens - 1);
 
       expect(manager.shouldCompactBeforeSending(message)).toBe(true);
     }
@@ -50,23 +58,22 @@ describe('ModelAgentManager context gating rollout', () => {
 
   it('still enables the 4k tracker for webllm', () => {
     const manager = createManager();
-    (manager as any).updateContextTokenTracker('webllm');
+    (manager as unknown as ManagerWithUpdate).updateContextTokenTracker('webllm');
 
-    const tracker = manager.getContextTokenTracker();
-    expect(tracker).not.toBeNull();
-    expect(tracker?.getStatus().maxTokens).toBe(4096);
+    const tracker = expectDefined(manager.getContextTokenTracker());
+    expect(tracker.getStatus().maxTokens).toBe(4096);
   });
 
   it('does not apply the 1.15 pre-send estimate buffer to webllm', () => {
     const manager = createManager();
-    (manager as any).updateContextTokenTracker('webllm');
+    (manager as unknown as ManagerWithUpdate).updateContextTokenTracker('webllm');
 
-    const tracker = manager.getContextTokenTracker();
+    const tracker = expectDefined(manager.getContextTokenTracker());
     const message = 'deterministic follow-up message for compaction gating';
-    const estimatedTokens = tracker!.estimateTokens(message);
+    const estimatedTokens = tracker.estimateTokens(message);
     const criticalThreshold = Math.ceil(4096 * 0.9);
 
-    tracker!.setConversationTokens(criticalThreshold - estimatedTokens - 1);
+    tracker.setConversationTokens(criticalThreshold - estimatedTokens - 1);
 
     expect(manager.shouldCompactBeforeSending(message)).toBe(false);
   });

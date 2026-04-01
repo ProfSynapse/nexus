@@ -1,6 +1,21 @@
 import { TokenCalculator } from '../../src/ui/chat/utils/TokenCalculator';
 import { ConversationData } from '../../src/types/chat/ChatTypes';
 
+type MessageWithUsage = ConversationData['messages'][number] & {
+  usage?: unknown;
+};
+
+function createMessage(usage?: unknown): MessageWithUsage {
+  return {
+    id: 'msg_1',
+    role: 'assistant',
+    content: 'This content should be ignored when usage is present.',
+    timestamp: Date.now(),
+    conversationId: 'conv_1',
+    usage
+  };
+}
+
 describe('TokenCalculator usage normalization', () => {
   it('counts camelCase prompt/completion/total usage fields', () => {
     const tokens = TokenCalculator.estimateTokenCount({
@@ -94,14 +109,7 @@ function createConversation(usage?: unknown): ConversationData {
     created: Date.now(),
     updated: Date.now(),
     messages: [
-      {
-        id: 'msg_1',
-        role: 'assistant',
-        content: 'This content should be ignored when usage is present.',
-        timestamp: Date.now(),
-        conversationId: 'conv_1',
-        usage: usage as any
-      }
+      createMessage(usage)
     ]
   };
 }

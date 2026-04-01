@@ -36,7 +36,7 @@ export class AudioEncoder {
       case 'mp3':
         return this.encodeMp3(buffer);
       default:
-        throw new ComposerError(`Unsupported audio output format: ${format}`);
+        throw new ComposerError(`Unsupported audio output format: ${String(format)}`);
     }
   }
 
@@ -121,15 +121,15 @@ export class AudioEncoder {
           const blob = new Blob(chunks, { type: 'audio/webm;codecs=opus' });
           const arrayBuffer = await blob.arrayBuffer();
           resolve(new Uint8Array(arrayBuffer));
-        } catch (err) {
-          reject(new ComposerError(`WebM encoding post-processing failed: ${err}`));
+        } catch (err: unknown) {
+          reject(new ComposerError(`WebM encoding post-processing failed: ${err instanceof Error ? err.message : String(err)}`));
         } finally {
-          audioCtx.close();
+          void audioCtx.close();
         }
       };
 
       recorder.onerror = () => {
-        audioCtx.close();
+        void audioCtx.close();
         reject(new ComposerError('WebM encoding failed'));
       };
 

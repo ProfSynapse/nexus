@@ -8,6 +8,13 @@ jest.mock('../../src/utils/platform', () => ({
 
 import { OpenAICodexAdapter, CodexOAuthTokens } from '../../src/services/llm/adapters/openai-codex/OpenAICodexAdapter';
 
+type RequestRecord = {
+  url: string;
+  headers: Record<string, string>;
+  body?: string;
+  method?: string;
+};
+
 function createTokens(overrides?: Partial<CodexOAuthTokens>): CodexOAuthTokens {
   return {
     accessToken: 'test-access-token',
@@ -63,8 +70,8 @@ describe('OpenAICodexAdapter', () => {
       };
     });
 
-    for await (const _ of adapter.generateStreamAsync('hello')) {
-      // drain
+    for await (const chunk of adapter.generateStreamAsync('hello')) {
+      void chunk;
     }
 
     expect(seenUrls.some((url) => url.includes('/oauth/token'))).toBe(true);
@@ -72,7 +79,7 @@ describe('OpenAICodexAdapter', () => {
   });
 
   it('sends codex headers and request body through requestUrl', async () => {
-    const requests: any[] = [];
+    const requests: RequestRecord[] = [];
     const adapter = new OpenAICodexAdapter(createTokens());
 
     __setRequestUrlMock(async (request) => {
@@ -86,7 +93,7 @@ describe('OpenAICodexAdapter', () => {
       };
     });
 
-    for await (const _ of adapter.generateStreamAsync('hello', {
+    for await (const chunk of adapter.generateStreamAsync('hello', {
       systemPrompt: 'System message',
       tools: [{
         type: 'function',
@@ -97,11 +104,11 @@ describe('OpenAICodexAdapter', () => {
         }
       }]
     })) {
-      // drain
+      void chunk;
     }
 
     const request = requests[0];
-    const body = JSON.parse(request.body);
+    const body = JSON.parse(request.body ?? '{}');
 
     expect(request.headers.Authorization).toBe('Bearer test-access-token');
     expect(request.headers['ChatGPT-Account-Id']).toBe('acct-test-123');
@@ -152,8 +159,8 @@ describe('OpenAICodexAdapter', () => {
     }));
 
     await expect(async () => {
-      for await (const _ of adapter.generateStreamAsync('hello')) {
-        // drain
+      for await (const chunk of adapter.generateStreamAsync('hello')) {
+        void chunk;
       }
     }).rejects.toMatchObject({
       name: 'LLMProviderError',
@@ -184,8 +191,8 @@ describe('OpenAICodexAdapter', () => {
     }));
 
     await expect(async () => {
-      for await (const _ of adapter.generateStreamAsync('hello')) {
-        // drain
+      for await (const chunk of adapter.generateStreamAsync('hello')) {
+        void chunk;
       }
     }).rejects.toMatchObject({
       name: 'LLMProviderError',
@@ -206,8 +213,8 @@ describe('OpenAICodexAdapter', () => {
     }));
 
     await expect(async () => {
-      for await (const _ of adapter.generateStreamAsync('hello')) {
-        // drain
+      for await (const chunk of adapter.generateStreamAsync('hello')) {
+        void chunk;
       }
     }).rejects.toMatchObject({
       name: 'LLMProviderError',
@@ -217,7 +224,7 @@ describe('OpenAICodexAdapter', () => {
   });
 
   it('includes tool definitions in request body when tools provided', async () => {
-    const requests: any[] = [];
+    const requests: RequestRecord[] = [];
     const adapter = new OpenAICodexAdapter(createTokens());
 
     __setRequestUrlMock(async (request) => {
@@ -250,8 +257,8 @@ describe('OpenAICodexAdapter', () => {
       }
     ];
 
-    for await (const _ of adapter.generateStreamAsync('What is the weather?', { tools })) {
-      // drain
+    for await (const chunk of adapter.generateStreamAsync('What is the weather?', { tools })) {
+      void chunk;
     }
 
     const body = JSON.parse(requests[0].body);

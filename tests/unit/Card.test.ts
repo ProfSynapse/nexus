@@ -14,15 +14,57 @@ import { Component } from 'obsidian';
 // Helpers
 // ============================================================================
 
+type MockElementOptions = {
+  cls?: string;
+  text?: string;
+  attr?: Record<string, string>;
+};
+
+type MockElement = {
+  tagName: string;
+  className: string;
+  classList: {
+    add: jest.Mock<void, [string]>;
+    remove: jest.Mock<void, [string]>;
+    toggle: jest.Mock<void, [string]>;
+    contains: jest.Mock<boolean, [string]>;
+  };
+  addClass: jest.Mock<MockElement, [string]>;
+  removeClass: jest.Mock<void, [string]>;
+  hasClass: jest.Mock<boolean, [string]>;
+  createEl: jest.Mock<MockElement, [string, MockElementOptions?]>;
+  createDiv: jest.Mock<MockElement, [string | { cls?: string; text?: string }?]>;
+  createSpan: jest.Mock<MockElement, [MockElementOptions?]>;
+  empty: jest.Mock<void, []>;
+  appendChild: jest.Mock<MockElement, [MockElement]>;
+  removeChild: jest.Mock<void, [MockElement]>;
+  addEventListener: jest.Mock<void, [string, EventListenerOrEventListenerObject]>;
+  removeEventListener: jest.Mock<void, [string, EventListenerOrEventListenerObject]>;
+  setAttribute: jest.Mock<void, [string, string]>;
+  getAttribute: jest.Mock<string | null, [string]>;
+  querySelector: jest.Mock<MockElement | null, [string]>;
+  querySelectorAll: jest.Mock<MockElement[], [string]>;
+  remove: jest.Mock<void, []>;
+  style: Record<string, unknown>;
+  textContent: string;
+  innerHTML: string;
+  setText: jest.Mock<void, [string]>;
+  focus: jest.Mock<void, []>;
+  _children: MockElement[];
+  _attributes: Record<string, string>;
+};
+
+type MockContainer = MockElement & HTMLElement;
+
 /**
  * Creates a mock container element that tracks child creation.
  * Mirrors the obsidian mock's createMockElement behavior.
  */
-function createMockContainer(): HTMLElement & { _children: HTMLElement[] } {
-  const children: HTMLElement[] = [];
+function createMockContainer(): MockContainer {
+  const children: MockElement[] = [];
 
-  const createElement = (cls?: string): HTMLElement => {
-    const el: any = {
+  const createElement = (cls?: string): MockElement => {
+    const el: MockElement = {
       tagName: 'DIV',
       className: cls || '',
       classList: {
@@ -34,7 +76,7 @@ function createMockContainer(): HTMLElement & { _children: HTMLElement[] } {
       addClass: jest.fn((c: string) => { el.className += ' ' + c; }),
       removeClass: jest.fn(),
       hasClass: jest.fn((c: string) => el.className.includes(c)),
-      createEl: jest.fn((tag: string, opts?: any) => {
+      createEl: jest.fn((tag: string, opts?: MockElementOptions) => {
         const child = createElement(opts?.cls || '');
         child.tagName = tag.toUpperCase();
         if (opts?.text) child.textContent = opts.text;
@@ -53,14 +95,14 @@ function createMockContainer(): HTMLElement & { _children: HTMLElement[] } {
         el._children.push(child);
         return child;
       }),
-      createSpan: jest.fn((opts?: any) => {
+      createSpan: jest.fn((opts?: MockElementOptions) => {
         const child = createElement(opts?.cls || '');
         if (opts?.text) child.textContent = opts.text;
         el._children.push(child);
         return child;
       }),
       empty: jest.fn(() => { el._children = []; }),
-      appendChild: jest.fn((child: any) => { el._children.push(child); }),
+      appendChild: jest.fn((child: MockElement) => { el._children.push(child); }),
       removeChild: jest.fn(),
       addEventListener: jest.fn(),
       removeEventListener: jest.fn(),
@@ -76,19 +118,22 @@ function createMockContainer(): HTMLElement & { _children: HTMLElement[] } {
       innerHTML: '',
       setText: jest.fn((text: string) => { el.textContent = text; }),
       focus: jest.fn(),
-      _children: [] as any[],
+      _children: [],
       _attributes: {} as Record<string, string>,
     };
     return el;
   };
 
-  const container = createElement('') as any;
+  const container = createElement('') as MockContainer;
   container._children = children;
   return container;
 }
 
 /** Recursively search for an element with a given CSS class */
-function findByClass(el: any, cls: string): any {
+function findByClass(el: MockElement | null, cls: string): MockElement | null {
+  if (!el) {
+    return null;
+  }
   if (el.className && el.className.includes(cls)) return el;
   for (const child of (el._children || [])) {
     const found = findByClass(child, cls);
@@ -98,8 +143,11 @@ function findByClass(el: any, cls: string): any {
 }
 
 /** Recursively collect all elements matching a class */
-function findAllByClass(el: any, cls: string): any[] {
-  const results: any[] = [];
+function findAllByClass(el: MockElement | null, cls: string): MockElement[] {
+  const results: MockElement[] = [];
+  if (!el) {
+    return results;
+  }
   if (el.className && el.className.includes(cls)) results.push(el);
   for (const child of (el._children || [])) {
     results.push(...findAllByClass(child, cls));
@@ -127,7 +175,7 @@ describe('Card', () => {
   describe('basic rendering', () => {
     it('should create a card element in the container', () => {
       const container = createMockContainer();
-      const card = new Card(container, baseConfig());
+      new Card(container, baseConfig());
 
       expect(container.createDiv).toHaveBeenCalledWith('agent-management-card');
     });
@@ -369,9 +417,9 @@ describe('Card', () => {
       const card = new Card(container, baseConfig());
 
       // setTitle calls querySelector('.agent-management-card-title')
-      const cardEl = card.getElement();
+      const cardEl = card.getElement() as MockContainer;
       const titleEl = findByClass(cardEl, 'agent-management-card-title');
-      (cardEl as any).querySelector = jest.fn(() => titleEl);
+      cardEl.querySelector = jest.fn(() => titleEl);
 
       card.setTitle('New Title');
       expect(titleEl.textContent).toBe('New Title');
@@ -381,11 +429,11 @@ describe('Card', () => {
       const container = createMockContainer();
       const card = new Card(container, baseConfig());
 
-      const cardEl = card.getElement();
+      const cardEl = card.getElement() as MockContainer;
 
       // Mock querySelector for existing description
       const existingDesc = findByClass(cardEl, 'agent-management-card-description');
-      (cardEl as any).querySelector = jest.fn(() => existingDesc);
+      cardEl.querySelector = jest.fn(() => existingDesc);
 
       card.setDescription('Updated description');
       // Should have called createDiv for new description
@@ -518,10 +566,10 @@ describe('Card', () => {
     it('should remove description when set to empty string', () => {
       const container = createMockContainer();
       const card = new Card(container, baseConfig());
-      const cardEl = card.getElement();
+      const cardEl = card.getElement() as MockContainer;
 
       const existingDesc = findByClass(cardEl, 'agent-management-card-description');
-      (cardEl as any).querySelector = jest.fn(() => existingDesc);
+      cardEl.querySelector = jest.fn(() => existingDesc);
 
       card.setDescription('');
       // Should have called remove on the existing description
@@ -534,10 +582,10 @@ describe('Card', () => {
     it('should remove description when set to whitespace', () => {
       const container = createMockContainer();
       const card = new Card(container, baseConfig());
-      const cardEl = card.getElement();
+      const cardEl = card.getElement() as MockContainer;
 
       const existingDesc = findByClass(cardEl, 'agent-management-card-description');
-      (cardEl as any).querySelector = jest.fn(() => existingDesc);
+      cardEl.querySelector = jest.fn(() => existingDesc);
 
       card.setDescription('   ');
       if (existingDesc) {

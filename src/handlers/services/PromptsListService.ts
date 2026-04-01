@@ -103,7 +103,7 @@ export class PromptsListService implements IPromptsListService {
             // Future: Add system prompt checking here
             
             return false;
-        } catch (error) {
+        } catch {
             logger.systemWarn(`PromptsListService: Prompt existence check failed for ${name}`);
             return false;
         }

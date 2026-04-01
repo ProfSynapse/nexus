@@ -44,20 +44,22 @@ export class WorkspaceFormRenderer {
   /**
    * Destroy - no cleanup needed
    */
-  destroy(): void {}
+  destroy(): void {
+    return;
+  }
 
   /**
    * Render Basic Info section
    */
   private renderBasicInfoSection(container: HTMLElement): void {
     const section = container.createDiv('nexus-form-section');
-    section.createEl('h4', { text: 'Basic Info', cls: 'nexus-section-header' });
+    section.createEl('h4', { text: 'Basic info', cls: 'nexus-section-header' });
 
     // Name field
     const nameField = section.createDiv('nexus-form-field');
     nameField.createEl('label', { text: 'Name', cls: 'nexus-form-label' });
     const nameInput = new TextComponent(nameField);
-    nameInput.setPlaceholder('My Workspace');
+    nameInput.setPlaceholder('My workspace');
     nameInput.setValue(this.formData.name || '');
     nameInput.onChange((value) => {
       this.formData.name = value;
@@ -75,7 +77,7 @@ export class WorkspaceFormRenderer {
 
     // Root Folder field
     const folderField = section.createDiv('nexus-form-field');
-    folderField.createEl('label', { text: 'Root Folder', cls: 'nexus-form-label' });
+    folderField.createEl('label', { text: 'Root folder', cls: 'nexus-form-label' });
     const folderInput = new TextComponent(folderField);
     folderInput.setPlaceholder('/');
     folderInput.setValue(this.formData.rootFolder || '/');
@@ -135,7 +137,7 @@ export class WorkspaceFormRenderer {
    */
   private renderAgentFilesSection(container: HTMLElement): void {
     const section = container.createDiv('nexus-form-section');
-    section.createEl('h4', { text: 'Agent & Files', cls: 'nexus-section-header' });
+    section.createEl('h4', { text: 'Agent & files', cls: 'nexus-section-header' });
 
     // Ensure context exists
     if (!this.formData.context) {
@@ -149,7 +151,7 @@ export class WorkspaceFormRenderer {
 
     // Dedicated Agent field
     const agentField = section.createDiv('nexus-form-field');
-    agentField.createEl('label', { text: 'Dedicated Agent', cls: 'nexus-form-label' });
+    agentField.createEl('label', { text: 'Dedicated agent', cls: 'nexus-form-label' });
 
     const dropdownContainer = agentField.createDiv('nexus-dropdown-container');
     const dropdown = new DropdownComponent(dropdownContainer);
@@ -198,12 +200,14 @@ export class WorkspaceFormRenderer {
       this.formData.context.workflows = [];
     }
 
+    const workflows = this.formData.context.workflows;
+
     const listContainer = subsection.createDiv('nexus-item-list');
 
-    if (this.formData.context.workflows.length === 0) {
+    if (workflows.length === 0) {
       listContainer.createEl('span', { text: 'None', cls: 'nexus-form-hint' });
     } else {
-      this.formData.context.workflows.forEach((workflow, index) => {
+      workflows.forEach((workflow, index) => {
         const item = listContainer.createDiv('nexus-item-row');
 
         const info = item.createDiv('nexus-item-info');
@@ -226,14 +230,14 @@ export class WorkspaceFormRenderer {
           .setButtonText('×')
           .setWarning()
           .onClick(() => {
-            this.formData.context!.workflows!.splice(index, 1);
+            workflows.splice(index, 1);
             this.onRefresh();
           });
       });
     }
 
     new ButtonComponent(subsection)
-      .setButtonText('+ Add Workflow')
+      .setButtonText('Add workflow')
       .onClick(() => this.onWorkflowEdit());
   }
 
@@ -242,31 +246,34 @@ export class WorkspaceFormRenderer {
    */
   private renderKeyFilesSection(container: HTMLElement): void {
     const subsection = container.createDiv('nexus-form-field');
-    subsection.createEl('label', { text: 'Key Files', cls: 'nexus-form-label' });
+    subsection.createEl('label', { text: 'Key files', cls: 'nexus-form-label' });
 
-    if (!this.formData.context?.keyFiles) {
-      this.formData.context = this.formData.context || {
+    if (!this.formData.context) {
+      this.formData.context = {
         purpose: '', workflows: [], keyFiles: [], preferences: ''
       };
+    } else if (!this.formData.context.keyFiles) {
       this.formData.context.keyFiles = [];
     }
+
+    const keyFiles = this.formData.context.keyFiles ?? [];
 
     const listContainer = subsection.createDiv('nexus-item-list');
 
     const updateKeyFilesList = () => {
       listContainer.empty();
 
-      if (this.formData.context!.keyFiles!.length === 0) {
+      if (keyFiles.length === 0) {
         listContainer.createEl('span', { text: 'None', cls: 'nexus-form-hint' });
       } else {
-        this.formData.context!.keyFiles!.forEach((filePath, index) => {
+        keyFiles.forEach((filePath, index) => {
           const item = listContainer.createDiv('nexus-item-row');
 
           const input = new TextComponent(item);
           input.setPlaceholder('path/to/file.md');
           input.setValue(filePath);
           input.onChange((value) => {
-            this.formData.context!.keyFiles![index] = value;
+            keyFiles[index] = value;
           });
 
           const actions = item.createDiv('nexus-item-actions');
@@ -277,7 +284,7 @@ export class WorkspaceFormRenderer {
             .setButtonText('×')
             .setWarning()
             .onClick(() => {
-              this.formData.context!.keyFiles!.splice(index, 1);
+              keyFiles.splice(index, 1);
               updateKeyFilesList();
             });
         });
@@ -287,10 +294,10 @@ export class WorkspaceFormRenderer {
     updateKeyFilesList();
 
     new ButtonComponent(subsection)
-      .setButtonText('+ Add Key File')
+      .setButtonText('Add key file')
       .onClick(() => {
-        const newIndex = this.formData.context!.keyFiles!.length;
-        this.formData.context!.keyFiles!.push('');
+        const newIndex = keyFiles.length;
+        keyFiles.push('');
         this.onFilePick(newIndex);
       });
   }

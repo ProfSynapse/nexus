@@ -1,4 +1,5 @@
 import { CommonResult } from '../types';
+import type { SessionData } from './session/SessionService';
 import { logger } from '../utils/logger';
 import { parseWorkspaceContext } from '../utils/contextUtils';
 import { generateSessionId, isStandardSessionId } from '../utils/sessionUtils';
@@ -12,6 +13,17 @@ export interface WorkspaceContext {
   activeWorkspace?: boolean;
 }
 
+interface SessionServiceLike {
+  getSession(sessionId: string): Promise<SessionData | null> | SessionData | null;
+  createSession(sessionData: {
+    name: string;
+    description: string;
+    workspaceId: string;
+    id: string;
+  }): Promise<unknown> | void;
+  updateSession(sessionData: SessionData): Promise<unknown> | void;
+}
+
 /**
  * SessionContextManager
  * 
@@ -21,7 +33,7 @@ export interface WorkspaceContext {
  */
 export class SessionContextManager {
   // Reference to session service for database validation
-  private sessionService: any = null;
+  private sessionService: SessionServiceLike | null = null;
   
   // Map of sessionId -> workspace context
   private sessionContextMap: Map<string, WorkspaceContext> = new Map();
@@ -36,7 +48,7 @@ export class SessionContextManager {
    * Set the session service for database validation
    * This is called during plugin initialization
    */
-  setSessionService(sessionService: any): void {
+  setSessionService(sessionService: SessionServiceLike): void {
     this.sessionService = sessionService;
   }
   
@@ -122,7 +134,7 @@ export class SessionContextManager {
   ): T {
     // Don't override existing context if specified
     const parsedContext = parseWorkspaceContext(params.workspaceContext);
-  if (parsedContext?.workspaceId) {
+    if (parsedContext?.workspaceId) {
       return params;
     }
     
@@ -170,7 +182,7 @@ export class SessionContextManager {
    * 
    * @param memoryService The memory service instance
    */
-  setMemoryService(_memoryService: any): void {
+  setMemoryService(_memoryService: unknown): void {
     // Placeholder for future implementation
     // Memory service will be used for session validation in future releases
   }
@@ -252,7 +264,7 @@ export class SessionContextManager {
           id: sessionId
         };
 
-        const createdSession = await this.sessionService.createSession(sessionData);
+        await this.sessionService.createSession(sessionData);
         logger.systemLog(`Session ${sessionId} successfully created in database with workspace ${workspaceId}`);
       } catch (error) {
         logger.systemError(error as Error, `Failed to create session ${sessionId}`);

@@ -11,7 +11,45 @@
  * - Basic recursive validation - can be enhanced with a proper validator library
  */
 
+interface JsonSchema {
+  type?: string | string[];
+  title?: string;
+  description?: string;
+  properties?: Record<string, JsonSchema>;
+  required?: string[];
+  items?: JsonSchema | JsonSchema[];
+  prefixItems?: JsonSchema[];
+  enum?: unknown[];
+  format?: string;
+  minimum?: number;
+  maximum?: number;
+  minItems?: number;
+  maxItems?: number;
+  additionalProperties?: JsonSchema | boolean;
+  nullable?: boolean;
+  default?: unknown;
+  examples?: unknown[];
+  [key: string]: unknown;
+}
+
 export class SchemaValidator {
+  private static readonly GOOGLE_ALLOWED_PROPERTIES = [
+    'type',
+    'title',
+    'description',
+    'properties',
+    'required',
+    'items',
+    'prefixItems',
+    'enum',
+    'format',
+    'minimum',
+    'maximum',
+    'minItems',
+    'maxItems',
+    'additionalProperties'
+  ] as const;
+
   /**
    * Validate data against a JSON schema
    * Basic implementation that checks:
@@ -19,7 +57,7 @@ export class SchemaValidator {
    * - Required properties
    * - Nested object validation
    */
-  static validateSchema(data: any, schema: any): boolean {
+  static validateSchema(data: unknown, schema: JsonSchema | undefined): boolean {
     // Basic schema validation - could be enhanced with a proper validator
     if (typeof schema !== 'object' || schema === null) {
       return true;
@@ -34,13 +72,14 @@ export class SchemaValidator {
       }
     }
 
-    if (schema.properties && typeof data === 'object') {
+    if (schema.properties && typeof data === 'object' && data !== null && !Array.isArray(data)) {
+      const objectData = data as Record<string, unknown>;
       for (const [key, propSchema] of Object.entries(schema.properties)) {
-        if (schema.required?.includes(key) && !(key in data)) {
+        if (schema.required?.includes(key) && !(key in objectData)) {
           return false;
         }
 
-        if (key in data && !this.validateSchema(data[key], propSchema)) {
+        if (key in objectData && !this.validateSchema(objectData[key], propSchema)) {
           return false;
         }
       }
@@ -69,36 +108,20 @@ export class SchemaValidator {
    *
    * Note: For nullable types, use type arrays like ["string", "null"] instead of nullable property
    */
-  static sanitizeSchemaForGoogle(schema: any): any {
+  static sanitizeSchemaForGoogle(schema: JsonSchema | undefined): JsonSchema | undefined {
     if (!schema || typeof schema !== 'object') {
       return schema;
     }
 
     // Create a clean copy
-    const sanitized: any = {};
-
-    // Properties officially supported by Google Gemini (as per docs)
-    const allowedProperties = [
-      'type',
-      'title',
-      'description',
-      'properties',
-      'required',
-      'items',
-      'prefixItems',
-      'enum',
-      'format',
-      'minimum',
-      'maximum',
-      'minItems',
-      'maxItems',
-      'additionalProperties'
-    ];
+    const sanitized: JsonSchema = {};
+    const schemaRecord = schema as Record<string, unknown>;
+    const sanitizedRecord = sanitized as Record<string, unknown>;
 
     // Copy allowed properties
-    for (const key of allowedProperties) {
-      if (key in schema) {
-        sanitized[key] = schema[key];
+    for (const key of SchemaValidator.GOOGLE_ALLOWED_PROPERTIES) {
+      if (key in schemaRecord) {
+        sanitizedRecord[key] = schemaRecord[key];
       }
     }
 
@@ -115,20 +138,22 @@ export class SchemaValidator {
     }
 
     // Recursively sanitize nested properties
-    if (sanitized.properties && typeof sanitized.properties === 'object') {
-      const cleanProps: any = {};
-      for (const [propName, propSchema] of Object.entries(sanitized.properties)) {
-        cleanProps[propName] = this.sanitizeSchemaForGoogle(propSchema);
+    let sanitizedProperties = sanitized.properties;
+    if (sanitizedProperties && typeof sanitizedProperties === 'object' && !Array.isArray(sanitizedProperties)) {
+      const cleanProps: Record<string, JsonSchema> = {};
+      for (const [propName, propSchema] of Object.entries(sanitizedProperties)) {
+        cleanProps[propName] = (this.sanitizeSchemaForGoogle(propSchema) ?? {});
       }
-      sanitized.properties = cleanProps;
+      sanitizedRecord.properties = cleanProps;
+      sanitizedProperties = cleanProps;
     }
 
     // Recursively sanitize array items
     if (sanitized.items) {
       if (Array.isArray(sanitized.items)) {
         // Convert array of schemas to prefixItems (tuple validation)
-        sanitized.prefixItems = sanitized.items.map((itemSchema: Record<string, unknown>) =>
-          this.sanitizeSchemaForGoogle(itemSchema)
+        sanitized.prefixItems = sanitized.items.map((itemSchema: JsonSchema) =>
+          (this.sanitizeSchemaForGoogle(itemSchema) ?? {})
         );
         delete sanitized.items;
       } else if (typeof sanitized.items === 'object') {
@@ -138,8 +163,8 @@ export class SchemaValidator {
 
     // Recursively sanitize prefixItems (tuple schemas)
     if (sanitized.prefixItems && Array.isArray(sanitized.prefixItems)) {
-      sanitized.prefixItems = sanitized.prefixItems.map((itemSchema: Record<string, unknown>) =>
-        this.sanitizeSchemaForGoogle(itemSchema)
+      sanitized.prefixItems = sanitized.prefixItems.map((itemSchema: JsonSchema) =>
+        (this.sanitizeSchemaForGoogle(itemSchema) ?? {})
       );
     }
 
@@ -149,9 +174,15 @@ export class SchemaValidator {
     }
 
     // CRITICAL: Validate required array - remove any properties that don't exist in sanitized.properties
-    if (sanitized.required && Array.isArray(sanitized.required) && sanitized.properties) {
+    if (
+      sanitized.required &&
+      Array.isArray(sanitized.required) &&
+      sanitizedProperties &&
+      typeof sanitizedProperties === 'object' &&
+      !Array.isArray(sanitizedProperties)
+    ) {
       sanitized.required = sanitized.required.filter((propName: string) => {
-        return propName in sanitized.properties;
+        return propName in sanitizedProperties;
       });
 
       // If required array is now empty, remove it
@@ -167,7 +198,7 @@ export class SchemaValidator {
    * Validate that a schema is suitable for Google Gemini
    * Returns validation result with error details if invalid
    */
-  static validateGoogleSchema(schema: any, schemaName?: string): { valid: boolean; error?: string } {
+  static validateGoogleSchema(schema: JsonSchema | undefined, schemaName?: string): { valid: boolean; error?: string } {
     if (!schema || typeof schema !== 'object') {
       return { valid: false, error: 'Schema must be an object' };
     }
@@ -211,8 +242,9 @@ export class SchemaValidator {
     }
 
     // Validate array items
-    if (schema.items && typeof schema.items === 'object' && !Array.isArray(schema.items)) {
-      const result = this.validateGoogleSchema(schema.items, `${schemaName}.items`);
+    const schemaItems = schema.items;
+    if (schemaItems && typeof schemaItems === 'object' && !Array.isArray(schemaItems)) {
+      const result = this.validateGoogleSchema(schemaItems, `${schemaName}.items`);
       if (!result.valid) {
         return result;
       }
@@ -224,7 +256,7 @@ export class SchemaValidator {
   /**
    * Calculate the maximum depth of a schema (for complexity checking)
    */
-  private static calculateSchemaDepth(schema: any, currentDepth: number = 0): number {
+  private static calculateSchemaDepth(schema: JsonSchema | undefined, currentDepth = 0): number {
     if (!schema || typeof schema !== 'object' || currentDepth > 20) {
       return currentDepth;
     }
@@ -240,13 +272,14 @@ export class SchemaValidator {
     }
 
     // Check array items
-    if (schema.items && typeof schema.items === 'object') {
-      const depth = this.calculateSchemaDepth(schema.items, currentDepth + 1);
+    const schemaItems = schema.items;
+    if (schemaItems && typeof schemaItems === 'object' && !Array.isArray(schemaItems)) {
+      const depth = this.calculateSchemaDepth(schemaItems, currentDepth + 1);
       maxDepth = Math.max(maxDepth, depth);
     }
 
     // Check additionalProperties
-    if (schema.additionalProperties && typeof schema.additionalProperties === 'object') {
+    if (schema.additionalProperties && typeof schema.additionalProperties === 'object' && !Array.isArray(schema.additionalProperties)) {
       const depth = this.calculateSchemaDepth(schema.additionalProperties, currentDepth + 1);
       maxDepth = Math.max(maxDepth, depth);
     }

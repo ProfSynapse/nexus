@@ -56,6 +56,26 @@ const STREAMING_REQUEST_TIMEOUT_MS = 120_000;
 /** Two-tool architecture tool names (must match ToolManager slugs) */
 const TOOL_NAMES = { discover: 'getTools', execute: 'useTools' } as const;
 
+interface CodexResponsesEvent {
+  type?: string;
+  response?: {
+    id?: string;
+  };
+  delta?: string | {
+    text?: string;
+    content?: string;
+  };
+  content?: string;
+  output_index?: number;
+  item?: {
+    type?: string;
+    call_id?: string;
+    id?: string;
+    name?: string;
+    arguments?: string;
+  };
+}
+
 /**
  * OAuth token state managed by the adapter.
  * Mirrors the fields persisted in OAuthState on LLMProviderConfig.oauth.
@@ -256,7 +276,7 @@ export class OpenAICodexAdapter extends BaseAdapter {
         hasToolCalls ? collectedToolCalls : undefined
       );
     } catch (error) {
-      throw this.handleError(error, 'generation');
+      this.handleError(error, 'generation');
     }
   }
 
@@ -326,7 +346,10 @@ export class OpenAICodexAdapter extends BaseAdapter {
         const toolPreamble = 'You are an AI assistant with tool access. '
           + 'Fulfill user requests by calling tools immediately — do NOT describe what you will do. '
           + `Call ${TOOL_NAMES.discover} first to discover available tools, then call ${TOOL_NAMES.execute} to execute them.\n\n`;
-        requestBody.instructions = toolPreamble + (requestBody.instructions || '');
+        const existingInstructions = typeof requestBody.instructions === 'string'
+          ? requestBody.instructions
+          : '';
+        requestBody.instructions = toolPreamble + existingInstructions;
 
       }
 
@@ -343,7 +366,7 @@ export class OpenAICodexAdapter extends BaseAdapter {
       yield* this.processCodexNodeStream(nodeStream);
 
     } catch (error) {
-      throw this.handleError(error, 'streaming generation');
+      this.handleError(error, 'streaming generation');
     }
   }
 
@@ -351,7 +374,7 @@ export class OpenAICodexAdapter extends BaseAdapter {
    * Extract text content from a Codex SSE event.
    * The Responses API uses several event shapes for text delivery.
    */
-  private extractDeltaText(event: Record<string, unknown>): string | null {
+  private extractDeltaText(event: CodexResponsesEvent): string | null {
     // Shape 1a: { delta: "text" } — Codex Responses API output_text.delta
     // The delta field is the text string itself, not a nested object
     if (typeof event.delta === 'string' && event.delta) {
@@ -359,7 +382,7 @@ export class OpenAICodexAdapter extends BaseAdapter {
     }
 
     // Shape 1b: { delta: { text: "..." } } — alternative nested delta format
-    const delta = event.delta as Record<string, unknown> | undefined;
+    const delta = typeof event.delta === 'object' ? event.delta : undefined;
     if (delta && typeof delta === 'object') {
       if (typeof delta.text === 'string' && delta.text) return delta.text;
       if (typeof delta.content === 'string' && delta.content) return delta.content;
@@ -367,7 +390,7 @@ export class OpenAICodexAdapter extends BaseAdapter {
 
     // Shape 2: { text: "..." } at top level — output_text.done event
     // (Skip for done events to avoid duplicating the full text)
-    const eventType = event.type as string | undefined;
+    const eventType = event.type;
     if (eventType === 'response.output_text.done') {
       return null; // Full text is a recap, not a delta
     }
@@ -389,7 +412,7 @@ export class OpenAICodexAdapter extends BaseAdapter {
     const { createParser } = await import('eventsource-parser');
 
     const eventQueue: StreamChunk[] = [];
-    const toolCallsMap = new Map<number, any>();
+    const toolCallsMap = new Map<number, ToolCall>();
     let currentResponseId: string | null = null;
     let isCompleted = false;
 
@@ -400,9 +423,9 @@ export class OpenAICodexAdapter extends BaseAdapter {
         return;
       }
 
-      let event: Record<string, any>;
+      let event: CodexResponsesEvent;
       try {
-        event = JSON.parse(sseEvent.data);
+        event = JSON.parse(sseEvent.data) as CodexResponsesEvent;
       } catch {
         return;
       }
@@ -464,7 +487,10 @@ export class OpenAICodexAdapter extends BaseAdapter {
         parser.feed(text);
 
         while (eventQueue.length > 0) {
-          const evt = eventQueue.shift()!;
+          const evt = eventQueue.shift();
+          if (!evt) {
+            break;
+          }
           yield evt;
           if (evt.complete) { isCompleted = true; break; }
         }
@@ -472,7 +498,11 @@ export class OpenAICodexAdapter extends BaseAdapter {
 
       // Drain remaining events
       while (eventQueue.length > 0) {
-        yield eventQueue.shift()!;
+        const evt = eventQueue.shift();
+        if (!evt) {
+          break;
+        }
+        yield evt;
       }
 
       if (!isCompleted) {

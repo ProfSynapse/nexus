@@ -7,7 +7,6 @@ import {
   mergeWithCommonSchema
 } from '../utils/schemaUtils';
 import { parseWorkspaceContext } from '../utils/contextUtils';
-import { getErrorMessage } from '../utils/errorUtils';
 import { enhanceSchemaDocumentation } from '../utils/validationUtils';
 import { JSONSchema } from '../types/schema/JSONSchemaTypes';
 
@@ -94,7 +93,7 @@ export abstract class BaseTool<T extends CommonParameters = CommonParameters, R 
    */
   protected getMergedSchema(customSchema: JSONSchema): JSONSchema {
     // Get the merged schema with common parameters
-    const mergedSchema = mergeWithCommonSchema(customSchema);
+    const mergedSchema = mergeWithCommonSchema(customSchema as Parameters<typeof mergeWithCommonSchema>[0]);
 
     // Ensure the schema has a type and properties
     mergedSchema.type = mergedSchema.type || 'object';
@@ -208,9 +207,9 @@ export abstract class BaseTool<T extends CommonParameters = CommonParameters, R 
   protected createErrorResult(
     error: string | Error | ValidationError[],
     params?: T,
-    context?: any
+    context?: unknown
   ): R {
-    return ValidationResultHelper.createErrorResult(this as ToolInterface, error, params, context);
+    return ValidationResultHelper.createErrorResult(this as ToolInterface, error, params, this.toRecord(context));
   }
 
   /**
@@ -225,11 +224,11 @@ export abstract class BaseTool<T extends CommonParameters = CommonParameters, R 
    * @returns Standardized success result
    */
   protected createSuccessResult(
-    data: any,
+    data: unknown,
     params?: T,
-    additionalData?: any
+    additionalData?: unknown
   ): R {
-    return ValidationResultHelper.createSuccessResult(this as ToolInterface, data, params, additionalData);
+    return ValidationResultHelper.createSuccessResult(this as ToolInterface, data, params, this.toRecord(additionalData));
   }
 
   /**
@@ -290,5 +289,13 @@ export abstract class BaseTool<T extends CommonParameters = CommonParameters, R 
       return this.createErrorResult(validation.errors, params as unknown as T);
     }
     return null;
+  }
+
+  private toRecord(value: unknown): Record<string, unknown> | undefined {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      return value as Record<string, unknown>;
+    }
+
+    return undefined;
   }
 }

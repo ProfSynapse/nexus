@@ -32,6 +32,9 @@ import { extractWikiLinks } from './EmbeddingUtils';
 import type { QAPair } from './QAPairBuilder';
 import type { MessageData } from '../../types/storage/HybridStorageTypes';
 import type { SQLiteCacheManager } from '../../database/storage/SQLiteCacheManager';
+import type { QueryParams } from '../../database/repositories/base/BaseRepository';
+
+const asQueryParams = (params: unknown[]): QueryParams => params as unknown as QueryParams;
 
 /**
  * Result from semantic conversation search.
@@ -130,7 +133,7 @@ export class ConversationEmbeddingService {
           // Insert into vec0 table
           await this.db.run(
             'INSERT INTO conversation_embeddings(embedding) VALUES (?)',
-            [embeddingBuffer]
+            asQueryParams([embeddingBuffer])
           );
           const result = await this.db.queryOne<{ id: number }>(
             'SELECT last_insert_rowid() as id'
@@ -245,7 +248,7 @@ export class ConversationEmbeddingService {
         WHERE (cem.workspaceId = ? OR cem.workspaceId IS NULL)
         ORDER BY distance
         LIMIT ?
-      `, [queryBuffer, workspaceId, candidateLimit]);
+      `, asQueryParams([queryBuffer, workspaceId, candidateLimit]));
 
       // Apply sessionId filter in application layer
       // (sqlite-vec does not support WHERE pushdown on vec0 tables)
@@ -288,7 +291,7 @@ export class ConversationEmbeddingService {
         const placeholders = conversationIds.map(() => '?').join(',');
         const convRows = await this.db.query<{ id: string; created: number }>(
           `SELECT id, created FROM conversations WHERE id IN (${placeholders})`,
-          conversationIds
+          asQueryParams(conversationIds)
         );
         for (const row of convRows) {
           conversationCreatedMap.set(row.id, row.created);
@@ -352,7 +355,7 @@ export class ConversationEmbeddingService {
         const titlePlaceholders = topConvIds.map(() => '?').join(',');
         const titleRows = await this.db.query<{ id: string; title: string }>(
           `SELECT id, title FROM conversations WHERE id IN (${titlePlaceholders})`,
-          topConvIds
+          asQueryParams(topConvIds)
         );
         for (const row of titleRows) {
           conversationTitleMap.set(row.id, row.title);

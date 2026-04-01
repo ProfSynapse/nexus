@@ -14,25 +14,63 @@ import {
   ModelPricing
 } from '../types';
 import { REQUESTY_MODELS, REQUESTY_DEFAULT_MODEL } from './RequestyModels';
-import { MCPToolExecution } from '../shared/ToolExecutionUtils';
 
 /**
  * Requesty API response structure (OpenAI-compatible)
  */
-interface RequestyChatCompletionResponse {
-  choices: Array<{
-    message?: {
-      content?: string;
-      toolCalls?: any[];
-    };
-    finish_reason?: string;
-  }>;
-  usage?: {
-    prompt_tokens?: number;
-    completion_tokens?: number;
-    total_tokens?: number;
+interface RequestyToolCall {
+  id?: string;
+  type?: string;
+  function?: {
+    name?: string;
+    arguments?: string;
   };
+  arguments?: string;
+  name?: string;
+  displayName?: string;
+  technicalName?: string;
+  result?: unknown;
+  success?: boolean;
+  error?: string;
 }
+
+interface RequestyMessage {
+  content?: string;
+  toolCalls?: RequestyToolCall[];
+}
+
+interface RequestyChoice {
+  message?: RequestyMessage;
+  delta?: {
+    content?: string;
+    tool_calls?: RequestyToolCall[];
+  };
+  finish_reason?: string;
+}
+
+interface RequestyUsage {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+}
+
+interface RequestyChatCompletionResponse {
+  choices: RequestyChoice[];
+  usage?: RequestyUsage;
+}
+
+type RequestySSEChoice = {
+  delta?: {
+    content?: string;
+    tool_calls?: RequestyToolCall[];
+  };
+  finish_reason?: string;
+};
+
+type RequestySSEParsedEvent = {
+  choices?: RequestySSEChoice[];
+  usage?: RequestyUsage;
+};
 
 export class RequestyAdapter extends BaseAdapter {
   readonly name = 'requesty';
@@ -45,8 +83,6 @@ export class RequestyAdapter extends BaseAdapter {
 
   async generateUncached(prompt: string, options?: GenerateOptions): Promise<LLMResponse> {
     try {
-      const model = options?.model || this.currentModel;
-      
       // Tool execution requires streaming - use generateStreamAsync instead
       if (options?.tools && options.tools.length > 0) {
         throw new Error('Tool execution requires streaming. Use generateStreamAsync() instead.');
@@ -55,7 +91,7 @@ export class RequestyAdapter extends BaseAdapter {
       // Use basic chat completions
       return await this.generateWithChatCompletions(prompt, options);
     } catch (error) {
-      throw this.handleError(error, 'generation');
+      this.handleError(error, 'generation');
     }
   }
 
@@ -91,10 +127,22 @@ export class RequestyAdapter extends BaseAdapter {
 
       yield* this.processNodeStream(nodeStream, {
         debugLabel: 'Requesty',
-        extractContent: (parsed) => parsed.choices[0]?.delta?.content || null,
-        extractToolCalls: (parsed) => parsed.choices[0]?.delta?.tool_calls || null,
-        extractFinishReason: (parsed) => parsed.choices[0]?.finish_reason || null,
-        extractUsage: (parsed) => parsed.usage || null,
+        extractContent: (parsed) => {
+          const event = parsed as RequestySSEParsedEvent;
+          return event.choices?.[0]?.delta?.content || null;
+        },
+        extractToolCalls: (parsed) => {
+          const event = parsed as RequestySSEParsedEvent;
+          return event.choices?.[0]?.delta?.tool_calls || null;
+        },
+        extractFinishReason: (parsed) => {
+          const event = parsed as RequestySSEParsedEvent;
+          return event.choices?.[0]?.finish_reason || null;
+        },
+        extractUsage: (parsed) => {
+          const event = parsed as RequestySSEParsedEvent;
+          return event.usage;
+        },
         accumulateToolCalls: true,
         toolCallThrottling: {
           initialYield: true,
@@ -162,10 +210,8 @@ export class RequestyAdapter extends BaseAdapter {
    * Generate using standard chat completions
    */
   private async generateWithChatCompletions(prompt: string, options?: GenerateOptions): Promise<LLMResponse> {
-    const model = options?.model || this.currentModel;
-    
-    const requestBody: any = {
-      model,
+    const requestBody: Record<string, unknown> = {
+      model: options?.model || this.currentModel,
       messages: this.buildMessages(prompt, options?.systemPrompt),
       temperature: options?.temperature,
       max_tokens: options?.maxTokens,
@@ -195,7 +241,10 @@ export class RequestyAdapter extends BaseAdapter {
 
     this.assertOk(response, `Requesty generation failed: HTTP ${response.status}`);
 
-    const data = response.json as RequestyChatCompletionResponse;
+    const data = response.json;
+    if (!data) {
+      throw new Error('No response from Requesty');
+    }
     const choice = data.choices[0];
     
     if (!choice) {
@@ -213,7 +262,7 @@ export class RequestyAdapter extends BaseAdapter {
 
     return this.buildLLMResponse(
       text,
-      model,
+      options?.model || this.currentModel,
       usage,
       { provider: 'requesty' },
       finishReason
@@ -221,7 +270,7 @@ export class RequestyAdapter extends BaseAdapter {
   }
 
   // Private methods
-  private extractToolCalls(message: any): any[] {
+  private extractToolCalls(message: RequestyMessage | undefined): RequestyToolCall[] {
     return message?.toolCalls || [];
   }
 
@@ -237,7 +286,7 @@ export class RequestyAdapter extends BaseAdapter {
     return reasonMap[reason] || 'stop';
   }
 
-  protected extractUsage(response: any): any {
+  protected extractUsage(response: RequestyChatCompletionResponse): { promptTokens: number; completionTokens: number; totalTokens: number } | undefined {
     const usage = response.usage;
     if (usage) {
       return {

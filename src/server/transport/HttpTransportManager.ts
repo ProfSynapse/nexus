@@ -7,7 +7,9 @@ import { Server as MCPSDKServer } from '@modelcontextprotocol/sdk/server/index.j
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { McpError, ErrorCode, isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { logger } from '../../utils/logger';
+// eslint-disable-next-line import/no-nodejs-modules -- desktop-only HTTP transport uses Node crypto in Electron
 import { randomUUID } from 'node:crypto';
+// eslint-disable-next-line import/no-nodejs-modules -- desktop-only HTTP transport uses Node http in Electron
 import http from 'http';
 import express from 'express';
 import cors from 'cors';
@@ -20,15 +22,15 @@ import { SERVER_LABELS } from '../../constants/branding';
 export class HttpTransportManager {
     private httpServer: http.Server | null = null;
     private app: express.Application;
-    private isRunning: boolean = false;
+    private isRunning = false;
     private port: number;
     private host: string;
     private transports: { [sessionId: string]: StreamableHTTPServerTransport } = {};
 
     constructor(
         private server: MCPSDKServer, 
-        port: number = 3000, 
-        host: string = 'localhost'
+        port = 3000, 
+        host = 'localhost'
     ) {
         this.port = port;
         this.host = host;
@@ -169,17 +171,21 @@ export class HttpTransportManager {
         try {
             // Create HTTP server with Express app
             this.httpServer = http.createServer(this.app);
+            const httpServer = this.httpServer;
+            if (!httpServer) {
+                throw new Error('HTTP server was not created');
+            }
             
             // Start HTTP server
             await new Promise<void>((resolve, reject) => {
-                this.httpServer!.listen(this.port, this.host, () => {
+                httpServer.listen(this.port, this.host, () => {
                     this.isRunning = true;
                     logger.systemLog(`HTTP MCP server started on ${this.host}:${this.port}`);
                     logger.systemLog(`MCP endpoint available at: http://${this.host}:${this.port}/sse`);
                     resolve();
                 });
                 
-                this.httpServer!.on('error', (error: NodeJS.ErrnoException) => {
+                httpServer.on('error', (error: NodeJS.ErrnoException) => {
                     if (error.code === 'EADDRINUSE') {
                         logger.systemError(error, `Port ${this.port} is already in use`);
                     } else {
@@ -209,6 +215,7 @@ export class HttpTransportManager {
         if (!this.httpServer) {
             return; // Nothing to stop
         }
+        const httpServer = this.httpServer;
 
         try {
             // Close all active transports
@@ -224,7 +231,7 @@ export class HttpTransportManager {
 
             // Close HTTP server
             await new Promise<void>((resolve, reject) => {
-                this.httpServer!.close((error) => {
+                httpServer.close((error) => {
                     if (error) {
                         reject(error);
                     } else {

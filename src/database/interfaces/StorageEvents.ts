@@ -19,6 +19,8 @@
  * - src/types/chat/ChatTypes.ts - Conversation message structures
  */
 
+import type { ConversationData } from '../../types/chat/ChatTypes';
+
 // ============================================================================
 // Base Event Interface
 // ============================================================================
@@ -254,7 +256,7 @@ export interface ConversationCreatedEvent extends BaseStorageEvent {
     /** Vault name */
     vault: string;
     /** Optional conversation settings */
-    settings?: any;
+    settings?: ConversationData['metadata'];
   };
 }
 
@@ -271,7 +273,7 @@ export interface ConversationUpdatedEvent extends BaseStorageEvent {
   data: Partial<{
     title: string;
     updated: number;
-    settings: any;
+    settings: ConversationData['metadata'];
   }>;
 }
 
@@ -288,7 +290,7 @@ export interface AlternativeMessageEvent {
   /** Tool calls made in this alternative (extended properties for tool bubble reconstruction) */
   tool_calls?: Array<{
     id: string;
-    type: 'function' | string;
+    type: string;
     function: { name: string; arguments: string };
     // Extended properties for tool bubbles reconstruction after reload
     name?: string;
@@ -324,7 +326,7 @@ export interface MessageEvent extends BaseStorageEvent {
     /** Tool calls (OpenAI format with extended properties for tool bubble reconstruction) */
     tool_calls?: Array<{
       id: string;
-      type: 'function' | string;
+    type: string;
       function: { name: string; arguments: string };
       // Extended properties for tool bubbles reconstruction after reload
       name?: string;
@@ -367,7 +369,7 @@ export interface MessageUpdatedEvent extends BaseStorageEvent {
     reasoning: string;
     tool_calls: Array<{
       id: string;
-      type: 'function' | string;
+    type: string;
       function: { name: string; arguments: string };
       // Extended properties for tool bubbles reconstruction
       name?: string;
@@ -449,7 +451,7 @@ export interface BranchMessageEvent extends BaseStorageEvent {
     /** Tool calls (OpenAI format) */
     tool_calls?: Array<{
       id: string;
-      type: 'function' | string;
+    type: string;
       function: { name: string; arguments: string };
       // Extended properties for tool bubbles
       name?: string;
@@ -487,7 +489,7 @@ export interface BranchMessageUpdatedEvent extends BaseStorageEvent {
     reasoning: string;
     tool_calls: Array<{
       id: string;
-      type: 'function' | string;
+    type: string;
       function: { name: string; arguments: string };
       result?: unknown;
       success?: boolean;

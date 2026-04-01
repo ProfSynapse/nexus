@@ -147,13 +147,14 @@ export class BranchHeader {
           text: 'Cancel',
         });
         const subagentId = metadata.subagentId;
+        const onCancel = this.callbacks.onCancel;
         if (this.component) {
           this.component.registerDomEvent(cancelBtn, 'click', () => {
-            this.callbacks.onCancel!(subagentId);
+            onCancel(subagentId);
           });
         } else {
           cancelBtn.addEventListener('click', () => {
-            this.callbacks.onCancel!(subagentId);
+            onCancel(subagentId);
           });
         }
       }
@@ -164,13 +165,14 @@ export class BranchHeader {
           text: 'Continue',
         });
         const branchId = this.context.branchId;
+        const onContinue = this.callbacks.onContinue;
         if (this.component) {
           this.component.registerDomEvent(continueBtn, 'click', () => {
-            this.callbacks.onContinue!(branchId);
+            onContinue(branchId);
           });
         } else {
           continueBtn.addEventListener('click', () => {
-            this.callbacks.onContinue!(branchId);
+            onContinue(branchId);
           });
         }
       }
@@ -189,7 +191,7 @@ export class BranchHeader {
   /**
    * Truncate long task descriptions
    */
-  private truncateTask(task: string, maxLength: number = 50): string {
+  private truncateTask(task: string, maxLength = 50): string {
     if (task.length <= maxLength) return task;
     return task.substring(0, maxLength - 3) + '...';
   }

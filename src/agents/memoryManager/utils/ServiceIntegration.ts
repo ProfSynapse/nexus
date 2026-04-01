@@ -51,13 +51,15 @@ export interface ServiceAccessResult<T> {
   service: T | null;
   error?: string;
   status: ServiceStatus;
-  diagnostics?: {
+  diagnostics?: ServiceAccessDiagnostics;
+}
+
+export interface ServiceAccessDiagnostics {
     pluginFound: boolean;
     serviceContainerAvailable: boolean;
     serviceFound: boolean;
     methodUsed: string;
     duration: number;
-  };
 }
 
 /**
@@ -197,11 +199,11 @@ export class ServiceIntegration {
         }
 
         // Try direct services access (fallback)
-        if (plugin.services && plugin.services[serviceName as keyof typeof plugin.services]) {
+        if (plugin.services && plugin.services[serviceName]) {
           this.log('debug', `[ServiceIntegration] Trying direct services access for ${displayName}`);
           diagnostics.methodUsed = diagnostics.methodUsed ? `${diagnostics.methodUsed}+direct` : 'direct';
 
-          const service = plugin.services[serviceName as keyof typeof plugin.services] as T;
+          const service = plugin.services[serviceName] as T;
           if (service) {
             this.log('debug', `[ServiceIntegration] Successfully got ${displayName} via direct access`);
             diagnostics.serviceFound = true;
@@ -284,8 +286,8 @@ export class ServiceIntegration {
       }
 
       // Try direct access
-      if (plugin.services && plugin.services[serviceName as keyof typeof plugin.services]) {
-        const service = plugin.services[serviceName as keyof typeof plugin.services] as T;
+      if (plugin.services && plugin.services[serviceName]) {
+        const service = plugin.services[serviceName] as T;
         if (service) {
           diagnostics.serviceFound = true;
           diagnostics.methodUsed = 'direct';
@@ -324,7 +326,19 @@ export class ServiceIntegration {
         retryCount: 0
       });
     }
-    return this.serviceStatuses.get(serviceName)!;
+    const existingStatus = this.serviceStatuses.get(serviceName);
+    if (existingStatus) {
+      return existingStatus;
+    }
+
+    const status: ServiceStatus = {
+      available: false,
+      initialized: false,
+      lastCheck: 0,
+      retryCount: 0
+    };
+    this.serviceStatuses.set(serviceName, status);
+    return status;
   }
 
   /**
@@ -356,7 +370,7 @@ export class ServiceIntegration {
     service: T | null,
     error?: string,
     status?: ServiceStatus,
-    diagnostics?: any
+    diagnostics?: ServiceAccessDiagnostics
   ): ServiceAccessResult<T> {
     return {
       success,
@@ -414,12 +428,13 @@ export class ServiceIntegration {
   /**
    * Configurable logging
    */
-  private log(level: 'debug' | 'info' | 'warn' | 'error', message: string, ...args: any[]): void {
+  private log(level: 'debug' | 'info' | 'warn' | 'error', message: string, ...args: unknown[]): void {
     const levels = { debug: 0, info: 1, warn: 2, error: 3 };
     const configLevel = levels[this.config.logLevel];
     const messageLevel = levels[level];
     
     if (messageLevel >= configLevel) {
+      // eslint-disable-next-line no-console
       console[level](message, ...args);
     }
   }

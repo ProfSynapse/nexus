@@ -132,6 +132,10 @@ export interface CostTracker {
   lastUpdated: string;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 /**
  * Provider-specific token counting functions
  */
@@ -162,7 +166,8 @@ export class TokenCounter {
         const data = response.json as OpenAITokenizeResponse;
         return data.token_count || 0;
       }
-    } catch (error) {
+    } catch {
+      // Swallow provider API failures and fall back to heuristic token counting below.
     }
 
     return this.fallbackTokenCount(text);
@@ -194,7 +199,8 @@ export class TokenCounter {
         const data = response.json as GoogleCountTokensResponse;
         return data.totalTokens || 0;
       }
-    } catch (error) {
+    } catch {
+      // Swallow provider API failures and fall back to heuristic token counting below.
     }
 
     return this.fallbackTokenCount(text);
@@ -205,6 +211,11 @@ export class TokenCounter {
    */
   static async countTokensAnthropic(text: string, model: string): Promise<number> {
     try {
+      const apiKey = process.env.ANTHROPIC_API_KEY;
+      if (!apiKey) {
+        return this.fallbackTokenCount(text);
+      }
+
       // Anthropic's count tokens endpoint
       const response = await ProviderHttpClient.request<AnthropicCountTokensResponse>({
         url: 'https://api.anthropic.com/v1/messages/count_tokens',
@@ -212,7 +223,7 @@ export class TokenCounter {
         operation: 'Anthropic token counting',
         method: 'POST',
         headers: {
-          'x-api-key': process.env.ANTHROPIC_API_KEY!,
+          'x-api-key': apiKey,
           'Content-Type': 'application/json',
           'anthropic-version': '2023-06-01'
         },
@@ -227,7 +238,8 @@ export class TokenCounter {
         const data = response.json as AnthropicCountTokensResponse;
         return data.input_tokens || 0;
       }
-    } catch (error) {
+    } catch {
+      // Swallow provider API failures and fall back to heuristic token counting below.
     }
 
     return this.fallbackTokenCount(text);
@@ -277,7 +289,7 @@ export class TokenCounter {
           tokenCount = this.fallbackTokenCount(text);
           break;
       }
-    } catch (error) {
+    } catch {
       tokenCount = this.fallbackTokenCount(text);
     }
 
@@ -399,7 +411,8 @@ export class CostCalculator {
           }
           break;
       }
-    } catch (error) {
+    } catch {
+      // Swallow malformed or unsupported response shapes and return null below.
     }
 
     return null;
@@ -444,8 +457,8 @@ export class CostCalculator {
   ): Array<CostBreakdown> {
     return providers
       .map(({ provider, model }) => this.calculateCost(provider, model, tokenUsage))
-      .filter(Boolean)
-      .sort((a, b) => a!.totalCost - b!.totalCost) as Array<CostBreakdown>;
+      .filter((cost): cost is CostBreakdown => cost !== null)
+      .sort((a, b) => a.totalCost - b.totalCost);
   }
 }
 
@@ -543,8 +556,10 @@ export class CostAnalyzer {
 
   importData(data: string): void {
     try {
-      const imported = JSON.parse(data);
-      this.tracker = { ...this.tracker, ...imported };
+      const imported: unknown = JSON.parse(data);
+      if (isRecord(imported)) {
+        this.tracker = { ...this.tracker, ...imported };
+      }
     } catch (error) {
       console.error('Failed to import cost tracking data:', error);
     }

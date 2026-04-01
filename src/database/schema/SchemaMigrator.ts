@@ -65,9 +65,9 @@
  */
 export interface MigratableDatabase {
   /** Execute SQL and return results */
-  exec(sql: string): { values: any[][] }[];
+  exec(sql: string): { values: unknown[][] }[];
   /** Run a statement (INSERT/UPDATE/DELETE) with optional parameters */
-  run(sql: string, params?: any[]): void;
+  run(sql: string, params?: unknown[]): void;
 }
 
 // Alias for backward compatibility
@@ -82,6 +82,19 @@ export interface Migration {
   sql: string[];
   /** Optional JavaScript migration function for logic that cannot be expressed in SQL alone (e.g., JSON parsing). */
   migrationFn?: (db: MigratableDatabase) => void;
+}
+
+interface LegacyConversationMetadata {
+  chatSettings?: {
+    workspaceId?: string;
+    sessionId?: string;
+  };
+  workspaceId?: string;
+  sessionId?: string;
+  workflowId?: string;
+  runTrigger?: string;
+  scheduledFor?: number;
+  runKey?: string;
 }
 
 /**
@@ -211,7 +224,7 @@ export const MIGRATIONS: Migration[] = [
         errorMessage TEXT
       )`,
     ],
-    migrationFn: (db: MigratableDatabase) => {
+    migrationFn: (db: MigratableDatabase): void => {
       // Backfill denormalized workspaceId/sessionId from metadataJson
       // Cannot use json_extract() — may not be available in WASM SQLite
       const rows = db.exec('SELECT id, metadataJson FROM conversations WHERE metadataJson IS NOT NULL');
@@ -225,7 +238,7 @@ export const MIGRATIONS: Migration[] = [
         let sessionId: string | null = null;
 
         try {
-          const metadata = JSON.parse(metadataJson);
+          const metadata = JSON.parse(metadataJson) as LegacyConversationMetadata;
 
           // Try chatSettings path first (ConversationManager-created conversations)
           if (metadata?.chatSettings?.workspaceId) {
@@ -354,7 +367,7 @@ export const MIGRATIONS: Migration[] = [
       'CREATE INDEX IF NOT EXISTS idx_conversations_scheduledFor ON conversations(scheduledFor)',
       'CREATE INDEX IF NOT EXISTS idx_conversations_runKey ON conversations(runKey)'
     ],
-    migrationFn: (db: MigratableDatabase) => {
+    migrationFn: (db: MigratableDatabase): void => {
       const rows = db.exec('SELECT id, metadataJson FROM conversations WHERE metadataJson IS NOT NULL');
       if (rows.length === 0) return;
 
@@ -363,7 +376,7 @@ export const MIGRATIONS: Migration[] = [
         const metadataJson = row[1] as string;
 
         try {
-          const metadata = JSON.parse(metadataJson);
+          const metadata = JSON.parse(metadataJson) as LegacyConversationMetadata;
           const workflowId = metadata?.workflowId;
           const runTrigger = metadata?.runTrigger;
           const scheduledFor = metadata?.scheduledFor;

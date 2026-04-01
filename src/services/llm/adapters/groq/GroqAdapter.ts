@@ -15,8 +15,8 @@ import {
   Tool,
   TokenUsage
 } from '../types';
+import type { SSEToolCall } from '../../streaming/SSEStreamProcessor';
 import { GROQ_MODELS, GROQ_DEFAULT_MODEL } from './GroqModels';
-import { MCPToolExecution } from '../shared/ToolExecutionUtils';
 
 /**
  * Extended Groq chunk type with x_groq metadata
@@ -42,6 +42,34 @@ interface GroqChatCompletionChunk {
   };
 }
 
+interface GroqChatCompletionMessage {
+  content?: string;
+  tool_calls?: unknown[];
+}
+
+interface GroqChatCompletionChoice {
+  delta?: GroqChatCompletionMessage & {
+    content?: string;
+    tool_calls?: unknown[];
+  };
+  message?: GroqChatCompletionMessage;
+  finish_reason?: string | null;
+}
+
+interface GroqChatCompletionResponse extends GroqChatCompletionChunk {
+  choices: GroqChatCompletionChoice[];
+}
+
+type GroqChatCompletionMessageParam = Record<string, unknown>;
+
+function isGroqChatCompletionResponse(parsed: unknown): parsed is GroqChatCompletionResponse {
+  if (!parsed || typeof parsed !== 'object') {
+    return false;
+  }
+
+  return Array.isArray((parsed as Record<string, unknown>).choices);
+}
+
 export class GroqAdapter extends BaseAdapter {
   readonly name = 'groq';
   readonly baseUrl = 'https://api.groq.com/openai/v1';
@@ -53,8 +81,6 @@ export class GroqAdapter extends BaseAdapter {
 
   async generateUncached(prompt: string, options?: GenerateOptions): Promise<LLMResponse> {
     try {
-      const model = options?.model || this.currentModel;
-      
       // Tool execution requires streaming - use generateStreamAsync instead
       if (options?.tools && options.tools.length > 0) {
         throw new Error('Tool execution requires streaming. Use generateStreamAsync() instead.');
@@ -63,7 +89,7 @@ export class GroqAdapter extends BaseAdapter {
       // Use basic chat completions
       return await this.generateWithChatCompletions(prompt, options);
     } catch (error) {
-      throw this.handleError(error, 'generation');
+      this.handleError(error, 'generation');
     }
   }
 
@@ -97,16 +123,43 @@ export class GroqAdapter extends BaseAdapter {
 
       yield* this.processNodeStream(nodeStream, {
         debugLabel: 'Groq',
-        extractContent: (chunk) => chunk.choices[0]?.delta?.content || null,
-        extractToolCalls: (chunk) => chunk.choices[0]?.delta?.tool_calls || null,
-        extractFinishReason: (chunk) => chunk.choices[0]?.finish_reason || null,
-        extractUsage: (chunk) => {
-          // Groq has both standard usage and x_groq metadata
-          const groqChunk = chunk as GroqChatCompletionChunk;
-          if (groqChunk.usage || groqChunk.x_groq) {
-            return groqChunk.usage || groqChunk.x_groq?.usage || null;
+        extractContent: (chunk) => {
+          if (!isGroqChatCompletionResponse(chunk)) {
+            return null;
           }
-          return null;
+
+          return chunk.choices[0]?.delta?.content || null;
+        },
+        extractToolCalls: (chunk) => {
+          if (!isGroqChatCompletionResponse(chunk)) {
+            return null;
+          }
+
+          return (chunk.choices[0]?.delta?.tool_calls || null) as SSEToolCall[] | null;
+        },
+        extractFinishReason: (chunk) => {
+          if (!isGroqChatCompletionResponse(chunk)) {
+            return null;
+          }
+
+          return chunk.choices[0]?.finish_reason ?? null;
+        },
+        extractUsage: (chunk) => {
+          if (!chunk || typeof chunk !== 'object') {
+            return undefined;
+          }
+
+          const groqChunk = chunk as GroqChatCompletionChunk;
+          const usage = groqChunk.usage || groqChunk.x_groq?.usage;
+          if (!usage) {
+            return undefined;
+          }
+
+          return {
+            prompt_tokens: usage.prompt_tokens,
+            completion_tokens: usage.completion_tokens,
+            total_tokens: usage.total_tokens
+          };
         },
         accumulateToolCalls: true,
         toolCallThrottling: {
@@ -180,7 +233,7 @@ export class GroqAdapter extends BaseAdapter {
 
     interface ChatCompletionParams {
       model: string;
-      messages: any[];
+      messages: GroqChatCompletionMessageParam[];
       temperature?: number;
       max_completion_tokens?: number;
       top_p?: number;
@@ -204,7 +257,7 @@ export class GroqAdapter extends BaseAdapter {
       chatParams.tools = this.convertTools(options.tools);
     }
 
-    const response = await this.request<any>({
+    const response = await this.request<GroqChatCompletionResponse>({
       url: `${this.baseUrl}/chat/completions`,
       operation: 'generation',
       method: 'POST',
@@ -216,7 +269,7 @@ export class GroqAdapter extends BaseAdapter {
       timeoutMs: 60_000
     });
     this.assertOk(response, `Groq generation failed: HTTP ${response.status}`);
-    const responseJson = response.json;
+    const responseJson = response.json as GroqChatCompletionResponse;
     const choice = responseJson.choices[0];
     
     if (!choice) {
@@ -225,7 +278,7 @@ export class GroqAdapter extends BaseAdapter {
     
     let text = choice.message?.content || '';
     const usage = this.extractUsage(responseJson);
-    const finishReason = this.mapFinishReason(choice.finish_reason);
+    const finishReason = this.mapFinishReason(choice.finish_reason ?? null);
 
     // If tools were provided and we got tool calls, we need to handle them
     // For now, just return the response as-is since tool execution is complex
@@ -260,7 +313,7 @@ export class GroqAdapter extends BaseAdapter {
     });
   }
 
-  private extractToolCalls(message: any): any[] {
+  private extractToolCalls(message: GroqChatCompletionMessage | null | undefined): unknown[] {
     return message?.tool_calls || [];
   }
 
@@ -276,10 +329,9 @@ export class GroqAdapter extends BaseAdapter {
     return reasonMap[reason] || 'stop';
   }
 
-  protected extractUsage(response: GroqChatCompletionChunk | any): TokenUsage | undefined {
+  protected extractUsage(response: GroqChatCompletionChunk): TokenUsage | undefined {
     const usage = response?.usage;
     if (usage) {
-      const groqResponse = response as GroqChatCompletionChunk;
       return {
         promptTokens: usage.prompt_tokens || 0,
         completionTokens: usage.completion_tokens || 0,

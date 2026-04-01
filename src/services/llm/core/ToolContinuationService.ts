@@ -12,7 +12,7 @@
 import { BaseAdapter } from '../adapters/BaseAdapter';
 import { ConversationContextBuilder } from '../../chat/ConversationContextBuilder';
 import { MCPToolExecution, IToolExecutor, ToolResult } from '../adapters/shared/ToolExecutionUtils';
-import { Tool, TokenUsage, SupportedProvider, ToolCall as AdapterToolCall } from '../adapters/types';
+import { Tool, TokenUsage, SupportedProvider, ToolCall as AdapterToolCall, GenerateOptions } from '../adapters/types';
 import { ToolCall as ChatToolCall } from '../../../types/chat/ChatTypes';
 import { checkForTerminalTool } from './TerminalToolHandler';
 import {
@@ -90,11 +90,10 @@ export class ToolContinuationService {
     for (let i = 0; i < toolCalls.length; i++) {
       const toolCall = toolCalls[i];
       const result = toolResults[i];
+      const returnedTools = (result?.result as { tools?: Array<Tool | { name: string; description?: string; inputSchema?: Record<string, unknown> }> } | undefined)?.tools;
 
       // Check if this was a get_tools call
-      if (toolCall.function?.name === 'get_tools' && result?.success && result?.result?.tools) {
-        const returnedTools = result.result.tools as Array<Tool | { name: string; description?: string; inputSchema?: Record<string, unknown> }>;
-
+      if (toolCall.function?.name === 'get_tools' && result?.success && returnedTools) {
         // Handle both MCP format and OpenAI format tools
         for (const tool of returnedTools) {
           // Type guard to check if it's already a Tool type
@@ -174,18 +173,18 @@ export class ToolContinuationService {
       await new Promise(resolve => setTimeout(resolve, 100));
 
       // Build complete tool calls with execution results
-      completeToolCallsWithResults = detectedToolCalls.map(originalCall => {
-        const result = toolResults.find(r => r.id === originalCall.id);
-        return {
-          id: originalCall.id,
-          type: originalCall.type || 'function',
-          name: originalCall.function?.name || originalCall.name,
-          parameters: JSON.parse(originalCall.function?.arguments || '{}'),
-          result: result?.result,
-          success: result?.success || false,
-          error: result?.error,
-          executionTime: result?.executionTime,
-          function: originalCall.function
+	      completeToolCallsWithResults = detectedToolCalls.map(originalCall => {
+	        const result = toolResults.find(r => r.id === originalCall.id);
+	        return {
+	          id: originalCall.id,
+	          type: originalCall.type || 'function',
+	          name: originalCall.function?.name || originalCall.name,
+	          parameters: this.parseToolArguments(originalCall.function?.arguments),
+	          result: result?.result,
+	          success: result?.success || false,
+	          error: result?.error,
+	          executionTime: result?.executionTime,
+	          function: originalCall.function
         };
       });
 
@@ -247,7 +246,7 @@ export class ToolContinuationService {
 
       let fullContent = '\n\n';
 
-      for await (const chunk of adapter.generateStreamAsync('', continuationOptions)) {
+      for await (const chunk of adapter.generateStreamAsync('', continuationOptions as unknown as GenerateOptions)) {
         if (chunk.content) {
           fullContent += chunk.content;
 
@@ -453,7 +452,7 @@ export class ToolContinuationService {
       let fullContent = '\n\n';
       let recursiveToolCallsDetected: ChatToolCall[] = [];
 
-      for await (const recursiveChunk of adapter.generateStreamAsync('', recursiveContinuationOptions)) {
+      for await (const recursiveChunk of adapter.generateStreamAsync('', recursiveContinuationOptions as unknown as GenerateOptions)) {
         if (recursiveChunk.content) {
           fullContent += recursiveChunk.content;
           yield {
@@ -506,9 +505,20 @@ export class ToolContinuationService {
         );
       }
 
-    } catch (recursiveError) {
-      // Swallow expected errors during streaming (incomplete JSON)
+	    } catch {
+	      // Swallow expected errors during streaming (incomplete JSON)
+	    }
+	  }
+
+  private parseToolArguments(argumentsJson: string | undefined): Record<string, unknown> {
+    if (!argumentsJson) {
+      return {};
     }
+
+    const parsed = JSON.parse(argumentsJson) as unknown;
+    return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : {};
   }
 
   /**

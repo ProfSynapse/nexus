@@ -81,9 +81,13 @@ export class MessageEditController {
       }
     };
 
-    component!.registerDomEvent(saveBtn, 'click', saveHandler);
-    component!.registerDomEvent(cancelBtn, 'click', cancelHandler);
-    component!.registerDomEvent(textarea, 'keydown', keydownHandler);
+    if (!component) {
+      throw new Error('MessageEditController requires a component to register DOM events');
+    }
+
+    component.registerDomEvent(saveBtn, 'click', saveHandler);
+    component.registerDomEvent(cancelBtn, 'click', cancelHandler);
+    component.registerDomEvent(textarea, 'keydown', keydownHandler);
   }
 
   /**

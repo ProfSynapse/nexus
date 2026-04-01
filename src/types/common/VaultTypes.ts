@@ -5,6 +5,12 @@
 
 import { App, TFile } from 'obsidian';
 
+export type VaultNoteOperationOptions = {
+  overwrite?: boolean;
+} & Record<string, unknown>;
+
+export type VaultNoteMetadata = Record<string, unknown>;
+
 /**
  * Vault manager interface
  */
@@ -13,11 +19,11 @@ export interface IVaultManager {
   ensureFolder(path: string): Promise<void>;
   folderExists(path: string): Promise<boolean>;
   createFolder(path: string): Promise<void>;
-  createNote(path: string, content: string, options?: any): Promise<TFile>;
+  createNote(path: string, content: string, options?: VaultNoteOperationOptions): Promise<TFile>;
   readNote(path: string): Promise<string>;
-  updateNote(path: string, content: string, options?: any): Promise<void>;
+  updateNote(path: string, content: string, options?: VaultNoteOperationOptions): Promise<void>;
   deleteNote(path: string): Promise<void>;
-  getNoteMetadata(path: string): Promise<any>;
+  getNoteMetadata(path: string): Promise<VaultNoteMetadata>;
 }
 
 /**

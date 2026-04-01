@@ -132,11 +132,11 @@ export class IngestConfirmModal extends Modal {
 
     new Setting(section)
       .setName('Processing mode')
-      .setDesc('Text extraction is free. Vision OCR uses an LLM for scanned documents.')
+      .setDesc('Text extraction is free. Use vision scan for scanned documents.')
       .addDropdown(dropdown => {
         dropdown
           .addOption('text', 'Text extraction')
-          .addOption('vision', 'Vision OCR')
+          .addOption('vision', 'Vision scan')
           .setValue(this.result.pdfMode || 'text')
           .onChange(value => {
             this.result.pdfMode = value as 'text' | 'vision';
@@ -247,8 +247,10 @@ export class IngestConfirmModal extends Modal {
         return;
       }
 
+      const modelSelect = modelSelectEl;
+
       provider.models.forEach(model => {
-        modelSelectEl!.createEl('option', {
+        modelSelect.createEl('option', {
           value: model.id,
           text: model.name
         });

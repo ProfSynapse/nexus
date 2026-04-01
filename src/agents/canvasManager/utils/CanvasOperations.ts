@@ -1,5 +1,5 @@
 import { App, TFile, TFolder } from 'obsidian';
-import { CanvasData, CanvasNode, CanvasEdge } from '../types';
+import { CanvasData } from '../types';
 
 /**
  * Utility class for canvas file operations
@@ -29,7 +29,7 @@ export class CanvasOperations {
       throw new Error(`Canvas not found: ${normalizedPath}. Use canvasManager.list to find canvases.`);
     }
     const content = await app.vault.read(file);
-    return JSON.parse(content);
+    return JSON.parse(content) as CanvasData;
   }
 
   /**
@@ -158,7 +158,7 @@ export class CanvasOperations {
   static async getCanvasSummary(app: App, file: TFile): Promise<{ nodeCount: number; edgeCount: number }> {
     try {
       const content = await app.vault.read(file);
-      const data: CanvasData = JSON.parse(content);
+      const data = JSON.parse(content) as CanvasData;
       return {
         nodeCount: (data.nodes || []).length,
         edgeCount: (data.edges || []).length

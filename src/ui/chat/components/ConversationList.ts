@@ -10,6 +10,8 @@ import { ConversationData } from '../../../types/chat/ChatTypes';
 export class ConversationList {
   private conversations: ConversationData[] = [];
   private activeConversationId: string | null = null;
+  private pendingDeleteConversationId: string | null = null;
+  private pendingDeleteTimer: number | null = null;
 
   constructor(
     private container: HTMLElement,
@@ -62,7 +64,7 @@ export class ConversationList {
       const selectHandler = () => {
         this.onConversationSelect(conversation);
       };
-      this.component!.registerDomEvent(content, 'click', selectHandler);
+      this.component?.registerDomEvent(content, 'click', selectHandler);
 
       // Title
       const title = content.createDiv('conversation-title');
@@ -96,7 +98,7 @@ export class ConversationList {
           e.stopPropagation();
           this.showRenameInput(item, content, conversation);
         };
-        this.component!.registerDomEvent(editBtn, 'click', editHandler);
+        this.component?.registerDomEvent(editBtn, 'click', editHandler);
       }
 
       // Delete button - uses clickable-icon for proper icon sizing
@@ -107,11 +109,9 @@ export class ConversationList {
       deleteBtn.setAttribute('aria-label', 'Delete conversation');
       const deleteHandler = (e: MouseEvent) => {
         e.stopPropagation();
-        if (confirm('Delete this conversation?')) {
-          this.onConversationDelete(conversation.id);
-        }
+        this.requestDeleteConversation(conversation);
       };
-      this.component!.registerDomEvent(deleteBtn, 'click', deleteHandler);
+      this.component?.registerDomEvent(deleteBtn, 'click', deleteHandler);
     });
   }
 
@@ -181,8 +181,8 @@ export class ConversationList {
       }
     };
 
-    this.component!.registerDomEvent(input, 'blur', blurHandler);
-    this.component!.registerDomEvent(input, 'keydown', keydownHandler);
+    this.component?.registerDomEvent(input, 'blur', blurHandler);
+    this.component?.registerDomEvent(input, 'keydown', keydownHandler);
   }
 
   /**
@@ -217,6 +217,30 @@ export class ConversationList {
     if (diffDays < 7) return `${diffDays}d ago`;
 
     return date.toLocaleDateString();
+  }
+
+  private requestDeleteConversation(conversation: ConversationData): void {
+    if (this.pendingDeleteConversationId === conversation.id) {
+      this.clearPendingDeleteConversation();
+      this.onConversationDelete(conversation.id);
+      return;
+    }
+
+    this.pendingDeleteConversationId = conversation.id;
+    if (this.pendingDeleteTimer !== null) {
+      window.clearTimeout(this.pendingDeleteTimer);
+    }
+    this.pendingDeleteTimer = window.setTimeout(() => {
+      this.clearPendingDeleteConversation();
+    }, 5000);
+  }
+
+  private clearPendingDeleteConversation(): void {
+    this.pendingDeleteConversationId = null;
+    if (this.pendingDeleteTimer !== null) {
+      window.clearTimeout(this.pendingDeleteTimer);
+      this.pendingDeleteTimer = null;
+    }
   }
 
   /**

@@ -40,9 +40,6 @@ function createMockSocket() {
   });
 }
 
-// Mock process.stdin and process.stdout for pipe assertions
-const originalStdin = process.stdin;
-const originalStdout = process.stdout;
 const mockPipe = jest.fn();
 const mockUnpipe = jest.fn();
 
@@ -52,6 +49,10 @@ const mockUnpipe = jest.fn();
 
 describe('connector - connectWithRetry', () => {
   let mockSocket: ReturnType<typeof createMockSocket>;
+  type StdinLike = NodeJS.ReadWriteStream & {
+    pipe: typeof mockPipe;
+    unpipe: typeof mockUnpipe;
+  };
 
   beforeEach(() => {
     jest.useFakeTimers();
@@ -59,8 +60,8 @@ describe('connector - connectWithRetry', () => {
     mockCreateConnection.mockReturnValue(mockSocket);
 
     // Mock stdin.pipe and stdin.unpipe
-    (process.stdin as any).pipe = mockPipe;
-    (process.stdin as any).unpipe = mockUnpipe;
+    (process.stdin as StdinLike).pipe = mockPipe;
+    (process.stdin as StdinLike).unpipe = mockUnpipe;
 
     mockPipe.mockClear();
     mockUnpipe.mockClear();

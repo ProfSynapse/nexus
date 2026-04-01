@@ -10,18 +10,32 @@ import { FileReader } from '../../src/agents/apps/composer/services/FileReader';
 import { ComposerError } from '../../src/agents/apps/composer/types';
 import { TFile, Vault } from 'obsidian';
 
+type MutableTFile = TFile & {
+  stat: {
+    size: number;
+    mtime: number;
+    ctime: number;
+  };
+};
+
+type MockVault = Vault & {
+  getFileByPath: jest.Mock<TFile | null, [string]>;
+  read: jest.Mock<Promise<string>, [TFile]>;
+  readBinary: jest.Mock<Promise<ArrayBuffer>, [TFile]>;
+};
+
 // Create a TFile stub with stat.size
-function makeTFile(path: string, size: number = 1024): TFile {
+function makeTFile(path: string, size = 1024): TFile {
   const file = new TFile(path.split('/').pop() || path, path);
-  (file as any).stat = { size, mtime: Date.now(), ctime: Date.now() };
+  (file as MutableTFile).stat = { size, mtime: Date.now(), ctime: Date.now() };
   return file;
 }
 
 function makeVault(fileMap: Record<string, TFile> = {}): Vault {
   const vault = new Vault();
-  (vault as any).getFileByPath = jest.fn((p: string) => fileMap[p] ?? null);
-  (vault as any).read = jest.fn().mockResolvedValue('text content');
-  (vault as any).readBinary = jest.fn().mockResolvedValue(new ArrayBuffer(8));
+  (vault as MockVault).getFileByPath = jest.fn((p: string) => fileMap[p] ?? null);
+  (vault as MockVault).read = jest.fn().mockResolvedValue('text content');
+  (vault as MockVault).readBinary = jest.fn().mockResolvedValue(new ArrayBuffer(8));
   return vault;
 }
 
@@ -146,7 +160,7 @@ describe('FileReader', () => {
     it('should read text content via vault.read', async () => {
       const file = makeTFile('note.md');
       const vault = makeVault();
-      (vault as any).read = jest.fn().mockResolvedValue('# Hello World');
+      (vault as MockVault).read = jest.fn().mockResolvedValue('# Hello World');
       const reader = new FileReader(vault, 50);
 
       const content = await reader.readText(file);
@@ -161,7 +175,7 @@ describe('FileReader', () => {
       const file = makeTFile('doc.pdf');
       const vault = makeVault();
       const mockBuffer = new ArrayBuffer(16);
-      (vault as any).readBinary = jest.fn().mockResolvedValue(mockBuffer);
+      (vault as MockVault).readBinary = jest.fn().mockResolvedValue(mockBuffer);
       const reader = new FileReader(vault, 50);
 
       const content = await reader.readBinary(file);

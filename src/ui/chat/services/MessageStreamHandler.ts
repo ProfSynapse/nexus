@@ -14,11 +14,31 @@
  */
 
 import { ChatService } from '../../../services/chat/ChatService';
-import { ConversationData } from '../../../types/chat/ChatTypes';
+import { ConversationData, ToolCall as ConversationToolCall } from '../../../types/chat/ChatTypes';
+
+interface StreamToolCall {
+  id: string;
+  type?: string;
+  name?: string;
+  displayName?: string;
+  technicalName?: string;
+  function: {
+    name: string;
+    arguments: string;
+  };
+  result?: unknown;
+  success?: boolean;
+  error?: string;
+  status?: string;
+  isVirtual?: boolean;
+  providerExecuted?: boolean;
+  isComplete?: boolean;
+  parameters?: unknown;
+}
 
 export interface StreamHandlerEvents {
   onStreamingUpdate: (messageId: string, content: string, isComplete: boolean, isIncremental?: boolean) => void;
-  onToolCallsDetected: (messageId: string, toolCalls: any[]) => void;
+  onToolCallsDetected: (messageId: string, toolCalls: StreamToolCall[]) => void;
 }
 
 export interface StreamOptions {
@@ -36,7 +56,7 @@ export interface StreamOptions {
 
 export interface StreamResult {
   streamedContent: string;
-  toolCalls?: any[];
+  toolCalls?: StreamToolCall[];
   reasoning?: string;  // Accumulated reasoning text
   usage?: {            // Token usage for context tracking
     promptTokens: number;
@@ -49,7 +69,7 @@ export interface StreamResult {
  * Create a synthetic tool call to represent reasoning/thinking in the UI
  * This allows reasoning to be displayed in the ProgressiveToolAccordion
  */
-function createReasoningToolCall(messageId: string, reasoningText: string, isComplete: boolean): any {
+function createReasoningToolCall(messageId: string, reasoningText: string, isComplete: boolean): StreamToolCall {
   return {
     id: `reasoning_${messageId}`,
     type: 'reasoning',  // Special type for reasoning display
@@ -64,6 +84,27 @@ function createReasoningToolCall(messageId: string, reasoningText: string, isCom
     status: isComplete ? 'completed' : 'streaming',
     success: true,
     isVirtual: true  // Flag to indicate this is not a real tool
+  };
+}
+
+function toConversationToolCall(toolCall: StreamToolCall): ConversationToolCall {
+  return {
+    id: toolCall.id,
+    type: 'function',
+    name: toolCall.name,
+    displayName: toolCall.displayName,
+    technicalName: toolCall.technicalName,
+    function: {
+      name: toolCall.function.name,
+      arguments: toolCall.function.arguments
+    },
+    result: toolCall.result,
+    success: toolCall.success,
+    error: toolCall.error,
+    providerExecuted: toolCall.providerExecuted,
+    parameters: toolCall.parameters && typeof toolCall.parameters === 'object'
+      ? (toolCall.parameters as Record<string, unknown>)
+      : undefined
   };
 }
 
@@ -87,7 +128,7 @@ export class MessageStreamHandler {
     options: StreamOptions
   ): Promise<StreamResult> {
     let streamedContent = '';
-    let toolCalls: any[] | undefined = undefined;
+    let toolCalls: StreamToolCall[] | undefined = undefined;
     let hasStartedStreaming = false;
     let finalUsage: StreamResult['usage'] | undefined = undefined;
 
@@ -152,7 +193,7 @@ export class MessageStreamHandler {
 
       // Extract tool calls when available
       if (chunk.toolCalls) {
-        toolCalls = chunk.toolCalls;
+        toolCalls = chunk.toolCalls as StreamToolCall[];
 
         // Emit tool calls event for final chunk
         if (chunk.complete) {
@@ -173,7 +214,7 @@ export class MessageStreamHandler {
       if (chunk.complete) {
         // Check if this is TRULY the final complete
         const hasToolCalls = toolCalls && toolCalls.length > 0;
-        const toolCallsHaveResults = hasToolCalls && toolCalls!.some((tc) =>
+        const toolCallsHaveResults = !!toolCalls?.length && toolCalls.some((tc) =>
           tc.result !== undefined || tc.success !== undefined
         );
         const isFinalComplete = !hasToolCalls || toolCallsHaveResults;
@@ -186,7 +227,7 @@ export class MessageStreamHandler {
               ...conversation.messages[placeholderMessageIndex],
               content: streamedContent,
               state: 'complete',
-              toolCalls: toolCalls,
+              toolCalls: toolCalls?.map(toConversationToolCall),
               // Persist reasoning for re-render from storage
               reasoning: reasoningAccumulator || undefined
             };
@@ -213,7 +254,7 @@ export class MessageStreamHandler {
           ...finalMsg,
           content: streamedContent,
           state: 'complete',
-          toolCalls: toolCalls,
+          toolCalls: toolCalls?.map(toConversationToolCall),
           reasoning: reasoningAccumulator || undefined
         };
       }

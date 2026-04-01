@@ -1,10 +1,32 @@
-import { PromptConfig, BatchExecutePromptParams, BatchRequest, TextPromptRequest, ImageGenerationRequest } from '../types';
+import {
+  PromptConfig,
+  BatchExecutePromptParams,
+  ImageGenerationRequest,
+  BatchRequest,
+  ImagePromptConfig,
+  TextPromptConfig,
+  TextPromptRequest
+} from '../types';
+
+type ActionConfigLike = {
+  type?: string;
+  targetPath?: string;
+  findText?: string;
+  position?: number;
+};
 
 /**
  * Utility for parsing and validating prompt configurations
  * Follows SRP by focusing only on prompt parsing logic
  */
 export class PromptParser {
+  private isImageRequest(request: BatchRequest): request is ImageGenerationRequest {
+    return request.type === 'image';
+  }
+
+  private isTextRequest(request: BatchRequest): request is TextPromptRequest {
+    return request.type === 'text';
+  }
 
   /**
    * Validate batch execution parameters
@@ -37,23 +59,22 @@ export class PromptParser {
   /**
    * Validate individual request configuration (text or image)
    */
-  validatePromptConfig(requestConfig: any, index: number): string[] {
+  validatePromptConfig(requestConfig: BatchRequest, index: number): string[] {
     const errors: string[] = [];
     const prefix = `Request ${index + 1}`;
-    const requestType = requestConfig.type || 'text'; // Default to text for backward compatibility
 
     if (!requestConfig.prompt || typeof requestConfig.prompt !== 'string') {
       errors.push(`${prefix}: prompt text is required and must be a string`);
     }
 
-    if (requestConfig.prompt && requestConfig.prompt.length > 32000) {
+    if (typeof requestConfig.prompt === 'string' && requestConfig.prompt.length > 32000) {
       errors.push(`${prefix}: prompt text cannot exceed 32,000 characters`);
     }
 
     // Type-specific validation
-    if (requestType === 'image') {
-      const imageConfig = requestConfig as ImageGenerationRequest;
-      
+    if (this.isImageRequest(requestConfig)) {
+      const imageConfig = requestConfig;
+
       if (!imageConfig.savePath || typeof imageConfig.savePath !== 'string') {
         errors.push(`${prefix}: savePath is required for image generation`);
       }
@@ -72,7 +93,7 @@ export class PromptParser {
       errors.push(`${prefix}: sequence must be a non-negative number`);
     }
 
-    if (requestConfig.contextFiles && !Array.isArray(requestConfig.contextFiles)) {
+    if (this.isTextRequest(requestConfig) && requestConfig.contextFiles && !Array.isArray(requestConfig.contextFiles)) {
       errors.push(`${prefix}: contextFiles must be an array`);
     }
 
@@ -81,7 +102,7 @@ export class PromptParser {
     }
 
     // Only validate actions for text requests (images don't have actions)
-    if (requestType === 'text' && requestConfig.action) {
+    if (this.isTextRequest(requestConfig) && requestConfig.action) {
       const actionErrors = this.validateActionConfig(requestConfig.action, prefix);
       errors.push(...actionErrors);
     }
@@ -92,7 +113,7 @@ export class PromptParser {
   /**
    * Validate action configuration
    */
-  validateActionConfig(action: any, prefix: string): string[] {
+  validateActionConfig(action: ActionConfigLike, prefix: string): string[] {
     const errors: string[] = [];
 
     if (!action.type) {
@@ -122,9 +143,8 @@ export class PromptParser {
   /**
    * Normalize request configurations (text and image)
    */
-  normalizePromptConfigs(requests: any[]): PromptConfig[] {
+  normalizePromptConfigs(requests: BatchRequest[]): PromptConfig[] {
     return requests.map((request, index) => {
-      const requestType = request.type || 'text'; // Default to text for backward compatibility
       const baseConfig = {
         id: request.id || `request_${index + 1}`,
         sequence: request.sequence || 0,
@@ -134,33 +154,32 @@ export class PromptParser {
         prompt: request.prompt
       };
 
-      if (requestType === 'image') {
-        return {
+      if (this.isImageRequest(request)) {
+        const imageRequest = request;
+        const imageConfig: ImagePromptConfig = {
           type: 'image',
           ...baseConfig,
-          provider: request.provider, // Resolved by generateImage.resolveDefaults() at execution time
-          model: request.model, // Resolved by generateImage.resolveDefaults() at execution time
-          aspectRatio: request.aspectRatio,
-          size: request.size,
-          quality: request.quality,
-          safety: request.safety,
-          savePath: request.savePath,
-          format: request.format,
-          background: request.background,
-          referenceImages: request.referenceImages
-        } as PromptConfig;
-      } else {
-        return {
-          type: 'text',
-          ...baseConfig,
-          provider: request.provider,
-          model: request.model,
-          contextFiles: request.contextFiles || [],
-          workspace: request.workspace,
-          action: request.action,
-          agent: request.agent
-        } as PromptConfig;
+          provider: imageRequest.provider, // Resolved by generateImage.resolveDefaults() at execution time
+          model: imageRequest.model, // Resolved by generateImage.resolveDefaults() at execution time
+          aspectRatio: imageRequest.aspectRatio,
+          savePath: imageRequest.savePath,
+          referenceImages: imageRequest.referenceImages
+        };
+        return imageConfig;
       }
+
+      const textRequest = request;
+      const textConfig: TextPromptConfig = {
+        type: 'text',
+        ...baseConfig,
+        provider: textRequest.provider,
+        model: textRequest.model,
+        contextFiles: textRequest.contextFiles || [],
+        workspace: textRequest.workspace,
+        action: textRequest.action,
+        customPrompt: textRequest.customPrompt
+      };
+      return textConfig;
     });
   }
 

@@ -11,11 +11,71 @@ import {
   LLMResponse,
   ModelInfo,
   ProviderCapabilities,
-  ModelPricing
+  ModelPricing,
+  ToolCall
 } from '../types';
 import { ANTHROPIC_MODELS, ANTHROPIC_DEFAULT_MODEL } from './AnthropicModels';
 import { ThinkingEffortMapper } from '../../utils/ThinkingEffortMapper';
-import { MCPToolExecution } from '../shared/ToolExecutionUtils';
+
+interface AnthropicMessage {
+  role: string;
+  content: string;
+}
+
+interface AnthropicUsage {
+  input_tokens?: number;
+  output_tokens?: number;
+  total_tokens?: number;
+}
+
+interface AnthropicToolDefinition {
+  type?: string;
+  name?: string;
+  description?: string;
+  max_uses?: number;
+  input_schema?: unknown;
+  function?: {
+    name?: string;
+    description?: string;
+    parameters?: unknown;
+    input_schema?: unknown;
+  };
+}
+
+type AnthropicToolInput = {
+  type?: string;
+  name?: string;
+  description?: string;
+  parameters?: unknown;
+  input_schema?: unknown;
+  function?: {
+    name?: string;
+    description?: string;
+    parameters?: unknown;
+    input_schema?: unknown;
+  };
+};
+
+interface AnthropicContentBlock {
+  type: string;
+  text?: string;
+  id?: string;
+  name?: string;
+  input?: unknown;
+  thinking?: string;
+  type_name?: string;
+  content?: AnthropicContentBlock[];
+}
+
+interface AnthropicResponse {
+  model?: string;
+  stop_reason?: string | null;
+  stop_sequence?: string | null;
+  content?: AnthropicContentBlock[];
+  usage?: AnthropicUsage;
+  error?: { message?: string };
+  message?: { usage?: AnthropicUsage };
+}
 
 export class AnthropicAdapter extends BaseAdapter {
   readonly name = 'anthropic';
@@ -45,18 +105,20 @@ export class AnthropicAdapter extends BaseAdapter {
   async* generateStreamAsync(prompt: string, options?: GenerateOptions): AsyncGenerator<StreamChunk, void, unknown> {
     try {
       // Build messages - use conversation history if provided (for tool continuations)
-      let messages: any[];
+      let messages: AnthropicMessage[];
       if (options?.conversationHistory && options.conversationHistory.length > 0) {
         // Use provided conversation history for tool continuations
-        messages = options.conversationHistory;
+        messages = options.conversationHistory as unknown as AnthropicMessage[];
       } else {
         // Build simple messages for initial request
         messages = this.buildMessages(prompt, options?.systemPrompt);
       }
 
-      const requestParams: any = {
+      let maxTokens = options?.maxTokens || 4096;
+      const tools: AnthropicToolDefinition[] = [];
+      const requestParams: Record<string, unknown> = {
         model: this.normalizeModelId(options?.model || this.currentModel),
-        max_tokens: options?.maxTokens || 4096,
+        max_tokens: maxTokens,
         messages: messages.filter(msg => msg.role !== 'system'),
         temperature: options?.temperature,
         stream: true
@@ -80,30 +142,34 @@ export class AnthropicAdapter extends BaseAdapter {
           budget_tokens: budgetTokens
         };
         // Ensure max_tokens > budget_tokens (Anthropic API requirement)
-        if (requestParams.max_tokens <= budgetTokens) {
-          requestParams.max_tokens = budgetTokens + 1024;
+        if (maxTokens <= budgetTokens) {
+          maxTokens = budgetTokens + 1024;
+          requestParams.max_tokens = maxTokens;
         }
       }
 
       // Add tools if provided
       if (options?.tools && options.tools.length > 0) {
-        requestParams.tools = this.convertTools(options.tools);
+        tools.push(...this.convertTools(options.tools as AnthropicToolInput[]));
       }
 
       // Add web search tool if requested
       if (options?.webSearch) {
-        requestParams.tools = requestParams.tools || [];
-        requestParams.tools.push({
+        tools.push({
           type: 'web_search_20250305',
           name: 'web_search',
           max_uses: 5
         });
       }
 
+      if (tools.length > 0) {
+        requestParams.tools = tools;
+      }
+
       // Look up model spec for beta headers (sent via HTTP header, not body field)
       const modelSpec = ANTHROPIC_MODELS.find(m => m.apiName === this.normalizeModelId(options?.model || this.currentModel));
 
-      let usage: any = undefined;
+      let usage: AnthropicUsage | undefined;
       let thinkingBlockIndex: number | null = null;  // Track thinking block for completion
       const nodeStream = await this.requestStream({
         url: `${this.baseUrl}/v1/messages`,
@@ -116,13 +182,13 @@ export class AnthropicAdapter extends BaseAdapter {
 
       yield* this.processNodeStream(nodeStream, {
         debugLabel: 'Anthropic',
-        extractContent: (event) => {
+        extractContent: (event: AnthropicResponse & { type?: string; index?: number; content_block?: { type?: string; id?: string; name?: string }; delta?: { type?: string; text?: string; partial_json?: string; thinking?: string } }) => {
           if (event.type === 'message_start' && event.message?.usage) {
             usage = event.message.usage;
           } else if (event.type === 'message_delta' && event.usage) {
             usage = event.usage;
           } else if (event.type === 'content_block_start' && event.content_block?.type === 'thinking') {
-            thinkingBlockIndex = event.index;
+            thinkingBlockIndex = event.index ?? null;
           }
 
           if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
@@ -130,14 +196,14 @@ export class AnthropicAdapter extends BaseAdapter {
           }
           return null;
         },
-        extractToolCalls: (event) => {
+        extractToolCalls: (event: AnthropicResponse & { type?: string; index?: number; content_block?: { type?: string; id?: string; name?: string }; delta?: { type?: string; text?: string; partial_json?: string; thinking?: string } }) => {
           if (event.type === 'content_block_start' && event.content_block?.type === 'tool_use') {
             return [{
               index: event.index,
-              id: event.content_block.id,
+              id: event.content_block.id || `anthropic-tool-${event.index ?? 0}`,
               type: 'function',
               function: {
-                name: event.content_block.name,
+                name: event.content_block.name || '',
                 arguments: ''
               }
             }];
@@ -146,15 +212,18 @@ export class AnthropicAdapter extends BaseAdapter {
           if (event.type === 'content_block_delta' && event.delta?.type === 'input_json_delta') {
             return [{
               index: event.index,
+              id: `anthropic-tool-${event.index ?? 0}`,
               function: {
+                name: '',
                 arguments: event.delta.partial_json || ''
-              }
+              },
+              type: 'function'
             }];
           }
 
           return null;
         },
-        extractFinishReason: (event) => {
+        extractFinishReason: (event: AnthropicResponse & { type?: string; error?: { message?: string } }) => {
           if (event.type === 'message_stop') {
             return 'stop';
           }
@@ -164,7 +233,7 @@ export class AnthropicAdapter extends BaseAdapter {
           return null;
         },
         extractUsage: () => usage,
-        extractReasoning: (event) => {
+        extractReasoning: (event: AnthropicResponse & { type?: string; index?: number; delta?: { type?: string; thinking?: string } }) => {
           if (event.type === 'content_block_delta' && event.delta?.type === 'thinking_delta') {
             return {
               text: event.delta.thinking || '',
@@ -250,10 +319,12 @@ export class AnthropicAdapter extends BaseAdapter {
    */
   private async generateWithBasicMessages(prompt: string, options?: GenerateOptions): Promise<LLMResponse> {
     const messages = this.buildMessages(prompt, options?.systemPrompt);
+    let maxTokens = options?.maxTokens || 4096;
+    const tools: AnthropicToolDefinition[] = [];
     
-    const requestParams: any = {
+    const requestParams: Record<string, unknown> = {
       model: options?.model || this.currentModel,
-      max_tokens: options?.maxTokens || 4096,
+      max_tokens: maxTokens,
       messages: messages.filter(msg => msg.role !== 'system'),
       temperature: options?.temperature,
       stop_sequences: options?.stopSequences
@@ -275,30 +346,34 @@ export class AnthropicAdapter extends BaseAdapter {
         budget_tokens: budgetTokens
       };
       // Ensure max_tokens > budget_tokens (Anthropic API requirement)
-      if (requestParams.max_tokens <= budgetTokens) {
-        requestParams.max_tokens = budgetTokens + 1024;
+      if (maxTokens <= budgetTokens) {
+        maxTokens = budgetTokens + 1024;
+        requestParams.max_tokens = maxTokens;
       }
     }
 
     // Add tools if provided
     if (options?.tools && options.tools.length > 0) {
-      requestParams.tools = this.convertTools(options.tools);
+      tools.push(...this.convertTools(options.tools as AnthropicToolInput[]));
     }
 
     // Special tools
     if (options?.webSearch) {
-      requestParams.tools = requestParams.tools || [];
-      requestParams.tools.push({
+      tools.push({
         type: 'web_search_20250305',
         name: 'web_search',
         max_uses: 5
       });
     }
 
+    if (tools.length > 0) {
+      requestParams.tools = tools;
+    }
+
     // Look up model spec for beta headers (sent via HTTP header, not body field)
     const modelSpec = ANTHROPIC_MODELS.find(m => m.apiName === this.normalizeModelId(options?.model || this.currentModel));
 
-    const response = await this.request<any>({
+    const response = await this.request<AnthropicResponse>({
       url: `${this.baseUrl}/v1/messages`,
       operation: 'generation',
       method: 'POST',
@@ -308,9 +383,12 @@ export class AnthropicAdapter extends BaseAdapter {
     });
     this.assertOk(response, `Anthropic generation failed: HTTP ${response.status}`);
     const responseJson = response.json;
+    if (!responseJson) {
+      throw new Error('Invalid response from Anthropic API');
+    }
     
     const extractedUsage = this.extractUsage(responseJson);
-    const finishReason = this.mapStopReason(responseJson.stop_reason);
+    const finishReason = this.mapStopReason(responseJson.stop_reason || null);
     const toolCalls = this.extractToolCalls(responseJson.content);
     const metadata = {
       thinking: this.extractThinking(responseJson),
@@ -319,7 +397,7 @@ export class AnthropicAdapter extends BaseAdapter {
 
     return await this.buildLLMResponse(
       this.extractTextFromContent(responseJson.content),
-      responseJson.model,
+      responseJson.model || this.currentModel,
       extractedUsage,
       metadata,
       finishReason,
@@ -357,7 +435,7 @@ export class AnthropicAdapter extends BaseAdapter {
     return headers;
   }
 
-  private convertTools(tools: any[]): any[] {
+  private convertTools(tools: AnthropicToolInput[]): AnthropicToolDefinition[] {
     return tools.map(tool => {
       if (tool.type === 'function') {
         // Handle both nested (Chat Completions) and flat (Responses API) formats
@@ -372,31 +450,37 @@ export class AnthropicAdapter extends BaseAdapter {
     });
   }
 
-  private extractTextFromContent(content: any[]): string {
+  private extractTextFromContent(content: AnthropicContentBlock[] | undefined): string {
+    if (!content) {
+      return '';
+    }
     return content
       .filter(block => block.type === 'text')
       .map(block => block.text)
       .join('');
   }
 
-  private extractToolCalls(content: any[]): any[] {
+  private extractToolCalls(content: AnthropicContentBlock[] | undefined): ToolCall[] {
+    if (!content) {
+      return [];
+    }
     return content
       .filter(block => block.type === 'tool_use')
-      .map(block => ({
-        id: block.id,
+      .map((block, index) => ({
+        id: block.id || `anthropic-tool-${index}`,
         type: 'function',
         function: {
-          name: block.name,
-          arguments: JSON.stringify(block.input)
+          name: block.name || '',
+          arguments: JSON.stringify(block.input || {})
         }
       }));
   }
 
-  private extractThinking(response: any): string | undefined {
+  private extractThinking(response: AnthropicResponse): string | undefined {
     // Extract thinking process from response if available
-    const thinkingBlocks = response.content?.filter((block: { type: string; thinking?: string }) => block.type === 'thinking') || [];
+    const thinkingBlocks = response.content?.filter((block) => block.type === 'thinking') || [];
     if (thinkingBlocks.length > 0) {
-      return thinkingBlocks.map((block: { thinking?: string }) => block.thinking).join('\n');
+      return thinkingBlocks.map((block) => block.thinking).filter((thinking): thinking is string => typeof thinking === 'string').join('\n');
     }
     return undefined;
   }
@@ -413,7 +497,7 @@ export class AnthropicAdapter extends BaseAdapter {
     return reasonMap[reason] || 'stop';
   }
 
-  protected extractUsage(response: any): any {
+  protected extractUsage(response: AnthropicResponse): { promptTokens: number; completionTokens: number; totalTokens: number } | undefined {
     if (response.usage) {
       return {
         promptTokens: response.usage.input_tokens || 0,

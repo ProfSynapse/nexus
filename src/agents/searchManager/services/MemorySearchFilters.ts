@@ -84,7 +84,7 @@ export class MemorySearchFilters implements MemorySearchFiltersInterface {
       try {
         const resultTime = new Date(result.metadata.created).getTime();
         return resultTime >= startTime && resultTime <= endTime;
-      } catch (error) {
+      } catch {
         // If date parsing fails, include result unless strict filtering is enabled
         return !this.configuration.strictFiltering;
       }
@@ -123,7 +123,7 @@ export class MemorySearchFilters implements MemorySearchFiltersInterface {
         
         return searchableContent.includes(searchPattern);
       });
-    } catch (error) {
+    } catch {
       return this.configuration.strictFiltering ? [] : results;
     }
   }
@@ -134,7 +134,7 @@ export class MemorySearchFilters implements MemorySearchFiltersInterface {
   applyToolCallFilter(results: MemorySearchResult[], filter: ToolCallFilter): MemorySearchResult[] {
     return results.filter(result => {
       // Only apply to tool call results
-      if (result.type !== MemoryType.TOOL_CALL) return true;
+      if (result.type !== 'toolCall') return true;
 
       return this.matchesToolCallFilter(result, filter);
     });
@@ -200,7 +200,7 @@ export class MemorySearchFilters implements MemorySearchFiltersInterface {
   applySuccessFilter(results: MemorySearchResult[], successStatus: boolean): MemorySearchResult[] {
     return results.filter(result => {
       // Only apply to tool call results
-      if (result.type !== MemoryType.TOOL_CALL) return true;
+      if (result.type !== 'toolCall') return true;
 
       return result.metadata.success === successStatus;
     });
@@ -218,7 +218,7 @@ export class MemorySearchFilters implements MemorySearchFiltersInterface {
 
     return results.filter(result => {
       // Only apply to tool call results
-      if (result.type !== MemoryType.TOOL_CALL) return true;
+      if (result.type !== 'toolCall') return true;
 
       const executionTime = result.metadata.executionTime;
       if (executionTime === undefined) return !this.configuration.strictFiltering;
@@ -343,7 +343,7 @@ export class MemorySearchFilters implements MemorySearchFiltersInterface {
     return true;
   }
 
-  private getSearchableContent(result: MemorySearchResult, caseSensitive: boolean = false): string {
+  private getSearchableContent(result: MemorySearchResult, caseSensitive = false): string {
     const parts = [
       result.highlight,
       result.context.before,
@@ -446,13 +446,15 @@ export class MemorySearchFilters implements MemorySearchFiltersInterface {
     // Add filters in order of selectivity (most selective first)
     
     // Session filter (very selective)
-    if (options.filterBySession && options.sessionId) {
-      chain.push((results) => this.applySessionFilter(results, [options.sessionId!]));
+    const sessionId = options.filterBySession ? options.sessionId : undefined;
+    if (sessionId) {
+      chain.push((results) => this.applySessionFilter(results, [sessionId]));
     }
 
     // Workspace filter (selective)
-    if (options.workspaceId) {
-      chain.push((results) => this.applyWorkspaceFilter(results, [options.workspaceId!]));
+    const workspaceId = options.workspaceId;
+    if (workspaceId) {
+      chain.push((results) => this.applyWorkspaceFilter(results, [workspaceId]));
     }
 
     // Tool call filters (moderately selective)

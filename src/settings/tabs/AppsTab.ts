@@ -44,7 +44,8 @@ export class AppsTab {
   render(): void {
     this.container.empty();
 
-    if (!this.services.appManager) {
+    const appManager = this.services.appManager;
+    if (!appManager) {
       this.container.createEl('p', {
         cls: 'setting-item-description',
         text: 'App manager not available. Please restart the plugin.'
@@ -52,12 +53,12 @@ export class AppsTab {
       return;
     }
 
-    const apps = this.services.appManager.getAvailableApps();
+    const apps = appManager.getAvailableApps();
 
     if (apps.length === 0) {
       this.container.createEl('p', {
         cls: 'setting-item-description',
-        text: 'No apps available yet. Apps will appear here as they are added to Nexus.'
+        text: 'No apps available yet. Apps will appear here as they are added.'
       });
       return;
     }
@@ -91,10 +92,12 @@ export class AppsTab {
         icon: 'download',
         label: 'Install',
         onClick: () => {
-          const result = this.services.appManager!.installApp(a.id);
+          const result = appManager.installApp(a.id);
           if (result.success) {
             new Notice(`${a.manifest.name} installed`);
-            this.saveSettings();
+            void this.saveSettings().catch(error => {
+              console.error('[AppsTab] Failed to save settings after install:', error);
+            });
             this.render();
           } else {
             new Notice(`Install failed: ${result.error}`);
@@ -119,7 +122,7 @@ export class AppsTab {
         showToggle: true,
         onToggle: async (item, enabled) => {
           if (!item.installed) return;
-          this.services.appManager!.setAppEnabled(item.appId, enabled);
+          appManager.setAppEnabled(item.appId, enabled);
           await this.saveSettings();
           this.render();
         },
@@ -136,7 +139,10 @@ export class AppsTab {
   }
 
   private openAppModal(appId: string): void {
-    const appManager = this.services.appManager!;
+    const appManager = this.services.appManager;
+    if (!appManager) {
+      return;
+    }
     const agent = appManager.getApp(appId);
     if (!agent) return;
 

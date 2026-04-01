@@ -5,7 +5,7 @@
  * Manages model files in the vault's .obsidian/models/ directory.
  */
 
-import { Vault, requestUrl, FileSystemAdapter } from 'obsidian';
+import { Vault, requestUrl, FileSystemAdapter, normalizePath } from 'obsidian';
 import {
   InstalledModel,
   DownloadProgress,
@@ -14,13 +14,31 @@ import {
   WebLLMError,
   WebLLMModelSpec,
 } from './types';
-import { HF_BASE_URL, getWebLLMModel } from './WebLLMModels';
+import { HF_BASE_URL } from './WebLLMModels';
 
 /** Default model storage path within vault */
-const MODEL_STORAGE_PATH = '.obsidian/models';
+const MODEL_STORAGE_PATH = 'models';
 
 /** Manifest file name for tracking installed models */
 const INSTALLED_MANIFEST = 'installed-models.json';
+
+type TensorCacheRecord = {
+  dataPath?: string;
+  nbytes?: number;
+};
+
+type TensorCacheConfig = {
+  records?: TensorCacheRecord[];
+};
+
+function isTensorCacheConfig(value: unknown): value is TensorCacheConfig {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+
+  const candidate = value as { records?: unknown };
+  return candidate.records === undefined || Array.isArray(candidate.records);
+}
 
 export class WebLLMModelManager {
   private vault: Vault;
@@ -28,7 +46,7 @@ export class WebLLMModelManager {
 
   constructor(vault: Vault, customStoragePath?: string) {
     this.vault = vault;
-    this.storagePath = customStoragePath || MODEL_STORAGE_PATH;
+    this.storagePath = customStoragePath || normalizePath(`${this.vault.configDir}/${MODEL_STORAGE_PATH}`);
   }
 
   // ============================================================================
@@ -56,8 +74,9 @@ export class WebLLMModelManager {
       }
 
       const content = await this.vault.adapter.read(manifestPath);
-      return JSON.parse(content);
-    } catch (error) {
+      const parsed = JSON.parse(content) as unknown;
+      return parsed as InstalledModel[];
+    } catch {
       return [];
     }
   }
@@ -180,7 +199,7 @@ export class WebLLMModelManager {
         throw new Error(`Failed to fetch manifest: ${response.status}`);
       }
 
-      const config = response.json;
+      const config: unknown = response.json;
 
       // Parse file list from config
       // MLC models typically have: mlc-chat-config.json, tokenizer files, and weight shards
@@ -201,11 +220,11 @@ export class WebLLMModelManager {
         try {
           // Check if file exists (HEAD request)
           const headResp = await requestUrl({ url, method: 'HEAD' });
-          if (headResp.status === 200) {
-            const size = parseInt(headResp.headers['content-length'] || '0', 10);
-            files.push({ name: tokenFile, url, size });
-            totalSize += size;
-          }
+      if (headResp.status === 200) {
+              const size = parseInt(headResp.headers['content-length'] || '0', 10);
+              files.push({ name: tokenFile, url, size });
+              totalSize += size;
+            }
         } catch {
           // File doesn't exist, skip
         }
@@ -217,7 +236,7 @@ export class WebLLMModelManager {
       try {
         const tensorResp = await requestUrl({ url: tensorCacheUrl, method: 'GET' });
         if (tensorResp.status === 200) {
-          const tensorConfig = tensorResp.json;
+          const tensorConfig: unknown = tensorResp.json;
           files.push({
             name: 'tensor-cache.json',
             url: tensorCacheUrl,
@@ -225,7 +244,7 @@ export class WebLLMModelManager {
           });
 
           // Add all weight shards listed in tensor-cache.json
-          if (tensorConfig.records && Array.isArray(tensorConfig.records)) {
+          if (isTensorCacheConfig(tensorConfig) && Array.isArray(tensorConfig.records)) {
             for (const record of tensorConfig.records) {
               if (record.dataPath) {
                 const dataUrl = `${basePath}/${record.dataPath}`;
@@ -369,7 +388,7 @@ export class WebLLMModelManager {
       } else {
         await this.vault.adapter.remove(path);
       }
-    } catch (error) {
+    } catch {
       // Ignore deletion errors
     }
   }
@@ -438,7 +457,7 @@ export class WebLLMModelManager {
   async getLocalModelUrl(modelId: string): Promise<string> {
     const modelPath = this.getModelPath(modelId);
 
-    const adapter: any = this.vault.adapter;
+    const adapter = this.vault.adapter;
     if (typeof adapter.getResourcePath === 'function') {
       return adapter.getResourcePath(modelPath);
     }
@@ -464,7 +483,7 @@ export class WebLLMModelManager {
       if (!exists) {
         await this.vault.adapter.mkdir(path);
       }
-    } catch (error) {
+    } catch {
       // Directory might already exist, ignore error
     }
   }
