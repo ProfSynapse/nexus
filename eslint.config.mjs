@@ -55,6 +55,36 @@ export default defineConfig([
             "@typescript-eslint/no-explicit-any": "warn",
             "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
             "no-console": ["warn", { allow: ["warn", "error"] }],
+
+            // Bot parity: obsidianmd recommended sets severity 0, but the
+            // obsidian-releases bot scanner treats require-await as Required.
+            "@typescript-eslint/require-await": "error",
+
+            // Bot parity: obsidianmd recommended sets "warn", but the bot
+            // treats prefer-file-manager-trash-file as Required (error).
+            "obsidianmd/prefer-file-manager-trash-file": "error",
+        },
+    },
+
+    // Node.js import exemptions — desktop-only files that legitimately use
+    // Node.js APIs (child_process, net, http, fs, etc.) in Electron.
+    // The obsidian-releases bot rejects inline eslint-disable for this rule,
+    // so we handle it at config level.
+    {
+        files: [
+            "src/server/**/*.ts",
+            "src/services/external/**/*.ts",
+            "src/services/llm/adapters/anthropic-claude-code/**/*.ts",
+            "src/services/llm/adapters/google-gemini-cli/**/*.ts",
+            "src/services/llm/adapters/shared/**/*.ts",
+            "src/services/oauth/**/*.ts",
+            "src/services/chat/MessageQueueService.ts",
+            "src/services/embeddings/IndexingQueue.ts",
+            "src/settings/getStartedStatus.ts",
+            "src/utils/cli*.ts",
+        ],
+        rules: {
+            "import/no-nodejs-modules": "off",
         },
     },
 ]);
