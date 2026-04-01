@@ -29,9 +29,9 @@ export class RequestExecutor {
 
     try {
       if (config.type === 'text') {
-        return await this.executeTextRequest(config as TextPromptConfig, context, sessionId, startTime);
+        return await this.executeTextRequest(config, context, sessionId, startTime);
       } else if (config.type === 'image') {
-        return await this.executeImageRequest(config as ImagePromptConfig, context, sessionId, startTime);
+        return await this.executeImageRequest(config, context, sessionId, startTime);
       } else {
         const executionTime = performance.now() - startTime;
         const unknownConfig = config as TextPromptConfig | ImagePromptConfig;
@@ -176,7 +176,7 @@ export class RequestExecutor {
     }
 
     if (config.type === 'image') {
-      const imageConfig = config as ImagePromptConfig;
+      const imageConfig = config;
       
       if (!imageConfig.savePath || imageConfig.savePath.trim().length === 0) {
         return { valid: false, error: 'Save path is required for image generation' };

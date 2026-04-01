@@ -15,8 +15,40 @@
 
 export interface ReasoningDetails {
   /** OpenRouter format: array of reasoning detail objects */
-  reasoning_details?: any[];
+  reasoning_details?: unknown[];
   /** Google Gemini format: thought signature string */
+  thought_signature?: string;
+}
+
+type JsonObject = Record<string, unknown>;
+
+interface ReasoningToolFunction {
+  name?: string;
+  arguments?: string;
+}
+
+interface ReasoningStreamChoice {
+  delta?: {
+    reasoning_details?: unknown[];
+  };
+  message?: {
+    reasoning_details?: unknown[];
+  };
+  reasoning_details?: unknown[];
+}
+
+interface ReasoningResponseMessage {
+  reasoning_details?: unknown[];
+  thought_signature?: string;
+}
+
+interface ReasoningToolCall extends JsonObject {
+  id?: string;
+  type?: string;
+  name?: string;
+  function?: ReasoningToolFunction;
+  parameters?: Record<string, unknown>;
+  reasoning_details?: unknown[];
   thought_signature?: string;
 }
 
@@ -48,24 +80,30 @@ export class ReasoningPreserver {
    * In streaming, reasoning_details appears in choice.delta.reasoning_details
    * See: https://openrouter.ai/docs/guides/best-practices/reasoning-tokens
    */
-  static extractFromStreamChunk(parsed: any): any[] | undefined {
+  static extractFromStreamChunk(parsed: JsonObject): unknown[] | undefined {
     // Check top-level first
-    if (parsed.reasoning_details) {
-      return parsed.reasoning_details;
+    const topLevelReasoning = parsed.reasoning_details;
+    if (Array.isArray(topLevelReasoning)) {
+      return topLevelReasoning as unknown[];
     }
 
     // Check each choice
-    for (const choice of parsed.choices || []) {
+    const choices = parsed.choices;
+    if (!Array.isArray(choices)) {
+      return undefined;
+    }
+
+    for (const choice of choices as ReasoningStreamChoice[]) {
       // Streaming: check delta
-      if (choice?.delta?.reasoning_details) {
+      if (Array.isArray(choice?.delta?.reasoning_details)) {
         return choice.delta.reasoning_details;
       }
       // Non-streaming: check message
-      if (choice?.message?.reasoning_details) {
+      if (Array.isArray(choice?.message?.reasoning_details)) {
         return choice.message.reasoning_details;
       }
       // Also check at choice level
-      if (choice?.reasoning_details) {
+      if (Array.isArray(choice?.reasoning_details)) {
         return choice.reasoning_details;
       }
     }
@@ -75,18 +113,20 @@ export class ReasoningPreserver {
   /**
    * Extract reasoning data from a non-streaming response (OpenRouter format)
    */
-  static extractFromResponse(choice: any): ReasoningDetails | undefined {
+  static extractFromResponse(choice: JsonObject): ReasoningDetails | undefined {
     const message = choice?.message;
-    if (!message) return undefined;
+    if (!message || typeof message !== 'object') return undefined;
+
+    const messageRecord = message as ReasoningResponseMessage;
 
     const result: ReasoningDetails = {};
 
-    if (message.reasoning_details) {
-      result.reasoning_details = message.reasoning_details;
+    if (Array.isArray(messageRecord.reasoning_details)) {
+      result.reasoning_details = messageRecord.reasoning_details;
     }
 
-    if (message.thought_signature) {
-      result.thought_signature = message.thought_signature;
+    if (typeof messageRecord.thought_signature === 'string') {
+      result.thought_signature = messageRecord.thought_signature;
     }
 
     return Object.keys(result).length > 0 ? result : undefined;
@@ -95,8 +135,18 @@ export class ReasoningPreserver {
   /**
    * Extract thought_signature from Google Gemini streaming part
    */
-  static extractThoughtSignatureFromPart(part: any): string | undefined {
-    return part.thoughtSignature || part.thought_signature;
+  static extractThoughtSignatureFromPart(part: JsonObject): string | undefined {
+    const camelCase = part.thoughtSignature;
+    if (typeof camelCase === 'string' && camelCase) {
+      return camelCase;
+    }
+
+    const snakeCase = part.thought_signature;
+    if (typeof snakeCase === 'string' && snakeCase) {
+      return snakeCase;
+    }
+
+    return undefined;
   }
 
   /**
@@ -104,9 +154,9 @@ export class ReasoningPreserver {
    * Returns new tool call objects with reasoning attached
    */
   static attachToToolCalls(
-    toolCalls: any[],
+    toolCalls: ReasoningToolCall[],
     reasoning: ReasoningDetails | undefined
-  ): any[] {
+  ): ReasoningToolCall[] {
     if (!reasoning || !toolCalls?.length) {
       return toolCalls;
     }
@@ -121,7 +171,7 @@ export class ReasoningPreserver {
   /**
    * Extract reasoning from tool calls (for building continuation messages)
    */
-  static extractFromToolCalls(toolCalls: any[]): ReasoningDetails | undefined {
+  static extractFromToolCalls(toolCalls: ReasoningToolCall[]): ReasoningDetails | undefined {
     if (!toolCalls?.length) return undefined;
 
     // Find the first tool call with reasoning data
@@ -146,20 +196,20 @@ export class ReasoningPreserver {
    * 2. On the message itself (for some providers)
    */
   static buildAssistantMessageWithReasoning(
-    toolCalls: any[],
+    toolCalls: ReasoningToolCall[],
     content: string | null = null
-  ): any {
+  ): JsonObject {
     const reasoning = this.extractFromToolCalls(toolCalls);
 
-    const message: any = {
+    const message: JsonObject = {
       role: 'assistant',
       content,
       tool_calls: toolCalls.map(tc => {
-        const toolCall: any = {
-          id: tc.id,
+        const toolCall: ReasoningToolCall = {
+          id: tc.id || '',
           type: 'function',
           function: {
-            name: tc.function?.name || tc.name,
+            name: tc.function?.name || tc.name || '',
             arguments: tc.function?.arguments || JSON.stringify(tc.parameters || {})
           }
         };
@@ -188,12 +238,13 @@ export class ReasoningPreserver {
    * Build a Google Gemini model message with thought signature preserved
    * Used for tool continuation requests
    */
-  static buildGoogleModelMessageWithThinking(toolCalls: any[]): any {
+  static buildGoogleModelMessageWithThinking(toolCalls: ReasoningToolCall[]): JsonObject {
     const parts = toolCalls.map(tc => {
-      const part: any = {
+      const args: unknown = JSON.parse(tc.function?.arguments || '{}');
+      const part: JsonObject = {
         functionCall: {
-          name: tc.function?.name || tc.name,
-          args: JSON.parse(tc.function?.arguments || '{}')
+          name: tc.function?.name || tc.name || '',
+          args
         }
       };
 
@@ -215,7 +266,7 @@ export class ReasoningPreserver {
    * Get reasoning request parameters for a model
    * Returns the parameters to enable reasoning capture (if applicable)
    */
-  static getReasoningRequestParams(model: string, provider: string, hasTools: boolean): any {
+  static getReasoningRequestParams(model: string, provider: string, hasTools: boolean): JsonObject {
     if (!hasTools) return {};
 
     if (this.requiresReasoningPreservation(model, provider)) {

@@ -3,7 +3,9 @@
  * Follows Single Responsibility Principle by focusing only on IPC transport
  */
 
+// eslint-disable-next-line import/no-nodejs-modules -- desktop-only IPC transport uses Node networking APIs in Electron
 import { Server as NetServer, Socket, createServer } from 'net';
+// eslint-disable-next-line import/no-nodejs-modules -- desktop-only IPC transport uses Node filesystem APIs in Electron
 import { promises as fs } from 'fs';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { Server as MCPSDKServer } from '@modelcontextprotocol/sdk/server/index.js';
@@ -17,7 +19,7 @@ import { logger } from '../../utils/logger';
  */
 export class IPCTransportManager {
     private ipcServer: NetServer | null = null;
-    private isRunning: boolean = false;
+    private isRunning = false;
     /** Per-connection MCPSDKServer instances for multi-client support. */
     private activeConnections: Set<MCPSDKServer> = new Set();
     /** Track current transport for proactive cleanup */
@@ -49,7 +51,7 @@ export class IPCTransportManager {
                 const server = createServer((socket) => {
                     this.handleSocketConnection(socket).catch(error => {
                         logger.systemError(error as Error, 'IPC Socket Handling');
-                        const netSocket = socket as Socket;
+                        const netSocket = socket;
                         if (!netSocket.destroyed) netSocket.destroy();
                     });
                 });
@@ -58,7 +60,7 @@ export class IPCTransportManager {
                 this.startListening(server, ipcPath, isWindows, resolve, reject);
             } catch (error) {
                 logger.systemError(error as Error, 'IPC Server Creation');
-                reject(error);
+                reject(error instanceof Error ? error : new Error(String(error)));
             }
         });
     }
@@ -78,9 +80,9 @@ export class IPCTransportManager {
      * new one, preventing a race where the old transport's onclose fires after
      * the new connect and nullifies Protocol._transport.
      */
-    private async handleSocketConnection(socket: NodeJS.ReadWriteStream): Promise<void> {
+    private async handleSocketConnection(socket: Socket): Promise<void> {
         if (this.serverFactory) {
-            this.handleMultiClientConnection(socket as Socket);
+            this.handleMultiClientConnection(socket);
         } else {
             await this.handleSingleClientConnection(socket);
         }
@@ -92,7 +94,12 @@ export class IPCTransportManager {
      */
     private handleMultiClientConnection(socket: Socket): void {
         try {
-            const server = this.serverFactory!();
+            const serverFactory = this.serverFactory;
+            if (!serverFactory) {
+                throw new Error('IPC multi-client server factory is not configured');
+            }
+
+            const server = serverFactory();
             const transport = new StdioServerTransport(socket, socket);
 
             const netSocket = socket;
@@ -129,8 +136,8 @@ export class IPCTransportManager {
      * Wires the raw socket's lifecycle events to the MCP transport
      * so that Protocol._transport is cleared when a client disconnects.
      */
-    private async handleSingleClientConnection(socket: NodeJS.ReadWriteStream): Promise<void> {
-        const netSocket = socket as Socket;
+    private async handleSingleClientConnection(socket: Socket): Promise<void> {
+        const netSocket = socket;
         try {
             const transport = this.stdioTransportManager.createSocketTransport(socket, socket);
             let closed = false;
@@ -179,7 +186,7 @@ export class IPCTransportManager {
         reject: (error: Error) => void
     ): void {
         server.on('error', (error) => {
-            logger.systemError(error as Error, 'IPC Server');
+            logger.systemError(error, 'IPC Server');
             
             if (!isWindows && (error as NodeJS.ErrnoException).code === 'EADDRINUSE') {
                 this.handleAddressInUse(server, ipcPath, reject);
@@ -203,12 +210,12 @@ export class IPCTransportManager {
                     server.listen(ipcPath);
                 } catch (listenError) {
                     logger.systemError(listenError as Error, 'Server Listen Retry');
-                    reject(listenError as Error);
+                    reject(listenError instanceof Error ? listenError : new Error(String(listenError)));
                 }
             })
             .catch(cleanupError => {
                 logger.systemError(cleanupError as Error, 'Socket Cleanup');
-                reject(cleanupError);
+                reject(cleanupError instanceof Error ? cleanupError : new Error(String(cleanupError)));
             });
     }
 
@@ -235,7 +242,7 @@ export class IPCTransportManager {
         ipcPath: string,
         isWindows: boolean,
         resolve: (server: NetServer) => void,
-        reject: (error: Error) => void
+        _reject: (error: Error) => void
     ): void {
         if (!isWindows) {
             fs.chmod(ipcPath, 0o666).catch(error => {
@@ -387,7 +394,7 @@ export class IPCTransportManager {
                     .catch(() => {
                         diagnostics.socketExists = false;
                     });
-            } catch (error) {
+            } catch {
                 diagnostics.socketExists = false;
             }
         }

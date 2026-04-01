@@ -22,6 +22,10 @@ export interface ToolBubbleFactoryOptions {
   component?: Component;
 }
 
+interface MessageBranchNavigatorLike {
+  updateMessage(message: ConversationMessage): void;
+}
+
 export class ToolBubbleFactory {
   /**
    * Create tool bubble containing multiple tool accordions
@@ -92,7 +96,7 @@ export class ToolBubbleFactory {
     renderContentCallback: (content: HTMLElement, text: string) => Promise<void>,
     onCopy: (messageId: string) => void,
     showCopyFeedback: (button: HTMLElement) => void,
-    messageBranchNavigator: any | null,
+    messageBranchNavigator: MessageBranchNavigatorLike | null,
     onMessageAlternativeChanged?: (messageId: string, alternativeIndex: number) => void,
     component?: Component
   ): HTMLElement {
@@ -130,19 +134,14 @@ export class ToolBubbleFactory {
       showCopyFeedback(copyBtn);
       onCopy(message.id);
     };
-    component!.registerDomEvent(copyBtn, 'click', copyHandler);
+    if (component) {
+      component.registerDomEvent(copyBtn, 'click', copyHandler);
+    } else {
+      copyBtn.addEventListener('click', copyHandler);
+    }
 
     // Message branch navigator for messages with branches
     if (message.branches && message.branches.length > 0 && messageBranchNavigator) {
-      const navigatorEvents = {
-        onAlternativeChanged: (messageId: string, alternativeIndex: number) => {
-          if (onMessageAlternativeChanged) {
-            onMessageAlternativeChanged(messageId, alternativeIndex);
-          }
-        },
-        onError: (errorMessage: string) => console.error('[ToolBubbleFactory] Branch navigation error:', errorMessage)
-      };
-
       messageBranchNavigator.updateMessage(message);
     }
 

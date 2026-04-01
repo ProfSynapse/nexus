@@ -128,9 +128,9 @@ export class ConversationSearchStrategy {
           matchedSequenceRange: result.matchedSequenceRange,
           windowMessages: result.windowMessages,
           content: result.matchedSide === 'question' ? result.question : result.answer
-        },
+        } as unknown as RawMemoryResult['trace'],
         similarity: 1 - result.score // Convert distance-based score (lower=better) to similarity (higher=better)
-      }));
+      } as RawMemoryResult));
     } catch (error) {
       console.error('[ConversationSearchStrategy] Error searching conversation embeddings:', error);
       return [];

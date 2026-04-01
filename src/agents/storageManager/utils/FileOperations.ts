@@ -94,7 +94,7 @@ export class FileOperations {
       
       try {
         await FileOperations.createFolder(app, currentPath);
-      } catch (error) {
+      } catch {
         // Ignore errors if the folder already exists
       }
       
@@ -122,7 +122,7 @@ export class FileOperations {
       throw new Error(`Path is not a file: ${path}`);
     }
     
-    await app.vault.delete(file);
+    await app.fileManager.trashFile(file);
   }
   
   /**
@@ -150,7 +150,7 @@ export class FileOperations {
       throw new Error(`Folder is not empty: ${path}`);
     }
     
-    await app.vault.delete(folder, true);
+    await app.fileManager.trashFile(folder);
   }
   
   /**
@@ -185,7 +185,7 @@ export class FileOperations {
     const existingFile = app.vault.getAbstractFileByPath(normalizedNewPath);
     if (existingFile) {
       if (overwrite) {
-        await app.vault.delete(existingFile);
+        await app.fileManager.trashFile(existingFile);
       } else {
         throw new Error(`Destination already exists: ${newPath}`);
       }
@@ -232,7 +232,7 @@ export class FileOperations {
     const existingFolder = app.vault.getAbstractFileByPath(normalizedNewPath);
     if (existingFolder) {
       if (overwrite) {
-        await app.vault.delete(existingFolder, true);
+        await app.fileManager.trashFile(existingFolder);
       } else {
         throw new Error(`Destination already exists: ${newPath}`);
       }
@@ -315,7 +315,7 @@ export class FileOperations {
         wasAutoIncremented = counter > 1;
       } else if (overwrite) {
         // Delete existing file
-        await app.vault.delete(existingTarget);
+        await app.fileManager.trashFile(existingTarget);
         wasOverwritten = true;
       } else {
         throw new Error(`Target file already exists: ${targetPath}`);

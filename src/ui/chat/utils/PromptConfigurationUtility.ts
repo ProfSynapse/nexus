@@ -14,6 +14,10 @@ import { getNexusPlugin } from '../../../utils/pluginLocator';
 import type { App } from 'obsidian';
 import type NexusPlugin from '../../../main';
 
+interface PromptStorageServiceLike {
+  getAllPrompts(): Promise<PromptInfo[]>;
+}
+
 /**
  * Utility class for prompt configuration and discovery
  */
@@ -34,7 +38,7 @@ export class PromptConfigurationUtility {
         return null;
       }
 
-      const customPromptStorageService = await plugin.getService('customPromptStorageService');
+      const customPromptStorageService = await plugin.getService<PromptStorageServiceLike>('customPromptStorageService');
       if (!customPromptStorageService) {
         return null;
       }

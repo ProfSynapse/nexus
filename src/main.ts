@@ -19,7 +19,7 @@ export default class NexusPlugin extends Plugin {
     /**
      * Get a service asynchronously
      */
-    public async getService<T>(name: string, timeoutMs?: number): Promise<T | null> {
+    public async getService<T>(name: string, _timeoutMs?: number): Promise<T | null> {
         if (!this.serviceManager) {
             return null;
         }
@@ -57,7 +57,11 @@ export default class NexusPlugin extends Plugin {
         return services;
     }
 
-    async onload() {
+    onload(): void {
+        void this.loadPlugin();
+    }
+
+    private async loadPlugin(): Promise<void> {
         try {
             // Ensure sqlite3.wasm exists (desktop only - SQLite not used on mobile)
             if (Platform.isDesktop) {
@@ -98,12 +102,12 @@ export default class NexusPlugin extends Plugin {
                     const { OAuthService } = await import('./services/oauth/OAuthService');
                     const { OpenRouterOAuthProvider } = await import('./services/oauth/providers/OpenRouterOAuthProvider');
                     const { OpenAICodexOAuthProvider } = await import('./services/oauth/providers/OpenAICodexOAuthProvider');
-            const { GithubCopilotOAuthProvider } = await import('./services/oauth/providers/GithubCopilotOAuthProvider');
+                    const { GithubCopilotOAuthProvider } = await import('./services/oauth/providers/GithubCopilotOAuthProvider');
 
                     const oauthService = OAuthService.getInstance();
                     oauthService.registerProvider(new OpenRouterOAuthProvider());
                     oauthService.registerProvider(new OpenAICodexOAuthProvider());
-            oauthService.registerProvider(new GithubCopilotOAuthProvider());
+                    oauthService.registerProvider(new GithubCopilotOAuthProvider());
                 } catch (error) {
                     console.error(`[${BRAND_NAME}] Failed to initialize OAuth providers:`, error);
                     // Continue without OAuth — manual API key entry still works
@@ -130,7 +134,11 @@ export default class NexusPlugin extends Plugin {
         }
     }
 
-    async onunload() {
+    onunload(): void {
+        void this.unloadPlugin();
+    }
+
+    private async unloadPlugin(): Promise<void> {
         // Shutdown lifecycle manager first (handles UI cleanup)
         if (this.lifecycleManager) {
             await this.lifecycleManager.shutdown();

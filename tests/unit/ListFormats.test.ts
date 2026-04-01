@@ -12,6 +12,20 @@ function makeAgent(): BaseAppAgent {
   return {} as unknown as BaseAppAgent;
 }
 
+type FormatEntry = {
+  format: string;
+  platforms: string[];
+  modes?: string[];
+  outputFormats?: string[];
+};
+
+type ListFormatsResult = {
+  success: boolean;
+  data: {
+    formats: FormatEntry[];
+  };
+};
+
 describe('ListFormatsTool', () => {
   let tool: ListFormatsTool;
 
@@ -25,9 +39,8 @@ describe('ListFormatsTool', () => {
   });
 
   it('should include markdown, pdf, and audio formats', async () => {
-    const result = await tool.execute({});
-    const data = (result as any).data;
-    const formatNames = data.formats.map((f: any) => f.format);
+    const result = await tool.execute({}) as ListFormatsResult;
+    const formatNames = result.data.formats.map((f: FormatEntry) => f.format);
 
     expect(formatNames).toContain('markdown');
     expect(formatNames).toContain('pdf');
@@ -35,9 +48,8 @@ describe('ListFormatsTool', () => {
   });
 
   it('should list audio as desktop-only', async () => {
-    const result = await tool.execute({});
-    const data = (result as any).data;
-    const audio = data.formats.find((f: any) => f.format === 'audio');
+    const result = await tool.execute({}) as ListFormatsResult;
+    const audio = result.data.formats.find((f: FormatEntry) => f.format === 'audio');
 
     expect(audio.platforms).toEqual(['desktop']);
     expect(audio.modes).toContain('concat');
@@ -45,10 +57,9 @@ describe('ListFormatsTool', () => {
   });
 
   it('should list markdown and pdf as cross-platform', async () => {
-    const result = await tool.execute({});
-    const data = (result as any).data;
-    const markdown = data.formats.find((f: any) => f.format === 'markdown');
-    const pdf = data.formats.find((f: any) => f.format === 'pdf');
+    const result = await tool.execute({}) as ListFormatsResult;
+    const markdown = result.data.formats.find((f: FormatEntry) => f.format === 'markdown');
+    const pdf = result.data.formats.find((f: FormatEntry) => f.format === 'pdf');
 
     expect(markdown.platforms).toContain('desktop');
     expect(markdown.platforms).toContain('mobile');
@@ -57,9 +68,8 @@ describe('ListFormatsTool', () => {
   });
 
   it('should include audio output formats', async () => {
-    const result = await tool.execute({});
-    const data = (result as any).data;
-    const audio = data.formats.find((f: any) => f.format === 'audio');
+    const result = await tool.execute({}) as ListFormatsResult;
+    const audio = result.data.formats.find((f: FormatEntry) => f.format === 'audio');
 
     expect(audio.outputFormats).toEqual(['wav', 'mp3', 'webm']);
   });

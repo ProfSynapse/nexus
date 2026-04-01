@@ -40,7 +40,7 @@ export class AudioMixer {
           // .slice(0) creates a copy because decodeAudioData detaches the ArrayBuffer
           const buffer = await audioContext.decodeAudioData(arrayBuffer.slice(0));
           decoded.push({ buffer, track });
-        } catch (err) {
+        } catch {
           throw new ComposerError(
             `Failed to decode audio: ${track.file.path}`,
             [track.file.path]
@@ -48,7 +48,7 @@ export class AudioMixer {
         }
       }
     } finally {
-      audioContext.close();
+      await audioContext.close();
     }
 
     // Step 2: Compute output dimensions

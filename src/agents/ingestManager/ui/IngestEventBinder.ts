@@ -95,7 +95,7 @@ export class IngestEventBinder {
     }
   }
 
-  private onDragLeave(e: DragEvent): void {
+  private onDragLeave(_e: DragEvent): void {
     this.dragCounter--;
     if (this.dragCounter <= 0) {
       this.dragCounter = 0;

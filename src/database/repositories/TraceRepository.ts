@@ -26,7 +26,17 @@ import {
 import { MemoryTraceData } from '../../types/storage/HybridStorageTypes';
 import { TraceAddedEvent } from '../interfaces/StorageEvents';
 import { PaginatedResult, PaginationParams } from '../../types/pagination/PaginationTypes';
-import { QueryCache } from '../optimizations/QueryCache';
+import { DatabaseRow, QueryParams } from './base/BaseRepository';
+
+interface TraceRow extends DatabaseRow {
+  id: string;
+  workspaceId: string;
+  sessionId: string;
+  timestamp: number;
+  type?: string;
+  content: string;
+  metadataJson?: string | null;
+}
 
 /**
  * Repository for memory trace entities
@@ -41,7 +51,7 @@ export class TraceRepository
   protected readonly tableName = 'memory_traces';
   protected readonly entityType = 'trace';
   // Traces write to workspace JSONL file
-  protected readonly jsonlPath = (workspaceId: string) => `workspaces/ws_${workspaceId}.jsonl`;
+  protected readonly jsonlPath: (workspaceId: string) => string = (workspaceId) => `workspaces/ws_${workspaceId}.jsonl`;
 
   constructor(deps: RepositoryDependencies) {
     super(deps);
@@ -52,7 +62,7 @@ export class TraceRepository
   // ============================================================================
 
   async getById(id: string): Promise<MemoryTraceData | null> {
-    const row = await this.sqliteCache.queryOne<any>(
+    const row = await this.sqliteCache.queryOne<TraceRow>(
       'SELECT * FROM memory_traces WHERE id = ?',
       [id]
     );
@@ -62,7 +72,7 @@ export class TraceRepository
   async getAll(options?: PaginationParams): Promise<PaginatedResult<MemoryTraceData>> {
     const baseQuery = 'SELECT * FROM memory_traces ORDER BY timestamp DESC';
     const countQuery = 'SELECT COUNT(*) as count FROM memory_traces';
-    const result = await this.queryPaginated<any>(baseQuery, countQuery, options);
+    const result = await this.queryPaginated<TraceRow>(baseQuery, countQuery, options);
     return {
       items: result.items.map(row => this.rowToEntity(row)),
       page: result.page,
@@ -78,7 +88,7 @@ export class TraceRepository
     return this.addTrace(data.workspaceId, data.sessionId, data);
   }
 
-  async update(id: string, data: any): Promise<void> {
+  async update(_id: string, _data: unknown): Promise<void> {
     // Traces are immutable records - no updates allowed
     throw new Error('Traces are immutable. Create a new trace instead.');
   }
@@ -101,19 +111,19 @@ export class TraceRepository
 
   async count(criteria?: Record<string, unknown>): Promise<number> {
     let sql = 'SELECT COUNT(*) as count FROM memory_traces';
-    const params: any[] = [];
+    const params: QueryParams = [];
 
     if (criteria) {
       const conditions: string[] = [];
-      if (criteria.workspaceId) {
+      if (typeof criteria.workspaceId === 'string') {
         conditions.push('workspaceId = ?');
         params.push(criteria.workspaceId);
       }
-      if (criteria.sessionId) {
+      if (typeof criteria.sessionId === 'string') {
         conditions.push('sessionId = ?');
         params.push(criteria.sessionId);
       }
-      if (criteria.type) {
+      if (typeof criteria.type === 'string') {
         conditions.push('type = ?');
         params.push(criteria.type);
       }
@@ -137,7 +147,7 @@ export class TraceRepository
   ): Promise<PaginatedResult<MemoryTraceData>> {
     let baseQuery = 'SELECT * FROM memory_traces WHERE workspaceId = ?';
     let countQuery = 'SELECT COUNT(*) as count FROM memory_traces WHERE workspaceId = ?';
-    const params: any[] = [workspaceId];
+    const params: QueryParams = [workspaceId];
 
     if (sessionId) {
       baseQuery += ' AND sessionId = ?';
@@ -147,7 +157,7 @@ export class TraceRepository
 
     baseQuery += ' ORDER BY timestamp DESC';
 
-    const result = await this.queryPaginated<any>(baseQuery, countQuery, options, params);
+    const result = await this.queryPaginated<TraceRow>(baseQuery, countQuery, options, params);
     return {
       items: result.items.map(row => this.rowToEntity(row)),
       page: result.page,
@@ -230,7 +240,7 @@ export class TraceRepository
         WHERE mt.workspaceId = ?
         AND mt.content LIKE ?
       `;
-      const params: any[] = [workspaceId, `%${query}%`];
+    const params: QueryParams = [workspaceId, `%${query}%`];
 
       if (sessionId) {
         baseQuery += ' AND mt.sessionId = ?';
@@ -240,7 +250,7 @@ export class TraceRepository
 
       baseQuery += ' ORDER BY mt.timestamp DESC';
 
-      const result = await this.queryPaginated<any>(baseQuery, countQuery, options, params);
+      const result = await this.queryPaginated<TraceRow>(baseQuery, countQuery, options, params);
       return {
         items: result.items.map(row => this.rowToEntity(row)),
         page: result.page,
@@ -270,9 +280,9 @@ export class TraceRepository
       SELECT COUNT(*) as count FROM memory_traces
       WHERE workspaceId = ? AND type = ?
     `;
-    const params = [workspaceId, type];
+    const params: QueryParams = [workspaceId, type];
 
-    const result = await this.queryPaginated<any>(baseQuery, countQuery, options, params);
+    const result = await this.queryPaginated<TraceRow>(baseQuery, countQuery, options, params);
     return {
       items: result.items.map(row => this.rowToEntity(row)),
       page: result.page,
@@ -292,15 +302,16 @@ export class TraceRepository
   // Protected Methods
   // ============================================================================
 
-  protected rowToEntity(row: any): MemoryTraceData {
+  protected rowToEntity(row: DatabaseRow): MemoryTraceData {
+    const traceRow = row as TraceRow;
     return {
-      id: row.id,
-      sessionId: row.sessionId,
-      workspaceId: row.workspaceId,
-      timestamp: row.timestamp,
-      type: row.type ?? undefined,
-      content: row.content,
-      metadata: row.metadataJson ? JSON.parse(row.metadataJson) : undefined
+      id: traceRow.id,
+      sessionId: traceRow.sessionId,
+      workspaceId: traceRow.workspaceId,
+      timestamp: traceRow.timestamp,
+      type: traceRow.type ?? undefined,
+      content: traceRow.content,
+      metadata: traceRow.metadataJson ? (JSON.parse(traceRow.metadataJson) as Record<string, unknown>) : undefined
     };
   }
 }

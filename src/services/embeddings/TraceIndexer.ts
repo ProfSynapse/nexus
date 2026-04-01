@@ -42,8 +42,8 @@ export class TraceIndexer {
     db: SQLiteCacheManager,
     embeddingService: EmbeddingService,
     onProgress: (progress: TraceIndexerProgress) => void,
-    saveInterval: number = 10,
-    yieldIntervalMs: number = 50
+    saveInterval = 10,
+    yieldIntervalMs = 50
   ) {
     this.db = db;
     this.embeddingService = embeddingService;

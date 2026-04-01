@@ -70,10 +70,10 @@ export class AgentStatusMenu {
   private element: HTMLElement | null = null;
   private badgeEl: HTMLElement | null = null;
   private iconEl: HTMLElement | null = null;
-  private lastCount: number = 0;
+  private lastCount = 0;
   private eventRef: ReturnType<Events['on']> | null = null;
-  private hasShownSuccess: boolean = false; // Track if green state was shown
-  private isShowingSpinner: boolean = false; // Track current icon state
+  private hasShownSuccess = false; // Track if green state was shown
+  private isShowingSpinner = false; // Track current icon state
 
   constructor(
     private container: HTMLElement,

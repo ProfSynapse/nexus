@@ -2,6 +2,8 @@ import { App, Platform } from 'obsidian';
 import type { LLMProviderConfig, LLMProviderSettings } from '../types/llm/ProviderTypes';
 import { getPrimaryServerKey } from '../constants/branding';
 import { supportsMCPBridge } from '../utils/platform';
+// eslint-disable-next-line import/no-nodejs-modules -- desktop-only config inspection uses Node fs in Electron
+import * as nodeFs from 'node:fs';
 
 export type ConfigStatus =
   | 'unsupported'
@@ -38,14 +40,14 @@ export function getClaudeDesktopConfigPath(): string | null {
     return null;
   }
 
-  const pathMod = require('path') as typeof import('path');
+  const joinPath = (...parts: string[]): string => parts.filter(Boolean).join('/');
 
   if (Platform.isWin) {
-    return pathMod.join(process.env.APPDATA || '', 'Claude', 'claude_desktop_config.json');
+    return joinPath(process.env.APPDATA || '', 'Claude', 'claude_desktop_config.json');
   }
 
   if (Platform.isMacOS) {
-    return pathMod.join(
+    return joinPath(
       process.env.HOME || '',
       'Library',
       'Application Support',
@@ -54,7 +56,7 @@ export function getClaudeDesktopConfigPath(): string | null {
     );
   }
 
-  return pathMod.join(process.env.HOME || '', '.config', 'Claude', 'claude_desktop_config.json');
+  return joinPath(process.env.HOME || '', '.config', 'Claude', 'claude_desktop_config.json');
 }
 
 export function getConfigStatus(app: App): ConfigStatus {
@@ -67,9 +69,7 @@ export function getConfigStatus(app: App): ConfigStatus {
     return 'unsupported';
   }
 
-  const nodeFs = require('fs') as typeof import('fs');
-  const pathMod = require('path') as typeof import('path');
-  const configDir = pathMod.dirname(configPath);
+  const configDir = configPath.replace(/[\\/][^\\/]+$/, '');
 
   if (!nodeFs.existsSync(configDir)) {
     return 'no-claude-folder';
@@ -85,10 +85,10 @@ export function getConfigStatus(app: App): ConfigStatus {
       return 'invalid-config';
     }
 
-    const config = JSON.parse(content);
+    const config = JSON.parse(content) as unknown;
     const serverKey = getPrimaryServerKey(app.vault.getName());
 
-    if (config.mcpServers && config.mcpServers[serverKey]) {
+    if (isRecord(config) && isRecord(config.mcpServers) && config.mcpServers[serverKey]) {
       return 'nexus-configured';
     }
 
@@ -101,4 +101,8 @@ export function getConfigStatus(app: App): ConfigStatus {
 
 export function isMCPConfigured(app: App): boolean {
   return getConfigStatus(app) === 'nexus-configured';
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

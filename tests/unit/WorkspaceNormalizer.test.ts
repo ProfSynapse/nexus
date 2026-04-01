@@ -10,8 +10,18 @@ import {
   normalizeWorkspaceContext,
   normalizeWorkspaceData,
 } from '../../src/services/helpers/WorkspaceNormalizer';
-import type { WorkflowSchedule, WorkspaceWorkflow } from '../../src/database/types/workspace/WorkspaceTypes';
+import type { WorkflowSchedule } from '../../src/database/types/workspace/WorkspaceTypes';
+import type { IndividualWorkspace } from '../../src/types/storage/StorageTypes';
 import type { WorkspaceContext } from '../../src/types/storage/HybridStorageTypes';
+
+function expectDefined<T>(value: T | null | undefined): T {
+  expect(value).toBeDefined();
+  return value as T;
+}
+
+function makeWorkspace(data: Partial<IndividualWorkspace> & { context?: WorkspaceContext }): IndividualWorkspace {
+  return data as IndividualWorkspace;
+}
 
 // ============================================================================
 // normalizeWorkflowSchedule
@@ -24,7 +34,7 @@ describe('normalizeWorkflowSchedule', () => {
 
   it('defaults enabled to true when not explicitly false', () => {
     const result = normalizeWorkflowSchedule({ frequency: 'daily', catchUp: 'skip' } as WorkflowSchedule);
-    expect(result!.enabled).toBe(true);
+    expect(expectDefined(result).enabled).toBe(true);
   });
 
   it('preserves enabled=false when explicitly set', () => {
@@ -33,16 +43,16 @@ describe('normalizeWorkflowSchedule', () => {
       frequency: 'daily',
       catchUp: 'skip',
     });
-    expect(result!.enabled).toBe(false);
+    expect(expectDefined(result).enabled).toBe(false);
   });
 
   it('defaults catchUp to "skip" when falsy', () => {
     const result = normalizeWorkflowSchedule({
       enabled: true,
       frequency: 'daily',
-      catchUp: '' as any,
+      catchUp: '' as unknown as WorkflowSchedule['catchUp'],
     });
-    expect(result!.catchUp).toBe('skip');
+    expect(expectDefined(result).catchUp).toBe('skip');
   });
 
   it('preserves valid catchUp value', () => {
@@ -51,7 +61,7 @@ describe('normalizeWorkflowSchedule', () => {
       frequency: 'daily',
       catchUp: 'all',
     });
-    expect(result!.catchUp).toBe('all');
+    expect(expectDefined(result).catchUp).toBe('all');
   });
 
   describe('intervalHours clamping', () => {
@@ -62,7 +72,7 @@ describe('normalizeWorkflowSchedule', () => {
         catchUp: 'skip',
         intervalHours: 0,
       });
-      expect(result!.intervalHours).toBe(1);
+      expect(expectDefined(result).intervalHours).toBe(1);
     });
 
     it('clamps 25 to 24 (maximum)', () => {
@@ -72,7 +82,7 @@ describe('normalizeWorkflowSchedule', () => {
         catchUp: 'skip',
         intervalHours: 25,
       });
-      expect(result!.intervalHours).toBe(24);
+      expect(expectDefined(result).intervalHours).toBe(24);
     });
 
     it('clamps NaN to 1 (Number(NaN) || 1 = 1)', () => {
@@ -82,7 +92,7 @@ describe('normalizeWorkflowSchedule', () => {
         catchUp: 'skip',
         intervalHours: NaN,
       });
-      expect(result!.intervalHours).toBe(1);
+      expect(expectDefined(result).intervalHours).toBe(1);
     });
 
     it('preserves valid intervalHours', () => {
@@ -92,7 +102,7 @@ describe('normalizeWorkflowSchedule', () => {
         catchUp: 'skip',
         intervalHours: 12,
       });
-      expect(result!.intervalHours).toBe(12);
+      expect(expectDefined(result).intervalHours).toBe(12);
     });
 
     it('clamps negative value to 1', () => {
@@ -102,7 +112,7 @@ describe('normalizeWorkflowSchedule', () => {
         catchUp: 'skip',
         intervalHours: -5,
       });
-      expect(result!.intervalHours).toBe(1);
+      expect(expectDefined(result).intervalHours).toBe(1);
     });
   });
 
@@ -114,7 +124,7 @@ describe('normalizeWorkflowSchedule', () => {
         catchUp: 'skip',
         hour: -1,
       });
-      expect(result!.hour).toBe(0);
+      expect(expectDefined(result).hour).toBe(0);
     });
 
     it('clamps 24 to 23', () => {
@@ -124,7 +134,7 @@ describe('normalizeWorkflowSchedule', () => {
         catchUp: 'skip',
         hour: 24,
       });
-      expect(result!.hour).toBe(23);
+      expect(expectDefined(result).hour).toBe(23);
     });
 
     it('clamps NaN to 0 (Number(NaN) || 0 = 0)', () => {
@@ -134,7 +144,7 @@ describe('normalizeWorkflowSchedule', () => {
         catchUp: 'skip',
         hour: NaN,
       });
-      expect(result!.hour).toBe(0);
+      expect(expectDefined(result).hour).toBe(0);
     });
   });
 
@@ -146,7 +156,7 @@ describe('normalizeWorkflowSchedule', () => {
         catchUp: 'skip',
         minute: -1,
       });
-      expect(result!.minute).toBe(0);
+      expect(expectDefined(result).minute).toBe(0);
     });
 
     it('clamps 60 to 59', () => {
@@ -156,7 +166,7 @@ describe('normalizeWorkflowSchedule', () => {
         catchUp: 'skip',
         minute: 60,
       });
-      expect(result!.minute).toBe(59);
+      expect(expectDefined(result).minute).toBe(59);
     });
   });
 
@@ -168,7 +178,7 @@ describe('normalizeWorkflowSchedule', () => {
         catchUp: 'skip',
         dayOfWeek: -1,
       });
-      expect(result!.dayOfWeek).toBe(0);
+      expect(expectDefined(result).dayOfWeek).toBe(0);
     });
 
     it('clamps 7 to 6', () => {
@@ -178,7 +188,7 @@ describe('normalizeWorkflowSchedule', () => {
         catchUp: 'skip',
         dayOfWeek: 7,
       });
-      expect(result!.dayOfWeek).toBe(6);
+      expect(expectDefined(result).dayOfWeek).toBe(6);
     });
   });
 
@@ -190,7 +200,7 @@ describe('normalizeWorkflowSchedule', () => {
         catchUp: 'skip',
         dayOfMonth: 0,
       });
-      expect(result!.dayOfMonth).toBe(1);
+      expect(expectDefined(result).dayOfMonth).toBe(1);
     });
 
     it('clamps 32 to 31', () => {
@@ -200,7 +210,7 @@ describe('normalizeWorkflowSchedule', () => {
         catchUp: 'skip',
         dayOfMonth: 32,
       });
-      expect(result!.dayOfMonth).toBe(31);
+      expect(expectDefined(result).dayOfMonth).toBe(31);
     });
 
     it('clamps NaN to 1 (Number(NaN) || 1 = 1)', () => {
@@ -210,7 +220,7 @@ describe('normalizeWorkflowSchedule', () => {
         catchUp: 'skip',
         dayOfMonth: NaN,
       });
-      expect(result!.dayOfMonth).toBe(1);
+      expect(expectDefined(result).dayOfMonth).toBe(1);
     });
   });
 
@@ -220,11 +230,11 @@ describe('normalizeWorkflowSchedule', () => {
       frequency: 'daily',
       catchUp: 'skip',
     });
-    expect(result!.intervalHours).toBeUndefined();
-    expect(result!.hour).toBeUndefined();
-    expect(result!.minute).toBeUndefined();
-    expect(result!.dayOfWeek).toBeUndefined();
-    expect(result!.dayOfMonth).toBeUndefined();
+    expect(expectDefined(result).intervalHours).toBeUndefined();
+    expect(expectDefined(result).hour).toBeUndefined();
+    expect(expectDefined(result).minute).toBeUndefined();
+    expect(expectDefined(result).dayOfWeek).toBeUndefined();
+    expect(expectDefined(result).dayOfMonth).toBeUndefined();
   });
 });
 
@@ -257,7 +267,7 @@ describe('normalizeWorkspaceContext', () => {
     };
     const result = normalizeWorkspaceContext(context);
     expect(result.changed).toBe(true);
-    expect(result.context.workflows![0].steps).toBe('Step 1\nStep 2');
+    expect(expectDefined(expectDefined(result.context.workflows)[0]).steps).toBe('Step 1\nStep 2');
   });
 
   it('assigns ID to workflow when missing', () => {
@@ -271,8 +281,9 @@ describe('normalizeWorkspaceContext', () => {
     };
     const result = normalizeWorkspaceContext(context);
     expect(result.changed).toBe(true);
-    expect(result.context.workflows![0].id).toBeTruthy();
-    expect(result.context.workflows![0].id.length).toBeGreaterThan(0);
+    const workflow = expectDefined(result.context.workflows)[0];
+    expect(workflow.id).toBeTruthy();
+    expect(workflow.id.length).toBeGreaterThan(0);
   });
 
   it('does not reassign ID when already present', () => {
@@ -285,7 +296,7 @@ describe('normalizeWorkspaceContext', () => {
       }],
     };
     const result = normalizeWorkspaceContext(context);
-    expect(result.context.workflows![0].id).toBe('existing-id');
+    expect(expectDefined(result.context.workflows)[0].id).toBe('existing-id');
   });
 
   it('normalizes schedule within workflow', () => {
@@ -305,7 +316,7 @@ describe('normalizeWorkspaceContext', () => {
     };
     const result = normalizeWorkspaceContext(context);
     expect(result.changed).toBe(true);
-    expect(result.context.workflows![0].schedule!.intervalHours).toBe(1);
+    expect(expectDefined(expectDefined(result.context.workflows)[0].schedule).intervalHours).toBe(1);
   });
 
   it('marks changed when schedule present (normalizeWorkflowSchedule always returns new object)', () => {
@@ -329,8 +340,9 @@ describe('normalizeWorkspaceContext', () => {
     // comparison (normalizedSchedule !== workflow.schedule) is always true
     expect(result.changed).toBe(true);
     // Values should be preserved though
-    expect(result.context.workflows![0].schedule!.hour).toBe(9);
-    expect(result.context.workflows![0].schedule!.enabled).toBe(true);
+    const scheduleResult = expectDefined(expectDefined(result.context.workflows)[0].schedule);
+    expect(scheduleResult.hour).toBe(9);
+    expect(scheduleResult.enabled).toBe(true);
   });
 });
 
@@ -340,17 +352,17 @@ describe('normalizeWorkspaceContext', () => {
 
 describe('normalizeWorkspaceData', () => {
   it('returns false when context is missing', () => {
-    const workspace = { id: 'ws-1' } as any;
+    const workspace = makeWorkspace({ id: 'ws-1' });
     expect(normalizeWorkspaceData(workspace)).toBe(false);
   });
 
   it('returns false when context has no workflows', () => {
-    const workspace = { id: 'ws-1', context: { purpose: 'test' } } as any;
+    const workspace = makeWorkspace({ id: 'ws-1', context: { purpose: 'test' } });
     expect(normalizeWorkspaceData(workspace)).toBe(false);
   });
 
   it('returns false when workflows is empty array', () => {
-    const workspace = { id: 'ws-1', context: { workflows: [] } } as any;
+    const workspace = makeWorkspace({ id: 'ws-1', context: { workflows: [] } });
     expect(normalizeWorkspaceData(workspace)).toBe(false);
   });
 
@@ -366,7 +378,7 @@ describe('normalizeWorkspaceData', () => {
           steps: ['a', 'b'] as unknown as string,
         }],
       },
-    } as any;
+    };
 
     const result = normalizeWorkspaceData(workspace);
     expect(result).toBe(true);
@@ -389,7 +401,7 @@ describe('normalizeWorkspaceData', () => {
           steps: 'step',
         }],
       },
-    } as any;
+    };
 
     normalizeWorkspaceData(workspace);
     expect(workspace.context.purpose).toBe('research');

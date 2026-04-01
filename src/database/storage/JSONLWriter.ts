@@ -71,6 +71,7 @@ export class JSONLWriter {
   private basePath: string;
   private deviceId: string;
   private locks: NamedLocks;
+  private readonly deviceIdStorageKey = 'claudesidian-device-id';
 
   constructor(options: JSONLWriterOptions) {
     this.app = options.app;
@@ -92,12 +93,13 @@ export class JSONLWriter {
    * @returns Persistent device UUID
    */
   private getOrCreateDeviceId(): string {
-    const storageKey = 'claudesidian-device-id';
-    let deviceId = localStorage.getItem(storageKey);
-    if (!deviceId) {
-      deviceId = uuidv4();
-      localStorage.setItem(storageKey, deviceId);
+    const storedDeviceId = this.app.loadLocalStorage(this.deviceIdStorageKey) as unknown;
+    if (typeof storedDeviceId === 'string' && storedDeviceId.length > 0) {
+      return storedDeviceId;
     }
+
+    const deviceId = uuidv4();
+    this.app.saveLocalStorage(this.deviceIdStorageKey, deviceId);
     return deviceId;
   }
 
@@ -310,7 +312,8 @@ export class JSONLWriter {
         try {
           const event = JSON.parse(lines[i]) as T;
           events.push(event);
-        } catch (e) {
+        } catch {
+          continue;
         }
       }
 

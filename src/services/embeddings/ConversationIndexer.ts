@@ -67,7 +67,7 @@ export class ConversationIndexer {
     db: SQLiteCacheManager,
     embeddingService: EmbeddingService,
     onProgress: (progress: ConversationIndexerProgress) => void,
-    saveInterval: number = 10
+    saveInterval = 10
   ) {
     this.db = db;
     this.embeddingService = embeddingService;
@@ -91,7 +91,7 @@ export class ConversationIndexer {
    */
   async start(
     abortSignal: AbortSignal | null,
-    yieldInterval: number = 5
+    yieldInterval = 5
   ): Promise<{ total: number; processed: number }> {
     if (this.isRunning) {
       return { total: 0, processed: 0 };
@@ -293,6 +293,11 @@ export class ConversationIndexer {
       return;
     }
 
+    const parseJsonValue = <T>(value: string): T => {
+      const parsed: unknown = JSON.parse(value);
+      return parsed as T;
+    };
+
     const messages: MessageData[] = messageRows.map(row => ({
       id: row.id,
       conversationId: row.conversationId,
@@ -301,10 +306,10 @@ export class ConversationIndexer {
       timestamp: row.timestamp,
       state: (row.state ?? 'complete') as MessageData['state'],
       sequenceNumber: row.sequenceNumber,
-      toolCalls: row.toolCallsJson ? JSON.parse(row.toolCallsJson) : undefined,
+      toolCalls: row.toolCallsJson ? parseJsonValue<MessageData['toolCalls']>(row.toolCallsJson) : undefined,
       toolCallId: row.toolCallId ?? undefined,
       reasoning: row.reasoningContent ?? undefined,
-      alternatives: row.alternativesJson ? JSON.parse(row.alternativesJson) : undefined,
+      alternatives: row.alternativesJson ? parseJsonValue<MessageData['alternatives']>(row.alternativesJson) : undefined,
       activeAlternativeIndex: row.activeAlternativeIndex ?? 0,
     }));
 

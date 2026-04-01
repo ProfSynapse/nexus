@@ -5,7 +5,7 @@
  * selection fixtures, instruction fixtures, and response fixtures.
  */
 
-import type { InlineEditRequest, SelectionContext, InlineEditState } from '../../src/ui/inline-edit/types';
+import type { InlineEditRequest, InlineEditState } from '../../src/ui/inline-edit/types';
 import type { EditorPosition } from '../mocks/obsidian';
 
 // ============================================================================

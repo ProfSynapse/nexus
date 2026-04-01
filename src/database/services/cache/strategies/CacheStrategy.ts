@@ -9,7 +9,7 @@
  */
 
 export interface CachedEntry {
-  data: any;
+  data: unknown;
   timestamp: number;
   size: number;
   ttl: number;

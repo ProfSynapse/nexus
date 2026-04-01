@@ -12,6 +12,21 @@
 import { Vault, TFile } from 'obsidian';
 import { ComposerError, TrackInput } from '../../src/agents/apps/composer/types';
 
+type MockTFile = TFile & {
+  stat: { size: number; mtime: number; ctime: number };
+};
+
+type VaultWithBinaryRead = Vault & {
+  readBinary: jest.Mock<Promise<ArrayBuffer>, [TFile]>;
+};
+
+type AudioGlobals = typeof globalThis & {
+  AudioContext: jest.Mock;
+  OfflineAudioContext: jest.Mock;
+};
+
+const audioGlobals = globalThis as AudioGlobals;
+
 // --- Mock Web Audio API ---
 
 function createMockAudioBuffer(opts: {
@@ -28,14 +43,14 @@ function createMockAudioBuffer(opts: {
     length,
     sampleRate,
     duration: length / sampleRate,
-    getChannelData: jest.fn((ch: number) => new Float32Array(length)),
+    getChannelData: jest.fn((_ch: number) => new Float32Array(length)),
   } as unknown as AudioBuffer;
 }
 
 const mockDecodeAudioData = jest.fn();
 const mockAudioCtxClose = jest.fn().mockResolvedValue(undefined);
 
-(global as any).AudioContext = jest.fn().mockImplementation(() => ({
+audioGlobals.AudioContext = jest.fn().mockImplementation(() => ({
   decodeAudioData: mockDecodeAudioData,
   close: mockAudioCtxClose,
 }));
@@ -47,7 +62,7 @@ const mockSourceConnect = jest.fn();
 const mockSourceStart = jest.fn();
 const mockStartRendering = jest.fn();
 
-(global as any).OfflineAudioContext = jest.fn().mockImplementation((channels: number, length: number, sampleRate: number) => {
+audioGlobals.OfflineAudioContext = jest.fn().mockImplementation((channels: number, length: number, sampleRate: number) => {
   const renderedBuffer = createMockAudioBuffer({ numberOfChannels: channels, length, sampleRate });
   mockStartRendering.mockResolvedValue(renderedBuffer);
 
@@ -73,13 +88,13 @@ import { AudioMixer } from '../../src/agents/apps/composer/services/AudioMixer';
 
 function makeTFile(name: string, path?: string): TFile {
   const file = new TFile(name, path ?? name);
-  (file as any).stat = { size: 4096, mtime: Date.now(), ctime: Date.now() };
+  (file as MockTFile).stat = { size: 4096, mtime: Date.now(), ctime: Date.now() };
   return file;
 }
 
 function makeVault(binaryMap: Record<string, ArrayBuffer> = {}): Vault {
   const vault = new Vault();
-  (vault as any).readBinary = jest.fn((file: TFile) => {
+  (vault as VaultWithBinaryRead).readBinary = jest.fn((file: TFile) => {
     return Promise.resolve(binaryMap[file.path] ?? new ArrayBuffer(16));
   });
   return vault;
@@ -213,7 +228,7 @@ describe('AudioMixer', () => {
     await mixer.mix(tracks, vault);
 
     // Total duration = max(0+1, 3+1) = 4 seconds → 4*44100 = 176400 samples
-    expect(OfflineAudioContext).toHaveBeenCalledWith(
+    expect(audioGlobals.OfflineAudioContext).toHaveBeenCalledWith(
       expect.any(Number),
       Math.ceil(4 * 44100),
       44100
@@ -277,7 +292,7 @@ describe('AudioMixer', () => {
     );
 
     // OfflineAudioContext should use max channels (2)
-    expect(OfflineAudioContext).toHaveBeenCalledWith(
+    expect(audioGlobals.OfflineAudioContext).toHaveBeenCalledWith(
       2,
       expect.any(Number),
       expect.any(Number)

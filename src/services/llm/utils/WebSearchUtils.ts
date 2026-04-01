@@ -6,6 +6,8 @@
 
 import { SearchResult } from '../adapters/types';
 
+type SearchResultCandidate = Partial<Record<'title' | 'url' | 'date', unknown>>;
+
 export class WebSearchUtils {
   /**
    * Format web search sources as markdown
@@ -25,33 +27,37 @@ export class WebSearchUtils {
   /**
    * Validate and normalize a search result
    */
-  static validateSearchResult(result: any): SearchResult | null {
+  static validateSearchResult(result: unknown): SearchResult | null {
     if (!result || typeof result !== 'object') {
       return null;
     }
 
-    if (!result.title || !result.url) {
+    const candidate = result as SearchResultCandidate;
+
+    if (typeof candidate.title !== 'string' || typeof candidate.url !== 'string') {
       return null;
     }
 
     // Validate URL format
     try {
-      new URL(result.url);
+      new URL(String(candidate.url));
     } catch {
       return null;
     }
 
     return {
-      title: String(result.title).trim(),
-      url: String(result.url).trim(),
-      date: result.date ? String(result.date).trim() : undefined
+      title: candidate.title.trim(),
+      url: candidate.url.trim(),
+      date: typeof candidate.date === 'string' && candidate.date.trim().length > 0
+        ? candidate.date.trim()
+        : undefined
     };
   }
 
   /**
    * Extract and validate multiple search results
    */
-  static extractSearchResults(results: any[]): SearchResult[] {
+  static extractSearchResults(results: readonly unknown[]): SearchResult[] {
     if (!Array.isArray(results)) {
       return [];
     }

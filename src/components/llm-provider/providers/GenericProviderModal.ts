@@ -38,9 +38,9 @@ export class GenericProviderModal implements IProviderModal {
   private secondaryCheckStatusButton: HTMLButtonElement | null = null;
 
   // State
-  private apiKey: string = '';
+  private apiKey = '';
   private models: ModelWithProvider[] = [];
-  private isValidated: boolean = false;
+  private isValidated = false;
   private validationTimeout: ReturnType<typeof setTimeout> | null = null;
 
   // OAuth flow managers
@@ -50,14 +50,15 @@ export class GenericProviderModal implements IProviderModal {
   constructor(config: ProviderModalConfig, deps: ProviderModalDependencies) {
     this.config = config;
     this.deps = deps;
+    const primaryOAuthConfig = this.config.oauthConfig;
 
     // Initialize from existing config
     this.apiKey = config.config.apiKey || '';
 
     // Set up primary OAuth flow manager
-    if (config.oauthConfig) {
+    if (primaryOAuthConfig) {
       this.primaryFlowManager = new OAuthFlowManager({
-        oauthConfig: config.oauthConfig,
+        oauthConfig: primaryOAuthConfig,
         providerId: config.providerId,
         app: deps.app,
         callbacks: {
@@ -98,7 +99,7 @@ export class GenericProviderModal implements IProviderModal {
             updateConnectButtonState(
               this.connectButton,
               connecting,
-              this.config.oauthConfig!.providerLabel,
+              primaryOAuthConfig.providerLabel,
             );
             // Hide device code display when flow ends
             if (!connecting) {
@@ -184,7 +185,7 @@ export class GenericProviderModal implements IProviderModal {
     // OAuth-only providers (e.g. GitHub Copilot) don't have a manual key input
     if (this.config.oauthOnly) return;
 
-    const setting = new Setting(container)
+    new Setting(container)
       .setDesc(`Enter your ${this.config.providerName} API key (format: ${this.config.keyFormat})`)
       .addText(text => {
         this.apiKeyInput = text.inputEl;
@@ -228,7 +229,7 @@ export class GenericProviderModal implements IProviderModal {
 
     const copyBtn = row.createEl('button', { text: 'Copy' });
     copyBtn.addEventListener('click', () => {
-      navigator.clipboard.writeText(userCode);
+      void navigator.clipboard.writeText(userCode);
       copyBtn.textContent = 'Copied!';
       setTimeout(() => {
         copyBtn.textContent = 'Copy';
@@ -261,8 +262,12 @@ export class GenericProviderModal implements IProviderModal {
     const result = renderOAuthBanner(this.oauthBannerContainer, {
       providerLabel: this.config.oauthConfig.providerLabel,
       isConnected: !!this.config.config.oauth?.connected,
-      onConnect: () => this.primaryFlowManager?.connect(),
-      onDisconnect: () => this.primaryFlowManager?.disconnect(),
+      onConnect: () => {
+        void this.primaryFlowManager?.connect();
+      },
+      onDisconnect: () => {
+        void this.primaryFlowManager?.disconnect();
+      },
     });
     this.connectButton = result.connectButton;
   }
@@ -302,7 +307,9 @@ export class GenericProviderModal implements IProviderModal {
         providerLabel: secondary.oauthConfig.providerLabel,
         isAuthenticated: !!secondary.config.oauth?.connected,
         notAuthenticatedHint: secondary.statusHint,
-        onCheckStatus: () => this.checkSecondaryCliStatus(),
+        onCheckStatus: () => {
+          void this.checkSecondaryCliStatus();
+        },
       });
       this.secondaryCheckStatusButton = result.checkStatusButton;
     } else {
@@ -310,8 +317,12 @@ export class GenericProviderModal implements IProviderModal {
       const result = renderOAuthBanner(this.secondaryBannerContainer, {
         providerLabel: secondary.oauthConfig.providerLabel,
         isConnected: !!secondary.config.oauth?.connected,
-        onConnect: () => this.secondaryFlowManager?.connect(),
-        onDisconnect: () => this.secondaryFlowManager?.disconnect(),
+        onConnect: () => {
+          void this.secondaryFlowManager?.connect();
+        },
+        onDisconnect: () => {
+          void this.secondaryFlowManager?.disconnect();
+        },
       });
       this.secondaryConnectButton = result.connectButton;
     }
@@ -390,7 +401,7 @@ export class GenericProviderModal implements IProviderModal {
 
       // Auto-validate after delay
       this.validationTimeout = setTimeout(() => {
-        this.validateApiKey();
+        void this.validateApiKey();
       }, 2000);
 
       // Auto-enable

@@ -17,7 +17,7 @@ export class AsyncLock {
     const result = this.promise.then(() => task());
     
     // Update the promise to wait for this task (handling errors)
-    this.promise = result.then(() => {}, () => {});
+    this.promise = result.then(() => undefined, () => undefined);
     
     return result;
   }
@@ -36,6 +36,10 @@ export class NamedLocks {
     if (!this.locks.has(name)) {
       this.locks.set(name, new AsyncLock());
     }
-    return this.locks.get(name)!.acquire(task);
+    const lock = this.locks.get(name);
+    if (!lock) {
+      throw new Error(`Failed to acquire async lock for ${name}`);
+    }
+    return lock.acquire(task);
   }
 }

@@ -14,6 +14,12 @@ import {
   ProviderHttpResponse
 } from '../adapters/shared/ProviderHttpClient';
 
+type ValidationResponseBody = {
+  error?: {
+    message?: string;
+  };
+};
+
 // Browser-compatible hash function (djb2 algorithm)
 // Not cryptographically secure but sufficient for cache key validation
 function generateHash(input: string): string {
@@ -73,7 +79,7 @@ export class LLMValidationService {
       headers?: Record<string, string>;
       body?: string;
     }
-  ): Promise<ProviderHttpResponse<any>> {
+  ): Promise<ProviderHttpResponse<ValidationResponseBody>> {
     return ProviderHttpClient.request({
       provider,
       operation,
@@ -173,16 +179,16 @@ export class LLMValidationService {
       if (response.status >= 200 && response.status < 300) {
         return { success: true };
       } else {
-        const errorData = response.json || {};
+        const errorData = (response.json ?? {});
         return {
           success: false,
           error: errorData.error?.message || `HTTP ${response.status}`
         };
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       return {
         success: false,
-        error: error.message || 'OpenAI API key validation failed'
+        error: error instanceof Error ? error.message : 'OpenAI API key validation failed'
       };
     }
   }
@@ -208,16 +214,16 @@ export class LLMValidationService {
       if (response.status >= 200 && response.status < 300) {
         return { success: true };
       } else {
-        const errorData = response.json || {};
+        const errorData = (response.json ?? {});
         return { 
           success: false, 
           error: errorData.error?.message || `HTTP ${response.status}` 
         };
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       return { 
         success: false, 
-        error: error.message || 'Anthropic API key validation failed' 
+        error: error instanceof Error ? error.message : 'Anthropic API key validation failed' 
       };
     }
   }
@@ -240,16 +246,16 @@ export class LLMValidationService {
       if (response.status >= 200 && response.status < 300) {
         return { success: true };
       } else {
-        const errorData = response.json || {};
+        const errorData = (response.json ?? {});
         return { 
           success: false, 
           error: errorData.error?.message || `HTTP ${response.status}` 
         };
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       return { 
         success: false, 
-        error: error.message || 'Google API key validation failed' 
+        error: error instanceof Error ? error.message : 'Google API key validation failed' 
       };
     }
   }
@@ -273,16 +279,16 @@ export class LLMValidationService {
       if (response.status >= 200 && response.status < 300) {
         return { success: true };
       } else {
-        const errorData = response.json || {};
+        const errorData = (response.json ?? {});
         return { 
           success: false, 
           error: errorData.error?.message || `HTTP ${response.status}` 
         };
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       return { 
         success: false, 
-        error: error.message || 'Mistral API key validation failed' 
+        error: error instanceof Error ? error.message : 'Mistral API key validation failed' 
       };
     }
   }
@@ -306,16 +312,16 @@ export class LLMValidationService {
       if (response.status >= 200 && response.status < 300) {
         return { success: true };
       } else {
-        const errorData = response.json || {};
+        const errorData = (response.json ?? {});
         return { 
           success: false, 
           error: errorData.error?.message || `HTTP ${response.status}` 
         };
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       return { 
         success: false, 
-        error: error.message || 'Groq API key validation failed' 
+        error: error instanceof Error ? error.message : 'Groq API key validation failed' 
       };
     }
   }
@@ -343,7 +349,7 @@ export class LLMValidationService {
       if (response.status >= 200 && response.status < 300) {
         return { success: true };
       } else {
-        const errorData = response.json || {};
+        const errorData = (response.json ?? {});
         const errorMessage = errorData.error?.message || JSON.stringify(errorData) || `HTTP ${response.status}`;
         console.error('OpenRouter validation error:', errorMessage);
         return { 
@@ -351,11 +357,11 @@ export class LLMValidationService {
           error: errorMessage
         };
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('OpenRouter validation exception:', error);
       return { 
         success: false, 
-        error: error.message || 'OpenRouter API key validation failed' 
+        error: error instanceof Error ? error.message : 'OpenRouter API key validation failed' 
       };
     }
   }
@@ -379,16 +385,16 @@ export class LLMValidationService {
       if (response.status >= 200 && response.status < 300) {
         return { success: true };
       } else {
-        const errorData = response.json || {};
+        const errorData = (response.json ?? {});
         return { 
           success: false, 
           error: errorData.error?.message || `HTTP ${response.status}` 
         };
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       return { 
         success: false, 
-        error: error.message || 'Perplexity API key validation failed' 
+        error: error instanceof Error ? error.message : 'Perplexity API key validation failed' 
       };
     }
   }
@@ -418,10 +424,10 @@ export class LLMValidationService {
           error: errorData.error?.message || `HTTP ${response.status}` 
         };
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       return { 
         success: false, 
-        error: error.message || 'Requesty API key validation failed' 
+        error: error instanceof Error ? error.message : 'Requesty API key validation failed' 
       };
     }
   }

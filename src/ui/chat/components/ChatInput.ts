@@ -4,11 +4,12 @@
  * Provides text input, send button, and model selection
  */
 
-import { setIcon, App, Platform, Component } from 'obsidian';
+import { setIcon, App, Component } from 'obsidian';
 import { initializeSuggesters, SuggesterInstances } from './suggesters/initializeSuggesters';
 import { ContentEditableHelper } from '../utils/ContentEditableHelper';
 import { ReferenceExtractor, ReferenceMetadata } from '../utils/ReferenceExtractor';
 import { MessageEnhancement } from './suggesters/base/SuggesterInterfaces';
+import { MessageEnhancer } from '../services/MessageEnhancer';
 import { isMobile, isIOS } from '../../../utils/platform';
 
 export class ChatInput {
@@ -75,6 +76,7 @@ export class ChatInput {
   private render(): void {
     this.container.empty();
     this.container.addClass('chat-input');
+    const component = this.component;
 
     // Input wrapper - contains both textarea and embedded send button
     const inputWrapper = this.container.createDiv('chat-input-wrapper');
@@ -117,10 +119,12 @@ export class ChatInput {
     };
 
     // Register events with component for auto-cleanup
-    this.component!.registerDomEvent(this.inputElement, 'keydown', keydownHandler);
-    this.component!.registerDomEvent(this.inputElement, 'input', inputHandler);
-    if (isIOS()) {
-      this.component!.registerDomEvent(this.inputElement, 'focus', focusHandler);
+    if (component) {
+      component.registerDomEvent(this.inputElement, 'keydown', keydownHandler);
+      component.registerDomEvent(this.inputElement, 'input', inputHandler);
+      if (isIOS()) {
+        component.registerDomEvent(this.inputElement, 'focus', focusHandler);
+      }
     }
 
     // Mobile: Add mobile-specific class for styling
@@ -141,7 +145,7 @@ export class ChatInput {
     const sendClickHandler = () => {
       this.handleSendOrStop();
     };
-    this.component!.registerDomEvent(this.sendButton, 'click', sendClickHandler);
+    component?.registerDomEvent(this.sendButton, 'click', sendClickHandler);
 
     // Initialize suggesters if app is available
     if (this.app && this.inputElement) {
@@ -352,7 +356,7 @@ export class ChatInput {
   /**
    * Get message enhancer (for accessing enhancements before sending)
    */
-  getMessageEnhancer() {
+  getMessageEnhancer(): MessageEnhancer | null {
     return this.suggesters?.messageEnhancer || null;
   }
 

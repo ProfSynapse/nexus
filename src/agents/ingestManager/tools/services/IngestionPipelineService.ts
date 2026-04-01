@@ -132,7 +132,7 @@ export async function processFile(
     const existingFile = deps.vault.getFileByPath(normalizedOutput);
 
     if (existingFile) {
-      await deps.vault.modify(existingFile as TFile, noteWrite.content);
+      await deps.vault.modify(existingFile, noteWrite.content);
     } else {
       await deps.vault.create(normalizedOutput, noteWrite.content);
     }

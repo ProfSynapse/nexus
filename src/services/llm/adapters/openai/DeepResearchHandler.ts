@@ -14,6 +14,66 @@ interface UsageInfo {
   total_tokens?: number;
 }
 
+interface DeepResearchInputContentPart {
+  type: 'input_text';
+  text: string;
+}
+
+interface DeepResearchInputItem {
+  role: 'developer' | 'user';
+  content: DeepResearchInputContentPart[];
+}
+
+interface DeepResearchTool {
+  type: string;
+  container?: {
+    type: string;
+    file_ids: string[];
+  };
+}
+
+interface DeepResearchRequestParams {
+  model: string;
+  input: DeepResearchInputItem[];
+  reasoning: {
+    summary: 'auto';
+  };
+  background: true;
+  tools?: DeepResearchTool[];
+}
+
+interface DeepResearchAnnotation {
+  type?: string;
+  title?: string;
+  url?: string;
+  start_index?: number;
+  end_index?: number;
+}
+
+interface DeepResearchOutputTextContent {
+  type?: string;
+  text?: string;
+  annotations?: DeepResearchAnnotation[];
+}
+
+interface DeepResearchOutputItem {
+  type?: string;
+  id?: string;
+  content?: DeepResearchOutputTextContent[];
+  usage?: UsageInfo;
+  encrypted_content?: string | null;
+}
+
+interface DeepResearchResponse {
+  id?: string;
+  status?: string;
+  output?: DeepResearchOutputItem[];
+  error?: string;
+  metadata?: {
+    processing_time_ms?: number;
+  };
+}
+
 export class DeepResearchHandler {
   constructor(
     private apiKey: string,
@@ -29,7 +89,7 @@ export class DeepResearchHandler {
   async generate(prompt: string, options?: GenerateOptions): Promise<LLMResponse> {
     const model = options?.model || 'sonar-deep-research';
 
-    const input: any[] = [];
+    const input: DeepResearchInputItem[] = [];
     if (options?.systemPrompt) {
       input.push({
         role: 'developer',
@@ -42,7 +102,7 @@ export class DeepResearchHandler {
       content: [{ type: 'input_text', text: prompt }]
     });
 
-    const requestParams: any = {
+    const requestParams: DeepResearchRequestParams = {
       model,
       input,
       reasoning: { summary: 'auto' },
@@ -64,7 +124,7 @@ export class DeepResearchHandler {
     }
 
     try {
-      const response = await ProviderHttpClient.request<any>({
+      const response = await ProviderHttpClient.request<DeepResearchResponse>({
         url: `${this.baseUrl}/responses`,
         provider: 'openai',
         operation: 'deep research generation',
@@ -79,8 +139,11 @@ export class DeepResearchHandler {
         throw new Error(response.text || `HTTP ${response.status}`);
       }
 
-      let finalResponse = response.json;
+      let finalResponse: DeepResearchResponse = response.json;
       if (finalResponse.status === 'in_progress' || !this.isComplete(finalResponse)) {
+        if (!finalResponse.id) {
+          throw new Error('Deep research response missing response id');
+        }
         finalResponse = await this.pollForCompletion(finalResponse.id, model);
       }
 
@@ -95,7 +158,11 @@ export class DeepResearchHandler {
     }
   }
 
-  private async pollForCompletion(responseId: string, model: string, maxWaitTime = 300000): Promise<any> {
+  private async pollForCompletion(
+    responseId: string,
+    model: string,
+    maxWaitTime = 300000
+  ): Promise<DeepResearchResponse> {
     const startTime = Date.now();
     const pollInterval = (
       model.includes('o4-mini')
@@ -105,7 +172,7 @@ export class DeepResearchHandler {
 
     while (Date.now() - startTime < maxWaitTime) {
       try {
-        const response = await ProviderHttpClient.request<any>({
+        const response = await ProviderHttpClient.request<DeepResearchResponse>({
           url: `${this.baseUrl}/responses/${responseId}`,
           provider: 'openai',
           operation: 'deep research poll',
@@ -138,10 +205,10 @@ export class DeepResearchHandler {
     throw new Error(`Deep research timed out after ${maxWaitTime}ms`);
   }
 
-  private isComplete(response: any): boolean {
+  private isComplete(response: DeepResearchResponse): boolean {
     return !!(response.output &&
       response.output.length > 0 &&
-      response.output.some((item: any) => {
+      response.output.some((item) => {
         if (item.type !== 'message') return false;
         if (!item.content || item.content.length === 0) return false;
         const firstContent = item.content[0];
@@ -149,7 +216,7 @@ export class DeepResearchHandler {
       }));
   }
 
-  private parseResponse(response: any, model: string): LLMResponse {
+  private parseResponse(response: DeepResearchResponse, model: string): LLMResponse {
     if (!response.output || response.output.length === 0) {
       throw new Error('No output received from deep research');
     }
@@ -168,7 +235,7 @@ export class DeepResearchHandler {
     const annotations = content.annotations || [];
 
     let usage: TokenUsage | undefined;
-    const usageOutput = response.output.find((item: any) => item?.usage);
+    const usageOutput = response.output.find(item => item?.usage);
     const rawUsage: UsageInfo | undefined = usageOutput?.usage;
     if (rawUsage) {
       usage = {
@@ -181,7 +248,7 @@ export class DeepResearchHandler {
     const metadata: Record<string, unknown> = {
       deepResearch: true,
       citations: annotations
-        .map((annotation: any) => {
+        .map((annotation) => {
           if (annotation.type !== 'url_citation' || !annotation.url) {
             return null;
           }

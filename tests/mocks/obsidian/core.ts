@@ -43,7 +43,9 @@ export class Editor {
   }
 
   replaceRange(text: string, from: EditorPosition, to?: EditorPosition): void {
-    // Mock implementation - in real tests we verify this is called with correct args
+    void text;
+    void from;
+    void to;
   }
 
   getValue(): string {
@@ -148,7 +150,24 @@ export const Platform = {
   isLinux: false,
 };
 
-type RequestUrlImpl = (request: any) => Promise<any>;
+interface RequestUrlRequest {
+  url?: string;
+  method?: string;
+  headers?: Record<string, string>;
+  body?: string;
+  timeout?: number;
+  throw?: boolean;
+}
+
+interface RequestUrlResponse {
+  status: number;
+  headers: Record<string, string>;
+  text: string;
+  json: unknown;
+  arrayBuffer: ArrayBuffer;
+}
+
+type RequestUrlImpl = (request: RequestUrlRequest) => Promise<RequestUrlResponse>;
 
 let requestUrlImpl: RequestUrlImpl = async () => ({
   status: 200,
@@ -162,7 +181,7 @@ export function __setRequestUrlMock(mock: RequestUrlImpl): void {
   requestUrlImpl = mock;
 }
 
-export function requestUrl(request: any): Promise<any> {
+export function requestUrl(request: RequestUrlRequest): Promise<RequestUrlResponse> {
   return requestUrlImpl(request);
 }
 
@@ -171,9 +190,7 @@ export function normalizePath(path: string): string {
 }
 
 // EventRef mock
-export interface EventRef {
-  // Empty interface for type compatibility
-}
+export type EventRef = Record<string, never>;
 
 // MarkdownFileInfo mock (used in editorCallback context)
 export interface MarkdownFileInfo {
@@ -195,9 +212,9 @@ export function createMockElement(tagName: string): HTMLElement {
     hasClass: jest.fn(() => false),
     toggleClass: jest.fn(),
     setText: jest.fn(),
-    createEl: jest.fn((_tag: string, _opts?: any) => createMockElement('div')),
-    createDiv: jest.fn((_cls?: string | Record<string, any>) => createMockElement('div')),
-    createSpan: jest.fn((_opts?: Record<string, any>) => createMockElement('span')),
+    createEl: jest.fn((_tag: string, _opts?: { cls?: string; text?: string; attr?: Record<string, string> }) => createMockElement('div')),
+    createDiv: jest.fn((_cls?: string | Record<string, unknown>) => createMockElement('div')),
+    createSpan: jest.fn((_opts?: Record<string, unknown>) => createMockElement('span')),
     empty: jest.fn(),
     remove: jest.fn(),
     appendChild: jest.fn(),

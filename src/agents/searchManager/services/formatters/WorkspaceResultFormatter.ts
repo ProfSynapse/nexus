@@ -8,8 +8,13 @@
  * Used by: ResultFormatter for WORKSPACE type results
  */
 
-import { MemorySearchResult } from '../../../../types/memory/MemorySearchTypes';
+import { MemoryResultMetadata, MemorySearchResult } from '../../../../types/memory/MemorySearchTypes';
 import { BaseResultFormatter } from './BaseResultFormatter';
+
+type WorkspaceResultMetadata = MemoryResultMetadata & {
+  workspacePath?: string[];
+  activeWorkspace?: boolean;
+};
 
 /**
  * Formatter for workspace results
@@ -19,7 +24,7 @@ export class WorkspaceResultFormatter extends BaseResultFormatter {
     return `Workspace: ${result.metadata.workspaceId || 'Unknown'}`;
   }
 
-  protected addTypeSpecificMetadata(formatted: Record<string, string>, metadata: any): void {
+  protected addTypeSpecificMetadata(formatted: Record<string, string>, metadata: WorkspaceResultMetadata): void {
     if (metadata.workspacePath && Array.isArray(metadata.workspacePath)) {
       formatted['Path'] = metadata.workspacePath.join(' > ');
     }

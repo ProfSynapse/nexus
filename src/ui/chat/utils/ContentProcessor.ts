@@ -78,7 +78,7 @@ export class ContentProcessor {
   /**
    * Truncate text to specified length with ellipsis
    */
-  static truncateText(text: string, maxLength: number, ellipsis: string = '...'): string {
+  static truncateText(text: string, maxLength: number, ellipsis = '...'): string {
     if (text.length <= maxLength) {
       return text;
     }
@@ -97,9 +97,9 @@ export class ContentProcessor {
   /**
    * Format conversation preview text
    */
-  static formatConversationPreview(lastMessage: string, maxLength: number = 100): string {
+  static formatConversationPreview(lastMessage: string, maxLength = 100): string {
     // Remove markdown formatting for preview
-    let preview = lastMessage
+    const preview = lastMessage
       .replace(/```[\s\S]*?```/g, '[code block]') // Replace code blocks
       .replace(/`([^`]+)`/g, '$1') // Remove inline code backticks
       .replace(/\*\*([^*]+)\*\*/g, '$1') // Remove bold

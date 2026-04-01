@@ -14,10 +14,19 @@ import type { OAuthModalConfig } from '../../src/components/llm-provider/types';
 jest.mock('obsidian', () => {
   const actual = jest.requireActual('obsidian');
 
+  type MockSettingText = {
+    _value: string;
+    _onChange: ((value: string) => void) | null;
+    setPlaceholder(): MockSettingText;
+    setValue(v: string): MockSettingText;
+    getValue(): string;
+    onChange(cb: (value: string) => void): MockSettingText;
+  };
+
   // Extend the Setting mock with addText
   class SettingWithText extends actual.Setting {
-    addText(callback: (text: any) => void): SettingWithText {
-      const mockText = {
+    addText(callback: (text: MockSettingText) => void): SettingWithText {
+      const mockText: MockSettingText = {
         _value: '',
         _onChange: null as ((value: string) => void) | null,
         setPlaceholder() { return this; },
@@ -136,14 +145,14 @@ describe('OAuthConsentModal', () => {
     // Get the mock button container returned by createDiv
     const createDivCalls = (modal.contentEl.createDiv as jest.Mock).mock.calls;
     const buttonContainerCallIndex = createDivCalls.findIndex(
-      (call: any) => call[0] === 'oauth-consent-buttons'
+      (call: unknown[]) => call[0] === 'oauth-consent-buttons'
     );
     const buttonContainer = (modal.contentEl.createDiv as jest.Mock).mock.results[buttonContainerCallIndex].value;
 
     // Verify buttons were created on the container
     const buttonCreateElCalls = (buttonContainer.createEl as jest.Mock).mock.calls;
     const buttonCalls = buttonCreateElCalls.filter(
-      (call: any) => call[0] === 'button'
+      (call: unknown[]) => call[0] === 'button'
     );
     expect(buttonCalls.length).toBe(2); // Cancel + Confirm
   });

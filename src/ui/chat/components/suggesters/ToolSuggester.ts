@@ -9,12 +9,11 @@ import {
   SuggestionItem,
   EditorSuggestContext,
   ToolSuggestionItem,
-  ToolHint,
-  ToolSchema,
-  EnhancementType
+  ToolHint
 } from './base/SuggesterInterfaces';
 import { MessageEnhancer } from '../../services/MessageEnhancer';
 import { ToolListService } from '../../../../handlers/services/ToolListService';
+import { ToolDefinition } from '../../../../handlers/interfaces/IRequestHandlerServices';
 import { IAgent } from '../../../../agents/interfaces/IAgent';
 
 /**
@@ -166,7 +165,7 @@ export class ToolSuggester extends BaseSuggester<ToolSuggestionItem> {
    */
   selectSuggestion(
     item: SuggestionItem<ToolSuggestionItem>,
-    evt: MouseEvent | KeyboardEvent
+    _evt: MouseEvent | KeyboardEvent
   ): void {
 
     if (!this.context) return;
@@ -199,7 +198,7 @@ export class ToolSuggester extends BaseSuggester<ToolSuggestionItem> {
    * @param item - Tool data
    * @returns Estimated token count
    */
-  protected estimateItemTokens(item: ToolSuggestionItem): number {
+  protected estimateItemTokens(_item: ToolSuggestionItem): number {
     // Tool schemas are typically ~150 tokens
     return 150;
   }
@@ -213,18 +212,18 @@ export class ToolSuggester extends BaseSuggester<ToolSuggestionItem> {
    * @param tool - Raw tool from ToolListService
    * @returns ToolSuggestionItem
    */
-  private convertToToolItem(tool: any): ToolSuggestionItem {
+  private convertToToolItem(tool: ToolDefinition): ToolSuggestionItem {
     // Extract category from tool name (e.g., "storageManager.list" -> "storageManager")
     const parts = tool.name.split('.');
     const category = parts.length > 1 ? parts[0] : 'general';
 
     return {
       name: tool.name,
-      description: tool.description,
+      description: tool.description || '',
       category: category,
       schema: {
         name: tool.name,
-        description: tool.description,
+        description: tool.description || '',
         inputSchema: tool.inputSchema
       }
     };

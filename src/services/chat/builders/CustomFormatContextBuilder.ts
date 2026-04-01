@@ -68,6 +68,22 @@ export class CustomFormatContextBuilder implements IContextBuilder {
     return true;
   }
 
+  private parseToolArguments(argumentsValue: unknown): Record<string, unknown> {
+    if (typeof argumentsValue === 'string') {
+      const parsed: unknown = JSON.parse(argumentsValue);
+      if (parsed !== null && typeof parsed === 'object') {
+        return parsed as Record<string, unknown>;
+      }
+      return {};
+    }
+
+    if (argumentsValue !== null && typeof argumentsValue === 'object') {
+      return argumentsValue as Record<string, unknown>;
+    }
+
+    return {};
+  }
+
   /**
    * Build context from stored conversation
    * Uses OpenAI-like format for context loading (simpler)
@@ -209,11 +225,9 @@ export class CustomFormatContextBuilder implements IContextBuilder {
     // Normalize tool calls for formatting
     const normalizedToolCalls = toolCalls.map(toolCall => {
       const toolName = toolCall.function?.name || 'unknown';
-      const args = toolCall.function?.arguments || '{}';
-      const parsedArgs = typeof args === 'string' ? JSON.parse(args) : args;
       return {
         name: toolName,
-        parameters: parsedArgs as Record<string, unknown>,
+        parameters: this.parseToolArguments(toolCall.function?.arguments),
         sourceFormat: toolCall.sourceFormat
       };
     });
@@ -257,11 +271,9 @@ export class CustomFormatContextBuilder implements IContextBuilder {
     // Normalize tool calls for formatting
     const normalizedToolCalls = toolCalls.map(toolCall => {
       const toolName = toolCall.function?.name || 'unknown';
-      const args = toolCall.function?.arguments || '{}';
-      const parsedArgs = typeof args === 'string' ? JSON.parse(args) : args;
       return {
         name: toolName,
-        parameters: parsedArgs as Record<string, unknown>,
+        parameters: this.parseToolArguments(toolCall.function?.arguments),
         sourceFormat: toolCall.sourceFormat
       };
     });

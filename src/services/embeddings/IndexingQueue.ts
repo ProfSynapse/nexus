@@ -24,6 +24,7 @@
  */
 
 import { App, TFile } from 'obsidian';
+// eslint-disable-next-line import/no-nodejs-modules -- desktop-only indexing queue uses Node EventEmitter in Electron
 import { EventEmitter } from 'events';
 import { EmbeddingService } from './EmbeddingService';
 import { preprocessContent, hashContent } from './EmbeddingUtils';
@@ -407,7 +408,10 @@ export class IndexingQueue extends EventEmitter {
           continue;
         }
 
-        const notePath = this.queue.shift()!;
+        const notePath = this.queue.shift();
+        if (!notePath) {
+          continue;
+        }
         const noteStart = Date.now();
 
         try {

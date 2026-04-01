@@ -231,7 +231,8 @@ export class RequestRouter {
             const workspaceSchemaProvider = WorkspaceSchemaProvider.forMemoryManager(workspaceService as unknown as import('../services/WorkspaceService').WorkspaceService);
             this.dependencies.schemaEnhancementService.registerProvider(workspaceSchemaProvider);
             
-        } catch (error) {
+        } catch {
+            return;
         }
     }
 }

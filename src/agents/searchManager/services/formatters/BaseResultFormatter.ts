@@ -10,11 +10,11 @@
 
 import {
   MemorySearchResult,
+  MemoryResultMetadata,
   FormattedMemoryResult,
   FormatOptions,
   FormatContext,
-  ResultFormatterConfiguration,
-  MemoryType
+  ResultFormatterConfiguration
 } from '../../../../types/memory/MemorySearchTypes';
 
 /**
@@ -85,14 +85,14 @@ export abstract class BaseResultFormatter {
    * Extension point for content enhancement
    * Override in subclasses for type-specific enhancements
    */
-  protected enhanceContent(content: string, result: MemorySearchResult, options: FormatOptions): string {
+  protected enhanceContent(content: string, _result: MemorySearchResult, _options: FormatOptions): string {
     return content;
   }
 
   /**
    * Generate preview from result context
    */
-  protected generatePreview(result: MemorySearchResult, options: FormatOptions): string {
+  protected generatePreview(result: MemorySearchResult, _options: FormatOptions): string {
     const previewLength = 100;
     const content = result.context.before + result.context.match + result.context.after;
 
@@ -110,7 +110,7 @@ export abstract class BaseResultFormatter {
     try {
       const date = new Date(timestamp);
       return date.toLocaleString();
-    } catch (error) {
+    } catch {
       return timestamp;
     }
   }
@@ -143,7 +143,7 @@ export abstract class BaseResultFormatter {
   /**
    * Format result metadata
    */
-  protected formatMetadata(metadata: any): Record<string, string> {
+  protected formatMetadata(metadata: MemoryResultMetadata): Record<string, string> {
     const formatted: Record<string, string> = {};
 
     if (metadata.created) {
@@ -169,7 +169,7 @@ export abstract class BaseResultFormatter {
    * Extension point for type-specific metadata
    * Override in subclasses to add specialized metadata fields
    */
-  protected addTypeSpecificMetadata(formatted: Record<string, string>, metadata: any): void {
+  protected addTypeSpecificMetadata(_formatted: Record<string, string>, _metadata: MemoryResultMetadata): void {
     // Base implementation - subclasses can override
   }
 

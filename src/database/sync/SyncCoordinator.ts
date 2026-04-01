@@ -53,9 +53,9 @@ export interface ISQLiteCacheManager {
   updateSyncState(deviceId: string, lastEventTimestamp: number, fileTimestamps: Record<string, number>): Promise<void>;
   isEventApplied(eventId: string): Promise<boolean>;
   markEventApplied(eventId: string): Promise<void>;
-  run(sql: string, params?: any[]): Promise<any>;
-  query<T>(sql: string, params?: any[]): Promise<T[]>;
-  queryOne<T>(sql: string, params?: any[]): Promise<T | null>;
+  run(sql: string, params?: unknown[]): Promise<unknown>;
+  query<T>(sql: string, params?: unknown[]): Promise<T[]>;
+  queryOne<T>(sql: string, params?: unknown[]): Promise<T | null>;
   clearAllData(): Promise<void>;
   rebuildFTSIndexes(): Promise<void>;
   save(): Promise<void>;
@@ -148,7 +148,7 @@ export class SyncCoordinator {
 
       return this.createResult(errors.length === 0, eventsApplied, eventsSkipped, errors, startTime, filesProcessed);
     } catch (error) {
-      return this.createResult(false, eventsApplied, eventsSkipped, [...errors, `Sync failed: ${error}`], startTime, filesProcessed);
+      return this.createResult(false, eventsApplied, eventsSkipped, [...errors, `Sync failed: ${String(error)}`], startTime, filesProcessed);
     }
   }
 
@@ -203,7 +203,7 @@ export class SyncCoordinator {
       } catch (saveError) {
         console.error('[SyncCoordinator] Failed to save sync state:', saveError);
       }
-      return this.createResult(false, eventsApplied, 0, [...errors, `Rebuild failed: ${error}`], startTime, filesProcessed);
+      return this.createResult(false, eventsApplied, 0, [...errors, `Rebuild failed: ${String(error)}`], startTime, filesProcessed);
     }
   }
 
@@ -250,7 +250,7 @@ export class SyncCoordinator {
         files.push(file);
         options.onProgress?.('Processing workspaces', i + 1, workspaceFiles.length);
       } catch (e) {
-        errors.push(`Failed to process ${file}: ${e}`);
+        errors.push(`Failed to process ${file}: ${String(e)}`);
       }
     }
 
@@ -289,7 +289,7 @@ export class SyncCoordinator {
         files.push(file);
         options.onProgress?.('Processing conversations', i + 1, conversationFiles.length);
       } catch (e) {
-        errors.push(`Failed to process ${file}: ${e}`);
+        errors.push(`Failed to process ${file}: ${String(e)}`);
       }
     }
 
@@ -347,7 +347,7 @@ export class SyncCoordinator {
         // Save after each file to prevent memory accumulation (OOM prevention)
         await this.sqliteCache.save();
       } catch (e) {
-        errors.push(`Failed to process ${file}: ${e}`);
+        errors.push(`Failed to process ${file}: ${String(e)}`);
       }
     }
 
@@ -391,7 +391,7 @@ export class SyncCoordinator {
         // Save after each file to prevent memory accumulation (OOM prevention)
         await this.sqliteCache.save();
       } catch (e) {
-        errors.push(`Failed to process ${file}: ${e}`);
+        errors.push(`Failed to process ${file}: ${String(e)}`);
       }
     }
 
@@ -430,7 +430,7 @@ export class SyncCoordinator {
         files.push(file);
         options.onProgress?.('Processing tasks', i + 1, taskFiles.length);
       } catch (e) {
-        errors.push(`Failed to process ${file}: ${e}`);
+        errors.push(`Failed to process ${file}: ${String(e)}`);
       }
     }
 
@@ -474,7 +474,7 @@ export class SyncCoordinator {
         // Save after each file to prevent memory accumulation (OOM prevention)
         await this.sqliteCache.save();
       } catch (e) {
-        errors.push(`Failed to process ${file}: ${e}`);
+        errors.push(`Failed to process ${file}: ${String(e)}`);
       }
     }
 

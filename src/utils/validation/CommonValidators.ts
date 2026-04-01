@@ -101,7 +101,7 @@ export interface SessionContextOptions {
 /**
  * Validation rule function type
  */
-export type ValidationRule<T> = (value: any, fieldName: string) => ValidationError | null;
+export type ValidationRule<TValue = unknown> = (value: TValue, fieldName: string) => ValidationError | null;
 
 /**
  * Validation rule set type
@@ -126,17 +126,20 @@ export class CommonValidators {
    * @returns ValidationError if validation fails, null if valid
    */
   static requiredString(
-    value: any,
+    value: unknown,
     fieldName: string,
     options: StringValidationOptions = {}
   ): ValidationError | null {
-    const opts: Required<StringValidationOptions> = {
+    const opts: StringValidationOptions & {
+      minLength: number;
+      maxLength: number;
+      allowEmpty: boolean;
+      trimWhitespace: boolean;
+    } = {
       minLength: 1,
       maxLength: 500,
       allowEmpty: false,
       trimWhitespace: true,
-      pattern: undefined as unknown as string,
-      patternHint: undefined as unknown as string,
       ...options
     };
 
@@ -198,8 +201,8 @@ export class CommonValidators {
    * @returns ValidationError if validation fails, null if valid
    */
   static filePath(
-    value: any, 
-    fieldName: string = 'filePath',
+    value: unknown,
+    fieldName = 'filePath',
     options: FilePathValidationOptions = {}
   ): ValidationError | null {
     // First validate as required string
@@ -209,13 +212,13 @@ export class CommonValidators {
     });
     if (stringError) return stringError;
 
-    const path = value.trim();
+    const path = (value as string).trim();
     
     // Obsidian-specific file path validation
     if (options.obsidianValidation !== false) {
       // Check for invalid characters in Obsidian file paths
-      const invalidChars = /[<>:"|?*\u0000-\u001f]/;
-      if (!options.allowGlobs && invalidChars.test(path)) {
+      const invalidPathCharPattern = /[<>:"|?*]/;
+      if (!options.allowGlobs && (invalidPathCharPattern.test(path) || this.containsControlCharacters(path))) {
         return this.createFieldError(fieldName, 'INVALID_PATH_CHARS',
           `${fieldName} contains invalid characters`,
           'File paths cannot contain: < > : " | ? * or control characters');
@@ -354,7 +357,8 @@ export class CommonValidators {
               'Provide workspaceContext or ensure inherited context is available'
             ));
           }
-        } catch (error) {
+        } catch (error: unknown) {
+          void error;
         }
       }
     }
@@ -379,17 +383,20 @@ export class CommonValidators {
     const errors: ValidationError[] = [];
     const startTime = performance.now();
 
-    for (const [fieldName, validator] of Object.entries(validators)) {
+    for (const fieldName of Object.keys(validators) as Array<Extract<keyof T, string>>) {
+      const validator = validators[fieldName];
+      if (typeof validator !== 'function') {
+        continue;
+      }
+
       try {
-        if (typeof validator === 'function') {
-          const paramsObj = params as Record<string, unknown>;
-          const fieldValue = paramsObj[fieldName];
-          const error = validator(fieldValue, fieldName);
-          if (error) {
-            errors.push(error);
-          }
+        const paramsObj = params as Record<string, unknown>;
+        const fieldValue = paramsObj[fieldName];
+        const error = validator(fieldValue as T[typeof fieldName], fieldName);
+        if (error) {
+          errors.push(error);
         }
-      } catch (validationError) {
+      } catch (validationError: unknown) {
         errors.push(this.createFieldError(
           fieldName,
           'VALIDATION_ERROR',
@@ -414,9 +421,9 @@ export class CommonValidators {
    * @returns ValidationError if validation fails, null if valid
    */
   static booleanFlag(
-    value: any,
+    value: unknown,
     fieldName: string,
-    required: boolean = false
+    required = false
   ): ValidationError | null {
     if (value === undefined || value === null) {
       if (required) {
@@ -444,7 +451,7 @@ export class CommonValidators {
    * @returns ValidationError if validation fails, null if valid
    */
   static numericValue(
-    value: any,
+    value: unknown,
     fieldName: string,
     options: {
       minimum?: number;
@@ -539,8 +546,6 @@ export class CommonValidators {
     startTime: number,
     success: boolean
   ): void {
-    const duration = performance.now() - startTime;
-
     // Integration with existing CompatibilityMonitor
     const globalObj = globalThis as Record<string, unknown>;
     const compatMonitor = globalObj.CompatibilityMonitor as {
@@ -556,6 +561,15 @@ export class CommonValidators {
         success
       );
     }
+  }
 
+  private static containsControlCharacters(value: string): boolean {
+    for (let index = 0; index < value.length; index += 1) {
+      if (value.charCodeAt(index) < 32) {
+        return true;
+      }
+    }
+
+    return false;
   }
 }

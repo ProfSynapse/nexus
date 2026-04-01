@@ -4,8 +4,32 @@
  * Shared CLI process runner for spawn-collect-resolve pattern.
  * Used by AnthropicClaudeCodeAdapter, GoogleGeminiCliAdapter, and GeminiCliAuthService.
  */
+/* eslint-disable import/no-nodejs-modules -- desktop-only CLI process runner uses Node child_process in Electron */
+import { Platform } from 'obsidian';
 import type { ChildProcess, SpawnOptions } from 'child_process';
 import { spawnDesktopProcess } from './desktopProcess';
+
+type CliProcessRunnerDesktopModuleMap = {
+  child_process: typeof import('child_process');
+};
+
+function loadDesktopModule<TModuleName extends keyof CliProcessRunnerDesktopModuleMap>(
+  moduleName: TModuleName
+): CliProcessRunnerDesktopModuleMap[TModuleName] {
+  if (!Platform.isDesktop) {
+    throw new Error(`${moduleName} is only available on desktop.`);
+  }
+
+  const maybeRequire = (globalThis as typeof globalThis & {
+    require?: (moduleId: string) => unknown;
+  }).require;
+
+  if (typeof maybeRequire !== 'function') {
+    throw new Error('Desktop module loader is unavailable.');
+  }
+
+  return maybeRequire(moduleName) as CliProcessRunnerDesktopModuleMap[TModuleName];
+}
 
 export interface CliProcessResult {
   stdout: string;
@@ -36,7 +60,7 @@ export function runCliProcess(
     stdinText?: string;
   }
 ): CliProcessHandle {
-  const childProcess = require('child_process') as typeof import('child_process');
+  const childProcess = loadDesktopModule('child_process');
 
   const spawnOptions: SpawnOptions = {
     cwd: options?.cwd,

@@ -85,7 +85,7 @@ export interface IStorageBackend {
    *   [18]
    * );
    */
-  query<T = any>(sql: string, params?: any[]): Promise<T[]>;
+  query<T = unknown>(sql: string, params?: unknown[]): Promise<T[]>;
 
   /**
    * Execute a SELECT query and return the first matching row
@@ -101,7 +101,7 @@ export interface IStorageBackend {
    *   [userId]
    * );
    */
-  queryOne<T = any>(sql: string, params?: any[]): Promise<T | null>;
+  queryOne<T = unknown>(sql: string, params?: unknown[]): Promise<T | null>;
 
   /**
    * Execute an INSERT, UPDATE, or DELETE query
@@ -117,7 +117,7 @@ export interface IStorageBackend {
    * );
    * console.log('Inserted user with ID:', result.lastInsertRowid);
    */
-  run(sql: string, params?: any[]): Promise<RunResult>;
+  run(sql: string, params?: unknown[]): Promise<RunResult>;
 
   // ============================================================================
   // Transaction Support

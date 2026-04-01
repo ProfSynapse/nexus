@@ -143,8 +143,9 @@ describe('SystemPromptBuilder compaction projection', () => {
     });
 
     expect(prompt).not.toBeNull();
-    const compactionIndex = prompt!.indexOf('<compaction_context>');
-    const toolsIndex = prompt!.indexOf('<tools_and_context>');
+    const promptText = prompt as string;
+    const compactionIndex = promptText.indexOf('<compaction_context>');
+    const toolsIndex = promptText.indexOf('<tools_and_context>');
 
     expect(compactionIndex).toBeGreaterThanOrEqual(0);
     expect(toolsIndex).toBeGreaterThan(compactionIndex);

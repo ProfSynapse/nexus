@@ -18,7 +18,7 @@
  */
 
 import { ChatService } from '../../../services/chat/ChatService';
-import { ConversationData, ConversationMessage } from '../../../types/chat/ChatTypes';
+import { ConversationData, ConversationMessage, ToolCall } from '../../../types/chat/ChatTypes';
 import { BranchManager } from './BranchManager';
 import { MessageStreamHandler } from './MessageStreamHandler';
 import { AbortHandler } from '../utils/AbortHandler';
@@ -27,7 +27,7 @@ import { filterCompletedToolCalls } from '../utils/toolCallUtils';
 export interface MessageAlternativeServiceEvents {
   onStreamingUpdate: (messageId: string, content: string, isComplete: boolean, isIncremental?: boolean) => void;
   onConversationUpdated: (conversation: ConversationData) => void;
-  onToolCallsDetected: (messageId: string, toolCalls: any[]) => void;
+  onToolCallsDetected: (messageId: string, toolCalls: ToolCall[]) => void;
   onLoadingStateChanged: (isLoading: boolean) => void;
   onError: (message: string) => void;
 }

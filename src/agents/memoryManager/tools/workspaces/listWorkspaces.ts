@@ -10,24 +10,23 @@ import { JSONSchema } from '../../../../types/schema/JSONSchemaTypes';
  */
 
 import { BaseTool } from '../../../baseTool';
+import type { MemoryManagerAgent } from '../../memoryManager';
 import { 
   ListWorkspacesParameters, 
   ListWorkspacesResult
 } from '../../../../database/workspace-types';
-import { WorkspaceService } from '../../../../services/WorkspaceService';
-import { parseWorkspaceContext } from '../../../../utils/contextUtils';
 
 /**
  * Mode to list available workspaces with filtering and sorting
  */
 export class ListWorkspacesTool extends BaseTool<ListWorkspacesParameters, ListWorkspacesResult> {
-  private agent: any;
+  private agent: MemoryManagerAgent;
   
   /**
    * Create a new ListWorkspacesMode for the consolidated MemoryManager
    * @param agent The MemoryManagerAgent instance
    */
-  constructor(agent: any) {
+  constructor(agent: MemoryManagerAgent) {
     super(
       'listWorkspaces',
       'List Workspaces',
@@ -60,8 +59,8 @@ export class ListWorkspacesTool extends BaseTool<ListWorkspacesParameters, ListW
         sortOrder?: 'asc' | 'desc',
         limit?: number
       } = {
-        sortBy: params.sortBy as 'name' | 'created' | 'lastAccessed' | undefined,
-        sortOrder: params.order as 'asc' | 'desc' | undefined,
+        sortBy: params.sortBy,
+        sortOrder: params.order,
         limit: params.limit
       };
 
@@ -83,21 +82,25 @@ export class ListWorkspacesTool extends BaseTool<ListWorkspacesParameters, ListW
         filteredWorkspaces = workspaces.filter((ws: { isArchived?: boolean }) => !ws.isArchived);
       }
 
-      // Lean format: just name and description
-      const leanWorkspaces = filteredWorkspaces.map((ws: { id: string; name: string; description?: string; rootFolder?: string; created?: number; lastAccessed?: number; isActive?: boolean }) => ({
-        name: ws.name,
-        description: ws.description || ''
+      // Preserve the result contract while tolerating partially populated workspace rows.
+      const leanWorkspaces = filteredWorkspaces.map((ws: { id?: string; name?: string; description?: string; rootFolder?: string; created?: number; lastAccessed?: number; childCount?: number; isActive?: boolean }) => ({
+        id: ws.id || 'unknown',
+        name: ws.name || 'Untitled Workspace',
+        description: ws.description,
+        rootFolder: ws.rootFolder || '',
+        lastAccessed: ws.lastAccessed ?? ws.created ?? 0,
+        childCount: ws.childCount ?? 0
       }));
 
       return {
         success: true,
-        data: leanWorkspaces
+        data: { workspaces: leanWorkspaces }
       };
       
-    } catch (error: any) {
+    } catch (error: unknown) {
       return {
         success: false,
-        error: `Unexpected error: ${error.message || String(error)}`,
+        error: `Unexpected error: ${error instanceof Error ? error.message : String(error)}`,
         data: { workspaces: [] }
       };
     }

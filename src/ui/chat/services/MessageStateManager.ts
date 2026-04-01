@@ -39,7 +39,7 @@ export class MessageStateManager {
   async addUserMessage(
     conversation: ConversationData,
     content: string,
-    metadata?: any
+    metadata?: ConversationMessage['metadata']
   ): Promise<ConversationMessage> {
     // Create user message with temporary ID
     const userMessage: ConversationMessage = {

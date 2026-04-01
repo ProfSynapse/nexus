@@ -53,7 +53,7 @@ export class ResponseFormatter implements IResponseFormatter {
         
         // Add parameter-specific hints if available
         if (result.parameterHints) {
-            errorText += `💡 Parameter Help:\n${result.parameterHints}\n\n`;
+            errorText += `💡 Parameter Help:\n${safeStringify(result.parameterHints)}\n\n`;
         }
         
         // Add what was provided vs what was expected

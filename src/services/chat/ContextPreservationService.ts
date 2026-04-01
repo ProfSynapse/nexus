@@ -350,8 +350,8 @@ export class ContextPreservationService {
       try {
         const args =
           typeof toolCall.function.arguments === 'string'
-            ? JSON.parse(toolCall.function.arguments)
-            : toolCall.function.arguments;
+            ? (JSON.parse(toolCall.function.arguments) as unknown)
+            : (toolCall.function.arguments as unknown);
         const argsObj = args as Record<string, unknown>;
         return {
           id: typeof argsObj.id === 'string' ? argsObj.id : undefined,

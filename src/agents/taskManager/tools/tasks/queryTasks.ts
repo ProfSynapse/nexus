@@ -51,8 +51,7 @@ export class QueryTasksTool extends BaseTool<QueryTasksParameters, QueryTasksRes
         }
 
         default:
-          return this.prepareResult(false, undefined,
-            `Unknown query type: "${params.query}". Valid values: nextActions, blockedTasks, dependencyTree`);
+          return this.prepareResult(false, undefined, 'Unknown query type');
       }
     } catch (error) {
       return { success: false, error: createErrorMessage('Failed to query tasks: ', error) };

@@ -119,8 +119,21 @@ export interface ValidationMetadata {
   /**
    * Additional context-specific metadata
    */
-  [key: string]: any;
+  [key: string]: ValidationMetadataValue | undefined;
 }
+
+type ValidationMetadataValue =
+  | string
+  | number
+  | boolean
+  | null
+  | ValidationMetadataValue[]
+  | { [key: string]: ValidationMetadataValue };
+
+type ValidationErrorDetails = Record<
+  string,
+  string | number | ValidationError[] | undefined
+>;
 
 /**
  * Interface for CompatibilityMonitor if available on globalThis
@@ -177,12 +190,12 @@ export class ValidationResultHelper {
 
     try {
       // Extract context information
-      const contextResult = this.extractAndValidateContext(params, tool);
+      this.extractAndValidateContext(params);
 
       // Format error message
       let errorMessage: string;
-      let errorCode: string = 'VALIDATION_ERROR';
-      let errorDetails: any = {};
+      let errorCode = 'VALIDATION_ERROR';
+      let errorDetails: ValidationErrorDetails = {};
       
       if (Array.isArray(error)) {
         // Handle ValidationError array
@@ -215,8 +228,7 @@ export class ValidationResultHelper {
         tool.constructor.name,
         'error-result-creation',
         startTime,
-        false,
-        { errorCode, hasValidationErrors: Array.isArray(error) }
+        false
       );
 
       // Create standardized result - don't echo back context fields the LLM already knows
@@ -264,9 +276,9 @@ export class ValidationResultHelper {
    * @param additionalData Additional properties to include in result
    * @returns Standardized success result
    */
-  static createSuccessResult<TResult extends CommonResult>(
+  static createSuccessResult<TData, TResult extends CommonResult>(
     tool: ToolInterface,
-    data: any,
+    data: TData,
     params?: CommonParameters,
     additionalData?: Record<string, unknown>
   ): TResult {
@@ -274,15 +286,14 @@ export class ValidationResultHelper {
 
     try {
       // Extract context information
-      const contextResult = this.extractAndValidateContext(params, tool);
+      this.extractAndValidateContext(params);
 
       // Track success result creation performance
       this.trackPerformance(
         tool.constructor.name,
         'success-result-creation',
         startTime,
-        true,
-        { hasData: !!data, dataType: typeof data }
+        true
       );
 
       // Create standardized result - don't echo back context fields the LLM already knows
@@ -347,8 +358,7 @@ export class ValidationResultHelper {
    * @returns Extracted context information
    */
   private static extractAndValidateContext(
-    params?: CommonParameters,
-    tool?: ToolInterface
+    params?: CommonParameters
   ): ContextExtractionResult {
     const result: ContextExtractionResult = {};
     
@@ -371,6 +381,7 @@ export class ValidationResultHelper {
           result.workspaceContext = params.workspaceContext;
         }
       } catch (error) {
+        void error;
       }
     }
     
@@ -411,11 +422,8 @@ export class ValidationResultHelper {
     toolName: string,
     operation: string,
     startTime: number,
-    success: boolean,
-    metadata?: Record<string, unknown>
+    success: boolean
   ): void {
-    const duration = performance.now() - startTime;
-
     // Integration with existing CompatibilityMonitor if available
     // Type-safe access using defined interface
     const global = globalThis as GlobalWithMonitor;

@@ -39,19 +39,29 @@ interface EmbeddingResponse {
  */
 export class EmbeddingIframe {
   private iframe: HTMLIFrameElement | null = null;
-  private isReady: boolean = false;
+  private isReady = false;
   // Init requests (id=-1) resolve with void, regular requests resolve with EmbeddingResponse
   private pendingRequests: Map<number, {
     resolve: (value: EmbeddingResponse | void) => void;
     reject: (error: Error) => void;
   }> = new Map();
-  private requestId: number = 0;
+  private requestId = 0;
   private initPromise: Promise<void> | null = null;
   private messageHandler: ((event: MessageEvent) => void) | null = null;
   private blobUrl: string | null = null;
 
   private readonly MODEL_ID = 'Xenova/all-MiniLM-L6-v2';
   private readonly DIMENSIONS = 384;
+
+  private isEmbeddingResponse(value: unknown): value is EmbeddingResponse {
+    if (!value || typeof value !== 'object') {
+      return false;
+    }
+
+    const candidate = value as Record<string, unknown>;
+    return typeof candidate.id === 'number'
+      && typeof candidate.success === 'boolean';
+  }
 
   /**
    * Initialize the iframe and load the embedding model
@@ -82,9 +92,11 @@ export class EmbeddingIframe {
     this.iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin');
 
     // Set up message listener before loading iframe
-    this.messageHandler = (event: MessageEvent) => {
+    this.messageHandler = (event: MessageEvent<unknown>) => {
       if (event.source !== this.iframe?.contentWindow) return;
-      this.handleMessage(event.data);
+      if (this.isEmbeddingResponse(event.data)) {
+        this.handleMessage(event.data);
+      }
     };
     window.addEventListener('message', this.messageHandler);
 
@@ -106,8 +118,14 @@ export class EmbeddingIframe {
         }
       });
 
-      this.iframe!.src = this.blobUrl!;
-      document.body.appendChild(this.iframe!);
+      const iframe = this.iframe;
+      const blobUrl = this.blobUrl;
+      if (!iframe || !blobUrl) {
+        throw new Error('Iframe initialization failed');
+      }
+
+      iframe.src = blobUrl;
+      document.body.appendChild(iframe);
     });
   }
 
@@ -259,7 +277,15 @@ export class EmbeddingIframe {
           reject(error);
         })
       });
-      this.iframe!.contentWindow!.postMessage({ id, ...request }, '*');
+      const iframe = this.iframe;
+      const contentWindow = iframe?.contentWindow;
+      if (!iframe || !contentWindow) {
+        clearTimeout(timeoutId);
+        reject(new Error('Iframe is not available'));
+        return;
+      }
+
+      contentWindow.postMessage({ id, ...request }, '*');
     });
   }
 
@@ -272,7 +298,10 @@ export class EmbeddingIframe {
     }
 
     const response = await this.sendRequest({ method: 'embed', text });
-    return new Float32Array(response.embedding!);
+    if (!response.embedding) {
+      throw new Error('Embedding response did not include embedding data');
+    }
+    return new Float32Array(response.embedding);
   }
 
   /**
@@ -284,7 +313,10 @@ export class EmbeddingIframe {
     }
 
     const response = await this.sendRequest({ method: 'embed_batch', texts });
-    return response.embeddings!.map(e => new Float32Array(e));
+    if (!response.embeddings) {
+      throw new Error('Embedding response did not include embeddings data');
+    }
+    return response.embeddings.map(e => new Float32Array(e));
   }
 
   /**
@@ -300,7 +332,7 @@ export class EmbeddingIframe {
     if (this.iframe) {
       try {
         await this.sendRequest({ method: 'dispose' });
-      } catch (e) {
+      } catch {
         // Ignore errors during disposal
       }
       this.iframe.remove();

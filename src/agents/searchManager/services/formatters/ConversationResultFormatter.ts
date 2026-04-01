@@ -11,9 +11,16 @@
 
 import {
   MemorySearchResult,
-  EnrichedMemorySearchResult
+  EnrichedMemorySearchResult,
+  MemoryResultMetadata
 } from '../../../../types/memory/MemorySearchTypes';
 import { BaseResultFormatter } from './BaseResultFormatter';
+
+type ConversationResultMetadata = MemoryResultMetadata & {
+  conversationId?: string;
+  pairType?: string;
+  matchedSide?: string;
+};
 
 /**
  * Helper to safely access conversation-specific fields from a MemorySearchResult.
@@ -25,7 +32,7 @@ function getConversationFields(result: MemorySearchResult): Record<string, unkno
   if ('_rawTrace' in result) {
     const rawTrace = (result as EnrichedMemorySearchResult)._rawTrace;
     if (rawTrace && typeof rawTrace === 'object') {
-      return rawTrace as Record<string, unknown>;
+      return rawTrace;
     }
   }
   return {};
@@ -37,8 +44,10 @@ function getConversationFields(result: MemorySearchResult): Record<string, unkno
 export class ConversationResultFormatter extends BaseResultFormatter {
   protected generateTitle(result: MemorySearchResult): string {
     const fields = getConversationFields(result);
-    const conversationTitle = fields.conversationTitle ?? 'Untitled';
-    return `Conversation: ${String(conversationTitle)}`;
+    const conversationTitle = typeof fields.conversationTitle === 'string'
+      ? fields.conversationTitle
+      : 'Untitled';
+    return `Conversation: ${conversationTitle}`;
   }
 
   protected generateSubtitle(result: MemorySearchResult): string | undefined {
@@ -50,23 +59,28 @@ export class ConversationResultFormatter extends BaseResultFormatter {
     }
 
     if (fields.matchedSide) {
-      parts.push(`Matched: ${String(fields.matchedSide)}`);
+      const matchedSide = typeof fields.matchedSide === 'string'
+        ? fields.matchedSide
+        : 'unknown';
+      parts.push(`Matched: ${matchedSide}`);
     }
 
     return parts.length > 0 ? parts.join(' | ') : undefined;
   }
 
-  protected addTypeSpecificMetadata(formatted: Record<string, string>, metadata: Record<string, unknown>): void {
-    if (metadata.conversationId) {
-      formatted['Conversation ID'] = String(metadata.conversationId);
+  protected addTypeSpecificMetadata(formatted: Record<string, string>, metadata: MemoryResultMetadata): void {
+    const conversationMetadata = metadata as ConversationResultMetadata;
+
+    if (conversationMetadata.conversationId) {
+      formatted['Conversation ID'] = String(conversationMetadata.conversationId);
     }
 
-    if (metadata.pairType) {
-      formatted['Pair Type'] = String(metadata.pairType);
+    if (conversationMetadata.pairType) {
+      formatted['Pair Type'] = String(conversationMetadata.pairType);
     }
 
-    if (metadata.matchedSide) {
-      formatted['Matched Side'] = String(metadata.matchedSide);
+    if (conversationMetadata.matchedSide) {
+      formatted['Matched Side'] = String(conversationMetadata.matchedSide);
     }
   }
 }

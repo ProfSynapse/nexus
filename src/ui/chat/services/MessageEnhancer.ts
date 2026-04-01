@@ -12,7 +12,6 @@ import {
   EnhancementType,
   EnhancementData
 } from '../components/suggesters/base/SuggesterInterfaces';
-import { TokenCalculator } from '../utils/TokenCalculator';
 
 /**
  * Service for building message enhancements from suggester selections
@@ -23,10 +22,6 @@ export class MessageEnhancer {
   private prompts: PromptReference[] = [];
   private notes: NoteReference[] = [];
   private workspaces: WorkspaceReference[] = [];
-
-  constructor() {
-    // No initialization needed - TokenCalculator is static
-  }
 
   // ==========================================================================
   // Add Enhancement Data

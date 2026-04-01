@@ -1,12 +1,16 @@
 import { ConversationEventApplier } from '../../src/database/sync/ConversationEventApplier';
 
+type SqliteCacheLike = {
+  run: jest.Mock<Promise<void>, [string, unknown[]]>;
+};
+
 describe('ConversationEventApplier', () => {
   it('applies message_deleted events to SQLite cache', async () => {
     const sqliteCache = {
       run: jest.fn(async () => undefined)
     };
 
-    const applier = new ConversationEventApplier(sqliteCache as any);
+    const applier = new ConversationEventApplier(sqliteCache as SqliteCacheLike);
 
     await applier.apply({
       id: 'evt-delete-1',

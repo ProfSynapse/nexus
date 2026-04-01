@@ -5,6 +5,13 @@ import {
 } from '../../src/services/llm/adapters/shared/ProviderHttpClient';
 
 describe('ProviderHttpClient', () => {
+  type HttpErrorResponse = {
+    response: {
+      status: number;
+    };
+    message: string;
+  };
+
   beforeEach(() => {
     __setRequestUrlMock(async () => ({
       status: 200,
@@ -76,19 +83,26 @@ describe('ProviderHttpClient', () => {
   });
 
   it('rejects timeout when request takes too long', async () => {
+    let pendingTimer: ReturnType<typeof setTimeout> | undefined;
     __setRequestUrlMock(() => new Promise((resolve) => {
-      // Never resolves — simulates a hung request
-      setTimeout(resolve, 60_000);
+      // Never resolves before the client timeout, but keep a handle so the test can clean up.
+      pendingTimer = setTimeout(resolve, 60_000);
     }));
 
-    await expect(
-      ProviderHttpClient.request({
-        url: 'https://example.com',
-        provider: 'openai',
-        operation: 'test',
-        timeoutMs: 50
-      })
-    ).rejects.toThrow(/timeout/i);
+    try {
+      await expect(
+        ProviderHttpClient.request({
+          url: 'https://example.com',
+          provider: 'openai',
+          operation: 'test',
+          timeoutMs: 50
+        })
+      ).rejects.toThrow(/timeout/i);
+    } finally {
+      if (pendingTimer) {
+        clearTimeout(pendingTimer);
+      }
+    }
   });
 
   it('applies exponential backoff between retries', async () => {
@@ -242,13 +256,13 @@ describe('ProviderHttpClient', () => {
           arrayBuffer: new ArrayBuffer(0)
         });
       } catch (e) {
-        return e as ProviderHttpError;
+        return e as HttpErrorResponse;
       }
     })();
 
     expect(error403).toBeInstanceOf(ProviderHttpError);
-    expect(error403!.response.status).toBe(403);
-    expect(error403!.message).toContain('403');
+    expect(error403.response.status).toBe(403);
+    expect(error403.message).toContain('403');
   });
 
   it('assertOk uses custom message when provided', () => {

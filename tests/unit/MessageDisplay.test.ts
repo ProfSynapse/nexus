@@ -28,9 +28,57 @@ const mockUpdateWithNewMessage = jest.fn();
 const mockCreateElement = jest.fn();
 const mockGetProgressiveToolAccordions = jest.fn(() => new Map());
 
+type MessageLike = {
+  content: string;
+  toolCalls?: unknown;
+};
+
+type MockDisplayElement = {
+  tagName: string;
+  className?: string;
+  classList: {
+    add: jest.Mock<void, []>;
+    remove: jest.Mock<void, []>;
+    contains: jest.Mock<boolean, []>;
+    toggle: jest.Mock<void, []>;
+  };
+  addClass: jest.Mock<void, []>;
+  removeClass: jest.Mock<void, []>;
+  hasClass: jest.Mock<boolean, []>;
+  empty: jest.Mock<void, []>;
+  createEl: jest.Mock<MockDisplayElement, [string, Record<string, unknown>?]>;
+  createDiv: jest.Mock<MockDisplayElement, [string?]>;
+  createSpan: jest.Mock<MockDisplayElement, [string?]>;
+  appendChild: jest.Mock<void, [MockDisplayElement]>;
+  prepend: jest.Mock<void, [MockDisplayElement]>;
+  removeChild: jest.Mock<void, [MockDisplayElement]>;
+  querySelector: jest.Mock<MockDisplayElement | null, [string]>;
+  querySelectorAll: jest.Mock<MockDisplayElement[], [string]>;
+  setAttribute: jest.Mock<void, [string, string]>;
+  getAttribute: jest.Mock<string | null, [string]>;
+  addEventListener: jest.Mock<void, [string, EventListenerOrEventListenerObject]>;
+  removeEventListener: jest.Mock<void, [string, EventListenerOrEventListenerObject]>;
+  remove: jest.Mock<void, []>;
+  after: jest.Mock<void, [MockDisplayElement]>;
+  textContent: string;
+  innerHTML: string;
+  style: Record<string, unknown>;
+  value: string;
+  scrollTop: number;
+  scrollHeight: number;
+  focus: jest.Mock<void, []>;
+  firstElementChild: MockDisplayElement | null;
+  nextElementSibling: MockDisplayElement | null;
+  children: MockDisplayElement[];
+};
+
+type MessageDisplayAccess = MessageDisplay & {
+  transientEventRow: MockDisplayElement | null;
+};
+
 jest.mock('../../src/ui/chat/components/MessageBubble', () => {
   return {
-    MessageBubble: jest.fn().mockImplementation((message: any) => ({
+    MessageBubble: jest.fn().mockImplementation((message: MessageLike) => ({
       message,
       cleanup: mockCleanup,
       getElement: mockGetElement,
@@ -46,8 +94,8 @@ jest.mock('../../src/ui/chat/components/MessageBubble', () => {
 jest.mock('../../src/ui/chat/services/BranchManager', () => {
   return {
     BranchManager: jest.fn().mockImplementation(() => ({
-      getActiveMessageContent: jest.fn((msg: any) => msg.content),
-      getActiveMessageToolCalls: jest.fn((msg: any) => msg.toolCalls)
+      getActiveMessageContent: jest.fn((msg: MessageLike) => msg.content),
+      getActiveMessageToolCalls: jest.fn((msg: MessageLike) => msg.toolCalls)
     }))
   };
 });
@@ -61,8 +109,8 @@ import { App } from '../mocks/obsidian';
  * Create a deeply-recursive mock element that supports Obsidian's
  * createDiv/createEl/createSpan chaining pattern.
  */
-function createDeepMockElement(tag = 'div'): any {
-  const el: any = {
+function createDeepMockElement(tag = 'div'): MockDisplayElement {
+  const el: MockDisplayElement = {
     tagName: tag.toUpperCase(),
     classList: {
       add: jest.fn(),
@@ -74,9 +122,9 @@ function createDeepMockElement(tag = 'div'): any {
     removeClass: jest.fn(),
     hasClass: jest.fn(() => false),
     empty: jest.fn(),
-    createEl: jest.fn((t: string, opts?: any) => createDeepMockElement(t)),
-    createDiv: jest.fn((cls?: string) => createDeepMockElement('div')),
-    createSpan: jest.fn((cls?: string) => createDeepMockElement('span')),
+    createEl: jest.fn((t: string, _opts?: Record<string, unknown>) => createDeepMockElement(t)),
+    createDiv: jest.fn((_cls?: string) => createDeepMockElement('div')),
+    createSpan: jest.fn((_cls?: string) => createDeepMockElement('span')),
     appendChild: jest.fn(),
     prepend: jest.fn(),
     removeChild: jest.fn(),
@@ -95,9 +143,9 @@ function createDeepMockElement(tag = 'div'): any {
     scrollTop: 0,
     scrollHeight: 1000,
     focus: jest.fn(),
-    firstElementChild: null as any,
-    nextElementSibling: null as any,
-    children: [] as any[]
+    firstElementChild: null,
+    nextElementSibling: null,
+    children: []
   };
   return el;
 }
@@ -126,10 +174,13 @@ function createMockDisplayContainer() {
 
 describe('MessageDisplay', () => {
   let display: MessageDisplay;
-  let container: any;
-  let messagesContainer: any;
+  let container: MockDisplayElement;
+  let messagesContainer: MockDisplayElement;
   let mockApp: App;
-  let mockBranchManager: any;
+  let mockBranchManager: {
+    getActiveMessageContent: (msg: MessageLike) => string;
+    getActiveMessageToolCalls: (msg: MessageLike) => unknown;
+  };
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -141,8 +192,8 @@ describe('MessageDisplay', () => {
 
     // Create a simple BranchManager mock
     mockBranchManager = {
-      getActiveMessageContent: jest.fn((msg: any) => msg.content),
-      getActiveMessageToolCalls: jest.fn((msg: any) => msg.toolCalls)
+      getActiveMessageContent: jest.fn((msg: MessageLike) => msg.content),
+      getActiveMessageToolCalls: jest.fn((msg: MessageLike) => msg.toolCalls)
     };
 
     // Mock createElement to return a trackable element
@@ -151,7 +202,7 @@ describe('MessageDisplay', () => {
 
     display = new MessageDisplay(
       container,
-      mockApp as any,
+      mockApp,
       mockBranchManager
     );
   });
@@ -224,7 +275,7 @@ describe('MessageDisplay', () => {
 
       display.showTransientEventRow('Compacting context before sending...');
 
-      const eventRow = (display as any).transientEventRow;
+      const eventRow = (display as MessageDisplayAccess).transientEventRow;
       expect(eventRow).toBeDefined();
       expect(eventRow.setAttribute).toHaveBeenCalledWith('role', 'status');
       expect(eventRow.setAttribute).toHaveBeenCalledWith('aria-live', 'polite');
@@ -233,7 +284,7 @@ describe('MessageDisplay', () => {
       display.clearTransientEventRow();
 
       expect(eventRow.remove).toHaveBeenCalled();
-      expect((display as any).transientEventRow).toBeNull();
+      expect((display as MessageDisplayAccess).transientEventRow).toBeNull();
     });
   });
 

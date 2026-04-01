@@ -330,15 +330,16 @@ export class ToolBatchExecutionService {
       }
 
       if (toolResult.success) {
-        const {
-          success: _success,
-          error: _error,
-          data,
-          workspaceContext: _workspaceContext,
-          context: _context,
-          sessionId: _sessionId,
-          ...extra
-        } = toolResult as unknown as Record<string, unknown>;
+        const toolResultPayload = {
+          ...(toolResult as unknown as Record<string, unknown>)
+        };
+        delete toolResultPayload.success;
+        delete toolResultPayload.error;
+        delete toolResultPayload.workspaceContext;
+        delete toolResultPayload.context;
+        delete toolResultPayload.sessionId;
+
+        const { data, ...extra } = toolResultPayload;
 
         if (data !== undefined && data !== null) {
           result.data = data;

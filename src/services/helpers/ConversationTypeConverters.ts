@@ -8,6 +8,8 @@ import { ConversationMetadata, MessageData } from '../../types/storage/HybridSto
 import type { ConversationBranch, SubagentBranchMetadata, HumanBranchMetadata } from '../../types/branch/BranchTypes';
 import type { ToolCall as ChatToolCall } from '../../types/chat/ChatTypes';
 
+type LegacyToolCallParameters = import('../../types/storage/StorageTypes').ToolCall['parameters'];
+
 /**
  * Convert new ConversationMetadata to legacy format
  */
@@ -87,7 +89,7 @@ export function convertToLegacyConversation(
         // 2. Result format from buildToolMetadata: { name, result, success, error }
         const hasFunction = tc.function && typeof tc.function === 'object';
         const name = (hasFunction ? tc.function.name : tc.name) || 'unknown_tool';
-        let parameters: any;
+        let parameters: unknown;
         if (hasFunction && tc.function.arguments) {
           if (typeof tc.function.arguments === 'string') {
             try {
@@ -107,7 +109,7 @@ export function convertToLegacyConversation(
           type: tc.type || 'function',
           name,
           function: tc.function || { name, arguments: JSON.stringify(parameters || {}) },
-          parameters: parameters || {},
+          parameters: (parameters || {}) as LegacyToolCallParameters,
           result: tc.result,
           success: tc.success,
           error: tc.error
@@ -127,12 +129,12 @@ export function convertToLegacyConversation(
         ...meta.chatSettings,
         workspaceId: metadata.workspaceId,
         sessionId: metadata.sessionId,
-        promptId: (meta.chatSettings as { promptId?: string } | undefined)?.promptId ?? (meta.promptId as string | undefined)
+        promptId: (meta.chatSettings as { promptId?: string } | undefined)?.promptId ?? (meta.promptId)
       },
-      workflowId: metadata.workflowId ?? (meta.workflowId as string | undefined),
-      runTrigger: metadata.runTrigger ?? (meta.runTrigger as 'manual' | 'scheduled' | 'catch_up' | undefined),
-      scheduledFor: metadata.scheduledFor ?? (meta.scheduledFor as number | undefined),
-      runKey: metadata.runKey ?? (meta.runKey as string | undefined),
+      workflowId: metadata.workflowId ?? (meta.workflowId),
+      runTrigger: metadata.runTrigger ?? (meta.runTrigger),
+      scheduledFor: metadata.scheduledFor ?? (meta.scheduledFor),
+      runKey: metadata.runKey ?? (meta.runKey),
       cost: resolvedCost
     },
     cost: resolvedCost

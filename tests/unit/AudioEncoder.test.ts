@@ -13,7 +13,7 @@
  * - downmixToStereo tested for channel averaging correctness
  */
 
-import { ComposerError } from '../../src/agents/apps/composer/types';
+import { ComposerError, AudioOutputFormat } from '../../src/agents/apps/composer/types';
 
 // --- Web Audio API mocks ---
 
@@ -40,6 +40,69 @@ function createMockAudioBuffer(opts: {
   } as unknown as AudioBuffer;
 }
 
+type MockBlobPart = Uint8Array | ArrayBuffer | string;
+
+class MockMediaRecorder {
+  ondataavailable: ((event: { data: Blob }) => void) | null = null;
+  onstop: (() => void) | null = null;
+  onerror: ((error: unknown) => void) | null = null;
+
+  start = jest.fn(() => {
+    // Simulate data available
+    setTimeout(() => {
+      this.ondataavailable?.({ data: new Blob([new Uint8Array([1, 2, 3])]) });
+    }, 0);
+  });
+
+  stop = jest.fn(() => {
+    setTimeout(() => {
+      this.onstop?.();
+    }, 0);
+  });
+}
+
+class MockBlob {
+  private readonly parts: MockBlobPart[];
+  size: number;
+  type: string;
+
+  constructor(parts: MockBlobPart[] = [], options?: { type?: string }) {
+    this.parts = parts;
+    this.type = options?.type ?? '';
+    this.size = parts.reduce((total, part) => {
+      if (part instanceof Uint8Array || part instanceof ArrayBuffer) {
+        return total + part.byteLength;
+      }
+      if (typeof part === 'string') {
+        return total + part.length;
+      }
+      return total;
+    }, 0);
+  }
+
+  async arrayBuffer(): Promise<ArrayBuffer> {
+    // Concatenate all parts
+    const totalSize = this.parts.reduce((total, part) => {
+      if (part instanceof Uint8Array || part instanceof ArrayBuffer) {
+        return total + part.byteLength;
+      }
+      return total;
+    }, 0);
+    const result = new Uint8Array(totalSize);
+    let offset = 0;
+    for (const part of this.parts) {
+      if (part instanceof Uint8Array) {
+        result.set(part, offset);
+        offset += part.byteLength;
+      } else if (part instanceof ArrayBuffer) {
+        result.set(new Uint8Array(part), offset);
+        offset += part.byteLength;
+      }
+    }
+    return result.buffer;
+  }
+}
+
 // Mock OfflineAudioContext for downmixToStereo
 const mockCreateBuffer = jest.fn((channels: number, length: number, sampleRate: number) => {
   const data = Array.from({ length: channels }, () => new Float32Array(length));
@@ -52,10 +115,17 @@ const mockCreateBuffer = jest.fn((channels: number, length: number, sampleRate: 
   } as unknown as AudioBuffer;
 });
 
+const globalForTests = globalThis as typeof globalThis & {
+  OfflineAudioContext: typeof OfflineAudioContext;
+  AudioContext: typeof AudioContext;
+  MediaRecorder: typeof MediaRecorder;
+  Blob: typeof Blob;
+};
+
 // Global OfflineAudioContext mock
-(global as any).OfflineAudioContext = jest.fn().mockImplementation(() => ({
+globalForTests.OfflineAudioContext = jest.fn().mockImplementation(() => ({
   createBuffer: mockCreateBuffer,
-}));
+})) as unknown as typeof OfflineAudioContext;
 
 // Mock AudioContext for WebM path
 const mockCloseFn = jest.fn().mockResolvedValue(undefined);
@@ -69,63 +139,18 @@ const mockSourceNode = {
   onended: null as (() => void) | null,
 };
 
-(global as any).AudioContext = jest.fn().mockImplementation(() => ({
+globalForTests.AudioContext = jest.fn().mockImplementation(() => ({
   sampleRate: 44100,
   createMediaStreamDestination: jest.fn(() => mockMediaStreamDest),
   createBufferSource: jest.fn(() => ({ ...mockSourceNode })),
   close: mockCloseFn,
-}));
+})) as unknown as typeof AudioContext;
 
 // Mock MediaRecorder for WebM path
-let mediaRecorderInstance: any;
-(global as any).MediaRecorder = jest.fn().mockImplementation(function (this: any, _stream: any, _opts: any) {
-  this.ondataavailable = null;
-  this.onstop = null;
-  this.onerror = null;
-  this.start = jest.fn(() => {
-    // Simulate data available
-    setTimeout(() => {
-      if (this.ondataavailable) {
-        this.ondataavailable({ data: new Blob([new Uint8Array([1, 2, 3])]) });
-      }
-    }, 0);
-  });
-  this.stop = jest.fn(() => {
-    setTimeout(() => {
-      if (this.onstop) this.onstop();
-    }, 0);
-  });
-  mediaRecorderInstance = this;
-  return this;
-});
+globalForTests.MediaRecorder = jest.fn().mockImplementation(() => new MockMediaRecorder()) as unknown as typeof MediaRecorder;
 
 // Mock Blob.prototype.arrayBuffer (not available in Node)
-(global as any).Blob = class MockBlob {
-  private parts: any[];
-  size: number;
-  type: string;
-  constructor(parts: any[] = [], options?: { type?: string }) {
-    this.parts = parts;
-    this.type = options?.type ?? '';
-    this.size = parts.reduce((s: number, p: any) => s + (p.byteLength || p.length || 0), 0);
-  }
-  async arrayBuffer(): Promise<ArrayBuffer> {
-    // Concatenate all parts
-    const totalSize = this.parts.reduce((s: number, p: any) => {
-      if (p instanceof Uint8Array) return s + p.byteLength;
-      return s + 0;
-    }, 0);
-    const result = new Uint8Array(totalSize);
-    let offset = 0;
-    for (const part of this.parts) {
-      if (part instanceof Uint8Array) {
-        result.set(part, offset);
-        offset += part.byteLength;
-      }
-    }
-    return result.buffer;
-  }
-};
+globalForTests.Blob = MockBlob as unknown as typeof Blob;
 
 // Mock wasm-media-encoders dynamic import
 const mockEncoder = {
@@ -370,7 +395,7 @@ describe('AudioEncoder', () => {
       const buffer = createMockAudioBuffer();
 
       await expect(
-        encoder.encode(buffer, 'flac' as any)
+        encoder.encode(buffer, 'flac' as unknown as AudioOutputFormat)
       ).rejects.toThrow(ComposerError);
     });
   });

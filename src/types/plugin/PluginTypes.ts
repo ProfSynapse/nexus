@@ -30,9 +30,7 @@ export interface PluginServices {
 }
 
 // Memory management settings
-interface MemorySettings {
-  // Workspace management interface
-}
+type MemorySettings = Record<string, never>;
 
 interface ProcessedFileState {
   filePath: string;

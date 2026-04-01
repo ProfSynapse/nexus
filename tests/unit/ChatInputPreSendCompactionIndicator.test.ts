@@ -1,6 +1,11 @@
 import { Component, createMockElement } from 'obsidian';
 import { ChatInput } from '../../src/ui/chat/components/ChatInput';
 
+type ChatInputWithInternals = ChatInput & {
+  inputElement: HTMLElement;
+  sendButton: HTMLButtonElement;
+};
+
 describe('ChatInput pre-send compaction state', () => {
   it('reduces the input UI to a disabled/busy state while transcript compaction indicator is active', () => {
     const container = createMockElement('div');
@@ -18,8 +23,9 @@ describe('ChatInput pre-send compaction state', () => {
 
     input.setPreSendCompacting(true);
 
-    const inputElement = (input as any).inputElement;
-    const sendButton = (input as any).sendButton;
+    const internals = input as ChatInputWithInternals;
+    const inputElement = internals.inputElement;
+    const sendButton = internals.sendButton;
 
     expect(container.addClass).toHaveBeenCalledWith('chat-input-compacting');
     expect(inputElement.setAttribute).toHaveBeenCalledWith('aria-busy', 'true');
@@ -47,7 +53,7 @@ describe('ChatInput pre-send compaction state', () => {
     input.setPreSendCompacting(true);
     input.setPreSendCompacting(false);
 
-    const inputElement = (input as any).inputElement;
+    const inputElement = (input as ChatInputWithInternals).inputElement;
 
     expect(container.removeClass).toHaveBeenCalledWith('chat-input-compacting');
     expect(inputElement.setAttribute).toHaveBeenCalledWith('aria-busy', 'false');

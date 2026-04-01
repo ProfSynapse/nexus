@@ -1,3 +1,5 @@
+import { safeStringify } from './jsonUtils';
+
 /**
  * Utility functions for error handling
  */
@@ -18,9 +20,25 @@ export function getErrorMessage(error: unknown): string {
     return 'Null error';
   } else if (error === undefined) {
     return 'Undefined error';
-  } else {
-    return String(error);
   }
+
+  if (typeof error === 'object') {
+    return safeStringify(error);
+  }
+
+  if (typeof error === 'function') {
+    return error.name ? `[Function ${error.name}]` : '[Function]';
+  }
+
+  if (typeof error === 'symbol') {
+    return error.description ?? error.toString();
+  }
+
+  if (typeof error === 'number' || typeof error === 'bigint' || typeof error === 'boolean') {
+    return `${error}`;
+  }
+
+  return 'Unknown error';
 }
 
 /**

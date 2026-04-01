@@ -12,15 +12,11 @@ import type { Settings } from '../../settings';
 // Use new SettingsView (tab-based UI) instead of old SettingsTab (accordion-based)
 import { SettingsView } from '../../settings/SettingsView';
 import type { BackgroundProcessor } from '../background/BackgroundProcessor';
+import type { PluginLifecycleManager } from '../PluginLifecycleManager';
 import type { ServiceManager } from '../ServiceManager';
 
 // Type-only import to avoid bundling Node.js dependencies on mobile
 type MCPConnectorType = import('../../connector').MCPConnector;
-
-// Extended interface for PluginLifecycleManager with optional methods
-interface LifecycleManager {
-    [key: string]: any;
-}
 
 export interface SettingsTabManagerConfig {
     plugin: Plugin;
@@ -28,7 +24,7 @@ export interface SettingsTabManagerConfig {
     settings: Settings;
     serviceManager: ServiceManager;
     connector?: MCPConnectorType; // Optional - undefined on mobile
-    lifecycleManager: LifecycleManager; // Reference to PluginLifecycleManager for ChatView activation
+    lifecycleManager: PluginLifecycleManager; // Reference to PluginLifecycleManager for ChatView activation
     backgroundProcessor?: BackgroundProcessor;
 }
 

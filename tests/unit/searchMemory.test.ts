@@ -9,18 +9,38 @@
  * and normal result formatting via an injected mock processor.
  */
 
+import { Plugin } from 'obsidian';
 import { SearchMemoryTool, MemoryType, SearchMemoryParams } from '../../src/agents/searchManager/tools/searchMemory';
-import { MemorySearchProcessorInterface, SearchProcessResult, SearchMetadata } from '../../src/agents/searchManager/services/MemorySearchProcessor';
+import { MemorySearchProcessorInterface } from '../../src/agents/searchManager/services/MemorySearchProcessor';
 import { GLOBAL_WORKSPACE_ID } from '../../src/services/WorkspaceService';
+
+type SchemaNode = {
+  type?: string;
+  enum?: string[];
+  default?: unknown;
+  minimum?: number;
+  maximum?: number;
+  description?: string;
+  items?: SchemaNode;
+  properties?: Record<string, SchemaNode>;
+  required?: string[];
+};
+
+type SearchMemoryToolResult = {
+  success: boolean;
+  error?: string;
+  data?: { results?: Array<{ type: string; question?: string; answer?: string; windowMessages?: unknown[] }> };
+  recommendations?: Array<{ type: string; message: string }>;
+};
 
 describe('SearchMemory Tool', () => {
   let tool: SearchMemoryTool;
-  let schema: Record<string, any>;
+  let schema: { properties?: Record<string, SchemaNode>; required?: string[] };
 
   beforeEach(() => {
     // Create tool with minimal mock dependencies
     // We only need the schema, not execution
-    const mockPlugin = {} as any;
+    const mockPlugin = {} as Plugin;
     tool = new SearchMemoryTool(mockPlugin);
     schema = tool.getParameterSchema();
   });
@@ -126,7 +146,7 @@ describe('SearchMemory Tool', () => {
 
   describe('result schema', () => {
     it('should include conversation result fields', () => {
-      const resultSchema = tool.getResultSchema();
+      const resultSchema = tool.getResultSchema() as { properties?: { results?: { items?: { properties?: Record<string, SchemaNode> } } } };
       const resultItemProps = resultSchema.properties?.results?.items?.properties;
 
       expect(resultItemProps).toBeDefined();
@@ -141,14 +161,14 @@ describe('SearchMemory Tool', () => {
     });
 
     it('should include matchedSide enum values', () => {
-      const resultSchema = tool.getResultSchema();
+      const resultSchema = tool.getResultSchema() as { properties?: { results?: { items?: { properties?: Record<string, SchemaNode> } } } };
       const matchedSide = resultSchema.properties?.results?.items?.properties?.matchedSide;
 
       expect(matchedSide.enum).toEqual(['question', 'answer']);
     });
 
     it('should include pairType enum values', () => {
-      const resultSchema = tool.getResultSchema();
+      const resultSchema = tool.getResultSchema() as { properties?: { results?: { items?: { properties?: Record<string, SchemaNode> } } } };
       const pairType = resultSchema.properties?.results?.items?.properties?.pairType;
 
       expect(pairType.enum).toEqual(['conversation_turn', 'trace_pair']);
@@ -230,7 +250,7 @@ describe('SearchMemory Tool', () => {
 
       // Inject mock processor via constructor's 5th parameter
       execTool = new SearchMemoryTool(
-        {} as any,        // plugin
+        {} as Plugin,     // plugin
         undefined,         // memoryService
         undefined,         // workspaceService
         undefined,         // storageAdapter
@@ -311,7 +331,7 @@ describe('SearchMemory Tool', () => {
 
       expect(result.success).toBe(true);
       expect(result.recommendations).toBeDefined();
-      const partialNudge = (result as any).recommendations?.find((r: any) => r.type === 'partial_search');
+      const partialNudge = (result as SearchMemoryToolResult).recommendations?.find(r => r.type === 'partial_search');
       expect(partialNudge).toBeDefined();
       expect(partialNudge.message).toContain('conversations search was unavailable');
     });
@@ -325,7 +345,7 @@ describe('SearchMemory Tool', () => {
       const result = await execTool.execute(makeParams({ query: 'auth' }));
 
       expect(result.success).toBe(true);
-      const errorNudge = (result as any).recommendations?.find((r: any) => r.type === 'search_error');
+      const errorNudge = (result as SearchMemoryToolResult).recommendations?.find(r => r.type === 'search_error');
       expect(errorNudge).toBeDefined();
       expect(errorNudge.message).toContain('Search failed for states');
     });
@@ -339,15 +359,15 @@ describe('SearchMemory Tool', () => {
       const result = await execTool.execute(makeParams({ query: 'auth' }));
 
       expect(result.success).toBe(true);
-      expect((result as any).data?.results).toHaveLength(1);
-      expect((result as any).data?.results[0]).toHaveProperty('type', 'conversation');
-      expect((result as any).data?.results[0]).toHaveProperty('question', 'How do we do auth?');
-      expect((result as any).data?.results[0]).toHaveProperty('answer', 'We use JWT tokens.');
+      expect((result as SearchMemoryToolResult).data?.results).toHaveLength(1);
+      expect((result as SearchMemoryToolResult).data?.results?.[0]).toHaveProperty('type', 'conversation');
+      expect((result as SearchMemoryToolResult).data?.results?.[0]).toHaveProperty('question', 'How do we do auth?');
+      expect((result as SearchMemoryToolResult).data?.results?.[0]).toHaveProperty('answer', 'We use JWT tokens.');
 
       // No partial_search or search_error nudges
-      const partialNudge = (result as any).recommendations?.find((r: any) => r.type === 'partial_search');
+      const partialNudge = (result as SearchMemoryToolResult).recommendations?.find(r => r.type === 'partial_search');
       expect(partialNudge).toBeUndefined();
-      const errorNudge = (result as any).recommendations?.find((r: any) => r.type === 'search_error');
+      const errorNudge = (result as SearchMemoryToolResult).recommendations?.find(r => r.type === 'search_error');
       expect(errorNudge).toBeUndefined();
     });
 
@@ -360,7 +380,7 @@ describe('SearchMemory Tool', () => {
       await execTool.execute({
         query: 'test',
         context: { workspaceId: '', sessionId: '', memory: '', goal: '' }
-      } as any);
+      } as SearchMemoryParams);
 
       expect(mockProcessor.process).toHaveBeenCalledWith(
         expect.objectContaining({ workspaceId: GLOBAL_WORKSPACE_ID })
@@ -396,9 +416,9 @@ describe('SearchMemory Tool', () => {
       const result = await execTool.execute(makeParams({ sessionId: 'sess-1' }));
 
       expect(result.success).toBe(true);
-      const firstResult = (result as any).data?.results[0];
-      expect(firstResult.windowMessages).toHaveLength(3);
-      expect(firstResult.windowMessages[0]).toEqual({
+      const firstResult = (result as SearchMemoryToolResult).data?.results?.[0];
+      expect(firstResult?.windowMessages).toHaveLength(3);
+      expect(firstResult?.windowMessages?.[0]).toEqual({
         role: 'user',
         content: 'Previous question',
         sequenceNumber: 1
@@ -435,8 +455,8 @@ describe('SearchMemory Tool', () => {
 
       expect(result.success).toBe(true);
       // Only the valid result should survive null filtering
-      expect((result as any).data?.results).toHaveLength(1);
-      expect((result as any).data?.results[0]).toHaveProperty('type', 'conversation');
+      expect((result as SearchMemoryToolResult).data?.results).toHaveLength(1);
+      expect((result as SearchMemoryToolResult).data?.results?.[0]).toHaveProperty('type', 'conversation');
     });
   });
 });

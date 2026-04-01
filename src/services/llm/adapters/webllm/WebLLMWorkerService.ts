@@ -7,20 +7,14 @@
  */
 
 import {
-  WorkerMessage,
   WorkerResponse,
-  ChunkResponse,
-  CompleteResponse,
-  ErrorResponse,
-  InitProgressResponse,
-  ReadyResponse,
   WebLLMError,
   WebLLMModelSpec,
 } from './types';
 
 /** Promise resolver for pending requests */
-interface PendingRequest<T = any> {
-  resolve: (value: T) => void;
+interface PendingRequest<T = unknown> {
+  resolve: (value: T | PromiseLike<T>) => void;
   reject: (error: Error) => void;
   onProgress?: (progress: number, stage: string) => void;
   onChunk?: (content: string) => void;
@@ -368,31 +362,32 @@ async function handleUnload(message) {
       switch (response.type) {
         case 'init_progress':
           if (pending.onProgress) {
-            const progress = response as InitProgressResponse;
+            const progress = response;
             pending.onProgress(progress.payload.progress, progress.payload.stage);
           }
           break;
 
         case 'ready':
           this.pendingRequests.delete(requestId);
-          this.currentModelId = (response as ReadyResponse).payload.modelId;
+          this.currentModelId = (response).payload.modelId;
           pending.resolve(response.payload);
           break;
 
         case 'complete':
           this.pendingRequests.delete(requestId);
-          pending.resolve((response as CompleteResponse).payload);
+          pending.resolve((response).payload);
           break;
 
-        case 'error':
+        case 'error': {
           this.pendingRequests.delete(requestId);
-          const error = response as ErrorResponse;
+          const error = response;
           pending.reject(new WebLLMError(
             error.payload.message,
             error.payload.code,
             error.payload.details
           ));
           break;
+        }
       }
     };
 
@@ -400,7 +395,7 @@ async function handleUnload(message) {
       console.error('[WebLLMWorkerService] Worker error:', event);
 
       // Reject all pending requests
-      for (const [id, pending] of this.pendingRequests) {
+      for (const pending of this.pendingRequests.values()) {
         pending.reject(new WebLLMError(
           'Worker error: ' + event.message,
           'WORKER_ERROR',
@@ -415,10 +410,11 @@ async function handleUnload(message) {
   /**
    * Send a message to the worker and wait for response
    */
-  private async sendMessage<T>(message: { type: string; payload?: any }, options?: {
+  private async sendMessage<T, TPayload = unknown>(message: { type: string; payload?: TPayload }, options?: {
     onProgress?: (progress: number, stage: string) => void;
   }): Promise<T> {
-    if (!this.worker) {
+    const worker = this.worker;
+    if (!worker) {
       throw new WebLLMError('Worker not initialized', 'WORKER_ERROR');
     }
 
@@ -427,12 +423,12 @@ async function handleUnload(message) {
 
     return new Promise<T>((resolve, reject) => {
       this.pendingRequests.set(id, {
-        resolve,
+        resolve: resolve as (value: unknown) => void,
         reject,
         onProgress: options?.onProgress,
       });
 
-      this.worker!.postMessage(fullMessage);
+      worker.postMessage(fullMessage);
     });
   }
 
@@ -537,7 +533,11 @@ async function handleUnload(message) {
         let response: WorkerResponse | null;
 
         if (responseQueue.length > 0) {
-          response = responseQueue.shift()!;
+          const queuedResponse = responseQueue.shift();
+          if (!queuedResponse) {
+            continue;
+          }
+          response = queuedResponse;
         } else {
           // Wait for next response
           response = await new Promise<WorkerResponse | null>((resolve) => {

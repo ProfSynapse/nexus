@@ -6,6 +6,7 @@ import { SystemPromptBuilder, type PromptSummary, type ToolAgentInfo } from '../
 import type { ChatService } from '../chat/ChatService';
 import type { WorkspaceService } from '../WorkspaceService';
 import type { CustomPromptStorageService } from '../../agents/promptManager/services/CustomPromptStorageService';
+import type { CustomPrompt } from '../../types';
 import type { WorkspaceWorkflow } from '../../database/types/workspace/WorkspaceTypes';
 import {
   buildWorkflowKickoffMessage,
@@ -20,6 +21,37 @@ export interface WorkflowRunServiceDeps {
   chatService: ChatService;
   workspaceService: WorkspaceService;
   customPromptStorage?: CustomPromptStorageService | null;
+}
+
+interface WorkflowModelOption {
+  providerId?: string;
+  modelId?: string;
+}
+
+interface AgentToolInfo {
+  slug?: string;
+  name?: string;
+}
+
+interface AgentLike {
+  name?: string;
+  description?: string;
+  getTools?: () => AgentToolInfo[];
+}
+
+interface AgentRegistryLike {
+  getAllAgents: () => Map<string, AgentLike> | AgentLike[] | Array<[string, AgentLike]>;
+}
+
+interface PluginWithAgentRegistry extends Plugin {
+  serviceManager?: {
+    getServiceIfReady?: (name: string) => AgentRegistryLike | null | undefined;
+  };
+  connector?: {
+    agentRegistry?: {
+      getAllAgents: () => Map<string, AgentLike> | AgentLike[] | Array<[string, AgentLike]>;
+    };
+  };
 }
 
 export class WorkflowRunService {
@@ -123,14 +155,14 @@ export class WorkflowRunService {
     };
   }
 
-  private resolvePrompt(promptId?: string) {
+  private resolvePrompt(promptId?: string): CustomPrompt | undefined {
     if (!promptId || !this.deps.customPromptStorage) {
       return undefined;
     }
     return this.deps.customPromptStorage.getPromptByNameOrId(promptId);
   }
 
-  private async resolveDefaultModel() {
+  private async resolveDefaultModel(): Promise<WorkflowModelOption | null> {
     const availableModels = await ModelSelectionUtility.getAvailableModels(this.deps.app);
     if (availableModels.length === 0) {
       return null;
@@ -165,19 +197,35 @@ export class WorkflowRunService {
   }
 
   private async getToolAgentInfo(): Promise<ToolAgentInfo[]> {
-    const plugin = this.deps.plugin as Plugin & {
-      serviceManager?: { getServiceIfReady?: (name: string) => any };
-      connector?: { agentRegistry?: { getAllAgents: () => Map<string, any> } };
+    const plugin = this.deps.plugin as PluginWithAgentRegistry;
+
+    const normalizeAgents = (
+      agents: Map<string, AgentLike> | AgentLike[] | Array<[string, AgentLike]>
+    ): Map<string, AgentLike> => {
+      if (agents instanceof Map) {
+        return agents;
+      }
+
+      if (agents.length > 0 && Array.isArray(agents[0])) {
+        return new Map(agents as Array<[string, AgentLike]>);
+      }
+
+      const normalized = new Map<string, AgentLike>();
+      for (const agent of agents as AgentLike[]) {
+        if (agent.name) {
+          normalized.set(agent.name, agent);
+        }
+      }
+      return normalized;
     };
 
     const agentService = plugin.serviceManager?.getServiceIfReady?.('agentRegistrationService');
     if (agentService) {
-      const agents = agentService.getAllAgents();
-      const agentMap = agents instanceof Map ? agents : new Map(agents.map((agent: { name: string }) => [agent.name, agent]));
-      return Array.from(agentMap.entries()).map(([name, agent]: [string, any]) => ({
+      const agentMap = normalizeAgents(agentService.getAllAgents());
+      return Array.from(agentMap.entries()).map(([name, agent]) => ({
         name,
         description: agent.description || '',
-        tools: (agent.getTools?.() || []).map((tool: { slug?: string; name?: string }) => tool.slug || tool.name || 'unknown')
+        tools: (agent.getTools?.() || []).map(tool => tool.slug || tool.name || 'unknown')
       }));
     }
 
@@ -186,10 +234,11 @@ export class WorkflowRunService {
       return [];
     }
 
-    return Array.from(agents.entries()).map(([name, agent]: [string, any]) => ({
+    const agentMap = normalizeAgents(agents);
+    return Array.from(agentMap.entries()).map(([name, agent]) => ({
       name,
       description: agent.description || '',
-      tools: (agent.getTools?.() || []).map((tool: { slug?: string; name?: string }) => tool.slug || tool.name || 'unknown')
+      tools: (agent.getTools?.() || []).map(tool => tool.slug || tool.name || 'unknown')
     }));
   }
 
@@ -226,7 +275,7 @@ export class WorkflowRunService {
       });
     }
 
-    this.deps.app.workspace.revealLeaf(leaf);
+    await this.deps.app.workspace.revealLeaf(leaf);
     return await this.waitForChatViewReady(leaf, conversationId, kickoffMessage, options);
   }
 

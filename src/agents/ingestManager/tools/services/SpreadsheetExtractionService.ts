@@ -24,12 +24,12 @@ export function extractSpreadsheetSheets(workbookData: ArrayBuffer): Spreadsheet
 
   return workbook.SheetNames.map((sheetName) => {
     const worksheet = workbook.Sheets[sheetName];
-    const rows = XLSX.utils.sheet_to_json(worksheet, {
+    const rows = XLSX.utils.sheet_to_json<unknown[]>(worksheet, {
       header: 1,
       raw: false,
       defval: '',
       blankrows: false
-    }) as unknown[][];
+    });
 
     const normalizedRows = normalizeRows(rows);
     const totalRows = normalizedRows.length;
@@ -72,9 +72,29 @@ function normalizeCell(cell: unknown): string {
     return '';
   }
 
+  if (typeof cell === 'string') {
+    return cell;
+  }
+
+  if (typeof cell === 'number' || typeof cell === 'boolean' || typeof cell === 'bigint') {
+    return String(cell);
+  }
+
+  if (typeof cell === 'symbol') {
+    return cell.description ?? 'Symbol';
+  }
+
   if (cell instanceof Date) {
     return cell.toISOString();
   }
 
-  return String(cell);
+  if (typeof cell === 'object') {
+    try {
+      return JSON.stringify(cell);
+    } catch {
+      return '[Object]';
+    }
+  }
+
+  return '[Unsupported value]';
 }

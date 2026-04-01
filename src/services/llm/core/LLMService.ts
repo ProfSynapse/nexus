@@ -5,11 +5,9 @@
 
 import { Vault, EventRef, DataAdapter } from 'obsidian';
 import { BaseAdapter } from '../adapters/BaseAdapter';
-import { GenerateOptions, LLMResponse, ModelInfo } from '../adapters/types';
+import { GenerateOptions, LLMResponse, ModelInfo, SearchResult } from '../adapters/types';
 import { LLMProviderSettings, LLMProviderConfig } from '../../../types';
 import { IToolExecutor } from '../adapters/shared/ToolExecutionUtils';
-import { ConversationContextBuilder } from '../../chat/ConversationContextBuilder';
-import { ConversationData } from '../../../types/chat/ChatTypes';
 import { AdapterRegistry } from './AdapterRegistry';
 import { ModelDiscoveryService } from './ModelDiscoveryService';
 import { FileContentService } from './FileContentService';
@@ -45,7 +43,7 @@ export interface LLMExecutionResult {
     currency: string;
   };
   filesIncluded?: string[];
-  webSearchResults?: any[]; // SearchResult[] from adapters/types, avoiding circular import
+  webSearchResults?: SearchResult[];
   error?: string;
 }
 

@@ -78,20 +78,21 @@ export class CacheManager {
     }
 
     private setupFileEventListeners(): void {
-        if (!this.vaultFileIndex) return;
+        const vaultFileIndex = this.vaultFileIndex;
+        if (!vaultFileIndex) return;
 
         // Listen for file events from Obsidian
         this.vaultEventRefs.push(
-            this.vault.on('create', async (file) => {
+            this.vault.on('create', (file) => {
                 if (file instanceof TFile && (file.extension === 'md' || file.extension === 'canvas')) {
-                    await this.vaultFileIndex!.updateFile(file);
+                    void vaultFileIndex.updateFile(file);
                 }
             })
         );
 
         this.vaultEventRefs.push(
             this.vault.on('delete', (file) => {
-                this.vaultFileIndex!.removeFile(file.path);
+                vaultFileIndex.removeFile(file.path);
                 // Also invalidate entity cache for files
                 if (this.entityCache) {
                     this.entityCache.invalidateFile(file.path);
@@ -100,41 +101,43 @@ export class CacheManager {
         );
 
         this.vaultEventRefs.push(
-            this.vault.on('rename', async (file, oldPath) => {
+            this.vault.on('rename', (file, oldPath) => {
                 if (file instanceof TFile && (file.extension === 'md' || file.extension === 'canvas')) {
-                    await this.vaultFileIndex!.renameFile(oldPath, file.path);
+                    void vaultFileIndex.renameFile(oldPath, file.path);
                 }
             })
         );
 
         this.vaultEventRefs.push(
-            this.vault.on('modify', async (file) => {
+            this.vault.on('modify', (file) => {
                 if (file instanceof TFile && (file.extension === 'md' || file.extension === 'canvas')) {
-                    await this.vaultFileIndex!.updateFile(file);
+                    void vaultFileIndex.updateFile(file);
                 }
             })
         );
     }
 
     private setupPrefetchListeners(): void {
-        if (!this.entityCache || !this.prefetchManager) return;
+        const entityCache = this.entityCache;
+        const prefetchManager = this.prefetchManager;
+        if (!entityCache || !prefetchManager) return;
 
         // Listen for entity cache events to trigger prefetching
         this.entityCacheEventRefs.push(
-            this.entityCache.on('workspace:preloaded', (workspaceId) => {
-                this.prefetchManager!.onWorkspaceLoaded(workspaceId as string);
+            entityCache.on('workspace:preloaded', (workspaceId) => {
+                void prefetchManager.onWorkspaceLoaded(workspaceId as string);
             })
         );
 
         this.entityCacheEventRefs.push(
-            this.entityCache.on('session:preloaded', (sessionId) => {
-                this.prefetchManager!.onSessionLoaded(sessionId as string);
+            entityCache.on('session:preloaded', (sessionId) => {
+                void prefetchManager.onSessionLoaded(sessionId as string);
             })
         );
 
         this.entityCacheEventRefs.push(
-            this.entityCache.on('state:preloaded', (stateId) => {
-                this.prefetchManager!.onStateLoaded(stateId as string);
+            entityCache.on('state:preloaded', (stateId) => {
+                void prefetchManager.onStateLoaded(stateId as string);
             })
         );
     }
@@ -161,40 +164,40 @@ export class CacheManager {
         await this.entityCache.preloadState(stateId);
     }
 
-    getCachedWorkspace(workspaceId: string) {
+    getCachedWorkspace(workspaceId: string): ReturnType<EntityCache['getWorkspace']> | null {
         return this.entityCache?.getWorkspace(workspaceId);
     }
 
-    getCachedSession(sessionId: string) {
+    getCachedSession(sessionId: string): ReturnType<EntityCache['getSession']> | null {
         return this.entityCache?.getSession(sessionId);
     }
 
-    getCachedState(stateId: string) {
+    getCachedState(stateId: string): ReturnType<EntityCache['getState']> | null {
         return this.entityCache?.getState(stateId);
     }
 
     // File index methods
-    getFileMetadata(filePath: string) {
+    getFileMetadata(filePath: string): ReturnType<VaultFileIndex['getFile']> | null {
         return this.vaultFileIndex?.getFile(filePath);
     }
 
-    getKeyFiles() {
+    getKeyFiles(): ReturnType<VaultFileIndex['getKeyFiles']> {
         return this.vaultFileIndex?.getKeyFiles() || [];
     }
 
-    getRecentFiles(limit?: number, folderPath?: string) {
+    getRecentFiles(limit?: number, folderPath?: string): ReturnType<VaultFileIndex['getRecentFiles']> {
         return this.vaultFileIndex?.getRecentFiles(limit, folderPath) || [];
     }
 
-    getFilesInFolder(folderPath: string, recursive = false) {
+    getFilesInFolder(folderPath: string, recursive = false): ReturnType<VaultFileIndex['getFilesInFolder']> {
         return this.vaultFileIndex?.getFilesInFolder(folderPath, recursive) || [];
     }
 
-    searchFiles(predicate: (file: any) => boolean) {
+    searchFiles(predicate: (file: unknown) => boolean): ReturnType<VaultFileIndex['searchFiles']> {
         return this.vaultFileIndex?.searchFiles(predicate) || [];
     }
 
-    async getFilesWithMetadata(filePaths: string[]) {
+    async getFilesWithMetadata(filePaths: string[]): Promise<ReturnType<VaultFileIndex['getFilesWithMetadata']>> {
         return this.vaultFileIndex?.getFilesWithMetadata(filePaths) || [];
     }
 
@@ -232,7 +235,16 @@ export class CacheManager {
     }
 
     // Stats
-    getStats() {
+    getStats(): {
+        entityCache: {
+            workspaces: number;
+            sessions: number;
+            states: number;
+            files: number;
+        } | null;
+        fileIndex: ReturnType<VaultFileIndex['getStats']> | null;
+        prefetch: ReturnType<PrefetchManager['getStats']> | null;
+    } {
         return {
             entityCache: this.entityCache ? {
                 workspaces: this.entityCache['workspaceCache'].size,

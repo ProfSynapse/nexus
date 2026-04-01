@@ -22,6 +22,26 @@ import type { MessageQueueService } from '../../../services/chat/MessageQueueSer
 import type { QueuedMessage } from '../../../types/branch/BranchTypes';
 import { getErrorMessage } from '../../../utils/errorUtils';
 
+interface StreamToolCallLike {
+  id: string;
+  type?: string;
+  name?: string;
+  displayName?: string;
+  technicalName?: string;
+  function: {
+    name: string;
+    arguments: string;
+  };
+  result?: unknown;
+  success?: boolean;
+  error?: string;
+  status?: string;
+  isVirtual?: boolean;
+  providerExecuted?: boolean;
+  isComplete?: boolean;
+  parameters?: unknown;
+}
+
 export interface MessageManagerEvents {
   onMessageAdded: (message: ConversationMessage) => void;
   onAIMessageStarted: (message: ConversationMessage) => void;
@@ -29,9 +49,9 @@ export interface MessageManagerEvents {
   onConversationUpdated: (conversation: ConversationData | null) => void;
   onLoadingStateChanged: (isLoading: boolean) => void;
   onError: (message: string) => void;
-  onToolCallsDetected: (messageId: string, toolCalls: any[]) => void;
-  onToolExecutionStarted: (messageId: string, toolCall: { id: string; name: string; parameters?: any }) => void;
-  onToolExecutionCompleted: (messageId: string, toolId: string, result: any, success: boolean, error?: string) => void;
+  onToolCallsDetected: (messageId: string, toolCalls: StreamToolCallLike[]) => void;
+  onToolExecutionStarted: (messageId: string, toolCall: { id: string; name: string; parameters?: Record<string, unknown> }) => void;
+  onToolExecutionCompleted: (messageId: string, toolId: string, result: unknown, success: boolean, error?: string) => void;
   onMessageIdUpdated: (oldId: string, newId: string, updatedMessage: ConversationMessage) => void;
   onGenerationAborted: (messageId: string, partialContent: string) => void;
   // Token usage for context tracking (optional - for local models)
@@ -143,7 +163,11 @@ export class MessageManager {
         getWebLLMLifecycleManager().recordActivity();
 
         // Add user message and get real ID from storage
-        await this.stateManager.addUserMessage(conversation, message, metadata);
+        await this.stateManager.addUserMessage(
+          conversation,
+          message,
+          metadata as Record<string, unknown> | undefined
+        );
 
         // Create placeholder AI message
         const placeholderMessage = this.stateManager.createPlaceholderAIMessage(conversation);
@@ -227,7 +251,7 @@ export class MessageManager {
         // Notify that conversation was updated
         this.events.onConversationUpdated(conversation);
 
-      } catch (error) {
+      } catch {
         this.events.onError('Failed to retry message');
       }
     });
@@ -338,7 +362,7 @@ export class MessageManager {
     conversation: ConversationData,
     messageId: string,
     newContent: string,
-    options?: {
+    _options?: {
       provider?: string;
       model?: string;
       systemPrompt?: string;
@@ -394,7 +418,7 @@ export class MessageManager {
     }
 
     if (activeGeneration) {
-      await activeGeneration.catch(() => {});
+      await activeGeneration.catch(() => undefined);
     }
   }
 

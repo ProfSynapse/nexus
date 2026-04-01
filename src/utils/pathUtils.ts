@@ -182,9 +182,11 @@ export function isValidPath(path: string): boolean {
     }
 
     // Check for invalid characters
-    const invalidChars = /[<>:"\\|?*\x00-\x1F]/;
-    if (invalidChars.test(path)) {
-        return false;
+    for (const char of path) {
+        const code = char.charCodeAt(0);
+        if ('<>:"\\|?*'.includes(char) || (code >= 0 && code <= 31)) {
+            return false;
+        }
     }
 
     return true;
@@ -194,7 +196,7 @@ export function isValidPath(path: string): boolean {
  * Checks if a string contains glob characters
  */
 export function isGlobPattern(pattern: string): boolean {
-    return /[*?\[\]{}]/.test(pattern);
+    return /[*?[\]{}]/.test(pattern);
 }
 
 /**
@@ -203,7 +205,7 @@ export function isGlobPattern(pattern: string): boolean {
  */
 export function globToRegex(pattern: string): RegExp {
     // Escape special regex characters except *, ?, [, ], {, }
-    let regexString = pattern
+    const regexString = pattern
         .replace(/[.+^${}()|\\]/g, '\\$&')
         // Handle ** (recursive wildcard)
         .replace(/\*\*/g, '.*')
@@ -216,7 +218,7 @@ export function globToRegex(pattern: string): RegExp {
         .replace(/\[/g, '[')
         .replace(/\]/g, ']')
         // Handle braces {} - simplified support for {a,b}
-        .replace(/\{([^}]+)\}/g, (_, options) => `(${options.replace(/,/g, '|')})`);
+        .replace(/\{([^}]+)\}/g, (_match: string, options: string) => `(${options.replace(/,/g, '|')})`);
     
     // Anchor to start and end
     return new RegExp(`^${regexString}$`);

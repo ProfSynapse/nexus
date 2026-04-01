@@ -13,6 +13,17 @@
 import http from 'node:http';
 import { startCallbackServer } from '../../src/services/oauth/OAuthCallbackServer';
 
+function expectDefined<T>(value: T | null | undefined): T {
+  expect(value).toBeDefined();
+  return value as T;
+}
+
+async function cleanupHandle(handle: { shutdown: () => void; waitForCallback: () => Promise<unknown> }): Promise<void> {
+  handle.shutdown();
+  await handle.waitForCallback().catch(() => undefined);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 // Use randomized ports from the IANA ephemeral range to avoid cross-run conflicts
 function nextPort(): number {
   return 49152 + Math.floor(Math.random() * 16383);
@@ -24,7 +35,7 @@ function makeRequest(url: string): Promise<{ statusCode: number; body: string }>
     http.get(url, (res) => {
       let body = '';
       res.on('data', (chunk) => (body += chunk));
-      res.on('end', () => resolve({ statusCode: res.statusCode!, body }));
+      res.on('end', () => resolve({ statusCode: res.statusCode ?? 0, body }));
     }).on('error', reject);
   });
 }
@@ -47,7 +58,7 @@ describe('OAuthCallbackServer', () => {
 
       // Cleanup
       handle.shutdown();
-      await handle.waitForCallback().catch(() => {});
+      await handle.waitForCallback().catch(() => undefined);
     });
   });
 
@@ -61,17 +72,21 @@ describe('OAuthCallbackServer', () => {
         expectedState,
       });
 
-      const callbackPromise = handle.waitForCallback();
+      try {
+        const callbackPromise = handle.waitForCallback();
 
-      const url = `http://127.0.0.1:${port}/callback?code=auth-code-xyz&state=${expectedState}`;
-      const response = await makeRequest(url);
+        const url = `http://127.0.0.1:${port}/callback?code=auth-code-xyz&state=${expectedState}`;
+        const response = await makeRequest(url);
 
-      expect(response.statusCode).toBe(200);
-      expect(response.body).toContain('Connected!');
+        expect(response.statusCode).toBe(200);
+        expect(response.body).toContain('Connected!');
 
-      const result = await callbackPromise;
-      expect(result.code).toBe('auth-code-xyz');
-      expect(result.state).toBe(expectedState);
+        const result = await callbackPromise;
+        expect(result.code).toBe('auth-code-xyz');
+        expect(result.state).toBe(expectedState);
+      } finally {
+        await cleanupHandle(handle);
+      }
     });
   });
 
@@ -84,17 +99,21 @@ describe('OAuthCallbackServer', () => {
         expectedState: 'expected-state',
       });
 
-      let caughtError: Error | null = null;
-      const callbackPromise = handle.waitForCallback().catch((e: Error) => { caughtError = e; });
+      try {
+        let caughtError: Error | null = null;
+        const callbackPromise = handle.waitForCallback().catch((e: Error) => { caughtError = e; });
 
-      const url = `http://127.0.0.1:${port}/callback?code=some-code&state=wrong-state`;
-      const response = await makeRequest(url);
+        const url = `http://127.0.0.1:${port}/callback?code=some-code&state=wrong-state`;
+        const response = await makeRequest(url);
 
-      expect(response.statusCode).toBe(400);
+        expect(response.statusCode).toBe(400);
 
-      await callbackPromise;
-      expect(caughtError).toBeDefined();
-      expect(caughtError!.message).toContain('State mismatch');
+        await callbackPromise;
+        expect(caughtError).toBeDefined();
+        expect(expectDefined(caughtError).message).toContain('State mismatch');
+      } finally {
+        await cleanupHandle(handle);
+      }
     });
   });
 
@@ -108,18 +127,21 @@ describe('OAuthCallbackServer', () => {
         expectedState,
       });
 
-      // Eagerly create a settled-safe promise
-      let caughtError: Error | null = null;
-      const callbackPromise = handle.waitForCallback().catch((e: Error) => { caughtError = e; });
+      try {
+        let caughtError: Error | null = null;
+        const callbackPromise = handle.waitForCallback().catch((e: Error) => { caughtError = e; });
 
-      const url = `http://127.0.0.1:${port}/callback?error=access_denied&error_description=User+denied+access&state=${expectedState}`;
-      const response = await makeRequest(url);
+        const url = `http://127.0.0.1:${port}/callback?error=access_denied&error_description=User+denied+access&state=${expectedState}`;
+        const response = await makeRequest(url);
 
-      expect(response.statusCode).toBe(400);
+        expect(response.statusCode).toBe(400);
 
-      await callbackPromise;
-      expect(caughtError).toBeDefined();
-      expect(caughtError!.message).toContain('OAuth error: User denied access');
+        await callbackPromise;
+        expect(caughtError).toBeDefined();
+        expect(expectDefined(caughtError).message).toContain('OAuth error: User denied access');
+      } finally {
+        await cleanupHandle(handle);
+      }
     });
 
     it('should use error code when no description is provided', async () => {
@@ -131,17 +153,21 @@ describe('OAuthCallbackServer', () => {
         expectedState,
       });
 
-      let caughtError: Error | null = null;
-      const callbackPromise = handle.waitForCallback().catch((e: Error) => { caughtError = e; });
+      try {
+        let caughtError: Error | null = null;
+        const callbackPromise = handle.waitForCallback().catch((e: Error) => { caughtError = e; });
 
-      const url = `http://127.0.0.1:${port}/callback?error=server_error&state=${expectedState}`;
-      const response = await makeRequest(url);
+        const url = `http://127.0.0.1:${port}/callback?error=server_error&state=${expectedState}`;
+        const response = await makeRequest(url);
 
-      expect(response.statusCode).toBe(400);
+        expect(response.statusCode).toBe(400);
 
-      await callbackPromise;
-      expect(caughtError).toBeDefined();
-      expect(caughtError!.message).toContain('OAuth error: server_error');
+        await callbackPromise;
+        expect(caughtError).toBeDefined();
+        expect(expectDefined(caughtError).message).toContain('OAuth error: server_error');
+      } finally {
+        await cleanupHandle(handle);
+      }
     });
   });
 
@@ -155,17 +181,21 @@ describe('OAuthCallbackServer', () => {
         expectedState,
       });
 
-      let caughtError: Error | null = null;
-      const callbackPromise = handle.waitForCallback().catch((e: Error) => { caughtError = e; });
+      try {
+        let caughtError: Error | null = null;
+        const callbackPromise = handle.waitForCallback().catch((e: Error) => { caughtError = e; });
 
-      const url = `http://127.0.0.1:${port}/callback?state=${expectedState}`;
-      const response = await makeRequest(url);
+        const url = `http://127.0.0.1:${port}/callback?state=${expectedState}`;
+        const response = await makeRequest(url);
 
-      expect(response.statusCode).toBe(400);
+        expect(response.statusCode).toBe(400);
 
-      await callbackPromise;
-      expect(caughtError).toBeDefined();
-      expect(caughtError!.message).toContain('Missing authorization code');
+        await callbackPromise;
+        expect(caughtError).toBeDefined();
+        expect(expectDefined(caughtError).message).toContain('Missing authorization code');
+      } finally {
+        await cleanupHandle(handle);
+      }
     });
   });
 
@@ -186,7 +216,7 @@ describe('OAuthCallbackServer', () => {
 
       // Cleanup
       handle.shutdown();
-      await handle.waitForCallback().catch(() => {});
+      await handle.waitForCallback().catch(() => undefined);
     });
   });
 
@@ -200,11 +230,15 @@ describe('OAuthCallbackServer', () => {
         timeoutMs: 100,
       });
 
-      let caughtError: Error | null = null;
-      await handle.waitForCallback().catch((e: Error) => { caughtError = e; });
+      try {
+        let caughtError: Error | null = null;
+        await handle.waitForCallback().catch((e: Error) => { caughtError = e; });
 
-      expect(caughtError).toBeDefined();
-      expect(caughtError!.message).toContain('OAuth callback timeout');
+        expect(caughtError).toBeDefined();
+        expect(expectDefined(caughtError).message).toContain('OAuth callback timeout');
+      } finally {
+        await cleanupHandle(handle);
+      }
     });
   });
 
@@ -224,7 +258,7 @@ describe('OAuthCallbackServer', () => {
       await callbackPromise;
 
       expect(caughtError).toBeDefined();
-      expect(caughtError!.message).toContain('shut down');
+      expect(expectDefined(caughtError).message).toContain('shut down');
     });
 
     it('should be idempotent (calling shutdown twice is safe)', async () => {
@@ -235,7 +269,7 @@ describe('OAuthCallbackServer', () => {
         expectedState: 'state-idempotent',
       });
 
-      const callbackPromise = handle.waitForCallback().catch(() => {});
+      const callbackPromise = handle.waitForCallback().catch(() => undefined);
 
       handle.shutdown();
       expect(() => handle.shutdown()).not.toThrow();

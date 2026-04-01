@@ -1,5 +1,11 @@
 import { Platform } from 'obsidian';
 
+type DesktopModuleMap = {
+    child_process: typeof import('child_process');
+    fs: typeof import('fs');
+    path: typeof import('path');
+};
+
 const COMMON_UNIX_BIN_DIRS = [
     '/opt/homebrew/bin',
     '/usr/local/bin',
@@ -15,6 +21,24 @@ const COMMON_WINDOWS_BIN_DIRS = [
     'C:\\Program Files\\Claude',
     'C:\\Program Files\\Anthropic\\Claude'
 ];
+
+function loadDesktopModule<TModuleName extends keyof DesktopModuleMap>(
+    moduleName: TModuleName
+): DesktopModuleMap[TModuleName] {
+    if (!Platform.isDesktop) {
+        throw new Error(`${moduleName} is only available on desktop.`);
+    }
+
+    const maybeRequire = (globalThis as typeof globalThis & {
+        require?: (moduleId: string) => unknown;
+    }).require;
+
+    if (typeof maybeRequire !== 'function') {
+        throw new Error('Desktop module loader is unavailable.');
+    }
+
+    return maybeRequire(moduleName) as DesktopModuleMap[TModuleName];
+}
 
 export function resolveDesktopBinaryPath(binaryName: string): string | null {
     if (!Platform.isDesktop) {
@@ -40,8 +64,8 @@ function resolveFromCurrentPath(binaryName: string): string | null {
     }
 
     try {
-        const childProcess = require('child_process') as typeof import('child_process');
-        const nodeFs = require('fs') as typeof import('fs');
+        const childProcess = loadDesktopModule('child_process');
+        const nodeFs = loadDesktopModule('fs');
         const command = Platform.isWin ? `where ${binaryName}` : `which ${binaryName}`;
         const result = childProcess.execSync(command, {
             encoding: 'utf8',
@@ -66,8 +90,8 @@ function resolveFromCommonLocations(binaryName: string): string | null {
     }
 
     try {
-        const nodeFs = require('fs') as typeof import('fs');
-        const pathMod = require('path') as typeof import('path');
+        const nodeFs = loadDesktopModule('fs');
+        const pathMod = loadDesktopModule('path');
         const binDirs = Platform.isWin ? COMMON_WINDOWS_BIN_DIRS : COMMON_UNIX_BIN_DIRS;
         const candidateNames = Platform.isWin ? [binaryName, `${binaryName}.exe`, `${binaryName}.cmd`] : [binaryName];
 
@@ -92,8 +116,8 @@ function resolveFromLoginShell(binaryName: string): string | null {
     }
 
     try {
-        const childProcess = require('child_process') as typeof import('child_process');
-        const nodeFs = require('fs') as typeof import('fs');
+        const childProcess = loadDesktopModule('child_process');
+        const nodeFs = loadDesktopModule('fs');
         const shell = process.env.SHELL || '/bin/zsh';
         const escapedBinaryName = binaryName.replace(/'/g, `'\\''`);
         const result = childProcess.execFileSync(

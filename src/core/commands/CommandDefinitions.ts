@@ -4,9 +4,19 @@
  */
 
 export interface CommandContext {
-  plugin: any;
-  serviceManager: any;
-  getService?: (name: any, timeoutMs?: any) => any;
+  plugin: {
+    app: {
+      setting: {
+        open(): void;
+        openTabById(id: string): void;
+      };
+    };
+    manifest: {
+      id: string;
+    };
+  };
+  serviceManager: unknown;
+  getService?: (name: string, timeoutMs?: number) => unknown;
   isInitialized?: () => boolean;
 }
 
@@ -14,7 +24,7 @@ export const BASIC_COMMAND_DEFINITIONS = [
   {
     id: 'open-settings',
     name: 'Open Plugin Settings',
-    callback: (context: CommandContext) => {
+    callback: (context: CommandContext): void => {
       context.plugin.app.setting.open();
       context.plugin.app.setting.openTabById(context.plugin.manifest.id);
     }

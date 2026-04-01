@@ -14,7 +14,7 @@
  * - Format file and folder metadata
  */
 
-import { TFile, TFolder } from 'obsidian';
+import { App, TFile, TFolder } from 'obsidian';
 
 /**
  * Directory item structure for search results (lean format)
@@ -39,9 +39,9 @@ export interface SearchMatch {
  * Implements Single Responsibility Principle - only handles result formatting
  */
 export class SearchResultFormatter {
-  private app: any;
+  private app: App;
 
-  constructor(app: any) {
+  constructor(app: App) {
     this.app = app;
   }
 
@@ -53,7 +53,7 @@ export class SearchResultFormatter {
    */
   async transformResults(
     matches: SearchMatch[],
-    includeContent: boolean = true
+    includeContent = true
   ): Promise<DirectoryItem[]> {
     const results: DirectoryItem[] = [];
 
@@ -68,7 +68,7 @@ export class SearchResultFormatter {
 
       // Add snippet for files if content requested
       if (isFile && includeContent) {
-        const snippet = await this.extractSnippet(item as TFile);
+        const snippet = await this.extractSnippet(item);
         if (snippet) {
           result.snippet = snippet;
         }
@@ -93,7 +93,7 @@ export class SearchResultFormatter {
       return firstFewLines.length > 200
         ? firstFewLines.substring(0, 200) + '...'
         : firstFewLines;
-    } catch (error) {
+    } catch {
       return 'Content not available';
     }
   }

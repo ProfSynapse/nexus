@@ -2,6 +2,8 @@ import { MessageManager } from '../../src/ui/chat/services/MessageManager';
 import { createConversation } from '../fixtures/chatBugs';
 import { createMockBranchManager, createMockChatService } from '../mocks/chatService';
 import { LLMProviderError } from '../../src/services/llm/adapters/types';
+import { ChatService } from '../../src/services/chat/ChatService';
+import { BranchManager } from '../../src/ui/chat/services/BranchManager';
 
 jest.mock('../../src/services/llm/adapters/webllm/WebLLMLifecycleManager', () => ({
   getWebLLMLifecycleManager: () => ({
@@ -10,14 +12,18 @@ jest.mock('../../src/services/llm/adapters/webllm/WebLLMLifecycleManager', () =>
 }));
 
 function createDeferred<T>() {
-  let resolve!: (value: T | PromiseLike<T>) => void;
-  let reject!: (reason?: unknown) => void;
+  let resolve: ((value: T | PromiseLike<T>) => void) | undefined;
+  let reject: ((reason?: unknown) => void) | undefined;
   const promise = new Promise<T>((res, rej) => {
     resolve = res;
     reject = rej;
   });
 
-  return { promise, resolve, reject };
+  return {
+    promise,
+    resolve: (value: T | PromiseLike<T>) => resolve?.(value),
+    reject: (reason?: unknown) => reject?.(reason)
+  };
 }
 
 describe('MessageManager interrupt flow', () => {
@@ -80,8 +86,8 @@ describe('MessageManager interrupt flow', () => {
     };
 
     const manager = new MessageManager(
-      mockChatService as any,
-      createMockBranchManager() as any,
+      mockChatService as unknown as ChatService,
+      createMockBranchManager() as unknown as BranchManager,
       events
     );
 
@@ -140,8 +146,8 @@ describe('MessageManager interrupt flow', () => {
     };
 
     const manager = new MessageManager(
-      mockChatService as any,
-      createMockBranchManager() as any,
+      mockChatService as unknown as ChatService,
+      createMockBranchManager() as unknown as BranchManager,
       events
     );
 
@@ -186,8 +192,8 @@ describe('MessageManager interrupt flow', () => {
     };
 
     const manager = new MessageManager(
-      mockChatService as any,
-      createMockBranchManager() as any,
+      mockChatService as unknown as ChatService,
+      createMockBranchManager() as unknown as BranchManager,
       events
     );
 
@@ -233,8 +239,8 @@ describe('MessageManager interrupt flow', () => {
     };
 
     const manager = new MessageManager(
-      mockChatService as any,
-      createMockBranchManager() as any,
+      mockChatService as unknown as ChatService,
+      createMockBranchManager() as unknown as BranchManager,
       events
     );
 
@@ -250,13 +256,14 @@ describe('MessageManager interrupt flow', () => {
     const conversation = createConversation({ messages: [] });
     const mockChatService = createMockChatService({ conversation });
 
-    mockChatService.generateResponseStreaming.mockImplementation(() => {
+      mockChatService.generateResponseStreaming.mockImplementation(() => {
       async function* stream() {
         throw new LLMProviderError(
           'Claude Code could not start because the local CLI command was too long for this platform.',
           'anthropic-claude-code',
           'REQUEST_TOO_LARGE'
         );
+        yield undefined;
       }
 
       return stream();
@@ -278,8 +285,8 @@ describe('MessageManager interrupt flow', () => {
     };
 
     const manager = new MessageManager(
-      mockChatService as any,
-      createMockBranchManager() as any,
+      mockChatService as unknown as ChatService,
+      createMockBranchManager() as unknown as BranchManager,
       events
     );
 
@@ -337,8 +344,8 @@ describe('MessageManager interrupt flow', () => {
     };
 
     const manager = new MessageManager(
-      mockChatService as any,
-      createMockBranchManager() as any,
+      mockChatService as unknown as ChatService,
+      createMockBranchManager() as unknown as BranchManager,
       events
     );
 

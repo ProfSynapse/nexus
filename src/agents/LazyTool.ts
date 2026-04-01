@@ -44,7 +44,12 @@ export class LazyTool implements ITool {
    */
   private getInstance(): ITool {
     if (!this._instance) {
-      this._instance = this._factory!();
+      const factory = this._factory;
+      if (!factory) {
+        throw new Error('LazyTool factory is unavailable before instance initialization.');
+      }
+
+      this._instance = factory();
       this._factory = null; // Release closure for GC
     }
     return this._instance;

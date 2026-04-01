@@ -13,8 +13,8 @@ import { UsageTracker } from '../../../../services/UsageTracker';
 import {
   BatchExecutePromptParams,
   BatchExecutePromptResult,
-  PromptConfig,
-  ExecutionContext
+  InternalExecutionResult,
+  PromptConfig
 } from './types';
 import {
   BudgetValidator,
@@ -26,8 +26,19 @@ import {
   ActionExecutor
 } from './services';
 import { PromptParser } from './utils';
-import { addRecommendations, Recommendation } from '../../../../utils/recommendationUtils';
+import { Recommendation } from '../../../../utils/recommendationUtils';
 import { NudgeHelpers } from '../../../../utils/nudgeHelpers';
+
+type BatchExecutePromptResultWithRecommendations = BatchExecutePromptResult & {
+  recommendations: Recommendation[];
+};
+
+function addBatchRecommendations(
+  result: BatchExecutePromptResult,
+  recommendations: Recommendation[]
+): BatchExecutePromptResultWithRecommendations {
+  return { ...result, recommendations };
+}
 
 /**
  * ExecutePromptsTool - Execute one or more LLM prompts
@@ -210,7 +221,7 @@ export class ExecutePromptsTool extends BaseTool<BatchExecutePromptParams, Batch
       );
       
       // Process actions for results that have them
-      await this.processResultActions(results, normalizedPrompts, params);
+      await this.processResultActions(results, normalizedPrompts);
       
       const totalExecutionTime = performance.now() - startTime;
       
@@ -233,7 +244,7 @@ export class ExecutePromptsTool extends BaseTool<BatchExecutePromptParams, Batch
       const batchNudge = NudgeHelpers.checkBatchAgentOpportunity(processedResults.results?.length || 0);
       if (batchNudge) nudges.push(batchNudge);
 
-      return addRecommendations(result, nudges);
+      return addBatchRecommendations(result, nudges);
 
     } catch (error) {
       console.error('Batch LLM prompt execution failed:', error);
@@ -249,9 +260,8 @@ export class ExecutePromptsTool extends BaseTool<BatchExecutePromptParams, Batch
    * Process content actions for results that specify them
    */
   private async processResultActions(
-    results: any[],
-    promptConfigs: PromptConfig[],
-    params: BatchExecutePromptParams
+    results: InternalExecutionResult[],
+    promptConfigs: PromptConfig[]
   ): Promise<void> {
     for (let i = 0; i < results.length; i++) {
       const result = results[i];

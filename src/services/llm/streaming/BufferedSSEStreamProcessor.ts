@@ -1,6 +1,52 @@
 import { createParser, type ParseEvent } from 'eventsource-parser';
-import { StreamChunk } from '../adapters/types';
+import { StreamChunk, ToolCall } from '../adapters/types';
 import { SSEStreamOptions } from './SSEStreamProcessor';
+
+interface BufferedUsage {
+  prompt_tokens?: number;
+  promptTokenCount?: number;
+  promptTokens?: number;
+  input_tokens?: number;
+  completion_tokens?: number;
+  candidatesTokenCount?: number;
+  completionTokens?: number;
+  output_tokens?: number;
+  total_tokens?: number;
+  totalTokenCount?: number;
+  totalTokens?: number;
+}
+
+interface BufferedToolCall {
+  id?: string;
+  type?: string;
+  function?: {
+    name?: string;
+    arguments?: string;
+  };
+  reasoning_details?: unknown;
+  thought_signature?: unknown;
+  [key: string]: unknown;
+}
+
+type BufferedParsedEvent = Record<string, unknown>;
+
+function normalizeBufferedToolCall(toolCall: BufferedToolCall): ToolCall {
+  return {
+    id: toolCall.id || '',
+    type: 'function',
+    name: toolCall.function?.name,
+    function: {
+      name: toolCall.function?.name || '',
+      arguments: toolCall.function?.arguments || ''
+    },
+    reasoning_details: Array.isArray(toolCall.reasoning_details)
+      ? toolCall.reasoning_details as Array<Record<string, unknown>>
+      : undefined,
+    thought_signature: typeof toolCall.thought_signature === 'string'
+      ? toolCall.thought_signature
+      : undefined
+  };
+}
 
 export class BufferedSSEStreamProcessor {
   static async* processSSEText(
@@ -9,9 +55,9 @@ export class BufferedSSEStreamProcessor {
   ): AsyncGenerator<StreamChunk, void, unknown> {
     const eventQueue: StreamChunk[] = [];
     let isCompleted = false;
-    let usage: any = undefined;
+    let usage: BufferedUsage | undefined;
     let metadata: Record<string, unknown> | undefined = undefined;
-    const toolCallsAccumulator: Map<number, any> = new Map();
+    const toolCallsAccumulator: Map<number, BufferedToolCall> = new Map();
 
     const parser = createParser((event: ParseEvent) => {
       if (event.type === 'reconnect-interval' || isCompleted) {
@@ -33,7 +79,7 @@ export class BufferedSSEStreamProcessor {
       }
 
       try {
-        const parsed = JSON.parse(event.data);
+        const parsed = JSON.parse(event.data) as BufferedParsedEvent;
 
         if (options.extractMetadata) {
           metadata = {
@@ -70,7 +116,7 @@ export class BufferedSSEStreamProcessor {
             const index = toolCall.index || 0;
 
             if (!toolCallsAccumulator.has(index)) {
-              const accumulated: any = {
+              const accumulated: BufferedToolCall = {
                 id: toolCall.id || '',
                 type: toolCall.type || 'function',
                 function: {
@@ -90,10 +136,21 @@ export class BufferedSSEStreamProcessor {
               shouldYieldToolCalls = options.toolCallThrottling?.initialYield !== false;
             } else {
               const existing = toolCallsAccumulator.get(index);
+              if (!existing) {
+                continue;
+              }
               if (toolCall.id) existing.id = toolCall.id;
-              if (toolCall.function?.name) existing.function.name = toolCall.function.name;
+              if (toolCall.function?.name) {
+                if (!existing.function) {
+                  existing.function = {};
+                }
+                existing.function.name = toolCall.function.name;
+              }
               if (toolCall.function?.arguments) {
-                existing.function.arguments += toolCall.function.arguments;
+                if (!existing.function) {
+                  existing.function = {};
+                }
+                existing.function.arguments = `${existing.function.arguments ?? ''}${toolCall.function.arguments}`;
                 const interval = options.toolCallThrottling?.progressInterval || 50;
                 shouldYieldToolCalls = existing.function.arguments.length > 0 &&
                   existing.function.arguments.length % interval === 0;
@@ -111,7 +168,7 @@ export class BufferedSSEStreamProcessor {
             eventQueue.push({
               content: '',
               complete: false,
-              toolCalls: Array.from(toolCallsAccumulator.values())
+              toolCalls: Array.from(toolCallsAccumulator.values()).map(normalizeBufferedToolCall)
             });
           }
         }
@@ -154,7 +211,7 @@ export class BufferedSSEStreamProcessor {
   }
 }
 
-function formatUsage(usage: any): StreamChunk['usage'] {
+function formatUsage(usage: BufferedUsage | undefined): StreamChunk['usage'] {
   if (!usage) {
     return undefined;
   }
@@ -167,12 +224,12 @@ function formatUsage(usage: any): StreamChunk['usage'] {
 }
 
 function getFinalToolCalls(
-  toolCallsAccumulator: Map<number, any>,
+  toolCallsAccumulator: Map<number, BufferedToolCall>,
   options: SSEStreamOptions
-): any[] | undefined {
+): ToolCall[] | undefined {
   if (!options.accumulateToolCalls || toolCallsAccumulator.size === 0) {
     return undefined;
   }
 
-  return Array.from(toolCallsAccumulator.values());
+  return Array.from(toolCallsAccumulator.values()).map(normalizeBufferedToolCall);
 }

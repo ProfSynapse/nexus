@@ -17,6 +17,8 @@
  * - Dependency Inversion: Modules depend on abstractions
  */
 
+import type { Command, Plugin } from 'obsidian';
+
 // Re-export all types from the modular structure for backward compatibility
 // Import from specific modules to avoid circular dependency
 
@@ -33,12 +35,9 @@ export {
 } from './types/llm';
 
 // Memory management settings
-export interface MemorySettings {
-  // Workspace management interface
-}
+export type MemorySettings = Record<string, never>;
 
-export const DEFAULT_MEMORY_SETTINGS: MemorySettings = {
-};
+export const DEFAULT_MEMORY_SETTINGS: MemorySettings = {};
 
 // MCP protocol types
 export type {
@@ -112,10 +111,10 @@ declare module 'obsidian' {
       commands: { [id: string]: Command };
     };
     plugins: {
-      getPlugin(id: string): any;
+      getPlugin(id: string): Plugin | undefined;
       enablePlugin(id: string): Promise<void>;
       disablePlugin(id: string): Promise<void>;
-      plugins: { [id: string]: any };
+      plugins: { [id: string]: Plugin | undefined };
     };
   }
 }

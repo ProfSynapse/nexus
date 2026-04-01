@@ -4,14 +4,17 @@
 // Dependencies: FileSystemService for ChromaDB collection file reading
 
 import { FileSystemService } from '../storage/FileSystemService';
-import { BRAND_NAME } from '../../constants/branding';
+
+type ChromaCollectionItem = Record<string, unknown> & {
+  metadata?: unknown;
+};
 
 export interface ChromaCollectionData {
-  memoryTraces: any[];
-  sessions: any[];
-  conversations: any[];
-  workspaces: any[];
-  snapshots: any[];
+  memoryTraces: ChromaCollectionItem[];
+  sessions: ChromaCollectionItem[];
+  conversations: ChromaCollectionItem[];
+  workspaces: ChromaCollectionItem[];
+  snapshots: ChromaCollectionItem[];
 }
 
 export class ChromaDataLoader {
@@ -31,19 +34,20 @@ export class ChromaDataLoader {
     ]);
 
     return {
-      memoryTraces,
-      sessions,
-      conversations,
-      workspaces,
-      snapshots
+      memoryTraces: normalizeCollection(memoryTraces),
+      sessions: normalizeCollection(sessions),
+      conversations: normalizeCollection(conversations),
+      workspaces: normalizeCollection(workspaces),
+      snapshots: normalizeCollection(snapshots)
     };
   }
 
   async detectLegacyData(): Promise<boolean> {
     try {
       const collections = await this.loadAllCollections();
-      return Object.values(collections).some(collection =>
-        Array.isArray(collection) && collection.length > 0
+      const collectionValues = Object.values(collections) as ChromaCollectionItem[][];
+      return collectionValues.some((collection: ChromaCollectionItem[]) =>
+        collection.length > 0
       );
     } catch {
       return false;
@@ -67,15 +71,17 @@ export class ChromaDataLoader {
 
     const collectionCounts: Record<string, number> = {};
 
-    for (const [collectionName, items] of Object.entries(collections)) {
+    const collectionEntries = Object.entries(collections) as Array<[keyof ChromaCollectionData, ChromaCollectionItem[]]>;
+
+    for (const [collectionName, items] of collectionEntries) {
       collectionCounts[collectionName] = items.length;
       totalItems += items.length;
 
       // Find timestamp ranges
       for (const item of items) {
-        const timestamp = item.metadata?.timestamp ||
-                         item.metadata?.created ||
-                         item.metadata?.created;
+        const timestamp = getTimestamp(getMetadata(item)?.timestamp) ??
+                         getTimestamp(getMetadata(item)?.created) ??
+                         getTimestamp(getMetadata(item)?.updated);
 
         if (timestamp) {
           if (!oldestTimestamp || timestamp < oldestTimestamp) {
@@ -124,4 +130,33 @@ export class ChromaDataLoader {
 
     return { accessible, missing, errors };
   }
+}
+
+function normalizeCollection(collection: unknown[]): ChromaCollectionItem[] {
+  return collection.filter(isChromaCollectionItem);
+}
+
+function isChromaCollectionItem(value: unknown): value is ChromaCollectionItem {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function getMetadata(item: ChromaCollectionItem): Record<string, unknown> | undefined {
+  return isRecord(item.metadata) ? item.metadata : undefined;
+}
+
+function getTimestamp(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string') {
+    const parsed = Date.parse(value);
+    return Number.isNaN(parsed) ? undefined : parsed;
+  }
+
+  return undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

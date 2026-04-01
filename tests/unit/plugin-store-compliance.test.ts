@@ -10,6 +10,7 @@
  */
 
 import { Platform } from '../mocks/obsidian';
+import path from 'node:path';
 
 // ============================================================================
 // 1. SQL Whitelist Validation
@@ -140,8 +141,7 @@ describe('Platform guards for Node.js modules', () => {
 
     function resolveConnectorPath(vaultRoot: string | null, relativePath: string): string {
       if (vaultRoot && Platform.isDesktop) {
-        const nodePath = require('path') as typeof import('path');
-        return nodePath.join(vaultRoot, relativePath);
+        return path.join(vaultRoot, relativePath);
       }
       return relativePath;
     }
@@ -179,8 +179,7 @@ describe('Platform guards for Node.js modules', () => {
 
     function getConfigPath(): string {
       if (Platform.isDesktop) {
-        const nodePath = require('path') as typeof import('path');
-        return nodePath.join(process.env.HOME || '/home/test', '.config', 'Claude', 'claude_desktop_config.json');
+        return path.join(process.env.HOME || '/home/test', '.config', 'Claude', 'claude_desktop_config.json');
       }
       return '';
     }
@@ -282,7 +281,9 @@ describe('EmbeddingIframe timeout cleanup pattern', () => {
     const clearTimeoutSpy = jest.spyOn(global, 'clearTimeout');
 
     try {
-      const timeoutId = setTimeout(() => {}, 30000);
+      const timeoutId = setTimeout(() => {
+        void 0;
+      }, 30000);
 
       // Simulate the wrapped reject that clears the timeout
       const wrappedReject = (error: Error) => {
@@ -304,7 +305,7 @@ describe('EmbeddingIframe timeout cleanup pattern', () => {
 
     try {
       let timeoutFired = false;
-      const pendingRequests = new Map<number, { resolve: Function; reject: Function }>();
+      const pendingRequests = new Map<number, { resolve: (value?: unknown) => void; reject: (reason?: unknown) => void }>();
       const id = 1;
 
       const timeoutId = setTimeout(() => {

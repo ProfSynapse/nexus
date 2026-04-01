@@ -70,7 +70,7 @@ export function initializeSuggesters(
         workspaceSuggester = new TextAreaWorkspaceSuggester(app, element, messageEnhancer, workspaceService, component);
       }
     }
-  } catch (error) {
+  } catch {
     // Prompt/workspace suggester initialization failed - will be undefined
   }
 

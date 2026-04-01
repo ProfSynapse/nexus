@@ -10,6 +10,22 @@ import { IPCTransportManager } from '../transport/IPCTransportManager';
 import { ServerStatus } from '../../types';
 import { logger } from '../../utils/logger';
 
+interface TransportStatusLike {
+    isRunning: boolean;
+    [key: string]: unknown;
+}
+
+interface AgentStatisticsLike {
+    totalAgents: number;
+    [key: string]: unknown;
+}
+
+interface ServerLifecycleDiagnostics {
+    status: ServerStatus;
+    isRunning: boolean;
+    isInError: boolean;
+}
+
 /**
  * Service responsible for server lifecycle management
  * Follows SRP by focusing only on lifecycle operations
@@ -107,7 +123,7 @@ export class ServerLifecycleManager {
     private async startTransports(): Promise<void> {
         try {
             // Start IPC transport only (used by both external clients and internal chatbot)
-            const ipcResult = await this.ipcTransportManager.startTransport();
+            await this.ipcTransportManager.startTransport();
             logger.systemLog('IPC transport started successfully');
         } catch (error) {
             logger.systemError(error as Error, 'Transport Start');
@@ -158,8 +174,8 @@ export class ServerLifecycleManager {
         status: ServerStatus;
         isRunning: boolean;
         agentCount: number;
-        httpTransportStatus: any;
-        ipcTransportStatus: any;
+        httpTransportStatus: TransportStatusLike;
+        ipcTransportStatus: TransportStatusLike;
         uptime?: number;
     } {
         return {
@@ -186,8 +202,11 @@ export class ServerLifecycleManager {
     async performHealthCheck(): Promise<{
         isHealthy: boolean;
         status: ServerStatus;
-        agentStatus: any;
-        transportStatus: any;
+        agentStatus: AgentStatisticsLike;
+        transportStatus: {
+            http: TransportStatusLike;
+            ipc: TransportStatusLike;
+        };
         issues: string[];
     }> {
         const issues: string[] = [];
@@ -231,10 +250,15 @@ export class ServerLifecycleManager {
      * Get server diagnostics
      */
     async getDiagnostics(): Promise<{
-        lifecycle: any;
-        agents: any;
-        transports: any;
-        events: any;
+        lifecycle: ServerLifecycleDiagnostics;
+        agents: AgentStatisticsLike;
+        transports: {
+            http: TransportStatusLike;
+            ipc: unknown;
+        };
+        events: {
+            hasEvents: boolean;
+        };
     }> {
         return {
             lifecycle: {

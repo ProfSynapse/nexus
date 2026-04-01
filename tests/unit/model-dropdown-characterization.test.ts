@@ -74,7 +74,7 @@ function createDefaultSettings(): ChatSettings {
   };
 }
 
-function createConfig(container: any): ChatSettingsRendererConfig {
+function createConfig(_container: unknown): ChatSettingsRendererConfig {
   return {
     app: new App(),
     llmProviderSettings: {
@@ -85,7 +85,7 @@ function createConfig(container: any): ChatSettingsRendererConfig {
       defaultProvider: 'openai',
       defaultModel: 'gpt-5-nano',
       defaultTemperature: 0.7,
-    } as any,
+    } as ChatSettingsRendererConfig['llmProviderSettings'],
     initialSettings: createDefaultSettings(),
     options: { workspaces: [], prompts: [] },
     callbacks: { onSettingsChange: jest.fn() },
@@ -149,7 +149,7 @@ describe('ChatSettingsRenderer model section characterization', () => {
     // The second createDiv('csr-section') is for the agent model section
     // (first is chat model, second is agent model)
     const allSectionCalls = container.createDiv.mock.calls
-      .map((call: any[], idx: number) => ({ cls: call[0], idx }))
+      .map(([cls], idx) => ({ cls, idx }))
       .filter((c: { cls: string }) => c.cls === 'csr-section');
 
     // At least 2 sections should have 'csr-section' class

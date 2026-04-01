@@ -78,6 +78,7 @@ export class ModelDiscoveryService implements IModelDiscoveryService {
 
           allModels.push(...modelsWithProvider);
         } catch (error) {
+          void error;
         }
       })
     );

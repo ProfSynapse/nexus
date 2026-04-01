@@ -232,7 +232,7 @@ describe('OpenRouterOAuthProvider', () => {
 
   describe('refreshToken', () => {
     it('should not have a refreshToken method (permanent keys)', () => {
-      expect((provider as any).refreshToken).toBeUndefined();
+      expect((provider as { refreshToken?: unknown }).refreshToken).toBeUndefined();
     });
   });
 });

@@ -14,6 +14,10 @@
  */
 
 import { MessageAlternativeService } from '../../src/ui/chat/services/MessageAlternativeService';
+import type { ChatService } from '../../src/services/chat/ChatService';
+import type { BranchManager } from '../../src/ui/chat/services/BranchManager';
+import type { MessageStreamHandler } from '../../src/ui/chat/services/MessageStreamHandler';
+import type { AbortHandler } from '../../src/ui/chat/utils/AbortHandler';
 import {
   createConversation,
   createUserMessage,
@@ -27,6 +31,34 @@ import {
   createMockStreamHandler,
   createMockAbortHandler
 } from '../mocks/chatService';
+
+type ConversationMessage = {
+  id: string;
+  content?: string;
+  toolCalls?: unknown;
+  reasoning?: string;
+  isLoading?: boolean;
+  state?: string;
+  activeAlternativeIndex?: number;
+};
+
+type StreamResponseResult = {
+  streamedContent: string;
+  toolCalls?: unknown;
+};
+
+type CapturedMessageState = {
+  content?: string;
+  toolCalls?: unknown;
+  reasoning?: string;
+  isLoading?: boolean;
+  state?: string;
+};
+
+function expectDefined<T>(value: T | null | undefined): T {
+  expect(value).toBeDefined();
+  return value as T;
+}
 
 describe('MessageAlternativeService', () => {
   let service: MessageAlternativeService;
@@ -56,10 +88,10 @@ describe('MessageAlternativeService', () => {
     };
 
     service = new MessageAlternativeService(
-      mockChatService as any,
-      mockBranchManager as any,
-      mockStreamHandler as any,
-      mockAbortHandler as any,
+      mockChatService as unknown as ChatService,
+      mockBranchManager as unknown as BranchManager,
+      mockStreamHandler as unknown as MessageStreamHandler,
+      mockAbortHandler as unknown as AbortHandler,
       mockEvents
     );
 
@@ -139,11 +171,11 @@ describe('MessageAlternativeService', () => {
 
   describe('message clearing before streaming', () => {
     it('should clear message content and set loading state before streaming', async () => {
-      let capturedMessageState: any = null;
+      let capturedMessageState: CapturedMessageState | null = null;
 
-      mockStreamHandler.streamResponse = jest.fn(async (conv) => {
+      mockStreamHandler.streamResponse = jest.fn(async (conv: { messages: ConversationMessage[] }) => {
         // Capture the message state when streaming starts
-        const aiMsg = conv.messages.find((m: any) => m.id === 'msg_ai');
+        const aiMsg = expectDefined(conv.messages.find((message) => message.id === 'msg_ai'));
         capturedMessageState = {
           content: aiMsg?.content,
           toolCalls: aiMsg?.toolCalls,
@@ -267,9 +299,9 @@ describe('MessageAlternativeService', () => {
 
   describe('concurrent retry guard', () => {
     it('should block second concurrent retry on the same message', async () => {
-      let resolveStream: (value: any) => void;
+      let resolveStream: ((value: StreamResponseResult) => void) | undefined;
       mockStreamHandler.streamResponse = jest.fn(
-        () => new Promise(resolve => { resolveStream = resolve; })
+        () => new Promise<StreamResponseResult>(resolve => { resolveStream = resolve; })
       );
 
       const conversation = createConversation({
@@ -289,7 +321,7 @@ describe('MessageAlternativeService', () => {
       expect(mockStreamHandler.streamResponse).toHaveBeenCalledTimes(1);
 
       // Clean up - resolve the first stream
-      resolveStream!({ streamedContent: 'done', toolCalls: undefined });
+      expectDefined(resolveStream)({ streamedContent: 'done', toolCalls: undefined });
       await firstRetry;
     });
 
@@ -446,7 +478,7 @@ describe('MessageAlternativeService', () => {
       // then starts streaming and writes partial content before aborting
       mockStreamHandler.streamResponse = jest.fn(async (conv) => {
         // Simulate partial content written during streaming
-        const aiMsg = conv.messages.find((m: any) => m.id === 'msg_ai');
+        const aiMsg = expectDefined(conv.messages.find((message) => message.id === 'msg_ai'));
         if (aiMsg) {
           aiMsg.content = 'Partial streamed content';
           aiMsg.state = 'streaming';

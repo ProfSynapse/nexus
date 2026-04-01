@@ -7,7 +7,7 @@ import { createMockElement, App, EventRef } from './core';
 // Scope mock
 export class Scope {
   register(): void {
-    // Mock implementation
+    void 0;
   }
 }
 
@@ -26,26 +26,26 @@ export class Modal {
   }
 
   open(): void {
-    // Mock implementation
+    void 0;
   }
 
   close(): void {
-    // Mock implementation
+    void 0;
   }
 
   onOpen(): void {
-    // Override in subclass
+    void 0;
   }
 
   onClose(): void {
-    // Override in subclass
+    void 0;
   }
 }
 
 // Component mock (base class for UI components like MessageBubble)
 export class Component {
-  private _domEvents: Array<{ el: any; type: string; handler: any }> = [];
-  private _intervals: any[] = [];
+  private _domEvents: Array<{ el: HTMLElement; type: string; handler: EventListenerOrEventListenerObject }> = [];
+  private _intervals: Array<ReturnType<typeof setInterval>> = [];
   private _isLoaded = false;
 
   load(): void {
@@ -53,7 +53,7 @@ export class Component {
   }
 
   onload(): void {
-    // Override in subclass
+    void 0;
   }
 
   unload(): void {
@@ -75,23 +75,23 @@ export class Component {
   }
 
   onunload(): void {
-    // Override in subclass
+    void 0;
   }
 
-  registerDomEvent(el: any, type: string, handler: any): void {
+  registerDomEvent(el: HTMLElement, type: string, handler: EventListenerOrEventListenerObject): void {
     this._domEvents.push({ el, type, handler });
     if (el && typeof el.addEventListener === 'function') {
       el.addEventListener(type, handler);
     }
   }
 
-  registerInterval(interval: any): number {
+  registerInterval(interval: ReturnType<typeof setInterval>): ReturnType<typeof setInterval> {
     this._intervals.push(interval);
     return interval;
   }
 
   registerEvent(eventRef: EventRef): void {
-    // Mock implementation
+    void eventRef;
   }
 }
 
@@ -107,7 +107,7 @@ export class Plugin extends Component {
   }
 
   addCommand(command: { id: string; name: string; callback?: () => void }): void {
-    // Mock implementation
+    void command;
   }
 }
 
@@ -121,15 +121,15 @@ export class Menu {
 
 // MenuItem mock
 export class MenuItem {
-  setTitle(title: string): this {
+  setTitle(_title: string): this {
     return this;
   }
 
-  setIcon(icon: string): this {
+  setIcon(_icon: string): this {
     return this;
   }
 
-  onClick(callback: () => void): this {
+  onClick(_callback: () => void): this {
     return this;
   }
 }

@@ -10,7 +10,7 @@
  */
 
 import { TFile, Vault, Platform } from 'obsidian';
-import { ComposerError, TrackInput } from '../../src/agents/apps/composer/types';
+import { ComposerError } from '../../src/agents/apps/composer/types';
 
 // --- Mock Web Audio API ---
 
@@ -28,7 +28,7 @@ function createMockAudioBuffer(opts: {
     length,
     sampleRate,
     duration: length / sampleRate,
-    getChannelData: jest.fn((ch: number) => new Float32Array(length)),
+    getChannelData: jest.fn((_ch: number) => new Float32Array(length)),
   } as unknown as AudioBuffer;
 }
 
@@ -36,7 +36,14 @@ function createMockAudioBuffer(opts: {
 const mockDecodeAudioData = jest.fn();
 const mockAudioCtxClose = jest.fn().mockResolvedValue(undefined);
 
-(global as any).AudioContext = jest.fn().mockImplementation(() => ({
+type WebAudioGlobals = typeof globalThis & {
+  AudioContext: typeof globalThis.AudioContext;
+  OfflineAudioContext: typeof globalThis.OfflineAudioContext;
+};
+
+const webAudioGlobals = globalThis as WebAudioGlobals;
+
+webAudioGlobals.AudioContext = jest.fn().mockImplementation(() => ({
   decodeAudioData: mockDecodeAudioData,
   close: mockAudioCtxClose,
   createMediaStreamDestination: jest.fn(),
@@ -52,7 +59,7 @@ const mockAudioCtxClose = jest.fn().mockResolvedValue(undefined);
 const mockStartRendering = jest.fn();
 const mockCreateBufferSource = jest.fn();
 
-(global as any).OfflineAudioContext = jest.fn().mockImplementation((channels: number, length: number, sampleRate: number) => {
+webAudioGlobals.OfflineAudioContext = jest.fn().mockImplementation((channels: number, length: number, sampleRate: number) => {
   const renderedBuffer = createMockAudioBuffer({ numberOfChannels: channels, length, sampleRate });
   mockStartRendering.mockResolvedValue(renderedBuffer);
 
@@ -89,15 +96,27 @@ jest.mock('wasm-media-encoders', () => ({}), { virtual: true });
 
 import { AudioComposer } from '../../src/agents/apps/composer/services/AudioComposer';
 
+type MutableTFile = TFile & {
+  stat: {
+    size: number;
+    mtime: number;
+    ctime: number;
+  };
+};
+
+type MockVault = Vault & {
+  readBinary: jest.Mock<Promise<ArrayBuffer>, [TFile]>;
+};
+
 function makeTFile(name: string, path?: string): TFile {
   const file = new TFile(name, path ?? name);
-  (file as any).stat = { size: 4096, mtime: Date.now(), ctime: Date.now() };
+  (file as MutableTFile).stat = { size: 4096, mtime: Date.now(), ctime: Date.now() };
   return file;
 }
 
 function makeVault(binaryMap: Record<string, ArrayBuffer> = {}): Vault {
   const vault = new Vault();
-  (vault as any).readBinary = jest.fn((file: TFile) => {
+  (vault as MockVault).readBinary = jest.fn((file: TFile) => {
     return Promise.resolve(binaryMap[file.path] ?? new ArrayBuffer(16));
   });
   return vault;
@@ -129,7 +148,8 @@ describe('AudioComposer', () => {
   describe('platform gating', () => {
     it('should throw ComposerError on non-desktop platform', async () => {
       const origIsDesktop = Platform.isDesktop;
-      (Platform as any).isDesktop = false;
+      const platform = Platform as typeof Platform & { isDesktop: boolean };
+      platform.isDesktop = false;
 
       try {
         const localComposer = new AudioComposer();
@@ -143,7 +163,7 @@ describe('AudioComposer', () => {
           )
         ).rejects.toThrow(ComposerError);
       } finally {
-        (Platform as any).isDesktop = origIsDesktop;
+        platform.isDesktop = origIsDesktop;
       }
     });
   });

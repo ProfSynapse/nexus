@@ -32,13 +32,62 @@
  * - Provides throttled progress updates for long tool arguments
  */
 
-import { StreamChunk } from '../adapters/types';
+import { StreamChunk, ToolCall } from '../adapters/types';
+
+interface StreamToolCallFunction {
+  name?: string;
+  arguments?: string;
+}
+
+interface StreamToolCall {
+  index?: number;
+  id?: string;
+  type?: string;
+  function?: StreamToolCallFunction;
+  reasoning_details?: unknown;
+  thought_signature?: unknown;
+}
+
+function normalizeStreamToolCall(toolCall: StreamToolCall): ToolCall {
+  return {
+    id: toolCall.id || '',
+    type: 'function',
+    name: toolCall.function?.name,
+    function: {
+      name: toolCall.function?.name || '',
+      arguments: toolCall.function?.arguments || ''
+    },
+    reasoning_details: Array.isArray(toolCall.reasoning_details)
+      ? toolCall.reasoning_details as Array<Record<string, unknown>>
+      : undefined,
+    thought_signature: typeof toolCall.thought_signature === 'string'
+      ? toolCall.thought_signature
+      : undefined
+  };
+}
+
+interface StreamChunkLike {
+  delta?: {
+    content?: string;
+    tool_calls?: StreamToolCall[];
+    finish_reason?: string;
+  };
+  choices?: Array<{
+    delta?: {
+      content?: string;
+      tool_calls?: StreamToolCall[];
+    };
+    finish_reason?: string;
+  }>;
+  usage?: unknown;
+  [key: string]: unknown;
+}
 
 export interface StreamChunkOptions {
-  extractContent: (chunk: any) => string | null;
-  extractToolCalls: (chunk: any) => any[] | null;
-  extractFinishReason: (chunk: any) => string | null;
-  extractUsage?: (chunk: any) => any;
+  extractContent: (chunk: StreamChunkLike) => string | null;
+  extractToolCalls: (chunk: StreamChunkLike) => StreamToolCall[] | null;
+  extractFinishReason: (chunk: StreamChunkLike) => string | null;
+  extractUsage?: (chunk: StreamChunkLike) => unknown;
 }
 
 export class StreamChunkProcessor {
@@ -47,10 +96,10 @@ export class StreamChunkProcessor {
    * Handles delta.content and delta.tool_calls from any OpenAI-compatible provider
    */
   static* processStreamChunk(
-    chunk: any,
+    chunk: StreamChunkLike,
     options: StreamChunkOptions,
-    toolCallsAccumulator: Map<number, any>,
-    usageRef: any
+    toolCallsAccumulator: Map<number, StreamToolCall>,
+    _usageRef: unknown
   ): Generator<StreamChunk, void, unknown> {
 
     // Extract text content
@@ -67,7 +116,7 @@ export class StreamChunkProcessor {
 
         if (!toolCallsAccumulator.has(index)) {
           // Initialize new tool call - preserve reasoning_details and thought_signature
-          const accumulated: any = {
+          const accumulated: StreamToolCall = {
             id: toolCall.id || '',
             type: toolCall.type || 'function',
             function: {
@@ -88,9 +137,20 @@ export class StreamChunkProcessor {
         } else {
           // Accumulate existing tool call arguments
           const existing = toolCallsAccumulator.get(index);
+          if (!existing) {
+            continue;
+          }
           if (toolCall.id) existing.id = toolCall.id;
-          if (toolCall.function?.name) existing.function.name = toolCall.function.name;
+          if (toolCall.function?.name) {
+            if (!existing.function) {
+              existing.function = {};
+            }
+            existing.function.name = toolCall.function.name;
+          }
           if (toolCall.function?.arguments) {
+            if (!existing.function) {
+              existing.function = {};
+            }
             existing.function.arguments += toolCall.function.arguments;
           }
           // Also preserve reasoning data if it arrives in later chunks
@@ -113,7 +173,7 @@ export class StreamChunkProcessor {
         yield {
           content: '',
           complete: false,
-          toolCalls: currentToolCalls
+          toolCalls: currentToolCalls.map(normalizeStreamToolCall)
         };
       }
     }

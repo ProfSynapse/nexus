@@ -25,15 +25,16 @@ import {
 import { logger } from '../../utils/logger';
 import { CustomPromptStorageService } from "../../agents/promptManager/services/CustomPromptStorageService";
 import { LLMProviderManager } from '../llm/providers/ProviderManager';
-import { DEFAULT_LLM_PROVIDER_SETTINGS, MCPSettings, MemorySettings } from '../../types';
-import { Settings } from '../../settings';
+import { DEFAULT_LLM_PROVIDER_SETTINGS, MemorySettings } from '../../types';
 import { MemoryService } from '../../agents/memoryManager/services/MemoryService';
 import { WorkspaceService } from '../WorkspaceService';
-import { VaultOperations } from '../../core/VaultOperations';
 import { UsageTracker } from '../UsageTracker';
+import type { VaultOperations } from '../../core/VaultOperations';
+import type { HybridStorageAdapter } from '../../database/adapters/HybridStorageAdapter';
 import type { IStorageAdapter } from '../../database/interfaces/IStorageAdapter';
 import type { MigratableDatabase } from '../../database/schema/SchemaMigrator';
 import { TaskBoardEvents } from '../task/TaskBoardEvents';
+import type { NexusPluginWithServices } from '../../agents/memoryManager/tools/utils/pluginTypes';
 
 /**
  * Type guard to check if plugin has Settings
@@ -47,6 +48,33 @@ function hasSettings(plugin: Plugin | NexusPlugin): plugin is NexusPlugin {
  */
 function hasServices(plugin: Plugin | NexusPlugin): plugin is NexusPlugin & { services: Record<string, unknown> } {
   return 'services' in plugin && typeof plugin.services === 'object' && plugin.services !== null;
+}
+
+interface PluginServices {
+  memoryService?: MemoryService;
+  workspaceService?: WorkspaceService;
+}
+
+function hasTypedServices(plugin: Plugin | NexusPlugin): plugin is NexusPlugin & { services: PluginServices } {
+  return hasServices(plugin);
+}
+
+interface StorageAdapterWithCache extends IStorageAdapter {
+  cache: MigratableDatabase;
+}
+
+function hasMigratableCache(adapter: IStorageAdapter): adapter is StorageAdapterWithCache {
+  if (!adapter.isReady() || !('cache' in adapter)) {
+    return false;
+  }
+
+  const cache = (adapter as { cache?: unknown }).cache;
+  return !!cache
+    && typeof cache === 'object'
+    && 'exec' in cache
+    && typeof (cache as Record<string, unknown>).exec === 'function'
+    && 'run' in cache
+    && typeof (cache as Record<string, unknown>).run === 'function';
 }
 
 /**
@@ -130,17 +158,18 @@ export class AgentInitializationService {
 
         if (this.serviceManager) {
           try {
-            const vaultOperations = await this.serviceManager.getService('vaultOperations');
+            const vaultOperations = await this.serviceManager.getService<VaultOperations>('vaultOperations');
             if (vaultOperations) {
               llmProviderManager.setVaultOperations(vaultOperations);
             }
-          } catch (error) {
+          } catch {
+            void 0;
           }
         }
 
         // Create usage tracker
         const { UsageTracker } = await import('../UsageTracker');
-        usageTracker = new UsageTracker('llm', pluginSettings);
+        usageTracker = new UsageTracker('llm', (pluginSettings ?? {}) as Record<string, unknown>);
 
       } catch (error) {
         logger.systemError(error as Error, 'LLM Provider Manager Initialization');
@@ -157,15 +186,10 @@ export class AgentInitializationService {
         // Use getServiceIfReady to avoid blocking on SQLite WASM loading during startup
         const storageAdapter = this.serviceManager.getServiceIfReady<IStorageAdapter>('hybridStorageAdapter');
         // Only use SQLite if adapter exists AND is fully ready (WASM loaded)
-        if (storageAdapter && storageAdapter.isReady() && 'cache' in storageAdapter) {
-          const cache = (storageAdapter as unknown as { cache: unknown }).cache;
-          if (cache && typeof cache === 'object'
-              && 'exec' in cache && typeof (cache as Record<string, unknown>).exec === 'function'
-              && 'run' in cache && typeof (cache as Record<string, unknown>).run === 'function') {
-            db = cache as MigratableDatabase;
-          }
+        if (storageAdapter && hasMigratableCache(storageAdapter)) {
+          db = storageAdapter.cache;
         }
-      } catch (error) {
+      } catch {
         // Database not available, will use data.json fallback
       }
     }
@@ -192,7 +216,7 @@ export class AgentInitializationService {
         const llmProviderSettings = pluginSettings?.llmProviders || DEFAULT_LLM_PROVIDER_SETTINGS;
 
         const minimalProviderManager = new LLMProviderManager(llmProviderSettings, this.app.vault);
-        const minimalUsageTracker = new UsageTracker('llm', pluginSettings);
+        const minimalUsageTracker = new UsageTracker('llm', (pluginSettings ?? {}) as Record<string, unknown>);
 
         if (!hasSettings(this.plugin)) {
           logger.systemError(new Error('Plugin settings not available for basic PromptManager'), 'Basic PromptManager Creation');
@@ -229,10 +253,10 @@ export class AgentInitializationService {
     if (this.serviceManager) {
       memoryService = this.serviceManager.getServiceIfReady<MemoryService>('memoryService');
       workspaceService = this.serviceManager.getServiceIfReady<WorkspaceService>('workspaceService');
-    } else if (hasServices(this.plugin)) {
+    } else if (hasTypedServices(this.plugin)) {
       // Fallback to plugin's direct service access
-      memoryService = this.plugin.services.memoryService as MemoryService | undefined || null;
-      workspaceService = this.plugin.services.workspaceService as WorkspaceService | undefined || null;
+      memoryService = this.plugin.services.memoryService ?? null;
+      workspaceService = this.plugin.services.workspaceService ?? null;
     }
 
     const searchManagerAgent = new SearchManagerAgent(
@@ -244,7 +268,7 @@ export class AgentInitializationService {
 
     // Update SearchManager with memory settings
     if (memorySettings) {
-      searchManagerAgent.updateSettings(memorySettings);
+      void searchManagerAgent.updateSettings(memorySettings);
     }
 
     this.agentManager.registerAgent(searchManagerAgent);
@@ -262,10 +286,10 @@ export class AgentInitializationService {
     if (this.serviceManager) {
       memoryService = this.serviceManager.getServiceIfReady<MemoryService>('memoryService');
       workspaceService = this.serviceManager.getServiceIfReady<WorkspaceService>('workspaceService');
-    } else if (hasServices(this.plugin)) {
+    } else if (hasTypedServices(this.plugin)) {
       // Fallback to plugin's direct service access
-      memoryService = this.plugin.services.memoryService as MemoryService | undefined || null;
-      workspaceService = this.plugin.services.workspaceService as WorkspaceService | undefined || null;
+      memoryService = this.plugin.services.memoryService ?? null;
+      workspaceService = this.plugin.services.workspaceService ?? null;
     }
 
     if (!memoryService || !workspaceService) {
@@ -273,9 +297,17 @@ export class AgentInitializationService {
       return;
     }
 
+    const pluginWithServices = hasServices(this.plugin)
+      ? (this.plugin as NexusPluginWithServices)
+      : null;
+    if (!pluginWithServices) {
+      logger.systemError(new Error('Plugin services not available - MemoryManager agent initialization'), 'MemoryManager Agent Initialization');
+      return;
+    }
+
     const memoryManagerAgent = new MemoryManagerAgent(
       this.app,
-      this.plugin,
+      pluginWithServices,
       memoryService,
       workspaceService,
       this.customPromptStorage
@@ -299,7 +331,7 @@ export class AgentInitializationService {
     const { DAGService } = await import('../../agents/taskManager/services/DAGService');
 
     // Get adapter — may need to await if not yet ready
-    let adapter = this.serviceManager.getServiceIfReady<any>('hybridStorageAdapter');
+    let adapter = this.serviceManager.getServiceIfReady<HybridStorageAdapter>('hybridStorageAdapter');
     if (!adapter) {
       adapter = await this.serviceManager.getService('hybridStorageAdapter');
     }
@@ -332,7 +364,7 @@ export class AgentInitializationService {
       validateWorkspace,
       TaskBoardEvents
     );
-    const taskManagerAgent = new TaskManagerAgent(this.app, this.plugin, taskService);
+    const taskManagerAgent = new TaskManagerAgent(this.app, this.plugin as NexusPlugin, taskService);
 
     this.agentManager.registerAgent(taskManagerAgent);
     logger.systemLog('TaskManager agent initialized successfully');
@@ -424,8 +456,8 @@ export class AgentInitializationService {
 
       if (this.serviceManager) {
         workspaceService = this.serviceManager.getServiceIfReady<WorkspaceService>('workspaceService');
-      } else if (hasServices(this.plugin)) {
-        workspaceService = this.plugin.services.workspaceService as WorkspaceService | undefined || null;
+      } else if (hasTypedServices(this.plugin)) {
+        workspaceService = this.plugin.services.workspaceService ?? null;
       }
 
       // CRITICAL: Check if SQLite is ready BEFORE calling any service methods
@@ -438,7 +470,7 @@ export class AgentInitializationService {
         }));
       }
       // If SQLite not ready, return empty - schema data will be populated on subsequent calls
-    } catch (error) {
+    } catch {
       logger.systemWarn('Failed to fetch workspaces for schema data');
     }
 
@@ -454,7 +486,7 @@ export class AgentInitializationService {
         }));
       }
       // If SQLite not ready, return empty - schema data will be populated on subsequent calls
-    } catch (error) {
+    } catch {
       logger.systemWarn('Failed to fetch custom agents for schema data');
     }
 
@@ -466,7 +498,7 @@ export class AgentInitializationService {
         .map(child => child.name)
         .filter(name => !name.startsWith('.')) // Exclude hidden folders
         .sort();
-    } catch (error) {
+    } catch {
       logger.systemWarn('Failed to fetch vault root for schema data');
     }
 

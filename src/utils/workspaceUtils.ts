@@ -134,9 +134,9 @@ export async function getBestWorkspaceForFile(
  * @deprecated Activity tracking removed - this function is a no-op
  */
 export async function updateWorkspaceActivityForFile(
-  filePath: string,
-  action: 'create' | 'edit' | 'delete',
-  workspaceService: WorkspaceService
+  _filePath: string,
+  _action: 'create' | 'edit' | 'delete',
+  _workspaceService: WorkspaceService
 ): Promise<void> {
   // Activity tracking not supported in new storage architecture
   // IndividualWorkspace does not have activityHistory property

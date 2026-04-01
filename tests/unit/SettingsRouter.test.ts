@@ -14,6 +14,7 @@ import { SettingsRouter, SettingsTab, RouterState } from '../../src/settings/Set
 // ============================================================================
 
 describe('SettingsRouter', () => {
+  type MutableRouterState = RouterState & { tab: string };
 
   let router: SettingsRouter;
 
@@ -320,8 +321,8 @@ describe('SettingsRouter', () => {
     });
 
     it('should not be affected by external mutation of returned state', () => {
-      const state = router.getState();
-      (state as any).tab = 'hacked';
+      const state = router.getState() as MutableRouterState;
+      state.tab = 'hacked';
       expect(router.getState().tab).toBe('defaults');
     });
 
@@ -331,7 +332,7 @@ describe('SettingsRouter', () => {
       router.setTab('providers');
 
       // Mutate the received state
-      (receivedState as any).tab = 'hacked';
+      (receivedState as MutableRouterState).tab = 'hacked';
       expect(router.getState().tab).toBe('providers');
     });
   });

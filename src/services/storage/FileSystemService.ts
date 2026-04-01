@@ -7,6 +7,19 @@ import { normalizePath, Plugin } from 'obsidian';
 import { VaultOperations } from '../../core/VaultOperations';
 import { IndividualConversation, IndividualWorkspace, ConversationIndex, WorkspaceIndex } from '../../types/storage/StorageTypes';
 
+type ChromaCollectionData = {
+  items?: unknown[];
+};
+
+function parseJsonContent(content: string): unknown {
+  try {
+    const parsed: unknown = JSON.parse(content);
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
 export class FileSystemService {
   private plugin: Plugin;
   private conversationsPath: string;
@@ -52,12 +65,7 @@ export class FileSystemService {
     
     if (!content) return null;
     
-    try {
-      const data = JSON.parse(content);
-      return data;
-    } catch (error) {
-      return null;
-    }
+    return parseJsonContent(content) as IndividualConversation | null;
   }
 
   /**
@@ -81,7 +89,7 @@ export class FileSystemService {
           return filename.replace('.json', '');
         });
       return conversationIds;
-    } catch (error) {
+    } catch {
       return [];
     }
   }
@@ -104,12 +112,7 @@ export class FileSystemService {
     
     if (!content) return null;
 
-    try {
-      const data = JSON.parse(content);
-      return data;
-    } catch (error) {
-      return null;
-    }
+    return parseJsonContent(content) as IndividualWorkspace | null;
   }
 
   /**
@@ -137,7 +140,7 @@ export class FileSystemService {
         })
         .filter(id => !!id && id !== 'undefined' && id !== 'null');
       return workspaceIds;
-    } catch (error) {
+    } catch {
       return [];
     }
   }
@@ -151,12 +154,7 @@ export class FileSystemService {
     
     if (!content) return null;
 
-    try {
-      const data = JSON.parse(content);
-      return data;
-    } catch (error) {
-      return null;
-    }
+    return parseJsonContent(content) as ConversationIndex | null;
   }
 
   /**
@@ -177,12 +175,7 @@ export class FileSystemService {
     
     if (!content) return null;
 
-    try {
-      const data = JSON.parse(content);
-      return data;
-    } catch (error) {
-      return null;
-    }
+    return parseJsonContent(content) as WorkspaceIndex | null;
   }
 
   /**
@@ -211,19 +204,19 @@ export class FileSystemService {
   /**
    * Read legacy ChromaDB collection for migration
    */
-  async readChromaCollection(collectionName: string): Promise<any[]> {
+  async readChromaCollection(collectionName: string): Promise<unknown[]> {
     const chromaPath = normalizePath(`${this.plugin.manifest.dir}/data/chroma-db/collections/${collectionName}/items.json`);
     const content = await this.vaultOperations.readFile(chromaPath);
     
     if (!content) return [];
 
-    try {
-      const data = JSON.parse(content);
-      const items = data.items || [];
-      return items;
-    } catch (error) {
+    const parsed = parseJsonContent(content);
+    if (!parsed || typeof parsed !== 'object') {
       return [];
     }
+
+    const data = parsed as ChromaCollectionData;
+    return Array.isArray(data.items) ? data.items : [];
   }
 
   /**

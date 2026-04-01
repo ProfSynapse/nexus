@@ -28,8 +28,8 @@ export class MigrationStatusTracker {
       }
 
       const content = await this.app.vault.adapter.read(this.statusPath);
-      const status = JSON.parse(content);
-      return status;
+      const status = JSON.parse(content) as unknown;
+      return this.isMigrationStatus(status) ? status : null;
     } catch (error) {
       console.error('[MigrationStatusTracker] Failed to load status:', error);
       return null;
@@ -137,5 +137,29 @@ export class MigrationStatusTracker {
     }
 
     await this.save(status);
+  }
+
+  private isMigrationFiles(value: unknown): value is NonNullable<MigrationStatus['migratedFiles']> {
+    if (!value || typeof value !== 'object') {
+      return false;
+    }
+
+    const files = value as Record<string, unknown>;
+    return Array.isArray(files.workspaces)
+      && files.workspaces.every((file) => typeof file === 'string')
+      && Array.isArray(files.conversations)
+      && files.conversations.every((file) => typeof file === 'string');
+  }
+
+  private isMigrationStatus(value: unknown): value is MigrationStatus {
+    if (!value || typeof value !== 'object') {
+      return false;
+    }
+
+    const status = value as Record<string, unknown>;
+    return typeof status.completed === 'boolean'
+      && typeof status.version === 'string'
+      && (status.migratedFiles === undefined || this.isMigrationFiles(status.migratedFiles))
+      && (status.legacyArchived === undefined || typeof status.legacyArchived === 'boolean');
   }
 }

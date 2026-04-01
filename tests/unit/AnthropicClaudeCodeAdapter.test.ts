@@ -4,6 +4,10 @@ import * as fsPromises from 'fs/promises';
 import { Platform } from 'obsidian';
 import { AnthropicClaudeCodeAdapter } from '../../src/services/llm/adapters/anthropic-claude-code/AnthropicClaudeCodeAdapter';
 
+type VaultLike = {
+  getName: () => string;
+};
+
 jest.mock('../../src/utils/binaryDiscovery', () => ({
   resolveDesktopBinaryPath: jest.fn((binary: string) => `/mock/bin/${binary}`)
 }));
@@ -56,7 +60,7 @@ describe('AnthropicClaudeCodeAdapter', () => {
     Platform.isWin = false;
     adapter = new AnthropicClaudeCodeAdapter({
       getName: () => 'Test Vault'
-    } as any);
+    } as VaultLike);
   });
 
   it('writes the system prompt to a temp file and sends the user prompt through stdin', async () => {
@@ -131,7 +135,7 @@ describe('AnthropicClaudeCodeAdapter', () => {
     for await (const _chunk of adapter.generateStreamAsync('Short prompt', {
       systemPrompt: 'Short system prompt'
     })) {
-      // drain
+      void _chunk;
     }
 
     await expect(fsPromises.access(mcpConfigPath)).rejects.toThrow();
@@ -161,7 +165,7 @@ describe('AnthropicClaudeCodeAdapter', () => {
     for await (const _chunk of adapter.generateStreamAsync('Explain the bug', {
       systemPrompt: oversizedSystemPrompt
     })) {
-      // drain
+      void _chunk;
     }
 
     expect(spawnDesktopProcess).toHaveBeenCalledTimes(1);
@@ -176,7 +180,7 @@ describe('AnthropicClaudeCodeAdapter', () => {
       for await (const _chunk of adapter.generateStreamAsync('Explain the bug', {
         model: oversizedModel
       })) {
-        // drain
+        void _chunk;
       }
     }).rejects.toMatchObject({
       name: 'LLMProviderError',

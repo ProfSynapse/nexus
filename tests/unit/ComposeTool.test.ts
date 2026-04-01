@@ -6,7 +6,7 @@
  * Tests mock at the vault + composer boundaries.
  */
 
-import { TFile, TFolder, Vault, Platform, normalizePath } from 'obsidian';
+import { TFile, Vault, Platform } from 'obsidian';
 
 // Mock pdf-lib to prevent import errors in PdfComposer
 jest.mock('pdf-lib', () => ({
@@ -25,9 +25,47 @@ jest.mock('pdf-lib', () => ({
 import { ComposeTool } from '../../src/agents/apps/composer/tools/compose';
 import { BaseAppAgent } from '../../src/agents/apps/BaseAppAgent';
 
-function makeTFile(name: string, path?: string, size: number = 1024): TFile {
+type MockVault = Vault & {
+  getFileByPath: jest.Mock<TFile | null, [string]>;
+  getAbstractFileByPath: jest.Mock<unknown, [string]>;
+  read: jest.Mock<Promise<string>, [TFile]>;
+  readBinary: jest.Mock<Promise<ArrayBuffer>, [TFile]>;
+  create: jest.Mock<Promise<void>, unknown[]>;
+  createBinary: jest.Mock<Promise<void>, unknown[]>;
+  createFolder: jest.Mock<Promise<void>, unknown[]>;
+  delete: jest.Mock<Promise<void>, unknown[]>;
+  rename: jest.Mock<Promise<void>, unknown[]>;
+};
+
+type ComposeResultData = {
+  path: string;
+  fileCount: number;
+  totalInputSize: number;
+  outputSize: number;
+};
+
+function asMockVault(vault: Vault): MockVault {
+  return vault as unknown as MockVault;
+}
+
+function getErrorMessage(result: { success: boolean; error?: string }): string {
+  expect(result.success).toBe(false);
+  expect(result.error).toBeDefined();
+  return result.error as string;
+}
+
+function getSuccessData(result: { success: boolean; data?: unknown }): ComposeResultData {
+  expect(result.success).toBe(true);
+  return result.data as ComposeResultData;
+}
+
+function makeTFile(name: string, path?: string, size = 1024): TFile {
   const file = new TFile(name, path ?? name);
-  (file as any).stat = { size, mtime: Date.now(), ctime: Date.now() };
+  (file as unknown as { stat: { size: number; mtime: number; ctime: number } }).stat = {
+    size,
+    mtime: Date.now(),
+    ctime: Date.now()
+  };
   return file;
 }
 
@@ -35,28 +73,31 @@ function makeVault(opts: {
   files?: Record<string, TFile>;
   textContent?: Record<string, string>;
   binaryContent?: Record<string, ArrayBuffer>;
-  abstractFiles?: Record<string, any>;
+  abstractFiles?: Record<string, unknown>;
 } = {}): Vault {
   const vault = new Vault();
-  (vault as any).getFileByPath = jest.fn((p: string) => opts.files?.[p] ?? null);
-  (vault as any).getAbstractFileByPath = jest.fn((p: string) => opts.abstractFiles?.[p] ?? opts.files?.[p] ?? null);
-  (vault as any).read = jest.fn((file: TFile) =>
+  const mockVault = asMockVault(vault);
+  mockVault.getFileByPath = jest.fn((p: string) => opts.files?.[p] ?? null);
+  mockVault.getAbstractFileByPath = jest.fn((p: string) => opts.abstractFiles?.[p] ?? opts.files?.[p] ?? null);
+  mockVault.read = jest.fn((file: TFile) =>
     Promise.resolve(opts.textContent?.[file.path] ?? 'default content')
   );
-  (vault as any).readBinary = jest.fn((file: TFile) =>
+  mockVault.readBinary = jest.fn((file: TFile) =>
     Promise.resolve(opts.binaryContent?.[file.path] ?? new ArrayBuffer(8))
   );
-  (vault as any).create = jest.fn().mockResolvedValue(undefined);
-  (vault as any).createBinary = jest.fn().mockResolvedValue(undefined);
-  (vault as any).createFolder = jest.fn().mockResolvedValue(undefined);
-  (vault as any).delete = jest.fn().mockResolvedValue(undefined);
+  mockVault.create = jest.fn().mockResolvedValue(undefined);
+  mockVault.createBinary = jest.fn().mockResolvedValue(undefined);
+  mockVault.createFolder = jest.fn().mockResolvedValue(undefined);
+  mockVault.delete = jest.fn().mockResolvedValue(undefined);
+  mockVault.rename = jest.fn().mockResolvedValue(undefined);
   return vault;
 }
 
-function makeAgent(vault: Vault): BaseAppAgent {
+function makeAgent(vault: Vault, app?: { fileManager: { trashFile: jest.Mock } }): BaseAppAgent {
   // Create a minimal mock of BaseAppAgent with getVault
   const agent = {
     getVault: () => vault,
+    getApp: () => app ?? null,
   } as unknown as BaseAppAgent;
   return agent;
 }
@@ -97,7 +138,7 @@ describe('ComposeTool', () => {
       });
 
       expect(result.success).toBe(false);
-      expect((result as any).error).toContain('Invalid output path');
+      expect(getErrorMessage(result)).toContain('Invalid output path');
     });
 
     it('should reject absolute output path', async () => {
@@ -108,7 +149,7 @@ describe('ComposeTool', () => {
       });
 
       expect(result.success).toBe(false);
-      expect((result as any).error).toContain('Invalid output path');
+      expect(getErrorMessage(result)).toContain('Invalid output path');
     });
 
     it('should require files array for non-mix mode', async () => {
@@ -119,7 +160,7 @@ describe('ComposeTool', () => {
       });
 
       expect(result.success).toBe(false);
-      expect((result as any).error).toContain('At least one file');
+      expect(getErrorMessage(result)).toContain('At least one file');
     });
 
     it('should require tracks array for audio mix mode', async () => {
@@ -131,7 +172,7 @@ describe('ComposeTool', () => {
       });
 
       expect(result.success).toBe(false);
-      expect((result as any).error).toContain('tracks');
+      expect(getErrorMessage(result)).toContain('tracks');
     });
 
     it('should validate track file paths in mix mode', async () => {
@@ -143,7 +184,7 @@ describe('ComposeTool', () => {
       });
 
       expect(result.success).toBe(false);
-      expect((result as any).error).toContain('Invalid track file path');
+      expect(getErrorMessage(result)).toContain('Invalid track file path');
     });
   });
 
@@ -151,7 +192,7 @@ describe('ComposeTool', () => {
     it('should error when output exists and overwrite is false (default)', async () => {
       // Set up vault to find existing file at output path
       const existingFile = makeTFile('output.md', 'output.md');
-      (vault as any).getAbstractFileByPath = jest.fn((p: string) => {
+      asMockVault(vault).getAbstractFileByPath = jest.fn((p: string) => {
         if (p === 'output.md') return existingFile;
         return null;
       });
@@ -163,13 +204,19 @@ describe('ComposeTool', () => {
       });
 
       expect(result.success).toBe(false);
-      expect((result as any).error).toContain('File already exists');
-      expect((result as any).error).toContain('overwrite: true');
+      expect(getErrorMessage(result)).toContain('File already exists');
+      expect(getErrorMessage(result)).toContain('overwrite: true');
     });
 
-    it('should delete existing file when overwrite is true', async () => {
+    it('should trash existing file through the file manager when overwrite is true', async () => {
       const file1 = makeTFile('notes/a.md', 'notes/a.md', 500);
       const existingOutput = makeTFile('output.md', 'output.md');
+      const tempOutput = makeTFile('output.md.composing', 'output.md.composing');
+      let deleted = false;
+      let tempCreated = false;
+      const trashFile = jest.fn(async () => {
+        deleted = true;
+      });
 
       vault = makeVault({
         files: { 'notes/a.md': file1 },
@@ -177,15 +224,19 @@ describe('ComposeTool', () => {
         abstractFiles: { 'output.md': existingOutput },
       });
 
-      // After delete, getAbstractFileByPath should return null for the output path
-      let deleted = false;
-      (vault as any).delete = jest.fn(() => { deleted = true; return Promise.resolve(); });
-      (vault as any).getAbstractFileByPath = jest.fn((p: string) => {
+      asMockVault(vault).create = jest.fn(async (_path: string) => {
+        tempCreated = true;
+      });
+      asMockVault(vault).rename = jest.fn(async () => {
+        tempCreated = false;
+      });
+      asMockVault(vault).getAbstractFileByPath = jest.fn((p: string) => {
         if (p === 'output.md' && !deleted) return existingOutput;
-        return vault.getFileByPath?.(p) ?? null;
+        if (p === 'output.md.composing' && tempCreated) return tempOutput;
+        return null;
       });
 
-      const agent = makeAgent(vault);
+      const agent = makeAgent(vault, { fileManager: { trashFile } });
       tool = new ComposeTool(agent);
 
       const result = await tool.execute({
@@ -195,7 +246,9 @@ describe('ComposeTool', () => {
         overwrite: true,
       });
 
-      expect(vault.delete).toHaveBeenCalledWith(existingOutput);
+      expect(trashFile).toHaveBeenCalledWith(existingOutput);
+      expect(vault.create).toHaveBeenCalledWith('output.md.composing', expect.any(String));
+      expect(vault.rename).toHaveBeenCalledWith(tempOutput, 'output.md');
       expect(result.success).toBe(true);
     });
   });
@@ -209,8 +262,9 @@ describe('ComposeTool', () => {
       });
 
       expect(result.success).toBe(true);
-      expect((result as any).data.path).toBe('output.md');
-      expect((result as any).data.fileCount).toBe(2);
+      const data = getSuccessData(result);
+      expect(data.path).toBe('output.md');
+      expect(data.fileCount).toBe(2);
       // TextComposer outputs string → vault.create is called (not createBinary)
       expect(vault.create).toHaveBeenCalled();
     });
@@ -240,7 +294,7 @@ describe('ComposeTool', () => {
     it('should reject audio format on non-desktop platform', async () => {
       // Temporarily mock Platform.isDesktop = false
       const origIsDesktop = Platform.isDesktop;
-      (Platform as any).isDesktop = false;
+      (Platform as unknown as { isDesktop: boolean }).isDesktop = false;
 
       try {
         const audioFile = makeTFile('song.mp3', 'song.mp3', 4096);
@@ -255,9 +309,9 @@ describe('ComposeTool', () => {
         });
 
         expect(result.success).toBe(false);
-        expect((result as any).error).toContain('not available on this platform');
+        expect(getErrorMessage(result)).toContain('not available on this platform');
       } finally {
-        (Platform as any).isDesktop = origIsDesktop;
+        (Platform as unknown as { isDesktop: boolean }).isDesktop = origIsDesktop;
       }
     });
   });
@@ -274,7 +328,7 @@ describe('ComposeTool', () => {
       });
 
       expect(result.success).toBe(false);
-      expect((result as any).error).toContain('Vault not available');
+      expect(getErrorMessage(result)).toContain('Vault not available');
     });
   });
 
@@ -287,7 +341,7 @@ describe('ComposeTool', () => {
       });
 
       expect(result.success).toBe(false);
-      expect((result as any).error).toContain('could not be resolved');
+      expect(getErrorMessage(result)).toContain('could not be resolved');
     });
   });
 
@@ -321,7 +375,7 @@ describe('ComposeTool', () => {
       });
 
       expect(result.success).toBe(true);
-      const data = (result as any).data;
+      const data = getSuccessData(result);
       expect(data.path).toBe('result.md');
       expect(data.fileCount).toBe(2);
       expect(data.totalInputSize).toBe(1300); // 500 + 800
@@ -336,9 +390,10 @@ describe('ComposeTool', () => {
       expect(schema).toBeDefined();
       expect(schema.properties).toBeDefined();
       // Check key properties exist
-      expect((schema.properties as any).format).toBeDefined();
-      expect((schema.properties as any).outputPath).toBeDefined();
-      expect((schema.properties as any).files).toBeDefined();
+      const properties = schema.properties as Record<string, unknown>;
+      expect(properties.format).toBeDefined();
+      expect(properties.outputPath).toBeDefined();
+      expect(properties.files).toBeDefined();
     });
   });
 });

@@ -6,7 +6,7 @@
  */
 
 import { ReplaceTool } from '../../src/agents/contentManager/tools/replace';
-import { TFile } from 'obsidian';
+import { App, TFile } from 'obsidian';
 
 // ============================================================================
 // Mock setup
@@ -15,7 +15,21 @@ import { TFile } from 'obsidian';
 let mockFileContent = '';
 const mockFile = new TFile('note.md', 'test/note.md');
 
-function createMockApp(fileExists = true) {
+type MockApp = App & {
+  vault: {
+    getAbstractFileByPath: jest.Mock<TFile | null, [string]>;
+    read: jest.Mock<Promise<string>, [TFile]>;
+    modify: jest.Mock<Promise<void>, [TFile, string]>;
+  };
+  workspace: Record<string, never>;
+};
+
+type SchemaLike = {
+  properties: Record<string, { description?: string }>;
+  required: string[];
+};
+
+function createMockApp(fileExists = true): MockApp {
   return {
     vault: {
       getAbstractFileByPath: jest.fn().mockReturnValue(fileExists ? mockFile : null),
@@ -25,7 +39,7 @@ function createMockApp(fileExists = true) {
       }),
     },
     workspace: {},
-  } as any;
+  } as unknown as MockApp;
 }
 
 const baseParams = {
@@ -34,7 +48,7 @@ const baseParams = {
 
 describe('ReplaceTool', () => {
   let tool: ReplaceTool;
-  let app: any;
+  let app: MockApp;
 
   beforeEach(() => {
     app = createMockApp();
@@ -453,7 +467,7 @@ describe('ReplaceTool', () => {
   describe('schema', () => {
     it('has self-documenting parameter descriptions', () => {
       const schema = tool.getParameterSchema();
-      const properties = (schema as any).properties;
+      const properties = (schema as SchemaLike).properties;
 
       expect(properties.oldContent.description).toContain('validated before any changes');
       expect(properties.newContent.description).toContain('empty string');
@@ -463,7 +477,7 @@ describe('ReplaceTool', () => {
 
     it('requires all five parameters', () => {
       const schema = tool.getParameterSchema();
-      const required = (schema as any).required;
+      const required = (schema as SchemaLike).required;
 
       expect(required).toContain('path');
       expect(required).toContain('oldContent');
@@ -474,7 +488,7 @@ describe('ReplaceTool', () => {
 
     it('result schema includes diff, totalLines, linesDelta', () => {
       const schema = tool.getResultSchema();
-      const properties = (schema as any).properties;
+      const properties = (schema as SchemaLike).properties;
 
       expect(properties.diff).toBeDefined();
       expect(properties.totalLines).toBeDefined();

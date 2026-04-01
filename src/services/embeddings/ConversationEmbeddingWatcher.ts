@@ -160,7 +160,10 @@ export class ConversationEmbeddingWatcher {
     }
 
     const question = userMessage.content;
-    const answer = message.content!;
+    const answer = message.content;
+    if (!answer || answer.trim().length === 0) {
+      return;
+    }
     const pairId = `${message.conversationId}:${userMessage.sequenceNumber}`;
 
     // Dedup check: skip if this pair is already being embedded

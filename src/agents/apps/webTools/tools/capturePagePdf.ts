@@ -59,7 +59,7 @@ export class CapturePagePdfTool extends BaseTool<CapturePagePdfParams, CommonRes
       }
 
       await app.workspace.revealLeaf(leaf);
-      await app.workspace.setActiveLeaf(leaf, { focus: true });
+      app.workspace.setActiveLeaf(leaf, { focus: true });
       const contents = await waitForWebViewerReady(leaf, timeoutMs, settleMs)
         ?? getWebViewerContents(leaf);
       if (!contents?.printToPDF) {

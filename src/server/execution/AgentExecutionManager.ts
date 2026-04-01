@@ -98,7 +98,7 @@ export class AgentExecutionManager {
             const help = generateToolHelp(
                 toolName,
                 tool.description,
-                schema
+                schema as Parameters<typeof generateToolHelp>[2]
             );
 
             // Format and return the help

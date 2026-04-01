@@ -11,15 +11,89 @@
 import { Plugin } from 'obsidian';
 import { FileSystemService } from './storage/FileSystemService';
 import { IndexManager } from './storage/IndexManager';
-import { IndividualConversation, ConversationMetadata as LegacyConversationMetadata, ConversationMessage } from '../types/storage/StorageTypes';
+import { IndividualConversation, ConversationMetadata as LegacyConversationMetadata } from '../types/storage/StorageTypes';
+import type { AlternativeMessage, MessageData, ToolCall } from '../types/storage/HybridStorageTypes';
+import type { ConversationMessage as LegacyConversationMessage, ToolCall as LegacyToolCall } from '../types/storage/StorageTypes';
 
 // Re-export for consumers
 export type { IndividualConversation, ConversationMessage } from '../types/storage/StorageTypes';
 import { IStorageAdapter } from '../database/interfaces/IStorageAdapter';
-import { ConversationMetadata } from '../types/storage/HybridStorageTypes';
 import { PaginationParams, PaginatedResult, calculatePaginationMetadata } from '../types/pagination/PaginationTypes';
 import { StorageAdapterOrGetter, resolveAdapter, withDualBackend } from './helpers/DualBackendExecutor';
 import { convertToLegacyMetadata, convertToLegacyConversation, populateMessageBranches } from './helpers/ConversationTypeConverters';
+
+type ConversationMessageResult = MessageData;
+
+interface ConversationMessageUpdate {
+  content?: string;
+  state?: 'draft' | 'streaming' | 'complete' | 'aborted' | 'invalid';
+  toolCalls?: ToolCall[];
+  reasoning?: string;
+}
+
+function toLegacyToolCall(toolCall: ToolCall): LegacyToolCall {
+  const parameters = toolCall.parameters ?? {};
+  return {
+    id: toolCall.id,
+    type: toolCall.type,
+    name: toolCall.name || toolCall.function?.name || 'unknown_tool',
+    function: toolCall.function || {
+      name: toolCall.name || 'unknown_tool',
+      arguments: JSON.stringify(parameters)
+    },
+    parameters,
+    result: toolCall.result,
+    success: toolCall.success,
+    error: toolCall.error,
+    executionTime: toolCall.executionTime
+  };
+}
+
+function toHybridToolCall(toolCall: LegacyToolCall): ToolCall {
+  const parameters = toolCall.parameters ?? {};
+  return {
+    id: toolCall.id,
+    type: 'function',
+    name: toolCall.name,
+    function: toolCall.function ?? {
+      name: toolCall.name,
+      arguments: JSON.stringify(parameters)
+    },
+    parameters,
+    result: toolCall.result,
+    success: toolCall.success,
+    error: toolCall.error,
+    executionTime: toolCall.executionTime
+  };
+}
+
+function toAlternativeMessage(message: LegacyConversationMessage): AlternativeMessage {
+  return {
+    id: message.id,
+    content: message.content ?? null,
+    timestamp: message.timestamp,
+    toolCalls: message.toolCalls?.map(toHybridToolCall),
+    reasoning: message.reasoning,
+    state: message.state ?? 'complete'
+  };
+}
+
+function toMessageData(message: LegacyConversationMessage, conversationId: string, sequenceNumber: number): MessageData {
+  return {
+    id: message.id,
+    conversationId,
+    role: message.role,
+    content: message.content ?? '',
+    timestamp: message.timestamp,
+    state: message.state ?? 'complete',
+    sequenceNumber,
+    toolCalls: message.toolCalls?.map(toHybridToolCall),
+    toolCallId: message.toolCallId,
+    reasoning: message.reasoning,
+    alternatives: message.alternatives?.map(toAlternativeMessage),
+    activeAlternativeIndex: message.activeAlternativeIndex
+  };
+}
 
 export class ConversationService {
   private storageAdapterOrGetter: StorageAdapterOrGetter;
@@ -161,8 +235,8 @@ export class ConversationService {
   async getMessages(
     conversationId: string,
     options?: PaginationParams
-  ): Promise<PaginatedResult<any>> {
-    return withDualBackend<PaginatedResult<any>>(
+  ): Promise<PaginatedResult<ConversationMessageResult>> {
+    return withDualBackend<PaginatedResult<ConversationMessageResult>>(
       this.storageAdapterOrGetter,
       async (adapter) => {
         const messagesResult = await adapter.getMessages(conversationId, {
@@ -172,41 +246,15 @@ export class ConversationService {
 
         return {
           ...messagesResult,
-          items: messagesResult.items.map(msg => ({
+          items: messagesResult.items.map((msg): MessageData => ({
             id: msg.id,
-            role: msg.role as 'user' | 'assistant' | 'tool',
-            content: msg.content || '',
+            conversationId: msg.conversationId,
+            role: msg.role,
+            content: msg.content,
             timestamp: msg.timestamp,
             state: msg.state,
-            toolCalls: msg.toolCalls?.map(tc => {
-              const hasFunction = tc.function && typeof tc.function === 'object';
-              const name = (hasFunction ? tc.function.name : tc.name) || 'unknown_tool';
-              let parameters: any;
-              if (hasFunction && tc.function.arguments) {
-                if (typeof tc.function.arguments === 'string') {
-                  try {
-                    parameters = JSON.parse(tc.function.arguments);
-                  } catch {
-                    // Malformed JSON in arguments — preserve raw string as-is
-                    parameters = tc.function.arguments;
-                  }
-                } else {
-                  parameters = tc.function.arguments;
-                }
-              } else {
-                parameters = tc.parameters;
-              }
-              return {
-                id: tc.id,
-                type: tc.type || 'function',
-                name,
-                function: tc.function || { name, arguments: JSON.stringify(parameters || {}) },
-                parameters: parameters || {},
-                result: tc.result,
-                success: tc.success,
-                error: tc.error
-              };
-            }),
+            sequenceNumber: msg.sequenceNumber,
+            toolCalls: msg.toolCalls,
             reasoning: msg.reasoning,
             metadata: msg.metadata,
             alternatives: msg.alternatives,
@@ -239,7 +287,7 @@ export class ConversationService {
 
         return {
           ...paginationMetadata,
-          items: paginatedMessages
+          items: paginatedMessages.map((msg, index) => toMessageData(msg, conversationId, startIndex + index))
         };
       }
     );
@@ -285,7 +333,7 @@ export class ConversationService {
    * Create new conversation (writes to adapter or legacy storage)
    */
   async createConversation(data: Partial<IndividualConversation>): Promise<IndividualConversation> {
-    const id = data.id || `conv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const id = data.id || `conv_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
 
     return withDualBackend(
       this.storageAdapterOrGetter,
@@ -297,10 +345,10 @@ export class ConversationService {
           vaultName: data.vault_name || this.plugin.app.vault.getName(),
           workspaceId: data.metadata?.chatSettings?.workspaceId,
           sessionId: data.metadata?.chatSettings?.sessionId,
-          workflowId: data.metadata?.workflowId as string | undefined,
-          runTrigger: data.metadata?.runTrigger as 'manual' | 'scheduled' | 'catch_up' | undefined,
-          scheduledFor: data.metadata?.scheduledFor as number | undefined,
-          runKey: data.metadata?.runKey as string | undefined,
+          workflowId: data.metadata?.workflowId,
+          runTrigger: data.metadata?.runTrigger,
+          scheduledFor: data.metadata?.scheduledFor,
+          runKey: data.metadata?.runKey,
           metadata: data.metadata
         });
 
@@ -339,10 +387,10 @@ export class ConversationService {
       async (adapter) => {
         // Merge existing metadata so we don't lose chat settings when only cost is updated
         const existing = await adapter.getConversation(id);
+        const existingMetadata = existing?.metadata;
         type ChatSettingsType = NonNullable<IndividualConversation['metadata']>['chatSettings'];
-        const existingMetadata = (existing?.metadata ?? {}) as IndividualConversation['metadata'];
-        const existingChatSettings = (existingMetadata?.chatSettings ?? {}) as ChatSettingsType;
-        const updatesChatSettings = (updates.metadata?.chatSettings ?? {}) as ChatSettingsType;
+        const existingChatSettings: ChatSettingsType = existingMetadata?.chatSettings ?? {};
+        const updatesChatSettings: ChatSettingsType = updates.metadata?.chatSettings ?? {};
 
         const mergedMetadata = {
           ...existingMetadata,
@@ -350,8 +398,8 @@ export class ConversationService {
           chatSettings: {
             ...existingChatSettings,
             ...updatesChatSettings,
-            workspaceId: updatesChatSettings?.workspaceId ?? existingChatSettings?.workspaceId,
-            sessionId: updatesChatSettings?.sessionId ?? existingChatSettings?.sessionId
+            workspaceId: updatesChatSettings.workspaceId ?? existingChatSettings.workspaceId,
+            sessionId: updatesChatSettings.sessionId ?? existingChatSettings.sessionId
           },
           cost: updates.cost || updates.metadata?.cost || existingMetadata?.cost
         };
@@ -387,7 +435,7 @@ export class ConversationService {
               reasoning: msg.reasoning,
               toolCalls: convertedToolCalls,
               toolCallId: msg.toolCallId,
-              alternatives: msg.alternatives as unknown as import('../types/storage/HybridStorageTypes').AlternativeMessage[] | undefined,
+              alternatives: msg.alternatives?.map(toAlternativeMessage),
               activeAlternativeIndex: msg.activeAlternativeIndex
             });
           }
@@ -398,10 +446,10 @@ export class ConversationService {
           updated: updates.updated ?? Date.now(),
           workspaceId: updates.metadata?.chatSettings?.workspaceId,
           sessionId: updates.metadata?.chatSettings?.sessionId,
-          workflowId: updates.metadata?.workflowId as string | undefined,
-          runTrigger: updates.metadata?.runTrigger as 'manual' | 'scheduled' | 'catch_up' | undefined,
-          scheduledFor: updates.metadata?.scheduledFor as number | undefined,
-          runKey: updates.metadata?.runKey as string | undefined,
+          workflowId: updates.metadata?.workflowId,
+          runTrigger: updates.metadata?.runTrigger,
+          scheduledFor: updates.metadata?.scheduledFor,
+          runKey: updates.metadata?.runKey,
           metadata: mergedMetadata
         });
       },
@@ -467,7 +515,7 @@ export class ConversationService {
   /**
    * Update conversation metadata only (for chat settings persistence)
    */
-  async updateConversationMetadata(id: string, metadata: any): Promise<void> {
+  async updateConversationMetadata(id: string, metadata?: IndividualConversation['metadata']): Promise<void> {
     await this.updateConversation(id, { metadata });
   }
 
@@ -480,13 +528,13 @@ export class ConversationService {
     conversationId: string;
     role: 'user' | 'assistant' | 'tool';
     content: string;
-    toolCalls?: any[];
+    toolCalls?: ToolCall[];
     cost?: { totalCost: number; currency: string };
     usage?: { promptTokens: number; completionTokens: number; totalTokens: number };
     provider?: string;
     model?: string;
     id?: string;
-    metadata?: any;
+    metadata?: Record<string, unknown>;
   }): Promise<{ success: boolean; messageId?: string; error?: string }> {
     try {
       return await withDualBackend(
@@ -515,24 +563,23 @@ export class ConversationService {
             return { success: false, error: `Conversation ${params.conversationId} not found` };
           }
 
-          const messageId = params.id || `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+          const messageId = params.id || `msg_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
           let initialState: 'draft' | 'complete' = 'complete';
           if (params.role === 'assistant' && (!params.content || params.content.trim() === '')) {
             initialState = 'draft';
           }
 
-          const message = {
+          const message: LegacyConversationMessage = {
             id: messageId,
             role: params.role,
             content: params.content,
             timestamp: Date.now(),
             state: initialState,
-            toolCalls: params.toolCalls || undefined,
+            toolCalls: params.toolCalls?.map(toLegacyToolCall),
             cost: params.cost,
             usage: params.usage,
             provider: params.provider,
-            model: params.model,
-            metadata: params.metadata
+            model: params.model
           };
 
           conversation.messages.push(message);
@@ -571,12 +618,7 @@ export class ConversationService {
   async updateMessage(
     conversationId: string,
     messageId: string,
-    updates: {
-      content?: string;
-      state?: 'draft' | 'streaming' | 'complete' | 'aborted' | 'invalid';
-      toolCalls?: any[];
-      reasoning?: string;
-    }
+    updates: ConversationMessageUpdate
   ): Promise<{ success: boolean; error?: string }> {
     try {
       return await withDualBackend(
@@ -599,7 +641,7 @@ export class ConversationService {
           const message = conversation.messages[messageIndex];
           if (updates.content !== undefined) message.content = updates.content;
           if (updates.state !== undefined) message.state = updates.state;
-          if (updates.toolCalls !== undefined) message.toolCalls = updates.toolCalls;
+          if (updates.toolCalls !== undefined) message.toolCalls = updates.toolCalls.map(toLegacyToolCall);
           if (updates.reasoning !== undefined) message.reasoning = updates.reasoning;
 
           conversation.updated = Date.now();
@@ -688,7 +730,7 @@ export class ConversationService {
   /**
    * Get recent conversations (uses index)
    */
-  async getRecentConversations(limit: number = 10): Promise<LegacyConversationMetadata[]> {
+  async getRecentConversations(limit = 10): Promise<LegacyConversationMetadata[]> {
     return this.listConversations(undefined, limit);
   }
 
@@ -828,7 +870,7 @@ export class ConversationService {
     task?: string,
     subagentMetadata?: Record<string, unknown>
   ): Promise<IndividualConversation> {
-    const branchId = `branch_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const branchId = `branch_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
 
     const branch = await this.createConversation({
       id: branchId,

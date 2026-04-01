@@ -17,6 +17,24 @@ import { requestUrl } from 'obsidian';
 import { WebLLMModelSpec } from './types';
 import { HF_BASE_URL } from './WebLLMModels';
 
+type TensorCacheRecord = {
+  dataPath?: string;
+  nbytes?: number;
+};
+
+type TensorCacheConfig = {
+  records?: TensorCacheRecord[];
+};
+
+function isTensorCacheConfig(value: unknown): value is TensorCacheConfig {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+
+  const candidate = value as { records?: unknown };
+  return candidate.records === undefined || Array.isArray(candidate.records);
+}
+
 export interface PrefetchProgress {
   totalFiles: number;
   completedFiles: number;
@@ -50,11 +68,11 @@ async function getModelFileList(modelSpec: WebLLMModelSpec): Promise<Array<{ nam
     const tensorCacheUrl = `${basePath}/tensor-cache.json`;
     const resp = await requestUrl({ url: tensorCacheUrl, method: 'GET' });
     if (resp.status === 200) {
-      const tensorConfig = resp.json;
+      const tensorConfig: unknown = resp.json;
       files.push({ name: 'tensor-cache.json', url: tensorCacheUrl, size: 0 });
 
       // Add all shards from tensor-cache
-      if (tensorConfig.records && Array.isArray(tensorConfig.records)) {
+      if (isTensorCacheConfig(tensorConfig) && Array.isArray(tensorConfig.records)) {
         for (const record of tensorConfig.records) {
           if (record.dataPath) {
             files.push({
@@ -66,7 +84,7 @@ async function getModelFileList(modelSpec: WebLLMModelSpec): Promise<Array<{ nam
         }
       }
     }
-  } catch (err) {
+  } catch {
     // Fall back to probing for shards
     for (let i = 0; i < 200; i++) {
       const shardName = `params_shard_${i}.bin`;
@@ -119,8 +137,8 @@ async function isFileCached(url: string): Promise<boolean> {
     const cache = await caches.open(CACHE_NAME);
     const response = await cache.match(url);
     return response !== undefined;
-  } catch (err) {
-    console.error('[WebLLMCachePrefetcher] isFileCached error:', err);
+  } catch (error) {
+    console.error('[WebLLMCachePrefetcher] isFileCached error:', error);
     return false;
   }
 }
@@ -130,8 +148,6 @@ async function isFileCached(url: string): Promise<boolean> {
  * Uses Obsidian's requestUrl which handles CORS and follows redirects
  */
 async function prefetchFile(url: string, cache: Cache): Promise<number> {
-  const fileName = url.split('/').pop() || url;
-
   // Check if already cached
   const cached = await cache.match(url);
   if (cached) {

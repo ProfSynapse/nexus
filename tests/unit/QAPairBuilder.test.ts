@@ -5,21 +5,19 @@
  * conversation messages into QA pairs for embedding. No mocks needed.
  */
 
-import { buildQAPairs, hashContent, QAPair } from '../../src/services/embeddings/QAPairBuilder';
+import { buildQAPairs, hashContent } from '../../src/services/embeddings/QAPairBuilder';
 import {
+  createMessage,
   SIMPLE_CONVERSATION,
   TOOL_CONVERSATION,
   MIXED_STATE_CONVERSATION,
   ORPHAN_CONVERSATION,
-  NULL_CONTENT_MESSAGES,
   UNSORTED_CONVERSATION,
   SYSTEM_MESSAGE,
   CONVERSATION_IDS,
   WORKSPACE_IDS,
   SESSION_IDS,
-  createMessage,
   resetMessageIdCounter,
-  TOOL_CALLS,
 } from '../fixtures/conversationSearch';
 
 beforeEach(() => {
@@ -27,6 +25,8 @@ beforeEach(() => {
 });
 
 describe('QAPairBuilder', () => {
+  type BuildQAPairsInput = Parameters<typeof buildQAPairs>[0];
+
   // ==========================================================================
   // hashContent
   // ==========================================================================
@@ -257,12 +257,12 @@ describe('QAPairBuilder', () => {
     });
 
     it('should return empty array for null messages', () => {
-      const pairs = buildQAPairs(null as unknown as any[], 'conv-null');
+      const pairs = buildQAPairs(null as unknown as BuildQAPairsInput, 'conv-null');
       expect(pairs).toEqual([]);
     });
 
     it('should return empty array for undefined messages', () => {
-      const pairs = buildQAPairs(undefined as unknown as any[], 'conv-undef');
+      const pairs = buildQAPairs(undefined as unknown as BuildQAPairsInput, 'conv-undef');
       expect(pairs).toEqual([]);
     });
   });

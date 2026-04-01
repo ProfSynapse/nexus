@@ -7,6 +7,8 @@ import { EmbeddingService } from '../../../services/embeddings/EmbeddingService'
 import { EmbeddingManager } from '../../../services/embeddings/EmbeddingManager';
 import { CommonParameters } from '../../../types';
 
+type SearchContentSchema = ReturnType<BaseTool<ContentSearchParams, ContentSearchResult>['getMergedSchema']>;
+
 /**
  * Extended plugin interface that includes optional embedding manager
  */
@@ -92,6 +94,7 @@ export class SearchContentTool extends BaseTool<ContentSearchParams, ContentSear
         }
       }
     } catch (error) {
+      void error;
     }
 
     return null;
@@ -205,7 +208,7 @@ export class SearchContentTool extends BaseTool<ContentSearchParams, ContentSear
         }
       }
 
-      const executionTime = performance.now() - startTime;
+      void startTime;
 
       return this.prepareResult(true, {
         results
@@ -257,7 +260,7 @@ export class SearchContentTool extends BaseTool<ContentSearchParams, ContentSear
       searchParams.snippetLength
     );
 
-    const executionTime = performance.now() - startTime;
+    void startTime;
 
     return this.prepareResult(true, {
       results: searchResults
@@ -294,7 +297,8 @@ export class SearchContentTool extends BaseTool<ContentSearchParams, ContentSear
     allResults.sort((a, b) => (b._score || 0) - (a._score || 0));
     // Strip internal score before returning
     const finalResults = allResults.slice(0, limit).map(r => {
-      const { _score, ...rest } = r;
+      const { _score: score, ...rest } = r;
+      void score;
       return rest;
     });
     return finalResults;
@@ -353,6 +357,7 @@ export class SearchContentTool extends BaseTool<ContentSearchParams, ContentSear
           }
         }
       } catch (error) {
+        void error;
       }
     } else {
       // Even if not including content, still extract frontmatter
@@ -363,6 +368,7 @@ export class SearchContentTool extends BaseTool<ContentSearchParams, ContentSear
           delete frontmatter.position;
         }
       } catch (error) {
+        void error;
       }
     }
 
@@ -457,7 +463,7 @@ export class SearchContentTool extends BaseTool<ContentSearchParams, ContentSear
   /**
    * Get parameter schema for MCP tool definition
    */
-  getParameterSchema() {
+  getParameterSchema(): SearchContentSchema {
     const toolSchema = {
       type: 'object',
       title: 'Content Search Params',
@@ -507,7 +513,7 @@ export class SearchContentTool extends BaseTool<ContentSearchParams, ContentSear
   /**
    * Get result schema for MCP tool definition
    */
-  getResultSchema() {
+  getResultSchema(): SearchContentSchema {
     return {
       type: 'object',
       properties: {

@@ -12,6 +12,12 @@ import {
   ProviderModalDependencies,
 } from '../types';
 
+/* eslint-disable obsidianmd/ui/sentence-case */
+
+interface LMStudioModelsResponse {
+  data: Array<{ id: string }>;
+}
+
 export class LMStudioProviderModal implements IProviderModal {
   private config: ProviderModalConfig;
   private deps: ProviderModalDependencies;
@@ -23,9 +29,9 @@ export class LMStudioProviderModal implements IProviderModal {
   private modelsContainer: HTMLElement | null = null;
 
   // State
-  private serverUrl: string = 'http://127.0.0.1:1234';
+  private serverUrl = 'http://127.0.0.1:1234';
   private discoveredModels: string[] = [];
-  private isValidated: boolean = false;
+  private isValidated = false;
   private validationTimeout: ReturnType<typeof setTimeout> | null = null;
 
   constructor(config: ProviderModalConfig, deps: ProviderModalDependencies) {
@@ -71,9 +77,11 @@ export class LMStudioProviderModal implements IProviderModal {
       .addButton(button => {
         this.discoverButton = button.buttonEl;
         button
-          .setButtonText('Discover Models')
+          .setButtonText('Discover models')
           .setTooltip('Connect to LM Studio server and discover available models')
-          .onClick(() => this.discoverModels());
+          .onClick(() => {
+            void this.discoverModels();
+          });
       });
   }
 
@@ -103,7 +111,7 @@ export class LMStudioProviderModal implements IProviderModal {
 
       // Auto-discover after delay
       this.validationTimeout = setTimeout(() => {
-        this.discoverModels();
+        void this.discoverModels();
       }, 2000);
 
       // Auto-enable
@@ -136,7 +144,7 @@ export class LMStudioProviderModal implements IProviderModal {
 
     if (this.discoveredModels.length > 0) {
       const titleP = descDiv.createEl('p');
-      titleP.createEl('strong', { text: `Discovered Models (${this.discoveredModels.length}):` });
+      titleP.createEl('strong', { text: `Discovered models (${this.discoveredModels.length}):` });
 
       const ul = descDiv.createEl('ul');
       ul.addClass('llm-provider-model-list');
@@ -147,7 +155,7 @@ export class LMStudioProviderModal implements IProviderModal {
       });
     } else {
       const p = descDiv.createEl('p');
-      p.createEl('em', { text: 'No models discovered yet. Click "Discover Models" to scan the server.' });
+      p.createEl('em', { text: 'No models discovered yet. Click "Discover models" to scan the server.' });
     }
   }
 
@@ -159,7 +167,7 @@ export class LMStudioProviderModal implements IProviderModal {
     const descDiv = helpDiv.createDiv('setting-item-description');
 
     const details = descDiv.createEl('details');
-    const summary = details.createEl('summary', { text: 'Setup Help' });
+    const summary = details.createEl('summary', { text: 'Setup help' });
     summary.addClass('llm-provider-help-summary');
 
     const contentDiv = details.createDiv();
@@ -172,7 +180,7 @@ export class LMStudioProviderModal implements IProviderModal {
     ol.addClass('llm-provider-help-list');
     ol.createEl('li', { text: 'Open LM Studio and load your desired model(s)' });
     ol.createEl('li', { text: 'Start the local server (usually on port 1234)' });
-    ol.createEl('li', { text: 'Click "Discover Models" to fetch available models' });
+    ol.createEl('li', { text: 'Click "Discover models" to fetch available models' });
     ol.createEl('li', { text: 'The first discovered model will be used by default' });
   }
 
@@ -212,14 +220,14 @@ export class LMStudioProviderModal implements IProviderModal {
         throw new Error(`Server not responding: ${modelsResponse.status}. Make sure LM Studio server is running.`);
       }
 
-      const modelsData = modelsResponse.json;
+      const modelsData = this.parseJson(modelsResponse.text);
 
-      if (!modelsData.data || !Array.isArray(modelsData.data)) {
+      if (!this.isLMStudioModelsResponse(modelsData)) {
         throw new Error('Invalid response format from LM Studio server');
       }
 
       // Extract model IDs
-      this.discoveredModels = modelsData.data.map((model: { id: string }) => model.id);
+      this.discoveredModels = modelsData.data.map(model => model.id);
 
       if (this.discoveredModels.length === 0) {
         new Notice('No models loaded in LM Studio. Please load a model first.');
@@ -264,6 +272,24 @@ export class LMStudioProviderModal implements IProviderModal {
    */
   private saveConfig(): void {
     this.config.onConfigChange(this.config.config);
+  }
+
+  private parseJson(text: string): unknown {
+    const parser = JSON.parse as (value: string) => unknown;
+    return parser(text);
+  }
+
+  private isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null;
+  }
+
+  private isLMStudioModelsResponse(value: unknown): value is LMStudioModelsResponse {
+    if (!this.isRecord(value)) {
+      return false;
+    }
+
+    const models = value.data;
+    return Array.isArray(models) && models.every(model => this.isRecord(model) && typeof model.id === 'string');
   }
 
   /**

@@ -123,13 +123,13 @@ export class IngestProgressBanner {
     }
 
     // Update progress bar
-    const barFill = bannerEl.querySelector('.nexus-ingest-progress-bar-fill') as HTMLElement | null;
+    const barFill = bannerEl.querySelector<HTMLElement>('.nexus-ingest-progress-bar-fill');
     if (barFill && progress.progress !== undefined) {
       barFill.style.width = `${Math.min(100, Math.max(0, progress.progress))}%`;
     }
 
     // Show dismiss for complete/error states
-    const dismissBtn = bannerEl.querySelector('.nexus-ingest-progress-dismiss') as HTMLElement | null;
+    const dismissBtn = bannerEl.querySelector('.nexus-ingest-progress-dismiss');
     if (dismissBtn) {
       if (progress.stage === 'complete' || progress.stage === 'error') {
         dismissBtn.removeClass('nexus-ingest-progress-dismiss-hidden');

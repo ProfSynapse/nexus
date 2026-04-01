@@ -18,7 +18,7 @@
  * - src/types/storage/HybridStorageTypes.ts - StateMetadata, StateData types
  */
 
-import { BaseRepository, RepositoryDependencies } from './base/BaseRepository';
+import { BaseRepository, RepositoryDependencies, DatabaseRow } from './base/BaseRepository';
 import {
   IStateRepository,
   SaveStateData
@@ -29,7 +29,17 @@ import {
   StateDeletedEvent
 } from '../interfaces/StorageEvents';
 import { PaginatedResult, PaginationParams } from '../../types/pagination/PaginationTypes';
-import { QueryCache } from '../optimizations/QueryCache';
+import { QueryParams } from './base/BaseRepository';
+
+interface StateRow extends DatabaseRow {
+  id: string;
+  workspaceId: string;
+  sessionId: string;
+  name: string;
+  description?: string | null;
+  created: number;
+  tagsJson?: string | null;
+}
 
 /**
  * Repository for state entities
@@ -44,7 +54,7 @@ export class StateRepository
   protected readonly tableName = 'states';
   protected readonly entityType = 'state';
   // States write to workspace JSONL file
-  protected readonly jsonlPath = (workspaceId: string) => `workspaces/ws_${workspaceId}.jsonl`;
+  protected readonly jsonlPath: (workspaceId: string) => string = (workspaceId) => `workspaces/ws_${workspaceId}.jsonl`;
 
   // In-memory cache for full state data (since content not in SQLite)
   private stateContentCache: Map<string, StateData> = new Map();
@@ -58,7 +68,7 @@ export class StateRepository
   // ============================================================================
 
   async getById(id: string): Promise<StateMetadata | null> {
-    const row = await this.sqliteCache.queryOne<any>(
+    const row = await this.sqliteCache.queryOne<StateRow>(
       'SELECT * FROM states WHERE id = ?',
       [id]
     );
@@ -68,7 +78,7 @@ export class StateRepository
   async getAll(options?: PaginationParams): Promise<PaginatedResult<StateMetadata>> {
     const baseQuery = 'SELECT * FROM states ORDER BY created DESC';
     const countQuery = 'SELECT COUNT(*) as count FROM states';
-    const result = await this.queryPaginated<any>(baseQuery, countQuery, options);
+    const result = await this.queryPaginated<StateRow>(baseQuery, countQuery, options);
     return {
       items: result.items.map(row => this.rowToEntity(row)),
       page: result.page,
@@ -84,7 +94,7 @@ export class StateRepository
     return this.saveState(data.workspaceId, data.sessionId, data);
   }
 
-  async update(id: string, data: any): Promise<void> {
+  async update(_id: string, _data: unknown): Promise<void> {
     // States are immutable snapshots - no updates allowed
     throw new Error('States are immutable. Create a new state instead.');
   }
@@ -127,15 +137,15 @@ export class StateRepository
 
   async count(criteria?: Record<string, unknown>): Promise<number> {
     let sql = 'SELECT COUNT(*) as count FROM states';
-    const params: any[] = [];
+    const params: QueryParams = [];
 
     if (criteria) {
       const conditions: string[] = [];
-      if (criteria.workspaceId) {
+      if (typeof criteria.workspaceId === 'string') {
         conditions.push('workspaceId = ?');
         params.push(criteria.workspaceId);
       }
-      if (criteria.sessionId) {
+      if (typeof criteria.sessionId === 'string') {
         conditions.push('sessionId = ?');
         params.push(criteria.sessionId);
       }
@@ -159,7 +169,7 @@ export class StateRepository
   ): Promise<PaginatedResult<StateMetadata>> {
     let baseQuery = 'SELECT * FROM states WHERE workspaceId = ?';
     let countQuery = 'SELECT COUNT(*) as count FROM states WHERE workspaceId = ?';
-    const params: any[] = [workspaceId];
+    const params: QueryParams = [workspaceId];
 
     if (sessionId) {
       baseQuery += ' AND sessionId = ?';
@@ -169,7 +179,7 @@ export class StateRepository
 
     baseQuery += ' ORDER BY created DESC';
 
-    const result = await this.queryPaginated<any>(baseQuery, countQuery, options, params);
+    const result = await this.queryPaginated<StateRow>(baseQuery, countQuery, options, params);
     return {
       items: result.items.map(row => this.rowToEntity(row)),
       page: result.page,
@@ -209,7 +219,7 @@ export class StateRepository
         return null;
       }
 
-      const content = JSON.parse(stateEvent.data.stateJson);
+      const content = this.parseJsonValue<unknown>(stateEvent.data.stateJson);
 
       const stateData: StateData = {
         ...metadata,
@@ -301,9 +311,9 @@ export class StateRepository
     // SQLite JSON query for tags array
     const baseQuery = `SELECT * FROM states WHERE tagsJson LIKE ? ORDER BY created DESC`;
     const countQuery = `SELECT COUNT(*) as count FROM states WHERE tagsJson LIKE ?`;
-    const params = [`%"${tag}"%`];
+    const params: QueryParams = [`%"${tag}"%`];
 
-    const result = await this.queryPaginated<any>(baseQuery, countQuery, options, params);
+    const result = await this.queryPaginated<StateRow>(baseQuery, countQuery, options, params);
     return {
       items: result.items.map(row => this.rowToEntity(row)),
       page: result.page,
@@ -319,15 +329,24 @@ export class StateRepository
   // Protected Methods
   // ============================================================================
 
-  protected rowToEntity(row: any): StateMetadata {
+  protected rowToEntity(row: DatabaseRow): StateMetadata {
+    const stateRow = row as StateRow;
     return {
-      id: row.id,
-      sessionId: row.sessionId,
-      workspaceId: row.workspaceId,
-      name: row.name,
-      description: row.description ?? undefined,
-      created: row.created,
-      tags: row.tagsJson ? JSON.parse(row.tagsJson) : undefined
+      id: stateRow.id,
+      sessionId: stateRow.sessionId,
+      workspaceId: stateRow.workspaceId,
+      name: stateRow.name,
+      description: stateRow.description ?? undefined,
+      created: stateRow.created,
+      tags: stateRow.tagsJson ? this.parseJsonValue<string[]>(stateRow.tagsJson) : undefined
     };
+  }
+
+  private parseJsonValue<T>(json: string): T | undefined {
+    try {
+      return JSON.parse(json) as T;
+    } catch {
+      return undefined;
+    }
   }
 }

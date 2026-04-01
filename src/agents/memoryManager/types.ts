@@ -1,5 +1,4 @@
 import { CommonResult, CommonParameters } from '../../types';
-import { WorkspaceContext } from '../../utils/contextUtils';
 
 /**
  * Base parameters for memory management operations

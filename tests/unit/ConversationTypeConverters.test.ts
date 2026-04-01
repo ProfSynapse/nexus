@@ -128,9 +128,10 @@ describe('convertToLegacyConversation', () => {
           }],
         }),
       ]);
-      const tc = result.messages[0].toolCalls![0];
-      expect(tc.name).toBe('search');
-      expect(tc.parameters).toEqual({ query: 'test' });
+      const tc = result.messages[0].toolCalls?.[0];
+      expect(tc).toBeDefined();
+      expect(tc?.name).toBe('search');
+      expect(tc?.parameters).toEqual({ query: 'test' });
     });
 
     it('handles malformed JSON in function.arguments — preserves raw string', () => {
@@ -144,10 +145,11 @@ describe('convertToLegacyConversation', () => {
           }],
         }),
       ]);
-      const tc = result.messages[0].toolCalls![0];
-      expect(tc.name).toBe('search');
+      const tc = result.messages[0].toolCalls?.[0];
+      expect(tc).toBeDefined();
+      expect(tc?.name).toBe('search');
       // Malformed JSON preserved as raw string
-      expect(tc.parameters).toBe('{broken json');
+      expect(tc?.parameters).toBe('{broken json');
     });
 
     it('handles function.arguments as object (already parsed)', () => {
@@ -161,8 +163,9 @@ describe('convertToLegacyConversation', () => {
           }],
         }),
       ]);
-      const tc = result.messages[0].toolCalls![0];
-      expect(tc.parameters).toEqual({ key: 'value' });
+      const tc = result.messages[0].toolCalls?.[0];
+      expect(tc).toBeDefined();
+      expect(tc?.parameters).toEqual({ key: 'value' });
     });
 
     it('handles missing tc.function — uses tc.name and tc.parameters', () => {
@@ -172,15 +175,16 @@ describe('convertToLegacyConversation', () => {
           toolCalls: [{
             id: 'tc-2',
             type: 'function',
-            function: undefined as any,
+            function: undefined as never,
             name: 'legacy_tool',
             parameters: { arg: 1 },
           }],
         }),
       ]);
-      const tc = result.messages[0].toolCalls![0];
-      expect(tc.name).toBe('legacy_tool');
-      expect(tc.parameters).toEqual({ arg: 1 });
+      const tc = result.messages[0].toolCalls?.[0];
+      expect(tc).toBeDefined();
+      expect(tc?.name).toBe('legacy_tool');
+      expect(tc?.parameters).toEqual({ arg: 1 });
     });
 
     it('defaults to "unknown_tool" when neither function.name nor name exists', () => {
@@ -194,8 +198,9 @@ describe('convertToLegacyConversation', () => {
           }],
         }),
       ]);
-      const tc = result.messages[0].toolCalls![0];
-      expect(tc.name).toBe('unknown_tool');
+      const tc = result.messages[0].toolCalls?.[0];
+      expect(tc).toBeDefined();
+      expect(tc?.name).toBe('unknown_tool');
     });
 
     it('preserves result, success, and error fields', () => {
@@ -212,9 +217,10 @@ describe('convertToLegacyConversation', () => {
           }],
         }),
       ]);
-      const tc = result.messages[0].toolCalls![0];
-      expect(tc.result).toBe('tool output');
-      expect(tc.success).toBe(true);
+      const tc = result.messages[0].toolCalls?.[0];
+      expect(tc).toBeDefined();
+      expect(tc?.result).toBe('tool output');
+      expect(tc?.success).toBe(true);
     });
 
     it('defaults type to "function" when not provided', () => {
@@ -223,12 +229,14 @@ describe('convertToLegacyConversation', () => {
           role: 'assistant',
           toolCalls: [{
             id: 'tc-5',
-            type: undefined as any,
+            type: undefined as never,
             function: { name: 'tool', arguments: '{}' },
           }],
         }),
       ]);
-      expect(result.messages[0].toolCalls![0].type).toBe('function');
+      const tc = result.messages[0].toolCalls?.[0];
+      expect(tc).toBeDefined();
+      expect(tc?.type).toBe('function');
     });
 
     it('handles empty function.arguments string', () => {
@@ -242,9 +250,10 @@ describe('convertToLegacyConversation', () => {
           }],
         }),
       ]);
-      const tc = result.messages[0].toolCalls![0];
+      const tc = result.messages[0].toolCalls?.[0];
+      expect(tc).toBeDefined();
       // Empty string is falsy, so it goes to else branch using tc.parameters
-      expect(tc.parameters).toEqual({});
+      expect(tc?.parameters).toEqual({});
     });
   });
 
@@ -514,7 +523,9 @@ describe('populateMessageBranches', () => {
 
     expect(messages[0].branches).toBeUndefined();
     expect(messages[1].branches).toHaveLength(1);
-    expect(messages[1].branches![0].id).toBe('branch-1');
+    const branch = messages[1].branches?.[0];
+    expect(branch).toBeDefined();
+    expect(branch?.id).toBe('branch-1');
     expect(messages[1].activeAlternativeIndex).toBe(0);
   });
 

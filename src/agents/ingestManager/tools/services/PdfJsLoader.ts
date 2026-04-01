@@ -16,7 +16,7 @@ declare global {
     pdfjsWorker?: PdfJsWorkerModule;
   }
 
-  // eslint-disable-next-line no-var
+   
   var pdfjsWorker: PdfJsWorkerModule | undefined;
 }
 

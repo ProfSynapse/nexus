@@ -90,7 +90,8 @@ export class ResultFormatter implements ResultFormatterInterface {
         const formatter = this.getFormatter(result.type);
         const formattedResult = await formatter.formatSingleResult(result, options);
         formatted.push(formattedResult);
-      } catch (error) {
+      } catch {
+        continue;
       }
     }
 
@@ -181,6 +182,11 @@ export class ResultFormatter implements ResultFormatterInterface {
     }
 
     // Return trace formatter as default
-    return this.formatters.get(MemoryType.TRACE)!;
+    const traceFormatter = this.formatters.get(MemoryType.TRACE);
+    if (traceFormatter) {
+      return traceFormatter;
+    }
+
+    throw new Error('Trace formatter is not registered');
   }
 }

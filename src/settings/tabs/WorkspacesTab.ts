@@ -9,7 +9,7 @@
  * - FilePickerRenderer (file picker)
  */
 
-import { App, Notice, Component } from 'obsidian';
+import { App, Notice, Component, Modal, ButtonComponent } from 'obsidian';
 import { SettingsRouter } from '../SettingsRouter';
 import { BreadcrumbNav, BreadcrumbNavItem } from '../components/BreadcrumbNav';
 import { WorkflowEditorRenderer, Workflow } from '../../components/workspace/WorkflowEditorRenderer';
@@ -25,7 +25,6 @@ import { v4 as uuidv4 } from '../../utils/uuid';
 import type { ServiceManager } from '../../core/ServiceManager';
 import type { WorkflowRunService } from '../../services/workflows/WorkflowRunService';
 import type { ProjectMetadata } from '../../database/repositories/interfaces/IProjectRepository';
-import type { TaskMetadata } from '../../database/repositories/interfaces/ITaskRepository';
 
 export interface WorkspacesTabServices {
     app: App;
@@ -44,8 +43,8 @@ export class WorkspacesTab {
     private services: WorkspacesTabServices;
     private workspaces: ProjectWorkspace[] = [];
     private currentWorkspace: Partial<ProjectWorkspace> | null = null;
-    private currentWorkflowIndex: number = -1;
-    private currentFileIndex: number = -1;
+    private currentWorkflowIndex = -1;
+    private currentFileIndex = -1;
     private currentView: WorkspacesView = 'list';
 
     // Renderers
@@ -59,7 +58,7 @@ export class WorkspacesTab {
     private saveTimeout?: ReturnType<typeof setTimeout>;
 
     // Loading state
-    private isLoading: boolean = true;
+    private isLoading = true;
 
     constructor(
         container: HTMLElement,
@@ -84,12 +83,12 @@ export class WorkspacesTab {
         );
 
         if (Array.isArray(services.prefetchedWorkspaces)) {
-            this.workspaces = services.prefetchedWorkspaces!;
+            this.workspaces = services.prefetchedWorkspaces;
             this.isLoading = false;
             this.render();
         } else {
             this.render();
-            this.loadWorkspaces().then(() => {
+            void this.loadWorkspaces().then(() => {
                 this.isLoading = false;
                 this.render();
             });
@@ -113,10 +112,10 @@ export class WorkspacesTab {
                     ])
                 ]);
                 if (service) {
-                    workspaceService = service as WorkspaceService;
+                    workspaceService = service;
                     this.services.workspaceService = workspaceService;
                 }
-            } catch (e) {
+            } catch {
                 // Service unavailable
             }
         }
@@ -219,7 +218,7 @@ export class WorkspacesTab {
             onOpenFilePicker: (index) => this.openFilePicker(index),
             onRefreshDetail: () => this.refreshDetail(),
             getAvailableAgents: () => this.getAvailableAgents(),
-            getTaskService: () => this.projectsManager.getTaskService() as any,
+            getTaskService: () => this.projectsManager.getTaskService(),
             onRefreshProjects: () => this.projectsManager.refreshProjects(),
             onOpenProjectDetail: (project) => { void this.openProjectDetailAndRender(project); },
             safeRegisterDomEvent: (el, eventName, handler) => this.safeRegisterDomEvent(el, eventName, handler)
@@ -279,10 +278,14 @@ export class WorkspacesTab {
 
         try {
             const existingIndex = this.workspaces.findIndex(w => w.id === this.currentWorkspace?.id);
+            const workspaceId = this.currentWorkspace.id;
+            if (!workspaceId) {
+                return null;
+            }
 
             if (existingIndex >= 0) {
                 await this.services.workspaceService.updateWorkspace(
-                    this.currentWorkspace.id!,
+                    workspaceId,
                     this.currentWorkspace
                 );
                 this.workspaces[existingIndex] = this.currentWorkspace as ProjectWorkspace;
@@ -303,7 +306,7 @@ export class WorkspacesTab {
     private async deleteCurrentWorkspace(): Promise<void> {
         if (!this.currentWorkspace?.id || !this.services.workspaceService) return;
 
-        const confirmed = confirm(`Delete workspace "${this.currentWorkspace.name}"? This cannot be undone.`);
+        const confirmed = await this.confirmDeleteWorkspace();
         if (!confirmed) return;
 
         try {
@@ -316,6 +319,17 @@ export class WorkspacesTab {
             console.error('[WorkspacesTab] Failed to delete workspace:', error);
             new Notice('Failed to delete workspace');
         }
+    }
+
+    private async confirmDeleteWorkspace(): Promise<boolean> {
+        return new Promise<boolean>((resolve) => {
+            const modal = new WorkspaceDeleteConfirmModal(
+                this.services.app,
+                this.currentWorkspace?.name || 'Workspace',
+                resolve
+            );
+            modal.open();
+        });
     }
 
     // --- Projects (delegated to ProjectsManagerView) ---
@@ -579,11 +593,64 @@ export class WorkspacesTab {
 
     private debouncedSave(): void {
         if (this.saveTimeout) clearTimeout(this.saveTimeout);
-        this.saveTimeout = setTimeout(() => { this.saveCurrentWorkspace(); }, 500);
+        this.saveTimeout = setTimeout(() => {
+            void this.saveCurrentWorkspace();
+        }, 500);
     }
 
     destroy(): void {
         if (this.saveTimeout) clearTimeout(this.saveTimeout);
         this.detailRenderer.destroyForm();
+    }
+}
+
+class WorkspaceDeleteConfirmModal extends Modal {
+    private resolved = false;
+
+    constructor(
+        app: App,
+        private readonly workspaceName: string,
+        private readonly onResolve: (confirmed: boolean) => void
+    ) {
+        super(app);
+    }
+
+    onOpen(): void {
+        const { contentEl } = this;
+        contentEl.empty();
+
+        contentEl.createEl('h2', { text: 'Delete workspace?' });
+        contentEl.createEl('p', {
+            text: `Delete workspace "${this.workspaceName}"? This cannot be undone.`,
+            cls: 'setting-item-description'
+        });
+
+        const buttonRow = contentEl.createDiv('modal-button-container');
+
+        new ButtonComponent(buttonRow)
+            .setButtonText('Cancel')
+            .onClick(() => {
+                this.resolve(false);
+                this.close();
+            });
+
+        new ButtonComponent(buttonRow)
+            .setButtonText('Delete')
+            .setCta()
+            .onClick(() => {
+                this.resolve(true);
+                this.close();
+            });
+    }
+
+    onClose(): void {
+        this.resolve(false);
+        this.contentEl.empty();
+    }
+
+    private resolve(confirmed: boolean): void {
+        if (this.resolved) return;
+        this.resolved = true;
+        this.onResolve(confirmed);
     }
 }

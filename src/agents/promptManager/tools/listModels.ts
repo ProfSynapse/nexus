@@ -8,9 +8,7 @@ import { CommonResult, CommonParameters } from '../../../types';
 import { createResult } from '../../../utils/schemaUtils';
 import { LLMProviderManager } from '../../../services/llm/providers/ProviderManager';
 
-export interface ListModelsParams extends CommonParameters {
-  // No additional parameters
-}
+export type ListModelsParams = CommonParameters
 
 export interface ListModelsResult extends CommonResult {
   data: {
@@ -38,7 +36,7 @@ export class ListModelsTool extends BaseTool<ListModelsParams, ListModelsResult>
     this.providerManager = providerManager;
   }
 
-  async execute(params: ListModelsParams): Promise<ListModelsResult> {
+  async execute(_params: ListModelsParams): Promise<ListModelsResult> {
     try {
       const models = await this.providerManager.getAvailableModels();
       const settings = this.providerManager.getSettings();

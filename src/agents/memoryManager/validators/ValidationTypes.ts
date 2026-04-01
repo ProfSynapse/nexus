@@ -13,6 +13,6 @@
  */
 export interface ValidationError {
   field: string;
-  value: any;
+  value: unknown;
   requirement: string;
 }

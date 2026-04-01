@@ -12,6 +12,7 @@ import { ISchemaBuilder, SchemaContext } from '../SchemaTypes';
 import { LLMProviderManager } from '../../../services/llm/providers/ProviderManager';
 import { mergeWithCommonSchema } from '../../schemaUtils';
 import { SchemaBuilder } from '../SchemaBuilder';
+import type { ValidationSchema } from '../../validationUtils';
 
 /**
  * Batch Execute Schema Builder - Handles complex batch LLM execution schemas
@@ -19,12 +20,15 @@ import { SchemaBuilder } from '../SchemaBuilder';
 export class BatchExecuteSchemaBuilder implements ISchemaBuilder {
   constructor(private providerManager: LLMProviderManager | null) {}
 
-  buildParameterSchema(context: SchemaContext): any {
+  buildParameterSchema(_context: SchemaContext): ValidationSchema {
     const builder = new SchemaBuilder(this.providerManager);
     const commonProps = builder.buildCommonProperties({
       includeProviders: true,
       includeActions: true
     });
+    const providerSchema = commonProps.provider as ValidationSchema;
+    const modelSchema = commonProps.model as ValidationSchema;
+    const actionSchema = commonProps.action as ValidationSchema;
 
     const batchSchema = {
       type: 'object',
@@ -48,8 +52,8 @@ export class BatchExecuteSchemaBuilder implements ISchemaBuilder {
                   'Explain this concept in simple terms'
                 ]
               },
-              provider: commonProps.provider,
-              model: commonProps.model,
+              provider: providerSchema,
+              model: modelSchema,
               contextFiles: {
                 type: 'array',
                 description: 'Optional context files to include with this prompt',
@@ -84,7 +88,7 @@ export class BatchExecuteSchemaBuilder implements ISchemaBuilder {
                 description: 'Specific IDs of previous steps to include as context (if not specified, includes all previous results when includePreviousResults is true)',
                 items: { type: 'string' }
               },
-              action: commonProps.action,
+              action: actionSchema,
               agent: {
                 type: 'string',
                 description: 'Optional custom agent/prompt to use for this prompt'
@@ -103,12 +107,12 @@ export class BatchExecuteSchemaBuilder implements ISchemaBuilder {
       },
       required: ['prompts'],
       additionalProperties: false
-    };
+    } satisfies ValidationSchema;
 
     return mergeWithCommonSchema(batchSchema);
   }
 
-  buildResultSchema(context: SchemaContext): any {
+  buildResultSchema(_context: SchemaContext): ValidationSchema {
     return {
       type: 'object',
       properties: {
@@ -177,10 +181,10 @@ export class BatchExecuteSchemaBuilder implements ISchemaBuilder {
       },
       required: ['success'],
       additionalProperties: false
-    };
+    } satisfies ValidationSchema;
   }
 
-  private buildPromptResultSchema(): any {
+  private buildPromptResultSchema(): ValidationSchema {
     return {
       type: 'object',
       properties: {
@@ -206,6 +210,6 @@ export class BatchExecuteSchemaBuilder implements ISchemaBuilder {
           }
         }
       }
-    };
+    } satisfies ValidationSchema;
   }
 }

@@ -7,8 +7,12 @@
  * Used by: ResultFormatter for TRACE type results and as fallback
  */
 
-import { MemorySearchResult } from '../../../../types/memory/MemorySearchTypes';
+import { MemoryResultMetadata, MemorySearchResult } from '../../../../types/memory/MemorySearchTypes';
 import { BaseResultFormatter } from './BaseResultFormatter';
+
+type TraceResultMetadata = MemoryResultMetadata & {
+  traceType?: string;
+};
 
 /**
  * Formatter for trace results (default formatter)
@@ -18,7 +22,7 @@ export class TraceResultFormatter extends BaseResultFormatter {
     return `Memory Trace: ${result.id}`;
   }
 
-  protected addTypeSpecificMetadata(formatted: Record<string, string>, metadata: any): void {
+  protected addTypeSpecificMetadata(formatted: Record<string, string>, metadata: TraceResultMetadata): void {
     if (metadata.traceType) {
       formatted['Trace Type'] = metadata.traceType;
     }

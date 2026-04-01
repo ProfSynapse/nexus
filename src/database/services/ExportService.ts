@@ -20,6 +20,7 @@ import { App } from 'obsidian';
 import { ConversationRepository } from '../repositories/ConversationRepository';
 import { MessageRepository } from '../repositories/MessageRepository';
 import { ExportFilter, ExportData, MessageData, ConversationExportData, WorkspaceExportData } from '../../types/storage/HybridStorageTypes';
+import type { WorkspaceMetadata, SessionMetadata, StateData, MemoryTraceData } from '../../types/storage/HybridStorageTypes';
 
 /**
  * Dependencies for ExportService
@@ -30,10 +31,32 @@ export interface ExportServiceDependencies {
   conversationRepo: ConversationRepository;
   messageRepo: MessageRepository;
   // Workspace-related repos (if needed for full export)
-  workspaceRepo?: any;
-  sessionRepo?: any;
-  stateRepo?: any;
-  traceRepo?: any;
+  workspaceRepo?: {
+    getWorkspaces(options?: { pageSize?: number }): Promise<{ items: WorkspaceMetadata[] }>;
+  };
+  sessionRepo?: {
+    getByWorkspaceId(workspaceId: string, options?: { pageSize?: number }): Promise<{ items: SessionMetadata[] }>;
+  };
+  stateRepo?: {
+    getStates(workspaceId: string, sessionId: string | undefined, options?: { pageSize?: number }): Promise<{ items: StateData[] }>;
+  };
+  traceRepo?: {
+    getTraces(workspaceId: string, sessionId: string | undefined, options?: { pageSize?: number }): Promise<{ items: MemoryTraceData[] }>;
+  };
+}
+
+interface ExportMessage {
+  role: string;
+  content: string;
+  tool_calls?: Array<{
+    id: string;
+    type: 'function';
+    function: {
+      name: string;
+      arguments: unknown;
+    };
+  }>;
+  tool_call_id?: string;
 }
 
 /**
@@ -131,22 +154,22 @@ export class ExportService {
   /**
    * Format a message for OpenAI export
    */
-  private formatMessageForExport(message: MessageData): any {
-    const formatted: any = {
+  private formatMessageForExport(message: MessageData): ExportMessage {
+    const formatted: ExportMessage = {
       role: message.role,
-      content: message.content
+      content: message.content ?? ''
     };
 
     // Include tool calls if present
     if (message.toolCalls && message.toolCalls.length > 0) {
-      formatted.tool_calls = message.toolCalls.map(tc => ({
-        id: tc.id,
-        type: 'function',
-        function: {
-          name: tc.function.name,
-          arguments: tc.function.arguments
-        }
-      }));
+        formatted.tool_calls = message.toolCalls.map(tc => ({
+          id: tc.id,
+          type: 'function',
+          function: {
+            name: tc.function.name,
+            arguments: tc.function.arguments
+          }
+        }));
     }
 
     // Include tool call ID if this is a tool response
@@ -222,12 +245,12 @@ export class ExportService {
       return [];
     }
 
-    const workspacesResult = await this.deps.workspaceRepo.getWorkspaces({
+    const workspacesResult: { items: WorkspaceMetadata[] } = await this.deps.workspaceRepo.getWorkspaces({
       pageSize: 10000
     });
 
     return Promise.all(
-      workspacesResult.items.map(async (ws: { id: string }) => {
+      workspacesResult.items.map(async (ws) => {
         // Get sessions
         const sessions = this.deps.sessionRepo
           ? (await this.deps.sessionRepo.getByWorkspaceId(ws.id, { pageSize: 10000 })).items
@@ -245,9 +268,9 @@ export class ExportService {
 
         return {
           metadata: ws,
-          sessions,
-          states,
-          traces
+          sessions: sessions,
+          states: states,
+          traces: traces
         };
       })
     );
@@ -261,6 +284,9 @@ export class ExportService {
    * Get device ID from localStorage
    */
   private getDeviceId(): string {
-    return localStorage.getItem('claudesidian-device-id') ?? 'unknown';
+    const storedDeviceId = this.deps.app.loadLocalStorage('claudesidian-device-id') as unknown;
+    return typeof storedDeviceId === 'string' && storedDeviceId.length > 0
+      ? storedDeviceId
+      : 'unknown';
   }
 }

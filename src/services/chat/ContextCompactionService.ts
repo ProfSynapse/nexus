@@ -345,7 +345,7 @@ export class ContextCompactionService {
    * Check if compaction is recommended based on message count
    * (Supplement to token-based check in ContextTokenTracker)
    */
-  shouldCompactByMessageCount(conversation: ConversationData, maxMessages: number = 20): boolean {
+  shouldCompactByMessageCount(conversation: ConversationData, maxMessages = 20): boolean {
     return conversation.messages.length > maxMessages;
   }
 }

@@ -42,10 +42,10 @@ describe('SettingsView — CustomPromptStorageService reuse logic', () => {
   }
 
   function resolveCustomPromptStorage(
-    existingStorage: any | undefined,
+    existingStorage: unknown | undefined,
     serviceManager: MockServiceManager | undefined,
-    fallbackFactory: () => any
-  ): any {
+    fallbackFactory: () => unknown
+  ): unknown {
     if (existingStorage) return existingStorage;
 
     // Try ServiceManager first (has db, writes to SQLite + data.json)

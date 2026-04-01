@@ -10,7 +10,6 @@ import {
   EditorSuggestContext,
   NoteSuggestionItem,
   NoteReference,
-  EnhancementType
 } from './base/SuggesterInterfaces';
 import { MessageEnhancer } from '../../services/MessageEnhancer';
 import { TokenCalculator } from '../../utils/TokenCalculator';
@@ -134,11 +133,16 @@ export class NoteSuggester extends BaseSuggester<NoteSuggestionItem> {
    * @param item - Selected note
    * @param evt - Selection event
    */
-  async selectSuggestion(
+  selectSuggestion(
     item: SuggestionItem<NoteSuggestionItem>,
-    evt: MouseEvent | KeyboardEvent
-  ): Promise<void> {
+    _evt: MouseEvent | KeyboardEvent
+  ): void {
+    void this.handleSuggestionSelection(item);
+  }
 
+  private async handleSuggestionSelection(
+    item: SuggestionItem<NoteSuggestionItem>
+  ): Promise<void> {
     const context = this.context;
     if (!context) return;
 

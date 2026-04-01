@@ -55,7 +55,7 @@ export interface OAuthFlowConfig {
  */
 export class OAuthFlowManager {
   private config: OAuthFlowConfig;
-  private isConnecting: boolean = false;
+  private isConnecting = false;
 
   constructor(config: OAuthFlowConfig) {
     this.config = config;
@@ -83,7 +83,9 @@ export class OAuthFlowManager {
       new OAuthConsentModal(
         this.config.app,
         oauthConfig,
-        (params) => this.executeFlow(params),
+        (params) => {
+          void this.executeFlow(params);
+        },
         () => { /* cancelled */ },
       ).open();
       return;
@@ -94,7 +96,9 @@ export class OAuthFlowManager {
       new OAuthPreAuthModal(
         this.config.app,
         oauthConfig,
-        (params) => this.executeFlow(params),
+        (params) => {
+          void this.executeFlow(params);
+        },
         () => { /* cancelled */ },
       ).open();
       return;

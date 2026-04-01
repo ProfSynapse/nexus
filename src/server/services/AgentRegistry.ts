@@ -87,9 +87,9 @@ export class AgentRegistry {
             try {
                 await agent.initialize();
                 logger.systemLog(`Agent initialized: ${agent.name}`);
-            } catch (error) {
-                logger.systemError(error as Error, `Agent Initialization: ${agent.name}`);
-                throw error;
+            } catch (_error) {
+                logger.systemError(_error as Error, `Agent Initialization: ${agent.name}`);
+                throw _error;
             }
         });
 
@@ -130,7 +130,7 @@ export class AgentRegistry {
                     description: agent.description,
                     toolCount: tools.length
                 };
-            } catch (error) {
+            } catch {
                 return {
                     name: agent.name,
                     description: agent.description,
@@ -192,9 +192,9 @@ export class AgentRegistry {
         try {
             const agent = this.getAgent(agentName);
             return agent.getTool(toolName) !== undefined;
-        } catch (error) {
-            return false;
-        }
+            } catch {
+                return false;
+            }
     }
 
     /**

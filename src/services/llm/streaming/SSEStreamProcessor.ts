@@ -47,17 +47,41 @@
  * - Proper finish reason handling
  */
 
-import { createParser, type ParsedEvent, type ParseEvent } from 'eventsource-parser';
-import { StreamChunk } from '../adapters/types';
+import { createParser, type ParseEvent } from 'eventsource-parser';
+import { StreamChunk, ToolCall } from '../adapters/types';
+
+export interface SSEParsedUsage {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+}
+
+interface SSEToolCallFunction {
+  name?: string;
+  arguments?: string;
+}
+
+export interface SSEToolCall {
+  index?: number;
+  id?: string;
+  type?: string;
+  function?: SSEToolCallFunction;
+  reasoning_details?: unknown;
+  thought_signature?: unknown;
+}
+
+export interface SSEParsedEvent extends Record<string, unknown> {
+  usage?: SSEParsedUsage;
+}
 
 export interface SSEStreamOptions {
-  extractContent: (parsed: any) => string | null;
-  extractToolCalls: (parsed: any) => any[] | null;
-  extractFinishReason: (parsed: any) => string | null;
-  extractUsage?: (parsed: any) => any;
-  extractMetadata?: (parsed: any) => Record<string, unknown> | null;
+  extractContent: (parsed: SSEParsedEvent) => string | null;
+  extractToolCalls: (parsed: SSEParsedEvent) => SSEToolCall[] | null;
+  extractFinishReason: (parsed: SSEParsedEvent) => string | null;
+  extractUsage?: (parsed: SSEParsedEvent) => SSEParsedUsage | undefined;
+  extractMetadata?: (parsed: SSEParsedEvent) => Record<string, unknown> | null;
   // Reasoning/thinking extraction for models that support it
-  extractReasoning?: (parsed: any) => { text: string; complete: boolean } | null;
+  extractReasoning?: (parsed: SSEParsedEvent) => { text: string; complete: boolean } | null;
   onParseError?: (error: Error, rawData: string) => void;
   debugLabel?: string;
   // Tool call accumulation settings
@@ -81,19 +105,16 @@ export class SSEStreamProcessor {
       throw new Error('Response body is not readable');
     }
 
-    const debugLabel = options.debugLabel || 'SSE';
-    let tokenCount = 0;
-    let usage: any = undefined;
+    let usage: SSEParsedUsage | undefined;
     let metadata: Record<string, unknown> | undefined = undefined;
 
     // Tool call accumulation system
-    const toolCallsAccumulator: Map<number, any> = new Map();
-    let accumulatedContent = '';
+    const toolCallsAccumulator: Map<number, ToolCall> = new Map();
 
     // Event queue for handling async events in sync generator
     const eventQueue: StreamChunk[] = [];
     let isCompleted = false;
-    let completionError: Error | null = null;
+    const completionError: Error | null = null;
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
@@ -132,7 +153,7 @@ export class SSEStreamProcessor {
       }
 
       try {
-        const parsed = JSON.parse(event.data);
+        const parsed = JSON.parse(event.data) as SSEParsedEvent;
 
         if (options.extractMetadata) {
           metadata = {
@@ -144,9 +165,6 @@ export class SSEStreamProcessor {
         // Extract content using adapter-specific logic
         const content = options.extractContent(parsed);
         if (content) {
-          tokenCount++;
-          accumulatedContent += content;
-
           eventQueue.push({
             content,
             complete: false
@@ -176,9 +194,9 @@ export class SSEStreamProcessor {
 
             if (!toolCallsAccumulator.has(index)) {
               // Initialize new tool call - preserve reasoning_details and thought_signature
-              const accumulated: any = {
+              const accumulated: ToolCall = {
                 id: toolCall.id || '',
-                type: toolCall.type || 'function',
+                type: 'function',
                 function: {
                   name: toolCall.function?.name || '',
                   arguments: toolCall.function?.arguments || ''
@@ -186,10 +204,10 @@ export class SSEStreamProcessor {
               };
 
               // Preserve reasoning data for OpenRouter Gemini and Google models
-              if (toolCall.reasoning_details) {
+              if (Array.isArray(toolCall.reasoning_details)) {
                 accumulated.reasoning_details = toolCall.reasoning_details;
               }
-              if (toolCall.thought_signature) {
+              if (typeof toolCall.thought_signature === 'string') {
                 accumulated.thought_signature = toolCall.thought_signature;
               }
 
@@ -198,10 +216,15 @@ export class SSEStreamProcessor {
             } else {
               // Accumulate existing tool call
               const existing = toolCallsAccumulator.get(index);
+              if (!existing) {
+                continue;
+              }
               if (toolCall.id) existing.id = toolCall.id;
-              if (toolCall.function?.name) existing.function.name = toolCall.function.name;
+              if (toolCall.function?.name) {
+                existing.function.name = toolCall.function.name;
+              }
               if (toolCall.function?.arguments) {
-                existing.function.arguments += toolCall.function.arguments;
+                existing.function.arguments = `${existing.function.arguments ?? ''}${toolCall.function.arguments}`;
 
                 // Check throttling conditions
                 const argLength = existing.function.arguments.length;
@@ -209,10 +232,10 @@ export class SSEStreamProcessor {
                 shouldYieldToolCalls = argLength > 0 && argLength % interval === 0;
               }
               // Also preserve reasoning data if it arrives in later chunks
-              if (toolCall.reasoning_details && !existing.reasoning_details) {
+              if (Array.isArray(toolCall.reasoning_details) && !existing.reasoning_details) {
                 existing.reasoning_details = toolCall.reasoning_details;
               }
-              if (toolCall.thought_signature && !existing.thought_signature) {
+              if (typeof toolCall.thought_signature === 'string' && !existing.thought_signature) {
                 existing.thought_signature = toolCall.thought_signature;
               }
             }
@@ -287,7 +310,10 @@ export class SSEStreamProcessor {
 
         // Yield any queued events
         while (eventQueue.length > 0) {
-          const event = eventQueue.shift()!;
+          const event = eventQueue.shift();
+          if (!event) {
+            continue;
+          }
           yield event;
 
           // If this was a completion event, we're done
@@ -300,7 +326,10 @@ export class SSEStreamProcessor {
 
       // Yield any remaining queued events
       while (eventQueue.length > 0) {
-        const event = eventQueue.shift()!;
+        const event = eventQueue.shift();
+        if (!event) {
+          continue;
+        }
         yield event;
       }
 
@@ -317,18 +346,12 @@ export class SSEStreamProcessor {
         };
       }
 
-    } catch (error) {
-      throw error;
     } finally {
       try {
-        reader.cancel();
-      } catch (error) {
+        void reader.cancel();
+      } catch {
         // Ignore cancellation errors
       }
-    }
-
-    if (completionError) {
-      throw completionError;
     }
   }
 }

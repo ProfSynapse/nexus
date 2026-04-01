@@ -17,7 +17,7 @@ import { MessageEnhancer } from './MessageEnhancer';
 export class SuggesterRegistry {
 
   private app: App;
-  private suggesters = new Map<SuggesterType, BaseSuggester<any>>();
+  private suggesters = new Map<SuggesterType, BaseSuggester<unknown>>();
   private messageEnhancer: MessageEnhancer;
   private activeSuggesters = new Set<SuggesterType>();
 
@@ -74,14 +74,14 @@ export class SuggesterRegistry {
    * @returns Suggester instance or undefined
    */
   get<T>(type: SuggesterType): BaseSuggester<T> | undefined {
-    return this.suggesters.get(type);
+    return this.suggesters.get(type) as BaseSuggester<T> | undefined;
   }
 
   /**
    * Get all registered suggesters
    * @returns Map of all suggesters
    */
-  getAll(): Map<SuggesterType, BaseSuggester<any>> {
+  getAll(): Map<SuggesterType, BaseSuggester<unknown>> {
     return new Map(this.suggesters);
   }
 

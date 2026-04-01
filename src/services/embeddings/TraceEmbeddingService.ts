@@ -23,6 +23,9 @@
 import type { EmbeddingEngine } from './EmbeddingEngine';
 import { preprocessContent, hashContent } from './EmbeddingUtils';
 import type { SQLiteCacheManager } from '../../database/storage/SQLiteCacheManager';
+import type { QueryParams } from '../../database/repositories/base/BaseRepository';
+
+const asQueryParams = (params: unknown[]): QueryParams => params as unknown as QueryParams;
 
 export interface TraceSearchResult {
   traceId: string;
@@ -85,7 +88,7 @@ export class TraceEmbeddingService {
         // Update existing - vec0 tables need direct buffer
         await this.db.run(
           'UPDATE trace_embeddings SET embedding = ? WHERE rowid = ?',
-          [embeddingBuffer, existing.rowid]
+          asQueryParams([embeddingBuffer, existing.rowid])
         );
         await this.db.run(
           'UPDATE trace_embedding_metadata SET contentHash = ?, model = ? WHERE rowid = ?',
@@ -95,7 +98,7 @@ export class TraceEmbeddingService {
         // Insert new - vec0 auto-generates rowid
         await this.db.run(
           'INSERT INTO trace_embeddings(embedding) VALUES (?)',
-          [embeddingBuffer]
+          asQueryParams([embeddingBuffer])
         );
         const result = await this.db.queryOne<{ id: number }>('SELECT last_insert_rowid() as id');
         const rowid = result?.id ?? 0;
@@ -153,7 +156,7 @@ export class TraceEmbeddingService {
         WHERE tem.workspaceId = ?
         ORDER BY distance
         LIMIT ?
-      `, [queryBuffer, workspaceId, candidateLimit]);
+      `, asQueryParams([queryBuffer, workspaceId, candidateLimit]));
 
       // 2. RE-RANKING LOGIC
       const now = Date.now();

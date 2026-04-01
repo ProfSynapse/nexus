@@ -19,6 +19,38 @@ export interface TerminalToolResult {
  */
 const TERMINAL_TOOLS = ['subagent', 'promptManager_subagent', 'promptManager.subagent'];
 
+interface WrappedToolCallParams {
+  task?: string;
+  tools?: Record<string, string[]>;
+}
+
+interface WrappedToolCall {
+  agent?: string;
+  tool?: string;
+  params?: WrappedToolCallParams;
+}
+
+interface TerminalSubagentResult {
+  success?: boolean;
+  data?: {
+    subagentId?: string;
+    branchId?: string;
+    status?: string;
+    message?: string;
+  };
+}
+
+interface UseToolResult {
+  success?: boolean;
+  data?: {
+    results?: TerminalSubagentResult[];
+  };
+}
+
+function isWrappedToolCallParams(value: unknown): value is { calls?: WrappedToolCall[] } {
+  return typeof value === 'object' && value !== null && 'calls' in value;
+}
+
 /**
  * Check if any executed tool is a "terminal" tool that should stop the pingpong loop
  * @param toolCalls - The tool calls with their execution results
@@ -33,18 +65,20 @@ export function checkForTerminalTool(toolCalls: ChatToolCall[]): TerminalToolRes
 
     // Check for subagent wrapped in toolManager_useTool
     let isWrappedSubagent = false;
-    let wrappedResult: any = null;
-    let wrappedParams: any = null;
+    let wrappedResult: TerminalSubagentResult | null = null;
+      let wrappedParams: WrappedToolCallParams | undefined;
 
     if (toolName === 'toolManager_useTool' || toolName.endsWith('useTool')) {
       // Try to get params from multiple sources
-      let params = toolCall.parameters as { calls?: Array<{ agent?: string; tool?: string; params?: any }> } | undefined;
+      let params = toolCall.parameters as { calls?: WrappedToolCall[] } | undefined;
 
       // If parameters is empty, try parsing from function.arguments
       if (!params?.calls && toolCall.function?.arguments) {
         try {
-          const parsed = JSON.parse(toolCall.function.arguments);
-          params = parsed;
+          const parsed = JSON.parse(toolCall.function.arguments) as unknown;
+          if (isWrappedToolCallParams(parsed)) {
+            params = parsed;
+          }
         } catch {
           // Ignore parse errors
         }
@@ -59,10 +93,7 @@ export function checkForTerminalTool(toolCalls: ChatToolCall[]): TerminalToolRes
 
           // Extract result from useTool's results array
           // Structure is: { success, data: { results: [...] } }
-          const useToolResult = toolCall.result as {
-            success?: boolean;
-            data?: { results?: Array<{ success?: boolean; data?: any; agent?: string; tool?: string }> };
-          } | undefined;
+          const useToolResult = toolCall.result as UseToolResult | undefined;
           const resultsArray = useToolResult?.data?.results;
 
           // Find the subagent result by index (matching position in calls array)
@@ -80,17 +111,9 @@ export function checkForTerminalTool(toolCalls: ChatToolCall[]): TerminalToolRes
 
     if (isDirectSubagent || isWrappedSubagent) {
       // Get the appropriate result and params
-      const result = isWrappedSubagent ? wrappedResult : toolCall.result as {
-        success?: boolean;
-        data?: {
-          subagentId?: string;
-          branchId?: string;
-          status?: string;
-          message?: string;
-        };
-      } | undefined;
+      const result = isWrappedSubagent ? wrappedResult : toolCall.result as TerminalSubagentResult | undefined;
 
-      const params = isWrappedSubagent ? wrappedParams : toolCall.parameters as { task?: string; tools?: Record<string, string[]> } | undefined;
+      const params = isWrappedSubagent ? wrappedParams : toolCall.parameters as WrappedToolCallParams | undefined;
 
       if (result?.success && result?.data) {
         const { branchId } = result.data;
@@ -99,10 +122,10 @@ export function checkForTerminalTool(toolCalls: ChatToolCall[]): TerminalToolRes
         let terminalMessage = `\n\n✅ **Subagent Started**\n\n`;
         terminalMessage += `**Task:** ${params?.task || 'Task assigned'}\n\n`;
 
-        const toolsParam = params?.tools as Record<string, string[]> | undefined;
+        const toolsParam = params?.tools;
         if (toolsParam && Object.keys(toolsParam).length > 0) {
           const toolsList = Object.entries(toolsParam)
-            .map(([agent, tools]) => `- ${agent}: ${(tools as string[]).join(', ')}`)
+            .map(([agent, tools]) => `- ${agent}: ${tools.join(', ')}`)
             .join('\n');
           terminalMessage += `**Tools Handed Off:**\n${toolsList}\n\n`;
         }

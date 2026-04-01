@@ -17,7 +17,8 @@ import {
   ProviderCapabilities,
   ModelPricing,
   TokenUsage,
-  LLMProviderError
+  LLMProviderError,
+  ToolCall
 } from '../types';
 import { ToolCallContentParser } from './ToolCallContentParser';
 import { usesCustomToolFormat } from '../../../chat/builders/ContextBuilderFactory';
@@ -49,6 +50,34 @@ interface ModelListResponse {
   }>;
 }
 
+interface ChatMessage {
+  role: string;
+  content: string;
+  tool_calls?: Array<{ id?: string; function?: { name?: string; arguments?: string } }>;
+  tool_call_id?: string;
+}
+
+interface ResponsesInputItem {
+  role?: string;
+  content?: string;
+  type?: string;
+  call_id?: string;
+  name?: string;
+  arguments?: string;
+  output?: string;
+}
+
+type LMStudioStreamChunk = ChatCompletionResponse & {
+  choices?: Array<{
+    delta?: {
+      content?: string;
+      tool_calls?: Array<{ id?: string; type?: string; function?: { name?: string; arguments?: string } }>;
+    };
+    finish_reason?: string;
+  }>;
+  usage?: ChatCompletionResponse['usage'];
+};
+
 export class LMStudioAdapter extends BaseAdapter {
   readonly name = 'lmstudio';
   readonly baseUrl: string;
@@ -72,14 +101,14 @@ export class LMStudioAdapter extends BaseAdapter {
   async generateUncached(prompt: string, options?: GenerateOptions): Promise<LLMResponse> {
     const model = options?.model || this.currentModel;
 
-    let messages: any[];
+    let messages: ChatMessage[];
     if (options?.conversationHistory && options.conversationHistory.length > 0) {
-      messages = options.conversationHistory;
+      messages = options.conversationHistory as unknown as ChatMessage[];
     } else {
       messages = this.buildMessages(prompt, options?.systemPrompt);
     }
 
-    const requestBody: any = {
+    const requestBody: Record<string, unknown> = {
       model: model,
       messages: messages,
       stream: false,
@@ -118,6 +147,13 @@ export class LMStudioAdapter extends BaseAdapter {
     this.assertOk(response, `LM Studio API error: ${response.status} - ${response.text || 'Unknown error'}`);
 
     const data = response.json as ChatCompletionResponse | null;
+    if (!data) {
+      throw new LLMProviderError(
+        'Invalid response format from LM Studio API: missing body',
+        'generation',
+        'INVALID_RESPONSE'
+      );
+    }
 
     if (!data?.choices || !data.choices[0]) {
       throw new LLMProviderError(
@@ -129,7 +165,7 @@ export class LMStudioAdapter extends BaseAdapter {
 
     const choice = data.choices[0];
     let content = choice.message?.content || '';
-    let toolCalls = choice.message?.tool_calls || [];
+    let toolCalls = (choice.message?.tool_calls || []) as ToolCall[];
 
     if (ToolCallContentParser.hasToolCallsFormat(content)) {
       const parsed = ToolCallContentParser.parse(content);
@@ -165,14 +201,14 @@ export class LMStudioAdapter extends BaseAdapter {
     const model = options?.model || this.currentModel;
 
     // Check for pre-built conversation history (tool continuations)
-    let messages: any[];
+    let messages: ChatMessage[];
     if (options?.conversationHistory && options.conversationHistory.length > 0) {
-      messages = options.conversationHistory;
+      messages = options.conversationHistory as unknown as ChatMessage[];
     } else {
       messages = this.buildMessages(prompt, options?.systemPrompt);
     }
 
-    const requestBody: any = {
+    const requestBody: Record<string, unknown> = {
       model: model,
       messages: messages,
       stream: true,
@@ -212,10 +248,10 @@ export class LMStudioAdapter extends BaseAdapter {
 
     for await (const chunk of this.processNodeStream(nodeStream, {
       debugLabel: 'LM Studio',
-      extractContent: (parsed) => parsed.choices?.[0]?.delta?.content || null,
-      extractToolCalls: (parsed) => parsed.choices?.[0]?.delta?.tool_calls || null,
-      extractFinishReason: (parsed) => parsed.choices?.[0]?.finish_reason || null,
-      extractUsage: (parsed) => parsed.usage,
+      extractContent: (parsed) => (parsed as LMStudioStreamChunk).choices?.[0]?.delta?.content || null,
+      extractToolCalls: (parsed) => (parsed as LMStudioStreamChunk).choices?.[0]?.delta?.tool_calls || null,
+      extractFinishReason: (parsed) => (parsed as LMStudioStreamChunk).choices?.[0]?.finish_reason || null,
+      extractUsage: (parsed) => (parsed as LMStudioStreamChunk).usage,
       accumulateToolCalls: true,
       toolCallThrottling: {
         initialYield: true,
@@ -250,7 +286,7 @@ export class LMStudioAdapter extends BaseAdapter {
   /**
    * Convert tools to Responses API format
    */
-  private convertToolsForResponsesApi(tools: any[]): any[] {
+  private convertToolsForResponsesApi(tools: Array<{ function?: { name?: string; description?: string; parameters?: unknown } }>): Array<Record<string, unknown>> {
     return tools.map((tool) => {
       if (tool.function) {
         return {
@@ -277,8 +313,8 @@ export class LMStudioAdapter extends BaseAdapter {
    * - { role: 'assistant', content: '...' } OR function_call items
    * - { type: 'function_call_output', call_id: '...', output: '...' }
    */
-  private convertChatCompletionsToResponsesInput(messages: any[], systemPrompt?: string): any[] {
-    const input: any[] = [];
+  private convertChatCompletionsToResponsesInput(messages: ChatMessage[], systemPrompt?: string): ResponsesInputItem[] {
+    const input: ResponsesInputItem[] = [];
 
     // Add system prompt first if provided
     if (systemPrompt) {
@@ -295,10 +331,10 @@ export class LMStudioAdapter extends BaseAdapter {
             input.push({ role: 'assistant', content: msg.content });
           }
           // Convert tool_calls to function_call items
-          for (const tc of msg.tool_calls) {
-            input.push({
-              type: 'function_call',
-              call_id: tc.id,
+            for (const tc of msg.tool_calls) {
+              input.push({
+                type: 'function_call',
+                call_id: tc.id,
               name: tc.function?.name || '',
               arguments: tc.function?.arguments || '{}'
             });
@@ -391,7 +427,7 @@ export class LMStudioAdapter extends BaseAdapter {
     };
   }
 
-  async getModelPricing(modelId: string): Promise<ModelPricing | null> {
+  async getModelPricing(_modelId: string): Promise<ModelPricing | null> {
     // Local models are free - zero rates
     const pricing: ModelPricing = {
       rateInputPerMillion: 0,
@@ -411,7 +447,7 @@ export class LMStudioAdapter extends BaseAdapter {
         timeoutMs: 10_000
       });
       return response.status === 200;
-    } catch (error) {
+    } catch {
       return false;
     }
   }
@@ -420,7 +456,7 @@ export class LMStudioAdapter extends BaseAdapter {
    * Convert tools from Chat Completions format to ensure compatibility
    * Handles both flat and nested tool formats
    */
-  private convertTools(tools: any[]): any[] {
+  private convertTools(tools: Array<{ name?: string; function?: { name?: string; description?: string; parameters?: unknown } }>): Array<Record<string, unknown>> {
     return tools.map((tool) => {
       // If already in flat format {type, name, description, parameters}, return as-is
       if (tool.name && !tool.function) {
@@ -503,8 +539,8 @@ export class LMStudioAdapter extends BaseAdapter {
     }
   }
 
-  protected buildMessages(prompt: string, systemPrompt?: string): any[] {
-    const messages = [];
+  protected buildMessages(prompt: string, systemPrompt?: string): ChatMessage[] {
+    const messages: ChatMessage[] = [];
 
     if (systemPrompt) {
       messages.push({ role: 'system', content: systemPrompt });
@@ -515,7 +551,7 @@ export class LMStudioAdapter extends BaseAdapter {
     return messages;
   }
 
-  protected handleError(error: any, operation: string): never {
+  protected handleError(error: unknown, operation: string): never {
     if (error instanceof LLMProviderError) {
       throw error;
     }
@@ -523,18 +559,19 @@ export class LMStudioAdapter extends BaseAdapter {
     let message = `LM Studio ${operation} failed`;
     let code = 'UNKNOWN_ERROR';
 
-    if (error?.message) {
+    if (error instanceof Error && error.message) {
       message += `: ${error.message}`;
     }
 
-    if (error?.code === 'ECONNREFUSED') {
+    const errorCode = error && typeof error === 'object' ? (error as { code?: string }).code : undefined;
+    if (errorCode === 'ECONNREFUSED') {
       message = 'Cannot connect to LM Studio server. Make sure LM Studio is running and the server is started.';
       code = 'CONNECTION_REFUSED';
-    } else if (error?.code === 'ENOTFOUND') {
+    } else if (errorCode === 'ENOTFOUND') {
       message = 'LM Studio server not found. Check the URL configuration.';
       code = 'SERVER_NOT_FOUND';
     }
 
-    throw new LLMProviderError(message, this.name, code, error);
+    throw new LLMProviderError(message, this.name, code, error instanceof Error ? error : undefined);
   }
 }

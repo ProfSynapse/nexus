@@ -7,7 +7,6 @@
  * providing a focused interface for chat UI operations.
  */
 
-import { Notice } from 'obsidian';
 import type { App, Plugin } from 'obsidian';
 import type { Settings } from '../../settings';
 import type { ChatService } from '../../services/chat/ChatService';
@@ -29,8 +28,8 @@ export interface ChatUIManagerConfig {
 
 export class ChatUIManager {
     private config: ChatUIManagerConfig;
-    private chatUIRegistered: boolean = false;
-    private viewRegistered: boolean = false;
+    private chatUIRegistered = false;
+    private viewRegistered = false;
 
     constructor(config: ChatUIManagerConfig) {
         this.config = config;
@@ -88,7 +87,7 @@ export class ChatUIManager {
      */
     async registerChatUI(): Promise<void> {
         try {
-            const { plugin, app } = this.config;
+            const { plugin } = this.config;
 
             // Skip if already registered
             if (this.chatUIRegistered) {
@@ -99,16 +98,16 @@ export class ChatUIManager {
             await this.registerViewEarly();
 
             // Add ribbon icon for chat
-            plugin.addRibbonIcon('message-square', 'Nexus Chat', () => {
-                this.activateChatView();
+            plugin.addRibbonIcon('message-square', 'Open chat', () => {
+                void this.activateChatView();
             });
 
             // Add command to open chat
             plugin.addCommand({
                 id: 'open-chat',
-                name: 'Open Nexus Chat',
+                name: 'Open chat',
                 callback: () => {
-                    this.activateChatView();
+                    void this.activateChatView();
                 }
             });
 
@@ -131,7 +130,7 @@ export class ChatUIManager {
         // Check if chat view already exists
         const existingLeaf = app.workspace.getLeavesOfType(CHAT_VIEW_TYPE)[0];
         if (existingLeaf) {
-            app.workspace.revealLeaf(existingLeaf);
+            await app.workspace.revealLeaf(existingLeaf);
             return;
         }
         
@@ -144,7 +143,7 @@ export class ChatUIManager {
             active: true
         });
 
-        app.workspace.revealLeaf(leaf);
+        await app.workspace.revealLeaf(leaf);
     }
 
     /**

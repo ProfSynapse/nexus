@@ -5,12 +5,11 @@
  * Uses a mocked IMessageRepository for dependency isolation.
  */
 
-import { ConversationWindowRetriever, MessageWindow } from '../../src/services/embeddings/ConversationWindowRetriever';
+import { ConversationWindowRetriever } from '../../src/services/embeddings/ConversationWindowRetriever';
 import type { IMessageRepository } from '../../src/database/repositories/interfaces/IMessageRepository';
 import type { MessageData } from '../../src/types/storage/HybridStorageTypes';
 import {
   createLongConversation,
-  createMessage,
   resetMessageIdCounter,
   CONVERSATION_IDS,
 } from '../fixtures/conversationSearch';
@@ -158,6 +157,7 @@ describe('ConversationWindowRetriever', () => {
       // windowSize=1, offset = 1*2 = 2
       // Match at 10-11: windowStart = max(0,10-2) = 8, windowEnd = 11+2 = 13
       const result = await retriever.getWindow(CONVERSATION_IDS.long, 10, 11, { windowSize: 1 });
+      void result;
 
       expect(mockRepo.getMessagesBySequenceRange).toHaveBeenCalledWith(
         CONVERSATION_IDS.long,
@@ -170,6 +170,7 @@ describe('ConversationWindowRetriever', () => {
       // windowSize=5, offset = 5*2 = 10
       // Match at 10-11: windowStart = max(0,10-10) = 0, windowEnd = 11+10 = 21
       const result = await retriever.getWindow(CONVERSATION_IDS.long, 10, 11, { windowSize: 5 });
+      void result;
 
       expect(mockRepo.getMessagesBySequenceRange).toHaveBeenCalledWith(
         CONVERSATION_IDS.long,

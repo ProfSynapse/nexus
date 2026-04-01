@@ -13,6 +13,8 @@ import {
   WorkspaceMetadata
 } from '../../types/storage/StorageTypes';
 
+type DateRangeBucket = ConversationIndex['byDateRange'][number];
+
 export class IndexManager {
   constructor(private fileSystem: FileSystemService) {}
 
@@ -428,7 +430,7 @@ export class IndexManager {
   /**
    * Add conversation to appropriate date range bucket
    */
-  private addToDateRangeBucket(buckets: any[], timestamp: number, id: string): void {
+  private addToDateRangeBucket(buckets: DateRangeBucket[], timestamp: number, id: string): void {
     for (const bucket of buckets) {
       if (timestamp >= bucket.start && timestamp < bucket.end) {
         if (!bucket.conversationIds.includes(id)) {

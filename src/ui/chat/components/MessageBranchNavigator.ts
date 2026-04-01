@@ -61,8 +61,13 @@ export class MessageBranchNavigator {
     // Event listeners
     const prevHandler = () => this.handlePreviousAlternative();
     const nextHandler = () => this.handleNextAlternative();
-    this.component!.registerDomEvent(this.prevButton, 'click', prevHandler);
-    this.component!.registerDomEvent(this.nextButton, 'click', nextHandler);
+    if (this.component) {
+      this.component.registerDomEvent(this.prevButton, 'click', prevHandler);
+      this.component.registerDomEvent(this.nextButton, 'click', nextHandler);
+    } else {
+      this.prevButton.addEventListener('click', prevHandler);
+      this.nextButton.addEventListener('click', nextHandler);
+    }
   }
 
   /**
@@ -111,7 +116,7 @@ export class MessageBranchNavigator {
   /**
    * Handle previous alternative navigation
    */
-  private async handlePreviousAlternative(): Promise<void> {
+  private handlePreviousAlternative(): void {
     if (!this.currentMessage) return;
     
     const currentIndex = this.currentMessage.activeAlternativeIndex || 0;
@@ -125,7 +130,7 @@ export class MessageBranchNavigator {
   /**
    * Handle next alternative navigation
    */
-  private async handleNextAlternative(): Promise<void> {
+  private handleNextAlternative(): void {
     if (!this.currentMessage) return;
     
     const currentIndex = this.currentMessage.activeAlternativeIndex || 0;
@@ -148,8 +153,9 @@ export class MessageBranchNavigator {
    * Get total branch count (including the original message)
    */
   private getAlternativeCount(): number {
-    if (!this.hasAlternatives()) return 1;
-    return (this.currentMessage!.branches!.length) + 1; // +1 for original message
+    const branches = this.currentMessage?.branches;
+    if (!branches || branches.length === 0) return 1;
+    return branches.length + 1; // +1 for original message
   }
 
   /**

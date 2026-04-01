@@ -73,7 +73,7 @@ export class CaptureToMarkdownTool extends BaseTool<CaptureToMarkdownParams, Com
       }
 
       await app.workspace.revealLeaf(leaf);
-      await app.workspace.setActiveLeaf(leaf, { focus: true });
+      app.workspace.setActiveLeaf(leaf, { focus: true });
       await waitForWebViewerReady(leaf, timeoutMs, settleMs);
 
       const beforePaths = new Set(app.vault.getMarkdownFiles().map((file) => file.path));

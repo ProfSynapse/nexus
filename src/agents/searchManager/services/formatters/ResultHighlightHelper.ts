@@ -20,7 +20,7 @@ import {
 export class ResultHighlightHelper {
   private maxHighlightLength: number;
 
-  constructor(maxHighlightLength: number = 200) {
+  constructor(maxHighlightLength = 200) {
     this.maxHighlightLength = maxHighlightLength;
   }
 

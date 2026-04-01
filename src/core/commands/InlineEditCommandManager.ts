@@ -55,12 +55,12 @@ export class InlineEditCommandManager {
   private registerInlineEditCommand(): void {
     this.config.plugin.addCommand({
       id: 'inline-ai-edit',
-      name: 'Edit selection with AI',
+      name: 'Edit selection',
       editorCallback: async (editor: Editor, ctx: MarkdownView | MarkdownFileInfo) => {
         // Get MarkdownView from context
         const view = ctx instanceof MarkdownView ? ctx : this.getActiveMarkdownView();
         if (!view) {
-          new Notice('No active markdown view');
+          new Notice('No active Markdown view');
           return;
         }
         await this.handleInlineEdit(editor, view);
@@ -95,7 +95,7 @@ export class InlineEditCommandManager {
 
         menu.addItem((item) => {
           item
-            .setTitle('Edit with AI')
+            .setTitle('Edit selection')
             .setIcon('wand-2')
             .onClick(async () => {
               await this.handleInlineEdit(editor, view);
@@ -111,7 +111,7 @@ export class InlineEditCommandManager {
   private async handleInlineEdit(editor: Editor, view: MarkdownView): Promise<void> {
     // Check for selection
     if (!editor.somethingSelected()) {
-      new Notice('Please select text to edit');
+      new Notice('Please select text to edit.');
       return;
     }
 
@@ -133,7 +133,7 @@ export class InlineEditCommandManager {
     // Get LLM service
     const llmService = await this.config.getService<LLMService>('llmService');
     if (!llmService) {
-      new Notice('LLM service not available. Please check your configuration.');
+      new Notice('The AI service is not available. Please check your configuration.');
       return;
     }
 

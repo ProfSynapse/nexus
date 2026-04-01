@@ -22,6 +22,25 @@ import { IMessageRepository, CreateMessageData, UpdateMessageData } from './inte
 import { MessageData, AlternativeMessage } from '../../types/storage/HybridStorageTypes';
 import { MessageEvent, MessageUpdatedEvent, MessageDeletedEvent, AlternativeMessageEvent } from '../interfaces/StorageEvents';
 import { PaginatedResult, PaginationParams } from '../../types/pagination/PaginationTypes';
+import { DatabaseRow, QueryParams } from './base/BaseRepository';
+
+interface MessageRow extends DatabaseRow {
+  id: string;
+  conversationId: string;
+  role: MessageData['role'];
+  content: string;
+  timestamp: number;
+  state?: MessageData['state'];
+  sequenceNumber: number;
+  toolCallsJson?: string | null;
+  toolCallId?: string | null;
+  reasoningContent?: string | null;
+  alternativesJson?: string | null;
+  activeAlternativeIndex?: number | null;
+  metadataJson?: string | null;
+}
+
+type MessageJSONValue = Record<string, unknown>;
 
 /**
  * Callback signature for message completion observers.
@@ -100,12 +119,12 @@ export class MessageRepository
   // Abstract method implementations
   // ============================================================================
 
-  protected rowToEntity(row: any): MessageData {
+  protected rowToEntity(row: MessageRow): MessageData {
     return this.rowToMessage(row);
   }
 
   async getById(id: string): Promise<MessageData | null> {
-    const row = await this.sqliteCache.queryOne<any>(
+    const row = await this.sqliteCache.queryOne<MessageRow>(
       `SELECT * FROM ${this.tableName} WHERE id = ?`,
       [id]
     );
@@ -126,7 +145,7 @@ export class MessageRepository
     };
   }
 
-  async create(data: any): Promise<string> {
+  async create(_data: unknown): Promise<string> {
     // Use addMessage with conversationId
     throw new Error('Use addMessage(conversationId, data) instead');
   }
@@ -169,7 +188,7 @@ export class MessageRepository
     const totalItems = countResult?.count ?? 0;
 
     // Get data (ordered by sequence number)
-    const rows = await this.sqliteCache.query<any>(
+    const rows = await this.sqliteCache.query<MessageRow>(
       `SELECT * FROM ${this.tableName} WHERE conversationId = ?
        ORDER BY sequenceNumber ASC
        LIMIT ? OFFSET ?`,
@@ -223,7 +242,7 @@ export class MessageRepository
     startSeq: number,
     endSeq: number
   ): Promise<MessageData[]> {
-    const rows = await this.sqliteCache.query<any>(
+    const rows = await this.sqliteCache.query<MessageRow>(
       `SELECT * FROM ${this.tableName}
        WHERE conversationId = ?
          AND sequenceNumber >= ?
@@ -340,7 +359,7 @@ export class MessageRepository
   async update(messageId: string, data: UpdateMessageData): Promise<void> {
     try {
       // Get message to find conversation ID
-      const message = await this.sqliteCache.queryOne<any>(
+      const message = await this.sqliteCache.queryOne<{ conversationId: string }>(
         `SELECT conversationId FROM ${this.tableName} WHERE id = ?`,
         [messageId]
       );
@@ -381,7 +400,7 @@ export class MessageRepository
 
       // 2. Update SQLite cache
       const setClauses: string[] = [];
-      const params: any[] = [];
+      const params: QueryParams = [];
 
       if (data.content !== undefined) {
         setClauses.push('content = ?');
@@ -477,15 +496,15 @@ export class MessageRepository
   /**
    * Convert SQLite row to MessageData
    */
-  private rowToMessage(row: any): MessageData {
-    let toolCalls: any;
-    let metadata: any;
-    let alternatives: any;
+  private rowToMessage(row: MessageRow): MessageData {
+    let toolCalls: MessageData['toolCalls'];
+    let metadata: MessageJSONValue | undefined;
+    let alternatives: AlternativeMessage[] | undefined;
 
     // Defensive JSON parsing — corrupt data shouldn't crash the entire message load
     if (row.toolCallsJson) {
       try {
-        toolCalls = JSON.parse(row.toolCallsJson);
+        toolCalls = this.parseJsonValue<MessageData['toolCalls']>(row.toolCallsJson);
       } catch {
         console.error(`[MessageRepository] Failed to parse toolCallsJson for message ${row.id}`);
         toolCalls = undefined;
@@ -494,7 +513,7 @@ export class MessageRepository
 
     if (row.metadataJson) {
       try {
-        metadata = JSON.parse(row.metadataJson);
+        metadata = this.parseJsonValue<MessageJSONValue>(row.metadataJson);
       } catch {
         console.error(`[MessageRepository] Failed to parse metadataJson for message ${row.id}`);
         metadata = undefined;
@@ -503,7 +522,7 @@ export class MessageRepository
 
     if (row.alternativesJson) {
       try {
-        alternatives = JSON.parse(row.alternativesJson);
+        alternatives = this.parseJsonValue<AlternativeMessage[]>(row.alternativesJson);
       } catch {
         console.error(`[MessageRepository] Failed to parse alternativesJson for message ${row.id}`);
         alternatives = undefined;
@@ -525,6 +544,14 @@ export class MessageRepository
       alternatives,
       activeAlternativeIndex: row.activeAlternativeIndex ?? 0
     };
+  }
+
+  private parseJsonValue<T>(json: string): T | undefined {
+    try {
+      return JSON.parse(json) as T;
+    } catch {
+      return undefined;
+    }
   }
 
   /**

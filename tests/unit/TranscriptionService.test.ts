@@ -335,30 +335,42 @@ describe('TranscriptionService', () => {
 
   describe('HTTP request', () => {
     it('sends to OpenAI endpoint with Bearer auth', async () => {
-      let capturedRequest: any = null;
-      __setRequestUrlMock(async (req) => {
+      type CapturedRequest = {
+        url: string;
+        method?: string;
+        headers: Record<string, string>;
+      };
+
+      let capturedRequest: CapturedRequest | null = null;
+      __setRequestUrlMock(async (req: CapturedRequest) => {
         capturedRequest = req;
         return { status: 200, json: { segments: [] } };
       });
 
       await transcribeAudio(new ArrayBuffer(10), 'audio/mpeg', 'test.mp3', 'openai', undefined, makeDeps());
 
-      expect(capturedRequest.url).toBe('https://api.openai.com/v1/audio/transcriptions');
-      expect(capturedRequest.method).toBe('POST');
-      expect(capturedRequest.headers['Authorization']).toBe('Bearer sk-test-key');
+      expect(capturedRequest?.url).toBe('https://api.openai.com/v1/audio/transcriptions');
+      expect(capturedRequest?.method).toBe('POST');
+      expect(capturedRequest?.headers['Authorization']).toBe('Bearer sk-test-key');
     });
 
     it('sends to Groq endpoint for groq provider', async () => {
-      let capturedRequest: any = null;
-      __setRequestUrlMock(async (req) => {
+      type CapturedRequest = {
+        url: string;
+        method?: string;
+        headers: Record<string, string>;
+      };
+
+      let capturedRequest: CapturedRequest | null = null;
+      __setRequestUrlMock(async (req: CapturedRequest) => {
         capturedRequest = req;
         return { status: 200, json: { segments: [] } };
       });
 
       await transcribeAudio(new ArrayBuffer(10), 'audio/mpeg', 'test.mp3', 'groq', undefined, makeDeps());
 
-      expect(capturedRequest.url).toBe('https://api.groq.com/openai/v1/audio/transcriptions');
-      expect(capturedRequest.headers['Authorization']).toBe('Bearer gsk-test-key');
+      expect(capturedRequest?.url).toBe('https://api.groq.com/openai/v1/audio/transcriptions');
+      expect(capturedRequest?.headers['Authorization']).toBe('Bearer gsk-test-key');
     });
   });
 

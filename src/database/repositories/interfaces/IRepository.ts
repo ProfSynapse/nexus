@@ -24,7 +24,7 @@ import { PaginatedResult, PaginationParams } from '../../../types/pagination/Pag
  *
  * @template T - The entity type this repository manages
  */
-export interface IRepository<T> {
+export interface IRepository<T, TCreate = Partial<T>, TUpdate = Partial<T>> {
   /**
    * Get a single entity by ID
    *
@@ -47,7 +47,7 @@ export interface IRepository<T> {
    * @param data - Entity data
    * @returns ID of the created entity
    */
-  create(data: any): Promise<string>;
+  create(data: TCreate): Promise<string>;
 
   /**
    * Update an existing entity
@@ -55,7 +55,7 @@ export interface IRepository<T> {
    * @param id - Entity ID
    * @param data - Partial entity data to update
    */
-  update(id: string, data: any): Promise<void>;
+  update(id: string, data: TUpdate): Promise<void>;
 
   /**
    * Delete an entity

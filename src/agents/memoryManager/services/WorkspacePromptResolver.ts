@@ -28,6 +28,12 @@ export interface WorkspacePromptInfo {
   systemPrompt: string;
 }
 
+interface PromptEntry {
+  id: string;
+  name: string;
+  prompt: string;
+}
+
 /**
  * Legacy workspace context structure for backward compatibility
  * Extends the current WorkspaceContext with deprecated fields
@@ -45,10 +51,18 @@ interface LegacyWorkspaceContext extends WorkspaceContext {
  */
 export class WorkspacePromptResolver {
   private app: App;
-  private plugin: any;
+  private plugin: {
+    settings?: {
+      settings?: {
+        customPrompts?: {
+          prompts?: PromptEntry[];
+        };
+      };
+    };
+  } | null;
   private customPromptStorage?: CustomPromptStorageService;
 
-  constructor(app: App, plugin: any, customPromptStorage?: CustomPromptStorageService) {
+  constructor(app: App, plugin: WorkspacePromptResolver['plugin'], customPromptStorage?: CustomPromptStorageService) {
     this.app = app;
     this.plugin = plugin;
     this.customPromptStorage = customPromptStorage;
@@ -110,7 +124,7 @@ export class WorkspacePromptResolver {
    */
   async fetchPromptByNameOrId(
     identifier: string,
-    app: App
+    _app: App
   ): Promise<WorkspacePromptInfo | null> {
     try {
       // Primary: CustomPromptStorageService (SQLite -> internal fallback to data.json)
@@ -129,11 +143,11 @@ export class WorkspacePromptResolver {
       const prompts = this.plugin?.settings?.settings?.customPrompts?.prompts || [];
 
       // Try ID lookup first (more specific)
-      let fallbackPrompt = prompts.find((p: any) => p.id === identifier);
+      let fallbackPrompt = prompts.find((p) => p.id === identifier);
 
       // Fall back to name lookup
       if (!fallbackPrompt) {
-        fallbackPrompt = prompts.find((p: any) => p.name === identifier);
+        fallbackPrompt = prompts.find((p) => p.name === identifier);
       }
 
       if (!fallbackPrompt) {

@@ -8,6 +8,7 @@
  */
 
 import { App } from 'obsidian';
+import type NexusPlugin from '../../main';
 import { BaseAgent } from '../baseAgent';
 import { TaskService } from './services/TaskService';
 
@@ -43,13 +44,14 @@ export class TaskManagerAgent extends BaseAgent {
   private app: App;
   private taskService: TaskService;
 
-  constructor(app: App, plugin: any, taskService: TaskService) {
+  constructor(app: App, plugin: NexusPlugin, taskService: TaskService) {
     super(
       'taskManager',
       'Workspace-scoped project and task management with DAG dependencies. Data model: Workspace → Project → Task. Two relationship types: dependsOn[] creates DAG edges between tasks (task cannot start until dependencies are done; cycles are rejected), parentTaskId nests subtasks under a parent (organizational hierarchy). Typical workflow: loadWorkspace → listProjects → createProject → createTask → queryTasks (nextActions) to find ready work, or openTasks for the visual board. 11 tools: createProject, listProjects, updateProject, archiveProject, createTask, listTasks, openTasks, updateTask, moveTask, queryTasks, linkNote.',
       '1.0.0'
     );
 
+    void plugin;
     this.app = app;
     this.taskService = taskService;
 

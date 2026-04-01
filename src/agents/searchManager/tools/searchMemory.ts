@@ -2,21 +2,32 @@ import { Plugin } from 'obsidian';
 import { BaseTool } from '../../baseTool';
 import { getErrorMessage } from '../../../utils/errorUtils';
 import {
-  MemorySearchParameters,
   MemorySearchResult,
   EnrichedMemorySearchResult,
   SearchMemoryModeResult,
-  DateRange
+  DateRange,
+  MemorySearchTraceLike
 } from '../../../types/memory/MemorySearchTypes';
-import { MemorySearchProcessor, MemorySearchProcessorInterface, SearchMetadata, SearchProcessResult } from '../services/MemorySearchProcessor';
+import { MemorySearchProcessor, MemorySearchProcessorInterface, SearchMetadata } from '../services/MemorySearchProcessor';
 import { MemorySearchFilters, MemorySearchFiltersInterface } from '../services/MemorySearchFilters';
 import { ResultFormatter, ResultFormatterInterface } from '../services/ResultFormatter';
 import { CommonParameters } from '../../../types/mcp/AgentTypes';
 import { MemoryService } from "../../memoryManager/services/MemoryService";
 import { WorkspaceService, GLOBAL_WORKSPACE_ID } from '../../../services/WorkspaceService';
 import { IStorageAdapter } from '../../../database/interfaces/IStorageAdapter';
-import { addRecommendations, Recommendation } from '../../../utils/recommendationUtils';
+import { Recommendation } from '../../../utils/recommendationUtils';
 import { NudgeHelpers } from '../../../utils/nudgeHelpers';
+
+type SearchMemoryResultWithRecommendations = SearchMemoryResult & {
+  recommendations: Recommendation[];
+};
+
+function addSearchRecommendations(
+  result: SearchMemoryResult,
+  recommendations: Recommendation[]
+): SearchMemoryResultWithRecommendations {
+  return { ...result, recommendations };
+}
 
 /**
  * Memory types available for search (simplified after MemoryManager refactor)
@@ -69,11 +80,11 @@ export interface SearchMemoryParams extends CommonParameters {
   // Additional properties to match MemorySearchParams
   workspace?: string;
   dateRange?: DateRange;
-  toolCallFilters?: any;
+  toolCallFilters?: Record<string, unknown>;
 }
 
 // SearchMemoryResult extends the base type
-export interface SearchMemoryResult extends SearchMemoryModeResult {}
+export type SearchMemoryResult = SearchMemoryModeResult
 
 // Legacy interface names for backward compatibility
 export type { MemorySearchResult };
@@ -120,7 +131,7 @@ export class SearchMemoryTool extends BaseTool<SearchMemoryParams, SearchMemoryR
     this.formatter = formatter || new ResultFormatter();
   }
 
-  private isThinContext(context: any): boolean {
+  private isThinContext(context: unknown): boolean {
     if (!context || typeof context !== 'object') {
       return true;
     }
@@ -162,12 +173,12 @@ export class SearchMemoryTool extends BaseTool<SearchMemoryParams, SearchMemoryR
 
           // Conversation results have a different structure than trace/state results
           if (trace.type === 'conversation') {
-            return this.formatConversationResult(trace);
+          return this.formatConversationResult(trace as unknown as MemorySearchTraceLike);
           }
 
           // Standard trace/state result formatting
-          return this.formatTraceResult(trace);
-        } catch (error) {
+          return this.formatTraceResult(trace as unknown as MemorySearchTraceLike);
+        } catch {
           return null;
         }
       });
@@ -187,7 +198,7 @@ export class SearchMemoryTool extends BaseTool<SearchMemoryParams, SearchMemoryR
       // Generate nudges based on memory search results
       const nudges = this.generateMemorySearchNudges(results, metadata);
 
-      return addRecommendations(result, nudges);
+      return addSearchRecommendations(result, nudges);
 
     } catch (error) {
       console.error('[SearchMemoryTool] Search error:', error);
@@ -195,7 +206,7 @@ export class SearchMemoryTool extends BaseTool<SearchMemoryParams, SearchMemoryR
     }
   }
 
-  getParameterSchema() {
+  getParameterSchema(): Record<string, unknown> {
     // Create the enhanced tool-specific schema
     const toolSchema = {
       type: 'object',
@@ -294,7 +305,7 @@ export class SearchMemoryTool extends BaseTool<SearchMemoryParams, SearchMemoryR
     return this.getMergedSchema(toolSchema);
   }
 
-  getResultSchema() {
+  getResultSchema(): Record<string, unknown> {
     return {
       type: 'object',
       properties: {
@@ -381,7 +392,7 @@ export class SearchMemoryTool extends BaseTool<SearchMemoryParams, SearchMemoryR
    * Returns a structured object with type 'conversation', the matched Q/A pair,
    * conversation metadata, and optional windowed messages for scoped search.
    */
-  private formatConversationResult(trace: Record<string, unknown>): Record<string, unknown> {
+  private formatConversationResult(trace: MemorySearchTraceLike): Record<string, unknown> {
     const entry: Record<string, unknown> = {
       type: 'conversation',
       conversationTitle: trace.conversationTitle || 'Untitled',
@@ -408,7 +419,7 @@ export class SearchMemoryTool extends BaseTool<SearchMemoryParams, SearchMemoryR
    * Format a standard trace/state result for the tool response.
    * Extracts content, tool name, and context from the raw trace metadata.
    */
-  private formatTraceResult(trace: Record<string, unknown>): Record<string, unknown> | null {
+  private formatTraceResult(trace: MemorySearchTraceLike): Record<string, unknown> | null {
     // Target canonical metadata context first, then legacy fallbacks
     const metadata = trace.metadata as Record<string, unknown> | undefined;
     let context = metadata?.context as Record<string, unknown> | undefined;
@@ -478,7 +489,10 @@ export class SearchMemoryTool extends BaseTool<SearchMemoryParams, SearchMemoryR
   /**
    * Generate nudges based on memory search results
    */
-  private generateMemorySearchNudges(results: any[], metadata: SearchMetadata): Recommendation[] {
+  private generateMemorySearchNudges(
+    results: Array<{ category?: string; metadata?: { type?: string } }>,
+    metadata: SearchMetadata
+  ): Recommendation[] {
     const nudges: Recommendation[] = [];
 
     if (!Array.isArray(results) || results.length === 0) {
