@@ -37,7 +37,7 @@ export class TextAreaPromptSuggester extends ContentEditableSuggester<PromptSugg
     this.promptStorage = promptStorage;
   }
 
-  async getSuggestions(query: string): Promise<SuggestionItem<PromptSuggestionItem>[]> {
+  getSuggestions(query: string): SuggestionItem<PromptSuggestionItem>[] {
     const prompts = this.promptStorage.getEnabledPrompts();
 
     if (prompts.length === 0) {

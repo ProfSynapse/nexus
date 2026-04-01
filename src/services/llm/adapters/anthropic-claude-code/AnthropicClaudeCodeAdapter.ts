@@ -1,4 +1,3 @@
-/* eslint-disable import/no-nodejs-modules -- desktop-only Claude Code adapter uses Node child_process in Electron */
 import { Platform, Vault } from 'obsidian';
 import type { ChildProcess } from 'child_process';
 import { BaseAdapter } from '../BaseAdapter';
@@ -65,7 +64,7 @@ export class AnthropicClaudeCodeAdapter extends BaseAdapter {
   }
 
   async* generateStreamAsync(prompt: string, options?: GenerateOptions): AsyncGenerator<StreamChunk, void, unknown> {
-    const runtime = await this.getRuntime();
+    const runtime = this.getRuntime();
     if (!runtime.claudePath) {
       throw new LLMProviderError('Claude Code was not found on PATH.', this.name, 'CONFIGURATION_ERROR');
     }
@@ -259,9 +258,9 @@ export class AnthropicClaudeCodeAdapter extends BaseAdapter {
     }
   }
 
-  async listModels(): Promise<ModelInfo[]> {
+  listModels(): Promise<ModelInfo[]> {
     const models = ModelRegistry.getProviderModels('anthropic-claude-code');
-    return models.map(model => ModelRegistry.toModelInfo(model));
+    return Promise.resolve(models.map(model => ModelRegistry.toModelInfo(model)));
   }
 
   getCapabilities(): ProviderCapabilities {
@@ -277,25 +276,25 @@ export class AnthropicClaudeCodeAdapter extends BaseAdapter {
     };
   }
 
-  async getModelPricing(modelId: string): Promise<ModelPricing | null> {
+  getModelPricing(modelId: string): Promise<ModelPricing | null> {
     const model = ModelRegistry.findModel('anthropic-claude-code', modelId);
     if (!model) {
-      return null;
+      return Promise.resolve(null);
     }
 
-    return {
+    return Promise.resolve({
       rateInputPerMillion: model.inputCostPerMillion,
       rateOutputPerMillion: model.outputCostPerMillion,
       currency: 'USD'
-    };
+    });
   }
 
-  private async getRuntime(): Promise<{
+  private getRuntime(): {
     claudePath: string | null;
     nodePath: string | null;
     connectorPath: string | null;
     vaultPath: string | null;
-  }> {
+  } {
     const claudePath = resolveDesktopBinaryPath('claude');
     const nodePath = resolveDesktopBinaryPath('node');
     const vaultPath = getVaultBasePath(this.vault);

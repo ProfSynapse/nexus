@@ -88,9 +88,9 @@ export class TraceRepository
     return this.addTrace(data.workspaceId, data.sessionId, data);
   }
 
-  async update(_id: string, _data: unknown): Promise<void> {
+  update(_id: string, _data: unknown): Promise<void> {
     // Traces are immutable records - no updates allowed
-    throw new Error('Traces are immutable. Create a new trace instead.');
+    return Promise.reject(new Error('Traces are immutable. Create a new trace instead.'));
   }
 
   async delete(id: string): Promise<void> {

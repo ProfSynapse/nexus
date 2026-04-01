@@ -18,11 +18,11 @@ export class LLMCostCalculator {
    * Calculate cost based on token usage and model pricing
    * Supports caching discounts for providers that offer them
    */
-  static async calculateCost(
+  static calculateCost(
     usage: TokenUsage,
     model: string,
     modelPricing: ModelPricing | null
-  ): Promise<CostDetails | null> {
+  ): CostDetails | null {
     if (!modelPricing) {
       return null;
     }

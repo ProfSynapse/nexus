@@ -546,6 +546,7 @@ export class ToolContinuationService {
    * Yield tool iteration limit message
    */
   private async* yieldToolLimitMessage(fullContent: string): AsyncGenerator<StreamYield, void, unknown> {
+    await Promise.resolve();
     const limitMessage = `\n\nTOOL_LIMIT_REACHED: You have used ${this.TOOL_ITERATION_LIMIT} tool iterations. You must now ask the user if they want to continue with more tool calls. Explain what you've accomplished so far and what you still need to do.`;
     yield {
       chunk: limitMessage,

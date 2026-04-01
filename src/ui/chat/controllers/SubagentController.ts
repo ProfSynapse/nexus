@@ -167,14 +167,14 @@ export class SubagentController {
    * Initialize subagent infrastructure
    * This is async and non-blocking - subagent features available once complete
    */
-  async initialize(
+  initialize(
     deps: SubagentControllerDependencies,
     contextProvider: SubagentContextProvider,
     streamingController: StreamingController,
     toolEventCoordinator: ToolEventCoordinator,
     settingsButtonContainer?: HTMLElement,
     settingsButton?: HTMLElement
-  ): Promise<void> {
+  ): void {
     if (this.initialized) return;
 
     try {

@@ -7,9 +7,7 @@ import { Server as MCPSDKServer } from '@modelcontextprotocol/sdk/server/index.j
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { McpError, ErrorCode, isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { logger } from '../../utils/logger';
-// eslint-disable-next-line import/no-nodejs-modules -- desktop-only HTTP transport uses Node crypto in Electron
 import { randomUUID } from 'node:crypto';
-// eslint-disable-next-line import/no-nodejs-modules -- desktop-only HTTP transport uses Node http in Electron
 import http from 'http';
 import express from 'express';
 import cors from 'cors';

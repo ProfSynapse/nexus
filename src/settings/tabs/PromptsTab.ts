@@ -16,8 +16,6 @@ import { CustomPromptStorageService } from '../../agents/promptManager/services/
 import { CardItem } from '../../components/CardManager';
 import { SearchableCardManager } from '../../components/SearchableCardManager';
 
-/* eslint-disable obsidianmd/ui/sentence-case */
-
 export interface PromptsTabServices {
     customPromptStorage?: CustomPromptStorageService;
     component?: Component;
@@ -143,7 +141,7 @@ export class PromptsTab {
         this.container.empty();
 
         // Header
-        this.container.createEl('h3', { text: 'Custom Prompts' });
+        this.container.createEl('h3', { text: 'Custom prompts' });
         this.container.createEl('p', {
             text: 'Create specialized prompts with custom system instructions',
             cls: 'setting-item-description'

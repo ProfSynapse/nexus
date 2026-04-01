@@ -263,7 +263,7 @@ export class WorkspaceDetailRenderer {
                 onAdd: () => {
                     callbacks.onNavigateProjectDetail();
                 },
-                onToggle: async () => {
+                onToggle: () => {
                     return;
                 },
                 onEdit: (item) => {

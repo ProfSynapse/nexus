@@ -50,9 +50,9 @@ export class PromptSuggester extends BaseSuggester<PromptSuggestionItem> {
    * @param context - Editor context with query
    * @returns Filtered and ranked prompt suggestions
    */
-  async getSuggestions(
+  getSuggestions(
     context: EditorSuggestContext
-  ): Promise<SuggestionItem<PromptSuggestionItem>[]> {
+  ): SuggestionItem<PromptSuggestionItem>[] {
 
     // Get enabled prompts only
     const prompts = this.promptStorage.getEnabledPrompts();

@@ -115,8 +115,8 @@ export class GithubCopilotAdapter extends BaseAdapter {
     };
   }
 
-  async getModelPricing(_modelId: string): Promise<ModelPricing | null> {
-    return null;
+  getModelPricing(_modelId: string): Promise<ModelPricing | null> {
+    return Promise.resolve(null);
   }
 
   async listModels(): Promise<ModelInfo[]> {

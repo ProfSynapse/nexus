@@ -43,9 +43,9 @@ export class NoteSuggester extends BaseSuggester<NoteSuggestionItem> {
    * @param context - Editor context with query
    * @returns Filtered and ranked note suggestions
    */
-  async getSuggestions(
+  getSuggestions(
     context: EditorSuggestContext
-  ): Promise<SuggestionItem<NoteSuggestionItem>[]> {
+  ): SuggestionItem<NoteSuggestionItem>[] {
 
     // Get all markdown files
     const files = this.app.vault.getMarkdownFiles();

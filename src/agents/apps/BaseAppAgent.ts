@@ -154,8 +154,8 @@ export abstract class BaseAppAgent extends BaseAgent {
    * Override in subclasses that support model selection.
    * Returns undefined by default (no model fetching support).
    */
-  async fetchTTSModels(): Promise<FetchTTSModelsResult | undefined> {
-    return undefined;
+  fetchTTSModels(): Promise<FetchTTSModelsResult | undefined> {
+    return Promise.resolve(undefined);
   }
 
   /**
@@ -179,15 +179,15 @@ export abstract class BaseAppAgent extends BaseAgent {
    * Validate credentials by checking if required ones are present.
    * Override for deeper validation (e.g., test API call).
    */
-  async validateCredentials(): Promise<CommonResult> {
+  validateCredentials(): Promise<CommonResult> {
     if (!this.hasRequiredCredentials()) {
       const missing = this.getMissingCredentials().map(c => c.label);
-      return {
+      return Promise.resolve({
         success: false,
         error: `Missing required credentials: ${missing.join(', ')}`
-      };
+      });
     }
-    return { success: true };
+    return Promise.resolve({ success: true });
   }
 
   /**

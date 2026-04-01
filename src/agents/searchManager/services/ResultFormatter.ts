@@ -35,12 +35,12 @@ import { ResultHighlightHelper } from './formatters/ResultHighlightHelper';
 import { ResultSummaryHelper } from './formatters/ResultSummaryHelper';
 
 export interface ResultFormatterInterface {
-  format(results: MemorySearchResult[], options: FormatOptions): Promise<FormattedMemoryResult[]>;
-  groupResults(results: MemorySearchResult[], groupBy: MemoryGroupOption): Promise<GroupedMemoryResults>;
+  format(results: MemorySearchResult[], options: FormatOptions): FormattedMemoryResult[];
+  groupResults(results: MemorySearchResult[], groupBy: MemoryGroupOption): GroupedMemoryResults;
   sortResults(results: MemorySearchResult[], sortBy: MemorySortOption): MemorySearchResult[];
-  buildSummary(results: MemorySearchResult[]): Promise<MemoryResultSummary>;
+  buildSummary(results: MemorySearchResult[]): MemoryResultSummary;
   paginate(results: MemorySearchResult[], pagination: PaginationOptions): PaginatedMemoryResults;
-  addHighlights(results: MemorySearchResult[], query: string, options?: HighlightOptions): Promise<MemorySearchResult[]>;
+  addHighlights(results: MemorySearchResult[], query: string, options?: HighlightOptions): MemorySearchResult[];
   getConfiguration(): ResultFormatterConfiguration;
   updateConfiguration(config: Partial<ResultFormatterConfiguration>): void;
 }
@@ -82,13 +82,13 @@ export class ResultFormatter implements ResultFormatterInterface {
   /**
    * Format search results according to options
    */
-  async format(results: MemorySearchResult[], options: FormatOptions): Promise<FormattedMemoryResult[]> {
+  format(results: MemorySearchResult[], options: FormatOptions): FormattedMemoryResult[] {
     const formatted: FormattedMemoryResult[] = [];
 
     for (const result of results) {
       try {
         const formatter = this.getFormatter(result.type);
-        const formattedResult = await formatter.formatSingleResult(result, options);
+        const formattedResult = formatter.formatSingleResult(result, options);
         formatted.push(formattedResult);
       } catch {
         continue;
@@ -101,7 +101,7 @@ export class ResultFormatter implements ResultFormatterInterface {
   /**
    * Group results by specified criteria
    */
-  async groupResults(results: MemorySearchResult[], groupBy: MemoryGroupOption): Promise<GroupedMemoryResults> {
+  groupResults(results: MemorySearchResult[], groupBy: MemoryGroupOption): GroupedMemoryResults {
     return this.groupingHelper.groupResults(results, groupBy);
   }
 
@@ -115,7 +115,7 @@ export class ResultFormatter implements ResultFormatterInterface {
   /**
    * Build result summary statistics
    */
-  async buildSummary(results: MemorySearchResult[]): Promise<MemoryResultSummary> {
+  buildSummary(results: MemorySearchResult[]): MemoryResultSummary {
     return this.summaryHelper.buildSummary(results);
   }
 
@@ -145,11 +145,11 @@ export class ResultFormatter implements ResultFormatterInterface {
   /**
    * Generate result highlights
    */
-  async addHighlights(
+  addHighlights(
     results: MemorySearchResult[],
     query: string,
     options: HighlightOptions = {}
-  ): Promise<MemorySearchResult[]> {
+  ): MemorySearchResult[] {
     return this.highlightHelper.addHighlights(results, query, options);
   }
 

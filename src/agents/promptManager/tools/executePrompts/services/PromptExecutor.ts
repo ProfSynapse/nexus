@@ -77,7 +77,7 @@ export class PromptExecutor {
       }
 
       // Resolve custom prompt if specified
-      const { systemPrompt, promptUsed } = await this.resolveCustomPrompt(textConfig.customPrompt);
+      const { systemPrompt, promptUsed } = this.resolveCustomPrompt(textConfig.customPrompt);
       
       // Build user prompt with context from previous results
       const userPrompt = this.contextBuilder.buildUserPromptWithContext(
@@ -98,14 +98,14 @@ export class PromptExecutor {
       };
       
       // Check budget before executing
-      await this.budgetValidator.validateBudget();
+      this.budgetValidator.validateBudget();
       
       // Execute the prompt
       const response = await this.llmService.executePrompt(executeParams);
       
       // Track usage
       if (response.cost && response.provider) {
-        await this.budgetValidator.trackUsage(
+        this.budgetValidator.trackUsage(
           response.provider.toLowerCase(),
           response.cost.totalCost || 0
         );
@@ -251,7 +251,7 @@ export class PromptExecutor {
   /**
    * Resolve custom prompt configuration
    */
-  private async resolveCustomPrompt(promptIdentifier?: string): Promise<{ systemPrompt: string; promptUsed: string }> {
+  private resolveCustomPrompt(promptIdentifier?: string): { systemPrompt: string; promptUsed: string } {
     let systemPrompt = '';
     let promptUsed = 'default';
 

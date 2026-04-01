@@ -104,6 +104,7 @@ export class TaskBoardView extends ItemView {
     return { ...this.filterState };
   }
 
+  // eslint-disable-next-line @typescript-eslint/require-await -- Obsidian ItemView lifecycle method
   async setState(state: TaskBoardViewState, _result: ViewStateResult): Promise<void> {
     this.filterState = {
       workspaceId: state?.workspaceId || '',
@@ -119,12 +120,14 @@ export class TaskBoardView extends ItemView {
     }
   }
 
+  // eslint-disable-next-line @typescript-eslint/require-await -- Obsidian ItemView lifecycle method
   async onOpen(): Promise<void> {
     this.isClosing = false;
     this.renderLoading('Loading task board...');
     void this.initializeView();
   }
 
+  // eslint-disable-next-line @typescript-eslint/require-await -- Obsidian ItemView lifecycle method
   async onClose(): Promise<void> {
     this.isClosing = true;
   }

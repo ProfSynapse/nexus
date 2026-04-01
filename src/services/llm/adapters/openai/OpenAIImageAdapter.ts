@@ -38,6 +38,7 @@ export class OpenAIImageAdapter extends BaseImageAdapter {
   
   // Image adapters don't support streaming in the same way as text
   async* generateStreamAsync(_prompt: string, _options?: GenerateOptions): AsyncGenerator<StreamChunk, void, unknown> {
+    await Promise.resolve();
     yield* [] as StreamChunk[];
     // Image generation is not streamable - it's a single result
     // This method should not be called for image adapters
@@ -98,7 +99,7 @@ export class OpenAIImageAdapter extends BaseImageAdapter {
         throw new Error('No response returned from OpenAI image generation');
       }
 
-      return await this.buildImageResponse(response, params);
+      return this.buildImageResponse(response, params);
     } catch (error) {
       this.handleImageError(error, 'image generation', params);
     }
@@ -178,25 +179,25 @@ export class OpenAIImageAdapter extends BaseImageAdapter {
   /**
    * Get pricing for gpt-image-1 image generation
    */
-  async getImageModelPricing(_model = 'gpt-image-1'): Promise<CostDetails> {
+  getImageModelPricing(_model = 'gpt-image-1'): Promise<CostDetails> {
     // gpt-image-1 pricing is token-based, approximate base price
     const basePrice = 0.015; // Approximate cost per image
 
-    return {
+    return Promise.resolve({
       inputCost: 0,
       outputCost: basePrice,
       totalCost: basePrice,
       currency: 'USD',
       rateInputPerMillion: 0,
       rateOutputPerMillion: basePrice * 1_000_000
-    };
+    });
   }
 
   /**
    * List available OpenAI image models
    */
-  async listModels(): Promise<ModelInfo[]> {
-    return [{
+  listModels(): Promise<ModelInfo[]> {
+    return Promise.resolve([{
       id: this.imageModel,
       name: 'GPT Image 1',
       contextWindow: 32000,
@@ -214,15 +215,15 @@ export class OpenAIImageAdapter extends BaseImageAdapter {
         currency: 'USD',
         lastUpdated: '2025-01-01'
       }
-    }];
+    }]);
   }
 
   // Private helper methods
 
-  private async buildImageResponse(
+  private buildImageResponse(
     response: OpenAIResponsesImageResponse, // Responses API response format
     params: ImageGenerationParams
-  ): Promise<ImageGenerationResponse> {
+  ): ImageGenerationResponse {
     // Extract image data from Responses API format
     const imageData = response.output
       .filter((output): output is OpenAIResponsesImageOutput & { result: string } => {

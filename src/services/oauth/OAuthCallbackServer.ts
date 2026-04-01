@@ -10,8 +10,6 @@
  * Used by: OAuthService.ts (starts server before opening browser,
  * waits for callback, then shuts down).
  */
-/* eslint-disable import/no-nodejs-modules -- desktop-only OAuth callback server uses Node HTTP/url/crypto in Electron */
-
 import { createServer, IncomingMessage, ServerResponse, Server } from 'node:http';
 import { URL } from 'node:url';
 import { timingSafeEqual } from 'node:crypto';

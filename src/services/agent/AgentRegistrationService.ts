@@ -138,7 +138,7 @@ export class AgentRegistrationService implements AgentRegistrationServiceInterfa
     this.initializationErrors = {};
 
     try {
-      const { hasValidLLMKeys, enableSearchModes, enableLLMModes } = await this.validationService.getCapabilityStatus();
+      const { hasValidLLMKeys, enableSearchModes, enableLLMModes } = this.validationService.getCapabilityStatus();
       const memorySettings = this.getMemorySettings();
 
       logger.systemLog(`Agent initialization started - Search modes: ${enableSearchModes}, LLM modes: ${enableLLMModes}`);
@@ -186,7 +186,7 @@ export class AgentRegistrationService implements AgentRegistrationServiceInterfa
           (name) => this.agentManager.unregisterAgent(name),
           this.app
         );
-        await appManager.loadInstalledApps();
+        appManager.loadInstalledApps();
         this.appManagerInstance = appManager;
         logger.systemLog('App agents loaded');
       });
@@ -251,7 +251,7 @@ export class AgentRegistrationService implements AgentRegistrationServiceInterfa
   /**
    * Safe initialization wrapper with error handling
    */
-  private async safeInitialize(agentName: string, initFn: () => Promise<void>): Promise<void> {
+  private async safeInitialize(agentName: string, initFn: () => Promise<void> | void): Promise<void> {
     try {
       await initFn();
     } catch (error) {

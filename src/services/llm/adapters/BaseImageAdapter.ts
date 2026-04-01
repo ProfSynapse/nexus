@@ -145,7 +145,7 @@ export abstract class BaseImageAdapter extends BaseAdapter {
   /**
    * Check if the adapter is available for image generation
    */
-  async isImageGenerationAvailable(): Promise<boolean> {
+  isImageGenerationAvailable(): boolean {
     if (!this.apiKey) {
       return false;
     }
@@ -300,12 +300,12 @@ export abstract class BaseImageAdapter extends BaseAdapter {
   }
 
   // Required BaseAdapter methods (stub implementations for image-only adapters)
-  async generateUncached(): Promise<never> {
-    throw new Error('Use generateImage() for image generation. This adapter only supports image generation.');
+  generateUncached(): Promise<never> {
+    return Promise.reject(new Error('Use generateImage() for image generation. This adapter only supports image generation.'));
   }
 
-  async generateStream(): Promise<never> {
-    throw new Error('Streaming not supported for image generation');
+  generateStream(): Promise<never> {
+    return Promise.reject(new Error('Streaming not supported for image generation'));
   }
 
   getCapabilities(): ProviderCapabilities {

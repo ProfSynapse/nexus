@@ -27,11 +27,11 @@ export class ResultHighlightHelper {
   /**
    * Add highlights to results
    */
-  async addHighlights(
+  addHighlights(
     results: MemorySearchResult[],
     query: string,
     options: HighlightOptions = {}
-  ): Promise<MemorySearchResult[]> {
+  ): MemorySearchResult[] {
     const {
       maxHighlights = 3,
       highlightLength = this.maxHighlightLength,

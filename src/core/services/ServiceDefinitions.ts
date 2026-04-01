@@ -61,7 +61,7 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
 
             const pathManager = new ObsidianPathManager(context.app.vault);
             const logger = new StructuredLogger(context.plugin);
-            return new VaultOperations(context.app.vault, pathManager, logger);
+            return new VaultOperations(context.app, context.app.vault, pathManager, logger);
         })
     },
 
@@ -396,7 +396,7 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
             const chatTraceService = await context.serviceManager.getService<ChatTraceService>('chatTraceService');
 
             const mcpConnector = context.connector ?? {
-                executeTool: async () => {
+                executeTool: () => {
                     throw new Error('MCP connector is unavailable');
                 }
             };

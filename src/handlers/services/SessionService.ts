@@ -7,7 +7,7 @@ import {
 import { logger } from '../../utils/logger';
 
 export class SessionService implements ISessionService {
-    async processSessionId(sessionId: string | undefined): Promise<{
+    processSessionId(sessionId: string | undefined): Promise<{
         sessionId: string;
         isNewSession: boolean;
         isNonStandardId: boolean;
@@ -16,31 +16,31 @@ export class SessionService implements ISessionService {
         if (!sessionId) {
             const newSessionId = this.generateSessionId();
             logger.systemLog(`Created new session with standardized ID: ${newSessionId}`);
-            
-            return {
+
+            return Promise.resolve({
                 sessionId: newSessionId,
                 isNewSession: true,
                 isNonStandardId: false
-            };
+            });
         }
-        
+
         if (!this.isStandardSessionId(sessionId)) {
             const standardizedId = this.generateSessionId();
             logger.systemLog(`Replaced non-standard session ID: ${sessionId} with standardized ID: ${standardizedId}`);
-            
-            return {
+
+            return Promise.resolve({
                 sessionId: standardizedId,
                 isNewSession: false,
                 isNonStandardId: true,
                 originalSessionId: sessionId
-            };
+            });
         }
-        
-        return {
+
+        return Promise.resolve({
             sessionId,
             isNewSession: false,
             isNonStandardId: false
-        };
+        });
     }
 
     generateSessionId(): string {

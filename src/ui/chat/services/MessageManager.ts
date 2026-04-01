@@ -126,6 +126,7 @@ export class MessageManager {
     this.messageQueueService = queueService;
 
     // Set up the message processor to handle queued messages
+    // eslint-disable-next-line @typescript-eslint/require-await -- Satisfies Promise<void> callback signature
     queueService.setProcessor(async (message: QueuedMessage) => {
       if (message.type === 'subagent_result') {
         // The subagent result is already stored in the branch

@@ -197,7 +197,7 @@ export class CacheManager {
         return this.vaultFileIndex?.searchFiles(predicate) || [];
     }
 
-    async getFilesWithMetadata(filePaths: string[]): Promise<ReturnType<VaultFileIndex['getFilesWithMetadata']>> {
+    getFilesWithMetadata(filePaths: string[]): ReturnType<VaultFileIndex['getFilesWithMetadata']> {
         return this.vaultFileIndex?.getFilesWithMetadata(filePaths) || [];
     }
 
@@ -212,7 +212,7 @@ export class CacheManager {
         if (this.vaultFileIndex) {
             const keyFiles = this.getKeyFiles();
             const keyFilePaths = keyFiles.map((f) => f.path);
-            await this.vaultFileIndex.warmup(keyFilePaths);
+            this.vaultFileIndex.warmup(keyFilePaths);
         }
     }
 

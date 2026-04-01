@@ -439,9 +439,9 @@ export class GoogleAdapter extends BaseAdapter {
     }
   }
 
-  async listModels(): Promise<ModelInfo[]> {
+  listModels(): Promise<ModelInfo[]> {
     try {
-      return GOOGLE_MODELS.map(model => ({
+      return Promise.resolve(GOOGLE_MODELS.map(model => ({
         id: model.apiName,
         name: model.name,
         contextWindow: model.contextWindow,
@@ -461,10 +461,10 @@ export class GoogleAdapter extends BaseAdapter {
           currency: 'USD',
           lastUpdated: new Date().toISOString()
         }
-      }));
+      })));
     } catch (error) {
       this.handleError(error, 'listing models');
-      return [];
+      return Promise.resolve([]);
     }
   }
 
@@ -813,15 +813,15 @@ export class GoogleAdapter extends BaseAdapter {
     };
   }
 
-  async getModelPricing(modelId: string): Promise<ModelPricing | null> {
+  getModelPricing(modelId: string): Promise<ModelPricing | null> {
     const costs = this.getCostPer1kTokens(modelId);
-    if (!costs) return null;
-    
-    return {
+    if (!costs) return Promise.resolve(null);
+
+    return Promise.resolve({
       rateInputPerMillion: costs.input * 1000,
       rateOutputPerMillion: costs.output * 1000,
       currency: 'USD'
-    };
+    });
   }
 }
 

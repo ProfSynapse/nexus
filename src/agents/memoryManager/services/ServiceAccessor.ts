@@ -379,8 +379,11 @@ export class ServiceAccessor {
     const messageLevel = levels[level];
 
     if (messageLevel >= configLevel) {
-      // eslint-disable-next-line no-console
-      console[level](message, ...args);
+      if (level === 'error') {
+        console.error(message, ...args);
+      } else {
+        console.warn(message, ...args);
+      }
     }
   }
 

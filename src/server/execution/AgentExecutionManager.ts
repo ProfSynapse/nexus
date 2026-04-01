@@ -57,7 +57,7 @@ export class AgentExecutionManager {
             const result = await agent.executeTool(tool, processedParams);
 
             // Update session context with result
-            await this.updateSessionContext(processedParams, result);
+            this.updateSessionContext(processedParams, result);
 
             // Add session instructions if needed
             return this.addSessionInstructions(processedParams, result);
@@ -142,7 +142,7 @@ export class AgentExecutionManager {
     /**
      * Update session context with execution result
      */
-    private async updateSessionContext(params: Record<string, unknown>, result: unknown): Promise<void> {
+    private updateSessionContext(params: Record<string, unknown>, result: unknown): void {
         const sessionId = getSessionIdFromParams(params);
         if (!this.sessionContextManager || !sessionId || !isCommonResult(result) || !result.workspaceContext) {
             return;

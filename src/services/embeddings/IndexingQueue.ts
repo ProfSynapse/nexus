@@ -24,7 +24,6 @@
  */
 
 import { App, TFile } from 'obsidian';
-// eslint-disable-next-line import/no-nodejs-modules -- desktop-only indexing queue uses Node EventEmitter in Electron
 import { EventEmitter } from 'events';
 import { EmbeddingService } from './EmbeddingService';
 import { preprocessContent, hashContent } from './EmbeddingUtils';

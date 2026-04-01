@@ -12,8 +12,6 @@ import {
   ProviderModalDependencies,
 } from '../types';
 
-/* eslint-disable obsidianmd/ui/sentence-case */
-
 interface OllamaTagsResponse {
   models: Array<{ name: string }>;
 }
@@ -294,7 +292,7 @@ export class OllamaProviderModal implements IProviderModal {
       new Notice(`Ollama test failed: ${errorMessage}`);
     } finally {
       if (this.testButton) {
-        this.testButton.textContent = 'Test Connection';
+        this.testButton.textContent = 'Test connection';
         this.testButton.disabled = false;
       }
     }

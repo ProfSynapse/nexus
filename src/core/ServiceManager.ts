@@ -40,7 +40,7 @@ export interface IServiceDescriptor<T = unknown> {
 
 export interface IServiceManager {
     // Registration methods - unified interface
-    registerService<T>(descriptor: IServiceDescriptor<T>): Promise<void>;
+    registerService<T>(descriptor: IServiceDescriptor<T>): void;
     registerFactory<T>(name: string, factory: ServiceFactory<T>, options?: ServiceRegistrationOptions): void;
     registerLazy<T>(name: string, factory: LazyFactory<T>): void;
     registerServiceFactory<T>(name: string, factory: IServiceFactory<T>): void;
@@ -62,8 +62,8 @@ export interface IServiceManager {
     
     // Lifecycle operations
     start(): Promise<void>;
-    stop(): Promise<void>;
-    cleanup(): Promise<void>;
+    stop(): void;
+    cleanup(): void;
 }
 
 export interface ServiceRegistrationOptions {
@@ -122,7 +122,7 @@ export class ServiceManager implements IServiceManager {
      * Register service using unified descriptor interface
      * Supports all existing registration patterns through a single interface
      */
-    async registerService<T>(descriptor: IServiceDescriptor<T>): Promise<void> {
+    registerService<T>(descriptor: IServiceDescriptor<T>): void {
         const stage = descriptor.stage || ServiceStage.BACKGROUND;
         const singleton = descriptor.singleton !== false; // Default to singleton
         
@@ -343,7 +343,7 @@ export class ServiceManager implements IServiceManager {
     /**
      * Stop the service manager
      */
-    async stop(): Promise<void> {
+    stop(): void {
         if (!this.isStarted) {
             return;
         }
@@ -351,7 +351,7 @@ export class ServiceManager implements IServiceManager {
         // Service manager stopping
         
         // Stop services in reverse dependency order
-        await this.cleanup();
+        this.cleanup();
         
         this.isStarted = false;
     }
@@ -359,7 +359,7 @@ export class ServiceManager implements IServiceManager {
     /**
      * Cleanup all services
      */
-    async cleanup(): Promise<void> {
+    cleanup(): void {
         try {
             // Container handles cleanup in proper dependency order
             this.container.clear();

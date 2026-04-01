@@ -7,7 +7,6 @@ import { Server as MCPSDKServer } from '@modelcontextprotocol/sdk/server/index.j
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import { logger } from '../../utils/logger';
-// eslint-disable-next-line import/no-nodejs-modules -- desktop-only STDIO transport uses Node streams in Electron
 import type { Readable, Writable } from 'node:stream';
 
 /**

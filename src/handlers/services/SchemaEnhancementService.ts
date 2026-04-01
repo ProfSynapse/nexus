@@ -137,12 +137,12 @@ export class SchemaEnhancementService implements ISchemaEnhancementService {
     /**
      * Get list of available enhancement provider names
      */
-    async getAvailableEnhancements(): Promise<string[]> {
+    getAvailableEnhancements(): Promise<string[]> {
         try {
-            return this.providers.map(provider => provider.name);
+            return Promise.resolve(this.providers.map(provider => provider.name));
         } catch (error) {
             logger.systemError(error as Error, 'Error getting available enhancements');
-            return [];
+            return Promise.resolve([]);
         }
     }
 

@@ -485,7 +485,7 @@ export class SchemaMigrator {
    * NOTE: When migrations are applied, the SQLite cache should be rebuilt from JSONL
    * because the existing data doesn't have the new columns populated correctly.
    */
-  async migrate(): Promise<{
+  migrate(): Promise<{
     applied: number;
     fromVersion: number;
     toVersion: number;
@@ -495,7 +495,7 @@ export class SchemaMigrator {
     const targetVersion = CURRENT_SCHEMA_VERSION;
 
     if (currentVersion >= targetVersion) {
-      return { applied: 0, fromVersion: currentVersion, toVersion: currentVersion, needsRebuild: false };
+      return Promise.resolve({ applied: 0, fromVersion: currentVersion, toVersion: currentVersion, needsRebuild: false });
     }
 
     // Ensure schema_version table exists
@@ -506,7 +506,7 @@ export class SchemaMigrator {
 
     if (pendingMigrations.length === 0) {
       this.setVersion(targetVersion);
-      return { applied: 0, fromVersion: currentVersion, toVersion: targetVersion, needsRebuild: false };
+      return Promise.resolve({ applied: 0, fromVersion: currentVersion, toVersion: targetVersion, needsRebuild: false });
     }
 
     let appliedCount = 0;
@@ -540,12 +540,12 @@ export class SchemaMigrator {
       }
     }
 
-    return {
+    return Promise.resolve({
       applied: appliedCount,
       fromVersion: currentVersion,
       toVersion: targetVersion,
       needsRebuild: false
-    };
+    });
   }
 
   /**

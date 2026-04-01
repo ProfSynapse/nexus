@@ -52,7 +52,7 @@ export class VaultFileIndex extends Events {
         super();
     }
 
-    async initialize(): Promise<void> {
+    initialize(): Promise<void> {
         if (this.isIndexing) {
             return this.indexPromise || Promise.resolve();
         }
@@ -60,44 +60,44 @@ export class VaultFileIndex extends Events {
         this.isIndexing = true;
         const startTime = Date.now();
 
-        this.indexPromise = this.buildIndex().then(() => {
+        try {
+            this.buildIndex();
             this.stats.indexingTime = Date.now() - startTime;
             this.stats.lastUpdated = Date.now();
             this.isIndexing = false;
             this.indexPromise = null;
             this.setupMetadataCacheEvents();
             this.trigger('index:ready', this.stats);
-        }).catch(error => {
+        } catch (error) {
             console.error('Error building file index:', error);
             this.isIndexing = false;
             this.indexPromise = null;
             throw error;
-        });
-
-        return this.indexPromise;
-    }
-
-    private async buildIndex(): Promise<void> {
-        this.clear();
-        
-        const files = this.vault.getFiles();
-        const markdownFiles = files.filter(file => file.extension === 'md' || file.extension === 'canvas');
-        
-        // First pass: Create basic index entries
-        for (const file of markdownFiles) {
-            await this.indexFile(file, false);
         }
 
+        return Promise.resolve();
+    }
+
+    private buildIndex(): void {
+        this.clear();
+
+        const files = this.vault.getFiles();
+        const markdownFiles = files.filter(file => file.extension === 'md' || file.extension === 'canvas');
+
+        // First pass: Create basic index entries
+        for (const file of markdownFiles) {
+            this.indexFile(file, false);
+        }
 
         // Second pass: Process metadata for key files (lazy load for others)
         const keyFiles = Array.from(this.fileIndex.values()).filter(f => f.isKeyFile);
-        await Promise.all(keyFiles.map(f => this.loadFileMetadata(f.path)));
+        keyFiles.forEach(f => this.loadFileMetadata(f.path));
 
         this.updateStats();
         this.trigger('index:built', this.stats);
     }
 
-    private async indexFile(file: TFile, loadMetadata = false): Promise<void> {
+    private indexFile(file: TFile, loadMetadata = false): void {
         const isKeyFile = this.keyFilePatterns.some(pattern => pattern.test(file.path));
         
         const indexed: IndexedFile = {
@@ -125,11 +125,11 @@ export class VaultFileIndex extends Events {
 
         // Load metadata if requested or if it's a key file
         if (loadMetadata || isKeyFile) {
-            await this.loadFileMetadata(file.path);
+            this.loadFileMetadata(file.path);
         }
     }
 
-    private async loadFileMetadata(filePath: string): Promise<void> {
+    private loadFileMetadata(filePath: string): void {
         const file = this.vault.getAbstractFileByPath(filePath);
         if (!(file instanceof TFile)) return;
 
@@ -168,8 +168,8 @@ export class VaultFileIndex extends Events {
     }
 
     // File operations
-    async updateFile(file: TFile): Promise<void> {
-        await this.indexFile(file, true);
+    updateFile(file: TFile): void {
+        this.indexFile(file, true);
         this.updateStats();
         this.trigger('file:updated', file.path);
     }
@@ -205,7 +205,7 @@ export class VaultFileIndex extends Events {
         this.trigger('file:removed', filePath);
     }
 
-    async renameFile(oldPath: string, newPath: string): Promise<void> {
+    renameFile(oldPath: string, newPath: string): void {
         const indexed = this.fileIndex.get(oldPath);
         if (!indexed) return;
 
@@ -215,7 +215,7 @@ export class VaultFileIndex extends Events {
         // Add new entry
         const file = this.vault.getAbstractFileByPath(newPath);
         if (file instanceof TFile) {
-            await this.updateFile(file);
+            this.updateFile(file);
         }
 
         this.trigger('file:renamed', { oldPath, newPath });
@@ -282,15 +282,15 @@ export class VaultFileIndex extends Events {
     }
 
     // Batch operations
-    async getFilesWithMetadata(filePaths: string[]): Promise<IndexedFile[]> {
+    getFilesWithMetadata(filePaths: string[]): IndexedFile[] {
         const results: IndexedFile[] = [];
-        
+
         for (const path of filePaths) {
             let indexed = this.fileIndex.get(path);
             if (indexed) {
                 // Ensure metadata is loaded
                 if (!indexed.frontmatter && !indexed.tags) {
-                    await this.loadFileMetadata(path);
+                    this.loadFileMetadata(path);
                     indexed = this.fileIndex.get(path);
                 }
                 if (indexed) {
@@ -327,11 +327,9 @@ export class VaultFileIndex extends Events {
     }
 
     // Performance helpers
-    async warmup(filePaths: string[]): Promise<void> {
+    warmup(filePaths: string[]): void {
         // Preload metadata for specified files
-        await Promise.all(
-            filePaths.map(path => this.loadFileMetadata(path))
-        );
+        filePaths.forEach(path => this.loadFileMetadata(path));
     }
 
     isReady(): boolean {
@@ -368,11 +366,11 @@ export class VaultFileIndex extends Events {
     /**
      * Handle metadata cache changes for a specific file
      */
-    private async handleMetadataChanged(file: TFile): Promise<void> {
+    private handleMetadataChanged(file: TFile): void {
         const indexed = this.fileIndex.get(file.path);
         if (!indexed) {
             // File not in our index yet, add it
-            await this.indexFile(file, true);
+            this.indexFile(file, true);
             return;
         }
 
@@ -393,7 +391,7 @@ export class VaultFileIndex extends Events {
         }
 
         // Reload metadata and update index
-        await this.loadFileMetadata(file.path);
+        this.loadFileMetadata(file.path);
         this.updateStats();
         this.trigger('metadata:updated', file.path, indexed);
     }

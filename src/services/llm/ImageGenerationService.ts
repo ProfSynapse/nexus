@@ -97,7 +97,7 @@ export class ImageGenerationService {
       }
 
       // Check if adapter is available for image generation
-      const isAvailable = await adapter.isImageGenerationAvailable();
+      const isAvailable = adapter.isImageGenerationAvailable();
       if (!isAvailable) {
         return {
           success: false,
@@ -155,7 +155,7 @@ export class ImageGenerationService {
   /**
    * Validate image generation parameters across all providers
    */
-  async validateParams(params: ImageGenerationParams): Promise<ImageValidationResult> {
+  validateParams(params: ImageGenerationParams): ImageValidationResult {
     try {
       const adapter = this.getAdapter(params.provider);
       if (!adapter) {
@@ -177,12 +177,12 @@ export class ImageGenerationService {
   /**
    * Get available providers with their status
    */
-  async getAvailableProviders(): Promise<Array<{
+  getAvailableProviders(): Array<{
     provider: ImageProvider;
     available: boolean;
     models: string[];
     error?: string;
-  }>> {
+  }> {
     const providers: Array<{
       provider: ImageProvider;
       available: boolean;
@@ -192,7 +192,7 @@ export class ImageGenerationService {
 
     for (const [providerName, adapter] of this.adapters) {
       try {
-        const available = await adapter.isImageGenerationAvailable();
+        const available = adapter.isImageGenerationAvailable();
         const models = available ? adapter.supportedModels : [];
         
         providers.push({
@@ -230,14 +230,14 @@ export class ImageGenerationService {
   /**
    * Get supported models for a provider
    */
-  async getSupportedModels(provider: ImageProvider): Promise<string[]> {
+  getSupportedModels(provider: ImageProvider): string[] {
     const adapter = this.getAdapter(provider);
     if (!adapter) {
       return [];
     }
 
     try {
-      const available = await adapter.isImageGenerationAvailable();
+      const available = adapter.isImageGenerationAvailable();
       return available ? adapter.supportedModels : [];
     } catch {
       return [];
@@ -279,7 +279,7 @@ export class ImageGenerationService {
   /**
    * Get provider capabilities
    */
-  async getProviderCapabilities(provider: ImageProvider): Promise<ProviderCapabilities | null> {
+  getProviderCapabilities(provider: ImageProvider): ProviderCapabilities | null {
     const adapter = this.getAdapter(provider);
     if (!adapter) {
       return null;

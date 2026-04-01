@@ -77,11 +77,11 @@ export class VaultSchemaProvider extends BaseSchemaProvider {
    * Enhance the schema with vault structure information
    * Adds vault context to relevant parameters and descriptions
    */
-  async enhanceSchema(toolName: string, baseSchema: EnhancedJSONSchema): Promise<EnhancedJSONSchema> {
-    return this.safeEnhance(async () => {
-      const vaultInfo = await this.getVaultStructure();
+  enhanceSchema(toolName: string, baseSchema: EnhancedJSONSchema): Promise<EnhancedJSONSchema> {
+    return this.safeEnhance(() => {
+      const vaultInfo = this.getVaultStructure();
       if (!vaultInfo) {
-        return baseSchema;
+        return Promise.resolve(baseSchema);
       }
 
       // Deep clone to avoid modifying original using BaseSchemaProvider utility
@@ -89,14 +89,14 @@ export class VaultSchemaProvider extends BaseSchemaProvider {
 
       // Enhance the schema based on available modes and properties
       this.enhanceSchemaWithVaultContext(enhanced, vaultInfo);
-      
+
       // Log enhancement activity for debugging
       this.logEnhancement(toolName, 'Added vault structure context', {
         rootFolders: vaultInfo.rootFolders.length,
         totalFiles: vaultInfo.totalFiles
       });
 
-      return enhanced;
+      return Promise.resolve(enhanced);
     }, baseSchema, 'vault structure enhancement');
   }
 
@@ -104,7 +104,7 @@ export class VaultSchemaProvider extends BaseSchemaProvider {
    * Get vault structure information with caching
    * Limits depth to avoid schema bloat while providing useful context
    */
-  private async getVaultStructure(): Promise<VaultStructureInfo | null> {
+  private getVaultStructure(): VaultStructureInfo | null {
     try {
       // Check cache first
       const now = Date.now();

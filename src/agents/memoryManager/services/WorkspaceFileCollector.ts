@@ -66,11 +66,11 @@ export class WorkspaceFileCollector {
    * @param recursive Whether to collect files recursively (true) or top-level only (false, default)
    * @returns Workspace path result with files list
    */
-  async buildWorkspacePath(
+  buildWorkspacePath(
     rootFolder: string,
     app: App,
     recursive = false
-  ): Promise<WorkspacePathResult> {
+  ): WorkspacePathResult {
     try {
       const folder = app.vault.getAbstractFileByPath(rootFolder);
 
@@ -155,10 +155,10 @@ export class WorkspaceFileCollector {
    * @param cacheManager The cache manager instance
    * @returns Array of recent file info
    */
-  async getRecentFilesInWorkspace(
+  getRecentFilesInWorkspace(
     workspace: IWorkspaceData,
     cacheManager: ICacheManager | null
-  ): Promise<RecentFileInfo[]> {
+  ): RecentFileInfo[] {
     try {
       if (!cacheManager) {
         return [];

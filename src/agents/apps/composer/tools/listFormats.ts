@@ -23,6 +23,7 @@ export class ListFormatsTool extends BaseTool<CommonParameters, CommonResult> {
     );
   }
 
+  // eslint-disable-next-line @typescript-eslint/require-await -- implements abstract BaseTool.execute()
   async execute(_params: CommonParameters): Promise<CommonResult> {
     return this.prepareResult(true, {
       formats: [

@@ -131,10 +131,10 @@ export class MessageRepository
     return row ? this.rowToMessage(row) : null;
   }
 
-  async getAll(options?: PaginationParams): Promise<PaginatedResult<MessageData>> {
+  getAll(options?: PaginationParams): Promise<PaginatedResult<MessageData>> {
     // Messages don't have a global getAll - they are per conversation
     // Return empty result - use getMessages instead
-    return {
+    return Promise.resolve({
       items: [],
       page: 0,
       pageSize: options?.pageSize ?? 50,
@@ -142,12 +142,12 @@ export class MessageRepository
       totalPages: 0,
       hasNextPage: false,
       hasPreviousPage: false
-    };
+    });
   }
 
-  async create(_data: unknown): Promise<string> {
+  create(_data: unknown): Promise<string> {
     // Use addMessage with conversationId
-    throw new Error('Use addMessage(conversationId, data) instead');
+    return Promise.reject(new Error('Use addMessage(conversationId, data) instead'));
   }
 
   async delete(id: string): Promise<void> {

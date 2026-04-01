@@ -65,7 +65,7 @@ export class EmbeddingManager {
    * Initialize the embedding system
    * Should be called after a delay from plugin startup (e.g., 3 seconds)
    */
-  async initialize(): Promise<void> {
+  initialize(): void {
     if (!this.isEnabled || this.isInitialized) {
       return;
     }

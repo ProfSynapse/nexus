@@ -25,7 +25,7 @@ const createFallbackCommand = () => ({ id: '', name: '', callback: noop });
 
 const returnZero = (): number => 0;
 
-const returnEmptyObject = async (): Promise<Record<string, never>> => ({});
+const returnEmptyObject = (): Promise<Record<string, never>> => Promise.resolve({});
 
 const returnComponent = <T>(component: T): T => component;
 
@@ -224,7 +224,7 @@ export class SearchManagerAgent extends BaseAgent {
    * Update the agent settings
    * @param settings New memory settings
    */
-  async updateSettings(settings: MemorySettings): Promise<void> {
+  updateSettings(settings: MemorySettings): void {
     this.settings = settings;
   }
 
@@ -242,9 +242,9 @@ export class SearchManagerAgent extends BaseAgent {
   /**
    * Initialize the search service
    */
-  async initializeSearchService(): Promise<void> {
+  initializeSearchService(): Promise<void> {
     // Search service initialization for JSON-based storage
-    return;
+    return Promise.resolve();
   }
 
 

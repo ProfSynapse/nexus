@@ -75,10 +75,10 @@ export class WorkspacePromptResolver {
    * @param app The Obsidian app instance
    * @returns Prompt info or null if not available
    */
-  async fetchWorkspacePrompt(
+  fetchWorkspacePrompt(
     workspace: ProjectWorkspace,
     app: App
-  ): Promise<WorkspacePromptInfo | null> {
+  ): WorkspacePromptInfo | null {
     try {
       // Check top-level dedicatedAgentId field first (new storage location)
       const workspaceWithId = workspace as ProjectWorkspace & { dedicatedAgentId?: string };
@@ -86,14 +86,14 @@ export class WorkspacePromptResolver {
 
       if (dedicatedAgentId) {
         // Use top-level dedicatedAgentId (name or ID)
-        return await this.fetchPromptByNameOrId(dedicatedAgentId, app);
+        return this.fetchPromptByNameOrId(dedicatedAgentId, app);
       }
 
       // DEPRECATED: Fall back to context.dedicatedAgent for backward compatibility
       // TODO(v5.0.0): Remove this fallback - migration v6 moves data to top-level dedicatedAgentId
       if (workspace.context?.dedicatedAgent) {
         const { agentId } = workspace.context.dedicatedAgent;
-        return await this.fetchPromptByNameOrId(agentId, app);
+        return this.fetchPromptByNameOrId(agentId, app);
       }
 
       // DEPRECATED: Fall back to legacy agents array for backward compatibility
@@ -103,7 +103,7 @@ export class WorkspacePromptResolver {
       if (legacyAgents && Array.isArray(legacyAgents) && legacyAgents.length > 0) {
         const legacyPromptRef = legacyAgents[0];
         if (legacyPromptRef && legacyPromptRef.name) {
-          return await this.fetchPromptByNameOrId(legacyPromptRef.name, app);
+          return this.fetchPromptByNameOrId(legacyPromptRef.name, app);
         }
       }
 
@@ -122,10 +122,10 @@ export class WorkspacePromptResolver {
    * @param app The Obsidian app instance (unused, kept for compatibility)
    * @returns Prompt info or null if not found
    */
-  async fetchPromptByNameOrId(
+  fetchPromptByNameOrId(
     identifier: string,
     _app: App
-  ): Promise<WorkspacePromptInfo | null> {
+  ): WorkspacePromptInfo | null {
     try {
       // Primary: CustomPromptStorageService (SQLite -> internal fallback to data.json)
       if (this.customPromptStorage) {

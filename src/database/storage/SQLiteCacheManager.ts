@@ -413,12 +413,13 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
    * Execute raw SQL (for schema creation and multi-statement execution)
    * NOTE: Does not support parameters - use run() or query() for parameterized queries
    */
-  async exec(sql: string): Promise<void> {
-    if (!this.db) throw new Error('Database not initialized');
+  exec(sql: string): Promise<void> {
+    if (!this.db) return Promise.reject(new Error('Database not initialized'));
 
     try {
       this.db.exec(sql);
       this.hasUnsavedData = true;
+      return Promise.resolve();
     } catch (error) {
       console.error('[SQLiteCacheManager] Exec failed:', error);
       throw error;
@@ -428,7 +429,7 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
   /**
    * Query returning multiple rows
    */
-  async query<T>(sql: string, params?: QueryParams): Promise<T[]> {
+  query<T>(sql: string, params?: QueryParams): Promise<T[]> {
     try {
       const db = this.getDbOrThrow();
       const stmt = db.prepare(sql);
@@ -440,7 +441,7 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
         while (stmt.step()) {
           results.push(stmt.get({}) as T);
         }
-        return results;
+        return Promise.resolve(results);
       } finally {
         stmt.finalize();
       }
@@ -453,7 +454,7 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
   /**
    * Query returning single row
    */
-  async queryOne<T>(sql: string, params?: QueryParams): Promise<T | null> {
+  queryOne<T>(sql: string, params?: QueryParams): Promise<T | null> {
     try {
       const db = this.getDbOrThrow();
       const stmt = db.prepare(sql);
@@ -462,9 +463,9 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
           stmt.bind(params);
         }
         if (stmt.step()) {
-          return stmt.get({}) as T;
+          return Promise.resolve(stmt.get({}) as T);
         }
-        return null;
+        return Promise.resolve(null);
       } finally {
         stmt.finalize();
       }
@@ -478,7 +479,7 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
    * Run a statement (INSERT, UPDATE, DELETE)
    * Returns changes count and last insert rowid
    */
-  async run(sql: string, params?: QueryParams): Promise<RunResult> {
+  run(sql: string, params?: QueryParams): Promise<RunResult> {
     try {
       const db = this.getDbOrThrow();
       const sqlite3 = this.getSqlite3OrThrow();
@@ -497,7 +498,7 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
       const lastInsertRowid = Number(sqlite3.capi.sqlite3_last_insert_rowid(db));
 
       this.hasUnsavedData = true;
-      return { changes, lastInsertRowid };
+      return Promise.resolve({ changes, lastInsertRowid });
     } catch (error) {
       console.error('[SQLiteCacheManager] Run failed:', error, { sql, params });
       throw error;
@@ -507,23 +508,26 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
   /**
    * Begin a transaction
    */
-  async beginTransaction(): Promise<void> {
+  beginTransaction(): Promise<void> {
     this.getDbOrThrow().exec('BEGIN TRANSACTION');
+    return Promise.resolve();
   }
 
   /**
    * Commit a transaction
    */
-  async commit(): Promise<void> {
+  commit(): Promise<void> {
     this.getDbOrThrow().exec('COMMIT');
     this.hasUnsavedData = true;
+    return Promise.resolve();
   }
 
   /**
    * Rollback a transaction
    */
-  async rollback(): Promise<void> {
+  rollback(): Promise<void> {
     this.getDbOrThrow().exec('ROLLBACK');
+    return Promise.resolve();
   }
 
   /**
@@ -679,7 +683,7 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
    * Clear all data (for rebuilding from JSONL)
    */
   async clearAllData(): Promise<void> {
-    await this.transaction(async () => {
+    await this.transaction(() => {
       const db = this.getDbOrThrow();
       db.exec(`
         DELETE FROM task_note_links;
@@ -702,6 +706,7 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
       db.exec(`CREATE VIRTUAL TABLE IF NOT EXISTS conversation_embeddings USING vec0(embedding float[384])`);
       db.exec(`DELETE FROM conversation_embedding_metadata`);
       db.exec(`DELETE FROM embedding_backfill_state`);
+      return Promise.resolve();
     });
   }
 
@@ -709,7 +714,7 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
    * Rebuild FTS5 indexes after bulk data changes
    */
   async rebuildFTSIndexes(): Promise<void> {
-    await this.transaction(async () => {
+    await this.transaction(() => {
       const db = this.getDbOrThrow();
       // Rebuild workspace FTS5
       db.exec(`
@@ -725,16 +730,18 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
       db.exec(`
         INSERT INTO message_fts(message_fts) VALUES ('rebuild');
       `);
+      return Promise.resolve();
     });
   }
 
   /**
    * Vacuum the database to reclaim space
    */
-  async vacuum(): Promise<void> {
+  vacuum(): Promise<void> {
     try {
       this.getDbOrThrow().exec('VACUUM');
       this.hasUnsavedData = true;
+      return Promise.resolve();
     } catch (error) {
       console.error('[SQLiteCacheManager] Vacuum failed:', error);
       throw error;

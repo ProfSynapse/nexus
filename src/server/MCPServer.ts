@@ -224,15 +224,15 @@ export class MCPServer implements IMCPServer {
     /**
      * Get server diagnostics
      */
-    async getDiagnostics(): Promise<ReturnType<ServerLifecycleManager['getDiagnostics']>> {
-        return await this.lifecycleManager.getDiagnostics();
+    getDiagnostics(): ReturnType<ServerLifecycleManager['getDiagnostics']> {
+        return this.lifecycleManager.getDiagnostics();
     }
 
     /**
      * Perform health check
      */
-    async performHealthCheck(): Promise<ReturnType<ServerLifecycleManager['performHealthCheck']>> {
-        return await this.lifecycleManager.performHealthCheck();
+    performHealthCheck(): ReturnType<ServerLifecycleManager['performHealthCheck']> {
+        return this.lifecycleManager.performHealthCheck();
     }
 
     /**

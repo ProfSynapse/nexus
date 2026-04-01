@@ -30,9 +30,9 @@ export class ServiceRegistrar {
     /**
      * Register all core services with the ServiceManager
      */
-    async registerCoreServices(): Promise<void> {
+    registerCoreServices(): void {
         for (const serviceDef of CORE_SERVICE_DEFINITIONS) {
-            await this.context.serviceManager.registerService({
+            this.context.serviceManager.registerService({
                 name: serviceDef.name,
                 dependencies: serviceDef.dependencies,
                 create: () => serviceDef.create(this.context)
@@ -150,7 +150,7 @@ export class ServiceRegistrar {
      * lazily when first requested via getService(). The UI shows immediately and
      * services spin up on-demand when chat/tools are actually used.
      */
-    async initializeEssentialServices(): Promise<void> {
+    initializeEssentialServices(): void {
         // No-op for fast startup - services initialize lazily on first access
         return;
     }
@@ -245,7 +245,7 @@ export class ServiceRegistrar {
     /**
      * Pre-initialize UI-critical services to avoid Memory Management loading delays
      */
-    async preInitializeUICriticalServices(): Promise<void> {
+    preInitializeUICriticalServices(): void {
         if (!this.context.serviceManager) return;
 
         try {

@@ -67,7 +67,7 @@ export class MessageStateManager {
 
     // Update with real ID from repository
     if (userMessageResult.success && userMessageResult.messageId) {
-      await this.updateMessageId(conversation, userMessage.id, userMessageResult.messageId, userMessage);
+      this.updateMessageId(conversation, userMessage.id, userMessageResult.messageId, userMessage);
     }
 
     return userMessage;
@@ -101,12 +101,12 @@ export class MessageStateManager {
   /**
    * Update message ID when real ID is received from storage
    */
-  private async updateMessageId(
+  private updateMessageId(
     conversation: ConversationData,
     tempId: string,
     realId: string,
     message: ConversationMessage
-  ): Promise<void> {
+  ): void {
     const tempMessageIndex = conversation.messages.findIndex(msg => msg.id === tempId);
     if (tempMessageIndex >= 0) {
       const oldId = conversation.messages[tempMessageIndex].id;

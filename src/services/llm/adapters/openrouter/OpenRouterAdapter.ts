@@ -631,14 +631,14 @@ export class OpenRouterAdapter extends BaseAdapter {
   /**
    * List available models
    */
-  async listModels(): Promise<ModelInfo[]> {
+  listModels(): Promise<ModelInfo[]> {
     try {
       // Use centralized model registry
       const openrouterModels = ModelRegistry.getProviderModels('openrouter');
-      return openrouterModels.map(model => ModelRegistry.toModelInfo(model));
+      return Promise.resolve(openrouterModels.map(model => ModelRegistry.toModelInfo(model)));
     } catch (error) {
       this.handleError(error, 'listing models');
-      return [];
+      return Promise.resolve([]);
     }
   }
 
@@ -817,21 +817,21 @@ export class OpenRouterAdapter extends BaseAdapter {
   /**
    * Get model pricing
    */
-  async getModelPricing(modelId: string): Promise<ModelPricing | null> {
+  getModelPricing(modelId: string): Promise<ModelPricing | null> {
     try {
       const models = ModelRegistry.getProviderModels('openrouter');
       const model = models.find(m => m.apiName === modelId);
       if (!model) {
-        return null;
+        return Promise.resolve(null);
       }
 
-      return {
+      return Promise.resolve({
         rateInputPerMillion: model.inputCostPerMillion,
         rateOutputPerMillion: model.outputCostPerMillion,
         currency: 'USD'
-      };
+      });
     } catch {
-      return null;
+      return Promise.resolve(null);
     }
   }
 

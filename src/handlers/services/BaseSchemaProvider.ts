@@ -26,12 +26,12 @@ export abstract class BaseSchemaProvider implements ISchemaProvider {
      * Default implementation - checks tool name patterns.
      * Override for more sophisticated logic.
      */
-    async canEnhance(toolName: string, baseSchema: EnhancedJSONSchema): Promise<boolean> {
+    canEnhance(toolName: string, baseSchema: EnhancedJSONSchema): Promise<boolean> {
         try {
-            return this.shouldEnhanceToolName(toolName) && this.hasValidSchema(baseSchema);
+            return Promise.resolve(this.shouldEnhanceToolName(toolName) && this.hasValidSchema(baseSchema));
         } catch (error) {
             logger.systemError(error as Error, `${this.name} - Error in canEnhance`);
-            return false;
+            return Promise.resolve(false);
         }
     }
 

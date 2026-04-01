@@ -12,8 +12,6 @@ import {
   ProviderModalDependencies,
 } from '../types';
 
-/* eslint-disable obsidianmd/ui/sentence-case */
-
 interface LMStudioModelsResponse {
   data: Array<{ id: string }>;
 }
@@ -155,7 +153,7 @@ export class LMStudioProviderModal implements IProviderModal {
       });
     } else {
       const p = descDiv.createEl('p');
-      p.createEl('em', { text: 'No models discovered yet. Click "Discover models" to scan the server.' });
+      p.createEl('em', { text: 'No models discovered yet. Click "discover models" to scan the server.' });
     }
   }
 
@@ -180,7 +178,7 @@ export class LMStudioProviderModal implements IProviderModal {
     ol.addClass('llm-provider-help-list');
     ol.createEl('li', { text: 'Open LM Studio and load your desired model(s)' });
     ol.createEl('li', { text: 'Start the local server (usually on port 1234)' });
-    ol.createEl('li', { text: 'Click "Discover models" to fetch available models' });
+    ol.createEl('li', { text: 'Click "discover models" to fetch available models' });
     ol.createEl('li', { text: 'The first discovered model will be used by default' });
   }
 
@@ -261,7 +259,7 @@ export class LMStudioProviderModal implements IProviderModal {
       new Notice(`LM Studio discovery failed: ${errorMessage}`);
     } finally {
       if (this.discoverButton) {
-        this.discoverButton.textContent = 'Discover Models';
+        this.discoverButton.textContent = 'Discover models';
         this.discoverButton.disabled = false;
       }
     }

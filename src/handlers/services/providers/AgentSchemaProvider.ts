@@ -82,9 +82,9 @@ export class AgentSchemaProvider extends BaseSchemaProvider {
     /**
      * Enhance PromptManager tool schemas with domain agent names and prompt IDs
      */
-    async enhanceSchema(toolName: string, baseSchema: EnhancedJSONSchema): Promise<EnhancedJSONSchema> {
-        return await this.safeEnhance(
-            async () => this.performEnhancement(toolName, baseSchema),
+    enhanceSchema(toolName: string, baseSchema: EnhancedJSONSchema): Promise<EnhancedJSONSchema> {
+        return this.safeEnhance(
+            () => Promise.resolve(this.performEnhancement(toolName, baseSchema)),
             baseSchema,
             'enhanceSchema'
         );
@@ -93,9 +93,9 @@ export class AgentSchemaProvider extends BaseSchemaProvider {
     /**
      * Perform the actual schema enhancement
      */
-    private async performEnhancement(toolName: string, baseSchema: EnhancedJSONSchema): Promise<EnhancedJSONSchema> {
+    private performEnhancement(toolName: string, baseSchema: EnhancedJSONSchema): EnhancedJSONSchema {
         // Get cached or fresh data
-        const data = await this.getCachedData();
+        const data = this.getCachedData();
 
         // Clone the base schema
         const enhanced = this.cloneSchema(baseSchema);
@@ -283,50 +283,50 @@ export class AgentSchemaProvider extends BaseSchemaProvider {
     /**
      * Get cached data or refresh if stale
      */
-    private async getCachedData(): Promise<CachedData> {
+    private getCachedData(): CachedData {
         const now = Date.now();
-        
+
         if (this.cache && (now - this.cache.timestamp) < this.CACHE_DURATION_MS) {
             return this.cache;
         }
-        
+
         // Refresh cache
-        const agents = await this.queryAvailableAgents();
-        const prompts = await this.queryAvailablePrompts();
-        
+        const agents = this.queryAvailableAgents();
+        const prompts = this.queryAvailablePrompts();
+
         this.cache = {
             agents,
             prompts,
             timestamp: now
         };
-        
+
         return this.cache;
     }
 
     /**
      * Query available agents from the agents map
      */
-    private async queryAvailableAgents(): Promise<AgentInfo[]> {
+    private queryAvailableAgents(): AgentInfo[] {
         if (!this.agentsMap) {
             return [];
         }
-        
+
         try {
             const agents: AgentInfo[] = [];
-            
+
             for (const [name, agent] of this.agentsMap.entries()) {
                 // Skip the PromptManager agent itself to avoid confusion
                 if (name === 'promptManager') {
                     continue;
                 }
-                
+
                 agents.push({
                     name,
                     description: agent.description || 'No description available',
                     enabled: true // Regular agents are always considered enabled
                 });
             }
-            
+
             return agents;
         } catch (error) {
             logger.systemError(error as Error, `${this.name} - Error querying available agents`);
@@ -337,19 +337,19 @@ export class AgentSchemaProvider extends BaseSchemaProvider {
     /**
      * Query available custom prompts from storage service
      */
-    private async queryAvailablePrompts(): Promise<PromptInfo[]> {
+    private queryAvailablePrompts(): PromptInfo[] {
         if (!this.customPromptStorage) {
             return [];
         }
-        
+
         try {
             // Check if custom prompts are enabled globally
             if (!this.customPromptStorage.isEnabled()) {
                 return [];
             }
-            
+
             const allPrompts = this.customPromptStorage.getAllPrompts();
-            
+
             return allPrompts.map(prompt => ({
                 id: prompt.id,
                 name: prompt.name,

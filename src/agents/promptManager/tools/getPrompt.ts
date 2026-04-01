@@ -31,6 +31,7 @@ export class GetPromptTool extends BaseTool<GetPromptParams, GetPromptResult> {
    * @param params Tool parameters
    * @returns Promise that resolves with the prompt data
    */
+  // eslint-disable-next-line @typescript-eslint/require-await -- implements ITool.execute() async interface
   async execute(params: GetPromptParams): Promise<GetPromptResult> {
     try {
       const { id, name } = params;

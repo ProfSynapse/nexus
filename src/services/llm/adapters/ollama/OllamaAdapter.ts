@@ -286,10 +286,10 @@ export class OllamaAdapter extends BaseAdapter {
     }
   }
 
-  async listModels(): Promise<ModelInfo[]> {
+  listModels(): Promise<ModelInfo[]> {
     // Only return the user-configured model
     // This ensures the UI only shows the model the user specifically configured
-    return [{
+    return Promise.resolve([{
       id: this.currentModel,
       name: this.currentModel,
       contextWindow: 128000, // Use a reasonable default, not model-specific
@@ -304,7 +304,7 @@ export class OllamaAdapter extends BaseAdapter {
         currency: 'USD',
         lastUpdated: new Date().toISOString()
       }
-    }];
+    }]);
   }
 
   getCapabilities(): ProviderCapabilities {
@@ -320,13 +320,13 @@ export class OllamaAdapter extends BaseAdapter {
     };
   }
 
-  async getModelPricing(_modelId: string): Promise<ModelPricing | null> {
+  getModelPricing(_modelId: string): Promise<ModelPricing | null> {
     // Local models are free - zero rates
-    return {
+    return Promise.resolve({
       rateInputPerMillion: 0,
       rateOutputPerMillion: 0,
       currency: 'USD'
-    };
+    });
   }
 
   async isAvailable(): Promise<boolean> {

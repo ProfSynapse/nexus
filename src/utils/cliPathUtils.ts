@@ -4,7 +4,6 @@
  * Shared vault base path and connector.js resolution helpers.
  * Used by CLI adapter runtimes (Claude Code, Gemini CLI) and auth services.
  */
-/* eslint-disable import/no-nodejs-modules -- desktop-only CLI path helpers use Node filesystem/path APIs in Electron */
 import * as nodeFs from 'node:fs';
 import * as pathMod from 'node:path';
 import { FileSystemAdapter, Vault } from 'obsidian';

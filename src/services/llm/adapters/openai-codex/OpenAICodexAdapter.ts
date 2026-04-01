@@ -517,9 +517,9 @@ export class OpenAICodexAdapter extends BaseAdapter {
   /**
    * List available Codex models from the static model registry.
    */
-  async listModels(): Promise<ModelInfo[]> {
+  listModels(): Promise<ModelInfo[]> {
     const codexModels = ModelRegistry.getProviderModels('openai-codex');
-    return codexModels.map(model => ModelRegistry.toModelInfo(model));
+    return Promise.resolve(codexModels.map(model => ModelRegistry.toModelInfo(model)));
   }
 
   /**
@@ -549,27 +549,27 @@ export class OpenAICodexAdapter extends BaseAdapter {
   /**
    * Get model pricing — Codex models are subscription-based ($0 per token).
    */
-  async getModelPricing(modelId: string): Promise<ModelPricing | null> {
+  getModelPricing(modelId: string): Promise<ModelPricing | null> {
     const models = ModelRegistry.getProviderModels('openai-codex');
     const model = models.find(m => m.apiName === modelId);
-    if (!model) return null;
+    if (!model) return Promise.resolve(null);
 
-    return {
+    return Promise.resolve({
       rateInputPerMillion: 0,
       rateOutputPerMillion: 0,
       currency: 'USD'
-    };
+    });
   }
 
   /**
    * Override isAvailable to check OAuth token validity instead of API key.
    */
-  async isAvailable(): Promise<boolean> {
-    return !!(
+  isAvailable(): Promise<boolean> {
+    return Promise.resolve(!!(
       this.tokens.accessToken &&
       this.tokens.refreshToken &&
       this.tokens.accountId
-    );
+    ));
   }
 
   /**

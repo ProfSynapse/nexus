@@ -23,7 +23,7 @@ export class ResultGroupingHelper {
   /**
    * Group results by specified criteria
    */
-  async groupResults(results: MemorySearchResult[], groupBy: MemoryGroupOption): Promise<GroupedMemoryResults> {
+  groupResults(results: MemorySearchResult[], groupBy: MemoryGroupOption): GroupedMemoryResults {
     const groups = new Map<string, MemorySearchResult[]>();
 
     // Group results by primary criteria

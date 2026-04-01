@@ -34,11 +34,6 @@ export type {
   WorkspaceState
 } from './session/SessionTypes';
 
-// eslint-disable-next-line @typescript-eslint/no-deprecated -- re-exported for backward compatibility
-export type { StateSnapshot } from './session/SessionTypes';
-// eslint-disable-next-line @typescript-eslint/no-deprecated -- re-exported for backward compatibility
-export type { WorkspaceStateSnapshot } from './session/SessionTypes';
-
 // Memory types
 export type {
   WorkspaceMemoryTrace,

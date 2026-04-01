@@ -10,7 +10,6 @@
  * Follows Single Responsibility Principle - only handles message queuing.
  */
 
-// eslint-disable-next-line import/no-nodejs-modules -- desktop-only message queue uses Node EventEmitter in Electron
 import { EventEmitter } from 'events';
 import type { QueuedMessage, MessageQueueEvents } from '../../types/branch/BranchTypes';
 

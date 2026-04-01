@@ -33,18 +33,18 @@ export class PromptsListService implements IPromptsListService {
      * Get all available prompts
      * @returns Promise resolving to array of prompts
      */
-    async listPrompts(): Promise<{ prompts: Prompt[] }> {
+    listPrompts(): Promise<{ prompts: Prompt[] }> {
         try {
-            
+
             const prompts: Prompt[] = [];
-            
+
             // Add system prompts (currently none)
             // Future enhancement: Could add predefined system prompt templates
-            
+
             // Add custom prompts if storage service is available
             if (this.customPromptStorage && this.customPromptStorage.isEnabled()) {
                 const customPrompts = this.customPromptStorage.getEnabledPrompts();
-                
+
                 // Convert custom prompts to MCP Prompt format
                 const mcpPrompts = customPrompts.map(customPrompt => ({
                     name: customPrompt.name,
@@ -52,11 +52,11 @@ export class PromptsListService implements IPromptsListService {
                     // Custom prompts don't have arguments for now
                     arguments: []
                 }));
-                
+
                 prompts.push(...mcpPrompts);
             }
-            
-            return { prompts };
+
+            return Promise.resolve({ prompts });
         } catch (error) {
             logger.systemError(error as Error, 'PromptsListService');
             throw new McpError(ErrorCode.InternalError, 'Failed to list prompts', error);
@@ -89,23 +89,23 @@ export class PromptsListService implements IPromptsListService {
      * @param name Prompt name
      * @returns Promise resolving to boolean
      */
-    async promptExists(name: string): Promise<boolean> {
+    promptExists(name: string): Promise<boolean> {
         try {
             // Check custom prompts first if available
             if (this.customPromptStorage && this.customPromptStorage.isEnabled()) {
                 const customPrompt = this.customPromptStorage.getPromptByNameOrId(name);
                 if (customPrompt && customPrompt.isEnabled) {
-                    return true;
+                    return Promise.resolve(true);
                 }
             }
-            
+
             // Check system prompts (currently none)
             // Future: Add system prompt checking here
-            
-            return false;
+
+            return Promise.resolve(false);
         } catch {
             logger.systemWarn(`PromptsListService: Prompt existence check failed for ${name}`);
-            return false;
+            return Promise.resolve(false);
         }
     }
 
@@ -114,22 +114,22 @@ export class PromptsListService implements IPromptsListService {
      * @param name Prompt name
      * @returns Promise resolving to prompt content or null
      */
-    async getPrompt(name: string): Promise<string | null> {
+    getPrompt(name: string): Promise<string | null> {
         try {
             if (this.customPromptStorage && this.customPromptStorage.isEnabled()) {
                 const customPrompt = this.customPromptStorage.getPromptByNameOrId(name);
                 if (customPrompt && customPrompt.isEnabled) {
-                    return customPrompt.prompt;
+                    return Promise.resolve(customPrompt.prompt);
                 }
             }
-            
+
             // Check system prompts (currently none)
             // Future: Add system prompt retrieval here
-            
-            return null;
+
+            return Promise.resolve(null);
         } catch (error) {
             logger.systemError(error as Error, 'PromptsListService');
-            return null;
+            return Promise.resolve(null);
         }
     }
 }

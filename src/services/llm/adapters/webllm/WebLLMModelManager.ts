@@ -454,7 +454,7 @@ export class WebLLMModelManager {
    * Get model file URL for local serving
    * Returns a file:// URL or blob URL for local access
    */
-  async getLocalModelUrl(modelId: string): Promise<string> {
+  getLocalModelUrl(modelId: string): string {
     const modelPath = this.getModelPath(modelId);
 
     const adapter = this.vault.adapter;

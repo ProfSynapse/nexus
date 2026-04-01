@@ -1,4 +1,3 @@
-/* eslint-disable import/no-nodejs-modules -- desktop-only Claude Code auth uses Node child_process in Electron */
 import { App, FileSystemAdapter, Platform } from 'obsidian';
 import { resolveDesktopBinaryPath } from '../../utils/binaryDiscovery';
 
