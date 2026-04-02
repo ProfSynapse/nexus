@@ -257,7 +257,7 @@ export class CustomPromptStorageService {
         const id = this.generatePromptId();
         const now = Date.now();
 
-        // Try SQLite first if available
+        // Best-effort SQLite write
         if (this.db && this.migrated) {
             try {
                 this.db.run(
@@ -274,14 +274,12 @@ export class CustomPromptStorageService {
                         now
                     ]
                 );
-
-                return { id, ...promptData };
             } catch (error) {
-                console.error('[CustomPromptStorageService] Error writing to SQLite, falling back to data.json:', error);
+                console.error('[CustomPromptStorageService] Error writing to SQLite:', error);
             }
         }
 
-        // Fallback to data.json
+        // Always write to data.json (source of truth for cross-device sync)
         const customPromptsSettings = this.ensureCustomPromptsSettings();
         const newPrompt: CustomPrompt = { id, ...promptData };
         customPromptsSettings.prompts.push(newPrompt);
@@ -299,7 +297,7 @@ export class CustomPromptStorageService {
     async updatePrompt(id: string, updates: Partial<Omit<CustomPrompt, 'id'>>): Promise<void> {
         const now = Date.now();
 
-        // Try SQLite first if available
+        // Best-effort SQLite write
         if (this.db && this.migrated) {
             try {
                 const fields: string[] = [];
@@ -330,14 +328,12 @@ export class CustomPromptStorageService {
                     `UPDATE custom_prompts SET ${fields.join(', ')} WHERE id = ?`,
                     values
                 );
-
-                return;
             } catch (error) {
-                console.error('[CustomPromptStorageService] Error updating in SQLite, falling back to data.json:', error);
+                console.error('[CustomPromptStorageService] Error updating in SQLite:', error);
             }
         }
 
-        // Fallback to data.json
+        // Always write to data.json (source of truth for cross-device sync)
         this.ensureCustomPromptsSettings();
         const prompts = this.getCustomPrompts();
         const index = prompts.findIndex(prompt => prompt.id === id);
@@ -363,17 +359,16 @@ export class CustomPromptStorageService {
      * @param id Prompt ID
      */
     async deletePrompt(id: string): Promise<void> {
-        // Try SQLite first if available
+        // Best-effort SQLite write
         if (this.db && this.migrated) {
             try {
                 this.db.run('DELETE FROM custom_prompts WHERE id = ?', [id]);
-                return;
             } catch (error) {
-                console.error('[CustomPromptStorageService] Error deleting from SQLite, falling back to data.json:', error);
+                console.error('[CustomPromptStorageService] Error deleting from SQLite:', error);
             }
         }
 
-        // Fallback to data.json
+        // Always write to data.json (source of truth for cross-device sync)
         this.ensureCustomPromptsSettings();
         const prompts = this.getCustomPrompts();
         const index = prompts.findIndex(prompt => prompt.id === id);
