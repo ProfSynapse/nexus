@@ -956,10 +956,6 @@ export class ChatView extends ItemView {
   }
 
   private handleStreamingUpdate(messageId: string, content: string, isComplete: boolean, isIncremental?: boolean): void {
-    const currentConversation = this.conversationManager?.getCurrentConversation();
-    const message = currentConversation?.messages.find((m) => m.id === messageId);
-    const isRetry = message && message.branches && message.branches.length > 0;
-
     if (isIncremental) {
       this.streamingController.updateStreamingChunk(messageId, content);
     } else if (isComplete) {
