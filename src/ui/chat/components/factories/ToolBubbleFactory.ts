@@ -90,9 +90,7 @@ export class ToolBubbleFactory {
   static createTextBubble(
     message: ConversationMessage,
     renderContentCallback: (content: HTMLElement, text: string) => Promise<void>,
-    messageBranchNavigator: any | null,
-    onMessageAlternativeChanged?: (messageId: string, alternativeIndex: number) => void,
-    component?: Component
+    messageBranchNavigator: any | null
   ): HTMLElement {
     const messageContainer = document.createElement('div');
     messageContainer.addClass('message-container');

@@ -2,7 +2,7 @@
  * MessageBubble - Individual message bubble component
  * Location: /src/ui/chat/components/MessageBubble.ts
  *
- * Renders user/AI messages with copy, retry, and edit actions.
+ * Renders user/AI messages with retry, edit, and action bar actions.
  * Delegates rendering responsibilities to specialized classes following SOLID principles.
  *
  * Used by MessageDisplay to render individual messages in the chat interface.
@@ -97,9 +97,7 @@ export class MessageBubble extends Component {
         this.textBubbleElement = ToolBubbleFactory.createTextBubble(
           renderMessage,
           (container, content) => this.renderContent(container, content),
-          this.messageBranchNavigator,
-          this.onMessageAlternativeChanged,
-          this
+          this.messageBranchNavigator
         );
         wrapper.appendChild(this.textBubbleElement);
 
