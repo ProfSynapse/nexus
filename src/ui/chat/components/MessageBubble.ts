@@ -184,7 +184,7 @@ export class MessageBubble extends Component {
   /**
    * Create action buttons (edit, retry, branch navigator)
    */
-  private createActionButtons(actions: HTMLElement, bubble: HTMLElement): void {
+  private createActionButtons(actions: HTMLElement, _bubble: HTMLElement): void {
     if (this.message.role === 'user') {
       // Edit button for user messages
       if (this.onEdit) {
