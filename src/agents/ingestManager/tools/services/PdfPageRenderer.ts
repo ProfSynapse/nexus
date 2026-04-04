@@ -4,10 +4,11 @@
  * Uses pdfjs-dist page rendering via OffscreenCanvas (Electron desktop only).
  *
  * Used by: OcrService (vision mode)
- * Dependencies: pdfjs-dist
+ * Dependencies: pdfjs-dist legacy build
  */
 
 import { PdfPageImage } from '../../types';
+import { loadPdfJs } from './PdfJsLoader';
 
 const RENDER_SCALE = 2.0; // 2x for good OCR quality
 
@@ -20,9 +21,8 @@ export async function renderPdfPages(
   pdfData: ArrayBuffer,
   onProgress?: (current: number, total: number) => void
 ): Promise<PdfPageImage[]> {
-  const pdfjsLib = await import('pdfjs-dist');
+  const pdfjsLib = await loadPdfJs();
 
-  // In esbuild platform:"node" builds, pdfjs-dist uses LoopbackPort automatically
   const loadingTask = pdfjsLib.getDocument({
     data: new Uint8Array(pdfData),
   });

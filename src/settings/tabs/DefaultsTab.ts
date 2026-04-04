@@ -292,6 +292,18 @@ export class DefaultsTab {
           });
       });
 
+    new Setting(content)
+      .setName('Auto-convert new files')
+      .setDesc('When supported PDF or audio files are added to the vault, automatically convert them to sibling Markdown files using the defaults below.')
+      .addToggle(toggle => {
+        toggle
+          .setValue(pluginSettings.autoIngestion === true)
+          .onChange(async (value) => {
+            pluginSettings.autoIngestion = value;
+            await this.services.settings.saveSettings();
+          });
+      });
+
     if (!isEnabled) {
       ingestionSettingsContainer.addClass('nexus-ingest-confirm-hidden');
     }

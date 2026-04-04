@@ -37,7 +37,7 @@ Native chat works on desktop and mobile. MCP clients, local desktop providers, a
 | Search notes and past conversations by meaning | [Semantic search](guide/semantic-search.md) |
 | Edit selected text directly in notes | [Inline editing](guide/inline-editing.md) |
 | Open webpages in Obsidian and save them as Markdown, PNG, or PDF *(experimental)* | [Apps](guide/apps.md) |
-| Drag PDF or audio files into chat and convert them to Markdown notes *(experimental)* | [Apps](guide/apps.md) |
+| Convert PDFs and audio files to Markdown notes — right-click in vault or auto on add *(experimental)* | [Apps](guide/apps.md) |
 | Merge PDFs, concat markdown, or mix audio tracks into one file *(experimental)* | [Apps](guide/apps.md) |
 | Create recurring routines and reusable workflows | [Workflow examples](guide/workflow-examples.md) |
 | Understand the MCP design and available tools | [Two-tool architecture](guide/two-tool-architecture.md) |

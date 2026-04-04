@@ -3,7 +3,7 @@ Last Updated: 2026-03-29
 
 ## Project Overview
 - **Name**: Nexus (package: claudesidian-mcp)
-- **Version**: 5.6.1
+- **Version**: 5.6.2
 - **Type**: Obsidian Community Plugin
 - **Purpose**: MCP integration for Obsidian with AI-powered vault operations
 - **Architecture**: Agent-Tool pattern with domain-driven design
@@ -711,15 +711,17 @@ Key files: `src/ui/chat/components/suggesters/`, `MessageEnhancer.ts`, `SystemPr
 ## Pinned Context
 
 <!-- pinned: 2026-03-29 -->
-### pdfjs-dist LoopbackPort bundling (Obsidian/Electron)
-To use pdfjs-dist in Obsidian without a separate worker file (which esbuild can't bundle):
+### pdfjs-dist in Obsidian/Electron (legacy build + shared loader)
+PDF.js 5 expects a configured `workerSrc` in the Electron renderer. Use the legacy build with a shared loader that seeds `globalThis.pdfjsWorker`:
 ```typescript
-import * as pdfjsLib from 'pdfjs-dist';
-import { LoopbackPort } from 'pdfjs-dist';
-pdfjsLib.GlobalWorkerOptions.workerSrc = ''; // disable external worker
-const doc = await pdfjsLib.getDocument({ data: uint8Array, worker: new LoopbackPort() }).promise;
+// src/agents/ingestManager/tools/services/PdfJsLoader.ts
+const [pdfjsLib, pdfjsWorker] = await Promise.all([
+  import('pdfjs-dist/legacy/build/pdf.mjs'),
+  import('pdfjs-dist/legacy/build/pdf.worker.mjs'),
+]);
+if (!globalThis.pdfjsWorker) globalThis.pdfjsWorker = pdfjsWorker;
 ```
-No esbuild config changes needed. ~1.5-2MB bundle impact. Used in `PdfTextExtractor.ts` and `PdfPageRenderer.ts`.
+Use `loadPdfJs()` from `PdfJsLoader.ts` in both `PdfTextExtractor.ts` and `PdfPageRenderer.ts`. Do NOT use `import('pdfjs-dist')` directly — the main entry fails in Electron without a worker URL.
 
 <!-- pinned: 2026-03-29 -->
 ### IngestManagerAgent — audio transcription provider scope (v1)

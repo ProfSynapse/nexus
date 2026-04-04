@@ -4,21 +4,19 @@
  * This is the default (free) PDF mode — no LLM API calls needed.
  *
  * Used by: IngestionPipelineService (text mode)
- * Dependencies: pdfjs-dist
+ * Dependencies: pdfjs-dist legacy build
  */
 
 import { PdfPageContent } from '../../types';
+import { loadPdfJs } from './PdfJsLoader';
 
 /**
  * Extract text from all pages of a PDF file.
- * Uses pdfjs-dist's getTextContent() which runs on the main thread via LoopbackPort.
+ * Uses pdfjs-dist's legacy getTextContent() build for Node/Electron compatibility.
  */
 export async function extractPdfText(pdfData: ArrayBuffer): Promise<PdfPageContent[]> {
-  // Dynamic import to lazy-load pdfjs-dist (only when PDF ingestion is used)
-  const pdfjsLib = await import('pdfjs-dist');
+  const pdfjsLib = await loadPdfJs();
 
-  // In esbuild platform:"node" builds, pdfjs-dist uses LoopbackPort automatically
-  // when no workerSrc is set. This runs the worker code on the main thread.
   const loadingTask = pdfjsLib.getDocument({
     data: new Uint8Array(pdfData),
   });

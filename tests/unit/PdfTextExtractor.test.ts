@@ -6,15 +6,16 @@
  * and whitespace trimming.
  */
 
-// Mock pdfjs-dist before importing the module under test
-jest.mock('pdfjs-dist', () => ({
-  getDocument: jest.fn(),
+// Mock the PDF.js loader before importing the module under test
+jest.mock('../../src/agents/ingestManager/tools/services/PdfJsLoader', () => ({
+  loadPdfJs: jest.fn(),
 }));
 
 import { extractPdfText } from '../../src/agents/ingestManager/tools/services/PdfTextExtractor';
-import * as pdfjsLib from 'pdfjs-dist';
+import { loadPdfJs } from '../../src/agents/ingestManager/tools/services/PdfJsLoader';
 
-const getDocumentMock = pdfjsLib.getDocument as jest.Mock;
+const loadPdfJsMock = loadPdfJs as jest.MockedFunction<typeof loadPdfJs>;
+const getDocumentMock = jest.fn();
 
 /**
  * Helper to build a mock PDF document with specified page text items.
@@ -45,6 +46,9 @@ function mockPdfDocument(pages: Array<Array<{ str: string; hasEOL?: boolean }>>)
 describe('PdfTextExtractor', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    loadPdfJsMock.mockResolvedValue({
+      getDocument: getDocumentMock,
+    } as unknown as Awaited<ReturnType<typeof loadPdfJs>>);
   });
 
   // ==========================================================================

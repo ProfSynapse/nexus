@@ -59,6 +59,7 @@ export interface MCPSettings {
   enabledVault: boolean;
   enableEmbeddings?: boolean; // Enable/disable local embeddings for semantic search (desktop only)
   enableIngestion?: boolean; // Enable/disable PDF/audio ingestion UI and ingest-only model settings
+  autoIngestion?: boolean; // Automatically convert newly added supported binary files to Markdown
   configFilePath?: string;
   memory?: MemorySettings;
   customPrompts?: CustomPromptsSettings;

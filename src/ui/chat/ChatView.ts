@@ -43,17 +43,6 @@ import { ToolEventCoordinator } from './coordinators/ToolEventCoordinator';
 import { ChatLayoutBuilder, ChatLayoutElements } from './builders/ChatLayoutBuilder';
 import { ChatEventBinder } from './utils/ChatEventBinder';
 
-// Ingest UI
-import { IngestEventBinder } from '../../agents/ingestManager/ui/IngestEventBinder';
-import { IngestProgressBanner } from '../../agents/ingestManager/ui/IngestProgressBanner';
-import { IngestConfirmModal, IngestConfirmOptions } from '../../agents/ingestManager/ui/IngestConfirmModal';
-import type { IngestProgress, IngestToolResult } from '../../agents/ingestManager/types';
-import { ACCEPTED_AUDIO_EXTENSIONS } from '../../agents/ingestManager/types';
-import {
-  getIngestCapabilityOptions,
-  IngestCapabilityOptions
-} from '../../agents/ingestManager/tools/services/IngestCapabilityService';
-
 // Utils
 import { ReferenceMetadata } from './utils/ReferenceExtractor';
 import { CHAT_VIEW_TYPES } from '../../constants/branding';
@@ -67,7 +56,6 @@ import type { AgentManager } from '../../services/AgentManager';
 import type { DirectToolExecutor } from '../../services/chat/DirectToolExecutor';
 import type { PromptManagerAgent } from '../../agents/promptManager/promptManager';
 import type { HybridStorageAdapter } from '../../database/adapters/HybridStorageAdapter';
-import { LLMProviderManager } from '../../services/llm/providers/ProviderManager';
 
 // Branch UI components
 import { BranchHeader, BranchViewContext } from './components/BranchHeader';
@@ -121,10 +109,6 @@ export class ChatView extends ItemView {
 
   // Layout elements
   private layoutElements!: ChatLayoutElements;
-
-  // Ingest UI
-  private ingestEventBinder: IngestEventBinder | null = null;
-  private ingestProgressBanner: IngestProgressBanner | null = null;
 
   constructor(leaf: WorkspaceLeaf, private chatService: ChatService) {
     super(leaf);
@@ -492,191 +476,6 @@ export class ChatView extends ItemView {
     );
 
     this.uiStateController.initializeEventListeners();
-
-    // Ingest drag-and-drop
-    this.initializeIngestUI();
-  }
-
-  /**
-   * Initialize ingest drag-and-drop UI and progress banner
-   */
-  private initializeIngestUI(): void {
-    const plugin = getNexusPlugin<NexusPlugin>(this.app);
-    if (!plugin || plugin.settings?.settings?.enableIngestion === false) return;
-
-    // Progress banner (always visible container, banners appear inside on ingest)
-    this.ingestProgressBanner = new IngestProgressBanner(
-      this.layoutElements.ingestBannerContainer
-    );
-
-    // Drag-and-drop event binding
-    const mainContainer = this.containerEl.querySelector('.chat-main') as HTMLElement;
-    if (mainContainer) {
-      this.ingestEventBinder = new IngestEventBinder(
-        mainContainer,
-        plugin,
-        (files) => this.handleIngestFiles(files)
-      );
-      this.ingestEventBinder.bind();
-    }
-  }
-
-  /**
-   * Handle files dropped onto the chat view for ingestion
-   */
-  private async handleIngestFiles(files: FileList): Promise<void> {
-    const plugin = getNexusPlugin<NexusPlugin>(this.app);
-    if (!plugin) return;
-    if (plugin.settings?.settings?.enableIngestion === false) {
-      new Notice('Ingestion is disabled in settings.');
-      return;
-    }
-
-    const settings = plugin.settings?.settings;
-    const llmSettings = settings?.llmProviders;
-    const ingestCapabilities = await this.getIngestCapabilities();
-
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
-
-      const isPdf = ext === '.pdf';
-      const isAudio = (ACCEPTED_AUDIO_EXTENSIONS as readonly string[]).includes(ext);
-      if (!isPdf && !isAudio) continue;
-
-      // Resolve vault-relative path from dropped filename
-      const vaultFile = this.app.vault.getFiles().find(f => f.name === file.name);
-      if (!vaultFile) {
-        this.ingestProgressBanner?.update({
-          filePath: file.name,
-          stage: 'error',
-          error: 'File not found in vault. Try dragging from the Obsidian file explorer.'
-        });
-        continue;
-      }
-      const vaultPath = vaultFile.path;
-
-      const fileType = isPdf ? 'pdf' as const : 'audio' as const;
-
-      // Build confirm modal options
-      const confirmOptions: IngestConfirmOptions = {
-        filePath: vaultPath,
-        fileType,
-        defaultPdfMode: (llmSettings?.defaultPdfMode as 'text' | 'vision') || 'text',
-        defaultOcrProvider: llmSettings?.defaultOcrModel?.provider,
-        defaultOcrModel: llmSettings?.defaultOcrModel?.model,
-        defaultTranscriptionProvider: llmSettings?.defaultTranscriptionModel?.provider,
-        defaultTranscriptionModel: llmSettings?.defaultTranscriptionModel?.model,
-        ocrProviders: ingestCapabilities.ocrProviders,
-        transcriptionProviders: ingestCapabilities.transcriptionProviders
-      };
-
-      const modal = new IngestConfirmModal(this.app, confirmOptions);
-      const result = await modal.prompt();
-
-      if (!result.confirmed) continue;
-
-      // Show progress banner
-      this.ingestProgressBanner?.update({
-        filePath: vaultPath,
-        stage: 'queued',
-        progress: 0
-      });
-
-      // Get the IngestManager agent and run ingestion
-      try {
-        const agentManager = await plugin.getService<AgentManager>('agentManager');
-        if (!agentManager) {
-          this.ingestProgressBanner?.update({
-            filePath: vaultPath,
-            stage: 'error',
-            error: 'Agent manager not available'
-          });
-          continue;
-        }
-
-        const ingestAgent = agentManager.getAgent('ingestManager');
-        if (!ingestAgent) {
-          this.ingestProgressBanner?.update({
-            filePath: vaultPath,
-            stage: 'error',
-            error: 'Ingest agent not available'
-          });
-          continue;
-        }
-
-        const ingestTool = ingestAgent.getTool('ingest');
-        if (!ingestTool) {
-          this.ingestProgressBanner?.update({
-            filePath: vaultPath,
-            stage: 'error',
-            error: 'Ingest tool not available'
-          });
-          continue;
-        }
-
-        // Update banner to active processing stage
-        this.ingestProgressBanner?.update({
-          filePath: vaultPath,
-          stage: isPdf ? 'extracting' : 'transcribing',
-          progress: 10
-        });
-
-        const ingestResult = await ingestTool.execute({
-          filePath: vaultPath,
-          mode: isPdf ? result.pdfMode : undefined,
-          ocrProvider: result.ocrProvider,
-          ocrModel: result.ocrModel,
-          transcriptionProvider: result.transcriptionProvider,
-          transcriptionModel: result.transcriptionModel,
-        }) as IngestToolResult;
-
-        if (ingestResult.success) {
-          this.ingestProgressBanner?.update({
-            filePath: vaultPath,
-            stage: 'complete',
-            progress: 100
-          });
-
-          if (ingestResult.outputPath) {
-            new Notice(`Ingested: ${ingestResult.outputPath}`);
-          }
-        } else {
-          this.ingestProgressBanner?.update({
-            filePath: vaultPath,
-            stage: 'error',
-            error: ingestResult.error || 'Ingestion failed'
-          });
-        }
-      } catch (err) {
-        this.ingestProgressBanner?.update({
-          filePath: vaultPath,
-          stage: 'error',
-          error: err instanceof Error ? err.message : 'Unexpected error during ingestion'
-        });
-      }
-    }
-  }
-
-  private async getIngestCapabilities(): Promise<IngestCapabilityOptions> {
-    const plugin = getNexusPlugin<NexusPlugin>(this.app);
-    if (plugin?.settings?.settings?.enableIngestion === false) {
-      return {
-        ocrProviders: [],
-        transcriptionProviders: []
-      };
-    }
-    const llmSettings = plugin?.settings?.settings?.llmProviders;
-
-    if (!llmSettings) {
-      return {
-        ocrProviders: [],
-        transcriptionProviders: []
-      };
-    }
-
-    const providerManager = new LLMProviderManager(llmSettings, this.app.vault);
-    return getIngestCapabilityOptions(providerManager);
   }
 
   /**
@@ -1547,7 +1346,5 @@ export class ChatView extends ItemView {
     this.nexusLoadingController?.unload();
     this.subagentController?.cleanup();
     this.branchHeader?.cleanup();
-    this.ingestEventBinder?.destroy();
-    this.ingestProgressBanner?.destroy();
   }
 }

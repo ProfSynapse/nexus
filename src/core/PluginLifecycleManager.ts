@@ -20,6 +20,7 @@ import { TaskBoardUIManager } from './ui/TaskBoardUIManager';
 import { BackgroundProcessor } from './background/BackgroundProcessor';
 import { SettingsTabManager } from './settings/SettingsTabManager';
 import { EmbeddingManager } from '../services/embeddings/EmbeddingManager';
+import { VaultIngestionManager } from './ingest/VaultIngestionManager';
 import type { ServiceCreationContext } from './services/ServiceDefinitions';
 import type { HybridStorageAdapter } from '../database/adapters/HybridStorageAdapter';
 import type { ChatTraceService } from '../services/chat/ChatTraceService';
@@ -72,6 +73,7 @@ export class PluginLifecycleManager {
     private backgroundProcessor: BackgroundProcessor;
     private settingsTabManager: SettingsTabManager;
     private inlineEditCommandManager: InlineEditCommandManager;
+    private vaultIngestionManager: VaultIngestionManager;
     private embeddingManager: EmbeddingManager | null = null;
 
     // Pending timer handles for cleanup on shutdown
@@ -139,6 +141,12 @@ export class PluginLifecycleManager {
             throw new Error('Plugin must implement getService method for InlineEditCommandManager');
         }
         this.inlineEditCommandManager = new InlineEditCommandManager({
+            plugin: config.plugin,
+            app: config.app,
+            getService: (name, timeoutMs) => this.serviceRegistrar.getService(name, timeoutMs)
+        });
+
+        this.vaultIngestionManager = new VaultIngestionManager({
             plugin: config.plugin,
             app: config.app,
             getService: (name, timeoutMs) => this.serviceRegistrar.getService(name, timeoutMs)
@@ -230,6 +238,9 @@ export class PluginLifecycleManager {
 
             // Register inline edit commands and context menu
             this.inlineEditCommandManager.registerCommands();
+
+            // Register vault-level ingestion triggers
+            this.vaultIngestionManager.register();
 
             // Check for updates
             this.backgroundProcessor.checkForUpdatesOnStartup();

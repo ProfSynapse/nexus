@@ -89,6 +89,7 @@ export const DEFAULT_SETTINGS: MCPSettings = {
   enabledVault: true,
   enableEmbeddings: true, // Enable local embeddings by default (desktop only)
   enableIngestion: true,
+  autoIngestion: false,
   configFilePath: undefined,
   memory: DEFAULT_MEMORY_SETTINGS,
   customPrompts: DEFAULT_CUSTOM_PROMPTS_SETTINGS,
