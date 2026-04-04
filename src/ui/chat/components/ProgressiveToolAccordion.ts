@@ -212,23 +212,101 @@ export class ProgressiveToolAccordion {
     }
 
     text.textContent = formatToolGroupHeader(this.displayGroup);
-    this.renderGroupContent(content);
+    this.updateGroupContent(content);
   }
 
-  private renderGroupContent(content: HTMLElement): void {
-    content.empty();
-
+  /**
+   * Targeted content update — reconciles existing DOM with current state
+   * instead of wiping and rebuilding on every refresh call.
+   * New steps are appended; existing steps are updated in place.
+   */
+  private updateGroupContent(content: HTMLElement): void {
     if (!this.displayGroup) {
       return;
     }
 
     if (this.displayGroup.kind === 'reasoning') {
-      this.renderReasoningItem(content, this.displayGroup.steps[0]);
+      const step = this.displayGroup.steps[0];
+      if (!step) {
+        return;
+      }
+      const existing = content.querySelector('.reasoning-item') as HTMLElement | null;
+      if (!existing) {
+        this.renderReasoningItem(content, step);
+      } else {
+        this.updateReasoningItem(existing, step);
+      }
       return;
     }
 
     for (const step of this.displayGroup.steps) {
-      this.renderStepItem(content, step);
+      const existing = content.querySelector(`[data-tool-id="${step.id}"]`) as HTMLElement | null;
+      if (!existing) {
+        this.renderStepItem(content, step);
+      } else {
+        this.updateStepItem(existing, step);
+      }
+    }
+  }
+
+  private updateReasoningItem(item: HTMLElement, step: ToolDisplayStep): void {
+    item.className = `progressive-tool-item reasoning-item tool-${step.status}`;
+
+    const meta = item.querySelector('.tool-meta') as HTMLElement | null;
+    if (meta) {
+      if (step.status === 'streaming' || step.status === 'executing') {
+        meta.textContent = 'thinking...';
+        meta.addClass('reasoning-streaming');
+      } else {
+        meta.textContent = '';
+        meta.removeClass('reasoning-streaming');
+      }
+    }
+
+    const reasoningContent = item.querySelector('[data-reasoning-content]') as HTMLElement | null;
+    if (reasoningContent) {
+      reasoningContent.textContent = typeof step.result === 'string' ? step.result : '';
+    }
+
+    const existingIndicator = item.querySelector('.reasoning-streaming-indicator');
+    if (step.status === 'streaming' || step.status === 'executing') {
+      if (!existingIndicator) {
+        const section = item.querySelector('.reasoning-content-section');
+        if (section) {
+          const indicator = section.createDiv('reasoning-streaming-indicator');
+          indicator.textContent = '⋯';
+        }
+      }
+    } else {
+      existingIndicator?.remove();
+    }
+  }
+
+  private updateStepItem(item: HTMLElement, step: ToolDisplayStep): void {
+    item.className = `progressive-tool-item tool-${step.status}`;
+
+    const name = item.querySelector('.tool-name') as HTMLElement | null;
+    if (name) {
+      name.textContent = step.displayName || formatToolStepLabel(step, this.getTenseForStep(step));
+    }
+
+    const meta = item.querySelector('.tool-meta') as HTMLElement | null;
+    if (meta) {
+      this.updateExecutionMeta(meta, step);
+    }
+
+    if (step.status === 'completed' && step.result !== undefined) {
+      const resultSection = item.querySelector(`[data-result-section="${step.id}"]`) as HTMLElement | null;
+      if (resultSection && resultSection.hasClass('progressive-accordion-hidden')) {
+        this.renderResultSection(resultSection, step);
+      }
+    }
+
+    if (step.status === 'failed' && step.error) {
+      const errorSection = item.querySelector(`[data-error-section="${step.id}"]`) as HTMLElement | null;
+      if (errorSection && errorSection.hasClass('progressive-accordion-hidden')) {
+        this.renderErrorSection(errorSection, step.error);
+      }
     }
   }
 
