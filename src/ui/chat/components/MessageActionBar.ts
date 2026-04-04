@@ -92,17 +92,32 @@ export class MessageActionBar extends Component {
     }, 1500);
   }
 
+  /**
+   * Returns the active MarkdownView, or falls back to the most recently
+   * opened markdown leaf if the chat panel currently has workspace focus.
+   */
+  private getMarkdownView(): MarkdownView | null {
+    const active = this.app.workspace.getActiveViewOfType(MarkdownView);
+    if (active) return active;
+
+    // Chat panel has focus — find any open note tab
+    const leaves = this.app.workspace.getLeavesOfType('markdown');
+    if (leaves.length === 0) return null;
+    return leaves[leaves.length - 1].view as MarkdownView;
+  }
+
   private handleInsert(): void {
-    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+    const view = this.getMarkdownView();
     if (!view) {
       new Notice('No active note — open a note and place your cursor first.');
       return;
     }
+    view.editor.focus();
     view.editor.replaceSelection(this.content);
   }
 
   private async handleAppend(): Promise<void> {
-    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+    const view = this.getMarkdownView();
     if (!view?.file) {
       new Notice('No active note — open a note first.');
       return;
