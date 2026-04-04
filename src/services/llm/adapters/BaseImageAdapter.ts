@@ -18,6 +18,18 @@ import {
 } from '../types/ImageTypes';
 import { ProviderCapabilities, ModelInfo, CostDetails } from './types';
 
+type HttpErrorLike = {
+  response?: {
+    status?: number;
+    data?: {
+      error?: {
+        message?: string;
+      };
+    };
+  };
+  message?: string;
+};
+
 export abstract class BaseImageAdapter extends BaseAdapter {
   abstract readonly supportedModels: ImageModel[];
   abstract readonly supportedSizes: string[];
@@ -141,7 +153,7 @@ export abstract class BaseImageAdapter extends BaseAdapter {
     try {
       const capabilities = this.getImageCapabilities();
       return capabilities.supportsImageGeneration || false;
-    } catch (error) {
+    } catch {
       return false;
     }
   }
@@ -184,7 +196,7 @@ export abstract class BaseImageAdapter extends BaseAdapter {
         resolution: usage.resolution,
         imagesGenerated: usage.imagesGenerated
       };
-    } catch (error) {
+    } catch {
       return null;
     }
   }
@@ -249,14 +261,19 @@ export abstract class BaseImageAdapter extends BaseAdapter {
   /**
    * Handle image-specific errors
    */
-  protected handleImageError(error: any, operation: string, params?: ImageGenerationParams): never {
+  protected handleImageError(error: unknown, operation: string, params?: ImageGenerationParams): never {
     if (error instanceof ImageGenerationError) {
       throw error;
     }
 
-    if (error.response) {
-      const status = error.response.status;
-      const message = error.response.data?.error?.message || error.message;
+    const responseError = error as HttpErrorLike;
+    const wrappedError = error instanceof Error
+      ? error
+      : new Error(responseError.message || 'Unknown error');
+
+    if (responseError.response) {
+      const status = responseError.response.status;
+      const message = responseError.response.data?.error?.message || responseError.message || 'Unknown error';
       
       let errorCode = 'HTTP_ERROR';
       if (status === 401) errorCode = 'AUTHENTICATION_ERROR';
@@ -268,26 +285,26 @@ export abstract class BaseImageAdapter extends BaseAdapter {
         `${operation} failed: ${message}`,
         this.name,
         errorCode,
-        error,
+        wrappedError,
         params
       );
     }
 
     throw new ImageGenerationError(
-      `${operation} failed: ${error.message || 'Unknown error'}`,
+      `${operation} failed: ${responseError.message || 'Unknown error'}`,
       this.name,
       'UNKNOWN_ERROR',
-      error,
+      wrappedError,
       params
     );
   }
 
   // Required BaseAdapter methods (stub implementations for image-only adapters)
-  async generateUncached(): Promise<any> {
+  async generateUncached(): Promise<never> {
     throw new Error('Use generateImage() for image generation. This adapter only supports image generation.');
   }
 
-  async generateStream(): Promise<any> {
+  async generateStream(): Promise<never> {
     throw new Error('Streaming not supported for image generation');
   }
 

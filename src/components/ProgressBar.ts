@@ -28,6 +28,16 @@ export interface ProgressCancelData {
     operationId: string;
 }
 
+interface MCPProgressHandlers {
+    updateProgress: (data: ProgressUpdateData) => void;
+    completeProgress: (data: ProgressCompleteData) => void;
+    cancelProgress: (data: ProgressCancelData) => void;
+}
+
+type ProgressWindow = Window & {
+    mcpProgressHandlers?: MCPProgressHandlers;
+};
+
 /**
  * ProgressBar component for displaying progress
  * Uses custom event handling to show progress of operations like indexing
@@ -108,6 +118,8 @@ export class ProgressBar {
      * Set up event handlers using a custom approach
      */
     private setupEventHandlers(): void {
+        const progressWindow = window as ProgressWindow;
+
         // Create progress update handler
         this.onProgressHandler = (data: ProgressUpdateData) => {
             // Progress update received
@@ -161,8 +173,7 @@ export class ProgressBar {
         };
         
         // Expose handlers as global methods to be called from other components
-        // @ts-ignore - Adding methods to window for inter-component communication
-        window.mcpProgressHandlers = {
+        progressWindow.mcpProgressHandlers = {
             updateProgress: this.onProgressHandler,
             completeProgress: this.onCompleteHandler,
             cancelProgress: onCancelHandler
@@ -203,11 +214,11 @@ export class ProgressBar {
      * Trigger cancel operation event
      */
     private triggerCancel(): void {
+        const progressWindow = window as ProgressWindow;
+
         // Call global cancel handler if available
-        // @ts-ignore - Using global methods for inter-component communication
-        if (window.mcpProgressHandlers && window.mcpProgressHandlers.cancelProgress) {
-            // @ts-ignore
-            window.mcpProgressHandlers.cancelProgress({
+        if (progressWindow.mcpProgressHandlers?.cancelProgress) {
+            progressWindow.mcpProgressHandlers.cancelProgress({
                 operationId: this.operationId
             });
         }

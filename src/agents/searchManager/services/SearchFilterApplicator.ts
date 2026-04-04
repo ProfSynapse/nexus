@@ -118,7 +118,7 @@ export class SearchFilterApplicator {
         const name = item instanceof TFile ? item.basename : item.name;
         return regex.test(item.path) || regex.test(name);
       });
-    } catch (error) {
+    } catch {
       // Invalid regex - return items unfiltered
       return items;
     }

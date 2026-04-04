@@ -38,7 +38,7 @@ export class ContextProgressBar {
     // Header
     const header = this.container.createDiv('context-progress-header');
     const label = header.createSpan('context-progress-label');
-    label.textContent = 'Context Usage';
+    label.textContent = 'Context usage';
 
     this.usageText = header.createSpan('context-progress-usage');
     this.usageText.textContent = '0 / 0 tokens (0%)';

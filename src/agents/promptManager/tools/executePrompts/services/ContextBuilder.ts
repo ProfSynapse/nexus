@@ -131,7 +131,7 @@ export class ContextBuilder {
   /**
    * Initialize execution context for batch processing
    */
-  initializeExecutionContext(sessionId?: string, context?: any): ExecutionContext {
+  initializeExecutionContext(sessionId?: string, context?: unknown): ExecutionContext {
     return {
       sessionId,
       context,

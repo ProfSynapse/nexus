@@ -94,7 +94,6 @@ export class TaskService {
       throw new Error(`Project "${data.name}" already exists in this workspace`);
     }
 
-    const now = Date.now();
     const projectId = await this.projectRepo.create({
       name: data.name,
       description: data.description,
@@ -360,7 +359,7 @@ export class TaskService {
       entity: 'task',
       action: 'moved',
       taskId,
-      projectId: (updateData.projectId as string | undefined) || task.projectId
+      projectId: (updateData.projectId) || task.projectId
     });
   }
 
@@ -477,15 +476,19 @@ export class TaskService {
 
     const nodes: TaskNode[] = allTasks.items.map(t => ({ id: t.id, status: t.status }));
     const { dependencies, dependents } = this.dagService.getDependencyTree(taskId, nodes, allEdges);
+    const mapTaskIds = (taskIds: string[]): Array<{ task: TaskMetadata; dependencies: never[]; dependents: never[] }> =>
+      taskIds.reduce<Array<{ task: TaskMetadata; dependencies: never[]; dependents: never[] }>>((acc, relatedTaskId) => {
+        const relatedTask = taskMap.get(relatedTaskId);
+        if (relatedTask) {
+          acc.push({ task: relatedTask, dependencies: [], dependents: [] });
+        }
+        return acc;
+      }, []);
 
     return {
       task,
-      dependencies: dependencies
-        .map(dId => ({ task: taskMap.get(dId)!, dependencies: [], dependents: [] }))
-        .filter(n => n.task),
-      dependents: dependents
-        .map(dId => ({ task: taskMap.get(dId)!, dependencies: [], dependents: [] }))
-        .filter(n => n.task)
+      dependencies: mapTaskIds(dependencies),
+      dependents: mapTaskIds(dependents)
     };
   }
 

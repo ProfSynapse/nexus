@@ -29,17 +29,42 @@ export interface ConversationMessage {
 // Google-specific message format
 export interface GoogleMessage {
   role: 'user' | 'model' | 'function';
-  parts: Array<{ text?: string; functionCall?: any; functionResponse?: any }>;
+  parts: Array<GoogleMessagePart>;
+}
+
+interface GoogleFunctionCall {
+  name?: string;
+  args?: string;
+}
+
+interface GoogleFunctionResponse {
+  name?: string;
+  response?: Record<string, unknown>;
+}
+
+interface GoogleMessagePart {
+  text?: string;
+  functionCall?: GoogleFunctionCall;
+  functionResponse?: GoogleFunctionResponse;
+}
+
+interface OpenAIContinuationItem {
+  role?: 'user' | 'assistant' | 'tool' | 'system';
+  content?: string;
+  type?: string;
+  call_id?: string;
+  name?: string;
+  arguments?: string;
 }
 
 // Internal options type used during streaming orchestration
 export interface GenerateOptionsInternal {
   model: string;
   systemPrompt?: string;
-  conversationHistory?: GoogleMessage[] | ConversationMessage[] | any[]; // any[] for OpenAI Responses API
+  conversationHistory?: GoogleMessage[] | ConversationMessage[] | OpenAIContinuationItem[];
   tools?: Tool[];
-  onToolEvent?: (event: 'started' | 'completed', data: any) => void;
-  onUsageAvailable?: (usage: any, cost?: any) => void;
+  onToolEvent?: (event: 'started' | 'completed', data: unknown) => void;
+  onUsageAvailable?: (usage: unknown, cost?: unknown) => void;
   enableThinking?: boolean;
   thinkingEffort?: 'low' | 'medium' | 'high';
   previousResponseId?: string; // OpenAI Responses API
@@ -50,8 +75,8 @@ export interface StreamingOptions {
   model?: string;
   systemPrompt?: string;
   tools?: Tool[];
-  onToolEvent?: (event: 'started' | 'completed', data: any) => void;
-  onUsageAvailable?: (usage: any, cost?: any) => void;
+  onToolEvent?: (event: 'started' | 'completed', data: unknown) => void;
+  onUsageAvailable?: (usage: unknown, cost?: unknown) => void;
   sessionId?: string;
   workspaceId?: string;
   conversationId?: string;
@@ -206,7 +231,7 @@ export class ProviderMessageBuilder {
 
       // Add function_call items (what the model called)
       for (const tc of toolCalls) {
-        const name = ('name' in tc && tc.name) ? tc.name as string : tc.function?.name || '';
+        const name = ('name' in tc && tc.name) ? tc.name : tc.function?.name || '';
         const args = tc.function?.arguments || '{}';
         inputItems.push({
           type: 'function_call',

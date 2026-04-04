@@ -48,6 +48,19 @@ export class ProgressiveToolAccordion {
     this.callbacks = callbacks || {};
   }
 
+  private getElementBySelector(selector: string): HTMLElement | null {
+    if (!this.element) {
+      return null;
+    }
+
+    const element = this.element.querySelector(selector);
+    return element instanceof HTMLElement ? element : null;
+  }
+
+  private isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+  }
+
   setCallbacks(callbacks: ProgressiveToolAccordionCallbacks): void {
     this.callbacks = { ...this.callbacks, ...callbacks };
   }
@@ -94,8 +107,8 @@ export class ProgressiveToolAccordion {
     name: string;
     technicalName?: string;
     type?: string;
-    parameters?: any;
-    result?: any;
+    parameters?: unknown;
+    result?: unknown;
     isComplete?: boolean;
     isVirtual?: boolean;
     status?: string;
@@ -103,7 +116,7 @@ export class ProgressiveToolAccordion {
     this.setDisplayGroup(normalizeToolCallForDisplay(toolCall));
   }
 
-  updateToolParameters(toolId: string, parameters: any, isComplete: boolean): void {
+  updateToolParameters(toolId: string, parameters: unknown, isComplete: boolean): void {
     if (!this.displayGroup) {
       return;
     }
@@ -123,7 +136,7 @@ export class ProgressiveToolAccordion {
     this.refresh();
   }
 
-  startTool(toolCall: { id: string; name: string; technicalName?: string; parameters?: any }): void {
+  startTool(toolCall: { id: string; name: string; technicalName?: string; parameters?: unknown }): void {
     if (!this.displayGroup) {
       this.setDisplayGroup(normalizeToolCallForDisplay({
         id: toolCall.id,
@@ -143,7 +156,7 @@ export class ProgressiveToolAccordion {
     this.refresh();
   }
 
-  completeTool(toolId: string, result: any, success: boolean, error?: string): void {
+  completeTool(toolId: string, result: unknown, success: boolean, error?: string): void {
     if (!this.displayGroup) {
       return;
     }
@@ -166,10 +179,10 @@ export class ProgressiveToolAccordion {
       return;
     }
 
-    const header = this.element.querySelector('.progressive-tool-header') as HTMLElement | null;
-    const icon = this.element.querySelector('.tool-icon') as HTMLElement | null;
-    const text = this.element.querySelector('.tool-text') as HTMLElement | null;
-    const content = this.element.querySelector('.progressive-tool-content') as HTMLElement | null;
+    const header = this.getElementBySelector('.progressive-tool-header');
+    const icon = this.getElementBySelector('.tool-icon');
+    const text = this.getElementBySelector('.tool-text');
+    const content = this.getElementBySelector('.progressive-tool-content');
 
     if (!header || !icon || !text || !content) {
       return;
@@ -230,7 +243,8 @@ export class ProgressiveToolAccordion {
       if (!step) {
         return;
       }
-      const existing = content.querySelector('.reasoning-item') as HTMLElement | null;
+      const existingRaw = content.querySelector('.reasoning-item');
+      const existing = existingRaw instanceof HTMLElement ? existingRaw : null;
       if (!existing) {
         this.renderReasoningItem(content, step);
       } else {
@@ -240,7 +254,8 @@ export class ProgressiveToolAccordion {
     }
 
     for (const step of this.displayGroup.steps) {
-      const existing = content.querySelector(`[data-tool-id="${step.id}"]`) as HTMLElement | null;
+      const existingRaw = content.querySelector(`[data-tool-id="${step.id}"]`);
+      const existing = existingRaw instanceof HTMLElement ? existingRaw : null;
       if (!existing) {
         this.renderStepItem(content, step);
       } else {
@@ -252,10 +267,11 @@ export class ProgressiveToolAccordion {
   private updateReasoningItem(item: HTMLElement, step: ToolDisplayStep): void {
     item.className = `progressive-tool-item reasoning-item tool-${step.status}`;
 
-    const meta = item.querySelector('.tool-meta') as HTMLElement | null;
+    const metaRaw = item.querySelector('.tool-meta');
+    const meta = metaRaw instanceof HTMLElement ? metaRaw : null;
     if (meta) {
       if (step.status === 'streaming' || step.status === 'executing') {
-        meta.textContent = 'thinking...';
+        meta.textContent = 'Thinking...';
         meta.addClass('reasoning-streaming');
       } else {
         meta.textContent = '';
@@ -263,7 +279,8 @@ export class ProgressiveToolAccordion {
       }
     }
 
-    const reasoningContent = item.querySelector('[data-reasoning-content]') as HTMLElement | null;
+    const reasoningContentRaw = item.querySelector('[data-reasoning-content]');
+    const reasoningContent = reasoningContentRaw instanceof HTMLElement ? reasoningContentRaw : null;
     if (reasoningContent) {
       reasoningContent.textContent = typeof step.result === 'string' ? step.result : '';
     }
@@ -285,25 +302,29 @@ export class ProgressiveToolAccordion {
   private updateStepItem(item: HTMLElement, step: ToolDisplayStep): void {
     item.className = `progressive-tool-item tool-${step.status}`;
 
-    const name = item.querySelector('.tool-name') as HTMLElement | null;
+    const nameRaw = item.querySelector('.tool-name');
+    const name = nameRaw instanceof HTMLElement ? nameRaw : null;
     if (name) {
       name.textContent = step.displayName || formatToolStepLabel(step, this.getTenseForStep(step));
     }
 
-    const meta = item.querySelector('.tool-meta') as HTMLElement | null;
+    const metaRaw = item.querySelector('.tool-meta');
+    const meta = metaRaw instanceof HTMLElement ? metaRaw : null;
     if (meta) {
       this.updateExecutionMeta(meta, step);
     }
 
     if (step.status === 'completed' && step.result !== undefined) {
-      const resultSection = item.querySelector(`[data-result-section="${step.id}"]`) as HTMLElement | null;
+      const resultSectionRaw = item.querySelector(`[data-result-section="${step.id}"]`);
+      const resultSection = resultSectionRaw instanceof HTMLElement ? resultSectionRaw : null;
       if (resultSection && resultSection.hasClass('progressive-accordion-hidden')) {
         this.renderResultSection(resultSection, step);
       }
     }
 
     if (step.status === 'failed' && step.error) {
-      const errorSection = item.querySelector(`[data-error-section="${step.id}"]`) as HTMLElement | null;
+      const errorSectionRaw = item.querySelector(`[data-error-section="${step.id}"]`);
+      const errorSection = errorSectionRaw instanceof HTMLElement ? errorSectionRaw : null;
       if (errorSection && errorSection.hasClass('progressive-accordion-hidden')) {
         this.renderErrorSection(errorSection, step.error);
       }
@@ -331,7 +352,7 @@ export class ProgressiveToolAccordion {
 
     const meta = header.createSpan('tool-meta');
     if (step.status === 'streaming' || step.status === 'executing') {
-      meta.textContent = 'thinking...';
+      meta.textContent = 'Thinking...';
       meta.addClass('reasoning-streaming');
     } else {
       meta.textContent = '';
@@ -447,10 +468,10 @@ export class ProgressiveToolAccordion {
         }
         break;
       case 'queued':
-        metaElement.textContent = 'queued';
+        metaElement.textContent = 'Queued';
         break;
       case 'skipped':
-        metaElement.textContent = 'skipped';
+        metaElement.textContent = 'Skipped';
         break;
       default:
         metaElement.textContent = '';
@@ -464,8 +485,8 @@ export class ProgressiveToolAccordion {
 
     this.isExpanded = !this.isExpanded;
 
-    const content = this.element.querySelector('.progressive-tool-content') as HTMLElement | null;
-    const expandIcon = this.element.querySelector('.tool-expand-icon') as HTMLElement | null;
+    const content = this.getElementBySelector('.progressive-tool-content');
+    const expandIcon = this.getElementBySelector('.tool-expand-icon');
 
     if (!content || !expandIcon) {
       return;
@@ -511,19 +532,16 @@ export class ProgressiveToolAccordion {
 
     let branchId: string | null = null;
     try {
-      const result = typeof step.result === 'string' ? JSON.parse(step.result) : step.result;
+      const result: unknown = typeof step.result === 'string' ? JSON.parse(step.result) : step.result;
       if (result && typeof result === 'object') {
-        const payload = result as Record<string, unknown>;
-        const data = payload.data;
-        if (data && typeof data === 'object') {
-          const dataObject = data as Record<string, unknown>;
-          if (typeof dataObject.branchId === 'string') {
-            branchId = dataObject.branchId;
+        if (this.isRecord(result)) {
+          const data = result.data;
+          if (this.isRecord(data) && typeof data.branchId === 'string') {
+            branchId = data.branchId;
           }
-        }
-
-        if (!branchId && typeof payload.branchId === 'string') {
-          branchId = payload.branchId;
+          if (!branchId && typeof result.branchId === 'string') {
+            branchId = result.branchId;
+          }
         }
       }
     } catch {
@@ -534,9 +552,11 @@ export class ProgressiveToolAccordion {
       return;
     }
 
+    const resolvedBranchId = branchId;
+
     const linkContainer = resultSection.createDiv('nexus-view-branch-link-container');
     const viewLink = linkContainer.createEl('a', {
-      text: 'View Branch →',
+      text: 'View branch →',
       cls: 'nexus-view-branch-link clickable-icon',
       href: '#'
     });
@@ -545,13 +565,13 @@ export class ProgressiveToolAccordion {
       this.component.registerDomEvent(viewLink, 'click', (e) => {
         e.preventDefault();
         e.stopPropagation();
-        this.callbacks.onViewBranch?.(branchId!);
+        this.callbacks.onViewBranch?.(resolvedBranchId);
       });
     } else {
       viewLink.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
-        this.callbacks.onViewBranch?.(branchId!);
+        this.callbacks.onViewBranch?.(resolvedBranchId);
       });
     }
   }
@@ -561,10 +581,9 @@ export class ProgressiveToolAccordion {
     setIcon(copyBtn, 'copy');
     copyBtn.setAttribute('aria-label', 'Copy to clipboard');
 
-    const copyHandler = async (e: MouseEvent) => {
+    const copyHandler = (e: MouseEvent) => {
       e.stopPropagation();
-      try {
-        await navigator.clipboard.writeText(getContent());
+      void navigator.clipboard.writeText(getContent()).then(() => {
         copyBtn.empty();
         setIcon(copyBtn, 'check');
         copyBtn.addClass('tool-copy-success');
@@ -573,9 +592,9 @@ export class ProgressiveToolAccordion {
           setIcon(copyBtn, 'copy');
           copyBtn.removeClass('tool-copy-success');
         }, 1500);
-      } catch (err) {
+      }).catch((err) => {
         console.error('Failed to copy:', err);
-      }
+      });
     };
 
     if (this.component) {
@@ -598,24 +617,22 @@ export class ProgressiveToolAccordion {
     };
   }
 
-  private normalizeParameters(parameters: any): Record<string, unknown> | undefined {
+  private normalizeParameters(parameters: unknown): Record<string, unknown> | undefined {
     if (parameters === undefined || parameters === null) {
       return undefined;
     }
 
     if (typeof parameters === 'string') {
       try {
-        const parsed = JSON.parse(parameters);
-        return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-          ? parsed as Record<string, unknown>
-          : undefined;
+        const parsed: unknown = JSON.parse(parameters);
+        return this.isRecord(parsed) ? parsed : undefined;
       } catch {
         return undefined;
       }
     }
 
-    if (typeof parameters === 'object' && !Array.isArray(parameters)) {
-      return parameters as Record<string, unknown>;
+    if (this.isRecord(parameters)) {
+      return parameters;
     }
 
     return undefined;
@@ -673,7 +690,7 @@ export class ProgressiveToolAccordion {
     return this.displayGroup?.steps.find(step => step.id === stepId);
   }
 
-  private findOrCreateStep(stepId: string, name: string, technicalName?: string, parameters?: any): ToolDisplayStep {
+  private findOrCreateStep(stepId: string, name: string, technicalName?: string, parameters?: unknown): ToolDisplayStep {
     if (!this.displayGroup) {
       this.displayGroup = {
         id: stepId,

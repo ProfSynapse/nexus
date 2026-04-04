@@ -6,13 +6,25 @@
 import { App } from 'obsidian';
 import { sanitizeVaultName } from '../../utils/vaultUtils';
 import { logger } from '../../utils/logger';
-import { platform } from 'os';
 import { getPrimaryServerKey, getPrimaryIpcPath } from '../../constants/branding';
 
 export interface ServerConfigurationOptions {
     serverName?: string;
     vaultName?: string;
-    capabilities?: any;
+    capabilities?: ServerCapabilities;
+}
+
+export interface ServerCapabilities {
+    resources: {
+        supportsUriTemplates: boolean;
+        supportsContentWatch: boolean;
+        supportsListWatch: boolean;
+    };
+    tools: {
+        supportsToolDescriptionMarkdown: boolean;
+        supportsToolArgumentsMarkdown: boolean;
+    };
+    prompts: Record<string, never>;
 }
 
 /**
@@ -23,7 +35,7 @@ export class ServerConfiguration {
     private serverName?: string;
     private vaultName: string;
     private sanitizedVaultName: string;
-    private capabilities: any;
+    private capabilities: ServerCapabilities;
 
     constructor(
         private app: App,
@@ -50,7 +62,7 @@ export class ServerConfiguration {
     /**
      * Get default server capabilities
      */
-    private getDefaultCapabilities(): any {
+    private getDefaultCapabilities(): ServerCapabilities {
         return {
             resources: {
                 supportsUriTemplates: true,
@@ -89,7 +101,7 @@ export class ServerConfiguration {
     /**
      * Get server options for SDK initialization
      */
-    getServerOptions(): { capabilities: any } {
+    getServerOptions(): { capabilities: ServerCapabilities } {
         return {
             capabilities: this.capabilities
         };
@@ -119,14 +131,14 @@ export class ServerConfiguration {
     /**
      * Get the server capabilities
      */
-    getCapabilities(): any {
+    getCapabilities(): ServerCapabilities {
         return this.capabilities;
     }
 
     /**
      * Update server capabilities
      */
-    updateCapabilities(capabilities: any): void {
+    updateCapabilities(capabilities: Partial<ServerCapabilities>): void {
         this.capabilities = { ...this.capabilities, ...capabilities };
     }
 
@@ -134,7 +146,7 @@ export class ServerConfiguration {
      * Check if this is a Windows platform
      */
     isWindows(): boolean {
-        return platform() === 'win32';
+        return process.platform === 'win32';
     }
 
     /**

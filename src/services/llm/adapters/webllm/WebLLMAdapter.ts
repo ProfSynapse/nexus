@@ -62,6 +62,7 @@ import {
   ModelPricing,
   TokenUsage,
   LLMProviderError,
+  ToolCall,
 } from '../types';
 import { ToolCallContentParser } from '../shared/ToolCallContentParser';
 import { WebLLMEngine, GenerationResult } from './WebLLMEngine';
@@ -75,7 +76,7 @@ import {
   WebLLMError,
   ChatMessage,
 } from './types';
-import { WEBLLM_MODELS, getWebLLMModel, getModelsForVRAM } from './WebLLMModels';
+import { WEBLLM_MODELS, getModelsForVRAM } from './WebLLMModels';
 
 // Unique instance counter for debugging adapter recreation issues
 let webllmAdapterInstanceCount = 0;
@@ -91,9 +92,9 @@ export class WebLLMAdapter extends BaseAdapter {
   private instanceId: number;
   private toolCallConverter: NexusToolCallConverter;
 
-  mcpConnector?: any; // For tool execution support
+  mcpConnector?: unknown; // For tool execution support
 
-  constructor(vault: Vault, mcpConnector?: any, sessionId?: string, workspaceId?: string) {
+  constructor(vault: Vault, mcpConnector?: unknown, sessionId?: string, workspaceId?: string) {
     // WebLLM doesn't need an API key
     super('', '', '', false);
 
@@ -161,7 +162,7 @@ export class WebLLMAdapter extends BaseAdapter {
 
     try {
       // Initialize model via main-thread engine
-      const result = await this.engine.initModel(modelSpec, {
+      await this.engine.initModel(modelSpec, {
         onProgress: (progress) => {
           this.state.loadProgress = progress.progress;
           if (onProgress) {
@@ -217,7 +218,7 @@ export class WebLLMAdapter extends BaseAdapter {
       this.state.status = 'ready';
 
       let content = result.content;
-      let toolCalls: any[] = [];
+      let toolCalls: ToolCall[] = [];
 
       // Check for [TOOL_CALLS] or <tool_call> format
       if (ToolCallContentParser.hasToolCallsFormat(content)) {
@@ -246,7 +247,7 @@ export class WebLLMAdapter extends BaseAdapter {
       );
     } catch (error) {
       this.state.status = 'ready';
-      throw this.handleError(error, 'generation');
+      this.handleError(error, 'generation');
     }
   }
 
@@ -262,7 +263,7 @@ export class WebLLMAdapter extends BaseAdapter {
     // Check for pre-built conversation history (tool continuations)
     let messages: ChatMessage[];
     if (options?.conversationHistory && options.conversationHistory.length > 0) {
-      messages = options.conversationHistory;
+      messages = options.conversationHistory as unknown as ChatMessage[];
     } else {
       messages = this.buildMessages(prompt, options?.systemPrompt);
     }
@@ -283,7 +284,6 @@ export class WebLLMAdapter extends BaseAdapter {
       let accumulatedContent = '';
       let hasToolCallsFormat = false;
       let finalUsage: TokenUsage | undefined;
-      let chunkCount = 0;
 
       for await (const response of this.engine.generateStream(messages, {
         temperature: options?.temperature,
@@ -296,7 +296,6 @@ export class WebLLMAdapter extends BaseAdapter {
         if ('tokenCount' in response && !('usage' in response)) {
           // This is a StreamChunk from the engine
           const chunk = response;
-          chunkCount++;
           accumulatedContent += chunk.content;
 
           // Check for [TOOL_CALLS] format early in stream
@@ -420,7 +419,7 @@ export class WebLLMAdapter extends BaseAdapter {
   /**
    * Get model pricing (always free for local models)
    */
-  async getModelPricing(modelId: string): Promise<ModelPricing | null> {
+  async getModelPricing(_modelId: string): Promise<ModelPricing | null> {
     return {
       rateInputPerMillion: 0,
       rateOutputPerMillion: 0,
@@ -490,7 +489,7 @@ export class WebLLMAdapter extends BaseAdapter {
   /**
    * Get VRAM info
    */
-  getVRAMInfo() {
+  getVRAMInfo(): WebLLMState['vramInfo'] {
     return this.state.vramInfo;
   }
 
@@ -625,7 +624,7 @@ export class WebLLMAdapter extends BaseAdapter {
   /**
    * Handle and normalize errors
    */
-  protected handleError(error: any, operation: string): never {
+  protected handleError(error: unknown, operation: string): never {
     if (error instanceof LLMProviderError) {
       throw error;
     }
@@ -643,7 +642,7 @@ export class WebLLMAdapter extends BaseAdapter {
       `WebLLM ${operation} failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
       'webllm',
       'UNKNOWN_ERROR',
-      error
+      error instanceof Error ? error : undefined
     );
   }
 

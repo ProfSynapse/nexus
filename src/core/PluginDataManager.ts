@@ -11,25 +11,25 @@ export class PluginDataManager {
   /**
    * Save data to plugin storage
    */
-  async saveData(data: any): Promise<void> {
+  async saveData<T = unknown>(data: T): Promise<void> {
     await this.plugin.saveData(data);
   }
 
   /**
    * Load data from plugin storage
    */
-  async loadData(): Promise<any> {
-    return await this.plugin.loadData();
+  async loadData<T = unknown>(): Promise<T | null> {
+    return await this.plugin.loadData() as T | null;
   }
 
   /**
    * Load data with defaults and migration support
    */
-  async load(defaults: any = {}, migrateFn?: (data: any) => any): Promise<any> {
+  async load<T = unknown>(defaults?: T, migrateFn?: (data: T) => T): Promise<T | undefined> {
     try {
-      let data = await this.plugin.loadData();
-      if (!data) {
-        data = defaults;
+      let data = await this.plugin.loadData() as T | undefined;
+      if (data === undefined || data === null) {
+        return defaults;
       }
       if (migrateFn) {
         data = migrateFn(data);
@@ -45,7 +45,7 @@ export class PluginDataManager {
    */
   async hasData(): Promise<boolean> {
     try {
-      const data = await this.plugin.loadData();
+      const data = (await this.plugin.loadData()) as unknown;
       return data !== null && data !== undefined;
     } catch {
       return false;
@@ -55,22 +55,22 @@ export class PluginDataManager {
 
 // Legacy compatibility exports
 export class SettingsMigrationManager {
-  static migrate(data: any): any {
+  static migrate<T = unknown>(data: T): T {
     return data;
   }
 }
 
 export interface SettingsSchema {
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
-export interface SettingsMigration {
+export interface SettingsMigration<T = unknown> {
   version: number;
-  migrate: (data: any) => any;
+  migrate: (data: T) => T;
 }
 
-export interface BackupData {
+export interface BackupData<T = unknown> {
   version: string;
   timestamp: number;
-  data: any;
+  data: T;
 }

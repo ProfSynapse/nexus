@@ -14,14 +14,121 @@ import {
   ModelInfo,
   ProviderCapabilities,
   ModelPricing,
-  SearchResult
+  SearchResult,
+  Tool,
+  TokenUsage,
+  ToolCall
 } from '../types';
 import { ModelRegistry } from '../ModelRegistry';
 import { DeepResearchHandler } from './DeepResearchHandler';
 import { WebSearchUtils } from '../../utils/WebSearchUtils';
 import { OPENAI_MODELS } from './OpenAIModels';
-import { MCPToolExecution } from '../shared/ToolExecutionUtils';
 import { ProviderHttpError } from '../shared/ProviderHttpClient';
+
+interface OpenAIResponsesTool {
+  type: string;
+  name?: string;
+  description?: string | null;
+  parameters?: unknown;
+  strict?: boolean | null;
+  function?: {
+    name?: string;
+    description?: string | null;
+    parameters?: unknown;
+    strict?: boolean | null;
+  };
+}
+
+interface OpenAIResponsesUsage {
+  input_tokens?: number;
+  output_tokens?: number;
+  total_tokens?: number;
+}
+
+interface OpenAIResponsesContentPart {
+  type?: string;
+  text?: string;
+}
+
+interface OpenAIResponsesItem {
+  type?: string;
+  id?: string;
+  call_id?: string;
+  name?: string;
+  arguments?: string;
+  encrypted_content?: string | null;
+  content?: OpenAIResponsesContentPart[];
+  usage?: OpenAIResponsesUsage;
+}
+
+interface OpenAIResponsesEvent {
+  type?: string;
+  delta?: string;
+  item?: OpenAIResponsesItem;
+  part?: {
+    type?: string;
+    text?: string;
+  };
+  response?: {
+    id?: string;
+    usage?: OpenAIResponsesUsage;
+  };
+  output_index?: number;
+  text?: string;
+  item_id?: string;
+}
+
+interface OpenAIResponsesResponse {
+  id?: string;
+  status?: string;
+  output?: OpenAIResponsesItem[];
+  usage?: OpenAIResponsesUsage;
+  metadata?: {
+    processing_time_ms?: number;
+  };
+}
+
+interface OpenAIChatMessageLike {
+  annotations?: Array<{
+    type?: string;
+    title?: string;
+    text?: string;
+    url?: string;
+    date?: string;
+    timestamp?: string;
+  }>;
+  toolCalls?: Array<{
+    function?: {
+      name?: string;
+    };
+    result?: string;
+  }>;
+}
+
+interface OpenAIChatResponseLike {
+  choices?: Array<{
+    message?: OpenAIChatMessageLike;
+  }>;
+}
+
+interface OpenAIResponsesRequest {
+  model: string;
+  stream: boolean;
+  input?: string | Array<Record<string, unknown>>;
+  instructions?: string;
+  previous_response_id?: string;
+  tools?: OpenAIResponsesTool[];
+  temperature?: number;
+  max_output_tokens?: number;
+  top_p?: number;
+  frequency_penalty?: number;
+  presence_penalty?: number;
+  reasoning?: {
+    effort: string;
+    summary: string;
+  };
+  include?: string[];
+}
 
 export class OpenAIAdapter extends BaseAdapter {
   readonly name = 'openai';
@@ -60,7 +167,7 @@ export class OpenAIAdapter extends BaseAdapter {
       // Otherwise use basic Responses API without tools
       return await this.generateWithResponsesAPI(prompt, options);
     } catch (error) {
-      throw this.handleError(error, 'generation');
+      this.handleError(error, 'generation');
     }
   }
 
@@ -81,7 +188,7 @@ export class OpenAIAdapter extends BaseAdapter {
 
       // Build Responses API parameters with retry logic for race conditions
       const stream = await this.retryWithBackoff(async () => {
-        const responseParams: any = {
+        const responseParams: OpenAIResponsesRequest = {
           model,
           stream: true
         };
@@ -107,20 +214,21 @@ export class OpenAIAdapter extends BaseAdapter {
 
         // Add tools if provided (convert from Chat Completions format to Responses API format)
         if (options?.tools) {
-          responseParams.tools = options.tools.map((tool: any) => {
+          responseParams.tools = options.tools.map((tool: Tool) => {
             // Responses API uses flat structure: {type, name, description, parameters}
             // Chat Completions uses nested: {type, function: {name, description, parameters}}
             if (tool.function) {
+              const functionTool = tool.function as NonNullable<Tool['function']> & { strict?: boolean | null };
               return {
                 type: 'function',
-                name: tool.function.name,
-                description: tool.function.description || null,
-                parameters: tool.function.parameters || null,
-                strict: tool.function.strict || null
+                name: functionTool.name,
+                description: functionTool.description || null,
+                parameters: functionTool.parameters || null,
+                strict: functionTool.strict || null
               };
             }
             // Already in Responses API format
-            return tool;
+            return tool as OpenAIResponsesTool;
           });
         }
 
@@ -162,22 +270,20 @@ export class OpenAIAdapter extends BaseAdapter {
     } catch (error) {
       this.logStreamingFailure(error, lastRequestSummary);
       console.error('[OpenAIAdapter] Streaming error:', error);
-      throw this.handleError(error, 'streaming generation');
+      this.handleError(error, 'streaming generation');
     }
   }
 
   private buildStreamingRequestSummary(
-    responseParams: Record<string, unknown>,
+    responseParams: OpenAIResponsesRequest,
     options: GenerateOptions | undefined,
     prompt: string
   ): Record<string, unknown> {
     const input = responseParams.input;
     const inputItems = Array.isArray(input) ? input : null;
-    const toolNames = Array.isArray(responseParams.tools)
-      ? (responseParams.tools as Array<Record<string, unknown>>)
-          .map(tool => typeof tool.name === 'string' ? tool.name : undefined)
-          .filter((name): name is string => Boolean(name))
-      : [];
+    const toolNames = responseParams.tools
+      ?.map(tool => tool.name)
+      .filter((name): name is string => Boolean(name)) || [];
 
     return {
       model: responseParams.model,
@@ -293,10 +399,9 @@ export class OpenAIAdapter extends BaseAdapter {
   private async* processResponsesNodeStream(nodeStream: NodeJS.ReadableStream): AsyncGenerator<StreamChunk, void, unknown> {
     const { createParser } = await import('eventsource-parser');
 
-    let fullContent = '';
     let currentResponseId: string | null = null;
-    const toolCallsMap = new Map<number, any>();
-    let usage: any = null;
+    const toolCallsMap = new Map<number, ToolCall>();
+    let usage: TokenUsage | undefined;
 
     // Reasoning tracking for GPT-5/o-series models
     let currentReasoningId: string | null = null;
@@ -313,9 +418,9 @@ export class OpenAIAdapter extends BaseAdapter {
         return;
       }
 
-      let event: Record<string, any>;
+      let event: OpenAIResponsesEvent;
       try {
-        event = JSON.parse(sseEvent.data);
+        event = JSON.parse(sseEvent.data) as OpenAIResponsesEvent;
       } catch {
         return;
       }
@@ -327,7 +432,6 @@ export class OpenAIAdapter extends BaseAdapter {
       switch (event.type) {
         case 'response.output_text.delta':
           if (event.delta) {
-            fullContent += event.delta;
             eventQueue.push({ content: event.delta, complete: false });
           }
           break;
@@ -336,19 +440,18 @@ export class OpenAIAdapter extends BaseAdapter {
           if (event.item) {
             const item = event.item;
             if (item.type === 'reasoning') {
-              currentReasoningId = item.id;
-              eventQueue.push({
-                content: '', complete: false, reasoning: '',
-                reasoningComplete: false, reasoningId: item.id
-              });
-            } else if (item.type === 'message' && item.content) {
-              for (const c of item.content) {
-                if (c.type === 'text' && c.text) {
-                  fullContent += c.text;
-                  eventQueue.push({ content: c.text, complete: false });
+                currentReasoningId = item.id || null;
+                eventQueue.push({
+                  content: '', complete: false, reasoning: '',
+                  reasoningComplete: false, reasoningId: item.id || undefined
+                });
+              } else if (item.type === 'message' && item.content) {
+                for (const c of item.content) {
+                  if (c.type === 'text' && c.text) {
+                    eventQueue.push({ content: c.text, complete: false });
+                  }
                 }
               }
-            }
           }
           break;
 
@@ -382,7 +485,7 @@ export class OpenAIAdapter extends BaseAdapter {
             const item = event.item;
             if (item.type === 'function_call') {
               toolCallsMap.set(event.output_index || 0, {
-                id: item.call_id || item.id,
+                id: item.call_id || item.id || '',
                 type: 'function',
                 function: { name: item.name || '', arguments: item.arguments || '{}' }
               });
@@ -390,7 +493,7 @@ export class OpenAIAdapter extends BaseAdapter {
               currentReasoningEncryptedContent = item.encrypted_content || null;
               eventQueue.push({
                 content: '', complete: false, reasoning: '', reasoningComplete: true,
-                reasoningId: item.id,
+                reasoningId: item.id || currentReasoningId || undefined,
                 reasoningEncryptedContent: currentReasoningEncryptedContent || undefined
               });
               currentReasoningId = null;
@@ -427,7 +530,7 @@ export class OpenAIAdapter extends BaseAdapter {
           break;
 
         case 'response.done':
-        case 'response.completed':
+        case 'response.completed': {
           if (event.response?.usage) {
             usage = {
               promptTokens: event.response.usage.input_tokens || 0,
@@ -445,6 +548,7 @@ export class OpenAIAdapter extends BaseAdapter {
           });
           isCompleted = true;
           break;
+        }
       }
     });
 
@@ -455,14 +559,21 @@ export class OpenAIAdapter extends BaseAdapter {
         parser.feed(text);
 
         while (eventQueue.length > 0) {
-          const evt = eventQueue.shift()!;
+          const evt = eventQueue.shift();
+          if (!evt) {
+            break;
+          }
           yield evt;
           if (evt.complete) { isCompleted = true; break; }
         }
       }
 
       while (eventQueue.length > 0) {
-        yield eventQueue.shift()!;
+        const evt = eventQueue.shift();
+        if (!evt) {
+          continue;
+        }
+        yield evt;
       }
 
       if (!isCompleted) {
@@ -480,7 +591,7 @@ export class OpenAIAdapter extends BaseAdapter {
   private async generateWithResponsesAPI(prompt: string, options?: GenerateOptions): Promise<LLMResponse> {
     const model = options?.model || this.currentModel;
 
-    const responseParams: any = {
+    const responseParams: OpenAIResponsesRequest = {
       model,
       input: prompt,
       stream: false
@@ -498,7 +609,7 @@ export class OpenAIAdapter extends BaseAdapter {
     if (options?.frequencyPenalty !== undefined) responseParams.frequency_penalty = options.frequencyPenalty;
     if (options?.presencePenalty !== undefined) responseParams.presence_penalty = options.presencePenalty;
 
-    const response = await this.request<any>({
+    const response = await this.request<OpenAIResponsesResponse>({
       url: `${this.baseUrl}/responses`,
       operation: 'generation',
       method: 'POST',
@@ -509,6 +620,9 @@ export class OpenAIAdapter extends BaseAdapter {
     this.assertOk(response, `OpenAI generation failed: HTTP ${response.status}`);
 
     const responseJson = response.json;
+    if (!responseJson) {
+      throw new Error('No output from OpenAI Responses API');
+    }
 
     if (!responseJson.output || responseJson.output.length === 0) {
       throw new Error('No output from OpenAI Responses API');
@@ -526,7 +640,7 @@ export class OpenAIAdapter extends BaseAdapter {
       }
     }
 
-    const usage = responseJson.usage ? {
+    const usage: TokenUsage | undefined = responseJson.usage ? {
       promptTokens: responseJson.usage.input_tokens || 0,
       completionTokens: responseJson.usage.output_tokens || 0,
       totalTokens: responseJson.usage.total_tokens || 0
@@ -553,7 +667,7 @@ export class OpenAIAdapter extends BaseAdapter {
    * Per the SSE spec, an event block can contain multiple `data:` lines
    * which must be concatenated with newlines to form the complete payload.
    */
-  private *parseSSEEvents(sseText: string): Generator<Record<string, any>, void, unknown> {
+  private *parseSSEEvents(sseText: string): Generator<OpenAIResponsesEvent, void, unknown> {
     const events = sseText.split('\n\n');
 
     for (const eventBlock of events) {
@@ -589,7 +703,7 @@ export class OpenAIAdapter extends BaseAdapter {
    * Extract search results from OpenAI response
    * OpenAI may include sources in annotations or tool results
    */
-  private extractOpenAISources(response: any): SearchResult[] {
+  private extractOpenAISources(response: OpenAIChatResponseLike): SearchResult[] {
     try {
       const sources: SearchResult[] = [];
 
@@ -611,18 +725,22 @@ export class OpenAIAdapter extends BaseAdapter {
       for (const toolCall of toolCalls) {
         if (toolCall.function?.name === 'web_search' && toolCall.result) {
           try {
-            const searchResult = JSON.parse(toolCall.result);
-            if (searchResult.sources && Array.isArray(searchResult.sources)) {
-              const extractedSources = WebSearchUtils.extractSearchResults(searchResult.sources);
-              sources.push(...extractedSources);
+            const searchResult: unknown = JSON.parse(toolCall.result);
+            if (isRecord(searchResult)) {
+              const rawSources = searchResult.sources;
+              if (Array.isArray(rawSources)) {
+                const extractedSources = WebSearchUtils.extractSearchResults(rawSources);
+                sources.push(...extractedSources);
+              }
             }
-          } catch (error) {
+          } catch {
+            continue;
           }
         }
       }
 
       return sources;
-    } catch (error) {
+    } catch {
       return [];
     }
   }
@@ -635,8 +753,7 @@ export class OpenAIAdapter extends BaseAdapter {
       // Use centralized model registry instead of API call
       const openaiModels = ModelRegistry.getProviderModels('openai');
       return openaiModels.map(model => ModelRegistry.toModelInfo(model));
-    } catch (error) {
-      this.handleError(error, 'listing models');
+    } catch {
       return [];
     }
   }
@@ -693,7 +810,7 @@ export class OpenAIAdapter extends BaseAdapter {
         rateOutputPerMillion: model.outputCostPerMillion,
         currency: 'USD'
       };
-    } catch (error) {
+    } catch {
       return null;
     }
   }

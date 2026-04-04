@@ -4,8 +4,22 @@
  * Runs before each test file to configure the testing environment.
  */
 
+declare global {
+  var require: NodeJS.Require | undefined;
+}
+
 // Extend Jest timeout for async operations
 jest.setTimeout(10000);
+
+const originalGlobalRequire = globalThis.require;
+
+beforeAll(() => {
+  globalThis.require = require;
+});
+
+afterAll(() => {
+  globalThis.require = originalGlobalRequire;
+});
 
 // Mock console.error to reduce noise in tests (but still capture for assertions)
 const originalConsoleError = console.error;

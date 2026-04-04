@@ -1,4 +1,4 @@
-import { Vault } from 'obsidian';
+import { Platform, Vault } from 'obsidian';
 import { getPrimaryServerKey } from '../constants/branding';
 import { resolveDesktopBinaryPath } from './binaryDiscovery';
 import { getVaultBasePath, getConnectorPath } from './cliPathUtils';
@@ -22,6 +22,28 @@ const BUILT_IN_TOOL_EXCLUSIONS = [
     'write_file',
     'google_web_search'
 ];
+
+type GeminiCliDesktopModuleMap = {
+    path: typeof import('path');
+};
+
+function loadDesktopModule<TModuleName extends keyof GeminiCliDesktopModuleMap>(
+    moduleName: TModuleName
+): GeminiCliDesktopModuleMap[TModuleName] {
+    if (!Platform.isDesktop) {
+        throw new Error(`${moduleName} is only available on desktop.`);
+    }
+
+    const maybeRequire = (globalThis as typeof globalThis & {
+        require?: (moduleId: string) => unknown;
+    }).require;
+
+    if (typeof maybeRequire !== 'function') {
+        throw new Error('Desktop module loader is unavailable.');
+    }
+
+    return maybeRequire(moduleName) as GeminiCliDesktopModuleMap[TModuleName];
+}
 
 export function resolveGeminiCliRuntime(vault: Vault): GeminiCliRuntime {
     const geminiPath = resolveDesktopBinaryPath('gemini');
@@ -56,7 +78,7 @@ export function buildGeminiCliEnv(systemSettingsPath?: string, nodePath?: string
     // (e.g. `node connector.js`) succeed when Obsidian runs with a restricted
     // PATH that omits nvm/homebrew/system node locations.
     if (nodePath) {
-        const pathMod = require('path') as typeof import('path');
+        const pathMod = loadDesktopModule('path');
         const nodeDir = pathMod.dirname(nodePath);
         const separator = process.platform === 'win32' ? ';' : ':';
         env.PATH = nodeDir + separator + (env.PATH || '');

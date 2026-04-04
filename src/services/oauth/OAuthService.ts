@@ -14,9 +14,36 @@
  * via refreshToken()).
  */
 
+import { Platform } from 'obsidian';
 import { IOAuthProvider, OAuthProviderConfig, OAuthResult } from './IOAuthProvider';
 import { generateCodeVerifier, generateCodeChallenge, generateState } from './PKCEUtils';
 import { startCallbackServer, CallbackServerHandle } from './OAuthCallbackServer';
+
+interface OAuthServiceDesktopModuleMap {
+  electron: {
+    shell: {
+      openExternal(url: string): void | Promise<void>;
+    };
+  };
+}
+
+function loadDesktopModule<TModuleName extends keyof OAuthServiceDesktopModuleMap>(
+  moduleName: TModuleName
+): OAuthServiceDesktopModuleMap[TModuleName] {
+  if (!Platform.isDesktop) {
+    throw new Error(`${moduleName} is only available on desktop.`);
+  }
+
+  const maybeRequire = (globalThis as typeof globalThis & {
+    require?: (moduleId: string) => unknown;
+  }).require;
+
+  if (typeof maybeRequire !== 'function') {
+    throw new Error('Desktop module loader is unavailable.');
+  }
+
+  return maybeRequire(moduleName) as OAuthServiceDesktopModuleMap[TModuleName];
+}
 
 /** Current state of the OAuth service */
 export type OAuthFlowState = 'idle' | 'authorizing' | 'exchanging';
@@ -127,8 +154,8 @@ export class OAuthService {
 
       // Open in system browser via Electron shell (preferred) or window.open (fallback)
       try {
-        const { shell } = require('electron');
-        shell.openExternal(authUrl);
+        const { shell } = loadDesktopModule('electron');
+        void shell.openExternal(authUrl);
       } catch {
         window.open(authUrl, '_blank');
       }

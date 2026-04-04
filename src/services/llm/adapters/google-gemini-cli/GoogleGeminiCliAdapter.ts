@@ -4,7 +4,8 @@
  * LLM adapter for Google Gemini CLI. Runs the CLI as a child process in
  * non-streaming (JSON output) mode and parses the result.
  */
-import { Vault } from 'obsidian';
+/* eslint-disable import/no-nodejs-modules -- desktop-only Gemini CLI adapter uses Node child_process in Electron */
+import { Platform, Vault } from 'obsidian';
 import type { ChildProcess } from 'child_process';
 import { BaseAdapter } from '../BaseAdapter';
 import {
@@ -25,6 +26,12 @@ import {
   buildGeminiCliSystemSettings,
   resolveGeminiCliRuntime
 } from '../../../../utils/geminiCli';
+
+type GeminiCliDesktopModuleMap = {
+  'fs/promises': typeof import('fs/promises');
+  os: typeof import('os');
+  path: typeof import('path');
+};
 
 interface GeminiCliJsonResponse {
   response?: string;
@@ -66,9 +73,9 @@ export class GoogleGeminiCliAdapter extends BaseAdapter {
       throw new LLMProviderError('Vault filesystem path is unavailable.', this.name, 'CONFIGURATION_ERROR');
     }
 
-    const fsPromises = require('fs/promises') as typeof import('fs/promises');
-    const osMod = require('os') as typeof import('os');
-    const pathMod = require('path') as typeof import('path');
+    const fsPromises = this.loadDesktopModule('fs/promises');
+    const osMod = this.loadDesktopModule('os');
+    const pathMod = this.loadDesktopModule('path');
 
     const tempDir = await fsPromises.mkdtemp(pathMod.join(osMod.tmpdir(), 'nexus-gemini-cli-'));
     const settingsPath = pathMod.join(tempDir, 'system-settings.json');
@@ -135,7 +142,7 @@ export class GoogleGeminiCliAdapter extends BaseAdapter {
       );
     } finally {
       this.activeProcess = null;
-      await fsPromises.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+      await fsPromises.rm(tempDir, { recursive: true, force: true }).catch(() => undefined);
     }
   }
 
@@ -182,6 +189,24 @@ export class GoogleGeminiCliAdapter extends BaseAdapter {
       this.activeProcess.kill();
       this.activeProcess = null;
     }
+  }
+
+  private loadDesktopModule<TModuleName extends keyof GeminiCliDesktopModuleMap>(
+    moduleName: TModuleName
+  ): GeminiCliDesktopModuleMap[TModuleName] {
+    if (!Platform.isDesktop) {
+      throw new Error(`${moduleName} is only available on desktop.`);
+    }
+
+    const maybeRequire = (globalThis as typeof globalThis & {
+      require?: (moduleId: string) => unknown;
+    }).require;
+
+    if (typeof maybeRequire !== 'function') {
+      throw new Error('Desktop module loader is unavailable.');
+    }
+
+    return maybeRequire(moduleName) as GeminiCliDesktopModuleMap[TModuleName];
   }
 
   private buildPrompt(prompt: string, systemPrompt?: string): string {
@@ -287,7 +312,7 @@ export class GoogleGeminiCliAdapter extends BaseAdapter {
   ): Record<string, unknown> | undefined {
     if (Array.isArray(modelStats)) {
       const firstEntry = modelStats[0];
-      return firstEntry && typeof firstEntry === 'object' ? firstEntry as Record<string, unknown> : undefined;
+      return firstEntry && typeof firstEntry === 'object' ? firstEntry : undefined;
     }
 
     if (!modelStats || typeof modelStats !== 'object') {

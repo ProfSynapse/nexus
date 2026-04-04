@@ -82,7 +82,7 @@ export class BranchService {
     messageId: string,
     task: string,
     subagentId: string,
-    maxIterations: number = 10
+    maxIterations = 10
   ): Promise<string> {
     const now = Date.now();
     const title = `Subagent: ${task.slice(0, 50)}${task.length > 50 ? '...' : ''}`;

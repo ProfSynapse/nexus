@@ -26,7 +26,7 @@ import { MessageEditController } from '../controllers/MessageEditController';
 
 export class MessageBubble extends Component {
   private element: HTMLElement | null = null;
-  private loadingInterval: any = null;
+  private loadingInterval: ReturnType<typeof setInterval> | null = null;
   private progressiveToolAccordions: Map<string, ProgressiveToolAccordion> = new Map();
   private messageBranchNavigator: MessageBranchNavigator | null = null;
   private toolBubbleElement: HTMLElement | null = null;
@@ -40,7 +40,7 @@ export class MessageBubble extends Component {
     private onCopy: (messageId: string) => void,
     private onRetry: (messageId: string) => void,
     private onEdit?: (messageId: string, newContent: string) => void,
-    private onToolEvent?: (messageId: string, event: 'detected' | 'started' | 'completed', data: any) => void,
+    private onToolEvent?: (messageId: string, event: 'detected' | 'started' | 'completed', data: Parameters<typeof ToolEventParser.getToolEventInfo>[0]) => void,
     private onMessageAlternativeChanged?: (messageId: string, alternativeIndex: number) => void,
     private onViewBranch?: (branchId: string) => void
   ) {
@@ -168,7 +168,7 @@ export class MessageBubble extends Component {
       actions = messageContainer.createDiv('message-actions-external');
     }
 
-    this.createActionButtons(actions, bubble);
+    this.createActionButtons(actions);
 
     // Message content
     const content = bubble.createDiv('message-content');
@@ -184,7 +184,7 @@ export class MessageBubble extends Component {
   /**
    * Create action buttons (edit, retry, branch navigator)
    */
-  private createActionButtons(actions: HTMLElement, _bubble: HTMLElement): void {
+  private createActionButtons(actions: HTMLElement): void {
     if (this.message.role === 'user') {
       // Edit button for user messages
       if (this.onEdit) {
@@ -193,7 +193,12 @@ export class MessageBubble extends Component {
           attr: { title: 'Edit message' }
         });
         setIcon(editBtn, 'edit');
-        this.registerDomEvent(editBtn, 'click', () => MessageEditController.handleEdit(this.message, this.element, this.onEdit!, this));
+        const onEdit = this.onEdit;
+        this.registerDomEvent(editBtn, 'click', () => {
+          if (onEdit) {
+            MessageEditController.handleEdit(this.message, this.element, onEdit, this);
+          }
+        });
       }
 
       // Retry button for user messages
@@ -408,7 +413,7 @@ export class MessageBubble extends Component {
     contentElement.empty();
 
     const activeContent = this.getActiveMessageContent(newMessage);
-    this.renderContent(contentElement as HTMLElement, activeContent).catch(error => {
+    this.renderContent(contentElement, activeContent).catch(error => {
       console.error('[MessageBubble] Error re-rendering content:', error);
     });
 
@@ -422,8 +427,14 @@ export class MessageBubble extends Component {
   /**
    * Handle tool events from MessageManager
    */
-  handleToolEvent(event: 'detected' | 'updated' | 'started' | 'completed', data: any): void {
+  handleToolEvent(event: 'detected' | 'updated' | 'started' | 'completed', data: Parameters<typeof ToolEventParser.getToolEventInfo>[0]): void {
     const info = ToolEventParser.getToolEventInfo(data, event);
+    const eventData = (data ?? {}) as {
+      result?: unknown;
+      success?: boolean;
+      error?: unknown;
+      [key: string]: unknown;
+    };
     const toolId = info.toolId || info.batchId || info.parentToolCallId || info.stepId;
     if (!toolId) {
       return;
@@ -463,14 +474,15 @@ export class MessageBubble extends Component {
       Boolean(data?.displayName);
 
     const isLiveBatchStep = Boolean(info.isBatchStepEvent);
+    const eventError = typeof eventData.error === 'string' ? eventData.error : undefined;
 
     if (event === 'completed' && !hasToolMetadata) {
-      accordion.completeTool(toolId, data.result, data.success !== false, data.error);
+      accordion.completeTool(toolId, eventData.result, eventData.success !== false, eventError);
     } else {
       const currentGroup = accordion.getDisplayGroup();
       const nextDisplayGroup = isLiveBatchStep
         ? normalizeToolCallForDisplay({
-            ...data,
+            ...eventData,
             id: toolId,
             toolId,
             parentToolCallId: info.parentToolCallId ?? info.batchId ?? toolId,
@@ -478,8 +490,9 @@ export class MessageBubble extends Component {
             callIndex: info.callIndex,
             totalCalls: info.totalCalls,
             strategy: info.strategy,
-            stepId: info.stepId,
-            status: info.status
+            stepId: info.stepId ?? undefined,
+            status: info.status ?? undefined,
+            error: eventError
           }, currentGroup)
         : info.displayGroup;
 
@@ -495,13 +508,13 @@ export class MessageBubble extends Component {
           nextDisplayGroup.technicalName?.endsWith('.useTools')
         );
 
-      const displayGroup = shouldPreserveCurrentBatch ? currentGroup! : nextDisplayGroup;
+      const displayGroup = shouldPreserveCurrentBatch && currentGroup ? currentGroup : nextDisplayGroup;
 
       accordion.setDisplayGroup(displayGroup);
     }
 
-    if (event === 'completed' && data.success && data.result) {
-      this.checkAndRenderImageResult(data.result);
+    if (event === 'completed' && eventData.success && eventData.result) {
+      this.checkAndRenderImageResult(eventData.result);
     }
   }
 
@@ -517,7 +530,7 @@ export class MessageBubble extends Component {
   /**
    * Check if a tool result contains an image path and render it
    */
-  private checkAndRenderImageResult(result: any): void {
+  private checkAndRenderImageResult(result: unknown): void {
     const imageData = this.extractImageFromResult(result);
     if (!imageData) return;
 
@@ -527,19 +540,21 @@ export class MessageBubble extends Component {
   /**
    * Extract image data from a tool result (supports generateImage tool format)
    */
-  private extractImageFromResult(result: any): { imagePath: string; prompt?: string; dimensions?: { width: number; height: number }; model?: string } | null {
-    if (!result) return null;
+  private extractImageFromResult(result: unknown): { imagePath: string; prompt?: string; dimensions?: { width: number; height: number }; model?: string } | null {
+    if (!result || typeof result !== 'object') return null;
 
     // Handle both direct result and nested data structure
-    const data = result.data || result;
+    const directResult = result as { data?: unknown };
+    const data = directResult.data ?? result;
 
     // Check for imagePath which indicates an image generation result
-    if (data && typeof data.imagePath === 'string') {
+    if (data && typeof data === 'object' && typeof (data as { imagePath?: unknown }).imagePath === 'string') {
+      const typedData = data as { imagePath: string; prompt?: unknown; revisedPrompt?: unknown; dimensions?: { width: number; height: number }; model?: unknown };
       return {
-        imagePath: data.imagePath,
-        prompt: data.prompt || data.revisedPrompt,
-        dimensions: data.dimensions,
-        model: data.model
+        imagePath: typedData.imagePath,
+        prompt: (typedData.prompt as string | undefined) || (typedData.revisedPrompt as string | undefined),
+        dimensions: typedData.dimensions,
+        model: typedData.model as string | undefined
       };
     }
 
@@ -605,7 +620,7 @@ export class MessageBubble extends Component {
     setIcon(openButton, 'external-link');
     openButton.createSpan({ text: 'Open in Obsidian' });
     this.registerDomEvent(openButton, 'click', () => {
-      this.app.workspace.openLinkText(imageData.imagePath, '', false);
+      void this.app.workspace.openLinkText(imageData.imagePath, '', false);
     });
 
     return imageBubble;
@@ -710,7 +725,7 @@ export class MessageBubble extends Component {
   /**
    * Get the active tool calls for the message (original or from branch)
    */
-  private getActiveToolCalls(message: ConversationMessage): any[] | undefined {
+  private getActiveToolCalls(message: ConversationMessage): ConversationMessage['toolCalls'] | undefined {
     const activeIndex = message.activeAlternativeIndex || 0;
 
     if (activeIndex === 0) {

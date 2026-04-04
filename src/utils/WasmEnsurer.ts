@@ -68,7 +68,7 @@ export class WasmEnsurer {
      * Download sqlite3.wasm from CDN
      */
     private async downloadWasm(wasmPath: string): Promise<boolean> {
-        const notice = new Notice('Downloading SQLite WASM file... This only happens once.', 0);
+        const notice = new Notice('Downloading the file... This only happens once.', 0);
 
         try {
             for (const url of WasmEnsurer.WASM_URLS) {
@@ -96,7 +96,7 @@ export class WasmEnsurer {
                     await this.plugin.app.vault.adapter.writeBinary(wasmPath, wasmData);
 
                     notice.hide();
-                    new Notice('SQLite WASM file downloaded successfully!', 3000);
+                    new Notice('File downloaded successfully!', 3000);
                     return true;
 
                 } catch (error) {
@@ -107,13 +107,13 @@ export class WasmEnsurer {
 
             // All URLs failed
             notice.hide();
-            new Notice('Failed to download SQLite WASM file. Please check your internet connection and restart Obsidian.', 10000);
+            new Notice('Failed to download the file. Please check your internet connection and restart Obsidian.', 10000);
             return false;
 
         } catch (error) {
             notice.hide();
             console.error('[WasmEnsurer] Download failed:', error);
-            new Notice('Failed to download SQLite WASM file. Some features may not work.', 10000);
+            new Notice('Failed to download the file. Some features may not work.', 10000);
             return false;
         }
     }

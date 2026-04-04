@@ -149,7 +149,7 @@ async function transcribeChunkWithSpeechApi(
     throw new Error(`Transcription failed: HTTP ${response.status}`);
   }
 
-  const data = response.json;
+  const data = response.json as unknown;
   if (execution === 'speech-api-segmented') {
     return parseSegmentedSpeechApiResponse(data, chunk.durationSeconds);
   }

@@ -8,9 +8,38 @@ import { BaseTool } from '../../../baseTool';
 import { MemoryManagerAgent } from '../../memoryManager'
 import { ListStatesParams, StateResult } from '../../types';
 import { createErrorMessage } from '../../../../utils/errorUtils';
-import { extractContextFromParams } from '../../../../utils/contextUtils';
-import { MemoryService } from "../../services/MemoryService";
 import { WorkspaceService, GLOBAL_WORKSPACE_ID } from '../../../../services/WorkspaceService';
+
+interface StateLike {
+  name: string;
+  description?: string;
+  timestamp?: number;
+  created?: number;
+  workspaceId?: string;
+  state?: {
+    context?: {
+      activeFiles?: string[];
+      activeTask?: string;
+    };
+    state?: {
+      metadata?: {
+        tags?: string[];
+        isArchived?: boolean;
+      };
+    };
+  };
+}
+
+interface EnhancedStateLike extends StateLike {
+  workspaceName: string;
+  created: number;
+  context?: {
+    files: string[];
+    traceCount: number;
+    tags: string[];
+    summary: string;
+  };
+}
 
 /**
  * Mode for listing states with filtering and sorting
@@ -32,7 +61,6 @@ export class ListStatesTool extends BaseTool<ListStatesParams, StateResult> {
     try {
       // Get services from agent
       const memoryService = await this.agent.getMemoryServiceAsync();
-      const workspaceService = await this.agent.getWorkspaceServiceAsync();
 
       if (!memoryService) {
         return this.prepareResult(false, undefined, 'Memory service not available');
@@ -40,7 +68,7 @@ export class ListStatesTool extends BaseTool<ListStatesParams, StateResult> {
 
       // Get workspace ID from context
       let workspaceId: string | undefined;
-      const inheritedContext = this.getInheritedWorkspaceContext(params);
+      const inheritedContext = super.getInheritedWorkspaceContext(params);
       if (inheritedContext?.workspaceId) {
         workspaceId = inheritedContext.workspaceId;
       }
@@ -61,7 +89,7 @@ export class ListStatesTool extends BaseTool<ListStatesParams, StateResult> {
       );
 
       // Extract items from PaginatedResult
-      let processedStates = statesResult.items;
+      let processedStates: StateLike[] = statesResult.items as unknown as StateLike[];
 
       // Filter out archived states by default (unless includeArchived is true)
       if (!params.includeArchived) {
@@ -75,13 +103,14 @@ export class ListStatesTool extends BaseTool<ListStatesParams, StateResult> {
 
       // Filter by tags if provided (tags aren't in DB, so must filter in-memory)
       // Note: This happens AFTER pagination, so may return fewer results than pageSize
-      if (params.tags && params.tags.length > 0) {
+      const tags = params.tags ?? [];
+      if (tags.length > 0) {
         processedStates = processedStates.filter(state => {
           const stateData = state.state as unknown as Record<string, unknown> | undefined;
           const nestedState = stateData?.state as Record<string, unknown> | undefined;
           const metadata = nestedState?.metadata as Record<string, unknown> | undefined;
           const stateTags = (metadata?.tags as string[]) || [];
-          return params.tags!.some(tag => stateTags.includes(tag));
+          return tags.some(tag => stateTags.includes(tag));
         });
       }
 
@@ -104,7 +133,7 @@ export class ListStatesTool extends BaseTool<ListStatesParams, StateResult> {
   /**
    * Sort states by creation date
    */
-  private sortStates(states: any[], order: 'asc' | 'desc'): any[] {
+  private sortStates(states: StateLike[], order: 'asc' | 'desc'): StateLike[] {
     return states.sort((a, b) => {
       const timeA = a.timestamp || a.created || 0;
       const timeB = b.timestamp || b.created || 0;
@@ -115,28 +144,32 @@ export class ListStatesTool extends BaseTool<ListStatesParams, StateResult> {
   /**
    * Enhance states with workspace names and context
    */
-  private async enhanceStatesWithContext(states: any[], workspaceService: WorkspaceService, includeContext?: boolean): Promise<any[]> {
+  private async enhanceStatesWithContext(
+    states: StateLike[],
+    workspaceService: WorkspaceService,
+    includeContext?: boolean
+  ): Promise<EnhancedStateLike[]> {
     const workspaceCache = new Map<string, string>();
     
     return await Promise.all(states.map(async (state) => {
-      let workspaceName = 'Unknown Workspace';
-      
-      if (!workspaceCache.has(state.workspaceId)) {
+      const stateWorkspaceId = state.workspaceId || 'unknown';
+      let workspaceName = workspaceCache.get(stateWorkspaceId) ?? 'Unknown Workspace';
+
+      if (!workspaceCache.has(stateWorkspaceId)) {
         try {
-          const workspace = await workspaceService.getWorkspace(state.workspaceId);
+          const workspace = await workspaceService.getWorkspace(stateWorkspaceId);
           workspaceName = workspace?.name || 'Unknown Workspace';
-          workspaceCache.set(state.workspaceId, workspaceName);
+          workspaceCache.set(stateWorkspaceId, workspaceName);
         } catch {
-          workspaceCache.set(state.workspaceId, 'Unknown Workspace');
+          workspaceCache.set(stateWorkspaceId, 'Unknown Workspace');
+          workspaceName = 'Unknown Workspace';
         }
-      } else {
-        workspaceName = workspaceCache.get(state.workspaceId)!;
       }
 
-      const enhanced: any = {
+      const enhanced: EnhancedStateLike = {
         ...state,
         workspaceName,
-        created: state.created || state.timestamp
+        created: state.created ?? state.timestamp ?? 0
       };
 
       if (includeContext && state.state?.context) {
@@ -152,13 +185,6 @@ export class ListStatesTool extends BaseTool<ListStatesParams, StateResult> {
     }));
   }
 
-
-  /**
-   * Get workspace context from inherited parameters
-   */
-  protected getInheritedWorkspaceContext(params: ListStatesParams): any {
-    return extractContextFromParams(params);
-  }
 
   getParameterSchema(): JSONSchema {
     const toolSchema = {

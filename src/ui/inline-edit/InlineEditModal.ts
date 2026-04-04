@@ -90,7 +90,13 @@ export class InlineEditModal extends Modal {
     });
   }
 
-  async onOpen(): Promise<void> {
+  onOpen(): void {
+    void this.initializeModal().catch((error) => {
+      console.error('[InlineEditModal] Failed to initialize modal:', error);
+    });
+  }
+
+  private async initializeModal(): Promise<void> {
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass('claudesidian-inline-edit-modal');
@@ -181,7 +187,7 @@ export class InlineEditModal extends Modal {
 
     // Selected text preview (read-only)
     const previewSection = container.createDiv('claudesidian-inline-edit-section');
-    previewSection.createEl('label', { text: 'Selected Text', cls: 'claudesidian-inline-edit-label' });
+    previewSection.createEl('label', { text: 'Selected text', cls: 'claudesidian-inline-edit-label' });
 
     const previewContainer = previewSection.createDiv('claudesidian-inline-edit-preview');
     const previewText = previewContainer.createEl('pre', {
@@ -198,7 +204,7 @@ export class InlineEditModal extends Modal {
       .addTextArea((textarea) => {
         this.instructionInput = textarea;
         textarea
-          .setPlaceholder('e.g., "Make this more concise" or "Fix grammar and spelling"')
+          .setPlaceholder('Make this more concise or fix grammar and spelling')
           .setValue(this.currentInstruction)
           .onChange((value) => {
             this.currentInstruction = value;
@@ -212,7 +218,7 @@ export class InlineEditModal extends Modal {
         this.plugin.registerDomEvent(textarea.inputEl, 'keydown', (e) => {
           if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
-            this.handleGenerate();
+            void this.handleGenerate();
           }
         });
 
@@ -252,12 +258,16 @@ export class InlineEditModal extends Modal {
 
     new ButtonComponent(buttonContainer)
       .setButtonText('Cancel')
-      .onClick(() => this.close());
+      .onClick(() => {
+        this.close();
+      });
 
     new ButtonComponent(buttonContainer)
       .setButtonText('Generate')
       .setCta()
-      .onClick(() => this.handleGenerate());
+      .onClick(() => {
+        void this.handleGenerate();
+      });
   }
 
   /**
@@ -269,7 +279,7 @@ export class InlineEditModal extends Modal {
 
     // Header with spinner
     const header = container.createDiv('claudesidian-inline-edit-loading-header');
-    const spinner = header.createDiv('claudesidian-inline-edit-spinner');
+    header.createDiv('claudesidian-inline-edit-spinner');
     header.createEl('h2', { text: progress || 'Generating...' });
 
     // Streaming preview
@@ -299,7 +309,7 @@ export class InlineEditModal extends Modal {
     const container = this.contentContainer;
 
     // Header
-    container.createEl('h2', { text: 'Review Changes', cls: 'claudesidian-inline-edit-header' });
+    container.createEl('h2', { text: 'Review changes', cls: 'claudesidian-inline-edit-header' });
 
     // Original text (read-only, collapsed)
     const originalSection = container.createDiv('claudesidian-inline-edit-section claudesidian-inline-edit-original-section');
@@ -310,7 +320,7 @@ export class InlineEditModal extends Modal {
     originalHeader.setAttribute('tabindex', '0');
     const collapseIcon = originalHeader.createSpan('claudesidian-inline-edit-collapse-icon');
     setIcon(collapseIcon, 'chevron-right');
-    originalHeader.createEl('label', { text: 'Original Text', cls: 'claudesidian-inline-edit-label' });
+    originalHeader.createEl('label', { text: 'Original text', cls: 'claudesidian-inline-edit-label' });
 
     const originalContent = originalSection.createDiv('claudesidian-inline-edit-collapsible-content');
     originalContent.addClass('claudesidian-inline-edit-collapsed');
@@ -335,7 +345,7 @@ export class InlineEditModal extends Modal {
 
     // Edited text (editable)
     const editedSection = container.createDiv('claudesidian-inline-edit-section');
-    editedSection.createEl('label', { text: 'Edited Text (editable)', cls: 'claudesidian-inline-edit-label' });
+    editedSection.createEl('label', { text: 'Edited text (editable)', cls: 'claudesidian-inline-edit-label' });
 
     const editedContainer = editedSection.createDiv('claudesidian-inline-edit-result-container');
     this.resultTextarea = editedContainer.createEl('textarea', {
@@ -356,16 +366,22 @@ export class InlineEditModal extends Modal {
 
     new ButtonComponent(buttonContainer)
       .setButtonText('Retry')
-      .onClick(() => this.handleRetry());
+      .onClick(() => {
+        this.handleRetry();
+      });
 
     new ButtonComponent(buttonContainer)
       .setButtonText('Cancel')
-      .onClick(() => this.close());
+      .onClick(() => {
+        this.close();
+      });
 
     new ButtonComponent(buttonContainer)
       .setButtonText('Apply')
       .setCta()
-      .onClick(() => this.handleApply());
+      .onClick(() => {
+        this.handleApply();
+      });
   }
 
   /**
@@ -398,12 +414,16 @@ export class InlineEditModal extends Modal {
 
     new ButtonComponent(buttonContainer)
       .setButtonText('Cancel')
-      .onClick(() => this.close());
+      .onClick(() => {
+        this.close();
+      });
 
     new ButtonComponent(buttonContainer)
-      .setButtonText('Try Again')
+      .setButtonText('Try again')
       .setCta()
-      .onClick(() => this.handleRetry());
+      .onClick(() => {
+        this.handleRetry();
+      });
   }
 
   /**

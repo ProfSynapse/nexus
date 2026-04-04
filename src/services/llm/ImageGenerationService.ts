@@ -5,7 +5,6 @@
  */
 
 import { Vault } from 'obsidian';
-import { OpenAIImageAdapter } from './adapters/openai/OpenAIImageAdapter'; // Available but not used
 import { GeminiImageAdapter } from './adapters/google/GeminiImageAdapter';
 import { OpenRouterImageAdapter } from './adapters/openrouter/OpenRouterImageAdapter';
 import { ImageFileManager } from './ImageFileManager';
@@ -17,7 +16,7 @@ import {
   ImageGenerationError
 } from './types/ImageTypes';
 import { BaseImageAdapter } from './adapters/BaseImageAdapter';
-import { ModelInfo } from './adapters/types';
+import { ModelInfo, ProviderCapabilities } from './adapters/types';
 import { LLMProviderSettings } from '../../types/llm/ProviderTypes';
 
 export class ImageGenerationService {
@@ -240,7 +239,7 @@ export class ImageGenerationService {
     try {
       const available = await adapter.isImageGenerationAvailable();
       return available ? adapter.supportedModels : [];
-    } catch (error) {
+    } catch {
       return [];
     }
   }
@@ -280,7 +279,7 @@ export class ImageGenerationService {
   /**
    * Get provider capabilities
    */
-  async getProviderCapabilities(provider: ImageProvider) {
+  async getProviderCapabilities(provider: ImageProvider): Promise<ProviderCapabilities | null> {
     const adapter = this.getAdapter(provider);
     if (!adapter) {
       return null;
@@ -288,7 +287,7 @@ export class ImageGenerationService {
 
     try {
       return adapter.getImageCapabilities();
-    } catch (error) {
+    } catch {
       return null;
     }
   }
@@ -319,7 +318,7 @@ export class ImageGenerationService {
         currency: pricing.currency,
         breakdown: `1 image using ${model}: ${pricing.totalCost} ${pricing.currency}`
       };
-    } catch (error) {
+    } catch {
       return null;
     }
   }

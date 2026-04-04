@@ -76,7 +76,12 @@ export class OAuthConsentModal extends Modal {
     fieldValues: Record<string, string>,
   ): void {
     const fieldsContainer = container.createDiv('oauth-consent-fields');
-    for (const field of this.oauthConfig.preAuthFields!) {
+    const preAuthFields = this.oauthConfig.preAuthFields;
+    if (!preAuthFields || preAuthFields.length === 0) {
+      return;
+    }
+
+    for (const field of preAuthFields) {
       fieldValues[field.key] = field.defaultValue || '';
       new Setting(fieldsContainer)
         .setName(field.label)

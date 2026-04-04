@@ -1,3 +1,4 @@
+/* eslint-disable import/no-nodejs-modules -- desktop-only Claude Code adapter uses Node child_process in Electron */
 import { Platform, Vault } from 'obsidian';
 import type { ChildProcess } from 'child_process';
 import { BaseAdapter } from '../BaseAdapter';
@@ -18,6 +19,14 @@ import { ModelRegistry } from '../ModelRegistry';
 import { getPrimaryServerKey } from '../../../../constants/branding';
 
 type ClaudeCodeToolCall = NonNullable<StreamChunk['toolCalls']>[number];
+type ClaudeCodeDesktopModuleMap = {
+  'fs/promises': typeof import('fs/promises');
+  os: typeof import('os');
+  path: typeof import('path');
+  child_process: typeof import('child_process');
+  readline: typeof import('readline');
+};
+
 const MAX_SAFE_WINDOWS_ARGV_CHARS = 24_000;
 
 export class AnthropicClaudeCodeAdapter extends BaseAdapter {
@@ -76,11 +85,11 @@ export class AnthropicClaudeCodeAdapter extends BaseAdapter {
       );
     }
 
-    const fsPromises = require('fs/promises') as typeof import('fs/promises');
-    const osMod = require('os') as typeof import('os');
-    const pathMod = require('path') as typeof import('path');
-    const childProcess = require('child_process') as typeof import('child_process');
-    const readline = require('readline') as typeof import('readline');
+    const fsPromises = this.loadDesktopModule('fs/promises');
+    const osMod = this.loadDesktopModule('os');
+    const pathMod = this.loadDesktopModule('path');
+    const childProcess = this.loadDesktopModule('child_process');
+    const readline = this.loadDesktopModule('readline');
 
     const tempDir = await fsPromises.mkdtemp(pathMod.join(osMod.tmpdir(), 'nexus-claude-code-adapter-'));
     const mcpConfigPath = pathMod.join(tempDir, 'mcp.json');
@@ -298,9 +307,27 @@ export class AnthropicClaudeCodeAdapter extends BaseAdapter {
     return {
       claudePath,
       nodePath,
-      connectorPath: getConnectorPath(vaultPath),
+      connectorPath: getConnectorPath(vaultPath, this.vault.configDir),
       vaultPath
     };
+  }
+
+  private loadDesktopModule<TModuleName extends keyof ClaudeCodeDesktopModuleMap>(
+    moduleName: TModuleName
+  ): ClaudeCodeDesktopModuleMap[TModuleName] {
+    if (!Platform.isDesktop) {
+      throw new Error(`${moduleName} is only available on desktop.`);
+    }
+
+    const maybeRequire = (globalThis as typeof globalThis & {
+      require?: (moduleId: string) => unknown;
+    }).require;
+
+    if (typeof maybeRequire !== 'function') {
+      throw new Error('Desktop module loader is unavailable.');
+    }
+
+    return maybeRequire(moduleName) as ClaudeCodeDesktopModuleMap[TModuleName];
   }
 
   private parseStreamJsonLine(line: string): Record<string, unknown> | null {
@@ -443,7 +470,8 @@ export class AnthropicClaudeCodeAdapter extends BaseAdapter {
       return content;
     }
 
-    const normalized = content.map((block) => {
+    const blocks = content as unknown[];
+    const normalized = blocks.map((block: unknown) => {
       if (!block || typeof block !== 'object') {
         return block;
       }

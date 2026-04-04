@@ -81,8 +81,79 @@ import { WebLLMModelSpec, WebLLMError } from './types';
 import { WEBLLM_MODELS, HF_BASE_URL } from './WebLLMModels';
 import { prefetchModel, isModelPrefetched } from './WebLLMCachePrefetcher';
 
-// Type imports for TypeScript (these are erased at runtime)
-import type * as WebLLMTypes from '@mlc-ai/web-llm';
+interface WebLLMInitProgressReport {
+  progress?: number;
+  text?: string;
+}
+
+interface WebLLMChatCompletionMessageParam {
+  role: string;
+  content: string;
+  name?: string;
+  tool_call_id?: string;
+}
+
+interface WebLLMChoice {
+  message?: {
+    content?: string;
+  };
+  delta?: {
+    content?: string;
+  };
+  finish_reason?: string;
+}
+
+interface WebLLMUsage {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+}
+
+interface WebLLMResponse {
+  choices: WebLLMChoice[];
+  usage?: WebLLMUsage;
+}
+
+interface WebLLMAppConfig {
+  model_list: Array<{
+    model: string;
+    model_id: string;
+    model_lib: string;
+    overrides: {
+      context_window_size: number;
+    };
+  }>;
+}
+
+interface WebLLMEngineInstance {
+  config?: {
+    context_window_size?: number;
+    max_gen_len?: number;
+  };
+  chat: {
+    completions: {
+      create(options: Record<string, unknown>): Promise<WebLLMResponse> | AsyncIterable<WebLLMResponse>;
+    };
+  };
+  resetChat(): Promise<void>;
+  interruptGenerate(): void;
+  unload(): Promise<void>;
+}
+
+interface WebLLMLibrary {
+  CreateMLCEngine(
+    modelId: string,
+    options?: {
+      appConfig?: WebLLMAppConfig;
+      initProgressCallback?: (report: WebLLMInitProgressReport) => void;
+      modelUrl?: string;
+    }
+  ): Promise<WebLLMEngineInstance>;
+}
+
+function isWebLLMLibrary(value: unknown): value is WebLLMLibrary {
+  return typeof value === 'object' && value !== null && 'CreateMLCEngine' in value;
+}
 
 export interface EngineProgress {
   progress: number;
@@ -106,7 +177,7 @@ export interface StreamChunk {
 }
 
 // Lazy-loaded WebLLM module
-let webllm: typeof WebLLMTypes | null = null;
+let webllm: WebLLMLibrary | null = null;
 
 // Singleton engine instance - shared across all WebLLMAdapter instances
 // This ensures the model stays loaded in GPU memory even when multiple adapters exist
@@ -212,7 +283,7 @@ function patchWebAssemblyInstantiate(): void {
  * Uses jsDelivr's esm.run service which serves browser-compatible ESM modules.
  * This works in Electron's renderer because it has full browser capabilities.
  */
-async function loadWebLLM(): Promise<typeof WebLLMTypes> {
+async function loadWebLLM(): Promise<WebLLMLibrary> {
   if (webllm) {
     return webllm;
   }
@@ -224,10 +295,12 @@ async function loadWebLLM(): Promise<typeof WebLLMTypes> {
   try {
     // Dynamic import from jsDelivr's esm.run service
     // This serves ESM modules that work in browser contexts
-    // @ts-ignore - TypeScript doesn't understand CDN URLs, but Electron's renderer can import them
-    const module = await import('https://esm.run/@mlc-ai/web-llm');
+    const imported: unknown = await import('https://esm.run/@mlc-ai/web-llm');
+    if (!isWebLLMLibrary(imported)) {
+      throw new Error('CreateMLCEngine not found in module');
+    }
 
-    webllm = module as typeof WebLLMTypes;
+    webllm = imported;
 
     if (!webllm.CreateMLCEngine) {
       throw new Error('CreateMLCEngine not found in module');
@@ -269,7 +342,7 @@ const STOCK_TEST_MODEL_ID = 'Mistral-7B-Instruct-v0.3-q4f16_1-MLC';
  * ║  allowing runtime selection between them.                                  ║
  * ╚═══════════════════════════════════════════════════════════════════════════╝
  */
-function createNexusAppConfig(selectedModel?: WebLLMModelSpec): WebLLMTypes.AppConfig | undefined {
+function createNexusAppConfig(): WebLLMAppConfig | undefined {
   if (USE_STOCK_MODEL_FOR_TESTING) {
     // Return undefined to use WebLLM's built-in model list
     return undefined;
@@ -277,11 +350,11 @@ function createNexusAppConfig(selectedModel?: WebLLMModelSpec): WebLLMTypes.AppC
 
   // Build model list from all available Nexus models
   const modelList = WEBLLM_MODELS
-    .filter(m => m.modelLibUrl) // Only include models with WASM libraries
+    .filter((m): m is (typeof WEBLLM_MODELS)[number] & { modelLibUrl: string } => typeof m.modelLibUrl === 'string' && m.modelLibUrl.length > 0)
     .map(model => ({
       model: `${HF_BASE_URL}/${model.huggingFaceRepo}/resolve/main/`,
       model_id: model.apiName,
-      model_lib: model.modelLibUrl!,
+      model_lib: model.modelLibUrl,
       overrides: {
         context_window_size: model.contextWindow,
       },
@@ -292,13 +365,11 @@ function createNexusAppConfig(selectedModel?: WebLLMModelSpec): WebLLMTypes.AppC
     return undefined;
   }
 
-  const targetModel = selectedModel || WEBLLM_MODELS[0];
-
   return { model_list: modelList };
 }
 
 export class WebLLMEngine {
-  private engine: WebLLMTypes.MLCEngine | null = null;
+  private engine: WebLLMEngineInstance | null = null;
   private isGenerating = false;
   private currentModelId: string | null = null;
   private abortController: AbortController | null = null;
@@ -363,7 +434,7 @@ export class WebLLMEngine {
     if (this.engine && this.currentModelId !== modelSpec.apiName) {
       try {
         await this.unloadModel();
-      } catch (unloadError) {
+      } catch {
         // Ignore unload errors
       }
     }
@@ -401,18 +472,18 @@ export class WebLLMEngine {
       const webllmLib = await loadWebLLM();
 
       // Progress callback adapter with error protection
-      const progressCallback = (report: WebLLMTypes.InitProgressReport) => {
+      const progressCallback = (report: WebLLMInitProgressReport) => {
         try {
           if (options?.onProgress) {
             const stage = report.text?.includes('Loading') ? 'loading' :
                           report.text?.includes('Download') ? 'downloading' : 'compiling';
             options.onProgress({
               progress: report.progress || 0,
-              stage: stage as EngineProgress['stage'],
+              stage,
               message: report.text || '',
             });
           }
-        } catch (progressError) {
+        } catch {
           // Ignore progress callback errors
         }
       };
@@ -517,13 +588,13 @@ export class WebLLMEngine {
       await this.resetChat();
 
       const response = await this.engine.chat.completions.create({
-        messages: messages as WebLLMTypes.ChatCompletionMessageParam[],
+        messages: messages as WebLLMChatCompletionMessageParam[],
         temperature: options?.temperature ?? 0.5,
         max_tokens: options?.maxTokens ?? 2048,
         top_p: options?.topP ?? 0.95,
         stop: options?.stopSequences,
         stream: false,
-      });
+      }) as WebLLMResponse;
 
       const choice = response.choices[0];
       const usage = response.usage || { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
@@ -552,7 +623,7 @@ export class WebLLMEngine {
       try {
         // Single reset call - double reset can corrupt WebGPU state on Apple Silicon
         await this.engine.resetChat();
-      } catch (error) {
+      } catch {
         // Non-fatal - continue anyway
       }
     }
@@ -588,7 +659,7 @@ export class WebLLMEngine {
         this.engine.interruptGenerate();
         // Longer wait for interrupt to take effect
         await new Promise(resolve => setTimeout(resolve, 500));
-      } catch (e) {
+      } catch {
         // Ignore interrupt errors
       }
       this.isGenerating = false;
@@ -601,7 +672,7 @@ export class WebLLMEngine {
       // Ensure any previous generation is fully stopped
       try {
         this.engine.interruptGenerate();
-      } catch (e) {
+      } catch {
         // Ignore - might not have anything to interrupt
       }
 
@@ -615,89 +686,85 @@ export class WebLLMEngine {
         await this.resetChat();
         // Longer delay after reset for GPU to fully process
         await new Promise(resolve => setTimeout(resolve, 300));
-      } catch (e) {
+      } catch {
         // Ignore reset errors
       }
 
       // Wrap stream creation in try-catch to capture WebGPU errors
-      let stream: any;
       try {
-        stream = await this.engine.chat.completions.create({
-          messages: messages as WebLLMTypes.ChatCompletionMessageParam[],
+        const stream = (await this.engine.chat.completions.create({
+          messages: messages as WebLLMChatCompletionMessageParam[],
           temperature: options?.temperature ?? 0.5,
           max_tokens: options?.maxTokens ?? 2048,
           top_p: options?.topP ?? 0.95,
           stop: options?.stopSequences,
           stream: true,
           stream_options: { include_usage: true },
-        });
+        })) as AsyncIterable<WebLLMResponse>;
+
+        let fullContent = '';
+        let usage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+        let finishReason = 'stop';
+
+        try {
+          for await (const chunk of stream) {
+            // Check for abort
+            if (this.abortController?.signal.aborted) {
+              finishReason = 'abort';
+              break;
+            }
+
+            const delta = chunk.choices[0]?.delta;
+            const content = delta?.content || '';
+
+            if (content) {
+              fullContent += content;
+              yield {
+                content,
+                tokenCount: fullContent.length, // Approximate
+              };
+            }
+
+            // Capture finish reason
+            if (chunk.choices[0]?.finish_reason) {
+              finishReason = chunk.choices[0].finish_reason;
+            }
+
+            // Capture usage from final chunk
+            if (chunk.usage) {
+              usage = {
+                promptTokens: chunk.usage.prompt_tokens || 0,
+                completionTokens: chunk.usage.completion_tokens || 0,
+                totalTokens: chunk.usage.total_tokens || 0,
+              };
+            }
+          }
+        } catch (streamIterError) {
+          // CRITICAL: Capture the actual WebGPU/WebLLM error
+          console.error('[NEXUS_DEBUG] ⚠️ STREAM ITERATION CRASHED:', streamIterError);
+          console.error('[NEXUS_DEBUG] Error type:', streamIterError instanceof Error ? streamIterError.constructor.name : typeof streamIterError);
+          console.error('[NEXUS_DEBUG] Error message:', streamIterError instanceof Error ? streamIterError.message : String(streamIterError));
+          console.error('[NEXUS_DEBUG] Error stack:', streamIterError instanceof Error ? streamIterError.stack : 'N/A');
+
+          // Check if it's a GPU device lost error
+          if (streamIterError instanceof Error && streamIterError.message?.includes('Device')) {
+            console.error('[NEXUS_DEBUG] GPU Device Lost - this is a WebGPU issue');
+          }
+
+          // Re-throw to propagate error
+          throw streamIterError;
+        }
+
+        // Yield final result
+        yield {
+          content: fullContent,
+          usage,
+          finishReason,
+        };
       } catch (streamError) {
         console.error('[NEXUS_DEBUG] Stream creation FAILED:', streamError);
         throw streamError;
       }
-
-      let fullContent = '';
-      let usage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
-      let finishReason = 'stop';
-      let chunkCount = 0;
-
-      try {
-        for await (const chunk of stream) {
-        chunkCount++;
-
-        // Check for abort
-        if (this.abortController?.signal.aborted) {
-          finishReason = 'abort';
-          break;
-        }
-
-        const delta = chunk.choices[0]?.delta;
-        const content = delta?.content || '';
-
-        if (content) {
-          fullContent += content;
-          yield {
-            content,
-            tokenCount: fullContent.length, // Approximate
-          } as StreamChunk;
-        }
-
-        // Capture finish reason
-        if (chunk.choices[0]?.finish_reason) {
-          finishReason = chunk.choices[0].finish_reason;
-        }
-
-        // Capture usage from final chunk
-        if (chunk.usage) {
-          usage = {
-            promptTokens: chunk.usage.prompt_tokens || 0,
-            completionTokens: chunk.usage.completion_tokens || 0,
-            totalTokens: chunk.usage.total_tokens || 0,
-          };
-        }
-        }
-      } catch (streamIterError) {
-        // CRITICAL: Capture the actual WebGPU/WebLLM error
-        console.error('[NEXUS_DEBUG] ⚠️ STREAM ITERATION CRASHED:', streamIterError);
-        console.error('[NEXUS_DEBUG] Error type:', streamIterError?.constructor?.name);
-        console.error('[NEXUS_DEBUG] Error message:', streamIterError instanceof Error ? streamIterError.message : String(streamIterError));
-        console.error('[NEXUS_DEBUG] Error stack:', streamIterError instanceof Error ? streamIterError.stack : 'N/A');
-
-        // Check if it's a GPU device lost error
-        if (streamIterError instanceof Error && streamIterError.message?.includes('Device')) {
-          console.error('[NEXUS_DEBUG] GPU Device Lost - this is a WebGPU issue');
-        }
-
-        // Re-throw to propagate error
-        throw streamIterError;
-      }
-
-      // Yield final result
-      yield {
-        content: fullContent,
-        usage,
-        finishReason,
-      } as GenerationResult;
     } finally {
       this.isGenerating = false;
       this.abortController = null;

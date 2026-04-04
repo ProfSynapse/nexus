@@ -99,9 +99,9 @@ function extractFrontmatter(content: string): {
   const body = trimmed.slice(match[0].length);
 
   try {
-    const parsed = yamlParse(match[1]);
+    const parsed: unknown = yamlParse(match[1]);
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      return { frontmatter: parsed, body };
+      return { frontmatter: parsed as Record<string, unknown>, body };
     }
     return { frontmatter: null, body: trimmed };
   } catch {

@@ -27,8 +27,8 @@ export class StatusBadge {
     static renderWithText(
         container: HTMLElement,
         configured: boolean,
-        configuredText: string = 'Configured',
-        notConfiguredText: string = 'Not configured'
+        configuredText = 'Configured',
+        notConfiguredText = 'Not configured'
     ): HTMLElement {
         const badge = container.createSpan('nexus-status-badge');
         badge.addClass(configured ? 'configured' : 'not-configured');

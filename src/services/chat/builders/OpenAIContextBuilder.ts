@@ -15,6 +15,19 @@ import { IContextBuilder, LLMMessage, LLMToolCall, ToolExecutionResult, OpenAIMe
 import { ConversationData, ChatMessage, ToolCall } from '../../../types/chat/ChatTypes';
 import { ReasoningPreserver } from '../../llm/adapters/shared/ReasoningPreserver';
 
+type ReasoningToolCallLike = {
+  id?: string;
+  type?: string;
+  name?: string;
+  function?: {
+    name?: string;
+    arguments?: string;
+  };
+  parameters?: Record<string, unknown>;
+  reasoning_details?: unknown[];
+  thought_signature?: string;
+};
+
 export class OpenAIContextBuilder implements IContextBuilder {
   readonly provider = 'openai';
 
@@ -140,9 +153,13 @@ export class OpenAIContextBuilder implements IContextBuilder {
     }
 
     // Build assistant message with reasoning preserved using centralized utility
-    const assistantMessage = ReasoningPreserver.buildAssistantMessageWithReasoning(toolCalls, null);
+    const reasoningToolCalls = toolCalls as unknown as ReasoningToolCallLike[];
+    const assistantMessage = ReasoningPreserver.buildAssistantMessageWithReasoning(
+      reasoningToolCalls,
+      null
+    ) as unknown as OpenAIMessage;
 
-    messages.push(assistantMessage as OpenAIMessage);
+    messages.push(assistantMessage);
 
     // Add tool result messages
     toolResults.forEach((result, index) => {
@@ -174,9 +191,13 @@ export class OpenAIContextBuilder implements IContextBuilder {
     const messages: OpenAIMessage[] = (previousMessages as OpenAIMessage[]).filter(msg => msg.role !== 'system');
 
     // Build assistant message with reasoning preserved using centralized utility
-    const assistantMessage = ReasoningPreserver.buildAssistantMessageWithReasoning(toolCalls, null);
+    const reasoningToolCalls = toolCalls as unknown as ReasoningToolCallLike[];
+    const assistantMessage = ReasoningPreserver.buildAssistantMessageWithReasoning(
+      reasoningToolCalls,
+      null
+    ) as unknown as OpenAIMessage;
 
-    messages.push(assistantMessage as OpenAIMessage);
+    messages.push(assistantMessage);
 
     // Add tool result messages
     toolResults.forEach((result, index) => {

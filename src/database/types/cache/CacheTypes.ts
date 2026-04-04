@@ -12,7 +12,7 @@ export interface WorkspaceCache {
    */
   hotCache: Map<string, {
     search: number[];
-    metadata: any;
+    metadata: Record<string, unknown>;
     lastAccessed: number;
     accessCount: number;
   }>;

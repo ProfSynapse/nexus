@@ -119,51 +119,57 @@ export class AppConfigModal extends Modal {
     // Validate button
     if (this.config.onValidate) {
       const validateLabel = this.config.validateLabel || 'Validate';
+      const onValidate = this.config.onValidate;
       const validateBtn = buttonContainer.createEl('button', { text: validateLabel });
-      validateBtn.addEventListener('click', async () => {
-        validateBtn.disabled = true;
-        validateBtn.setText('Validating...');
-        try {
-          // Save first to ensure credentials are persisted
-          await this.config.onSave(this.currentCredentials);
-          const result = await this.config.onValidate!();
-          if (result.success) {
-            const missing = (result.data != null && typeof result.data === 'object' && 'missingPermissions' in result.data)
-              ? (result.data as { missingPermissions: unknown }).missingPermissions
-              : undefined;
-            if (Array.isArray(missing) && missing.length > 0) {
-              const msg = `Valid, but missing permissions: ${missing.join(', ')}`;
-              new Notice(`${this.config.manifest.name}: ${msg}`);
-              statusEl.setText(msg);
-              statusEl.className = 'app-config-status app-config-status-warning';
+      validateBtn.addEventListener('click', () => {
+        void (async () => {
+          validateBtn.disabled = true;
+          validateBtn.setText('Validating...');
+          try {
+            // Save first to ensure credentials are persisted
+            await this.config.onSave(this.currentCredentials);
+            const result = await onValidate();
+            if (result.success) {
+              const missing = (result.data != null && typeof result.data === 'object' && 'missingPermissions' in result.data)
+                ? (result.data as { missingPermissions: unknown }).missingPermissions
+                : undefined;
+              if (Array.isArray(missing) && missing.length > 0) {
+                const msg = `Valid, but missing permissions: ${missing.join(', ')}`;
+                new Notice(`${this.config.manifest.name}: ${msg}`);
+                statusEl.setText(msg);
+                statusEl.className = 'app-config-status app-config-status-warning';
+              } else {
+                new Notice(`${this.config.manifest.name}: credentials valid`);
+                statusEl.setText('Valid ✓');
+                statusEl.className = 'app-config-status app-config-status-success';
+              }
             } else {
-              new Notice(`${this.config.manifest.name}: credentials valid`);
-              statusEl.setText('Valid ✓');
-              statusEl.className = 'app-config-status app-config-status-success';
+              new Notice(`${this.config.manifest.name}: ${result.error || 'Validation failed'}`);
+              statusEl.setText(result.error || 'Validation failed');
+              statusEl.className = 'app-config-status app-config-status-error';
             }
-          } else {
-            new Notice(`${this.config.manifest.name}: ${result.error || 'validation failed'}`);
-            statusEl.setText(result.error || 'Validation failed');
-            statusEl.className = 'app-config-status app-config-status-error';
+          } catch (error) {
+            new Notice(`Validation error: ${error instanceof Error ? error.message : String(error)}`);
+          } finally {
+            validateBtn.disabled = false;
+            validateBtn.setText(validateLabel);
           }
-        } catch (error) {
-          new Notice(`Validation error: ${error}`);
-        } finally {
-          validateBtn.disabled = false;
-          validateBtn.setText(validateLabel);
-        }
+        })();
       });
     }
 
     // Uninstall button
     if (this.config.onUninstall) {
+      const onUninstall = this.config.onUninstall;
       const uninstallBtn = buttonContainer.createEl('button', {
         text: 'Uninstall',
         cls: 'mod-warning'
       });
-      uninstallBtn.addEventListener('click', async () => {
-        await this.config.onUninstall!();
-        this.close();
+      uninstallBtn.addEventListener('click', () => {
+        void (async () => {
+          await onUninstall();
+          this.close();
+        })();
       });
     }
   }
@@ -182,7 +188,7 @@ export class AppConfigModal extends Modal {
       dropdown.setDisabled(true);
 
       // Load options asynchronously
-      section.loadOptions().then(result => {
+      void section.loadOptions().then(result => {
         // Clear loading option
         dropdown.selectEl.empty();
 
@@ -193,7 +199,7 @@ export class AppConfigModal extends Modal {
         }
 
         // Add a "use default" option
-        dropdown.addOption('', 'Default (Eleven Multilingual v2)');
+        dropdown.addOption('', 'Default');
 
         for (const option of result.options) {
           dropdown.addOption(option.value, option.label);
@@ -214,13 +220,15 @@ export class AppConfigModal extends Modal {
     if (this.saveTimeout) {
       clearTimeout(this.saveTimeout);
     }
-    this.saveTimeout = setTimeout(async () => {
-      try {
-        await this.config.onSave(this.currentCredentials);
-        this.updateStatusEl('Saved');
-      } catch {
-        // Save failed silently
-      }
+    this.saveTimeout = setTimeout(() => {
+      void (async () => {
+        try {
+          await this.config.onSave(this.currentCredentials);
+          this.updateStatusEl('Saved');
+        } catch {
+          // Save failed silently
+        }
+      })();
     }, 500);
   }
 
@@ -228,15 +236,17 @@ export class AppConfigModal extends Modal {
     if (this.saveTimeout) {
       clearTimeout(this.saveTimeout);
     }
-    this.saveTimeout = setTimeout(async () => {
-      try {
-        if (this.config.onSaveSettings) {
-          await this.config.onSaveSettings(this.currentSettings);
+    this.saveTimeout = setTimeout(() => {
+      void (async () => {
+        try {
+          if (this.config.onSaveSettings) {
+            await this.config.onSaveSettings(this.currentSettings);
+          }
+          this.updateStatusEl('Saved');
+        } catch {
+          // Save failed silently
         }
-        this.updateStatusEl('Saved');
-      } catch {
-        // Save failed silently
-      }
+      })();
     }, 500);
   }
 

@@ -109,7 +109,7 @@ export class TokenCalculator {
     currentUsage: ContextUsage,
     newMessage: string,
     systemPrompt?: string | null,
-    bufferPercentage: number = 10 // Leave 10% buffer
+    bufferPercentage = 10 // Leave 10% buffer
   ): boolean {
     const newMessageTokens = this.estimateMessageTokens(newMessage, systemPrompt);
     const projectedUsage = currentUsage.used + newMessageTokens;

@@ -1,11 +1,94 @@
 import { BaseAdapter } from '../BaseAdapter';
 import { GenerateOptions, StreamChunk, LLMResponse, ModelInfo, ProviderCapabilities, ModelPricing, Tool, ToolCall } from '../types';
-import { GITHUB_COPILOT_MODELS, GITHUB_COPILOT_DEFAULT_MODEL } from './GithubCopilotModels';
+import { GITHUB_COPILOT_DEFAULT_MODEL } from './GithubCopilotModels';
 import { ProviderHttpClient, ProviderHttpError } from '../shared/ProviderHttpClient';
 
 const COPILOT_API_ENDPOINT = 'https://api.githubcopilot.com/chat/completions';
 const COPILOT_RESPONSES_ENDPOINT = 'https://api.githubcopilot.com/responses';
 const COPILOT_MODELS_ENDPOINT = 'https://api.githubcopilot.com/models';
+
+interface CopilotModelDescriptor {
+  id: string;
+  name?: string;
+  context_window?: number;
+  contextWindow?: number;
+  max_output_tokens?: number;
+  maxTokens?: number;
+  supported_endpoints?: string[];
+}
+
+interface CopilotModelsResponse {
+  data?: CopilotModelDescriptor[];
+}
+
+interface CopilotSessionTokenResponse {
+  token?: string;
+}
+
+interface CopilotChatCompletionMessage {
+  content?: string;
+}
+
+interface CopilotChatCompletionChoice {
+  message?: CopilotChatCompletionMessage;
+}
+
+interface CopilotChatCompletionResponse {
+  choices?: CopilotChatCompletionChoice[];
+  model: string;
+  usage?: LLMResponse['usage'];
+}
+
+interface CopilotRequestMessage extends Record<string, unknown> {
+  role: string;
+  content?: string;
+}
+
+interface CopilotResponsesItem {
+  type?: string;
+  call_id?: string;
+  id?: string;
+  name?: string;
+  arguments?: string;
+}
+
+interface CopilotResponsesApiEvent {
+  type?: string;
+  delta?: unknown;
+  response?: {
+    id?: string;
+  };
+  item?: CopilotResponsesItem;
+  output_index?: number;
+}
+
+interface CopilotChatTool {
+  type: 'function';
+  function: {
+    name: string;
+    description: string;
+    parameters: Record<string, unknown>;
+  };
+}
+
+interface CopilotSSEChoice {
+  delta?: {
+    content?: string;
+    tool_calls?: Array<{
+      id?: string;
+      type?: string;
+      function?: {
+        name?: string;
+        arguments?: string;
+      };
+    }>;
+  };
+  finish_reason?: string;
+}
+
+interface CopilotSSEEvent {
+  choices?: CopilotSSEChoice[];
+}
 
 export class GithubCopilotAdapter extends BaseAdapter {
   readonly name = 'github-copilot';
@@ -32,12 +115,12 @@ export class GithubCopilotAdapter extends BaseAdapter {
     };
   }
 
-  async getModelPricing(modelId: string): Promise<ModelPricing | null> {
+  async getModelPricing(_modelId: string): Promise<ModelPricing | null> {
     return null;
   }
 
   async listModels(): Promise<ModelInfo[]> {
-    const toModelInfo = (model: any): ModelInfo => ({
+    const toModelInfo = (model: CopilotModelDescriptor): ModelInfo => ({
       id: model.id,
       name: model.name || model.id,
       contextWindow: model.context_window || model.contextWindow || 200000,
@@ -56,12 +139,14 @@ export class GithubCopilotAdapter extends BaseAdapter {
         if (syncedModels && syncedModels.length > 0) {
           return syncedModels.map(toModelInfo);
         }
-      } catch (err) {}
+      } catch {
+        // Intentionally swallow discovery failures and fall back to an empty model list.
+      }
     }
     return [];
   }
 
-  async syncModels(token: string): Promise<any[]> {
+  async syncModels(token: string): Promise<CopilotModelDescriptor[]> {
     const sessionToken = await this.getSessionToken(token);
     const headers = this.getAuthHeaders(sessionToken);
 
@@ -72,7 +157,7 @@ export class GithubCopilotAdapter extends BaseAdapter {
       method: 'GET',
       headers
     });
-    const models = (response.json as any).data || [];
+    const models = ((response.json as CopilotModelsResponse).data || []);
 
     // Cache supported_endpoints per model for routing decisions
     for (const model of models) {
@@ -101,7 +186,7 @@ export class GithubCopilotAdapter extends BaseAdapter {
       headers
     });
     
-    const json = response.json as any;
+    const json = response.json as CopilotSessionTokenResponse;
     if (!json.token) throw new Error('Failed to fetch Copilot session token');
     return json.token;
   }
@@ -162,7 +247,7 @@ export class GithubCopilotAdapter extends BaseAdapter {
       body: JSON.stringify(payload)
     });
     
-    const data = response.json as any;
+    const data = response.json as CopilotChatCompletionResponse;
     return {
       text: data.choices?.[0]?.message?.content || '',
       model: data.model,
@@ -209,9 +294,18 @@ export class GithubCopilotAdapter extends BaseAdapter {
       });
 
       yield* this.processNodeStream(stream, {
-        extractContent: (parsed) => parsed.choices?.[0]?.delta?.content || null,
-        extractToolCalls: (parsed) => parsed.choices?.[0]?.delta?.tool_calls || null,
-        extractFinishReason: (parsed) => parsed.choices?.[0]?.finish_reason || null,
+        extractContent: (parsed) => {
+          const event = parsed as CopilotSSEEvent;
+          return event.choices?.[0]?.delta?.content || null;
+        },
+        extractToolCalls: (parsed) => {
+          const event = parsed as CopilotSSEEvent;
+          return event.choices?.[0]?.delta?.tool_calls || null;
+        },
+        extractFinishReason: (parsed) => {
+          const event = parsed as CopilotSSEEvent;
+          return event.choices?.[0]?.finish_reason || null;
+        },
         accumulateToolCalls: true,
         toolCallThrottling: {
           initialYield: true,
@@ -303,6 +397,10 @@ export class GithubCopilotAdapter extends BaseAdapter {
    * Handles the different event structure from /responses (vs /chat/completions).
    * Modeled after OpenAICodexAdapter.processCodexNodeStream().
    */
+  private isResponsesApiEvent(value: unknown): value is CopilotResponsesApiEvent {
+    return typeof value === 'object' && value !== null;
+  }
+
   private async *processResponsesStream(
     nodeStream: NodeJS.ReadableStream
   ): AsyncGenerator<StreamChunk, void, unknown> {
@@ -330,9 +428,13 @@ export class GithubCopilotAdapter extends BaseAdapter {
         return;
       }
 
-      let event: Record<string, any>;
+      let event: CopilotResponsesApiEvent;
       try {
-        event = JSON.parse(sseEvent.data);
+        const parsed = JSON.parse(sseEvent.data) as unknown;
+        if (!this.isResponsesApiEvent(parsed)) {
+          return;
+        }
+        event = parsed;
       } catch {
         return;
       }
@@ -394,15 +496,26 @@ export class GithubCopilotAdapter extends BaseAdapter {
         parser.feed(text);
 
         while (eventQueue.length > 0) {
-          const evt = eventQueue.shift()!;
-          yield evt;
-          if (evt.complete) { isCompleted = true; break; }
+          const nextEvent = eventQueue.shift();
+          if (!nextEvent) {
+            break;
+          }
+
+          yield nextEvent;
+          if (nextEvent.complete) {
+            isCompleted = true;
+            break;
+          }
         }
       }
 
       // Drain remaining events
       while (eventQueue.length > 0) {
-        yield eventQueue.shift()!;
+        const nextEvent = eventQueue.shift();
+        if (!nextEvent) {
+          break;
+        }
+        yield nextEvent;
       }
 
       if (!isCompleted) {
@@ -414,15 +527,15 @@ export class GithubCopilotAdapter extends BaseAdapter {
     }
   }
 
-  private buildRequestMessages(prompt: string, options?: GenerateOptions): any[] {
+  private buildRequestMessages(prompt: string, options?: GenerateOptions): CopilotRequestMessage[] {
     if (options?.conversationHistory && options.conversationHistory.length > 0) {
-      return options.conversationHistory;
+      return options.conversationHistory as unknown as CopilotRequestMessage[];
     }
 
-    return this.buildMessages(prompt, options?.systemPrompt);
+    return this.buildMessages(prompt, options?.systemPrompt) as unknown as CopilotRequestMessage[];
   }
 
-  private convertTools(tools: Tool[]): any[] {
+  private convertTools(tools: Tool[]): CopilotChatTool[] {
     return tools.map(tool => {
       if (tool.type === 'function' && tool.function) {
         return {

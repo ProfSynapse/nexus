@@ -13,7 +13,6 @@ const WEB_TOOLS_MANIFEST: AppManifest = {
   description: 'Desktop Web Viewer tools for opening webpages and saving them into the vault as Markdown',
   version: '1.0.0',
   author: 'Nexus',
-  docsUrl: 'https://help.obsidian.md/plugins/web-viewer',
   credentials: [],
   validation: {
     mode: 'none',

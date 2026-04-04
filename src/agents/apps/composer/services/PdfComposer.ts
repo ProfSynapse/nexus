@@ -39,7 +39,7 @@ export class PdfComposer implements IFormatComposer {
         sourcePdf = await PDFDocument.load(arrayBuffer, {
           ignoreEncryption: true,
         });
-      } catch (err) {
+      } catch {
         throw new ComposerError(
           `Failed to parse PDF: ${file.path} — file may be corrupted or use unsupported features`,
           [file.path]

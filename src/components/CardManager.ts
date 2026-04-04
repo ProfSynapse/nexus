@@ -28,7 +28,7 @@ export interface CardManagerConfig<T extends CardItem> {
     emptyStateText: string;
     items: T[];
     onAdd?: () => void;
-    onToggle: (item: T, enabled: boolean) => Promise<void>;
+    onToggle: (item: T, enabled: boolean) => void | Promise<void>;
     onEdit: (item: T) => void;
     onDelete?: (item: T) => void;
     showToggle?: boolean;
@@ -66,10 +66,14 @@ export class CardManager<T extends CardItem> {
      */
     private createAddButton(): void {
         const addButtonContainer = this.config.containerEl.createDiv('card-manager-add-button');
+        const onAdd = this.config.onAdd;
+        if (!onAdd) {
+            return;
+        }
         new ButtonComponent(addButtonContainer)
             .setButtonText(this.config.addButtonText ?? '')
             .setCta()
-            .onClick(() => this.config.onAdd!());
+            .onClick(() => onAdd());
     }
 
     /**
@@ -94,21 +98,22 @@ export class CardManager<T extends CardItem> {
     private createCard(item: T): void {
         const showToggle = item.showToggle ?? this.config.showToggle !== false;
         const showEdit = item.showEdit ?? true;
+        const onDelete = this.config.onDelete;
         const cardConfig: CardConfig = {
             title: item.name,
             description: item.description || '',
             isEnabled: item.isEnabled,
             showToggle,
-            onToggle: async (enabled: boolean) => {
+            onToggle: (enabled: boolean) => {
                 // Update the item's enabled state BEFORE calling the callback
                 // This prevents race conditions where refreshCards() uses stale data
                 item.isEnabled = enabled;
-                await this.config.onToggle(item, enabled);
+                void this.config.onToggle(item, enabled);
                 // Don't call refreshCards() - the toggle already reflects the new state
                 // and the item is already updated in place
             },
             onEdit: showEdit ? () => this.config.onEdit(item) : undefined,
-            onDelete: this.config.onDelete ? () => this.config.onDelete!(item) : undefined,
+            onDelete: onDelete ? () => onDelete(item) : undefined,
             additionalActions: item.additionalActions
         };
 

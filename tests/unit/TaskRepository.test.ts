@@ -9,29 +9,58 @@
 
 import { TaskRepository } from '../../src/database/repositories/TaskRepository';
 import { RepositoryDependencies } from '../../src/database/repositories/base/BaseRepository';
+import type { TaskMetadata } from '../../src/database/repositories/interfaces/ITaskRepository';
 
 // ============================================================================
 // Mock Dependencies
 // ============================================================================
 
-function createMockDeps(): RepositoryDependencies {
+type MockRepositoryDependencies = RepositoryDependencies & {
+  sqliteCache: RepositoryDependencies['sqliteCache'] & {
+    queryOne: jest.Mock;
+    query: jest.Mock;
+    run: jest.Mock;
+    transaction: jest.Mock;
+  };
+  jsonlWriter: RepositoryDependencies['jsonlWriter'] & {
+    appendEvent: jest.Mock;
+  };
+  queryCache: RepositoryDependencies['queryCache'] & {
+    cachedQuery: jest.Mock;
+    invalidateByType: jest.Mock;
+    invalidateById: jest.Mock;
+    invalidate: jest.Mock;
+  };
+};
+
+type TaskResult = Awaited<ReturnType<TaskRepository['getById']>>;
+
+function createMockDeps(): MockRepositoryDependencies {
   return {
     sqliteCache: {
       queryOne: jest.fn(),
       query: jest.fn().mockResolvedValue([]),
       run: jest.fn(),
-      transaction: jest.fn((fn: () => Promise<any>) => fn())
-    } as any,
+      transaction: jest.fn((fn: () => Promise<unknown>) => fn())
+    },
     jsonlWriter: {
       appendEvent: jest.fn().mockResolvedValue({ id: 'evt-1', type: 'test', timestamp: Date.now(), deviceId: 'dev-1' })
-    } as any,
+    },
     queryCache: {
-      cachedQuery: jest.fn((_key: string, fn: () => Promise<any>) => fn()),
+      cachedQuery: jest.fn((_key: string, fn: () => Promise<unknown>) => fn()),
       invalidateByType: jest.fn(),
       invalidateById: jest.fn(),
       invalidate: jest.fn()
-    } as any
+    }
   };
+}
+
+function expectTask(result: TaskResult): TaskMetadata {
+  expect(result).not.toBeNull();
+  if (!result) {
+    throw new Error('Expected task');
+  }
+  return result;
 }
 
 const sampleRow = {
@@ -70,12 +99,12 @@ describe('TaskRepository', () => {
       (deps.sqliteCache.queryOne as jest.Mock).mockResolvedValue({ ...sampleRow });
 
       const result = await repo.getById('task-1');
+      const task = expectTask(result);
 
-      expect(result).not.toBeNull();
-      expect(result!.id).toBe('task-1');
-      expect(result!.title).toBe('Test Task');
-      expect(result!.status).toBe('todo');
-      expect(result!.priority).toBe('medium');
+      expect(task.id).toBe('task-1');
+      expect(task.title).toBe('Test Task');
+      expect(task.status).toBe('todo');
+      expect(task.priority).toBe('medium');
     });
 
     it('should return null when not found', async () => {
@@ -92,7 +121,7 @@ describe('TaskRepository', () => {
       });
 
       const result = await repo.getById('task-1');
-      expect(result!.tags).toEqual(['bug', 'urgent']);
+      expect(expectTask(result).tags).toEqual(['bug', 'urgent']);
     });
 
     it('should parse metadataJson', async () => {
@@ -102,7 +131,7 @@ describe('TaskRepository', () => {
       });
 
       const result = await repo.getById('task-1');
-      expect(result!.metadata).toEqual({ priority_score: 42 });
+      expect(expectTask(result).metadata).toEqual({ priority_score: 42 });
     });
 
     it('should handle malformed tagsJson gracefully', async () => {
@@ -112,7 +141,7 @@ describe('TaskRepository', () => {
       });
 
       const result = await repo.getById('task-1');
-      expect(result!.tags).toBeUndefined();
+      expect(expectTask(result).tags).toBeUndefined();
     });
 
     it('should handle malformed metadataJson gracefully', async () => {
@@ -122,18 +151,19 @@ describe('TaskRepository', () => {
       });
 
       const result = await repo.getById('task-1');
-      expect(result!.metadata).toBeUndefined();
+      expect(expectTask(result).metadata).toBeUndefined();
     });
 
     it('should convert null optional fields to undefined', async () => {
       (deps.sqliteCache.queryOne as jest.Mock).mockResolvedValue({ ...sampleRow });
 
       const result = await repo.getById('task-1');
-      expect(result!.parentTaskId).toBeUndefined();
-      expect(result!.description).toBeUndefined();
-      expect(result!.completedAt).toBeUndefined();
-      expect(result!.dueDate).toBeUndefined();
-      expect(result!.assignee).toBeUndefined();
+      const task = expectTask(result);
+      expect(task.parentTaskId).toBeUndefined();
+      expect(task.description).toBeUndefined();
+      expect(task.completedAt).toBeUndefined();
+      expect(task.dueDate).toBeUndefined();
+      expect(task.assignee).toBeUndefined();
     });
   });
 

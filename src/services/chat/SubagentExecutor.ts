@@ -31,6 +31,7 @@ import type {
 import type { BranchService } from './BranchService';
 import type { MessageQueueService } from './MessageQueueService';
 import type { DirectToolExecutor } from './DirectToolExecutor';
+import { formatWorkspaceDataForPrompt } from '../../utils/WorkspaceDataFormatter';
 
 export interface SubagentExecutorDependencies {
   branchService: BranchService;
@@ -129,7 +130,7 @@ export class SubagentExecutor {
     this.events.onSubagentStarted?.(subagentId, params.task, branchId);
 
     // Fire and forget - don't await
-    this.runSubagentLoop(subagentId, branchId, params, abortController.signal)
+    void this.runSubagentLoop(subagentId, branchId, params, abortController.signal)
       .then(result => {
         this.activeSubagents.delete(subagentId);
         this.updateStatus(subagentId, { state: result.success ? 'complete' : 'max_iterations' });
@@ -468,7 +469,7 @@ export class SubagentExecutor {
     const hasPreloadedTools = toolSchemas && toolSchemas.length > 0;
 
     // Start with inherited agent prompt if available
-    let promptParts: string[] = [];
+    const promptParts: string[] = [];
 
     // 1. Add inherited agent persona/prompt if parent had a custom agent selected
     if (params.agentPrompt) {
@@ -558,8 +559,6 @@ BEGIN - Start by calling getTools to discover available tools.`);
    * Uses shared utility for consistency with SystemPromptBuilder
    */
   private formatWorkspaceData(workspaceData: Record<string, unknown>): string {
-    // Import dynamically to avoid circular dependencies
-    const { formatWorkspaceDataForPrompt } = require('../../utils/WorkspaceDataFormatter');
     return formatWorkspaceDataForPrompt(workspaceData, { maxStates: 3 });
   }
 
@@ -668,7 +667,7 @@ BEGIN - Start by calling getTools to discover available tools.`);
       queuedAt: Date.now(),
     };
 
-    this.dependencies.messageQueueService.enqueue(message);
+    void this.dependencies.messageQueueService.enqueue(message);
   }
 
   /**

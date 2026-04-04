@@ -56,7 +56,7 @@ export interface SubagentToolContext {
   agentPrompt?: string;  // Custom agent's full system prompt
   agentName?: string;    // Custom agent name for reference
   // Inherited workspace settings
-  workspaceData?: any;   // Full comprehensive workspace data (sessions, states, files, etc.)
+  workspaceData?: Record<string, unknown>;   // Full comprehensive workspace data (sessions, states, files, etc.)
   // Inherited context notes (file paths - subagent will read content)
   contextNotes?: string[];
   // Inherited thinking settings

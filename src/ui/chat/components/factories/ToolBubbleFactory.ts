@@ -22,6 +22,10 @@ export interface ToolBubbleFactoryOptions {
   component?: Component;
 }
 
+interface MessageBranchNavigatorLike {
+  updateMessage(message: ConversationMessage): void;
+}
+
 export class ToolBubbleFactory {
   /**
    * Create tool bubble containing multiple tool accordions
@@ -90,7 +94,7 @@ export class ToolBubbleFactory {
   static createTextBubble(
     message: ConversationMessage,
     renderContentCallback: (content: HTMLElement, text: string) => Promise<void>,
-    messageBranchNavigator: any | null
+    messageBranchNavigator: MessageBranchNavigatorLike | null
   ): HTMLElement {
     const messageContainer = document.createElement('div');
     messageContainer.addClass('message-container');

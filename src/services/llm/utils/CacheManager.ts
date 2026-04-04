@@ -220,7 +220,7 @@ export class FileCache<T> extends BaseCache<T> {
   constructor(config: Partial<CacheConfig> = {}) {
     super({ ...config, persistToDisk: true });
     this.baseDir = CacheManager.vaultAdapterConfig?.baseDir || config.cacheDir || '.cache';
-    this.initializeCache();
+    void this.initializeCache();
   }
 
   async get(key: string): Promise<T | null> {
@@ -312,8 +312,11 @@ export class FileCache<T> extends BaseCache<T> {
       const exists = await adapter.exists(filePath);
       if (!exists) return null;
       const data = await adapter.read(filePath);
-      const parsed = JSON.parse(data);
-      return parsed.entry;
+      const parsed: unknown = JSON.parse(data);
+      if (isCacheRecord<T>(parsed)) {
+        return parsed.entry;
+      }
+      return null;
     } catch {
       return null;
     }
@@ -383,12 +386,23 @@ export class FileCache<T> extends BaseCache<T> {
   }
 }
 
+function isCacheRecord<T>(value: unknown): value is { key?: string; entry: CacheEntry<T> } {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return false;
+  }
+
+  const entry = (value as { entry?: unknown }).entry;
+  return typeof entry === 'object' && entry !== null && !Array.isArray(entry)
+    && typeof (entry as { timestamp?: unknown }).timestamp === 'number'
+    && typeof (entry as { hits?: unknown }).hits === 'number';
+}
+
 /**
  * CacheManager singleton
  * Manages multiple cache instances and provides centralized configuration
  */
 export class CacheManager {
-  private static instances = new Map<string, BaseCache<any>>();
+  private static instances = new Map<string, BaseCache<unknown>>();
   static vaultAdapterConfig: { adapter: VaultAdapter; baseDir: string } | null = null;
 
   static getLRUCache<T>(name: string, config?: Partial<CacheConfig>): LRUCache<T> {
@@ -423,7 +437,7 @@ export class CacheManager {
    * Configure a vault adapter so cache persistence uses Obsidian API.
    * Must be called before creating file-based caches for disk persistence to work.
    */
-  static configureVaultAdapter(adapter: VaultAdapter, baseDir: string = '.nexus/cache') {
+  static configureVaultAdapter(adapter: VaultAdapter, baseDir = '.nexus/cache'): void {
     this.vaultAdapterConfig = { adapter, baseDir };
   }
 }

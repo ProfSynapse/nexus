@@ -82,7 +82,7 @@ export class CacheEvictionPolicy {
    */
   static getEvictionCandidates(
     cacheGroups: Map<string, Map<string, CachedEntry>>,
-    count: number = 10
+    count = 10
   ): EvictionEntry[] {
     const allEntries: EvictionEntry[] = [];
 

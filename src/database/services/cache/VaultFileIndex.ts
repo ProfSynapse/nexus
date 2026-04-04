@@ -1,4 +1,4 @@
-import { Events, Vault, TFile, TFolder, FileStats, MetadataCache, App, EventRef } from 'obsidian';
+import { Events, Vault, TFile, App, EventRef } from 'obsidian';
 
 export interface IndexedFile {
     path: string;
@@ -12,7 +12,7 @@ export interface IndexedFile {
     isKeyFile: boolean;
     tags?: string[];
     aliases?: string[];
-    frontmatter?: any;
+    frontmatter?: unknown;
     backlinks?: string[];
     forwardLinks?: string[];
 }
@@ -116,10 +116,12 @@ export class VaultFileIndex extends Events {
 
         // Update folder index
         const folderPath = file.parent?.path || '/';
-        if (!this.folderIndex.has(folderPath)) {
-            this.folderIndex.set(folderPath, []);
+        let folderFiles = this.folderIndex.get(folderPath);
+        if (!folderFiles) {
+            folderFiles = [];
+            this.folderIndex.set(folderPath, folderFiles);
         }
-        this.folderIndex.get(folderPath)!.push(file.path);
+        folderFiles.push(file.path);
 
         // Load metadata if requested or if it's a key file
         if (loadMetadata || isKeyFile) {
@@ -140,15 +142,20 @@ export class VaultFileIndex extends Events {
             if (cache) {
                 indexed.frontmatter = cache.frontmatter;
                 indexed.tags = cache.tags?.map((t: { tag: string }) => t.tag) || [];
-                indexed.aliases = cache.frontmatter?.aliases || [];
+                const frontmatter = cache.frontmatter as { aliases?: unknown } | undefined;
+                indexed.aliases = Array.isArray(frontmatter?.aliases)
+                    ? frontmatter.aliases.filter((alias): alias is string => typeof alias === 'string')
+                    : [];
 
                 // Update tag index
                 if (indexed.tags) {
                     indexed.tags.forEach(tag => {
-                        if (!this.tagIndex.has(tag)) {
-                            this.tagIndex.set(tag, []);
+                        let tagFiles = this.tagIndex.get(tag);
+                        if (!tagFiles) {
+                            tagFiles = [];
+                            this.tagIndex.set(tag, tagFiles);
                         }
-                        this.tagIndex.get(tag)!.push(filePath);
+                        tagFiles.push(filePath);
                     });
                 }
 
@@ -343,7 +350,7 @@ export class VaultFileIndex extends Events {
 
         // Listen for metadata changes (tags, frontmatter, links)
         const metadataChangedRef = metadataCache.on('changed', (file: TFile) => {
-            this.handleMetadataChanged(file);
+            void this.handleMetadataChanged(file);
         });
 
         // Listen for resolved metadata (when a file's metadata is fully processed)
@@ -403,9 +410,10 @@ export class VaultFileIndex extends Events {
      */
     cleanup(): void {
         // Remove all metadata event listeners
-        if (this.app?.metadataCache) {
+        const metadataCache = this.app?.metadataCache;
+        if (metadataCache) {
             this.metadataEventRefs.forEach(eventRef => {
-                this.app!.metadataCache.offref(eventRef);
+                metadataCache.offref(eventRef);
             });
         }
         this.metadataEventRefs = [];

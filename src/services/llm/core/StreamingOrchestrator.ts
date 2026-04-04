@@ -12,12 +12,13 @@
 import { IToolExecutor } from '../adapters/shared/ToolExecutionUtils';
 import { LLMProviderSettings } from '../../../types';
 import { IAdapterRegistry } from './AdapterRegistry';
-import { TokenUsage, LLMProviderError } from '../adapters/types';
+import { TokenUsage, LLMProviderError, GenerateOptions } from '../adapters/types';
 import { Notice } from 'obsidian';
 import { ToolCall as ChatToolCall } from '../../../types/chat/ChatTypes';
 import {
   ProviderMessageBuilder,
   ConversationMessage,
+  GenerateOptionsInternal,
   StreamingOptions,
   GoogleMessage
 } from './ProviderMessageBuilder';
@@ -72,6 +73,13 @@ export class StreamingOrchestrator {
     }
   }
 
+  private createAdapterGenerateOptions(options: GenerateOptionsInternal): GenerateOptions {
+    return {
+      ...options,
+      conversationHistory: options.conversationHistory as Array<Record<string, unknown>> | undefined
+    };
+  }
+
   /**
    * Primary method: orchestrate streaming response with tool execution
    * @param messages - Conversation message history
@@ -82,51 +90,51 @@ export class StreamingOrchestrator {
     messages: ConversationMessage[],
     options?: StreamingOptions
   ): AsyncGenerator<StreamYield, void, unknown> {
-    try {
-      // Validate settings
-      if (!this.settings || !this.settings.defaultModel) {
-        throw new Error('LLM service not properly configured - missing settings');
-      }
+    // Validate settings
+    if (!this.settings || !this.settings.defaultModel) {
+      throw new Error('LLM service not properly configured - missing settings');
+    }
 
-      // Determine provider and model
-      const provider = options?.provider || this.settings.defaultModel.provider;
-      const model = options?.model || this.settings.defaultModel.model;
+    // Determine provider and model
+    const provider = options?.provider || this.settings.defaultModel.provider;
+    const model = options?.model || this.settings.defaultModel.model;
 
-      // Get adapter
-      const adapter = this.adapterRegistry.getAdapter(provider);
-      if (!adapter) {
-        const availableProviders = this.adapterRegistry.getAvailableProviders();
-        console.error(`[StreamingOrchestrator] Provider '${provider}' not available. Available providers:`, availableProviders);
-        throw new Error(`Provider not available: ${provider}. Available: [${availableProviders.join(', ')}]`);
-      }
+    // Get adapter
+    const adapter = this.adapterRegistry.getAdapter(provider);
+    if (!adapter) {
+      const availableProviders = this.adapterRegistry.getAvailableProviders();
+      console.error(`[StreamingOrchestrator] Provider '${provider}' not available. Available providers:`, availableProviders);
+      throw new Error(`Provider not available: ${provider}. Available: [${availableProviders.join(', ')}]`);
+    }
 
-      // Build initial options via message builder
-      const { generateOptions, userPrompt } = this.messageBuilder.buildInitialOptions(
-        provider,
-        model,
-        messages,
-        options
-      );
+    // Build initial options via message builder
+    const { generateOptions, userPrompt } = this.messageBuilder.buildInitialOptions(
+      provider,
+      model,
+      messages,
+      options
+    );
 
-      // Store original messages for pingpong context (exclude the last user message)
-      const previousMessages = messages.slice(0, -1);
+    // Store original messages for pingpong context (exclude the last user message)
+    const previousMessages = messages.slice(0, -1);
 
-      // Execute initial stream and detect tool calls
-      let fullContent = '';
-      let detectedToolCalls: ChatToolCall[] = [];
-      let finalUsage: TokenUsage | undefined = undefined;
+    // Execute initial stream and detect tool calls
+    let fullContent = '';
+    let detectedToolCalls: ChatToolCall[] = [];
+    let finalUsage: TokenUsage | undefined = undefined;
 
-      // For Google, pass empty string as prompt since conversation is in conversationHistory
-      const isGoogleModel = provider === 'google';
-      const promptToPass = isGoogleModel ? '' : userPrompt;
+    // For Google, pass empty string as prompt since conversation is in conversationHistory
+    const isGoogleModel = provider === 'google';
+    const promptToPass = isGoogleModel ? '' : userPrompt;
 
-      // Determine the active adapter and provider for streaming.
-      // These may be swapped to a fallback on Codex rate limit (429).
-      let activeAdapter = adapter;
-      let activeProvider = provider;
+    // Determine the active adapter and provider for streaming.
+    // These may be swapped to a fallback on Codex rate limit (429).
+    let activeAdapter = adapter;
+    let activeProvider = provider;
 
       try {
-        for await (const chunk of activeAdapter.generateStreamAsync(promptToPass, generateOptions)) {
+        const adapterGenerateOptions = this.createAdapterGenerateOptions(generateOptions);
+        for await (const chunk of activeAdapter.generateStreamAsync(promptToPass, adapterGenerateOptions)) {
           // Track usage from chunks
           if (chunk.usage) {
             finalUsage = chunk.usage;
@@ -184,83 +192,84 @@ export class StreamingOrchestrator {
             break;
           }
         }
-      } catch (error) {
-        // On Codex 429, fall back to standard OpenAI adapter if available
-        if (
-          error instanceof LLMProviderError &&
-          error.code === 'RATE_LIMIT_ERROR' &&
-          error.provider === 'openai-codex'
-        ) {
-          const fallbackAdapter = this.adapterRegistry.getAdapter('openai');
-          if (fallbackAdapter) {
-            new Notice('ChatGPT rate limit reached — falling back to OpenAI API');
-            activeAdapter = fallbackAdapter;
-            activeProvider = 'openai';
+    } catch (error) {
+      // On Codex 429, fall back to standard OpenAI adapter if available
+      if (
+        error instanceof LLMProviderError &&
+        error.code === 'RATE_LIMIT_ERROR' &&
+        error.provider === 'openai-codex'
+      ) {
+        const fallbackAdapter = this.adapterRegistry.getAdapter('openai');
+        if (fallbackAdapter) {
+          new Notice('Rate limit reached. Falling back to the API.');
+          activeAdapter = fallbackAdapter;
+          activeProvider = 'openai';
 
-            // Reset streaming state for retry
-            fullContent = '';
-            detectedToolCalls = [];
-            finalUsage = undefined;
+          // Reset streaming state for retry
+          fullContent = '';
+          detectedToolCalls = [];
+          finalUsage = undefined;
 
-            for await (const chunk of fallbackAdapter.generateStreamAsync(promptToPass, generateOptions)) {
-              if (chunk.usage) {
-                finalUsage = chunk.usage;
-              }
+          const adapterGenerateOptions = this.createAdapterGenerateOptions(generateOptions);
+          for await (const chunk of fallbackAdapter.generateStreamAsync(promptToPass, adapterGenerateOptions)) {
+            if (chunk.usage) {
+              finalUsage = chunk.usage;
+            }
 
-              if (chunk.content) {
-                fullContent += chunk.content;
-                yield {
-                  chunk: chunk.content,
-                  complete: false,
-                  content: fullContent,
-                  toolCalls: undefined
-                };
-              }
+            if (chunk.content) {
+              fullContent += chunk.content;
+              yield {
+                chunk: chunk.content,
+                complete: false,
+                content: fullContent,
+                toolCalls: undefined
+              };
+            }
 
-              if (chunk.reasoning) {
-                yield {
-                  chunk: '',
-                  complete: false,
-                  content: fullContent,
-                  toolCalls: undefined,
-                  reasoning: chunk.reasoning,
-                  reasoningComplete: chunk.reasoningComplete
-                };
-              }
+            if (chunk.reasoning) {
+              yield {
+                chunk: '',
+                complete: false,
+                content: fullContent,
+                toolCalls: undefined,
+                reasoning: chunk.reasoning,
+                reasoningComplete: chunk.reasoningComplete
+              };
+            }
 
-              if (chunk.toolCalls) {
-                const chatToolCalls: ChatToolCall[] = chunk.toolCalls.map(tc => ({
-                  ...tc,
-                  type: tc.type || 'function',
-                  function: tc.function || { name: '', arguments: '{}' }
-                }));
+            if (chunk.toolCalls) {
+              const chatToolCalls: ChatToolCall[] = chunk.toolCalls.map(tc => ({
+                ...tc,
+                type: tc.type || 'function',
+                function: tc.function || { name: '', arguments: '{}' }
+              }));
 
-                yield {
-                  chunk: '',
-                  complete: false,
-                  content: fullContent,
-                  toolCalls: chatToolCalls,
-                  toolCallsReady: chunk.complete || false
-                };
-
-                if (chunk.complete) {
-                  detectedToolCalls = chatToolCalls;
-                }
-              }
+              yield {
+                chunk: '',
+                complete: false,
+                content: fullContent,
+                toolCalls: chatToolCalls,
+                toolCallsReady: chunk.complete || false
+              };
 
               if (chunk.complete) {
-                this.persistLatestResponseId(activeProvider, chunk, options);
-                break;
+                detectedToolCalls = chatToolCalls;
               }
             }
-          } else {
-            // No fallback available — re-throw original error
-            throw error;
+
+            if (chunk.complete) {
+              this.persistLatestResponseId(activeProvider, chunk, options);
+              break;
+            }
           }
         } else {
+          // No fallback available — re-throw original error
           throw error;
         }
+      } else {
+        throw error;
       }
+    }
 
       // If no tool calls detected, we're done
       if (detectedToolCalls.length === 0 || !generateOptions.tools || generateOptions.tools.length === 0) {
@@ -293,7 +302,7 @@ export class StreamingOrchestrator {
       }
 
       // Tool calls detected - delegate to ToolContinuationService
-      yield* this.toolContinuation.executeToolsAndContinue(
+    yield* this.toolContinuation.executeToolsAndContinue(
         activeAdapter,
         activeProvider,
         detectedToolCalls,
@@ -303,9 +312,5 @@ export class StreamingOrchestrator {
         options,
         finalUsage
       );
-
-    } catch (error) {
-      throw error;
-    }
   }
 }

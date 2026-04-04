@@ -66,32 +66,35 @@ export class Card {
     
     // Toggle switch using Obsidian's ToggleComponent (only if showToggle is true)
     if (this.config.showToggle && this.config.onToggle) {
+      const onToggle = this.config.onToggle;
       const toggleContainer = actionsEl.createDiv('agent-management-toggle');
       new ToggleComponent(toggleContainer)
         .setValue(this.config.isEnabled || false)
         .onChange(async (value) => {
           this.config.isEnabled = value;
-          this.config.onToggle!(value);
+          onToggle(value);
         });
     }
     
     if (this.config.onEdit) {
+      const onEdit = this.config.onEdit;
       const editBtn = actionsEl.createEl('button', {
         cls: 'clickable-icon agent-management-edit-btn',
         attr: { 'aria-label': 'Edit' }
       });
       setIcon(editBtn, 'edit');
-      const editHandler = () => this.config.onEdit!();
+      const editHandler = () => onEdit();
       this.safeRegisterDomEvent(editBtn, 'click', editHandler);
     }
 
     if (this.config.onDelete) {
+      const onDelete = this.config.onDelete;
       const deleteBtn = actionsEl.createEl('button', {
         cls: 'clickable-icon agent-management-delete-btn',
         attr: { 'aria-label': 'Delete' }
       });
       setIcon(deleteBtn, 'trash');
-      const deleteHandler = () => this.config.onDelete!();
+      const deleteHandler = () => onDelete();
       this.safeRegisterDomEvent(deleteBtn, 'click', deleteHandler);
     }
 

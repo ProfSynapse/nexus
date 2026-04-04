@@ -59,6 +59,10 @@ import { TaskRepository } from '../repositories/TaskRepository';
 // Import services
 import { ExportService } from '../services/ExportService';
 
+type ExportServiceStateRepo = {
+  getStates(workspaceId: string, sessionId: string | undefined, options?: { pageSize?: number }): Promise<{ items: StateData[] }>;
+};
+
 /**
  * Configuration options for HybridStorageAdapter
  */
@@ -160,7 +164,7 @@ export class HybridStorageAdapter implements IStorageAdapter {
       messageRepo: this.messageRepo,
       workspaceRepo: this.workspaceRepo,
       sessionRepo: this.sessionRepo,
-      stateRepo: this.stateRepo,
+      stateRepo: this.stateRepo as unknown as ExportServiceStateRepo,
       traceRepo: this.traceRepo
     });
   }
@@ -195,8 +199,8 @@ export class HybridStorageAdapter implements IStorageAdapter {
     });
 
     // Start initialization in background
-    this.performInitialization().catch(error => {
-      this.initError = error;
+    this.performInitialization().catch((error: unknown) => {
+      this.initError = error instanceof Error ? error : new Error(String(error));
       console.error('[HybridStorageAdapter] Background initialization failed:', error);
     });
 

@@ -1,5 +1,20 @@
-import { Platform } from 'obsidian';
+import { App, Plugin, Platform } from 'obsidian';
 import { ClaudeHeadlessService } from '../../src/services/external/ClaudeHeadlessService';
+
+type ClaudeHeadlessServiceWithRunProcess = ClaudeHeadlessService & {
+  runProcess: (
+    command: string,
+    args: string[],
+    cwd?: string,
+    env?: NodeJS.ProcessEnv,
+    stdinText?: string
+  ) => Promise<{
+    stdout: string;
+    stderr: string;
+    exitCode: number | null;
+    errorCode?: string;
+  }>;
+};
 
 describe('ClaudeHeadlessService', () => {
   let service: ClaudeHeadlessService;
@@ -12,12 +27,12 @@ describe('ClaudeHeadlessService', () => {
         vault: {
           getName: () => 'Test Vault'
         }
-      } as any,
+      } as unknown as App,
       {
         manifest: {
           dir: '/mock/.obsidian/plugins/claudesidian-mcp'
         }
-      } as any
+      } as unknown as Plugin
     );
   });
 
@@ -35,7 +50,7 @@ describe('ClaudeHeadlessService', () => {
       authStatusText: 'Authenticated'
     });
 
-    const runProcess = jest.spyOn(service as any, 'runProcess').mockImplementation(
+    const runProcess = jest.spyOn(service as ClaudeHeadlessServiceWithRunProcess, 'runProcess').mockImplementation(
       async (_command: string, args: string[], cwd?: string, _env?: NodeJS.ProcessEnv, stdinText?: string) => {
         expect(args).toEqual([
           '-p',
@@ -90,7 +105,7 @@ describe('ClaudeHeadlessService', () => {
       authStatusText: 'Authenticated'
     });
 
-    jest.spyOn(service as any, 'runProcess').mockResolvedValue({
+    jest.spyOn(service as ClaudeHeadlessServiceWithRunProcess, 'runProcess').mockResolvedValue({
       stdout: '',
       stderr: 'spawn E2BIG',
       exitCode: null,
@@ -120,7 +135,7 @@ describe('ClaudeHeadlessService', () => {
       authStatusText: 'Authenticated'
     });
 
-    const runProcess = jest.spyOn(service as any, 'runProcess');
+    const runProcess = jest.spyOn(service as ClaudeHeadlessServiceWithRunProcess, 'runProcess');
 
     const result = await service.run({
       prompt: 'Summarize the regression',

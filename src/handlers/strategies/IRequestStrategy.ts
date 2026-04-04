@@ -1,4 +1,4 @@
-export interface IRequestStrategy<TRequest = any, TResponse = any> {
+export interface IRequestStrategy<TRequest = unknown, TResponse = unknown> {
     canHandle(request: TRequest): boolean;
     handle(request: TRequest): Promise<TResponse>;
 }

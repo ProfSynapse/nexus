@@ -20,17 +20,17 @@ function createMockDeps(): RepositoryDependencies {
       queryOne: jest.fn(),
       query: jest.fn(),
       run: jest.fn(),
-      transaction: jest.fn((fn: () => Promise<any>) => fn())
-    } as any,
+      transaction: jest.fn((fn: () => Promise<unknown>) => fn())
+    } as unknown as RepositoryDependencies['sqliteCache'],
     jsonlWriter: {
       appendEvent: jest.fn().mockResolvedValue({ id: 'evt-1', type: 'test', timestamp: Date.now(), deviceId: 'dev-1' })
-    } as any,
+    } as unknown as RepositoryDependencies['jsonlWriter'],
     queryCache: {
-      cachedQuery: jest.fn((_key: string, fn: () => Promise<any>) => fn()),
+      cachedQuery: jest.fn((_key: string, fn: () => Promise<unknown>) => fn()),
       invalidateByType: jest.fn(),
       invalidateById: jest.fn(),
       invalidate: jest.fn()
-    } as any
+    } as unknown as RepositoryDependencies['queryCache']
   };
 }
 
@@ -63,9 +63,9 @@ describe('ProjectRepository', () => {
       const result = await repo.getById('proj-1');
 
       expect(result).not.toBeNull();
-      expect(result!.id).toBe('proj-1');
-      expect(result!.name).toBe('Test');
-      expect(result!.status).toBe('active');
+      expect(result?.id).toBe('proj-1');
+      expect(result?.name).toBe('Test');
+      expect(result?.status).toBe('active');
     });
 
     it('should return null when not found', async () => {
@@ -88,7 +88,7 @@ describe('ProjectRepository', () => {
       });
 
       const result = await repo.getById('proj-1');
-      expect(result!.metadata).toEqual({ color: 'blue' });
+      expect(result?.metadata).toEqual({ color: 'blue' });
     });
 
     it('should handle malformed metadataJson gracefully', async () => {
@@ -104,7 +104,7 @@ describe('ProjectRepository', () => {
       });
 
       const result = await repo.getById('proj-1');
-      expect(result!.metadata).toBeUndefined();
+      expect(result?.metadata).toBeUndefined();
     });
 
     it('should use query cache', async () => {
@@ -226,7 +226,7 @@ describe('ProjectRepository', () => {
     beforeEach(() => {
       // Mock getById (used internally by update to get workspaceId)
       (deps.queryCache.cachedQuery as jest.Mock).mockImplementation(
-        (_key: string, fn: () => Promise<any>) => fn()
+        (_key: string, fn: () => Promise<unknown>) => fn()
       );
       (deps.sqliteCache.queryOne as jest.Mock).mockResolvedValue({
         id: 'proj-1',
@@ -285,7 +285,7 @@ describe('ProjectRepository', () => {
   describe('delete', () => {
     beforeEach(() => {
       (deps.queryCache.cachedQuery as jest.Mock).mockImplementation(
-        (_key: string, fn: () => Promise<any>) => fn()
+        (_key: string, fn: () => Promise<unknown>) => fn()
       );
       (deps.sqliteCache.queryOne as jest.Mock).mockResolvedValue({
         id: 'proj-1',
@@ -411,7 +411,7 @@ describe('ProjectRepository', () => {
       const result = await repo.getByName('ws-1', 'Target');
 
       expect(result).not.toBeNull();
-      expect(result!.name).toBe('Target');
+      expect(result?.name).toBe('Target');
     });
 
     it('should return null when not found', async () => {
@@ -434,7 +434,7 @@ describe('ProjectRepository', () => {
       });
 
       const result = await repo.getById('p1');
-      expect(result!.description).toBeUndefined();
+      expect(result?.description).toBeUndefined();
     });
 
     it('should handle null metadata', async () => {
@@ -444,7 +444,7 @@ describe('ProjectRepository', () => {
       });
 
       const result = await repo.getById('p1');
-      expect(result!.metadata).toBeUndefined();
+      expect(result?.metadata).toBeUndefined();
     });
   });
 

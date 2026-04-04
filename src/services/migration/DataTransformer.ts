@@ -3,9 +3,83 @@
 // Used by: DataMigrationService to convert legacy data to split-file architecture
 // Dependencies: ChromaDataLoader for source data, StorageTypes for target structure
 
-import { IndividualConversation, IndividualWorkspace, MemoryTrace, StateData } from '../../types/storage/StorageTypes';
+import { IndividualConversation, IndividualWorkspace, MemoryTrace, StateData, ConversationMessage, ToolCall } from '../../types/storage/StorageTypes';
+import type { WorkspaceState } from '../../database/types/session/SessionTypes';
 import { ChromaCollectionData } from './ChromaDataLoader';
 import { normalizeLegacyTraceMetadata } from '../memory/LegacyTraceMetadataNormalizer';
+
+type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
+
+interface LegacyMetadata extends Record<string, unknown> {
+  conversation?: {
+    title?: string;
+    created?: number;
+    updated?: number;
+    vault_name?: string;
+    messages?: LegacyMessage[];
+  };
+  title?: string;
+  created?: number;
+  updated?: number;
+  vault_name?: string;
+  workspaceId?: string;
+  sessionId?: string;
+  name?: string;
+  description?: string;
+  rootFolder?: string;
+  lastAccessed?: number;
+  isActive?: boolean;
+  startTime?: number;
+  endTime?: number;
+  context?: string;
+  timestamp?: number;
+  activityType?: string;
+  type?: string;
+  params?: string;
+  result?: string;
+  relatedFiles?: string;
+  snapshot?: Record<string, unknown>;
+}
+
+interface LegacyDocument extends Record<string, unknown> {
+  content?: string;
+  timestamp?: number;
+}
+
+interface LegacyMessage extends Record<string, unknown> {
+  id?: string;
+  role?: string;
+  content?: string;
+  timestamp?: number;
+  toolCalls?: unknown;
+  toolName?: string;
+  toolParams?: unknown;
+  toolResult?: unknown;
+}
+
+interface LegacyRecord extends Record<string, unknown> {
+  id: string;
+  metadata?: LegacyMetadata;
+  document?: LegacyDocument;
+  content?: string;
+  snapshot?: Record<string, unknown>;
+}
+
+interface LegacyWorkspaceContextMigration extends Record<string, unknown> {
+  agents?: Array<{
+    id?: string;
+    name?: string;
+  }>;
+  keyFiles?: Array<{
+    files?: Record<string, unknown>;
+  }> | string[];
+  preferences?: unknown[] | string;
+  status?: unknown;
+  dedicatedAgent?: {
+    agentId?: string;
+    agentName?: string;
+  };
+}
 
 export class DataTransformer {
 
@@ -13,17 +87,17 @@ export class DataTransformer {
     conversations: IndividualConversation[];
     workspaces: IndividualWorkspace[];
   } {
-    const conversations = this.transformConversations(chromaData.conversations);
+    const conversations = this.transformConversations(chromaData.conversations as LegacyRecord[]);
     const workspaces = this.transformWorkspaceHierarchy(
-      chromaData.workspaces,
-      chromaData.sessions,
-      chromaData.memoryTraces,
-      chromaData.snapshots
+      chromaData.workspaces as LegacyRecord[],
+      chromaData.sessions as LegacyRecord[],
+      chromaData.memoryTraces as LegacyRecord[],
+      chromaData.snapshots as LegacyRecord[]
     );
     return { conversations, workspaces };
   }
 
-  private transformConversations(conversations: any[]): IndividualConversation[] {
+  private transformConversations(conversations: LegacyRecord[]): IndividualConversation[] {
     const result: IndividualConversation[] = [];
 
     for (const conv of conversations) {
@@ -50,26 +124,26 @@ export class DataTransformer {
     return result;
   }
 
-  private transformMessages(messages: any[]): any[] {
+  private transformMessages(messages: LegacyMessage[]): ConversationMessage[] {
     if (!Array.isArray(messages)) return [];
 
     return messages.map(msg => ({
-      id: msg.id || `msg_${Date.now()}_${Math.random().toString(36).substr(2, 8)}`,
-      role: msg.role || 'user',
+      id: msg.id || `msg_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
+      role: this.normalizeConversationRole(msg.role),
       content: msg.content || '',
       timestamp: msg.timestamp || Date.now(),
-      toolCalls: msg.toolCalls,
+      toolCalls: Array.isArray(msg.toolCalls) ? (msg.toolCalls as ToolCall[]) : undefined,
       toolName: msg.toolName,
-      toolParams: msg.toolParams,
+      toolParams: this.toRecord(msg.toolParams),
       toolResult: msg.toolResult
     }));
   }
 
   private transformWorkspaceHierarchy(
-    workspaces: any[],
-    sessions: any[],
-    memoryTraces: any[],
-    snapshots: any[]
+    workspaces: LegacyRecord[],
+    sessions: LegacyRecord[],
+    memoryTraces: LegacyRecord[],
+    snapshots: LegacyRecord[]
   ): IndividualWorkspace[] {
     // Group data by relationships
     const sessionsByWorkspace = this.groupBy(sessions, s => s.metadata?.workspaceId || 'unknown');
@@ -102,7 +176,7 @@ export class DataTransformer {
           created: wsMetadata?.metadata?.created || Date.now(),
           lastAccessed: wsMetadata?.metadata?.lastAccessed || Date.now(),
           isActive: wsMetadata?.metadata?.isActive ?? true,
-          context,
+          context: context as IndividualWorkspace['context'],
           sessions: {}
         };
 
@@ -132,13 +206,16 @@ export class DataTransformer {
     return result;
   }
 
-  private transformTraces(traces: any[], workspaceId: string, sessionId: string): Record<string, MemoryTrace> {
+  private transformTraces(traces: LegacyRecord[], workspaceId: string, sessionId: string): Record<string, MemoryTrace> {
     const result: Record<string, MemoryTrace> = {};
 
     for (const trace of traces) {
       try {
         // Extract content from either document.content or direct content
-        const content = trace.document?.content || trace.content || trace.metadata?.content || '';
+        const content = this.getStringValue(trace.document?.content) ||
+          this.getStringValue(trace.content) ||
+          this.getStringValue((trace.metadata as Record<string, unknown> | undefined)?.content) ||
+          '';
         const legacyParams = this.parseJSONString(trace.metadata?.params);
         const legacyResult = this.parseJSONString(trace.metadata?.result);
         const legacyFiles = this.parseJSONString(trace.metadata?.relatedFiles) || [];
@@ -171,7 +248,7 @@ export class DataTransformer {
     return result;
   }
 
-  private transformStates(states: any[]): Record<string, StateData> {
+  private transformStates(states: LegacyRecord[]): Record<string, StateData> {
     const result: Record<string, StateData> = {};
 
     for (const state of states) {
@@ -180,7 +257,7 @@ export class DataTransformer {
           id: state.id,
           name: state.metadata?.name || 'Unnamed State',
           created: state.metadata?.created || Date.now(),
-          state: state.metadata?.snapshot || state.snapshot || {}
+          state: (state.metadata?.snapshot || state.snapshot || {}) as unknown as WorkspaceState
         };
       } catch (error) {
         console.error(`[DataTransformer] Error transforming state ${state.id}:`, error);
@@ -208,12 +285,12 @@ export class DataTransformer {
     }, {} as Record<string, T>);
   }
 
-  private parseJSONString(str: string | undefined): any {
+  private parseJSONString(str: string | undefined): JsonValue | string | undefined {
     if (!str) return undefined;
     if (typeof str !== 'string') return str;
 
     try {
-      return JSON.parse(str);
+      return JSON.parse(str) as JsonValue;
     } catch {
       return str;
     }
@@ -222,16 +299,17 @@ export class DataTransformer {
   /**
    * Migrate workspace context from old structure to new structure
    */
-  private migrateWorkspaceContext(context: any): any {
+  private migrateWorkspaceContext(context: unknown): unknown {
     if (!context || typeof context !== 'object') {
       return context;
     }
 
-    const migratedContext = { ...context };
+    const legacyContext = context as LegacyWorkspaceContextMigration;
+    const migratedContext: LegacyWorkspaceContextMigration = { ...legacyContext };
 
     // Migrate agents array to dedicatedAgent
-    if (context.agents && Array.isArray(context.agents) && context.agents.length > 0) {
-      const firstAgent = context.agents[0];
+    if (legacyContext.agents && Array.isArray(legacyContext.agents) && legacyContext.agents.length > 0) {
+      const firstAgent = legacyContext.agents[0];
       if (firstAgent && firstAgent.name) {
         migratedContext.dedicatedAgent = {
           agentId: firstAgent.id || firstAgent.name,
@@ -242,33 +320,56 @@ export class DataTransformer {
     }
 
     // Migrate keyFiles from complex categorized structure to simple array
-    if (context.keyFiles && Array.isArray(context.keyFiles)) {
+    if (legacyContext.keyFiles && Array.isArray(legacyContext.keyFiles)) {
       const simpleKeyFiles: string[] = [];
-      context.keyFiles.forEach((category: any) => {
-        if (category.files && typeof category.files === 'object') {
-          Object.values(category.files).forEach((filePath: any) => {
-            if (typeof filePath === 'string') {
-              simpleKeyFiles.push(filePath);
-            }
-          });
+      legacyContext.keyFiles.forEach((category) => {
+        if (typeof category === 'string') {
+          simpleKeyFiles.push(category);
+          return;
+        }
+
+        if (category && typeof category === 'object' && 'files' in category) {
+          const categoryRecord = category as { files?: Record<string, unknown> };
+          if (categoryRecord.files && typeof categoryRecord.files === 'object') {
+            Object.values(categoryRecord.files).forEach((filePath: unknown) => {
+              if (typeof filePath === 'string') {
+                simpleKeyFiles.push(filePath);
+              }
+            });
+          }
         }
       });
       migratedContext.keyFiles = simpleKeyFiles;
     }
 
     // Migrate preferences from array to string
-    if (context.preferences && Array.isArray(context.preferences)) {
-      const preferencesString = context.preferences
-        .filter((pref: any) => typeof pref === 'string' && pref.trim())
-        .join('. ') + (context.preferences.length > 0 ? '.' : '');
+    if (legacyContext.preferences && Array.isArray(legacyContext.preferences)) {
+      const preferencesString = legacyContext.preferences
+        .filter((pref: unknown): pref is string => typeof pref === 'string' && pref.trim().length > 0)
+        .join('. ') + (legacyContext.preferences.length > 0 ? '.' : '');
       migratedContext.preferences = preferencesString;
     }
 
     // Remove status field
-    if (context.status) {
+    if (legacyContext.status) {
       delete migratedContext.status;
     }
 
     return migratedContext;
+  }
+
+  private getStringValue(value: unknown): string | undefined {
+    return typeof value === 'string' ? value : undefined;
+  }
+
+  private normalizeConversationRole(role: string | undefined): 'user' | 'assistant' | 'tool' {
+    return role === 'assistant' || role === 'tool' ? role : 'user';
+  }
+
+  private toRecord(value: unknown): Record<string, unknown> | undefined {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return undefined;
+    }
+    return value as Record<string, unknown>;
   }
 }

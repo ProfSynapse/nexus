@@ -119,7 +119,7 @@ export class TaskEventApplier {
     if (!event.projectId) return;
 
     const updates: string[] = [];
-    const values: any[] = [];
+    const values: unknown[] = [];
 
     if (event.data.name !== undefined) { updates.push('name = ?'); values.push(event.data.name); }
     if (event.data.description !== undefined) { updates.push('description = ?'); values.push(event.data.description); }
@@ -179,7 +179,7 @@ export class TaskEventApplier {
     if (!event.taskId) return;
 
     const updates: string[] = [];
-    const values: any[] = [];
+    const values: unknown[] = [];
 
     if (event.data.projectId !== undefined) { updates.push('projectId = ?'); values.push(event.data.projectId); }
     if (event.data.parentTaskId !== undefined) { updates.push('parentTaskId = ?'); values.push(event.data.parentTaskId); }

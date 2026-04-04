@@ -10,7 +10,6 @@ import {
   EditorSuggestContext,
   WorkspaceSuggestionItem,
   WorkspaceReference,
-  EnhancementType
 } from './base/SuggesterInterfaces';
 import { MessageEnhancer } from '../../services/MessageEnhancer';
 import { WorkspaceService } from '../../../../services/WorkspaceService';
@@ -130,7 +129,7 @@ export class WorkspaceSuggester extends BaseSuggester<WorkspaceSuggestionItem> {
    */
   selectSuggestion(
     item: SuggestionItem<WorkspaceSuggestionItem>,
-    evt: MouseEvent | KeyboardEvent
+    _evt: MouseEvent | KeyboardEvent
   ): void {
 
     const context = this.context;
@@ -201,7 +200,7 @@ export class WorkspaceSuggester extends BaseSuggester<WorkspaceSuggestionItem> {
    * @param item - Workspace suggestion item
    * @returns Estimated token count (0 for workspace references)
    */
-  protected estimateItemTokens(item: WorkspaceSuggestionItem): number {
+  protected estimateItemTokens(_item: WorkspaceSuggestionItem): number {
     // Workspace references don't directly add tokens until context is loaded
     // Token estimation will happen when the full workspace is loaded
     return 0;

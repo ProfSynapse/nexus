@@ -44,12 +44,16 @@ export class UsageTracker {
     
     constructor(
         private usageType: UsageType,
-        private settings: any
+        private settings: Record<string, unknown>
     ) {
         this.storageKeyPrefix = `nexus-usage-${usageType}`;
         this.budgetKey = `nexus-budget-${usageType}`;
         this.legacyStorageKeys = [`claudesidian-usage-${usageType}`];
         this.legacyBudgetKeys = [`claudesidian-budget-${usageType}`];
+    }
+
+    private getLocalStorage(): Storage | null {
+        return typeof globalThis.localStorage === 'undefined' ? null : globalThis.localStorage;
     }
 
     /**
@@ -131,12 +135,14 @@ export class UsageTracker {
      * Set monthly budget
      */
     setMonthlyBudget(budget: number): void {
-        if (typeof localStorage === 'undefined') return;
+        const storage = this.getLocalStorage();
+        if (!storage) return;
         
         try {
-            localStorage.setItem(this.budgetKey, budget.toString());
+            storage.setItem(this.budgetKey, budget.toString());
             this.cleanupLegacyKeys(this.legacyBudgetKeys);
-        } catch (error) {
+        } catch {
+            return;
         }
     }
 
@@ -144,12 +150,13 @@ export class UsageTracker {
      * Get monthly budget
      */
     getMonthlyBudget(): number {
-        if (typeof localStorage === 'undefined') return 0;
+        const storage = this.getLocalStorage();
+        if (!storage) return 0;
         
         try {
             const budget = this.getWithLegacyKeys(this.budgetKey, this.legacyBudgetKeys);
             return budget ? parseFloat(budget) : 0;
-        } catch (error) {
+        } catch {
             return 0;
         }
     }
@@ -167,7 +174,8 @@ export class UsageTracker {
             lastUpdated: new Date().toISOString()
         };
 
-        if (typeof localStorage === 'undefined') {
+        const storage = this.getLocalStorage();
+        if (!storage) {
             return defaultData;
         }
 
@@ -175,18 +183,23 @@ export class UsageTracker {
             const stored = this.getWithLegacyKeys(this.storageKeyPrefix, this.legacyStorageKeys);
             if (!stored) return defaultData;
 
-            const parsed = JSON.parse(stored) as UsageData;
-            
+            const parsed: unknown = JSON.parse(stored);
+            if (!parsed || typeof parsed !== 'object') {
+                return defaultData;
+            }
+
+            const usage = parsed as Partial<UsageData>;
+
             // Ensure all required fields exist
             return {
-                monthly: parsed.monthly || {},
-                allTime: parsed.allTime || {},
-                monthlyTotal: parsed.monthlyTotal || 0,
-                allTimeTotal: parsed.allTimeTotal || 0,
-                currentMonth: parsed.currentMonth || this.getCurrentMonthKey(),
-                lastUpdated: parsed.lastUpdated || new Date().toISOString()
+                monthly: usage.monthly || {},
+                allTime: usage.allTime || {},
+                monthlyTotal: usage.monthlyTotal || 0,
+                allTimeTotal: usage.allTimeTotal || 0,
+                currentMonth: usage.currentMonth || this.getCurrentMonthKey(),
+                lastUpdated: usage.lastUpdated || new Date().toISOString()
             };
-        } catch (error) {
+        } catch {
             return defaultData;
         }
     }
@@ -195,30 +208,34 @@ export class UsageTracker {
      * Save usage data to storage
      */
     private async saveUsageData(data: UsageData): Promise<void> {
-        if (typeof localStorage === 'undefined') return;
+        const storage = this.getLocalStorage();
+        if (!storage) return;
 
         try {
-            localStorage.setItem(this.storageKeyPrefix, JSON.stringify(data));
+            storage.setItem(this.storageKeyPrefix, JSON.stringify(data));
             this.cleanupLegacyKeys(this.legacyStorageKeys);
-        } catch (error) {
+        } catch {
+            return;
         }
     }
 
     private getWithLegacyKeys(primaryKey: string, legacyKeys: string[]): string | null {
-        if (typeof localStorage === 'undefined') return null;
+        const storage = this.getLocalStorage();
+        if (!storage) return null;
 
-        const primaryValue = localStorage.getItem(primaryKey);
+        const primaryValue = storage.getItem(primaryKey);
         if (primaryValue) {
             return primaryValue;
         }
 
         for (const key of legacyKeys) {
-            const legacyValue = localStorage.getItem(key);
+            const legacyValue = storage.getItem(key);
             if (legacyValue) {
                 try {
-                    localStorage.setItem(primaryKey, legacyValue);
+                    storage.setItem(primaryKey, legacyValue);
                     this.cleanupLegacyKeys(legacyKeys);
-                } catch (error) {
+                } catch {
+                    return legacyValue;
                 }
                 return legacyValue;
             }
@@ -228,11 +245,12 @@ export class UsageTracker {
     }
 
     private cleanupLegacyKeys(keys: string[]): void {
-        if (typeof localStorage === 'undefined') return;
+        const storage = this.getLocalStorage();
+        if (!storage) return;
 
         for (const key of keys) {
             try {
-                localStorage.removeItem(key);
+                storage.removeItem(key);
             } catch {
                 // Ignore cleanup errors
             }

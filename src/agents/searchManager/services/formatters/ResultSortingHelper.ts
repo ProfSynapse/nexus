@@ -10,8 +10,7 @@
 
 import {
   MemorySearchResult,
-  MemorySortOption,
-  MemoryType
+  MemorySortOption
 } from '../../../../types/memory/MemorySearchTypes';
 
 /**
@@ -30,11 +29,12 @@ export class ResultSortingHelper {
           comparison = b.score - a.score;
           break;
 
-        case 'timestamp':
+        case 'timestamp': {
           const aTime = new Date(a.metadata.created).getTime();
           const bTime = new Date(b.metadata.created).getTime();
           comparison = bTime - aTime;
           break;
+        }
 
         case 'relevance':
           comparison = this.compareRelevance(a, b);
@@ -57,8 +57,8 @@ export class ResultSortingHelper {
     let bRelevance = b.score;
 
     // Boost tool call results
-    if (a.type === MemoryType.TOOL_CALL) aRelevance += 0.1;
-    if (b.type === MemoryType.TOOL_CALL) bRelevance += 0.1;
+    if (a.type === 'toolCall') aRelevance += 0.1;
+    if (b.type === 'toolCall') bRelevance += 0.1;
 
     // Boost recent results
     const aTime = new Date(a.metadata.created).getTime();

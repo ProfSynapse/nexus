@@ -9,7 +9,7 @@
 import { App } from 'obsidian';
 import { MemoryService } from "./MemoryService";
 import { WorkspaceService } from "../../../services/WorkspaceService";
-import { StateValidator } from '../validators/StateValidator';
+import { StateValidator, type StateCreationParams } from '../validators/StateValidator';
 import { ValidationError } from '../validators/ValidationTypes';
 import {
   ServiceAccessor,
@@ -69,7 +69,7 @@ export class ValidationService {
   /**
    * Validate state creation parameters
    */
-  validateStateCreationParams(params: any): ValidationError[] {
+  validateStateCreationParams(params: StateCreationParams): ValidationError[] {
     return StateValidator.validateCreationParams(params);
   }
 

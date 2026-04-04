@@ -42,7 +42,7 @@ export class DefaultsTab {
     this.router = router;
     this.services = services;
 
-    this.loadDataAndRender();
+    void this.loadDataAndRender();
   }
 
   /**
@@ -186,7 +186,9 @@ export class DefaultsTab {
       initialSettings: this.getCurrentSettings(),
       options: { workspaces, prompts },
       callbacks: {
-        onSettingsChange: (settings) => this.saveSettings(settings)
+        onSettingsChange: (settings) => {
+          void this.saveSettings(settings);
+        }
       }
     });
 
@@ -213,7 +215,7 @@ export class DefaultsTab {
 
       new Setting(embeddingsContent)
         .setName('Enable')
-        .setDesc('Local AI for semantic search (~23MB download). Restart to apply.')
+        .setDesc('Local embeddings for semantic search (~23 megabytes download). Restart to apply.')
         .addToggle(toggle => {
           toggle
             .setValue(this.services.settings.settings.enableEmbeddings ?? true)
@@ -313,11 +315,11 @@ export class DefaultsTab {
 
     new Setting(ingestionSettingsContainer)
       .setName('Default PDF mode')
-      .setDesc('Text extraction is free. Vision OCR uses an LLM for scanned documents.')
+      .setDesc('Text extraction is free. Vision scan uses a model for scanned documents.')
       .addDropdown(dropdown => {
         dropdown
           .addOption('text', 'Text extraction')
-          .addOption('vision', 'Vision OCR')
+          .addOption('vision', 'Vision scan')
           .setValue(llmSettings.defaultPdfMode || 'text')
           .onChange(async (value) => {
             llmSettings.defaultPdfMode = value as 'text' | 'vision';
@@ -421,8 +423,9 @@ export class DefaultsTab {
         return;
       }
 
+      const currentModelDropdown = modelDropdown;
       provider.models.forEach(model => {
-        modelDropdown!.createEl('option', {
+        currentModelDropdown.createEl('option', {
           value: model.id,
           text: model.name
         });

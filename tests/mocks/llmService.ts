@@ -107,7 +107,7 @@ export function createMockLLMService(config?: Partial<MockStreamConfig>): jest.M
 
     getAvailableProviders: jest.fn(() => ['openai', 'anthropic']),
 
-    waitForInit: jest.fn(async () => {}),
+    waitForInit: jest.fn(async () => undefined),
 
     dispose: jest.fn(),
 
@@ -172,6 +172,7 @@ export function createTimeoutMock(timeoutMs: number): jest.Mocked<LLMService> {
     await new Promise((_, reject) =>
       setTimeout(() => reject(new Error('Request timeout')), timeoutMs)
     );
+    yield undefined;
   }) as unknown as jest.Mock;
   return mockService;
 }

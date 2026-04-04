@@ -2,7 +2,6 @@ import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import { IToolExecutionService, ToolExecutionResult } from '../interfaces/IRequestHandlerServices';
 import { IAgent } from '../../agents/interfaces/IAgent';
 import { logger } from '../../utils/logger';
-import { getErrorMessage } from '../../utils/errorUtils';
 
 export class ToolExecutionService implements IToolExecutionService {
     async executeAgent(

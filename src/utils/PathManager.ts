@@ -61,7 +61,7 @@ export class PathManager {
    * Create plugin-relative path - always returns path relative to vault root
    */
   createPluginPath(subPath?: string): string {
-    const basePath = `.obsidian/plugins/${this.pluginId}`;
+    const basePath = `${this.app.vault.configDir}/plugins/${this.pluginId}`;
     if (!subPath) return basePath;
     
     const sanitizedSubPath = this.sanitizePath(subPath);
@@ -153,9 +153,10 @@ export class PathManager {
    */
   private attemptRegexConversion(absolutePath: string): ConversionResult {
     const normalized = this.normalizeSeparators(absolutePath);
+    const configDir = this.escapeRegExp(this.normalizeSeparators(this.app.vault.configDir));
     
-    // Pattern to match: any-prefix/(.obsidian/plugins/plugin-id/...)
-    const pattern = /.*[\/\\](\.obsidian[\/\\]plugins[\/\\][^\/\\]+[\/\\].*)$/;
+    // Pattern to match: any-prefix/(configDir/plugins/plugin-id/...)
+    const pattern = new RegExp(`.*[/\\\\](${configDir}[/\\\\]plugins[/\\\\][^/\\\\]+[/\\\\].*)$`);
     const match = normalized.match(pattern);
     
     if (match) {
@@ -178,11 +179,12 @@ export class PathManager {
    */
   private extractPluginPathFallback(path: string): string {
     const normalized = this.normalizeSeparators(path);
+    const configDir = this.normalizeSeparators(this.app.vault.configDir);
     
-    // Look for .obsidian/plugins anywhere in path
-    const obsidianIndex = normalized.indexOf('.obsidian/plugins/');
-    if (obsidianIndex >= 0) {
-      return normalized.substring(obsidianIndex);
+    // Look for configured vault config directory anywhere in path
+    const configIndex = normalized.indexOf(`${configDir}/plugins/`);
+    if (configIndex >= 0) {
+      return normalized.substring(configIndex);
     }
 
     // Ultimate fallback - return safe default
@@ -286,7 +288,7 @@ export class PathManager {
   async safePathOperation<T>(
     path: string,
     operation: (validPath: string) => Promise<T>,
-    operationName: string = 'unknown'
+    operationName = 'unknown'
   ): Promise<T> {
     try {
       // Convert to relative if absolute

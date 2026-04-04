@@ -49,6 +49,12 @@ export interface RepositoryDependencies {
   queryCache: QueryCache;
 }
 
+export interface DatabaseRow {
+  [key: string]: unknown;
+}
+
+export type QueryParams = Array<string | number | null | boolean>;
+
 /**
  * Base repository with shared functionality
  *
@@ -91,7 +97,7 @@ export abstract class BaseRepository<T> implements IRepository<T> {
    * @param row - Raw SQLite row data
    * @returns Typed entity instance
    */
-  protected abstract rowToEntity(row: any): T;
+  protected abstract rowToEntity(row: DatabaseRow): T;
 
   /**
    * Get entity by ID (subclasses implement with entity-specific logic)
@@ -106,12 +112,12 @@ export abstract class BaseRepository<T> implements IRepository<T> {
   /**
    * Create a new entity
    */
-  abstract create(data: any): Promise<string>;
+  abstract create(data: unknown): Promise<string>;
 
   /**
    * Update an existing entity
    */
-  abstract update(id: string, data: any): Promise<void>;
+  abstract update(id: string, data: unknown): Promise<void>;
 
   /**
    * Delete an entity
@@ -167,7 +173,7 @@ export abstract class BaseRepository<T> implements IRepository<T> {
     baseQuery: string,
     countQuery: string,
     options: PaginationParams = {},
-    params: any[] = []
+    params: QueryParams = []
   ): Promise<PaginatedResult<R>> {
     const page = options.page ?? 0;
     const pageSize = Math.min(options.pageSize ?? 25, 200);
@@ -258,7 +264,8 @@ export abstract class BaseRepository<T> implements IRepository<T> {
    * @param operation - Operation name
    * @param details - Optional details
    */
-  protected log(_operation: string, _details?: any): void {
+  protected log(_operation: string, _details?: unknown): void {
+    return;
   }
 
   /**
@@ -267,7 +274,7 @@ export abstract class BaseRepository<T> implements IRepository<T> {
    * @param operation - Operation name
    * @param error - Error object
    */
-  protected logError(operation: string, error: any): void {
+  protected logError(operation: string, error: unknown): void {
     console.error(`[${this.entityType}Repository] ${operation} failed:`, error);
   }
 }

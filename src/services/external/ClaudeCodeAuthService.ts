@@ -1,3 +1,4 @@
+/* eslint-disable import/no-nodejs-modules -- desktop-only Claude Code auth uses Node child_process in Electron */
 import { App, FileSystemAdapter, Platform } from 'obsidian';
 import { resolveDesktopBinaryPath } from '../../utils/binaryDiscovery';
 
@@ -72,7 +73,7 @@ export class ClaudeCodeAuthService {
             };
         }
 
-        const childProcess = require('child_process') as typeof import('child_process');
+        const childProcess = await import('node:child_process');
         const child = childProcess.spawn(
             initialStatus.claudePath,
             ['auth', 'login', '--claudeai'],
@@ -119,7 +120,7 @@ export class ClaudeCodeAuthService {
         args: string[],
         cwd?: string
     ): Promise<{ stdout: string; stderr: string; exitCode: number | null }> {
-        const childProcess = require('child_process') as typeof import('child_process');
+        const childProcess = await import('node:child_process');
 
         return await new Promise((resolve) => {
             const child = childProcess.spawn(command, args, {

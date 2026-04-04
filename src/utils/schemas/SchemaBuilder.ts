@@ -27,7 +27,6 @@ import { JSONSchema } from '../../types/schema/JSONSchemaTypes';
 // Re-export SchemaType for consumers
 export { SchemaType } from './SchemaTypes';
 import { LLMProviderManager } from '../../services/llm/providers/ProviderManager';
-import { mergeWithCommonSchema } from '../schemaUtils';
 import { ProviderInfoService } from './services/ProviderInfoService';
 import { BatchExecuteSchemaBuilder } from './builders/BatchExecuteSchemaBuilder';
 import { ExecuteSchemaBuilder } from './builders/ExecuteSchemaBuilder';
@@ -51,8 +50,8 @@ export class SchemaBuilder {
    * Main entry point - builds schema based on type and context
    */
   static buildSchema(type: SchemaType, context: SchemaContext): {
-    parameterSchema: any;
-    resultSchema: any;
+    parameterSchema: Record<string, unknown>;
+    resultSchema: Record<string, unknown>;
   } {
     const builder = new SchemaBuilder(context.providerManager);
     const concreteBuilder = builder.getBuilder(type);
@@ -66,7 +65,7 @@ export class SchemaBuilder {
   /**
    * Instance method for parameter schema building
    */
-  buildParameterSchema(type: SchemaType, context: SchemaContext): any {
+  buildParameterSchema(type: SchemaType, context: SchemaContext): Record<string, unknown> {
     const builder = this.getBuilder(type);
     return builder.buildParameterSchema(context);
   }
@@ -74,7 +73,7 @@ export class SchemaBuilder {
   /**
    * Instance method for result schema building
    */
-  buildResultSchema(type: SchemaType, context: SchemaContext): any {
+  buildResultSchema(type: SchemaType, context: SchemaContext): Record<string, unknown> {
     const builder = this.getBuilder(type);
     return builder.buildResultSchema(context);
   }
@@ -146,7 +145,6 @@ export class SchemaBuilder {
     const properties: CommonSchemaProperties = {};
 
     if (options.includeProviders) {
-      const providerInfo = this.getProviderInfo();
       const defaultModel = this.providerInfoService.getDefaultModel();
 
       properties.provider = {
@@ -172,7 +170,7 @@ export class SchemaBuilder {
   /**
    * Build action schema for content operations
    */
-  private buildActionSchema(): any {
+  private buildActionSchema(): Record<string, unknown> {
     return {
       type: 'object',
       description: 'Optional action to perform with the LLM response',

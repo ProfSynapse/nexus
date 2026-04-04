@@ -6,14 +6,106 @@
  * Flow: User message → LLM → Tool calls → MCPConnector → Agents → Results → LLM → Response
  */
 
-import { ConversationData, ConversationMessage, ToolCall, CreateConversationParams } from '../../types/chat/ChatTypes';
+import { ConversationData, ChatMessage, ToolCall } from '../../types/chat/ChatTypes';
 import { getErrorMessage } from '../../utils/errorUtils';
 import { ToolCallService } from './ToolCallService';
+import type { ToolEventCallback } from './ToolCallService';
 import { CostTrackingService } from './CostTrackingService';
 import { ConversationQueryService } from './ConversationQueryService';
 import { ConversationManager } from './ConversationManager';
 import { StreamingResponseService } from './StreamingResponseService';
 import { ChatTraceService } from './ChatTraceService';
+import type { DirectToolExecutor } from './DirectToolExecutor';
+import type { PaginatedResult } from '../../types/pagination/PaginationTypes';
+import type { LLMService } from '../llm/core/LLMService';
+import type { JSONSchema } from '../../types/schema/JSONSchemaTypes';
+
+interface ConversationListItem {
+  id: string;
+  title: string;
+  summary: string;
+  relevanceScore: number;
+  lastUpdated: number;
+}
+
+interface ChatUsage {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+}
+
+interface ChatStreamingChunk {
+  chunk: string;
+  complete: boolean;
+  messageId: string;
+  toolCalls?: ToolCall[];
+  reasoning?: string;
+  reasoningComplete?: boolean;
+  usage?: ChatUsage;
+}
+
+interface ChatMessageCreateParams {
+  conversationId: string;
+  role: 'user' | 'assistant';
+  content: string;
+  toolCalls?: ToolCall[];
+  metadata?: Record<string, unknown>;
+  id?: string;
+}
+
+interface ConversationRepositoryLike {
+  updateConversation(id: string, updates: Partial<ConversationData>): Promise<void>;
+}
+
+interface MCPConnectorLike {
+  getAvailableTools?: () => Array<{
+    type: 'function';
+    function?: {
+      name: string;
+      description?: string;
+      parameters?: JSONSchema;
+    };
+    name: string;
+    description?: string;
+    inputSchema?: JSONSchema;
+  }>;
+  executeTool: (name: string, args: Record<string, unknown>) => Promise<unknown>;
+}
+
+interface ConversationServiceDependency {
+  getConversation: (id: string, pagination?: { page?: number; pageSize?: number }) => Promise<ConversationData | null>;
+  listConversations: (vaultName?: string, limit?: number) => Promise<Array<{
+    id: string;
+    title: string;
+    created: number;
+    updated: number;
+    vault_name?: string;
+    message_count?: number;
+  }>>;
+  searchConversations: (query: string, limit?: number) => Promise<Array<{
+    id: string;
+    title: string;
+    created: number;
+    updated: number;
+    vault_name?: string;
+    message_count?: number;
+  }>>;
+  addMessage: (params: {
+    conversationId: string;
+    role: string;
+    content: string;
+    id?: string;
+    toolCalls?: ToolCall[];
+    metadata?: Record<string, unknown>;
+  }) => Promise<void>;
+  updateConversation: (id: string, updates: Partial<ConversationData>) => Promise<void>;
+  updateConversationMetadata?: (conversationId: string, metadata: Record<string, unknown>) => Promise<void>;
+  createConversation: (data: unknown) => Promise<ConversationData>;
+  deleteConversation: (id: string) => Promise<void>;
+  getMessages?: (conversationId: string, options?: { page?: number; pageSize?: number }) => Promise<PaginatedResult<ChatMessage>>;
+  getRepository?: () => ConversationRepositoryLike;
+  count?: () => Promise<number>;
+}
 
 export interface ChatServiceOptions {
   maxToolIterations?: number;
@@ -22,10 +114,10 @@ export interface ChatServiceOptions {
 }
 
 export interface ChatServiceDependencies {
-  conversationService: any;
-  llmService: any;
+  conversationService: ConversationServiceDependency;
+  llmService: LLMService;
   vaultName: string;
-  mcpConnector: any; // Required - MCPConnector for tool execution
+  mcpConnector: MCPConnectorLike; // Required - MCPConnector for tool execution
   chatTraceService?: ChatTraceService; // Optional - for creating memory traces
 }
 
@@ -38,7 +130,7 @@ export class ChatService {
   private chatTraceService?: ChatTraceService;
   private currentProvider?: string; // Track current provider for context building
   private currentSessionId?: string; // Track current session ID for tool execution
-  private isInitialized: boolean = false;
+  private isInitialized = false;
 
   constructor(
     private dependencies: ChatServiceDependencies,
@@ -81,7 +173,7 @@ export class ChatService {
   }
 
   /** Set tool event callback for live UI updates */
-  setToolEventCallback(callback: (messageId: string, event: 'detected' | 'updated' | 'started' | 'completed', data: any) => void): void {
+  setToolEventCallback(callback: ToolEventCallback): void {
     this.toolCallService.setEventCallback(callback);
   }
 
@@ -89,7 +181,7 @@ export class ChatService {
    * Set the DirectToolExecutor for direct tool execution
    * This enables tools on ALL platforms (desktop + mobile) without MCP
    */
-  setDirectToolExecutor(executor: any): void {
+  setDirectToolExecutor(executor: DirectToolExecutor): void {
     this.toolCallService.setDirectToolExecutor(executor);
   }
 
@@ -153,7 +245,8 @@ export class ChatService {
         try {
           await this.chatTraceService.initializeSession(conversation.id, workspaceId, sessionId);
           await this.chatTraceService.traceConversationEvent(conversation.id, 'started', title);
-        } catch (error) {
+        } catch {
+          // Trace initialization is best-effort and must not block conversation creation.
         }
       }
 
@@ -193,14 +286,7 @@ export class ChatService {
   /**
    * Add a message to a conversation
    */
-  async addMessage(params: {
-    conversationId: string;
-    role: 'user' | 'assistant';
-    content: string;
-    toolCalls?: any[];
-    metadata?: any;
-    id?: string; // Optional: specify messageId for consistency with in-memory state
-  }): Promise<{ success: boolean; messageId?: string; error?: string }> {
+  async addMessage(params: ChatMessageCreateParams): Promise<{ success: boolean; messageId?: string; error?: string }> {
     try {
       await this.conversationManager.addMessage({
         conversationId: params.conversationId,
@@ -243,11 +329,8 @@ export class ChatService {
     error?: string;
   }> {
     try {
-      // Use streaming method and collect complete response
-      let completeResponse = '';
       let messageId: string | undefined;
       for await (const chunk of this.conversationManager.sendMessage(conversationId, message, options)) {
-        completeResponse += chunk.chunk;
         messageId = chunk.messageId;
       }
 
@@ -285,7 +368,7 @@ export class ChatService {
       enableThinking?: boolean;
       thinkingEffort?: 'low' | 'medium' | 'high';
     }
-  ): AsyncGenerator<{ chunk: string; complete: boolean; messageId: string; toolCalls?: any[]; reasoning?: string; reasoningComplete?: boolean; usage?: { promptTokens: number; completionTokens: number; totalTokens: number } }, void, unknown> {
+  ): AsyncGenerator<ChatStreamingChunk, void, unknown> {
     // Store current provider and session for backward compatibility
     if (options?.provider) {
       this.currentProvider = options.provider;
@@ -333,7 +416,7 @@ export class ChatService {
   async getMessages(
     conversationId: string,
     options?: { page?: number; pageSize?: number }
-  ): Promise<any> {
+  ): Promise<PaginatedResult<ChatMessage>> {
     return this.conversationQueryService.getMessages(conversationId, options);
   }
 
@@ -363,7 +446,7 @@ export class ChatService {
   }
 
   /** Search conversations */
-  async searchConversations(query: string, limit = 10): Promise<any[]> {
+  async searchConversations(query: string, limit = 10): Promise<ConversationListItem[]> {
     const results = await this.conversationQueryService.searchConversations(query, { limit });
     return results.map(conv => ({
       id: conv.id,
@@ -375,13 +458,13 @@ export class ChatService {
   }
 
   /** Get conversation repository for branch management */
-  getConversationRepository(): any {
-    return this.conversationQueryService.getConversationRepository();
+  getConversationRepository(): ConversationRepositoryLike {
+    return this.conversationQueryService.getConversationRepository() as ConversationRepositoryLike;
   }
 
   /** Get conversation service (alias for getConversationRepository) */
-  getConversationService(): any {
-    return this.conversationQueryService.getConversationService();
+  getConversationService(): ConversationServiceDependency {
+    return this.dependencies.conversationService;
   }
 
   /**
@@ -400,7 +483,7 @@ export class ChatService {
    * Get the LLM service for direct streaming access
    * Used by subagent infrastructure for autonomous LLM calls
    */
-  getLLMService(): any {
+  getLLMService(): LLMService {
     return this.dependencies.llmService;
   }
 

@@ -22,9 +22,45 @@ export interface ToolResult {
   id: string;
   name?: string;
   success: boolean;
-  result?: any;
+  result?: unknown;
   error?: string;
   executionTime?: number;
+}
+
+export type ToolMessage =
+  | {
+      role: 'user';
+      content: Array<{
+        type: 'tool_result';
+        tool_use_id: string;
+        content: string;
+      }>;
+    }
+  | {
+      role: 'function';
+      parts: Array<{
+        functionResponse: {
+          name?: string;
+          response: unknown;
+        };
+      }>;
+    }
+  | {
+      role: 'tool';
+      tool_call_id: string;
+      content: string;
+    };
+
+export interface ToolMetadata {
+  toolCallCount: number;
+  toolCalls?: Array<{
+    id: string;
+    name?: string;
+    result?: unknown;
+    success: boolean;
+    error?: string;
+    executionTime?: number;
+  }>;
 }
 
 /**
@@ -35,7 +71,7 @@ export interface IToolExecutor {
   executeToolCalls(
     toolCalls: ToolCall[],
     context?: { sessionId?: string; workspaceId?: string },
-    onToolEvent?: (event: 'started' | 'completed', data: any) => void
+    onToolEvent?: (event: 'started' | 'completed', data: unknown) => void
   ): Promise<ToolResult[]>;
 }
 
@@ -53,7 +89,7 @@ export class ToolExecutionUtils {
     toolExecutor: IToolExecutor | null | undefined,
     toolCalls: ToolCall[],
     provider: SupportedProvider,
-    onToolEvent?: (event: 'started' | 'completed', data: any) => void,
+    onToolEvent?: (event: 'started' | 'completed', data: unknown) => void,
     context?: { sessionId?: string; workspaceId?: string }
   ): Promise<ToolResult[]> {
     if (!toolExecutor) {
@@ -80,7 +116,7 @@ export class ToolExecutionUtils {
   static buildToolMessages(
     toolResults: ToolResult[],
     provider: SupportedProvider
-  ): Array<any> {
+  ): ToolMessage[] {
     if (provider === 'anthropic') {
       // Anthropic format: role='user', content array with tool_result objects
       return toolResults.map(result => ({
@@ -125,7 +161,7 @@ export class ToolExecutionUtils {
   /**
    * Build tool metadata for response
    */
-  static buildToolMetadata(toolResults: ToolResult[]) {
+  static buildToolMetadata(toolResults: ToolResult[]): ToolMetadata {
     return {
       toolCallCount: toolResults.length,
       toolCalls: toolResults.length > 0 ? toolResults.map(result => ({

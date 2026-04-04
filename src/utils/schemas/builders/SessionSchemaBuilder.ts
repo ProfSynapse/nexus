@@ -9,12 +9,13 @@
  */
 
 import { ISchemaBuilder, SchemaContext } from '../SchemaTypes';
+import type { ValidationSchema } from '../../validationUtils';
 
 /**
  * Session Schema Builder - Handles session creation schemas
  */
 export class SessionSchemaBuilder implements ISchemaBuilder {
-  buildParameterSchema(context: SchemaContext): any {
+  buildParameterSchema(_context: SchemaContext): ValidationSchema {
     return {
       type: 'object',
       properties: {
@@ -65,10 +66,10 @@ export class SessionSchemaBuilder implements ISchemaBuilder {
           description: 'Optional workspace context - if not provided, uses a default workspace'
         }
       }
-    };
+    } satisfies ValidationSchema;
   }
 
-  buildResultSchema(context: SchemaContext): any {
+  buildResultSchema(_context: SchemaContext): ValidationSchema {
     return {
       type: 'object',
       properties: {
@@ -121,6 +122,6 @@ export class SessionSchemaBuilder implements ISchemaBuilder {
         context: { type: 'string', description: 'The purpose and context of this session creation' }
       },
       required: ['success']
-    };
+    } satisfies ValidationSchema;
   }
 }

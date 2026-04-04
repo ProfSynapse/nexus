@@ -24,7 +24,31 @@ interface ToolCallWithArguments {
     arguments?: string;
   };
   arguments?: string;
-  [key: string]: any;
+  id?: string | null;
+  toolId?: string | null;
+  batchId?: string | null;
+  parentToolCallId?: string | null;
+  callIndex?: number;
+  totalCalls?: number;
+  strategy?: string;
+  name?: string;
+  technicalName?: string;
+  displayName?: string;
+  type?: string;
+  parameters?: unknown;
+  result?: unknown;
+  error?: unknown;
+  success?: boolean;
+  isVirtual?: boolean;
+  parametersComplete?: boolean;
+  [key: string]: unknown;
+}
+
+interface ToolEventData extends ToolCallWithArguments {
+  toolCall?: ToolCallWithArguments;
+  stepId?: string | null;
+  status?: string;
+  isComplete?: boolean;
 }
 
 export interface ToolEventInfo {
@@ -34,25 +58,34 @@ export interface ToolEventInfo {
   parentToolCallId?: string | null;
   callIndex?: number;
   totalCalls?: number;
-  strategy?: 'serial' | 'parallel' | string;
+  strategy?: string;
   isBatchStepEvent?: boolean;
   displayName: string;
   technicalName?: string;
-  parameters?: any;
+  parameters?: unknown;
   isComplete: boolean;
   displayGroup: ToolDisplayGroup;
   // Reasoning-specific properties
   type?: string;
-  result?: any;
+  result?: unknown;
   status?: string;
   isVirtual?: boolean;
 }
 
 export class ToolEventParser {
+  private static toOptionalString(value: string | null | undefined): string | undefined {
+    if (typeof value !== 'string') {
+      return undefined;
+    }
+
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  }
+
   /**
    * Extract tool event information from raw event data
    */
-  static getToolEventInfo(data: any, event?: 'detected' | 'updated' | 'started' | 'completed'): ToolEventInfo {
+  static getToolEventInfo(data: ToolEventData | undefined, event?: 'detected' | 'updated' | 'started' | 'completed'): ToolEventInfo {
     const toolCall = data?.toolCall;
     const batchId = this.getBatchId(data, toolCall);
     const stepId = data?.stepId ?? data?.id ?? toolCall?.id ?? null;
@@ -69,13 +102,16 @@ export class ToolEventParser {
     const toolId = isBatchStepEvent ? batchId : (data?.toolId ?? data?.id ?? toolCall?.id ?? batchId ?? null);
     const eventStatus = this.getEventStatus(data, event);
     const normalizedInput = toolCall || data;
+    const normalizedToolId = this.toOptionalString(toolId);
+    const normalizedStepId = this.toOptionalString(stepId);
+    const normalizedBatchId = this.toOptionalString(batchId);
     const displayGroup = normalizeToolCallForDisplay({
-      ...normalizedInput,
-      id: toolId || normalizedInput?.id || normalizedInput?.toolId || data?.id || data?.toolId,
-      stepId,
-      toolId: batchId || data?.toolId || normalizedInput?.toolId,
-      batchId: batchId || data?.batchId,
-      parentToolCallId: data?.parentToolCallId ?? toolCall?.parentToolCallId ?? batchId ?? undefined,
+      ...(normalizedInput ?? {}),
+      id: normalizedToolId ?? this.toOptionalString(normalizedInput?.id) ?? this.toOptionalString(normalizedInput?.toolId) ?? this.toOptionalString(data?.id) ?? this.toOptionalString(data?.toolId),
+      stepId: normalizedStepId,
+      toolId: normalizedBatchId ?? this.toOptionalString(data?.toolId) ?? this.toOptionalString(normalizedInput?.toolId),
+      batchId: normalizedBatchId ?? this.toOptionalString(data?.batchId),
+      parentToolCallId: this.toOptionalString(data?.parentToolCallId) ?? this.toOptionalString(toolCall?.parentToolCallId) ?? normalizedBatchId,
       callIndex: data?.callIndex ?? normalizedInput?.callIndex,
       totalCalls: data?.totalCalls ?? normalizedInput?.totalCalls,
       strategy: data?.strategy ?? normalizedInput?.strategy,
@@ -85,7 +121,7 @@ export class ToolEventParser {
       type: data?.type ?? normalizedInput?.type,
       parameters: data?.parameters ?? normalizedInput?.parameters,
       result: data?.result ?? normalizedInput?.result,
-      error: data?.error ?? normalizedInput?.error,
+      error: this.toOptionalString((data?.error ?? normalizedInput?.error) as string | null | undefined),
       success: data?.success ?? normalizedInput?.success,
       status: eventStatus,
       isVirtual: data?.isVirtual ?? normalizedInput?.isVirtual,
@@ -117,7 +153,7 @@ export class ToolEventParser {
       toolId,
       batchId,
       stepId,
-      parentToolCallId: data?.parentToolCallId ?? toolCall?.parentToolCallId ?? batchId ?? null,
+      parentToolCallId: this.toOptionalString(data?.parentToolCallId) ?? this.toOptionalString(toolCall?.parentToolCallId) ?? normalizedBatchId ?? null,
       callIndex: typeof data?.callIndex === 'number' ? data.callIndex : undefined,
       totalCalls: typeof data?.totalCalls === 'number' ? data.totalCalls : undefined,
       strategy: data?.strategy ?? normalizedInput?.strategy,
@@ -138,7 +174,7 @@ export class ToolEventParser {
   /**
    * Extract tool parameters from event data
    */
-  static extractToolParametersFromEvent(data: any): any {
+  static extractToolParametersFromEvent(data: ToolEventData | undefined): unknown {
     if (!data) {
       return undefined;
     }
@@ -163,7 +199,7 @@ export class ToolEventParser {
   /**
    * Parse parameter value from string or object
    */
-  static parseParameterValue(value: any): any {
+  static parseParameterValue(value: unknown): unknown {
     if (value === undefined || value === null) {
       return undefined;
     }
@@ -182,12 +218,12 @@ export class ToolEventParser {
   /**
    * Get tool call arguments from various formats
    */
-  static getToolCallArguments(toolCall: any): any {
+  static getToolCallArguments(toolCall: ToolCallWithArguments | undefined): unknown {
     if (!toolCall) {
       return undefined;
     }
 
-    const typedToolCall = toolCall as ToolCallWithArguments;
+    const typedToolCall = toolCall;
 
     if (typedToolCall.function && typeof typedToolCall.function === 'object' && 'arguments' in typedToolCall.function) {
       return typedToolCall.function.arguments;
@@ -196,7 +232,7 @@ export class ToolEventParser {
     return typedToolCall.arguments;
   }
 
-  private static getBatchId(data: any, toolCall: any): string | null {
+  private static getBatchId(data: ToolEventData | undefined, toolCall: ToolCallWithArguments | undefined): string | null {
     const candidates = [
       data?.parentToolCallId,
       data?.batchId,
@@ -215,7 +251,7 @@ export class ToolEventParser {
     return null;
   }
 
-  private static getEventStatus(data: any, event?: 'detected' | 'updated' | 'started' | 'completed'): string | undefined {
+  private static getEventStatus(data: ToolEventData | undefined, event?: 'detected' | 'updated' | 'started' | 'completed'): string | undefined {
     if (event === 'started') {
       return 'executing';
     }

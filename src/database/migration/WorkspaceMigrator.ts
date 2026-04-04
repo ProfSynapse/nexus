@@ -13,8 +13,6 @@ import { JSONLWriter } from '../storage/JSONLWriter';
 import {
   IndividualWorkspace,
   SessionData,
-  MemoryTrace,
-  StateData,
 } from '../../types/storage/StorageTypes';
 import {
   WorkspaceCreatedEvent,
@@ -66,7 +64,7 @@ export class WorkspaceMigrator extends BaseMigrator<WorkspaceMigrationResult> {
     let workspace: IndividualWorkspace;
 
     try {
-      workspace = JSON.parse(content);
+      workspace = JSON.parse(content) as IndividualWorkspace;
     } catch (parseError) {
       console.error(`[WorkspaceMigrator] Failed to parse workspace JSON: ${filePath}`, parseError);
       return;

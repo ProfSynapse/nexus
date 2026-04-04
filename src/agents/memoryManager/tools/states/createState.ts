@@ -22,6 +22,23 @@ import { MemoryService } from "../../services/MemoryService";
 import { WorkspaceService, GLOBAL_WORKSPACE_ID } from '../../../../services/WorkspaceService';
 import { createServiceIntegration, ValidationError } from '../../services/ValidationService';
 import { SchemaBuilder, SchemaType } from '../../../../utils/schemas/SchemaBuilder';
+import { WorkspaceContext } from '../../../../database/types/workspace/WorkspaceTypes';
+import { IndividualWorkspace } from '../../../../types/storage/StorageTypes';
+import { StateContext, WorkspaceState } from '../../../../database/types/session/SessionTypes';
+
+interface WorkspaceResolutionData {
+    workspaceId: string;
+    workspace: IndividualWorkspace;
+}
+
+interface StateContextResult {
+    context: StateContext;
+    workspaceContext: WorkspaceContext;
+}
+
+interface PersistedWorkspaceState extends WorkspaceState {
+    state: NonNullable<WorkspaceState['state']>;
+}
 
 /**
  * Consolidated CreateStateMode - combines all state creation functionality
@@ -85,9 +102,13 @@ export class CreateStateTool extends BaseTool<CreateStateParams, StateResult> {
             if (!workspaceResult.success) {
                 return this.prepareResult(false, undefined, workspaceResult.error, extractContextFromParams(params));
             }
+            if (!workspaceResult.data) {
+                return this.prepareResult(false, undefined, 'Workspace resolution failed - no workspace data returned', extractContextFromParams(params));
+            }
 
             // Phase 3.5: Check state name uniqueness (states are workspace-scoped using '_workspace' as sessionId)
-            const existingStates = await memoryService.getStates(workspaceResult.data.workspaceId, '_workspace');
+            const workspaceData = workspaceResult.data;
+            const existingStates = await memoryService.getStates(workspaceData.workspaceId, '_workspace');
             const nameExists = existingStates.items.some(state => state.name === params.name);
             if (nameExists) {
                 return this.prepareResult(
@@ -99,10 +120,10 @@ export class CreateStateTool extends BaseTool<CreateStateParams, StateResult> {
             }
 
             // Phase 4: Build state context (consolidated from StateCreator logic)
-            const contextResult = await this.buildStateContext(params, workspaceResult.data, workspaceService);
+            const contextResult = await this.buildStateContext(params, workspaceData, workspaceService);
 
             // Phase 5: Create and persist state (consolidated persistence logic)
-            const persistResult = await this.createAndPersistState(params, workspaceResult.data, contextResult, memoryService);
+            const persistResult = await this.createAndPersistState(params, workspaceData, contextResult, memoryService);
             if (!persistResult.success) {
                 return this.prepareResult(false, undefined, persistResult.error, extractContextFromParams(params));
             }
@@ -113,7 +134,7 @@ export class CreateStateTool extends BaseTool<CreateStateParams, StateResult> {
             }
 
             // Extract workspaceId for verification (use '_workspace' as sessionId)
-            const workspaceId = workspaceResult.data.workspaceId;
+            const workspaceId = workspaceData.workspaceId;
 
             // Phase 6: Verify persistence (data integrity check)
             const verificationResult = await this.verifyStatePersistence(workspaceId, '_workspace', persistResult.stateId, memoryService);
@@ -128,7 +149,7 @@ export class CreateStateTool extends BaseTool<CreateStateParams, StateResult> {
                 persistResult.stateId,
                 persistResult.savedState,
                 contextResult,
-                workspaceResult.data,
+                workspaceData,
                 startTime,
                 params
             );
@@ -232,7 +253,7 @@ export class CreateStateTool extends BaseTool<CreateStateParams, StateResult> {
     /**
      * Resolve workspace context (consolidated workspace resolution)
      */
-    private async resolveWorkspaceContext(params: CreateStateParams, workspaceService: WorkspaceService): Promise<{success: boolean; error?: string; data?: any}> {
+    private async resolveWorkspaceContext(params: CreateStateParams, workspaceService: WorkspaceService): Promise<{success: boolean; error?: string; data?: WorkspaceResolutionData}> {
         try {
             // Get workspace from inherited context or use global workspace
             const inheritedContext = this.getInheritedWorkspaceContext(params);
@@ -260,11 +281,11 @@ export class CreateStateTool extends BaseTool<CreateStateParams, StateResult> {
     /**
      * Build state context (consolidated from StateCreator logic)
      */
-    private async buildStateContext(params: CreateStateParams, workspaceData: any, workspaceService: WorkspaceService): Promise<any> {
+    private async buildStateContext(params: CreateStateParams, workspaceData: WorkspaceResolutionData, _workspaceService: WorkspaceService): Promise<StateContextResult> {
         const { workspace } = workspaceData;
 
         // Extract or create workspace context
-        let currentWorkspaceContext;
+        let currentWorkspaceContext: WorkspaceContext;
         if (workspace.context) {
             currentWorkspaceContext = workspace.context;
         } else {
@@ -297,10 +318,10 @@ export class CreateStateTool extends BaseTool<CreateStateParams, StateResult> {
      */
     private async createAndPersistState(
         params: CreateStateParams,
-        workspaceData: any,
-        contextResult: any,
+        workspaceData: WorkspaceResolutionData,
+        contextResult: StateContextResult,
         memoryService: MemoryService
-    ): Promise<{success: boolean; error?: string; stateId?: string; savedState?: any}> {
+    ): Promise<{success: boolean; error?: string; stateId?: string; savedState?: PersistedWorkspaceState}> {
         try {
             const { workspaceId, workspace } = workspaceData;
             const { context } = contextResult;
@@ -309,7 +330,7 @@ export class CreateStateTool extends BaseTool<CreateStateParams, StateResult> {
             // Build WorkspaceState for storage following the architecture design
             // This matches the WorkspaceState interface which extends State
             // Use '_workspace' as sessionId for workspace-scoped states
-            const workspaceState = {
+            const workspaceState: PersistedWorkspaceState = {
                 // Core State fields (required)
                 id: `state_${now}_${Math.random().toString(36).substring(2, 11)}`,
                 name: params.name,
@@ -369,8 +390,8 @@ export class CreateStateTool extends BaseTool<CreateStateParams, StateResult> {
             }
 
             return { success: true };
-        } catch (error) {
-            return { success: false, error: createErrorMessage('Verification failed: ', error) };
+        } catch (_error) {
+            return { success: false, error: createErrorMessage('Verification failed: ', _error) };
         }
     }
 
@@ -381,7 +402,7 @@ export class CreateStateTool extends BaseTool<CreateStateParams, StateResult> {
         try {
             await memoryService.deleteState(workspaceId, sessionId, stateId);
             // State rolled back silently - error will be reported through main flow
-        } catch (error) {
+        } catch {
             // Rollback failure is not critical - verification failure is the primary issue
             // Don't log or throw here to avoid noise
         }
@@ -391,12 +412,12 @@ export class CreateStateTool extends BaseTool<CreateStateParams, StateResult> {
      * Prepare final result - simplified to just return success
      */
     private prepareFinalResult(
-        stateId: string,
-        savedState: any,
-        contextResult: any,
-        workspaceData: any,
-        startTime: number,
-        params: CreateStateParams
+        _stateId: string,
+        _savedState: PersistedWorkspaceState | undefined,
+        _contextResult: StateContextResult,
+        _workspaceData: WorkspaceResolutionData,
+        _startTime: number,
+        _params: CreateStateParams
     ): StateResult {
         // Success - LLM already knows the state details it passed
         return this.prepareResult(true);

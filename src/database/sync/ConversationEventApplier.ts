@@ -91,7 +91,7 @@ export class ConversationEventApplier {
 
   private async applyConversationUpdated(event: ConversationUpdatedEvent): Promise<void> {
     const updates: string[] = [];
-    const values: any[] = [];
+    const values: unknown[] = [];
 
     if (event.data.title !== undefined) { updates.push('title = ?'); values.push(event.data.title); }
     if (event.data.updated !== undefined) { updates.push('updated = ?'); values.push(event.data.updated); }
@@ -158,7 +158,7 @@ export class ConversationEventApplier {
 
   private async applyMessageUpdated(event: MessageUpdatedEvent): Promise<void> {
     const updates: string[] = [];
-    const values: any[] = [];
+    const values: unknown[] = [];
 
     if (event.data.content !== undefined) { updates.push('content = ?'); values.push(event.data.content); }
     if (event.data.state !== undefined) { updates.push('state = ?'); values.push(event.data.state); }

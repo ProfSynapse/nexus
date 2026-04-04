@@ -17,12 +17,20 @@
  * - src/types/storage/HybridStorageTypes.ts - Data types
  */
 
-import { BaseRepository, RepositoryDependencies } from './base/BaseRepository';
+import { BaseRepository, DatabaseRow, RepositoryDependencies } from './base/BaseRepository';
 import { IConversationRepository, CreateConversationData, UpdateConversationData } from './interfaces/IConversationRepository';
 import { ConversationMetadata } from '../../types/storage/HybridStorageTypes';
 import { ConversationCreatedEvent, ConversationUpdatedEvent } from '../interfaces/StorageEvents';
 import { PaginatedResult, PaginationParams } from '../../types/pagination/PaginationTypes';
 import { QueryOptions } from '../interfaces/IStorageAdapter';
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function isRunTrigger(value: unknown): value is 'manual' | 'scheduled' | 'catch_up' {
+  return value === 'manual' || value === 'scheduled' || value === 'catch_up';
+}
 
 /**
  * Conversation repository implementation
@@ -49,8 +57,8 @@ export class ConversationRepository
   // Abstract method implementations
   // ============================================================================
 
-  protected rowToEntity(row: any): ConversationMetadata {
-    return this.rowToConversation(row);
+  protected rowToEntity(row: DatabaseRow): ConversationMetadata {
+    return this.rowToConversation(row as ConversationRow);
   }
 
   async getAll(options?: PaginationParams): Promise<PaginatedResult<ConversationMetadata>> {
@@ -68,7 +76,7 @@ export class ConversationRepository
     return this.getCachedOrFetch(
       `${this.entityType}:${id}`,
       async () => {
-        const row = await this.sqliteCache.queryOne<any>(
+        const row = await this.sqliteCache.queryOne<ConversationRow>(
           `SELECT * FROM ${this.tableName} WHERE id = ?`,
           [id]
         );
@@ -93,7 +101,7 @@ export class ConversationRepository
     if (!ALLOWED_SORT_COLUMNS.includes(requestedSort as typeof ALLOWED_SORT_COLUMNS[number])) {
       throw new Error(`Invalid sort column: ${requestedSort}`);
     }
-    if (!ALLOWED_SORT_ORDERS.includes(requestedOrder as typeof ALLOWED_SORT_ORDERS[number])) {
+    if (!ALLOWED_SORT_ORDERS.includes(requestedOrder)) {
       throw new Error(`Invalid sort order: ${requestedOrder}`);
     }
     const sortBy = requestedSort;
@@ -101,7 +109,7 @@ export class ConversationRepository
 
     // Build WHERE clause
     const filters: string[] = [];
-    const params: any[] = [];
+    const params: Array<string | number | null> = [];
 
     // Exclude branches by default (branches have parentConversationId in metadata)
     if (!includeBranches) {
@@ -109,27 +117,27 @@ export class ConversationRepository
     }
 
     if (options?.filter) {
-      if (options.filter.vaultName) {
+      if (typeof options.filter.vaultName === 'string') {
         filters.push('vaultName = ?');
         params.push(options.filter.vaultName);
       }
-      if (options.filter.workspaceId) {
+      if (typeof options.filter.workspaceId === 'string') {
         filters.push('workspaceId = ?');
         params.push(options.filter.workspaceId);
       }
-      if (options.filter.sessionId) {
+      if (typeof options.filter.sessionId === 'string') {
         filters.push('sessionId = ?');
         params.push(options.filter.sessionId);
       }
-      if (options.filter.workflowId) {
+      if (typeof options.filter.workflowId === 'string') {
         filters.push('workflowId = ?');
         params.push(options.filter.workflowId);
       }
-      if (options.filter.runKey) {
+      if (typeof options.filter.runKey === 'string') {
         filters.push('runKey = ?');
         params.push(options.filter.runKey);
       }
-      if (options.filter.runTrigger) {
+      if (typeof options.filter.runTrigger === 'string') {
         filters.push('runTrigger = ?');
         params.push(options.filter.runTrigger);
       }
@@ -145,7 +153,7 @@ export class ConversationRepository
     const totalItems = countResult?.count ?? 0;
 
     // Get data
-    const rows = await this.sqliteCache.query<any>(
+    const rows = await this.sqliteCache.query<ConversationRow>(
       `SELECT * FROM ${this.tableName} ${whereClause}
        ORDER BY ${sortBy} ${sortOrder}
        LIMIT ? OFFSET ?`,
@@ -168,7 +176,7 @@ export class ConversationRepository
    */
   async search(query: string): Promise<ConversationMetadata[]> {
     const rows = await this.sqliteCache.searchConversations(query);
-    return rows.map((r) => this.rowToConversation(r));
+    return rows.map((r) => this.rowToConversation(r as ConversationRow));
   }
 
   /**
@@ -176,11 +184,11 @@ export class ConversationRepository
    */
   async count(filter?: Record<string, unknown>): Promise<number> {
     let whereClause = '';
-    const params: any[] = [];
+    const params: Array<string | number | null> = [];
 
     if (filter) {
       const filters: string[] = [];
-      if (filter.vaultName) {
+      if (typeof filter.vaultName === 'string') {
         filters.push('vaultName = ?');
         params.push(filter.vaultName);
       }
@@ -284,7 +292,7 @@ export class ConversationRepository
 
       // 2. Update SQLite cache
       const setClauses: string[] = [];
-      const params: any[] = [];
+      const params: Array<string | number | null> = [];
 
       if (data.title !== undefined) {
         setClauses.push('title = ?');
@@ -400,15 +408,21 @@ export class ConversationRepository
   /**
    * Convert SQLite row to ConversationMetadata
    */
-  private rowToConversation(row: any): ConversationMetadata {
-    const metadata = row.metadataJson ? JSON.parse(row.metadataJson) : undefined;
-    const chatSettings = metadata?.chatSettings;
-    const workspaceId = row.workspaceId ?? metadata?.workspaceId ?? chatSettings?.workspaceId;
-    const sessionId = row.sessionId ?? metadata?.sessionId ?? chatSettings?.sessionId;
-    const workflowId = row.workflowId ?? metadata?.workflowId;
-    const runTrigger = row.runTrigger ?? metadata?.runTrigger;
-    const scheduledFor = row.scheduledFor ?? metadata?.scheduledFor;
-    const runKey = row.runKey ?? metadata?.runKey;
+  private rowToConversation(row: ConversationRow): ConversationMetadata {
+    const metadataRaw: unknown = row.metadataJson ? JSON.parse(row.metadataJson) : undefined;
+    const metadata = isRecord(metadataRaw) ? metadataRaw : undefined;
+    const chatSettings = metadata && isRecord(metadata.chatSettings) ? metadata.chatSettings : undefined;
+    const workspaceId = row.workspaceId ?? (typeof metadata?.workspaceId === 'string' ? metadata.workspaceId : undefined) ?? (typeof chatSettings?.workspaceId === 'string' ? chatSettings.workspaceId : undefined);
+    const sessionId = row.sessionId ?? (typeof metadata?.sessionId === 'string' ? metadata.sessionId : undefined) ?? (typeof chatSettings?.sessionId === 'string' ? chatSettings.sessionId : undefined);
+    const workflowId = row.workflowId ?? (typeof metadata?.workflowId === 'string' ? metadata.workflowId : undefined);
+    const rawRunTrigger = metadata?.runTrigger;
+    const runTrigger: ConversationMetadata['runTrigger'] = isRunTrigger(row.runTrigger)
+      ? row.runTrigger
+      : isRunTrigger(rawRunTrigger)
+        ? rawRunTrigger
+        : undefined;
+    const scheduledFor = row.scheduledFor ?? (typeof metadata?.scheduledFor === 'number' ? metadata.scheduledFor : undefined);
+    const runKey = row.runKey ?? (typeof metadata?.runKey === 'string' ? metadata.runKey : undefined);
     return {
       id: row.id,
       title: row.title,
@@ -449,4 +463,20 @@ export class ConversationRepository
   private getRunKey(data: Partial<ConversationMetadata>): string | undefined {
     return data.runKey ?? (data.metadata?.runKey as string | undefined);
   }
+}
+
+interface ConversationRow extends DatabaseRow {
+  id: string;
+  title: string;
+  created: number;
+  updated: number;
+  vaultName: string;
+  messageCount: number;
+  metadataJson?: string | null;
+  workspaceId?: string | null;
+  sessionId?: string | null;
+  workflowId?: string | null;
+  runTrigger?: string | null;
+  scheduledFor?: number | null;
+  runKey?: string | null;
 }

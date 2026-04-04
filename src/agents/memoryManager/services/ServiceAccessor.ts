@@ -26,13 +26,15 @@ export interface ServiceAccessResult<T> {
   service: T | null;
   error?: string;
   status: ServiceStatus;
-  diagnostics?: {
-    pluginFound: boolean;
-    serviceContainerAvailable: boolean;
-    serviceFound: boolean;
-    methodUsed: string;
-    duration: number;
-  };
+  diagnostics?: ServiceAccessDiagnostics;
+}
+
+export interface ServiceAccessDiagnostics {
+  pluginFound: boolean;
+  serviceContainerAvailable: boolean;
+  serviceFound: boolean;
+  methodUsed: string;
+  duration: number;
 }
 
 export interface ServiceIntegrationConfig {
@@ -269,15 +271,19 @@ export class ServiceAccessor {
    * Get or create service status tracking
    */
   private getServiceStatus(serviceName: string): ServiceStatus {
-    if (!this.serviceStatuses.has(serviceName)) {
-      this.serviceStatuses.set(serviceName, {
-        available: false,
-        initialized: false,
-        lastCheck: 0,
-        retryCount: 0
-      });
+    const existingStatus = this.serviceStatuses.get(serviceName);
+    if (existingStatus) {
+      return existingStatus;
     }
-    return this.serviceStatuses.get(serviceName)!;
+
+    const status: ServiceStatus = {
+      available: false,
+      initialized: false,
+      lastCheck: 0,
+      retryCount: 0
+    };
+    this.serviceStatuses.set(serviceName, status);
+    return status;
   }
 
   /**
@@ -309,7 +315,7 @@ export class ServiceAccessor {
     service: T | null,
     error?: string,
     status?: ServiceStatus,
-    diagnostics?: any
+    diagnostics?: ServiceAccessDiagnostics
   ): ServiceAccessResult<T> {
     return {
       success,
@@ -367,12 +373,13 @@ export class ServiceAccessor {
   /**
    * Configurable logging
    */
-  private log(level: 'debug' | 'info' | 'warn' | 'error', message: string, ...args: any[]): void {
+  private log(level: 'debug' | 'info' | 'warn' | 'error', message: string, ...args: unknown[]): void {
     const levels = { debug: 0, info: 1, warn: 2, error: 3 };
     const configLevel = levels[this.config.logLevel];
     const messageLevel = levels[level];
 
     if (messageLevel >= configLevel) {
+      // eslint-disable-next-line no-console
       console[level](message, ...args);
     }
   }

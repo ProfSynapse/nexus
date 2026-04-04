@@ -14,6 +14,11 @@ import { OpenAICodexOAuthProvider } from '../../src/services/oauth/providers/Ope
 
 const mockRequestUrl = jest.fn();
 
+function expectDefined<T>(value: T | null | undefined): T {
+  expect(value).toBeDefined();
+  return value as T;
+}
+
 /** Helper: create a mock JWT with given claims payload */
 function createMockJwt(claims: Record<string, unknown>): string {
   const header = btoa(JSON.stringify({ alg: 'RS256', typ: 'JWT' }))
@@ -460,7 +465,8 @@ describe('OpenAICodexOAuthProvider', () => {
         arrayBuffer: new ArrayBuffer(0),
       });
 
-      await provider.refreshToken!('old-refresh-token');
+      const refreshToken = expectDefined(provider.refreshToken);
+      await refreshToken('old-refresh-token');
 
       expect(mockRequestUrl).toHaveBeenCalledWith(expect.objectContaining({
         url: 'https://auth.openai.com/oauth/token',
@@ -495,12 +501,13 @@ describe('OpenAICodexOAuthProvider', () => {
         arrayBuffer: new ArrayBuffer(0),
       });
 
-      const result = await provider.refreshToken!('old-rt');
+      const refreshToken = expectDefined(provider.refreshToken);
+      const result = await refreshToken('old-rt');
 
       expect(result).not.toBeNull();
-      expect(result!.apiKey).toBe('refreshed-at');
-      expect(result!.refreshToken).toBe('rotated-rt');
-      expect(result!.expiresAt).toBeGreaterThan(Date.now());
+      expect(expectDefined(result).apiKey).toBe('refreshed-at');
+      expect(expectDefined(result).refreshToken).toBe('rotated-rt');
+      expect(expectDefined(result).expiresAt).toBeGreaterThan(Date.now());
     });
 
     it('should return null on HTTP error', async () => {
@@ -512,14 +519,16 @@ describe('OpenAICodexOAuthProvider', () => {
         arrayBuffer: new ArrayBuffer(0),
       });
 
-      const result = await provider.refreshToken!('expired-rt');
+      const refreshToken = expectDefined(provider.refreshToken);
+      const result = await refreshToken('expired-rt');
       expect(result).toBeNull();
     });
 
     it('should return null on network error', async () => {
       mockRequestUrl.mockRejectedValue(new Error('Network error'));
 
-      const result = await provider.refreshToken!('some-rt');
+      const refreshToken = expectDefined(provider.refreshToken);
+      const result = await refreshToken('some-rt');
       expect(result).toBeNull();
     });
   });

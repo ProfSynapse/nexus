@@ -13,7 +13,7 @@
  * - GenerateImageMode: MCP interface mode
  */
 
-import { CostDetails, TokenUsage, LLMProviderError } from '../adapters/types';
+import { CostDetails, LLMProviderError } from '../adapters/types';
 
 // Core image generation parameter interfaces
 export interface ImageGenerationParams {
@@ -140,93 +140,85 @@ export interface ImageBuffer {
 }
 
 // OpenAI specific types (available but not active)
-export namespace OpenAI {
-  export interface ImageGenerationRequest {
-    model: 'gpt-5.2'; // Model that supports image_generation tool
-    input: string;
-    tools: Array<{
-      type: 'image_generation';
-      size?: '1024x1024' | '1536x1024' | '1024x1536' | 'auto';
-      quality?: 'low' | 'medium' | 'high' | 'auto';
-      background?: 'transparent' | 'opaque' | 'auto';
-    }>;
-  }
+export interface OpenAIImageGenerationRequest {
+  model: 'gpt-5.2'; // Model that supports image_generation tool
+  input: string;
+  tools: Array<{
+    type: 'image_generation';
+    size?: '1024x1024' | '1536x1024' | '1024x1536' | 'auto';
+    quality?: 'low' | 'medium' | 'high' | 'auto';
+    background?: 'transparent' | 'opaque' | 'auto';
+  }>;
+}
 
-  export interface ImageGenerationResponse {
-    created: number;
-    data: Array<{
-      url?: string;
-      b64_json?: string;
-      revised_prompt?: string;
-    }>;
-  }
+export interface OpenAIImageGenerationResponse {
+  created: number;
+  data: Array<{
+    url?: string;
+    b64_json?: string;
+    revised_prompt?: string;
+  }>;
 }
 
 // Google Nano Banana specific types
-export namespace Google {
-  // Raw REST request part for reference images
-  export interface RequestInlineDataPart {
-    inline_data: {
-      mime_type: string;
-      data: string; // base64
-    };
-  }
+export interface GoogleRequestInlineDataPart {
+  inline_data: {
+    mime_type: string;
+    data: string; // base64
+  };
+}
 
-  // Raw REST request part for text
-  export interface RequestTextPart {
-    text: string;
-  }
+export interface GoogleRequestTextPart {
+  text: string;
+}
 
-  export type RequestPart = RequestInlineDataPart | RequestTextPart;
+export type GoogleRequestPart = GoogleRequestInlineDataPart | GoogleRequestTextPart;
 
-  export interface RequestContent {
-    parts: RequestPart[];
-  }
+export interface GoogleRequestContent {
+  parts: GoogleRequestPart[];
+}
 
-  // Nano Banana image generation config
-  export interface ImageConfig {
-    aspectRatio?: string;
-    imageSize?: '1K' | '2K' | '4K';
-  }
+export interface GoogleImageConfig {
+  aspectRatio?: string;
+  imageSize?: '1K' | '2K' | '4K';
+}
 
-  // Request for generateContent with image generation
-  export interface ImageGenerationRequest {
-    model: 'gemini-2.5-flash-image' | 'gemini-3-pro-image-preview' | 'gemini-3.1-flash-image-preview';
-    contents: RequestContent[];
-    generationConfig?: {
-      responseModalities?: ('TEXT' | 'IMAGE')[];
-      imageConfig?: ImageConfig;
-    };
-  }
+export interface GoogleImageGenerationRequest {
+  model: 'gemini-2.5-flash-image' | 'gemini-3-pro-image-preview' | 'gemini-3.1-flash-image-preview';
+  contents: GoogleRequestContent[];
+  generationConfig?: {
+    responseModalities?: ('TEXT' | 'IMAGE')[];
+    imageConfig?: GoogleImageConfig;
+  };
+}
 
-  export interface SafetySetting {
-    category: string;
-    threshold: 'BLOCK_NONE' | 'BLOCK_LOW_AND_ABOVE' | 'BLOCK_MEDIUM_AND_ABOVE' | 'BLOCK_HIGH_AND_ABOVE';
-  }
+export interface GoogleSafetySetting {
+  category: string;
+  threshold: 'BLOCK_NONE' | 'BLOCK_LOW_AND_ABOVE' | 'BLOCK_MEDIUM_AND_ABOVE' | 'BLOCK_HIGH_AND_ABOVE';
+}
 
-  export interface ImageGenerationResponse {
-    candidates: Array<{
-      content?: {
-        parts: Array<{
-          inlineData?: {
-            mimeType: string;
-            data: string; // base64
-          };
-          text?: string;
-        }>;
-      };
-      safetyRatings?: Array<{
-        category: string;
-        probability: string;
+export interface GoogleImageGenerationResponse {
+  candidates: Array<{
+    content?: {
+      parts: Array<{
+        inlineData?: {
+          mimeType: string;
+          data: string; // base64
+        };
+        text?: string;
       }>;
-      finishReason?: string;
-    }>;
-    usageMetadata?: {
-      promptTokenCount: number;
-      candidatesTokenCount: number;
-      totalTokenCount: number;
     };
-  }
+    safetyRatings?: Array<{
+      category: string;
+      probability: string;
+    }>;
+    finishReason?: string;
+  }>;
+  usageMetadata?: {
+    promptTokenCount: number;
+    candidatesTokenCount: number;
+    totalTokenCount: number;
+  };
 }
 
 // Image generation error types

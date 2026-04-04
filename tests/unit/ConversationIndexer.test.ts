@@ -136,10 +136,11 @@ describe('ConversationIndexer', () => {
       const conversations = [createConversationRow('conv-1')];
       mocks.mockDb.query
         .mockResolvedValueOnce(conversations) // conversations list
-        .mockImplementationOnce(() => new Promise(() => {})); // block on messages query
+        .mockImplementationOnce(() => new Promise(() => undefined)); // block on messages query
 
       // Start first run (will block)
       const firstRun = indexer.start(null, 100);
+      void firstRun;
 
       // Allow microtask to set isRunning
       await new Promise(r => setTimeout(r, 10));

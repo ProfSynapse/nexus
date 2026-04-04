@@ -10,7 +10,7 @@
 import { TaskService } from '../../src/agents/taskManager/services/TaskService';
 import { DAGService } from '../../src/agents/taskManager/services/DAGService';
 import type { IProjectRepository, ProjectMetadata } from '../../src/database/repositories/interfaces/IProjectRepository';
-import type { ITaskRepository, TaskMetadata, NoteLink } from '../../src/database/repositories/interfaces/ITaskRepository';
+import type { ITaskRepository, TaskMetadata } from '../../src/database/repositories/interfaces/ITaskRepository';
 import { PaginatedResult } from '../../src/types/pagination/PaginationTypes';
 
 // ============================================================================

@@ -19,6 +19,11 @@ import {
 } from '../fixtures/chatBugs';
 
 describe('filterCompletedToolCalls', () => {
+  function expectDefinedResult<T>(value: T | undefined): T {
+    expect(value).toBeDefined();
+    return value as T;
+  }
+
   // ==========================================================================
   // Undefined / Empty Input
   // ==========================================================================
@@ -42,35 +47,35 @@ describe('filterCompletedToolCalls', () => {
   describe('all completed tool calls', () => {
     it('should preserve all tool calls when all have results', () => {
       const result = filterCompletedToolCalls(TOOL_CALLS.allCompleted);
+      const definedResult = expectDefinedResult(result);
 
-      expect(result).toBeDefined();
-      expect(result!.length).toBe(TOOL_CALLS.allCompleted.length);
+      expect(definedResult).toHaveLength(TOOL_CALLS.allCompleted.length);
     });
 
     it('should preserve a tool call with result set', () => {
       const tc = createCompletedToolCall({ id: 'tc_result', result: { data: 'yes' }, success: undefined });
       const result = filterCompletedToolCalls([tc]);
+      const definedResult = expectDefinedResult(result);
 
-      expect(result).toBeDefined();
-      expect(result!.length).toBe(1);
-      expect(result![0].id).toBe('tc_result');
+      expect(definedResult).toHaveLength(1);
+      expect(definedResult[0].id).toBe('tc_result');
     });
 
     it('should preserve a tool call with success set (even if false)', () => {
       const tc = createFailedToolCall({ id: 'tc_failed', result: undefined, success: false });
       const result = filterCompletedToolCalls([tc]);
+      const definedResult = expectDefinedResult(result);
 
-      expect(result).toBeDefined();
-      expect(result!.length).toBe(1);
-      expect(result![0].id).toBe('tc_failed');
+      expect(definedResult).toHaveLength(1);
+      expect(definedResult[0].id).toBe('tc_failed');
     });
 
     it('should preserve a tool call with both result and success set', () => {
       const tc = createCompletedToolCall({ id: 'tc_both', result: 'done', success: true });
       const result = filterCompletedToolCalls([tc]);
+      const definedResult = expectDefinedResult(result);
 
-      expect(result).toBeDefined();
-      expect(result![0].id).toBe('tc_both');
+      expect(definedResult[0].id).toBe('tc_both');
     });
   });
 
@@ -97,12 +102,12 @@ describe('filterCompletedToolCalls', () => {
   describe('mixed tool calls', () => {
     it('should keep only completed tool calls from a mixed array', () => {
       const result = filterCompletedToolCalls(TOOL_CALLS.mixed);
+      const definedResult = expectDefinedResult(result);
 
-      expect(result).toBeDefined();
       // mixed has 2 completed (tc_mix_c1, tc_mix_c2) and 2 incomplete (tc_mix_i1, tc_mix_i2)
-      expect(result!.length).toBe(2);
+      expect(definedResult).toHaveLength(2);
 
-      const ids = result!.map(tc => tc.id);
+      const ids = definedResult.map(tc => tc.id);
       expect(ids).toContain('tc_mix_c1');
       expect(ids).toContain('tc_mix_c2');
       expect(ids).not.toContain('tc_mix_i1');
@@ -124,11 +129,11 @@ describe('filterCompletedToolCalls', () => {
       const incomplete = createIncompleteToolCall({ id: 'tc_drop' });
 
       const result = filterCompletedToolCalls([original, incomplete]);
+      const definedResult = expectDefinedResult(result);
 
-      expect(result).toBeDefined();
-      expect(result!.length).toBe(1);
+      expect(definedResult).toHaveLength(1);
 
-      const kept = result![0];
+      const kept = definedResult[0];
       expect(kept.id).toBe('tc_full');
       expect(kept.name).toBe('myTool');
       expect(kept.displayName).toBe('My Tool');
@@ -149,25 +154,25 @@ describe('filterCompletedToolCalls', () => {
       // result is set to null explicitly, which is !== undefined
       const tc = createIncompleteToolCall({ id: 'tc_null_result', result: null as unknown });
       const result = filterCompletedToolCalls([tc]);
+      const definedResult = expectDefinedResult(result);
 
-      expect(result).toBeDefined();
-      expect(result!.length).toBe(1);
+      expect(definedResult).toHaveLength(1);
     });
 
     it('should treat result of empty string as defined (completed)', () => {
       const tc = createIncompleteToolCall({ id: 'tc_empty_result', result: '' });
       const result = filterCompletedToolCalls([tc]);
+      const definedResult = expectDefinedResult(result);
 
-      expect(result).toBeDefined();
-      expect(result!.length).toBe(1);
+      expect(definedResult).toHaveLength(1);
     });
 
     it('should treat result of false as defined (completed)', () => {
       const tc = createIncompleteToolCall({ id: 'tc_false_result', result: false });
       const result = filterCompletedToolCalls([tc]);
+      const definedResult = expectDefinedResult(result);
 
-      expect(result).toBeDefined();
-      expect(result!.length).toBe(1);
+      expect(definedResult).toHaveLength(1);
     });
 
     it('should not mutate the original array', () => {

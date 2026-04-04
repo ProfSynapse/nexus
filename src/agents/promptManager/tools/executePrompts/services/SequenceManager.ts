@@ -37,7 +37,10 @@ export class SequenceManager {
     
     // Execute each sequence in order
     for (const sequence of sortedSequences) {
-      const sequencePrompts = sequenceGroups.get(sequence)!;
+      const sequencePrompts = sequenceGroups.get(sequence);
+      if (!sequencePrompts) {
+        continue;
+      }
       
       // Execute prompts within this sequence with parallel group support
       const sequenceResults = await this.executeSequenceWithParallelGroups(
@@ -74,7 +77,10 @@ export class SequenceManager {
     
     // Execute each parallel group sequentially
     for (const groupKey of sortedGroups) {
-      const groupPrompts = parallelGroups.get(groupKey)!;
+      const groupPrompts = parallelGroups.get(groupKey);
+      if (!groupPrompts) {
+        continue;
+      }
       
       // Execute all requests in this group concurrently (text and image)
       const groupExecutionResults = await this.requestExecutor.executeRequestsInParallel(
@@ -100,10 +106,11 @@ export class SequenceManager {
     
     for (const prompt of prompts) {
       const sequence = prompt.sequence || 0;
+      const group = sequenceGroups.get(sequence) ?? [];
       if (!sequenceGroups.has(sequence)) {
-        sequenceGroups.set(sequence, []);
+        sequenceGroups.set(sequence, group);
       }
-      sequenceGroups.get(sequence)!.push(prompt);
+      group.push(prompt);
     }
     
     return sequenceGroups;
@@ -117,10 +124,11 @@ export class SequenceManager {
     
     for (const prompt of prompts) {
       const groupKey = prompt.parallelGroup || 'default';
+      const group = parallelGroups.get(groupKey) ?? [];
       if (!parallelGroups.has(groupKey)) {
-        parallelGroups.set(groupKey, []);
+        parallelGroups.set(groupKey, group);
       }
-      parallelGroups.get(groupKey)!.push(prompt);
+      group.push(prompt);
     }
     
     return parallelGroups;
@@ -141,7 +149,13 @@ export class SequenceManager {
   /**
    * Get execution statistics from results (internal use only)
    */
-  getExecutionStatistics(results: InternalExecutionResult[]) {
+  getExecutionStatistics(results: InternalExecutionResult[]): {
+    totalPrompts: number;
+    successfulPrompts: number;
+    failedPrompts: number;
+    totalExecutionTimeMS: number;
+    avgExecutionTimeMS: number;
+  } {
     const successful = results.filter(r => r.success);
     const failed = results.filter(r => !r.success);
     const totalExecutionTime = results.reduce((sum, r) => sum + (r.executionTime || 0), 0);

@@ -82,7 +82,7 @@ export interface WorkspaceState extends State {
   timestamp?: number;
   description?: string;
   state?: {
-    workspace: any;
+    workspace: unknown;
     recentTraces: string[];
     contextFiles: string[];
     metadata: Record<string, unknown>;

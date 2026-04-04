@@ -45,6 +45,34 @@ export interface StateSummary {
  * Implements Single Responsibility Principle - only handles data fetching
  */
 export class WorkspaceDataFetcher {
+  private static isMemoryService(
+    memoryService: unknown
+  ): memoryService is {
+    getSessions(workspaceId: string): Promise<PaginatedResult<{ id: string; name: string; description?: string; startTime: number; workspaceId?: string }>>;
+    getStates(workspaceId: string, sessionId?: string, options?: PaginationParams): Promise<PaginatedResult<{
+      id: string;
+      name?: string;
+      description?: string;
+      sessionId?: string;
+      created?: number;
+      timestamp?: number;
+      workspaceId?: string;
+      state?: {
+        description?: string;
+        sessionId?: string;
+        workspaceId?: string;
+        metadata?: { tags?: string[] };
+      };
+    }>>;
+  } {
+    return !!memoryService
+      && typeof memoryService === 'object'
+      && 'getSessions' in memoryService
+      && typeof memoryService.getSessions === 'function'
+      && 'getStates' in memoryService
+      && typeof memoryService.getStates === 'function';
+  }
+
   /**
    * Fetch sessions for a workspace with defensive filtering and pagination
    * @param workspaceId The workspace ID
@@ -54,11 +82,11 @@ export class WorkspaceDataFetcher {
    */
   async fetchWorkspaceSessions(
     workspaceId: string,
-    memoryService: any,
+    memoryService: unknown,
     options?: PaginationParams
   ): Promise<PaginatedResult<SessionSummary>> {
     try {
-      if (!memoryService) {
+      if (!WorkspaceDataFetcher.isMemoryService(memoryService)) {
         return createEmptyPaginatedResult<SessionSummary>(0, options?.pageSize ?? 10);
       }
 
@@ -86,9 +114,9 @@ export class WorkspaceDataFetcher {
       // Map to session summaries
       const sessionSummaries = validSessions.map((session: { id: string; name?: string; description?: string; isActive?: boolean; startTime?: number; workspaceId?: string }) => ({
         id: session.id,
-        name: session.name,
+        name: session.name || 'Untitled Session',
         description: session.description,
-        created: session.startTime,
+        created: session.startTime ?? 0,
         workspaceId: session.workspaceId // Include for validation
       }));
 
@@ -125,11 +153,11 @@ export class WorkspaceDataFetcher {
    */
   async fetchWorkspaceStates(
     workspaceId: string,
-    memoryService: any,
+    memoryService: unknown,
     options?: PaginationParams
   ): Promise<PaginatedResult<StateSummary>> {
     try {
-      if (!memoryService) {
+      if (!WorkspaceDataFetcher.isMemoryService(memoryService)) {
         return createEmptyPaginatedResult<StateSummary>(0, options?.pageSize ?? 10);
       }
 
@@ -174,10 +202,10 @@ export class WorkspaceDataFetcher {
         }
       }) => ({
         id: state.id,
-        name: state.name,
+        name: state.name || 'Untitled State',
         description: state.description || state.state?.description,
-        sessionId: state.sessionId || state.state?.sessionId,
-        created: state.created || state.timestamp,
+        sessionId: state.sessionId || state.state?.sessionId || 'default-session',
+        created: state.created ?? state.timestamp ?? 0,
         tags: state.state?.metadata?.tags || [],
         workspaceId: state.state?.workspaceId || state.workspaceId // Include for validation
       }));

@@ -8,6 +8,11 @@
 
 import { CommonParameters } from '../mcp/AgentTypes';
 
+export type MemorySearchTraceLike = {
+  id: string;
+  [key: string]: unknown;
+};
+
 // Core search parameters interface
 export interface MemorySearchParameters extends CommonParameters {
   query: string;
@@ -59,7 +64,7 @@ export interface MemorySearchContext {
 
 // Raw memory result from searches
 export interface RawMemoryResult {
-  trace: any; // MemoryTrace or ToolCallMemoryTrace
+  trace: MemorySearchTraceLike;
   similarity?: number;
 }
 
@@ -75,7 +80,7 @@ export interface MemorySearchResult {
 
 // Enriched memory search result with raw trace attached
 export interface EnrichedMemorySearchResult extends MemorySearchResult {
-  _rawTrace: any;
+  _rawTrace: MemorySearchTraceLike;
 }
 
 // Memory result metadata
@@ -341,8 +346,8 @@ export interface ToolCallInfo {
   mode: string;
   executionTime?: number;
   success: boolean;
-  input?: any;
-  output?: any;
+  input?: unknown;
+  output?: unknown;
   error?: string;
 }
 

@@ -1,4 +1,4 @@
-import { Setting, Notice, ButtonComponent } from 'obsidian';
+import { Setting, Notice } from 'obsidian';
 import { SettingsRouter } from '../SettingsRouter';
 import { IStorageAdapter } from '../../database/interfaces/IStorageAdapter';
 import { ServiceManager } from '../../core/ServiceManager';
@@ -20,7 +20,7 @@ export class DataTab {
         this.container.addClass('nexus-settings-tab-content');
 
         // Header
-        this.container.createEl('h3', { text: 'Data Management' });
+        this.container.createEl('h3', { text: 'Data management' });
         this.container.createEl('p', { 
             text: 'Manage your conversation data, exports, and backups.',
             cls: 'nexus-settings-desc'
@@ -51,19 +51,19 @@ export class DataTab {
         section.createEl('h4', { text: 'Export' });
 
         new Setting(section)
-            .setName('Export to ChatML')
-            .setDesc('Export all conversations in ChatML JSONL format (compatible with OpenAI fine-tuning).')
+            .setName('Export conversations')
+            .setDesc('Export conversations.')
             .addButton(button => button
-                .setButtonText('Export Dataset')
+                .setButtonText('Export dataset')
                 .setIcon('download')
                 .onClick(async () => {
                     if (!this.storageAdapter) {
-                        new Notice('Storage adapter not available. Please try again later.');
+                        new Notice('Storage adapter is not available. Please try again later.');
                         await this.initStorageAdapter();
                         return;
                     }
 
-                    button.setButtonText('Exporting...').setDisabled(true);
+                    button.setButtonText('Exporting dataset...').setDisabled(true);
                     try {
                         const jsonl = await this.storageAdapter.exportConversationsForFineTuning();
                         
@@ -78,12 +78,12 @@ export class DataTab {
                         document.body.removeChild(a);
                         URL.revokeObjectURL(url);
 
-                        new Notice('Export complete!');
+                        new Notice('Export complete.');
                     } catch (error) {
                         console.error('Export failed:', error);
-                        new Notice('Export failed. Check console for details.');
+                        new Notice('Export failed. Check the console for details.');
                     } finally {
-                        button.setButtonText('Export Dataset').setDisabled(false);
+                        button.setButtonText('Export dataset').setDisabled(false);
                     }
                 }));
     }

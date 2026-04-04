@@ -213,7 +213,7 @@ function renderModelDropdown(
       .addText(text => text
         .setValue(config.getOllamaModel?.() || '')
         .setDisabled(true)
-        .setPlaceholder('Configure in Ollama settings'));
+        .setPlaceholder('Configure in settings'));
     return;
   }
 

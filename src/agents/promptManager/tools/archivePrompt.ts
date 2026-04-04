@@ -2,6 +2,7 @@ import { JSONSchema } from '../../../types/schema/JSONSchemaTypes';
 import { BaseTool } from '../../baseTool';
 import { ArchivePromptParams, ArchivePromptResult } from '../types';
 import { CustomPromptStorageService } from '../services/CustomPromptStorageService';
+import { getErrorMessage } from '../../../utils/errorUtils';
 
 /**
  * Tool for archiving a custom prompt
@@ -60,7 +61,7 @@ export class ArchivePromptTool extends BaseTool<ArchivePromptParams, ArchiveProm
       // Success - LLM already knows what it archived
       return this.prepareResult(true);
     } catch (error) {
-      return this.prepareResult(false, undefined, `Failed to archive prompt: ${error}`);
+      return this.prepareResult(false, undefined, `Failed to archive prompt: ${getErrorMessage(error)}`);
     }
   }
 

@@ -78,7 +78,7 @@ export class SchemaEnhancementService implements ISchemaEnhancementService {
             }
 
             // Start with a deep clone of the base schema to avoid mutations
-            let enhancedSchema = JSON.parse(JSON.stringify(baseSchema));
+            let enhancedSchema = cloneEnhancedSchema(baseSchema);
 
             // Track which providers were applied for debugging
             const appliedProviders: string[] = [];
@@ -177,4 +177,13 @@ export class SchemaEnhancementService implements ISchemaEnhancementService {
         this.providers = [];
         logger.systemLog(`Cleared ${count} schema enhancement providers`);
     }
+}
+
+function cloneEnhancedSchema(schema: EnhancedJSONSchema): EnhancedJSONSchema {
+    const cloned: unknown = JSON.parse(JSON.stringify(schema));
+    return isEnhancedJSONSchema(cloned) ? cloned : { ...schema };
+}
+
+function isEnhancedJSONSchema(value: unknown): value is EnhancedJSONSchema {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

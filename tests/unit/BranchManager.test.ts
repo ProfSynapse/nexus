@@ -14,7 +14,6 @@
 import { BranchManager } from '../../src/ui/chat/services/BranchManager';
 import {
   createAssistantMessage,
-  createUserMessage,
   createBranch,
   createEmptyBranch,
   createConversation,
@@ -22,6 +21,11 @@ import {
   createCompletedToolCall
 } from '../fixtures/chatBugs';
 import { createMockConversationRepo } from '../mocks/chatService';
+
+function expectDefined<T>(value: T | null | undefined): T {
+  expect(value).toBeDefined();
+  return value as T;
+}
 
 describe('BranchManager', () => {
   let branchManager: BranchManager;
@@ -73,7 +77,7 @@ describe('BranchManager', () => {
 
       const result = branchManager.getActiveBranch(message);
       expect(result).not.toBeNull();
-      expect(result!.id).toBe('branch_active');
+      expect(expectDefined(result).id).toBe('branch_active');
     });
 
     it('should return null when activeAlternativeIndex is out of range', () => {
@@ -146,7 +150,7 @@ describe('BranchManager', () => {
 
       const result = branchManager.getActiveMessageToolCalls(message);
       expect(result).toBeDefined();
-      expect(result![0].id).toBe('tc_original');
+      expect(expectDefined(result)[0].id).toBe('tc_original');
     });
 
     it('should return branch tool calls when a branch is active', () => {
@@ -162,7 +166,7 @@ describe('BranchManager', () => {
 
       const result = branchManager.getActiveMessageToolCalls(message);
       expect(result).toBeDefined();
-      expect(result![0].id).toBe('tc_branch');
+      expect(expectDefined(result)[0].id).toBe('tc_branch');
     });
 
     it('should return undefined (not original data) when active branch has no messages', () => {
@@ -240,7 +244,7 @@ describe('BranchManager', () => {
 
       expect(branchId).toBeDefined();
       expect(aiMsg.branches).toBeDefined();
-      expect(aiMsg.branches!.length).toBe(1);
+      expect(expectDefined(aiMsg.branches).length).toBe(1);
       expect(aiMsg.activeAlternativeIndex).toBe(1); // Points to new branch
     });
 

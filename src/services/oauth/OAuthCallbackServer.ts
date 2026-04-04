@@ -10,6 +10,7 @@
  * Used by: OAuthService.ts (starts server before opening browser,
  * waits for callback, then shuts down).
  */
+/* eslint-disable import/no-nodejs-modules -- desktop-only OAuth callback server uses Node HTTP/url/crypto in Electron */
 
 import { createServer, IncomingMessage, ServerResponse, Server } from 'node:http';
 import { URL } from 'node:url';
@@ -120,12 +121,17 @@ export function startCallbackServer(options: CallbackServerOptions): Promise<Cal
         timeoutHandle = null;
       }
       if (server) {
+        const serverToClose = server;
+        server = null;
         try {
-          server.close();
+          serverToClose.close();
+          const serverWithCloseAll = serverToClose as unknown as { closeAllConnections?: () => void };
+          if (typeof serverWithCloseAll.closeAllConnections === 'function') {
+            serverWithCloseAll.closeAllConnections();
+          }
         } catch {
           // Ignore close errors during cleanup
         }
-        server = null;
       }
     };
 
@@ -224,6 +230,10 @@ export function startCallbackServer(options: CallbackServerOptions): Promise<Cal
 
     // Bind to 127.0.0.1 ONLY -- never 'localhost' (resolves to IPv6 on some systems), never 0.0.0.0
     server.listen(port, '127.0.0.1', () => {
+      // This is a short-lived local callback listener. Unref it so it never
+      // becomes the only handle keeping a process or test run alive.
+      server?.unref();
+
       // Set up timeout for auto-shutdown
       timeoutHandle = setTimeout(() => {
         if (!settled) {

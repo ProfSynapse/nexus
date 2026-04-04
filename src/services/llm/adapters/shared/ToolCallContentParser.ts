@@ -40,7 +40,7 @@ export interface ParsedToolCallResult {
 
 export interface RawToolCall {
   name: string;
-  arguments: string;
+  arguments: unknown;
   id?: string;
 }
 
@@ -79,6 +79,28 @@ export class ToolCallContentParser {
    */
   static hasToolCallsFormat(content: string): boolean {
     return this.hasBracketToolCallsFormat(content) || this.hasXmlToolCallFormat(content);
+  }
+
+  private static isUnknownArray(value: unknown): value is unknown[] {
+    return Array.isArray(value);
+  }
+
+  private static isRawToolCall(value: unknown): value is RawToolCall {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return false;
+    }
+
+    const candidate = value as Record<string, unknown>;
+    return typeof candidate.name === 'string';
+  }
+
+  private static parseRawToolCalls(jsonString: string): RawToolCall[] {
+    const parsed: unknown = JSON.parse(jsonString);
+    if (!this.isUnknownArray(parsed)) {
+      return [];
+    }
+
+    return parsed.filter((value): value is RawToolCall => this.isRawToolCall(value));
   }
 
   /**
@@ -145,9 +167,8 @@ export class ToolCallContentParser {
       const jsonString = jsonMatch[1];
 
       // Parse the JSON array
-      const rawToolCalls: RawToolCall[] = JSON.parse(jsonString);
-
-      if (!Array.isArray(rawToolCalls)) {
+      const rawToolCalls = this.parseRawToolCalls(jsonString);
+      if (rawToolCalls.length === 0) {
         return result;
       }
 
@@ -200,7 +221,6 @@ export class ToolCallContentParser {
       // Reset regex lastIndex for multiple uses
       const regex = new RegExp(this.XML_TOOL_CALL_JSON_PATTERN.source, 'gi');
       let match;
-      let lastMatchEnd = 0;
       const toolCallMatches: { json: string; start: number; end: number }[] = [];
 
       while ((match = regex.exec(content)) !== null) {
@@ -209,7 +229,6 @@ export class ToolCallContentParser {
           start: match.index,
           end: match.index + match[0].length
         });
-        lastMatchEnd = match.index + match[0].length;
       }
 
       if (toolCallMatches.length === 0) {
@@ -221,15 +240,18 @@ export class ToolCallContentParser {
         const jsonString = toolCallMatches[i].json.trim();
 
         try {
-          const parsed = JSON.parse(jsonString);
+          const parsed: unknown = JSON.parse(jsonString);
 
           // Handle both single object and array formats
-          const toolCallsArray = Array.isArray(parsed) ? parsed : [parsed];
+          const toolCallsArray = this.isUnknownArray(parsed) ? parsed : [parsed];
 
           for (const rawCall of toolCallsArray) {
-            result.toolCalls.push(this.convertToToolCall(rawCall, result.toolCalls.length, 'xml'));
+            if (this.isRawToolCall(rawCall)) {
+              result.toolCalls.push(this.convertToToolCall(rawCall, result.toolCalls.length, 'xml'));
+            }
           }
-        } catch (parseError) {
+        } catch {
+          continue;
         }
       }
 

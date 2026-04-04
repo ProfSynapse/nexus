@@ -1,8 +1,18 @@
+/* eslint-disable import/no-nodejs-modules -- desktop-only Claude headless integration uses Node child_process/stream/fs in Electron */
 import { App, FileSystemAdapter, Plugin, Platform } from 'obsidian';
+import type { ChildProcessByStdio } from 'child_process';
+import type { Readable, Writable } from 'stream';
 import { getPrimaryServerKey } from '../../constants/branding';
 import { resolveDesktopBinaryPath } from '../../utils/binaryDiscovery';
 
 const MAX_SAFE_WINDOWS_ARGV_CHARS = 24_000;
+
+type ClaudeHeadlessDesktopModuleMap = {
+    'fs/promises': typeof import('fs/promises');
+    path: typeof import('path');
+    os: typeof import('os');
+    child_process: typeof import('child_process');
+};
 
 export interface ClaudeHeadlessPreflightResult {
     claudePath: string | null;
@@ -105,9 +115,9 @@ export class ClaudeHeadlessService {
             return this.buildFailureResult('Vault base path is unavailable. This experiment requires the desktop filesystem adapter.', preflight, startedAt);
         }
 
-        const fsPromises = require('fs/promises') as typeof import('fs/promises');
-        const pathMod = require('path') as typeof import('path');
-        const osMod = require('os') as typeof import('os');
+        const fsPromises = this.loadDesktopModule('fs/promises');
+        const pathMod = this.loadDesktopModule('path');
+        const osMod = this.loadDesktopModule('os');
 
         const tempDir = await fsPromises.mkdtemp(pathMod.join(osMod.tmpdir(), 'nexus-claude-headless-'));
         const mcpConfigPath = pathMod.join(tempDir, 'mcp.json');
@@ -216,15 +226,17 @@ export class ClaudeHeadlessService {
         env?: NodeJS.ProcessEnv,
         stdinText?: string
     ): Promise<ProcessResult> {
-        const childProcess = require('child_process') as typeof import('child_process');
+        const childProcess = this.loadDesktopModule('child_process');
 
         return await new Promise<ProcessResult>((resolve) => {
-            const stdio = (stdinText !== undefined ? ['pipe', 'pipe', 'pipe'] : ['ignore', 'pipe', 'pipe']) as any;
+            const stdio: ['pipe', 'pipe', 'pipe'] | ['ignore', 'pipe', 'pipe'] = stdinText !== undefined
+                ? ['pipe', 'pipe', 'pipe']
+                : ['ignore', 'pipe', 'pipe'];
             const child = childProcess.spawn(command, args, {
                 cwd,
                 env,
                 stdio
-            }) as any;
+            }) as ChildProcessByStdio<Writable | null, Readable, Readable>;
 
             let stdout = '';
             let stderr = '';
@@ -287,7 +299,7 @@ export class ClaudeHeadlessService {
             return null;
         }
 
-        const pathMod = require('path') as typeof import('path');
+        const pathMod = this.loadDesktopModule('path');
         const manifestDir = this.plugin.manifest.dir;
         const pluginFolderName = manifestDir ? manifestDir.split('/').pop() || manifestDir : '';
 
@@ -295,7 +307,7 @@ export class ClaudeHeadlessService {
             return null;
         }
 
-        return pathMod.join(vaultBasePath, '.obsidian', 'plugins', pluginFolderName, 'connector.js');
+        return pathMod.join(vaultBasePath, this.app.vault.configDir, 'plugins', pluginFolderName, 'connector.js');
     }
 
     private getVaultBasePath(): string | null {
@@ -305,6 +317,24 @@ export class ClaudeHeadlessService {
         }
 
         return null;
+    }
+
+    private loadDesktopModule<TModuleName extends keyof ClaudeHeadlessDesktopModuleMap>(
+        moduleName: TModuleName
+    ): ClaudeHeadlessDesktopModuleMap[TModuleName] {
+        if (!Platform.isDesktop) {
+            throw new Error(`${moduleName} is only available on desktop.`);
+        }
+
+        const maybeRequire = (globalThis as typeof globalThis & {
+            require?: (moduleId: string) => unknown;
+        }).require;
+
+        if (typeof maybeRequire !== 'function') {
+            throw new Error('Desktop module loader is unavailable.');
+        }
+
+        return maybeRequire(moduleName) as ClaudeHeadlessDesktopModuleMap[TModuleName];
     }
 
     private formatCommand(command: string, args: string[]): string {

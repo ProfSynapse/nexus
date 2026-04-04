@@ -43,13 +43,13 @@ export class EmbeddingManager {
   private statusBar: EmbeddingStatusBar | null = null;
 
   private isEnabled: boolean;
-  private isInitialized: boolean = false;
+  private isInitialized = false;
 
   constructor(
     app: App,
     plugin: Plugin,
     db: SQLiteCacheManager,
-    enableEmbeddings: boolean = true,
+    enableEmbeddings = true,
     messageRepository?: MessageRepository
   ) {
     this.app = app;
@@ -96,22 +96,8 @@ export class EmbeddingManager {
 
       // Start background indexing after a brief delay
       // This ensures the plugin is fully loaded before we start heavy processing
-      setTimeout(async () => {
-        if (this.queue) {
-          try {
-            // Phase 1: Index all notes
-            await this.queue.startFullIndex();
-
-            // Phase 2: Backfill existing traces (from migration)
-            await this.queue.startTraceIndex();
-
-            // Phase 3: Backfill existing conversations
-            // Runs after notes and traces; idempotent and resumable on interrupt
-            await this.queue.startConversationIndex();
-          } catch (error) {
-            console.error('[EmbeddingManager] Background indexing failed:', error);
-          }
-        }
+      setTimeout(() => {
+        void this.runBackgroundIndexing();
       }, 3000); // 3-second delay
 
       this.isInitialized = true;
@@ -217,5 +203,25 @@ export class EmbeddingManager {
       conversationChunkCount: stats.conversationChunkCount,
       indexingInProgress: this.queue?.isIndexing() ?? false
     };
+  }
+
+  private async runBackgroundIndexing(): Promise<void> {
+    if (!this.queue) {
+      return;
+    }
+
+    try {
+      // Phase 1: Index all notes
+      await this.queue.startFullIndex();
+
+      // Phase 2: Backfill existing traces (from migration)
+      await this.queue.startTraceIndex();
+
+      // Phase 3: Backfill existing conversations
+      // Runs after notes and traces; idempotent and resumable on interrupt
+      await this.queue.startConversationIndex();
+    } catch (error) {
+      console.error('[EmbeddingManager] Background indexing failed:', error);
+    }
   }
 }

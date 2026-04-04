@@ -13,7 +13,7 @@
  * - Configuration file handling
  */
 
-import { Vault, TFile, TFolder, normalizePath } from 'obsidian';
+import { Vault, TFile, TFolder } from 'obsidian';
 import { ObsidianPathManager } from './ObsidianPathManager';
 import { StructuredLogger } from './StructuredLogger';
 
@@ -113,7 +113,7 @@ export class VaultOperations {
    * Read file content with caching support
    * Uses adapter.read() for hidden files since Obsidian doesn't index them
    */
-  async readFile(path: string, useCache: boolean = true): Promise<string | null> {
+  async readFile(path: string, useCache = true): Promise<string | null> {
     try {
       const normalizedPath = this.pathManager.normalizePath(path);
 
@@ -254,7 +254,9 @@ export class VaultOperations {
       const file = await this.getFile(normalizedPath);
       
       if (file) {
-        await this.vault.delete(file);
+        // FileManager is not available on this service; use Vault.trash as the fallback path.
+        // eslint-disable-next-line obsidianmd/prefer-file-manager-trash-file
+        await this.vault.trash(file, true);
         this.fileCache.delete(normalizedPath);
         this.logger.debug(`Deleted file: ${normalizedPath}`);
         return true;
@@ -277,7 +279,9 @@ export class VaultOperations {
       const folder = await this.getFolder(normalizedPath);
       
       if (folder) {
-        await this.vault.delete(folder);
+        // FileManager is not available on this service; use Vault.trash as the fallback path.
+        // eslint-disable-next-line obsidianmd/prefer-file-manager-trash-file
+        await this.vault.trash(folder, true);
         this.logger.debug(`Deleted folder: ${normalizedPath}`);
         return true;
       }
@@ -303,7 +307,7 @@ export class VaultOperations {
           size: stat.size || 0,
           mtime: stat.mtime || 0,
           ctime: stat.ctime || 0,
-          type: stat.type as 'file' | 'folder'
+          type: stat.type
         };
       }
       

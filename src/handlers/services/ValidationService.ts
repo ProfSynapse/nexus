@@ -8,6 +8,8 @@ import { getErrorMessage } from '../../utils/errorUtils';
 import { logger } from '../../utils/logger';
 import { smartNormalizePath, normalizePath, OperationType } from '../../utils/pathUtils';
 
+type HintSchema = Parameters<typeof generateHintsForErrors>[1];
+
 export class ValidationService implements IValidationService {
     async validateToolParams(params: Record<string, unknown>, schema?: JSONSchema | EnhancedJSONSchema, toolName?: string): Promise<Record<string, unknown>> {
         const enhancedParams = { ...params };
@@ -251,7 +253,7 @@ export class ValidationService implements IValidationService {
             logger.systemLog('DEBUG: Schema used for validation:', JSON.stringify(schema, null, 2));
             logger.systemLog('DEBUG: Params being validated:', JSON.stringify(params, null, 2));
             
-            const hints = generateHintsForErrors(validationErrors, schema);
+            const hints = generateHintsForErrors(validationErrors, schema as HintSchema);
             
             for (const error of validationErrors) {
                 if (error.path.length === 1) {

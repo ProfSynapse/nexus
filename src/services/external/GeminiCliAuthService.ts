@@ -6,6 +6,7 @@
  * Gemini CLI externally before using it. This service only checks
  * whether the CLI is present and authenticated.
  */
+/* eslint-disable import/no-nodejs-modules -- desktop-only Gemini CLI auth uses Node filesystem/process APIs in Electron */
 import { App, Platform } from 'obsidian';
 import { CliProcessResult } from '../../utils/cliProcessRunner';
 import { resolveGeminiCliRuntime } from '../../utils/geminiCli';
@@ -95,9 +96,9 @@ export class GeminiCliAuthService {
      * non-zero otherwise.
      */
     private async runAuthProbe(): Promise<CliProcessResult> {
-        const fs = require('fs') as typeof import('fs');
-        const osMod = require('os') as typeof import('os');
-        const pathMod = require('path') as typeof import('path');
+        const fs = await import('node:fs');
+        const osMod = await import('node:os');
+        const pathMod = await import('node:path');
 
         const credsPath = pathMod.join(osMod.homedir(), '.gemini', 'oauth_creds.json');
 
@@ -134,8 +135,8 @@ export class GeminiCliAuthService {
 
         // Parse and confirm an access token is present
         try {
-            const creds = JSON.parse(raw) as Record<string, unknown>;
-            const hasToken = typeof creds['access_token'] === 'string' && (creds['access_token'] as string).length > 0;
+            const creds = JSON.parse(raw) as unknown;
+            const hasToken = isRecord(creds) && typeof creds.access_token === 'string' && creds.access_token.length > 0;
             if (!hasToken) {
                 return {
                     stdout: '',
@@ -153,4 +154,8 @@ export class GeminiCliAuthService {
 
         return { stdout: 'ok', stderr: '', exitCode: 0 };
     }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

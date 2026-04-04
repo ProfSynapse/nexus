@@ -53,7 +53,7 @@ interface ToolExecutionResponse {
 }
 
 export class ToolExecutionStrategy implements IRequestStrategy<ToolExecutionRequest, ToolExecutionResponse> {
-    private readonly instanceId = `TES_V2_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    private readonly instanceId = `TES_V2_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
     private readonly buildVersion = 'BUILD_20250803_1755'; // Force new instances
 
     constructor(
@@ -94,7 +94,7 @@ export class ToolExecutionStrategy implements IRequestStrategy<ToolExecutionRequ
                         success,
                         executionTime
                     );
-                } catch (captureError) {
+                } catch {
                     // Silently ignore capture errors
                 }
             }
@@ -117,7 +117,7 @@ export class ToolExecutionStrategy implements IRequestStrategy<ToolExecutionRequ
                         false,
                         executionTime
                     );
-                } catch (captureError) {
+                } catch {
                     // Silently ignore capture errors
                 }
             }
@@ -146,7 +146,7 @@ export class ToolExecutionStrategy implements IRequestStrategy<ToolExecutionRequ
                                 enhancedMessage += `\n\n📋 Required Parameters: ${parameterSchema.required.join(', ')}`;
                             }
                         }
-                    } catch (schemaError) {
+                    } catch {
                         // Ignore schema retrieval errors
                     }
                 }

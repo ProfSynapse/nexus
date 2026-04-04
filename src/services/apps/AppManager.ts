@@ -144,10 +144,12 @@ export class AppManager {
       }
     } else if (!enabled && this.apps.has(appId)) {
       // Unregister but keep config
-      const agent = this.apps.get(appId)!;
-      agent.onunload();
-      this.unregisterCallback(agent.name);
-      this.apps.delete(appId);
+      const agent = this.apps.get(appId);
+      if (agent) {
+        agent.onunload();
+        this.unregisterCallback(agent.name);
+        this.apps.delete(appId);
+      }
     }
 
     return true;

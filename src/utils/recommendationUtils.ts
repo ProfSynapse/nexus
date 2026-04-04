@@ -14,6 +14,9 @@ export interface Recommendation {
  * @param recommendations - Array of recommendations to inject
  * @returns Enhanced result with recommendations field
  */
-export function addRecommendations(result: any, recommendations: Recommendation[]): any {
+export function addRecommendations<T extends Record<string, unknown>>(
+	result: T,
+	recommendations: Recommendation[]
+): T & { recommendations: Recommendation[] } {
 	return { ...result, recommendations };
 }

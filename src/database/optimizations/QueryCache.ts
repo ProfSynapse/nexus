@@ -79,7 +79,7 @@ export interface CacheStats {
  * ```
  */
 export class QueryCache {
-  private cache = new Map<string, CacheEntry<any>>();
+  private cache = new Map<string, CacheEntry<unknown>>();
   private hits = 0;
   private misses = 0;
   private maxSize: number;
@@ -370,7 +370,7 @@ export class QueryCache {
    * QueryCache.workspaceKey(undefined, 'list'); // 'workspace:list:all'
    * ```
    */
-  static workspaceKey(id?: string, queryType: string = 'get'): string {
+  static workspaceKey(id?: string, queryType = 'get'): string {
     return id ? `workspace:${queryType}:${id}` : `workspace:${queryType}:all`;
   }
 
@@ -382,7 +382,7 @@ export class QueryCache {
    * @param queryType - Type of query (default: 'get')
    * @returns Formatted cache key
    */
-  static sessionKey(workspaceId: string, sessionId?: string, queryType: string = 'get'): string {
+  static sessionKey(workspaceId: string, sessionId?: string, queryType = 'get'): string {
     return sessionId
       ? `session:${queryType}:${workspaceId}:${sessionId}`
       : `session:${queryType}:${workspaceId}:all`;
@@ -396,7 +396,7 @@ export class QueryCache {
    * @param queryType - Type of query (default: 'get')
    * @returns Formatted cache key
    */
-  static stateKey(workspaceId: string, sessionId?: string, queryType: string = 'get'): string {
+  static stateKey(workspaceId: string, sessionId?: string, queryType = 'get'): string {
     return sessionId
       ? `state:${queryType}:${workspaceId}:${sessionId}`
       : `state:${queryType}:${workspaceId}:all`;
@@ -409,7 +409,7 @@ export class QueryCache {
    * @param queryType - Type of query (default: 'get')
    * @returns Formatted cache key
    */
-  static conversationKey(id?: string, queryType: string = 'get'): string {
+  static conversationKey(id?: string, queryType = 'get'): string {
     return id ? `conversation:${queryType}:${id}` : `conversation:${queryType}:all`;
   }
 
@@ -420,7 +420,7 @@ export class QueryCache {
    * @param queryType - Type of query (default: 'get')
    * @returns Formatted cache key
    */
-  static messageKey(conversationId: string, queryType: string = 'get'): string {
+  static messageKey(conversationId: string, queryType = 'get'): string {
     return `message:${queryType}:${conversationId}`;
   }
 
@@ -432,7 +432,7 @@ export class QueryCache {
    * @param queryType - Type of query (default: 'get')
    * @returns Formatted cache key
    */
-  static projectKey(workspaceId: string, projectId?: string, queryType: string = 'get'): string {
+  static projectKey(workspaceId: string, projectId?: string, queryType = 'get'): string {
     return projectId
       ? `project:${queryType}:${workspaceId}:${projectId}`
       : `project:${queryType}:${workspaceId}:all`;
@@ -446,7 +446,7 @@ export class QueryCache {
    * @param queryType - Type of query (default: 'get')
    * @returns Formatted cache key
    */
-  static taskKey(projectId: string, taskId?: string, queryType: string = 'get'): string {
+  static taskKey(projectId: string, taskId?: string, queryType = 'get'): string {
     return taskId
       ? `task:${queryType}:${projectId}:${taskId}`
       : `task:${queryType}:${projectId}:all`;

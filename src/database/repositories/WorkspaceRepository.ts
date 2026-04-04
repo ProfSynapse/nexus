@@ -19,6 +19,7 @@
  */
 
 import { BaseRepository, RepositoryDependencies } from './base/BaseRepository';
+import { DatabaseRow } from './base/BaseRepository';
 import {
   IWorkspaceRepository,
   CreateWorkspaceData,
@@ -34,6 +35,21 @@ import { PaginatedResult, PaginationParams } from '../../types/pagination/Pagina
 import { QueryOptions } from '../interfaces/IStorageAdapter';
 import { QueryCache } from '../optimizations/QueryCache';
 
+type SqliteValue = string | number | null;
+
+interface WorkspaceRow extends DatabaseRow {
+  id: string;
+  name: string;
+  description?: string | null;
+  rootFolder: string;
+  created: number;
+  lastAccessed: number;
+  isActive: number;
+  isArchived?: number | null;
+  dedicatedAgentId?: string | null;
+  contextJson?: string | null;
+}
+
 /**
  * Repository for workspace entities
  *
@@ -46,7 +62,7 @@ export class WorkspaceRepository
 
   protected readonly tableName = 'workspaces';
   protected readonly entityType = 'workspace';
-  protected readonly jsonlPath = (id: string) => `workspaces/ws_${id}.jsonl`;
+  protected readonly jsonlPath = (id: string): string => `workspaces/ws_${id}.jsonl`;
 
   constructor(deps: RepositoryDependencies) {
     super(deps);
@@ -60,7 +76,7 @@ export class WorkspaceRepository
     return this.getCachedOrFetch(
       QueryCache.workspaceKey(id),
       async () => {
-        const row = await this.sqliteCache.queryOne<any>(
+        const row = await this.sqliteCache.queryOne<WorkspaceRow>(
           'SELECT * FROM workspaces WHERE id = ?',
           [id]
         );
@@ -157,7 +173,7 @@ export class WorkspaceRepository
 
         // 2. Update SQLite cache
         const setClauses: string[] = [];
-        const params: any[] = [];
+        const params: SqliteValue[] = [];
 
         if (data.name !== undefined) {
           setClauses.push('name = ?');
@@ -236,15 +252,15 @@ export class WorkspaceRepository
 
   async count(criteria?: Record<string, unknown>): Promise<number> {
     let sql = 'SELECT COUNT(*) as count FROM workspaces';
-    const params: any[] = [];
+    const params: SqliteValue[] = [];
 
     if (criteria) {
       const conditions: string[] = [];
-      if (criteria.isActive !== undefined) {
+      if (typeof criteria.isActive === 'boolean') {
         conditions.push('isActive = ?');
         params.push(criteria.isActive ? 1 : 0);
       }
-      if (criteria.isArchived !== undefined) {
+      if (typeof criteria.isArchived === 'boolean') {
         conditions.push('isArchived = ?');
         params.push(criteria.isArchived ? 1 : 0);
       }
@@ -271,14 +287,14 @@ export class WorkspaceRepository
     if (!ALLOWED_SORT_COLUMNS.includes(requestedSort as typeof ALLOWED_SORT_COLUMNS[number])) {
       throw new Error(`Invalid sort column: ${requestedSort}`);
     }
-    if (!ALLOWED_SORT_ORDERS.includes(requestedOrder as typeof ALLOWED_SORT_ORDERS[number])) {
+    if (!ALLOWED_SORT_ORDERS.includes(requestedOrder)) {
       throw new Error(`Invalid sort order: ${requestedOrder}`);
     }
     const sortBy = requestedSort;
     const sortOrder = requestedOrder;
 
     let whereClause = '';
-    const params: any[] = [];
+    const params: SqliteValue[] = [];
 
     if (options?.filter) {
       const filters: string[] = [];
@@ -298,7 +314,7 @@ export class WorkspaceRepository
     const baseQuery = `SELECT * FROM workspaces ${whereClause} ORDER BY ${sortBy} ${sortOrder}`;
     const countQuery = `SELECT COUNT(*) as count FROM workspaces ${whereClause}`;
 
-    const result = await this.queryPaginated<any>(baseQuery, countQuery, options, params);
+    const result = await this.queryPaginated<WorkspaceRow>(baseQuery, countQuery, options, params);
     return {
       items: result.items.map(row => this.rowToEntity(row)),
       page: result.page,
@@ -311,7 +327,7 @@ export class WorkspaceRepository
   }
 
   async getByName(name: string): Promise<WorkspaceMetadata | null> {
-    const row = await this.sqliteCache.queryOne<any>(
+    const row = await this.sqliteCache.queryOne<WorkspaceRow>(
       'SELECT * FROM workspaces WHERE name = ?',
       [name]
     );
@@ -346,7 +362,7 @@ export class WorkspaceRepository
   }
 
   async search(query: string): Promise<WorkspaceMetadata[]> {
-    const rows = await this.sqliteCache.searchWorkspaces(query);
+    const rows = await this.sqliteCache.searchWorkspaces(query) as WorkspaceRow[];
     return rows.map(row => this.rowToEntity(row));
   }
 
@@ -354,26 +370,31 @@ export class WorkspaceRepository
   // Protected Methods
   // ============================================================================
 
-  protected rowToEntity(row: any): WorkspaceMetadata {
-    let context = undefined;
-    if (row.contextJson) {
-      try {
-        context = JSON.parse(row.contextJson);
-      } catch (e) {
-      }
-    }
+  protected rowToEntity(row: DatabaseRow): WorkspaceMetadata {
+    const workspaceRow = row as WorkspaceRow;
+    const context = workspaceRow.contextJson
+      ? this.parseJsonValue<WorkspaceMetadata['context']>(workspaceRow.contextJson)
+      : undefined;
 
     return {
-      id: row.id,
-      name: row.name,
-      description: row.description ?? undefined,
-      rootFolder: row.rootFolder,
-      created: row.created,
-      lastAccessed: row.lastAccessed,
-      isActive: row.isActive === 1,
-      isArchived: row.isArchived === 1,
-      dedicatedAgentId: row.dedicatedAgentId ?? undefined,
+      id: workspaceRow.id,
+      name: workspaceRow.name,
+      description: workspaceRow.description ?? undefined,
+      rootFolder: workspaceRow.rootFolder,
+      created: workspaceRow.created,
+      lastAccessed: workspaceRow.lastAccessed,
+      isActive: workspaceRow.isActive === 1,
+      isArchived: workspaceRow.isArchived === 1,
+      dedicatedAgentId: workspaceRow.dedicatedAgentId ?? undefined,
       context
     };
+  }
+
+  private parseJsonValue<T>(json: string): T | undefined {
+    try {
+      return JSON.parse(json) as T;
+    } catch {
+      return undefined;
+    }
   }
 }

@@ -2,7 +2,6 @@ import {
   PromptExecutionResult,
   InternalExecutionResult,
   BatchExecutePromptResult,
-  ExecutionStats,
   MergedResponse
 } from '../types';
 

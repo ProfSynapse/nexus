@@ -17,6 +17,8 @@ import { WorkspaceService } from '../services/WorkspaceService';
 import { MemoryService } from '../agents/memoryManager/services/MemoryService';
 import { CustomPromptStorageService } from '../agents/promptManager/services/CustomPromptStorageService';
 import type { ServiceManager } from '../core/ServiceManager';
+import type { PluginLifecycleManager } from '../core/PluginLifecycleManager';
+import type { IndividualWorkspace } from '../types/storage/StorageTypes';
 
 // Agents
 import { SearchManagerAgent } from '../agents/searchManager/searchManager';
@@ -52,7 +54,7 @@ export class SettingsView extends PluginSettingTab {
 
     // Managers
     private serviceManager: ServiceManager | undefined;
-    private pluginLifecycleManager: any;
+    private pluginLifecycleManager: PluginLifecycleManager | undefined;
     private appManager: AppManager | undefined;
 
     // UI Components
@@ -71,8 +73,8 @@ export class SettingsView extends PluginSettingTab {
     // private dataTab: DataTab | undefined; // TODO: Re-enable when Data tab is ready
 
     // Prefetched data cache
-    private prefetchedWorkspaces: any[] | null = null;
-    private isPrefetching: boolean = false;
+    private prefetchedWorkspaces: IndividualWorkspace[] | null = null;
+    private isPrefetching = false;
 
     constructor(
         app: App,
@@ -85,7 +87,7 @@ export class SettingsView extends PluginSettingTab {
         searchManager?: SearchManagerAgent,
         memoryManager?: MemoryManagerAgent,
         serviceManager?: ServiceManager,
-        pluginLifecycleManager?: any,
+        pluginLifecycleManager?: PluginLifecycleManager,
         appManager?: AppManager
     ) {
         super(app, plugin);
@@ -168,7 +170,7 @@ export class SettingsView extends PluginSettingTab {
                     workspaceService = await Promise.race([
                         this.serviceManager.getService<WorkspaceService>('workspaceService'),
                         new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), 5000))
-                    ]) as WorkspaceService | undefined;
+                    ]);
                 }
             }
 
@@ -198,7 +200,7 @@ export class SettingsView extends PluginSettingTab {
         this.getStartedAccordion?.unload();
 
         // Start prefetching workspaces in background (non-blocking)
-        this.prefetchWorkspaces();
+        void this.prefetchWorkspaces();
 
         // 1. Render header (About + Update button)
         this.renderHeader(containerEl);
@@ -245,9 +247,9 @@ export class SettingsView extends PluginSettingTab {
         const header = containerEl.createDiv('nexus-settings-header');
 
         // Title and description
-        header.createEl('h2', { text: 'Nexus' });
+        ;
         header.createEl('p', {
-            text: 'AI-powered assistant for your Obsidian vault',
+            text: 'An assistant for your vault',
             cls: 'nexus-settings-desc'
         });
 
@@ -260,7 +262,7 @@ export class SettingsView extends PluginSettingTab {
         });
 
         // Conditionally show update UI (hidden when plugin is in the community store)
-        UpdateManager.isStoreAvailable(this.plugin.manifest.id).then((storeAvailable) => {
+        void UpdateManager.isStoreAvailable(this.plugin.manifest.id).then((storeAvailable) => {
             if (storeAvailable) return;
 
             // Update notification if available
@@ -473,8 +475,8 @@ export class SettingsView extends PluginSettingTab {
      */
     private renderProvidersTab(
         container: HTMLElement,
-        state: RouterState,
-        services: any
+        _state: RouterState,
+        _services: { memoryService?: MemoryService; workspaceService?: WorkspaceService; customPromptStorage?: CustomPromptStorageService }
     ): void {
         // Destroy previous tab instance if exists
         this.providersTab?.destroy();
@@ -496,8 +498,8 @@ export class SettingsView extends PluginSettingTab {
      */
     private renderAppsTab(
         container: HTMLElement,
-        state: RouterState,
-        services: any
+        _state: RouterState,
+        _services: { memoryService?: MemoryService; workspaceService?: WorkspaceService; customPromptStorage?: CustomPromptStorageService }
     ): void {
         this.appsTab?.destroy();
         this.appsTab = new AppsTab(
@@ -560,7 +562,7 @@ export class SettingsView extends PluginSettingTab {
         // (e.g., ".obsidian/plugins/claudesidian-mcp" instead of just "claudesidian-mcp")
         const pluginFolderName = pluginDir ? pluginDir.split('/').pop() || pluginDir : '';
         const pluginPath = vaultBasePath && pluginFolderName
-            ? `${vaultBasePath}/.obsidian/plugins/${pluginFolderName}`
+            ? `${vaultBasePath}/${this.app.vault.configDir}/plugins/${pluginFolderName}`
             : '';
         const vaultPath = vaultBasePath || '';
 

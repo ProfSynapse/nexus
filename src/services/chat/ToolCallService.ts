@@ -125,7 +125,7 @@ export class ToolCallService {
       if (this.mcpConnector && typeof this.mcpConnector.getAvailableTools === 'function') {
         // MCP connector returns tools in MCP or OpenAI format
         const tools = this.mcpConnector.getAvailableTools();
-        this.availableTools = (tools || []) as (MCPTool | OpenAITool)[];
+        this.availableTools = (tools || []);
         return;
       }
 
@@ -151,7 +151,7 @@ export class ToolCallService {
     return mcpTools.map(tool => {
       // Check if already in OpenAI format (has type: 'function' and function object)
       if ('type' in tool && tool.type === 'function' && 'function' in tool) {
-        return tool as OpenAITool; // Already converted, return as-is
+        return tool; // Already converted, return as-is
       }
 
       // Convert from MCP format (name, description, inputSchema) to OpenAI format
@@ -165,6 +165,30 @@ export class ToolCallService {
         }
       };
     });
+  }
+
+  private parseToolArguments(argumentsValue: unknown): Record<string, unknown> {
+    if (typeof argumentsValue === 'string') {
+      const parsed: unknown = JSON.parse(argumentsValue);
+      if (parsed !== null && typeof parsed === 'object') {
+        return parsed as Record<string, unknown>;
+      }
+      return {};
+    }
+
+    if (argumentsValue !== null && typeof argumentsValue === 'object') {
+      return argumentsValue as Record<string, unknown>;
+    }
+
+    return {};
+  }
+
+  private parseToolArgumentsSafely(argumentsValue: unknown): Record<string, unknown> {
+    try {
+      return this.parseToolArguments(argumentsValue);
+    } catch {
+      return {};
+    }
   }
 
   /**
@@ -270,12 +294,10 @@ export class ToolCallService {
         }
 
         // Extract parameters
-        const args = typeof toolCall.function?.arguments === 'string'
-          ? JSON.parse(toolCall.function.arguments)
-          : (toolCall.function?.arguments || {});
+        const args = this.parseToolArguments(toolCall.function?.arguments);
 
         // Enrich with context
-        const enrichedArgs = this.enrichWithContext(args as Record<string, unknown>, context);
+        const enrichedArgs = this.enrichWithContext(args, context);
 
         // Get the tool name (ensure it's defined)
         const toolName = toolCall.function?.name || toolCall.name || 'unknown';
@@ -329,9 +351,7 @@ export class ToolCallService {
             name: toolName,
             arguments: toolCall.function?.arguments || JSON.stringify({})
           },
-          parameters: typeof toolCall.function?.arguments === 'string'
-            ? JSON.parse(toolCall.function.arguments)
-            : (toolCall.function?.arguments || {}),
+          parameters: this.parseToolArgumentsSafely(toolCall.function?.arguments),
           error: error instanceof Error ? error.message : String(error),
           success: false
         };

@@ -99,7 +99,7 @@ export class WorkspaceEventApplier {
     }
 
     const updates: string[] = [];
-    const values: any[] = [];
+    const values: unknown[] = [];
 
     if (event.data.name !== undefined) { updates.push('name = ?'); values.push(event.data.name); }
     if (event.data.description !== undefined) { updates.push('description = ?'); values.push(event.data.description); }
@@ -151,7 +151,7 @@ export class WorkspaceEventApplier {
 
   private async applySessionUpdated(event: SessionUpdatedEvent): Promise<void> {
     const updates: string[] = [];
-    const values: any[] = [];
+    const values: unknown[] = [];
 
     if (event.data.name !== undefined) { updates.push('name = ?'); values.push(event.data.name); }
     if (event.data.description !== undefined) { updates.push('description = ?'); values.push(event.data.description); }

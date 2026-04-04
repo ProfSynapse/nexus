@@ -49,6 +49,32 @@ interface UseToolParams {
   strategy?: 'serial' | 'parallel';
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isUseToolCall(value: unknown): value is UseToolCall {
+  return (
+    isRecord(value) &&
+    typeof value.agent === 'string' &&
+    typeof value.tool === 'string' &&
+    isRecord(value.params)
+  );
+}
+
+function isUseToolParams(value: unknown): value is UseToolParams {
+  return (
+    isRecord(value) &&
+    isRecord(value.context) &&
+    typeof value.context.workspaceId === 'string' &&
+    typeof value.context.sessionId === 'string' &&
+    typeof value.context.memory === 'string' &&
+    typeof value.context.goal === 'string' &&
+    Array.isArray(value.calls) &&
+    value.calls.every(isUseToolCall)
+  );
+}
+
 
 export class NexusToolCallConverter {
   private defaultContext: NexusDefaultContext;
@@ -164,7 +190,10 @@ export class NexusToolCallConverter {
     let originalParams: Record<string, unknown> = {};
     try {
       const argsStr = toolCall.function?.arguments || '{}';
-      originalParams = JSON.parse(argsStr);
+      const parsedArgs: unknown = JSON.parse(argsStr);
+      if (isRecord(parsedArgs)) {
+        originalParams = parsedArgs;
+      }
     } catch {
       // Invalid JSON - use empty params
     }
@@ -196,7 +225,7 @@ export class NexusToolCallConverter {
    * Convert multiple tool calls to useTool format
    * Optionally batch them into a single useTool call
    */
-  convertToolCalls(toolCalls: ToolCall[], batch: boolean = false): ToolCall[] {
+  convertToolCalls(toolCalls: ToolCall[], batch = false): ToolCall[] {
     if (!toolCalls || toolCalls.length === 0) {
       return [];
     }
@@ -223,8 +252,8 @@ export class NexusToolCallConverter {
       // If already useTool format, extract its calls
       if (this.isUseToolFormat(toolCall)) {
         try {
-          const params = JSON.parse(toolCall.function?.arguments || '{}');
-          if (params.calls && Array.isArray(params.calls)) {
+          const params: unknown = JSON.parse(toolCall.function?.arguments || '{}');
+          if (isUseToolParams(params)) {
             allCalls.push(...params.calls);
           }
         } catch {
@@ -240,7 +269,10 @@ export class NexusToolCallConverter {
       if (parsed) {
         let originalParams: Record<string, unknown> = {};
         try {
-          originalParams = JSON.parse(toolCall.function?.arguments || '{}');
+          const parsedArgs: unknown = JSON.parse(toolCall.function?.arguments || '{}');
+          if (isRecord(parsedArgs)) {
+            originalParams = parsedArgs;
+          }
         } catch {
           // Invalid JSON
         }

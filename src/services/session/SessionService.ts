@@ -85,7 +85,7 @@ export class SessionService {
         this.sessions.set(sessionId, session);
         return session;
       }
-    } catch (error) {
+    } catch {
       // Session not found in default workspace
     }
 
@@ -95,7 +95,7 @@ export class SessionService {
   /**
    * Get all sessions from a workspace
    */
-  async getAllSessions(workspaceId: string = 'default'): Promise<SessionData[]> {
+  async getAllSessions(workspaceId = 'default'): Promise<SessionData[]> {
     try {
       const workspaceSessions = await this.memoryService.getSessions(workspaceId);
       // Convert to SessionData format and cache
@@ -111,7 +111,7 @@ export class SessionService {
       }
 
       return sessions;
-    } catch (error) {
+    } catch {
       return [];
     }
   }
@@ -139,7 +139,7 @@ export class SessionService {
   /**
    * Delete a session
    */
-  async deleteSession(sessionId: string, workspaceId: string = 'default'): Promise<void> {
+  async deleteSession(sessionId: string, workspaceId = 'default'): Promise<void> {
     // Remove from memory cache
     this.sessions.delete(sessionId);
 
@@ -155,7 +155,7 @@ export class SessionService {
    * Generate a unique session ID
    */
   private generateSessionId(): string {
-    return `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    return `session_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
   }
   
   /**

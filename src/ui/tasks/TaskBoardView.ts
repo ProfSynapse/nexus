@@ -93,7 +93,7 @@ export class TaskBoardView extends ItemView {
   }
 
   getDisplayText(): string {
-    return 'Task Board';
+    return 'Task board';
   }
 
   getIcon(): string {
@@ -206,26 +206,28 @@ export class TaskBoardView extends ItemView {
   }
 
   private async loadBoardData(): Promise<void> {
-    if (!this.workspaceService || !this.taskService) {
+    const workspaceService = this.workspaceService;
+    const taskService = this.taskService;
+    if (!workspaceService || !taskService) {
       throw new Error('Task board services are not initialized');
     }
 
-    const workspaces = await this.workspaceService.getWorkspaces({
+    const workspaces = await workspaceService.getWorkspaces({
       sortBy: 'lastAccessed',
       sortOrder: 'desc'
     });
     this.workspaces = workspaces.filter(workspace => !workspace.isArchived);
 
     if (!this.filterState.workspaceId) {
-      const activeWorkspace = await this.workspaceService.getActiveWorkspace();
+      const activeWorkspace = await workspaceService.getActiveWorkspace();
       this.filterState.workspaceId = activeWorkspace?.id || 'all';
     }
 
     const workspaceData = await Promise.all(
       this.workspaces.map(async workspace => {
         const [projectsResult, tasksResult] = await Promise.all([
-          this.taskService!.listProjects(workspace.id, { pageSize: 1000 }),
-          this.taskService!.listWorkspaceTasks(workspace.id, { pageSize: 10000 })
+          taskService.listProjects(workspace.id, { pageSize: 1000 }),
+          taskService.listWorkspaceTasks(workspace.id, { pageSize: 10000 })
         ]);
 
         return {
@@ -253,7 +255,7 @@ export class TaskBoardView extends ItemView {
     // Load note links for all tasks
     const noteLinksResults = await Promise.all(
       allTasks.map(task =>
-        this.taskService!.getNoteLinks(task.id).catch(() => [] as NoteLink[])
+        taskService.getNoteLinks(task.id).catch(() => [] as NoteLink[])
       )
     );
     allTasks.forEach((task, index) => {
@@ -335,7 +337,7 @@ export class TaskBoardView extends ItemView {
     const header = container.createDiv('nexus-task-board-header');
     const text = header.createDiv();
     text.createDiv({ cls: 'nexus-task-board-kicker', text: 'Workspace view' });
-    text.createEl('h2', { text: 'Task Board' });
+    text.createEl('h2', { text: 'Task board' });
     text.createEl('p', {
       cls: 'nexus-task-board-subtitle',
       text: 'Drag cards to change status. Use the edit icon for task details.'

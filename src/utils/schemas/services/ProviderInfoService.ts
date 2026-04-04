@@ -47,7 +47,7 @@ export class ProviderInfoService {
       const settings = this.providerManager.getSettings();
       return Object.keys(settings.providers)
         .filter(id => settings.providers[id]?.enabled && settings.providers[id]?.apiKey);
-    } catch (error) {
+    } catch {
       return [];
     }
   }
@@ -67,12 +67,13 @@ export class ProviderInfoService {
         try {
           const providerModels = staticModelsService.getModelsForProvider(providerId);
           models.push(...providerModels.map((m) => m.id));
-        } catch (error) {
+        } catch {
+          // Ignore individual provider model lookup failures.
         }
       });
 
       return [...new Set(models)]; // Remove duplicates
-    } catch (error) {
+    } catch {
       return [];
     }
   }
@@ -86,7 +87,7 @@ export class ProviderInfoService {
     try {
       const settings = this.providerManager.getSettings();
       return settings.defaultModel || null;
-    } catch (error) {
+    } catch {
       return null;
     }
   }

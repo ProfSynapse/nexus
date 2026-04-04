@@ -3,6 +3,7 @@ import { BaseTool } from '../../baseTool';
 import { GetPromptParams, GetPromptResult } from '../types';
 import { CustomPromptStorageService } from '../services/CustomPromptStorageService';
 import { getCommonResultSchema, createResult } from '../../../utils/schemaUtils';
+import { getErrorMessage } from '../../../utils/errorUtils';
 
 /**
  * Tool for getting a specific custom prompt for persona adoption
@@ -72,7 +73,7 @@ To execute tasks: User must explicitly request promptManager_executePrompts`;
 
       return createResult<GetPromptResult>(true, resultWithMessage, undefined);
     } catch (error) {
-      return createResult<GetPromptResult>(false, null, `Failed to get prompt: ${error}`);
+      return createResult<GetPromptResult>(false, null, `Failed to get prompt: ${getErrorMessage(error)}`);
     }
   }
 

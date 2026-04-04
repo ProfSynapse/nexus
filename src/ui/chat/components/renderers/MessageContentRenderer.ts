@@ -33,7 +33,7 @@ export class MessageContentRenderer {
     }
 
     let contentToRender = content;
-    let placeholders: any[] | null = null;
+    let placeholders: ReturnType<typeof ReferenceBadgeRenderer.injectReferencePlaceholders>['placeholders'] | null = null;
 
     // Inject reference placeholders if metadata exists
     if (referenceMetadata && referenceMetadata.references.length > 0) {

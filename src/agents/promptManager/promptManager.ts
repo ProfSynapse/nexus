@@ -15,6 +15,7 @@ import type { SubagentToolContext } from './tools/subagent';
 import { CustomPromptStorageService } from './services/CustomPromptStorageService';
 import { Settings } from '../../settings';
 import { sanitizeVaultName } from '../../utils/vaultUtils';
+import { getErrorMessage } from '../../utils/errorUtils';
 import { LLMProviderManager } from '../../services/llm/providers/ProviderManager';
 import { AgentManager } from '../../services/AgentManager';
 import { UsageTracker } from '../../services/UsageTracker';
@@ -345,7 +346,7 @@ export class PromptManagerAgent extends BaseAgent {
 
       return promptSummary.join('\n');
     } catch (error) {
-      return `Custom Prompts: Error loading custom prompts (${error})`;
+      return `Custom Prompts: Error loading custom prompts (${getErrorMessage(error)})`;
     }
   }
 }

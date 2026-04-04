@@ -2,6 +2,33 @@ import { ModelAgentManager } from '../../src/ui/chat/services/ModelAgentManager'
 import { CompactedContext } from '../../src/services/chat/ContextCompactionService';
 import type { ModelOption } from '../../src/ui/chat/types/SelectionTypes';
 
+type ModelAgentManagerTestAccess = ModelAgentManager & {
+  getAvailableModels(): Promise<ModelOption[]>;
+  getAvailablePrompts(): Promise<unknown[]>;
+};
+
+type CompactionMetadata = {
+  compaction: {
+    frontier: unknown[];
+  };
+};
+
+function withCoverage(record: CompactedContext): CompactedContext & {
+  transcriptCoverage: NonNullable<CompactedContext['transcriptCoverage']>;
+} {
+  if (!record.transcriptCoverage) {
+    throw new Error('Expected transcript coverage');
+  }
+  return {
+    ...record,
+    transcriptCoverage: record.transcriptCoverage
+  };
+}
+
+function asManager(manager: ModelAgentManager): ModelAgentManagerTestAccess {
+  return manager as ModelAgentManagerTestAccess;
+}
+
 describe('ModelAgentManager compaction persistence', () => {
   const initialCompactionRecord: CompactedContext = {
     summary: 'Previous work summary',
@@ -86,6 +113,8 @@ describe('ModelAgentManager compaction persistence', () => {
       initialCompactionRecord
     );
 
+    const initialRecord = withCoverage(initialCompactionRecord);
+
     expect(metadata).toEqual({
       chatSettings: {
         providerId: 'anthropic-claude-code',
@@ -93,10 +122,10 @@ describe('ModelAgentManager compaction persistence', () => {
       },
       compaction: {
         frontier: [{
-          ...initialCompactionRecord,
+          ...initialRecord,
           level: 0,
           mergedRecordCount: 1,
-          transcriptCoverageAncestry: [initialCompactionRecord.transcriptCoverage!]
+          transcriptCoverageAncestry: [initialRecord.transcriptCoverage]
         }]
       }
     });
@@ -118,7 +147,7 @@ describe('ModelAgentManager compaction persistence', () => {
     };
 
     const manager = createManager(conversationService);
-    jest.spyOn(manager as any, 'getAvailableModels').mockResolvedValue([
+    jest.spyOn(asManager(manager), 'getAvailableModels').mockResolvedValue([
       {
         providerId: 'anthropic-claude-code',
         modelId: 'claude-sonnet-4-6',
@@ -127,29 +156,29 @@ describe('ModelAgentManager compaction persistence', () => {
         contextWindow: 200_000
       }
     ]);
-    jest.spyOn(manager as any, 'getAvailablePrompts').mockResolvedValue([]);
+    jest.spyOn(asManager(manager), 'getAvailablePrompts').mockResolvedValue([]);
 
     await manager.initializeFromConversation('conv_1');
 
     expect(manager.getCompactionFrontier()).toEqual([
       {
-        ...initialCompactionRecord,
+        ...withCoverage(initialCompactionRecord),
         level: 0,
         mergedRecordCount: 1,
-        transcriptCoverageAncestry: [initialCompactionRecord.transcriptCoverage!]
+        transcriptCoverageAncestry: [withCoverage(initialCompactionRecord).transcriptCoverage]
       },
       {
-        ...secondContext,
+        ...withCoverage(secondContext),
         level: 0,
         mergedRecordCount: 1,
-        transcriptCoverageAncestry: [secondContext.transcriptCoverage!]
+        transcriptCoverageAncestry: [withCoverage(secondContext).transcriptCoverage]
       }
     ]);
     expect(manager.getLatestCompactionRecord()).toEqual({
-      ...secondContext,
+      ...withCoverage(secondContext),
       level: 0,
       mergedRecordCount: 1,
-      transcriptCoverageAncestry: [secondContext.transcriptCoverage!]
+      transcriptCoverageAncestry: [withCoverage(secondContext).transcriptCoverage]
     });
   });
 
@@ -169,7 +198,7 @@ describe('ModelAgentManager compaction persistence', () => {
     };
 
     const manager = createManager(conversationService);
-    jest.spyOn(manager as any, 'getAvailableModels').mockResolvedValue([
+    jest.spyOn(asManager(manager), 'getAvailableModels').mockResolvedValue([
       {
         providerId: 'anthropic-claude-code',
         modelId: 'claude-sonnet-4-6',
@@ -178,21 +207,21 @@ describe('ModelAgentManager compaction persistence', () => {
         contextWindow: 200_000
       }
     ]);
-    jest.spyOn(manager as any, 'getAvailablePrompts').mockResolvedValue([]);
+    jest.spyOn(asManager(manager), 'getAvailablePrompts').mockResolvedValue([]);
 
     await manager.initializeFromConversation('conv_legacy');
 
     expect(manager.getCompactionFrontier()).toEqual([{
-      ...initialCompactionRecord,
+      ...withCoverage(initialCompactionRecord),
       level: 0,
       mergedRecordCount: 1,
-      transcriptCoverageAncestry: [initialCompactionRecord.transcriptCoverage!]
+      transcriptCoverageAncestry: [withCoverage(initialCompactionRecord).transcriptCoverage]
     }]);
     expect(manager.getLatestCompactionRecord()).toEqual({
-      ...initialCompactionRecord,
+      ...withCoverage(initialCompactionRecord),
       level: 0,
       mergedRecordCount: 1,
-      transcriptCoverageAncestry: [initialCompactionRecord.transcriptCoverage!]
+      transcriptCoverageAncestry: [withCoverage(initialCompactionRecord).transcriptCoverage]
     });
   });
 
@@ -217,22 +246,22 @@ describe('ModelAgentManager compaction persistence', () => {
       secondContext.transcriptCoverage
     ]);
     expect(frontier[1]).toMatchObject({
-      ...thirdContext,
+      ...withCoverage(thirdContext),
       level: 0,
       mergedRecordCount: 1,
-      transcriptCoverageAncestry: [thirdContext.transcriptCoverage!]
+      transcriptCoverageAncestry: [withCoverage(thirdContext).transcriptCoverage]
     });
     expect(frontier[2]).toMatchObject({
-      ...fourthContext,
+      ...withCoverage(fourthContext),
       level: 0,
       mergedRecordCount: 1,
-      transcriptCoverageAncestry: [fourthContext.transcriptCoverage!]
+      transcriptCoverageAncestry: [withCoverage(fourthContext).transcriptCoverage]
     });
     expect(manager.getLatestCompactionRecord()).toEqual({
-      ...fourthContext,
+      ...withCoverage(fourthContext),
       level: 0,
       mergedRecordCount: 1,
-      transcriptCoverageAncestry: [fourthContext.transcriptCoverage!]
+      transcriptCoverageAncestry: [withCoverage(fourthContext).transcriptCoverage]
     });
   });
 
@@ -264,7 +293,7 @@ describe('ModelAgentManager compaction persistence', () => {
 
     const manager = createManager(conversationService);
     manager.appendCompactionRecord(initialCompactionRecord);
-    jest.spyOn(manager as any, 'getAvailableModels').mockResolvedValue([
+    jest.spyOn(asManager(manager), 'getAvailableModels').mockResolvedValue([
       {
         providerId: 'anthropic-claude-code',
         modelId: 'claude-sonnet-4-6',
@@ -273,7 +302,7 @@ describe('ModelAgentManager compaction persistence', () => {
         contextWindow: 200_000
       }
     ]);
-    jest.spyOn(manager as any, 'getAvailablePrompts').mockResolvedValue([]);
+    jest.spyOn(asManager(manager), 'getAvailablePrompts').mockResolvedValue([]);
 
     await manager.initializeFromConversation('conv_2');
 
@@ -293,7 +322,7 @@ describe('ModelAgentManager compaction persistence', () => {
       manager.buildMetadataWithCompactionRecord(undefined, initialCompactionRecord),
       secondContext
     );
-    expect((metadata as any).compaction.frontier).toHaveLength(2);
+    expect((metadata as CompactionMetadata).compaction.frontier).toHaveLength(2);
 
     manager.clearPreviousContext();
     expect(manager.getCompactionFrontier()).toEqual([]);

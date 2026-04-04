@@ -1,27 +1,37 @@
 import { Events, Vault, TFile } from 'obsidian';
 import { WorkspaceService } from '../../../services/WorkspaceService';
 import { MemoryService } from '../../../agents/memoryManager/services/MemoryService';
+import { IndividualWorkspace } from '../../../types/storage/StorageTypes';
+import { WorkspaceMemoryTrace } from '../../types/memory/MemoryTypes';
+import { WorkspaceSession, WorkspaceState } from '../../types/session/SessionTypes';
 
 interface TimestampedEntry {
     timestamp: number;
 }
 
 interface CachedWorkspace extends TimestampedEntry {
-    data: any;
+    data: IndividualWorkspace;
     sessionIds: string[];
     stateIds: string[];
     associatedFiles: string[];
 }
 
 interface CachedSession extends TimestampedEntry {
-    data: any;
+    data: WorkspaceSession;
     traceIds: string[];
     associatedFiles: string[];
 }
 
 interface CachedState extends TimestampedEntry {
-    data: any;
+    data: WorkspaceStateRecord;
     associatedFiles: string[];
+}
+
+interface WorkspaceStateRecord {
+    id: string;
+    name: string;
+    created: number;
+    state: WorkspaceState;
 }
 
 interface FileMetadata {
@@ -30,7 +40,7 @@ interface FileMetadata {
     modified: number;
     size: number;
     isKeyFile: boolean;
-    frontmatter?: any;
+    frontmatter?: Record<string, unknown>;
     workspaceIds?: string[];
 }
 
@@ -141,7 +151,7 @@ export class EntityCache extends Events {
             // Collect associated files
             const associatedFiles = new Set<string>();
             // Note: WorkspaceSession doesn't have activeNote property
-            tracesResult.items.forEach(trace => {
+            tracesResult.items.forEach((trace: WorkspaceMemoryTrace) => {
                 const metadata = trace.metadata as { input?: { files?: string[] }; legacy?: { relatedFiles?: string[] } } | undefined;
                 const files =
                   (metadata?.input?.files && Array.isArray(metadata.input.files)
@@ -206,7 +216,7 @@ export class EntityCache extends Events {
     async preloadFiles(filePaths: string[]): Promise<void> {
         const files = filePaths
             .map(path => this.vault.getAbstractFileByPath(path))
-            .filter(file => file instanceof TFile) as TFile[];
+            .filter(file => file instanceof TFile);
 
         await Promise.all(files.map(file => this.cacheFileMetadata(file)));
     }
@@ -225,9 +235,9 @@ export class EntityCache extends Events {
     }
 
     // Batch loading methods
-    async batchLoadSessions(sessionIds: string[]): Promise<any[]> {
+    async batchLoadSessions(sessionIds: string[]): Promise<WorkspaceSession[]> {
         const uncached: string[] = [];
-        const results: any[] = [];
+        const results: WorkspaceSession[] = [];
 
         // Check cache first
         for (const id of sessionIds) {
@@ -244,7 +254,7 @@ export class EntityCache extends Events {
             // Load sessions individually
             const sessionPromises = uncached.map(id => this.memoryService.getSession('default-workspace', id));
             const sessionResults = await Promise.all(sessionPromises);
-            const sessions = sessionResults.filter((s): s is any => s !== undefined);
+            const sessions = sessionResults.filter((s): s is WorkspaceSession => s !== undefined && s !== null);
             
             // Cache the loaded sessions
             for (const session of sessions) {
@@ -263,9 +273,9 @@ export class EntityCache extends Events {
         return results;
     }
 
-    async batchLoadStates(stateIds: string[]): Promise<any[]> {
+    async batchLoadStates(stateIds: string[]): Promise<WorkspaceStateRecord[]> {
         const uncached: string[] = [];
-        const results: any[] = [];
+        const results: WorkspaceStateRecord[] = [];
 
         // Check cache first
         for (const id of stateIds) {

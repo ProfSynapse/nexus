@@ -20,6 +20,18 @@ import {
 } from '../fixtures/chatBugs';
 import type { AlternativeMessageEvent } from '../../src/database/interfaces/StorageEvents';
 
+type TestToolCall = {
+  id: string;
+  type?: string;
+  function: { name: string; arguments: string };
+  name?: string;
+  parameters?: Record<string, unknown>;
+  result?: unknown;
+  success?: boolean;
+  error?: string;
+  executionTime?: number;
+};
+
 /**
  * Replicate the convertAlternativesToEvent logic from MessageRepository
  * for isolated unit testing without needing SQLite/JSONL infrastructure.
@@ -31,7 +43,7 @@ function convertAlternativesToEvent(
     id: string;
     content: string | null;
     timestamp: number;
-    toolCalls?: any[];
+    toolCalls?: TestToolCall[];
     reasoning?: string;
     state?: string;
   }>
@@ -43,7 +55,7 @@ function convertAlternativesToEvent(
     id: alt.id,
     content: alt.content,
     timestamp: alt.timestamp,
-    tool_calls: alt.toolCalls?.map((tc: any) => ({
+    tool_calls: alt.toolCalls?.map((tc: TestToolCall) => ({
       id: tc.id,
       type: tc.type || 'function',
       function: tc.function,
@@ -58,6 +70,11 @@ function convertAlternativesToEvent(
     reasoning: alt.reasoning,
     state: alt.state
   }));
+}
+
+function expectDefined<T>(value: T | null | undefined): T {
+  expect(value).toBeDefined();
+  return value as T;
 }
 
 describe('MessageRepository convertAlternativesToEvent', () => {
@@ -80,14 +97,15 @@ describe('MessageRepository convertAlternativesToEvent', () => {
       const alt = createAlternativeMessage({ toolCalls: undefined });
       const result = convertAlternativesToEvent([alt]);
 
+      const event = expectDefined(result)[0];
       expect(result).toBeDefined();
-      expect(result!.length).toBe(1);
-      expect(result![0].id).toBe(alt.id);
-      expect(result![0].content).toBe(alt.content);
-      expect(result![0].timestamp).toBe(alt.timestamp);
-      expect(result![0].tool_calls).toBeUndefined();
-      expect(result![0].reasoning).toBe(alt.reasoning);
-      expect(result![0].state).toBe(alt.state);
+      expect(expectDefined(result).length).toBe(1);
+      expect(event.id).toBe(alt.id);
+      expect(event.content).toBe(alt.content);
+      expect(event.timestamp).toBe(alt.timestamp);
+      expect(event.tool_calls).toBeUndefined();
+      expect(event.reasoning).toBe(alt.reasoning);
+      expect(event.state).toBe(alt.state);
     });
   });
 
@@ -113,8 +131,7 @@ describe('MessageRepository convertAlternativesToEvent', () => {
 
       const result = convertAlternativesToEvent([alt]);
 
-      expect(result).toBeDefined();
-      const eventToolCall = result![0].tool_calls![0];
+      const eventToolCall = expectDefined(expectDefined(result)[0].tool_calls)[0];
 
       // Core OpenAI format fields
       expect(eventToolCall.id).toBe('tc_full');
@@ -139,7 +156,7 @@ describe('MessageRepository convertAlternativesToEvent', () => {
       const alt = createAlternativeMessage({ toolCalls: [toolCall] });
       const result = convertAlternativesToEvent([alt]);
 
-      const eventToolCall = result![0].tool_calls![0];
+      const eventToolCall = expectDefined(expectDefined(result)[0].tool_calls)[0];
       expect(eventToolCall.error).toBe('File not found');
       expect(eventToolCall.success).toBe(false);
     });
@@ -152,8 +169,9 @@ describe('MessageRepository convertAlternativesToEvent', () => {
       const alt = createAlternativeMessage({ toolCalls: [tc1, tc2, tc3] });
       const result = convertAlternativesToEvent([alt]);
 
-      expect(result![0].tool_calls!.length).toBe(3);
-      expect(result![0].tool_calls!.map(tc => tc.id)).toEqual(['tc_1', 'tc_2', 'tc_3']);
+      const toolCalls = expectDefined(expectDefined(result)[0].tool_calls);
+      expect(toolCalls.length).toBe(3);
+      expect(toolCalls.map(tc => tc.id)).toEqual(['tc_1', 'tc_2', 'tc_3']);
     });
   });
 
@@ -193,7 +211,7 @@ describe('MessageRepository convertAlternativesToEvent', () => {
       expect(parsed[0].reasoning).toBe('Some reasoning');
       expect(parsed[0].state).toBe('complete');
 
-      const parsedTc = parsed[0].tool_calls![0];
+      const parsedTc = expectDefined(parsed[0].tool_calls)[0];
       expect(parsedTc.id).toBe('tc_round');
       expect(parsedTc.name).toBe('myTool');
       expect(parsedTc.parameters).toEqual({ nested: { key: 'value' } });
@@ -205,13 +223,13 @@ describe('MessageRepository convertAlternativesToEvent', () => {
     it('should default type to function when not set', () => {
       const toolCall = createIncompleteToolCall({
         id: 'tc_notype',
-        type: undefined as any
+        type: undefined
       });
 
       const alt = createAlternativeMessage({ toolCalls: [toolCall] });
       const result = convertAlternativesToEvent([alt]);
 
-      expect(result![0].tool_calls![0].type).toBe('function');
+      expect(expectDefined(expectDefined(result)[0].tool_calls)[0].type).toBe('function');
     });
   });
 
@@ -234,11 +252,11 @@ describe('MessageRepository convertAlternativesToEvent', () => {
 
       const result = convertAlternativesToEvent([alt1, alt2]);
 
-      expect(result!.length).toBe(2);
-      expect(result![0].id).toBe('alt_1');
-      expect(result![0].tool_calls!.length).toBe(1);
-      expect(result![1].id).toBe('alt_2');
-      expect(result![1].tool_calls).toBeUndefined();
+      expect(expectDefined(result).length).toBe(2);
+      expect(expectDefined(result)[0].id).toBe('alt_1');
+      expect(expectDefined(expectDefined(result)[0].tool_calls).length).toBe(1);
+      expect(expectDefined(result)[1].id).toBe('alt_2');
+      expect(expectDefined(result)[1].tool_calls).toBeUndefined();
     });
   });
 });

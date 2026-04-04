@@ -40,7 +40,7 @@ export class MessageActionBar extends Component {
     const insertBtn = this.addButton(container, 'file-input', 'Insert at cursor', () => this.handleInsert());
     this.registerDomEvent(insertBtn, 'mousedown', (e: MouseEvent) => e.preventDefault());
 
-    const appendBtn = this.addButton(container, 'file-plus-2', 'Append to active note', () => this.handleAppend());
+    const appendBtn = this.addButton(container, 'file-plus-2', 'Append to active note', () => { void this.handleAppend(); });
     this.registerDomEvent(appendBtn, 'mousedown', (e: MouseEvent) => e.preventDefault());
 
     this.addButton(container, 'file-plus', 'Create new file', () => this.handleCreate());

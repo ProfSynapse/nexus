@@ -13,6 +13,7 @@
 
 import { WebLLMAdapter } from './WebLLMAdapter';
 import { WEBLLM_MODELS } from './WebLLMModels';
+import type { WebLLMState } from './types';
 import { Notice } from 'obsidian';
 import { getAllPluginIds } from '../../../../constants/branding';
 
@@ -22,19 +23,6 @@ export interface WebLLMLifecycleCallbacks {
   onLoadingComplete?: () => void;
   onUnload?: () => void;
   onError?: (error: Error) => void;
-}
-
-/**
- * Helper function to safely get instanceId from adapter
- * Uses 'in' operator type guard and Record<string, unknown> for type safety
- * instead of 'as any' cast
- */
-function getAdapterInstanceId(adapter: WebLLMAdapter | null): number | undefined {
-  if (adapter && 'instanceId' in adapter) {
-    const value = (adapter as unknown as Record<string, unknown>).instanceId;
-    return typeof value === 'number' ? value : undefined;
-  }
-  return undefined;
 }
 
 /**
@@ -66,10 +54,10 @@ export class WebLLMLifecycleManager {
 
   private adapter: WebLLMAdapter | null = null;
   private idleTimer: ReturnType<typeof setTimeout> | null = null;
-  private lastActivityTime: number = 0;
+  private lastActivityTime = 0;
   private callbacks: WebLLMLifecycleCallbacks = {};
-  private isLoading: boolean = false;
-  private isChatViewOpen: boolean = false;
+  private isLoading = false;
+  private isChatViewOpen = false;
 
   /**
    * Set the WebLLM adapter reference
@@ -136,7 +124,7 @@ export class WebLLMLifecycleManager {
       }
 
       return false;
-    } catch (error) {
+    } catch {
       return false;
     }
   }
@@ -292,15 +280,8 @@ export class WebLLMLifecycleManager {
   private startIdleTimer(): void {
     if (this.idleTimer) return;
 
-    this.idleTimer = setTimeout(async () => {
-      this.idleTimer = null;
-
-      if (!this.adapter?.isModelLoaded()) return;
-
-      const idleTime = Date.now() - this.lastActivityTime;
-      if (idleTime >= WebLLMLifecycleManager.IDLE_TIMEOUT_MS) {
-        await this.unloadModel();
-      }
+    this.idleTimer = setTimeout(() => {
+      void this.handleIdleTimeout();
     }, WebLLMLifecycleManager.IDLE_TIMEOUT_MS);
   }
 
@@ -331,7 +312,7 @@ export class WebLLMLifecycleManager {
   /**
    * Get the current adapter state
    */
-  getState() {
+  getState(): WebLLMState | undefined {
     return this.adapter?.getState();
   }
 
@@ -342,6 +323,17 @@ export class WebLLMLifecycleManager {
     this.clearIdleTimer();
     this.adapter = null;
     this.callbacks = {};
+  }
+
+  private async handleIdleTimeout(): Promise<void> {
+    this.idleTimer = null;
+
+    if (!this.adapter?.isModelLoaded()) return;
+
+    const idleTime = Date.now() - this.lastActivityTime;
+    if (idleTime >= WebLLMLifecycleManager.IDLE_TIMEOUT_MS) {
+      await this.unloadModel();
+    }
   }
 }
 

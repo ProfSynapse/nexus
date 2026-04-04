@@ -8,6 +8,7 @@
  *
  * Used by: BaseAdapter.request(), BaseAdapter.requestStream()
  */
+/* eslint-disable import/no-nodejs-modules -- desktop-only provider streaming uses Node http/https/stream in Electron */
 
 import { requestUrl } from 'obsidian';
 import { LLMProviderError } from '../types';
@@ -188,10 +189,10 @@ export class ProviderHttpClient {
     const parsed = new URL(config.url);
     const isHttps = parsed.protocol === 'https:';
 
-    // Dynamically require Node.js modules (available in Electron)
-    const nodeModule = isHttps
-      ? require('https') as typeof import('https')
-      : require('http') as typeof import('http');
+    // Dynamically import Node.js modules (available in Electron)
+      const nodeModule = isHttps
+        ? await import('node:https')
+        : await import('node:http');
 
     const timeoutMs = config.timeoutMs ?? 120_000;
 
@@ -239,7 +240,7 @@ export class ProviderHttpClient {
       });
 
       req.on('error', (err) => {
-        reject(err);
+        reject(err instanceof Error ? err : new Error(String(err)));
       });
 
       // Abort support
@@ -295,7 +296,7 @@ export class ProviderHttpClient {
     }
 
     // Wrap the buffered text as a minimal readable stream
-    const { Readable } = require('stream') as typeof import('stream');
+      const { Readable } = await import('node:stream');
     const readable = new Readable({
       read() {
         this.push(Buffer.from(response.text, 'utf-8'));
@@ -337,7 +338,7 @@ export class ProviderHttpClient {
     },
     timeoutMs: number
   ): Promise<Awaited<ReturnType<typeof requestUrl>>> {
-    return new Promise((resolve, reject) => {
+      return new Promise((resolve, reject) => {
       const timeoutId = setTimeout(() => {
         reject(new Error(`Request timeout after ${timeoutMs}ms`));
       }, timeoutMs);
@@ -349,7 +350,7 @@ export class ProviderHttpClient {
         })
         .catch((error) => {
           clearTimeout(timeoutId);
-          reject(error);
+          reject(error instanceof Error ? error : new Error(String(error)));
         });
     });
   }

@@ -49,11 +49,18 @@ export abstract class ContentEditableSuggester<T> {
    * Setup event listeners
    */
   private setupEventListeners(): void {
-    const inputHandler = () => this.onInput();
+    const inputHandler = () => {
+      this.onInput();
+    };
     const keydownHandler = (e: KeyboardEvent) => this.onKeyDown(e);
 
-    this.component!.registerDomEvent(this.element, 'input', inputHandler);
-    this.component!.registerDomEvent(this.element, 'keydown', keydownHandler);
+    if (this.component) {
+      this.component.registerDomEvent(this.element, 'input', inputHandler);
+      this.component.registerDomEvent(this.element, 'keydown', keydownHandler);
+    } else {
+      this.element.addEventListener('input', inputHandler);
+      this.element.addEventListener('keydown', keydownHandler);
+    }
 
     // Click outside to close - stored as instance property for cleanup
     this.clickOutsideHandler = (e: MouseEvent) => {
@@ -72,7 +79,7 @@ export abstract class ContentEditableSuggester<T> {
   /**
    * Handle input event
    */
-  private async onInput(): Promise<void> {
+  private onInput(): void {
     const text = ContentEditableHelper.getPlainText(this.element);
     const cursorPos = ContentEditableHelper.getCursorPosition(this.element);
 
@@ -94,7 +101,16 @@ export abstract class ContentEditableSuggester<T> {
     const query = match[1] || '';
 
     // Debounce the suggestion fetch
-    this.debounceTimer = setTimeout(async () => {
+    this.debounceTimer = setTimeout(() => {
+      void this.loadSuggestions(query);
+    }, this.config.debounceDelay || 100);
+  }
+
+  /**
+   * Load and render suggestions for the current query
+   */
+  private async loadSuggestions(query: string): Promise<void> {
+    try {
       const suggestions = await this.getSuggestions(query);
 
       if (suggestions.length === 0) {
@@ -105,7 +121,9 @@ export abstract class ContentEditableSuggester<T> {
       this.currentSuggestions = suggestions;
       this.selectedIndex = 0;
       this.showSuggestions();
-    }, this.config.debounceDelay || 100);
+    } catch {
+      this.closeSuggestions();
+    }
   }
 
   /**
@@ -134,7 +152,7 @@ export abstract class ContentEditableSuggester<T> {
         if (this.currentSuggestions.length > 0) {
           e.preventDefault();
           e.stopPropagation();
-          this.selectCurrentSuggestion();
+          void this.selectCurrentSuggestion();
         }
         break;
 
@@ -153,14 +171,15 @@ export abstract class ContentEditableSuggester<T> {
       this.createSuggestionContainer();
     }
 
-    if (!this.suggestionContainer) return;
+    const suggestionContainer = this.suggestionContainer;
+    if (!suggestionContainer) return;
 
     // Clear existing suggestions
-    this.suggestionContainer.empty();
+    suggestionContainer.empty();
 
     // Render each suggestion
     this.currentSuggestions.forEach((suggestion, index) => {
-      const item = this.suggestionContainer!.createDiv('suggester-item');
+      const item = suggestionContainer.createDiv('suggester-item');
       if (index === this.selectedIndex) {
         item.addClass('is-selected');
       }
@@ -172,17 +191,21 @@ export abstract class ContentEditableSuggester<T> {
         e.preventDefault();
         e.stopPropagation();
         this.selectedIndex = index;
-        this.selectCurrentSuggestion();
+        void this.selectCurrentSuggestion();
       };
 
-      this.component!.registerDomEvent(item, 'click', clickHandler);
+      if (this.component) {
+        this.component.registerDomEvent(item, 'click', clickHandler);
+      } else {
+        item.addEventListener('click', clickHandler);
+      }
     });
 
     // Position above the input
     this.positionSuggestions();
 
-    this.suggestionContainer.classList.remove('suggester-container-hidden');
-    this.suggestionContainer.classList.add('suggester-container-visible');
+    suggestionContainer.classList.remove('suggester-container-hidden');
+    suggestionContainer.classList.add('suggester-container-visible');
     this.isActive = true;
   }
 

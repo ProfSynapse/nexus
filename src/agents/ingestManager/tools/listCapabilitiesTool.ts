@@ -30,7 +30,7 @@ export class ListCapabilitiesTool extends BaseTool<ListCapabilitiesParameters, L
     );
   }
 
-  async execute(params: ListCapabilitiesParameters): Promise<ListCapabilitiesResult> {
+  async execute(_params: ListCapabilitiesParameters): Promise<ListCapabilitiesResult> {
     try {
       const providerManager = this.getProviderManager();
       if (!providerManager) {

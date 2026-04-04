@@ -41,7 +41,7 @@ export class TaskBoardUIManager {
       await this.registerViewEarly();
       this.config.plugin.addCommand({
         id: 'open-task-board',
-        name: 'Open Task Board',
+        name: 'Open task board',
         callback: () => {
           void this.activateTaskBoardView();
         }

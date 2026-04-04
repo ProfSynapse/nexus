@@ -6,12 +6,10 @@
 import { CommonParameters, CommonResult } from '../../../types/mcp';
 import {
   ProjectWorkspace,
-  WorkspaceContext,
   WorkspaceWorkflow
 } from './WorkspaceTypes';
-import { StateContext } from '../session/SessionTypes';
 
-export interface WorkspaceWorkflowDefinition extends WorkspaceWorkflow {}
+export type WorkspaceWorkflowDefinition = WorkspaceWorkflow
 
 /**
  * Create workspace parameters - LLM must provide complete WorkspaceContext structure
@@ -192,7 +190,7 @@ export interface CreateStateParameters extends CommonParameters {
   
   // Optional legacy fields
   description?: string;
-  workspaceContext?: any;
+  workspaceContext?: CommonParameters['workspaceContext'];
   targetSessionId?: string;
   includeSummary?: boolean;
   includeFileContents?: boolean;
@@ -273,7 +271,7 @@ export interface StateResult extends CommonResult {
     workspaceId: string;
     sessionId: string;
     timestamp: number;
-    capturedContext?: any;
+    capturedContext?: unknown;
   };
 }
 
@@ -309,6 +307,6 @@ export interface AddFilesToWorkspaceResult extends CommonResult {
 }
 
 // Legacy exports for backward compatibility
-export interface WorkspaceParameters extends LoadWorkspaceParameters {}
-export interface WorkspaceResult extends LoadWorkspaceResult {}
-export interface QuickCreateWorkspaceParameters extends CreateWorkspaceParameters {}
+export type WorkspaceParameters = LoadWorkspaceParameters
+export type WorkspaceResult = LoadWorkspaceResult
+export type QuickCreateWorkspaceParameters = CreateWorkspaceParameters

@@ -2,6 +2,7 @@ import { JSONSchema } from '../../../types/schema/JSONSchemaTypes';
 import { BaseTool } from '../../baseTool';
 import { CreatePromptParams, CreatePromptResult } from '../types';
 import { CustomPromptStorageService } from '../services/CustomPromptStorageService';
+import { getErrorMessage } from '../../../utils/errorUtils';
 
 /**
  * Tool for creating a new custom prompt
@@ -57,7 +58,7 @@ export class CreatePromptTool extends BaseTool<CreatePromptParams, CreatePromptR
       // Success - LLM already knows what it passed
       return this.prepareResult(true);
     } catch (error) {
-      return this.prepareResult(false, undefined, `Failed to create prompt: ${error}`);
+      return this.prepareResult(false, undefined, `Failed to create prompt: ${getErrorMessage(error)}`);
     }
   }
 

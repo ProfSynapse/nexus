@@ -17,6 +17,11 @@
 import { WorkspaceService } from '../../src/services/WorkspaceService';
 import { createMockPlugin, createMockFileSystem, createMockIndexManager, createMockAdapter } from '../helpers/mockFactories';
 
+function expectDefined<T>(value: T | null | undefined): T {
+  expect(value).toBeDefined();
+  return value as T;
+}
+
 describe('getWorkspaceByNameOrId characterization', () => {
   const plugin = createMockPlugin();
 
@@ -35,7 +40,7 @@ describe('getWorkspaceByNameOrId characterization', () => {
     const result = await service.getWorkspaceByNameOrId('ws-id-123');
 
     expect(result).not.toBeNull();
-    expect(result!.id).toBe('ws-id-123');
+    expect(expectDefined(result).id).toBe('ws-id-123');
     // Characterization: ID lookup happens first, name lookup is never attempted
     expect(adapter.getWorkspaces).not.toHaveBeenCalled();
   });
@@ -68,7 +73,7 @@ describe('getWorkspaceByNameOrId characterization', () => {
     const result = await service.getWorkspaceByNameOrId('my workspace');
 
     expect(result).not.toBeNull();
-    expect(result!.id).toBe('ws-actual-id');
+    expect(expectDefined(result).id).toBe('ws-actual-id');
   });
 
   it('returns null when neither ID nor name matches (legacy path)', async () => {
@@ -107,7 +112,7 @@ describe('getSessionByNameOrId characterization', () => {
     const result = await service.getSessionByNameOrId('ws1', 'session-1');
 
     expect(result).not.toBeNull();
-    expect(result!.id).toBe('session-1');
+    expect(expectDefined(result).id).toBe('session-1');
   });
 
   it('falls back to name lookup when ID not found (legacy path)', async () => {
@@ -131,8 +136,8 @@ describe('getSessionByNameOrId characterization', () => {
     const result = await service.getSessionByNameOrId('ws1', 'target session');
 
     expect(result).not.toBeNull();
-    expect(result!.id).toBe('s1');
-    expect(result!.name).toBe('Target Session');
+    expect(expectDefined(result).id).toBe('s1');
+    expect(expectDefined(result).name).toBe('Target Session');
   });
 });
 
@@ -153,9 +158,9 @@ describe('getStateByNameOrId characterization', () => {
     const result = await service.getStateByNameOrId('ws1', 's1', 'state-1');
 
     expect(result).not.toBeNull();
-    expect(result!.id).toBe('state-1');
+    expect(expectDefined(result).id).toBe('state-1');
     // Characterization: adapter path maps `content` to `state`
-    expect(result!.state).toEqual({ key: 'value' });
+    expect(expectDefined(result).state).toEqual({ key: 'value' });
   });
 
   it('returns null when neither ID nor name matches (legacy path)', async () => {

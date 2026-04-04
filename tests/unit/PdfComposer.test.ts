@@ -9,6 +9,14 @@ import { PdfComposer } from '../../src/agents/apps/composer/services/PdfComposer
 import { ComposerError } from '../../src/agents/apps/composer/types';
 import { TFile, Vault } from 'obsidian';
 
+type MockTFile = TFile & {
+  stat: { size: number; mtime: number; ctime: number };
+};
+
+type VaultWithReadBinary = Vault & {
+  readBinary: jest.Mock<Promise<ArrayBuffer>, [TFile]>;
+};
+
 // Mock pdf-lib at module level.
 // The mock factory below is hoisted, so we cannot reference `const` variables.
 // Instead, we use `jest.requireMock` to access mock functions in tests.
@@ -40,13 +48,13 @@ const { __mocks: pdfMocks } = jest.requireMock('pdf-lib') as {
 
 function makeTFile(name: string, path?: string): TFile {
   const file = new TFile(name, path ?? name);
-  (file as any).stat = { size: 1024, mtime: Date.now(), ctime: Date.now() };
+  (file as MockTFile).stat = { size: 1024, mtime: Date.now(), ctime: Date.now() };
   return file;
 }
 
 function makeVault(binaryMap: Record<string, ArrayBuffer>): Vault {
   const vault = new Vault();
-  (vault as any).readBinary = jest.fn((file: TFile) => {
+  (vault as VaultWithReadBinary).readBinary = jest.fn((file: TFile) => {
     return Promise.resolve(binaryMap[file.path] ?? new ArrayBuffer(0));
   });
   return vault;
@@ -75,7 +83,7 @@ describe('PdfComposer', () => {
   it('should reject mix mode', async () => {
     const vault = makeVault({});
     await expect(
-      composer.compose({ mode: 'mix', tracks: [] } as any, vault, {})
+      composer.compose({ mode: 'mix', tracks: [] } as Parameters<PdfComposer['compose']>[0], vault, {})
     ).rejects.toThrow(ComposerError);
   });
 

@@ -14,9 +14,35 @@
  * Used by: ProvidersTab (startGithubCopilotDeviceFlow), AdapterRegistry
  */
 
-import { Notice } from 'obsidian';
+import { Notice, Platform } from 'obsidian';
 import { IOAuthProvider, OAuthProviderConfig, OAuthResult } from '../IOAuthProvider';
 import { ProviderHttpClient } from '../../llm/adapters/shared/ProviderHttpClient';
+
+interface GithubCopilotOAuthDesktopModuleMap {
+  electron: {
+    shell: {
+      openExternal(url: string): void | Promise<void>;
+    };
+  };
+}
+
+function loadDesktopModule<TModuleName extends keyof GithubCopilotOAuthDesktopModuleMap>(
+  moduleName: TModuleName
+): GithubCopilotOAuthDesktopModuleMap[TModuleName] {
+  if (!Platform.isDesktop) {
+    throw new Error(`${moduleName} is only available on desktop.`);
+  }
+
+  const maybeRequire = (globalThis as typeof globalThis & {
+    require?: (moduleId: string) => unknown;
+  }).require;
+
+  if (typeof maybeRequire !== 'function') {
+    throw new Error('Desktop module loader is unavailable.');
+  }
+
+  return maybeRequire(moduleName) as GithubCopilotOAuthDesktopModuleMap[TModuleName];
+}
 
 /** GitHub's OAuth app client ID for Copilot Chat (VS Code extension) */
 const COPILOT_CLIENT_ID = '01ab8ac9400c4e429b23';
@@ -182,8 +208,8 @@ export class GithubCopilotOAuthProvider implements IOAuthProvider {
 
     // Step 2: Open verification URL in browser
     try {
-      const { shell } = require('electron');
-      shell.openExternal(deviceData.verification_uri || VERIFICATION_URL);
+      const { shell } = loadDesktopModule('electron');
+      void shell.openExternal(deviceData.verification_uri || VERIFICATION_URL);
     } catch {
       window.open(deviceData.verification_uri || VERIFICATION_URL, '_blank');
     }

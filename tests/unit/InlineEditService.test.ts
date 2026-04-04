@@ -6,7 +6,7 @@
  */
 
 import { InlineEditService } from '../../src/services/InlineEditService';
-import type { InlineEditState, InlineEditResult, InlineEditCallbacks } from '../../src/ui/inline-edit/types';
+import type { InlineEditState, InlineEditCallbacks } from '../../src/ui/inline-edit/types';
 import {
   createMockLLMService,
   createSuccessMock,
@@ -17,7 +17,6 @@ import {
 } from '../mocks/llmService';
 import {
   SELECTIONS,
-  INSTRUCTIONS,
   REQUESTS,
   ERROR_MESSAGES,
   STREAMING_CHUNKS,
