@@ -723,9 +723,8 @@
     padding: 0.2rem;
     opacity: 0.25;
     pointer-events: none;
-    transition: opacity 0.2s ease;
+    transition: opacity 0.1s ease;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
-    z-index: 10;
     width: fit-content;
 }
 
@@ -736,14 +735,10 @@
     left: auto;
 }
 
-/* Assistant messages: pill in top-right (icon is in top-left), inside bubble with sticky */
+/* Assistant messages: pill sits in the header flex row, pushed to the right */
 .message-container.message-assistant .message-actions-external {
-    position: sticky;
-    top: 0.5rem;
-    float: right;
-    margin-right: 0.75rem;
-    margin-top: 0.5rem;
-    z-index: 20;
+    position: relative;
+    margin-left: auto;
 }
 
 /* Tool messages: pill in top-right, absolute positioning outside bubble */
@@ -5851,11 +5846,6 @@ body.is-mobile .message-actions-external {
     border-radius: 8px;
 }
 
-/* Assistant messages: keep in corner but smaller on mobile */
-body.is-mobile .message-container.message-assistant .message-actions-external {
-    top: 0.25rem;
-    right: 0.25rem;
-}
 
 /* Message bubbles - more padding and margin on mobile */
 body.is-mobile .message-bubble {

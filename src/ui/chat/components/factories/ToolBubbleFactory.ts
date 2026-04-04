@@ -99,13 +99,11 @@ export class ToolBubbleFactory {
 
     const bubble = messageContainer.createDiv('message-bubble');
 
-    // Actions inside the bubble (for sticky positioning)
-    bubble.createDiv('message-actions-external');
-
-    // Header with bot icon
+    // Header with bot icon; actions pill sits in the header top-right
     const header = bubble.createDiv('message-header');
     const roleIcon = header.createDiv('message-role-icon');
     setIcon(roleIcon, 'bot');
+    header.createDiv('message-actions-external');
 
     // Message content
     const content = bubble.createDiv('message-content');

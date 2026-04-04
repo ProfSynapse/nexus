@@ -163,7 +163,7 @@ export class MessageBubble extends Component {
     if (this.message.role === 'user') {
       actions = header.createDiv('message-actions-external');
     } else if (this.message.role === 'assistant') {
-      actions = bubble.createDiv('message-actions-external');
+      actions = header.createDiv('message-actions-external');
     } else {
       actions = messageContainer.createDiv('message-actions-external');
     }
