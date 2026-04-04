@@ -722,6 +722,7 @@
     border-radius: 50px;
     padding: 0.2rem;
     opacity: 0;
+    pointer-events: none;
     transition: all 0.2s ease;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
     z-index: 10;
@@ -754,6 +755,7 @@
 
 .message-container:hover .message-actions-external {
     opacity: 1;
+    pointer-events: auto;
     transform: translateY(0);
 }
 
@@ -5915,11 +5917,13 @@ body.is-mobile .progressive-tool-header {
 
 body.is-mobile .message-actions-external {
     opacity: 0.85;
+    pointer-events: auto;
     transform: translateY(0);
 }
 
 body.is-mobile .message-container:active .message-actions-external {
     opacity: 1;
+    pointer-events: auto;
 }
 
 body.is-mobile .conversation-delete {
@@ -6084,6 +6088,7 @@ body.is-mobile .chat-loading-overlay {
 @media (hover: hover) and (pointer: fine) {
     .message-container:hover .message-actions-external {
         opacity: 1;
+        pointer-events: auto;
         transform: translateY(0);
     }
 
@@ -6100,6 +6105,7 @@ body.is-mobile .chat-loading-overlay {
 @media (hover: none) and (pointer: coarse) {
     .message-actions-external {
         opacity: 0.85;
+        pointer-events: auto;
     }
 
     .conversation-delete {
