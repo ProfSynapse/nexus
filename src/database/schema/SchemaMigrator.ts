@@ -73,7 +73,7 @@ export interface MigratableDatabase {
 // Alias for backward compatibility
 type Database = MigratableDatabase;
 
-export const CURRENT_SCHEMA_VERSION = 11;
+export const CURRENT_SCHEMA_VERSION = 12;
 
 export interface Migration {
   version: number;
@@ -402,6 +402,26 @@ export const MIGRATIONS: Migration[] = [
     sql: [
       'ALTER TABLE workspaces ADD COLUMN isArchived INTEGER DEFAULT 0',
       'CREATE INDEX IF NOT EXISTS idx_workspaces_archived ON workspaces(isArchived)'
+    ]
+  },
+
+  // Version 11 -> 12: Rebuild note and block embedding tables for 384-dim model
+  // The note_embeddings and block_embeddings vec0 tables were created with float[768]
+  // when an older embedding model was in use. The current model (TaylorAI/bge-micro-v2)
+  // produces 384-dim vectors. vec0 virtual tables cannot be ALTERed — they must be
+  // dropped and recreated. Dropping a vec0 table also drops its shadow tables
+  // (_chunks, _info, _rowids, _vector_chunks00), so no manual shadow cleanup is needed.
+  // Associated metadata rows are also cleared since their rowids are now invalid.
+  {
+    version: 12,
+    description: 'Rebuild note_embeddings and block_embeddings vec0 tables from float[768] to float[384] to match current embedding model output',
+    sql: [
+      'DROP TABLE IF EXISTS note_embeddings',
+      'CREATE VIRTUAL TABLE IF NOT EXISTS note_embeddings USING vec0(embedding float[384])',
+      'DROP TABLE IF EXISTS block_embeddings',
+      'CREATE VIRTUAL TABLE IF NOT EXISTS block_embeddings USING vec0(embedding float[384])',
+      'DELETE FROM embedding_metadata',
+      'DELETE FROM block_embedding_metadata',
     ]
   },
 ];
