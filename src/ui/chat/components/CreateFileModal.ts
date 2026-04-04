@@ -9,12 +9,13 @@
  * Used by MessageActionBar when the user clicks "Create new file".
  */
 
-import { App, Modal, Notice, Setting, normalizePath } from 'obsidian';
+import { App, Modal, Notice, Setting, ToggleComponent, normalizePath } from 'obsidian';
 
 export class CreateFileModal extends Modal {
   private filename = '';
-  private folderPath = '00-inbox';
+  private folderPath = '00-Inbox';
   private openAfterSave = true;
+  private openAfterSaveToggle: ToggleComponent | null = null;
   private readonly content: string;
 
   constructor(app: App, content: string) {
@@ -46,12 +47,12 @@ export class CreateFileModal extends Modal {
           .onChange(value => { this.folderPath = value; });
       });
 
-    // Open after save toggle
+    // Open after save toggle — store ref so handleCreate reads current value directly
     new Setting(contentEl)
       .setName('Open after saving')
       .addToggle(toggle => {
-        toggle.setValue(this.openAfterSave)
-          .onChange(value => { this.openAfterSave = value; });
+        toggle.setValue(this.openAfterSave);
+        this.openAfterSaveToggle = toggle;
       });
 
     // Action buttons
@@ -82,7 +83,7 @@ export class CreateFileModal extends Modal {
       return;
     }
 
-    const folder = this.folderPath.trim() || '00-inbox';
+    const folder = this.folderPath.trim() || '00-Inbox';
     const filePath = normalizePath(`${folder}/${name}.md`);
 
     // Guard against duplicate
@@ -97,7 +98,10 @@ export class CreateFileModal extends Modal {
       new Notice(`Created: ${name}.md`);
       this.close();
 
-      if (this.openAfterSave) {
+      const shouldOpen = this.openAfterSaveToggle
+        ? this.openAfterSaveToggle.getValue()
+        : this.openAfterSave;
+      if (shouldOpen) {
         await this.app.workspace.getLeaf().openFile(file);
       }
     } catch (err) {
