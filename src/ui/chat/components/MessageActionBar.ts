@@ -34,8 +34,15 @@ export class MessageActionBar extends Component {
    */
   renderInto(container: HTMLElement): void {
     this.copyButton = this.addButton(container, 'copy', 'Copy message', () => this.handleCopy());
-    this.addButton(container, 'file-input', 'Insert at cursor', () => this.handleInsert());
-    this.addButton(container, 'file-plus-2', 'Append to active note', () => this.handleAppend());
+
+    // Insert and Append need mousedown:preventDefault so clicking the button
+    // does not shift focus away from the active note (and lose the cursor).
+    const insertBtn = this.addButton(container, 'file-input', 'Insert at cursor', () => this.handleInsert());
+    this.registerDomEvent(insertBtn, 'mousedown', (e: MouseEvent) => e.preventDefault());
+
+    const appendBtn = this.addButton(container, 'file-plus-2', 'Append to active note', () => this.handleAppend());
+    this.registerDomEvent(appendBtn, 'mousedown', (e: MouseEvent) => e.preventDefault());
+
     this.addButton(container, 'file-plus', 'Create new file', () => this.handleCreate());
   }
 
@@ -87,13 +94,19 @@ export class MessageActionBar extends Component {
 
   private handleInsert(): void {
     const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-    if (!view) return;
+    if (!view) {
+      new Notice('No active note — open a note and place your cursor first.');
+      return;
+    }
     view.editor.replaceSelection(this.content);
   }
 
   private async handleAppend(): Promise<void> {
     const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-    if (!view?.file) return;
+    if (!view?.file) {
+      new Notice('No active note — open a note first.');
+      return;
+    }
 
     const timestamp = new Date().toLocaleString();
     const separator = `\n\n---\n*Appended from Nexus Chat — ${timestamp}*\n\n`;
