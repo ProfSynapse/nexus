@@ -213,16 +213,16 @@ export class ChatInput {
   private autoResizeInput(): void {
     if (!this.inputElement) return;
 
-    // Reset height to auto to get the correct scrollHeight
-    this.inputElement.addClass('chat-input-auto-height');
+    // Match CSS values exactly: desktop min 72px / max 200px, mobile min 64px / max 160px
+    const minHeight = isMobile() ? 64 : 72;
+    const maxHeight = isMobile() ? 160 : 200;
 
-    // Set height limits - matches CSS min/max heights
-    const minHeight = 48;
-    const maxHeight = 120;
+    // Remove explicit height so scrollHeight reflects the natural content height.
+    // This is more reliable than the class-toggle approach for contenteditable divs,
+    // which can read a stale scrollHeight before the browser has reflowed.
+    this.inputElement.style.removeProperty('height');
+
     const newHeight = Math.min(Math.max(this.inputElement.scrollHeight, minHeight), maxHeight);
-
-    // Remove auto-height class and set specific height
-    this.inputElement.removeClass('chat-input-auto-height');
     this.inputElement.style.setProperty('height', newHeight + 'px');
 
     // Enable scrolling if content exceeds max height
