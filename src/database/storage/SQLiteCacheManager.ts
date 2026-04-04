@@ -242,7 +242,10 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
       const dbAdapter = new DatabaseAdapter(this.getDbOrThrow());
       const migrator = new SchemaMigrator(dbAdapter);
       const migrationResult = await migrator.migrate();
-      if (migrationResult.applied > 0) {
+      // Fix vec0 table dimensions if needed. vec0 virtual tables cannot be
+      // DROPped/recreated via prepare().step() — must use native db.exec().
+      const vec0Fixed = this.fixVec0TableDimensions(dbAdapter);
+      if (migrationResult.applied > 0 || vec0Fixed) {
         await this.saveToFile(); // Save after migrations
       }
 
@@ -671,6 +674,54 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
        VALUES (?, ?, ?)`,
       [deviceId, lastEventTimestamp, JSON.stringify(fileTimestamps)]
     );
+  }
+
+  // ==================== Schema fixes ====================
+
+  /**
+   * Fix vec0 virtual table dimensions for note_embeddings and block_embeddings.
+   *
+   * vec0 virtual tables cannot be DROPped and recreated via the prepare().step()
+   * DDL path used by SchemaMigrator. They require the native WASM db.exec() path.
+   * This method is called after migrations and uses the raw db directly.
+   *
+   * Returns true if any tables were fixed (caller should save to file).
+   */
+  private fixVec0TableDimensions(dbAdapter: DatabaseAdapter): boolean {
+    const db = this.getDbOrThrow();
+    let fixed = false;
+
+    try {
+      const noteResult = dbAdapter.exec("SELECT sql FROM sqlite_master WHERE name='note_embeddings'");
+      const noteSql = noteResult[0]?.values[0]?.[0] as string | undefined;
+      if (noteSql?.includes('float[768]')) {
+        db.exec('DROP TABLE IF EXISTS note_embeddings');
+        db.exec('CREATE VIRTUAL TABLE IF NOT EXISTS note_embeddings USING vec0(embedding float[384])');
+        db.exec('DELETE FROM embedding_metadata');
+        fixed = true;
+      }
+    } catch (error) {
+      console.error('[SQLiteCacheManager] Failed to fix note_embeddings dimensions:', error);
+    }
+
+    try {
+      const blockResult = dbAdapter.exec("SELECT sql FROM sqlite_master WHERE name='block_embeddings'");
+      const blockSql = blockResult[0]?.values[0]?.[0] as string | undefined;
+      if (blockSql?.includes('float[768]')) {
+        db.exec('DROP TABLE IF EXISTS block_embeddings');
+        db.exec('CREATE VIRTUAL TABLE IF NOT EXISTS block_embeddings USING vec0(embedding float[384])');
+        db.exec('DELETE FROM block_embedding_metadata');
+        fixed = true;
+      }
+    } catch (error) {
+      console.error('[SQLiteCacheManager] Failed to fix block_embeddings dimensions:', error);
+    }
+
+    if (fixed) {
+      console.warn('[SQLiteCacheManager] Fixed vec0 embedding table dimensions (768→384)');
+    }
+
+    return fixed;
   }
 
   // ==================== Data management ====================
