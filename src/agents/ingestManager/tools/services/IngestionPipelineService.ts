@@ -269,6 +269,19 @@ function processSpreadsheet(
   };
 }
 
+/** Audio MIME types accepted by the transcription pipeline. */
+const SUPPORTED_AUDIO_MIME_TYPES = new Set([
+  'audio/mpeg',
+  'audio/wav',
+  'audio/mp4',
+  'audio/aac',
+  'audio/ogg',
+  'audio/opus',
+  'audio/flac',
+  'audio/webm',
+  'audio/x-ms-wma',
+]);
+
 /** Process an audio file (transcription) */
 async function processAudio(
   fileData: ArrayBuffer,
@@ -277,6 +290,13 @@ async function processAudio(
   request: IngestFileRequest,
   deps: PipelineDeps
 ): Promise<{ content: string; durationSeconds?: number }> {
+  if (!SUPPORTED_AUDIO_MIME_TYPES.has(mimeType)) {
+    throw new Error(
+      `Unsupported audio format "${mimeType}". ` +
+      `Supported: ${Array.from(SUPPORTED_AUDIO_MIME_TYPES).join(', ')}`
+    );
+  }
+
   const provider = request.transcriptionProvider;
   const model = request.transcriptionModel;
 
