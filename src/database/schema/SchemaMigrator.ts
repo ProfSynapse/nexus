@@ -73,7 +73,7 @@ export interface MigratableDatabase {
 // Alias for backward compatibility
 type Database = MigratableDatabase;
 
-export const CURRENT_SCHEMA_VERSION = 17;
+export const CURRENT_SCHEMA_VERSION = 18;
 
 export interface Migration {
   version: number;
@@ -462,6 +462,33 @@ export const MIGRATIONS: Migration[] = [
     description: 'Drop orphaned embedding_config table left by prior Nomic embedding era',
     sql: [
       'DROP TABLE IF EXISTS embedding_config',
+    ]
+  },
+
+  // Version 17 -> 18: Recreate embedding_metadata without the dimension column.
+  // An intermediate migration in the old local-fixes fork (between its v13-v16) added a
+  // `dimension INTEGER NOT NULL` column to embedding_metadata. That fork's strip commit
+  // (which dropped the column) ran at migration v12/v13 in its final HEAD numbering, but
+  // the live DB was already at v16 so that strip never executed. The column is not in our
+  // fresh-install schema or in NoteEmbeddingService's INSERT statement, causing a
+  // NOT NULL constraint violation on every note indexing attempt. Fix: drop and recreate
+  // the table with the correct schema. Data loss is safe — this table is a re-indexing
+  // cache; the system will re-embed notes on the next indexing pass.
+  {
+    version: 18,
+    description: 'Recreate embedding_metadata without legacy dimension column from old local-fixes fork',
+    sql: [
+      'DROP TABLE IF EXISTS embedding_metadata',
+      `CREATE TABLE IF NOT EXISTS embedding_metadata (
+        rowid INTEGER PRIMARY KEY,
+        notePath TEXT NOT NULL UNIQUE,
+        model TEXT NOT NULL,
+        contentHash TEXT NOT NULL,
+        created INTEGER NOT NULL,
+        updated INTEGER NOT NULL
+      )`,
+      'CREATE INDEX IF NOT EXISTS idx_embedding_meta_path ON embedding_metadata(notePath)',
+      'CREATE INDEX IF NOT EXISTS idx_embedding_meta_hash ON embedding_metadata(contentHash)',
     ]
   },
 ];
