@@ -1774,39 +1774,6 @@
 /* EXPERIMENTAL WARNING STYLES    */
 /* =============================== */
 
-/* ChatView Experimental Warning Banner */
-.chat-experimental-warning {
-    background: var(--background-modifier-error);
-    border: 1px solid var(--background-modifier-error-border, var(--background-modifier-border));
-    border-radius: 6px;
-    padding: 8px 12px;
-    margin-bottom: 12px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 0.9em;
-    flex-wrap: wrap;
-}
-
-.chat-experimental-warning .warning-icon {
-    font-size: 1.1em;
-    color: var(--text-warning);
-}
-
-.chat-experimental-warning .warning-text {
-    color: var(--text-on-accent);
-}
-
-.chat-experimental-warning .warning-link {
-    color: var(--text-accent);
-    text-decoration: underline;
-    font-weight: 500;
-}
-
-.chat-experimental-warning .warning-link:hover {
-    color: var(--text-accent-hover);
-}
-
 /* Settings Tab Experimental Warning Styles */
 .experimental-warning-container {
     background: var(--background-modifier-error);
@@ -7081,12 +7048,6 @@ body.is-mobile .chat-loading-overlay {
 /* Progress Bar Styles */
 .chat-progress-bar-reset {
     width: 0%;
-}
-
-/* Warning Banner Fade Out */
-.chat-warning-banner-fadeout {
-    opacity: 0;
-    transition: opacity 0.5s ease-out;
 }
 
 /* Input Auto-Resize Styles */
