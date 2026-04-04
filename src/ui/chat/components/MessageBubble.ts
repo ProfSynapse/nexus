@@ -787,8 +787,10 @@ export class MessageBubble extends Component {
   }
 
   /**
-   * Append the action bar pill below the message container for completed
-   * assistant messages that have non-empty text content.
+   * Populate the existing .message-actions-external pill with action buttons
+   * for completed assistant messages that have non-empty text content.
+   * Buttons are inserted into the pill that already sits in the upper-right
+   * corner — no new wrapper element is created.
    */
   private appendActionBar(container: HTMLElement, message: ConversationMessage): void {
     if (message.role !== 'assistant') return;
@@ -800,17 +802,19 @@ export class MessageBubble extends Component {
     // Only create once per message lifecycle — rebuildElement resets this.actionBar
     if (this.actionBar !== null) return;
 
+    const actionsEl = container.querySelector('.message-actions-external');
+    if (!(actionsEl instanceof HTMLElement)) return;
+
     this.actionBar = new MessageActionBar(activeContent, this.app);
-    container.appendChild(this.actionBar.createElement());
+    this.actionBar.renderInto(actionsEl);
   }
 
   /**
-   * Remove the action bar from the DOM and unload its event handlers.
+   * Remove action buttons from the pill and unload event handlers.
    */
   private cleanupActionBar(): void {
     if (!this.actionBar) return;
-    const el = this.actionBar.getElement();
-    if (el) el.remove();
+    this.actionBar.removeFromContainer();
     this.actionBar.unload();
     this.actionBar = null;
   }

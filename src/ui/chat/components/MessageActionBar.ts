@@ -1,19 +1,24 @@
 /**
- * MessageActionBar - Action pill shown below completed AI message bubbles
+ * MessageActionBar - Populates the existing message-actions-external pill
  * Location: /src/ui/chat/components/MessageActionBar.ts
  *
- * Renders four action buttons: Copy, Insert at cursor, Append to active note,
- * and Create new file. Appears only on completed assistant messages that have
- * non-empty text content. Fades to 35% opacity at rest and full opacity on hover.
+ * Renders four action buttons into the caller-supplied container element
+ * (the existing .message-actions-external pill that sits in the upper-right
+ * corner of each message bubble). Buttons appear alongside any other pill
+ * contents (e.g. branch navigator) and use the same message-action-btn
+ * styling as the original copy button did.
  *
- * Used by MessageBubble.appendActionBar() after a message reaches completed state.
+ * Only rendered for completed assistant messages with non-empty text content.
+ * Called by MessageBubble.appendActionBar() after message state transitions
+ * to complete.
  */
 
 import { App, Component, MarkdownView, Notice, setIcon } from 'obsidian';
 import { CreateFileModal } from './CreateFileModal';
 
 export class MessageActionBar extends Component {
-  private element: HTMLElement | null = null;
+  private buttons: HTMLElement[] = [];
+  private copyButton: HTMLElement | null = null;
 
   constructor(
     private readonly content: string,
@@ -23,24 +28,25 @@ export class MessageActionBar extends Component {
   }
 
   /**
-   * Build and return the pill element. Call once — the element is stored and
-   * returned by getElement() for later DOM removal.
+   * Create the four action buttons inside the provided container element.
+   * The container is the existing .message-actions-external pill — no new
+   * wrapper is created. Call removeFromContainer() before unload to clean up.
    */
-  createElement(): HTMLElement {
-    const bar = document.createElement('div');
-    bar.addClass('message-action-bar');
-
-    this.addButton(bar, 'copy', 'Copy message', () => this.handleCopy(bar));
-    this.addButton(bar, 'file-input', 'Insert at cursor', () => this.handleInsert());
-    this.addButton(bar, 'file-plus-2', 'Append to active note', () => this.handleAppend());
-    this.addButton(bar, 'file-plus', 'Create new file', () => this.handleCreate());
-
-    this.element = bar;
-    return bar;
+  renderInto(container: HTMLElement): void {
+    this.copyButton = this.addButton(container, 'copy', 'Copy message', () => this.handleCopy());
+    this.addButton(container, 'file-input', 'Insert at cursor', () => this.handleInsert());
+    this.addButton(container, 'file-plus-2', 'Append to active note', () => this.handleAppend());
+    this.addButton(container, 'file-plus', 'Create new file', () => this.handleCreate());
   }
 
-  getElement(): HTMLElement | null {
-    return this.element;
+  /**
+   * Remove all buttons this component added from their parent container.
+   * Call before unload() to keep the DOM clean.
+   */
+  removeFromContainer(): void {
+    this.buttons.forEach(btn => btn.remove());
+    this.buttons = [];
+    this.copyButton = null;
   }
 
   // ─── Private helpers ────────────────────────────────────────────────────────
@@ -50,21 +56,20 @@ export class MessageActionBar extends Component {
     icon: string,
     title: string,
     handler: () => void
-  ): void {
+  ): HTMLElement {
     const btn = parent.createEl('button', {
-      cls: 'message-action-bar-btn clickable-icon',
+      cls: 'message-action-btn clickable-icon',
       attr: { title, 'aria-label': title }
     });
     setIcon(btn, icon);
     this.registerDomEvent(btn, 'click', handler);
+    this.buttons.push(btn);
+    return btn;
   }
 
-  private handleCopy(bar: HTMLElement): void {
+  private handleCopy(): void {
     navigator.clipboard.writeText(this.content).then(() => {
-      const btn = bar.querySelector('[title="Copy message"]');
-      if (btn instanceof HTMLElement) {
-        this.showCopyFeedback(btn);
-      }
+      if (this.copyButton) this.showCopyFeedback(this.copyButton);
     }).catch(err => {
       console.error('[MessageActionBar] Copy failed:', err);
       new Notice('Copy failed.');
@@ -73,8 +78,10 @@ export class MessageActionBar extends Component {
 
   private showCopyFeedback(button: HTMLElement): void {
     setIcon(button, 'check');
+    button.classList.add('copy-success');
     setTimeout(() => {
       setIcon(button, 'copy');
+      button.classList.remove('copy-success');
     }, 1500);
   }
 
