@@ -73,7 +73,7 @@ export interface MigratableDatabase {
 // Alias for backward compatibility
 type Database = MigratableDatabase;
 
-export const CURRENT_SCHEMA_VERSION = 12;
+export const CURRENT_SCHEMA_VERSION = 17;
 
 export interface Migration {
   version: number;
@@ -414,6 +414,55 @@ export const MIGRATIONS: Migration[] = [
     version: 12,
     description: 'Version marker: note/block vec0 table dimension fix (768→384) handled by SQLiteCacheManager.fixVec0TableDimensions()',
     sql: []
+  },
+
+  // ========================================================================
+  // Versions 13–16: Stub acknowledgement markers for the prior fork era
+  //
+  // The live cache.db was at schema version 16 when this fork was initialized.
+  // That v16 state came from a previous local-fixes branch of nexus that had:
+  //   - A Nomic embedding pipeline (nomic-embed-text-v1.5, 768-dim)
+  //   - A semantic panel UI feature with block_embeddings and semantic_feedback tables
+  //   - An embedding_config key/value table
+  // That branch ran migrations up to v16, then was abandoned in favour of this fork.
+  //
+  // These stubs record that history so CURRENT_SCHEMA_VERSION matches the live DB
+  // and the migrate() version comparison stays accurate for future migrations.
+  // They do nothing — all actual cleanup is in migration v17 below.
+  // ========================================================================
+  {
+    version: 13,
+    description: 'Stub: acknowledge legacy Nomic embedding pipeline era (prior local-fixes fork, v13)',
+    sql: []
+  },
+  {
+    version: 14,
+    description: 'Stub: acknowledge legacy batch GPU inference / semantic panel features (prior local-fixes fork, v14)',
+    sql: []
+  },
+  {
+    version: 15,
+    description: 'Stub: acknowledge legacy mtime-based embedding optimization (prior local-fixes fork, v15)',
+    sql: []
+  },
+  {
+    version: 16,
+    description: 'Stub: acknowledge legacy upstream-merge state (prior local-fixes fork, v16)',
+    sql: []
+  },
+
+  // Version 16 -> 17: Drop orphaned embedding_config table from prior Nomic era.
+  // The embedding_config table (key TEXT PRIMARY KEY, value TEXT NOT NULL) was created
+  // by the old local-fixes fork's Nomic embedding pipeline. It holds stale records like
+  // activeModel=Xenova/nomic-embed-text-v1.5 and activeDimension=768. Our fork uses
+  // Xenova/all-MiniLM-L6-v2 via iframe/CDN and never reads or writes embedding_config.
+  // Dropping it removes the confusion and shrinks the DB.
+  {
+    version: 17,
+    description: 'Drop orphaned embedding_config table left by prior Nomic embedding era',
+    sql: [
+      'DROP TABLE IF EXISTS embedding_config',
+    ]
   },
 ];
 
