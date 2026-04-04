@@ -13,6 +13,7 @@
 import { ConversationMessage } from '../../../types/chat/ChatTypes';
 import { ProgressiveToolAccordion } from './ProgressiveToolAccordion';
 import { MessageBranchNavigator, MessageBranchNavigatorEvents } from './MessageBranchNavigator';
+import { MessageActionBar } from './MessageActionBar';
 import { setIcon, Component, App } from 'obsidian';
 
 // Extracted classes
@@ -31,6 +32,7 @@ export class MessageBubble extends Component {
   private toolBubbleElement: HTMLElement | null = null;
   private textBubbleElement: HTMLElement | null = null;
   private imageBubbleElement: HTMLElement | null = null;
+  private actionBar: MessageActionBar | null = null;
 
   constructor(
     private message: ConversationMessage,
@@ -95,8 +97,6 @@ export class MessageBubble extends Component {
         this.textBubbleElement = ToolBubbleFactory.createTextBubble(
           renderMessage,
           (container, content) => this.renderContent(container, content),
-          this.onCopy,
-          (button) => this.showCopyFeedback(button),
           this.messageBranchNavigator,
           this.onMessageAlternativeChanged,
           this
@@ -128,6 +128,7 @@ export class MessageBubble extends Component {
       }
 
       this.element = wrapper;
+      this.appendActionBar(wrapper, this.message);
       return wrapper;
     }
 
@@ -178,11 +179,12 @@ export class MessageBubble extends Component {
     });
 
     this.element = messageContainer;
+    this.appendActionBar(messageContainer, this.message);
     return messageContainer;
   }
 
   /**
-   * Create action buttons (edit, retry, copy, branch navigator)
+   * Create action buttons (edit, retry, branch navigator)
    */
   private createActionButtons(actions: HTMLElement, bubble: HTMLElement): void {
     if (this.message.role === 'user') {
@@ -221,17 +223,6 @@ export class MessageBubble extends Component {
         this.onCopy(this.message.id);
       });
     } else {
-      // Copy button for AI messages
-      const copyBtn = actions.createEl('button', {
-        cls: 'message-action-btn clickable-icon',
-        attr: { title: 'Copy message' }
-      });
-      setIcon(copyBtn, 'copy');
-      this.registerDomEvent(copyBtn, 'click', () => {
-        this.showCopyFeedback(copyBtn);
-        this.onCopy(this.message.id);
-      });
-
       // Message branch navigator for AI messages with branches
       if (this.message.branches && this.message.branches.length > 0) {
         const navigatorEvents: MessageBranchNavigatorEvents = {
@@ -425,6 +416,8 @@ export class MessageBubble extends Component {
 
     if (newMessage.isLoading && newMessage.role === 'assistant') {
       this.appendLoadingIndicator(contentElement);
+    } else if (this.element) {
+      this.appendActionBar(this.element, newMessage);
     }
   }
 
@@ -670,6 +663,7 @@ export class MessageBubble extends Component {
     this.toolBubbleElement = null;
     this.textBubbleElement = null;
     this.imageBubbleElement = null;
+    this.cleanupActionBar();
 
     const nextElement = this.createElement();
 
@@ -795,6 +789,35 @@ export class MessageBubble extends Component {
   }
 
   /**
+   * Append the action bar pill below the message container for completed
+   * assistant messages that have non-empty text content.
+   */
+  private appendActionBar(container: HTMLElement, message: ConversationMessage): void {
+    if (message.role !== 'assistant') return;
+    if (message.isLoading || message.state === 'streaming') return;
+
+    const activeContent = this.getActiveMessageContent(message);
+    if (!activeContent.trim()) return;
+
+    // Only create once per message lifecycle — rebuildElement resets this.actionBar
+    if (this.actionBar !== null) return;
+
+    this.actionBar = new MessageActionBar(activeContent, this.app);
+    container.appendChild(this.actionBar.createElement());
+  }
+
+  /**
+   * Remove the action bar from the DOM and unload its event handlers.
+   */
+  private cleanupActionBar(): void {
+    if (!this.actionBar) return;
+    const el = this.actionBar.getElement();
+    if (el) el.remove();
+    this.actionBar.unload();
+    this.actionBar = null;
+  }
+
+  /**
    * Cleanup resources.
    * Calls Component.unload() to auto-clean registerDomEvent/registerInterval handlers.
    */
@@ -803,6 +826,7 @@ export class MessageBubble extends Component {
   cleanup(): void {
     this.stopLoadingAnimation();
     this.cleanupProgressiveAccordions();
+    this.cleanupActionBar();
 
     if (this.messageBranchNavigator) {
       this.messageBranchNavigator.destroy();

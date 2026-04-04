@@ -90,8 +90,6 @@ export class ToolBubbleFactory {
   static createTextBubble(
     message: ConversationMessage,
     renderContentCallback: (content: HTMLElement, text: string) => Promise<void>,
-    onCopy: (messageId: string) => void,
-    showCopyFeedback: (button: HTMLElement) => void,
     messageBranchNavigator: any | null,
     onMessageAlternativeChanged?: (messageId: string, alternativeIndex: number) => void,
     component?: Component
@@ -104,7 +102,7 @@ export class ToolBubbleFactory {
     const bubble = messageContainer.createDiv('message-bubble');
 
     // Actions inside the bubble (for sticky positioning)
-    const actions = bubble.createDiv('message-actions-external');
+    bubble.createDiv('message-actions-external');
 
     // Header with bot icon
     const header = bubble.createDiv('message-header');
@@ -120,29 +118,8 @@ export class ToolBubbleFactory {
       console.error('[ToolBubbleFactory] Error rendering text bubble content:', error);
     });
 
-    // Copy button
-    const copyBtn = actions.createEl('button', {
-      cls: 'message-action-btn clickable-icon',
-      attr: { title: 'Copy message' }
-    });
-    setIcon(copyBtn, 'copy');
-    const copyHandler = () => {
-      showCopyFeedback(copyBtn);
-      onCopy(message.id);
-    };
-    component!.registerDomEvent(copyBtn, 'click', copyHandler);
-
     // Message branch navigator for messages with branches
     if (message.branches && message.branches.length > 0 && messageBranchNavigator) {
-      const navigatorEvents = {
-        onAlternativeChanged: (messageId: string, alternativeIndex: number) => {
-          if (onMessageAlternativeChanged) {
-            onMessageAlternativeChanged(messageId, alternativeIndex);
-          }
-        },
-        onError: (errorMessage: string) => console.error('[ToolBubbleFactory] Branch navigation error:', errorMessage)
-      };
-
       messageBranchNavigator.updateMessage(message);
     }
 
