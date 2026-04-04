@@ -1,7 +1,9 @@
 /**
  * Location: src/agents/ingestManager/tools/services/IngestModelCatalog.ts
- * Purpose: Shared declarations for ingestion-only models that are not part of
- * the normal chat model registry.
+ * Purpose: Shared declarations for ingestion-only OCR models that are not part
+ * of the normal chat model registry. Transcription models now live in the
+ * shared VoiceTypes catalog so ingest, defaults, and the audio editor all use
+ * one source of truth.
  */
 
 export type IngestionModelKind = 'ocr' | 'transcription';
@@ -21,69 +23,6 @@ const INGESTION_MODELS: IngestionModelDeclaration[] = [
     id: 'mistral-ocr',
     name: 'Mistral OCR (PDF OCR)',
     kind: 'ocr'
-  },
-  {
-    provider: 'openai',
-    id: 'gpt-4o-transcribe',
-    name: 'GPT-4o Transcribe',
-    kind: 'transcription',
-    execution: 'speech-api-plain'
-  },
-  {
-    provider: 'openai',
-    id: 'gpt-4o-mini-transcribe',
-    name: 'GPT-4o Mini Transcribe',
-    kind: 'transcription',
-    execution: 'speech-api-plain'
-  },
-  {
-    provider: 'openai',
-    id: 'whisper-1',
-    name: 'Whisper 1 (Transcription)',
-    kind: 'transcription',
-    execution: 'speech-api-segmented'
-  },
-  {
-    provider: 'groq',
-    id: 'whisper-large-v3-turbo',
-    name: 'Whisper Large v3 Turbo (Transcription)',
-    kind: 'transcription',
-    execution: 'speech-api-segmented'
-  },
-  {
-    provider: 'groq',
-    id: 'whisper-large-v3',
-    name: 'Whisper Large v3 (Transcription)',
-    kind: 'transcription',
-    execution: 'speech-api-segmented'
-  },
-  {
-    provider: 'google',
-    id: 'gemini-3-flash-preview',
-    name: 'Gemini 3.0 Flash Preview (Audio)',
-    kind: 'transcription',
-    execution: 'multimodal-audio'
-  },
-  {
-    provider: 'google',
-    id: 'gemini-2.5-flash',
-    name: 'Gemini 2.5 Flash (Audio)',
-    kind: 'transcription',
-    execution: 'multimodal-audio'
-  },
-  {
-    provider: 'openrouter',
-    id: 'google/gemini-3-flash-preview',
-    name: 'Gemini 3.0 Flash Preview (Audio)',
-    kind: 'transcription',
-    execution: 'multimodal-audio'
-  },
-  {
-    provider: 'openrouter',
-    id: 'google/gemini-2.5-flash',
-    name: 'Gemini 2.5 Flash (Audio)',
-    kind: 'transcription',
-    execution: 'multimodal-audio'
   }
 ];
 

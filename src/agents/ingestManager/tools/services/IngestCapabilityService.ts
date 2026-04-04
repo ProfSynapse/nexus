@@ -13,6 +13,7 @@ import {
   getIngestionModelsForProvider,
   IngestionModelKind
 } from './IngestModelCatalog';
+import { getTranscriptionModelsForProvider } from '../../../../services/llm/types/VoiceTypes';
 
 export interface IngestModelOption {
   id: string;
@@ -86,7 +87,11 @@ function getProviderOptions(
       continue;
     }
 
-    for (const model of getIngestionModelsForProvider(providerId, kind)) {
+    const models = kind === 'transcription'
+      ? getTranscriptionModelsForProvider(providerId)
+      : getIngestionModelsForProvider(providerId, kind);
+
+    for (const model of models) {
       if (config.models?.[model.id]?.enabled === false) {
         continue;
       }

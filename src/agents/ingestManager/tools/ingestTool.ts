@@ -14,6 +14,7 @@ import { JSONSchema } from '../../../types/schema/JSONSchemaTypes';
 import { createErrorMessage } from '../../../utils/errorUtils';
 import { processFile, PipelineDeps } from './services/IngestionPipelineService';
 import type { LLMProviderManager } from '../../../services/llm/providers/ProviderManager';
+import { TranscriptionService } from '../../../services/llm/TranscriptionService';
 
 export class IngestTool extends BaseTool<IngestToolParameters, IngestToolResult> {
   constructor(
@@ -44,6 +45,7 @@ export class IngestTool extends BaseTool<IngestToolParameters, IngestToolResult>
       }
 
       const llmService = providerManager.getLLMService();
+      const transcriptionService = new TranscriptionService(providerManager.getSettings());
 
       const deps: PipelineDeps = {
         vault: this.vault,
@@ -72,19 +74,7 @@ export class IngestTool extends BaseTool<IngestToolParameters, IngestToolResult>
             };
           }
         },
-        transcriptionDeps: {
-          getApiKey: (provider) => {
-            const settings = providerManager.getSettings();
-            return settings?.providers?.[provider]?.apiKey;
-          },
-          getOpenRouterHeaders: () => {
-            const openRouterConfig = providerManager.getSettings()?.providers?.openrouter;
-            return {
-              httpReferer: openRouterConfig?.httpReferer,
-              xTitle: openRouterConfig?.xTitle
-            };
-          }
-        }
+        transcriptionService
       };
 
       const result = await processFile(params, deps);

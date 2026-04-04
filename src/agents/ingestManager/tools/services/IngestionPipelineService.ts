@@ -28,7 +28,6 @@ import {
   MAX_SHEET_COLUMNS,
   MAX_SHEET_ROWS
 } from './SpreadsheetExtractionService';
-import { transcribeAudio, TranscriptionServiceDeps } from './TranscriptionService';
 import {
   buildAudioNote,
   buildDocxNote,
@@ -36,12 +35,13 @@ import {
   buildPptxNote,
   buildSpreadsheetSheetNote
 } from './OutputNoteBuilder';
-import { getIngestionProvidersForKind } from './IngestModelCatalog';
+import { TranscriptionService } from '../../../../services/llm/TranscriptionService';
+import { getTranscriptionProviders, type TranscriptionProvider } from '../../../../services/llm/types/VoiceTypes';
 
 export interface PipelineDeps {
   vault: Vault;
   ocrDeps: OcrServiceDeps;
-  transcriptionDeps: TranscriptionServiceDeps;
+  transcriptionService: TranscriptionService;
 }
 
 interface NoteWrite {
@@ -283,18 +283,24 @@ async function processAudio(
   if (!provider) {
     throw new Error(
       'Audio transcription requires a transcriptionProvider. ' +
-      `Supported: ${getIngestionProvidersForKind('transcription').join(', ')}`
+      `Supported: ${getTranscriptionProviders().join(', ')}`
     );
   }
 
-  const segments: TranscriptionSegment[] = await transcribeAudio(
-    fileData,
+  const transcription = await deps.transcriptionService.transcribe({
+    audioData: fileData,
     mimeType,
     fileName,
-    provider,
+    provider: provider as TranscriptionProvider,
     model,
-    deps.transcriptionDeps
-  );
+    requestWordTimestamps: true
+  });
+
+  const segments: TranscriptionSegment[] = transcription.segments.map(segment => ({
+    startSeconds: segment.startSeconds,
+    endSeconds: segment.endSeconds,
+    text: segment.text
+  }));
 
   const content = buildAudioNote(fileName, segments);
   const lastSegment = segments[segments.length - 1];
