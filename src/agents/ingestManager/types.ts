@@ -1,6 +1,6 @@
 /**
  * Location: src/agents/ingestManager/types.ts
- * Purpose: Shared types for the Nexus Ingester agent — PDF and audio file ingestion pipeline.
+ * Purpose: Shared types for the Nexus Ingester agent — document, spreadsheet, PDF, and audio ingestion pipeline.
  *
  * Used by: IngestAgent, IngestTool, ListCapabilitiesTool, all ingestion services
  * Dependencies: CommonParameters, CommonResult from types
@@ -9,12 +9,21 @@
 import { CommonParameters, CommonResult } from '../../types';
 
 export const ACCEPTED_PDF_EXTENSIONS = ['.pdf'] as const;
+export const ACCEPTED_DOCX_EXTENSIONS = ['.docx'] as const;
+export const ACCEPTED_PPTX_EXTENSIONS = ['.pptx'] as const;
+export const ACCEPTED_XLSX_EXTENSIONS = ['.xlsx'] as const;
 export const ACCEPTED_AUDIO_EXTENSIONS = ['.mp3', '.wav', '.ogg', '.flac', '.m4a', '.aac', '.webm', '.opus'] as const;
-export const ACCEPTED_EXTENSIONS = [...ACCEPTED_PDF_EXTENSIONS, ...ACCEPTED_AUDIO_EXTENSIONS] as const;
+export const ACCEPTED_EXTENSIONS = [
+  ...ACCEPTED_PDF_EXTENSIONS,
+  ...ACCEPTED_DOCX_EXTENSIONS,
+  ...ACCEPTED_PPTX_EXTENSIONS,
+  ...ACCEPTED_XLSX_EXTENSIONS,
+  ...ACCEPTED_AUDIO_EXTENSIONS
+] as const;
 
 // ─── File Detection ──────────────────────────────────────────────────────────
 
-export type IngestFileType = 'pdf' | 'audio';
+export type IngestFileType = 'pdf' | 'docx' | 'pptx' | 'xlsx' | 'audio';
 
 export interface FileTypeInfo {
   type: IngestFileType;
@@ -37,13 +46,14 @@ export interface IngestToolParameters extends CommonParameters, IngestFileReques
 
 export interface IngestToolResult extends CommonResult {
   outputPath?: string;
+  outputPaths?: string[];
   pageCount?: number;
   durationSeconds?: number;
   processingTimeMs?: number;
   warnings?: string[];
 }
 
-export interface ListCapabilitiesParameters extends CommonParameters {}
+export type ListCapabilitiesParameters = CommonParameters;
 
 export interface IngestCapabilities {
   ocrProviders: ProviderCapabilityInfo[];
@@ -82,6 +92,35 @@ export interface PdfPageImage {
   base64Png: string;
   width: number;
   height: number;
+}
+
+// ─── DOCX Services ───────────────────────────────────────────────────────────
+
+export interface DocxExtractionResult {
+  markdown: string;
+  warnings: string[];
+}
+
+// ─── PPTX Services ───────────────────────────────────────────────────────────
+
+export interface PptxSlideContent {
+  slideNumber: number;
+  text: string;
+  notes?: string;
+}
+
+export interface PptxExtractionResult {
+  slides: PptxSlideContent[];
+  warnings: string[];
+}
+
+// ─── Spreadsheet Services ────────────────────────────────────────────────────
+
+export interface SpreadsheetSheetContent {
+  sheetName: string;
+  rows: string[][];
+  totalRows: number;
+  totalColumns: number;
 }
 
 // ─── Audio Services ──────────────────────────────────────────────────────────

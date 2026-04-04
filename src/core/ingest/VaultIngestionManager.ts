@@ -161,8 +161,13 @@ export class VaultIngestionManager {
         throw new Error(result.error || 'Ingestion failed');
       }
 
-      const outputPath = result.outputPath || this.getOutputPath(file.path);
-      new Notice(`Converted ${file.name} -> ${outputPath}`, 5000);
+      const outputPaths = result.outputPaths ?? (result.outputPath ? [result.outputPath] : []);
+      if (outputPaths.length > 1) {
+        new Notice(`Converted ${file.name} into ${outputPaths.length} Markdown notes.`, 5000);
+      } else {
+        const outputPath = outputPaths[0] || this.getOutputPath(file.path);
+        new Notice(`Converted ${file.name} -> ${outputPath}`, 5000);
+      }
 
       if (result.warnings && result.warnings.length > 0) {
         new Notice(result.warnings.join(' '), 7000);
@@ -239,6 +244,16 @@ export class VaultIngestionManager {
       };
     }
 
+    if (fileType.type === 'docx' || fileType.type === 'pptx' || fileType.type === 'xlsx') {
+      return {
+        ready: true,
+        params: {
+          filePath: file.path
+        }
+      };
+    }
+
+
     const transcriptionProvider = llmSettings.defaultTranscriptionModel?.provider;
     const transcriptionModel = llmSettings.defaultTranscriptionModel?.model;
     if (!transcriptionProvider || !transcriptionModel) {
@@ -260,6 +275,10 @@ export class VaultIngestionManager {
   }
 
   private getOutputFile(file: TFile): TFile | null {
+    const fileType = detectFileType(file.path);
+    if (fileType?.type === 'xlsx') {
+      return null;
+    }
     return this.config.app.vault.getFileByPath(this.getOutputPath(file.path));
   }
 

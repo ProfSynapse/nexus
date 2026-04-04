@@ -46,6 +46,45 @@ describe('FileTypeDetector', () => {
   });
 
   // ==========================================================================
+  // detectFileType — DOCX/PPTX/XLSX
+  // ==========================================================================
+
+  describe('detectFileType - Office', () => {
+    it('should detect .docx files', () => {
+      const result = detectFileType('document.docx');
+      expect(result).toEqual({
+        type: 'docx',
+        mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        extension: '.docx',
+      });
+    });
+
+    it('should detect .xlsx files', () => {
+      const result = detectFileType('spreadsheet.xlsx');
+      expect(result).toEqual({
+        type: 'xlsx',
+        mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        extension: '.xlsx',
+      });
+    });
+
+    it('should detect .pptx files', () => {
+      const result = detectFileType('deck.pptx');
+      expect(result).toEqual({
+        type: 'pptx',
+        mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        extension: '.pptx',
+      });
+    });
+
+    it('should detect office extensions case-insensitively', () => {
+      expect(detectFileType('draft.DOCX')?.type).toBe('docx');
+      expect(detectFileType('slides.PPTX')?.type).toBe('pptx');
+      expect(detectFileType('budget.XLSX')?.type).toBe('xlsx');
+    });
+  });
+
+  // ==========================================================================
   // detectFileType — Audio
   // ==========================================================================
 
@@ -96,8 +135,6 @@ describe('FileTypeDetector', () => {
   describe('detectFileType - unsupported', () => {
     it('should return null for unsupported extensions', () => {
       expect(detectFileType('image.png')).toBeNull();
-      expect(detectFileType('document.docx')).toBeNull();
-      expect(detectFileType('spreadsheet.xlsx')).toBeNull();
       expect(detectFileType('video.avi')).toBeNull();
       expect(detectFileType('script.js')).toBeNull();
     });
@@ -153,6 +190,13 @@ describe('FileTypeDetector', () => {
       expect(exts.pdf).toEqual(['.pdf']);
     });
 
+    it('should return office extensions', () => {
+      const exts = getSupportedExtensions();
+      expect(exts.docx).toEqual(['.docx']);
+      expect(exts.pptx).toEqual(['.pptx']);
+      expect(exts.xlsx).toEqual(['.xlsx']);
+    });
+
     it('should return all audio extensions', () => {
       const exts = getSupportedExtensions();
       expect(exts.audio).toContain('.mp3');
@@ -185,6 +229,12 @@ describe('FileTypeDetector', () => {
     it('should return true for audio files', () => {
       expect(isSupportedFile('recording.mp3')).toBe(true);
       expect(isSupportedFile('audio.wav')).toBe(true);
+    });
+
+    it('should return true for office files', () => {
+      expect(isSupportedFile('proposal.docx')).toBe(true);
+      expect(isSupportedFile('deck.pptx')).toBe(true);
+      expect(isSupportedFile('forecast.xlsx')).toBe(true);
     });
 
     it('should return false for unsupported files', () => {

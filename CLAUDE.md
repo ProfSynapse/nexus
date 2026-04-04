@@ -3,7 +3,7 @@ Last Updated: 2026-03-29
 
 ## Project Overview
 - **Name**: Nexus (package: claudesidian-mcp)
-- **Version**: 5.6.2
+- **Version**: 5.6.3
 - **Type**: Obsidian Community Plugin
 - **Purpose**: MCP integration for Obsidian with AI-powered vault operations
 - **Architecture**: Agent-Tool pattern with domain-driven design
@@ -756,7 +756,7 @@ Whisper API (OpenAI + Groq) only. Excluded in v1:
 <!-- SESSION_START -->
 ## Current Session
 <!-- Auto-managed by session_init hook. Overwritten each session. -->
-- Resume: `claude --resume 2e726e80-57fb-4b21-8de4-d96a935e92e3`
-- Team: `pact-2e726e80`
-- Started: 2026-03-29 19:18:19 UTC
+- Resume: `claude --resume 63e74727-e3ea-443e-9c40-f83d2bde44a0`
+- Team: `pact-63e74727`
+- Started: 2026-03-31 11:19:57 UTC
 <!-- SESSION_END -->

@@ -13,22 +13,40 @@ import { Vault, TFile, normalizePath } from 'obsidian';
 import {
   IngestFileRequest,
   IngestToolResult,
-  IngestProgress,
   IngestProgressCallback,
   PdfPageContent,
+  SpreadsheetSheetContent,
   TranscriptionSegment,
 } from '../../types';
 import { detectFileType } from './FileTypeDetector';
+import { extractDocxMarkdown } from './DocxExtractionService';
 import { extractPdfText } from './PdfTextExtractor';
+import { extractPptxContent } from './PptxExtractionService';
 import { ocrPdf, OcrServiceDeps } from './OcrService';
+import {
+  extractSpreadsheetSheets,
+  MAX_SHEET_COLUMNS,
+  MAX_SHEET_ROWS
+} from './SpreadsheetExtractionService';
 import { transcribeAudio, TranscriptionServiceDeps } from './TranscriptionService';
-import { buildPdfNote, buildAudioNote } from './OutputNoteBuilder';
+import {
+  buildAudioNote,
+  buildDocxNote,
+  buildPdfNote,
+  buildPptxNote,
+  buildSpreadsheetSheetNote
+} from './OutputNoteBuilder';
 import { getIngestionProvidersForKind } from './IngestModelCatalog';
 
 export interface PipelineDeps {
   vault: Vault;
   ocrDeps: OcrServiceDeps;
   transcriptionDeps: TranscriptionServiceDeps;
+}
+
+interface NoteWrite {
+  outputPath: string;
+  content: string;
 }
 
 /**
@@ -57,7 +75,7 @@ export async function processFile(
   if (!fileType) {
     return {
       success: false,
-      error: `Unsupported file type. Supported: PDF, MP3, WAV, M4A, OGG, FLAC, WEBM, AAC`,
+      error: 'Unsupported file type. Supported: PDF, DOCX, PPTX, XLSX, MP3, WAV, M4A, OGG, FLAC, WEBM, AAC',
     };
   }
 
@@ -65,7 +83,7 @@ export async function processFile(
   const fileData = await deps.vault.readBinary(file);
 
   // Route by file type
-  let noteContent: string;
+  let noteWrites: NoteWrite[];
   let pageCount: number | undefined;
   let durationSeconds: number | undefined;
 
@@ -73,41 +91,61 @@ export async function processFile(
     const result = await processPdf(
       fileData, file.name, request, deps, onProgress, filePath
     );
-    noteContent = result.content;
+    noteWrites = [{ outputPath: buildOutputPath(filePath), content: result.content }];
     pageCount = result.pageCount;
     if (result.warnings) warnings.push(...result.warnings);
-  } else {
+  } else if (fileType.type === 'audio') {
     onProgress?.({ filePath, stage: 'transcribing', progress: 0 });
 
     const result = await processAudio(
       fileData, file.name, fileType.mimeType, request, deps
     );
-    noteContent = result.content;
+    noteWrites = [{ outputPath: buildOutputPath(filePath), content: result.content }];
     durationSeconds = result.durationSeconds;
 
     onProgress?.({ filePath, stage: 'transcribing', progress: 100 });
+  } else if (fileType.type === 'docx') {
+    onProgress?.({ filePath, stage: 'extracting', progress: 0 });
+    const result = await processDocx(fileData, file.name);
+    noteWrites = [{ outputPath: buildOutputPath(filePath), content: result.content }];
+    if (result.warnings) warnings.push(...result.warnings);
+    onProgress?.({ filePath, stage: 'extracting', progress: 100 });
+  } else if (fileType.type === 'pptx') {
+    onProgress?.({ filePath, stage: 'extracting', progress: 0 });
+    const result = await processPptx(fileData, file.name);
+    noteWrites = [{ outputPath: buildOutputPath(filePath), content: result.content }];
+    if (result.warnings) warnings.push(...result.warnings);
+    onProgress?.({ filePath, stage: 'extracting', progress: 100 });
+  } else {
+    onProgress?.({ filePath, stage: 'extracting', progress: 0 });
+    const result = processSpreadsheet(fileData, file.name, filePath);
+    noteWrites = result.notes;
+    if (result.warnings) warnings.push(...result.warnings);
+    onProgress?.({ filePath, stage: 'extracting', progress: 100 });
   }
 
-  // Build output path: same folder as original, with .md extension
   onProgress?.({ filePath, stage: 'building' });
-  const outputPath = buildOutputPath(filePath);
 
-  // Create the output note
-  const normalizedOutput = normalizePath(outputPath);
-  const existingFile = deps.vault.getFileByPath(normalizedOutput);
+  const outputPaths: string[] = [];
+  for (const noteWrite of noteWrites) {
+    const normalizedOutput = normalizePath(noteWrite.outputPath);
+    const existingFile = deps.vault.getFileByPath(normalizedOutput);
 
-  if (existingFile) {
-    // Overwrite existing note
-    await deps.vault.modify(existingFile as TFile, noteContent);
-  } else {
-    await deps.vault.create(normalizedOutput, noteContent);
+    if (existingFile) {
+      await deps.vault.modify(existingFile as TFile, noteWrite.content);
+    } else {
+      await deps.vault.create(normalizedOutput, noteWrite.content);
+    }
+
+    outputPaths.push(normalizedOutput);
   }
 
   onProgress?.({ filePath, stage: 'complete', progress: 100 });
 
   return {
     success: true,
-    outputPath: normalizedOutput,
+    outputPath: outputPaths[0],
+    outputPaths,
     pageCount,
     durationSeconds,
     processingTimeMs: Date.now() - startTime,
@@ -167,6 +205,70 @@ async function processPdf(
   return { content, pageCount: pages.length, warnings };
 }
 
+/** Process a DOCX file */
+async function processDocx(
+  fileData: ArrayBuffer,
+  fileName: string
+): Promise<{ content: string; warnings?: string[] }> {
+  const result = await extractDocxMarkdown(fileData);
+
+  return {
+    content: buildDocxNote(fileName, result.markdown),
+    warnings: result.warnings.length > 0 ? result.warnings : undefined
+  };
+}
+
+/** Process a PPTX file */
+async function processPptx(
+  fileData: ArrayBuffer,
+  fileName: string
+): Promise<{ content: string; warnings?: string[] }> {
+  const result = await extractPptxContent(fileData);
+
+  return {
+    content: buildPptxNote(fileName, result.slides),
+    warnings: result.warnings.length > 0 ? result.warnings : undefined
+  };
+}
+
+/** Process an XLSX file */
+function processSpreadsheet(
+  fileData: ArrayBuffer,
+  fileName: string,
+  filePath: string
+): { notes: NoteWrite[]; warnings?: string[] } {
+  const sheets = extractSpreadsheetSheets(fileData);
+  const validSheets: SpreadsheetSheetContent[] = [];
+  const warnings: string[] = [];
+
+  for (const sheet of sheets) {
+    if (sheet.totalColumns > MAX_SHEET_COLUMNS || sheet.totalRows > MAX_SHEET_ROWS) {
+      warnings.push(
+        `Skipped sheet "${sheet.sheetName}" because it exceeds the spreadsheet limit ` +
+        `(${sheet.totalColumns} columns x ${sheet.totalRows} rows; max ${MAX_SHEET_COLUMNS} x ${MAX_SHEET_ROWS}).`
+      );
+      continue;
+    }
+
+    validSheets.push(sheet);
+  }
+
+  if (validSheets.length === 0) {
+    throw new Error(
+      `No sheets were converted. All sheets exceed the spreadsheet limit ` +
+      `(max ${MAX_SHEET_COLUMNS} columns x ${MAX_SHEET_ROWS} rows).`
+    );
+  }
+
+  return {
+    notes: validSheets.map((sheet) => ({
+      outputPath: buildSpreadsheetSheetOutputPath(filePath, sheet.sheetName),
+      content: buildSpreadsheetSheetNote(fileName, sheet)
+    })),
+    warnings: warnings.length > 0 ? warnings : undefined
+  };
+}
+
 /** Process an audio file (transcription) */
 async function processAudio(
   fileData: ArrayBuffer,
@@ -209,4 +311,19 @@ function buildOutputPath(filePath: string): string {
   const dotIndex = filePath.lastIndexOf('.');
   if (dotIndex === -1) return filePath + '.md';
   return filePath.slice(0, dotIndex) + '.md';
+}
+
+function buildSpreadsheetSheetOutputPath(filePath: string, sheetName: string): string {
+  const basePath = buildOutputPath(filePath).replace(/\.md$/i, '');
+  const safeSheetName = sanitizeSheetNameForPath(sheetName);
+  return `${basePath} - ${safeSheetName}.md`;
+}
+
+function sanitizeSheetNameForPath(sheetName: string): string {
+  const sanitized = sheetName
+    .replace(/[\\/:*?"<>|]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return sanitized || 'Sheet';
 }

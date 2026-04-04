@@ -8,8 +8,16 @@
 import {
   buildPdfNote,
   buildAudioNote,
+  buildDocxNote,
+  buildPptxNote,
+  buildSpreadsheetSheetNote,
 } from '../../src/agents/ingestManager/tools/services/OutputNoteBuilder';
-import { PdfPageContent, TranscriptionSegment } from '../../src/agents/ingestManager/types';
+import {
+  PdfPageContent,
+  PptxSlideContent,
+  SpreadsheetSheetContent,
+  TranscriptionSegment
+} from '../../src/agents/ingestManager/types';
 
 describe('OutputNoteBuilder', () => {
   // ==========================================================================
@@ -192,6 +200,113 @@ describe('OutputNoteBuilder', () => {
       expect(lines[2]).toBe('[00:00:00] First segment');
       expect(lines[3]).toBe('[00:00:10] Second segment');
       expect(lines[4]).toBe('[00:00:20] Third segment');
+    });
+  });
+
+  // ==========================================================================
+  // buildDocxNote
+  // ==========================================================================
+
+  describe('buildDocxNote', () => {
+    it('should include the source embed and markdown body', () => {
+      const result = buildDocxNote('proposal.docx', '# Proposal\n\nBody text');
+      expect(result).toBe('![[proposal.docx]]\n\n# Proposal\n\nBody text\n');
+    });
+
+    it('should handle empty markdown', () => {
+      const result = buildDocxNote('empty.docx', '');
+      expect(result).toBe('![[empty.docx]]\n');
+    });
+  });
+
+  // ==========================================================================
+  // buildPptxNote
+  // ==========================================================================
+
+  describe('buildPptxNote', () => {
+    it('should include slide sections and notes', () => {
+      const slides: PptxSlideContent[] = [
+        { slideNumber: 1, text: 'Executive summary' },
+        { slideNumber: 2, text: 'Roadmap', notes: 'Keep this concise' }
+      ];
+
+      const result = buildPptxNote('board-deck.pptx', slides);
+
+      expect(result).toContain('![[board-deck.pptx]]');
+      expect(result).toContain('## Slide 1');
+      expect(result).toContain('Executive summary');
+      expect(result).toContain('## Slide 2');
+      expect(result).toContain('### Notes');
+      expect(result).toContain('Keep this concise');
+    });
+
+    it('should mark slides with no text clearly', () => {
+      const slides: PptxSlideContent[] = [
+        { slideNumber: 1, text: '' }
+      ];
+
+      const result = buildPptxNote('empty.pptx', slides);
+
+      expect(result).toContain('_No extractable slide text._');
+    });
+  });
+
+  // ==========================================================================
+  // buildSpreadsheetSheetNote
+  // ==========================================================================
+
+  describe('buildSpreadsheetSheetNote', () => {
+    it('should include the sheet name as a heading', () => {
+      const sheet: SpreadsheetSheetContent = {
+        sheetName: 'Summary',
+        rows: [['Revenue']],
+        totalRows: 1,
+        totalColumns: 1
+      };
+
+      const result = buildSpreadsheetSheetNote('report.xlsx', sheet);
+
+      expect(result).toContain('# Summary');
+    });
+
+    it('should render rows as markdown tables with row numbers', () => {
+      const sheet: SpreadsheetSheetContent = {
+        sheetName: 'Budget',
+        rows: [['Name', 'Amount'], ['Marketing', '5000']],
+        totalRows: 2,
+        totalColumns: 2
+      };
+
+      const result = buildSpreadsheetSheetNote('budget.xlsx', sheet);
+
+      expect(result).toContain('| Row | Column 1 | Column 2 |');
+      expect(result).toContain('| 1 | Name | Amount |');
+      expect(result).toContain('| 2 | Marketing | 5000 |');
+    });
+
+    it('should render empty sheets clearly', () => {
+      const sheet: SpreadsheetSheetContent = {
+        sheetName: 'Empty',
+        rows: [],
+        totalRows: 0,
+        totalColumns: 0
+      };
+
+      const result = buildSpreadsheetSheetNote('empty.xlsx', sheet);
+      expect(result).toContain('_Empty sheet._');
+    });
+
+    it('should preserve special characters inside cells', () => {
+      const sheet: SpreadsheetSheetContent = {
+        sheetName: 'Flags',
+        rows: [['A|B', 'Line 1\nLine 2']],
+        totalRows: 1,
+        totalColumns: 2
+      };
+
+      const result = buildSpreadsheetSheetNote('flags.xlsx', sheet);
+      expect(result).toContain('A\\|B');
+      expect(result).toContain('Line 1<br>Line 2');
     });
   });
 });
