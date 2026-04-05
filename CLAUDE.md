@@ -3,7 +3,7 @@ Last Updated: 2026-04-01
 
 ## Project Overview
 - **Name**: Nexus (package: claudesidian-mcp)
-- **Version**: 5.6.5
+- **Version**: 5.6.6
 - **Type**: Obsidian Community Plugin
 - **Purpose**: MCP integration for Obsidian with AI-powered vault operations
 - **Architecture**: Agent-Tool pattern with domain-driven design
@@ -22,7 +22,7 @@ Full guidelines: `docs/obsidian-plugin-guidelines.md`
 
 ## Recent Changes
 
-**Current Version**: 5.6.5 — fix obsidian-releases bot lint violations
+**Current Version**: 5.6.6 — fix CustomPromptStorageService dual-write desync
 Full changelog: `docs/changelog.md`
 
 **Latest features** (Apr 2026):
@@ -122,6 +122,10 @@ None.
 **ESLint v9 + Obsidian plugin linter** ✅ — Upgraded to ESLint v9 + typescript-eslint v8 + `eslint-plugin-obsidianmd`. Flat config at `eslint.config.mjs`. Config updated for obsidian-releases bot parity: `require-await` enabled, `prefer-file-manager-trash-file` escalated to error, Node.js imports exempted at config level, sentence-case configured with project acronyms/brands. Lint passes clean (0 errors, 0 warnings). All ~190 bot violations fixed on `fix/pr-bot-lint` branch (135 files).
 
 **Anthropic multi-tool-call regression** ✅ fixed — Added `index?: number` to `ToolCall` interface (`src/services/llm/adapters/types.ts`), restored `index: event.index` to both `extractToolCalls` return objects in `AnthropicAdapter.ts`. SSEStreamProcessor accumulation now works correctly for multi-tool responses.
+
+**Issue #88 — CustomPromptStorageService dual-write desync** — Fix on `fix/issue-88-dual-write-desync` branch (worktree). Removed early returns in createPrompt/updatePrompt/deletePrompt so both SQLite and data.json are always written. Committed (3447d8c5), awaiting PR.
+
+**Issue #64 — Claude Code ENAMETOOLONG** — User reports PR #73 fix may not have fully resolved the issue. Needs re-investigation.
 
 **Context Budget Service** — `feat/context-budget-service` branch is the user's active in-progress branch. Work ongoing.
 
@@ -302,7 +306,7 @@ Whisper API (OpenAI + Groq) only. Excluded in v1:
 <!-- SESSION_START -->
 ## Current Session
 <!-- Auto-managed by session_init hook. Overwritten each session. -->
-- Resume: `claude --resume 03fdfe4e-5579-4704-8001-94bd4cb6d6be`
-- Team: `pact-03fdfe4e`
-- Started: 2026-04-01 18:56:40 UTC
+- Resume: `claude --resume 0d94f9cc-e1c7-415d-bfa6-a807f6ff6252`
+- Team: `pact-0d94f9cc`
+- Started: 2026-04-02 23:23:08 UTC
 <!-- SESSION_END -->

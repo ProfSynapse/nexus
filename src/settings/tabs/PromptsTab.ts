@@ -224,7 +224,7 @@ export class PromptsTab {
         const nameField = form.createDiv('nexus-form-field');
         nameField.createEl('label', { text: 'Name', cls: 'nexus-form-label' });
         const nameInput = new TextComponent(nameField);
-        nameInput.setPlaceholder('e.g., Code Reviewer');
+        nameInput.setPlaceholder('e.g., code reviewer');
         nameInput.setValue(prompt.name || '');
         nameInput.onChange((value) => {
             prompt.name = value;
@@ -239,7 +239,7 @@ export class PromptsTab {
             cls: 'nexus-form-hint'
         });
         const descInput = new TextAreaComponent(descField);
-        descInput.setPlaceholder('e.g., Reviews code for best practices and potential issues');
+        descInput.setPlaceholder('e.g., reviews code for best practices and potential issues');
         descInput.setValue(prompt.description || '');
         descInput.onChange((value) => {
             prompt.description = value;
