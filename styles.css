@@ -759,7 +759,7 @@
     padding: 0.35rem;
     border-radius: 50%;
     cursor: pointer;
-    transition: background 0.15s ease, color 0.15s ease;
+    transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -5839,11 +5839,13 @@ body.is-mobile .message-action-btn {
     --icon-size: 16px;
 }
 
-/* Action button container - position BELOW the message on mobile */
+/* Action button container - pill sizing on mobile; always visible since touch can't hover */
 body.is-mobile .message-actions-external {
     gap: 2px;
     padding: 2px;
     border-radius: 8px;
+    opacity: 0.75;
+    pointer-events: auto;
 }
 
 
@@ -5899,16 +5901,6 @@ body.is-mobile .tool-accordion-header,
 body.is-mobile .progressive-tool-header {
     min-height: 44px;
     padding: 0.75rem 1rem;
-}
-
-/* ------------------------------ */
-/* ALWAYS-VISIBLE MESSAGE ACTIONS */
-/* ------------------------------ */
-/* Touch devices can't hover, so show actions by default */
-
-body.is-mobile .message-actions-external {
-    opacity: 0.75;
-    pointer-events: auto;
 }
 
 body.is-mobile .message-container:active .message-actions-external {
