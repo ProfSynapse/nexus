@@ -344,7 +344,13 @@ export class MessageDisplay {
   private onCopyMessage(messageId: string): void {
     const message = this.findMessage(messageId);
     if (message) {
-      navigator.clipboard.writeText(message.content).then(() => {
+      // Use branch-aware content so copying page 1 gives page 1 and page 2 gives page 2.
+      // message.content is always the most-recently-streamed response; branches hold older
+      // alternatives. Reading message.content directly ignores the active page selection.
+      const content = this.branchManager
+        ? this.branchManager.getActiveMessageContent(message)
+        : message.content;
+      navigator.clipboard.writeText(content).then(() => {
         // Message copied to clipboard
       }).catch(() => {
         // Failed to copy message

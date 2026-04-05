@@ -277,7 +277,7 @@ export class StreamingOrchestrator {
 
       // If no tool calls detected, we're done
       if (detectedToolCalls.length === 0 || !generateOptions.tools || generateOptions.tools.length === 0) {
-        console.warn(`[StreamingOrchestrator] stream complete — ${fullContent.length} chars total content`);
+        console.warn(`[StreamingOrchestrator] stream complete — ${fullContent.length} chars | tail: "${fullContent.slice(-100)}"`);
         yield {
           chunk: '',
           complete: true,
