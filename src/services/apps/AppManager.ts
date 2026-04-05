@@ -38,7 +38,7 @@ export class AppManager {
    * Load all installed and enabled apps.
    * Called during plugin initialization after core agents are registered.
    */
-  async loadInstalledApps(): Promise<void> {
+  loadInstalledApps(): void {
     for (const [appId, config] of Object.entries(this.appConfigs)) {
       if (!config.enabled) continue;
 

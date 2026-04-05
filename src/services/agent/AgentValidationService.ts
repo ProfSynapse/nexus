@@ -22,7 +22,7 @@ export class AgentValidationService {
    * Check if LLM API keys are configured (not validated - validation happens on first use)
    * This enables LLM modes without making network requests on every startup
    */
-  async validateLLMApiKeys(): Promise<boolean> {
+  validateLLMApiKeys(): boolean {
     try {
       const pluginWithSettings = this.plugin as Plugin & { settings?: { settings?: { llmProviders?: typeof DEFAULT_LLM_PROVIDER_SETTINGS } } };
       const pluginSettings = pluginWithSettings?.settings?.settings;
@@ -50,12 +50,12 @@ export class AgentValidationService {
   /**
    * Get agent capability status
    */
-  async getCapabilityStatus(): Promise<{
+  getCapabilityStatus(): {
     hasValidLLMKeys: boolean;
     enableSearchModes: boolean;
     enableLLMModes: boolean;
-  }> {
-    const hasValidLLMKeys = await this.validateLLMApiKeys();
+  } {
+    const hasValidLLMKeys = this.validateLLMApiKeys();
 
     // Search modes disabled
     const enableSearchModes = false;

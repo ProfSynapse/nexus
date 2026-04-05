@@ -66,6 +66,7 @@ interface OpenRouterImageResponse {
 export class OpenRouterImageAdapter extends BaseImageAdapter {
 
   async* generateStreamAsync(_prompt: string, _options?: GenerateOptions): AsyncGenerator<StreamChunk, void, unknown> {
+    await Promise.resolve();
     yield* [] as StreamChunk[];
     throw new Error('Image generation does not support streaming');
   }
@@ -360,7 +361,7 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
    * Get pricing for OpenRouter image models
    * Note: OpenRouter pricing varies by underlying model
    */
-  async getImageModelPricing(model = 'gemini-2.5-flash-image'): Promise<CostDetails> {
+  getImageModelPricing(model = 'gemini-2.5-flash-image'): Promise<CostDetails> {
     // OpenRouter pricing is model-dependent
     // These are approximate prices - actual cost from OpenRouter API response
     const pricing: Record<string, number> = {
@@ -374,21 +375,21 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
 
     const basePrice = pricing[model] || 0.05;
 
-    return {
+    return Promise.resolve({
       inputCost: 0,
       outputCost: basePrice,
       totalCost: basePrice,
       currency: 'USD',
       rateInputPerMillion: 0,
       rateOutputPerMillion: basePrice * 1_000_000
-    };
+    });
   }
 
   /**
    * List available OpenRouter image models
    */
-  async listModels(): Promise<ModelInfo[]> {
-    return [
+  listModels(): Promise<ModelInfo[]> {
+    return Promise.resolve([
       {
         id: 'gemini-2.5-flash-image',
         name: 'Nano Banana (via OpenRouter)',
@@ -503,7 +504,7 @@ export class OpenRouterImageAdapter extends BaseImageAdapter {
           lastUpdated: '2025-12-07'
         }
       }
-    ];
+    ]);
   }
 
   // Private helper methods

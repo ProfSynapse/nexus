@@ -160,7 +160,7 @@ export class LoadWorkspaceTool extends BaseTool<LoadWorkspaceParameters, LoadWor
 
       // Fetch prompt data using prompt resolver
       const app = this.agent.getApp();
-      const workspacePrompt = await this.promptResolver.fetchWorkspacePrompt(projectWorkspace, app);
+      const workspacePrompt = this.promptResolver.fetchWorkspacePrompt(projectWorkspace, app);
 
       // Fetch task summary if TaskManager is available
       let taskSummary: WorkspaceTaskSummary | null = null;
@@ -173,12 +173,12 @@ export class LoadWorkspaceTool extends BaseTool<LoadWorkspaceParameters, LoadWor
 
       // Collect files using file collector
       const cacheManager = this.agent.getCacheManager();
-      const recentFiles = await this.fileCollector.getRecentFilesInWorkspace(workspace, cacheManager);
+      const recentFiles = this.fileCollector.getRecentFilesInWorkspace(workspace, cacheManager);
 
       // Build workspace structure using file collector
       // recursive defaults to false (top-level only)
       const recursive = params.recursive ?? false;
-      const workspacePathResult = await this.fileCollector.buildWorkspacePath(
+      const workspacePathResult = this.fileCollector.buildWorkspacePath(
         workspace.rootFolder,
         // workspace uses IndividualWorkspace shape but rootFolder is identical
         app,

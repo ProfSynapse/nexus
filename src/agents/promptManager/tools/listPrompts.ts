@@ -45,6 +45,7 @@ export class ListPromptsTool extends BaseTool<ListPromptsParams, ListPromptsResu
    * @param params Tool parameters
    * @returns Promise that resolves with the list of prompts
    */
+  // eslint-disable-next-line @typescript-eslint/require-await -- implements ITool.execute() async interface
   async execute(params: ListPromptsParams): Promise<ListPromptsResult> {
     try {
       const { enabledOnly = false, includeArchived = false } = params;

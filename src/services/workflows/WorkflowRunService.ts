@@ -191,12 +191,12 @@ export class WorkflowRunService {
       vaultStructure: this.workspaceIntegration.getVaultStructure(),
       availableWorkspaces: await this.workspaceIntegration.listAvailableWorkspaces(),
       availablePrompts,
-      toolAgents: await this.getToolAgentInfo(),
+      toolAgents: this.getToolAgentInfo(),
       skipToolsSection: params.providerId === 'webllm'
     });
   }
 
-  private async getToolAgentInfo(): Promise<ToolAgentInfo[]> {
+  private getToolAgentInfo(): ToolAgentInfo[] {
     const plugin = this.deps.plugin as PluginWithAgentRegistry;
 
     const normalizeAgents = (

@@ -23,12 +23,12 @@ export class ResourceListService implements IResourceListService {
      * Get all vault resources as MCP resources
      * @returns Promise resolving to array of resources
      */
-    async listResources(): Promise<{ resources: Resource[] }> {
+    listResources(): Promise<{ resources: Resource[] }> {
         try {
-            
+
             const resources: Resource[] = [];
             const files = this.app.vault.getMarkdownFiles();
-            
+
             for (const file of files) {
                 resources.push({
                     uri: `obsidian://${file.path}`,
@@ -36,8 +36,8 @@ export class ResourceListService implements IResourceListService {
                     mimeType: "text/markdown"
                 });
             }
-            
-            return { resources };
+
+            return Promise.resolve({ resources });
         } catch (error) {
             logger.systemError(error as Error, 'ResourceListService');
             throw new McpError(ErrorCode.InternalError, 'Failed to list resources', error);

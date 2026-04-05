@@ -59,8 +59,8 @@ export class UsageTracker {
     /**
      * Track usage for a specific provider
      */
-    async trackUsage(provider: string, cost: number): Promise<UsageResponse> {
-        const usage = await this.loadUsageData();
+    trackUsage(provider: string, cost: number): UsageResponse {
+        const usage = this.loadUsageData();
         const currentMonth = this.getCurrentMonthKey();
         
         // Reset monthly stats if new month
@@ -80,7 +80,7 @@ export class UsageTracker {
         
         usage.lastUpdated = new Date().toISOString();
         
-        await this.saveUsageData(usage);
+        this.saveUsageData(usage);
         
         const budgetStatus = this.getBudgetStatus(usage.monthlyTotal);
         
@@ -94,8 +94,8 @@ export class UsageTracker {
     /**
      * Check if budget allows for a specific cost
      */
-    async canAfford(cost: number): Promise<boolean> {
-        const usage = await this.loadUsageData();
+    canAfford(cost: number): boolean {
+        const usage = this.loadUsageData();
         const budget = this.getMonthlyBudget();
         
         if (budget <= 0) return true; // No budget set
@@ -106,29 +106,29 @@ export class UsageTracker {
     /**
      * Get current budget status
      */
-    async getBudgetStatusAsync(): Promise<BudgetStatus> {
-        const usage = await this.loadUsageData();
+    getBudgetStatusAsync(): BudgetStatus {
+        const usage = this.loadUsageData();
         return this.getBudgetStatus(usage.monthlyTotal);
     }
 
     /**
      * Get usage data for display
      */
-    async getUsageData(): Promise<UsageData> {
-        return await this.loadUsageData();
+    getUsageData(): UsageData {
+        return this.loadUsageData();
     }
 
     /**
      * Reset monthly usage
      */
-    async resetMonthlyUsage(): Promise<void> {
-        const usage = await this.loadUsageData();
+    resetMonthlyUsage(): void {
+        const usage = this.loadUsageData();
         usage.monthly = {};
         usage.monthlyTotal = 0;
         usage.currentMonth = this.getCurrentMonthKey();
         usage.lastUpdated = new Date().toISOString();
         
-        await this.saveUsageData(usage);
+        this.saveUsageData(usage);
     }
 
     /**
@@ -164,7 +164,7 @@ export class UsageTracker {
     /**
      * Load usage data from storage
      */
-    private async loadUsageData(): Promise<UsageData> {
+    private loadUsageData(): UsageData {
         const defaultData: UsageData = {
             monthly: {},
             allTime: {},
@@ -207,7 +207,7 @@ export class UsageTracker {
     /**
      * Save usage data to storage
      */
-    private async saveUsageData(data: UsageData): Promise<void> {
+    private saveUsageData(data: UsageData): void {
         const storage = this.getLocalStorage();
         if (!storage) return;
 

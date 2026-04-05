@@ -4,7 +4,6 @@
  * LLM adapter for Google Gemini CLI. Runs the CLI as a child process in
  * non-streaming (JSON output) mode and parses the result.
  */
-/* eslint-disable import/no-nodejs-modules -- desktop-only Gemini CLI adapter uses Node child_process in Electron */
 import { Platform, Vault } from 'obsidian';
 import type { ChildProcess } from 'child_process';
 import { BaseAdapter } from '../BaseAdapter';
@@ -155,8 +154,8 @@ export class GoogleGeminiCliAdapter extends BaseAdapter {
     };
   }
 
-  async listModels(): Promise<ModelInfo[]> {
-    return ModelRegistry.getProviderModels('google-gemini-cli').map(model => ModelRegistry.toModelInfo(model));
+  listModels(): Promise<ModelInfo[]> {
+    return Promise.resolve(ModelRegistry.getProviderModels('google-gemini-cli').map(model => ModelRegistry.toModelInfo(model)));
   }
 
   getCapabilities(): ProviderCapabilities {
@@ -171,17 +170,17 @@ export class GoogleGeminiCliAdapter extends BaseAdapter {
     };
   }
 
-  async getModelPricing(modelId: string): Promise<ModelPricing | null> {
+  getModelPricing(modelId: string): Promise<ModelPricing | null> {
     const model = ModelRegistry.findModel('google-gemini-cli', modelId);
     if (!model) {
-      return null;
+      return Promise.resolve(null);
     }
 
-    return {
+    return Promise.resolve({
       rateInputPerMillion: model.inputCostPerMillion,
       rateOutputPerMillion: model.outputCostPerMillion,
       currency: 'USD'
-    };
+    });
   }
 
   abort(): void {

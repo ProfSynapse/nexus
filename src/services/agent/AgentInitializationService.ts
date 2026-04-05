@@ -92,7 +92,7 @@ export class AgentInitializationService {
   /**
    * Initialize ContentManager agent
    */
-  async initializeContentManager(): Promise<void> {
+  initializeContentManager(): void {
     const contentManagerAgent = new ContentManagerAgent(
       this.app,
       hasSettings(this.plugin) ? this.plugin : undefined
@@ -105,7 +105,7 @@ export class AgentInitializationService {
   /**
    * Initialize StorageManager agent
    */
-  async initializeStorageManager(): Promise<void> {
+  initializeStorageManager(): void {
     const storageManagerAgent = new StorageManagerAgent(this.app);
 
     this.agentManager.registerAgent(storageManagerAgent);
@@ -115,7 +115,7 @@ export class AgentInitializationService {
   /**
    * Initialize CanvasManager agent
    */
-  async initializeCanvasManager(): Promise<void> {
+  initializeCanvasManager(): void {
     const canvasManagerAgent = new CanvasManagerAgent(this.app);
 
     this.agentManager.registerAgent(canvasManagerAgent);
@@ -245,7 +245,7 @@ export class AgentInitializationService {
   /**
    * Initialize SearchManager agent
    */
-  async initializeSearchManager(enableSearchModes: boolean, memorySettings: MemorySettings): Promise<void> {
+  initializeSearchManager(enableSearchModes: boolean, memorySettings: MemorySettings): void {
     // Get required services
     let memoryService: MemoryService | null = null;
     let workspaceService: WorkspaceService | null = null;
@@ -278,7 +278,7 @@ export class AgentInitializationService {
   /**
    * Initialize MemoryManager agent
    */
-  async initializeMemoryManager(): Promise<void> {
+  initializeMemoryManager(): void {
     // Get required services - try ServiceManager first, then plugin direct access
     let memoryService: MemoryService | null = null;
     let workspaceService: WorkspaceService | null = null;
@@ -373,7 +373,7 @@ export class AgentInitializationService {
   /**
    * Initialize IngestManager agent
    */
-  async initializeIngestManager(): Promise<void> {
+  initializeIngestManager(): void {
     // Lazy getter — resolves LLMProviderManager via PromptManager at call time
     const getProviderManager = (): LLMProviderManager | null => {
       try {

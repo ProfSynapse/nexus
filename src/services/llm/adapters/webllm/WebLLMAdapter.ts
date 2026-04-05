@@ -419,12 +419,12 @@ export class WebLLMAdapter extends BaseAdapter {
   /**
    * Get model pricing (always free for local models)
    */
-  async getModelPricing(_modelId: string): Promise<ModelPricing | null> {
-    return {
+  getModelPricing(_modelId: string): Promise<ModelPricing | null> {
+    return Promise.resolve({
       rateInputPerMillion: 0,
       rateOutputPerMillion: 0,
       currency: 'USD',
-    };
+    });
   }
 
   /**

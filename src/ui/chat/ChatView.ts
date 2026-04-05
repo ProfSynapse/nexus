@@ -317,6 +317,7 @@ export class ChatView extends ItemView {
     errorDiv.createDiv({ cls: 'chat-service-error-text', text: 'Chat service unavailable. Please reload Obsidian.' });
   }
 
+  // eslint-disable-next-line @typescript-eslint/require-await -- Obsidian ItemView lifecycle method
   async onClose(): Promise<void> {
     // Signal polling loops to stop before any cleanup runs
     this.isClosing = true;
@@ -589,7 +590,7 @@ export class ChatView extends ItemView {
       };
 
       // Initialize with dependencies
-      await this.subagentController.initialize(
+      this.subagentController.initialize(
         {
           app: this.app,
           chatService: this.chatService,

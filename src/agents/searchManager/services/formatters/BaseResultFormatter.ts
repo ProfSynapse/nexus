@@ -39,7 +39,7 @@ export abstract class BaseResultFormatter {
    * Format a single search result
    * Template method - calls extension points for customization
    */
-  async formatSingleResult(result: MemorySearchResult, options: FormatOptions): Promise<FormattedMemoryResult> {
+  formatSingleResult(result: MemorySearchResult, options: FormatOptions): FormattedMemoryResult {
     const formatContext: FormatContext = {
       searchQuery: '',
       resultType: result.type,

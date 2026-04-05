@@ -33,14 +33,14 @@ export class ValidationService implements IValidationService {
         return enhancedParams;
     }
 
-    async validateSessionId(sessionId: string): Promise<string> {
+    validateSessionId(sessionId: string): Promise<string> {
         if (!sessionId || typeof sessionId !== 'string') {
-            throw new McpError(
+            return Promise.reject(new McpError(
                 ErrorCode.InvalidParams,
                 'Session ID must be a non-empty string'
-            );
+            ));
         }
-        return sessionId;
+        return Promise.resolve(sessionId);
     }
 
     /**
@@ -140,7 +140,7 @@ export class ValidationService implements IValidationService {
         return 'GENERIC';
     }
 
-    async validateBatchOperations(operations: BatchOperation[]): Promise<void> {
+    validateBatchOperations(operations: BatchOperation[]): Promise<void> {
         const batchErrors: ValidationError[] = [];
 
         operations.forEach((operation: BatchOperation, index: number) => {
@@ -182,16 +182,17 @@ export class ValidationService implements IValidationService {
                 });
             }
         });
-        
+
         if (batchErrors.length > 0) {
             throw new McpError(
                 ErrorCode.InvalidParams,
                 formatValidationErrors(batchErrors)
             );
         }
+        return Promise.resolve();
     }
 
-    async validateBatchPaths(paths: string[]): Promise<void> {
+    validateBatchPaths(paths: string[]): Promise<void> {
         const pathErrors: ValidationError[] = [];
         const pathsValue = paths as unknown;
 
@@ -201,7 +202,7 @@ export class ValidationService implements IValidationService {
                 pathsValue.trim().endsWith(']')) {
                 try {
                     JSON.parse(pathsValue);
-                    return;
+                    return Promise.resolve();
                 } catch (error) {
                     pathErrors.push({
                         path: ['paths'],
@@ -244,9 +245,10 @@ export class ValidationService implements IValidationService {
                 `❌ Path Validation Failed\n\n${errorMessage}\n\n💡 Tip: Paths should be an array of strings like ["/"] or ["folder/file.md"]`
             );
         }
+        return Promise.resolve();
     }
 
-    private async validateAgainstSchema(params: Record<string, unknown>, schema: JSONSchema | EnhancedJSONSchema): Promise<void> {
+    private validateAgainstSchema(params: Record<string, unknown>, schema: JSONSchema | EnhancedJSONSchema): Promise<void> {
         const validationErrors = validateParams(params, schema);
         if (validationErrors.length > 0) {
             logger.systemLog('DEBUG: Validation errors found:', JSON.stringify(validationErrors, null, 2));
@@ -305,5 +307,6 @@ export class ValidationService implements IValidationService {
                 `❌ Validation Failed\n\n` + formatValidationErrors(validationErrors) + `\n\n💡 Check parameter types and required fields.`
             );
         }
+        return Promise.resolve();
     }
 }

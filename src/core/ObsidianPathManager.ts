@@ -167,7 +167,7 @@ export class ObsidianPathManager {
   /**
    * Generate unique path to avoid conflicts
    */
-  async generateUniquePath(basePath: string): Promise<string> {
+  generateUniquePath(basePath: string): string {
     let uniquePath = basePath;
     let counter = 1;
 

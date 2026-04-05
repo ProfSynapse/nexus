@@ -206,15 +206,15 @@ export class MemoryManagerAgent extends BaseAgent {
   /**
    * Get the memory service instance asynchronously - now uses injected service
    */
-  async getMemoryServiceAsync(): Promise<MemoryService | null> {
-    return this.memoryService;
+  getMemoryServiceAsync(): Promise<MemoryService | null> {
+    return Promise.resolve(this.memoryService);
   }
   
   /**
    * Get the workspace service instance asynchronously - now uses injected service
    */
-  async getWorkspaceServiceAsync(): Promise<WorkspaceService | null> {
-    return this.workspaceService;
+  getWorkspaceServiceAsync(): Promise<WorkspaceService | null> {
+    return Promise.resolve(this.workspaceService);
   }
   
   /**

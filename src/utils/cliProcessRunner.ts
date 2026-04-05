@@ -4,7 +4,6 @@
  * Shared CLI process runner for spawn-collect-resolve pattern.
  * Used by AnthropicClaudeCodeAdapter, GoogleGeminiCliAdapter, and GeminiCliAuthService.
  */
-/* eslint-disable import/no-nodejs-modules -- desktop-only CLI process runner uses Node child_process in Electron */
 import { Platform } from 'obsidian';
 import type { ChildProcess, SpawnOptions } from 'child_process';
 import { spawnDesktopProcess } from './desktopProcess';

@@ -102,6 +102,7 @@ export class GetToolsTool implements ITool<GetToolsParams, GetToolsResult> {
    * @param params Tool parameters with request array
    * @returns Promise that resolves with tool schemas
    */
+  // eslint-disable-next-line @typescript-eslint/require-await -- implements ITool.execute() async interface
   async execute(params: GetToolsParams): Promise<GetToolsResult> {
     try {
       const { request } = params;

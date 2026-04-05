@@ -2,7 +2,6 @@ import { App, Platform } from 'obsidian';
 import type { LLMProviderConfig, LLMProviderSettings } from '../types/llm/ProviderTypes';
 import { getPrimaryServerKey } from '../constants/branding';
 import { supportsMCPBridge } from '../utils/platform';
-// eslint-disable-next-line import/no-nodejs-modules -- desktop-only config inspection uses Node fs in Electron
 import * as nodeFs from 'node:fs';
 
 export type ConfigStatus =

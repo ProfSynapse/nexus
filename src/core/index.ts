@@ -97,7 +97,7 @@ export async function createCoreServices(plugin: CorePluginLike): Promise<CoreSe
   await dataManager.load();
   
   // Create vault operations
-  const vaultOperations = new VaultOperations(plugin.app.vault, pathManager, logger);
+  const vaultOperations = new VaultOperations(plugin.app, plugin.app.vault, pathManager, logger);
   
   // Create service container
   const container = new ServiceContainer();
@@ -211,6 +211,7 @@ export class ArchitectureMigrationHelper {
     if (!this.plugin.vaultOperations && this.plugin.pathManager && this.plugin.logger) {
       const { VaultOperations } = await import('./VaultOperations');
       this.plugin.vaultOperations = new VaultOperations(
+        this.plugin.app,
         this.plugin.app.vault,
         this.plugin.pathManager,
         this.plugin.logger

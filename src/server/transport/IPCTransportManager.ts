@@ -3,9 +3,7 @@
  * Follows Single Responsibility Principle by focusing only on IPC transport
  */
 
-// eslint-disable-next-line import/no-nodejs-modules -- desktop-only IPC transport uses Node networking APIs in Electron
 import { Server as NetServer, Socket, createServer } from 'net';
-// eslint-disable-next-line import/no-nodejs-modules -- desktop-only IPC transport uses Node filesystem APIs in Electron
 import { promises as fs } from 'fs';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { Server as MCPSDKServer } from '@modelcontextprotocol/sdk/server/index.js';

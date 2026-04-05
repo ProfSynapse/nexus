@@ -70,6 +70,7 @@ export class GeminiImageAdapter extends BaseImageAdapter {
 
   // Image adapters don't support streaming in the same way as text
   async* generateStreamAsync(_prompt: string, _options?: GenerateOptions): AsyncGenerator<StreamChunk, void, unknown> {
+    await Promise.resolve();
     yield* [] as StreamChunk[];
     throw new Error('Image generation does not support streaming');
   }
@@ -371,7 +372,7 @@ export class GeminiImageAdapter extends BaseImageAdapter {
   /**
    * Get pricing for Nano Banana models (2025 pricing)
    */
-  async getImageModelPricing(model = 'gemini-2.5-flash-image'): Promise<CostDetails> {
+  getImageModelPricing(model = 'gemini-2.5-flash-image'): Promise<CostDetails> {
     const pricing: Record<string, number> = {
       'gemini-2.5-flash-image': 0.039,      // Nano Banana
       'gemini-3-pro-image-preview': 0.08,   // Nano Banana Pro (estimate)
@@ -380,21 +381,21 @@ export class GeminiImageAdapter extends BaseImageAdapter {
 
     const basePrice = pricing[model] || 0.039;
 
-    return {
+    return Promise.resolve({
       inputCost: 0,
       outputCost: basePrice,
       totalCost: basePrice,
       currency: 'USD',
       rateInputPerMillion: 0,
       rateOutputPerMillion: basePrice * 1_000_000
-    };
+    });
   }
 
   /**
    * List available Nano Banana image models
    */
-  async listModels(): Promise<ModelInfo[]> {
-    return [
+  listModels(): Promise<ModelInfo[]> {
+    return Promise.resolve([
       {
         id: 'gemini-2.5-flash-image',
         name: 'Nano Banana (Fast)',
@@ -452,7 +453,7 @@ export class GeminiImageAdapter extends BaseImageAdapter {
           lastUpdated: '2026-02-26'
         }
       }
-    ];
+    ]);
   }
 
   // Private helper methods

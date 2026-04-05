@@ -27,17 +27,17 @@ export class ToolHelpService implements IToolHelpService {
      * @param mode Mode name to get help for
      * @returns Promise resolving to help content
      */
-    async generateToolHelp(
+    generateToolHelp(
         getAgent: (name: string) => IAgent,
         toolName: string,
         mode: string
     ): Promise<{ content: HelpContent[] }> {
         try {
             logger.systemLog(`ToolHelpService: Generating help for tool ${toolName}, mode ${mode}`);
-            
+
             // Extract agent name from tool name (removes vault suffix if present)
             const agentName = this.extractAgentName(toolName);
-            
+
             // Validate mode parameter
             if (!mode) {
                 throw new McpError(
@@ -45,7 +45,7 @@ export class ToolHelpService implements IToolHelpService {
                     `Missing required parameter: mode for help on agent ${agentName}`
                 );
             }
-            
+
             // Get the agent
             const agent = getAgent(agentName);
             if (!agent) {
@@ -54,7 +54,7 @@ export class ToolHelpService implements IToolHelpService {
                     `Agent ${agentName} not found`
                 );
             }
-            
+
             // Get the tool instance
             const toolInstance = agent.getTool(mode);
             if (!toolInstance) {
@@ -76,15 +76,15 @@ export class ToolHelpService implements IToolHelpService {
 
             // Format the help text
             const helpText = formatToolHelp(help);
-            
+
             logger.systemLog(`ToolHelpService: Generated help for ${agentName}_${mode}`);
-            
-            return {
+
+            return Promise.resolve({
                 content: [{
                     type: "text",
                     text: helpText
                 }]
-            };
+            });
         } catch (error) {
             if (error instanceof McpError) {
                 throw error;
@@ -173,7 +173,7 @@ export class ToolHelpService implements IToolHelpService {
      * @param toolSlug Tool slug to validate
      * @returns Promise resolving to boolean
      */
-    async validateToolExists(
+    validateToolExists(
         getAgent: (name: string) => IAgent,
         toolName: string,
         toolSlug: string
@@ -183,21 +183,21 @@ export class ToolHelpService implements IToolHelpService {
             const agent = getAgent(agentName);
 
             if (!agent) {
-                return false;
+                return Promise.resolve(false);
             }
 
             const toolInstance = agent.getTool(toolSlug);
-            return toolInstance !== undefined;
+            return Promise.resolve(toolInstance !== undefined);
         } catch {
             logger.systemWarn(`ToolHelpService: Tool validation failed for ${toolName}.${toolSlug}`);
-            return false;
+            return Promise.resolve(false);
         }
     }
 
     /**
      * @deprecated Use validateToolExists instead
      */
-    async validateModeExists(
+    validateModeExists(
         getAgent: (name: string) => IAgent,
         toolName: string,
         mode: string

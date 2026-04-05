@@ -546,7 +546,7 @@ export class ChatSettingsRenderer {
     this.renderContextNotesList();
   }
 
-  private async syncWorkspacePrompt(workspaceId: string | null): Promise<void> {
+  private syncWorkspacePrompt(workspaceId: string | null): void {
     if (!workspaceId) return;
 
     const workspace = this.config.options.workspaces.find(w => w.id === workspaceId);

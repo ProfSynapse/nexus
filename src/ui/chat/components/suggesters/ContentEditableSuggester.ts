@@ -33,7 +33,7 @@ export abstract class ContentEditableSuggester<T> {
   /**
    * Get suggestions based on query
    */
-  abstract getSuggestions(query: string): Promise<SuggestionItem<T>[]>;
+  abstract getSuggestions(query: string): Promise<SuggestionItem<T>[]> | SuggestionItem<T>[];
 
   /**
    * Render a single suggestion item

@@ -1,8 +1,6 @@
 import { App, FileSystemAdapter, Modal, Platform, Setting, normalizePath } from 'obsidian';
 import { getAllPluginIds, getPrimaryServerKey, BRAND_NAME } from '../constants/branding';
 
-/* eslint-disable obsidianmd/ui/sentence-case */
-
 type ConfigModalDesktopModuleMap = {
     path: typeof import('path');
 };
@@ -136,7 +134,7 @@ export class ConfigModal extends Modal {
         step1.appendText(' → ');
         step1.createEl('strong', { text: 'Developer' });
         step1.appendText(' → ');
-        step1.createEl('strong', { text: 'Edit Config' });
+        step1.createEl('strong', { text: 'Edit config' });
         step1.appendText(' (this creates the config file if it doesn\'t exist)');
 
         // Step 2: Alternative - use file link
@@ -166,7 +164,7 @@ export class ConfigModal extends Modal {
         
         // Copy button
         const copyButton = windowsContent.createEl('button', {
-            text: 'Copy Configuration',
+            text: 'Copy configuration',
             cls: 'mod-cta'
         });
         
@@ -200,7 +198,7 @@ export class ConfigModal extends Modal {
         step1.appendText(' → ');
         step1.createEl('strong', { text: 'Developer' });
         step1.appendText(' → ');
-        step1.createEl('strong', { text: 'Edit Config' });
+        step1.createEl('strong', { text: 'Edit config' });
         step1.appendText(' (this creates the config file if it doesn\'t exist)');
 
         // Step 2: Alternative - use file link
@@ -230,7 +228,7 @@ export class ConfigModal extends Modal {
         
         // Copy button
         const copyButton = macContent.createEl('button', {
-            text: 'Copy Configuration',
+            text: 'Copy configuration',
             cls: 'mod-cta'
         });
         
@@ -264,7 +262,7 @@ export class ConfigModal extends Modal {
         step1.appendText(' → ');
         step1.createEl('strong', { text: 'Developer' });
         step1.appendText(' → ');
-        step1.createEl('strong', { text: 'Edit Config' });
+        step1.createEl('strong', { text: 'Edit config' });
         step1.appendText(' (this creates the config file if it doesn\'t exist)');
 
         // Step 2: Alternative - use file link
@@ -294,7 +292,7 @@ export class ConfigModal extends Modal {
         
         // Copy button
         const copyButton = linuxContent.createEl('button', {
-            text: 'Copy Configuration',
+            text: 'Copy configuration',
             cls: 'mod-cta'
         });
         

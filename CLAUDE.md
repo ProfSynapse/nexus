@@ -3,7 +3,7 @@ Last Updated: 2026-04-01
 
 ## Project Overview
 - **Name**: Nexus (package: claudesidian-mcp)
-- **Version**: 5.6.4
+- **Version**: 5.6.5
 - **Type**: Obsidian Community Plugin
 - **Purpose**: MCP integration for Obsidian with AI-powered vault operations
 - **Architecture**: Agent-Tool pattern with domain-driven design
@@ -22,15 +22,14 @@ Full guidelines: `docs/obsidian-plugin-guidelines.md`
 
 ## Recent Changes
 
-**Current Version**: 5.6.4 — any→unknown type migration, ESLint v9 + obsidianmd linter
+**Current Version**: 5.6.5 — fix obsidian-releases bot lint violations
 Full changelog: `docs/changelog.md`
 
-**Latest features** (Mar 2026):
-- Nexus Ingester (PR #83) — PDF/audio drag-to-ingest, multi-provider OCR/transcription
-- Web Tools Agent (PR #82) — headless browser capture, markdown extraction
-- Composer App (PR #81) — PDF merge, audio concat/mix, markdown concat
+**Latest features** (Apr 2026):
+- v5.6.4 (PR #86) — any→unknown type migration, ESLint v9 + obsidianmd linter, Anthropic multi-tool fix
+- v5.6.3 — DOCX/PPTX/XLSX ingestion support
+- v5.6.0 — Nexus Ingester, Web Tools Agent, Composer App (PRs #81–83)
 - v5.5.0 — Task Board, Compaction Frontier, Tool Refactors (PRs #65–72)
-- v5.4.0 — Claude Code integration, replace/insert tools (PRs #57, #58)
 
 ## Quick Navigation
 
@@ -120,7 +119,7 @@ None.
 
 **`any` → `unknown` Type Migration** ✅ — Complete. TS build passes (exit 0), lint clean (0 violations). 539 files changed. 8 test suites still failing (73 tests) — user fixing manually. Remaining test failures: `QAPairBuilder`, `BranchManager`, `ComposeTool`, `MessageAlternativeService`, `ClaudeHeadlessService`, `GoogleGeminiCliAdapter`, `AnthropicClaudeCodeAdapter`, `cliProcessRunner`.
 
-**ESLint v9 + Obsidian plugin linter** ✅ — Upgraded to ESLint v9 + typescript-eslint v8 + `eslint-plugin-obsidianmd`. Flat config at `eslint.config.mjs`. Lint is clean (0 violations). Remaining work tracked in `docs/plans/eslint-punchlist.md` for future passes (Obsidian compliance, async/promise issues, etc.) — deferred until tests pass.
+**ESLint v9 + Obsidian plugin linter** ✅ — Upgraded to ESLint v9 + typescript-eslint v8 + `eslint-plugin-obsidianmd`. Flat config at `eslint.config.mjs`. Config updated for obsidian-releases bot parity: `require-await` enabled, `prefer-file-manager-trash-file` escalated to error, Node.js imports exempted at config level, sentence-case configured with project acronyms/brands. Lint passes clean (0 errors, 0 warnings). All ~190 bot violations fixed on `fix/pr-bot-lint` branch (135 files).
 
 **Anthropic multi-tool-call regression** ✅ fixed — Added `index?: number` to `ToolCall` interface (`src/services/llm/adapters/types.ts`), restored `index: event.index` to both `extractToolCalls` return objects in `AnthropicAdapter.ts`. SSEStreamProcessor accumulation now works correctly for multi-tool responses.
 
@@ -194,7 +193,7 @@ Full tech debt tracker: `docs/tech-debt.md`
 
 **600+ line files to watch**: WorkspaceService (965), ModelAgentManager (895), SQLiteCacheManager (856), ConversationService (813), connector (731), ChatSettingsModal (702), ChatView (659), OpenRouterAdapter (640), ValidationService (625), BatchExecutePromptTool (618), GoogleAdapter (612)
 
-**Plugin store compliance**: `isDesktopOnly: false` is correct. Audit 2026-03-13 found regressions — see `docs/review/plugin-store-audit-2026-03-13.md` and `docs/tech-debt.md` for issue counts.
+**Plugin store compliance**: `isDesktopOnly: false` is correct. PR #11597 to obsidian-releases — all ~190 bot violations fixed on `fix/pr-bot-lint`. Audited GREEN. VaultOperations now uses `app.fileManager.trashFile()` (constructor takes `App` as first arg).
 
 ## MCP Integration
 
@@ -303,7 +302,7 @@ Whisper API (OpenAI + Groq) only. Excluded in v1:
 <!-- SESSION_START -->
 ## Current Session
 <!-- Auto-managed by session_init hook. Overwritten each session. -->
-- Resume: `claude --resume 6295761f-91ca-489d-91e2-39a760ca88a0`
-- Team: `pact-6295761f`
-- Started: 2026-04-01 12:13:20 UTC
+- Resume: `claude --resume 03fdfe4e-5579-4704-8001-94bd4cb6d6be`
+- Team: `pact-03fdfe4e`
+- Started: 2026-04-01 18:56:40 UTC
 <!-- SESSION_END -->

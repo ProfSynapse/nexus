@@ -25,7 +25,7 @@ export class ContextTracker {
     const conversation = this.conversationManager.getCurrentConversation();
     const selectedModel = await this.modelAgentManager.getSelectedModelOrDefault();
 
-    const usage = await TokenCalculator.getContextUsage(
+    const usage = TokenCalculator.getContextUsage(
       selectedModel,
       conversation,
       await this.modelAgentManager.getCurrentSystemPrompt()

@@ -160,7 +160,7 @@ export class PluginLifecycleManager {
             // PHASE 1: Foundation - Service container and settings already created by main.ts
 
             // PHASE 2: Register core services (no initialization yet)
-            await this.serviceRegistrar.registerCoreServices();
+            this.serviceRegistrar.registerCoreServices();
 
             // PHASE 3: Register ChatView EARLY so Obsidian can restore it during layout restoration
             await this.chatUIManager.registerViewEarly();
@@ -188,8 +188,8 @@ export class PluginLifecycleManager {
             await this.config.settings.loadSettings();
             await this.serviceRegistrar.initializeDataDirectories();
             await this.serviceRegistrar.initializeBusinessServices();
-            await this.serviceRegistrar.preInitializeUICriticalServices();
-            await this.backgroundProcessor.validateSearchFunctionality();
+            this.serviceRegistrar.preInitializeUICriticalServices();
+            this.backgroundProcessor.validateSearchFunctionality();
 
             // Start MCP server AFTER services are ready (registers agents)
             // Only on desktop - connector is undefined on mobile
@@ -213,7 +213,7 @@ export class PluginLifecycleManager {
 
             // Initialize settings tab AFTER business services are ready
             // This prevents race condition where settings tab tries to access agents before services are initialized
-            await this.settingsTabManager.initializeSettingsTab();
+            this.settingsTabManager.initializeSettingsTab();
 
             // Defer SQLite/embedding initialization - WASM loading is CPU-intensive (~2s)
             // Uses a fixed timeout from onload rather than onLayoutReady (which is unreliable, can take 13+s)
@@ -321,7 +321,7 @@ export class PluginLifecycleManager {
                 enableEmbeddings,
                 storageAdapter.messages
             );
-            await this.embeddingManager.initialize();
+            this.embeddingManager.initialize();
             (this.config.plugin as PluginWithServices).embeddingManager = this.embeddingManager;
 
             // Wire embedding service into ChatTraceService
@@ -381,7 +381,7 @@ export class PluginLifecycleManager {
 
             // Cleanup service manager (handles all service cleanup)
             if (this.config.serviceManager) {
-                await this.config.serviceManager.stop();
+                this.config.serviceManager.stop();
             }
 
             // Stop the MCP connector

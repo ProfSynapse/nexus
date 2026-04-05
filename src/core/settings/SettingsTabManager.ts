@@ -39,7 +39,7 @@ export class SettingsTabManager {
     /**
      * Initialize settings tab asynchronously
      */
-    async initializeSettingsTab(): Promise<void> {
+    initializeSettingsTab(): void {
         try {
             // Get agent references - may not be available yet
             const searchManager = this.config.connector?.getSearchManager();

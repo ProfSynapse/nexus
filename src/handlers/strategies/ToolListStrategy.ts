@@ -38,14 +38,14 @@ export class ToolListStrategy implements IRequestStrategy<ToolListRequest, ToolL
         return request.method === 'tools/list';
     }
 
-    async handle(_request: ToolListRequest): Promise<ToolListResponse> {
+    handle(_request: ToolListRequest): Promise<ToolListResponse> {
         try {
             // Two-Tool Architecture: Return only toolManager tools
             const toolManagerAgent = this.agents.get('toolManager');
 
             if (!toolManagerAgent) {
                 logger.systemWarn('[ToolListStrategy] ToolManager agent not found - returning empty tools list');
-                return { tools: [] };
+                return Promise.resolve({ tools: [] });
             }
 
             // Get tools from toolManager (getTools and useTools)
@@ -59,7 +59,7 @@ export class ToolListStrategy implements IRequestStrategy<ToolListRequest, ToolL
                 inputSchema: tool.getParameterSchema() as Record<string, unknown>
             }));
 
-            return { tools };
+            return Promise.resolve({ tools });
         } catch (error) {
             logger.systemError(error as Error, "Tool List Strategy");
             throw new McpError(ErrorCode.InternalError, 'Failed to list tools', error);

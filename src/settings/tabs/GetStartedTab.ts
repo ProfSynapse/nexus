@@ -14,8 +14,6 @@ import { BackButton } from '../components/BackButton';
 import { getPrimaryServerKey } from '../../constants/branding';
 import { ConfigStatus, getClaudeDesktopConfigPath, getConfigStatus } from '../getStartedStatus';
 
-/* eslint-disable obsidianmd/ui/sentence-case */
-
 type GetStartedView = 'paths' | 'internal-chat' | 'mcp-setup';
 type DesktopModuleMap = {
     child_process: typeof import('child_process');
@@ -175,7 +173,7 @@ export class GetStartedTab {
 
         // Step 1: Configure a provider
         const step1 = this.container.createDiv('nexus-setup-step');
-        step1.createEl('h4', { text: 'Step 1: Configure an LLM provider' });
+        step1.createEl('h4', { text: 'Step 1: configure an LLM provider' });
         step1.createEl('p', {
             text: 'You need at least one LLM provider configured to use the chat.',
             cls: 'setting-item-description'
@@ -191,7 +189,7 @@ export class GetStartedTab {
 
         // Step 2: Open chat view
         const step2 = this.container.createDiv('nexus-setup-step');
-        step2.createEl('h4', { text: 'Step 2: Open the chat view' });
+        step2.createEl('h4', { text: 'Step 2: open the chat view' });
         step2.createEl('p', {
             text: 'Once a provider is configured, you can open the chat view:',
             cls: 'setting-item-description'
@@ -199,12 +197,12 @@ export class GetStartedTab {
 
         const instructions = step2.createEl('ul', { cls: 'nexus-setup-instructions' });
         instructions.createEl('li', { text: 'Click the chat icon in the left ribbon' });
-        instructions.createEl('li', { text: 'Or use the command palette: "Nexus: Open chat"' });
+        instructions.createEl('li', { text: 'Or use the command palette: "Nexus: open chat"' });
         instructions.createEl('li', { text: 'Or use the hotkey: Ctrl/Cmd + Shift + C' });
 
         // Step 3: Start chatting
         const step3 = this.container.createDiv('nexus-setup-step');
-        step3.createEl('h4', { text: 'Step 3: Start chatting!' });
+        step3.createEl('h4', { text: 'Step 3: start chatting!' });
         step3.createEl('p', {
             text: 'Your AI assistant has full access to your vault. Ask questions, take notes, and get help with your writing.',
             cls: 'setting-item-description'
@@ -225,7 +223,7 @@ export class GetStartedTab {
             this.services.component
         );
 
-        this.container.createEl('h3', { text: 'Claude Desktop Setup' });
+        this.container.createEl('h3', { text: 'Claude Desktop setup' });
 
         // MCP setup requires Node.js modules (path, fs, child_process) — desktop only
         if (!Platform.isDesktop) {
@@ -257,7 +255,7 @@ export class GetStartedTab {
                 component.registerDomEvent(refreshBtn, 'click', refreshHandler);
             }
             this.container.createEl('p', {
-                text: 'Node.js is required to run the MCP connector. Install it, then click Refresh.',
+                text: 'Node.js is required to run the MCP connector. Install it, then click refresh.',
                 cls: 'nexus-mcp-help'
             });
         }
@@ -298,14 +296,14 @@ export class GetStartedTab {
 
             // Help text below
             this.container.createEl('p', {
-                text: 'Install Claude Desktop, open it once, then enable Settings → Developer → MCP Servers',
+                text: 'Install Claude Desktop, open it once, then enable settings → developer → MCP servers',
                 cls: 'nexus-mcp-help'
             });
         } else if (configStatus === 'nexus-configured') {
             // Already configured - success state
             const row = this.container.createDiv('nexus-mcp-row');
             row.createEl('span', {
-                text: '✓ Connected',
+                text: '✓ connected',
                 cls: 'nexus-mcp-status nexus-mcp-success'
             });
 
@@ -331,7 +329,7 @@ export class GetStartedTab {
             // Config file exists but is invalid/empty
             const row = this.container.createDiv('nexus-mcp-row');
             row.createEl('span', {
-                text: '⚠️ Config file is invalid or empty',
+                text: '⚠️ config file is invalid or empty',
                 cls: 'nexus-mcp-status nexus-mcp-warning'
             });
 
@@ -350,7 +348,7 @@ export class GetStartedTab {
             }
 
             this.container.createEl('p', {
-                text: 'The config file exists but has invalid JSON. Click "Fix Config" to overwrite it, or manually edit.',
+                text: 'The config file exists but has invalid JSON. Click "fix config" to overwrite it, or manually edit.',
                 cls: 'nexus-mcp-help'
             });
         } else {
@@ -517,7 +515,7 @@ export class GetStartedTab {
     /**
      * Auto-configure Nexus in Claude Desktop config
      */
-    private async autoConfigureNexus(configPath: string): Promise<void> {
+    private autoConfigureNexus(configPath: string): void {
         const nodeFs = this.loadDesktopModule('fs');
         const pathMod = this.loadDesktopModule('path');
         try {

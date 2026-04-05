@@ -50,14 +50,14 @@ export class BackgroundProcessor {
     /**
      * Check for updates on startup in background
      */
-    async checkForUpdatesOnStartup(): Promise<void> {
+    checkForUpdatesOnStartup(): void {
         // Run in background to avoid blocking startup
         setTimeout(() => {
             void this.runStartupUpdateCheck();
         }, 2000); // 2 second delay
     }
 
-    async validateSearchFunctionality(): Promise<void> {
+    validateSearchFunctionality(): void {
         try {
             const serviceManager = this.config.serviceManager;
             if (serviceManager) {

@@ -94,9 +94,9 @@ export class StateRepository
     return this.saveState(data.workspaceId, data.sessionId, data);
   }
 
-  async update(_id: string, _data: unknown): Promise<void> {
+  update(_id: string, _data: unknown): Promise<void> {
     // States are immutable snapshots - no updates allowed
-    throw new Error('States are immutable. Create a new state instead.');
+    return Promise.reject(new Error('States are immutable. Create a new state instead.'));
   }
 
   async delete(id: string): Promise<void> {

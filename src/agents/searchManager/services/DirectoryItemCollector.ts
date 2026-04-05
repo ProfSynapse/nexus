@@ -35,11 +35,11 @@ export class DirectoryItemCollector {
    * @param maxDepth Optional maximum depth for recursion
    * @returns Array of collected items
    */
-  async getDirectoryItems(
+  getDirectoryItems(
     paths: string[],
     searchType: 'files' | 'folders' | 'both',
     maxDepth?: number
-  ): Promise<(TFile | TFolder)[]> {
+  ): (TFile | TFolder)[] {
     const allItems: (TFile | TFolder)[] = [];
 
     for (const path of paths) {
@@ -69,7 +69,7 @@ export class DirectoryItemCollector {
         allItems.push(...vaultItems);
       } else {
         // Specific directory
-        const directoryItems = await this.getItemsInDirectory(
+        const directoryItems = this.getItemsInDirectory(
           normalizedPath,
           searchType,
           maxDepth
@@ -89,11 +89,11 @@ export class DirectoryItemCollector {
    * @param maxDepth Optional maximum depth
    * @returns Array of collected items
    */
-  private async getItemsInDirectory(
+  private getItemsInDirectory(
     directoryPath: string,
     searchType: 'files' | 'folders' | 'both',
     maxDepth?: number
-  ): Promise<(TFile | TFolder)[]> {
+  ): (TFile | TFolder)[] {
     const folder = this.plugin.app.vault.getAbstractFileByPath(directoryPath);
 
     if (!(folder instanceof TFolder)) {

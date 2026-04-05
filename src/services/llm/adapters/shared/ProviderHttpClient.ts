@@ -8,8 +8,6 @@
  *
  * Used by: BaseAdapter.request(), BaseAdapter.requestStream()
  */
-/* eslint-disable import/no-nodejs-modules -- desktop-only provider streaming uses Node http/https/stream in Electron */
-
 import { requestUrl } from 'obsidian';
 import { LLMProviderError } from '../types';
 import { hasNodeRuntime } from '../../../../utils/platform';

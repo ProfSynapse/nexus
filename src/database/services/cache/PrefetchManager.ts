@@ -85,7 +85,7 @@ export class PrefetchManager extends Events {
 
             // Prefetch file metadata
             if (relatedFiles.size > 0) {
-                await this.cacheManager.getFilesWithMetadata(Array.from(relatedFiles));
+                this.cacheManager.getFilesWithMetadata(Array.from(relatedFiles));
             }
 
             // Start processing the queue

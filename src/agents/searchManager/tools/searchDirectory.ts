@@ -101,7 +101,7 @@ export class SearchDirectoryTool extends BaseTool<SearchDirectoryParams, SearchD
       const searchType = params.searchType || 'both';
 
       // Get items from specified directories using item collector
-      const items = await this.itemCollector.getDirectoryItems(
+      const items = this.itemCollector.getDirectoryItems(
         params.paths,
         searchType,
         params.depth

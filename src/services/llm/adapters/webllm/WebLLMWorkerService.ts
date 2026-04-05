@@ -37,7 +37,7 @@ export class WebLLMWorkerService {
    * Initialize the Web Worker
    * Uses Blob URL pattern to work within Obsidian's restrictions
    */
-  async initialize(fileHandler?: (path: string) => Promise<ArrayBuffer>): Promise<void> {
+  initialize(fileHandler?: (path: string) => Promise<ArrayBuffer>): void {
     if (this.worker) {
       return;
     }
@@ -561,7 +561,7 @@ async function handleUnload(message) {
   /**
    * Abort current generation
    */
-  async abort(): Promise<void> {
+  abort(): void {
     if (!this.worker) return;
 
     const id = crypto.randomUUID();

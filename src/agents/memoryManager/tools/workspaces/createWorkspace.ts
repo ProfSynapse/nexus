@@ -90,7 +90,7 @@ export class CreateWorkspaceTool extends BaseTool<CreateWorkspaceParameters, Cre
 
             // Combine provided key files with auto-detected ones
             const providedKeyFiles = params.keyFiles || [];
-            const autoDetectedKeyFiles = await this.detectSimpleKeyFiles(params.rootFolder);
+            const autoDetectedKeyFiles = this.detectSimpleKeyFiles(params.rootFolder);
             const allKeyFiles = [...new Set([...providedKeyFiles, ...autoDetectedKeyFiles])]; // Remove duplicates
 
             // Build workspace context (don't include dedicatedAgent object yet - will be resolved on load)
@@ -154,7 +154,7 @@ export class CreateWorkspaceTool extends BaseTool<CreateWorkspaceParameters, Cre
     /**
      * Auto-detect key files in workspace folder (simple array format)
      */
-    private async detectSimpleKeyFiles(rootFolder: string): Promise<string[]> {
+    private detectSimpleKeyFiles(rootFolder: string): string[] {
         try {
             const detectedFiles: string[] = [];
 

@@ -131,14 +131,14 @@ export class ContentCache extends Events {
   /**
    * Cache file content with metadata
    */
-  async cacheFileContent(
+  cacheFileContent(
     filePath: string,
     content: string,
     metadata?: unknown,
     ttl?: number
   ): Promise<void> {
     if (!this.options.enableFileContentCache) {
-      return;
+      return Promise.resolve();
     }
 
     const size = this.estimateSize(content);
@@ -160,6 +160,7 @@ export class ContentCache extends Events {
 
     this.trigger('cached', { type: 'file', filePath, size });
     this.enforceMemoryLimits();
+    return Promise.resolve();
   }
 
   /**

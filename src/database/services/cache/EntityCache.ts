@@ -221,9 +221,9 @@ export class EntityCache extends Events {
         await Promise.all(files.map(file => this.cacheFileMetadata(file)));
     }
 
-    private async cacheFileMetadata(file: TFile): Promise<void> {
+    private cacheFileMetadata(file: TFile): Promise<void> {
         const keyFilePatterns = [/readme\.md$/i, /index\.md$/i, /\.canvas$/];
-        
+
         this.fileMetadataCache.set(file.path, {
             path: file.path,
             name: file.name,
@@ -232,6 +232,7 @@ export class EntityCache extends Events {
             isKeyFile: keyFilePatterns.some(p => p.test(file.path)),
             // Frontmatter will be loaded lazily when needed
         });
+        return Promise.resolve();
     }
 
     // Batch loading methods

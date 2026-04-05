@@ -69,31 +69,31 @@ export class WorkspaceSchemaProvider implements ISchemaProvider {
    * @param baseSchema Base schema to potentially enhance
    * @returns Promise<boolean> true if this provider can enhance the schema
    */
-  async canEnhance(toolName: string, baseSchema: EnhancedJSONSchema): Promise<boolean> {
+  canEnhance(toolName: string, baseSchema: EnhancedJSONSchema): Promise<boolean> {
     try {
       // Extract agent name from tool name (handle both "memoryManager" and "memoryManager_vaultName" formats)
       const agentName = toolName.split('_')[0];
-      
+
       // Only enhance memoryManager agent
       if (agentName !== 'memoryManager') {
-        return false;
+        return Promise.resolve(false);
       }
 
       // Check if the schema has mode property with workspace-related modes
       if (!baseSchema?.properties?.mode?.enum) {
-        return false;
+        return Promise.resolve(false);
       }
 
       // Check if any target modes are present in the schema
       const schemaModes = baseSchema.properties.mode.enum as string[];
       const hasTargetMode = this.targetModes.some(mode => schemaModes.includes(mode));
-      
+
       logger.systemLog(`canEnhance(${toolName}): ${hasTargetMode}`, 'WorkspaceSchemaProvider');
-      return hasTargetMode;
+      return Promise.resolve(hasTargetMode);
 
     } catch (error) {
       logger.systemError(error instanceof Error ? error : new Error(String(error)), 'WorkspaceSchemaProvider canEnhance');
-      return false;
+      return Promise.resolve(false);
     }
   }
 

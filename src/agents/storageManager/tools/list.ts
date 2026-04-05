@@ -35,13 +35,14 @@ export class ListTool extends BaseDirectoryTool<ListParams, ListResult> {
    * @param params Tool parameters
    * @returns Promise resolving to the result
    */
+  // eslint-disable-next-line @typescript-eslint/require-await -- implements abstract BaseTool.execute()
   async execute(params: ListParams): Promise<ListResult> {
     try {
       // Default to vault root if no path provided
       const path = params.path ?? '';
 
       // Get the folder using base class method
-      const parentFolder = await this.getFolder(path);
+      const parentFolder = this.getFolder(path);
       const normalizedPath = this.normalizeDirectoryPath(path);
 
       // Get contents (depth 0 = current folder only)

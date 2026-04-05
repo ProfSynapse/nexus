@@ -53,6 +53,7 @@ export class BufferedSSEStreamProcessor {
     sseText: string,
     options: SSEStreamOptions
   ): AsyncGenerator<StreamChunk, void, unknown> {
+    await Promise.resolve();
     const eventQueue: StreamChunk[] = [];
     let isCompleted = false;
     let usage: BufferedUsage | undefined;

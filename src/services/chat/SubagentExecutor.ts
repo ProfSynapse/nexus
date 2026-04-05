@@ -263,7 +263,7 @@ export class SubagentExecutor {
     }
 
     // 3. Build system prompt WITH tool schemas + context files included
-    const systemPrompt = await this.buildSystemPrompt(params, toolSchemasText, contextFilesContent);
+    const systemPrompt = this.buildSystemPrompt(params, toolSchemasText, contextFilesContent);
 
     // 4. Build initial user message (just task + any additional context string)
     const initialMessage = this.buildInitialMessage(params.task, params.context || '');
@@ -460,11 +460,11 @@ export class SubagentExecutor {
    * @param toolSchemas Pre-fetched tool schemas to include (optional)
    * @param contextFilesContent Content from context files to include (optional)
    */
-  private async buildSystemPrompt(
+  private buildSystemPrompt(
     params: SubagentParams,
     toolSchemas?: string,
     contextFilesContent?: string
-  ): Promise<string> {
+  ): string {
     // Determine if tools were pre-loaded by parent
     const hasPreloadedTools = toolSchemas && toolSchemas.length > 0;
 

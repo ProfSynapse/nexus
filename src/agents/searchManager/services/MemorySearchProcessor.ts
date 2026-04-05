@@ -56,9 +56,9 @@ export interface MemorySearchProcessorInterface {
   process(params: MemorySearchParameters): Promise<SearchProcessResult>;
   validateParameters(params: MemorySearchParameters): ValidationResult;
   executeSearch(query: string, options: MemorySearchExecutionOptions): Promise<RawMemoryResult[]>;
-  enrichResults(results: RawMemoryResult[], context: MemorySearchContext): Promise<EnrichedMemorySearchResult[]>;
+  enrichResults(results: RawMemoryResult[], context: MemorySearchContext): EnrichedMemorySearchResult[];
   getConfiguration(): MemoryProcessorConfiguration;
-  updateConfiguration(config: Partial<MemoryProcessorConfiguration>): Promise<void>;
+  updateConfiguration(config: Partial<MemoryProcessorConfiguration>): void;
 }
 
 export class MemorySearchProcessor implements MemorySearchProcessorInterface {
@@ -110,7 +110,7 @@ export class MemorySearchProcessor implements MemorySearchProcessorInterface {
 
     const searchOptions = this.buildSearchOptions(params);
     const { rawResults, metadata } = await this.executeSearchWithMetadata(params.query, searchOptions);
-    const results = await this.enrichResults(rawResults, context);
+    const results = this.enrichResults(rawResults, context);
 
     return { results, metadata };
   }
@@ -223,7 +223,7 @@ export class MemorySearchProcessor implements MemorySearchProcessorInterface {
   /**
    * Enrich raw results with metadata and context
    */
-  async enrichResults(results: RawMemoryResult[], context: MemorySearchContext): Promise<EnrichedMemorySearchResult[]> {
+  enrichResults(results: RawMemoryResult[], context: MemorySearchContext): EnrichedMemorySearchResult[] {
     const enrichedResults: EnrichedMemorySearchResult[] = [];
 
     for (const result of results) {
@@ -244,7 +244,7 @@ export class MemorySearchProcessor implements MemorySearchProcessorInterface {
     return { ...this.configuration };
   }
 
-  async updateConfiguration(config: Partial<MemoryProcessorConfiguration>): Promise<void> {
+  updateConfiguration(config: Partial<MemoryProcessorConfiguration>): void {
     this.configuration = { ...this.configuration, ...config };
   }
 
@@ -411,8 +411,8 @@ export class MemorySearchProcessor implements MemorySearchProcessorInterface {
     }
   }
 
-  private async searchToolCallTraces(): Promise<RawMemoryResult[]> {
-    return [];
+  private searchToolCallTraces(): Promise<RawMemoryResult[]> {
+    return Promise.resolve([]);
   }
 
   private async searchSessions(query: string, options: MemorySearchExecutionOptions): Promise<RawMemoryResult[]> {

@@ -11,11 +11,11 @@ export class TokenCalculator {
   /**
    * Get current context usage for a conversation and model
    */
-  static async getContextUsage(
+  static getContextUsage(
     selectedModel: ModelOption | null,
     currentConversation: ConversationData | null,
     currentSystemPrompt: string | null
-  ): Promise<ContextUsage> {
+  ): ContextUsage {
     try {
       if (!selectedModel || !currentConversation) {
         return { used: 0, total: 0, percentage: 0 };

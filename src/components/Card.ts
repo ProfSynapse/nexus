@@ -70,7 +70,7 @@ export class Card {
       const toggleContainer = actionsEl.createDiv('agent-management-toggle');
       new ToggleComponent(toggleContainer)
         .setValue(this.config.isEnabled || false)
-        .onChange(async (value) => {
+        .onChange((value) => {
           this.config.isEnabled = value;
           onToggle(value);
         });

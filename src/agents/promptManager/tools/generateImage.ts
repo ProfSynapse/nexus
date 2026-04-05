@@ -120,7 +120,7 @@ export class GenerateImageTool extends BaseTool<GenerateImageParams, GenerateIma
       const { provider, model } = this.resolveDefaults(params.provider, params.model);
 
       // Validate parameters
-      const validation = await this.imageService.validateParams({
+      const validation = this.imageService.validateParams({
         prompt: params.prompt,
         provider,
         model,

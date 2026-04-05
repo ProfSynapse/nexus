@@ -6,7 +6,6 @@
  * Gemini CLI externally before using it. This service only checks
  * whether the CLI is present and authenticated.
  */
-/* eslint-disable import/no-nodejs-modules -- desktop-only Gemini CLI auth uses Node filesystem/process APIs in Electron */
 import { App, Platform } from 'obsidian';
 import { CliProcessResult } from '../../utils/cliProcessRunner';
 import { resolveGeminiCliRuntime } from '../../utils/geminiCli';

@@ -35,7 +35,7 @@ export abstract class BaseDirectoryTool<T extends CommonParameters, R extends Co
    * @returns TFolder instance
    * @throws Error if folder not found
    */
-  protected async getFolder(path: string): Promise<TFolder> {
+  protected getFolder(path: string): TFolder {
     const normalizedPath = this.normalizeDirectoryPath(path);
 
     // Handle root directory case

@@ -427,7 +427,7 @@ export class LMStudioAdapter extends BaseAdapter {
     };
   }
 
-  async getModelPricing(_modelId: string): Promise<ModelPricing | null> {
+  getModelPricing(_modelId: string): Promise<ModelPricing | null> {
     // Local models are free - zero rates
     const pricing: ModelPricing = {
       rateInputPerMillion: 0,
@@ -435,7 +435,7 @@ export class LMStudioAdapter extends BaseAdapter {
       currency: 'USD'
     };
 
-    return pricing;
+    return Promise.resolve(pricing);
   }
 
   async isAvailable(): Promise<boolean> {

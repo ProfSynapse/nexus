@@ -199,7 +199,7 @@ export class ServerLifecycleManager {
     /**
      * Perform health check
      */
-    async performHealthCheck(): Promise<{
+    performHealthCheck(): {
         isHealthy: boolean;
         status: ServerStatus;
         agentStatus: AgentStatisticsLike;
@@ -208,7 +208,7 @@ export class ServerLifecycleManager {
             ipc: TransportStatusLike;
         };
         issues: string[];
-    }> {
+    } {
         const issues: string[] = [];
 
         // Check status
@@ -249,7 +249,7 @@ export class ServerLifecycleManager {
     /**
      * Get server diagnostics
      */
-    async getDiagnostics(): Promise<{
+    getDiagnostics(): {
         lifecycle: ServerLifecycleDiagnostics;
         agents: AgentStatisticsLike;
         transports: {
@@ -259,7 +259,7 @@ export class ServerLifecycleManager {
         events: {
             hasEvents: boolean;
         };
-    }> {
+    } {
         return {
             lifecycle: {
                 status: this.status,

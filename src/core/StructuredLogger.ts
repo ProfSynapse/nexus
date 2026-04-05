@@ -338,7 +338,7 @@ export class StructuredLogger {
   /**
    * Export logs for debugging
    */
-  async exportLogs(): Promise<string> {
+  exportLogs(): string {
     if (!this.config.enableExport) {
       throw new Error('Log export is disabled');
     }

@@ -242,12 +242,12 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
       const dbAdapter = new DatabaseAdapter(this.getDbOrThrow());
       const migrator = new SchemaMigrator(dbAdapter);
       const migrationResult = await migrator.migrate();
-      // Fix vec0 table dimensions if needed. vec0 virtual tables cannot be
-      // DROPped/recreated via prepare().step() — must use native db.exec().
-      const vec0Fixed = this.fixVec0TableDimensions(dbAdapter);
-      if (migrationResult.applied > 0 || vec0Fixed) {
+      if (migrationResult.applied > 0) {
         await this.saveToFile(); // Save after migrations
       }
+
+      // Fix vec0 virtual table dimensions if needed (768→384 migration)
+      this.fixVec0TableDimensions(dbAdapter);
 
       // Start auto-save timer
       if (this.autoSaveInterval > 0) {
@@ -416,12 +416,13 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
    * Execute raw SQL (for schema creation and multi-statement execution)
    * NOTE: Does not support parameters - use run() or query() for parameterized queries
    */
-  async exec(sql: string): Promise<void> {
-    if (!this.db) throw new Error('Database not initialized');
+  exec(sql: string): Promise<void> {
+    if (!this.db) return Promise.reject(new Error('Database not initialized'));
 
     try {
       this.db.exec(sql);
       this.hasUnsavedData = true;
+      return Promise.resolve();
     } catch (error) {
       console.error('[SQLiteCacheManager] Exec failed:', error);
       throw error;
@@ -431,7 +432,7 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
   /**
    * Query returning multiple rows
    */
-  async query<T>(sql: string, params?: QueryParams): Promise<T[]> {
+  query<T>(sql: string, params?: QueryParams): Promise<T[]> {
     try {
       const db = this.getDbOrThrow();
       const stmt = db.prepare(sql);
@@ -443,7 +444,7 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
         while (stmt.step()) {
           results.push(stmt.get({}) as T);
         }
-        return results;
+        return Promise.resolve(results);
       } finally {
         stmt.finalize();
       }
@@ -456,7 +457,7 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
   /**
    * Query returning single row
    */
-  async queryOne<T>(sql: string, params?: QueryParams): Promise<T | null> {
+  queryOne<T>(sql: string, params?: QueryParams): Promise<T | null> {
     try {
       const db = this.getDbOrThrow();
       const stmt = db.prepare(sql);
@@ -465,9 +466,9 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
           stmt.bind(params);
         }
         if (stmt.step()) {
-          return stmt.get({}) as T;
+          return Promise.resolve(stmt.get({}) as T);
         }
-        return null;
+        return Promise.resolve(null);
       } finally {
         stmt.finalize();
       }
@@ -481,7 +482,7 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
    * Run a statement (INSERT, UPDATE, DELETE)
    * Returns changes count and last insert rowid
    */
-  async run(sql: string, params?: QueryParams): Promise<RunResult> {
+  run(sql: string, params?: QueryParams): Promise<RunResult> {
     try {
       const db = this.getDbOrThrow();
       const sqlite3 = this.getSqlite3OrThrow();
@@ -500,7 +501,7 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
       const lastInsertRowid = Number(sqlite3.capi.sqlite3_last_insert_rowid(db));
 
       this.hasUnsavedData = true;
-      return { changes, lastInsertRowid };
+      return Promise.resolve({ changes, lastInsertRowid });
     } catch (error) {
       console.error('[SQLiteCacheManager] Run failed:', error, { sql, params });
       throw error;
@@ -510,23 +511,26 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
   /**
    * Begin a transaction
    */
-  async beginTransaction(): Promise<void> {
+  beginTransaction(): Promise<void> {
     this.getDbOrThrow().exec('BEGIN TRANSACTION');
+    return Promise.resolve();
   }
 
   /**
    * Commit a transaction
    */
-  async commit(): Promise<void> {
+  commit(): Promise<void> {
     this.getDbOrThrow().exec('COMMIT');
     this.hasUnsavedData = true;
+    return Promise.resolve();
   }
 
   /**
    * Rollback a transaction
    */
-  async rollback(): Promise<void> {
+  rollback(): Promise<void> {
     this.getDbOrThrow().exec('ROLLBACK');
+    return Promise.resolve();
   }
 
   /**
@@ -676,16 +680,83 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
     );
   }
 
+  // ==================== Data management ====================
+
+  /**
+   * Clear all data (for rebuilding from JSONL)
+   */
+  async clearAllData(): Promise<void> {
+    await this.transaction(() => {
+      const db = this.getDbOrThrow();
+      db.exec(`
+        DELETE FROM task_note_links;
+        DELETE FROM task_dependencies;
+        DELETE FROM tasks;
+        DELETE FROM projects;
+        DELETE FROM messages;
+        DELETE FROM conversations;
+        DELETE FROM memory_traces;
+        DELETE FROM states;
+        DELETE FROM sessions;
+        DELETE FROM workspaces;
+        DELETE FROM applied_events;
+        DELETE FROM sync_state;
+      `);
+
+      // Drop and recreate vec0 virtual tables (cannot DELETE from vec0)
+      // Conversation embeddings
+      db.exec(`DROP TABLE IF EXISTS conversation_embeddings`);
+      db.exec(`CREATE VIRTUAL TABLE IF NOT EXISTS conversation_embeddings USING vec0(embedding float[384])`);
+      db.exec(`DELETE FROM conversation_embedding_metadata`);
+      db.exec(`DELETE FROM embedding_backfill_state`);
+      return Promise.resolve();
+    });
+  }
+
+  /**
+   * Rebuild FTS5 indexes after bulk data changes
+   */
+  async rebuildFTSIndexes(): Promise<void> {
+    await this.transaction(() => {
+      const db = this.getDbOrThrow();
+      // Rebuild workspace FTS5
+      db.exec(`
+        INSERT INTO workspace_fts(workspace_fts) VALUES ('rebuild');
+      `);
+
+      // Rebuild conversation FTS5
+      db.exec(`
+        INSERT INTO conversation_fts(conversation_fts) VALUES ('rebuild');
+      `);
+
+      // Rebuild message FTS5
+      db.exec(`
+        INSERT INTO message_fts(message_fts) VALUES ('rebuild');
+      `);
+      return Promise.resolve();
+    });
+  }
+
+  /**
+   * Vacuum the database to reclaim space
+   */
+  vacuum(): Promise<void> {
+    try {
+      this.getDbOrThrow().exec('VACUUM');
+      this.hasUnsavedData = true;
+      return Promise.resolve();
+    } catch (error) {
+      console.error('[SQLiteCacheManager] Vacuum failed:', error);
+      throw error;
+    }
+  }
+
   // ==================== Schema fixes ====================
 
   /**
-   * Fix vec0 virtual table dimensions for note_embeddings and block_embeddings.
-   *
-   * vec0 virtual tables cannot be DROPped and recreated via the prepare().step()
-   * DDL path used by SchemaMigrator. They require the native WASM db.exec() path.
-   * This method is called after migrations and uses the raw db directly.
-   *
-   * Returns true if any tables were fixed (caller should save to file).
+   * Fix vec0 virtual table dimensions if they were created with 768-dim (legacy Nomic era).
+   * vec0 tables cannot be ALTERed — must be dropped and recreated.
+   * Called after migrations run during initialize().
    */
   private fixVec0TableDimensions(dbAdapter: DatabaseAdapter): boolean {
     const db = this.getDbOrThrow();
@@ -722,74 +793,6 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
     }
 
     return fixed;
-  }
-
-  // ==================== Data management ====================
-
-  /**
-   * Clear all data (for rebuilding from JSONL)
-   */
-  async clearAllData(): Promise<void> {
-    await this.transaction(async () => {
-      const db = this.getDbOrThrow();
-      db.exec(`
-        DELETE FROM task_note_links;
-        DELETE FROM task_dependencies;
-        DELETE FROM tasks;
-        DELETE FROM projects;
-        DELETE FROM messages;
-        DELETE FROM conversations;
-        DELETE FROM memory_traces;
-        DELETE FROM states;
-        DELETE FROM sessions;
-        DELETE FROM workspaces;
-        DELETE FROM applied_events;
-        DELETE FROM sync_state;
-      `);
-
-      // Drop and recreate vec0 virtual tables (cannot DELETE from vec0)
-      // Conversation embeddings
-      db.exec(`DROP TABLE IF EXISTS conversation_embeddings`);
-      db.exec(`CREATE VIRTUAL TABLE IF NOT EXISTS conversation_embeddings USING vec0(embedding float[384])`);
-      db.exec(`DELETE FROM conversation_embedding_metadata`);
-      db.exec(`DELETE FROM embedding_backfill_state`);
-    });
-  }
-
-  /**
-   * Rebuild FTS5 indexes after bulk data changes
-   */
-  async rebuildFTSIndexes(): Promise<void> {
-    await this.transaction(async () => {
-      const db = this.getDbOrThrow();
-      // Rebuild workspace FTS5
-      db.exec(`
-        INSERT INTO workspace_fts(workspace_fts) VALUES ('rebuild');
-      `);
-
-      // Rebuild conversation FTS5
-      db.exec(`
-        INSERT INTO conversation_fts(conversation_fts) VALUES ('rebuild');
-      `);
-
-      // Rebuild message FTS5
-      db.exec(`
-        INSERT INTO message_fts(message_fts) VALUES ('rebuild');
-      `);
-    });
-  }
-
-  /**
-   * Vacuum the database to reclaim space
-   */
-  async vacuum(): Promise<void> {
-    try {
-      this.getDbOrThrow().exec('VACUUM');
-      this.hasUnsavedData = true;
-    } catch (error) {
-      console.error('[SQLiteCacheManager] Vacuum failed:', error);
-      throw error;
-    }
   }
 
   // ==================== Full-text search ====================

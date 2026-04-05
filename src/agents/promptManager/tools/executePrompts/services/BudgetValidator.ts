@@ -11,12 +11,12 @@ export class BudgetValidator {
    * Check if the monthly budget has been exceeded
    * @throws Error if budget is exceeded
    */
-  async validateBudget(): Promise<void> {
+  validateBudget(): void {
     if (!this.usageTracker) {
       return; // No budget tracking configured
     }
 
-    const budgetStatus = await this.usageTracker.getBudgetStatusAsync();
+    const budgetStatus = this.usageTracker.getBudgetStatusAsync();
     if (budgetStatus.budgetExceeded) {
       throw new Error(
         `Monthly LLM budget of $${budgetStatus.monthlyBudget.toFixed(2)} has been exceeded. ` +
@@ -31,13 +31,13 @@ export class BudgetValidator {
    * @param provider LLM provider used
    * @param cost Total cost of the execution
    */
-  async trackUsage(provider: string, cost: number): Promise<void> {
+  trackUsage(provider: string, cost: number): void {
     if (!this.usageTracker) {
       return; // No usage tracking configured
     }
 
     try {
-      await this.usageTracker.trackUsage(provider.toLowerCase(), cost);
+      this.usageTracker.trackUsage(provider.toLowerCase(), cost);
     } catch (error) {
       console.error('Failed to track LLM usage:', error);
       // Don't fail the request if usage tracking fails
@@ -47,11 +47,11 @@ export class BudgetValidator {
   /**
    * Get current budget status for reporting
    */
-  async getBudgetStatus(): Promise<BudgetStatus | null> {
+  getBudgetStatus(): BudgetStatus | null {
     if (!this.usageTracker) {
       return null;
     }
 
-    return await this.usageTracker.getBudgetStatusAsync();
+    return this.usageTracker.getBudgetStatusAsync();
   }
 }

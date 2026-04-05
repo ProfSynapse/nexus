@@ -1,4 +1,3 @@
-/* eslint-disable import/no-nodejs-modules -- desktop-only Claude headless integration uses Node child_process/stream/fs in Electron */
 import { App, FileSystemAdapter, Plugin, Platform } from 'obsidian';
 import type { ChildProcessByStdio } from 'child_process';
 import type { Readable, Writable } from 'stream';

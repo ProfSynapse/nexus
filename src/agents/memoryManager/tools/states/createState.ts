@@ -120,7 +120,7 @@ export class CreateStateTool extends BaseTool<CreateStateParams, StateResult> {
             }
 
             // Phase 4: Build state context (consolidated from StateCreator logic)
-            const contextResult = await this.buildStateContext(params, workspaceData, workspaceService);
+            const contextResult = this.buildStateContext(params, workspaceData, workspaceService);
 
             // Phase 5: Create and persist state (consolidated persistence logic)
             const persistResult = await this.createAndPersistState(params, workspaceData, contextResult, memoryService);
@@ -281,7 +281,7 @@ export class CreateStateTool extends BaseTool<CreateStateParams, StateResult> {
     /**
      * Build state context (consolidated from StateCreator logic)
      */
-    private async buildStateContext(params: CreateStateParams, workspaceData: WorkspaceResolutionData, _workspaceService: WorkspaceService): Promise<StateContextResult> {
+    private buildStateContext(params: CreateStateParams, workspaceData: WorkspaceResolutionData, _workspaceService: WorkspaceService): StateContextResult {
         const { workspace } = workspaceData;
 
         // Extract or create workspace context
