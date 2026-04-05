@@ -685,6 +685,9 @@ export class ChatView extends ItemView {
 
       const hasProviders = this.chatService.hasConfiguredProviders();
       this.uiStateController.showWelcomeState(hasProviders);
+      if (this.layoutElements.chatTitle) {
+        this.layoutElements.chatTitle.textContent = 'Chat';
+      }
       if (this.chatInput) {
         this.chatInput.setConversationState(false);
       }
@@ -811,6 +814,9 @@ export class ChatView extends ItemView {
 
       const hasProviders = this.chatService.hasConfiguredProviders();
       this.uiStateController.showWelcomeState(hasProviders);
+      if (this.layoutElements.chatTitle) {
+        this.layoutElements.chatTitle.textContent = 'Chat';
+      }
       if (this.chatInput) {
         this.chatInput.setConversationState(false);
       }
