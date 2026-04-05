@@ -1149,18 +1149,17 @@ export class ChatView extends ItemView {
     }
   }
 
-  private handleBranchSwitched(messageId: string, _branchId: string): void {
-    // This handler fires via onBranchSwitched AFTER BranchManager has already
-    // completed the switch (activeAlternativeIndex updated, DB saved).
-    // We only need to refresh the UI — calling switchToBranch again would be
-    // a no-op at best and fails hard when branchId is the sentinel 'original'.
-    const currentConversation = this.conversationManager.getCurrentConversation();
-    if (currentConversation) {
-      const updatedMessage = currentConversation.messages.find(msg => msg.id === messageId);
-      if (updatedMessage) {
-        this.messageDisplay.updateMessage(messageId, updatedMessage);
-      }
-    }
+  private handleBranchSwitched(_messageId: string, _branchId: string): void {
+    // Intentional no-op.
+    //
+    // This event fires AFTER BranchManager completes a switch. The caller
+    // (handleBranchSwitchedByIndex) already calls messageDisplay.updateMessage()
+    // on success, so there is nothing left to do here.
+    //
+    // Doing anything here causes a double updateMessage call that races with
+    // the first async renderContent, producing truncated / corrupted output.
+    // Calling switchToBranch here would re-enter the switch, and fails hard
+    // when branchId is the sentinel 'original' (back-to-original navigation).
   }
 
   /**
