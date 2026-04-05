@@ -23,7 +23,8 @@ describe('VoiceTypes', () => {
   describe('getTranscriptionModelsForProvider', () => {
     it('returns OpenAI models', () => {
       const models = getTranscriptionModelsForProvider('openai');
-      expect(models.length).toBeGreaterThanOrEqual(2);
+      expect(models).toHaveLength(1);
+      expect(models[0].id).toBe('whisper-1');
       expect(models.every(m => m.provider === 'openai')).toBe(true);
     });
 
@@ -38,7 +39,7 @@ describe('VoiceTypes', () => {
     });
 
     it.each([
-      'openai', 'groq', 'mistral', 'deepgram', 'assemblyai', 'google', 'openrouter'
+      'openai', 'groq', 'mistral', 'deepgram', 'assemblyai'
     ] as TranscriptionProvider[])('returns at least one model for %s', (provider) => {
       const models = getTranscriptionModelsForProvider(provider);
       expect(models.length).toBeGreaterThanOrEqual(1);
@@ -69,26 +70,22 @@ describe('VoiceTypes', () => {
       expect(model?.execution).toBe('speech-api-async');
     });
 
-    it('finds google multimodal model', () => {
-      const model = getTranscriptionModel('google', 'gemini-2.5-flash');
-      expect(model).toBeDefined();
-      expect(model?.execution).toBe('multimodal-audio');
+    it('returns undefined for removed google model', () => {
+      expect(getTranscriptionModel('google', 'gemini-2.5-flash')).toBeUndefined();
     });
   });
 
   // ── getTranscriptionProviders ───────────────────────────────────────
 
   describe('getTranscriptionProviders', () => {
-    it('returns all 7 providers', () => {
+    it('returns all 5 providers', () => {
       const providers = getTranscriptionProviders();
       expect(providers).toContain('openai');
       expect(providers).toContain('groq');
       expect(providers).toContain('mistral');
       expect(providers).toContain('deepgram');
       expect(providers).toContain('assemblyai');
-      expect(providers).toContain('google');
-      expect(providers).toContain('openrouter');
-      expect(providers).toHaveLength(7);
+      expect(providers).toHaveLength(5);
     });
 
     it('returns no duplicates', () => {

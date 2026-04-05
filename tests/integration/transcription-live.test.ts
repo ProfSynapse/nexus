@@ -8,9 +8,7 @@
  *   GROQ_API_KEY=gsk_...
  *   DEEPGRAM_API_KEY=...
  *   ASSEMBLYAI_API_KEY=...
- *   GEMINI_API_KEY=...
  *   MISTRAL_API_KEY=...
- *   OPENROUTER_API_KEY=...
  *
  * Run:
  *   npx jest tests/integration/transcription-live.test.ts --no-coverage --verbose
@@ -22,9 +20,7 @@ import { OpenAITranscriptionAdapter } from '../../src/services/llm/adapters/open
 import { GroqTranscriptionAdapter } from '../../src/services/llm/adapters/groq/GroqTranscriptionAdapter';
 import { DeepgramTranscriptionAdapter } from '../../src/services/llm/adapters/deepgram/DeepgramTranscriptionAdapter';
 import { AssemblyAITranscriptionAdapter } from '../../src/services/llm/adapters/assemblyai/AssemblyAITranscriptionAdapter';
-import { GoogleTranscriptionAdapter } from '../../src/services/llm/adapters/google/GoogleTranscriptionAdapter';
 import { MistralTranscriptionAdapter } from '../../src/services/llm/adapters/mistral/MistralTranscriptionAdapter';
-import { OpenRouterTranscriptionAdapter } from '../../src/services/llm/adapters/openrouter/OpenRouterTranscriptionAdapter';
 import type { AudioChunk, TranscriptionRequest, TranscriptionProvider, TranscriptionSegment } from '../../src/services/llm/types/VoiceTypes';
 
 // Wire requestUrl to real HTTP via fetch
@@ -129,37 +125,13 @@ function validateSegments(segments: TranscriptionSegment[], providerName: string
   expect(matchedWords.length).toBeGreaterThanOrEqual(3);
 }
 
-// Looser validation for multimodal providers (Google, OpenRouter) —
-// they use LLMs, not speech models, so output may be more conversational
-function validateMultimodalSegments(segments: TranscriptionSegment[], providerName: string): void {
-  expect(segments.length).toBeGreaterThan(0);
-
-  for (const segment of segments) {
-    expect(typeof segment.startSeconds).toBe('number');
-    expect(typeof segment.endSeconds).toBe('number');
-    expect(typeof segment.text).toBe('string');
-    expect(segment.text.length).toBeGreaterThan(0);
-  }
-
-  const fullText = segments.map(s => s.text).join(' ').toLowerCase();
-  console.log(`[${providerName}] Transcribed: "${fullText}"`);
-
-  // Multimodal models may rephrase or add punctuation, but should capture key content
-  const expectedWords = ['hello', 'test', 'quick', 'brown', 'fox', 'lazy', 'dog'];
-  const matchedWords = expectedWords.filter(w => fullText.includes(w));
-  console.log(`[${providerName}] Matched ${matchedWords.length}/${expectedWords.length} expected words: ${matchedWords.join(', ')}`);
-  expect(matchedWords.length).toBeGreaterThanOrEqual(2);
-}
-
 // --- API keys from environment ---
 
 const openaiKey = process.env.OPENAI_API_KEY;
 const groqKey = process.env.GROQ_API_KEY;
 const deepgramKey = process.env.DEEPGRAM_API_KEY;
 const assemblyaiKey = process.env.ASSEMBLYAI_API_KEY;
-const googleKey = process.env.GEMINI_API_KEY;
 const mistralKey = process.env.MISTRAL_API_KEY;
-const openrouterKey = process.env.OPENROUTER_API_KEY;
 
 // --- Speech-API providers (Whisper format) ---
 
@@ -172,12 +144,6 @@ describe('Live Transcription: OpenAI', () => {
     validateSegments(segments, 'OpenAI/whisper-1');
     const hasWords = segments.some(s => s.words && s.words.length > 0);
     console.log(`[OpenAI] Word timestamps: ${hasWords}`);
-  }, 30_000);
-
-  runTest('transcribes with gpt-4o-transcribe', async () => {
-    const adapter = new OpenAITranscriptionAdapter({ apiKey: openaiKey! });
-    const segments = await adapter.transcribeChunk(testChunk, makeRequest('openai', 'gpt-4o-transcribe'));
-    validateSegments(segments, 'OpenAI/gpt-4o-transcribe');
   }, 30_000);
 });
 
@@ -233,32 +199,6 @@ describe('Live Transcription: AssemblyAI', () => {
   }, 120_000);
 });
 
-// --- Multimodal providers (LLM-based, JSON body, base64 audio) ---
-
-describe('Live Transcription: Google Gemini', () => {
-  const runTest = googleKey ? it : it.skip;
-
-  runTest('transcribes with gemini-2.5-flash', async () => {
-    const adapter = new GoogleTranscriptionAdapter({ apiKey: googleKey! });
-    const segments = await adapter.transcribeChunk(testChunk, makeRequest('google', 'gemini-2.5-flash'));
-    validateMultimodalSegments(segments, 'Google/gemini-2.5-flash');
-  }, 60_000);
-});
-
-describe('Live Transcription: OpenRouter', () => {
-  const runTest = openrouterKey ? it : it.skip;
-
-  runTest('transcribes with google/gemini-2.5-flash', async () => {
-    const adapter = new OpenRouterTranscriptionAdapter({
-      apiKey: openrouterKey!,
-      httpReferer: 'https://nexus.obsidian.md',
-      xTitle: 'Nexus Integration Test'
-    });
-    const segments = await adapter.transcribeChunk(testChunk, makeRequest('openrouter', 'google/gemini-2.5-flash'));
-    validateMultimodalSegments(segments, 'OpenRouter/gemini-2.5-flash');
-  }, 60_000);
-});
-
 // --- Summary ---
 
 const configuredProviders = [
@@ -267,14 +207,12 @@ const configuredProviders = [
   mistralKey && 'mistral',
   deepgramKey && 'deepgram',
   assemblyaiKey && 'assemblyai',
-  googleKey && 'google',
-  openrouterKey && 'openrouter',
 ].filter(Boolean) as string[];
 
 describe('Provider summary', () => {
   it('lists configured providers', () => {
-    console.log(`\nConfigured providers (${configuredProviders.length}/7): ${configuredProviders.join(', ')}`);
-    const missing = ['openai', 'groq', 'mistral', 'deepgram', 'assemblyai', 'google', 'openrouter']
+    console.log(`\nConfigured providers (${configuredProviders.length}/5): ${configuredProviders.join(', ')}`);
+    const missing = ['openai', 'groq', 'mistral', 'deepgram', 'assemblyai']
       .filter(p => !configuredProviders.includes(p));
     if (missing.length > 0) {
       console.log(`Skipped (no API key): ${missing.join(', ')}`);

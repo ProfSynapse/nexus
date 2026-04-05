@@ -7,17 +7,11 @@
 
 import type { LLMProviderSettings } from '../../../types/llm/ProviderTypes';
 
-/** Default prompt for multimodal audio transcription (Google, OpenRouter). */
-export const DEFAULT_TRANSCRIPTION_PROMPT =
-  'Transcribe this audio verbatim. Return only the transcript text with no commentary, labels, or markdown.';
-
-export type TranscriptionProvider = 'openai' | 'groq' | 'google' | 'openrouter' | 'mistral' | 'deepgram' | 'assemblyai';
+export type TranscriptionProvider = 'openai' | 'groq' | 'mistral' | 'deepgram' | 'assemblyai';
 
 export type TranscriptionExecution =
   | 'speech-api-segmented'
-  | 'speech-api-plain'
-  | 'speech-api-async'
-  | 'multimodal-audio';
+  | 'speech-api-async';
 
 export interface TranscriptionWord {
   text: string;
@@ -83,22 +77,6 @@ export interface AudioChunk {
 const TRANSCRIPTION_MODELS: TranscriptionModelDeclaration[] = [
   {
     provider: 'openai',
-    id: 'gpt-4o-transcribe',
-    name: 'GPT-4o Transcribe',
-    execution: 'speech-api-plain',
-    supportsWordTimestamps: false,
-    supportsPrompt: true
-  },
-  {
-    provider: 'openai',
-    id: 'gpt-4o-mini-transcribe',
-    name: 'GPT-4o Mini Transcribe',
-    execution: 'speech-api-plain',
-    supportsWordTimestamps: false,
-    supportsPrompt: true
-  },
-  {
-    provider: 'openai',
     id: 'whisper-1',
     name: 'Whisper 1',
     execution: 'speech-api-segmented',
@@ -155,38 +133,6 @@ const TRANSCRIPTION_MODELS: TranscriptionModelDeclaration[] = [
     execution: 'speech-api-async',
     supportsWordTimestamps: true,
     supportsSpeakerLabels: true,
-    supportsPrompt: true
-  },
-  {
-    provider: 'google',
-    id: 'gemini-3-flash-preview',
-    name: 'Gemini 3.0 Flash Preview (Audio)',
-    execution: 'multimodal-audio',
-    supportsWordTimestamps: false,
-    supportsPrompt: true
-  },
-  {
-    provider: 'google',
-    id: 'gemini-2.5-flash',
-    name: 'Gemini 2.5 Flash (Audio)',
-    execution: 'multimodal-audio',
-    supportsWordTimestamps: false,
-    supportsPrompt: true
-  },
-  {
-    provider: 'openrouter',
-    id: 'google/gemini-3-flash-preview',
-    name: 'Gemini 3.0 Flash Preview (Audio)',
-    execution: 'multimodal-audio',
-    supportsWordTimestamps: false,
-    supportsPrompt: true
-  },
-  {
-    provider: 'openrouter',
-    id: 'google/gemini-2.5-flash',
-    name: 'Gemini 2.5 Flash (Audio)',
-    execution: 'multimodal-audio',
-    supportsWordTimestamps: false,
     supportsPrompt: true
   }
 ];

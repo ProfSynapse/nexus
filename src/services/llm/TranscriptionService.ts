@@ -4,8 +4,6 @@ import { GroqTranscriptionAdapter } from './adapters/groq/GroqTranscriptionAdapt
 import { MistralTranscriptionAdapter } from './adapters/mistral/MistralTranscriptionAdapter';
 import { DeepgramTranscriptionAdapter } from './adapters/deepgram/DeepgramTranscriptionAdapter';
 import { AssemblyAITranscriptionAdapter } from './adapters/assemblyai/AssemblyAITranscriptionAdapter';
-import { GoogleTranscriptionAdapter } from './adapters/google/GoogleTranscriptionAdapter';
-import { OpenRouterTranscriptionAdapter } from './adapters/openrouter/OpenRouterTranscriptionAdapter';
 import type { BaseTranscriptionAdapter } from './adapters/BaseTranscriptionAdapter';
 import {
   getTranscriptionModel,
@@ -105,21 +103,6 @@ export class TranscriptionService {
       }));
     }
 
-    const googleConfig = this.llmSettings.providers?.google;
-    if (googleConfig?.enabled && googleConfig.apiKey) {
-      this.adapters.set('google', new GoogleTranscriptionAdapter({
-        apiKey: googleConfig.apiKey
-      }));
-    }
-
-    const openRouterConfig = this.llmSettings.providers?.openrouter;
-    if (openRouterConfig?.enabled && openRouterConfig.apiKey) {
-      this.adapters.set('openrouter', new OpenRouterTranscriptionAdapter({
-        apiKey: openRouterConfig.apiKey,
-        httpReferer: openRouterConfig.httpReferer,
-        xTitle: openRouterConfig.xTitle
-      }));
-    }
   }
 
   async transcribe(request: TranscriptionRequest): Promise<TranscriptionResult> {

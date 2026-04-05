@@ -11,7 +11,6 @@ import { getTranscriptionModelsForProvider, type TranscriptionProvider } from '.
 
 export interface TranscriptionServiceDeps {
   getApiKey: (provider: string) => string | undefined;
-  getOpenRouterHeaders?: () => { httpReferer?: string; xTitle?: string };
 }
 
 export async function transcribeAudio(
@@ -47,9 +46,6 @@ function buildSettings(
 ): LLMProviderSettings {
   const providerModels = getTranscriptionModelsForProvider(provider);
   const selectedModel = model || providerModels[0]?.id || '';
-  const openRouterHeaders = provider === 'openrouter'
-    ? deps.getOpenRouterHeaders?.()
-    : undefined;
 
   return {
     ...DEFAULT_LLM_PROVIDER_SETTINGS,
@@ -61,13 +57,7 @@ function buildSettings(
           enabled: false
         }),
         apiKey: deps.getApiKey(provider) || '',
-        enabled: true,
-        ...(provider === 'openrouter'
-          ? {
-              httpReferer: openRouterHeaders?.httpReferer || '',
-              xTitle: openRouterHeaders?.xTitle || ''
-            }
-          : {})
+        enabled: true
       }
     },
     defaultTranscriptionModel: selectedModel

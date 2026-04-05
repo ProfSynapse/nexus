@@ -48,22 +48,6 @@ export abstract class BaseTranscriptionAdapter {
     return map[mimeType] || '.bin';
   }
 
-  protected mimeToOpenRouterFormat(mimeType: string): string {
-    const ext = this.mimeToExtension(mimeType);
-    return ext.startsWith('.') ? ext.slice(1) : ext;
-  }
-
-  protected arrayBufferToBase64(buffer: ArrayBuffer): string {
-    const bytes = new Uint8Array(buffer);
-    let binary = '';
-
-    for (let i = 0; i < bytes.byteLength; i++) {
-      binary += String.fromCharCode(bytes[i]);
-    }
-
-    return btoa(binary);
-  }
-
   protected buildChunkFileName(fileName: string, mimeType: string): string {
     const baseName = fileName.replace(/\.[^.]+$/, '');
     return `${baseName}${this.mimeToExtension(mimeType)}`;

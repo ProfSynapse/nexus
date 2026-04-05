@@ -103,17 +103,7 @@ describe('OpenAITranscriptionAdapter', () => {
       );
     });
 
-    it('uses json response_format for non-whisper models', async () => {
-      await adapter.transcribeChunk(makeChunk(), makeRequest({ model: 'gpt-4o-transcribe' }));
-
-      expect(buildMultipartMock).toHaveBeenCalledWith(
-        expect.arrayContaining([
-          expect.objectContaining({ name: 'response_format', value: 'json' })
-        ])
-      );
-    });
-
-    it('adds word timestamp granularity when requested for whisper-1', async () => {
+    it('adds word timestamp granularity when requested', async () => {
       await adapter.transcribeChunk(
         makeChunk(),
         makeRequest({ model: 'whisper-1', requestWordTimestamps: true })
@@ -127,17 +117,6 @@ describe('OpenAITranscriptionAdapter', () => {
           expect.objectContaining({ value: 'word' })
         ])
       );
-    });
-
-    it('does not add word granularity for non-whisper models even if requested', async () => {
-      await adapter.transcribeChunk(
-        makeChunk(),
-        makeRequest({ model: 'gpt-4o-transcribe', requestWordTimestamps: true })
-      );
-
-      const fields = buildMultipartMock.mock.calls[0][0];
-      const timestampFields = fields.filter(f => f.name === 'timestamp_granularities[]');
-      expect(timestampFields).toHaveLength(0);
     });
 
     it('includes prompt when provided', async () => {

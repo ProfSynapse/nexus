@@ -27,19 +27,14 @@ export class OpenAITranscriptionAdapter extends BaseTranscriptionAdapter {
       { name: 'model', value: request.model }
     ];
 
-    const wantsWords = request.model === 'whisper-1' && request.requestWordTimestamps === true;
     if (request.prompt?.trim()) {
       fields.push({ name: 'prompt', value: request.prompt.trim() });
     }
 
-    if (request.model === 'whisper-1') {
-      fields.push({ name: 'response_format', value: 'verbose_json' });
-      fields.push({ name: 'timestamp_granularities[]', value: 'segment' });
-      if (wantsWords) {
-        fields.push({ name: 'timestamp_granularities[]', value: 'word' });
-      }
-    } else {
-      fields.push({ name: 'response_format', value: 'json' });
+    fields.push({ name: 'response_format', value: 'verbose_json' });
+    fields.push({ name: 'timestamp_granularities[]', value: 'segment' });
+    if (request.requestWordTimestamps === true) {
+      fields.push({ name: 'timestamp_granularities[]', value: 'word' });
     }
 
     const { body, contentType } = buildMultipartFormData(fields);

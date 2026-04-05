@@ -24,8 +24,6 @@ jest.mock('../../src/services/llm/adapters/groq/GroqTranscriptionAdapter');
 jest.mock('../../src/services/llm/adapters/mistral/MistralTranscriptionAdapter');
 jest.mock('../../src/services/llm/adapters/deepgram/DeepgramTranscriptionAdapter');
 jest.mock('../../src/services/llm/adapters/assemblyai/AssemblyAITranscriptionAdapter');
-jest.mock('../../src/services/llm/adapters/google/GoogleTranscriptionAdapter');
-jest.mock('../../src/services/llm/adapters/openrouter/OpenRouterTranscriptionAdapter');
 
 import { TranscriptionService } from '../../src/services/llm/TranscriptionService';
 import { chunkAudio } from '../../src/services/llm/utils/AudioChunkingService';
@@ -296,25 +294,6 @@ describe('TranscriptionService (class-based)', () => {
       expect(result.durationSeconds).toBeUndefined();
     });
 
-    it('disables word timestamps when model does not support them', async () => {
-      const { mockTranscribeChunk } = setupMockAdapter();
-      mockTranscribeChunk.mockResolvedValue([]);
-
-      const service = new TranscriptionService(makeSettings());
-      await service.transcribe({
-        audioData: new ArrayBuffer(10),
-        mimeType: 'audio/mpeg',
-        fileName: 'test.mp3',
-        provider: 'openai',
-        model: 'gpt-4o-transcribe',
-        requestWordTimestamps: true
-      });
-
-      // gpt-4o-transcribe does not support word timestamps
-      const callArgs = mockTranscribeChunk.mock.calls[0][1];
-      expect(callArgs.requestWordTimestamps).toBe(false);
-    });
-
     it('passes word timestamps when model supports them', async () => {
       const { mockTranscribeChunk } = setupMockAdapter();
       mockTranscribeChunk.mockResolvedValue([]);
@@ -359,7 +338,8 @@ describe('TranscriptionService (class-based)', () => {
     it('returns all models when none are disabled', () => {
       const service = new TranscriptionService(makeSettings());
       const models = service.getModelsForProvider('openai');
-      expect(models.length).toBeGreaterThanOrEqual(2);
+      expect(models).toHaveLength(1);
+      expect(models[0].id).toBe('whisper-1');
     });
 
     it('filters out disabled models', () => {

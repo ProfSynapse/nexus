@@ -7,7 +7,7 @@
  */
 
 export type IngestionModelKind = 'ocr' | 'transcription';
-export type IngestionModelExecution = 'speech-api-segmented' | 'speech-api-plain' | 'multimodal-audio';
+export type IngestionModelExecution = 'speech-api-segmented' | 'speech-api-async';
 
 export interface IngestionModelDeclaration {
   provider: string;

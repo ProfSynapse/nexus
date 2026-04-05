@@ -121,7 +121,7 @@ export class IngestTool extends BaseTool<IngestToolParameters, IngestToolResult>
         },
         transcriptionModel: {
           type: 'string',
-          description: 'Model for audio transcription (e.g., "gpt-4o-transcribe", "whisper-large-v3-turbo", "gemini-2.5-flash"). Optional — defaults to the provider\'s first supported transcription model.',
+          description: 'Model for audio transcription (e.g., "whisper-1", "whisper-large-v3-turbo", "voxtral-mini-latest"). Optional — defaults to the provider\'s first supported transcription model.',
         },
       },
       required: ['filePath'],
