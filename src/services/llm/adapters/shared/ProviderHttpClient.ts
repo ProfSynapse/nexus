@@ -187,10 +187,13 @@ export class ProviderHttpClient {
     const parsed = new URL(config.url);
     const isHttps = parsed.protocol === 'https:';
 
-    // Dynamically import Node.js modules (available in Electron)
-      const nodeModule = isHttps
-        ? await import('node:https')
-        : await import('node:http');
+    // Use require() for Node.js built-ins — dynamic import() fails in Electron renderer
+    // due to CORS policy blocking the node: protocol scheme.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-assignment
+    const httpsReq: typeof import('node:https') = require('https');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-assignment
+    const httpReq: typeof import('node:http') = require('http');
+    const nodeModule = isHttps ? httpsReq : httpReq;
 
     const timeoutMs = config.timeoutMs ?? 120_000;
 
