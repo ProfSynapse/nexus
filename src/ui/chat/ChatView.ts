@@ -344,6 +344,15 @@ export class ChatView extends ItemView {
     this.initializeSubagentInfrastructure().catch((error) => {
       console.error('[ChatView] Failed to initialize subagent infrastructure:', error);
     });
+
+    // Refresh context progress bar when this view regains focus
+    this.registerEvent(
+      this.app.workspace.on('active-leaf-change', (leaf) => {
+        if (leaf === this.leaf) {
+          void this.updateContextProgress();
+        }
+      })
+    );
   }
 
   /**
