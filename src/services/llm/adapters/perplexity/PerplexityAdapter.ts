@@ -194,7 +194,7 @@ export class PerplexityAdapter extends BaseAdapter {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(requestBody),
-        timeoutMs: 120_000
+        timeoutMs: 300_000
       });
 
       yield* this.processNodeStream(nodeStream, {
