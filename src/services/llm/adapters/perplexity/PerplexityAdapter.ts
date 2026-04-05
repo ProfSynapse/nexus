@@ -212,7 +212,10 @@ export class PerplexityAdapter extends BaseAdapter {
           if (data.images?.length) meta.perplexityImages = data.images;
           return Object.keys(meta).length > 0 ? meta : null;
         },
-        accumulateToolCalls: false
+        accumulateToolCalls: false,
+        onParseError: (err, rawData) => {
+          console.warn('[PerplexityAdapter] SSE parse error — chunk skipped:', err.message, '| raw:', rawData?.slice(0, 200));
+        }
       });
     } catch (error) {
       console.error('[PerplexityAdapter] Streaming error:', error);

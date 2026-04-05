@@ -206,7 +206,14 @@ export class ProviderHttpClient {
         headers: config.headers ?? {},
       };
 
+      // Keep a reference to res so the timeout handler can destroy it too.
+      // Without this, req.destroy() silently closes the socket without emitting
+      // an error on res, so the for-await loop in processNodeStream sees a clean
+      // end rather than a thrown error — causing silent truncation.
+      let resRef: import('http').IncomingMessage | null = null;
+
       const req = nodeModule.request(requestOptions, (res) => {
+        resRef = res;
         const status = res.statusCode ?? 0;
 
         if (status < 200 || status >= 300) {
@@ -235,9 +242,15 @@ export class ProviderHttpClient {
         resolve(res);
       });
 
-      // Timeout handling
+      // Timeout handling — fires when socket is idle (no bytes received) for timeoutMs ms.
+      // We must destroy BOTH req and res: req.destroy() kills the socket but does NOT
+      // emit an error on res (IncomingMessage), so the streaming for-await loop would
+      // see a clean end and silently save partial content without any console output.
       req.setTimeout(timeoutMs, () => {
-        req.destroy(new Error(`Stream request timeout after ${timeoutMs}ms`));
+        const err = new Error(`Stream request timeout after ${timeoutMs}ms (${config.provider || 'unknown'})`);
+        console.warn(`[ProviderHttpClient] Stream inactivity timeout after ${timeoutMs}ms for ${config.provider || 'unknown'} — destroying socket`);
+        req.destroy(err);
+        resRef?.destroy(err);
       });
 
       req.on('error', (err) => {
