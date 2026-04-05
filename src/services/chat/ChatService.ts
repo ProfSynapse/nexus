@@ -42,6 +42,7 @@ interface ChatStreamingChunk {
   reasoning?: string;
   reasoningComplete?: boolean;
   usage?: ChatUsage;
+  metadata?: Record<string, unknown>;
 }
 
 interface ChatMessageCreateParams {

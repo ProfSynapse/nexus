@@ -62,6 +62,10 @@ interface PerplexityStreamChoice {
 interface PerplexityStreamChunk {
   choices?: PerplexityStreamChoice[];
   usage?: PerplexityChatResponse['usage'];
+  citations?: string[];
+  search_results?: PerplexitySearchResult[];
+  related_questions?: string[];
+  images?: unknown[];
 }
 
 interface PerplexityChatResponse {
@@ -71,7 +75,10 @@ interface PerplexityChatResponse {
     completion_tokens?: number;
     total_tokens?: number;
   };
+  citations?: string[];
   search_results?: PerplexitySearchResult[];
+  related_questions?: string[];
+  images?: unknown[];
 }
 
 interface PerplexitySearchResult {
@@ -190,6 +197,15 @@ export class PerplexityAdapter extends BaseAdapter {
         extractToolCalls: () => null,
         extractFinishReason: (parsed) => (parsed as PerplexityStreamChunk).choices?.[0]?.finish_reason || null,
         extractUsage: (parsed) => (parsed as PerplexityStreamChunk).usage,
+        extractMetadata: (parsed) => {
+          const data = parsed as PerplexityStreamChunk;
+          const meta: Record<string, unknown> = {};
+          if (data.citations?.length) meta.perplexityCitations = data.citations;
+          if (data.search_results?.length) meta.perplexitySearchResults = data.search_results;
+          if (data.related_questions?.length) meta.perplexityRelatedQuestions = data.related_questions;
+          if (data.images?.length) meta.perplexityImages = data.images;
+          return Object.keys(meta).length > 0 ? meta : null;
+        },
         accumulateToolCalls: false
       });
     } catch (error) {
@@ -314,18 +330,18 @@ export class PerplexityAdapter extends BaseAdapter {
       ? this.extractPerplexitySources(data.search_results || [])
       : undefined;
 
-    return this.buildLLMResponse(
-      text,
-      model,
-      usage,
-      {
-        provider: 'perplexity',
-        searchResults: data.search_results,
-        searchMode: options?.searchMode,
-        webSearchResults
-      },
-      finishReason
-    );
+    const responseMeta: Record<string, unknown> = {
+      provider: 'perplexity',
+      searchResults: data.search_results,
+      searchMode: options?.searchMode,
+      webSearchResults
+    };
+    if (data.citations?.length) responseMeta.perplexityCitations = data.citations;
+    if (data.search_results?.length) responseMeta.perplexitySearchResults = data.search_results;
+    if (data.related_questions?.length) responseMeta.perplexityRelatedQuestions = data.related_questions;
+    if (data.images?.length) responseMeta.perplexityImages = data.images;
+
+    return this.buildLLMResponse(text, model, usage, responseMeta, finishReason);
   }
 
   // Private methods
