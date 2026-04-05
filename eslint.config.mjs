@@ -91,6 +91,7 @@ export default defineConfig([
             "src/services/embeddings/IndexingQueue.ts",
             "src/settings/getStartedStatus.ts",
             "src/utils/cli*.ts",
+            "src/database/storage/JSONLWriter.ts",
         ],
         rules: {
             "import/no-nodejs-modules": "off",

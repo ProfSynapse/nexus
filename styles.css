@@ -692,6 +692,19 @@
     flex-direction: row-reverse;
 }
 
+/* Assistant message header sticks to the top of the scroll pane while the bubble is in view.
+   padding-bottom replaces margin-bottom so the background covers the gap and
+   scrolling content cannot bleed through underneath. */
+.message-container.message-assistant .message-header {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--background-secondary);
+    padding-bottom: 0.5rem;
+    margin-bottom: 0;
+    border-radius: 0.75rem 0.75rem 0 0;
+}
+
 .message-role-icon {
     width: 20px;
     height: 20px;

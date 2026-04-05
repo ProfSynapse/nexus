@@ -23,10 +23,13 @@
  * - src/database/services/cache/EntityCache.ts - In-memory cache layer
  */
 
-import { App } from 'obsidian';
+import { App, FileSystemAdapter } from 'obsidian';
 import { StorageEvent, BaseStorageEvent } from '../interfaces/StorageEvents';
 import { v4 as uuidv4 } from '../../utils/uuid';
 import { NamedLocks } from '../../utils/AsyncLock';
+
+/** Max file size (bytes) before readEvents falls back to streaming readline (default: 50 MB) */
+const READ_STREAM_THRESHOLD = 50 * 1024 * 1024;
 
 /**
  * Configuration options for JSONLWriter
@@ -298,10 +301,20 @@ export class JSONLWriter {
     try {
       const fullPath = `${this.basePath}/${relativePath}`;
 
-      // Use adapter.exists and adapter.read for hidden folder support (.nexus/)
+      // Use adapter.exists for hidden folder support (.nexus/)
       const exists = await this.app.vault.adapter.exists(fullPath);
       if (!exists) {
         return [];
+      }
+
+      const stat = await this.app.vault.adapter.stat(fullPath);
+      const fileSize = stat?.size ?? 0;
+
+      // For large files use Node.js readline streaming to avoid RangeError: Invalid string length
+      if (fileSize > READ_STREAM_THRESHOLD && this.app.vault.adapter instanceof FileSystemAdapter) {
+        return await this.readEventsStreaming<T>(
+          this.app.vault.adapter.getBasePath() + '/' + fullPath
+        );
       }
 
       const content = await this.app.vault.adapter.read(fullPath);
@@ -322,6 +335,40 @@ export class JSONLWriter {
       console.error(`[JSONLWriter] Failed to read events from ${relativePath}:`, error);
       return [];
     }
+  }
+
+  /**
+   * Read events from a large JSONL file using Node.js readline streaming.
+   * Avoids loading the entire file into a single string (V8 string length limit).
+   *
+   * @param absolutePath - Absolute filesystem path to the .jsonl file
+   */
+  private readEventsStreaming<T extends StorageEvent>(absolutePath: string): Promise<T[]> {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const fs = require('fs') as typeof import('fs');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const readline = require('readline') as typeof import('readline');
+
+    return new Promise((resolve, reject) => {
+      const events: T[] = [];
+      const rl = readline.createInterface({
+        input: fs.createReadStream(absolutePath, { encoding: 'utf8' }),
+        crlfDelay: Infinity,
+      });
+
+      rl.on('line', (line: string) => {
+        const trimmed = line.trim();
+        if (!trimmed) return;
+        try {
+          events.push(JSON.parse(trimmed) as T);
+        } catch {
+          // skip malformed lines
+        }
+      });
+
+      rl.on('close', () => resolve(events));
+      rl.on('error', reject);
+    });
   }
 
   /**
