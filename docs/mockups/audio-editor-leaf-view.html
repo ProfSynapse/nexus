@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Audio Editor Leaf Mockup</title>
+  <link rel="stylesheet" href="./audio-editor-leaf-view.css">
+</head>
+<body>
+  <div class="audio-shell">
+    <div class="layout">
+      <aside class="sidebar panel" aria-label="Sources">
+        <div class="sidebar-top">
+          <label class="field">
+            <span>Workspace</span>
+            <select id="workspace-select"></select>
+          </label>
+
+          <label class="field">
+            <span>Search</span>
+            <input id="source-search" type="search" placeholder="Filter files and folders">
+          </label>
+        </div>
+
+        <div id="source-tree" class="source-tree"></div>
+        <div class="sidebar-hint">Enter inserts selected source. Shift+Enter creates a new track first.</div>
+      </aside>
+
+      <main class="main">
+        <section class="panel transcript-panel" aria-label="Transcript">
+          <div class="panel-row">
+            <div class="section-title">Transcript</div>
+          </div>
+          <div id="transcript-list" class="transcript-list"></div>
+        </section>
+
+        <div class="timeline-toggle-row">
+          <button type="button" class="chevron-button" id="timeline-toggle" aria-expanded="false" aria-controls="timeline-panel">▸</button>
+        </div>
+
+        <section class="panel timeline-panel is-collapsed" id="timeline-panel" aria-label="Timeline">
+          <div class="timeline-overview-row">
+            <button type="button" class="button button-primary overview-play-button" id="play-toggle" aria-label="Play">▶</button>
+            <div class="timeline-overview-wrap">
+              <div class="section-title">Timeline</div>
+              <div class="timeline-overview" id="timeline-overview" aria-label="Timeline overview"></div>
+            </div>
+          </div>
+
+          <div class="timeline-expanded-controls">
+            <div class="timeline-controls">
+              <div class="mode-toggle" role="tablist" aria-label="Edit mode">
+                <button type="button" class="button mode-button is-active" id="mode-pointer" aria-selected="true">🖱️</button>
+                <button type="button" class="button mode-button" id="mode-cut" aria-selected="false">✂️</button>
+              </div>
+              <button type="button" class="button" id="add-keyframe" aria-label="Add keyframe">📍</button>
+              <button type="button" class="button" id="new-track" aria-label="New track">➕</button>
+              <label class="zoom-field">
+                <span>Zoom</span>
+                <input id="zoom-range" type="range" min="1" max="5" value="2" aria-label="Timeline zoom">
+              </label>
+              <div class="time-readout">
+                <span id="time-readout">00:24.6</span>
+                <span>/</span>
+                <span id="duration-readout">02:48.0</span>
+              </div>
+            </div>
+          </div>
+
+          <div id="timeline-ruler" class="timeline-ruler" aria-hidden="true"></div>
+          <div id="track-list" class="track-list"></div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <script src="./audio-editor-leaf-view.js"></script>
+</body>
+</html>

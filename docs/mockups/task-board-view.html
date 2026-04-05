@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Task Board Mockup</title>
+  <link rel="stylesheet" href="./task-board-view.css">
+</head>
+<body>
+  <div class="board-shell">
+    <header class="board-header">
+      <div>
+        <div class="board-label">Workspace view mockup</div>
+        <h1>Task board</h1>
+        <p class="board-subtitle">Drag cards to change status. Use the edit icon to open task details.</p>
+      </div>
+
+      <div class="board-actions">
+        <button type="button" class="button button-secondary">New task</button>
+      </div>
+    </header>
+
+    <section class="board-toolbar" aria-label="Board controls">
+      <label class="field">
+        <span>Workspace</span>
+        <select id="workspace-filter">
+          <option value="all">All workspaces</option>
+          <option value="product-systems">Product systems</option>
+          <option value="mobile-lab">Mobile lab</option>
+        </select>
+      </label>
+
+      <label class="field">
+        <span>Project</span>
+        <select id="project-filter">
+          <option value="all">All projects</option>
+        </select>
+      </label>
+
+      <label class="field field-search">
+        <span>Search</span>
+        <input id="search-filter" type="search" placeholder="Search tasks">
+      </label>
+
+      <div class="board-stats">
+        <span><strong id="visible-task-count">7</strong> tasks</span>
+        <span><strong id="visible-project-count">3</strong> projects</span>
+      </div>
+    </section>
+
+    <main class="board-columns" aria-label="Task columns">
+      <article class="column" data-status="todo">
+        <header class="column-header">
+          <h2>Todo</h2>
+          <span class="column-count" data-count-for="todo">3</span>
+        </header>
+
+        <div class="column-body" data-drop-zone="todo">
+          <article
+            class="task-card"
+            draggable="true"
+            data-id="task-1"
+            data-workspace="product-systems"
+            data-workspace-label="Product systems"
+            data-project="plugin-store"
+            data-project-label="Plugin store compliance"
+            data-status="todo"
+            data-title="Audit remaining inline styles"
+            data-description="Review the remaining inline style cases and decide which should move into styles.css."
+            data-priority="critical"
+            data-assignee="Jordan"
+            data-due-date="2026-03-24"
+            data-tags="ui,compliance"
+            data-parent-task-id=""
+          >
+            <div class="task-card-row">
+              <div class="task-card-title">Audit remaining inline styles</div>
+              <button type="button" class="task-card-icon-button" data-edit-task aria-label="Edit task">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 20h9"/>
+                  <path d="M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4Z"/>
+                </svg>
+              </button>
+            </div>
+            <div class="task-card-meta">Product systems · Plugin store compliance</div>
+          </article>
+
+          <article
+            class="task-card"
+            draggable="true"
+            data-id="task-2"
+            data-workspace="product-systems"
+            data-workspace-label="Product systems"
+            data-project="subagents"
+            data-project-label="Subagent stability"
+            data-status="todo"
+            data-title="Manual test branch restoration"
+            data-description="Validate branch context and back navigation after a restored workspace."
+            data-priority="high"
+            data-assignee="Dylan"
+            data-due-date="2026-03-25"
+            data-tags="manual-test,branching"
+            data-parent-task-id=""
+          >
+            <div class="task-card-row">
+              <div class="task-card-title">Manual test branch restoration</div>
+              <button type="button" class="task-card-icon-button" data-edit-task aria-label="Edit task">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 20h9"/>
+                  <path d="M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4Z"/>
+                </svg>
+              </button>
+            </div>
+            <div class="task-card-meta">Product systems · Subagent stability</div>
+          </article>
+
+          <article
+            class="task-card"
+            draggable="true"
+            data-id="task-3"
+            data-workspace="mobile-lab"
+            data-workspace-label="Mobile lab"
+            data-project="mobile"
+            data-project-label="Mobile parity"
+            data-status="todo"
+            data-title="Review desktop-only code paths"
+            data-description="Identify task board behaviors that need mobile-safe fallbacks."
+            data-priority="medium"
+            data-assignee=""
+            data-due-date=""
+            data-tags="mobile"
+            data-parent-task-id=""
+          >
+            <div class="task-card-row">
+              <div class="task-card-title">Review desktop-only code paths</div>
+              <button type="button" class="task-card-icon-button" data-edit-task aria-label="Edit task">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 20h9"/>
+                  <path d="M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4Z"/>
+                </svg>
+              </button>
+            </div>
+            <div class="task-card-meta">Mobile lab · Mobile parity</div>
+          </article>
+        </div>
+      </article>
+
+      <article class="column" data-status="in_progress">
+        <header class="column-header">
+          <h2>In progress</h2>
+          <span class="column-count" data-count-for="in_progress">2</span>
+        </header>
+
+        <div class="column-body" data-drop-zone="in_progress">
+          <article
+            class="task-card"
+            draggable="true"
+            data-id="task-4"
+            data-workspace="product-systems"
+            data-workspace-label="Product systems"
+            data-project="subagents"
+            data-project-label="Subagent stability"
+            data-status="in_progress"
+            data-title="Refine subagent loading overlay"
+            data-description="Reduce flicker while tool-heavy child runs are streaming."
+            data-priority="high"
+            data-assignee="Jordan"
+            data-due-date="2026-03-24"
+            data-tags="ui,subagents"
+            data-parent-task-id=""
+          >
+            <div class="task-card-row">
+              <div class="task-card-title">Refine subagent loading overlay</div>
+              <button type="button" class="task-card-icon-button" data-edit-task aria-label="Edit task">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 20h9"/>
+                  <path d="M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4Z"/>
+                </svg>
+              </button>
+            </div>
+            <div class="task-card-meta">Product systems · Subagent stability</div>
+          </article>
+
+          <article
+            class="task-card"
+            draggable="true"
+            data-id="task-5"
+            data-workspace="product-systems"
+            data-workspace-label="Product systems"
+            data-project="plugin-store"
+            data-project-label="Plugin store compliance"
+            data-status="in_progress"
+            data-title="Command palette naming audit"
+            data-description="Shift remaining command titles to sentence case."
+            data-priority="medium"
+            data-assignee="Ava"
+            data-due-date="2026-03-27"
+            data-tags="commands"
+            data-parent-task-id=""
+          >
+            <div class="task-card-row">
+              <div class="task-card-title">Command palette naming audit</div>
+              <button type="button" class="task-card-icon-button" data-edit-task aria-label="Edit task">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 20h9"/>
+                  <path d="M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4Z"/>
+                </svg>
+              </button>
+            </div>
+            <div class="task-card-meta">Product systems · Plugin store compliance</div>
+          </article>
+        </div>
+      </article>
+
+      <article class="column" data-status="done">
+        <header class="column-header">
+          <h2>Done</h2>
+          <span class="column-count" data-count-for="done">1</span>
+        </header>
+
+        <div class="column-body" data-drop-zone="done">
+          <article
+            class="task-card"
+            draggable="true"
+            data-id="task-6"
+            data-workspace="product-systems"
+            data-workspace-label="Product systems"
+            data-project="plugin-store"
+            data-project-label="Plugin store compliance"
+            data-status="done"
+            data-title="Register DOM events cleanup"
+            data-description="Converted remaining direct listeners to registerDomEvent."
+            data-priority="low"
+            data-assignee="Jordan"
+            data-due-date=""
+            data-tags="cleanup"
+            data-parent-task-id=""
+          >
+            <div class="task-card-row">
+              <div class="task-card-title">Register DOM events cleanup</div>
+              <button type="button" class="task-card-icon-button" data-edit-task aria-label="Edit task">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 20h9"/>
+                  <path d="M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4Z"/>
+                </svg>
+              </button>
+            </div>
+            <div class="task-card-meta">Product systems · Plugin store compliance</div>
+          </article>
+        </div>
+      </article>
+
+      <article class="column" data-status="cancelled">
+        <header class="column-header">
+          <h2>Cancelled</h2>
+          <span class="column-count" data-count-for="cancelled">1</span>
+        </header>
+
+        <div class="column-body" data-drop-zone="cancelled">
+          <article
+            class="task-card"
+            draggable="true"
+            data-id="task-7"
+            data-workspace="mobile-lab"
+            data-workspace-label="Mobile lab"
+            data-project="mobile"
+            data-project-label="Mobile parity"
+            data-status="cancelled"
+            data-title="Native swipe gesture prototype"
+            data-description="Deferred until the basic board interactions are in place."
+            data-priority="low"
+            data-assignee=""
+            data-due-date=""
+            data-tags=""
+            data-parent-task-id=""
+          >
+            <div class="task-card-row">
+              <div class="task-card-title">Native swipe gesture prototype</div>
+              <button type="button" class="task-card-icon-button" data-edit-task aria-label="Edit task">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 20h9"/>
+                  <path d="M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4Z"/>
+                </svg>
+              </button>
+            </div>
+            <div class="task-card-meta">Mobile lab · Mobile parity</div>
+          </article>
+        </div>
+      </article>
+    </main>
+  </div>
+
+  <div class="modal-backdrop is-hidden" id="task-modal-backdrop">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="task-modal-title">
+      <div class="modal-header">
+        <div>
+          <div class="board-label">Task details</div>
+          <h2 id="task-modal-title">Edit task</h2>
+        </div>
+        <button type="button" class="task-card-icon-button" id="close-modal-button" aria-label="Close modal">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M18 6 6 18"/>
+            <path d="m6 6 12 12"/>
+          </svg>
+        </button>
+      </div>
+
+      <form class="modal-form">
+        <label class="field">
+          <span>Title</span>
+          <input id="edit-title" type="text">
+        </label>
+
+        <label class="field">
+          <span>Description</span>
+          <textarea id="edit-description" rows="4"></textarea>
+        </label>
+
+        <div class="field-grid">
+          <label class="field">
+            <span>Status</span>
+            <select id="edit-status">
+              <option value="todo">Todo</option>
+              <option value="in_progress">In progress</option>
+              <option value="done">Done</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Priority</span>
+            <select id="edit-priority">
+              <option value="critical">Critical</option>
+              <option value="high">High</option>
+              <option value="medium">Medium</option>
+              <option value="low">Low</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Project</span>
+            <select id="edit-project-id">
+              <option value="plugin-store">Plugin store compliance</option>
+              <option value="subagents">Subagent stability</option>
+              <option value="mobile">Mobile parity</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Parent task</span>
+            <input id="edit-parent-task-id" type="text" placeholder="Task ID or blank">
+          </label>
+
+          <label class="field">
+            <span>Assignee</span>
+            <input id="edit-assignee" type="text">
+          </label>
+
+          <label class="field">
+            <span>Due date</span>
+            <input id="edit-due-date" type="date">
+          </label>
+        </div>
+
+        <label class="field">
+          <span>Tags</span>
+          <input id="edit-tags" type="text" placeholder="Comma-separated tags">
+        </label>
+
+        <div class="modal-footer">
+          <div class="save-note" id="save-note">Dragging updates the task status immediately in this mock.</div>
+          <div class="editor-actions">
+            <button type="button" class="button button-secondary" id="cancel-button">Cancel</button>
+            <button type="button" class="button" id="save-button">Save task</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="./task-board-view.js"></script>
+</body>
+</html>

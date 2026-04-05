@@ -1,0 +1,12 @@
+{
+  "docs": [
+    "AGENTS.md",
+    "CLAUDE.md"
+  ],
+  "skillSourceDir": ".skills",
+  "skillTargets": [
+    ".codex/skills",
+    ".claude/skills",
+    ".cline/skills"
+  ]
+}
