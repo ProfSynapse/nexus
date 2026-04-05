@@ -125,6 +125,18 @@ export class ProvidersTab {
             signupUrl: 'https://console.groq.com/keys',
             category: 'cloud'
         },
+        deepgram: {
+            name: 'Deepgram',
+            keyFormat: 'dg_...',
+            signupUrl: 'https://console.deepgram.com/project/api-keys',
+            category: 'cloud'
+        },
+        assemblyai: {
+            name: 'AssemblyAI',
+            keyFormat: '...API key...',
+            signupUrl: 'https://www.assemblyai.com/dashboard/api-keys',
+            category: 'cloud'
+        },
         openrouter: {
             name: 'OpenRouter',
             keyFormat: 'sk-or-...',
@@ -430,7 +442,7 @@ export class ProvidersTab {
             groups.push({ title: 'LOCAL PROVIDERS', items: localItems });
         }
 
-        const cloudIds = ['openai', 'anthropic', 'google', 'mistral', 'groq', 'openrouter', 'requesty', 'perplexity', 'github-copilot'];
+        const cloudIds = ['openai', 'anthropic', 'google', 'mistral', 'groq', 'deepgram', 'assemblyai', 'openrouter', 'requesty', 'perplexity', 'github-copilot'];
         const cloudItems = cloudIds
             .map(id => this.buildProviderCardItem(id, settings))
             .filter((item): item is ProviderCardItem => item !== null);

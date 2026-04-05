@@ -16,11 +16,32 @@ BCPs.md
 
 CLAUDE.md 
 
-docs/
+docs/*
+!docs/plans/
+docs/plans/*
+!docs/plans/*.md
+!docs/research/
+docs/research/*
+!docs/research/*.md
+!docs/mockups/
+docs/mockups/*
+!docs/mockups/*.html
+!docs/mockups/*.css
+!docs/mockups/*.js
 
 Example Files/
 
-.claude/
+.claude/*
+!.claude/skills/
+!.claude/skills/**
+
+.cline/*
+!.cline/skills/
+!.cline/skills/**
+
+.codex/*
+!.codex/skills/
+!.codex/skills/**
 
 refactoring/
 

@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Compaction Indicator Preview</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --background-primary: #1f2125;
+      --background-secondary: #262a31;
+      --background-secondary-alt: #2b3038;
+      --background-modifier-border: #3a404a;
+      --background-modifier-hover: #323844;
+      --interactive-accent: #8cb8ff;
+      --interactive-accent-hover: #a8caff;
+      --text-normal: #edf1f7;
+      --text-muted: #acb5c2;
+      --text-faint: #7e8794;
+      --text-on-accent: #12202f;
+      --text-error: #ef6b6b;
+      --radius-s: 6px;
+      --radius-m: 10px;
+      --radius-l: 14px;
+      --shadow-l: 0 16px 48px rgba(0, 0, 0, 0.35);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      padding: 24px;
+      font-family: "SF Pro Text", "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at top right, rgba(140, 184, 255, 0.12), transparent 28%),
+        linear-gradient(180deg, #17191d 0%, #1f2125 100%);
+      color: var(--text-normal);
+    }
+
+    .preview-shell {
+      max-width: 1100px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 320px minmax(0, 1fr);
+      gap: 18px;
+    }
+
+    .panel,
+    .chat-shell,
+    .message-bubble,
+    .chat-input-surface {
+      background: var(--background-secondary);
+      border: 1px solid var(--background-modifier-border);
+      border-radius: var(--radius-l);
+      box-shadow: var(--shadow-l);
+    }
+
+    .panel {
+      padding: 16px;
+      align-self: start;
+      position: sticky;
+      top: 24px;
+    }
+
+    .eyebrow {
+      margin: 0 0 6px;
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-faint);
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 24px;
+    }
+
+    .subtitle {
+      margin: 8px 0 0;
+      color: var(--text-muted);
+      line-height: 1.5;
+      font-size: 14px;
+    }
+
+    .control-group {
+      margin-top: 18px;
+      display: grid;
+      gap: 10px;
+    }
+
+    .control-label {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-faint);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .state-grid {
+      display: grid;
+      gap: 8px;
+    }
+
+    .state-option {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 10px 12px;
+      border: 1px solid var(--background-modifier-border);
+      border-radius: var(--radius-m);
+      background: var(--background-primary);
+      cursor: pointer;
+    }
+
+    .state-option:hover {
+      background: var(--background-modifier-hover);
+    }
+
+    .state-option input {
+      margin-top: 3px;
+    }
+
+    .state-option strong {
+      display: block;
+      font-size: 14px;
+    }
+
+    .state-option span {
+      display: block;
+      margin-top: 2px;
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.45;
+    }
+
+    .field {
+      display: grid;
+      gap: 6px;
+    }
+
+    .field label {
+      font-size: 13px;
+      color: var(--text-faint);
+    }
+
+    .field textarea {
+      min-height: 112px;
+      width: 100%;
+      padding: 12px;
+      border: 1px solid var(--background-modifier-border);
+      border-radius: var(--radius-m);
+      background: var(--background-primary);
+      color: var(--text-normal);
+      resize: vertical;
+      font: inherit;
+      line-height: 1.5;
+    }
+
+    .button-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .button {
+      min-height: 34px;
+      padding: 0 12px;
+      border: 0;
+      border-radius: var(--radius-s);
+      background: var(--interactive-accent);
+      color: var(--text-on-accent);
+      font: inherit;
+      cursor: pointer;
+    }
+
+    .button:hover {
+      background: var(--interactive-accent-hover);
+    }
+
+    .button-secondary {
+      background: var(--background-secondary-alt);
+      color: var(--text-normal);
+      border: 1px solid var(--background-modifier-border);
+    }
+
+    .button-secondary:hover {
+      background: var(--background-modifier-hover);
+    }
+
+    .chat-shell {
+      min-height: calc(100vh - 48px);
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      overflow: hidden;
+    }
+
+    .chat-header {
+      padding: 18px 20px 14px;
+      border-bottom: 1px solid var(--background-modifier-border);
+    }
+
+    .chat-header h2 {
+      margin: 0;
+      font-size: 18px;
+    }
+
+    .chat-header p {
+      margin: 6px 0 0;
+      color: var(--text-muted);
+      font-size: 13px;
+    }
+
+    .chat-scroll {
+      padding: 20px;
+      display: grid;
+      align-content: start;
+      gap: 14px;
+      background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.015), transparent 28%),
+        var(--background-primary);
+    }
+
+    .message-bubble {
+      max-width: 78%;
+      padding: 14px 15px;
+      border-radius: 16px;
+      box-shadow: none;
+    }
+
+    .message-bubble.user {
+      margin-left: auto;
+      background: linear-gradient(180deg, rgba(140, 184, 255, 0.18), rgba(140, 184, 255, 0.09));
+      border-color: rgba(140, 184, 255, 0.35);
+    }
+
+    .message-bubble.assistant {
+      background: var(--background-secondary);
+    }
+
+    .message-meta {
+      margin-bottom: 6px;
+      font-size: 12px;
+      color: var(--text-faint);
+    }
+
+    .message-body {
+      line-height: 1.55;
+      font-size: 14px;
+    }
+
+    .assistant-loading {
+      display: none;
+      align-items: center;
+      gap: 8px;
+      margin-top: 8px;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    .assistant-loading.is-visible {
+      display: inline-flex;
+    }
+
+    .assistant-loading .dots::after {
+      content: "...";
+      animation: assistant-dots 1.1s steps(4, end) infinite;
+      display: inline-block;
+      width: 14px;
+      overflow: hidden;
+      vertical-align: bottom;
+    }
+
+    .message-display-event-row {
+      display: none;
+      justify-content: center;
+      padding: 2px 0 8px;
+    }
+
+    .message-display-event-row.is-visible {
+      display: flex;
+    }
+
+    .message-display-event-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      max-width: min(100%, 32rem);
+      padding: 0.5rem 0.85rem;
+      border: 1px solid var(--background-modifier-border);
+      border-radius: 999px;
+      background: var(--background-secondary);
+      color: var(--interactive-accent);
+      font-size: 0.82rem;
+      line-height: 1.35;
+    }
+
+    .message-display-event-dot {
+      width: 0.5rem;
+      height: 0.5rem;
+      border-radius: 50%;
+      background: var(--interactive-accent);
+      flex: 0 0 auto;
+      animation: chat-pre-send-pulse 1.2s ease-in-out infinite;
+    }
+
+    .message-display-event-text {
+      font-weight: 600;
+    }
+
+    .chat-input-container {
+      padding: 12px;
+      border-top: 1px solid var(--background-modifier-border);
+      background: var(--background-primary);
+    }
+
+    .chat-input-surface {
+      box-shadow: none;
+      border-radius: 18px;
+      padding: 14px;
+      background: rgba(38, 42, 49, 0.88);
+      backdrop-filter: blur(10px);
+    }
+
+    .chat-input {
+      width: 100%;
+      box-sizing: border-box;
+    }
+
+    .chat-input-wrapper {
+      position: relative;
+      width: 100%;
+      box-sizing: border-box;
+    }
+
+    .chat-textarea {
+      width: 100%;
+      min-height: 88px;
+      max-height: 200px;
+      padding: 14px 52px 14px 14px;
+      border: 1px solid var(--background-modifier-border);
+      border-radius: 14px;
+      background: var(--background-secondary);
+      color: var(--text-normal);
+      font-size: 14px;
+      line-height: 1.5;
+      overflow-y: auto;
+      transition: border-color 0.2s, box-shadow 0.2s, opacity 0.2s;
+      white-space: pre-wrap;
+    }
+
+    .chat-textarea::before {
+      content: attr(data-placeholder);
+      color: var(--text-muted);
+    }
+
+    .chat-textarea.has-content::before {
+      content: none;
+    }
+
+    .chat-textarea[aria-disabled="true"] {
+      opacity: 0.7;
+    }
+
+    .chat-send-button {
+      position: absolute;
+      top: 50%;
+      right: 10px;
+      transform: translateY(-50%);
+      width: 34px;
+      height: 34px;
+      border: none;
+      border-radius: 50%;
+      background: var(--interactive-accent);
+      color: var(--text-on-accent);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 0.2s, background-color 0.2s, opacity 0.2s;
+    }
+
+    .chat-send-button:hover {
+      background: var(--interactive-accent-hover);
+      transform: translateY(-50%) scale(1.04);
+    }
+
+    .chat-send-button.stop-mode {
+      background: var(--text-error);
+      color: white;
+      animation: pulse-stop 1.5s ease-in-out infinite;
+    }
+
+    .chat-send-button.disabled-mode {
+      background: var(--background-modifier-border);
+      color: var(--text-muted);
+      cursor: not-allowed;
+      opacity: 0.7;
+    }
+
+    .chat-input-compacting .chat-textarea {
+      border-color: var(--interactive-accent);
+      box-shadow: 0 0 0 1px rgba(140, 184, 255, 0.16);
+    }
+
+    .status-note {
+      margin-top: 10px;
+      font-size: 12px;
+      color: var(--text-faint);
+      line-height: 1.45;
+    }
+
+    .state-chip-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+
+    .state-chip {
+      padding: 5px 9px;
+      border-radius: 999px;
+      border: 1px solid var(--background-modifier-border);
+      background: var(--background-primary);
+      color: var(--text-muted);
+      font-size: 12px;
+    }
+
+    .state-chip.is-active {
+      color: var(--text-normal);
+      border-color: rgba(140, 184, 255, 0.45);
+      background: rgba(140, 184, 255, 0.12);
+    }
+
+    @keyframes pulse-stop {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(239, 107, 107, 0.38); }
+      50% { box-shadow: 0 0 0 5px rgba(239, 107, 107, 0); }
+    }
+
+    @keyframes chat-pre-send-pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.6; transform: scale(0.88); }
+    }
+
+    @keyframes assistant-dots {
+      0% { width: 0; }
+      100% { width: 14px; }
+    }
+
+    @media (max-width: 920px) {
+      body {
+        padding: 16px;
+      }
+
+      .preview-shell {
+        grid-template-columns: 1fr;
+      }
+
+      .panel {
+        position: static;
+      }
+
+      .chat-shell {
+        min-height: 720px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="preview-shell">
+    <aside class="panel">
+      <p class="eyebrow">Mockup harness</p>
+      <h1>Pre-send compaction indicator</h1>
+      <p class="subtitle">Preview the difference between the input-area compaction state and normal assistant generation without forcing real compaction in the app.</p>
+
+      <section class="control-group" aria-labelledby="state-heading">
+        <div id="state-heading" class="control-label">Preview state</div>
+        <div class="state-grid" role="radiogroup" aria-label="Preview state">
+          <label class="state-option">
+            <input type="radio" name="preview-state" value="normal" checked>
+            <div>
+              <strong>Normal input</strong>
+              <span>Standard send-ready input with no in-flight work.</span>
+            </div>
+          </label>
+          <label class="state-option">
+            <input type="radio" name="preview-state" value="compacting">
+            <div>
+              <strong>Pre-send compacting</strong>
+              <span>User send is still in flight, but the app is compacting before release.</span>
+            </div>
+          </label>
+          <label class="state-option">
+            <input type="radio" name="preview-state" value="loading">
+            <div>
+              <strong>Assistant loading / thinking</strong>
+              <span>Normal post-send generation state with the stop button active.</span>
+            </div>
+          </label>
+          <label class="state-option">
+            <input type="radio" name="preview-state" value="no-conversation">
+            <div>
+              <strong>No conversation selected</strong>
+              <span>Useful contrast for the disabled input state.</span>
+            </div>
+          </label>
+        </div>
+      </section>
+
+      <section class="control-group">
+        <div class="control-label">Input copy</div>
+        <div class="field">
+          <label for="preview-message">User draft shown in the input</label>
+          <textarea id="preview-message">Please send the next compaction refinement after you preserve the current frontier and transcript recovery guarantees.</textarea>
+        </div>
+      </section>
+
+      <section class="control-group">
+        <div class="control-label">Quick toggles</div>
+        <div class="button-row">
+          <button id="set-normal" type="button" class="button">Normal</button>
+          <button id="set-compacting" type="button" class="button">Compacting</button>
+          <button id="set-loading" type="button" class="button button-secondary">Loading</button>
+        </div>
+      </section>
+    </aside>
+
+    <main class="chat-shell" aria-label="Chat preview">
+      <header class="chat-header">
+        <h2>Nexus Chat</h2>
+        <p>Input-area state should make it obvious when compaction is delaying release of the user message versus when the assistant is already generating.</p>
+      </header>
+
+      <section class="chat-scroll">
+        <article class="message-bubble assistant">
+          <div class="message-meta">Assistant · 11:46 AM</div>
+          <div class="message-body">
+            We now persist a bounded compaction frontier, restore it across reloads, and render it deterministically in the system prompt.
+          </div>
+        </article>
+
+        <article class="message-bubble user">
+          <div class="message-meta">You · 11:47 AM</div>
+          <div class="message-body">
+            Good. Next I want a visible indicator if the app compacts before my message actually gets sent.
+          </div>
+        </article>
+
+        <article class="message-bubble assistant">
+          <div class="message-meta">Assistant · 11:47 AM</div>
+          <div class="message-body">
+            The compaction status should live near the send controls so the user knows their action is still in progress.
+          </div>
+          <div id="assistant-loading" class="assistant-loading" aria-hidden="true">
+            <span>Thinking</span>
+            <span class="dots"></span>
+          </div>
+        </article>
+
+        <div id="transcript-event-row" class="message-display-event-row" role="status" aria-live="polite" aria-atomic="true">
+          <div class="message-display-event-pill">
+            <span class="message-display-event-dot" aria-hidden="true"></span>
+            <span class="message-display-event-text">Compacting context before sending...</span>
+          </div>
+        </div>
+      </section>
+
+      <footer class="chat-input-container">
+        <div class="chat-input-surface">
+          <div id="chat-input" class="chat-input">
+            <div class="chat-input-wrapper">
+              <div
+                id="chat-textarea"
+                class="chat-textarea has-content"
+                data-placeholder="Type your message..."
+                role="textbox"
+                aria-multiline="true"
+                aria-disabled="false"
+                aria-busy="false"
+              ></div>
+              <button id="chat-send-button" type="button" class="chat-send-button" aria-label="Send message">↑</button>
+            </div>
+
+            <div class="state-chip-row" aria-hidden="true">
+              <span id="chip-input" class="state-chip is-active">Input active</span>
+              <span id="chip-compaction" class="state-chip">Pre-send compaction</span>
+              <span id="chip-loading" class="state-chip">Assistant generation</span>
+            </div>
+
+            <p id="status-note" class="status-note">User message is still editable and ready to send.</p>
+          </div>
+        </div>
+      </footer>
+    </main>
+  </div>
+
+  <script>
+    const stateInputs = Array.from(document.querySelectorAll('input[name="preview-state"]'));
+    const previewMessage = document.getElementById('preview-message');
+    const chatInput = document.getElementById('chat-input');
+    const chatTextarea = document.getElementById('chat-textarea');
+    const chatSendButton = document.getElementById('chat-send-button');
+    const transcriptEventRow = document.getElementById('transcript-event-row');
+    const assistantLoading = document.getElementById('assistant-loading');
+    const statusNote = document.getElementById('status-note');
+    const chipInput = document.getElementById('chip-input');
+    const chipCompaction = document.getElementById('chip-compaction');
+    const chipLoading = document.getElementById('chip-loading');
+
+    const setNormalButton = document.getElementById('set-normal');
+    const setCompactingButton = document.getElementById('set-compacting');
+    const setLoadingButton = document.getElementById('set-loading');
+
+    function setActiveChip(activeChip) {
+      [chipInput, chipCompaction, chipLoading].forEach((chip) => chip.classList.remove('is-active'));
+      activeChip.classList.add('is-active');
+    }
+
+    function syncDraftText() {
+      const value = previewMessage.value;
+      chatTextarea.textContent = value;
+      chatTextarea.classList.toggle('has-content', value.trim().length > 0);
+    }
+
+    function applyState(state) {
+      syncDraftText();
+
+      chatInput.classList.remove('chat-input-compacting');
+      transcriptEventRow.classList.remove('is-visible');
+      assistantLoading.classList.remove('is-visible');
+      assistantLoading.setAttribute('aria-hidden', 'true');
+      chatSendButton.className = 'chat-send-button';
+      chatSendButton.disabled = false;
+      chatTextarea.setAttribute('aria-disabled', 'false');
+      chatTextarea.setAttribute('aria-busy', 'false');
+
+      if (state === 'normal') {
+        chatSendButton.textContent = '↑';
+        chatSendButton.setAttribute('aria-label', 'Send message');
+        chatTextarea.setAttribute('data-placeholder', 'Type your message...');
+        statusNote.textContent = 'User message is still editable and ready to send.';
+        setActiveChip(chipInput);
+        return;
+      }
+
+      if (state === 'compacting') {
+        chatInput.classList.add('chat-input-compacting');
+        transcriptEventRow.classList.add('is-visible');
+        chatSendButton.classList.add('disabled-mode');
+        chatSendButton.disabled = true;
+        chatSendButton.textContent = '↑';
+        chatSendButton.setAttribute('aria-label', 'Compacting context before sending');
+        chatTextarea.setAttribute('aria-disabled', 'true');
+        chatTextarea.setAttribute('aria-busy', 'true');
+        chatTextarea.setAttribute('data-placeholder', 'Compacting context before sending...');
+        statusNote.textContent = 'Primary signal lives in the transcript. The input stays in a supporting disabled/busy state until send proceeds.';
+        setActiveChip(chipCompaction);
+        return;
+      }
+
+      if (state === 'loading') {
+        assistantLoading.classList.add('is-visible');
+        assistantLoading.setAttribute('aria-hidden', 'false');
+        chatSendButton.classList.add('stop-mode');
+        chatSendButton.textContent = '■';
+        chatSendButton.setAttribute('aria-label', 'Stop generation');
+        chatTextarea.setAttribute('data-placeholder', 'Type to interrupt, or stop generation');
+        statusNote.textContent = 'Assistant generation has already started. This should read differently from pre-send compaction.';
+        setActiveChip(chipLoading);
+        return;
+      }
+
+      if (state === 'no-conversation') {
+        chatSendButton.classList.add('disabled-mode');
+        chatSendButton.disabled = true;
+        chatSendButton.textContent = '↑';
+        chatSendButton.setAttribute('aria-label', 'No conversation selected');
+        chatTextarea.textContent = '';
+        chatTextarea.classList.remove('has-content');
+        chatTextarea.setAttribute('aria-disabled', 'true');
+        chatTextarea.setAttribute('data-placeholder', 'Select or create a conversation to begin');
+        statusNote.textContent = 'Baseline disabled state for contrast. No send action is in flight.';
+        setActiveChip(chipInput);
+      }
+    }
+
+    function selectState(state) {
+      stateInputs.forEach((input) => {
+        input.checked = input.value === state;
+      });
+      applyState(state);
+    }
+
+    stateInputs.forEach((input) => {
+      input.addEventListener('change', () => {
+        if (input.checked) {
+          applyState(input.value);
+        }
+      });
+    });
+
+    previewMessage.addEventListener('input', () => {
+      const selected = stateInputs.find((input) => input.checked)?.value || 'normal';
+      applyState(selected);
+    });
+
+    setNormalButton.addEventListener('click', () => selectState('normal'));
+    setCompactingButton.addEventListener('click', () => selectState('compacting'));
+    setLoadingButton.addEventListener('click', () => selectState('loading'));
+
+    selectState('normal');
+  </script>
+</body>
+</html>

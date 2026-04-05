@@ -13,6 +13,8 @@ export class ProviderUtils {
       'anthropic-claude-code': 'Anthropic (Claude Code)',
       'google-gemini-cli': 'Google (Gemini CLI)',
       'mistral': 'Mistral AI',
+      'deepgram': 'Deepgram',
+      'assemblyai': 'AssemblyAI',
       'ollama': 'Ollama',
       'lmstudio': 'LM Studio',
       'webllm': 'Nexus (Local)',
@@ -86,7 +88,9 @@ export class ProviderUtils {
       'google': '#4285f4',
       'github-copilot': '#1f6feb',
       'cohere': '#39c6b9',
-      'huggingface': '#ff9a00'
+      'huggingface': '#ff9a00',
+      'deepgram': '#13ef93',
+      'assemblyai': '#4f46e5'
     };
     return colors[providerId] || '#6b7280';
   }
@@ -108,7 +112,9 @@ export class ProviderUtils {
       'google': '🔍',
       'github-copilot': '✈️',
       'cohere': '🧬',
-      'huggingface': '🤗'
+      'huggingface': '🤗',
+      'deepgram': '🎙️',
+      'assemblyai': '📝'
     };
     return icons[providerId] || '🤖';
   }
@@ -143,7 +149,9 @@ export class ProviderUtils {
       'google': 'GGL',
       'github-copilot': 'GHC',
       'cohere': 'COH',
-      'huggingface': 'HF'
+      'huggingface': 'HF',
+      'deepgram': 'DGM',
+      'assemblyai': 'AAI'
     };
     return abbreviations[providerId] || providerId.substring(0, 3).toUpperCase();
   }

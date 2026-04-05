@@ -272,9 +272,16 @@ describe('ProjectRepository', () => {
       expect(sql).not.toContain('name = ?');
     });
 
-    it('should invalidate cache with project ID', async () => {
+    it('should invalidate cache by ID for non-status updates', async () => {
       await repo.update('proj-1', { name: 'X' });
       expect(deps.queryCache.invalidateById).toHaveBeenCalledWith('project', 'proj-1');
+      expect(deps.queryCache.invalidateByType).not.toHaveBeenCalled();
+    });
+
+    it('should invalidate full project and task cache on status change', async () => {
+      await repo.update('proj-1', { status: 'archived' });
+      expect(deps.queryCache.invalidateByType).toHaveBeenCalledWith('project');
+      expect(deps.queryCache.invalidateByType).toHaveBeenCalledWith('task');
     });
   });
 

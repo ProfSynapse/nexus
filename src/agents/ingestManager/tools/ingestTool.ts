@@ -14,8 +14,13 @@ import { JSONSchema } from '../../../types/schema/JSONSchemaTypes';
 import { createErrorMessage } from '../../../utils/errorUtils';
 import { processFile, PipelineDeps } from './services/IngestionPipelineService';
 import type { LLMProviderManager } from '../../../services/llm/providers/ProviderManager';
+import { TranscriptionService } from '../../../services/llm/TranscriptionService';
+import { getTranscriptionProviders } from '../../../services/llm/types/VoiceTypes';
 
 export class IngestTool extends BaseTool<IngestToolParameters, IngestToolResult> {
+  private cachedTranscriptionService: TranscriptionService | null = null;
+  private cachedSettingsHash: string | null = null;
+
   constructor(
     private vault: Vault,
     private getProviderManager: () => LLMProviderManager | null
@@ -23,17 +28,16 @@ export class IngestTool extends BaseTool<IngestToolParameters, IngestToolResult>
     super(
       'ingest',
       'Ingest File',
-      'Ingest a PDF, DOCX, PPTX, XLSX, or audio file into a structured markdown note. ' +
-      'PDF supports text extraction (default, free) or vision-based OCR (requires provider/model). ' +
-      'DOCX, PPTX, and XLSX convert directly to markdown without an LLM call. ' +
-      'Audio supports transcription via OpenAI, Groq, Google Gemini, and OpenRouter audio-capable models. ' +
-      'The output note is created alongside the original file with an ![[embed]] link.',
+      buildToolDescription(),
       '1.0.0'
     );
   }
 
   async execute(params: IngestToolParameters): Promise<IngestToolResult> {
     try {
+      // Refresh description to reflect any newly enabled providers
+      this.description = buildToolDescription();
+
       if (!params.filePath) {
         return this.prepareResult(false, undefined, 'filePath is required');
       }
@@ -44,6 +48,7 @@ export class IngestTool extends BaseTool<IngestToolParameters, IngestToolResult>
       }
 
       const llmService = providerManager.getLLMService();
+      const transcriptionService = this.getOrCreateTranscriptionService(providerManager);
 
       const deps: PipelineDeps = {
         vault: this.vault,
@@ -72,19 +77,7 @@ export class IngestTool extends BaseTool<IngestToolParameters, IngestToolResult>
             };
           }
         },
-        transcriptionDeps: {
-          getApiKey: (provider) => {
-            const settings = providerManager.getSettings();
-            return settings?.providers?.[provider]?.apiKey;
-          },
-          getOpenRouterHeaders: () => {
-            const openRouterConfig = providerManager.getSettings()?.providers?.openrouter;
-            return {
-              httpReferer: openRouterConfig?.httpReferer,
-              xTitle: openRouterConfig?.xTitle
-            };
-          }
-        }
+        transcriptionService
       };
 
       const result = await processFile(params, deps);
@@ -98,6 +91,9 @@ export class IngestTool extends BaseTool<IngestToolParameters, IngestToolResult>
   }
 
   getParameterSchema(): JSONSchema {
+    const providers = getTranscriptionProviders();
+    const providerList = providers.join(', ');
+
     return this.getMergedSchema({
       type: 'object',
       properties: {
@@ -120,15 +116,32 @@ export class IngestTool extends BaseTool<IngestToolParameters, IngestToolResult>
         },
         transcriptionProvider: {
           type: 'string',
-          description: 'Provider for audio transcription. Supported: "openai", "groq", "google", "openrouter". Required for audio files.',
+          enum: [...providers],
+          description: `Provider for audio transcription. Supported: ${providerList}. Required for audio files.`,
         },
         transcriptionModel: {
           type: 'string',
-          description: 'Model for audio transcription (e.g., "gpt-4o-transcribe", "whisper-large-v3-turbo", "gemini-2.5-flash"). Optional — defaults to the provider\'s first supported transcription model.',
+          description: 'Model for audio transcription (e.g., "whisper-1", "whisper-large-v3-turbo", "voxtral-mini-latest"). Optional — defaults to the provider\'s first supported transcription model.',
         },
       },
       required: ['filePath'],
     });
+  }
+
+  /**
+   * Cache TranscriptionService — recreate only when provider settings change.
+   */
+  private getOrCreateTranscriptionService(providerManager: LLMProviderManager): TranscriptionService {
+    const settings = providerManager.getSettings();
+    const hash = computeSettingsHash(settings);
+
+    if (this.cachedTranscriptionService && this.cachedSettingsHash === hash) {
+      return this.cachedTranscriptionService;
+    }
+
+    this.cachedTranscriptionService = new TranscriptionService(settings);
+    this.cachedSettingsHash = hash;
+    return this.cachedTranscriptionService;
   }
 
   getResultSchema(): JSONSchema {
@@ -154,4 +167,60 @@ export class IngestTool extends BaseTool<IngestToolParameters, IngestToolResult>
       },
     };
   }
+}
+
+/**
+ * Build the tool description dynamically from the transcription provider registry.
+ */
+function buildToolDescription(): string {
+  const providers = getTranscriptionProviders();
+  const providerNames = providers.map(p => formatProviderName(p));
+  const providerList = providerNames.length > 0
+    ? providerNames.join(', ')
+    : 'no transcription providers configured';
+
+  return (
+    'Ingest a PDF, DOCX, PPTX, XLSX, or audio file into a structured markdown note. ' +
+    'PDF supports text extraction (default, free) or vision-based OCR (requires provider/model). ' +
+    'DOCX, PPTX, and XLSX convert directly to markdown without an LLM call. ' +
+    `Audio supports transcription via ${providerList}. ` +
+    'The output note is created alongside the original file with an ![[embed]] link.'
+  );
+}
+
+/** Human-readable provider name from provider ID. */
+function formatProviderName(provider: string): string {
+  const nameMap: Record<string, string> = {
+    openai: 'OpenAI',
+    groq: 'Groq',
+    google: 'Google Gemini',
+    openrouter: 'OpenRouter',
+    mistral: 'Mistral',
+    deepgram: 'Deepgram',
+    assemblyai: 'AssemblyAI',
+  };
+  return nameMap[provider] ?? provider;
+}
+
+/**
+ * Compute a simple hash of provider settings relevant to TranscriptionService.
+ * Used to detect when the cached service needs to be recreated.
+ */
+function computeSettingsHash(settings: unknown): string {
+  if (!settings || typeof settings !== 'object') return '';
+  const s = settings as Record<string, unknown>;
+  const providers = s.providers;
+  if (!providers || typeof providers !== 'object') return '';
+
+  // Hash provider enabled/apiKey state — lightweight, no crypto needed
+  const parts: string[] = [];
+  for (const [key, value] of Object.entries(providers as Record<string, unknown>)) {
+    if (value && typeof value === 'object') {
+      const v = value as Record<string, unknown>;
+      const enabled = typeof v.enabled === 'boolean' ? String(v.enabled) : '';
+      const keyLen = typeof v.apiKey === 'string' ? v.apiKey.length : 0;
+      parts.push(`${key}:${enabled}:${keyLen}`);
+    }
+  }
+  return parts.sort().join('|');
 }

@@ -3,19 +3,23 @@
  *
  * Tests provider validation, API key checks, response parsing branches,
  * MIME-to-extension mapping, chunk timestamp offsetting, and error handling.
+ *
+ * The shim at ingestManager/tools/services/TranscriptionService delegates to
+ * the shared TranscriptionService at services/llm/TranscriptionService.
+ * Mocks target the shared service's module paths.
  */
 
-// Mock AudioChunkingService
+// Mock AudioChunkingService (shared service path)
 jest.mock(
-  '../../src/agents/ingestManager/tools/services/AudioChunkingService',
+  '../../src/services/llm/utils/AudioChunkingService',
   () => ({
     chunkAudio: jest.fn(),
   })
 );
 
-// Mock MultipartFormDataBuilder
+// Mock MultipartFormDataBuilder (shared service path)
 jest.mock(
-  '../../src/agents/ingestManager/tools/services/MultipartFormDataBuilder',
+  '../../src/services/llm/utils/MultipartFormDataBuilder',
   () => ({
     buildMultipartFormData: jest.fn(),
   })
@@ -27,9 +31,9 @@ import {
   TranscriptionServiceDeps,
 } from '../../src/agents/ingestManager/tools/services/TranscriptionService';
 import { getIngestionProvidersForKind } from '../../src/agents/ingestManager/tools/services/IngestModelCatalog';
-import { chunkAudio } from '../../src/agents/ingestManager/tools/services/AudioChunkingService';
-import { buildMultipartFormData } from '../../src/agents/ingestManager/tools/services/MultipartFormDataBuilder';
-import { AudioChunk } from '../../src/agents/ingestManager/types';
+import { chunkAudio } from '../../src/services/llm/utils/AudioChunkingService';
+import { buildMultipartFormData } from '../../src/services/llm/utils/MultipartFormDataBuilder';
+import type { AudioChunk } from '../../src/services/llm/types/VoiceTypes';
 
 const chunkAudioMock = chunkAudio as jest.MockedFunction<typeof chunkAudio>;
 const buildMultipartMock = buildMultipartFormData as jest.MockedFunction<typeof buildMultipartFormData>;
@@ -73,18 +77,17 @@ describe('TranscriptionService', () => {
 
   describe('provider validation', () => {
     it('throws for unsupported provider', async () => {
-      // Provide a fake API key so we get past the key check to the provider/model check
       const deps = makeDeps({ getApiKey: () => 'fake-key' });
       await expect(
-        transcribeAudio(new ArrayBuffer(10), 'audio/mpeg', 'test.mp3', 'deepgram', undefined, deps)
-      ).rejects.toThrow(/Provider "deepgram" does not support/);
+        transcribeAudio(new ArrayBuffer(10), 'audio/mpeg', 'test.mp3', 'nonsense-provider', undefined, deps)
+      ).rejects.toThrow(/No transcription provider\/model available/);
     });
 
-    it('error message includes provider name', async () => {
+    it('error message for unknown provider', async () => {
       const deps = makeDeps({ getApiKey: () => 'fake-key' });
       await expect(
         transcribeAudio(new ArrayBuffer(10), 'audio/mpeg', 'test.mp3', 'unknown', undefined, deps)
-      ).rejects.toThrow(/Provider "unknown"/);
+      ).rejects.toThrow(/No transcription provider\/model available/);
     });
 
     it('accepts openai provider', async () => {
@@ -107,19 +110,19 @@ describe('TranscriptionService', () => {
       const deps = makeDeps({ getApiKey: () => undefined });
       await expect(
         transcribeAudio(new ArrayBuffer(10), 'audio/mpeg', 'test.mp3', 'openai', undefined, deps)
-      ).rejects.toThrow(/No API key configured for provider "openai"/);
+      ).rejects.toThrow(/not configured or not enabled/);
     });
   });
 
   // ── Default model selection ───────────────────────────────────────────
 
   describe('model selection', () => {
-    it('uses gpt-4o-transcribe as default for openai', async () => {
-      __setRequestUrlMock(async () => ({ status: 200, json: { text: '' } }));
+    it('uses whisper-1 as default for openai', async () => {
+      __setRequestUrlMock(async () => ({ status: 200, json: { segments: [] } }));
       await transcribeAudio(new ArrayBuffer(10), 'audio/mpeg', 'test.mp3', 'openai', undefined, makeDeps());
       expect(buildMultipartMock).toHaveBeenCalledWith(
         expect.arrayContaining([
-          expect.objectContaining({ name: 'model', value: 'gpt-4o-transcribe' }),
+          expect.objectContaining({ name: 'model', value: 'whisper-1' }),
         ])
       );
     });
@@ -214,7 +217,7 @@ describe('TranscriptionService', () => {
       }));
       await expect(
         transcribeAudio(new ArrayBuffer(10), 'audio/mpeg', 'test.mp3', 'openai', undefined, makeDeps())
-      ).rejects.toThrow(/Transcription failed: HTTP 401/);
+      ).rejects.toThrow(/transcription failed: HTTP 401/i);
     });
 
     it('does not include body text in error message', async () => {
@@ -225,8 +228,7 @@ describe('TranscriptionService', () => {
       }));
       await expect(
         transcribeAudio(new ArrayBuffer(10), 'audio/mpeg', 'test.mp3', 'openai', undefined, makeDeps())
-      ).rejects.toThrow(/Transcription failed: HTTP 500/);
-      // Body text is logged to console.error but intentionally excluded from the thrown error
+      ).rejects.toThrow(/transcription failed: HTTP 500/i);
       await expect(
         transcribeAudio(new ArrayBuffer(10), 'audio/mpeg', 'test.mp3', 'openai', undefined, makeDeps())
       ).rejects.toThrow(expect.not.objectContaining({ message: expect.stringContaining('Internal server error') }));
@@ -240,7 +242,7 @@ describe('TranscriptionService', () => {
       }));
       await expect(
         transcribeAudio(new ArrayBuffer(10), 'audio/mpeg', 'test.mp3', 'openai', undefined, makeDeps())
-      ).rejects.toThrow(/Transcription failed: HTTP 400/);
+      ).rejects.toThrow(/transcription failed: HTTP 400/i);
     });
   });
 
@@ -298,12 +300,15 @@ describe('TranscriptionService', () => {
       __setRequestUrlMock(async () => ({ status: 200, json: { segments: [] } }));
       await transcribeAudio(new ArrayBuffer(10), 'audio/mpeg', 'test.mp3', 'openai', 'whisper-1', makeDeps());
 
-      expect(buildMultipartMock).toHaveBeenCalledWith([
-        expect.objectContaining({ name: 'file', filename: 'test.mp3', contentType: 'audio/mpeg' }),
-        expect.objectContaining({ name: 'model', value: 'whisper-1' }),
-        expect.objectContaining({ name: 'response_format', value: 'verbose_json' }),
-        expect.objectContaining({ name: 'timestamp_granularities[]', value: 'segment' }),
-      ]);
+      // The shim sets requestWordTimestamps: true, so both segment and word granularities are sent
+      expect(buildMultipartMock).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({ name: 'file', filename: 'test.mp3', contentType: 'audio/mpeg' }),
+          expect.objectContaining({ name: 'model', value: 'whisper-1' }),
+          expect.objectContaining({ name: 'response_format', value: 'verbose_json' }),
+          expect.objectContaining({ name: 'timestamp_granularities[]', value: 'segment' }),
+        ])
+      );
     });
 
     it('derives filename extension from chunk mimeType', async () => {
@@ -377,13 +382,9 @@ describe('TranscriptionService', () => {
   // ── getIngestionProvidersForKind (transcription) ──────────────────────
 
   describe('getIngestionProvidersForKind (transcription)', () => {
-    it('returns all transcription-capable providers', () => {
+    it('returns empty — transcription models live in VoiceTypes, not IngestModelCatalog', () => {
       const providers = getIngestionProvidersForKind('transcription');
-      expect(providers).toContain('openai');
-      expect(providers).toContain('groq');
-      expect(providers).toContain('google');
-      expect(providers).toContain('openrouter');
-      expect(providers).toHaveLength(4);
+      expect(providers).toHaveLength(0);
     });
   });
 });

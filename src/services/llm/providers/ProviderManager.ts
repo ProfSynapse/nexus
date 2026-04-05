@@ -338,6 +338,16 @@ export class LLMProviderManager {
         description: 'Ultra-fast inference speeds for quick responses'
       },
       {
+        id: 'deepgram',
+        name: 'Deepgram',
+        description: 'Specialized speech-to-text with strong word timing and transcript structure'
+      },
+      {
+        id: 'assemblyai',
+        name: 'AssemblyAI',
+        description: 'Specialized speech-to-text with diarization and transcript post-processing features'
+      },
+      {
         id: 'openrouter',
         name: 'OpenRouter',
         description: 'Access to 400+ models from multiple providers in one API'

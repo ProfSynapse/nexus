@@ -305,9 +305,20 @@ describe('TaskRepository', () => {
       expect(sqlCall[0]).toContain('parentTaskId = ?');
     });
 
-    it('should invalidate cache with task ID', async () => {
+    it('should invalidate cache by ID for non-filterable updates', async () => {
       await repo.update('task-1', { title: 'X' });
       expect(deps.queryCache.invalidateById).toHaveBeenCalledWith('task', 'task-1');
+      expect(deps.queryCache.invalidateByType).not.toHaveBeenCalled();
+    });
+
+    it('should invalidate full task cache on status change', async () => {
+      await repo.update('task-1', { status: 'done' });
+      expect(deps.queryCache.invalidateByType).toHaveBeenCalledWith('task');
+    });
+
+    it('should invalidate full task cache on projectId change', async () => {
+      await repo.update('task-1', { projectId: 'proj-2' });
+      expect(deps.queryCache.invalidateByType).toHaveBeenCalledWith('task');
     });
   });
 
