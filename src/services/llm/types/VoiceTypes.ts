@@ -141,8 +141,17 @@ const TRANSCRIPTION_MODELS: TranscriptionModelDeclaration[] = [
   },
   {
     provider: 'assemblyai',
-    id: 'best',
-    name: 'Best (Default)',
+    id: 'universal-3-pro',
+    name: 'Universal 3 Pro',
+    execution: 'speech-api-async',
+    supportsWordTimestamps: true,
+    supportsSpeakerLabels: true,
+    supportsPrompt: true
+  },
+  {
+    provider: 'assemblyai',
+    id: 'universal-2',
+    name: 'Universal 2',
     execution: 'speech-api-async',
     supportsWordTimestamps: true,
     supportsSpeakerLabels: true,
