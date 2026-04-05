@@ -63,7 +63,6 @@ export interface StreamResult {
     completionTokens: number;
     totalTokens: number;
   };
-  metadata?: Record<string, unknown>;  // Provider response metadata (e.g. Perplexity citations)
 }
 
 /**
@@ -132,7 +131,6 @@ export class MessageStreamHandler {
     let toolCalls: StreamToolCall[] | undefined = undefined;
     let hasStartedStreaming = false;
     let finalUsage: StreamResult['usage'] | undefined = undefined;
-    let finalMetadata: Record<string, unknown> | undefined = undefined;
 
     // Reasoning accumulation
     let reasoningAccumulator = '';
@@ -212,11 +210,6 @@ export class MessageStreamHandler {
         };
       }
 
-      // Capture provider metadata when available (e.g. Perplexity citations)
-      if (chunk.metadata) {
-        finalMetadata = chunk.metadata;
-      }
-
       // Handle completion
       if (chunk.complete) {
         // Check if this is TRULY the final complete
@@ -236,9 +229,7 @@ export class MessageStreamHandler {
               state: 'complete',
               toolCalls: toolCalls?.map(toConversationToolCall),
               // Persist reasoning for re-render from storage
-              reasoning: reasoningAccumulator || undefined,
-              // Persist provider metadata (Perplexity citations, etc.)
-              metadata: finalMetadata || conversation.messages[placeholderMessageIndex].metadata
+              reasoning: reasoningAccumulator || undefined
             };
           }
 
@@ -264,8 +255,7 @@ export class MessageStreamHandler {
           content: streamedContent,
           state: 'complete',
           toolCalls: toolCalls?.map(toConversationToolCall),
-          reasoning: reasoningAccumulator || undefined,
-          metadata: finalMetadata || finalMsg.metadata
+          reasoning: reasoningAccumulator || undefined
         };
       }
     }
@@ -274,8 +264,7 @@ export class MessageStreamHandler {
       streamedContent,
       toolCalls,
       reasoning: reasoningAccumulator || undefined,
-      usage: finalUsage,
-      metadata: finalMetadata
+      usage: finalUsage
     };
   }
 

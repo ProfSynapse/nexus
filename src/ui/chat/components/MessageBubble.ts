@@ -123,13 +123,6 @@ export class MessageBubble extends Component {
         if (contentElement instanceof HTMLElement && this.message.isLoading && !activeContent.trim()) {
           this.appendLoadingIndicator(contentElement);
         }
-
-        // Citations panel for group mode (future-proof — Perplexity currently never uses group mode)
-        if (this.message.role === 'assistant' &&
-            this.message.state !== 'streaming' && !this.message.isLoading) {
-          const innerBubble = this.textBubbleElement.querySelector('.message-bubble');
-          if (innerBubble instanceof HTMLElement) this.appendCitationsPanel(innerBubble);
-        }
       }
 
       this.element = wrapper;
@@ -179,19 +172,9 @@ export class MessageBubble extends Component {
 
     // Message content
     const content = bubble.createDiv('message-content');
-    const citationsForRender = this.getPerplexityCitations();
-    const activeContentDisplay = this.stripThinkingBlocks(activeContent);
-    this.renderContent(content, activeContentDisplay).then(() => {
-      if (citationsForRender) this.replaceInlineCitationMarkers(content, citationsForRender);
-    }).catch(error => {
+    this.renderContent(content, activeContent).catch(error => {
       console.error('[MessageBubble] Error rendering initial content:', error);
     });
-
-    // Citations panel — appended to bubble (not content) so streaming clears don't remove it
-    if (citationsForRender && this.message.role === 'assistant' &&
-        this.message.state !== 'streaming' && !this.message.isLoading) {
-      this.appendCitationsPanel(bubble);
-    }
 
     this.element = messageContainer;
     this.appendActionBar(messageContainer, this.message);
@@ -336,11 +319,10 @@ export class MessageBubble extends Component {
 
     contentElement.empty();
 
-    const displayContent = this.stripThinkingBlocks(content);
-    this.renderContent(contentElement as HTMLElement, displayContent).catch(error => {
+    this.renderContent(contentElement as HTMLElement, content).catch(error => {
       console.error('[MessageBubble] Error rendering content:', error);
       const fallbackDiv = document.createElement('div');
-      fallbackDiv.textContent = displayContent;
+      fallbackDiv.textContent = content;
       contentElement.appendChild(fallbackDiv);
     });
 
@@ -431,11 +413,7 @@ export class MessageBubble extends Component {
     contentElement.empty();
 
     const activeContent = this.getActiveMessageContent(newMessage);
-    const activeContentDisplay = this.stripThinkingBlocks(activeContent);
-    const citationsForUpdate = this.getPerplexityCitations();
-    this.renderContent(contentElement, activeContentDisplay).then(() => {
-      if (citationsForUpdate) this.replaceInlineCitationMarkers(contentElement, citationsForUpdate);
-    }).catch(error => {
+    this.renderContent(contentElement, activeContent).catch(error => {
       console.error('[MessageBubble] Error re-rendering content:', error);
     });
 
@@ -443,11 +421,6 @@ export class MessageBubble extends Component {
       this.appendLoadingIndicator(contentElement);
     } else if (this.element) {
       this.appendActionBar(this.element, newMessage);
-      // Refresh citations panel on completed message (covers just-finished streaming)
-      if (citationsForUpdate) {
-        const messageBubble = contentElement.closest<HTMLElement>('.message-bubble');
-        if (messageBubble) this.appendCitationsPanel(messageBubble);
-      }
     }
   }
 
@@ -859,156 +832,6 @@ export class MessageBubble extends Component {
     this.actionBar.removeFromContainer();
     this.actionBar.unload();
     this.actionBar = null;
-  }
-
-  // ── Perplexity Citations UI ──────────────────────────────────────────────
-
-  /**
-   * Return Perplexity citation URLs from message metadata, or null if none.
-   */
-  private getPerplexityCitations(): string[] | null {
-    const citations = this.message.metadata?.perplexityCitations;
-    return Array.isArray(citations) && citations.length > 0 ? citations as string[] : null;
-  }
-
-  /**
-   * Build and append the collapsible "Sources" panel to a .message-bubble element.
-   * Idempotent: removes any existing panel before creating a fresh one.
-   * Only call for completed Perplexity assistant messages.
-   */
-  private appendCitationsPanel(messageBubble: HTMLElement): void {
-    const citations = this.getPerplexityCitations();
-    if (!citations) return;
-
-    // Idempotent — remove stale panel from previous render
-    messageBubble.querySelector('.perplexity-citations-panel')?.remove();
-
-    const panel = messageBubble.createDiv('perplexity-citations-panel');
-
-    // Toggle header
-    const header = panel.createDiv('perplexity-citations-header');
-    const icon = header.createDiv('perplexity-citations-icon');
-    setIcon(icon, 'chevron-right');
-    header.createSpan({ text: `Sources (${citations.length})` });
-
-    // Citation list (hidden by default)
-    const list = panel.createDiv('perplexity-citations-list');
-
-    // Build title lookup from search_results if available
-    const titleMap = new Map<string, string>();
-    const searchResults = this.message.metadata?.perplexitySearchResults;
-    if (Array.isArray(searchResults)) {
-      for (const sr of searchResults as Array<Record<string, unknown>>) {
-        const url = typeof sr.url === 'string' ? sr.url : null;
-        const title = typeof sr.title === 'string' ? sr.title
-          : (typeof sr.name === 'string' ? sr.name : null);
-        if (url && title) titleMap.set(url, title);
-      }
-    }
-
-    citations.forEach((url, index) => {
-      const row = list.createDiv('perplexity-citation-row');
-      row.createSpan({ cls: 'perplexity-citation-num', text: String(index + 1) });
-
-      let domain = url;
-      try { domain = new URL(url).hostname.replace(/^www\./, ''); } catch { /* keep raw */ }
-
-      const textEl = row.createDiv('perplexity-citation-text');
-      const title = titleMap.get(url);
-      if (title) {
-        textEl.createSpan({ cls: 'perplexity-citation-title', text: title });
-        textEl.createSpan({ cls: 'perplexity-citation-domain', text: domain });
-      } else {
-        textEl.createSpan({ cls: 'perplexity-citation-domain', text: domain });
-      }
-
-      this.registerDomEvent(row, 'click', () => window.open(url, '_blank'));
-    });
-
-    this.registerDomEvent(header, 'click', () => {
-      panel.classList.toggle('perplexity-citations-expanded');
-      setIcon(icon,
-        panel.classList.contains('perplexity-citations-expanded') ? 'chevron-down' : 'chevron-right'
-      );
-    });
-  }
-
-  /**
-   * Walk text nodes inside container and replace [N] citation markers with
-   * superscript links. Run inside renderContent().then() — never before.
-   */
-  private replaceInlineCitationMarkers(container: HTMLElement, citations: string[]): void {
-    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
-    const replacements: Array<{ node: Text; fragments: Node[] }> = [];
-
-    let node = walker.nextNode() as Text | null;
-    while (node) {
-      const text = node.textContent || '';
-      if (/\[\d+\]/.test(text)) {
-        const fragments: Node[] = [];
-        const pattern = /\[(\d+)\]/g;
-        let lastIndex = 0;
-        let match: RegExpExecArray | null;
-
-        while ((match = pattern.exec(text)) !== null) {
-          if (match.index > lastIndex) {
-            fragments.push(document.createTextNode(text.slice(lastIndex, match.index)));
-          }
-
-          const num = parseInt(match[1], 10);
-          const url = num >= 1 && num <= citations.length ? citations[num - 1] : null;
-
-          const sup = document.createElement('sup');
-          sup.addClass('perplexity-superscript');
-          if (url) {
-            const link = sup.createEl('a', { cls: 'perplexity-citation-link', text: match[1] });
-            this.registerDomEvent(link, 'click', (e: MouseEvent) => {
-              e.preventDefault();
-              window.open(url, '_blank');
-            });
-          } else {
-            sup.appendText(match[1]);
-          }
-
-          fragments.push(sup);
-          lastIndex = match.index + match[0].length;
-        }
-
-        if (fragments.length > 0) {
-          if (lastIndex < text.length) fragments.push(document.createTextNode(text.slice(lastIndex)));
-          replacements.push({ node, fragments });
-        }
-      }
-      node = walker.nextNode() as Text | null;
-    }
-
-    for (const { node: textNode, fragments } of replacements) {
-      const parent = textNode.parentNode;
-      if (!parent) continue;
-      for (const fragment of fragments) parent.insertBefore(fragment, textNode);
-      parent.removeChild(textNode);
-    }
-  }
-
-  /**
-   * Strip <think>...</think> blocks from content before display.
-   * These are chain-of-thought tokens from reasoning models (e.g. sonar-reasoning-pro)
-   * and should not be rendered as response content.
-   * Handles incomplete blocks (stream cut off before </think>).
-   */
-  private stripThinkingBlocks(content: string): string {
-    // Remove complete <think>...</think> blocks (including trailing whitespace/newline)
-    let result = content.replace(/<think>[\s\S]*?<\/think>\s*/g, '');
-    // Remove incomplete <think> block — stream was cut before closing tag
-    result = result.replace(/<think>[\s\S]*$/, '');
-    result = result.trim();
-    // If stripping removed everything but the raw content was non-empty, the
-    // stream was cut during the reasoning phase and no answer was recorded.
-    // Show a placeholder instead of a blank bubble.
-    if (!result && content.trim()) {
-      return '*[Response unavailable — stream was interrupted during reasoning.]*';
-    }
-    return result;
   }
 
   /**

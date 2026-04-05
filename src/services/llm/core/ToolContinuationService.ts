@@ -34,7 +34,6 @@ export interface StreamYield {
   usage?: TokenUsage;
   reasoning?: string;
   reasoningComplete?: boolean;
-  metadata?: Record<string, unknown>;
 }
 
 export class ToolContinuationService {

@@ -49,8 +49,6 @@ export interface StreamingChunk {
   reasoningComplete?: boolean;  // True when reasoning finished
   // Token usage (available on complete chunk)
   usage?: MessageUsage;
-  // Provider response metadata (e.g. Perplexity citations, search_results)
-  metadata?: Record<string, unknown>;
 }
 
 interface StreamingToolCall extends ToolCall {
@@ -74,7 +72,6 @@ interface LLMChunkLike {
   reasoning?: string;
   reasoningComplete?: boolean;
   usage?: unknown;
-  metadata?: Record<string, unknown>;
 }
 
 interface LLMServiceLike {
@@ -225,10 +222,9 @@ export class StreamingResponseService {
       let toolCalls: StreamingToolCall[] | undefined = undefined;
       this.dependencies.toolCallService.resetDetectedTools(); // Reset tool detection state for new message
 
-      // Track usage, cost, and provider metadata for conversation tracking
+      // Track usage and cost for conversation tracking
       let finalUsage: NormalizedTokenUsage | undefined = undefined;
       let finalCost: MessageCost | undefined = undefined;
-      let finalMetadata: Record<string, unknown> | undefined = undefined;
       const selectedModel = typeof llmOptions.model === 'string' ? llmOptions.model : defaultModel.model;
 
       for await (const chunk of this.dependencies.llmService.generateResponseStream(messages, llmOptions)) {
@@ -271,11 +267,6 @@ export class StreamingResponseService {
 
         // Save to database BEFORE yielding final chunk to ensure persistence
         if (chunk.complete) {
-          // Capture provider metadata (e.g. Perplexity citations)
-          if (chunk.metadata) {
-            finalMetadata = chunk.metadata;
-          }
-
           // Calculate cost from final usage using CostTrackingService
           if (finalUsage) {
             const usageData = this.dependencies.costTrackingService.extractUsage(finalUsage);
@@ -314,11 +305,6 @@ export class StreamingResponseService {
               msg.provider = provider;
               msg.model = selectedModel;
 
-              // Save provider metadata (citations, search results, etc.)
-              if (finalMetadata) {
-                msg.metadata = finalMetadata;
-              }
-
               // Save updated conversation
               await this.dependencies.conversationService.updateConversation(conversationId, {
                 messages: conv.messages,
@@ -343,9 +329,7 @@ export class StreamingResponseService {
           reasoning: chunk.reasoning,
           reasoningComplete: chunk.reasoningComplete,
           // Pass through usage for context tracking
-          usage: chunk.complete ? finalUsage : undefined,
-          // Pass through provider metadata (Perplexity citations, etc.)
-          metadata: chunk.complete ? finalMetadata : undefined
+          usage: chunk.complete ? finalUsage : undefined
         };
 
         if (chunk.complete) {

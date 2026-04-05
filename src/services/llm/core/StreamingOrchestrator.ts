@@ -122,7 +122,6 @@ export class StreamingOrchestrator {
     let fullContent = '';
     let detectedToolCalls: ChatToolCall[] = [];
     let finalUsage: TokenUsage | undefined = undefined;
-    let finalMetadata: Record<string, unknown> | undefined = undefined;
 
     // For Google, pass empty string as prompt since conversation is in conversationHistory
     const isGoogleModel = provider === 'google';
@@ -189,7 +188,6 @@ export class StreamingOrchestrator {
           }
 
           if (chunk.complete) {
-            if (chunk.metadata) finalMetadata = chunk.metadata;
             this.persistLatestResponseId(activeProvider, chunk, options);
             break;
           }
@@ -211,7 +209,6 @@ export class StreamingOrchestrator {
           fullContent = '';
           detectedToolCalls = [];
           finalUsage = undefined;
-          finalMetadata = undefined;
 
           const adapterGenerateOptions = this.createAdapterGenerateOptions(generateOptions);
           for await (const chunk of fallbackAdapter.generateStreamAsync(promptToPass, adapterGenerateOptions)) {
@@ -261,7 +258,6 @@ export class StreamingOrchestrator {
             }
 
             if (chunk.complete) {
-              if (chunk.metadata) finalMetadata = chunk.metadata;
               this.persistLatestResponseId(activeProvider, chunk, options);
               break;
             }
@@ -277,14 +273,12 @@ export class StreamingOrchestrator {
 
       // If no tool calls detected, we're done
       if (detectedToolCalls.length === 0 || !generateOptions.tools || generateOptions.tools.length === 0) {
-        console.warn(`[StreamingOrchestrator] stream complete — ${fullContent.length} chars | tail: "${fullContent.slice(-100)}"`);
         yield {
           chunk: '',
           complete: true,
           content: fullContent,
           toolCalls: undefined,
-          usage: finalUsage,
-          metadata: finalMetadata
+          usage: finalUsage
         };
         return;
       }
@@ -302,8 +296,7 @@ export class StreamingOrchestrator {
           complete: true,
           content: fullContent,
           toolCalls: detectedToolCalls,
-          usage: finalUsage,
-          metadata: finalMetadata
+          usage: finalUsage
         };
         return;
       }

@@ -285,7 +285,6 @@ export abstract class BaseAdapter {
 
         const finishReason = options.extractFinishReason(parsed);
         if (finishReason === 'stop' || finishReason === 'length' || finishReason === 'tool_calls') {
-          console.warn(`[BaseAdapter] ${options.debugLabel || 'unknown'} finish_reason="${finishReason}"`);
           const finalToolCalls = this.getFinalToolCallsFromAccumulator(toolCallsAccumulator, options);
           eventQueue.push({
             content: '',
@@ -336,7 +335,6 @@ export abstract class BaseAdapter {
 
       // If stream ended without a completion event, yield one
       if (!isCompleted) {
-        console.warn(`[BaseAdapter] ${options.debugLabel || 'unknown'} stream closed without [DONE] — partial content saved`);
         yield {
           content: '',
           complete: true,

@@ -248,7 +248,6 @@ export class ProviderHttpClient {
       // see a clean end and silently save partial content without any console output.
       req.setTimeout(timeoutMs, () => {
         const err = new Error(`Stream request timeout after ${timeoutMs}ms (${config.provider || 'unknown'})`);
-        console.warn(`[ProviderHttpClient] Stream inactivity timeout after ${timeoutMs}ms for ${config.provider || 'unknown'} — destroying socket`);
         req.destroy(err);
         resRef?.destroy(err);
       });
