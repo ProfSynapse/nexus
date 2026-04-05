@@ -2,6 +2,8 @@
  * Perplexity AI Adapter with true streaming support
  * Supports Perplexity's Sonar models with web search and reasoning capabilities
  * Based on official Perplexity streaming documentation with SSE parsing
+ * Updated April 2026: fixed request body (no extra wrapper), removed dead tool code,
+ * added all search params, gated reasoning_effort/stream_mode to sonar-reasoning-pro.
  */
 
 import { BaseAdapter } from '../BaseAdapter';
@@ -13,8 +15,7 @@ import {
   ProviderCapabilities,
   ModelPricing,
   TokenUsage,
-  SearchResult,
-  Tool
+  SearchResult
 } from '../types';
 import { PERPLEXITY_MODELS, PERPLEXITY_DEFAULT_MODEL } from './PerplexityModels';
 import { WebSearchUtils } from '../../utils/WebSearchUtils';
@@ -22,13 +23,28 @@ import { WebSearchUtils } from '../../utils/WebSearchUtils';
 export interface PerplexityOptions extends GenerateOptions {
   webSearch?: boolean;
   searchMode?: 'web' | 'academic' | 'sec';
-  reasoningEffort?: 'low' | 'medium' | 'high' | 'minimal';
   searchContextSize?: 'low' | 'medium' | 'high';
+  webSearchSearchType?: string;
+  // Reasoning (sonar-reasoning-pro only)
+  reasoningEffort?: 'low' | 'medium' | 'high' | 'minimal';
+  streamMode?: string;
+  // Search filters
+  searchRecencyFilter?: 'hour' | 'day' | 'week' | 'month' | 'year';
+  searchDomainFilter?: string[];
+  searchAfterDateFilter?: string;
+  searchBeforeDateFilter?: string;
+  lastUpdatedAfterFilter?: string;
+  lastUpdatedBeforeFilter?: string;
+  enableSearchClassifier?: boolean;
+  disableSearch?: boolean;
+  returnRelatedQuestions?: boolean;
+  returnImages?: boolean;
+  searchLanguageFilter?: string;
+  languagePreference?: string;
 }
 
 interface PerplexityChatMessage {
   content?: string;
-  toolCalls?: PerplexityToolCall[];
 }
 
 interface PerplexityChatChoice {
@@ -39,7 +55,6 @@ interface PerplexityChatChoice {
 interface PerplexityStreamChoice {
   delta?: {
     content?: string;
-    tool_calls?: PerplexityToolCall[];
   };
   finish_reason?: string;
 }
@@ -59,15 +74,6 @@ interface PerplexityChatResponse {
   search_results?: PerplexitySearchResult[];
 }
 
-interface PerplexityToolCall {
-  function?: {
-    name?: string;
-    arguments?: string;
-  };
-  name?: string;
-  arguments?: string;
-}
-
 interface PerplexitySearchResult {
   title?: string;
   name?: string;
@@ -76,36 +82,34 @@ interface PerplexitySearchResult {
   timestamp?: string;
 }
 
-interface PerplexityToolDefinition {
-  type: string;
-  function?: {
-    name?: string;
-    description?: string;
-    parameters?: Record<string, unknown>;
-  };
-  name?: string;
-  description?: string;
-  parameters?: Record<string, unknown>;
-  input_schema?: Record<string, unknown>;
-}
-
 interface PerplexityRequestBody {
   model: string;
   messages: Array<Record<string, unknown>>;
+  stream?: boolean;
   temperature?: number;
   max_tokens?: number;
   top_p?: number;
-  presence_penalty?: number;
-  frequency_penalty?: number;
-  tools?: PerplexityToolDefinition[];
-  stream?: boolean;
-  extra?: {
-    search_mode: 'web' | 'academic' | 'sec';
-    reasoning_effort: 'low' | 'medium' | 'high' | 'minimal';
-    web_search_options: {
-      search_context_size: 'low' | 'medium' | 'high';
-    };
+  // Search params (top-level per API spec)
+  search_mode?: 'web' | 'academic' | 'sec';
+  web_search_options?: {
+    search_context_size?: 'low' | 'medium' | 'high';
+    search_type?: string;
   };
+  search_recency_filter?: 'hour' | 'day' | 'week' | 'month' | 'year';
+  search_domain_filter?: string[];
+  search_after_date_filter?: string;
+  search_before_date_filter?: string;
+  last_updated_after_filter?: string;
+  last_updated_before_filter?: string;
+  enable_search_classifier?: boolean;
+  disable_search?: boolean;
+  return_related_questions?: boolean;
+  return_images?: boolean;
+  search_language_filter?: string;
+  language_preference?: string;
+  // Reasoning — only valid for sonar-reasoning-pro
+  reasoning_effort?: 'low' | 'medium' | 'high' | 'minimal';
+  stream_mode?: string;
 }
 
 export class PerplexityAdapter extends BaseAdapter {
@@ -119,15 +123,9 @@ export class PerplexityAdapter extends BaseAdapter {
 
   async generateUncached(prompt: string, options?: PerplexityOptions): Promise<LLMResponse> {
     try {
-      // Validate web search support (Perplexity always supports web search)
       if (options?.webSearch) {
         WebSearchUtils.validateWebSearchRequest('perplexity', options.webSearch);
       }
-
-      // Perplexity does not support native function calling
-      // If tools are requested, proceed without tools
-
-      // Use standard chat completions (Perplexity's strength is web search, not tool calling)
       return await this.generateWithChatCompletions(prompt, options);
     } catch (error) {
       this.handleError(error, 'generation');
@@ -140,24 +138,39 @@ export class PerplexityAdapter extends BaseAdapter {
    */
   async* generateStreamAsync(prompt: string, options?: PerplexityOptions): AsyncGenerator<StreamChunk, void, unknown> {
     try {
+      const model = options?.model || this.currentModel;
+      const isReasoningPro = model === 'sonar-reasoning-pro';
+
       const requestBody: PerplexityRequestBody = {
-        model: options?.model || this.currentModel,
+        model,
         messages: this.buildMessages(prompt, options?.systemPrompt),
+        stream: true,
         temperature: options?.temperature,
         max_tokens: options?.maxTokens,
         top_p: options?.topP,
-        presence_penalty: options?.presencePenalty,
-        frequency_penalty: options?.frequencyPenalty,
-        tools: options?.tools ? this.convertTools(options.tools) : undefined,
-        stream: true,
-        extra: {
-          search_mode: options?.searchMode || 'web',
-          reasoning_effort: options?.reasoningEffort || 'medium',
-          web_search_options: {
-            search_context_size: options?.searchContextSize || 'low'
-          }
-        }
+        search_mode: options?.searchMode,
+        web_search_options: (options?.searchContextSize || options?.webSearchSearchType) ? {
+          search_context_size: options?.searchContextSize,
+          search_type: options?.webSearchSearchType
+        } : undefined,
+        search_recency_filter: options?.searchRecencyFilter,
+        search_domain_filter: options?.searchDomainFilter,
+        search_after_date_filter: options?.searchAfterDateFilter,
+        search_before_date_filter: options?.searchBeforeDateFilter,
+        last_updated_after_filter: options?.lastUpdatedAfterFilter,
+        last_updated_before_filter: options?.lastUpdatedBeforeFilter,
+        enable_search_classifier: options?.enableSearchClassifier,
+        disable_search: options?.disableSearch,
+        return_related_questions: options?.returnRelatedQuestions,
+        return_images: options?.returnImages,
+        search_language_filter: options?.searchLanguageFilter,
+        language_preference: options?.languagePreference,
+        // reasoning_effort and stream_mode are only valid for sonar-reasoning-pro
+        reasoning_effort: isReasoningPro ? options?.reasoningEffort : undefined,
+        stream_mode: isReasoningPro ? options?.streamMode : undefined
       };
+
+      this.stripUndefined(requestBody);
 
       const nodeStream = await this.requestStream({
         url: `${this.baseUrl}/chat/completions`,
@@ -174,14 +187,10 @@ export class PerplexityAdapter extends BaseAdapter {
       yield* this.processNodeStream(nodeStream, {
         debugLabel: 'Perplexity',
         extractContent: (parsed) => (parsed as PerplexityStreamChunk).choices?.[0]?.delta?.content || null,
-        extractToolCalls: (parsed) => (parsed as PerplexityStreamChunk).choices?.[0]?.delta?.tool_calls || null,
+        extractToolCalls: () => null,
         extractFinishReason: (parsed) => (parsed as PerplexityStreamChunk).choices?.[0]?.finish_reason || null,
         extractUsage: (parsed) => (parsed as PerplexityStreamChunk).usage,
-        accumulateToolCalls: true,
-        toolCallThrottling: {
-          initialYield: true,
-          progressInterval: 50
-        }
+        accumulateToolCalls: false
       });
     } catch (error) {
       console.error('[PerplexityAdapter] Streaming error:', error);
@@ -230,7 +239,7 @@ export class PerplexityAdapter extends BaseAdapter {
       supportedFeatures: [
         'messages',
         'streaming',
-        'web_search', // This is Perplexity's main strength
+        'web_search',
         'reasoning',
         'sonar_models',
         'academic_search',
@@ -241,30 +250,40 @@ export class PerplexityAdapter extends BaseAdapter {
   }
 
   /**
-   * Generate using standard chat completions
+   * Generate using standard chat completions (non-streaming path)
    */
   private async generateWithChatCompletions(prompt: string, options?: PerplexityOptions): Promise<LLMResponse> {
+    const model = options?.model || this.currentModel;
+    const isReasoningPro = model === 'sonar-reasoning-pro';
+
     const requestBody: PerplexityRequestBody = {
-      model: options?.model || this.currentModel,
+      model,
       messages: this.buildMessages(prompt, options?.systemPrompt),
       temperature: options?.temperature,
       max_tokens: options?.maxTokens,
       top_p: options?.topP,
-      presence_penalty: options?.presencePenalty,
-      frequency_penalty: options?.frequencyPenalty,
-      extra: {
-        search_mode: options?.searchMode || 'web',
-        reasoning_effort: options?.reasoningEffort || 'medium',
-        web_search_options: {
-          search_context_size: options?.searchContextSize || 'low'
-        }
-      }
+      search_mode: options?.searchMode,
+      web_search_options: (options?.searchContextSize || options?.webSearchSearchType) ? {
+        search_context_size: options?.searchContextSize,
+        search_type: options?.webSearchSearchType
+      } : undefined,
+      search_recency_filter: options?.searchRecencyFilter,
+      search_domain_filter: options?.searchDomainFilter,
+      search_after_date_filter: options?.searchAfterDateFilter,
+      search_before_date_filter: options?.searchBeforeDateFilter,
+      last_updated_after_filter: options?.lastUpdatedAfterFilter,
+      last_updated_before_filter: options?.lastUpdatedBeforeFilter,
+      enable_search_classifier: options?.enableSearchClassifier,
+      disable_search: options?.disableSearch,
+      return_related_questions: options?.returnRelatedQuestions,
+      return_images: options?.returnImages,
+      search_language_filter: options?.searchLanguageFilter,
+      language_preference: options?.languagePreference,
+      reasoning_effort: isReasoningPro ? options?.reasoningEffort : undefined,
+      stream_mode: isReasoningPro ? options?.streamMode : undefined
     };
 
-    // Add tools if provided
-    if (options?.tools) {
-      requestBody.tools = this.convertTools(options.tools);
-    }
+    this.stripUndefined(requestBody);
 
     const response = await this.request<PerplexityChatResponse>({
       url: `${this.baseUrl}/chat/completions`,
@@ -282,35 +301,26 @@ export class PerplexityAdapter extends BaseAdapter {
 
     const data = response.json as PerplexityChatResponse;
     const choice = data.choices[0];
-    
+
     if (!choice) {
       throw new Error('No response from Perplexity');
     }
-    
-    let text = choice.message?.content || '';
+
+    const text = choice.message?.content || '';
     const usage = this.extractUsage(data);
-    const rawFinishReason = choice.finish_reason || 'stop';
+    const finishReason = this.mapFinishReason(choice.finish_reason || 'stop');
 
-    // If tools were provided and we got tool calls, return placeholder text
-    if (options?.tools && choice.message?.toolCalls && choice.message.toolCalls.length > 0) {
-      text = text || '[AI requested tool calls but tool execution not available]';
-    }
-
-    // Extract and format web search results
     const webSearchResults = options?.webSearch || data.search_results
       ? this.extractPerplexitySources(data.search_results || [])
       : undefined;
 
-    // Map finish reason to expected type
-    const finishReason = this.mapFinishReason(rawFinishReason);
-
     return this.buildLLMResponse(
       text,
-      options?.model || this.currentModel,
+      model,
       usage,
       {
         provider: 'perplexity',
-        searchResults: data.search_results, // Keep raw data for debugging
+        searchResults: data.search_results,
         searchMode: options?.searchMode,
         webSearchResults
       },
@@ -319,6 +329,18 @@ export class PerplexityAdapter extends BaseAdapter {
   }
 
   // Private methods
+
+  /**
+   * Remove undefined keys from an object before JSON serialisation so the
+   * Perplexity API never receives fields that aren't explicitly set.
+   */
+  private stripUndefined(obj: Record<string, unknown>): void {
+    Object.keys(obj).forEach(key => {
+      if (obj[key] === undefined) {
+        delete obj[key];
+      }
+    });
+  }
 
   /**
    * Extract search results from Perplexity response
@@ -341,13 +363,9 @@ export class PerplexityAdapter extends BaseAdapter {
     }
   }
 
-  private extractToolCalls(message: PerplexityChatMessage | undefined): PerplexityToolCall[] {
-    return message?.toolCalls || [];
-  }
-
   private mapFinishReason(reason: string | null): 'stop' | 'length' | 'tool_calls' | 'content_filter' {
     if (!reason) return 'stop';
-    
+
     const reasonMap: Record<string, 'stop' | 'length' | 'tool_calls' | 'content_filter'> = {
       'stop': 'stop',
       'length': 'length',
@@ -372,7 +390,7 @@ export class PerplexityAdapter extends BaseAdapter {
   private getCostPer1kTokens(modelId: string): { input: number; output: number } | undefined {
     const model = PERPLEXITY_MODELS.find(m => m.apiName === modelId);
     if (!model) return undefined;
-    
+
     return {
       input: model.inputCostPerMillion / 1000,
       output: model.outputCostPerMillion / 1000
@@ -387,23 +405,6 @@ export class PerplexityAdapter extends BaseAdapter {
       rateInputPerMillion: costs.input * 1000,
       rateOutputPerMillion: costs.output * 1000,
       currency: 'USD'
-    });
-  }
-
-  private convertTools(tools: Tool[]): PerplexityToolDefinition[] {
-    return tools.map(tool => {
-      if (tool.type === 'function' && tool.function) {
-        const toolDef = tool.function;
-        return {
-          type: 'function',
-          function: {
-            name: toolDef.name,
-            description: toolDef.description,
-            parameters: toolDef.parameters
-          }
-        };
-      }
-      return tool as unknown as PerplexityToolDefinition;
     });
   }
 }
