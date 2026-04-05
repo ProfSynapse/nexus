@@ -177,7 +177,7 @@ export class PerplexityAdapter extends BaseAdapter {
         stream_mode: isReasoningPro ? options?.streamMode : undefined
       };
 
-      this.stripUndefined(requestBody);
+      this.stripUndefined(requestBody as unknown as Record<string, unknown>);
 
       const nodeStream = await this.requestStream({
         url: `${this.baseUrl}/chat/completions`,
@@ -299,7 +299,7 @@ export class PerplexityAdapter extends BaseAdapter {
       stream_mode: isReasoningPro ? options?.streamMode : undefined
     };
 
-    this.stripUndefined(requestBody);
+    this.stripUndefined(requestBody as unknown as Record<string, unknown>);
 
     const response = await this.request<PerplexityChatResponse>({
       url: `${this.baseUrl}/chat/completions`,
