@@ -24,7 +24,7 @@ import type { LLMProviderManager } from '../../services/llm/providers/ProviderMa
  * - text (default, free): pdfjs-dist text extraction via getTextContent()
  * - vision: Renders pages to PNG → sends to vision LLM for OCR
  *
- * Audio: Transcription via explicit speech and multimodal-audio models.
+ * Audio: Transcription via speech-API models with timestamp support.
  */
 export class IngestManagerAgent extends BaseAgent {
   private vault: Vault;

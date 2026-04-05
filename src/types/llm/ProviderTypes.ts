@@ -121,6 +121,14 @@ export const DEFAULT_LLM_PROVIDER_SETTINGS: LLMProviderSettings = {
       apiKey: '',
       enabled: false
     },
+    deepgram: {
+      apiKey: '',
+      enabled: false
+    },
+    assemblyai: {
+      apiKey: '',
+      enabled: false
+    },
     openrouter: {
       apiKey: '',
       enabled: false,
