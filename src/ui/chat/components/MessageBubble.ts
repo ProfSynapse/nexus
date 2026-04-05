@@ -180,7 +180,8 @@ export class MessageBubble extends Component {
     // Message content
     const content = bubble.createDiv('message-content');
     const citationsForRender = this.getPerplexityCitations();
-    this.renderContent(content, activeContent).then(() => {
+    const activeContentDisplay = this.stripThinkingBlocks(activeContent);
+    this.renderContent(content, activeContentDisplay).then(() => {
       if (citationsForRender) this.replaceInlineCitationMarkers(content, citationsForRender);
     }).catch(error => {
       console.error('[MessageBubble] Error rendering initial content:', error);
@@ -335,10 +336,11 @@ export class MessageBubble extends Component {
 
     contentElement.empty();
 
-    this.renderContent(contentElement as HTMLElement, content).catch(error => {
+    const displayContent = this.stripThinkingBlocks(content);
+    this.renderContent(contentElement as HTMLElement, displayContent).catch(error => {
       console.error('[MessageBubble] Error rendering content:', error);
       const fallbackDiv = document.createElement('div');
-      fallbackDiv.textContent = content;
+      fallbackDiv.textContent = displayContent;
       contentElement.appendChild(fallbackDiv);
     });
 
@@ -429,8 +431,9 @@ export class MessageBubble extends Component {
     contentElement.empty();
 
     const activeContent = this.getActiveMessageContent(newMessage);
+    const activeContentDisplay = this.stripThinkingBlocks(activeContent);
     const citationsForUpdate = this.getPerplexityCitations();
-    this.renderContent(contentElement, activeContent).then(() => {
+    this.renderContent(contentElement, activeContentDisplay).then(() => {
       if (citationsForUpdate) this.replaceInlineCitationMarkers(contentElement, citationsForUpdate);
     }).catch(error => {
       console.error('[MessageBubble] Error re-rendering content:', error);
@@ -985,6 +988,20 @@ export class MessageBubble extends Component {
       for (const fragment of fragments) parent.insertBefore(fragment, textNode);
       parent.removeChild(textNode);
     }
+  }
+
+  /**
+   * Strip <think>...</think> blocks from content before display.
+   * These are chain-of-thought tokens from reasoning models (e.g. sonar-reasoning-pro)
+   * and should not be rendered as response content.
+   * Handles incomplete blocks (stream cut off before </think>).
+   */
+  private stripThinkingBlocks(content: string): string {
+    // Remove complete <think>...</think> blocks (including trailing whitespace/newline)
+    let result = content.replace(/<think>[\s\S]*?<\/think>\s*/g, '');
+    // Remove incomplete <think> block — stream was cut before closing tag
+    result = result.replace(/<think>[\s\S]*$/, '');
+    return result.trim();
   }
 
   /**

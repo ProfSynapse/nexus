@@ -148,12 +148,16 @@ export class PerplexityAdapter extends BaseAdapter {
       const model = options?.model || this.currentModel;
       const isReasoningPro = model === 'sonar-reasoning-pro';
 
+      // Use explicit max_tokens so reasoning tokens don't exhaust an unknown API default.
+      // sonar-reasoning-pro thinking tokens count against this limit — 16000 gives headroom.
+      const defaultMaxTokens = model === 'sonar-reasoning-pro' ? 16000 : 8000;
+
       const requestBody: PerplexityRequestBody = {
         model,
         messages: this.buildMessages(prompt, options?.systemPrompt),
         stream: true,
         temperature: options?.temperature,
-        max_tokens: options?.maxTokens,
+        max_tokens: options?.maxTokens ?? defaultMaxTokens,
         top_p: options?.topP,
         search_mode: options?.searchMode,
         web_search_options: (options?.searchContextSize || options?.webSearchSearchType) ? {
