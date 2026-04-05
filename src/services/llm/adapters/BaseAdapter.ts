@@ -285,6 +285,7 @@ export abstract class BaseAdapter {
 
         const finishReason = options.extractFinishReason(parsed);
         if (finishReason === 'stop' || finishReason === 'length' || finishReason === 'tool_calls') {
+          console.warn(`[BaseAdapter] ${options.debugLabel || 'unknown'} finish_reason="${finishReason}"`);
           const finalToolCalls = this.getFinalToolCallsFromAccumulator(toolCallsAccumulator, options);
           eventQueue.push({
             content: '',
