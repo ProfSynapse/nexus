@@ -79,9 +79,10 @@ export class TaskBoardView extends ItemView {
   private isReady = false;
   private isSyncingBoardData = false;
   private isEditModalOpen = false;
-  private hasPendingEventSync = false;
+  private pendingEvent: TaskBoardDataChangedEvent | null = null;
   private columnsContainer: HTMLElement | null = null;
   private statsContainer: HTMLElement | null = null;
+  private projectSelect: HTMLSelectElement | null = null;
   private collapsedSwimlanes = new Set<string>();
 
   constructor(leaf: WorkspaceLeaf, private plugin: NexusPlugin) {
@@ -130,6 +131,12 @@ export class TaskBoardView extends ItemView {
   // eslint-disable-next-line @typescript-eslint/require-await -- Obsidian ItemView lifecycle method
   async onClose(): Promise<void> {
     this.isClosing = true;
+    this.workspaces = [];
+    this.projects = [];
+    this.tasks = [];
+    this.columnsContainer = null;
+    this.statsContainer = null;
+    this.projectSelect = null;
   }
 
   private get contentContainer(): HTMLElement {
@@ -336,6 +343,27 @@ export class TaskBoardView extends ItemView {
     }
   }
 
+  private refreshProjectDropdown(): void {
+    if (!this.projectSelect) return;
+
+    const currentValue = this.filterState.projectId || 'all';
+
+    this.projectSelect.empty();
+    this.projectSelect.createEl('option', { value: 'all', text: 'All projects' });
+    this.getFilteredProjectsForToolbar().forEach(project => {
+      this.projectSelect!.createEl('option', {
+        value: project.id,
+        text: project.name
+      });
+    });
+
+    const optionValues = new Set(
+      Array.from(this.projectSelect.options).map(o => o.value)
+    );
+    this.projectSelect.value = optionValues.has(currentValue) ? currentValue : 'all';
+    this.filterState.projectId = this.projectSelect.value;
+  }
+
   private renderHeader(container: HTMLElement): void {
     const header = container.createDiv('nexus-task-board-header');
     const text = header.createDiv();
@@ -364,12 +392,14 @@ export class TaskBoardView extends ItemView {
     this.registerDomEvent(workspaceSelect, 'change', () => {
       this.filterState.workspaceId = workspaceSelect.value;
       this.ensureValidFilters();
+      this.refreshProjectDropdown();
       this.refreshColumns();
     });
 
     const projectField = toolbar.createDiv('nexus-task-board-field');
     projectField.createEl('label', { cls: 'nexus-task-board-field-label', text: 'Project' });
-    const projectSelect = projectField.createEl('select', { cls: 'nexus-task-board-input' });
+    this.projectSelect = projectField.createEl('select', { cls: 'nexus-task-board-input' });
+    const projectSelect = this.projectSelect;
     projectSelect.createEl('option', { value: 'all', text: 'All projects' });
     this.getFilteredProjectsForToolbar().forEach(project => {
       projectSelect.createEl('option', {
@@ -565,6 +595,11 @@ export class TaskBoardView extends ItemView {
     this.registerDomEvent(card, 'dragend', () => {
       card.removeClass('is-dragging');
       this.dragTaskId = null;
+      if (this.pendingEvent) {
+        const event = this.pendingEvent;
+        this.pendingEvent = null;
+        void this.syncFromEvent(event);
+      }
     });
 
     const row = card.createDiv('nexus-task-board-card-row');
@@ -825,9 +860,10 @@ export class TaskBoardView extends ItemView {
       },
       onClose: () => {
         this.isEditModalOpen = false;
-        if (this.hasPendingEventSync) {
-          this.hasPendingEventSync = false;
-          void this.syncFromEvent();
+        if (this.pendingEvent) {
+          const event = this.pendingEvent;
+          this.pendingEvent = null;
+          void this.syncFromEvent(event);
         }
       }
     }).open();
@@ -925,14 +961,14 @@ export class TaskBoardView extends ItemView {
     }
 
     if (this.isEditModalOpen || this.dragTaskId || this.isSyncingBoardData) {
-      this.hasPendingEventSync = true;
+      this.pendingEvent = event;
       return;
     }
 
-    await this.syncFromEvent();
+    await this.syncFromEvent(event);
   }
 
-  private async syncFromEvent(): Promise<void> {
+  private async syncFromEvent(event?: TaskBoardDataChangedEvent): Promise<void> {
     if (this.isClosing || !this.isReady || this.isSyncingBoardData) {
       return;
     }
@@ -941,10 +977,15 @@ export class TaskBoardView extends ItemView {
     try {
       await this.loadBoardData();
       if (!this.isClosing) {
-        this.renderBoard();
+        if (event?.entity === 'task' && event.action !== 'moved') {
+          this.refreshColumns();
+        } else {
+          this.renderBoard();
+        }
       }
     } catch (error) {
       console.error('[TaskBoardView] Event sync failed:', error);
+      new Notice('Task board sync failed. Data may be stale.');
     } finally {
       this.isSyncingBoardData = false;
     }

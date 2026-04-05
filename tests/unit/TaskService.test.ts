@@ -867,6 +867,23 @@ describe('TaskService', () => {
       expect(result.projects.items).toHaveLength(1);
     });
 
+    it('should not count completed projects as active', async () => {
+      const projects = [
+        createMockProject({ id: 'p1', status: 'active' }),
+        createMockProject({ id: 'p2', status: 'completed' }),
+        createMockProject({ id: 'p3', status: 'archived' })
+      ];
+
+      projectRepo.getByWorkspace.mockResolvedValue(paginatedResult(projects));
+      taskRepo.getByWorkspace.mockResolvedValue(paginatedResult([]));
+      taskRepo.getAllDependencyEdges.mockResolvedValue([]);
+
+      const result = await service.getWorkspaceSummary('ws-1');
+      expect(result.projects.total).toBe(3);          // all projects including archived
+      expect(result.projects.active).toBe(1);          // only status === 'active'
+      expect(result.projects.items).toHaveLength(2);   // active + completed visible, archived excluded
+    });
+
     it('should limit next actions to 5', async () => {
       const project = createMockProject({ status: 'active' });
       const tasks = Array.from({ length: 10 }, (_, i) =>

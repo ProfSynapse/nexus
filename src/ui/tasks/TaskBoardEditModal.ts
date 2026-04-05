@@ -156,7 +156,9 @@ export class TaskBoardEditModal extends Modal {
   }
 
   onClose(): void {
-    this.noteSuggesters.forEach(s => s.close());
+    for (const s of this.noteSuggesters) {
+      try { s.close(); } catch { /* individual suggester failure is non-fatal */ }
+    }
     this.noteSuggesters = [];
     this.options.onClose?.();
   }

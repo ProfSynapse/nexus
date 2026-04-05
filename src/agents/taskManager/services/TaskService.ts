@@ -585,7 +585,7 @@ export class TaskService {
     return {
       projects: {
         total: projects.totalItems,
-        active: projectItems.length,
+        active: projectItems.filter(p => p.status === 'active').length,
         items: projectItems
       },
       tasks: {
