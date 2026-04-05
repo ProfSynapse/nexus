@@ -352,9 +352,12 @@ export class ConversationRepository
    */
   async delete(id: string): Promise<void> {
     try {
-      // No specific delete event - just remove from SQLite
-      // Messages are cascaded via foreign key constraint
+      // Remove from SQLite — messages cascade via foreign key constraint
       await this.sqliteCache.run(`DELETE FROM ${this.tableName} WHERE id = ?`, [id]);
+
+      // Delete the JSONL file (contains both conversation metadata events and all
+      // message events — same file path used by MessageRepository for this conversation)
+      await this.jsonlWriter.deleteFile(this.jsonlPath(id));
 
       // Invalidate cache
       this.invalidateCache();
