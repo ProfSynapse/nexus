@@ -781,7 +781,6 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
       if (blockSql?.includes('float[768]')) {
         db.exec('DROP TABLE IF EXISTS block_embeddings');
         db.exec('CREATE VIRTUAL TABLE IF NOT EXISTS block_embeddings USING vec0(embedding float[384])');
-        db.exec('DELETE FROM block_embedding_metadata');
         fixed = true;
       }
     } catch (error) {

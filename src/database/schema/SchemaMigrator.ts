@@ -73,7 +73,7 @@ export interface MigratableDatabase {
 // Alias for backward compatibility
 type Database = MigratableDatabase;
 
-export const CURRENT_SCHEMA_VERSION = 18;
+export const CURRENT_SCHEMA_VERSION = 19;
 
 export interface Migration {
   version: number;
@@ -489,6 +489,22 @@ export const MIGRATIONS: Migration[] = [
       )`,
       'CREATE INDEX IF NOT EXISTS idx_embedding_meta_path ON embedding_metadata(notePath)',
       'CREATE INDEX IF NOT EXISTS idx_embedding_meta_hash ON embedding_metadata(contentHash)',
+    ]
+  },
+
+  // Version 18 -> 19: Drop remaining orphaned tables from the prior local-fixes fork.
+  // The abandoned C:\Users\middl\Documents\GitHub\nexus branch (local-fixes) ran migrations
+  // through v16, leaving behind two tables our fork never uses:
+  //   - semantic_feedback: from the semantic panel / in-chat feedback UI (Plan 04/05)
+  //   - block_embedding_metadata: metadata index for block-level embeddings (Nomic era)
+  // Neither table has any code references in this fork. Both are safe to drop.
+  // IF EXISTS ensures this is a no-op on fresh installs that never had these tables.
+  {
+    version: 19,
+    description: 'Drop orphaned semantic_feedback and block_embedding_metadata tables from prior local-fixes fork',
+    sql: [
+      'DROP TABLE IF EXISTS semantic_feedback',
+      'DROP TABLE IF EXISTS block_embedding_metadata',
     ]
   },
 ];
