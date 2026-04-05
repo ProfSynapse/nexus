@@ -148,9 +148,11 @@ export class PerplexityAdapter extends BaseAdapter {
       const model = options?.model || this.currentModel;
       const isReasoningPro = model === 'sonar-reasoning-pro';
 
-      // Use explicit max_tokens so reasoning tokens don't exhaust an unknown API default.
-      // sonar-reasoning-pro thinking tokens count against this limit — 16000 gives headroom.
-      const defaultMaxTokens = model === 'sonar-reasoning-pro' ? 16000 : 8000;
+      // Use explicit max_tokens to cap completion length. 16 000 tokens (~12 000 words)
+      // gives ample room for the answer on all models. For sonar-reasoning-pro, reasoning
+      // tokens count against this budget, but typical <think> blocks use 500–1 500 tokens,
+      // leaving 14 000–15 500 tokens for the actual answer.
+      const defaultMaxTokens = 16000;
 
       const requestBody: PerplexityRequestBody = {
         model,

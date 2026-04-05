@@ -1001,7 +1001,14 @@ export class MessageBubble extends Component {
     let result = content.replace(/<think>[\s\S]*?<\/think>\s*/g, '');
     // Remove incomplete <think> block — stream was cut before closing tag
     result = result.replace(/<think>[\s\S]*$/, '');
-    return result.trim();
+    result = result.trim();
+    // If stripping removed everything but the raw content was non-empty, the
+    // stream was cut during the reasoning phase and no answer was recorded.
+    // Show a placeholder instead of a blank bubble.
+    if (!result && content.trim()) {
+      return '*[Response unavailable — stream was interrupted during reasoning.]*';
+    }
+    return result;
   }
 
   /**
