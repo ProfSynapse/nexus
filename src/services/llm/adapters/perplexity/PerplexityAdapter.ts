@@ -21,8 +21,8 @@ import { WebSearchUtils } from '../../utils/WebSearchUtils';
 
 export interface PerplexityOptions extends GenerateOptions {
   webSearch?: boolean;
-  searchMode?: 'web' | 'academic';
-  reasoningEffort?: 'low' | 'medium' | 'high';
+  searchMode?: 'web' | 'academic' | 'sec';
+  reasoningEffort?: 'low' | 'medium' | 'high' | 'minimal';
   searchContextSize?: 'low' | 'medium' | 'high';
 }
 
@@ -100,8 +100,8 @@ interface PerplexityRequestBody {
   tools?: PerplexityToolDefinition[];
   stream?: boolean;
   extra?: {
-    search_mode: 'web' | 'academic';
-    reasoning_effort: 'low' | 'medium' | 'high';
+    search_mode: 'web' | 'academic' | 'sec';
+    reasoning_effort: 'low' | 'medium' | 'high' | 'minimal';
     web_search_options: {
       search_context_size: 'low' | 'medium' | 'high';
     };

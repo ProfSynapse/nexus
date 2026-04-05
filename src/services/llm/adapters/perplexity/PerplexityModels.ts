@@ -1,6 +1,8 @@
 /**
  * Perplexity AI Model Definitions
- * Based on 2025 Perplexity API specifications
+ * Based on April 2026 Perplexity API specifications
+ * Active models: sonar, sonar-pro, sonar-reasoning-pro, sonar-deep-research
+ * Removed: sonar-reasoning (deprecated Dec 15 2025), r1-1776 (removed Aug 1 2025)
  */
 
 import { ModelSpec } from '../modelTypes';
@@ -43,22 +45,6 @@ export const PERPLEXITY_MODELS: ModelSpec[] = [
   // Reasoning Models
   {
     provider: 'perplexity',
-    name: 'Sonar Reasoning',
-    apiName: 'sonar-reasoning',
-    contextWindow: 128000,
-    maxTokens: 8000,
-    inputCostPerMillion: 1.00,
-    outputCostPerMillion: 5.00,
-    capabilities: {
-      supportsJSON: true,
-      supportsImages: false,
-      supportsFunctions: false,
-      supportsStreaming: true,
-      supportsThinking: true
-    }
-  },
-  {
-    provider: 'perplexity',
     name: 'Sonar Reasoning Pro',
     apiName: 'sonar-reasoning-pro',
     contextWindow: 200000,
@@ -90,35 +76,15 @@ export const PERPLEXITY_MODELS: ModelSpec[] = [
       supportsStreaming: true,
       supportsThinking: false
     }
-  },
-
-  // Offline Model
-  {
-    provider: 'perplexity',
-    name: 'r1-1776',
-    apiName: 'r1-1776',
-    contextWindow: 128000,
-    maxTokens: 8000,
-    inputCostPerMillion: 2.00,
-    outputCostPerMillion: 8.00,
-    capabilities: {
-      supportsJSON: true,
-      supportsImages: false,
-      supportsFunctions: false,
-      supportsStreaming: true,
-      supportsThinking: false
-    }
   }
 ];
 
 export const PERPLEXITY_DEFAULT_MODEL = 'sonar-pro';
 
-export const PERPLEXITY_SEARCH_MODELS = PERPLEXITY_MODELS.filter(m => 
-  m.apiName !== 'r1-1776' // All models except r1-1776 have web search
-);
-export const PERPLEXITY_REASONING_MODELS = PERPLEXITY_MODELS.filter(m => 
+// All current models support web search
+export const PERPLEXITY_SEARCH_MODELS = PERPLEXITY_MODELS;
+
+// Models that support reasoning/thinking (sonar-reasoning-pro)
+export const PERPLEXITY_REASONING_MODELS = PERPLEXITY_MODELS.filter(m =>
   m.capabilities.supportsThinking
-);
-export const PERPLEXITY_OFFLINE_MODELS = PERPLEXITY_MODELS.filter(m => 
-  m.apiName === 'r1-1776' // Only r1-1776 is offline
 );
