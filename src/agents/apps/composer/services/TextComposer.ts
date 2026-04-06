@@ -9,7 +9,6 @@
  */
 
 import { Vault } from 'obsidian';
-import { parse as yamlParse, stringify as yamlStringify } from 'yaml';
 import { IFormatComposer, ComposeInput, ComposeOptions, ComposerError } from '../types';
 
 export class TextComposer implements IFormatComposer {
@@ -38,7 +37,7 @@ export class TextComposer implements IFormatComposer {
     for (const file of files) {
       let content = await vault.read(file);
 
-      const fmResult = extractFrontmatter(content);
+      const fmResult = await extractFrontmatter(content);
 
       switch (frontmatterHandling) {
         case 'first':
@@ -73,7 +72,7 @@ export class TextComposer implements IFormatComposer {
     let result = sections.join(separator);
 
     if (frontmatterHandling === 'merge' && Object.keys(mergedFrontmatter).length > 0) {
-      const fmYaml = serializeFrontmatter(mergedFrontmatter);
+      const fmYaml = await serializeFrontmatter(mergedFrontmatter);
       result = fmYaml + '\n' + result;
     }
 
@@ -86,10 +85,10 @@ export class TextComposer implements IFormatComposer {
  * Uses the 'yaml' package for robust parsing of nested structures,
  * arrays, and multi-line values.
  */
-function extractFrontmatter(content: string): {
+async function extractFrontmatter(content: string): Promise<{
   frontmatter: Record<string, unknown> | null;
   body: string;
-} {
+}> {
   // Strip BOM if present
   const trimmed = content.replace(/^\uFEFF/, '');
 
@@ -99,6 +98,7 @@ function extractFrontmatter(content: string): {
   const body = trimmed.slice(match[0].length);
 
   try {
+    const { parse: yamlParse } = await import('yaml');
     const parsed: unknown = yamlParse(match[1]);
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
       return { frontmatter: parsed as Record<string, unknown>, body };
@@ -113,6 +113,7 @@ function extractFrontmatter(content: string): {
 /**
  * Serialize a frontmatter object back to YAML format.
  */
-function serializeFrontmatter(fm: Record<string, unknown>): string {
+async function serializeFrontmatter(fm: Record<string, unknown>): Promise<string> {
+  const { stringify: yamlStringify } = await import('yaml');
   return '---\n' + yamlStringify(fm).trimEnd() + '\n---';
 }
