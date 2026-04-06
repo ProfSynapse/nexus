@@ -142,7 +142,7 @@ export class WorkspaceService {
           let comparison = 0;
           switch (sortBy) {
             case 'name':
-              comparison = a.name.localeCompare(b.name);
+              comparison = (a.name ?? '').localeCompare(b.name ?? '');
               break;
             case 'created':
               comparison = a.created - b.created;

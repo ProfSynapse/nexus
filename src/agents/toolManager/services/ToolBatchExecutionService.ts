@@ -237,7 +237,7 @@ export class ToolBatchExecutionService {
     }
 
     const byName = this.knownWorkspaces.find(workspace =>
-      workspace.name.toLowerCase() === workspaceId.toLowerCase()
+      workspace.name?.toLowerCase() === workspaceId.toLowerCase()
     );
     if (byName) {
       return null;
