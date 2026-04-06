@@ -129,10 +129,9 @@ export class ConversationList {
     const currentTitle = conversation.title;
 
     // Create input element
-    const input = document.createElement('input');
+    const input = createEl('input', { cls: 'conversation-rename-input' });
     input.type = 'text';
     input.value = currentTitle;
-    input.className = 'conversation-rename-input';
 
     // Replace title with input
     titleEl.replaceWith(input);
@@ -149,9 +148,10 @@ export class ConversationList {
       const newTitle = input.value.trim();
 
       // Restore title element
-      const newTitleEl = document.createElement('div');
-      newTitleEl.className = 'conversation-title';
-      newTitleEl.textContent = save && newTitle ? newTitle : currentTitle;
+      const newTitleEl = createEl('div', {
+        cls: 'conversation-title',
+        text: save && newTitle ? newTitle : currentTitle
+      });
       input.replaceWith(newTitleEl);
 
       // Restore action buttons
@@ -247,6 +247,6 @@ export class ConversationList {
    * Cleanup resources
    */
   cleanup(): void {
-    // Clean up any event listeners if needed
+    this.clearPendingDeleteConversation();
   }
 }
