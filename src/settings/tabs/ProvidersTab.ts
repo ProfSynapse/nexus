@@ -586,8 +586,7 @@ export class ProvidersTab {
             oauthConfig: displayConfig.oauthConfig,
             secondaryOAuthProvider,
             oauthOnly: providerId === 'github-copilot',
-            onSave: (updatedConfig: LLMProviderConfig) => {
-                void (async () => {
+            onSave: async (updatedConfig: LLMProviderConfig) => {
                 settings.providers[providerId] = updatedConfig;
 
                 // Handle Ollama model update
@@ -604,7 +603,6 @@ export class ProvidersTab {
                 await this.saveSettings();
                 this.render(); // Refresh the view
                 new Notice(`${displayConfig.name} settings saved`);
-                })();
             }
         };
 
