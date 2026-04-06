@@ -31,6 +31,10 @@ type ReasoningToolCallLike = {
 export class OpenAIContextBuilder implements IContextBuilder {
   readonly provider = 'openai';
 
+  private getToolName(toolCall: ToolCall): string {
+    return toolCall.function?.name || toolCall.name || '';
+  }
+
   /**
    * Validate if a message should be included in LLM context
    */
@@ -104,6 +108,7 @@ export class OpenAIContextBuilder implements IContextBuilder {
             messages.push({
               role: 'tool',
               tool_call_id: toolCall.id,
+              name: this.getToolName(toolCall),
               content: resultContent
             });
           });
@@ -171,6 +176,7 @@ export class OpenAIContextBuilder implements IContextBuilder {
       messages.push({
         role: 'tool',
         tool_call_id: toolCall.id,
+        name: toolCall.function?.name || '',
         content: resultContent
       });
     });
@@ -205,6 +211,7 @@ export class OpenAIContextBuilder implements IContextBuilder {
       messages.push({
         role: 'tool',
         tool_call_id: toolCall.id,
+        name: toolCall.function?.name || '',
         content: result.success
           ? JSON.stringify(result.result || {})
           : JSON.stringify({ error: result.error || 'Tool execution failed' })

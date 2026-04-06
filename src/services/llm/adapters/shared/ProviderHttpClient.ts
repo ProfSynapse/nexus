@@ -53,6 +53,29 @@ interface ErrorLikeResponse {
   json: unknown;
 }
 
+type NodeRequireLike = (moduleName: string) => unknown;
+type NodeHttpModule = {
+  request: (
+    options: {
+      hostname: string;
+      port: string | number;
+      path: string;
+      method: string;
+      headers: Record<string, string>;
+    },
+    callback: (response: NodeJS.ReadableStream & {
+      statusCode?: number;
+      statusMessage?: string;
+    }) => void
+  ) => {
+    write: (chunk: string) => void;
+    end: () => void;
+    destroy: (error?: Error) => void;
+    setTimeout: (timeoutMs: number, callback: () => void) => void;
+    on: (event: string, handler: (error: unknown) => void) => void;
+  };
+};
+
 export class ProviderHttpError extends Error {
   response: ErrorLikeResponse;
 
@@ -85,6 +108,40 @@ function enforceHttps(url: string): void {
 }
 
 export class ProviderHttpClient {
+  private static getNodeRequire(): NodeRequireLike | null {
+    const globalRequire = typeof globalThis === 'object'
+      ? (globalThis as { require?: unknown }).require
+      : undefined;
+    const candidate = typeof require === 'function' ? require : globalRequire;
+    return typeof candidate === 'function' ? (candidate as NodeRequireLike) : null;
+  }
+
+  private static loadNodeBuiltin<T>(moduleName: string): T | null {
+    if (!hasNodeRuntime()) {
+      return null;
+    }
+
+    const nodeRequire = this.getNodeRequire();
+    if (!nodeRequire) {
+      return null;
+    }
+
+    try {
+      return nodeRequire(moduleName) as T;
+    } catch {
+      const fallbackName = moduleName.replace(/^node:/, '');
+      if (fallbackName === moduleName) {
+        return null;
+      }
+
+      try {
+        return nodeRequire(fallbackName) as T;
+      } catch {
+        return null;
+      }
+    }
+  }
+
   static async request<TJson = unknown>(
     config: ProviderHttpRequest
   ): Promise<ProviderHttpResponse<TJson>> {
@@ -187,10 +244,14 @@ export class ProviderHttpClient {
     const parsed = new URL(config.url);
     const isHttps = parsed.protocol === 'https:';
 
-    // Dynamically import Node.js modules (available in Electron)
-      const nodeModule = isHttps
-        ? await import('node:https')
-        : await import('node:http');
+    // Use CommonJS require here. Dynamic ESM imports of node: builtins are blocked
+    // in Obsidian's app:// renderer even when Node runtime is available.
+    const nodeModule = this.loadNodeBuiltin<NodeHttpModule>(
+      isHttps ? 'node:https' : 'node:http'
+    );
+    if (!nodeModule) {
+      return this.requestStreamBufferedFallback(config);
+    }
 
     const timeoutMs = config.timeoutMs ?? 120_000;
 
@@ -225,7 +286,9 @@ export class ProviderHttpClient {
               }
             ));
           });
-          res.on('error', (err) => reject(err));
+          res.on('error', (err) => {
+            reject(err instanceof Error ? err : new Error(String(err)));
+          });
           return;
         }
 
@@ -293,16 +356,25 @@ export class ProviderHttpClient {
       );
     }
 
-    // Wrap the buffered text as a minimal readable stream
-      const { Readable } = await import('node:stream');
-    const readable = new Readable({
-      read() {
-        this.push(Buffer.from(response.text, 'utf-8'));
-        this.push(null);
-      }
-    });
+    // Return a minimal async-iterable stream shape so adapters can keep using
+    // the same SSE parsing path without depending on node:stream in the renderer.
+    const bufferedStream: AsyncIterable<string> = {
+      [Symbol.asyncIterator]() {
+        let emitted = false;
+        return {
+          next: () => {
+            if (emitted) {
+              return Promise.resolve({ done: true, value: undefined });
+            }
 
-    return readable;
+            emitted = true;
+            return Promise.resolve({ done: false, value: response.text });
+          }
+        };
+      }
+    };
+
+    return bufferedStream as NodeJS.ReadableStream;
   }
 
   private static async requestOnce<TJson = unknown>(

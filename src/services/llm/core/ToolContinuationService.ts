@@ -425,7 +425,7 @@ export class ToolContinuationService {
       // Build continuation for recursive pingpong
       const recursiveContinuationOptions = this.messageBuilder.buildContinuationOptions(
         provider,
-        userPrompt,
+        '',
         recursiveToolCalls,
         recursiveToolResults,
         previousMessages,
