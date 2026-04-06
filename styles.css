@@ -2896,12 +2896,6 @@ a:hover {
     align-items: center;
 }
 
-.llm-provider-model-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-bottom: 10px;
-}
 
 .llm-provider-model-name {
     min-width: 150px;
@@ -3665,54 +3659,6 @@ a:hover {
 /* CHAT SETTINGS MODAL STYLES */
 /* =========================== */
 
-.chat-settings-modal {
-    padding: 20px;
-    min-width: 500px;
-}
-
-.chat-settings-modal h2 {
-    margin-top: 0;
-    margin-bottom: 20px;
-    color: var(--text-normal);
-}
-
-.workspace-info-section {
-    margin-top: 20px;
-    padding: 16px;
-    background: var(--background-secondary);
-    border-radius: 6px;
-    border: 1px solid var(--background-modifier-border);
-}
-
-.workspace-context-summary {
-    margin-top: 10px;
-}
-
-.workspace-context-summary h4 {
-    margin-top: 0;
-    margin-bottom: 12px;
-    color: var(--text-normal);
-    font-size: 14px;
-}
-
-.context-item {
-    margin-bottom: 8px;
-    font-size: 13px;
-    color: var(--text-muted);
-}
-
-.context-item strong {
-    color: var(--text-normal);
-}
-
-.workspace-info-section p {
-    margin-top: 10px;
-    margin-bottom: 0;
-    font-size: 12px;
-    color: var(--text-faint);
-    font-style: italic;
-}
-
 /* =========================== */
 /* MCP SETUP UI STYLES        */
 /* =========================== */
@@ -4057,6 +4003,8 @@ a:hover {
 
 /* Modal Container */
 .chat-settings-modal {
+    padding: 20px;
+    min-width: 500px;
     max-width: 600px;
 }
 
@@ -4073,14 +4021,9 @@ a:hover {
 }
 
 /* Button Containers */
-.chat-settings-button-container {
+.chat-settings-buttons {
     display: flex;
     gap: 8px;
-}
-
-/* Sections */
-.chat-settings-section {
-    margin-bottom: 16px;
 }
 
 /* Workspace Info Section */
@@ -4098,25 +4041,6 @@ a:hover {
 
 .workspace-context-summary .context-item {
     margin-bottom: 4px;
-}
-
-/* Context Notes */
-.context-notes-section {
-    margin-top: 16px;
-}
-
-.context-notes-list {
-    margin-top: 8px;
-}
-
-.context-notes-empty {
-    padding: 12px;
-    color: var(--text-muted);
-    text-align: center;
-}
-
-.add-context-note-container {
-    margin-top: 12px;
 }
 
 /* ===========================================
@@ -4296,6 +4220,13 @@ a:hover {
     font-size: 12px;
     color: var(--text-muted);
     margin-left: var(--space-s);
+}
+
+.csr-temp-value {
+    min-width: 2.5em;
+    text-align: right;
+    color: var(--text-muted);
+    font-size: var(--font-smaller);
 }
 
 /* Context notes */
@@ -6240,6 +6171,8 @@ body.is-mobile .chat-loading-overlay {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
 }
 
 .llm-provider-model-toggle {
