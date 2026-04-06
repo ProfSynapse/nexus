@@ -80,8 +80,16 @@ export interface SystemPromptOptions {
   messageEnhancement?: MessageEnhancement | null;
   customPrompt?: string | null;
   workspaceContext?: WorkspaceContext | null;
-  // Full comprehensive workspace data from LoadWorkspaceTool (when workspace selected in settings)
+  // Full comprehensive workspace data — only populated on first-message send (G-W3)
   loadedWorkspaceData?: LoadedWorkspaceData | null;
+  // Slim header data — always populated when a workspace is selected
+  selectedWorkspaceSlimData?: {
+    id: string;
+    name: string;
+    description?: string;
+    purpose?: string;
+    rootFolder?: string;
+  } | null;
   // Dynamic context (always loaded fresh)
   vaultStructure?: VaultStructure | null;
   availableWorkspaces?: WorkspaceSummary[];
@@ -181,10 +189,10 @@ export class SystemPromptBuilder {
       sections.push(customPromptSection);
     }
 
-    // 8. Selected workspace context (full data from settings selection)
+    // 8. Selected workspace context
     const workspaceSection = this.buildSelectedWorkspaceSection(
-      options.loadedWorkspaceData,
-      options.workspaceContext
+      options.selectedWorkspaceSlimData,
+      options.loadedWorkspaceData
     );
     if (workspaceSection) {
       sections.push(workspaceSection);
@@ -415,22 +423,25 @@ Prefer targeted context gathering over large dumps.
   }
 
   /**
-   * Build selected workspace section with comprehensive data
-   * When a workspace is selected in chat settings, include the full workspace data
-   * (same rich context as the #workspace suggester)
+   * Build selected workspace section.
+   *
+   * Priority:
+   * 1. loadedWorkspaceData present (first-message send, G-W3) → full JSON blob for that turn
+   * 2. selectedWorkspaceSlimData present → slim ~100-token header (normal every-turn behavior)
+   * 3. Neither → omit section
    */
   private buildSelectedWorkspaceSection(
-    loadedWorkspaceData?: LoadedWorkspaceData | null,
-    workspaceContext?: WorkspaceContext | null
+    selectedWorkspaceSlimData?: { id: string; name: string; description?: string; purpose?: string; rootFolder?: string } | null,
+    loadedWorkspaceData?: LoadedWorkspaceData | null
   ): string | null {
-    // If we have full workspace data, include the complete object
+    // Full data path — only active on first-message send (G-W3)
     if (loadedWorkspaceData) {
       const workspaceName = loadedWorkspaceData.context?.name ||
                            loadedWorkspaceData.name ||
                            'Selected Workspace';
       const workspaceId = loadedWorkspaceData.id || 'unknown';
 
-      let prompt = `<selected_workspace name="${this.escapeXmlAttribute(workspaceName)}" id="${this.escapeXmlAttribute(workspaceId)}">\n`;
+      let prompt = `<selected_workspace name="${this.escapeXmlAttribute(String(workspaceName))}" id="${this.escapeXmlAttribute(String(workspaceId))}">\n`;
       prompt += 'This workspace is currently selected. Use it as the primary context.\n\n';
       prompt += this.escapeXmlContent(JSON.stringify(loadedWorkspaceData, null, 2));
       prompt += '\n</selected_workspace>';
@@ -438,12 +449,19 @@ Prefer targeted context gathering over large dumps.
       return prompt;
     }
 
-    // Fallback to basic context if no comprehensive data
-    if (!workspaceContext) {
+    // Slim header path — every turn when workspace is selected
+    if (!selectedWorkspaceSlimData) {
       return null;
     }
 
-    return `<selected_workspace>\n${this.escapeXmlContent(JSON.stringify(workspaceContext, null, 2))}\n</selected_workspace>`;
+    const { id, name, description, purpose, rootFolder } = selectedWorkspaceSlimData;
+    const lines: string[] = [];
+    if (description) lines.push(`Description: ${description}`);
+    if (purpose) lines.push(`Purpose: ${purpose}`);
+    if (rootFolder) lines.push(`Root folder: ${rootFolder}`);
+    lines.push('For file structure, sessions, or task details, call memoryManager.loadWorkspace.');
+
+    return `<active_workspace id="${this.escapeXmlAttribute(id)}" name="${this.escapeXmlAttribute(name)}">\n${lines.join('\n')}\n</active_workspace>`;
   }
 
   /**
