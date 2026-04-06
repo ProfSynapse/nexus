@@ -5,8 +5,6 @@
  * - isAvailable (API key presence)
  * - getModels (delegates to VoiceTypes)
  * - mimeToExtension mapping
- * - mimeToOpenRouterFormat
- * - arrayBufferToBase64
  * - buildChunkFileName
  */
 
@@ -32,14 +30,6 @@ class TestAdapter extends BaseTranscriptionAdapter {
   // Expose protected methods for testing
   public testMimeToExtension(mimeType: string): string {
     return this.mimeToExtension(mimeType);
-  }
-
-  public testMimeToOpenRouterFormat(mimeType: string): string {
-    return this.mimeToOpenRouterFormat(mimeType);
-  }
-
-  public testArrayBufferToBase64(buffer: ArrayBuffer): string {
-    return this.arrayBufferToBase64(buffer);
   }
 
   public testBuildChunkFileName(fileName: string, mimeType: string): string {
@@ -124,50 +114,6 @@ describe('BaseTranscriptionAdapter', () => {
 
     it('returns .bin for non-audio MIME type', () => {
       expect(adapter.testMimeToExtension('text/plain')).toBe('.bin');
-    });
-  });
-
-  // ── mimeToOpenRouterFormat ──────────────────────────────────────────
-
-  describe('mimeToOpenRouterFormat', () => {
-    const adapter = makeAdapter();
-
-    it('strips leading dot from known extensions', () => {
-      expect(adapter.testMimeToOpenRouterFormat('audio/mpeg')).toBe('mp3');
-      expect(adapter.testMimeToOpenRouterFormat('audio/wav')).toBe('wav');
-    });
-
-    it('returns bin for unknown MIME type', () => {
-      expect(adapter.testMimeToOpenRouterFormat('audio/unknown')).toBe('bin');
-    });
-  });
-
-  // ── arrayBufferToBase64 ─────────────────────────────────────────────
-
-  describe('arrayBufferToBase64', () => {
-    const adapter = makeAdapter();
-
-    it('encodes empty buffer to empty string', () => {
-      expect(adapter.testArrayBufferToBase64(new ArrayBuffer(0))).toBe('');
-    });
-
-    it('encodes known bytes correctly', () => {
-      const buffer = new ArrayBuffer(3);
-      const view = new Uint8Array(buffer);
-      view[0] = 72;  // H
-      view[1] = 105; // i
-      view[2] = 33;  // !
-      expect(adapter.testArrayBufferToBase64(buffer)).toBe(btoa('Hi!'));
-    });
-
-    it('handles binary data with high bytes', () => {
-      const buffer = new ArrayBuffer(2);
-      const view = new Uint8Array(buffer);
-      view[0] = 0xFF;
-      view[1] = 0x00;
-      const result = adapter.testArrayBufferToBase64(buffer);
-      expect(typeof result).toBe('string');
-      expect(result.length).toBeGreaterThan(0);
     });
   });
 
