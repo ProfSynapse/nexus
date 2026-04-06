@@ -119,7 +119,8 @@ export class ModelAgentManager {
   private currentSystemPrompt: string | null = null;
   private selectedWorkspaceId: string | null = null;
   private workspaceContext: WorkspaceContext | null = null;
-  private loadedWorkspaceData: Record<string, unknown> | null = null; // Full data — only populated for first-message send (G-W3)
+  private loadedWorkspaceData: Record<string, unknown> | null = null;  // Full data — populated on first-message send, cleared immediately after
+  private pendingFullWorkspaceLoad = false;                            // True from workspace selection/restore until first message is sent
   private selectedWorkspaceSlimData: {                                 // Slim header data — always populated when workspace selected
     id: string;
     name: string;
@@ -303,6 +304,7 @@ export class ModelAgentManager {
     // Set tentative state immediately — prevents modal from showing empty on transient errors
     this.selectedWorkspaceId = workspaceId;
     this.loadedWorkspaceData = null;
+    this.pendingFullWorkspaceLoad = false;
     this.workspaceContext = null;
     this.selectedWorkspaceSlimData = null;
 
@@ -324,6 +326,7 @@ export class ModelAgentManager {
         purpose: workspace.context?.['purpose'] as string | undefined,
         rootFolder: workspace.rootFolder
       };
+      this.pendingFullWorkspaceLoad = true; // Full load fires on first message send (G-W3)
 
       // Bind session to workspace
       await this.workspaceIntegration.bindSessionToWorkspace(sessionId, this.selectedWorkspaceId);
@@ -356,6 +359,7 @@ export class ModelAgentManager {
       this.selectedWorkspaceId = null;
       this.workspaceContext = null;
       this.loadedWorkspaceData = null;
+      this.pendingFullWorkspaceLoad = false;
       this.selectedWorkspaceSlimData = null;
       this.contextNotesManager.clear();
       this.agentProvider = null;
@@ -640,7 +644,8 @@ export class ModelAgentManager {
   async setWorkspaceContext(workspaceId: string, context: WorkspaceContext): Promise<void> {
     this.selectedWorkspaceId = workspaceId;
     this.workspaceContext = context;
-    this.loadedWorkspaceData = null; // Will be populated on first message send (G-W3)
+    this.loadedWorkspaceData = null;
+    this.pendingFullWorkspaceLoad = true; // Full load fires on first message send (G-W3)
 
     // Cheap DB lookup for slim header data
     try {
@@ -673,6 +678,7 @@ export class ModelAgentManager {
     this.selectedWorkspaceId = null;
     this.workspaceContext = null;
     this.loadedWorkspaceData = null;
+    this.pendingFullWorkspaceLoad = false;
     this.selectedWorkspaceSlimData = null;
     this.events.onSystemPromptChanged(await this.buildSystemPromptWithWorkspace());
   }
@@ -1009,12 +1015,29 @@ export class ModelAgentManager {
     thinkingEffort?: 'low' | 'medium' | 'high';
     temperature?: number;
   }> {
+    // G-W3: on first message after workspace selection/restore, load full data for this turn only
+    if (this.pendingFullWorkspaceLoad && this.selectedWorkspaceId) {
+      this.pendingFullWorkspaceLoad = false;
+      try {
+        const fullData = await this.workspaceIntegration.loadWorkspace(this.selectedWorkspaceId);
+        if (fullData) {
+          this.loadedWorkspaceData = fullData;
+        }
+      } catch (error) {
+        console.error('[ModelAgentManager] First-message workspace load failed, using slim header:', error);
+      }
+    }
+
     const sessionId = await this.getCurrentSessionId();
+    const systemPrompt = await this.buildSystemPromptWithWorkspace() || undefined;
+
+    // Clear full data immediately — subsequent turns use the slim header
+    this.loadedWorkspaceData = null;
 
     return {
       provider: this.selectedModel?.providerId,
       model: this.selectedModel?.modelId,
-      systemPrompt: await this.buildSystemPromptWithWorkspace() || undefined,
+      systemPrompt,
       workspaceId: this.selectedWorkspaceId || undefined,
       sessionId: sessionId,
       enableThinking: this.thinkingSettings.enabled,
