@@ -44,7 +44,7 @@ export class ConversationManager {
    */
   async loadConversations(): Promise<void> {
     try {
-      this.conversations = await this.chatService.listConversations({ limit: 50 });
+      this.conversations = await this.chatService.listConversations({ limit: 500 });
 
       this.events.onConversationsChanged();
 
