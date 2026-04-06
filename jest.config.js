@@ -41,6 +41,9 @@ module.exports = {
     // Nexus Ingester services
     'src/agents/ingestManager/tools/services/TranscriptionService.ts',
     'src/agents/ingestManager/tools/services/OcrService.ts',
+    // Conversation list pagination + search
+    'src/ui/chat/services/ConversationManager.ts',
+    'src/ui/chat/components/ConversationList.ts',
     '!src/**/*.d.ts'
   ],
   coverageThreshold: {
@@ -229,6 +232,21 @@ module.exports = {
       functions: 100,
       lines: 85,
       statements: 85
+    },
+    // Conversation list pagination + search: pure service logic (high bar)
+    './src/ui/chat/services/ConversationManager.ts': {
+      branches: 80,
+      functions: 85,
+      lines: 90,
+      statements: 90
+    },
+    // Conversation list pagination + search: DOM component (lower bar)
+    // showRenameInput (60 lines) requires real DOM — not testable with mock elements
+    './src/ui/chat/components/ConversationList.ts': {
+      branches: 25,
+      functions: 50,
+      lines: 55,
+      statements: 55
     }
   },
   coverageDirectory: 'coverage',
