@@ -12,6 +12,11 @@ describe('ProviderHttpClient', () => {
     message: string;
   };
 
+  type ProviderHttpClientInternals = {
+    getNodeRequire: () => ((moduleName: string) => unknown) | null;
+    loadNodeBuiltin: <T>(moduleName: string) => T | null;
+  };
+
   beforeEach(() => {
     __setRequestUrlMock(async () => ({
       status: 200,
@@ -279,5 +284,65 @@ describe('ProviderHttpClient', () => {
         'Custom validation error'
       )
     ).toThrow('Custom validation error');
+  });
+
+  it('falls back from node: builtin names to bare module names', () => {
+    const requireMock = jest.fn((moduleName: string) => {
+      if (moduleName === 'node:http') {
+        throw new Error('node: prefix unsupported');
+      }
+
+      if (moduleName === 'http') {
+        return { request: jest.fn() };
+      }
+
+      throw new Error(`unexpected module ${moduleName}`);
+    });
+
+    const internals = ProviderHttpClient as unknown as ProviderHttpClientInternals;
+    const requireSpy = jest.spyOn(internals, 'getNodeRequire').mockReturnValue(requireMock);
+
+    try {
+      const module = internals.loadNodeBuiltin<{ request: unknown }>('node:http');
+      expect(module).toEqual({ request: expect.any(Function) });
+      expect(requireMock).toHaveBeenNthCalledWith(1, 'node:http');
+      expect(requireMock).toHaveBeenNthCalledWith(2, 'http');
+    } finally {
+      requireSpy.mockRestore();
+    }
+  });
+
+  it('uses buffered fallback when node transport is unavailable', async () => {
+    __setRequestUrlMock(async () => ({
+      status: 200,
+      headers: { 'content-type': 'text/event-stream' },
+      text: 'data: {"choices":[{"delta":{"content":"hello"}}]}\n\ndata: [DONE]\n\n',
+      json: null,
+      arrayBuffer: new ArrayBuffer(0)
+    }));
+
+    const internals = ProviderHttpClient as unknown as ProviderHttpClientInternals;
+    const loadBuiltinSpy = jest.spyOn(internals, 'loadNodeBuiltin').mockReturnValue(null);
+
+    try {
+      const stream = await ProviderHttpClient.requestStream({
+        url: 'http://127.0.0.1:1234/v1/chat/completions',
+        provider: 'lmstudio',
+        operation: 'streaming generation',
+        method: 'POST',
+        body: '{}'
+      });
+
+      const chunks: string[] = [];
+      for await (const chunk of stream as AsyncIterable<string>) {
+        chunks.push(chunk);
+      }
+
+      expect(chunks).toEqual([
+        'data: {"choices":[{"delta":{"content":"hello"}}]}\n\ndata: [DONE]\n\n'
+      ]);
+    } finally {
+      loadBuiltinSpy.mockRestore();
+    }
   });
 });
