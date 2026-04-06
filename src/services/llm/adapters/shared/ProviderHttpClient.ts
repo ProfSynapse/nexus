@@ -293,16 +293,15 @@ export class ProviderHttpClient {
       );
     }
 
-    // Wrap the buffered text as a minimal readable stream
-      const { Readable } = await import('node:stream');
-    const readable = new Readable({
-      read() {
-        this.push(Buffer.from(response.text, 'utf-8'));
-        this.push(null);
-      }
-    });
+    // Wrap the buffered text as a minimal async iterable (no Node.js deps)
+    async function* textIterator(): AsyncGenerator<string> {
+      yield response.text;
+    }
 
-    return readable;
+    // Return the async iterable cast to ReadableStream type.
+    // The consumer (processNodeStream) uses `for await (const chunk of stream)`
+    // which works with any AsyncIterable, not just Node.js Readable.
+    return textIterator() as unknown as NodeJS.ReadableStream;
   }
 
   private static async requestOnce<TJson = unknown>(
