@@ -118,7 +118,8 @@ export class ContextProgressBar {
     this.progressBar.style.width = `${Math.min(visualPercentage, 100)}%`;
 
     // The gradient automatically shows the appropriate color based on fill width
-    this.progressBar.className = 'context-progress-bar-fill';
+    this.progressBar.removeAttribute('class');
+    this.progressBar.addClass('context-progress-bar-fill');
 
     // Update usage text
     const usedFormatted = this.formatTokenCount(used);
