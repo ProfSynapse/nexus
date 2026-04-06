@@ -191,16 +191,6 @@ export class MessageDisplay {
   }
 
   /**
-   * Escape HTML for safe display
-   */
-  private escapeHtml(text: string): string {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-  }
-
-
-  /**
    * Show welcome state
    */
   showWelcome(): void {
@@ -344,7 +334,10 @@ export class MessageDisplay {
   private onCopyMessage(messageId: string): void {
     const message = this.findMessage(messageId);
     if (message) {
-      navigator.clipboard.writeText(message.content).then(() => {
+      const content = this.branchManager
+        ? this.branchManager.getActiveMessageContent(message)
+        : message.content;
+      navigator.clipboard.writeText(content).then(() => {
         // Message copied to clipboard
       }).catch(() => {
         // Failed to copy message

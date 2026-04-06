@@ -109,12 +109,11 @@ export class ModelSelectionUtility {
         };
       }
 
-      // If still no default, return the hardcoded default (openai/gpt-4o)
-      // This prevents errors during initial setup
-      return { provider: 'openai', model: 'gpt-4o' };
+      // No default configured — return empty sentinel so callers show "no model selected" state
+      return { provider: '', model: '' };
     } catch {
-      // Return fallback instead of throwing to prevent UI errors
-      return { provider: 'openai', model: 'gpt-4o' };
+      // Return empty sentinel instead of throwing to prevent UI errors
+      return { provider: '', model: '' };
     }
   }
 

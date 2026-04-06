@@ -278,6 +278,11 @@ export class MessageBubble extends Component {
    * Start loading animation (animated dots)
    */
   private startLoadingAnimation(container: HTMLElement): void {
+    if (this.loadingInterval) {
+      clearInterval(this.loadingInterval);
+      this.loadingInterval = null;
+    }
+
     const dotsElement = container.querySelector('.dots');
     if (dotsElement) {
       let dotCount = 0;

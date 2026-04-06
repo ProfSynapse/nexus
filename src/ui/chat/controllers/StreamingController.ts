@@ -219,15 +219,6 @@ export class StreamingController {
   }
 
   /**
-   * Escape HTML for safe display
-   */
-  private escapeHtml(text: string): string {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-  }
-
-  /**
    * Get active animation count (for debugging/monitoring)
    */
   getActiveAnimationCount(): number {

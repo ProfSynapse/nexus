@@ -218,15 +218,14 @@ export class ChatInput {
     if (!this.inputElement) return;
 
     // Reset height to auto to get the correct scrollHeight
-    this.inputElement.addClass('chat-input-auto-height');
+    this.inputElement.style.removeProperty('height');
 
     // Set height limits - matches CSS min/max heights
-    const minHeight = 48;
-    const maxHeight = 120;
+    const minHeight = isMobile() ? 64 : 72;
+    const maxHeight = isMobile() ? 160 : 200;
     const newHeight = Math.min(Math.max(this.inputElement.scrollHeight, minHeight), maxHeight);
 
-    // Remove auto-height class and set specific height
-    this.inputElement.removeClass('chat-input-auto-height');
+    // Set specific height
     this.inputElement.style.setProperty('height', newHeight + 'px');
 
     // Enable scrolling if content exceeds max height

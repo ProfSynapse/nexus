@@ -533,6 +533,15 @@ export class ChatView extends ItemView {
     );
 
     this.uiStateController.initializeEventListeners();
+
+    // Refresh context bar when user switches back to this tab
+    this.registerEvent(
+      this.app.workspace.on('active-leaf-change', (leaf) => {
+        if (leaf === this.leaf) {
+          void this.updateContextProgress();
+        }
+      })
+    );
   }
 
   /**
@@ -676,6 +685,9 @@ export class ChatView extends ItemView {
 
       const hasProviders = this.chatService.hasConfiguredProviders();
       this.uiStateController.showWelcomeState(hasProviders);
+      if (this.layoutElements.chatTitle) {
+        this.layoutElements.chatTitle.textContent = 'Chat';
+      }
       if (this.chatInput) {
         this.chatInput.setConversationState(false);
       }
@@ -802,6 +814,9 @@ export class ChatView extends ItemView {
 
       const hasProviders = this.chatService.hasConfiguredProviders();
       this.uiStateController.showWelcomeState(hasProviders);
+      if (this.layoutElements.chatTitle) {
+        this.layoutElements.chatTitle.textContent = 'Chat';
+      }
       if (this.chatInput) {
         this.chatInput.setConversationState(false);
       }
@@ -1149,22 +1164,10 @@ export class ChatView extends ItemView {
     }
   }
 
-  private async handleBranchSwitched(messageId: string, branchId: string): Promise<void> {
-    const currentConversation = this.conversationManager.getCurrentConversation();
-    if (currentConversation) {
-      const success = await this.branchManager.switchToBranch(
-        currentConversation,
-        messageId,
-        branchId
-      );
-
-      if (success) {
-        const updatedMessage = currentConversation.messages.find(msg => msg.id === messageId);
-        if (updatedMessage) {
-          this.messageDisplay.updateMessage(messageId, updatedMessage);
-        }
-      }
-    }
+  private handleBranchSwitched(_messageId: string, _branchId: string): void {
+    // Intentional no-op — the caller (handleBranchSwitchedByIndex) already
+    // calls messageDisplay.updateMessage() on success. Doing anything here
+    // causes a double updateMessage race that corrupts output.
   }
 
   /**

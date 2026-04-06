@@ -64,7 +64,9 @@ export class BranchHeader {
    */
   update(context: Partial<BranchViewContext>): void {
     if (!this.context) return;
-    this.context = { ...this.context, ...context };
+    const merged = { ...this.context, ...context };
+    if (JSON.stringify(merged) === JSON.stringify(this.context)) return;
+    this.context = merged;
     this.render();
   }
 

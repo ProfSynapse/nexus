@@ -722,6 +722,7 @@
     border-radius: 50px;
     padding: 0.2rem;
     opacity: 0;
+    pointer-events: none;
     transition: all 0.2s ease;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
     z-index: 10;
@@ -754,6 +755,7 @@
 
 .message-container:hover .message-actions-external {
     opacity: 1;
+    pointer-events: auto;
     transform: translateY(0);
 }
 
@@ -844,6 +846,8 @@
     word-wrap: break-word;
     overflow-wrap: break-word;
     hyphens: auto;
+    user-select: text;
+    cursor: text;
 }
 
 .message-content p {
@@ -2921,6 +2925,7 @@ a:hover {
 .llm-provider-model-row {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 10px;
     margin-bottom: 10px;
 }
@@ -3690,49 +3695,13 @@ a:hover {
 .chat-settings-modal {
     padding: 20px;
     min-width: 500px;
+    max-width: 600px;
 }
 
 .chat-settings-modal h2 {
     margin-top: 0;
     margin-bottom: 20px;
     color: var(--text-normal);
-}
-
-.workspace-info-section {
-    margin-top: 20px;
-    padding: 16px;
-    background: var(--background-secondary);
-    border-radius: 6px;
-    border: 1px solid var(--background-modifier-border);
-}
-
-.workspace-context-summary {
-    margin-top: 10px;
-}
-
-.workspace-context-summary h4 {
-    margin-top: 0;
-    margin-bottom: 12px;
-    color: var(--text-normal);
-    font-size: 14px;
-}
-
-.context-item {
-    margin-bottom: 8px;
-    font-size: 13px;
-    color: var(--text-muted);
-}
-
-.context-item strong {
-    color: var(--text-normal);
-}
-
-.workspace-info-section p {
-    margin-top: 10px;
-    margin-bottom: 0;
-    font-size: 12px;
-    color: var(--text-faint);
-    font-style: italic;
 }
 
 /* =========================== */
@@ -4077,11 +4046,6 @@ a:hover {
    Chat Settings Modal - Complete Styling
    =========================================== */
 
-/* Modal Container */
-.chat-settings-modal {
-    max-width: 600px;
-}
-
 /* Header */
 .chat-settings-header {
     display: flex;
@@ -4095,50 +4059,9 @@ a:hover {
 }
 
 /* Button Containers */
-.chat-settings-button-container {
+.chat-settings-buttons {
     display: flex;
     gap: 8px;
-}
-
-/* Sections */
-.chat-settings-section {
-    margin-bottom: 16px;
-}
-
-/* Workspace Info Section */
-.workspace-context-summary {
-    padding: 12px;
-    background: var(--background-secondary);
-    border-radius: 6px;
-    margin-top: 12px;
-}
-
-.workspace-context-summary h4 {
-    margin-top: 0;
-    margin-bottom: 8px;
-}
-
-.workspace-context-summary .context-item {
-    margin-bottom: 4px;
-}
-
-/* Context Notes */
-.context-notes-section {
-    margin-top: 16px;
-}
-
-.context-notes-list {
-    margin-top: 8px;
-}
-
-.context-notes-empty {
-    padding: 12px;
-    color: var(--text-muted);
-    text-align: center;
-}
-
-.add-context-note-container {
-    margin-top: 12px;
 }
 
 /* ===========================================
@@ -4313,6 +4236,15 @@ a:hover {
 
 .csr-effort-value {
     min-width: 50px;
+    text-align: center;
+    font-weight: 500;
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-left: var(--space-s);
+}
+
+.csr-temp-value {
+    min-width: 30px;
     text-align: center;
     font-weight: 500;
     font-size: 12px;
@@ -5874,11 +5806,14 @@ body.is-mobile .message-action-btn {
     --icon-size: 16px;
 }
 
-/* Action button container - position BELOW the message on mobile */
+/* Action button container - mobile sizing and always-visible (touch can't hover) */
 body.is-mobile .message-actions-external {
     gap: 2px;
     padding: 2px;
     border-radius: 8px;
+    opacity: 0.85;
+    pointer-events: auto;
+    transform: translateY(0);
 }
 
 /* Assistant messages: keep in corner but smaller on mobile */
@@ -5941,18 +5876,9 @@ body.is-mobile .progressive-tool-header {
     padding: 0.75rem 1rem;
 }
 
-/* ------------------------------ */
-/* ALWAYS-VISIBLE MESSAGE ACTIONS */
-/* ------------------------------ */
-/* Touch devices can't hover, so show actions by default */
-
-body.is-mobile .message-actions-external {
-    opacity: 0.85;
-    transform: translateY(0);
-}
-
 body.is-mobile .message-container:active .message-actions-external {
     opacity: 1;
+    pointer-events: auto;
 }
 
 body.is-mobile .conversation-delete {
@@ -6117,6 +6043,7 @@ body.is-mobile .chat-loading-overlay {
 @media (hover: hover) and (pointer: fine) {
     .message-container:hover .message-actions-external {
         opacity: 1;
+        pointer-events: auto;
         transform: translateY(0);
     }
 
@@ -6133,6 +6060,7 @@ body.is-mobile .chat-loading-overlay {
 @media (hover: none) and (pointer: coarse) {
     .message-actions-external {
         opacity: 0.85;
+        pointer-events: auto;
     }
 
     .conversation-delete {
@@ -6265,13 +6193,6 @@ body.is-mobile .chat-loading-overlay {
 
 .llm-provider-help-list {
     margin: 0.5em 0;
-}
-
-/* Model row in generic provider */
-.llm-provider-model-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
 }
 
 .llm-provider-model-toggle {
