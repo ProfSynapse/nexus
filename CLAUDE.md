@@ -1,9 +1,9 @@
 # Claude Code Context Document
-Last Updated: 2026-04-01
+Last Updated: 2026-04-06
 
 ## Project Overview
 - **Name**: Nexus (package: claudesidian-mcp)
-- **Version**: 5.6.7
+- **Version**: 5.6.8
 - **Type**: Obsidian Community Plugin
 - **Purpose**: MCP integration for Obsidian with AI-powered vault operations
 - **Architecture**: Agent-Tool pattern with domain-driven design
@@ -22,7 +22,7 @@ Full guidelines: `docs/obsidian-plugin-guidelines.md`
 
 ## Recent Changes
 
-**Current Version**: 5.6.6 — fix CustomPromptStorageService dual-write desync
+**Current Version**: 5.6.8
 Full changelog: `docs/changelog.md`
 
 **Latest features** (Apr 2026):
@@ -117,19 +117,19 @@ None.
 
 ### Current Work
 
-**`any` → `unknown` Type Migration** ✅ — Complete. TS build passes (exit 0), lint clean (0 violations). 539 files changed. 8 test suites still failing (73 tests) — user fixing manually. Remaining test failures: `QAPairBuilder`, `BranchManager`, `ComposeTool`, `MessageAlternativeService`, `ClaudeHeadlessService`, `GoogleGeminiCliAdapter`, `AnthropicClaudeCodeAdapter`, `cliProcessRunner`.
+**PR #97 Review (Midway65)** — Community PR "Improvements to the chat panel". 37 files, +2058/-1702. Auditing in progress. UI bug fixes are legitimate; action bar feature (Insert/Append/Create File) rejected as UI noise. Schema migrations v12-v19 are fork-specific cleanup that should not be merged. Key findings:
+- 3 confirmed chat UI bugs: click-blocking invisible pill, text not selectable, copy returns wrong branch content
+- ProviderHttpClient timeout fix and `require()` switch are real fixes but undisclosed in PR scope
+- Orphaned JSONL pruning at startup inverts JSONL-as-source-of-truth assumption — risky
+- Massive whitespace noise across service/database files inflates diff
 
-**ESLint v9 + Obsidian plugin linter** ✅ — Upgraded to ESLint v9 + typescript-eslint v8 + `eslint-plugin-obsidianmd`. Flat config at `eslint.config.mjs`. Config updated for obsidian-releases bot parity: `require-await` enabled, `prefer-file-manager-trash-file` escalated to error, Node.js imports exempted at config level, sentence-case configured with project acronyms/brands. Lint passes clean (0 errors, 0 warnings). All ~190 bot violations fixed on `fix/pr-bot-lint` branch (135 files).
+**Issue #88 — CustomPromptStorageService dual-write desync** — Fix on `fix/issue-88-dual-write-desync` branch (worktree). Committed (3447d8c5), awaiting PR.
 
-**Anthropic multi-tool-call regression** ✅ fixed — Added `index?: number` to `ToolCall` interface (`src/services/llm/adapters/types.ts`), restored `index: event.index` to both `extractToolCalls` return objects in `AnthropicAdapter.ts`. SSEStreamProcessor accumulation now works correctly for multi-tool responses.
+**Issue #64 — Claude Code ENAMETOOLONG** — PR #73 fix may not have fully resolved. Needs re-investigation.
 
-**Issue #88 — CustomPromptStorageService dual-write desync** — Fix on `fix/issue-88-dual-write-desync` branch (worktree). Removed early returns in createPrompt/updatePrompt/deletePrompt so both SQLite and data.json are always written. Committed (3447d8c5), awaiting PR.
+**Context Budget Service** — `feat/context-budget-service` branch, work ongoing.
 
-**Issue #64 — Claude Code ENAMETOOLONG** — User reports PR #73 fix may not have fully resolved the issue. Needs re-investigation.
-
-**Context Budget Service** — `feat/context-budget-service` branch is the user's active in-progress branch. Work ongoing.
-
-**File Picker Bug** — `FilePickerRenderer.getRootFolder()` fails when workspace rootFolder has leading `/` (e.g., `/blog-test` → Obsidian expects `blog-test`). Separate fix needed.
+**File Picker Bug** — `FilePickerRenderer.getRootFolder()` fails when workspace rootFolder has leading `/`. Separate fix needed.
 
 ### Branch Architecture
 
@@ -255,7 +255,7 @@ Key files: `src/ui/chat/components/suggesters/`, `MessageEnhancer.ts`, `SystemPr
 
 - **Subagents**: Branch → stream via LLMService → save result. `chunk.toolCalls` are display-only.
 - **WebLLM/Nexus**: Nexus Quark (4B, 4K context), `<tool_call>` format. May crash on Apple Silicon.
-- **Storage**: Branches as JSONL events, SQLite v9 schema (4 task tables added in v9), tool names use `agent_tool` format.
+- **Storage**: Branches as JSONL events, SQLite v11 schema (4 task tables added in v9, workflow columns in v10, archive flag in v11), tool names use `agent_tool` format.
 - **Apps & Vault Access**: App agents that produce files must have vault access wired through `BaseAppAgent`. Use `vault.createBinary()` for binary outputs (audio, images) and `vault.create()` for text. Always ensure parent directories exist before writing.
 
 ## Pinned Context
@@ -273,11 +273,17 @@ if (!globalThis.pdfjsWorker) globalThis.pdfjsWorker = pdfjsWorker;
 ```
 Use `loadPdfJs()` from `PdfJsLoader.ts` in both `PdfTextExtractor.ts` and `PdfPageRenderer.ts`. Do NOT use `import('pdfjs-dist')` directly — the main entry fails in Electron without a worker URL.
 
-<!-- pinned: 2026-03-29 -->
-### IngestManagerAgent — audio transcription provider scope (v1)
-Whisper API (OpenAI + Groq) only. Excluded in v1:
-- **Ollama / LM Studio**: No audio transcription endpoint — vision-only
-- **Google multimodal audio**: Deferred to v2 (requires different API path)
+<!-- pinned: 2026-04-05 -->
+### Shared Transcription Infrastructure
+Transcription extracted from ingest into shared service at `src/services/llm/TranscriptionService.ts`. Five providers fully integrated:
+- **OpenAI** (`whisper-1`, `gpt-4o-transcribe`) — word timestamps via `verbose_json`
+- **Groq** — word timestamps, fastest inference
+- **Mistral** (`voxtral-mini`) — word timestamps + diarization
+- **Deepgram** — word timestamps, utterances, diarization, keyword biasing
+- **AssemblyAI** — word timestamps, speaker labels
+
+Adapters at `src/services/llm/adapters/{provider}/`. Types at `src/services/llm/types/VoiceTypes.ts`.
+⚠️ Ingest shim at `src/agents/ingestManager/tools/services/TranscriptionService.ts` strips word-level data — audio editor must call shared service directly.
 - **Drag-drop file path**: Browser `File.name` is basename only — use `vault.getFiles().find(f => f.name === file.name)` to get vault-relative path in `handleIngestFiles`.
 
 ## Working Memory
@@ -296,17 +302,10 @@ Whisper API (OpenAI + Groq) only. Excluded in v1:
 
 ### 2026-03-29 16:10
 **Summary**: Completed full PACT cycle (PREPARE → CODE → TEST → REVIEW in progress) for the Nexus Ingester feature in claudesidian-mc...
-## Current Session
-<!-- Auto-managed by session_init hook. Overwritten each session. -->
-- Resume: `claude --resume 53b8cd78-df63-4a32-b113-132dde8d14df`
-- Team: `pact-53b8cd78`
-- Started: 2026-03-29 13:26:59 UTC
-<!-- SESSION_END -->
-
 <!-- SESSION_START -->
 ## Current Session
 <!-- Auto-managed by session_init hook. Overwritten each session. -->
-- Resume: `claude --resume 0d94f9cc-e1c7-415d-bfa6-a807f6ff6252`
-- Team: `pact-0d94f9cc`
-- Started: 2026-04-02 23:23:08 UTC
+- Resume: `claude --resume 6e102c56-dc39-48ff-8ff0-5e0f39d1b75b`
+- Team: `pact-6e102c56`
+- Started: 2026-04-06 19:09:24 UTC
 <!-- SESSION_END -->
