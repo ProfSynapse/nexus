@@ -582,7 +582,7 @@ export class WorkspaceService {
           pageSize: 100
         });
         const match = result.items.find(
-          ws => ws.name.toLowerCase() === identifier.toLowerCase()
+          ws => ws.name?.toLowerCase() === identifier.toLowerCase()
         );
         return match?.id ?? null;
       },
@@ -590,7 +590,7 @@ export class WorkspaceService {
         const index = await this.indexManager.loadWorkspaceIndex();
         const workspaces = Object.values(index.workspaces);
         const match = workspaces.find(
-          ws => ws.name.toLowerCase() === identifier.toLowerCase()
+          ws => ws.name?.toLowerCase() === identifier.toLowerCase()
         );
         return match?.id ?? null;
       }
