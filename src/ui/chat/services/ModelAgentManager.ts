@@ -119,7 +119,14 @@ export class ModelAgentManager {
   private currentSystemPrompt: string | null = null;
   private selectedWorkspaceId: string | null = null;
   private workspaceContext: WorkspaceContext | null = null;
-  private loadedWorkspaceData: Record<string, unknown> | null = null; // Full comprehensive workspace data from LoadWorkspaceTool
+  private loadedWorkspaceData: Record<string, unknown> | null = null; // Full data — only populated for first-message send (G-W3)
+  private selectedWorkspaceSlimData: {                                 // Slim header data — always populated when workspace selected
+    id: string;
+    name: string;
+    description?: string;
+    purpose?: string;
+    rootFolder?: string;
+  } | null = null;
   private contextNotesManager: ContextNotesManager;
   private currentConversationId: string | null = null;
   private messageEnhancement: MessageEnhancement | null = null;
@@ -297,6 +304,7 @@ export class ModelAgentManager {
     this.selectedWorkspaceId = workspaceId;
     this.loadedWorkspaceData = null;
     this.workspaceContext = null;
+    this.selectedWorkspaceSlimData = null;
 
     try {
       const workspace = await this.workspaceIntegration.getWorkspaceBasic(workspaceId);
@@ -309,6 +317,13 @@ export class ModelAgentManager {
 
       this.selectedWorkspaceId = workspace.id;
       this.workspaceContext = (workspace.context as WorkspaceContext) || null;
+      this.selectedWorkspaceSlimData = {
+        id: workspace.id,
+        name: workspace.name,
+        description: workspace.description,
+        purpose: workspace.context?.['purpose'] as string | undefined,
+        rootFolder: workspace.rootFolder
+      };
 
       // Bind session to workspace
       await this.workspaceIntegration.bindSessionToWorkspace(sessionId, this.selectedWorkspaceId);
@@ -341,6 +356,7 @@ export class ModelAgentManager {
       this.selectedWorkspaceId = null;
       this.workspaceContext = null;
       this.loadedWorkspaceData = null;
+      this.selectedWorkspaceSlimData = null;
       this.contextNotesManager.clear();
       this.agentProvider = null;
       this.agentModel = null;
@@ -617,28 +633,32 @@ export class ModelAgentManager {
   }
 
   /**
-   * Set workspace context - loads full comprehensive data
-   * When a workspace is selected in chat settings, load the same rich data
-   * as the #workspace suggester (file structure, sessions, states, etc.)
+   * Set workspace context when user selects a workspace in chat settings.
+   * Populates slim header data via cheap DB lookup; full data is loaded on
+   * first message send (G-W3).
    */
   async setWorkspaceContext(workspaceId: string, context: WorkspaceContext): Promise<void> {
     this.selectedWorkspaceId = workspaceId;
-    this.workspaceContext = context; // Keep basic context for backward compatibility
+    this.workspaceContext = context;
+    this.loadedWorkspaceData = null; // Will be populated on first message send (G-W3)
 
-    // Load full comprehensive workspace data (same as #workspace suggester)
+    // Cheap DB lookup for slim header data
     try {
-      const fullWorkspaceData = await this.workspaceIntegration.loadWorkspace(workspaceId);
-      if (fullWorkspaceData) {
-        this.loadedWorkspaceData = fullWorkspaceData;
-      }
+      const slim = await this.workspaceIntegration.getWorkspaceBasic(workspaceId);
+      this.selectedWorkspaceSlimData = slim ? {
+        id: slim.id,
+        name: slim.name,
+        description: slim.description,
+        purpose: slim.context?.['purpose'] as string | undefined,
+        rootFolder: slim.rootFolder
+      } : null;
     } catch (error) {
-      console.error('[ModelAgentManager] Failed to load full workspace data:', error);
-      this.loadedWorkspaceData = null;
+      console.error('[ModelAgentManager] Failed to load workspace slim data:', error);
+      this.selectedWorkspaceSlimData = null;
     }
 
     // Get session ID from current conversation
     const sessionId = await this.getCurrentSessionId();
-
     if (sessionId) {
       await this.workspaceIntegration.bindSessionToWorkspace(sessionId, workspaceId);
     }
@@ -653,6 +673,7 @@ export class ModelAgentManager {
     this.selectedWorkspaceId = null;
     this.workspaceContext = null;
     this.loadedWorkspaceData = null;
+    this.selectedWorkspaceSlimData = null;
     this.events.onSystemPromptChanged(await this.buildSystemPromptWithWorkspace());
   }
 
@@ -1031,7 +1052,8 @@ export class ModelAgentManager {
       messageEnhancement: this.messageEnhancement,
       customPrompt: this.currentSystemPrompt,
       workspaceContext: this.workspaceContext,
-      loadedWorkspaceData: this.loadedWorkspaceData,
+      loadedWorkspaceData: this.loadedWorkspaceData,       // null except on first-message send (G-W3)
+      selectedWorkspaceSlimData: this.selectedWorkspaceSlimData,
       // Nexus models are pre-trained on the toolset - skip tools section
       skipToolsSection: isNexusModel,
       // Context status for token-limited models
