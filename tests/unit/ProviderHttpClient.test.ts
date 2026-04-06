@@ -1,4 +1,14 @@
 import { __setRequestUrlMock } from '../mocks/obsidian';
+
+const mockHasNodeRuntime = jest.fn(() => false);
+const mockIsDesktop = jest.fn(() => true);
+
+jest.mock('../../src/utils/platform', () => ({
+  ...jest.requireActual('../../src/utils/platform'),
+  hasNodeRuntime: () => mockHasNodeRuntime(),
+  isDesktop: () => mockIsDesktop(),
+}));
+
 import {
   ProviderHttpClient,
   ProviderHttpError
@@ -13,6 +23,9 @@ describe('ProviderHttpClient', () => {
   };
 
   beforeEach(() => {
+    mockHasNodeRuntime.mockReturnValue(false);
+    mockIsDesktop.mockReturnValue(true);
+
     __setRequestUrlMock(async () => ({
       status: 200,
       headers: { 'content-type': 'application/json' },
@@ -185,6 +198,61 @@ describe('ProviderHttpClient', () => {
     });
 
     expect(result).toBe('plain text body');
+  });
+
+  it('requestStream uses the buffered mobile fallback as an async iterable', async () => {
+    __setRequestUrlMock(async () => ({
+      status: 200,
+      headers: { 'content-type': 'text/event-stream' },
+      text: 'data: {"type":"response.output_text.delta","delta":"Hello"}\n\n',
+      json: null,
+      arrayBuffer: new ArrayBuffer(0)
+    }));
+
+    const stream = await ProviderHttpClient.requestStream({
+      url: 'https://example.com/stream',
+      provider: 'openai',
+      operation: 'stream-test',
+      method: 'POST'
+    });
+
+    const chunks: string[] = [];
+    for await (const chunk of stream as AsyncIterable<string>) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks).toEqual([
+      'data: {"type":"response.output_text.delta","delta":"Hello"}\n\n'
+    ]);
+  });
+
+  it('requestStream uses the buffered fallback when runtime looks like Node but platform is not desktop', async () => {
+    mockHasNodeRuntime.mockReturnValue(true);
+    mockIsDesktop.mockReturnValue(false);
+
+    __setRequestUrlMock(async () => ({
+      status: 200,
+      headers: { 'content-type': 'text/event-stream' },
+      text: 'data: {"type":"response.output_text.delta","delta":"Mobile"}\n\n',
+      json: null,
+      arrayBuffer: new ArrayBuffer(0)
+    }));
+
+    const stream = await ProviderHttpClient.requestStream({
+      url: 'https://example.com/stream',
+      provider: 'mistral',
+      operation: 'mobile-shim-test',
+      method: 'POST'
+    });
+
+    const chunks: string[] = [];
+    for await (const chunk of stream as AsyncIterable<string>) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks).toEqual([
+      'data: {"type":"response.output_text.delta","delta":"Mobile"}\n\n'
+    ]);
   });
 
   it('respects custom retryOnStatuses', async () => {

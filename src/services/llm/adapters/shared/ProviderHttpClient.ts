@@ -10,7 +10,7 @@
  */
 import { requestUrl } from 'obsidian';
 import { LLMProviderError } from '../types';
-import { hasNodeRuntime } from '../../../../utils/platform';
+import { hasNodeRuntime, isDesktop } from '../../../../utils/platform';
 
 export interface ProviderHttpRequest {
   url: string;
@@ -179,7 +179,7 @@ export class ProviderHttpClient {
   ): Promise<NodeJS.ReadableStream> {
     enforceHttps(config.url);
 
-    if (!hasNodeRuntime()) {
+    if (!isDesktop() || !hasNodeRuntime()) {
       // Mobile fallback: use requestUrl (fully buffered) and wrap as a readable stream
       return this.requestStreamBufferedFallback(config);
     }
@@ -293,15 +293,29 @@ export class ProviderHttpClient {
       );
     }
 
-    // Wrap the buffered text as a minimal async iterable (no Node.js deps)
-    async function* textIterator(): AsyncGenerator<string> {
-      yield response.text;
-    }
+    // Wrap the buffered text as a minimal async iterable (no Node.js deps).
+    // Consumers only require `for await ... of` support on the returned object.
+    const bufferedStream: AsyncIterable<string> = {
+      [Symbol.asyncIterator](): AsyncIterator<string> {
+        let hasYielded = false;
+
+        return {
+          next(): Promise<IteratorResult<string>> {
+            if (hasYielded) {
+              return Promise.resolve({ value: undefined, done: true });
+            }
+
+            hasYielded = true;
+            return Promise.resolve({ value: response.text, done: false });
+          }
+        };
+      }
+    };
 
     // Return the async iterable cast to ReadableStream type.
     // The consumer (processNodeStream) uses `for await (const chunk of stream)`
     // which works with any AsyncIterable, not just Node.js Readable.
-    return textIterator() as unknown as NodeJS.ReadableStream;
+    return bufferedStream as unknown as NodeJS.ReadableStream;
   }
 
   private static async requestOnce<TJson = unknown>(
