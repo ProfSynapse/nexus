@@ -6,7 +6,7 @@
 import { ModelOption, PromptOption } from '../types/SelectionTypes';
 import { WorkspaceContext } from '../../../database/types/workspace/WorkspaceTypes';
 import { MessageEnhancement } from '../components/suggesters/base/SuggesterInterfaces';
-import { SystemPromptBuilder, PromptSummary, ToolAgentInfo, ContextStatusInfo } from './SystemPromptBuilder';
+import { SystemPromptBuilder, ContextStatusInfo } from './SystemPromptBuilder';
 import { ContextNotesManager } from './ContextNotesManager';
 import { ModelSelectionUtility } from '../utils/ModelSelectionUtility';
 import { PromptConfigurationUtility } from '../utils/PromptConfigurationUtility';
@@ -86,25 +86,6 @@ interface ConversationServiceLike {
   updateConversationMetadata(conversationId: string, metadata: Record<string, unknown>): Promise<void>;
 }
 
-interface AgentToolLike {
-  slug?: string;
-  name?: string;
-}
-
-interface AgentLike {
-  description?: string;
-  getTools?: () => AgentToolLike[];
-}
-
-/**
- * App type with plugin registry access
- */
-type AppWithPlugins = {
-  plugins?: {
-    plugins?: Record<string, NexusPlugin>;
-  };
-} & Omit<App, 'plugins'>;
-
 /**
  * Plugin interface with settings structure
  */
@@ -124,11 +105,6 @@ interface PluginWithSettings {
   };
   serviceManager?: {
     getServiceIfReady?: (name: string) => unknown;
-  };
-  connector?: {
-    agentRegistry?: {
-      getAllAgents: () => Map<string, AgentLike>;
-    };
   };
 }
 
@@ -647,9 +623,8 @@ export class ModelAgentManager {
    * When a workspace is selected in chat settings, load the same rich data
    * as the #workspace suggester (file structure, sessions, states, etc.)
    */
-  async setWorkspaceContext(workspaceId: string, context: WorkspaceContext): Promise<void> {
+  async setWorkspaceContext(workspaceId: string): Promise<void> {
     this.selectedWorkspaceId = workspaceId;
-    this.workspaceContext = context; // Keep basic context for backward compatibility
 
     // Load full comprehensive workspace data (same as #workspace suggester)
     try {
@@ -1035,12 +1010,6 @@ export class ModelAgentManager {
   private async buildSystemPromptWithWorkspace(): Promise<string | null> {
     const sessionId = await this.getCurrentSessionId();
 
-    // Fetch dynamic context (always fresh)
-    const vaultStructure = this.workspaceIntegration.getVaultStructure();
-    const availableWorkspaces = await this.workspaceIntegration.listAvailableWorkspaces();
-    const availablePrompts = await this.getAvailablePromptSummaries();
-    const toolAgents = this.getToolAgentInfo();
-
     // Skip tools section for Nexus/WebLLM - it's pre-trained on the toolset
     const isNexusModel = this.selectedModel?.providerId === 'webllm';
 
@@ -1064,12 +1033,7 @@ export class ModelAgentManager {
       messageEnhancement: this.messageEnhancement,
       customPrompt: this.currentSystemPrompt,
       workspaceContext: this.workspaceContext,
-      loadedWorkspaceData: this.loadedWorkspaceData, // Full comprehensive workspace data
-      // Dynamic context (always loaded fresh)
-      vaultStructure,
-      availableWorkspaces,
-      availablePrompts,
-      toolAgents,
+      loadedWorkspaceData: this.loadedWorkspaceData,
       // Nexus models are pre-trained on the toolset - skip tools section
       skipToolsSection: isNexusModel,
       // Context status for token-limited models
@@ -1116,73 +1080,6 @@ export class ModelAgentManager {
    */
   hasPreviousContext(): boolean {
     return this.hasCompactionFrontier();
-  }
-
-  /**
-   * Get available prompts as summaries for system prompt
-   * Note: These are user-created prompts, displayed in system prompt for LLM awareness
-   */
-  private async getAvailablePromptSummaries(): Promise<PromptSummary[]> {
-    const prompts = await this.getAvailablePrompts();
-    return prompts.map(prompt => ({
-      id: prompt.id,
-      name: prompt.name,
-      description: prompt.description || 'Custom prompt'
-    }));
-  }
-
-  /**
-   * Get tool agents info from agent registry for system prompt
-   * Returns agent names, descriptions, and their available tools
-   */
-  private getToolAgentInfo(): ToolAgentInfo[] {
-    try {
-      // Access plugin from app
-      const appWithPlugins = this.app as unknown as AppWithPlugins;
-      const plugin = appWithPlugins.plugins?.plugins?.['claudesidian-mcp'] as unknown as PluginWithSettings | undefined;
-      if (!plugin) {
-        return [];
-      }
-
-      // Try agentRegistrationService first (works on both desktop and mobile)
-      const agentService = plugin.serviceManager?.getServiceIfReady?.('agentRegistrationService');
-      if (agentService) {
-        const typedAgentService = agentService as { getAllAgents: () => Map<string, AgentLike> | Array<{ name: string } & AgentLike> };
-        const agents = typedAgentService.getAllAgents();
-        const agentMap = agents instanceof Map ? agents : new Map(agents.map((a) => [a.name, a]));
-
-        return Array.from(agentMap.entries()).map(([name, agent]) => {
-          const agentTools = agent.getTools?.() || [];
-          return {
-            name,
-            description: agent.description || '',
-            tools: agentTools.map(t => t.slug || t.name || 'unknown')
-          };
-        });
-      }
-
-      // Fallback to connector's agentRegistry (desktop only)
-      const connector = plugin.connector;
-      if (connector?.agentRegistry) {
-        const agents = connector.agentRegistry.getAllAgents();
-        const result: ToolAgentInfo[] = [];
-
-        for (const [name, agent] of agents) {
-          const agentTools = agent.getTools?.() || [];
-          result.push({
-            name,
-            description: agent.description || '',
-            tools: agentTools.map(t => t.slug || t.name || 'unknown')
-          });
-        }
-
-        return result;
-      }
-
-      return [];
-    } catch {
-      return [];
-    }
   }
 
   /**
