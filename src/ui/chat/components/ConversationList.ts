@@ -150,7 +150,7 @@ export class ConversationList {
       // Restore title element
       const newTitleEl = createEl('div', {
         cls: 'conversation-title',
-        text: save && newTitle ? newTitle : currentTitle
+        text: save && newTitle ? newTitle : currentTitle,
       });
       input.replaceWith(newTitleEl);
 

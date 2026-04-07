@@ -542,6 +542,15 @@ export class ChatView extends ItemView {
     );
 
     this.uiStateController.initializeEventListeners();
+
+    // Refresh context bar when user switches back to this tab
+    this.registerEvent(
+      this.app.workspace.on('active-leaf-change', (leaf) => {
+        if (leaf === this.leaf) {
+          void this.updateContextProgress();
+        }
+      })
+    );
   }
 
   /**
@@ -1165,16 +1174,9 @@ export class ChatView extends ItemView {
   }
 
   private handleBranchSwitched(_messageId: string, _branchId: string): void {
-    // Intentional no-op.
-    //
-    // This event fires AFTER BranchManager completes a switch. The caller
-    // (handleBranchSwitchedByIndex) already calls messageDisplay.updateMessage()
-    // on success, so there is nothing left to do here.
-    //
-    // Doing anything here causes a double updateMessage call that races with
-    // the first async renderContent, producing truncated / corrupted output.
-    // Calling switchToBranch here would re-enter the switch, and fails hard
-    // when branchId is the sentinel 'original' (back-to-original navigation).
+    // Intentional no-op — the caller (handleBranchSwitchedByIndex) already
+    // calls messageDisplay.updateMessage() on success. Doing anything here
+    // causes a double updateMessage race that corrupts output.
   }
 
   /**

@@ -109,10 +109,10 @@ export class ModelSelectionUtility {
         };
       }
 
-      // No configured default found — return empty sentinel so callers
-      // can show a "no model selected" state rather than an unavailable model.
+      // No default configured — return empty sentinel so callers show "no model selected" state
       return { provider: '', model: '' };
     } catch {
+      // Return empty sentinel instead of throwing to prevent UI errors
       return { provider: '', model: '' };
     }
   }

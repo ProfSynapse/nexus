@@ -734,10 +734,11 @@
     border: 1px solid var(--background-modifier-border);
     border-radius: 50px;
     padding: 0.2rem;
-    opacity: 0.25;
+    opacity: 0;
     pointer-events: none;
-    transition: opacity 0.1s ease;
+    transition: all 0.2s ease;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+    z-index: 10;
     width: fit-content;
 }
 
@@ -748,10 +749,14 @@
     left: auto;
 }
 
-/* Assistant messages: pill sits in the header flex row, pushed to the right */
+/* Assistant messages: pill in top-right (icon is in top-left), inside bubble with sticky */
 .message-container.message-assistant .message-actions-external {
-    position: relative;
-    margin-left: auto;
+    position: sticky;
+    top: 0.5rem;
+    float: right;
+    margin-right: 0.75rem;
+    margin-top: 0.5rem;
+    z-index: 20;
 }
 
 /* Tool messages: pill in top-right, absolute positioning outside bubble */
@@ -764,6 +769,7 @@
 .message-container:hover .message-actions-external {
     opacity: 1;
     pointer-events: auto;
+    transform: translateY(0);
 }
 
 .message-action-btn {
@@ -772,7 +778,7 @@
     padding: 0.35rem;
     border-radius: 50%;
     cursor: pointer;
-    transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease;
+    transition: background 0.15s ease, color 0.15s ease;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1784,6 +1790,39 @@
 /* =============================== */
 /* EXPERIMENTAL WARNING STYLES    */
 /* =============================== */
+
+/* ChatView Experimental Warning Banner */
+.chat-experimental-warning {
+    background: var(--background-modifier-error);
+    border: 1px solid var(--background-modifier-error-border, var(--background-modifier-border));
+    border-radius: 6px;
+    padding: 8px 12px;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.9em;
+    flex-wrap: wrap;
+}
+
+.chat-experimental-warning .warning-icon {
+    font-size: 1.1em;
+    color: var(--text-warning);
+}
+
+.chat-experimental-warning .warning-text {
+    color: var(--text-on-accent);
+}
+
+.chat-experimental-warning .warning-link {
+    color: var(--text-accent);
+    text-decoration: underline;
+    font-weight: 500;
+}
+
+.chat-experimental-warning .warning-link:hover {
+    color: var(--text-accent-hover);
+}
 
 /* Settings Tab Experimental Warning Styles */
 .experimental-warning-container {
@@ -2896,6 +2935,13 @@ a:hover {
     align-items: center;
 }
 
+.llm-provider-model-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 10px;
+}
 
 .llm-provider-model-name {
     min-width: 150px;
@@ -3659,6 +3705,18 @@ a:hover {
 /* CHAT SETTINGS MODAL STYLES */
 /* =========================== */
 
+.chat-settings-modal {
+    padding: 20px;
+    min-width: 500px;
+    max-width: 600px;
+}
+
+.chat-settings-modal h2 {
+    margin-top: 0;
+    margin-bottom: 20px;
+    color: var(--text-normal);
+}
+
 /* =========================== */
 /* MCP SETUP UI STYLES        */
 /* =========================== */
@@ -4001,13 +4059,6 @@ a:hover {
    Chat Settings Modal - Complete Styling
    =========================================== */
 
-/* Modal Container */
-.chat-settings-modal {
-    padding: 20px;
-    min-width: 500px;
-    max-width: 600px;
-}
-
 /* Header */
 .chat-settings-header {
     display: flex;
@@ -4024,23 +4075,6 @@ a:hover {
 .chat-settings-buttons {
     display: flex;
     gap: 8px;
-}
-
-/* Workspace Info Section */
-.workspace-context-summary {
-    padding: 12px;
-    background: var(--background-secondary);
-    border-radius: 6px;
-    margin-top: 12px;
-}
-
-.workspace-context-summary h4 {
-    margin-top: 0;
-    margin-bottom: 8px;
-}
-
-.workspace-context-summary .context-item {
-    margin-bottom: 4px;
 }
 
 /* ===========================================
@@ -4223,10 +4257,12 @@ a:hover {
 }
 
 .csr-temp-value {
-    min-width: 2.5em;
-    text-align: right;
+    min-width: 30px;
+    text-align: center;
+    font-weight: 500;
+    font-size: 12px;
     color: var(--text-muted);
-    font-size: var(--font-smaller);
+    margin-left: var(--space-s);
 }
 
 /* Context notes */
@@ -5783,15 +5819,21 @@ body.is-mobile .message-action-btn {
     --icon-size: 16px;
 }
 
-/* Action button container - pill sizing on mobile; always visible since touch can't hover */
+/* Action button container - mobile sizing and always-visible (touch can't hover) */
 body.is-mobile .message-actions-external {
     gap: 2px;
     padding: 2px;
     border-radius: 8px;
-    opacity: 0.75;
+    opacity: 0.85;
     pointer-events: auto;
+    transform: translateY(0);
 }
 
+/* Assistant messages: keep in corner but smaller on mobile */
+body.is-mobile .message-container.message-assistant .message-actions-external {
+    top: 0.25rem;
+    right: 0.25rem;
+}
 
 /* Message bubbles - more padding and margin on mobile */
 body.is-mobile .message-bubble {
@@ -6164,15 +6206,6 @@ body.is-mobile .chat-loading-overlay {
 
 .llm-provider-help-list {
     margin: 0.5em 0;
-}
-
-/* Model row in generic provider */
-.llm-provider-model-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 10px;
-    margin-bottom: 10px;
 }
 
 .llm-provider-model-toggle {
@@ -6982,6 +7015,12 @@ body.is-mobile .chat-loading-overlay {
 /* Progress Bar Styles */
 .chat-progress-bar-reset {
     width: 0%;
+}
+
+/* Warning Banner Fade Out */
+.chat-warning-banner-fadeout {
+    opacity: 0;
+    transition: opacity 0.5s ease-out;
 }
 
 /* Input Auto-Resize Styles */
@@ -7862,4 +7901,3 @@ body.is-mobile .nexus-task-board-shell {
     min-width: 80px;
     min-height: 44px;
 }
-

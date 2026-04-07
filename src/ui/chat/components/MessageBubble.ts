@@ -2,7 +2,7 @@
  * MessageBubble - Individual message bubble component
  * Location: /src/ui/chat/components/MessageBubble.ts
  *
- * Renders user/AI messages with retry, edit, and action bar actions.
+ * Renders user/AI messages with copy, retry, and edit actions.
  * Delegates rendering responsibilities to specialized classes following SOLID principles.
  *
  * Used by MessageDisplay to render individual messages in the chat interface.
@@ -13,7 +13,6 @@
 import { ConversationMessage } from '../../../types/chat/ChatTypes';
 import { ProgressiveToolAccordion } from './ProgressiveToolAccordion';
 import { MessageBranchNavigator, MessageBranchNavigatorEvents } from './MessageBranchNavigator';
-import { MessageActionBar } from './MessageActionBar';
 import { setIcon, Component, App } from 'obsidian';
 
 // Extracted classes
@@ -23,6 +22,7 @@ import { ToolEventParser } from '../utils/ToolEventParser';
 import { normalizeToolCallForDisplay } from '../utils/toolDisplayNormalizer';
 import { MessageContentRenderer } from './renderers/MessageContentRenderer';
 import { MessageEditController } from '../controllers/MessageEditController';
+import { MessageActionBar } from './MessageActionBar';
 
 export class MessageBubble extends Component {
   private element: HTMLElement | null = null;
@@ -163,7 +163,7 @@ export class MessageBubble extends Component {
     if (this.message.role === 'user') {
       actions = header.createDiv('message-actions-external');
     } else if (this.message.role === 'assistant') {
-      actions = header.createDiv('message-actions-external');
+      actions = bubble.createDiv('message-actions-external');
     } else {
       actions = messageContainer.createDiv('message-actions-external');
     }
@@ -182,7 +182,7 @@ export class MessageBubble extends Component {
   }
 
   /**
-   * Create action buttons (edit, retry, branch navigator)
+   * Create action buttons (edit, retry, copy, branch navigator)
    */
   private createActionButtons(actions: HTMLElement): void {
     if (this.message.role === 'user') {
@@ -226,6 +226,17 @@ export class MessageBubble extends Component {
         this.onCopy(this.message.id);
       });
     } else {
+      // Copy button for AI messages
+      const copyBtn = actions.createEl('button', {
+        cls: 'message-action-btn clickable-icon',
+        attr: { title: 'Copy message' }
+      });
+      setIcon(copyBtn, 'copy');
+      this.registerDomEvent(copyBtn, 'click', () => {
+        this.showCopyFeedback(copyBtn);
+        this.onCopy(this.message.id);
+      });
+
       // Message branch navigator for AI messages with branches
       if (this.message.branches && this.message.branches.length > 0) {
         const navigatorEvents: MessageBranchNavigatorEvents = {
@@ -271,6 +282,7 @@ export class MessageBubble extends Component {
       clearInterval(this.loadingInterval);
       this.loadingInterval = null;
     }
+
     const dotsElement = container.querySelector('.dots');
     if (dotsElement) {
       let dotCount = 0;
@@ -806,10 +818,9 @@ export class MessageBubble extends Component {
   }
 
   /**
-   * Populate the existing .message-actions-external pill with action buttons
-   * for completed assistant messages that have non-empty text content.
-   * Buttons are inserted into the pill that already sits in the upper-right
-   * corner — no new wrapper element is created.
+   * Append action bar buttons (Copy, Insert, Append, Create File) into the existing
+   * .message-actions-external pill. Only created once per message lifecycle.
+   * Only appears for completed assistant messages with non-empty text content.
    */
   private appendActionBar(container: HTMLElement, message: ConversationMessage): void {
     if (message.role !== 'assistant') return;

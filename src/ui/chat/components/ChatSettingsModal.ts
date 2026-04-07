@@ -207,7 +207,7 @@ export class ChatSettingsModal extends Modal {
       // Update context notes
       await this.modelAgentManager.setContextNotes(settings.contextNotes);
 
-      // Update image model in plugin settings
+      // Update image model
       const plugin = getNexusPlugin<NexusPluginWithSettings>(this.app);
       const llmSettings = plugin?.settings?.settings?.llmProviders;
       if (llmSettings && plugin?.settings) {
