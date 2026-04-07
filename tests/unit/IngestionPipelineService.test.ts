@@ -47,21 +47,12 @@ jest.mock(
   })
 );
 
-// Mock TranscriptionService
-jest.mock(
-  '../../src/agents/ingestManager/tools/services/TranscriptionService',
-  () => ({
-    transcribeAudio: jest.fn(),
-  })
-);
-
 import { processFile } from '../../src/agents/ingestManager/tools/services/IngestionPipelineService';
 import { extractDocxMarkdown } from '../../src/agents/ingestManager/tools/services/DocxExtractionService';
 import { extractPdfText } from '../../src/agents/ingestManager/tools/services/PdfTextExtractor';
 import { extractPptxContent } from '../../src/agents/ingestManager/tools/services/PptxExtractionService';
 import { ocrPdf } from '../../src/agents/ingestManager/tools/services/OcrService';
 import { extractSpreadsheetSheets } from '../../src/agents/ingestManager/tools/services/SpreadsheetExtractionService';
-import { transcribeAudio } from '../../src/agents/ingestManager/tools/services/TranscriptionService';
 import {
   IngestFileRequest,
   IngestProgress,
@@ -76,7 +67,6 @@ const extractPdfTextMock = extractPdfText as jest.MockedFunction<typeof extractP
 const extractPptxContentMock = extractPptxContent as jest.MockedFunction<typeof extractPptxContent>;
 const ocrPdfMock = ocrPdf as jest.MockedFunction<typeof ocrPdf>;
 const extractSpreadsheetSheetsMock = extractSpreadsheetSheets as jest.MockedFunction<typeof extractSpreadsheetSheets>;
-const transcribeAudioMock = transcribeAudio as jest.MockedFunction<typeof transcribeAudio>;
 
 /** Create a mock Vault with configurable getFileByPath, readBinary, create, modify */
 function createMockVault(options: {
@@ -110,8 +100,8 @@ function createMockDeps(vault?: Vault) {
     ocrDeps: {
       generateWithVision: jest.fn().mockResolvedValue('OCR extracted text'),
     },
-    transcriptionDeps: {
-      getApiKey: jest.fn().mockReturnValue('test-api-key'),
+    transcriptionService: {
+      transcribe: jest.fn().mockResolvedValue({ segments: [] }),
     },
   };
 }
@@ -255,12 +245,11 @@ describe('IngestionPipelineService', () => {
   // ==========================================================================
 
   describe('audio transcription', () => {
-    it('should route audio files to transcribeAudio', async () => {
-      const segments: TranscriptionSegment[] = [
-        { startSeconds: 0, endSeconds: 10, text: 'Hello world' },
-      ];
-      transcribeAudioMock.mockResolvedValue(segments);
+    it('should route audio files to transcriptionService.transcribe', async () => {
       const deps = createMockDeps();
+      (deps.transcriptionService.transcribe as jest.Mock).mockResolvedValue({
+        segments: [{ startSeconds: 0, endSeconds: 10, text: 'Hello world' }],
+      });
       const request: IngestFileRequest = {
         filePath: 'notes/recording.mp3',
         transcriptionProvider: 'openai',
@@ -269,7 +258,7 @@ describe('IngestionPipelineService', () => {
 
       const result = await processFile(request, deps);
 
-      expect(transcribeAudioMock).toHaveBeenCalled();
+      expect(deps.transcriptionService.transcribe).toHaveBeenCalled();
       expect(result.success).toBe(true);
       expect(result.durationSeconds).toBe(10);
     });
@@ -284,10 +273,10 @@ describe('IngestionPipelineService', () => {
     });
 
     it('should create .md output from audio transcription', async () => {
-      transcribeAudioMock.mockResolvedValue([
-        { startSeconds: 0, endSeconds: 5, text: 'Transcribed text' },
-      ]);
       const deps = createMockDeps();
+      (deps.transcriptionService.transcribe as jest.Mock).mockResolvedValue({
+        segments: [{ startSeconds: 0, endSeconds: 5, text: 'Transcribed text' }],
+      });
       const request: IngestFileRequest = {
         filePath: 'notes/recording.mp3',
         transcriptionProvider: 'openai',
@@ -469,10 +458,10 @@ describe('IngestionPipelineService', () => {
     });
 
     it('should call onProgress for audio transcription stages', async () => {
-      transcribeAudioMock.mockResolvedValue([
-        { startSeconds: 0, endSeconds: 5, text: 'Hello' },
-      ]);
       const deps = createMockDeps();
+      (deps.transcriptionService.transcribe as jest.Mock).mockResolvedValue({
+        segments: [{ startSeconds: 0, endSeconds: 5, text: 'Hello' }],
+      });
       const request: IngestFileRequest = {
         filePath: 'notes/recording.mp3',
         transcriptionProvider: 'openai',

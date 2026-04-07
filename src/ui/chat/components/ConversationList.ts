@@ -12,13 +12,18 @@ export class ConversationList {
   private activeConversationId: string | null = null;
   private pendingDeleteConversationId: string | null = null;
   private pendingDeleteTimer: number | null = null;
+  private _hasMore = false;
+  private _isLoading = false;
+  private _isSearchActive = false;
+  private loadMoreBtn: HTMLButtonElement | null = null;
 
   constructor(
     private container: HTMLElement,
     private onConversationSelect: (conversation: ConversationData) => void,
     private onConversationDelete: (conversationId: string) => void,
     private onConversationRename?: (conversationId: string, newTitle: string) => void,
-    private component?: Component
+    private component?: Component,
+    private onLoadMore?: () => void
   ) {
     this.render();
   }
@@ -27,8 +32,35 @@ export class ConversationList {
    * Set conversations to display
    */
   setConversations(conversations: ConversationData[]): void {
-    this.conversations = conversations.sort((a, b) => b.updated - a.updated);
+    // Shallow copy to avoid mutating the caller's array.
+    // Only sort by updated when browsing — search results preserve relevance ordering.
+    this.conversations = this._isSearchActive
+      ? [...conversations]
+      : [...conversations].sort((a, b) => b.updated - a.updated);
     this.render();
+  }
+
+  /**
+   * Update pagination state for Load More button visibility
+   */
+  setHasMore(hasMore: boolean): void {
+    this._hasMore = hasMore;
+    this.updateLoadMoreButton();
+  }
+
+  /**
+   * Update loading state for Load More button
+   */
+  setIsLoading(isLoading: boolean): void {
+    this._isLoading = isLoading;
+    this.updateLoadMoreButton();
+  }
+
+  /**
+   * Update search state for contextual empty state message
+   */
+  setIsSearchActive(isSearchActive: boolean): void {
+    this._isSearchActive = isSearchActive;
   }
 
   /**
@@ -44,11 +76,14 @@ export class ConversationList {
    */
   private render(): void {
     this.container.empty();
+    this.loadMoreBtn = null; // container.empty() destroys child nodes
     this.container.addClass('conversation-list');
 
     if (this.conversations.length === 0) {
       const emptyState = this.container.createDiv('conversation-list-empty');
-      emptyState.textContent = 'No conversations yet';
+      emptyState.textContent = this._isSearchActive
+        ? 'No results found'
+        : 'No conversations yet';
       return;
     }
 
@@ -113,6 +148,9 @@ export class ConversationList {
       };
       this.component?.registerDomEvent(deleteBtn, 'click', deleteHandler);
     });
+
+    // Load More button
+    this.renderLoadMoreButton();
   }
 
   /**
@@ -240,6 +278,62 @@ export class ConversationList {
     if (this.pendingDeleteTimer !== null) {
       window.clearTimeout(this.pendingDeleteTimer);
       this.pendingDeleteTimer = null;
+    }
+  }
+
+  /**
+   * Render the Load More button at the bottom of the list.
+   * Creates the button once and reuses it across updates.
+   */
+  private renderLoadMoreButton(): void {
+    if (!this._hasMore || !this.onLoadMore) return;
+
+    if (!this.loadMoreBtn) {
+      this.loadMoreBtn = this.container.createEl('button', {
+        cls: 'conversation-load-more-btn',
+      });
+      this.loadMoreBtn.setAttribute('aria-label', 'Load more conversations');
+      const handler = () => {
+        if (!this._isLoading) {
+          this.onLoadMore?.();
+        }
+      };
+      this.component?.registerDomEvent(this.loadMoreBtn, 'click', handler);
+    } else {
+      this.container.appendChild(this.loadMoreBtn);
+    }
+
+    this.syncLoadMoreButtonState();
+  }
+
+  /**
+   * Sync Load More button text and disabled state to current loading state
+   */
+  private syncLoadMoreButtonState(): void {
+    if (!this.loadMoreBtn) return;
+    this.loadMoreBtn.textContent = this._isLoading ? 'Loading...' : 'Load more';
+    if (this._isLoading) {
+      this.loadMoreBtn.setAttribute('disabled', 'true');
+    } else {
+      this.loadMoreBtn.removeAttribute('disabled');
+    }
+  }
+
+  /**
+   * Update Load More button visibility/state without full re-render
+   */
+  private updateLoadMoreButton(): void {
+    if (this._hasMore && this.onLoadMore && this.conversations.length > 0) {
+      if (this.loadMoreBtn) {
+        if (!this.loadMoreBtn.parentElement) {
+          this.container.appendChild(this.loadMoreBtn);
+        }
+        this.syncLoadMoreButtonState();
+      } else {
+        this.renderLoadMoreButton();
+      }
+    } else if (this.loadMoreBtn?.parentElement) {
+      this.loadMoreBtn.remove();
     }
   }
 

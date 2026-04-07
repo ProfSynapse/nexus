@@ -3,7 +3,7 @@ Last Updated: 2026-04-06
 
 ## Project Overview
 - **Name**: Nexus (package: claudesidian-mcp)
-- **Version**: 5.6.8
+- **Version**: 5.6.9
 - **Type**: Obsidian Community Plugin
 - **Purpose**: MCP integration for Obsidian with AI-powered vault operations
 - **Architecture**: Agent-Tool pattern with domain-driven design
@@ -22,10 +22,11 @@ Full guidelines: `docs/obsidian-plugin-guidelines.md`
 
 ## Recent Changes
 
-**Current Version**: 5.6.8
+**Current Version**: 5.6.9
 Full changelog: `docs/changelog.md`
 
 **Latest features** (Apr 2026):
+- v5.6.9 (PR #99) — Conversation list pagination ("Load More") + FTS title search in sidebar
 - v5.6.4 (PR #86) — any→unknown type migration, ESLint v9 + obsidianmd linter, Anthropic multi-tool fix
 - v5.6.3 — DOCX/PPTX/XLSX ingestion support
 - v5.6.0 — Nexus Ingester, Web Tools Agent, Composer App (PRs #81–83)
@@ -289,23 +290,30 @@ Adapters at `src/services/llm/adapters/{provider}/`. Types at `src/services/llm/
 ## Working Memory
 <!-- Auto-managed by pact-memory skill. Last 3 memories shown. Full history searchable via pact-memory skill. -->
 
-### 2026-03-29 18:54
-**Context**: Orchestration retrospective for the Nexus Ingester feature in claudesidian-mcp. Full PACT cycle: PREPARE, concurrent CODE (backend + frontend), TEST, REVIEW (5 reviewers), REMEDIATION (3 concurrent fixers). PR #83 on feat/nexus-ingester branch. Variety scored 13 (Novelty:3, Scope:4, Uncertainty:3, Risk:3). Zero imPACT cycles triggered. All phases completed on first pass. 16 specialist tasks total across the workflow. The orchestration pattern was: sequential phases with concurrent specialists within each phase, plus a planned follow-up wiring task to bridge concurrent CODE outputs.
-**Goal**: Calibrate orchestration judgment via second-order observation -- track variety scoring accuracy and dispatch strategy effectiveness for the ingester domain. This data feeds Learning II pattern matching for future new-agent implementations.
-**Decisions**: Variety scored 13 (Novelty:3, Scope:4, Uncertainty:3, Risk:3), actual was close -- zero imPACT cycles, Concurrent frontend+backend CODE dispatch with planned wiring task, Concurrent remediation dispatch (3 fixers in parallel) with test-reviewer reuse
-**Lessons**: Concurrent agent dispatch consistently produces shared constant duplication (DRY findings in review) -- consider injecting shared constants explicitly in dispatch prompts for cross-domain parallel work. The ingester had ACCEPTED_EXTENSIONS duplicated 4x and provider lists duplicated in ChatView and DefaultsTab., PREPARE phase investment pays off: pdfjs-dist LoopbackPort approach and decodeAudioData crash risk identified upfront prevented blocking issues during CODE. Without PREPARE, these would have been imPACT-triggering blockers., Reviewer reuse as fixer (test-reviewer stayed for test alignment fixes after review) is efficient -- no context loss. The reviewer already understood the codebase and the issues, so fixing was faster than spawning a fresh agent., Variety score of 13 was accurate -- actual difficulty matched prediction. Zero imPACT cycles, all phases ran as planned. The high Scope dimension (4) was justified by the cross-cutting nature (new agent + adapter extensions + UI + settings + tests)., Concurrent remediation dispatch caused test/implementation alignment gap: TranscriptionService error format and AudioChunkingService >25MB behavior were changed by backend fixer but tests were written against the pre-fix behavior. Resolved by reusing test-reviewer to align tests with fixes. For future concurrent remediation, consider sequencing test updates after implementation fixes., The wiring task pattern (task #14) for bridging concurrent CODE outputs worked well and was planned upfront. This should be the standard pattern when frontend and backend are dispatched concurrently with a shared integration point.
-**Reasoning chains**: Variety calibration: predicted 13 -> actual ~13 (no imPACTs, no phase reruns) -> scoring was accurate for new-agent implementations with PREPARE investment -> future new-agent tasks in this project can use 12-14 as baseline variety, DRY duplication from concurrent dispatch: parallel agents independently define same constants -> review catches it -> remediation consolidates -> prevention: inject shared constants in dispatch prompts or define types.ts contents upfront in architecture phase, PREPARE ROI: 1 preparer task upfront -> 0 imPACT cycles during CODE -> saved at least 2 potential blockers (pdfjs-dist bundling, decodeAudioData crash) -> PREPARE is justified for variety 10+ tasks
-**Memory ID**: 6ecbd511caced58995c91472df49c955
+### 2026-04-06 21:10
+**Context**: Orchestration retrospective for conversation list pagination and search feature (PR #99) in claudesidian-mcp v5.6.8. Full PACT cycle: plan-mode → CODE (3 tasks: backend #6, frontend #7, wiring #8) → TEST (#10, 63 tests) → REVIEW (3 reviewers: architect #12, test-engineer #13, frontend #14) → REMEDIATION (5 tasks: #16, #17, #18, #19, #20). Zero imPACT cycles. PREPARE and ARCHITECT phases skipped — plan from plan-mode was comprehensive enough. 3 blocking review findings fixed in cycle 1. Variety scored 5 (Low), actual ~6. Session completed in single pass.
+**Goal**: Calibrate orchestration judgment via second-order observation — track variety scoring accuracy and dispatch strategy effectiveness for the pagination/search domain. This data feeds Learning II pattern matching for future UI pagination features.
+**Decisions**: Variety scored 5 (Novelty:1, Scope:2, Uncertainty:1, Risk:1), actual ~6, Skipped PREPARE and ARCHITECT phases — plan-driven workflow, Concurrent backend + frontend CODE dispatch with planned wiring task, 3 reviewers (architect, test-engineer, frontend-coder) without security reviewer
+**Lessons**: Plan-driven PREPARE/ARCHITECT skip works well for Low variety (score 5) but can miss implementation gaps like missing count() method — the plan enumerated layers to modify but did not probe whether each layer already exposed the required adapter methods. Structured gate question 3 (unknown-unknowns) should probe service method signatures more carefully., Wiring task pattern confirmed effective for 4th time (after Ingester backend+frontend, Ingester remediation, Composer) as standard approach for concurrent CODE outputs. Planning the wiring task upfront in the architecture/plan phase prevents integration surprises., Whitespace reformatting from agents pollutes diffs — the Edit tool normalizes CRLF to LF, converting every line in CRLF files. Consider adding formatting constraints to agent prompts, or requiring agents to use git checkout + sed for CRLF-sensitive files., Variety score of 5 was close to actual (~6). The count() gap was a genuine unknown-unknown that bumped Uncertainty from 1 to 2 in hindsight. For pagination features, probe adapter method availability during planning., Reviewer-to-fixer reuse (frontend-reviewer fixed blocking #17 + minor #18, test-reviewer fixed #19) is efficient — no context loss, faster than spawning fresh agents. This pattern now confirmed across 2 features (Ingester, pagination)., Concurrent remediation (5 fixers) worked cleanly — no coordination issues this time because fixes were to separate files/concerns. Sequencing was natural: blocking (#16, #17) → minor (#18, #19) → whitespace cleanup (#20).
+**Reasoning chains**: Variety calibration: predicted 5 → actual ~6 (count() gap was genuine unknown-unknown, bumped Uncertainty 1→2) → scoring was accurate for pagination features with plan-mode investment → future pagination tasks can use 5-6 as baseline, PREPARE skip ROI: no PREPARE phase → 0 imPACT cycles during CODE → but 1 blocking issue caught in review (count() missing) → PREPARE investment questionable for Low variety, review caught it anyway → skip was net positive, Wiring task ROI: 1 wiring task (#8) planned upfront → clean integration of concurrent outputs → 4th confirmation of pattern → should be standard for all concurrent CODE dispatch
+**Memory ID**: 91a4435063b6817f1ae45fe01c5e1dfa
 
-### 2026-03-29 18:46
-**Summary**: Post-review remediation for Nexus Ingester PR #83 in claudesidian-mcp.
+### 2026-04-06 21:06
+**Summary**: PR #99 peer review for conversation list pagination and search feature in claudesidian-mcp.
 
-### 2026-03-29 16:10
-**Summary**: Completed full PACT cycle (PREPARE → CODE → TEST → REVIEW in progress) for the Nexus Ingester feature in claudesidian-mc...
+### 2026-04-06 20:38
+**Summary**: TEST phase for conversation list pagination and search feature in claudesidian-mcp v5.6.8.
+## Current Session
+<!-- Auto-managed by session_init hook. Overwritten each session. -->
+- Resume: `claude --resume a89883a5-9570-4c8e-a9b5-b53f8ae4ad39`
+- Team: `pact-a89883a5`
+- Started: 2026-04-06 20:25:34 UTC
+<!-- SESSION_END -->
+
 <!-- SESSION_START -->
 ## Current Session
 <!-- Auto-managed by session_init hook. Overwritten each session. -->
-- Resume: `claude --resume 6e102c56-dc39-48ff-8ff0-5e0f39d1b75b`
-- Team: `pact-6e102c56`
-- Started: 2026-04-06 19:09:24 UTC
+- Resume: `claude --resume a89883a5-9570-4c8e-a9b5-b53f8ae4ad39`
+- Team: `pact-a89883a5`
+- Started: 2026-04-06 21:04:50 UTC
 <!-- SESSION_END -->

@@ -184,11 +184,13 @@
     display: flex;
     gap: 0.25rem;
     opacity: 0;
+    pointer-events: none;
     transition: opacity 0.2s;
 }
 
 .conversation-item:hover .conversation-actions {
     opacity: 1;
+    pointer-events: auto;
 }
 
 /* Individual action button styling */
@@ -226,6 +228,59 @@
 .conversation-delete-btn:hover {
     background: var(--background-modifier-error);
     color: var(--text-on-accent);
+}
+
+/* Conversation Search */
+.conversation-search-container {
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.conversation-search-input {
+    box-sizing: border-box;
+    width: 100%;
+    padding: 0.4rem 0.6rem;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    background: var(--background-primary);
+    color: var(--text-normal);
+    font-size: 0.85rem;
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+.conversation-search-input:focus {
+    border-color: var(--interactive-accent);
+}
+
+.conversation-search-input::placeholder {
+    color: var(--text-faint);
+}
+
+/* Load More Button */
+.conversation-load-more-btn {
+    display: block;
+    width: calc(100% - 1rem);
+    margin: 0.5rem auto;
+    padding: 0.5rem;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    background: var(--background-primary);
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    cursor: pointer;
+    text-align: center;
+    transition: background-color 0.2s, color 0.2s;
+}
+
+.conversation-load-more-btn:hover {
+    background: var(--background-modifier-hover);
+    color: var(--text-normal);
+}
+
+.conversation-load-more-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
 }
 
 /* =========================== */

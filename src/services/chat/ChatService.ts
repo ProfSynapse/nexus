@@ -25,6 +25,7 @@ interface ConversationListItem {
   title: string;
   summary: string;
   relevanceScore: number;
+  created: number;
   lastUpdated: number;
 }
 
@@ -74,7 +75,7 @@ interface MCPConnectorLike {
 
 interface ConversationServiceDependency {
   getConversation: (id: string, pagination?: { page?: number; pageSize?: number }) => Promise<ConversationData | null>;
-  listConversations: (vaultName?: string, limit?: number) => Promise<Array<{
+  listConversations: (vaultName?: string, limit?: number, page?: number) => Promise<Array<{
     id: string;
     title: string;
     created: number;
@@ -420,8 +421,13 @@ export class ChatService {
     return this.conversationQueryService.getMessages(conversationId, options);
   }
 
-  /** List conversations */
-  async listConversations(options?: { limit?: number; offset?: number }): Promise<ConversationData[]> {
+  /** List conversations with pagination */
+  async listConversations(options?: {
+    limit?: number;
+    page?: number;
+    sortBy?: string;
+    sortOrder?: 'asc' | 'desc';
+  }): Promise<PaginatedResult<ConversationData>> {
     return this.conversationQueryService.listConversations(options);
   }
 
@@ -453,6 +459,7 @@ export class ChatService {
       title: conv.title,
       summary: conv.messages[0]?.content.substring(0, 100) + '...',
       relevanceScore: 0.8,
+      created: conv.created,
       lastUpdated: conv.updated
     }));
   }

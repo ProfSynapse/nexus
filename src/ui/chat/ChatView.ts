@@ -100,6 +100,9 @@ export class ChatView extends ItemView {
   // Disposal guard - prevents polling loops from operating on detached DOM
   private isClosing = false;
 
+  // Search debounce timer for conversation search input
+  private searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
   // Branch UI state
   private branchHeader: BranchHeader | null = null;
   private currentBranchContext: BranchViewContext | null = null;
@@ -469,7 +472,10 @@ export class ChatView extends ItemView {
       (conversationId, newTitle) => {
         void this.conversationManager.renameConversation(conversationId, newTitle);
       },
-      this // Pass Component for registerDomEvent
+      this, // Pass Component for registerDomEvent
+      () => {
+        void this.conversationManager.loadMoreConversations();
+      }
     );
 
     this.messageDisplay = new MessageDisplay(
@@ -542,6 +548,25 @@ export class ChatView extends ItemView {
     );
 
     this.uiStateController.initializeEventListeners();
+
+    // Wire search input with 300ms debounce
+    if (this.layoutElements.searchInput) {
+      this.registerDomEvent(this.layoutElements.searchInput, 'input', () => {
+        if (this.searchDebounceTimer) {
+          clearTimeout(this.searchDebounceTimer);
+        }
+        const query = this.layoutElements.searchInput.value.trim();
+        if (query.length === 0) {
+          this.searchDebounceTimer = null;
+          void this.conversationManager.clearSearch();
+          return;
+        }
+        this.searchDebounceTimer = setTimeout(() => {
+          this.searchDebounceTimer = null;
+          void this.conversationManager.searchConversations(query);
+        }, 300);
+      });
+    }
 
     // Refresh context bar when user switches back to this tab
     this.registerEvent(
@@ -811,14 +836,18 @@ export class ChatView extends ItemView {
 
   private async handleConversationsChanged(): Promise<void> {
     if (this.conversationList) {
+      this.conversationList.setIsSearchActive(this.conversationManager.isSearchActive);
       this.conversationList.setConversations(this.conversationManager.getConversations());
+      this.conversationList.setHasMore(this.conversationManager.hasMore);
+      this.conversationList.setIsLoading(this.conversationManager.isLoading);
     }
 
     const conversations = this.conversationManager.getConversations();
     const currentConversation = this.conversationManager.getCurrentConversation();
 
-    if (conversations.length === 0) {
+    if (conversations.length === 0 && !this.conversationManager.isSearchActive) {
       // Re-initialize with defaults when returning to welcome state
+      // (only when truly empty — not when search returns zero results)
       await this.modelAgentManager.initializeDefaults();
 
       const hasProviders = this.chatService.hasConfiguredProviders();
@@ -1426,6 +1455,10 @@ export class ChatView extends ItemView {
   }
 
   private cleanup(): void {
+    if (this.searchDebounceTimer) {
+      clearTimeout(this.searchDebounceTimer);
+      this.searchDebounceTimer = null;
+    }
     this.conversationList?.cleanup();
     this.messageDisplay?.cleanup();
     this.chatInput?.cleanup();

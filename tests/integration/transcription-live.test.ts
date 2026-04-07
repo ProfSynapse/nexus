@@ -217,6 +217,7 @@ describe('Provider summary', () => {
     if (missing.length > 0) {
       console.log(`Skipped (no API key): ${missing.join(', ')}`);
     }
-    expect(configuredProviders.length).toBeGreaterThanOrEqual(1);
+    // All providers accounted for (configured + skipped = total)
+    expect(configuredProviders.length + missing.length).toBe(5);
   });
 });

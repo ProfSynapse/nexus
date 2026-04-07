@@ -118,14 +118,14 @@ export class ConversationService {
   /**
    * List conversations (uses index only - lightweight and fast)
    */
-  async listConversations(vaultName?: string, limit?: number): Promise<LegacyConversationMetadata[]> {
+  async listConversations(vaultName?: string, limit?: number, page?: number): Promise<LegacyConversationMetadata[]> {
     return withDualBackend(
       this.storageAdapterOrGetter,
       async (adapter) => {
         const result = await adapter.getConversations({
           filter: vaultName ? { vaultName } : undefined,
           pageSize: limit ?? 100,
-          page: 0,
+          page: page ?? 0,
           sortBy: 'updated',
           sortOrder: 'desc'
         });
@@ -138,9 +138,10 @@ export class ConversationService {
           conversations = conversations.filter(conv => conv.vault_name === vaultName);
         }
         conversations.sort((a, b) => b.updated - a.updated);
-        if (limit) {
-          conversations = conversations.slice(0, limit);
-        }
+        const pageSize = limit ?? 100;
+        const pageNum = page ?? 0;
+        const start = pageNum * pageSize;
+        conversations = conversations.slice(start, start + pageSize);
         return conversations;
       }
     );
@@ -732,6 +733,26 @@ export class ConversationService {
    */
   async getRecentConversations(limit = 10): Promise<LegacyConversationMetadata[]> {
     return this.listConversations(undefined, limit);
+  }
+
+  /**
+   * Count total conversations (excludes branches)
+   */
+  async count(): Promise<number> {
+    return withDualBackend(
+      this.storageAdapterOrGetter,
+      async (adapter) => {
+        const result = await adapter.getConversations({
+          pageSize: 1,
+          page: 0
+        });
+        return result.totalItems;
+      },
+      async () => {
+        const index = await this.indexManager.loadConversationIndex();
+        return Object.keys(index.conversations).length;
+      }
+    );
   }
 
   /**
