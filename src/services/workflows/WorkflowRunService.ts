@@ -2,7 +2,7 @@ import type { App, Plugin, WorkspaceLeaf } from 'obsidian';
 import { generateSessionId } from '../../utils/sessionUtils';
 import { ModelSelectionUtility } from '../../ui/chat/utils/ModelSelectionUtility';
 import { WorkspaceIntegrationService } from '../../ui/chat/services/WorkspaceIntegrationService';
-import { SystemPromptBuilder, type PromptSummary, type ToolAgentInfo } from '../../ui/chat/services/SystemPromptBuilder';
+import { SystemPromptBuilder, type ToolAgentInfo } from '../../ui/chat/services/SystemPromptBuilder';
 import type { ChatService } from '../chat/ChatService';
 import type { WorkspaceService } from '../WorkspaceService';
 import type { CustomPromptStorageService } from '../../agents/promptManager/services/CustomPromptStorageService';
@@ -177,21 +177,11 @@ export class WorkflowRunService {
     loadedWorkspaceData: Record<string, unknown>;
     providerId?: string;
   }): Promise<string | null> {
-    const availablePrompts: PromptSummary[] = (this.deps.customPromptStorage?.getEnabledPrompts() || []).map(prompt => ({
-      id: prompt.id,
-      name: prompt.name,
-      description: prompt.description || 'Custom prompt'
-    }));
-
     return this.systemPromptBuilder.build({
       sessionId: params.sessionId,
       workspaceId: params.workspaceId,
       customPrompt: params.customPrompt,
       loadedWorkspaceData: params.loadedWorkspaceData,
-      vaultStructure: this.workspaceIntegration.getVaultStructure(),
-      availableWorkspaces: await this.workspaceIntegration.listAvailableWorkspaces(),
-      availablePrompts,
-      toolAgents: this.getToolAgentInfo(),
       skipToolsSection: params.providerId === 'webllm'
     });
   }

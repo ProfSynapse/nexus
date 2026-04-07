@@ -22,6 +22,7 @@ import {
   type ModelAgentMessageOptions,
   type ModelAgentPromptContextSnapshot,
 } from './ModelAgentPromptContextAssembler';
+import { ModelSelectionUtility } from '../utils/ModelSelectionUtility';
 import { PromptConfigurationUtility } from '../utils/PromptConfigurationUtility';
 import { WorkspaceIntegrationService } from './WorkspaceIntegrationService';
 import { StaticModelsService } from '../../../services/StaticModelsService';
