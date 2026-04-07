@@ -44,6 +44,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export interface SQLiteCacheManagerOptions {
   app: App;
   dbPath: string;  // e.g., '.nexus/cache.db'
+  wasmPath?: string;
   autoSaveInterval?: number;  // ms between auto-saves (default: 30000)
 }
 
@@ -96,6 +97,7 @@ class DatabaseAdapter {
 export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager {
   private app: App;
   private dbPath: string;  // Relative path within vault
+  private wasmPath?: string;
   private sqlite3: SQLite3Module | null = null;  // The sqlite3 WASM module
   private db: SQLiteDatabase | null = null;  // The oo1.DB instance
   private isInitialized = false;
@@ -111,6 +113,7 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
   constructor(options: SQLiteCacheManagerOptions) {
     this.app = options.app;
     this.dbPath = options.dbPath;
+    this.wasmPath = options.wasmPath;
     this.autoSaveInterval = options.autoSaveInterval ?? 30000;  // 30 seconds default
     this.searchService = new SQLiteSearchService(this);
   }
@@ -136,6 +139,16 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
    * as well as the current `.obsidian/plugins/nexus/` folder.
    */
   private async resolveSqliteWasmPath(): Promise<string> {
+    if (this.wasmPath) {
+      try {
+        if (await this.app.vault.adapter.exists(this.wasmPath)) {
+          return this.wasmPath;
+        }
+      } catch {
+        // Fall through to legacy candidates.
+      }
+    }
+
     const configDir = this.app.vault.configDir;
     const candidatePluginFolders = ['nexus', 'claudesidian-mcp'];
     const candidates = candidatePluginFolders.map(folder => `${configDir}/plugins/${folder}/sqlite3.wasm`);

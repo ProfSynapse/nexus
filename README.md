@@ -73,6 +73,16 @@ When a config file needs to be edited, show the exact snippet with my vault path
 - [Workflow examples](guide/workflow-examples.md)
 - [Two-tool architecture](guide/two-tool-architecture.md)
 
+## Multi-Device Sync
+
+Nexus stores conversations, workspaces, and tasks as JSONL files. These files now live inside the plugin directory at `.obsidian/plugins/<plugin-folder>/data/`, which Obsidian Sync includes automatically.
+
+On first launch after updating, Nexus copies existing data from the legacy `.nexus/` folder into the plugin directory. The `.nexus/` folder is kept as a fallback and is never deleted automatically.
+
+The SQLite cache (`cache.db`) is local-only and rebuilt from JSONL on each device — it is not synced.
+
+**Mobile tip**: If your vault finishes syncing after Nexus has already loaded, run the command palette action **Nexus: Refresh synced data** to pick up the latest files.
+
 ## Development
 
 ```bash

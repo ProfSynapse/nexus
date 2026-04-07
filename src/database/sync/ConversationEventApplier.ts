@@ -9,6 +9,7 @@ import {
   ConversationEvent,
   ConversationCreatedEvent,
   ConversationUpdatedEvent,
+  ConversationDeletedEvent,
   MessageEvent,
   MessageUpdatedEvent,
   MessageDeletedEvent,
@@ -32,6 +33,9 @@ export class ConversationEventApplier {
         break;
       case 'conversation_updated':
         await this.applyConversationUpdated(event);
+        break;
+      case 'conversation_deleted':
+        await this.applyConversationDeleted(event);
         break;
       case 'message':
         await this.applyMessageAdded(event);
@@ -121,6 +125,18 @@ export class ConversationEventApplier {
         values
       );
     }
+  }
+
+  private async applyConversationDeleted(event: ConversationDeletedEvent): Promise<void> {
+    // Delete messages first (cascade), then conversation
+    await this.sqliteCache.run(
+      `DELETE FROM messages WHERE conversationId = ?`,
+      [event.conversationId]
+    );
+    await this.sqliteCache.run(
+      `DELETE FROM conversations WHERE id = ?`,
+      [event.conversationId]
+    );
   }
 
   private async applyMessageAdded(event: MessageEvent): Promise<void> {

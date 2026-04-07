@@ -21,7 +21,7 @@
  * - src/database/interfaces/IStorageAdapter.ts - Interface definition
  */
 
-import { App } from 'obsidian';
+import { App, Plugin } from 'obsidian';
 import { IStorageAdapter, QueryOptions, ImportOptions } from '../interfaces/IStorageAdapter';
 import { JSONLWriter } from '../storage/JSONLWriter';
 import { SQLiteCacheManager } from '../storage/SQLiteCacheManager';
@@ -42,10 +42,16 @@ import {
 } from '../../types/storage/HybridStorageTypes';
 import { RepositoryDependencies } from '../repositories/base/BaseRepository';
 import { LegacyMigrator } from '../migration/LegacyMigrator';
-import { WorkspaceEvent, TaskEvent } from '../interfaces/StorageEvents';
+import { WorkspaceEvent, ConversationEvent, TaskEvent } from '../interfaces/StorageEvents';
 import { WorkspaceEventApplier } from '../sync/WorkspaceEventApplier';
+import { ConversationEventApplier } from '../sync/ConversationEventApplier';
 import { TaskEventApplier } from '../sync/TaskEventApplier';
 import { resolveWorkspaceId } from '../sync/resolveWorkspaceId';
+import {
+  PluginScopedStorageCoordinator,
+  PluginScopedStoragePlan
+} from '../migration/PluginScopedStorageCoordinator';
+import { resolvePluginStorageRoot } from '../storage/PluginStoragePathResolver';
 
 // Import all repositories
 import { WorkspaceRepository } from '../repositories/WorkspaceRepository';
@@ -69,6 +75,8 @@ type ExportServiceStateRepo = {
 export interface HybridStorageAdapterOptions {
   /** Obsidian app instance */
   app: App;
+  /** Active plugin instance for plugin-scoped storage resolution */
+  plugin: Plugin;
   /** Base path for storage (default: '.nexus') */
   basePath?: string;
   /** Auto-sync on initialization (default: true) */
@@ -87,6 +95,7 @@ export interface HybridStorageAdapterOptions {
  */
 export class HybridStorageAdapter implements IStorageAdapter {
   private app: App;
+  private plugin: Plugin;
   private basePath: string;
   private initialized = false;
   private syncInterval?: NodeJS.Timeout;
@@ -101,6 +110,7 @@ export class HybridStorageAdapter implements IStorageAdapter {
   private sqliteCache: SQLiteCacheManager;
   private syncCoordinator: SyncCoordinator;
   private queryCache: QueryCache;
+  private storageCoordinator: PluginScopedStorageCoordinator;
 
   // Repositories (composed)
   private workspaceRepo!: WorkspaceRepository;
@@ -117,7 +127,10 @@ export class HybridStorageAdapter implements IStorageAdapter {
 
   constructor(options: HybridStorageAdapterOptions) {
     this.app = options.app;
+    this.plugin = options.plugin;
     this.basePath = options.basePath ?? '.nexus';
+    const storageRoots = resolvePluginStorageRoot(this.app, this.plugin);
+    this.storageCoordinator = new PluginScopedStorageCoordinator(this.app, this.plugin, this.basePath);
 
     // Initialize infrastructure
     this.jsonlWriter = new JSONLWriter({
@@ -127,7 +140,8 @@ export class HybridStorageAdapter implements IStorageAdapter {
 
     this.sqliteCache = new SQLiteCacheManager({
       app: this.app,
-      dbPath: `${this.basePath}/cache.db`
+      dbPath: `${storageRoots.dataRoot}/cache.db`,
+      wasmPath: `${storageRoots.pluginDir}/sqlite3.wasm`
     });
 
     this.syncCoordinator = new SyncCoordinator(
@@ -218,14 +232,6 @@ export class HybridStorageAdapter implements IStorageAdapter {
    */
   private async performInitialization(): Promise<void> {
     try {
-      // 1. Initialize SQLite cache
-      await this.sqliteCache.initialize();
-
-      // 2. Ensure JSONL directories exist
-      await this.jsonlWriter.ensureDirectory('workspaces');
-      await this.jsonlWriter.ensureDirectory('conversations');
-      await this.jsonlWriter.ensureDirectory('tasks');
-
       const migrator = new LegacyMigrator(this.app);
       const migrationNeeded = await migrator.isMigrationNeeded();
       let actuallyMigrated = false;
@@ -236,6 +242,17 @@ export class HybridStorageAdapter implements IStorageAdapter {
         actuallyMigrated = migrationResult.needed &&
           (migrationResult.stats.workspacesMigrated > 0 || migrationResult.stats.conversationsMigrated > 0);
       }
+
+      const storagePlan = await this.storageCoordinator.prepareStoragePlan();
+      this.applyStoragePlan(storagePlan);
+
+      // 1. Initialize SQLite cache
+      await this.sqliteCache.initialize();
+
+      // 2. Ensure JSONL directories exist
+      await this.jsonlWriter.ensureDirectory('workspaces');
+      await this.jsonlWriter.ensureDirectory('conversations');
+      await this.jsonlWriter.ensureDirectory('tasks');
 
       // Mark as initialized BEFORE sync so the UI isn't blocked.
       // SQLite schema is ready — sync populates data in the background.
@@ -268,7 +285,14 @@ export class HybridStorageAdapter implements IStorageAdapter {
           console.error('[HybridStorageAdapter] Workspace reconciliation failed:', reconcileError);
         }
 
-        // 6. Reconcile JSONL tasks missing from SQLite
+        // 6. Reconcile JSONL conversations missing from SQLite
+        try {
+          await this.reconcileMissingConversations();
+        } catch (reconcileError) {
+          console.error('[HybridStorageAdapter] Conversation reconciliation failed:', reconcileError);
+        }
+
+        // 7. Reconcile JSONL tasks missing from SQLite
         try {
           await this.reconcileMissingTasks();
         } catch (reconcileError) {
@@ -284,6 +308,12 @@ export class HybridStorageAdapter implements IStorageAdapter {
       }
       throw error;
     }
+  }
+
+  private applyStoragePlan(plan: PluginScopedStoragePlan): void {
+    this.basePath = plan.writeBasePath;
+    this.jsonlWriter.setBasePath(plan.writeBasePath);
+    this.jsonlWriter.setReadBasePaths(plan.readBasePaths);
   }
 
   /**
@@ -332,6 +362,51 @@ export class HybridStorageAdapter implements IStorageAdapter {
         reconciled++;
       } catch (e) {
         console.error(`[HybridStorageAdapter] Failed to reconcile workspace ${id}:`, e);
+      }
+    }
+
+    if (reconciled > 0) {
+      await this.sqliteCache.save();
+    }
+  }
+
+  /**
+   * Reconcile JSONL conversation files that are missing from SQLite.
+   * This handles the case where incremental sync skips remote files because
+   * their event timestamps predate the local sync watermark.
+   */
+  private async reconcileMissingConversations(): Promise<void> {
+    const conversationFiles = await this.jsonlWriter.listFiles('conversations');
+    if (conversationFiles.length === 0) return;
+
+    const conversationApplier = new ConversationEventApplier(this.sqliteCache);
+    let reconciled = 0;
+
+    for (const file of conversationFiles) {
+      const match = file.match(/conversations\/conv_(.+)\.jsonl$/);
+      if (!match) continue;
+
+      const conversationId = match[1];
+      const existing = await this.conversationRepo.getById(conversationId);
+      if (existing) continue;
+
+      try {
+        const events = await this.jsonlWriter.readEvents<ConversationEvent>(file);
+        events.sort((a, b) => a.timestamp - b.timestamp);
+
+        // Skip deleted conversations — no need to create then immediately delete
+        const hasDeleteEvent = events.some(e => e.type === 'conversation_deleted');
+        if (hasDeleteEvent) continue;
+
+        const hasMetadataEvent = events.some(event => event.type === 'metadata');
+        if (!hasMetadataEvent) continue;
+
+        for (const event of events) {
+          await conversationApplier.apply(event);
+        }
+        reconciled++;
+      } catch (e) {
+        console.error(`[HybridStorageAdapter] Failed to reconcile conversation ${conversationId}:`, e);
       }
     }
 
@@ -479,6 +554,14 @@ export class HybridStorageAdapter implements IStorageAdapter {
   async sync(): Promise<SyncResult> {
     try {
       const result = await this.syncCoordinator.sync();
+
+      try {
+        await this.reconcileMissingWorkspaces();
+        await this.reconcileMissingConversations();
+        await this.reconcileMissingTasks();
+      } catch (reconcileError) {
+        console.error('[HybridStorageAdapter] Post-sync reconciliation failed:', reconcileError);
+      }
 
       // Invalidate all query cache on sync
       this.queryCache.clear();
