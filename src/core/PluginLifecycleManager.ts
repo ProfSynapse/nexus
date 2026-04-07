@@ -308,11 +308,17 @@ export class PluginLifecycleManager {
 
     /**
      * Initialize embeddings when storage adapter becomes ready (called from background).
-     * The storageAdapter.cache getter always returns the constructor-created sqliteCache,
-     * so no waitForReady guard is needed here.
+     * Must wait for the adapter's SQLite cache to finish initializing before
+     * creating EmbeddingManager, since background indexing queries SQLite.
      */
     private async initializeEmbeddingsWhenReady(storageAdapter: HybridStorageAdapter): Promise<void> {
         try {
+            const ready = await storageAdapter.waitForReady();
+            if (!ready) {
+                console.warn('[PluginLifecycleManager] Storage adapter failed to initialize; skipping embeddings');
+                return;
+            }
+            console.log('[PluginLifecycleManager] Storage adapter ready, initializing embeddings...');
             const enableEmbeddings = this.config.settings.settings.enableEmbeddings ?? true;
             this.embeddingManager = new EmbeddingManager(
                 this.config.app,
