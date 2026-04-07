@@ -295,7 +295,7 @@ export class ChatView extends ItemView {
 
     // Notify Nexus lifecycle manager that ChatView is open
     // Pass current provider so it can pre-load if Nexus is selected
-    const currentProvider = (await this.modelAgentManager.getMessageOptions()).provider;
+    const currentProvider = this.modelAgentManager.getSelectedModel()?.providerId;
     lifecycleManager.handleChatViewOpened(currentProvider).catch((error) => {
       console.error('[ChatView] handleChatViewOpened failed:', error);
     });
