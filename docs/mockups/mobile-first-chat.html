@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Nexus Chat — Mobile-First Redesign</title>
+  <link rel="stylesheet" href="mobile-first-chat.css">
+</head>
+<body>
+  <div class="mockup-shell">
+    <!-- Toggle controls (mockup-only) -->
+    <div class="mockup-controls">
+      <h2>Nexus Chat — Mobile-First Redesign</h2>
+      <p class="mockup-subtitle">Toggle between current and proposed layouts to compare vertical space usage.</p>
+      <div class="mockup-toggle-row">
+        <button class="mockup-btn active" data-view="proposed">Proposed</button>
+        <button class="mockup-btn" data-view="current">Current</button>
+        <button class="mockup-btn" data-view="side-by-side">Side by Side</button>
+      </div>
+      <div class="mockup-toggle-row">
+        <label class="mockup-check">
+          <input type="checkbox" id="toggle-keyboard"> Show keyboard (simulate)
+        </label>
+        <label class="mockup-check">
+          <input type="checkbox" id="toggle-mobile" checked> Mobile frame
+        </label>
+      </div>
+    </div>
+
+    <!-- Phone frames -->
+    <div class="phone-container" id="phone-container">
+      <!-- PROPOSED DESIGN -->
+      <div class="phone-frame" id="proposed-frame">
+        <div class="phone-label">Proposed</div>
+        <div class="phone-screen">
+          <div class="chat-view-container proposed">
+            <!-- Compact header -->
+            <div class="chat-header compact">
+              <button class="chat-hamburger-button" aria-label="Toggle conversations">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+              </button>
+              <div class="chat-title compact">Chatting</div>
+              <div class="chat-header-actions">
+                <button class="chat-header-btn" aria-label="Task board">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+                </button>
+                <button class="chat-header-btn" aria-label="Settings">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                </button>
+              </div>
+            </div>
+
+            <!-- Messages area -->
+            <div class="message-display-container">
+              <div class="messages-container" id="proposed-messages">
+                <!-- Messages injected by JS -->
+              </div>
+            </div>
+
+            <!-- Compact input + inline context -->
+            <div class="chat-input-area compact">
+              <div class="chat-input-wrapper">
+                <div class="chat-textarea compact" contenteditable="true" data-placeholder="Message..." role="textbox"></div>
+                <button class="chat-send-button compact" aria-label="Send">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+                </button>
+              </div>
+              <!-- Inline context micro-bar -->
+              <div class="context-micro-bar">
+                <div class="context-micro-fill" style="width: 2%"></div>
+                <span class="context-micro-text">2k / 1M</span>
+                <span class="context-micro-cost">$0.00</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- CURRENT DESIGN -->
+      <div class="phone-frame hidden" id="current-frame">
+        <div class="phone-label">Current</div>
+        <div class="phone-screen">
+          <div class="chat-view-container current">
+            <!-- Current header -->
+            <div class="chat-header current">
+              <button class="chat-hamburger-button" aria-label="Menu">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+              </button>
+              <div class="chat-title current">Chatting</div>
+              <div class="chat-header-actions">
+                <button class="chat-header-btn current" aria-label="Task board">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+                </button>
+                <button class="chat-header-btn current" aria-label="Settings">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                </button>
+              </div>
+            </div>
+
+            <!-- Messages area -->
+            <div class="message-display-container">
+              <div class="messages-container" id="current-messages">
+                <!-- Messages injected by JS -->
+              </div>
+            </div>
+
+            <!-- Current input area -->
+            <div class="chat-input-area current">
+              <div class="chat-input-wrapper">
+                <div class="chat-textarea current" contenteditable="true" data-placeholder="Type your message..." role="textbox"></div>
+                <button class="chat-send-button current" aria-label="Send">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+                </button>
+              </div>
+            </div>
+
+            <!-- Current context bar (separate, full) -->
+            <div class="context-progress-container current">
+              <div class="context-progress-header">
+                <span class="context-progress-label">Context usage</span>
+                <span class="context-progress-usage">2.0k / 1.0M tokens (0%)</span>
+                <span class="chat-cost-badge">$0.0000</span>
+              </div>
+              <div class="context-progress-bar-container">
+                <div class="context-progress-bar-bg">
+                  <div class="context-progress-bar-fill" style="width: 2%"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Design notes -->
+    <div class="design-notes">
+      <h3>Design Changes</h3>
+      <div class="notes-grid">
+        <div class="note-card">
+          <div class="note-title">Header: 36px → 36px (same height, denser)</div>
+          <ul>
+            <li>Padding reduced from <code>12px 16px</code> to <code>6px 10px</code></li>
+            <li>Title font 16px → 14px, left-aligned instead of centered</li>
+            <li>Header buttons packed tighter with <code>gap: 2px</code></li>
+          </ul>
+        </div>
+        <div class="note-card">
+          <div class="note-title">Message bubbles: ~40% less vertical space</div>
+          <ul>
+            <li>Padding from <code>0.875rem 1rem</code> → <code>0.5rem 0.75rem</code></li>
+            <li>Role icons removed — user/assistant distinguished by alignment + subtle color</li>
+            <li>Message header row eliminated (was icon + actions, now actions are tap-to-reveal)</li>
+            <li>Bubble border-radius from <code>1rem</code> → <code>0.75rem</code></li>
+            <li>Container width 95% → 85% for user, full for assistant (chat-app pattern)</li>
+            <li>Gap between messages: <code>0.25rem</code> → <code>0.375rem</code> (tighter but readable)</li>
+          </ul>
+        </div>
+        <div class="note-card">
+          <div class="note-title">Action buttons: tap-to-reveal overlay</div>
+          <ul>
+            <li>Actions hidden by default (no opacity:0.85 always-visible)</li>
+            <li>Single tap on message reveals floating action pill</li>
+            <li>Tap outside or second tap dismisses</li>
+            <li>Saves ~28px per message (action row height eliminated)</li>
+          </ul>
+        </div>
+        <div class="note-card">
+          <div class="note-title">Input: single-line default, auto-expands</div>
+          <ul>
+            <li>min-height from <code>64px</code> → <code>40px</code> (single line)</li>
+            <li>Auto-grows as user types, up to 120px</li>
+            <li>Placeholder shortened: "Type your message..." → "Message..."</li>
+            <li>Container padding from <code>8px 12px</code> → <code>6px 10px</code></li>
+            <li>Saves ~32px in default state</li>
+          </ul>
+        </div>
+        <div class="note-card">
+          <div class="note-title">Context bar: collapsed to micro-bar</div>
+          <ul>
+            <li>Full progress bar (60px) → 16px inline strip below input</li>
+            <li>Shows abbreviated info: "2k / 1M" and cost</li>
+            <li>Color-coded fill still visible as thin 3px bar</li>
+            <li>Tap to expand full context details (future)</li>
+            <li>Saves ~44px</li>
+          </ul>
+        </div>
+        <div class="note-card highlight">
+          <div class="note-title">Total vertical savings: ~90-120px</div>
+          <ul>
+            <li>Header: ~6px saved</li>
+            <li>Per-message: ~20-30px saved (compounds with message count)</li>
+            <li>Input area: ~32px saved</li>
+            <li>Context bar: ~44px saved</li>
+            <li>On a 667px viewport with keyboard (280px visible), this means 2-3 more messages visible</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="mobile-first-chat.js"></script>
+</body>
+</html>
