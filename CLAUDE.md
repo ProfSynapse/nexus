@@ -246,11 +246,20 @@ Instead of 50+ tools, MCP exposes just 2: `getTools` (discovery) and `useTools` 
 ## Memory & Workspace System
 
 ### Storage Location
-`.nexus/` - All storage in single hidden folder:
-- `conversations/*.jsonl` - OpenAI fine-tuning format (syncs across devices)
+
+**Primary (synced)**: `.obsidian/plugins/<plugin-folder>/data/` — plugin-scoped, included by Obsidian Sync:
+- `conversations/*.jsonl` - OpenAI fine-tuning format
 - `workspaces/*.jsonl` - Event-sourced workspace data
 - `tasks/tasks_[workspaceId].jsonl` - Task/project events per workspace
-- `cache.db` - SQLite local cache (auto-rebuilt, not synced) ⚠️ **Do NOT delete** — task/project data is NOT recovered from JSONL on rebuild
+- `migration/` - Migration manifest and verification state
+
+**Legacy fallback**: `.nexus/` — original hidden folder, kept as read-only fallback after migration. Not deleted automatically.
+
+**Local-only**: `cache.db` - SQLite local cache (auto-rebuilt from JSONL, never synced) ⚠️ **Do NOT delete** — task/project data is NOT recovered from JSONL on rebuild
+
+**Migration**: On first launch, JSONL files are copied from `.nexus/` to the plugin data folder. The migration is copy-only, idempotent, and verified before the plugin switches reads to the new location. Mobile users whose vault syncs after init can run **Nexus: Refresh synced data** from the command palette.
+
+**Path resolution**: The plugin folder name is resolved at runtime from `plugin.manifest.dir` (supports both `nexus` and legacy `claudesidian-mcp` installs). See `src/database/storage/PluginStoragePathResolver.ts`.
 
 ### Architecture
 - Hybrid JSONL + SQLite: JSONL = source of truth, SQLite = fast queries

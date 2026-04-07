@@ -4,6 +4,7 @@ import {
   resolvePluginStorageRoot,
   ResolvedPluginStorageRoot
 } from '../storage/PluginStoragePathResolver';
+import { pluginDataLock } from '../../utils/pluginDataLock';
 
 const STORAGE_VERSION = 1;
 const STORAGE_CATEGORIES = ['workspaces', 'conversations', 'tasks'] as const;
@@ -78,8 +79,26 @@ export class PluginScopedStorageCoordinator {
     await this.ensureDirectory(this.roots.dataRoot);
     await this.ensureDirectory(this.roots.migrationRoot);
 
+    // Short-circuit: if migration already verified, skip all filesystem I/O
+    const persistedState = await this.loadState();
+    if (persistedState.migration.state === 'verified') {
+      return {
+        writeBasePath: this.roots.dataRoot,
+        readBasePaths: [this.roots.dataRoot, this.legacyBasePath],
+        state: {
+          ...persistedState,
+          sourceOfTruthLocation: 'plugin-data',
+          migration: {
+            ...persistedState.migration,
+            activeDestination: this.roots.dataRoot
+          }
+        },
+        roots: this.roots
+      };
+    }
+
     const legacyFiles = await this.collectLegacyFiles();
-    let state = await this.loadState();
+    let state = persistedState;
     state = {
       ...state,
       migration: {
@@ -329,9 +348,11 @@ export class PluginScopedStorageCoordinator {
   }
 
   private async saveState(state: PluginScopedStorageState): Promise<void> {
-    const pluginData = await this.loadPluginData();
-    pluginData.pluginStorage = state;
-    await this.plugin.saveData(pluginData);
+    await pluginDataLock.acquire(async () => {
+      const pluginData = await this.loadPluginData();
+      pluginData.pluginStorage = state;
+      await this.plugin.saveData(pluginData);
+    });
   }
 
   private async loadPluginData(): Promise<StoredPluginData> {

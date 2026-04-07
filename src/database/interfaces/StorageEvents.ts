@@ -278,6 +278,17 @@ export interface ConversationUpdatedEvent extends BaseStorageEvent {
 }
 
 /**
+ * Event: Conversation deleted
+ *
+ * Marks a conversation as deleted (soft delete in JSONL).
+ */
+export interface ConversationDeletedEvent extends BaseStorageEvent {
+  type: 'conversation_deleted';
+  /** Target conversation ID */
+  conversationId: string;
+}
+
+/**
  * Alternative message data for branching support
  */
 export interface AlternativeMessageEvent {
@@ -677,6 +688,7 @@ export type WorkspaceEvent =
 export type ConversationEvent =
   | ConversationCreatedEvent
   | ConversationUpdatedEvent
+  | ConversationDeletedEvent
   | MessageEvent
   | MessageUpdatedEvent
   | MessageDeletedEvent
@@ -728,6 +740,7 @@ export function isConversationEvent(event: StorageEvent): event is ConversationE
   return [
     'metadata',
     'conversation_updated',
+    'conversation_deleted',
     'message',
     'message_updated',
     'message_deleted',
@@ -798,6 +811,7 @@ export function isUpdateEvent(event: StorageEvent): boolean {
 export function isDeletionEvent(event: StorageEvent): boolean {
   return [
     'workspace_deleted',
+    'conversation_deleted',
     'state_deleted',
     'message_deleted',
     'project_deleted',

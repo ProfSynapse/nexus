@@ -394,6 +394,10 @@ export class HybridStorageAdapter implements IStorageAdapter {
         const events = await this.jsonlWriter.readEvents<ConversationEvent>(file);
         events.sort((a, b) => a.timestamp - b.timestamp);
 
+        // Skip deleted conversations — no need to create then immediately delete
+        const hasDeleteEvent = events.some(e => e.type === 'conversation_deleted');
+        if (hasDeleteEvent) continue;
+
         const hasMetadataEvent = events.some(event => event.type === 'metadata');
         if (!hasMetadataEvent) continue;
 

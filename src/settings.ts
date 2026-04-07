@@ -1,5 +1,6 @@
 import { Plugin } from 'obsidian';
 import { MCPSettings, DEFAULT_SETTINGS, type LLMProviderConfig } from './types';
+import { pluginDataLock } from './utils/pluginDataLock';
 
 /**
  * Settings manager
@@ -74,12 +75,14 @@ export class Settings {
      * Save settings to plugin data
      */
     async saveSettings(): Promise<void> {
-        const loadedData: unknown = await this.plugin.loadData();
-        const mergedData = loadedData && typeof loadedData === 'object'
-            ? { ...(loadedData as Record<string, unknown>), ...this.settings }
-            : this.settings;
+        await pluginDataLock.acquire(async () => {
+            const loadedData: unknown = await this.plugin.loadData();
+            const mergedData = loadedData && typeof loadedData === 'object'
+                ? { ...(loadedData as Record<string, unknown>), ...this.settings }
+                : this.settings;
 
-        await this.plugin.saveData(mergedData);
+            await this.plugin.saveData(mergedData);
+        });
     }
 }
 
