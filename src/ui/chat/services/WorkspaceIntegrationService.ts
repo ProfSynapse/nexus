@@ -191,39 +191,6 @@ export class WorkspaceIntegrationService {
   }
 
   /**
-   * Get basic workspace data from DB — cheap lookup, no agent execution.
-   * Safe to call at any startup phase. Used by restoreWorkspace() to avoid
-   * agent dependency at conversation-switch time.
-   */
-  async getWorkspaceBasic(workspaceId: string): Promise<{
-    id: string;
-    name: string;
-    description?: string;
-    rootFolder?: string;
-    context?: Record<string, unknown>;
-  } | null> {
-    try {
-      const plugin = getNexusPlugin<NexusPlugin>(this.app);
-      const workspaceService = await plugin?.getService<WorkspaceService>('workspaceService');
-      if (!workspaceService) return null;
-
-      const workspace = await workspaceService.getWorkspaceByNameOrId(workspaceId);
-      if (!workspace) return null;
-
-      return {
-        id: workspace.id,
-        name: workspace.name,
-        description: workspace.description ?? undefined,
-        rootFolder: workspace.rootFolder ?? undefined,
-        context: workspace.context as Record<string, unknown> | undefined
-      };
-    } catch (error) {
-      console.error('[WorkspaceIntegrationService] getWorkspaceBasic failed:', error);
-      return null;
-    }
-  }
-
-  /**
    * Get all available workspaces with summary information
    * Used to give the LLM awareness of what workspaces exist
    */
