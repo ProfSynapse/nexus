@@ -6,131 +6,37 @@
 import { ModelOption, PromptOption } from '../types/SelectionTypes';
 import { WorkspaceContext } from '../../../database/types/workspace/WorkspaceTypes';
 import { MessageEnhancement } from '../components/suggesters/base/SuggesterInterfaces';
-import { SystemPromptBuilder, PromptSummary, ToolAgentInfo, ContextStatusInfo } from './SystemPromptBuilder';
+import { SystemPromptBuilder } from './SystemPromptBuilder';
 import { ContextNotesManager } from './ContextNotesManager';
+import {
+  ModelAgentConversationSettingsStore,
+  type ConversationMetadataWithCompaction,
+  type ConversationServiceLike,
+  type ConversationSettingsMetadata,
+} from './ModelAgentConversationSettingsStore';
+import { ModelAgentWorkspaceContextService } from './ModelAgentWorkspaceContextService';
+import { ModelAgentDefaultsResolver } from './ModelAgentDefaultsResolver';
+import { ModelAgentCompactionState } from './ModelAgentCompactionState';
+import {
+  ModelAgentPromptContextAssembler,
+  type ModelAgentMessageOptions,
+  type ModelAgentPromptContextSnapshot,
+} from './ModelAgentPromptContextAssembler';
 import { ModelSelectionUtility } from '../utils/ModelSelectionUtility';
 import { PromptConfigurationUtility } from '../utils/PromptConfigurationUtility';
 import { WorkspaceIntegrationService } from './WorkspaceIntegrationService';
 import { StaticModelsService } from '../../../services/StaticModelsService';
 import { getWebLLMLifecycleManager } from '../../../services/llm/adapters/webllm/WebLLMLifecycleManager';
 import { ThinkingSettings } from '../../../types/llm/ProviderTypes';
-import { ContextTokenTracker, ContextStatus } from '../../../services/chat/ContextTokenTracker';
+import { ContextStatus, ContextTokenTracker } from '../../../services/chat/ContextTokenTracker';
 import { CompactedContext } from '../../../services/chat/ContextCompactionService';
 import {
   CompactionFrontierBudgetPolicy,
   CompactionFrontierRecord,
   CompactionFrontierService
 } from '../../../services/chat/CompactionFrontierService';
-import { ContextBudgetService } from '../../../services/chat/ContextBudgetService';
 import { ConversationData } from '../../../types/chat/ChatTypes';
-import type NexusPlugin from '../../../main';
 import type { App } from 'obsidian';
-
-// Context window sizes for providers that participate in app-level pre-send compaction.
-// WebLLM uses a small hard-ish limit; selected CLI/API-backed providers use a conservative
-// 200k soft cap so long-running conversations compact before provider-side overflow/degradation.
-const LOCAL_PROVIDER_CONTEXT_WINDOWS: Record<string, number> = {
-  webllm: 4096,   // Nexus Quark uses 4K context - NEEDS compaction or crashes
-  'anthropic-claude-code': 200000,
-  'google-gemini-cli': 200000,
-  'openai-codex': 200000,
-  'github-copilot': 200000,
-  // ollama and lmstudio omitted - they handle overflow gracefully
-};
-
-const PRE_SEND_ESTIMATE_MULTIPLIERS: Record<string, number> = {
-  'anthropic-claude-code': 1.15,
-  'google-gemini-cli': 1.15,
-  'openai-codex': 1.15,
-  'github-copilot': 1.15
-};
-
-interface ConversationCompactionMetadata {
-  // Legacy single-record metadata still restored for backward compatibility.
-  previousContext?: CompactedContext;
-  frontier?: CompactionFrontierRecord[];
-}
-
-interface ConversationMetadataWithCompaction {
-  chatSettings?: {
-    providerId?: string;
-    modelId?: string;
-    promptId?: string;
-    workspaceId?: string;
-    sessionId?: string;
-  };
-  compaction?: ConversationCompactionMetadata;
-  [key: string]: unknown;
-}
-
-interface ConversationSettingsMetadata {
-  providerId?: string;
-  modelId?: string;
-  promptId?: string | null;
-  workspaceId?: string | null;
-  sessionId?: string | null;
-  contextNotes?: string[];
-  thinking?: ThinkingSettings;
-  temperature?: number;
-  agentProvider?: string | null;
-  agentModel?: string | null;
-  agentThinking?: ThinkingSettings;
-}
-
-interface ConversationServiceLike {
-  getConversation(conversationId: string, pagination?: { page?: number; pageSize?: number }): Promise<{
-    metadata?: ConversationMetadataWithCompaction & {
-      chatSettings?: ConversationSettingsMetadata;
-    };
-  } | null>;
-  updateConversationMetadata(conversationId: string, metadata: Record<string, unknown>): Promise<void>;
-}
-
-interface AgentToolLike {
-  slug?: string;
-  name?: string;
-}
-
-interface AgentLike {
-  description?: string;
-  getTools?: () => AgentToolLike[];
-}
-
-/**
- * App type with plugin registry access
- */
-type AppWithPlugins = {
-  plugins?: {
-    plugins?: Record<string, NexusPlugin>;
-  };
-} & Omit<App, 'plugins'>;
-
-/**
- * Plugin interface with settings structure
- */
-interface PluginWithSettings {
-  settings?: {
-    settings?: {
-      llmProviders?: {
-        defaultThinking?: ThinkingSettings;
-        defaultTemperature?: number;
-        agentModel?: { provider: string; model: string };
-        agentThinking?: ThinkingSettings;
-      };
-      defaultWorkspaceId?: string;
-      defaultPromptId?: string;
-      defaultContextNotes?: string[];
-    };
-  };
-  serviceManager?: {
-    getServiceIfReady?: (name: string) => unknown;
-  };
-  connector?: {
-    agentRegistry?: {
-      getAllAgents: () => Map<string, AgentLike>;
-    };
-  };
-}
 
 export interface ModelAgentManagerEvents {
   onModelChanged: (model: ModelOption | null) => void;
@@ -152,6 +58,11 @@ export class ModelAgentManager {
   private messageEnhancement: MessageEnhancement | null = null;
   private systemPromptBuilder: SystemPromptBuilder;
   private workspaceIntegration: WorkspaceIntegrationService;
+  private conversationSettingsStore: ModelAgentConversationSettingsStore;
+  private workspaceContextService: ModelAgentWorkspaceContextService;
+  private defaultsResolver: ModelAgentDefaultsResolver;
+  private compactionState = new ModelAgentCompactionState();
+  private promptContextAssembler: ModelAgentPromptContextAssembler;
   private agentProvider: string | null = null;
   private agentModel: string | null = null;
   private agentThinkingSettings: ThinkingSettings = { enabled: false, effort: 'medium' };
@@ -167,15 +78,28 @@ export class ModelAgentManager {
     private conversationService?: ConversationServiceLike, // Optional ConversationService for persistence
     conversationId?: string
   ) {
-    this.currentConversationId = conversationId || null;
+    this.setCurrentConversationId(conversationId ?? null);
 
     // Initialize services
     this.contextNotesManager = new ContextNotesManager();
     this.workspaceIntegration = new WorkspaceIntegrationService(app);
+    this.conversationSettingsStore = new ModelAgentConversationSettingsStore(conversationService);
+    this.workspaceContextService = new ModelAgentWorkspaceContextService(this.workspaceIntegration);
+    this.defaultsResolver = new ModelAgentDefaultsResolver({
+      app,
+      staticModelsService: this.staticModelsService,
+      workspaceContextService: this.workspaceContextService,
+      getAvailableModels: () => this.getAvailableModels(),
+      getAvailablePrompts: () => this.getAvailablePrompts(),
+    });
     this.systemPromptBuilder = new SystemPromptBuilder(
       this.workspaceIntegration.readNoteContent.bind(this.workspaceIntegration),
       this.workspaceIntegration.loadWorkspace.bind(this.workspaceIntegration)
     );
+    this.promptContextAssembler = new ModelAgentPromptContextAssembler({
+      systemPromptBuilder: this.systemPromptBuilder,
+      getSessionId: async () => await this.getCurrentSessionId()
+    });
   }
 
   /**
@@ -188,18 +112,19 @@ export class ModelAgentManager {
   }
 
   /**
+   * Set the current conversation ID used for session lookups and persistence.
+   */
+  setCurrentConversationId(conversationId: string | null): void {
+    this.currentConversationId = conversationId;
+  }
+
+  /**
    * Initialize from conversation metadata (if available), otherwise use plugin default
    */
   async initializeFromConversation(conversationId: string): Promise<void> {
     try {
-      let chatSettings: ConversationSettingsMetadata | undefined;
-      let conversationMetadata: ConversationMetadataWithCompaction | undefined;
-
-      if (this.conversationService) {
-        const conversation = await this.conversationService.getConversation(conversationId);
-        conversationMetadata = conversation?.metadata as ConversationMetadataWithCompaction | undefined;
-        chatSettings = conversation?.metadata?.chatSettings as ConversationSettingsMetadata | undefined;
-      }
+      const { conversationMetadata, chatSettings } =
+        await this.conversationSettingsStore.load(conversationId);
 
       this.clearCompactionFrontier();
       await this.initializeDefaultModel();
@@ -316,32 +241,10 @@ export class ModelAgentManager {
    * Restore workspace from settings - loads full comprehensive data
    */
   private async restoreWorkspace(workspaceId: string, sessionId?: string): Promise<void> {
-    try {
-      // Load full comprehensive workspace data (same as #workspace suggester)
-      const fullWorkspaceData = await this.workspaceIntegration.loadWorkspace(workspaceId);
-
-      if (!fullWorkspaceData) {
-        this.selectedWorkspaceId = null;
-        this.loadedWorkspaceData = null;
-        this.workspaceContext = null;
-        return;
-      }
-
-      this.selectedWorkspaceId = (fullWorkspaceData.id as string) || workspaceId;
-
-      this.loadedWorkspaceData = fullWorkspaceData;
-      // Also extract basic context for backward compatibility
-      this.workspaceContext = fullWorkspaceData.context || fullWorkspaceData.workspaceContext || null;
-
-      // Bind session to workspace
-      await this.workspaceIntegration.bindSessionToWorkspace(sessionId, this.selectedWorkspaceId);
-    } catch (error) {
-      console.error('[ModelAgentManager] Failed to restore workspace:', error);
-      // Clear workspace data on failure
-      this.selectedWorkspaceId = null;
-      this.loadedWorkspaceData = null;
-      this.workspaceContext = null;
-    }
+    const workspaceState = await this.workspaceContextService.restoreWorkspace(workspaceId, sessionId);
+    this.selectedWorkspaceId = workspaceState.selectedWorkspaceId;
+    this.loadedWorkspaceData = workspaceState.loadedWorkspaceData;
+    this.workspaceContext = workspaceState.workspaceContext;
   }
 
   /**
@@ -349,96 +252,27 @@ export class ModelAgentManager {
    */
   private async initializeDefaultModel(): Promise<void> {
     try {
-      // Initialize default model
-      const availableModels = await this.getAvailableModels();
-      const defaultModel = await ModelSelectionUtility.findDefaultModelOption(this.app, availableModels);
+      const defaultState = await this.defaultsResolver.resolveDefaultState();
 
-      if (defaultModel) {
-        this.selectedModel = defaultModel;
-        this.updateCompactionFrontierPolicy(defaultModel);
-        this.events.onModelChanged(defaultModel);
-      } else {
-        this.updateCompactionFrontierPolicy(null);
-      }
+      this.selectedModel = defaultState.selectedModel;
+      this.updateCompactionFrontierPolicy(defaultState.selectedModel);
+      this.events.onModelChanged(defaultState.selectedModel);
 
-      // Clear state first
-      this.selectedPrompt = null;
-      this.currentSystemPrompt = null;
-      this.selectedWorkspaceId = null;
-      this.workspaceContext = null;
-      this.loadedWorkspaceData = null;
+      this.selectedPrompt = defaultState.selectedPrompt;
+      this.currentSystemPrompt = defaultState.currentSystemPrompt;
+      this.selectedWorkspaceId = defaultState.workspaceState.selectedWorkspaceId;
+      this.workspaceContext = defaultState.workspaceState.workspaceContext;
+      this.loadedWorkspaceData = defaultState.workspaceState.loadedWorkspaceData;
       this.contextNotesManager.clear();
-      this.agentProvider = null;
-      this.agentModel = null;
-      this.agentThinkingSettings = { enabled: false, effort: 'medium' };
+      this.contextNotesManager.setNotes(defaultState.contextNotes);
+      this.thinkingSettings = { ...defaultState.thinkingSettings };
+      this.agentProvider = defaultState.agentProvider;
+      this.agentModel = defaultState.agentModel;
+      this.agentThinkingSettings = { ...defaultState.agentThinkingSettings };
+      this.temperature = defaultState.temperature;
 
-      // Get plugin settings for defaults
-      const { getNexusPlugin } = await import('../../../utils/pluginLocator');
-      const plugin = getNexusPlugin<NexusPlugin>(this.app) as unknown as PluginWithSettings | null;
-      const settings = plugin?.settings?.settings;
-
-      // Load default thinking settings
-      const llmProviders = settings?.llmProviders;
-      if (llmProviders?.defaultThinking) {
-        this.thinkingSettings = {
-          enabled: llmProviders.defaultThinking.enabled ?? false,
-          effort: llmProviders.defaultThinking.effort ?? 'medium'
-        };
-      }
-
-      // Load default agent model if set
-      if (llmProviders?.agentModel) {
-        this.agentProvider = llmProviders.agentModel.provider || null;
-        this.agentModel = llmProviders.agentModel.model || null;
-      }
-
-      // Load default agent thinking settings if set
-      if (llmProviders?.agentThinking) {
-        this.agentThinkingSettings = {
-          enabled: llmProviders.agentThinking.enabled ?? false,
-          effort: llmProviders.agentThinking.effort ?? 'medium'
-        };
-      }
-
-      // Load default temperature if set
-      if (llmProviders?.defaultTemperature !== undefined) {
-        this.temperature = llmProviders.defaultTemperature;
-      }
-
-      // Load default context notes if set
-      if (settings?.defaultContextNotes && Array.isArray(settings.defaultContextNotes)) {
-        this.contextNotesManager.setNotes(settings.defaultContextNotes);
-      }
-
-      // Load default workspace if set
-      if (settings?.defaultWorkspaceId) {
-        try {
-          await this.restoreWorkspace(settings.defaultWorkspaceId, undefined);
-        } catch {
-          // Failed to load default workspace
-        }
-      }
-
-      // Load default prompt if set
-      if (settings?.defaultPromptId) {
-        try {
-          const availablePrompts = await this.getAvailablePrompts();
-          const defaultPrompt = availablePrompts.find(p => p.id === settings.defaultPromptId || p.name === settings.defaultPromptId);
-          if (defaultPrompt) {
-            this.selectedPrompt = defaultPrompt;
-            this.currentSystemPrompt = defaultPrompt.systemPrompt || null;
-            this.events.onPromptChanged(defaultPrompt);
-            this.events.onSystemPromptChanged(this.currentSystemPrompt);
-            return; // Prompt was set, don't reset
-          }
-        } catch {
-          // Failed to load default prompt
-        }
-      }
-
-      // Notify listeners about the state (no prompt selected)
-      this.events.onPromptChanged(null);
-      this.events.onSystemPromptChanged(null);
+      this.events.onPromptChanged(defaultState.selectedPrompt);
+      this.events.onSystemPromptChanged(defaultState.currentSystemPrompt);
     } catch {
       // Failed to initialize defaults
     }
@@ -448,32 +282,11 @@ export class ModelAgentManager {
    * Save current selections to conversation metadata
    */
   async saveToConversation(conversationId: string): Promise<void> {
-    if (!this.conversationService) {
-      return;
-    }
-
     try {
-      // Load existing metadata first to preserve sessionId
-      const existingConversation = await this.conversationService.getConversation(conversationId);
-      const existingSessionId = existingConversation?.metadata?.chatSettings?.sessionId;
-
-      const metadata = {
-        chatSettings: {
-          providerId: this.selectedModel?.providerId,
-          modelId: this.selectedModel?.modelId,
-          promptId: this.selectedPrompt?.id ?? null,
-          workspaceId: this.selectedWorkspaceId,
-          contextNotes: this.contextNotesManager.getNotes(),
-          sessionId: existingSessionId, // Preserve the session ID
-          thinking: this.thinkingSettings,
-          temperature: this.temperature,
-          agentProvider: this.agentProvider,
-          agentModel: this.agentModel,
-          agentThinking: this.agentThinkingSettings
-        }
-      };
-
-      await this.conversationService.updateConversationMetadata(conversationId, metadata);
+      await this.conversationSettingsStore.save(
+        conversationId,
+        this.buildChatSettingsMetadata()
+      );
     } catch {
       // Failed to save to conversation
     }
@@ -490,15 +303,7 @@ export class ModelAgentManager {
    * Get current selected model or default (async - fetches default if none selected)
    */
   async getSelectedModelOrDefault(): Promise<ModelOption | null> {
-    if (this.selectedModel) {
-      return this.selectedModel;
-    }
-
-    // Get the default model
-    const availableModels = await this.getAvailableModels();
-    const defaultModel = await ModelSelectionUtility.findDefaultModelOption(this.app, availableModels);
-
-    return defaultModel;
+    return await this.defaultsResolver.getSelectedModelOrDefault(this.selectedModel);
   }
 
   /**
@@ -507,38 +312,7 @@ export class ModelAgentManager {
    * so per-conversation model settings are not silently lost when discovery is incomplete.
    */
   async resolveModelOption(providerId: string, modelId: string): Promise<ModelOption | null> {
-    if (!providerId || !modelId) {
-      return null;
-    }
-
-    const availableModels = await this.getAvailableModels();
-    const discoveredModel = availableModels.find(
-      model => model.providerId === providerId && model.modelId === modelId
-    );
-    if (discoveredModel) {
-      return discoveredModel;
-    }
-
-    const staticModel = this.staticModelsService.findModel(providerId, modelId);
-    if (staticModel) {
-      return {
-        providerId,
-        providerName: ModelSelectionUtility.getProviderDisplayName(providerId),
-        modelId,
-        modelName: staticModel.name,
-        contextWindow: staticModel.contextWindow,
-        supportsThinking: staticModel.capabilities.supportsThinking
-      };
-    }
-
-    return {
-      providerId,
-      providerName: ModelSelectionUtility.getProviderDisplayName(providerId),
-      modelId,
-      modelName: modelId,
-      contextWindow: 128000,
-      supportsThinking: false
-    };
+    return await this.defaultsResolver.resolveModelOption(providerId, modelId);
   }
 
   /**
@@ -560,7 +334,7 @@ export class ModelAgentManager {
    * Get current system prompt (includes workspace context if set)
    */
   async getCurrentSystemPrompt(): Promise<string | null> {
-    return await this.buildSystemPromptWithWorkspace();
+    return await this.promptContextAssembler.buildSystemPrompt(this.getPromptContextSnapshot());
   }
 
   /**
@@ -613,22 +387,7 @@ export class ModelAgentManager {
    * Only local providers with limited context windows need tracking
    */
   private updateContextTokenTracker(provider: string): void {
-    const contextWindow = LOCAL_PROVIDER_CONTEXT_WINDOWS[provider];
-    const preSendEstimateMultiplier = PRE_SEND_ESTIMATE_MULTIPLIERS[provider] ?? 1;
-
-    if (contextWindow) {
-      // Initialize or update tracker for local provider
-      if (!this.contextTokenTracker) {
-        this.contextTokenTracker = new ContextTokenTracker(contextWindow, preSendEstimateMultiplier);
-      } else {
-        this.contextTokenTracker.setMaxTokens(contextWindow);
-        this.contextTokenTracker.setPreSendEstimateMultiplier(preSendEstimateMultiplier);
-        this.contextTokenTracker.reset();
-      }
-    } else {
-      // Clear tracker for API providers (they handle context internally)
-      this.contextTokenTracker = null;
-    }
+    this.compactionState.updateContextTokenTracker(provider);
   }
 
   /**
@@ -639,7 +398,7 @@ export class ModelAgentManager {
     this.currentSystemPrompt = prompt?.systemPrompt || null;
 
     this.events.onPromptChanged(prompt);
-    this.events.onSystemPromptChanged(await this.buildSystemPromptWithWorkspace());
+    await this.refreshSystemPrompt();
   }
 
   /**
@@ -647,39 +406,25 @@ export class ModelAgentManager {
    * When a workspace is selected in chat settings, load the same rich data
    * as the #workspace suggester (file structure, sessions, states, etc.)
    */
-  async setWorkspaceContext(workspaceId: string, context: WorkspaceContext): Promise<void> {
-    this.selectedWorkspaceId = workspaceId;
-    this.workspaceContext = context; // Keep basic context for backward compatibility
-
-    // Load full comprehensive workspace data (same as #workspace suggester)
-    try {
-      const fullWorkspaceData = await this.workspaceIntegration.loadWorkspace(workspaceId);
-      if (fullWorkspaceData) {
-        this.loadedWorkspaceData = fullWorkspaceData;
-      }
-    } catch (error) {
-      console.error('[ModelAgentManager] Failed to load full workspace data:', error);
-      this.loadedWorkspaceData = null;
-    }
-
-    // Get session ID from current conversation
+  async setWorkspaceContext(workspaceId: string): Promise<void> {
     const sessionId = await this.getCurrentSessionId();
+    const workspaceState = await this.workspaceContextService.loadSelectedWorkspace(workspaceId, sessionId);
+    this.selectedWorkspaceId = workspaceState.selectedWorkspaceId;
+    this.loadedWorkspaceData = workspaceState.loadedWorkspaceData;
+    this.workspaceContext = workspaceState.workspaceContext;
 
-    if (sessionId) {
-      await this.workspaceIntegration.bindSessionToWorkspace(sessionId, workspaceId);
-    }
-
-    this.events.onSystemPromptChanged(await this.buildSystemPromptWithWorkspace());
+    await this.refreshSystemPrompt();
   }
 
   /**
    * Clear workspace context
    */
   async clearWorkspaceContext(): Promise<void> {
-    this.selectedWorkspaceId = null;
-    this.workspaceContext = null;
-    this.loadedWorkspaceData = null;
-    this.events.onSystemPromptChanged(await this.buildSystemPromptWithWorkspace());
+    const emptyWorkspaceState = this.workspaceContextService.createEmptyState();
+    this.selectedWorkspaceId = emptyWorkspaceState.selectedWorkspaceId;
+    this.workspaceContext = emptyWorkspaceState.workspaceContext;
+    this.loadedWorkspaceData = emptyWorkspaceState.loadedWorkspaceData;
+    await this.refreshSystemPrompt();
   }
 
   /**
@@ -694,7 +439,7 @@ export class ModelAgentManager {
    */
   async setContextNotes(notes: string[]): Promise<void> {
     this.contextNotesManager.setNotes(notes);
-    this.events.onSystemPromptChanged(await this.buildSystemPromptWithWorkspace());
+    await this.refreshSystemPrompt();
   }
 
   /**
@@ -702,7 +447,7 @@ export class ModelAgentManager {
    */
   async addContextNote(notePath: string): Promise<void> {
     if (this.contextNotesManager.addNote(notePath)) {
-      this.events.onSystemPromptChanged(await this.buildSystemPromptWithWorkspace());
+      await this.refreshSystemPrompt();
     }
   }
 
@@ -711,7 +456,7 @@ export class ModelAgentManager {
    */
   async removeContextNote(index: number): Promise<void> {
     if (this.contextNotesManager.removeNote(index)) {
-      this.events.onSystemPromptChanged(await this.buildSystemPromptWithWorkspace());
+      await this.refreshSystemPrompt();
     }
   }
 
@@ -786,16 +531,14 @@ export class ModelAgentManager {
    * Call this after streaming completes with actual usage data
    */
   recordTokenUsage(promptTokens: number, completionTokens: number): void {
-    if (this.contextTokenTracker) {
-      this.contextTokenTracker.recordUsage(promptTokens, completionTokens);
-    }
+    this.compactionState.recordTokenUsage(promptTokens, completionTokens);
   }
 
   /**
    * Get current context status (for UI display or compaction checks)
    */
   getContextStatus(): ContextStatus | null {
-    return this.contextTokenTracker?.getStatus() || null;
+    return this.compactionState.getContextStatus();
   }
 
   /**
@@ -807,48 +550,33 @@ export class ModelAgentManager {
     systemPrompt?: string | null,
     providerOverride?: string
   ): boolean {
-    const messageText = typeof conversationOrMessage === 'string'
-      ? conversationOrMessage
-      : (message || '');
-
-    if (this.contextTokenTracker) {
-      return this.contextTokenTracker.shouldCompactBeforeSending(messageText);
-    }
-
-    if (typeof conversationOrMessage === 'string') {
-      return false;
-    }
-
-    const provider = providerOverride || this.selectedModel?.providerId || null;
-    const budget = ContextBudgetService.estimateBudget(
-      provider,
+    return this.compactionState.shouldCompactBeforeSending(
       conversationOrMessage,
+      message,
       systemPrompt,
-      messageText
+      providerOverride || this.selectedModel?.providerId || null
     );
-
-    return budget.shouldCompact;
   }
 
   /**
    * Reset token tracker (after compaction or new conversation)
    */
   resetTokenTracker(): void {
-    this.contextTokenTracker?.reset();
+    this.compactionState.resetTokenTracker();
   }
 
   /**
    * Check if using a token-limited local model
    */
   isUsingLocalModel(): boolean {
-    return this.contextTokenTracker !== null;
+    return this.compactionState.isUsingLocalModel();
   }
 
   /**
    * Get the context token tracker (for direct access if needed)
    */
   getContextTokenTracker(): ContextTokenTracker | null {
-    return this.contextTokenTracker;
+    return this.compactionState.getContextTokenTracker();
   }
 
   // ========== Compaction Frontier ==========
@@ -857,17 +585,15 @@ export class ModelAgentManager {
    * Append a compaction record to the bounded frontier.
    */
   appendCompactionRecord(context: CompactedContext): void {
-    this.compactionFrontier = this.compactionFrontierService.appendRecord(this.compactionFrontier, context);
+    this.compactionState.appendCompactionRecord(context);
   }
 
   private updateCompactionFrontierPolicy(model: ModelOption | null): void {
-    const policy = CompactionFrontierService.createPolicyForContextWindow(model?.contextWindow);
-    this.compactionFrontierService = new CompactionFrontierService(policy);
-    this.compactionFrontier = this.compactionFrontierService.normalizeFrontier(this.compactionFrontier);
+    this.compactionState.updatePolicy(model?.contextWindow);
   }
 
   getCompactionFrontierBudgetPolicy(): CompactionFrontierBudgetPolicy {
-    return CompactionFrontierService.createPolicyForContextWindow(this.selectedModel?.contextWindow);
+    return this.compactionState.getCompactionFrontierBudgetPolicy(this.selectedModel?.contextWindow);
   }
 
   /**
@@ -877,94 +603,49 @@ export class ModelAgentManager {
     metadata: Record<string, unknown> | undefined,
     compactionRecord: CompactedContext
   ): Record<string, unknown> {
-    const frontier = this.compactionFrontierService.appendRecord(
-      this.getFrontierFromMetadata((metadata ?? {}) as ConversationMetadataWithCompaction),
-      compactionRecord
-    );
-    return this.buildMetadataWithCompactionFrontier(metadata, frontier);
+    return this.compactionState.buildMetadataWithCompactionRecord(metadata, compactionRecord);
   }
 
   buildMetadataWithCompactionFrontier(
     metadata: Record<string, unknown> | undefined,
     frontier: CompactedContext[]
   ): Record<string, unknown> {
-    const existingMetadata = (metadata ?? {}) as ConversationMetadataWithCompaction;
-    const existingCompaction = existingMetadata.compaction ?? {};
-    const { previousContext: _legacyPreviousContext, ...remainingCompaction } = existingCompaction;
-    void _legacyPreviousContext;
-    const normalizedFrontier = this.compactionFrontierService.normalizeFrontier(frontier);
-
-    return {
-      ...existingMetadata,
-      compaction: {
-        ...remainingCompaction,
-        frontier: normalizedFrontier
-      }
-    };
+    return this.compactionState.buildMetadataWithCompactionFrontier(metadata, frontier);
   }
 
   /**
    * Get the latest active compaction record.
    */
   getLatestCompactionRecord(): CompactedContext | null {
-    return this.compactionFrontier.length > 0
-      ? this.compactionFrontier[this.compactionFrontier.length - 1]
-      : null;
+    return this.compactionState.getLatestCompactionRecord();
   }
 
   /**
    * Get the current active compaction frontier.
    */
   getCompactionFrontier(): CompactionFrontierRecord[] {
-    return [...this.compactionFrontier];
+    return this.compactionState.getCompactionFrontier();
   }
 
   /**
    * Clear compaction frontier (on new conversation or manual clear)
    */
   clearCompactionFrontier(): void {
-    this.compactionFrontier = [];
+    this.compactionState.clearCompactionFrontier();
   }
 
   /**
    * Check if there is compacted context in the frontier.
    */
   hasCompactionFrontier(): boolean {
-    return this.compactionFrontier.some(record => record.summary.length > 0);
+    return this.compactionState.hasCompactionFrontier();
   }
 
   private restoreCompactionFrontierFromMetadata(
     metadata: ConversationMetadataWithCompaction | undefined
   ): void {
-    this.compactionFrontier = this.getFrontierFromMetadata(metadata);
+    this.compactionState.restoreCompactionFrontierFromMetadata(metadata);
   }
-
-  private getFrontierFromMetadata(
-    metadata: ConversationMetadataWithCompaction | undefined
-  ): CompactionFrontierRecord[] {
-    const frontier = metadata?.compaction?.frontier;
-    if (Array.isArray(frontier)) {
-      return this.compactionFrontierService.normalizeFrontier(
-        frontier.filter(this.isValidCompactedContext)
-      );
-    }
-
-    const legacyCompactionRecord = metadata?.compaction?.previousContext;
-    if (this.isValidCompactedContext(legacyCompactionRecord)) {
-      return this.compactionFrontierService.normalizeFrontier([legacyCompactionRecord]);
-    }
-
-    return [];
-  }
-
-  private isValidCompactedContext = (
-    value: unknown
-  ): value is CompactedContext => {
-    return !!value &&
-      typeof value === 'object' &&
-      typeof (value as CompactedContext).summary === 'string' &&
-      (value as CompactedContext).summary.length > 0;
-  };
 
   /**
    * Set message enhancement from suggesters
@@ -991,7 +672,10 @@ export class ModelAgentManager {
    * Get available models from validated providers
    */
   async getAvailableModels(): Promise<ModelOption[]> {
-    return await ModelSelectionUtility.getAvailableModels(this.app);
+    const modelSelectionUtility = ModelSelectionUtility as {
+      getAvailableModels(app: App): Promise<ModelOption[]>;
+    };
+    return await modelSelectionUtility.getAvailableModels(this.app);
   }
 
   /**
@@ -1004,80 +688,8 @@ export class ModelAgentManager {
   /**
    * Get message options for current selection (includes workspace context)
    */
-  async getMessageOptions(): Promise<{
-    provider?: string;
-    model?: string;
-    systemPrompt?: string;
-    workspaceId?: string;
-    sessionId?: string;
-    enableThinking?: boolean;
-    thinkingEffort?: 'low' | 'medium' | 'high';
-    temperature?: number;
-  }> {
-    const sessionId = await this.getCurrentSessionId();
-
-    return {
-      provider: this.selectedModel?.providerId,
-      model: this.selectedModel?.modelId,
-      systemPrompt: await this.buildSystemPromptWithWorkspace() || undefined,
-      workspaceId: this.selectedWorkspaceId || undefined,
-      sessionId: sessionId,
-      enableThinking: this.thinkingSettings.enabled,
-      thinkingEffort: this.thinkingSettings.effort,
-      temperature: this.temperature
-    };
-  }
-
-  /**
-   * Build system prompt with workspace context and dynamic context
-   * Dynamic context (vault structure, workspaces, agents) is always fetched fresh
-   */
-  private async buildSystemPromptWithWorkspace(): Promise<string | null> {
-    const sessionId = await this.getCurrentSessionId();
-
-    // Fetch dynamic context (always fresh)
-    const vaultStructure = this.workspaceIntegration.getVaultStructure();
-    const availableWorkspaces = await this.workspaceIntegration.listAvailableWorkspaces();
-    const availablePrompts = await this.getAvailablePromptSummaries();
-    const toolAgents = this.getToolAgentInfo();
-
-    // Skip tools section for Nexus/WebLLM - it's pre-trained on the toolset
-    const isNexusModel = this.selectedModel?.providerId === 'webllm';
-
-    // Get context status for token-limited models
-    let contextStatus: ContextStatusInfo | null = null;
-    if (this.contextTokenTracker) {
-      const status = this.contextTokenTracker.getStatus();
-      contextStatus = {
-        usedTokens: status.usedTokens,
-        maxTokens: status.maxTokens,
-        percentUsed: status.percentUsed,
-        status: status.status,
-        statusMessage: this.contextTokenTracker.getStatusForPrompt()
-      };
-    }
-
-    return await this.systemPromptBuilder.build({
-      sessionId,
-      workspaceId: this.selectedWorkspaceId || undefined,
-      contextNotes: this.contextNotesManager.getNotes(),
-      messageEnhancement: this.messageEnhancement,
-      customPrompt: this.currentSystemPrompt,
-      workspaceContext: this.workspaceContext,
-      loadedWorkspaceData: this.loadedWorkspaceData, // Full comprehensive workspace data
-      // Dynamic context (always loaded fresh)
-      vaultStructure,
-      availableWorkspaces,
-      availablePrompts,
-      toolAgents,
-      // Nexus models are pre-trained on the toolset - skip tools section
-      skipToolsSection: isNexusModel,
-      // Context status for token-limited models
-      contextStatus,
-      // Active compaction frontier (if any), plus legacy single-record fallback for older callers
-      compactionFrontier: this.compactionFrontier,
-      legacyCompactionRecord: this.getLatestCompactionRecord()
-    });
+  async getMessageOptions(): Promise<ModelAgentMessageOptions> {
+    return await this.promptContextAssembler.buildMessageOptions(this.getPromptContextSnapshot());
   }
 
   /**
@@ -1119,85 +731,55 @@ export class ModelAgentManager {
   }
 
   /**
-   * Get available prompts as summaries for system prompt
-   * Note: These are user-created prompts, displayed in system prompt for LLM awareness
-   */
-  private async getAvailablePromptSummaries(): Promise<PromptSummary[]> {
-    const prompts = await this.getAvailablePrompts();
-    return prompts.map(prompt => ({
-      id: prompt.id,
-      name: prompt.name,
-      description: prompt.description || 'Custom prompt'
-    }));
-  }
-
-  /**
-   * Get tool agents info from agent registry for system prompt
-   * Returns agent names, descriptions, and their available tools
-   */
-  private getToolAgentInfo(): ToolAgentInfo[] {
-    try {
-      // Access plugin from app
-      const appWithPlugins = this.app as unknown as AppWithPlugins;
-      const plugin = appWithPlugins.plugins?.plugins?.['claudesidian-mcp'] as unknown as PluginWithSettings | undefined;
-      if (!plugin) {
-        return [];
-      }
-
-      // Try agentRegistrationService first (works on both desktop and mobile)
-      const agentService = plugin.serviceManager?.getServiceIfReady?.('agentRegistrationService');
-      if (agentService) {
-        const typedAgentService = agentService as { getAllAgents: () => Map<string, AgentLike> | Array<{ name: string } & AgentLike> };
-        const agents = typedAgentService.getAllAgents();
-        const agentMap = agents instanceof Map ? agents : new Map(agents.map((a) => [a.name, a]));
-
-        return Array.from(agentMap.entries()).map(([name, agent]) => {
-          const agentTools = agent.getTools?.() || [];
-          return {
-            name,
-            description: agent.description || '',
-            tools: agentTools.map(t => t.slug || t.name || 'unknown')
-          };
-        });
-      }
-
-      // Fallback to connector's agentRegistry (desktop only)
-      const connector = plugin.connector;
-      if (connector?.agentRegistry) {
-        const agents = connector.agentRegistry.getAllAgents();
-        const result: ToolAgentInfo[] = [];
-
-        for (const [name, agent] of agents) {
-          const agentTools = agent.getTools?.() || [];
-          result.push({
-            name,
-            description: agent.description || '',
-            tools: agentTools.map(t => t.slug || t.name || 'unknown')
-          });
-        }
-
-        return result;
-      }
-
-      return [];
-    } catch {
-      return [];
-    }
-  }
-
-  /**
    * Get current session ID from conversation
    */
   private async getCurrentSessionId(): Promise<string | undefined> {
-    if (!this.currentConversationId || !this.conversationService) {
+    if (!this.currentConversationId) {
       return undefined;
     }
 
     try {
-      const conversation = await this.conversationService.getConversation(this.currentConversationId);
-      return conversation?.metadata?.chatSettings?.sessionId;
+      return await this.conversationSettingsStore.getSessionId(this.currentConversationId);
     } catch {
       return undefined;
     }
+  }
+
+  private buildChatSettingsMetadata(): ConversationSettingsMetadata {
+    return {
+      providerId: this.selectedModel?.providerId,
+      modelId: this.selectedModel?.modelId,
+      promptId: this.selectedPrompt?.id ?? null,
+      workspaceId: this.selectedWorkspaceId,
+      contextNotes: this.contextNotesManager.getNotes(),
+      thinking: this.thinkingSettings,
+      temperature: this.temperature,
+      agentProvider: this.agentProvider,
+      agentModel: this.agentModel,
+      agentThinking: this.agentThinkingSettings
+    };
+  }
+
+  private getPromptContextSnapshot(): ModelAgentPromptContextSnapshot {
+    return {
+      selectedModel: this.selectedModel,
+      selectedWorkspaceId: this.selectedWorkspaceId,
+      workspaceContext: this.workspaceContext,
+      loadedWorkspaceData: this.loadedWorkspaceData,
+      contextNotes: this.contextNotesManager.getNotes(),
+      messageEnhancement: this.messageEnhancement,
+      currentSystemPrompt: this.currentSystemPrompt,
+      thinkingSettings: this.thinkingSettings,
+      temperature: this.temperature,
+      contextTokenTracker: this.compactionState.getContextTokenTracker(),
+      compactionFrontier: this.compactionState.getCompactionFrontier(),
+      latestCompactionRecord: this.compactionState.getLatestCompactionRecord()
+    };
+  }
+
+  private async refreshSystemPrompt(): Promise<void> {
+    this.events.onSystemPromptChanged(
+      await this.promptContextAssembler.buildSystemPrompt(this.getPromptContextSnapshot())
+    );
   }
 }

@@ -20,7 +20,7 @@
 import { BaseRepository, DatabaseRow, RepositoryDependencies } from './base/BaseRepository';
 import { IConversationRepository, CreateConversationData, UpdateConversationData } from './interfaces/IConversationRepository';
 import { ConversationMetadata } from '../../types/storage/HybridStorageTypes';
-import { ConversationCreatedEvent, ConversationUpdatedEvent } from '../interfaces/StorageEvents';
+import { ConversationCreatedEvent, ConversationUpdatedEvent, ConversationDeletedEvent } from '../interfaces/StorageEvents';
 import { PaginatedResult, PaginationParams } from '../../types/pagination/PaginationTypes';
 import { QueryOptions } from '../interfaces/IStorageAdapter';
 
@@ -352,14 +352,19 @@ export class ConversationRepository
    */
   async delete(id: string): Promise<void> {
     try {
-      // Remove from SQLite — messages cascade via foreign key constraint
+      // 1. Write deletion event to JSONL so reconciliation skips this conversation
+      await this.writeEvent<ConversationDeletedEvent>(
+        this.jsonlPath(id),
+        {
+          type: 'conversation_deleted',
+          conversationId: id
+        }
+      );
+
+      // 2. Delete from SQLite — messages are cascaded via foreign key constraint
       await this.sqliteCache.run(`DELETE FROM ${this.tableName} WHERE id = ?`, [id]);
 
-      // Delete the JSONL file (contains both conversation metadata events and all
-      // message events — same file path used by MessageRepository for this conversation)
-      await this.jsonlWriter.deleteFile(this.jsonlPath(id));
-
-      // Invalidate cache
+      // 3. Invalidate cache
       this.invalidateCache();
 
     } catch (error) {

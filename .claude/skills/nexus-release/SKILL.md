@@ -60,10 +60,12 @@ git push origin main
 
 Always attach the **4 build artifacts**:
 
+**IMPORTANT**: Tags and titles use plain version numbers (`X.Y.Z`), NOT `v`-prefixed (`vX.Y.Z`).
+
 ```bash
-gh release create vX.Y.Z \
+gh release create X.Y.Z \
   main.js connector.js manifest.json styles.css \
-  --title "vX.Y.Z — Short Description" \
+  --title "X.Y.Z" \
   --notes "$(cat <<'EOF'
 ## What's New / Fixes
 
@@ -91,3 +93,4 @@ EOF
 - Missing one of the 3 version files
 - Not attaching all 4 release artifacts
 - Releasing from a feature branch instead of `main`
+- Using `v`-prefixed tags (`v5.6.10`) — use plain version numbers (`5.6.10`)

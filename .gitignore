@@ -24,6 +24,9 @@ docs/plans/*
 !docs/research/
 docs/research/*
 !docs/research/*.md
+!docs/review/
+docs/review/*
+!docs/review/*.md
 !docs/mockups/
 docs/mockups/*
 !docs/mockups/*.html

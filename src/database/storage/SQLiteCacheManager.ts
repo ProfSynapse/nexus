@@ -22,28 +22,30 @@
  * - Works in Electron renderer (no native bindings)
  */
 
-// Import the raw WASM sqlite3 module (has sqlite-vec compiled in)
-// esbuild alias resolves this to index.mjs which exports sqlite3InitModule
-import sqlite3InitModule from '@dao-xyz/sqlite3-vec/wasm';
-
 import { App } from 'obsidian';
 import { PaginatedResult, PaginationParams } from '../../types/pagination/PaginationTypes';
 import { IStorageBackend, RunResult, DatabaseStats } from '../interfaces/IStorageBackend';
 import type { SyncState, ISQLiteCacheManager } from '../sync/SyncCoordinator';
 import { SQLiteSearchService } from './SQLiteSearchService';
 import { QueryParams } from '../repositories/base/BaseRepository';
+import {
+  SQLiteWasmBridge,
+  SQLiteWasmModule,
+  SQLiteDatabaseHandle
+} from './SQLiteWasmBridge';
+import { SQLiteTransactionCoordinator } from './SQLiteTransactionCoordinator';
+import { SQLiteSyncStateStore } from './SQLiteSyncStateStore';
+import { SQLitePersistenceService } from './SQLitePersistenceService';
+import { SQLiteMaintenanceService, SQLiteMaintenanceStatistics } from './SQLiteMaintenanceService';
 
 // Import schema from TypeScript module (esbuild compatible)
 import { SCHEMA_SQL } from '../schema/schema';
 import { SchemaMigrator } from '../schema/SchemaMigrator';
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
-}
-
 export interface SQLiteCacheManagerOptions {
   app: App;
   dbPath: string;  // e.g., '.nexus/cache.db'
+  wasmPath?: string;
   autoSaveInterval?: number;  // ms between auto-saves (default: 30000)
 }
 
@@ -52,33 +54,23 @@ export interface QueryResult<T> {
   totalCount?: number;
 }
 
-type SQLite3Module = Awaited<ReturnType<typeof sqlite3InitModule>>;
-type SQLiteDatabase = InstanceType<SQLite3Module['oo1']['DB']>;
-
 /**
  * Database adapter that wraps raw WASM SQLite database to provide
  * exec() and run() methods for MigratableDatabase interface.
  */
 class DatabaseAdapter {
-  constructor(private rawDb: SQLiteDatabase) {}
+  constructor(
+    private readonly bridge: SQLiteWasmBridge,
+    private readonly rawDb: SQLiteDatabaseHandle
+  ) {}
 
   exec(sql: string): { values: unknown[][] }[] {
-    const stmt = this.rawDb.prepare(sql);
-    const results: unknown[][] = [];
-    while (stmt.step()) {
-      results.push(stmt.get([]) as unknown[]);
-    }
-    stmt.finalize();
+    const results = this.bridge.collectValues(this.rawDb, sql);
     return results.length > 0 ? [{ values: results }] : [];
   }
 
   run(sql: string, params?: QueryParams): void {
-    const stmt = this.rawDb.prepare(sql);
-    if (params?.length) {
-      stmt.bind(params);
-    }
-    stmt.step();
-    stmt.finalize();
+    this.bridge.executeStatement(this.rawDb, sql, params);
   }
 }
 
@@ -96,33 +88,79 @@ class DatabaseAdapter {
 export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager {
   private app: App;
   private dbPath: string;  // Relative path within vault
-  private sqlite3: SQLite3Module | null = null;  // The sqlite3 WASM module
-  private db: SQLiteDatabase | null = null;  // The oo1.DB instance
+  private wasmPath?: string;
+  private readonly bridge: SQLiteWasmBridge;
+  private sqlite3: SQLiteWasmModule | null = null;  // The sqlite3 WASM module
+  private db: SQLiteDatabaseHandle | null = null;  // The oo1.DB instance
   private isInitialized = false;
   private searchService: SQLiteSearchService;
   private hasUnsavedData = false;
   private autoSaveInterval: number;
   private autoSaveTimer: NodeJS.Timeout | null = null;
-
-  // Transaction management - prevent nested transactions
-  private transactionDepth = 0;
-  private transactionLock: Promise<void> = Promise.resolve();
+  private readonly transactionCoordinator: SQLiteTransactionCoordinator;
+  private readonly syncStateStore: SQLiteSyncStateStore;
+  private readonly persistenceService: SQLitePersistenceService;
+  private maintenanceService?: SQLiteMaintenanceService;
 
   constructor(options: SQLiteCacheManagerOptions) {
     this.app = options.app;
     this.dbPath = options.dbPath;
+    this.wasmPath = options.wasmPath;
     this.autoSaveInterval = options.autoSaveInterval ?? 30000;  // 30 seconds default
+    this.bridge = new SQLiteWasmBridge();
+    this.transactionCoordinator = new SQLiteTransactionCoordinator();
+    this.persistenceService = new SQLitePersistenceService({
+      app: this.app,
+      dbPath: this.dbPath,
+      bridge: this.bridge
+    });
+    this.syncStateStore = new SQLiteSyncStateStore(
+      <T>(sql: string, params?: QueryParams) => this.query<T>(sql, params),
+      <T>(sql: string, params?: QueryParams) => this.queryOne<T>(sql, params),
+      (sql: string, params?: QueryParams) => this.run(sql, params)
+    );
     this.searchService = new SQLiteSearchService(this);
   }
 
-  private getSqlite3OrThrow(): SQLite3Module {
+  /**
+   * Update the database path before initialization.
+   * Must be called before initialize() — has no effect after the DB is open.
+   */
+  setDbPath(path: string): void {
+    if (this.isInitialized) {
+      console.warn('[SQLiteCacheManager] setDbPath called after initialization — ignoring');
+      return;
+    }
+
+    this.dbPath = path;
+    this.persistenceService.setDbPath(path);
+    if (this.maintenanceService) {
+      this.maintenanceService.setDbPath(path);
+    }
+  }
+
+  private getMaintenanceService(): SQLiteMaintenanceService {
+    if (!this.maintenanceService) {
+      this.maintenanceService = new SQLiteMaintenanceService({
+        app: this.app,
+        dbPath: this.dbPath,
+        bridge: this.bridge,
+        getDb: () => this.getDbOrThrow(),
+        queryOne: <T>(sql: string, params?: QueryParams) => this.queryOne<T>(sql, params),
+        transaction: <T>(fn: () => Promise<T>) => this.transaction(fn)
+      });
+    }
+    return this.maintenanceService;
+  }
+
+  private getSqlite3OrThrow(): SQLiteWasmModule {
     if (!this.sqlite3) {
       throw new Error('SQLite module not initialized');
     }
     return this.sqlite3;
   }
 
-  private getDbOrThrow(): SQLiteDatabase {
+  private getDbOrThrow(): SQLiteDatabaseHandle {
     if (!this.db) {
       throw new Error('Database not initialized');
     }
@@ -136,6 +174,16 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
    * as well as the current `.obsidian/plugins/nexus/` folder.
    */
   private async resolveSqliteWasmPath(): Promise<string> {
+    if (this.wasmPath) {
+      try {
+        if (await this.app.vault.adapter.exists(this.wasmPath)) {
+          return this.wasmPath;
+        }
+      } catch {
+        // Fall through to legacy candidates.
+      }
+    }
+
     const configDir = this.app.vault.configDir;
     const candidatePluginFolders = ['nexus', 'claudesidian-mcp'];
     const candidates = candidatePluginFolders.map(folder => `${configDir}/plugins/${folder}/sqlite3.wasm`);
@@ -194,23 +242,7 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
       };
 
       try {
-        // External library types are incomplete - instantiateWasm is a valid option but not in InitOptions type
-        // Cast to unknown first to bypass strict type checking for the extended options
-        const initOptions = {
-          instantiateWasm: (imports: WebAssembly.Imports, successCallback: (instance: WebAssembly.Instance) => void) => {
-            WebAssembly.instantiate(wasmBinary, imports)
-              .then(result => {
-                successCallback(result.instance);
-              })
-              .catch(err => {
-                console.error('[SQLiteCacheManager] WASM instantiation failed:', err);
-              });
-            return {};
-          },
-          print: () => undefined,
-          printErr: (msg: string) => console.error('[SQLite]', msg)
-        } as unknown as Parameters<typeof sqlite3InitModule>[0];
-        this.sqlite3 = await sqlite3InitModule(initOptions);
+        this.sqlite3 = await this.bridge.initializeModule(wasmBinary);
       } finally {
         consoleRef.warn = originalWarn;
         consoleRef.log = originalLog;
@@ -231,23 +263,22 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
         await this.loadFromFile();
       } else {
         const sqlite3 = this.getSqlite3OrThrow();
-        const db = new sqlite3.oo1.DB(':memory:');
+        const db = this.persistenceService.createFreshDatabase(sqlite3, SCHEMA_SQL);
         this.db = db;
-        db.exec(SCHEMA_SQL);
         await this.saveToFile();
       }
 
       // Run schema migrations for existing databases
       // Wrap raw database in adapter to provide exec() and run() methods
-      const dbAdapter = new DatabaseAdapter(this.getDbOrThrow());
+      const dbAdapter = new DatabaseAdapter(this.bridge, this.getDbOrThrow());
       const migrator = new SchemaMigrator(dbAdapter);
       const migrationResult = await migrator.migrate();
       if (migrationResult.applied > 0) {
         await this.saveToFile(); // Save after migrations
       }
 
-      // Fix vec0 virtual table dimensions if needed (768→384 migration)
-      this.fixVec0TableDimensions(dbAdapter);
+      // Fork: Fix vec0 virtual table dimensions if needed (768→384 migration for legacy Nomic era)
+      await this.getMaintenanceService().fixVec0TableDimensions();
 
       // Start auto-save timer
       if (this.autoSaveInterval > 0) {
@@ -272,62 +303,9 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
    * Includes corruption detection and auto-recovery
    */
   private async loadFromFile(): Promise<void> {
-    try {
-      // Read binary data from vault
-      const data = await this.app.vault.adapter.readBinary(this.dbPath);
-      const uint8 = new Uint8Array(data);
-
-      if (uint8.length === 0) {
-        // Empty file, create new database
-        const sqlite3 = this.getSqlite3OrThrow();
-        const db = new sqlite3.oo1.DB(':memory:');
-        this.db = db;
-        db.exec(SCHEMA_SQL);
-        return;
-      }
-
-      // Allocate memory for the database bytes
-      const sqlite3 = this.getSqlite3OrThrow();
-      const ptr = sqlite3.wasm.allocFromTypedArray(uint8);
-
-      // Create empty in-memory database
-      this.db = new sqlite3.oo1.DB(':memory:');
-      const db = this.getDbOrThrow();
-
-      // Deserialize the data into the database
-      const rc = sqlite3.capi.sqlite3_deserialize(
-        db,
-        'main',
-        ptr,
-        uint8.byteLength,
-        uint8.byteLength,
-        sqlite3.capi.SQLITE_DESERIALIZE_FREEONCLOSE |
-        sqlite3.capi.SQLITE_DESERIALIZE_RESIZEABLE
-      );
-
-      if (rc !== 0) {
-        throw new Error(`sqlite3_deserialize failed with code ${rc}`);
-      }
-
-      // Verify database integrity
-      try {
-        const integrityResult = db.selectValue('PRAGMA integrity_check');
-        if (integrityResult !== 'ok') {
-          const integrityMessage = typeof integrityResult === 'string'
-            ? integrityResult
-            : JSON.stringify(integrityResult) ?? 'unknown';
-          throw new Error(`Database integrity check failed: ${integrityMessage}`);
-        }
-      } catch {
-        await this.recreateCorruptedDatabase();
-        return;
-      }
-
-      this.hasUnsavedData = false;
-    } catch (error) {
-      console.error('[SQLiteCacheManager] Failed to load from file:', error);
-      await this.recreateCorruptedDatabase();
-    }
+    const sqlite3 = this.getSqlite3OrThrow();
+    this.db = await this.persistenceService.loadDatabase(sqlite3, SCHEMA_SQL);
+    this.hasUnsavedData = false;
   }
 
   /**
@@ -335,54 +313,28 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
    * Deletes corrupt file and creates fresh database
    */
   private async recreateCorruptedDatabase(): Promise<void> {
+    const sqlite3 = this.getSqlite3OrThrow();
     if (this.db) {
       try {
-        this.db.close();
+        this.bridge.close(this.db);
       } catch {
         void 0;
       }
       this.db = null;
     }
 
-    try {
-      await this.app.vault.adapter.remove(this.dbPath);
-    } catch {
-      void 0;
-    }
-
-    const sqlite3 = this.getSqlite3OrThrow();
-    const db = new sqlite3.oo1.DB(':memory:');
-    this.db = db;
-    db.exec(SCHEMA_SQL);
-    await this.saveToFile();
+    this.db = await this.persistenceService.recreateCorruptedDatabase(sqlite3, SCHEMA_SQL);
+    this.hasUnsavedData = false;
   }
 
   /**
    * Save database to file using sqlite3_js_db_export
    */
   private async saveToFile(): Promise<void> {
-    try {
-      const db = this.getDbOrThrow();
-      const sqlite3 = this.getSqlite3OrThrow();
-      // Temporarily suppress console.log during WASM export to avoid "Heap resize" noise
-      const consoleRef = console;
-      const originalLog = consoleRef.log;
-      consoleRef.log = () => undefined;
-
-      let data: { buffer: ArrayBuffer };
-      try {
-        data = sqlite3.capi.sqlite3_js_db_export(db);
-      } finally {
-        consoleRef.log = originalLog;
-      }
-
-      await this.app.vault.adapter.writeBinary(this.dbPath, data.buffer);
-
-      this.hasUnsavedData = false;
-    } catch (error) {
-      console.error('[SQLiteCacheManager] Failed to save to file:', error);
-      throw error;
-    }
+    const db = this.getDbOrThrow();
+    const sqlite3 = this.getSqlite3OrThrow();
+    await this.persistenceService.saveDatabase(sqlite3, db);
+    this.hasUnsavedData = false;
   }
 
   /**
@@ -402,7 +354,7 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
       }
 
       if (this.db) {
-        this.db.close();
+        this.bridge.close(this.db);
         this.db = null;
       }
       this.isInitialized = false;
@@ -420,7 +372,7 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
     if (!this.db) return Promise.reject(new Error('Database not initialized'));
 
     try {
-      this.db.exec(sql);
+      this.bridge.exec(this.db, sql);
       this.hasUnsavedData = true;
       return Promise.resolve();
     } catch (error) {
@@ -434,20 +386,8 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
    */
   query<T>(sql: string, params?: QueryParams): Promise<T[]> {
     try {
-      const db = this.getDbOrThrow();
-      const stmt = db.prepare(sql);
-      try {
-        if (params?.length) {
-          stmt.bind(params);
-        }
-        const results: T[] = [];
-        while (stmt.step()) {
-          results.push(stmt.get({}) as T);
-        }
-        return Promise.resolve(results);
-      } finally {
-        stmt.finalize();
-      }
+      const results = this.bridge.query<T>(this.getDbOrThrow(), sql, params);
+      return Promise.resolve(results);
     } catch (error) {
       console.error('[SQLiteCacheManager] Query failed:', error, { sql, params });
       throw error;
@@ -459,19 +399,8 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
    */
   queryOne<T>(sql: string, params?: QueryParams): Promise<T | null> {
     try {
-      const db = this.getDbOrThrow();
-      const stmt = db.prepare(sql);
-      try {
-        if (params?.length) {
-          stmt.bind(params);
-        }
-        if (stmt.step()) {
-          return Promise.resolve(stmt.get({}) as T);
-        }
-        return Promise.resolve(null);
-      } finally {
-        stmt.finalize();
-      }
+      const result = this.bridge.queryOne<T>(this.getDbOrThrow(), sql, params);
+      return Promise.resolve(result);
     } catch (error) {
       console.error('[SQLiteCacheManager] QueryOne failed:', error, { sql, params });
       throw error;
@@ -486,19 +415,7 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
     try {
       const db = this.getDbOrThrow();
       const sqlite3 = this.getSqlite3OrThrow();
-      const stmt = db.prepare(sql);
-      try {
-        if (params?.length) {
-          stmt.bind(params);
-        }
-        stmt.stepReset();
-      } finally {
-        stmt.finalize();
-      }
-
-      // Get changes count and last insert rowid
-      const changes = db.changes();
-      const lastInsertRowid = Number(sqlite3.capi.sqlite3_last_insert_rowid(db));
+      const { changes, lastInsertRowid } = this.bridge.run(db, sqlite3, sql, params);
 
       this.hasUnsavedData = true;
       return Promise.resolve({ changes, lastInsertRowid });
@@ -512,7 +429,7 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
    * Begin a transaction
    */
   beginTransaction(): Promise<void> {
-    this.getDbOrThrow().exec('BEGIN TRANSACTION');
+    this.bridge.exec(this.getDbOrThrow(), 'BEGIN TRANSACTION');
     return Promise.resolve();
   }
 
@@ -520,7 +437,7 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
    * Commit a transaction
    */
   commit(): Promise<void> {
-    this.getDbOrThrow().exec('COMMIT');
+    this.bridge.exec(this.getDbOrThrow(), 'COMMIT');
     this.hasUnsavedData = true;
     return Promise.resolve();
   }
@@ -529,7 +446,7 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
    * Rollback a transaction
    */
   rollback(): Promise<void> {
-    this.getDbOrThrow().exec('ROLLBACK');
+    this.bridge.exec(this.getDbOrThrow(), 'ROLLBACK');
     return Promise.resolve();
   }
 
@@ -538,37 +455,12 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
    * Handles concurrent access via lock and nested transactions via depth tracking
    */
   async transaction<T>(fn: () => Promise<T>): Promise<T> {
-    // If already in a transaction, just run the function (no nesting)
-    if (this.transactionDepth > 0) {
-      return fn();
-    }
-
-    // Queue this transaction after any pending ones
-    let resolve: (() => void) | undefined;
-    const previousLock = this.transactionLock;
-    this.transactionLock = new Promise<void>((r) => { resolve = r; });
-
-    try {
-      // Wait for any pending transaction to complete
-      await previousLock;
-
-      this.transactionDepth++;
-      await this.beginTransaction();
-
-      try {
-        const result = await fn();
-        await this.commit();
-        return result;
-      } catch (error) {
-        await this.rollback();
-        throw error;
-      } finally {
-        this.transactionDepth--;
-      }
-    } finally {
-      // Release the lock for the next transaction
-      resolve?.();
-    }
+    return this.transactionCoordinator.run(
+      () => this.beginTransaction(),
+      () => this.commit(),
+      () => this.rollback(),
+      fn
+    );
   }
 
   // ==================== Higher-level query methods ====================
@@ -612,32 +504,21 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
    * Check if an event has already been applied
    */
   async isEventApplied(eventId: string): Promise<boolean> {
-    const result = await this.queryOne<{ eventId: string }>(
-      'SELECT eventId FROM applied_events WHERE eventId = ?',
-      [eventId]
-    );
-    return result !== null;
+    return this.syncStateStore.isEventApplied(eventId);
   }
 
   /**
    * Mark an event as applied
    */
   async markEventApplied(eventId: string): Promise<void> {
-    await this.run(
-      'INSERT OR IGNORE INTO applied_events (eventId, appliedAt) VALUES (?, ?)',
-      [eventId, Date.now()]
-    );
+    await this.syncStateStore.markEventApplied(eventId);
   }
 
   /**
    * Get list of applied event IDs after a timestamp
    */
   async getAppliedEventsAfter(timestamp: number): Promise<string[]> {
-    const results = await this.query<{ eventId: string }>(
-      'SELECT eventId FROM applied_events WHERE appliedAt > ? ORDER BY appliedAt',
-      [timestamp]
-    );
-    return results.map(r => r.eventId);
+    return this.syncStateStore.getAppliedEventsAfter(timestamp);
   }
 
   // ==================== Sync state ====================
@@ -646,152 +527,29 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
    * Get sync state for a device
    */
   async getSyncState(deviceId: string): Promise<SyncState | null> {
-    const result = await this.queryOne<{ deviceId: string; lastEventTimestamp: number; syncedFilesJson: string }>(
-      'SELECT deviceId, lastEventTimestamp, syncedFilesJson FROM sync_state WHERE deviceId = ?',
-      [deviceId]
-    );
-
-    if (!result) return null;
-
-      const fileTimestampsRaw: unknown = result.syncedFilesJson ? JSON.parse(result.syncedFilesJson) : {};
-      const fileTimestamps: Record<string, number> = {};
-      if (isRecord(fileTimestampsRaw)) {
-        for (const [key, value] of Object.entries(fileTimestampsRaw)) {
-          if (typeof value === 'number' && Number.isFinite(value)) {
-            fileTimestamps[key] = value;
-          }
-        }
-      }
-      return {
-        deviceId: result.deviceId,
-        lastEventTimestamp: result.lastEventTimestamp,
-        fileTimestamps
-      };
+    return this.syncStateStore.getSyncState(deviceId);
   }
 
   /**
    * Update sync state for a device
    */
   async updateSyncState(deviceId: string, lastEventTimestamp: number, fileTimestamps: Record<string, number>): Promise<void> {
-    await this.run(
-      `INSERT OR REPLACE INTO sync_state (deviceId, lastEventTimestamp, syncedFilesJson)
-       VALUES (?, ?, ?)`,
-      [deviceId, lastEventTimestamp, JSON.stringify(fileTimestamps)]
-    );
+    await this.syncStateStore.updateSyncState(deviceId, lastEventTimestamp, fileTimestamps);
   }
 
   // ==================== Data management ====================
 
-  /**
-   * Clear all data (for rebuilding from JSONL)
-   */
   async clearAllData(): Promise<void> {
-    await this.transaction(() => {
-      const db = this.getDbOrThrow();
-      db.exec(`
-        DELETE FROM task_note_links;
-        DELETE FROM task_dependencies;
-        DELETE FROM tasks;
-        DELETE FROM projects;
-        DELETE FROM messages;
-        DELETE FROM conversations;
-        DELETE FROM memory_traces;
-        DELETE FROM states;
-        DELETE FROM sessions;
-        DELETE FROM workspaces;
-        DELETE FROM applied_events;
-        DELETE FROM sync_state;
-      `);
-
-      // Drop and recreate vec0 virtual tables (cannot DELETE from vec0)
-      // Conversation embeddings
-      db.exec(`DROP TABLE IF EXISTS conversation_embeddings`);
-      db.exec(`CREATE VIRTUAL TABLE IF NOT EXISTS conversation_embeddings USING vec0(embedding float[384])`);
-      db.exec(`DELETE FROM conversation_embedding_metadata`);
-      db.exec(`DELETE FROM embedding_backfill_state`);
-      return Promise.resolve();
-    });
+    await this.getMaintenanceService().clearAllData();
   }
 
-  /**
-   * Rebuild FTS5 indexes after bulk data changes
-   */
   async rebuildFTSIndexes(): Promise<void> {
-    await this.transaction(() => {
-      const db = this.getDbOrThrow();
-      // Rebuild workspace FTS5
-      db.exec(`
-        INSERT INTO workspace_fts(workspace_fts) VALUES ('rebuild');
-      `);
-
-      // Rebuild conversation FTS5
-      db.exec(`
-        INSERT INTO conversation_fts(conversation_fts) VALUES ('rebuild');
-      `);
-
-      // Rebuild message FTS5
-      db.exec(`
-        INSERT INTO message_fts(message_fts) VALUES ('rebuild');
-      `);
-      return Promise.resolve();
-    });
+    await this.getMaintenanceService().rebuildFTSIndexes();
   }
 
-  /**
-   * Vacuum the database to reclaim space
-   */
-  vacuum(): Promise<void> {
-    try {
-      this.getDbOrThrow().exec('VACUUM');
-      this.hasUnsavedData = true;
-      return Promise.resolve();
-    } catch (error) {
-      console.error('[SQLiteCacheManager] Vacuum failed:', error);
-      throw error;
-    }
-  }
-
-  // ==================== Schema fixes ====================
-
-  /**
-   * Fix vec0 virtual table dimensions if they were created with 768-dim (legacy Nomic era).
-   * vec0 tables cannot be ALTERed — must be dropped and recreated.
-   * Called after migrations run during initialize().
-   */
-  private fixVec0TableDimensions(dbAdapter: DatabaseAdapter): boolean {
-    const db = this.getDbOrThrow();
-    let fixed = false;
-
-    try {
-      const noteResult = dbAdapter.exec("SELECT sql FROM sqlite_master WHERE name='note_embeddings'");
-      const noteSql = noteResult[0]?.values[0]?.[0] as string | undefined;
-      if (noteSql?.includes('float[768]')) {
-        db.exec('DROP TABLE IF EXISTS note_embeddings');
-        db.exec('CREATE VIRTUAL TABLE IF NOT EXISTS note_embeddings USING vec0(embedding float[384])');
-        db.exec('DELETE FROM embedding_metadata');
-        fixed = true;
-      }
-    } catch (error) {
-      console.error('[SQLiteCacheManager] Failed to fix note_embeddings dimensions:', error);
-    }
-
-    try {
-      const blockResult = dbAdapter.exec("SELECT sql FROM sqlite_master WHERE name='block_embeddings'");
-      const blockSql = blockResult[0]?.values[0]?.[0] as string | undefined;
-      if (blockSql?.includes('float[768]')) {
-        db.exec('DROP TABLE IF EXISTS block_embeddings');
-        db.exec('CREATE VIRTUAL TABLE IF NOT EXISTS block_embeddings USING vec0(embedding float[384])');
-        fixed = true;
-      }
-    } catch (error) {
-      console.error('[SQLiteCacheManager] Failed to fix block_embeddings dimensions:', error);
-    }
-
-    if (fixed) {
-      console.warn('[SQLiteCacheManager] Fixed vec0 embedding table dimensions (768→384)');
-    }
-
-    return fixed;
+  async vacuum(): Promise<void> {
+    await this.getMaintenanceService().vacuum();
+    this.hasUnsavedData = true;
   }
 
   // ==================== Full-text search ====================
@@ -830,51 +588,8 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
   /**
    * Get database statistics
    */
-  async getStatistics(): Promise<{
-    workspaces: number;
-    sessions: number;
-    states: number;
-    traces: number;
-    conversations: number;
-    messages: number;
-    appliedEvents: number;
-    conversationEmbeddings: number;
-    dbSizeBytes: number;
-  }> {
-    const stats = await Promise.all([
-      this.queryOne<{ count: number }>('SELECT COUNT(*) as count FROM workspaces'),
-      this.queryOne<{ count: number }>('SELECT COUNT(*) as count FROM sessions'),
-      this.queryOne<{ count: number }>('SELECT COUNT(*) as count FROM states'),
-      this.queryOne<{ count: number }>('SELECT COUNT(*) as count FROM memory_traces'),
-      this.queryOne<{ count: number }>('SELECT COUNT(*) as count FROM conversations'),
-      this.queryOne<{ count: number }>('SELECT COUNT(*) as count FROM messages'),
-      this.queryOne<{ count: number }>('SELECT COUNT(*) as count FROM applied_events'),
-      this.queryOne<{ count: number }>('SELECT COUNT(*) as count FROM conversation_embedding_metadata'),
-    ]);
-
-    // Get file size from filesystem
-    let dbSizeBytes = 0;
-    try {
-      const exists = await this.app.vault.adapter.exists(this.dbPath);
-      if (exists) {
-        const stat = await this.app.vault.adapter.stat(this.dbPath);
-        dbSizeBytes = stat?.size ?? 0;
-      }
-    } catch {
-      void 0;
-    }
-
-    return {
-      workspaces: stats[0]?.count ?? 0,
-      sessions: stats[1]?.count ?? 0,
-      states: stats[2]?.count ?? 0,
-      traces: stats[3]?.count ?? 0,
-      conversations: stats[4]?.count ?? 0,
-      messages: stats[5]?.count ?? 0,
-      appliedEvents: stats[6]?.count ?? 0,
-      conversationEmbeddings: stats[7]?.count ?? 0,
-      dbSizeBytes
-    };
+  async getStatistics(): Promise<SQLiteMaintenanceStatistics> {
+    return this.getMaintenanceService().getStatistics();
   }
 
   // ==================== Utilities ====================
@@ -927,30 +642,6 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
    * Get database statistics (IStorageBackend requirement)
    */
   async getStats(): Promise<DatabaseStats> {
-    const stats = await this.getStatistics();
-
-    // Count tables
-    const tableCountResult = await this.queryOne<{ count: number }>(
-      "SELECT COUNT(*) as count FROM sqlite_master WHERE type='table'"
-    );
-    const tableCount = tableCountResult?.count ?? 0;
-
-    return {
-      fileSize: stats.dbSizeBytes,
-      tableCount,
-      totalRows: stats.workspaces + stats.sessions + stats.states + stats.traces +
-                 stats.conversations + stats.messages,
-      tableCounts: {
-        workspaces: stats.workspaces,
-        sessions: stats.sessions,
-        states: stats.states,
-        memory_traces: stats.traces,
-        conversations: stats.conversations,
-        messages: stats.messages,
-        applied_events: stats.appliedEvents,
-        conversation_embedding_metadata: stats.conversationEmbeddings
-      },
-      walMode: false  // WASM doesn't use WAL mode
-    };
+    return this.getMaintenanceService().getStats();
   }
 }

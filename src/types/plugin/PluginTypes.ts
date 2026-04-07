@@ -6,6 +6,7 @@
 import { CustomPromptsSettings } from '../mcp/CustomPromptTypes';
 import { LLMProviderSettings } from '../llm/ProviderTypes';
 import { AppsSettings } from '../apps/AppTypes';
+import type { PluginScopedStorageState } from '../../database/migration/PluginScopedStorageCoordinator';
 
 // Forward declarations for service types to avoid circular imports
 // Actual types are imported where needed
@@ -73,6 +74,7 @@ export interface MCPSettings {
   availableUpdateVersion?: string;
   lastUpdateCheckDate?: string;
   processedFiles?: ProcessedFilesData;
+  pluginStorage?: PluginScopedStorageState;
   workflowScheduler?: {
     lastCheckAt?: number;
   };

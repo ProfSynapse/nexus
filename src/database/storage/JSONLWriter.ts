@@ -23,13 +23,13 @@
  * - src/database/services/cache/EntityCache.ts - In-memory cache layer
  */
 
-import { App, FileSystemAdapter } from 'obsidian';
+import { App } from 'obsidian';
 import { StorageEvent, BaseStorageEvent } from '../interfaces/StorageEvents';
 import { v4 as uuidv4 } from '../../utils/uuid';
 import { NamedLocks } from '../../utils/AsyncLock';
 
-/** Max file size (bytes) before readEvents falls back to streaming readline (default: 50 MB) */
-const READ_STREAM_THRESHOLD = 50 * 1024 * 1024;
+/** Fork: Max file size (bytes) before readEvents falls back to streaming readline (50 MB) */
+const MAX_FILE_SIZE_FOR_IN_MEMORY_READ = 50 * 1024 * 1024;
 
 /**
  * Configuration options for JSONLWriter
@@ -39,6 +39,8 @@ export interface JSONLWriterOptions {
   app: App;
   /** Base path for storage (default: '.nexus') */
   basePath: string;
+  /** Ordered read roots for verified/fallback lookups */
+  readBasePaths?: string[];
 }
 
 /**
@@ -72,6 +74,7 @@ export interface JSONLWriterOptions {
 export class JSONLWriter {
   private app: App;
   private basePath: string;
+  private readBasePaths: string[];
   private deviceId: string;
   private locks: NamedLocks;
   private readonly deviceIdStorageKey = 'claudesidian-device-id';
@@ -79,8 +82,17 @@ export class JSONLWriter {
   constructor(options: JSONLWriterOptions) {
     this.app = options.app;
     this.basePath = options.basePath;
+    this.readBasePaths = this.normalizeReadBasePaths(options.readBasePaths ?? [options.basePath]);
     this.deviceId = this.getOrCreateDeviceId();
     this.locks = new NamedLocks();
+  }
+
+  setBasePath(basePath: string): void {
+    this.basePath = basePath;
+  }
+
+  setReadBasePaths(basePaths: string[]): void {
+    this.readBasePaths = this.normalizeReadBasePaths(basePaths);
   }
 
   // ============================================================================
@@ -113,6 +125,26 @@ export class JSONLWriter {
    */
   getDeviceId(): string {
     return this.deviceId;
+  }
+
+  private normalizeReadBasePaths(basePaths: string[]): string[] {
+    const ordered = basePaths.length > 0 ? basePaths : [this.basePath];
+    return Array.from(new Set(ordered));
+  }
+
+  private buildFullPath(basePath: string, relativePath: string): string {
+    return `${basePath}/${relativePath}`;
+  }
+
+  private async resolveReadablePaths(relativePath: string): Promise<string[]> {
+    const readablePaths: string[] = [];
+    for (const readBasePath of this.readBasePaths) {
+      const fullPath = this.buildFullPath(readBasePath, relativePath);
+      if (await this.app.vault.adapter.exists(fullPath)) {
+        readablePaths.push(fullPath);
+      }
+    }
+    return readablePaths;
   }
 
   // ============================================================================
@@ -299,38 +331,45 @@ export class JSONLWriter {
    */
   async readEvents<T extends StorageEvent>(relativePath: string): Promise<T[]> {
     try {
-      const fullPath = `${this.basePath}/${relativePath}`;
-
-      // Use adapter.exists for hidden folder support (.nexus/)
-      const exists = await this.app.vault.adapter.exists(fullPath);
-      if (!exists) {
+      const readablePaths = await this.resolveReadablePaths(relativePath);
+      if (readablePaths.length === 0) {
         return [];
       }
 
-      const stat = await this.app.vault.adapter.stat(fullPath);
-      const fileSize = stat?.size ?? 0;
+      const dedupedEvents = new Map<string, T>();
+      for (const fullPath of readablePaths) {
+        // Fork: Fall back to streaming readline for files >50 MB (avoids V8 string length crash)
+        const stat = await this.app.vault.adapter.stat?.(fullPath);
+        const fileSize = stat?.size ?? 0;
 
-      // For large files use Node.js readline streaming to avoid RangeError: Invalid string length
-      if (fileSize > READ_STREAM_THRESHOLD && this.app.vault.adapter instanceof FileSystemAdapter) {
-        return await this.readEventsStreaming<T>(
-          this.app.vault.adapter.getBasePath() + '/' + fullPath
-        );
-      }
+        let fileEvents: T[];
+        if (fileSize > MAX_FILE_SIZE_FOR_IN_MEMORY_READ) {
+          fileEvents = await this.readEventsStreaming<T>(fullPath);
+        } else {
+          const content = await this.app.vault.adapter.read(fullPath);
+          const lines = content.split('\n').filter(line => line.trim());
+          fileEvents = [];
+          for (const line of lines) {
+            try {
+              fileEvents.push(JSON.parse(line) as T);
+            } catch {
+              continue;
+            }
+          }
+        }
 
-      const content = await this.app.vault.adapter.read(fullPath);
-      const lines = content.split('\n').filter(line => line.trim());
-
-      const events: T[] = [];
-      for (let i = 0; i < lines.length; i++) {
-        try {
-          const event = JSON.parse(lines[i]) as T;
-          events.push(event);
-        } catch {
-          continue;
+        for (let i = 0; i < fileEvents.length; i++) {
+          const event = fileEvents[i];
+          const eventId = typeof (event as { id?: unknown }).id === 'string'
+            ? String((event as { id: string }).id)
+            : `${fullPath}:${i}:${JSON.stringify(event)}`;
+          if (!dedupedEvents.has(eventId)) {
+            dedupedEvents.set(eventId, event);
+          }
         }
       }
 
-      return events;
+      return Array.from(dedupedEvents.values());
     } catch (error) {
       console.error(`[JSONLWriter] Failed to read events from ${relativePath}:`, error);
       return [];
@@ -338,7 +377,7 @@ export class JSONLWriter {
   }
 
   /**
-   * Read events from a large JSONL file using Node.js readline streaming.
+   * Fork: Read events from a large JSONL file using Node.js readline streaming.
    * Avoids loading the entire file into a single string (V8 string length limit).
    *
    * @param absolutePath - Absolute filesystem path to the .jsonl file
@@ -463,18 +502,24 @@ export class JSONLWriter {
    */
   async listFiles(subPath: string): Promise<string[]> {
     try {
-      const fullPath = `${this.basePath}/${subPath}`;
+      const files = new Set<string>();
 
-      // Use adapter.list for hidden folder support (.nexus/)
-      const exists = await this.app.vault.adapter.exists(fullPath);
-      if (!exists) {
-        return [];
+      for (const readBasePath of this.readBasePaths) {
+        const fullPath = `${readBasePath}/${subPath}`;
+        const exists = await this.app.vault.adapter.exists(fullPath);
+        if (!exists) {
+          continue;
+        }
+
+        const listing = await this.app.vault.adapter.list(fullPath);
+        for (const filePath of listing.files) {
+          if (filePath.endsWith('.jsonl')) {
+            files.add(filePath.replace(`${readBasePath}/`, ''));
+          }
+        }
       }
 
-      const listing = await this.app.vault.adapter.list(fullPath);
-      return listing.files
-        .filter(f => f.endsWith('.jsonl'))
-        .map(f => f.replace(`${this.basePath}/`, ''));
+      return Array.from(files).sort();
     } catch (error) {
       console.error(`[JSONLWriter] Failed to list files in ${subPath}:`, error);
       return [];
@@ -488,9 +533,8 @@ export class JSONLWriter {
    * @returns True if file exists
    */
   async fileExists(relativePath: string): Promise<boolean> {
-    const fullPath = `${this.basePath}/${relativePath}`;
-    // Use adapter.exists for hidden folder support (.nexus/)
-    return await this.app.vault.adapter.exists(fullPath);
+    const readablePaths = await this.resolveReadablePaths(relativePath);
+    return readablePaths.length > 0;
   }
 
   /**
@@ -525,13 +569,11 @@ export class JSONLWriter {
    */
   async getFileModTime(relativePath: string): Promise<number | null> {
     try {
-      const fullPath = `${this.basePath}/${relativePath}`;
-      // Use adapter for hidden folder support (.nexus/)
-      const exists = await this.app.vault.adapter.exists(fullPath);
-      if (!exists) {
+      const readablePaths = await this.resolveReadablePaths(relativePath);
+      if (readablePaths.length === 0) {
         return null;
       }
-      const stat = await this.app.vault.adapter.stat(fullPath);
+      const stat = await this.app.vault.adapter.stat(readablePaths[0]);
       return stat?.mtime ?? null;
     } catch (error) {
       console.error(`[JSONLWriter] Failed to get mod time for ${relativePath}:`, error);
@@ -547,13 +589,11 @@ export class JSONLWriter {
    */
   async getFileSize(relativePath: string): Promise<number | null> {
     try {
-      const fullPath = `${this.basePath}/${relativePath}`;
-      // Use adapter for hidden folder support (.nexus/)
-      const exists = await this.app.vault.adapter.exists(fullPath);
-      if (!exists) {
+      const readablePaths = await this.resolveReadablePaths(relativePath);
+      if (readablePaths.length === 0) {
         return null;
       }
-      const stat = await this.app.vault.adapter.stat(fullPath);
+      const stat = await this.app.vault.adapter.stat(readablePaths[0]);
       return stat?.size ?? null;
     } catch (error) {
       console.error(`[JSONLWriter] Failed to get size for ${relativePath}:`, error);

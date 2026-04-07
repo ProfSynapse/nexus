@@ -21,7 +21,7 @@
  * - src/database/interfaces/IStorageAdapter.ts - Interface definition
  */
 
-import { App } from 'obsidian';
+import { App, Plugin } from 'obsidian';
 import { IStorageAdapter, QueryOptions, ImportOptions } from '../interfaces/IStorageAdapter';
 import { JSONLWriter } from '../storage/JSONLWriter';
 import { SQLiteCacheManager } from '../storage/SQLiteCacheManager';
@@ -42,10 +42,16 @@ import {
 } from '../../types/storage/HybridStorageTypes';
 import { RepositoryDependencies } from '../repositories/base/BaseRepository';
 import { LegacyMigrator } from '../migration/LegacyMigrator';
-import { WorkspaceEvent, TaskEvent } from '../interfaces/StorageEvents';
+import { WorkspaceEvent, ConversationEvent, TaskEvent } from '../interfaces/StorageEvents';
 import { WorkspaceEventApplier } from '../sync/WorkspaceEventApplier';
+import { ConversationEventApplier } from '../sync/ConversationEventApplier';
 import { TaskEventApplier } from '../sync/TaskEventApplier';
 import { resolveWorkspaceId } from '../sync/resolveWorkspaceId';
+import {
+  PluginScopedStorageCoordinator,
+  PluginScopedStoragePlan
+} from '../migration/PluginScopedStorageCoordinator';
+import { resolvePluginStorageRoot } from '../storage/PluginStoragePathResolver';
 
 // Import all repositories
 import { WorkspaceRepository } from '../repositories/WorkspaceRepository';
@@ -69,6 +75,8 @@ type ExportServiceStateRepo = {
 export interface HybridStorageAdapterOptions {
   /** Obsidian app instance */
   app: App;
+  /** Active plugin instance for plugin-scoped storage resolution */
+  plugin: Plugin;
   /** Base path for storage (default: '.nexus') */
   basePath?: string;
   /** Auto-sync on initialization (default: true) */
@@ -87,6 +95,7 @@ export interface HybridStorageAdapterOptions {
  */
 export class HybridStorageAdapter implements IStorageAdapter {
   private app: App;
+  private plugin: Plugin;
   private basePath: string;
   private initialized = false;
   private syncInterval?: NodeJS.Timeout;
@@ -101,6 +110,7 @@ export class HybridStorageAdapter implements IStorageAdapter {
   private sqliteCache: SQLiteCacheManager;
   private syncCoordinator: SyncCoordinator;
   private queryCache: QueryCache;
+  private storageCoordinator: PluginScopedStorageCoordinator;
 
   // Repositories (composed)
   private workspaceRepo!: WorkspaceRepository;
@@ -117,7 +127,10 @@ export class HybridStorageAdapter implements IStorageAdapter {
 
   constructor(options: HybridStorageAdapterOptions) {
     this.app = options.app;
+    this.plugin = options.plugin;
     this.basePath = options.basePath ?? '.nexus';
+    const storageRoots = resolvePluginStorageRoot(this.app, this.plugin);
+    this.storageCoordinator = new PluginScopedStorageCoordinator(this.app, this.plugin, this.basePath);
 
     // Initialize infrastructure
     this.jsonlWriter = new JSONLWriter({
@@ -127,7 +140,8 @@ export class HybridStorageAdapter implements IStorageAdapter {
 
     this.sqliteCache = new SQLiteCacheManager({
       app: this.app,
-      dbPath: `${this.basePath}/cache.db`
+      dbPath: `${storageRoots.dataRoot}/cache.db`,
+      wasmPath: `${storageRoots.pluginDir}/sqlite3.wasm`
     });
 
     this.syncCoordinator = new SyncCoordinator(
@@ -218,24 +232,42 @@ export class HybridStorageAdapter implements IStorageAdapter {
    */
   private async performInitialization(): Promise<void> {
     try {
-      // 1. Initialize SQLite cache
-      await this.sqliteCache.initialize();
-
-      // 2. Ensure JSONL directories exist
-      await this.jsonlWriter.ensureDirectory('workspaces');
-      await this.jsonlWriter.ensureDirectory('conversations');
-      await this.jsonlWriter.ensureDirectory('tasks');
+      console.log('[HybridStorageAdapter] Starting initialization...');
 
       const migrator = new LegacyMigrator(this.app);
       const migrationNeeded = await migrator.isMigrationNeeded();
       let actuallyMigrated = false;
 
       if (migrationNeeded) {
+        console.log('[HybridStorageAdapter] Legacy migration needed, running...');
         const migrationResult = await migrator.migrate();
         // Only count as "actually migrated" if something was migrated
         actuallyMigrated = migrationResult.needed &&
           (migrationResult.stats.workspacesMigrated > 0 || migrationResult.stats.conversationsMigrated > 0);
+        console.log('[HybridStorageAdapter] Legacy migration complete:', {
+          workspaces: migrationResult.stats.workspacesMigrated,
+          conversations: migrationResult.stats.conversationsMigrated
+        });
       }
+
+      console.log('[HybridStorageAdapter] Preparing storage plan...');
+      const storagePlan = await this.storageCoordinator.prepareStoragePlan();
+      this.applyStoragePlan(storagePlan);
+      console.log('[HybridStorageAdapter] Storage plan applied:', {
+        writePath: storagePlan.writeBasePath,
+        readPaths: storagePlan.readBasePaths,
+        migrationState: storagePlan.state.migration.state
+      });
+
+      // 1. Initialize SQLite cache
+      console.log('[HybridStorageAdapter] Initializing SQLite cache...');
+      await this.sqliteCache.initialize();
+      console.log('[HybridStorageAdapter] SQLite cache initialized');
+
+      // 2. Ensure JSONL directories exist
+      await this.jsonlWriter.ensureDirectory('workspaces');
+      await this.jsonlWriter.ensureDirectory('conversations');
+      await this.jsonlWriter.ensureDirectory('tasks');
 
       // Mark as initialized BEFORE sync so the UI isn't blocked.
       // SQLite schema is ready — sync populates data in the background.
@@ -249,14 +281,14 @@ export class HybridStorageAdapter implements IStorageAdapter {
       // The UI will show incrementally as data syncs in.
       const syncState = await this.sqliteCache.getSyncState(this.jsonlWriter.getDeviceId());
 
-      // 5. Prune orphaned conversation JSONL files BEFORE sync/rebuild.
+      // Fork: Prune orphaned conversation JSONL files BEFORE sync/rebuild.
       // Only safe when a prior session exists (syncState present), meaning SQLite
       // accurately reflects what was alive at end of last session. Orphaned files
-      // (from the pre-fix delete bug) have no SQLite record at this point and can
-      // be safely deleted. Running BEFORE rebuild prevents fullRebuild from
-      // re-reading the orphaned files and resurrecting deleted conversations.
+      // (from the pre-fix delete bug) have no SQLite record and can be safely deleted.
+      // Running BEFORE rebuild prevents fullRebuild from resurrecting deleted conversations.
       // Skip on first-ever startup (!syncState) — SQLite is empty and every file
-      // would look orphaned.
+      // would look orphaned. TEMPORARY: remove once vault reports zero pruned files
+      // for several consecutive sessions.
       if (syncState) {
         try {
           await this.pruneOrphanedConversationFiles();
@@ -266,23 +298,35 @@ export class HybridStorageAdapter implements IStorageAdapter {
       }
 
       if (!syncState || actuallyMigrated) {
+        console.log('[HybridStorageAdapter] Running full rebuild...');
         try {
           await this.syncCoordinator.fullRebuild();
+          console.log('[HybridStorageAdapter] Full rebuild complete');
         } catch (rebuildError) {
           console.error('[HybridStorageAdapter] Full rebuild failed:', rebuildError);
         }
       } else {
+        console.log('[HybridStorageAdapter] Running incremental sync...');
         try {
           await this.syncCoordinator.sync();
+          console.log('[HybridStorageAdapter] Incremental sync complete');
         } catch (syncError) {
           console.error('[HybridStorageAdapter] Incremental sync failed:', syncError);
         }
 
-        // 6. Reconcile JSONL workspaces missing from SQLite
+        // 5. Reconcile JSONL workspaces missing from SQLite
+        console.log('[HybridStorageAdapter] Reconciling missing data...');
         try {
           await this.reconcileMissingWorkspaces();
         } catch (reconcileError) {
           console.error('[HybridStorageAdapter] Workspace reconciliation failed:', reconcileError);
+        }
+
+        // 6. Reconcile JSONL conversations missing from SQLite
+        try {
+          await this.reconcileMissingConversations();
+        } catch (reconcileError) {
+          console.error('[HybridStorageAdapter] Conversation reconciliation failed:', reconcileError);
         }
 
         // 7. Reconcile JSONL tasks missing from SQLite
@@ -291,8 +335,28 @@ export class HybridStorageAdapter implements IStorageAdapter {
         } catch (reconcileError) {
           console.error('[HybridStorageAdapter] Task reconciliation failed:', reconcileError);
         }
+        console.log('[HybridStorageAdapter] Reconciliation complete');
       }
 
+      // Copy fully-populated cache.db to plugin-scoped storage after sync completes.
+      // Must happen AFTER rebuild/sync so the copy includes sync state.
+      if (this.storageCoordinator.backgroundMigration) {
+        try {
+          await this.storageCoordinator.backgroundMigration;
+          const dataRoot = this.storageCoordinator.roots.dataRoot;
+          const legacyCacheDb = `${this.basePath}/cache.db`;
+          const newCacheDb = `${dataRoot}/cache.db`;
+          if (await this.app.vault.adapter.exists(legacyCacheDb)) {
+            const content = await this.app.vault.adapter.readBinary(legacyCacheDb);
+            await this.app.vault.adapter.writeBinary(newCacheDb, content);
+            console.log('[HybridStorageAdapter] Copied cache.db to plugin-scoped storage');
+          }
+        } catch (cacheError) {
+          console.warn('[HybridStorageAdapter] cache.db copy failed (will rebuild on next boot):', cacheError);
+        }
+      }
+
+      console.log('[HybridStorageAdapter] Initialization complete');
     } catch (error) {
       console.error('[HybridStorageAdapter] Initialization failed:', error);
       this.initError = error as Error;
@@ -301,6 +365,13 @@ export class HybridStorageAdapter implements IStorageAdapter {
       }
       throw error;
     }
+  }
+
+  private applyStoragePlan(plan: PluginScopedStoragePlan): void {
+    this.basePath = plan.writeBasePath;
+    this.jsonlWriter.setBasePath(plan.writeBasePath);
+    this.jsonlWriter.setReadBasePaths(plan.readBasePaths);
+    this.sqliteCache.setDbPath(`${plan.writeBasePath}/cache.db`);
   }
 
   /**
@@ -358,6 +429,51 @@ export class HybridStorageAdapter implements IStorageAdapter {
   }
 
   /**
+   * Reconcile JSONL conversation files that are missing from SQLite.
+   * This handles the case where incremental sync skips remote files because
+   * their event timestamps predate the local sync watermark.
+   */
+  private async reconcileMissingConversations(): Promise<void> {
+    const conversationFiles = await this.jsonlWriter.listFiles('conversations');
+    if (conversationFiles.length === 0) return;
+
+    const conversationApplier = new ConversationEventApplier(this.sqliteCache);
+    let reconciled = 0;
+
+    for (const file of conversationFiles) {
+      const match = file.match(/conversations\/conv_(.+)\.jsonl$/);
+      if (!match) continue;
+
+      const conversationId = match[1];
+      const existing = await this.conversationRepo.getById(conversationId);
+      if (existing) continue;
+
+      try {
+        const events = await this.jsonlWriter.readEvents<ConversationEvent>(file);
+        events.sort((a, b) => a.timestamp - b.timestamp);
+
+        // Skip deleted conversations — no need to create then immediately delete
+        const hasDeleteEvent = events.some(e => e.type === 'conversation_deleted');
+        if (hasDeleteEvent) continue;
+
+        const hasMetadataEvent = events.some(event => event.type === 'metadata');
+        if (!hasMetadataEvent) continue;
+
+        for (const event of events) {
+          await conversationApplier.apply(event);
+        }
+        reconciled++;
+      } catch (e) {
+        console.error(`[HybridStorageAdapter] Failed to reconcile conversation ${conversationId}:`, e);
+      }
+    }
+
+    if (reconciled > 0) {
+      await this.sqliteCache.save();
+    }
+  }
+
+  /**
    * Reconcile JSONL task files that are missing from SQLite.
    * Handles the case where incremental sync skips same-device events,
    * leaving tasks in JSONL but absent from the SQLite cache.
@@ -404,40 +520,6 @@ export class HybridStorageAdapter implements IStorageAdapter {
 
     if (reconciled > 0) {
       await this.sqliteCache.save();
-    }
-  }
-
-  /**
-   * Remove JSONL files for conversations that no longer exist in SQLite.
-   *
-   * Prior to the deleteConversation fix, ConversationRepository.delete() only
-   * removed the SQLite row and never deleted the JSONL file. This left orphaned
-   * files behind for every conversation that was ever deleted. This method runs
-   * once per startup (incremental sync path) to clean them up.
-   */
-  private async pruneOrphanedConversationFiles(): Promise<void> {
-    const files = await this.jsonlWriter.listFiles('conversations');
-    if (files.length === 0) return;
-
-    let pruned = 0;
-    for (const file of files) {
-      const match = file.match(/conversations\/conv_(.+)\.jsonl$/);
-      if (!match) continue;
-
-      const conversationId = match[1];
-      const existing = await this.conversationRepo.getById(conversationId);
-      if (existing) continue;
-
-      try {
-        await this.jsonlWriter.deleteFile(file);
-        pruned++;
-      } catch (e) {
-        console.error(`[HybridStorageAdapter] Failed to prune orphaned conversation file ${file}:`, e);
-      }
-    }
-
-    if (pruned > 0) {
-      console.warn(`[HybridStorageAdapter] Pruned ${pruned} orphaned conversation JSONL file(s)`);
     }
   }
 
@@ -530,6 +612,14 @@ export class HybridStorageAdapter implements IStorageAdapter {
   async sync(): Promise<SyncResult> {
     try {
       const result = await this.syncCoordinator.sync();
+
+      try {
+        await this.reconcileMissingWorkspaces();
+        await this.reconcileMissingConversations();
+        await this.reconcileMissingTasks();
+      } catch (reconcileError) {
+        console.error('[HybridStorageAdapter] Post-sync reconciliation failed:', reconcileError);
+      }
 
       // Invalidate all query cache on sync
       this.queryCache.clear();
@@ -820,5 +910,37 @@ export class HybridStorageAdapter implements IStorageAdapter {
     }
 
     throw new Error('HybridStorageAdapter not initialized. Call initialize() first.');
+  }
+
+  /**
+   * Fork: Prune orphaned conversation JSONL files that have no corresponding SQLite record.
+   * Left behind by the pre-fix deleteConversation bug. Runs once per startup on the
+   * incremental sync path (syncState present). TEMPORARY — remove once vault shows zero
+   * pruned files at startup for several consecutive sessions.
+   */
+  private async pruneOrphanedConversationFiles(): Promise<void> {
+    const files = await this.jsonlWriter.listFiles('conversations');
+    if (files.length === 0) return;
+
+    let pruned = 0;
+    for (const file of files) {
+      const match = file.match(/conversations\/conv_(.+)\.jsonl$/);
+      if (!match) continue;
+
+      const conversationId = match[1];
+      const existing = await this.conversationRepo.getById(conversationId);
+      if (existing) continue;
+
+      try {
+        await this.jsonlWriter.deleteFile(file);
+        pruned++;
+      } catch (e) {
+        console.error(`[HybridStorageAdapter] Failed to prune orphaned conversation file ${file}:`, e);
+      }
+    }
+
+    if (pruned > 0) {
+      console.warn(`[HybridStorageAdapter] Pruned ${pruned} orphaned conversation JSONL file(s)`);
+    }
   }
 }

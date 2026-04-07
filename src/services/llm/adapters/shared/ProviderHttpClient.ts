@@ -10,7 +10,8 @@
  */
 import { requestUrl } from 'obsidian';
 import { LLMProviderError } from '../types';
-import { hasNodeRuntime } from '../../../../utils/platform';
+import { hasNodeRuntime, isDesktop } from '../../../../utils/platform';
+import { desktopRequire } from '../../../../utils/desktopRequire';
 
 export interface ProviderHttpRequest {
   url: string;
@@ -179,7 +180,7 @@ export class ProviderHttpClient {
   ): Promise<NodeJS.ReadableStream> {
     enforceHttps(config.url);
 
-    if (!hasNodeRuntime()) {
+    if (!isDesktop() || !hasNodeRuntime()) {
       // Mobile fallback: use requestUrl (fully buffered) and wrap as a readable stream
       return this.requestStreamBufferedFallback(config);
     }
@@ -187,13 +188,13 @@ export class ProviderHttpClient {
     const parsed = new URL(config.url);
     const isHttps = parsed.protocol === 'https:';
 
-    // Use require() for Node.js built-ins — dynamic import() fails in Electron renderer
-    // due to CORS policy blocking the node: protocol scheme.
-    // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-assignment
-    const httpsReq: typeof import('node:https') = require('https');
-    // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-assignment
-    const httpReq: typeof import('node:http') = require('http');
-    const nodeModule = isHttps ? httpsReq : httpReq;
+    // Use require (not import) for Node.js built-ins in Electron renderer.
+    // Dynamic import('node:http') is treated as a URL fetch by the ESM loader,
+    // which triggers CORS errors in Obsidian's app:// origin. require() goes
+    // through Node's CommonJS resolver and works without network requests.
+    const nodeModule = isHttps
+      ? desktopRequire<typeof import('node:https')>('node:https')
+      : desktopRequire<typeof import('node:http')>('node:http');
 
     const timeoutMs = config.timeoutMs ?? 120_000;
 
@@ -206,14 +207,7 @@ export class ProviderHttpClient {
         headers: config.headers ?? {},
       };
 
-      // Keep a reference to res so the timeout handler can destroy it too.
-      // Without this, req.destroy() silently closes the socket without emitting
-      // an error on res, so the for-await loop in processNodeStream sees a clean
-      // end rather than a thrown error — causing silent truncation.
-      let resRef: import('http').IncomingMessage | null = null;
-
       const req = nodeModule.request(requestOptions, (res) => {
-        resRef = res;
         const status = res.statusCode ?? 0;
 
         if (status < 200 || status >= 300) {
@@ -242,14 +236,9 @@ export class ProviderHttpClient {
         resolve(res);
       });
 
-      // Timeout handling — fires when socket is idle (no bytes received) for timeoutMs ms.
-      // We must destroy BOTH req and res: req.destroy() kills the socket but does NOT
-      // emit an error on res (IncomingMessage), so the streaming for-await loop would
-      // see a clean end and silently save partial content without any console output.
+      // Timeout handling
       req.setTimeout(timeoutMs, () => {
-        const err = new Error(`Stream request timeout after ${timeoutMs}ms (${config.provider || 'unknown'})`);
-        req.destroy(err);
-        resRef?.destroy(err);
+        req.destroy(new Error(`Stream request timeout after ${timeoutMs}ms`));
       });
 
       req.on('error', (err) => {
@@ -308,16 +297,29 @@ export class ProviderHttpClient {
       );
     }
 
-    // Wrap the buffered text as a minimal readable stream
-      const { Readable } = await import('node:stream');
-    const readable = new Readable({
-      read() {
-        this.push(Buffer.from(response.text, 'utf-8'));
-        this.push(null);
-      }
-    });
+    // Wrap the buffered text as a minimal async iterable (no Node.js deps).
+    // Consumers only require `for await ... of` support on the returned object.
+    const bufferedStream: AsyncIterable<string> = {
+      [Symbol.asyncIterator](): AsyncIterator<string> {
+        let hasYielded = false;
 
-    return readable;
+        return {
+          next(): Promise<IteratorResult<string>> {
+            if (hasYielded) {
+              return Promise.resolve({ value: undefined, done: true });
+            }
+
+            hasYielded = true;
+            return Promise.resolve({ value: response.text, done: false });
+          }
+        };
+      }
+    };
+
+    // Return the async iterable cast to ReadableStream type.
+    // The consumer (processNodeStream) uses `for await (const chunk of stream)`
+    // which works with any AsyncIterable, not just Node.js Readable.
+    return bufferedStream as unknown as NodeJS.ReadableStream;
   }
 
   private static async requestOnce<TJson = unknown>(

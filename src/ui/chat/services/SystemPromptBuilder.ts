@@ -82,12 +82,6 @@ export interface SystemPromptOptions {
   workspaceContext?: WorkspaceContext | null;
   // Full comprehensive workspace data from LoadWorkspaceTool (when workspace selected in settings)
   loadedWorkspaceData?: LoadedWorkspaceData | null;
-  // Dynamic context (always loaded fresh)
-  vaultStructure?: VaultStructure | null;
-  availableWorkspaces?: WorkspaceSummary[];
-  availablePrompts?: PromptSummary[];
-  // Tool agents with their tools (dynamically loaded from agent registry)
-  toolAgents?: ToolAgentInfo[];
   // Skip the tools section for models that are pre-trained on the toolset (e.g., Nexus)
   skipToolsSection?: boolean;
   // Context status for token-limited models (enables context awareness)

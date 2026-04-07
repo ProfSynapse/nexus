@@ -273,6 +273,7 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
 
                 const adapter = new HybridStorageAdapter({
                     app: context.app,
+                    plugin: context.plugin,
                     basePath: '.nexus',
                     autoSync: true,
                     cacheTTL: 60000, // 1 minute query cache
