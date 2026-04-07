@@ -643,13 +643,11 @@ export class ModelAgentManager {
    * Populates slim header data via cheap DB lookup; full data is loaded on
    * first message send (G-W3).
    */
-  async setWorkspaceContext(workspaceId: string, context: WorkspaceContext | null): Promise<void> {
+  async setWorkspaceContext(workspaceId: string): Promise<void> {
     this.selectedWorkspaceId = workspaceId;
-    this.workspaceContext = context;
     this.loadedWorkspaceData = null;
     this.pendingFullWorkspaceLoad = false;
 
-    // Cheap DB lookup for slim header data
     try {
       const slim = await this.workspaceIntegration.getWorkspaceBasic(workspaceId);
       if (slim) {
@@ -668,6 +666,7 @@ export class ModelAgentManager {
       }
     } catch (error) {
       console.error('[ModelAgentManager] Failed to load workspace slim data:', error);
+      this.workspaceContext = null;
       this.selectedWorkspaceSlimData = null;
     }
 
