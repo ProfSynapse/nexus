@@ -4,10 +4,9 @@ This file is the authoritative record of every file in `my-custom-branch` that i
 diverges from upstream (`ProfSynapse/nexus`). Load it at the start of every upstream merge
 session to know which files require manual resolution and which can be auto-merged.
 
-**Last audited against:** v5.6.10 (`425a568f`)  
+**Last audited against:** upstream/main HEAD (`35bed848`) — PRs #103, #106, #107, #112–#115  
 **Audit date:** 2026-04-07  
-**Next merge target:** `upstream/main` HEAD (`35bed848`) — PRs #111–#115  
-**Merge plan:** `docs/plans/upstream-merge-next.md`
+**Next merge target:** next upstream/main HEAD (watch for new PRs)
 
 ---
 
@@ -18,7 +17,7 @@ requires manual resolution using the pattern: accept upstream base, then layer b
 
 | File | Fork change | Resolution pattern |
 |------|-------------|-------------------|
-| `src/ui/chat/components/MessageBubble.ts` | Action bar: `import MessageActionBar`, `private actionBar` field, `appendActionBar()`, `cleanupActionBar()`, call sites at mount/cleanup | Take upstream as base; layer back all action bar lines |
+| `src/ui/chat/components/MessageBubble.ts` | Action bar: `import MessageActionBar`, `private actionBar` field, `appendActionBar()`, `cleanupActionBar()`, call sites in createElement/updateWithNewMessage/rebuildElement/cleanup | Take upstream as base; layer back all action bar insertions; update ToolBubbleFactory call to 3-param |
 | `src/ui/chat/components/factories/ToolBubbleFactory.ts` | `createTextBubble` is 3-param (onCopy/showCopyFeedback removed — action bar owns copy) | Take upstream; restore 3-param signature |
 
 **Fork-only files (no upstream counterpart — always rebase cleanly):**
@@ -57,28 +56,27 @@ optional chaining. If upstream fixes this themselves, take their version and dro
 | `src/services/WorkspaceService.ts` | `(a.name ?? '').localeCompare(b.name ?? '')`, two `ws.name?.toLowerCase()` guards |
 
 ### JSONL data quality fixes
-Fixes for orphaned JSONL files left by the pre-fix `deleteConversation` bug, streaming write
-amplification, and large-file read limits.
+Fixes for streaming write amplification and large-file read limits. ConversationRepository now
+uses upstream's tombstone approach (no fork divergence); pruning still needed for pre-tombstone orphans.
 
 | File | Change |
 |------|--------|
 | `src/database/adapters/HybridStorageAdapter.ts` | `pruneOrphanedConversationFiles()` runs on startup to clean orphaned `.jsonl` files — **temporary**: remove once vault reports zero pruned files at startup for several consecutive sessions |
-| `src/database/repositories/ConversationRepository.ts` | `delete()` now deletes the JSONL file in addition to the SQLite row — **⚠️ DROP on next merge**: take upstream's tombstone approach (`ConversationDeletedEvent`) instead; file deletion breaks mobile sync rebuild |
 | `src/database/repositories/MessageRepository.ts` | Skips JSONL write during streaming states (`draft`/`streaming`) — prevents O(n²) storage growth |
-| `src/database/storage/JSONLWriter.ts` | `readEventsStreaming()` fallback via Node.js readline for files >50 MB |
+| `src/database/storage/JSONLWriter.ts` | `readEventsStreaming()` fallback via Node.js readline for files >50 MB; `stat?.()` optional-chain safe for test environments |
 | `eslint.config.mjs` | Added `JSONLWriter.ts` to `import/no-nodejs-modules` exceptions (uses `require('fs')`, `require('readline')`) |
 
 ### Schema / embedding fix
 
 | File | Change |
 |------|--------|
-| `src/database/storage/SQLiteCacheManager.ts` | `fixVec0TableDimensions()` — drops and recreates `note_embeddings` / `block_embeddings` if they were created with `float[768]` (legacy Nomic era); runs once after migrations on init |
+| `src/database/storage/SQLiteMaintenanceService.ts` | `fixVec0TableDimensions()` — drops and recreates `note_embeddings` / `block_embeddings` if they were created with `float[768]` (legacy Nomic era); no-op when dimensions correct |
+| `src/database/storage/SQLiteCacheManager.ts` | Calls `getMaintenanceService().fixVec0TableDimensions()` after migrations in `initialize()` |
 
 ### Provider / HTTP fixes
 
 | File | Change |
 |------|--------|
-| `src/services/llm/adapters/shared/ProviderHttpClient.ts` | Uses `require('https')`/`require('http')` instead of dynamic `import()` (Electron renderer CORS blocks `node:` protocol); timeout handler destroys both `req` and `res` to prevent silent stream truncation — **⚠️ DROP on next merge**: upstream PR #103 ships a cleaner fix using `desktopRequire()` + pure `AsyncIterable` mobile fallback; verify `resRef?.destroy(err)` is present in upstream version before dropping ours |
 | `src/settings/tabs/ProvidersTab.ts` | `onSave` simplified from IIFE `void (async () => {...})()` to direct `async` callback |
 | `src/components/LLMProviderModal.ts` | `onSave` type widened to `void \| Promise<void>`; auto-save path awaits the callback with try/catch |
 
@@ -99,7 +97,7 @@ amplification, and large-file read limits.
 **reset to upstream before every merge** with:
 
 ```
-git checkout <upstream-tag> -- src/utils/connectorContent.ts
+git checkout upstream/main -- src/utils/connectorContent.ts
 ```
 
 Do not treat timestamp-only diffs as fork divergences.
@@ -108,7 +106,7 @@ Do not treat timestamp-only diffs as fork divergences.
 
 ## How to use this file
 
-1. Before each upstream merge, run: `git diff --name-status <tag>..my-custom-branch`
+1. Before each upstream merge, run: `git diff --name-status upstream/main..my-custom-branch`
 2. Cross-reference each modified file against this registry
 3. Files not listed here should match upstream exactly — investigate any that don't
 4. After resolving conflicts, re-run the diff to confirm no unintended divergences remain
