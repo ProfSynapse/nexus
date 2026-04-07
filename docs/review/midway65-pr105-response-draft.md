@@ -6,6 +6,8 @@ Hi @Midway65, thanks for the continued work here — you keep finding real thing
 
 We pulled out the dead per-turn fetch removal and landed it on `fix/remove-dead-per-turn-fetches`. You were right that `vaultStructure`, `availableWorkspaces`, `availablePrompts`, and `toolAgents` were being fetched every message send and never consumed by the builder — I'd removed the consumption side a while back but never cleaned up the fetch side. That's now gone (-110 lines).
 
+We also fixed the `workspace?.context` guard you identified — that was a real upstream bug dating back to Sep 2025 where most user-created workspaces were silently skipped during selection. Landed in #107.
+
 ## Why we can't merge this PR as-is
 
 **1. It carries the full PR #97 payload.** This PR is 40 files / 66 commits / +2,250/-1,896 but the workspace feature only touches ~5 files across 8 commits. The rest is the PR #97 content we already went through — schema migrations v12-v19, the action bar feature, the JSONL orphan pruning, and ~1,500 lines of CRLF whitespace conversion. All of that is still bundled in here, which makes it impossible to review or merge cleanly.
@@ -16,7 +18,9 @@ The "slim header on turn 2+" approach (G-W2/G-W3) saves tokens, but the LLM lose
 
 This also means the "cheap restore" (G-W1) can't be separated out — on `main`, the `restoreWorkspace` call via `loadWorkspace()` is what populates `loadedWorkspaceData`, which is what the system prompt builder serializes. Replacing that with a basic DB lookup would remove the folder tree from the system prompt.
 
-**3. The 3 bug fixes in the latest commits fix bugs introduced by the refactor, not bugs on `main`.** The G-W3 flag race condition only exists because the G-W3 flag was introduced in this PR. The redundant `context` parameter is only redundant after the `setWorkspaceContext` refactor. The `workspace?.context` guard that blocked 14/21 workspaces was added as part of this PR's workspace changes — it doesn't exist on `main`. These are valid fixes within your branch, but they don't address issues in the upstream codebase.
+**3. Two of the 3 bug fixes address bugs introduced by the refactor, not bugs on `main`.** The G-W3 flag race condition only exists because the G-W3 flag was introduced in this PR. The redundant `context` parameter is only redundant after the `setWorkspaceContext` refactor. These are valid fixes within your branch, but they don't address issues in the upstream codebase.
+
+The `workspace?.context` guard that blocked 14/21 workspaces was a good catch — that one *was* a real bug on `main` (dating back to Sep 2025). We've fixed it separately in #107.
 
 ## Specific items not taken and why
 
@@ -27,7 +31,8 @@ This also means the "cheap restore" (G-W1) can't be separated out — on `main`,
 | JSONL orphan pruning at startup | Deletes JSONL files not found in SQLite, but JSONL is our source of truth. If SQLite is corrupt/incomplete, this permanently destroys conversation data. |
 | Two-tier prompt (G-W2/G-W3) | LLM needs full workspace context every turn, not just on the first message. |
 | Cheap restore (G-W1) | Breaks the system prompt — `loadWorkspace()` is what populates the data serialized into the prompt. |
-| 3 bug fix commits | Fix bugs introduced by this PR's refactor, not bugs on `main`. |
+| G-W3 flag + redundant context param fixes | Fix bugs introduced by this PR's refactor, not bugs on `main`. |
+| `workspace?.context` guard fix | Real upstream bug — good catch. Fixed separately in #107. |
 | ProviderHttpClient `require()` switch | Already fixed on `main` via the mobile compat work (`desktopRequire()`). |
 | CRLF whitespace changes | ~1,500 lines of noise across 10 files that inflate the diff. |
 
