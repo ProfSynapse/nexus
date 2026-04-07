@@ -253,7 +253,6 @@ export class VaultIngestionManager {
       };
     }
 
-
     const transcriptionProvider = llmSettings.defaultTranscriptionModel?.provider;
     const transcriptionModel = llmSettings.defaultTranscriptionModel?.model;
     if (!transcriptionProvider || !transcriptionModel) {

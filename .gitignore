@@ -17,6 +17,7 @@ BCPs.md
 CLAUDE.md 
 
 docs/*
+!docs/fork_divergence.md
 !docs/plans/
 docs/plans/*
 !docs/plans/*.md
