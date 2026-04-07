@@ -12,22 +12,26 @@
 
 import { ConversationMessage } from '../../../types/chat/ChatTypes';
 import { ProgressiveToolAccordion } from './ProgressiveToolAccordion';
-import { MessageBranchNavigator, MessageBranchNavigatorEvents } from './MessageBranchNavigator';
 import { setIcon, Component, App } from 'obsidian';
 
 // Extracted classes
 import { ReferenceBadgeRenderer } from './renderers/ReferenceBadgeRenderer';
 import { ToolBubbleFactory } from './factories/ToolBubbleFactory';
 import { ToolEventParser } from '../utils/ToolEventParser';
-import { normalizeToolCallForDisplay } from '../utils/toolDisplayNormalizer';
 import { MessageContentRenderer } from './renderers/MessageContentRenderer';
 import { MessageEditController } from '../controllers/MessageEditController';
+import { MessageBubbleBranchNavigatorBinder } from './helpers/MessageBubbleBranchNavigatorBinder';
+import { MessageBubbleImageRenderer } from './helpers/MessageBubbleImageRenderer';
+import { MessageBubbleToolEventCoordinator } from './helpers/MessageBubbleToolEventCoordinator';
+import { MessageBubbleStateResolver } from './helpers/MessageBubbleStateResolver';
 
 export class MessageBubble extends Component {
   private element: HTMLElement | null = null;
   private loadingInterval: ReturnType<typeof setInterval> | null = null;
   private progressiveToolAccordions: Map<string, ProgressiveToolAccordion> = new Map();
-  private messageBranchNavigator: MessageBranchNavigator | null = null;
+  private branchNavigatorBinder: MessageBubbleBranchNavigatorBinder;
+  private imageRenderer: MessageBubbleImageRenderer;
+  private toolEventCoordinator: MessageBubbleToolEventCoordinator;
   private toolBubbleElement: HTMLElement | null = null;
   private textBubbleElement: HTMLElement | null = null;
   private imageBubbleElement: HTMLElement | null = null;
@@ -43,6 +47,34 @@ export class MessageBubble extends Component {
     private onViewBranch?: (branchId: string) => void
   ) {
     super();
+    this.branchNavigatorBinder = new MessageBubbleBranchNavigatorBinder({
+      component: this,
+      onMessageAlternativeChanged: this.onMessageAlternativeChanged
+    });
+    this.imageRenderer = new MessageBubbleImageRenderer({
+      app: this.app,
+      component: this,
+      getMessage: () => this.message,
+      getElement: () => this.element,
+      getToolBubbleElement: () => this.toolBubbleElement,
+      getTextBubbleElement: () => this.textBubbleElement,
+      getImageBubbleElement: () => this.imageBubbleElement,
+      setImageBubbleElement: (element) => {
+        this.imageBubbleElement = element;
+      }
+    });
+    this.toolEventCoordinator = new MessageBubbleToolEventCoordinator({
+      component: this,
+      getMessage: () => this.message,
+      getElement: () => this.element,
+      getToolBubbleElement: () => this.toolBubbleElement,
+      setToolBubbleElement: (element) => {
+        this.toolBubbleElement = element;
+      },
+      progressiveToolAccordions: this.progressiveToolAccordions,
+      onViewBranch: this.onViewBranch,
+      imageRenderer: this.imageRenderer
+    });
   }
 
   /**
@@ -50,10 +82,11 @@ export class MessageBubble extends Component {
    * For assistant messages with toolCalls or reasoning, returns a fragment containing tool bubble + text bubble
    */
   createElement(): HTMLElement {
-    const activeToolCalls = this.getActiveToolCalls(this.message);
-    const activeReasoning = this.getActiveReasoning(this.message);
-    const showToolBubble = this.getRenderMode(this.message) === 'group';
-    const activeContent = this.getActiveMessageContent(this.message);
+    const state = MessageBubbleStateResolver.resolve(this.message);
+    const activeToolCalls = state.activeToolCalls;
+    const activeReasoning = state.activeReasoning;
+    const showToolBubble = state.renderMode === 'group';
+    const activeContent = state.activeContent;
 
     if (showToolBubble) {
       const wrapper = document.createElement('div');
@@ -78,26 +111,16 @@ export class MessageBubble extends Component {
         });
       }
 
-      // Check for image results in completed tool calls (for loaded messages)
-      if (activeToolCalls) {
-        for (const toolCall of activeToolCalls) {
-          if (toolCall.result && toolCall.success !== false) {
-            const imageData = this.extractImageFromResult(toolCall.result);
-            if (imageData) {
-              this.createImageBubbleStatic(wrapper, imageData);
-            }
-          }
-        }
-      }
+      this.imageRenderer.renderLoadedToolResults(activeToolCalls, wrapper);
 
       // Create text bubble if there's content OR if streaming (need element for StreamingController)
-      if (this.shouldRenderTextBubble(this.message)) {
+      if (state.shouldRenderTextBubble) {
         this.textBubbleElement = ToolBubbleFactory.createTextBubble(
           renderMessage,
           (container, content) => this.renderContent(container, content),
           this.onCopy,
           (button) => this.showCopyFeedback(button),
-          this.messageBranchNavigator,
+          this.branchNavigatorBinder.getNavigator(),
           this.onMessageAlternativeChanged,
           this
         );
@@ -107,17 +130,7 @@ export class MessageBubble extends Component {
         if (renderMessage.branches && renderMessage.branches.length > 0) {
           const actions = this.textBubbleElement.querySelector('.message-actions-external');
           if (actions instanceof HTMLElement) {
-            const navigatorEvents: MessageBranchNavigatorEvents = {
-              onAlternativeChanged: (messageId, alternativeIndex) => {
-                if (this.onMessageAlternativeChanged) {
-                  this.onMessageAlternativeChanged(messageId, alternativeIndex);
-                }
-              },
-              onError: (message) => console.error('[MessageBubble] Branch navigation error:', message)
-            };
-
-            this.messageBranchNavigator = new MessageBranchNavigator(actions, navigatorEvents, this);
-            this.messageBranchNavigator.updateMessage(renderMessage);
+            this.branchNavigatorBinder.sync(actions, renderMessage);
           }
         }
 
@@ -237,20 +250,7 @@ export class MessageBubble extends Component {
         this.onCopy(this.message.id);
       });
 
-      // Message branch navigator for AI messages with branches
-      if (this.message.branches && this.message.branches.length > 0) {
-        const navigatorEvents: MessageBranchNavigatorEvents = {
-          onAlternativeChanged: (messageId, alternativeIndex) => {
-            if (this.onMessageAlternativeChanged) {
-              this.onMessageAlternativeChanged(messageId, alternativeIndex);
-            }
-          },
-          onError: (message) => console.error('[MessageBubble] Branch navigation error:', message)
-        };
-
-        this.messageBranchNavigator = new MessageBranchNavigator(actions, navigatorEvents, this);
-        this.messageBranchNavigator.updateMessage(this.message);
-      }
+      this.branchNavigatorBinder.sync(actions, this.message);
     }
   }
 
@@ -354,13 +354,15 @@ export class MessageBubble extends Component {
    * Update MessageBubble with new message data
    */
   updateWithNewMessage(newMessage: ConversationMessage): void {
-    const previousRenderMode = this.getRenderMode(this.message);
-    const nextRenderMode = this.getRenderMode(newMessage);
-    const previousHadTextBubble = this.shouldRenderTextBubble(this.message);
-    const nextNeedsTextBubble = this.shouldRenderTextBubble(newMessage);
+    const previousState = MessageBubbleStateResolver.resolve(this.message);
+    const nextState = MessageBubbleStateResolver.resolve(newMessage);
+    const previousRenderMode = previousState.renderMode;
+    const nextRenderMode = nextState.renderMode;
+    const previousHadTextBubble = previousState.shouldRenderTextBubble;
+    const nextNeedsTextBubble = nextState.shouldRenderTextBubble;
 
     // Handle progressive accordion transition to static
-    const activeToolCalls = this.getActiveToolCalls(newMessage);
+    const activeToolCalls = nextState.activeToolCalls;
     if (this.progressiveToolAccordions.size > 0 && activeToolCalls) {
       const hasCompletedTools = activeToolCalls.some(tc =>
         tc.result !== undefined || tc.success !== undefined
@@ -368,9 +370,7 @@ export class MessageBubble extends Component {
 
       if (!hasCompletedTools) {
         this.message = newMessage;
-        if (this.messageBranchNavigator) {
-          this.messageBranchNavigator.updateMessage(newMessage);
-        }
+        this.branchNavigatorBinder.getNavigator()?.updateMessage(newMessage);
         return;
       }
     }
@@ -392,30 +392,13 @@ export class MessageBubble extends Component {
         this.toolBubbleElement = null;
       }
 
-      if (this.imageBubbleElement) {
-        this.imageBubbleElement.remove();
-        this.imageBubbleElement = null;
-      }
+      this.imageRenderer.clear();
     }
 
-    if (this.messageBranchNavigator) {
-      this.messageBranchNavigator.updateMessage(newMessage);
-    } else if (newMessage.branches && newMessage.branches.length > 0 && this.element) {
-      // Branch navigator doesn't exist yet but message now has branches (e.g. after retry).
-      // Create the navigator dynamically so the user can switch between alternatives.
+    if (this.element) {
       const actions = this.element.querySelector('.message-actions-external');
       if (actions instanceof HTMLElement) {
-        const navigatorEvents: MessageBranchNavigatorEvents = {
-          onAlternativeChanged: (messageId, alternativeIndex) => {
-            if (this.onMessageAlternativeChanged) {
-              this.onMessageAlternativeChanged(messageId, alternativeIndex);
-            }
-          },
-          onError: (message) => console.error('[MessageBubble] Branch navigation error:', message)
-        };
-
-        this.messageBranchNavigator = new MessageBranchNavigator(actions, navigatorEvents, this);
-        this.messageBranchNavigator.updateMessage(newMessage);
+        this.branchNavigatorBinder.sync(actions, newMessage);
       }
     }
 
@@ -428,7 +411,7 @@ export class MessageBubble extends Component {
 
     contentElement.empty();
 
-    const activeContent = this.getActiveMessageContent(newMessage);
+    const activeContent = nextState.activeContent;
     this.renderContent(contentElement, activeContent).catch(error => {
       console.error('[MessageBubble] Error re-rendering content:', error);
     });
@@ -442,202 +425,7 @@ export class MessageBubble extends Component {
    * Handle tool events from MessageManager
    */
   handleToolEvent(event: 'detected' | 'updated' | 'started' | 'completed', data: Parameters<typeof ToolEventParser.getToolEventInfo>[0]): void {
-    const info = ToolEventParser.getToolEventInfo(data, event);
-    const eventData = (data ?? {}) as {
-      result?: unknown;
-      success?: boolean;
-      error?: unknown;
-      [key: string]: unknown;
-    };
-    const toolId = info.toolId || info.batchId || info.parentToolCallId || info.stepId;
-    if (!toolId) {
-      return;
-    }
-
-    let accordion = this.progressiveToolAccordions.get(toolId);
-
-    if (!accordion && (event === 'detected' || event === 'started' || event === 'completed')) {
-      accordion = new ProgressiveToolAccordion(this);
-      const accordionElement = accordion.createElement();
-
-      // Wire up onViewBranch callback for subagent navigation
-      if (this.onViewBranch) {
-        accordion.setCallbacks({ onViewBranch: this.onViewBranch });
-      }
-
-      if (!this.toolBubbleElement) {
-        this.createToolBubbleOnDemand();
-      }
-
-      const toolContent = this.toolBubbleElement?.querySelector('.tool-bubble-content');
-      if (toolContent) {
-        toolContent.appendChild(accordionElement);
-      }
-
-      this.progressiveToolAccordions.set(toolId, accordion);
-    }
-
-    if (!accordion) {
-      return;
-    }
-
-    const hasToolMetadata =
-      Boolean(data?.toolCall) ||
-      Boolean(data?.name) ||
-      Boolean(data?.technicalName) ||
-      Boolean(data?.displayName);
-
-    const isLiveBatchStep = Boolean(info.isBatchStepEvent);
-    const eventError = typeof eventData.error === 'string' ? eventData.error : undefined;
-
-    if (event === 'completed' && !hasToolMetadata) {
-      accordion.completeTool(toolId, eventData.result, eventData.success !== false, eventError);
-    } else {
-      const currentGroup = accordion.getDisplayGroup();
-      const nextDisplayGroup = isLiveBatchStep
-        ? normalizeToolCallForDisplay({
-            ...eventData,
-            id: toolId,
-            toolId,
-            parentToolCallId: info.parentToolCallId ?? info.batchId ?? toolId,
-            batchId: info.batchId ?? toolId,
-            callIndex: info.callIndex,
-            totalCalls: info.totalCalls,
-            strategy: info.strategy,
-            stepId: info.stepId ?? undefined,
-            status: info.status ?? undefined,
-            error: eventError
-          }, currentGroup)
-        : info.displayGroup;
-
-      const shouldPreserveCurrentBatch =
-        !isLiveBatchStep &&
-        Boolean(currentGroup) &&
-        currentGroup?.kind === 'batch' &&
-        currentGroup.steps.length > 0 &&
-        nextDisplayGroup.kind === 'batch' &&
-        nextDisplayGroup.steps.length === 0 &&
-        (
-          nextDisplayGroup.technicalName === 'useTools' ||
-          nextDisplayGroup.technicalName?.endsWith('.useTools')
-        );
-
-      const displayGroup = shouldPreserveCurrentBatch && currentGroup ? currentGroup : nextDisplayGroup;
-
-      accordion.setDisplayGroup(displayGroup);
-    }
-
-    if (event === 'completed' && eventData.success && eventData.result) {
-      this.checkAndRenderImageResult(eventData.result);
-    }
-  }
-
-  /**
-   * Create tool bubble on-demand during streaming
-   */
-  private createToolBubbleOnDemand(): void {
-    if (this.toolBubbleElement) return;
-
-    this.toolBubbleElement = ToolBubbleFactory.createToolBubbleOnDemand(this.message, this.element);
-  }
-
-  /**
-   * Check if a tool result contains an image path and render it
-   */
-  private checkAndRenderImageResult(result: unknown): void {
-    const imageData = this.extractImageFromResult(result);
-    if (!imageData) return;
-
-    this.createImageBubble(imageData);
-  }
-
-  /**
-   * Extract image data from a tool result (supports generateImage tool format)
-   */
-  private extractImageFromResult(result: unknown): { imagePath: string; prompt?: string; dimensions?: { width: number; height: number }; model?: string } | null {
-    if (!result || typeof result !== 'object') return null;
-
-    // Handle both direct result and nested data structure
-    const directResult = result as { data?: unknown };
-    const data = directResult.data ?? result;
-
-    // Check for imagePath which indicates an image generation result
-    if (data && typeof data === 'object' && typeof (data as { imagePath?: unknown }).imagePath === 'string') {
-      const typedData = data as { imagePath: string; prompt?: unknown; revisedPrompt?: unknown; dimensions?: { width: number; height: number }; model?: unknown };
-      return {
-        imagePath: typedData.imagePath,
-        prompt: (typedData.prompt as string | undefined) || (typedData.revisedPrompt as string | undefined),
-        dimensions: typedData.dimensions,
-        model: typedData.model as string | undefined
-      };
-    }
-
-    return null;
-  }
-
-  /**
-   * Create an image bubble to display generated images prominently in the chat
-   */
-  private createImageBubble(imageData: { imagePath: string; prompt?: string; dimensions?: { width: number; height: number }; model?: string }): void {
-    if (!this.element) return;
-
-    const imageBubble = this.buildImageBubbleElement(imageData);
-
-    // Insert image bubble after tool bubble, before text bubble
-    if (this.toolBubbleElement && this.textBubbleElement) {
-      this.element.insertBefore(imageBubble, this.textBubbleElement);
-    } else if (this.toolBubbleElement) {
-      this.element.appendChild(imageBubble);
-    } else {
-      // No tool bubble, append to wrapper
-      this.element.appendChild(imageBubble);
-    }
-
-    this.imageBubbleElement = imageBubble;
-  }
-
-  /**
-   * Create an image bubble for static content (during createElement)
-   */
-  private createImageBubbleStatic(parent: HTMLElement, imageData: { imagePath: string; prompt?: string; dimensions?: { width: number; height: number }; model?: string }): void {
-    const imageBubble = this.buildImageBubbleElement(imageData);
-    parent.appendChild(imageBubble);
-    this.imageBubbleElement = imageBubble;
-  }
-
-  /**
-   * Build the image bubble element
-   */
-  private buildImageBubbleElement(imageData: { imagePath: string; prompt?: string; dimensions?: { width: number; height: number }; model?: string }): HTMLElement {
-    // Create image bubble container
-    const imageBubble = document.createElement('div');
-    imageBubble.addClass('message-container');
-    imageBubble.addClass('message-image');
-    imageBubble.setAttribute('data-message-id', `${this.message.id}_image`);
-
-    const bubble = imageBubble.createDiv('message-bubble image-bubble');
-
-    // Image container
-    const imageContainer = bubble.createDiv('generated-image-container');
-
-    // Create image element
-    const img = imageContainer.createEl('img', { cls: 'generated-image' });
-
-    // Get the resource path using Obsidian's vault adapter
-    const resourcePath = this.app.vault.adapter.getResourcePath(imageData.imagePath);
-    img.src = resourcePath;
-    img.alt = imageData.prompt || 'Generated image';
-    img.setAttribute('loading', 'lazy');
-
-    // Open in Obsidian button
-    const openButton = bubble.createEl('button', { cls: 'generated-image-open-btn' });
-    setIcon(openButton, 'external-link');
-    openButton.createSpan({ text: 'Open in Obsidian' });
-    this.registerDomEvent(openButton, 'click', () => {
-      void this.app.workspace.openLinkText(imageData.imagePath, '', false);
-    });
-
-    return imageBubble;
+    this.toolEventCoordinator.handleToolEvent(event, data);
   }
 
   /**
@@ -645,30 +433,6 @@ export class MessageBubble extends Component {
    */
   getProgressiveToolAccordions(): Map<string, ProgressiveToolAccordion> {
     return this.progressiveToolAccordions;
-  }
-
-  /**
-   * Determine which DOM structure this message needs.
-   */
-  private getRenderMode(message: ConversationMessage): 'group' | 'standard' {
-    const activeToolCalls = this.getActiveToolCalls(message);
-    const hasToolCalls = message.role === 'assistant' && !!activeToolCalls && activeToolCalls.length > 0;
-    const activeReasoning = this.getActiveReasoning(message);
-    const hasReasoning = message.role === 'assistant' && !!activeReasoning;
-    return hasToolCalls || hasReasoning ? 'group' : 'standard';
-  }
-
-  /**
-   * Tool/reasoning messages still need a text bubble while loading so streaming
-   * updates always have a content container to target.
-   */
-  private shouldRenderTextBubble(message: ConversationMessage): boolean {
-    if (message.role !== 'assistant') {
-      return false;
-    }
-
-    const activeContent = this.getActiveMessageContent(message);
-    return !!activeContent.trim() || message.state === 'streaming' || !!message.isLoading;
   }
 
   /**
@@ -682,10 +446,7 @@ export class MessageBubble extends Component {
     this.stopLoadingAnimation();
     this.cleanupProgressiveAccordions();
 
-    if (this.messageBranchNavigator) {
-      this.messageBranchNavigator.destroy();
-      this.messageBranchNavigator = null;
-    }
+    this.branchNavigatorBinder.destroy();
 
     this.toolBubbleElement = null;
     this.textBubbleElement = null;
@@ -709,78 +470,6 @@ export class MessageBubble extends Component {
     loadingSpan.appendText('Thinking');
     loadingSpan.createEl('span', { cls: 'dots', text: '...' });
     this.startLoadingAnimation(loadingDiv);
-  }
-
-  /**
-   * Get the active content for the message (original or from branch)
-   */
-  private getActiveMessageContent(message: ConversationMessage): string {
-    const activeIndex = message.activeAlternativeIndex || 0;
-
-    if (activeIndex === 0) {
-      return message.content;
-    }
-
-    // Use branches (new unified model)
-    if (message.branches && message.branches.length > 0) {
-      const branchIndex = activeIndex - 1;
-      if (branchIndex >= 0 && branchIndex < message.branches.length) {
-        const branch = message.branches[branchIndex];
-        if (branch.messages.length > 0) {
-          return branch.messages[branch.messages.length - 1].content;
-        }
-      }
-    }
-
-    return message.content;
-  }
-
-  /**
-   * Get the active tool calls for the message (original or from branch)
-   */
-  private getActiveToolCalls(message: ConversationMessage): ConversationMessage['toolCalls'] | undefined {
-    const activeIndex = message.activeAlternativeIndex || 0;
-
-    if (activeIndex === 0) {
-      return message.toolCalls;
-    }
-
-    // Use branches (new unified model)
-    if (message.branches && message.branches.length > 0) {
-      const branchIndex = activeIndex - 1;
-      if (branchIndex >= 0 && branchIndex < message.branches.length) {
-        const branch = message.branches[branchIndex];
-        if (branch.messages.length > 0) {
-          return branch.messages[branch.messages.length - 1].toolCalls;
-        }
-      }
-    }
-
-    return message.toolCalls;
-  }
-
-  /**
-   * Get the active reasoning for the message (original or from branch)
-   */
-  private getActiveReasoning(message: ConversationMessage): string | undefined {
-    const activeIndex = message.activeAlternativeIndex || 0;
-
-    if (activeIndex === 0) {
-      return message.reasoning;
-    }
-
-    // Use branches (new unified model)
-    if (message.branches && message.branches.length > 0) {
-      const branchIndex = activeIndex - 1;
-      if (branchIndex >= 0 && branchIndex < message.branches.length) {
-        const branch = message.branches[branchIndex];
-        if (branch.messages.length > 0) {
-          return branch.messages[branch.messages.length - 1].reasoning;
-        }
-      }
-    }
-
-    return message.reasoning;
   }
 
   /**
@@ -824,10 +513,7 @@ export class MessageBubble extends Component {
     this.stopLoadingAnimation();
     this.cleanupProgressiveAccordions();
 
-    if (this.messageBranchNavigator) {
-      this.messageBranchNavigator.destroy();
-      this.messageBranchNavigator = null;
-    }
+    this.branchNavigatorBinder.destroy();
 
     this.element = null;
 
