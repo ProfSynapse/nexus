@@ -5,7 +5,9 @@ diverges from upstream (`ProfSynapse/nexus`). Load it at the start of every upst
 session to know which files require manual resolution and which can be auto-merged.
 
 **Last audited against:** v5.6.10 (`425a568f`)  
-**Audit date:** 2026-04-07
+**Audit date:** 2026-04-07  
+**Next merge target:** `upstream/main` HEAD (`35bed848`) — PRs #111–#115  
+**Merge plan:** `docs/plans/upstream-merge-next.md`
 
 ---
 
@@ -60,8 +62,8 @@ amplification, and large-file read limits.
 
 | File | Change |
 |------|--------|
-| `src/database/adapters/HybridStorageAdapter.ts` | `pruneOrphanedConversationFiles()` runs on startup to clean orphaned `.jsonl` files |
-| `src/database/repositories/ConversationRepository.ts` | `delete()` now deletes the JSONL file in addition to the SQLite row |
+| `src/database/adapters/HybridStorageAdapter.ts` | `pruneOrphanedConversationFiles()` runs on startup to clean orphaned `.jsonl` files — **temporary**: remove once vault reports zero pruned files at startup for several consecutive sessions |
+| `src/database/repositories/ConversationRepository.ts` | `delete()` now deletes the JSONL file in addition to the SQLite row — **⚠️ DROP on next merge**: take upstream's tombstone approach (`ConversationDeletedEvent`) instead; file deletion breaks mobile sync rebuild |
 | `src/database/repositories/MessageRepository.ts` | Skips JSONL write during streaming states (`draft`/`streaming`) — prevents O(n²) storage growth |
 | `src/database/storage/JSONLWriter.ts` | `readEventsStreaming()` fallback via Node.js readline for files >50 MB |
 | `eslint.config.mjs` | Added `JSONLWriter.ts` to `import/no-nodejs-modules` exceptions (uses `require('fs')`, `require('readline')`) |
@@ -76,7 +78,7 @@ amplification, and large-file read limits.
 
 | File | Change |
 |------|--------|
-| `src/services/llm/adapters/shared/ProviderHttpClient.ts` | Uses `require('https')`/`require('http')` instead of dynamic `import()` (Electron renderer CORS blocks `node:` protocol); timeout handler destroys both `req` and `res` to prevent silent stream truncation |
+| `src/services/llm/adapters/shared/ProviderHttpClient.ts` | Uses `require('https')`/`require('http')` instead of dynamic `import()` (Electron renderer CORS blocks `node:` protocol); timeout handler destroys both `req` and `res` to prevent silent stream truncation — **⚠️ DROP on next merge**: upstream PR #103 ships a cleaner fix using `desktopRequire()` + pure `AsyncIterable` mobile fallback; verify `resRef?.destroy(err)` is present in upstream version before dropping ours |
 | `src/settings/tabs/ProvidersTab.ts` | `onSave` simplified from IIFE `void (async () => {...})()` to direct `async` callback |
 | `src/components/LLMProviderModal.ts` | `onSave` type widened to `void \| Promise<void>`; auto-save path awaits the callback with try/catch |
 
