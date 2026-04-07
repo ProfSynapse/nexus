@@ -257,8 +257,6 @@ export class ModelAgentManager {
         this.selectedWorkspaceId = null;
         this.workspaceContext = null;
         this.loadedWorkspaceData = null;
-        this.pendingFullWorkspaceLoad = false;
-        this.selectedWorkspaceSlimData = null;
       }
     }
 
@@ -1017,12 +1015,6 @@ export class ModelAgentManager {
     thinkingEffort?: 'low' | 'medium' | 'high';
     temperature?: number;
   }> {
-    // Clear previous turn's full data before deciding whether to load new data.
-    // This keeps loadedWorkspaceData available to subagents throughout the current
-    // message-processing cycle (they call getLoadedWorkspaceData() after the send
-    // returns), and ensures it doesn't bleed into subsequent turns' system prompts.
-    this.loadedWorkspaceData = null;
-
     // G-W3: on first message after workspace selection/restore, load full data for this turn only
     if (this.pendingFullWorkspaceLoad && this.selectedWorkspaceId) {
       this.pendingFullWorkspaceLoad = false;
@@ -1038,6 +1030,9 @@ export class ModelAgentManager {
 
     const sessionId = await this.getCurrentSessionId();
     const systemPrompt = await this.buildSystemPromptWithWorkspace() || undefined;
+
+    // Clear full data immediately — subsequent turns use the slim header
+    this.loadedWorkspaceData = null;
 
     return {
       provider: this.selectedModel?.providerId,
