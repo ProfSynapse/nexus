@@ -6,7 +6,7 @@
  * Dependencies: jszip, fast-xml-parser
  */
 
-import JSZip from 'jszip';
+import type JSZip from 'jszip';
 import { XMLParser } from 'fast-xml-parser';
 import { PptxExtractionResult, PptxSlideContent } from '../../types';
 
@@ -33,7 +33,8 @@ interface RelationshipEntry {
  * Convert a PPTX file into slide text plus speaker notes.
  */
 export async function extractPptxContent(pptxData: ArrayBuffer): Promise<PptxExtractionResult> {
-  const zip = await JSZip.loadAsync(pptxData);
+  const JSZipModule = await import('jszip');
+  const zip = await JSZipModule.default.loadAsync(pptxData);
   const warnings: string[] = [];
   const slidePaths = await getSlidePaths(zip, warnings);
   const slides: PptxSlideContent[] = [];

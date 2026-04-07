@@ -2,7 +2,7 @@ import { App, Platform } from 'obsidian';
 import type { LLMProviderConfig, LLMProviderSettings } from '../types/llm/ProviderTypes';
 import { getPrimaryServerKey } from '../constants/branding';
 import { supportsMCPBridge } from '../utils/platform';
-import * as nodeFs from 'node:fs';
+import { desktopRequire } from '../utils/desktopRequire';
 
 export type ConfigStatus =
   | 'unsupported'
@@ -69,6 +69,7 @@ export function getConfigStatus(app: App): ConfigStatus {
   }
 
   const configDir = configPath.replace(/[\\/][^\\/]+$/, '');
+  const nodeFs = desktopRequire<typeof import('node:fs')>('node:fs');
 
   if (!nodeFs.existsSync(configDir)) {
     return 'no-claude-folder';

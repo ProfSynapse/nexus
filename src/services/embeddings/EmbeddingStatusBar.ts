@@ -29,7 +29,7 @@ export class EmbeddingStatusBar {
   private controlEl: HTMLSpanElement | null = null;
   private currentIconName: string | null = null;
   private isEnabled: boolean;
-  private progressHandler: ((progress: IndexingProgress) => void) | null = null;
+  private progressHandler: ((...data: unknown[]) => void) | null = null;
 
   constructor(
     plugin: Plugin,
@@ -71,7 +71,7 @@ export class EmbeddingStatusBar {
     this.controlEl.addClass('nexus-embedding-control-interactive');
 
     // Wire up progress events (store handler for cleanup)
-    this.progressHandler = this.handleProgress.bind(this);
+    this.progressHandler = (...data: unknown[]) => this.handleProgress(data[0] as IndexingProgress);
     this.indexingQueue.on('progress', this.progressHandler);
 
     // Initially hidden
@@ -193,7 +193,7 @@ export class EmbeddingStatusBar {
   destroy(): void {
     // Remove progress listener from IndexingQueue
     if (this.progressHandler) {
-      this.indexingQueue.removeListener('progress', this.progressHandler);
+      this.indexingQueue.off('progress', this.progressHandler);
       this.progressHandler = null;
     }
 

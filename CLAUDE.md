@@ -3,7 +3,7 @@ Last Updated: 2026-04-06
 
 ## Project Overview
 - **Name**: Nexus (package: claudesidian-mcp)
-- **Version**: 5.6.9
+- **Version**: 5.6.10
 - **Type**: Obsidian Community Plugin
 - **Purpose**: MCP integration for Obsidian with AI-powered vault operations
 - **Architecture**: Agent-Tool pattern with domain-driven design
@@ -19,6 +19,27 @@ Full guidelines: `docs/obsidian-plugin-guidelines.md`
 - `registerDomEvent` for all DOM events (not `addEventListener` — causes memory leaks)
 - Use `requestUrl()` not `fetch()` for HTTP; `normalizePath()` for paths
 - Hidden files (`.nexus/`) are the only valid exception to `vault.adapter` usage
+
+### Mobile Compatibility (Critical)
+
+**`isDesktopOnly: false`** — this plugin runs on mobile. Node.js built-ins (`fs`, `path`, `http`, `crypto`, `events`, `stream`, `net`, `os`, `url`, `process`, `buffer`) do NOT exist on Obsidian mobile.
+
+**Top-level imports execute during module init, BEFORE any `Platform.isDesktop` guard can run.** This means:
+
+| Pattern | Result on Mobile |
+|---------|-----------------|
+| `import mammoth from 'mammoth'` (top-level) | **Crashes plugin** — mammoth depends on `stream`, `fs` |
+| `import { EventEmitter } from 'events'` (top-level) | **Crashes plugin** — null on mobile |
+| `const mammoth = await import('mammoth')` (inside async fn) | **Safe** — only loads when called |
+| `const fs = desktopRequire<typeof import('node:fs')>('node:fs')` (inside fn) | **Safe** — lazy load |
+
+**Rules for new code:**
+1. **Never** top-level import Node.js built-ins — use `desktopRequire()` from `src/utils/desktopRequire.ts`
+2. **Never** top-level import npm packages that depend on Node.js built-ins (mammoth, jszip, xlsx, yaml, etc.) — use dynamic `await import()` inside async functions
+3. **Replace** `EventEmitter` with Obsidian's `Events` class (cross-platform)
+4. **Desktop-only features** (ingestion, composer, OAuth, CLI, MCP transports): ensure all Node.js-dependent imports are lazy
+
+**Known desktop-only npm packages**: mammoth, jszip, xlsx, yaml (all have Node.js transitive deps)
 
 ## Recent Changes
 
@@ -290,19 +311,18 @@ Adapters at `src/services/llm/adapters/{provider}/`. Types at `src/services/llm/
 ## Working Memory
 <!-- Auto-managed by pact-memory skill. Last 3 memories shown. Full history searchable via pact-memory skill. -->
 
+### 2026-04-06 22:09
+**Context**: Fixed a critical crash-on-launch bug for Nexus (claudesidian-mcp) on Obsidian mobile. The plugin loaded fine on desktop but immediately crashed on mobile (iOS/Android) because Obsidian mobile runs in a JavaScript-only environment WITHOUT Node.js built-ins. The crash occurred during plugin initialization — before any runtime guards like Platform.isDesktop could execute — because ES module top-level imports are evaluated at module load time. This affected 14 files across settings, services, utils, server transports, and agents. The fix introduced a shared desktopRequire() utility and converted all problematic imports to dynamic import() or lazy require() patterns. This is a fundamental Obsidian plugin development constraint that applies to ALL plugins targeting both desktop and mobile.
+**Goal**: Establish institutional knowledge about the 'mobile-hostile imports' pattern so that future development on claudesidian-mcp (and any Obsidian plugin work) avoids introducing top-level imports of Node.js-dependent packages, which silently work on desktop but crash on mobile.
+**Decisions**: Use dynamic import() for npm packages with Node.js internals instead of top-level imports, Created shared desktopRequire() utility at src/utils/desktopRequire.ts
+**Lessons**: On Obsidian mobile, Node.js built-ins do NOT exist: fs, path, http, crypto, events, stream, net, os, url, process, buffer are all unavailable. Any npm package that transitively depends on these will crash if imported at the top level during plugin initialization., ES module top-level imports execute during module initialization BEFORE any runtime guard (like Platform.isDesktop) can run. This means even code like 'if (Platform.isDesktop) { useNodeFeature() }' will crash if the import at the top of the file pulls in Node.js dependencies — the import itself fails before the guard is reached., Three categories of mobile-hostile imports were identified: (1) Direct Node.js imports in our code (e.g., import * as nodeFs from 'node:fs', import { EventEmitter } from 'events'), (2) npm packages with transitive Node.js deps (mammoth→jszip→stream/events/fs, xlsx→stream, jszip→stream/events, yaml→process/buffer), (3) Desktop-only features that should never load on mobile (OAuth server, CLI utils, MCP transports, ingestion agents, composer agent)., The fix for direct Node.js imports is to use a desktopRequire() helper that wraps globalThis.require for lazy loading, or replace with Obsidian equivalents (e.g., Node's EventEmitter → Obsidian's Events class which provides on/off/trigger)., The fix for npm packages with Node.js internals is to convert top-level 'import X from "package"' to dynamic 'await import("package")' inside async functions. This defers module loading to runtime when the feature is actually used, avoiding the crash during plugin init., A shared utility was created at src/utils/desktopRequire.ts that wraps the globalThis.require pattern for ESLint compatibility. This is the canonical way to lazily require Node.js modules in this codebase., When adding ANY new npm dependency to an Obsidian plugin, check its dependency tree for Node.js built-in usage. Tools like 'npm ls' or checking the package's package.json for 'node:' imports can reveal transitive Node.js dependencies that will break mobile.
+**Memory ID**: c1bc3267ec04afc02b1cb6df52f6f916
+
 ### 2026-04-06 21:10
-**Context**: Orchestration retrospective for conversation list pagination and search feature (PR #99) in claudesidian-mcp v5.6.8. Full PACT cycle: plan-mode → CODE (3 tasks: backend #6, frontend #7, wiring #8) → TEST (#10, 63 tests) → REVIEW (3 reviewers: architect #12, test-engineer #13, frontend #14) → REMEDIATION (5 tasks: #16, #17, #18, #19, #20). Zero imPACT cycles. PREPARE and ARCHITECT phases skipped — plan from plan-mode was comprehensive enough. 3 blocking review findings fixed in cycle 1. Variety scored 5 (Low), actual ~6. Session completed in single pass.
-**Goal**: Calibrate orchestration judgment via second-order observation — track variety scoring accuracy and dispatch strategy effectiveness for the pagination/search domain. This data feeds Learning II pattern matching for future UI pagination features.
-**Decisions**: Variety scored 5 (Novelty:1, Scope:2, Uncertainty:1, Risk:1), actual ~6, Skipped PREPARE and ARCHITECT phases — plan-driven workflow, Concurrent backend + frontend CODE dispatch with planned wiring task, 3 reviewers (architect, test-engineer, frontend-coder) without security reviewer
-**Lessons**: Plan-driven PREPARE/ARCHITECT skip works well for Low variety (score 5) but can miss implementation gaps like missing count() method — the plan enumerated layers to modify but did not probe whether each layer already exposed the required adapter methods. Structured gate question 3 (unknown-unknowns) should probe service method signatures more carefully., Wiring task pattern confirmed effective for 4th time (after Ingester backend+frontend, Ingester remediation, Composer) as standard approach for concurrent CODE outputs. Planning the wiring task upfront in the architecture/plan phase prevents integration surprises., Whitespace reformatting from agents pollutes diffs — the Edit tool normalizes CRLF to LF, converting every line in CRLF files. Consider adding formatting constraints to agent prompts, or requiring agents to use git checkout + sed for CRLF-sensitive files., Variety score of 5 was close to actual (~6). The count() gap was a genuine unknown-unknown that bumped Uncertainty from 1 to 2 in hindsight. For pagination features, probe adapter method availability during planning., Reviewer-to-fixer reuse (frontend-reviewer fixed blocking #17 + minor #18, test-reviewer fixed #19) is efficient — no context loss, faster than spawning fresh agents. This pattern now confirmed across 2 features (Ingester, pagination)., Concurrent remediation (5 fixers) worked cleanly — no coordination issues this time because fixes were to separate files/concerns. Sequencing was natural: blocking (#16, #17) → minor (#18, #19) → whitespace cleanup (#20).
-**Reasoning chains**: Variety calibration: predicted 5 → actual ~6 (count() gap was genuine unknown-unknown, bumped Uncertainty 1→2) → scoring was accurate for pagination features with plan-mode investment → future pagination tasks can use 5-6 as baseline, PREPARE skip ROI: no PREPARE phase → 0 imPACT cycles during CODE → but 1 blocking issue caught in review (count() missing) → PREPARE investment questionable for Low variety, review caught it anyway → skip was net positive, Wiring task ROI: 1 wiring task (#8) planned upfront → clean integration of concurrent outputs → 4th confirmation of pattern → should be standard for all concurrent CODE dispatch
-**Memory ID**: 91a4435063b6817f1ae45fe01c5e1dfa
+**Summary**: Orchestration retrospective for conversation list pagination and search feature (PR #99) in claudesidian-mcp v5.6.8.
 
 ### 2026-04-06 21:06
 **Summary**: PR #99 peer review for conversation list pagination and search feature in claudesidian-mcp.
-
-### 2026-04-06 20:38
-**Summary**: TEST phase for conversation list pagination and search feature in claudesidian-mcp v5.6.8.
 ## Current Session
 <!-- Auto-managed by session_init hook. Overwritten each session. -->
 - Resume: `claude --resume a89883a5-9570-4c8e-a9b5-b53f8ae4ad39`
@@ -313,7 +333,7 @@ Adapters at `src/services/llm/adapters/{provider}/`. Types at `src/services/llm/
 <!-- SESSION_START -->
 ## Current Session
 <!-- Auto-managed by session_init hook. Overwritten each session. -->
-- Resume: `claude --resume a89883a5-9570-4c8e-a9b5-b53f8ae4ad39`
-- Team: `pact-a89883a5`
-- Started: 2026-04-06 21:04:50 UTC
+- Resume: `claude --resume e2d81636-c5aa-4265-a772-384b26069c58`
+- Team: `pact-e2d81636`
+- Started: 2026-04-06 21:40:23 UTC
 <!-- SESSION_END -->

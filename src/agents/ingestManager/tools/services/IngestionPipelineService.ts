@@ -118,7 +118,7 @@ export async function processFile(
     onProgress?.({ filePath, stage: 'extracting', progress: 100 });
   } else {
     onProgress?.({ filePath, stage: 'extracting', progress: 0 });
-    const result = processSpreadsheet(fileData, file.name, filePath);
+    const result = await processSpreadsheet(fileData, file.name, filePath);
     noteWrites = result.notes;
     if (result.warnings) warnings.push(...result.warnings);
     onProgress?.({ filePath, stage: 'extracting', progress: 100 });
@@ -232,12 +232,12 @@ async function processPptx(
 }
 
 /** Process an XLSX file */
-function processSpreadsheet(
+async function processSpreadsheet(
   fileData: ArrayBuffer,
   fileName: string,
   filePath: string
-): { notes: NoteWrite[]; warnings?: string[] } {
-  const sheets = extractSpreadsheetSheets(fileData);
+): Promise<{ notes: NoteWrite[]; warnings?: string[] }> {
+  const sheets = await extractSpreadsheetSheets(fileData);
   const validSheets: SpreadsheetSheetContent[] = [];
   const warnings: string[] = [];
 

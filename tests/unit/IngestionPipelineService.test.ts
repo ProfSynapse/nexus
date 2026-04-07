@@ -342,7 +342,7 @@ describe('IngestionPipelineService', () => {
       const sheets: SpreadsheetSheetContent[] = [
         { sheetName: 'Sheet1', rows: [['A', 'B']], totalRows: 1, totalColumns: 2 }
       ];
-      extractSpreadsheetSheetsMock.mockReturnValue(sheets);
+      extractSpreadsheetSheetsMock.mockResolvedValue(sheets);
       const deps = createMockDeps();
       const request: IngestFileRequest = { filePath: 'notes/finance.xlsx' };
 
@@ -359,7 +359,7 @@ describe('IngestionPipelineService', () => {
     });
 
     it('should skip oversized sheets and warn', async () => {
-      extractSpreadsheetSheetsMock.mockReturnValue([
+      extractSpreadsheetSheetsMock.mockResolvedValue([
         {
           sheetName: 'Large',
           rows: [['A']],
@@ -389,7 +389,7 @@ describe('IngestionPipelineService', () => {
     });
 
     it('should fail when all sheets exceed the spreadsheet limit', async () => {
-      extractSpreadsheetSheetsMock.mockReturnValue([
+      extractSpreadsheetSheetsMock.mockResolvedValue([
         {
           sheetName: 'Large',
           rows: [['A']],

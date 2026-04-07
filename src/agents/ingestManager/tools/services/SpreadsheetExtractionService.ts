@@ -6,7 +6,6 @@
  * Dependencies: xlsx
  */
 
-import * as XLSX from 'xlsx';
 import { SpreadsheetSheetContent } from '../../types';
 
 export const MAX_SHEET_COLUMNS = 50;
@@ -15,7 +14,8 @@ export const MAX_SHEET_ROWS = 1500;
 /**
  * Extract all sheets from an XLSX workbook into row arrays suitable for Markdown rendering.
  */
-export function extractSpreadsheetSheets(workbookData: ArrayBuffer): SpreadsheetSheetContent[] {
+export async function extractSpreadsheetSheets(workbookData: ArrayBuffer): Promise<SpreadsheetSheetContent[]> {
+  const XLSX = await import('xlsx');
   const workbook = XLSX.read(workbookData, {
     type: 'array',
     cellDates: true,

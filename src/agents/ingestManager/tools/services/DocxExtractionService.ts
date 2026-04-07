@@ -6,7 +6,6 @@
  * Dependencies: mammoth
  */
 
-import mammoth from 'mammoth';
 import { DocxExtractionResult } from '../../types';
 
 interface MammothMarkdownMessage {
@@ -19,15 +18,16 @@ interface MammothMarkdownResult {
   messages: MammothMarkdownMessage[];
 }
 
-type MammothWithMarkdown = typeof mammoth & {
+interface MammothWithMarkdown {
   convertToMarkdown: (input: { buffer: Buffer }) => Promise<MammothMarkdownResult>;
-};
+}
 
 /**
  * Convert a DOCX file into Markdown.
  */
 export async function extractDocxMarkdown(docxData: ArrayBuffer): Promise<DocxExtractionResult> {
-  const mammothWithMarkdown = mammoth as MammothWithMarkdown;
+  const mammothModule = await import('mammoth');
+  const mammothWithMarkdown = mammothModule.default as unknown as MammothWithMarkdown;
   const result = await mammothWithMarkdown.convertToMarkdown({
     buffer: Buffer.from(new Uint8Array(docxData))
   });
