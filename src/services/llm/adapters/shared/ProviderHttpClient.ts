@@ -11,6 +11,7 @@
 import { requestUrl } from 'obsidian';
 import { LLMProviderError } from '../types';
 import { hasNodeRuntime, isDesktop } from '../../../../utils/platform';
+import { desktopRequire } from '../../../../utils/desktopRequire';
 
 export interface ProviderHttpRequest {
   url: string;
@@ -187,10 +188,13 @@ export class ProviderHttpClient {
     const parsed = new URL(config.url);
     const isHttps = parsed.protocol === 'https:';
 
-    // Dynamically import Node.js modules (available in Electron)
-      const nodeModule = isHttps
-        ? await import('node:https')
-        : await import('node:http');
+    // Use require (not import) for Node.js built-ins in Electron renderer.
+    // Dynamic import('node:http') is treated as a URL fetch by the ESM loader,
+    // which triggers CORS errors in Obsidian's app:// origin. require() goes
+    // through Node's CommonJS resolver and works without network requests.
+    const nodeModule = isHttps
+      ? desktopRequire<typeof import('node:https')>('node:https')
+      : desktopRequire<typeof import('node:http')>('node:http');
 
     const timeoutMs = config.timeoutMs ?? 120_000;
 
