@@ -143,7 +143,7 @@ export class ModelAgentManager {
     private conversationService?: ConversationServiceLike, // Optional ConversationService for persistence
     conversationId?: string
   ) {
-    this.currentConversationId = conversationId || null;
+    this.setCurrentConversationId(conversationId ?? null);
 
     // Initialize services
     this.contextNotesManager = new ContextNotesManager();
@@ -161,6 +161,13 @@ export class ModelAgentManager {
   async initializeDefaults(): Promise<void> {
     this.clearCompactionFrontier();
     await this.initializeDefaultModel();
+  }
+
+  /**
+   * Set the current conversation ID used for session lookups and persistence.
+   */
+  setCurrentConversationId(conversationId: string | null): void {
+    this.currentConversationId = conversationId;
   }
 
   /**
