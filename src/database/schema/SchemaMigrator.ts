@@ -417,6 +417,28 @@ export const MIGRATIONS: Migration[] = [
   },
 
   // ========================================================================
+  // FORK MIGRATION NUMBERING CONVENTION
+  //
+  // This fork's local stubs occupy versions 12–19. Upstream (nexus published plugin)
+  // is currently at v11 and will release v12, v13, ... in future updates.
+  //
+  // RULE: When merging an upstream migration numbered N where N ≤ 19, renumber it
+  // to the next available version above 19 (i.e. 20, 21, 22 ...) in this array.
+  // Once upstream's version counter exceeds 19, merge their migrations as-is.
+  //
+  // Example — upstream publishes v12:
+  //   {
+  //     version: 20,  // renumbered from upstream v12
+  //     description: '[upstream v12] <their description>',
+  //     sql: [ /* their SQL unchanged */ ]
+  //   }
+  // Then set CURRENT_SCHEMA_VERSION = 20.
+  //
+  // This ensures the migrator (which skips anything ≤ MAX(schema_version) in the DB)
+  // actually runs the upstream schema change on existing installs.
+  // ========================================================================
+
+  // ========================================================================
   // Versions 13–16: Stub acknowledgement markers for the prior fork era
   //
   // The live cache.db was at schema version 16 when this fork was initialized.
