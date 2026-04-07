@@ -122,6 +122,23 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
     this.searchService = new SQLiteSearchService(this);
   }
 
+  /**
+   * Update the database path before initialization.
+   * Must be called before initialize() — has no effect after the DB is open.
+   */
+  setDbPath(path: string): void {
+    if (this.isInitialized) {
+      console.warn('[SQLiteCacheManager] setDbPath called after initialization — ignoring');
+      return;
+    }
+
+    this.dbPath = path;
+    this.persistenceService.setDbPath(path);
+    if (this.maintenanceService) {
+      this.maintenanceService.setDbPath(path);
+    }
+  }
+
   private getMaintenanceService(): SQLiteMaintenanceService {
     if (!this.maintenanceService) {
       this.maintenanceService = new SQLiteMaintenanceService({

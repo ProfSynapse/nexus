@@ -1,4 +1,4 @@
-import { App, Plugin, normalizePath } from 'obsidian';
+import { App, Notice, Plugin, normalizePath } from 'obsidian';
 import type { MCPSettings } from '../../types/plugin/PluginTypes';
 import {
   resolvePluginStorageRoot,
@@ -64,8 +64,23 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
+/**
+ * Two-stage migration coordinator for plugin-scoped storage.
+ *
+ * Stage 1 (first boot with legacy data): Returns legacy paths immediately,
+ *   kicks off file copy + verify as fire-and-forget background work.
+ *   When complete, persists state as 'verified'. No path changes this session.
+ *
+ * Stage 2 (subsequent boot after verified): Returns plugin-data paths instantly.
+ *   No file I/O needed — the copy was completed in a prior session.
+ *
+ * Failed state: Stays on legacy paths. Background copy may retry on next boot.
+ */
 export class PluginScopedStorageCoordinator {
   readonly roots: ResolvedPluginStorageRoot;
+
+  /** Exposed for testing — resolves when background migration finishes. */
+  backgroundMigration: Promise<void> | null = null;
 
   constructor(
     private readonly app: App,
@@ -75,81 +90,110 @@ export class PluginScopedStorageCoordinator {
     this.roots = resolvePluginStorageRoot(app, plugin);
   }
 
+  /**
+   * Return a storage plan quickly. Never blocks on file copy I/O.
+   *
+   * - verified: instant cutover to plugin-data paths
+   * - not_started/copying/copied/failed with legacy files: legacy paths,
+   *   background copy kicked off
+   * - no legacy files: plugin-data paths (nothing to migrate)
+   */
   async prepareStoragePlan(): Promise<PluginScopedStoragePlan> {
-    await this.ensureDirectory(this.roots.dataRoot);
-    await this.ensureDirectory(this.roots.migrationRoot);
+    const state = await this.loadState();
 
-    // Short-circuit: if migration already verified, skip all filesystem I/O
-    const persistedState = await this.loadState();
-    if (persistedState.migration.state === 'verified') {
-      return {
-        writeBasePath: this.roots.dataRoot,
-        readBasePaths: [this.roots.dataRoot, this.legacyBasePath],
-        state: {
-          ...persistedState,
-          sourceOfTruthLocation: 'plugin-data',
-          migration: {
-            ...persistedState.migration,
-            activeDestination: this.roots.dataRoot
-          }
-        },
-        roots: this.roots
-      };
+    // Stage 2: migration already verified in a prior session — instant cutover
+    if (state.migration.state === 'verified') {
+      return this.buildPluginDataPlan(state);
     }
 
+    // Check whether legacy files exist (lightweight directory listing)
     const legacyFiles = await this.collectLegacyFiles();
-    let state = persistedState;
-    state = {
-      ...state,
-      migration: {
-        ...state.migration,
-        activeDestination: this.roots.dataRoot,
-        legacySourcesDetected: legacyFiles.length > 0 ? [this.legacyBasePath] : []
-      }
-    };
 
+    // No legacy data — go straight to plugin-data paths
     if (legacyFiles.length === 0) {
-      const nextState: PluginScopedStorageState = {
+      const freshState: PluginScopedStorageState = {
         ...state,
         sourceOfTruthLocation: 'plugin-data',
         migration: {
           ...state.migration,
+          activeDestination: this.roots.dataRoot,
+          legacySourcesDetected: [],
+          // Preserve failed state if a prior attempt failed
           state: state.migration.state === 'failed' ? 'failed' : state.migration.state,
           lastError: state.migration.state === 'failed' ? state.migration.lastError : undefined
         }
       };
-      await this.saveState(nextState);
+      await this.saveState(freshState);
       return {
         writeBasePath: this.roots.dataRoot,
         readBasePaths: [this.roots.dataRoot],
-        state: nextState,
+        state: freshState,
         roots: this.roots
       };
     }
 
-    try {
-      state = await this.runCopyOnlyMigration(state, legacyFiles);
-      if (state.migration.state === 'verified') {
-        const verifiedState: PluginScopedStorageState = {
-          ...state,
-          sourceOfTruthLocation: 'plugin-data'
-        };
-        await this.saveState(verifiedState);
-        return {
-          writeBasePath: this.roots.dataRoot,
-          readBasePaths: [this.roots.dataRoot, this.legacyBasePath],
-          state: verifiedState,
-          roots: this.roots
-        };
+    // Stage 1: legacy files exist — return legacy plan immediately,
+    // kick off copy+verify in the background
+    const legacyState: PluginScopedStorageState = {
+      ...state,
+      sourceOfTruthLocation: 'legacy-dotnexus',
+      migration: {
+        ...state.migration,
+        activeDestination: this.roots.dataRoot,
+        legacySourcesDetected: [this.legacyBasePath]
       }
-    } catch (error) {
-      state = await this.saveFailureState(state, error instanceof Error ? error.message : String(error));
-    }
+    };
+
+    this.backgroundMigration = this.runBackgroundMigration(legacyState, legacyFiles);
 
     return {
       writeBasePath: this.legacyBasePath,
       readBasePaths: [this.legacyBasePath],
-      state,
+      state: legacyState,
+      roots: this.roots
+    };
+  }
+
+  /**
+   * Fire-and-forget background migration. Copies legacy files to plugin-scoped
+   * storage, verifies them, and saves state as 'verified'. Errors are caught
+   * and persisted as 'failed' state — they don't propagate to the caller.
+   */
+  private async runBackgroundMigration(
+    state: PluginScopedStorageState,
+    legacyFiles: string[]
+  ): Promise<void> {
+    try {
+      new Notice('Preparing your data for cross-device sync…');
+      await this.ensureDirectory(this.roots.dataRoot);
+      await this.ensureDirectory(this.roots.migrationRoot);
+
+      const finalState = await this.runCopyOnlyMigration(state, legacyFiles);
+      if (finalState.migration.state === 'verified') {
+        console.warn('[PluginScopedStorageCoordinator] Background migration verified — cutover will happen on next boot');
+        new Notice('Data migration complete — changes take effect on next restart.');
+      }
+    } catch (error) {
+      console.error('[PluginScopedStorageCoordinator] Background migration failed:', error);
+      new Notice('Data migration encountered an issue — see console for details.');
+      await this.saveFailureState(state, error instanceof Error ? error.message : String(error)).catch(() => {
+        // Best-effort — don't let state save failure mask the original error
+      });
+    }
+  }
+
+  private buildPluginDataPlan(state: PluginScopedStorageState): PluginScopedStoragePlan {
+    return {
+      writeBasePath: this.roots.dataRoot,
+      readBasePaths: [this.roots.dataRoot, this.legacyBasePath],
+      state: {
+        ...state,
+        sourceOfTruthLocation: 'plugin-data',
+        migration: {
+          ...state.migration,
+          activeDestination: this.roots.dataRoot
+        }
+      },
       roots: this.roots
     };
   }

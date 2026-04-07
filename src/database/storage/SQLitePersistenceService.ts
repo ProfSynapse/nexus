@@ -14,13 +14,17 @@ interface SQLitePersistenceServiceOptions {
 
 export class SQLitePersistenceService {
   private readonly app: App;
-  private readonly dbPath: string;
+  private dbPath: string;
   private readonly bridge: SQLiteWasmBridge;
 
   constructor(options: SQLitePersistenceServiceOptions) {
     this.app = options.app;
     this.dbPath = options.dbPath;
     this.bridge = options.bridge;
+  }
+
+  setDbPath(dbPath: string): void {
+    this.dbPath = dbPath;
   }
 
   async loadDatabase(sqlite3: SQLiteWasmModule, schemaSql: string): Promise<SQLiteDatabaseHandle> {

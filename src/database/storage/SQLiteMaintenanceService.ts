@@ -27,7 +27,7 @@ interface SQLiteMaintenanceServiceOptions {
 
 export class SQLiteMaintenanceService {
   private readonly app: App;
-  private readonly dbPath: string;
+  private dbPath: string;
   private readonly bridge: SQLiteWasmBridge;
   private readonly getDb: () => SQLiteDatabaseHandle;
   private readonly queryOne: <T>(sql: string, params?: QueryParams) => Promise<T | null>;
@@ -40,6 +40,10 @@ export class SQLiteMaintenanceService {
     this.getDb = options.getDb;
     this.queryOne = options.queryOne;
     this.transaction = options.transaction;
+  }
+
+  setDbPath(dbPath: string): void {
+    this.dbPath = dbPath;
   }
 
   async clearAllData(): Promise<void> {
