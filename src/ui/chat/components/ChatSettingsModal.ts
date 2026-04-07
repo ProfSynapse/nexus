@@ -180,7 +180,9 @@ export class ChatSettingsModal extends Modal {
       // Update workspace
       if (settings.workspaceId) {
         const workspace = await this.workspaceService.getWorkspace(settings.workspaceId);
-        await this.modelAgentManager.setWorkspaceContext(settings.workspaceId, workspace?.context ?? null);
+        if (workspace?.context) {
+          await this.modelAgentManager.setWorkspaceContext(settings.workspaceId, workspace.context);
+        }
       } else {
         await this.modelAgentManager.clearWorkspaceContext();
       }

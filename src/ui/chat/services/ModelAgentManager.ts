@@ -643,7 +643,7 @@ export class ModelAgentManager {
    * Populates slim header data via cheap DB lookup; full data is loaded on
    * first message send (G-W3).
    */
-  async setWorkspaceContext(workspaceId: string, context: WorkspaceContext | null): Promise<void> {
+  async setWorkspaceContext(workspaceId: string, context: WorkspaceContext): Promise<void> {
     this.selectedWorkspaceId = workspaceId;
     this.workspaceContext = context;
     this.loadedWorkspaceData = null;
