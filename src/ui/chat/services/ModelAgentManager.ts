@@ -646,18 +646,24 @@ export class ModelAgentManager {
   async setWorkspaceContext(workspaceId: string): Promise<void> {
     this.selectedWorkspaceId = workspaceId;
     this.loadedWorkspaceData = null;
-    this.pendingFullWorkspaceLoad = true; // Full load fires on first message send (G-W3)
+    this.pendingFullWorkspaceLoad = false;
 
     try {
       const slim = await this.workspaceIntegration.getWorkspaceBasic(workspaceId);
-      this.workspaceContext = (slim?.context as WorkspaceContext) ?? null;
-      this.selectedWorkspaceSlimData = slim ? {
-        id: slim.id,
-        name: slim.name,
-        description: slim.description,
-        purpose: slim.context?.['purpose'] as string | undefined,
-        rootFolder: slim.rootFolder
-      } : null;
+      if (slim) {
+        this.workspaceContext = (slim.context as WorkspaceContext) ?? null;
+        this.selectedWorkspaceSlimData = {
+          id: slim.id,
+          name: slim.name,
+          description: slim.description,
+          purpose: slim.context?.['purpose'] as string | undefined,
+          rootFolder: slim.rootFolder
+        };
+        this.pendingFullWorkspaceLoad = true; // Full load fires on first message send (G-W3)
+      } else {
+        this.workspaceContext = null;
+        this.selectedWorkspaceSlimData = null;
+      }
     } catch (error) {
       console.error('[ModelAgentManager] Failed to load workspace slim data:', error);
       this.workspaceContext = null;
@@ -1079,7 +1085,6 @@ export class ModelAgentManager {
       contextNotes: this.contextNotesManager.getNotes(),
       messageEnhancement: this.messageEnhancement,
       customPrompt: this.currentSystemPrompt,
-      workspaceContext: this.workspaceContext,
       loadedWorkspaceData: this.loadedWorkspaceData,       // null except on first-message send (G-W3)
       selectedWorkspaceSlimData: this.selectedWorkspaceSlimData,
       // Nexus models are pre-trained on the toolset - skip tools section
