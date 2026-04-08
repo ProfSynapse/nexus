@@ -31,12 +31,13 @@ Ask the user if not specified:
 - **Minor** (x.+1.0): New features, non-breaking changes
 - **Major** (+1.0.0): Breaking changes
 
-### 2. Bump Version in 3 Files
+### 2. Bump Version in 4 Files
 
-All three must match:
+Update all four:
 ```
 package.json      →  "version": "X.Y.Z"
 manifest.json     →  "version": "X.Y.Z"
+versions.json     →  add/update "X.Y.Z": "0.15.0"
 CLAUDE.md         →  "- **Version**: X.Y.Z"
 ```
 
@@ -51,7 +52,7 @@ npm run build
 ### 4. Commit and Push
 
 ```bash
-git add package.json manifest.json CLAUDE.md src/utils/connectorContent.ts
+git add package.json manifest.json versions.json CLAUDE.md src/utils/connectorContent.ts
 git commit -m "chore: bump version to X.Y.Z"
 git push origin main
 ```
@@ -60,10 +61,12 @@ git push origin main
 
 Always attach the **4 build artifacts**:
 
+Use a `vX.Y.Z` git tag, but a number-only GitHub release title:
+
 ```bash
 gh release create vX.Y.Z \
   main.js connector.js manifest.json styles.css \
-  --title "vX.Y.Z — Short Description" \
+  --title "X.Y.Z — Short Description" \
   --notes "$(cat <<'EOF'
 ## What's New / Fixes
 
@@ -88,6 +91,7 @@ EOF
 ## Common Mistakes to Avoid
 
 - Forgetting to rebuild after version bump (stale `connectorContent.ts`)
-- Missing one of the 3 version files
+- Missing one of the 4 version files (`versions.json` is required)
 - Not attaching all 4 release artifacts
 - Releasing from a feature branch instead of `main`
+- Using `vX.Y.Z` in the release title instead of `X.Y.Z`
