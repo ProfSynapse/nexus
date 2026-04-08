@@ -1,5 +1,8 @@
 import { App, FileSystemAdapter, Platform } from 'obsidian';
 import { resolveDesktopBinaryPath } from '../../utils/binaryDiscovery';
+import { runCliProcess } from '../../utils/cliProcessRunner';
+import { spawnDesktopProcess } from '../../utils/desktopProcess';
+import { desktopRequire } from '../../utils/desktopRequire';
 
 export interface ClaudeCodeAuthStatus {
     available: boolean;
@@ -14,10 +17,22 @@ interface ClaudeAuthStatusJson {
     authMethod?: string;
 }
 
+type ChildProcessModule = typeof import('child_process');
+
 export class ClaudeCodeAuthService {
     constructor(private app: App) {}
 
     async getStatus(): Promise<ClaudeCodeAuthStatus> {
+        if (!Platform.isDesktop) {
+            return {
+                available: false,
+                loggedIn: false,
+                authMethod: 'none',
+                claudePath: null,
+                error: 'Claude Code auth is only available on desktop.'
+            };
+        }
+
         const claudePath = resolveDesktopBinaryPath('claude');
         if (!claudePath) {
             return {
@@ -72,13 +87,14 @@ export class ClaudeCodeAuthService {
             };
         }
 
-        const childProcess = await import('node:child_process');
-        const child = childProcess.spawn(
+        const childProcess = desktopRequire<ChildProcessModule>('child_process');
+        const child = spawnDesktopProcess(
+            childProcess,
             initialStatus.claudePath,
             ['auth', 'login', '--claudeai'],
             {
                 cwd: this.getVaultBasePath() ?? undefined,
-                env: { ...process.env },
+                env: this.buildClaudeEnv(),
                 stdio: 'ignore'
             }
         );
@@ -119,38 +135,12 @@ export class ClaudeCodeAuthService {
         args: string[],
         cwd?: string
     ): Promise<{ stdout: string; stderr: string; exitCode: number | null }> {
-        const childProcess = await import('node:child_process');
-
-        return await new Promise((resolve) => {
-            const child = childProcess.spawn(command, args, {
-                cwd,
-                env: { ...process.env },
-                stdio: ['ignore', 'pipe', 'pipe']
-            });
-
-            let stdout = '';
-            let stderr = '';
-
-            child.stdout.on('data', (chunk: Buffer | string) => {
-                stdout += chunk.toString();
-            });
-
-            child.stderr.on('data', (chunk: Buffer | string) => {
-                stderr += chunk.toString();
-            });
-
-            child.on('error', (error: Error) => {
-                resolve({
-                    stdout,
-                    stderr: stderr ? `${stderr}\n${error.message}` : error.message,
-                    exitCode: null
-                });
-            });
-
-            child.on('close', (exitCode: number | null) => {
-                resolve({ stdout, stderr, exitCode });
-            });
+        const handle = runCliProcess(command, args, {
+            cwd,
+            env: this.buildClaudeEnv()
         });
+
+        return await handle.result;
     }
 
     private getVaultBasePath(): string | null {
@@ -160,6 +150,13 @@ export class ClaudeCodeAuthService {
         }
 
         return null;
+    }
+
+    private buildClaudeEnv(): NodeJS.ProcessEnv {
+        const env = { ...process.env };
+        delete env.ANTHROPIC_API_KEY;
+        delete env.ANTHROPIC_AUTH_TOKEN;
+        return env;
     }
 
     private async sleep(ms: number): Promise<void> {
