@@ -7257,27 +7257,28 @@ body.is-mobile .chat-loading-overlay {
 .nexus-task-board-view {
     display: flex;
     flex-direction: column;
-    height: 100%;
-    min-height: 0;
-    overflow: hidden;
+    min-height: 100%;
+    overflow-x: hidden;
+    overflow-y: auto;
 }
 
 .nexus-task-board-shell {
     display: flex;
     flex-direction: column;
-    flex: 1 1 auto;
+    flex: 0 0 auto;
     gap: var(--space-l);
-    min-height: 0;
+    min-height: 100%;
     padding: var(--space-l);
-    overflow: hidden;
+    overflow: visible;
 }
 
 .nexus-task-board-columns-wrapper {
     display: flex;
     flex-direction: column;
-    flex: 1 1 auto;
+    flex: 0 0 auto;
     min-height: 0;
-    overflow: hidden;
+    overflow-x: auto;
+    overflow-y: visible;
 }
 
 .nexus-task-board-header,
@@ -7382,12 +7383,11 @@ body.is-mobile .chat-loading-overlay {
 
 .nexus-task-board-columns {
     display: flex;
-    flex: 1 1 auto;
+    flex: 0 0 auto;
     gap: var(--space-m);
     min-height: 0;
-    align-items: stretch;
-    overflow-x: auto;
-    overflow-y: hidden;
+    align-items: flex-start;
+    overflow: visible;
     padding-bottom: 2px;
 }
 
@@ -7397,6 +7397,7 @@ body.is-mobile .chat-loading-overlay {
     min-height: 0;
     display: flex;
     flex-direction: column;
+    align-self: flex-start;
     padding: var(--space-m);
 }
 
@@ -7427,14 +7428,14 @@ body.is-mobile .chat-loading-overlay {
 }
 
 .nexus-task-board-column-body {
-    flex: 1 1 auto;
+    flex: 0 0 auto;
     min-height: 0;
     display: flex;
     flex-direction: column;
     gap: var(--space-s);
     padding: 2px;
     border-radius: var(--radius-s);
-    overflow-y: auto;
+    overflow: visible;
 }
 
 .nexus-task-board-column-body.is-drop-target {

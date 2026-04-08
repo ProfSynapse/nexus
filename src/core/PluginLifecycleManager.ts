@@ -318,7 +318,7 @@ export class PluginLifecycleManager {
                 console.warn('[PluginLifecycleManager] Storage adapter failed to initialize; skipping embeddings');
                 return;
             }
-            console.log('[PluginLifecycleManager] Storage adapter ready, initializing embeddings...');
+            console.warn('[PluginLifecycleManager] Storage adapter ready, initializing embeddings...');
             const enableEmbeddings = this.config.settings.settings.enableEmbeddings ?? true;
             this.embeddingManager = new EmbeddingManager(
                 this.config.app,
