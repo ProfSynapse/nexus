@@ -91,6 +91,9 @@ export interface ConversationMessage {
   // Reasoning/thinking content from LLMs (Claude, GPT-5, Gemini)
   reasoning?: string;
 
+  // Provider-specific message metadata (citations, references, etc.)
+  metadata?: Record<string, unknown>;
+
   // Message branching support (legacy - being migrated to branches)
   alternatives?: ConversationMessage[];
   activeAlternativeIndex?: number;

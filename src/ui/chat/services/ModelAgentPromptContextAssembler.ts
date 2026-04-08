@@ -1,6 +1,7 @@
 import type { WorkspaceContext } from '../../../database/types/workspace/WorkspaceTypes';
 import type { CompactedContext } from '../../../services/chat/ContextCompactionService';
 import type { CompactionFrontierRecord } from '../../../services/chat/CompactionFrontierService';
+import { shouldPassToolSchemasToProvider } from '../../../services/llm/utils/ToolSchemaSupport';
 import type { ThinkingSettings } from '../../../types/llm/ProviderTypes';
 import type { MessageEnhancement } from '../components/suggesters/base/SuggesterInterfaces';
 import type { ModelOption } from '../types/SelectionTypes';
@@ -65,7 +66,7 @@ export class ModelAgentPromptContextAssembler {
       customPrompt: snapshot.currentSystemPrompt,
       workspaceContext: snapshot.workspaceContext,
       loadedWorkspaceData: snapshot.loadedWorkspaceData as LoadedWorkspaceData | null,
-      skipToolsSection: snapshot.selectedModel?.providerId === 'webllm',
+      skipToolsSection: !shouldPassToolSchemasToProvider(snapshot.selectedModel?.providerId),
       contextStatus: this.buildContextStatus(snapshot.contextTokenTracker),
       compactionFrontier: snapshot.compactionFrontier,
       legacyCompactionRecord: snapshot.latestCompactionRecord

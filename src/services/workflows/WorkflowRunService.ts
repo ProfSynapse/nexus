@@ -2,7 +2,7 @@ import type { App, Plugin, WorkspaceLeaf } from 'obsidian';
 import { generateSessionId } from '../../utils/sessionUtils';
 import { ModelSelectionUtility } from '../../ui/chat/utils/ModelSelectionUtility';
 import { WorkspaceIntegrationService } from '../../ui/chat/services/WorkspaceIntegrationService';
-import { SystemPromptBuilder, type ToolAgentInfo } from '../../ui/chat/services/SystemPromptBuilder';
+import { SystemPromptBuilder } from '../../ui/chat/services/SystemPromptBuilder';
 import type { ChatService } from '../chat/ChatService';
 import type { WorkspaceService } from '../WorkspaceService';
 import type { CustomPromptStorageService } from '../../agents/promptManager/services/CustomPromptStorageService';
@@ -26,32 +26,6 @@ export interface WorkflowRunServiceDeps {
 interface WorkflowModelOption {
   providerId?: string;
   modelId?: string;
-}
-
-interface AgentToolInfo {
-  slug?: string;
-  name?: string;
-}
-
-interface AgentLike {
-  name?: string;
-  description?: string;
-  getTools?: () => AgentToolInfo[];
-}
-
-interface AgentRegistryLike {
-  getAllAgents: () => Map<string, AgentLike> | AgentLike[] | Array<[string, AgentLike]>;
-}
-
-interface PluginWithAgentRegistry extends Plugin {
-  serviceManager?: {
-    getServiceIfReady?: (name: string) => AgentRegistryLike | null | undefined;
-  };
-  connector?: {
-    agentRegistry?: {
-      getAllAgents: () => Map<string, AgentLike> | AgentLike[] | Array<[string, AgentLike]>;
-    };
-  };
 }
 
 export class WorkflowRunService {
@@ -184,52 +158,6 @@ export class WorkflowRunService {
       loadedWorkspaceData: params.loadedWorkspaceData,
       skipToolsSection: params.providerId === 'webllm'
     });
-  }
-
-  private getToolAgentInfo(): ToolAgentInfo[] {
-    const plugin = this.deps.plugin as PluginWithAgentRegistry;
-
-    const normalizeAgents = (
-      agents: Map<string, AgentLike> | AgentLike[] | Array<[string, AgentLike]>
-    ): Map<string, AgentLike> => {
-      if (agents instanceof Map) {
-        return agents;
-      }
-
-      if (agents.length > 0 && Array.isArray(agents[0])) {
-        return new Map(agents as Array<[string, AgentLike]>);
-      }
-
-      const normalized = new Map<string, AgentLike>();
-      for (const agent of agents as AgentLike[]) {
-        if (agent.name) {
-          normalized.set(agent.name, agent);
-        }
-      }
-      return normalized;
-    };
-
-    const agentService = plugin.serviceManager?.getServiceIfReady?.('agentRegistrationService');
-    if (agentService) {
-      const agentMap = normalizeAgents(agentService.getAllAgents());
-      return Array.from(agentMap.entries()).map(([name, agent]) => ({
-        name,
-        description: agent.description || '',
-        tools: (agent.getTools?.() || []).map(tool => tool.slug || tool.name || 'unknown')
-      }));
-    }
-
-    const agents = plugin.connector?.agentRegistry?.getAllAgents?.();
-    if (!agents) {
-      return [];
-    }
-
-    const agentMap = normalizeAgents(agents);
-    return Array.from(agentMap.entries()).map(([name, agent]) => ({
-      name,
-      description: agent.description || '',
-      tools: (agent.getTools?.() || []).map(tool => tool.slug || tool.name || 'unknown')
-    }));
   }
 
   private findWorkflowDefinition(loadedWorkspaceData: Record<string, unknown>, workflowId: string): WorkspaceWorkflow | undefined {

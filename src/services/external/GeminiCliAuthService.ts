@@ -8,6 +8,7 @@
  */
 import { App, Platform } from 'obsidian';
 import { CliProcessResult } from '../../utils/cliProcessRunner';
+import { desktopRequire } from '../../utils/desktopRequire';
 import { resolveGeminiCliRuntime } from '../../utils/geminiCli';
 
 export interface GeminiCliAuthStatus {
@@ -35,7 +36,7 @@ export class GeminiCliAuthService {
             };
         }
 
-        const runtime = resolveGeminiCliRuntime(this.app.vault);
+        const runtime = await Promise.resolve(resolveGeminiCliRuntime(this.app.vault));
         if (!runtime.geminiPath) {
             return {
                 available: false,
@@ -46,7 +47,7 @@ export class GeminiCliAuthService {
             };
         }
 
-        const probe = await this.runAuthProbe();
+        const probe = await Promise.resolve(this.runAuthProbe());
         return {
             available: true,
             loggedIn: probe.exitCode === 0,
@@ -94,10 +95,10 @@ export class GeminiCliAuthService {
      * Returns exitCode 0 if credentials exist and contain an access token,
      * non-zero otherwise.
      */
-    private async runAuthProbe(): Promise<CliProcessResult> {
-        const fs = await import('node:fs');
-        const osMod = await import('node:os');
-        const pathMod = await import('node:path');
+    private runAuthProbe(): CliProcessResult {
+        const fs = desktopRequire<typeof import('node:fs')>('node:fs');
+        const osMod = desktopRequire<typeof import('node:os')>('node:os');
+        const pathMod = desktopRequire<typeof import('node:path')>('node:path');
 
         const credsPath = pathMod.join(osMod.homedir(), '.gemini', 'oauth_creds.json');
 

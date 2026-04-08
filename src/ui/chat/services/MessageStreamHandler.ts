@@ -58,6 +58,7 @@ export interface StreamResult {
   streamedContent: string;
   toolCalls?: StreamToolCall[];
   reasoning?: string;  // Accumulated reasoning text
+  metadata?: Record<string, unknown>;
   usage?: {            // Token usage for context tracking
     promptTokens: number;
     completionTokens: number;
@@ -131,6 +132,7 @@ export class MessageStreamHandler {
     let toolCalls: StreamToolCall[] | undefined = undefined;
     let hasStartedStreaming = false;
     let finalUsage: StreamResult['usage'] | undefined = undefined;
+    let finalMetadata: Record<string, unknown> | undefined = undefined;
 
     // Reasoning accumulation
     let reasoningAccumulator = '';
@@ -210,6 +212,13 @@ export class MessageStreamHandler {
         };
       }
 
+      if (chunk.metadata) {
+        finalMetadata = {
+          ...(finalMetadata || {}),
+          ...chunk.metadata
+        };
+      }
+
       // Handle completion
       if (chunk.complete) {
         // Check if this is TRULY the final complete
@@ -225,13 +234,14 @@ export class MessageStreamHandler {
           if (placeholderMessageIndex >= 0) {
             conversation.messages[placeholderMessageIndex] = {
               ...conversation.messages[placeholderMessageIndex],
-              content: streamedContent,
-              state: 'complete',
-              toolCalls: toolCalls?.map(toConversationToolCall),
-              // Persist reasoning for re-render from storage
-              reasoning: reasoningAccumulator || undefined
-            };
-          }
+            content: streamedContent,
+            state: 'complete',
+            toolCalls: toolCalls?.map(toConversationToolCall),
+            // Persist reasoning for re-render from storage
+            reasoning: reasoningAccumulator || undefined,
+            metadata: finalMetadata
+          };
+        }
 
           // Send final complete content
           this.events.onStreamingUpdate(aiMessageId, streamedContent, true, false);
@@ -255,7 +265,8 @@ export class MessageStreamHandler {
           content: streamedContent,
           state: 'complete',
           toolCalls: toolCalls?.map(toConversationToolCall),
-          reasoning: reasoningAccumulator || undefined
+          reasoning: reasoningAccumulator || undefined,
+          metadata: finalMetadata
         };
       }
     }
@@ -264,6 +275,7 @@ export class MessageStreamHandler {
       streamedContent,
       toolCalls,
       reasoning: reasoningAccumulator || undefined,
+      metadata: finalMetadata,
       usage: finalUsage
     };
   }

@@ -3,7 +3,7 @@ Last Updated: 2026-04-06
 
 ## Project Overview
 - **Name**: Nexus (package: claudesidian-mcp)
-- **Version**: 5.6.10
+- **Version**: 5.7.1
 - **Type**: Obsidian Community Plugin
 - **Purpose**: MCP integration for Obsidian with AI-powered vault operations
 - **Architecture**: Agent-Tool pattern with domain-driven design
@@ -43,13 +43,14 @@ Full guidelines: `docs/obsidian-plugin-guidelines.md`
 
 ## Recent Changes
 
-**Current Version**: 5.6.9
+**Current Version**: 5.7.1
 Full changelog: `docs/changelog.md`
 
 **Latest features** (Apr 2026):
+- v5.7.1 — Claude Code desktop auth status/login fix for Electron renderer imports (issue #120)
+- v5.7.0 — Plugin-scoped storage migration, mobile support (experimental), major refactors (PRs #102–#119)
 - v5.6.9 (PR #99) — Conversation list pagination ("Load More") + FTS title search in sidebar
 - v5.6.4 (PR #86) — any→unknown type migration, ESLint v9 + obsidianmd linter, Anthropic multi-tool fix
-- v5.6.3 — DOCX/PPTX/XLSX ingestion support
 - v5.6.0 — Nexus Ingester, Web Tools Agent, Composer App (PRs #81–83)
 - v5.5.0 — Task Board, Compaction Frontier, Tool Refactors (PRs #65–72)
 
@@ -342,7 +343,9 @@ Adapters at `src/services/llm/adapters/{provider}/`. Types at `src/services/llm/
 <!-- SESSION_START -->
 ## Current Session
 <!-- Auto-managed by session_init hook. Overwritten each session. -->
-- Resume: `claude --resume e2d81636-c5aa-4265-a772-384b26069c58`
-- Team: `pact-e2d81636`
-- Started: 2026-04-06 21:40:23 UTC
+- Resume: `claude --resume c5de3df6-8deb-4276-8c92-e89422ce357f`
+- Team: `pact-c5de3df6`
+- Session dir: `/Users/jrosenbaum/.claude/pact-sessions/claudesidian-mcp/c5de3df6-8deb-4276-8c92-e89422ce357f`
+- Plugin root: `/Users/jrosenbaum/.claude/plugins/marketplaces/pact-marketplace/pact-plugin`
+- Started: 2026-04-08 11:05:59 UTC
 <!-- SESSION_END -->

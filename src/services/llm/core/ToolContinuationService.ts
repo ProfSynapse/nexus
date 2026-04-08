@@ -32,6 +32,7 @@ export interface StreamYield {
   toolCalls?: ChatToolCall[];
   toolCallsReady?: boolean;
   usage?: TokenUsage;
+  metadata?: Record<string, unknown>;
   reasoning?: string;
   reasoningComplete?: boolean;
 }
@@ -254,7 +255,8 @@ export class ToolContinuationService {
             chunk: chunk.content,
             complete: false,
             content: fullContent,
-            toolCalls: undefined
+            toolCalls: undefined,
+            metadata: chunk.metadata
           };
         }
 
@@ -271,7 +273,8 @@ export class ToolContinuationService {
             complete: false,
             content: fullContent,
             toolCalls: chatToolCalls,
-            toolCallsReady: chunk.complete || false
+            toolCallsReady: chunk.complete || false,
+            metadata: chunk.metadata
           };
 
           if (!chunk.complete) {
@@ -459,7 +462,8 @@ export class ToolContinuationService {
             chunk: recursiveChunk.content,
             complete: false,
             content: fullContent,
-            toolCalls: undefined
+            toolCalls: undefined,
+            metadata: recursiveChunk.metadata
           };
         }
 
@@ -476,7 +480,8 @@ export class ToolContinuationService {
             complete: false,
             content: fullContent,
             toolCalls: nestedChatToolCalls,
-            toolCallsReady: recursiveChunk.complete || false
+            toolCallsReady: recursiveChunk.complete || false,
+            metadata: recursiveChunk.metadata
           };
 
           // Store for execution after stream completes

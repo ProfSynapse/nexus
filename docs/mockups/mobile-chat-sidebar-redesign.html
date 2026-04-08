@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nexus Mobile Chat Replica</title>
+  <link rel="stylesheet" href="./mobile-chat-sidebar-redesign.css">
+</head>
+<body class="mock-page is-mobile theme-dark">
+  <div class="mock-layout">
+    <section class="mock-intro">
+      <div class="mock-eyebrow">Current vs compact mobile</div>
+      <h1>Side-by-side chat comparison using the same base UI</h1>
+      <p>
+        Both panels use the same chat structure and copied class styling. The right side only changes spacing and sizing so we can judge a compact mobile pass without redesigning the interface.
+      </p>
+
+      <div class="mock-toolbar" aria-label="Replica controls">
+        <button type="button" class="mock-toolbar-button is-active" data-screen="welcome">Welcome</button>
+        <button type="button" class="mock-toolbar-button" data-screen="conversation">Conversation</button>
+        <button type="button" class="mock-toolbar-button" data-toggle-drawer>Drawer hidden</button>
+        <button type="button" class="mock-toolbar-button" data-toggle-keyboard>Keyboard closed</button>
+      </div>
+    </section>
+
+    <section class="mock-compare-grid">
+      <article class="mock-device">
+        <div class="mock-device-label">Current mobile</div>
+        <div class="mock-device-shell" data-variant="current"></div>
+      </article>
+
+      <article class="mock-device mock-device--optimized">
+        <div class="mock-device-label">Compact mobile</div>
+        <div class="mock-device-shell" data-variant="optimized"></div>
+      </article>
+    </section>
+  </div>
+
+  <template id="phone-template">
+    <div class="mock-phone">
+      <div class="mock-phone-notch"></div>
+
+      <div class="mock-screen">
+        <div class="chat-view-container">
+          <div class="chat-layout">
+            <div class="chat-main">
+              <div class="chat-experimental-warning" data-role="warning-banner">
+                <span class="warning-icon">⚠️</span>
+                <span class="warning-text">This chat is in beta.</span>
+                <a class="warning-link" href="https://github.com/ProfSynapse/nexus/issues" target="_blank" rel="noopener noreferrer">Report issues</a>
+                <span class="warning-text">Use at your own risk.</span>
+              </div>
+
+              <header class="chat-header">
+                <button type="button" class="chat-hamburger-button" data-role="hamburger-button" aria-label="Toggle conversations">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M3 6h18"></path>
+                    <path d="M3 12h18"></path>
+                    <path d="M3 18h18"></path>
+                  </svg>
+                </button>
+
+                <div class="chat-title" data-role="chat-title">Chat</div>
+
+                <button type="button" class="chat-settings-button" aria-label="Chat settings">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <circle cx="12" cy="12" r="3"></circle>
+                    <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-.4-1.1 1.7 1.7 0 0 0-1-.6 1.7 1.7 0 0 0-1.82.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H2.8a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.1-.4 1.7 1.7 0 0 0 .6-1A1.7 1.7 0 0 0 4.26 6.4l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V2.8a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 .4 1.1 1.7 1.7 0 0 0 1 .6 1.7 1.7 0 0 0 1.82-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 .6 1 1.7 1.7 0 0 0 1.1.4h.1a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.1.4 1.7 1.7 0 0 0-.6 1z"></path>
+                  </svg>
+                </button>
+              </header>
+
+              <div class="nexus-branch-header-container"></div>
+              <div class="message-display-container" data-role="message-display-container"></div>
+              <div class="chat-input-container">
+                <div class="chat-input">
+                  <div class="chat-input-wrapper">
+                    <div class="chat-textarea" data-role="chat-input" role="textbox" aria-multiline="true" data-placeholder="Type your message..." contenteditable="false"></div>
+                    <button type="button" class="chat-send-button clickable-icon disabled-mode" data-role="send-button" aria-label="No conversation selected" disabled>
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M12 5v14"></path>
+                        <path d="m19 12-7-7-7 7"></path>
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div class="chat-context-container"></div>
+
+              <div class="nexus-loading-overlay chat-loading-overlay-hidden">
+                <div class="nexus-loading-content">
+                  <div class="nexus-loading-spinner">
+                    <svg viewBox="0 0 50 50" class="nexus-spinner" aria-hidden="true">
+                      <circle cx="25" cy="25" r="20" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round"></circle>
+                    </svg>
+                  </div>
+                  <div class="nexus-loading-status" data-status-el="true">Loading model...</div>
+                  <div class="nexus-loading-progress-container">
+                    <div class="nexus-loading-progress-bar chat-progress-bar-reset" data-progress-el="true"></div>
+                  </div>
+                  <div class="nexus-loading-progress-text" data-progress-text-el="true">0%</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="chat-backdrop" data-role="chat-backdrop"></div>
+
+            <aside class="chat-sidebar chat-sidebar-hidden" data-role="chat-sidebar">
+              <div class="chat-sidebar-header">
+                <h3>Conversations</h3>
+                <button type="button" class="chat-new-button">New chat</button>
+              </div>
+
+              <div class="conversation-search-container">
+                <input
+                  class="conversation-search-input"
+                  type="text"
+                  placeholder="Search by title..."
+                  aria-label="Search conversations by title"
+                >
+              </div>
+
+              <div class="conversation-list-container conversation-list">
+                <div class="conversation-item active">
+                  <div class="conversation-content">
+                    <div class="conversation-title">Mobile sidebar redesign</div>
+                    <div class="conversation-preview">Can we make this easier to use on mobile?</div>
+                    <div class="conversation-timestamp">2m ago</div>
+                  </div>
+                  <div class="conversation-actions">
+                    <button type="button" class="conversation-action-btn conversation-edit-btn clickable-icon" aria-label="Rename conversation">
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M12 20h9"></path>
+                        <path d="M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4Z"></path>
+                      </svg>
+                    </button>
+                    <button type="button" class="conversation-action-btn conversation-delete-btn clickable-icon" aria-label="Delete conversation">
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M3 6h18"></path>
+                        <path d="M8 6V4h8v2"></path>
+                        <path d="M19 6l-1 14H6L5 6"></path>
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+
+                <div class="conversation-item">
+                  <div class="conversation-content">
+                    <div class="conversation-title">Subagent bug pass</div>
+                    <div class="conversation-preview">Retry still gets stuck after stop generation.</div>
+                    <div class="conversation-timestamp">Yesterday</div>
+                  </div>
+                  <div class="conversation-actions">
+                    <button type="button" class="conversation-action-btn conversation-edit-btn clickable-icon" aria-label="Rename conversation">
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M12 20h9"></path>
+                        <path d="M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4Z"></path>
+                      </svg>
+                    </button>
+                    <button type="button" class="conversation-action-btn conversation-delete-btn clickable-icon" aria-label="Delete conversation">
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M3 6h18"></path>
+                        <path d="M8 6V4h8v2"></path>
+                        <path d="M19 6l-1 14H6L5 6"></path>
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </aside>
+          </div>
+        </div>
+      </div>
+
+      <div class="mock-keyboard" aria-hidden="true">
+        <div class="mock-keyboard-handle"></div>
+        <div class="mock-keyboard-grid">
+          <span></span><span></span><span></span><span></span><span></span><span></span>
+          <span></span><span></span><span></span><span></span><span></span><span></span>
+          <span></span><span></span><span></span><span></span><span></span><span></span>
+        </div>
+      </div>
+    </div>
+  </template>
+
+  <template id="welcome-template">
+    <div class="chat-welcome">
+      <div class="chat-welcome-content">
+        <div class="chat-welcome-icon">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8Z"></path>
+          </svg>
+        </div>
+        <div class="chat-welcome-title">Welcome to chat</div>
+        <p class="chat-welcome-desc">Your AI assistant for exploring and managing your vault.</p>
+        <div class="chat-welcome-hotkeys-container">
+          <div class="chat-welcome-hotkeys">
+            <div class="chat-welcome-hotkey"><code>/</code><span>Select a tool to use</span></div>
+            <div class="chat-welcome-hotkey"><code>@</code><span>Select an agent to use</span></div>
+            <div class="chat-welcome-hotkey"><code>[[</code><span>Select a note to reference</span></div>
+          </div>
+        </div>
+        <button type="button" class="chat-welcome-button mod-cta">Start your first conversation</button>
+      </div>
+    </div>
+  </template>
+
+  <template id="conversation-template">
+    <div class="messages-container">
+      <div class="message-container message-user" data-message-id="user-1">
+        <div class="message-bubble">
+          <div class="message-header">
+            <div class="message-role-icon">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M20 21a8 8 0 0 0-16 0"></path>
+                <circle cx="12" cy="8" r="4"></circle>
+              </svg>
+            </div>
+            <div class="message-actions-external">
+              <button type="button" class="message-action-btn clickable-icon" title="Edit message">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M12 20h9"></path>
+                  <path d="M16.5 3.5a2.1 2.1 0 1 1 3 3L7 19l-4 1 1-4Z"></path>
+                </svg>
+              </button>
+              <button type="button" class="message-action-btn clickable-icon" title="Retry message">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M3 12a9 9 0 1 0 3-6.7L3 8"></path>
+                  <path d="M3 3v5h5"></path>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <div class="message-content">
+            <p>Can we make this easier to use in the Obsidian sidebar on mobile? The keyboard takes up a lot of space and the layout feels empty.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="message-container message-assistant" data-message-id="assistant-1">
+        <div class="message-bubble">
+          <div class="message-header">
+            <div class="message-role-icon">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 8V4"></path>
+                <path d="M8 2h8"></path>
+                <rect x="5" y="8" width="14" height="11" rx="2"></rect>
+                <path d="M9 12h.01"></path>
+                <path d="M15 12h.01"></path>
+                <path d="M9 16c1 .8 2 .8 3 .8s2 0 3-.8"></path>
+              </svg>
+            </div>
+          </div>
+
+          <div class="message-actions-external">
+            <button type="button" class="message-action-btn clickable-icon" title="Copy message">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="9" y="9" width="13" height="13" rx="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+            </button>
+          </div>
+
+          <div class="message-content">
+            <p>The current mobile view is the same chat UI inside a narrow sidebar, so the centered welcome block and tall composer use a large share of the visible height once the keyboard appears.</p>
+            <p>This replica is meant to show the exact starting point before we change anything.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </template>
+
+  <script src="./mobile-chat-sidebar-redesign.js"></script>
+</body>
+</html>

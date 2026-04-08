@@ -38,4 +38,4 @@ There is also a built-in management interface in **Settings &rarr; Nexus &rarr; 
 
 ## Data Storage
 
-Task data is stored in `.nexus/tasks/tasks_[workspaceId].jsonl` (event-sourced) with a SQLite cache for fast queries. Edits from chat tools and the settings UI operate on the same data.
+Task data is stored in `data/tasks/tasks_[workspaceId].jsonl` inside the plugin directory (event-sourced) with a SQLite cache for fast queries. Edits from chat tools and the settings UI operate on the same data.

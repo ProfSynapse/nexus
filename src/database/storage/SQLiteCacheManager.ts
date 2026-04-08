@@ -277,7 +277,7 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
         await this.saveToFile(); // Save after migrations
       }
 
-      // Fork: Fix vec0 virtual table dimensions if needed (768→384 migration for legacy Nomic era)
+      // Fork: Fix vec0 table dimensions if created with legacy float[768] (Nomic era)
       await this.getMaintenanceService().fixVec0TableDimensions();
 
       // Start auto-save timer

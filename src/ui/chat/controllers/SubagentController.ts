@@ -21,6 +21,7 @@ import type { ChatService } from '../../../services/chat/ChatService';
 import type { ConversationService } from '../../../services/ConversationService';
 import type { DirectToolExecutor } from '../../../services/chat/DirectToolExecutor';
 import type { Tool } from '../../../services/llm/adapters/types';
+import { shouldPassToolSchemasToProvider } from '../../../services/llm/utils/ToolSchemaSupport';
 import type { PromptManagerAgent } from '../../../agents/promptManager/promptManager';
 import type { HybridStorageAdapter } from '../../../database/adapters/HybridStorageAdapter';
 import type { LLMService } from '../../../services/llm/core/LLMService';
@@ -339,7 +340,9 @@ export class SubagentController {
       }
     ) {
       try {
-        const tools = (await directToolExecutor.getAvailableTools()).filter((tool): tool is Tool => isOpenAITool(tool));
+        const tools = shouldPassToolSchemasToProvider(options?.provider)
+          ? (await directToolExecutor.getAvailableTools()).filter((tool): tool is Tool => isOpenAITool(tool))
+          : [];
         const streamOptions = {
           provider: options?.provider,
           model: options?.model,

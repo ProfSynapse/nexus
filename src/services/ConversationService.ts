@@ -29,6 +29,7 @@ interface ConversationMessageUpdate {
   state?: 'draft' | 'streaming' | 'complete' | 'aborted' | 'invalid';
   toolCalls?: ToolCall[];
   reasoning?: string;
+  metadata?: Record<string, unknown>;
 }
 
 function toLegacyToolCall(toolCall: ToolCall): LegacyToolCall {
@@ -73,6 +74,7 @@ function toAlternativeMessage(message: LegacyConversationMessage): AlternativeMe
     content: message.content ?? null,
     timestamp: message.timestamp,
     toolCalls: message.toolCalls?.map(toHybridToolCall),
+    metadata: message.metadata,
     reasoning: message.reasoning,
     state: message.state ?? 'complete'
   };
@@ -90,6 +92,7 @@ function toMessageData(message: LegacyConversationMessage, conversationId: strin
     toolCalls: message.toolCalls?.map(toHybridToolCall),
     toolCallId: message.toolCallId,
     reasoning: message.reasoning,
+    metadata: message.metadata,
     alternatives: message.alternatives?.map(toAlternativeMessage),
     activeAlternativeIndex: message.activeAlternativeIndex
   };
@@ -436,6 +439,7 @@ export class ConversationService {
               reasoning: msg.reasoning,
               toolCalls: convertedToolCalls,
               toolCallId: msg.toolCallId,
+              metadata: msg.metadata,
               alternatives: msg.alternatives?.map(toAlternativeMessage),
               activeAlternativeIndex: msg.activeAlternativeIndex
             });
@@ -580,7 +584,8 @@ export class ConversationService {
             cost: params.cost,
             usage: params.usage,
             provider: params.provider,
-            model: params.model
+            model: params.model,
+            metadata: params.metadata
           };
 
           conversation.messages.push(message);
@@ -644,6 +649,7 @@ export class ConversationService {
           if (updates.state !== undefined) message.state = updates.state;
           if (updates.toolCalls !== undefined) message.toolCalls = updates.toolCalls.map(toLegacyToolCall);
           if (updates.reasoning !== undefined) message.reasoning = updates.reasoning;
+          if (updates.metadata !== undefined) message.metadata = updates.metadata;
 
           conversation.updated = Date.now();
           await this.fileSystem.writeConversation(conversationId, conversation);
