@@ -60,7 +60,9 @@ export class BranchHeader {
   }
 
   /**
-   * Update the context (e.g., when iteration count changes)
+   * Update the context (e.g., when iteration count changes).
+   * Skips re-render when merged context is identical to current — prevents
+   * unbounded registerDomEvent accumulation in component._events on hot paths.
    */
   update(context: Partial<BranchViewContext>): void {
     if (!this.context) return;

@@ -159,4 +159,48 @@ export class SQLiteMaintenanceService {
       walMode: false
     };
   }
+
+  /**
+   * Fork: Fix vec0 virtual table dimensions if the tables were created with float[768]
+   * (legacy Nomic embedding era). Drops and recreates them as float[384].
+   * vec0 tables cannot be ALTERed — must be dropped and recreated.
+   * Called after migrations run during initialize(). No-op if dimensions are correct.
+   */
+  async fixVec0TableDimensions(): Promise<boolean> {
+    const db = this.getDb();
+    let fixed = false;
+
+    try {
+      const noteResult = await this.queryOne<{ sql: string }>(
+        "SELECT sql FROM sqlite_master WHERE name='note_embeddings'"
+      );
+      if (noteResult?.sql?.includes('float[768]')) {
+        this.bridge.exec(db, 'DROP TABLE IF EXISTS note_embeddings');
+        this.bridge.exec(db, 'CREATE VIRTUAL TABLE IF NOT EXISTS note_embeddings USING vec0(embedding float[384])');
+        this.bridge.exec(db, 'DELETE FROM embedding_metadata');
+        fixed = true;
+      }
+    } catch (error) {
+      console.error('[SQLiteMaintenanceService] Failed to fix note_embeddings dimensions:', error);
+    }
+
+    try {
+      const blockResult = await this.queryOne<{ sql: string }>(
+        "SELECT sql FROM sqlite_master WHERE name='block_embeddings'"
+      );
+      if (blockResult?.sql?.includes('float[768]')) {
+        this.bridge.exec(db, 'DROP TABLE IF EXISTS block_embeddings');
+        this.bridge.exec(db, 'CREATE VIRTUAL TABLE IF NOT EXISTS block_embeddings USING vec0(embedding float[384])');
+        fixed = true;
+      }
+    } catch (error) {
+      console.error('[SQLiteMaintenanceService] Failed to fix block_embeddings dimensions:', error);
+    }
+
+    if (fixed) {
+      console.warn('[SQLiteMaintenanceService] Fixed vec0 embedding table dimensions (768→384)');
+    }
+
+    return fixed;
+  }
 }

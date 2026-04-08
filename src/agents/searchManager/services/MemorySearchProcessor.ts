@@ -450,7 +450,7 @@ export class MemorySearchProcessor implements MemorySearchProcessorInterface {
 
       for (const state of statesResult.items) {
         let score = 0;
-        if (state.name.toLowerCase().includes(queryLower)) score += 0.9;
+        if (state.name?.toLowerCase().includes(queryLower)) score += 0.9;
         if (score > 0) {
           results.push({ trace: state as unknown as RawMemoryResult['trace'], similarity: score } as RawMemoryResult);
         }
@@ -473,7 +473,7 @@ export class MemorySearchProcessor implements MemorySearchProcessorInterface {
 
       for (const workspace of workspaces) {
         let score = 0;
-        if (workspace.name.toLowerCase().includes(queryLower)) score += 0.9;
+        if (workspace.name?.toLowerCase().includes(queryLower)) score += 0.9;
         if (workspace.description?.toLowerCase().includes(queryLower)) score += 0.8;
         if (score > 0) {
           results.push({ trace: workspace as unknown as RawMemoryResult['trace'], similarity: score } as RawMemoryResult);

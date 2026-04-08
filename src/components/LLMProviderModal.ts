@@ -40,7 +40,7 @@ export interface LLMProviderModalConfig {
   config: LLMProviderConfig;
   oauthConfig?: OAuthModalConfig;
   secondaryOAuthProvider?: SecondaryOAuthProviderConfig;
-  onSave: (config: LLMProviderConfig) => void;
+  onSave: (config: LLMProviderConfig) => void | Promise<void>;
   /** If true, hide the API key input — provider uses OAuth exclusively */
   oauthOnly?: boolean;
 }
@@ -168,7 +168,7 @@ export class LLMProviderModal extends Modal {
         clearTimeout(this.autoSaveTimeout);
         this.autoSaveTimeout = null;
       }
-      this.config.onSave(config);
+      void this.config.onSave(config);
       this.showSaveStatus('Saved');
       setTimeout(() => this.showSaveStatus('Ready'), 2000);
     } else {
@@ -187,19 +187,24 @@ export class LLMProviderModal extends Modal {
     this.showSaveStatus('Saving...');
 
     this.autoSaveTimeout = setTimeout(() => {
-      // Get final config from provider modal
-      if (this.providerModal) {
-        this.config.config = this.providerModal.getConfig();
-      }
+      void (async () => {
+        // Get final config from provider modal
+        if (this.providerModal) {
+          this.config.config = this.providerModal.getConfig();
+        }
 
-      // Call the save callback
-      this.config.onSave(this.config.config);
-      this.showSaveStatus('Saved');
+        try {
+          await this.config.onSave(this.config.config);
+          this.showSaveStatus('Saved');
+        } catch {
+          this.showSaveStatus('Save failed');
+        }
 
-      // Reset status after 2 seconds
-      setTimeout(() => {
-        this.showSaveStatus('Ready');
-      }, 2000);
+        // Reset status after 2 seconds
+        setTimeout(() => {
+          this.showSaveStatus('Ready');
+        }, 2000);
+      })();
     }, 500);
   }
 

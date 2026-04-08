@@ -73,7 +73,7 @@ export interface MigratableDatabase {
 // Alias for backward compatibility
 type Database = MigratableDatabase;
 
-export const CURRENT_SCHEMA_VERSION = 11;
+export const CURRENT_SCHEMA_VERSION = 19;
 
 export interface Migration {
   version: number;
@@ -402,6 +402,131 @@ export const MIGRATIONS: Migration[] = [
     sql: [
       'ALTER TABLE workspaces ADD COLUMN isArchived INTEGER DEFAULT 0',
       'CREATE INDEX IF NOT EXISTS idx_workspaces_archived ON workspaces(isArchived)'
+    ]
+  },
+
+  // Version 11 -> 12: Fix note/block embedding vec0 table dimensions (768 → 384)
+  // vec0 virtual tables cannot be DROPped and recreated via prepare().step() DDL —
+  // they require the native WASM exec() path. This migration is a version marker only;
+  // the actual DROP/CREATE is handled in SQLiteCacheManager.fixVec0TableDimensions()
+  // which is called after migrations run and uses the correct raw db.exec() path.
+  {
+    version: 12,
+    description: 'Version marker: note/block vec0 table dimension fix (768→384) handled by SQLiteCacheManager.fixVec0TableDimensions()',
+    sql: []
+  },
+
+  // ========================================================================
+  // FORK MIGRATION NUMBERING CONVENTION
+  //
+  // This fork's local stubs occupy versions 12–19. Upstream (nexus published plugin)
+  // is currently at v11 and will release v12, v13, ... in future updates.
+  //
+  // RULE: When merging an upstream migration numbered N where N ≤ 19, renumber it
+  // to the next available version above 19 (i.e. 20, 21, 22 ...) in this array.
+  // Once upstream's version counter exceeds 19, merge their migrations as-is.
+  //
+  // Example — upstream publishes v12:
+  //   {
+  //     version: 20,  // renumbered from upstream v12
+  //     description: '[upstream v12] <their description>',
+  //     sql: [ /* their SQL unchanged */ ]
+  //   }
+  // Then set CURRENT_SCHEMA_VERSION = 20.
+  //
+  // This ensures the migrator (which skips anything ≤ MAX(schema_version) in the DB)
+  // actually runs the upstream schema change on existing installs.
+  // ========================================================================
+
+  // ========================================================================
+  // Versions 13–16: Stub acknowledgement markers for the prior fork era
+  //
+  // The live cache.db was at schema version 16 when this fork was initialized.
+  // That v16 state came from a previous local-fixes branch of nexus that had:
+  //   - A Nomic embedding pipeline (nomic-embed-text-v1.5, 768-dim)
+  //   - A semantic panel UI feature with block_embeddings and semantic_feedback tables
+  //   - An embedding_config key/value table
+  // That branch ran migrations up to v16, then was abandoned in favour of this fork.
+  //
+  // These stubs record that history so CURRENT_SCHEMA_VERSION matches the live DB
+  // and the migrate() version comparison stays accurate for future migrations.
+  // They do nothing — all actual cleanup is in migration v17 below.
+  // ========================================================================
+  {
+    version: 13,
+    description: 'Stub: acknowledge legacy Nomic embedding pipeline era (prior local-fixes fork, v13)',
+    sql: []
+  },
+  {
+    version: 14,
+    description: 'Stub: acknowledge legacy batch GPU inference / semantic panel features (prior local-fixes fork, v14)',
+    sql: []
+  },
+  {
+    version: 15,
+    description: 'Stub: acknowledge legacy mtime-based embedding optimization (prior local-fixes fork, v15)',
+    sql: []
+  },
+  {
+    version: 16,
+    description: 'Stub: acknowledge legacy upstream-merge state (prior local-fixes fork, v16)',
+    sql: []
+  },
+
+  // Version 16 -> 17: Drop orphaned embedding_config table from prior Nomic era.
+  // The embedding_config table (key TEXT PRIMARY KEY, value TEXT NOT NULL) was created
+  // by the old local-fixes fork's Nomic embedding pipeline. It holds stale records like
+  // activeModel=Xenova/nomic-embed-text-v1.5 and activeDimension=768. Our fork uses
+  // Xenova/all-MiniLM-L6-v2 via iframe/CDN and never reads or writes embedding_config.
+  // Dropping it removes the confusion and shrinks the DB.
+  {
+    version: 17,
+    description: 'Drop orphaned embedding_config table left by prior Nomic embedding era',
+    sql: [
+      'DROP TABLE IF EXISTS embedding_config',
+    ]
+  },
+
+  // Version 17 -> 18: Recreate embedding_metadata without the dimension column.
+  // An intermediate migration in the old local-fixes fork (between its v13-v16) added a
+  // `dimension INTEGER NOT NULL` column to embedding_metadata. That fork's strip commit
+  // (which dropped the column) ran at migration v12/v13 in its final HEAD numbering, but
+  // the live DB was already at v16 so that strip never executed. The column is not in our
+  // fresh-install schema or in NoteEmbeddingService's INSERT statement, causing a
+  // NOT NULL constraint violation on every note indexing attempt. Fix: drop and recreate
+  // the table with the correct schema. Data loss is safe — this table is a re-indexing
+  // cache; the system will re-embed notes on the next indexing pass.
+  {
+    version: 18,
+    description: 'Recreate embedding_metadata without legacy dimension column from old local-fixes fork',
+    sql: [
+      'DROP TABLE IF EXISTS embedding_metadata',
+      `CREATE TABLE IF NOT EXISTS embedding_metadata (
+        rowid INTEGER PRIMARY KEY,
+        notePath TEXT NOT NULL UNIQUE,
+        model TEXT NOT NULL,
+        contentHash TEXT NOT NULL,
+        created INTEGER NOT NULL,
+        updated INTEGER NOT NULL
+      )`,
+      'CREATE INDEX IF NOT EXISTS idx_embedding_meta_path ON embedding_metadata(notePath)',
+      'CREATE INDEX IF NOT EXISTS idx_embedding_meta_hash ON embedding_metadata(contentHash)',
+    ]
+  },
+
+  // Version 18 -> 19: Drop remaining orphaned tables from the prior local-fixes fork.
+  // The abandoned C:\Users\middl\Documents\GitHub\nexus branch (local-fixes) ran migrations
+  // through v16, leaving behind two tables our fork never uses:
+  //   - semantic_feedback: from the semantic panel / in-chat feedback UI (Plan 04/05)
+  //   - block_embedding_metadata: metadata index for block-level embeddings (Nomic era)
+  // Neither table has any code references in this fork. Both are safe to drop.
+  // IF EXISTS ensures this is a no-op on fresh installs that never had these tables.
+  {
+    version: 19,
+    description: 'Drop orphaned semantic_feedback and block_embedding_metadata tables from prior local-fixes fork',
+    sql: [
+      'DROP TABLE IF EXISTS semantic_feedback',
+      'DROP TABLE IF EXISTS block_embedding_metadata',
     ]
   },
 ];

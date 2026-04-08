@@ -265,6 +265,23 @@ export class HybridStorageAdapter implements IStorageAdapter {
       // This can take a long time for large vaults (168MB+ JSONL files).
       // The UI will show incrementally as data syncs in.
       const syncState = await this.sqliteCache.getSyncState(this.jsonlWriter.getDeviceId());
+
+      // Fork: Prune orphaned conversation JSONL files BEFORE sync/rebuild.
+      // Only safe when a prior session exists (syncState present), meaning SQLite
+      // accurately reflects what was alive at end of last session. Orphaned files
+      // (from the pre-fix delete bug) have no SQLite record and can be safely deleted.
+      // Running BEFORE rebuild prevents fullRebuild from resurrecting deleted conversations.
+      // Skip on first-ever startup (!syncState) — SQLite is empty and every file
+      // would look orphaned. TEMPORARY: remove once vault reports zero pruned files
+      // for several consecutive sessions.
+      if (syncState) {
+        try {
+          await this.pruneOrphanedConversationFiles();
+        } catch (pruneError) {
+          console.error('[HybridStorageAdapter] Orphaned conversation file pruning failed:', pruneError);
+        }
+      }
+
       if (!syncState || actuallyMigrated) {
         try {
           await this.syncCoordinator.fullRebuild();
@@ -869,5 +886,37 @@ export class HybridStorageAdapter implements IStorageAdapter {
     }
 
     throw new Error('HybridStorageAdapter not initialized. Call initialize() first.');
+  }
+
+  /**
+   * Fork: Prune orphaned conversation JSONL files that have no corresponding SQLite record.
+   * Left behind by the pre-fix deleteConversation bug. Runs once per startup on the
+   * incremental sync path (syncState present). TEMPORARY — remove once vault shows zero
+   * pruned files at startup for several consecutive sessions.
+   */
+  private async pruneOrphanedConversationFiles(): Promise<void> {
+    const files = await this.jsonlWriter.listFiles('conversations');
+    if (files.length === 0) return;
+
+    let pruned = 0;
+    for (const file of files) {
+      const match = file.match(/conversations\/conv_(.+)\.jsonl$/);
+      if (!match) continue;
+
+      const conversationId = match[1];
+      const existing = await this.conversationRepo.getById(conversationId);
+      if (existing) continue;
+
+      try {
+        await this.jsonlWriter.deleteFile(file);
+        pruned++;
+      } catch (e) {
+        console.error(`[HybridStorageAdapter] Failed to prune orphaned conversation file ${file}:`, e);
+      }
+    }
+
+    if (pruned > 0) {
+      console.warn(`[HybridStorageAdapter] Pruned ${pruned} orphaned conversation JSONL file(s)`);
+    }
   }
 }

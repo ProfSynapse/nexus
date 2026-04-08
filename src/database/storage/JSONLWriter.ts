@@ -28,6 +28,9 @@ import { StorageEvent, BaseStorageEvent } from '../interfaces/StorageEvents';
 import { v4 as uuidv4 } from '../../utils/uuid';
 import { NamedLocks } from '../../utils/AsyncLock';
 
+/** Fork: Max file size (bytes) before readEvents falls back to streaming readline (50 MB) */
+const MAX_FILE_SIZE_FOR_IN_MEMORY_READ = 50 * 1024 * 1024;
+
 /**
  * Configuration options for JSONLWriter
  */
@@ -335,20 +338,33 @@ export class JSONLWriter {
 
       const dedupedEvents = new Map<string, T>();
       for (const fullPath of readablePaths) {
-        const content = await this.app.vault.adapter.read(fullPath);
-        const lines = content.split('\n').filter(line => line.trim());
+        // Fork: Fall back to streaming readline for files >50 MB (avoids V8 string length crash)
+        const stat = await this.app.vault.adapter.stat?.(fullPath);
+        const fileSize = stat?.size ?? 0;
 
-        for (let i = 0; i < lines.length; i++) {
-          try {
-            const event = JSON.parse(lines[i]) as T;
-            const eventId = typeof (event as { id?: unknown }).id === 'string'
-              ? String((event as { id: string }).id)
-              : `${fullPath}:${i}:${lines[i]}`;
-            if (!dedupedEvents.has(eventId)) {
-              dedupedEvents.set(eventId, event);
+        let fileEvents: T[];
+        if (fileSize > MAX_FILE_SIZE_FOR_IN_MEMORY_READ) {
+          fileEvents = await this.readEventsStreaming<T>(fullPath);
+        } else {
+          const content = await this.app.vault.adapter.read(fullPath);
+          const lines = content.split('\n').filter(line => line.trim());
+          fileEvents = [];
+          for (const line of lines) {
+            try {
+              fileEvents.push(JSON.parse(line) as T);
+            } catch {
+              continue;
             }
-          } catch {
-            continue;
+          }
+        }
+
+        for (let i = 0; i < fileEvents.length; i++) {
+          const event = fileEvents[i];
+          const eventId = typeof (event as { id?: unknown }).id === 'string'
+            ? String((event as { id: string }).id)
+            : `${fullPath}:${i}:${JSON.stringify(event)}`;
+          if (!dedupedEvents.has(eventId)) {
+            dedupedEvents.set(eventId, event);
           }
         }
       }
@@ -358,6 +374,40 @@ export class JSONLWriter {
       console.error(`[JSONLWriter] Failed to read events from ${relativePath}:`, error);
       return [];
     }
+  }
+
+  /**
+   * Fork: Read events from a large JSONL file using Node.js readline streaming.
+   * Avoids loading the entire file into a single string (V8 string length limit).
+   *
+   * @param absolutePath - Absolute filesystem path to the .jsonl file
+   */
+  private readEventsStreaming<T extends StorageEvent>(absolutePath: string): Promise<T[]> {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const fs = require('fs') as typeof import('fs');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const readline = require('readline') as typeof import('readline');
+
+    return new Promise((resolve, reject) => {
+      const events: T[] = [];
+      const rl = readline.createInterface({
+        input: fs.createReadStream(absolutePath, { encoding: 'utf8' }),
+        crlfDelay: Infinity,
+      });
+
+      rl.on('line', (line: string) => {
+        const trimmed = line.trim();
+        if (!trimmed) return;
+        try {
+          events.push(JSON.parse(trimmed) as T);
+        } catch {
+          // skip malformed lines
+        }
+      });
+
+      rl.on('close', () => resolve(events));
+      rl.on('error', reject);
+    });
   }
 
   /**

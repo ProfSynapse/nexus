@@ -24,6 +24,7 @@ import { MessageBubbleBranchNavigatorBinder } from './helpers/MessageBubbleBranc
 import { MessageBubbleImageRenderer } from './helpers/MessageBubbleImageRenderer';
 import { MessageBubbleToolEventCoordinator } from './helpers/MessageBubbleToolEventCoordinator';
 import { MessageBubbleStateResolver } from './helpers/MessageBubbleStateResolver';
+import { MessageActionBar } from './MessageActionBar';
 
 export class MessageBubble extends Component {
   private element: HTMLElement | null = null;
@@ -35,6 +36,7 @@ export class MessageBubble extends Component {
   private toolBubbleElement: HTMLElement | null = null;
   private textBubbleElement: HTMLElement | null = null;
   private imageBubbleElement: HTMLElement | null = null;
+  private actionBar: MessageActionBar | null = null;
 
   constructor(
     private message: ConversationMessage,
@@ -118,11 +120,7 @@ export class MessageBubble extends Component {
         this.textBubbleElement = ToolBubbleFactory.createTextBubble(
           renderMessage,
           (container, content) => this.renderContent(container, content),
-          this.onCopy,
-          (button) => this.showCopyFeedback(button),
-          this.branchNavigatorBinder.getNavigator(),
-          this.onMessageAlternativeChanged,
-          this
+          this.branchNavigatorBinder.getNavigator()
         );
         wrapper.appendChild(this.textBubbleElement);
 
@@ -141,6 +139,7 @@ export class MessageBubble extends Component {
       }
 
       this.element = wrapper;
+      this.appendActionBar(wrapper, this.message);
       return wrapper;
     }
 
@@ -191,6 +190,7 @@ export class MessageBubble extends Component {
     });
 
     this.element = messageContainer;
+    this.appendActionBar(messageContainer, this.message);
     return messageContainer;
   }
 
@@ -507,6 +507,8 @@ export class MessageBubble extends Component {
     if (newMessage.isLoading && newMessage.role === 'assistant') {
       this.appendLoadingIndicator(contentElement);
     }
+
+    this.appendActionBar(this.element, newMessage);
   }
 
   /**
@@ -592,6 +594,39 @@ export class MessageBubble extends Component {
   }
 
   /**
+   * Append action bar buttons (Copy, Insert, Append, Create File) into the existing
+   * .message-actions-external pill. Only created once per message lifecycle.
+   * Only appears for completed assistant messages with non-empty text content.
+   */
+  private appendActionBar(container: HTMLElement | null, message: ConversationMessage): void {
+    if (!container) return;
+    if (message.role !== 'assistant') return;
+    if (message.isLoading || message.state === 'streaming') return;
+
+    const activeContent = MessageBubbleStateResolver.resolve(message).activeContent;
+    if (!activeContent.trim()) return;
+
+    // Only create once per message lifecycle — rebuildElement resets this.actionBar
+    if (this.actionBar !== null) return;
+
+    const actionsEl = container.querySelector('.message-actions-external');
+    if (!(actionsEl instanceof HTMLElement)) return;
+
+    this.actionBar = new MessageActionBar(activeContent, this.app);
+    this.actionBar.renderInto(actionsEl);
+  }
+
+  /**
+   * Remove action buttons from the pill and unload event handlers.
+   */
+  private cleanupActionBar(): void {
+    if (!this.actionBar) return;
+    this.actionBar.removeFromContainer();
+    this.actionBar.unload();
+    this.actionBar = null;
+  }
+
+  /**
    * Cleanup resources.
    * Calls Component.unload() to auto-clean registerDomEvent/registerInterval handlers.
    */
@@ -600,6 +635,7 @@ export class MessageBubble extends Component {
   cleanup(): void {
     this.stopLoadingAnimation();
     this.cleanupProgressiveAccordions();
+    this.cleanupActionBar();
 
     this.branchNavigatorBinder.destroy();
 

@@ -7,7 +7,6 @@
  * - Building header with hamburger, title, and settings buttons
  * - Creating message display, input, and context containers
  * - Building sidebar with conversation list
- * - Auto-hiding experimental warning banner
  *
  * Used by ChatView to build the initial DOM structure,
  * following the Builder pattern for complex UI construction.
@@ -42,9 +41,6 @@ export class ChatLayoutBuilder {
     // Create main layout structure
     const chatLayout = container.createDiv('chat-layout');
     const mainContainer = chatLayout.createDiv('chat-main');
-
-    // Experimental warning banner
-    this.createWarningBanner(mainContainer);
 
     // Header
     const { chatTitle, hamburgerButton, settingsButton } = this.createHeader(mainContainer);
@@ -122,29 +118,6 @@ export class ChatLayoutBuilder {
     progressText.dataset.progressTextEl = 'true';
 
     return overlay;
-  }
-
-  /**
-   * Create experimental warning banner with auto-hide
-   */
-  private static createWarningBanner(container: HTMLElement): void {
-    const warningBanner = container.createDiv('chat-experimental-warning');
-
-    warningBanner.createEl('span', { cls: 'warning-icon', text: '⚠️' });
-    warningBanner.createEl('span', { cls: 'warning-text', text: 'This chat is in beta.' });
-    const link = warningBanner.createEl('a', { cls: 'warning-link', text: 'Report issues' });
-    link.href = 'https://github.com/ProfSynapse/nexus/issues';
-    link.target = '_blank';
-    link.rel = 'noopener noreferrer';
-    warningBanner.createEl('span', { cls: 'warning-text', text: 'Use at your own risk.' });
-
-    // Auto-hide warning after 5 seconds
-    setTimeout(() => {
-      warningBanner.addClass('chat-warning-banner-fadeout');
-      setTimeout(() => {
-        warningBanner.addClass('chat-loading-overlay-hidden');
-      }, 500);
-    }, 5000);
   }
 
   /**

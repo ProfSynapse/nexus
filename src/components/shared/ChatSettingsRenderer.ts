@@ -542,7 +542,7 @@ export class ChatSettingsRenderer {
         dropdown.onChange((value) => {
           this.settings.workspaceId = value || null;
           this.notifyChange();
-          void this.syncWorkspacePrompt(value);
+          this.syncWorkspacePrompt(value);
         });
       });
 

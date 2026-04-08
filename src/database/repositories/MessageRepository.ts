@@ -368,35 +368,42 @@ export class MessageRepository
         throw new Error(`Message ${messageId} not found`);
       }
 
-      // 1. Write update event to JSONL
-      await this.writeEvent<MessageUpdatedEvent>(
-        this.jsonlPath(message.conversationId),
-        {
-          type: 'message_updated',
-          conversationId: message.conversationId,
-          messageId,
-          data: {
-            content: data.content ?? undefined,
-            state: data.state,
-            reasoning: data.reasoning,
-            // Persist full tool call data including results so tool bubbles can be reconstructed
-            tool_calls: data.toolCalls?.map(tc => ({
-              id: tc.id,
-              type: tc.type || 'function',
-              function: tc.function,
-              name: tc.name,
-              parameters: tc.parameters,
-              result: tc.result,
-              success: tc.success,
-              error: tc.error
-            })),
-            tool_call_id: data.toolCallId ?? undefined,
-            // Branching support
-            alternatives: this.convertAlternativesToEvent(data.alternatives),
-            activeAlternativeIndex: data.activeAlternativeIndex
+      // 1. Write update event to JSONL — skip in-progress streaming states.
+      // During streaming every chunk calls update() with state='draft'/'streaming' and
+      // the full accumulated content so far. Writing each chunk to JSONL is O(n²) storage
+      // per message and the intermediate content is not useful for replay or sync.
+      // SQLite is the live store during streaming; JSONL gets the single final event.
+      const isStreaming = data.state === 'draft' || data.state === 'streaming';
+      if (!isStreaming) {
+        await this.writeEvent<MessageUpdatedEvent>(
+          this.jsonlPath(message.conversationId),
+          {
+            type: 'message_updated',
+            conversationId: message.conversationId,
+            messageId,
+            data: {
+              content: data.content ?? undefined,
+              state: data.state,
+              reasoning: data.reasoning,
+              // Persist full tool call data including results so tool bubbles can be reconstructed
+              tool_calls: data.toolCalls?.map(tc => ({
+                id: tc.id,
+                type: tc.type || 'function',
+                function: tc.function,
+                name: tc.name,
+                parameters: tc.parameters,
+                result: tc.result,
+                success: tc.success,
+                error: tc.error
+              })),
+              tool_call_id: data.toolCallId ?? undefined,
+              // Branching support
+              alternatives: this.convertAlternativesToEvent(data.alternatives),
+              activeAlternativeIndex: data.activeAlternativeIndex
+            }
           }
-        }
-      );
+        );
+      }
 
       // 2. Update SQLite cache
       const setClauses: string[] = [];

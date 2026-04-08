@@ -94,11 +94,7 @@ export class ToolBubbleFactory {
   static createTextBubble(
     message: ConversationMessage,
     renderContentCallback: (content: HTMLElement, text: string) => Promise<void>,
-    onCopy: (messageId: string) => void,
-    showCopyFeedback: (button: HTMLElement) => void,
-    messageBranchNavigator: MessageBranchNavigatorLike | null,
-    onMessageAlternativeChanged?: (messageId: string, alternativeIndex: number) => void,
-    component?: Component
+    messageBranchNavigator: MessageBranchNavigatorLike | null
   ): HTMLElement {
     const messageContainer = document.createElement('div');
     messageContainer.addClass('message-container');
@@ -107,13 +103,11 @@ export class ToolBubbleFactory {
 
     const bubble = messageContainer.createDiv('message-bubble');
 
-    // Actions inside the bubble (for sticky positioning)
-    const actions = bubble.createDiv('message-actions-external');
-
-    // Header with bot icon
+    // Header with bot icon; actions pill sits in the header top-right
     const header = bubble.createDiv('message-header');
     const roleIcon = header.createDiv('message-role-icon');
     setIcon(roleIcon, 'bot');
+    header.createDiv('message-actions-external');
 
     // Message content
     const content = bubble.createDiv('message-content');
@@ -123,22 +117,6 @@ export class ToolBubbleFactory {
     renderContentCallback(content, activeContent).catch(error => {
       console.error('[ToolBubbleFactory] Error rendering text bubble content:', error);
     });
-
-    // Copy button
-    const copyBtn = actions.createEl('button', {
-      cls: 'message-action-btn clickable-icon',
-      attr: { title: 'Copy message' }
-    });
-    setIcon(copyBtn, 'copy');
-    const copyHandler = () => {
-      showCopyFeedback(copyBtn);
-      onCopy(message.id);
-    };
-    if (component) {
-      component.registerDomEvent(copyBtn, 'click', copyHandler);
-    } else {
-      copyBtn.addEventListener('click', copyHandler);
-    }
 
     // Message branch navigator for messages with branches
     if (message.branches && message.branches.length > 0 && messageBranchNavigator) {

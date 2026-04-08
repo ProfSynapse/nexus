@@ -17,12 +17,16 @@ BCPs.md
 CLAUDE.md 
 
 docs/*
+!docs/fork_divergence.md
 !docs/plans/
 docs/plans/*
 !docs/plans/*.md
 !docs/research/
 docs/research/*
 !docs/research/*.md
+!docs/review/
+docs/review/*
+!docs/review/*.md
 !docs/mockups/
 docs/mockups/*
 !docs/mockups/*.html
