@@ -1,16 +1,17 @@
 # Workspace Memory
 
-All Nexus data lives in `.nexus/` inside your vault:
+All Nexus data lives inside the plugin directory:
 
 ```
-.nexus/
-├── conversations/*.jsonl   # Chat history (syncs across devices)
-├── workspaces/*.jsonl      # Workspace events
-├── tasks/tasks_*.jsonl     # Task/project events per workspace
-└── cache.db                # SQLite cache (auto-rebuilt, not synced)
+.obsidian/plugins/<plugin-folder>/
+├── data/
+│   ├── conversations/*.jsonl   # Chat history (syncs across devices)
+│   ├── workspaces/*.jsonl      # Workspace events
+│   └── tasks/tasks_*.jsonl     # Task/project events per workspace
+└── cache.db                    # SQLite cache (auto-rebuilt, not synced)
 ```
 
-JSONL files are the source of truth (sync-friendly). SQLite is a local performance cache that rebuilds automatically.
+JSONL files are the source of truth (sync-friendly). SQLite is a local performance cache that rebuilds automatically. Because the `data/` folder lives inside the plugin directory, Obsidian Sync includes it automatically.
 
 ---
 

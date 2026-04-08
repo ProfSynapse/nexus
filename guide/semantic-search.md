@@ -8,7 +8,7 @@ Search your vault by meaning, not just keywords. Nexus runs embeddings locally o
 
 - **Desktop only** — Embeddings run locally via iframe-sandboxed transformers.js
 - **Model**: `Xenova/all-MiniLM-L6-v2` (384 dimensions, ~23MB)
-- **Storage**: Vectors in `.nexus/cache.db` via sqlite-vec
+- **Storage**: Vectors in `cache.db` (in the plugin directory) via sqlite-vec
 - **First run** downloads the model (requires internet); subsequent runs are fully offline
 - **Status bar** shows indexing progress — click to pause/resume
 

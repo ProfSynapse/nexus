@@ -25,6 +25,21 @@ Nexus can be used in two ways:
 
 Native chat works on desktop and mobile. MCP clients, local desktop providers, and semantic search are desktop-only.
 
+## Mobile Support (Experimental)
+
+Native chat works on mobile (iOS and Android). Desktop-only features gracefully skip loading on mobile -- they will not appear or cause errors.
+
+| Feature | Mobile | Desktop |
+|---------|--------|---------|
+| Native chat | Yes | Yes |
+| Workspace memory and tasks | Yes | Yes |
+| MCP clients (Claude Desktop, Cursor, etc.) | No | Yes |
+| Semantic search (local embeddings) | No | Yes |
+| Ingestion (PDF, audio, DOCX) | No | Yes |
+| Composer and Web Tools | No | Yes |
+
+Mobile support is new and may have bugs. Please [report issues on GitHub](https://github.com/ProfSynapse/claudesidian-mcp/issues).
+
 ## Use Cases
 
 | If you want to... | Start here |
@@ -75,13 +90,17 @@ When a config file needs to be edited, show the exact snippet with my vault path
 
 ## Multi-Device Sync
 
-Nexus stores conversations, workspaces, and tasks as JSONL files. These files now live inside the plugin directory at `.obsidian/plugins/<plugin-folder>/data/`, which Obsidian Sync includes automatically.
+Nexus stores conversations, workspaces, and tasks as JSONL files inside the plugin directory at `.obsidian/plugins/<plugin-folder>/data/`. Because this is inside the plugin folder, Obsidian Sync includes it automatically.
 
-On first launch after updating, Nexus copies existing data from the legacy `.nexus/` folder into the plugin directory. The `.nexus/` folder is kept as a fallback and is never deleted automatically.
+The SQLite cache (`cache.db`) is local-only and rebuilt from JSONL on each device -- it is not synced.
 
-The SQLite cache (`cache.db`) is local-only and rebuilt from JSONL on each device — it is not synced.
+### Migrating from `.nexus/`
 
-**Mobile tip**: If your vault finishes syncing after Nexus has already loaded, run the command palette action **Nexus: Refresh synced data** to pick up the latest files.
+If you previously used Nexus when data was stored in the `.nexus/` folder at your vault root:
+
+- **Migration is automatic.** On first launch after updating, Nexus copies your existing data from `.nexus/` into the plugin directory. No manual steps required.
+- **Your original data is preserved.** The `.nexus/` folder is kept as a read-only fallback and is never deleted automatically. You can remove it manually after confirming everything works.
+- **Mobile sync timing.** If your vault finishes syncing after Nexus has already loaded on mobile, run **Nexus: Refresh synced data** from the command palette to pick up the latest files.
 
 ## Development
 
