@@ -4,8 +4,8 @@ This file is the authoritative record of every file in `my-custom-branch` that i
 diverges from upstream (`ProfSynapse/nexus`). Load it at the start of every upstream merge
 session to know which files require manual resolution and which can be auto-merged.
 
-**Last audited against:** upstream/main HEAD (`35bed848`) — PRs #103, #106, #107, #112–#115  
-**Audit date:** 2026-04-07  
+**Last audited against:** upstream/main HEAD (`f4e49fd3`) — PRs #118, #119, #121  
+**Audit date:** 2026-04-08  
 **Next merge target:** next upstream/main HEAD (watch for new PRs)
 
 ---
@@ -17,8 +17,8 @@ requires manual resolution using the pattern: accept upstream base, then layer b
 
 | File | Fork change | Resolution pattern |
 |------|-------------|-------------------|
-| `src/ui/chat/components/MessageBubble.ts` | Action bar: `import MessageActionBar`, `private actionBar` field, `appendActionBar()`, `cleanupActionBar()`, call sites in createElement/updateWithNewMessage/rebuildElement/cleanup | Take upstream as base; layer back all action bar insertions; update ToolBubbleFactory call to 3-param |
-| `src/ui/chat/components/factories/ToolBubbleFactory.ts` | `createTextBubble` is 3-param (onCopy/showCopyFeedback removed — action bar owns copy) | Take upstream; restore 3-param signature |
+| `src/ui/chat/components/MessageBubble.ts` | Action bar: `import MessageActionBar`, `private actionBar` field, `appendActionBar()`, `cleanupActionBar()`, call sites in createElement/updateWithNewMessage/cleanup | Take upstream as base; layer back all action bar insertions; fix `createTextBubble` call back to 3-arg (upstream keeps reverting to 7-arg) |
+| `src/ui/chat/components/factories/ToolBubbleFactory.ts` | `createTextBubble` is 3-param (onCopy/showCopyFeedback removed — action bar owns copy). **Note:** upstream base is 7-param but upstream has not changed this file — git auto-keeps our 3-param. The recurring risk is the **call site in MessageBubble.ts** — every merge where upstream touches MessageBubble risks reverting it to 7 args. Always check after merge and fix if needed. | Git auto-keeps 3-param; verify MessageBubble.ts call site is 3-arg |
 
 **Fork-only files (no upstream counterpart — always rebase cleanly):**
 - `src/ui/chat/components/MessageActionBar.ts`
@@ -36,6 +36,7 @@ they do a conflict will occur. Resolution is always: take upstream base, then re
 | `styles.css` | Sticky assistant header rule | CSS rule block labelled `/* fork: sticky assistant header */` |
 | `src/ui/chat/builders/ChatLayoutBuilder.ts` | Banner removal (beta/experimental warning stripped) | Remove the banner call after taking upstream |
 | `src/database/schema/SchemaMigrator.ts` | Convention comment + fork migrations v12–v19 | Comment block + all migrations numbered ≥ 20 (our convention: upstream ≤ 19, fork ≥ 20) |
+| `src/database/adapters/HybridStorageAdapter.ts` | `pruneOrphanedConversationFiles()` runs on startup — **TEMPORARY**; remove once vault reports zero pruned files for several consecutive sessions. Also upstream touched this file in PR #119 and likely will again. | Re-insert `if (syncState) { await pruneOrphanedConversationFiles() }` block after `getSyncState` call, before rebuild/sync. Keep upstream's `initialized = true` block ABOVE it. |
 
 ---
 
@@ -84,10 +85,12 @@ uses upstream's tombstone approach (no fork divergence); pruning still needed fo
 
 | File | Change |
 |------|--------|
-| `src/ui/chat/ChatView.ts` | Registers `active-leaf-change` to refresh context progress bar when view regains focus |
 | `src/ui/chat/components/ContextProgressBar.ts` | Uses `removeAttribute('class') + addClass()` instead of `className =` (Obsidian API correctness) |
-| `src/ui/chat/components/BranchHeader.ts` | JSDoc updated — documents skip-re-render guard against `registerDomEvent` accumulation |
 | `src/components/shared/ChatSettingsRenderer.ts` | Removed `void` from `this.syncWorkspacePrompt(value)` call |
+
+**Retired entries (absorbed by upstream PR #119):**
+- `ChatView.ts` — `active-leaf-change` handler: now in upstream's ChatView (line 607). No longer fork-divergent.
+- `BranchHeader.ts` — JSDoc: BranchHeader ownership moved to `ChatBranchViewCoordinator`. No longer fork-divergent.
 
 ---
 
