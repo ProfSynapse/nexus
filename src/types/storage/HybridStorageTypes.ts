@@ -276,6 +276,9 @@ export interface AlternativeMessage {
   /** Tool calls made in this alternative */
   toolCalls?: ToolCall[];
 
+  /** Optional provider-specific metadata */
+  metadata?: Record<string, unknown>;
+
   /** Reasoning/thinking content for this alternative */
   reasoning?: string;
 

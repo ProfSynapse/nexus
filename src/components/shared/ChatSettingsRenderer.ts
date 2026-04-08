@@ -252,7 +252,10 @@ export class ChatSettingsRenderer {
       getDefaultModelForProvider: (id) => this.getDefaultModelForProvider(id),
       notifyChange: () => this.notifyChange(),
       reRender: () => this.render(),
-      onAfterRender: (content) => this.renderReasoningControls(content),
+      onAfterRender: (content) => {
+        this.renderReasoningControls(content);
+        this.renderPerplexityWarning(content, 'chat');
+      },
     });
   }
 
@@ -368,7 +371,32 @@ export class ChatSettingsRenderer {
       getDefaultModelForProvider: (id) => this.getDefaultModelForProvider(id),
       notifyChange: () => this.notifyChange(),
       reRender: () => this.render(),
-      onAfterRender: (content) => this.renderReasoningControls(content, 'agent'),
+      onAfterRender: (content) => {
+        this.renderReasoningControls(content, 'agent');
+        this.renderPerplexityWarning(content, 'agent');
+      },
+    });
+  }
+
+  private renderPerplexityWarning(content: HTMLElement, variant: 'chat' | 'agent'): void {
+    const provider = variant === 'agent' ? this.settings.agentProvider : this.settings.provider;
+    if (provider !== 'perplexity') {
+      return;
+    }
+
+    const warningEl = content.createDiv({ cls: 'csr-provider-warning' });
+    warningEl.createDiv({
+      cls: 'csr-provider-warning-title',
+      text: 'Perplexity cannot use Nexus tools'
+    });
+
+    const message = variant === 'agent'
+      ? 'Prompt actions and subagents will run in text-only mode. Use another cloud model for vault edits or other tool-driven work.'
+      : 'Chat and subagents will not receive tool schemas with Perplexity. Use it for search-heavy, text-only work.'
+
+    warningEl.createDiv({
+      cls: 'csr-provider-warning-text',
+      text: message
     });
   }
 

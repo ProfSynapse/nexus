@@ -40,6 +40,7 @@ interface ChatStreamingChunk {
   complete: boolean;
   messageId: string;
   toolCalls?: ToolCall[];
+  metadata?: Record<string, unknown>;
   reasoning?: string;
   reasoningComplete?: boolean;
   usage?: ChatUsage;

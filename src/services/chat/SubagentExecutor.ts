@@ -32,6 +32,7 @@ import type { BranchService } from './BranchService';
 import type { MessageQueueService } from './MessageQueueService';
 import type { DirectToolExecutor } from './DirectToolExecutor';
 import { formatWorkspaceDataForPrompt } from '../../utils/WorkspaceDataFormatter';
+import { isPerplexityProvider } from '../llm/utils/ToolSchemaSupport';
 
 export interface SubagentExecutorDependencies {
   branchService: BranchService;
@@ -467,6 +468,7 @@ export class SubagentExecutor {
   ): string {
     // Determine if tools were pre-loaded by parent
     const hasPreloadedTools = toolSchemas && toolSchemas.length > 0;
+    const toolsUnavailable = isPerplexityProvider(params.provider);
 
     // Start with inherited agent prompt if available
     const promptParts: string[] = [];
@@ -483,7 +485,7 @@ export class SubagentExecutor {
     // 2. Add core subagent instructions
     promptParts.push(`## Subagent Instructions
 
-You are an AUTONOMOUS subagent. You MUST complete tasks independently using tools.
+You are an AUTONOMOUS subagent. You MUST complete tasks independently${toolsUnavailable ? ' without Nexus tool calls for this run' : ' using tools'}.
 
 ### Your Task
 ${params.task}
@@ -492,7 +494,9 @@ ${params.task}
 
 1. **NEVER ask questions or seek clarification** - You are autonomous. Make reasonable assumptions and proceed.
 
-2. **ALWAYS use tools** - Your first response MUST include tool calls.
+2. **${toolsUnavailable ? 'Do not attempt Nexus tool calls' : 'ALWAYS use tools'}** - ${toolsUnavailable
+    ? 'The selected Perplexity model cannot execute Nexus tools in subagent mode. Work in text only and clearly report any tool-dependent step you could not perform.'
+    : 'Your first response MUST include tool calls.'}
 
 3. **Text-only response = Task complete** - Only respond with plain text (no tool calls) when you have FINISHED the task and are reporting results.
 
@@ -514,7 +518,15 @@ ${params.task}
     }
 
     // 5. Add tool section based on whether tools were pre-loaded
-    if (hasPreloadedTools) {
+    if (toolsUnavailable) {
+      promptParts.push(`## Tool Availability
+
+The selected Perplexity model cannot call Nexus tools in subagent mode.
+
+- Do not call toolManager_getTools or toolManager_useTool
+- Complete the task as a text-only research or analysis pass
+- If a vault action is required, state exactly what action is needed in your final response`);
+    } else if (hasPreloadedTools) {
       promptParts.push(`## Pre-loaded Tools (Ready to Use)
 
 The parent agent has equipped you with these specific tools. Use them via toolManager_useTool:

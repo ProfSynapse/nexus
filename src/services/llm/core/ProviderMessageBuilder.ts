@@ -14,6 +14,7 @@
 import { ConversationContextBuilder } from '../../chat/ConversationContextBuilder';
 import { ToolResult } from '../adapters/shared/ToolExecutionUtils';
 import { Tool, ToolCall as AdapterToolCall } from '../adapters/types';
+import { shouldPassToolSchemasToProvider } from '../utils/ToolSchemaSupport';
 import { ToolCall as ChatToolCall } from '../../../types/chat/ChatTypes';
 
 // Union type for tool calls from different sources
@@ -371,7 +372,7 @@ export class ProviderMessageBuilder {
         model,
         systemPrompt: extractedSystemPrompt,
         conversationHistory: googleConversationHistory,
-        tools: options?.tools,
+        tools: shouldPassToolSchemasToProvider(provider) ? options?.tools : undefined,
         onToolEvent: options?.onToolEvent,
         onUsageAvailable: options?.onUsageAvailable,
         enableThinking: options?.enableThinking,
@@ -389,7 +390,7 @@ export class ProviderMessageBuilder {
       generateOptions = {
         model,
         systemPrompt: systemPrompt || extractedSystemPrompt,
-        tools: options?.tools,
+        tools: shouldPassToolSchemasToProvider(provider) ? options?.tools : undefined,
         onToolEvent: options?.onToolEvent,
         onUsageAvailable: options?.onUsageAvailable,
         enableThinking: options?.enableThinking,

@@ -148,7 +148,8 @@ export class StreamingOrchestrator {
               chunk: chunk.content,
               complete: false,
               content: fullContent,
-              toolCalls: undefined
+              toolCalls: undefined,
+              metadata: chunk.metadata
             };
           }
 
@@ -222,7 +223,8 @@ export class StreamingOrchestrator {
                 chunk: chunk.content,
                 complete: false,
                 content: fullContent,
-                toolCalls: undefined
+                toolCalls: undefined,
+                metadata: chunk.metadata
               };
             }
 

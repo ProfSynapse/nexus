@@ -24,6 +24,7 @@ import { ToolCallService } from './ToolCallService';
 import { CostTrackingService } from './CostTrackingService';
 import type { MessageQueueService } from './MessageQueueService';
 import { ContextBudgetService, type NormalizedTokenUsage } from './ContextBudgetService';
+import { shouldPassToolSchemasToProvider } from '../llm/utils/ToolSchemaSupport';
 
 export interface StreamingOptions {
   provider?: string;
@@ -44,6 +45,7 @@ export interface StreamingChunk {
   complete: boolean;
   messageId: string;
   toolCalls?: StreamingToolCall[];
+  metadata?: Record<string, unknown>;
   // Reasoning/thinking support (Claude, GPT-5, Gemini, etc.)
   reasoning?: string;           // Incremental reasoning text
   reasoningComplete?: boolean;  // True when reasoning finished
@@ -69,6 +71,7 @@ interface LLMChunkLike {
   complete: boolean;
   toolCalls?: StreamingToolCall[];
   toolCallsReady?: boolean;
+  metadata?: Record<string, unknown>;
   reasoning?: string;
   reasoningComplete?: boolean;
   usage?: unknown;
@@ -173,8 +176,9 @@ export class StreamingResponseService {
       // Get tools from ToolCallService in OpenAI format
       // NOTE: WebLLM/Nexus models are fine-tuned with tool knowledge baked in
       // They don't need tool schemas passed - they generate [TOOL_CALLS] naturally
-      const isWebLLM = provider === 'webllm';
-      const openAITools = isWebLLM ? [] : this.dependencies.toolCallService.getAvailableTools();
+      const openAITools = shouldPassToolSchemasToProvider(provider)
+        ? this.dependencies.toolCallService.getAvailableTools()
+        : [];
 
       // Prepare LLM options with converted tools
       // NOTE: systemPrompt is already in the messages array from buildLLMMessages()
@@ -220,6 +224,7 @@ export class StreamingResponseService {
 
       // Stream the response from LLM service with MCP tools
       let toolCalls: StreamingToolCall[] | undefined = undefined;
+      let finalMetadata: Record<string, unknown> | undefined = undefined;
       this.dependencies.toolCallService.resetDetectedTools(); // Reset tool detection state for new message
 
       // Track usage and cost for conversation tracking
@@ -241,6 +246,13 @@ export class StreamingResponseService {
           if (normalizedUsage) {
             finalUsage = normalizedUsage;
           }
+        }
+
+        if (chunk.metadata) {
+          finalMetadata = {
+            ...(finalMetadata || {}),
+            ...chunk.metadata
+          };
         }
 
         // Extract tool calls when available and handle progressive display
@@ -292,6 +304,9 @@ export class StreamingResponseService {
               if (toolCalls) {
                 msg.toolCalls = toolCalls;
               }
+              if (finalMetadata && Object.keys(finalMetadata).length > 0) {
+                msg.metadata = finalMetadata;
+              }
 
               // Only update cost/usage if we have values (don't overwrite with undefined)
               // This prevents overwriting async updates from OpenRouter's generation API
@@ -325,6 +340,7 @@ export class StreamingResponseService {
           complete: chunk.complete,
           messageId,
           toolCalls: toolCalls,
+          metadata: chunk.complete ? finalMetadata : undefined,
           // Pass through reasoning for UI display
           reasoning: chunk.reasoning,
           reasoningComplete: chunk.reasoningComplete,

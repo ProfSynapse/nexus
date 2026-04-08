@@ -265,6 +265,94 @@ export class MessageBubble extends Component {
 
     const referenceMetadata = ReferenceBadgeRenderer.getReferenceMetadata(this.message.metadata);
     await MessageContentRenderer.renderContent(container, content, this.app, this, referenceMetadata);
+    this.renderSourceFooter(container);
+  }
+
+  private renderSourceFooter(container: HTMLElement): void {
+    if (this.message.role !== 'assistant') {
+      return;
+    }
+
+    const sources = this.getMessageSources();
+    if (sources.length === 0) {
+      return;
+    }
+
+    const footer = container.createDiv('message-sources');
+    footer.createDiv({ cls: 'message-sources-title', text: 'Sources' });
+
+    const list = footer.createDiv('message-source-list');
+    for (const source of sources) {
+      const link = list.createEl('a', {
+        cls: 'message-source-link',
+        text: source.title,
+        attr: {
+          href: source.url,
+          target: '_blank',
+          rel: 'noopener noreferrer'
+        }
+      });
+
+      if (source.date) {
+        link.setAttribute('aria-label', `${source.title} (${source.date})`);
+      }
+    }
+  }
+
+  private getMessageSources(): Array<{ title: string; url: string; date?: string }> {
+    const metadata = this.message.metadata;
+    if (!metadata) {
+      return [];
+    }
+
+    const deduped = new Map<string, { title: string; url: string; date?: string }>();
+    const webSearchResults = metadata.webSearchResults;
+    if (Array.isArray(webSearchResults)) {
+      for (const result of webSearchResults) {
+        if (!result || typeof result !== 'object') {
+          continue;
+        }
+
+        const candidate = result as { title?: unknown; url?: unknown; date?: unknown };
+        if (typeof candidate.url !== 'string' || !candidate.url.trim()) {
+          continue;
+        }
+
+        deduped.set(candidate.url, {
+          url: candidate.url,
+          title: typeof candidate.title === 'string' && candidate.title.trim()
+            ? candidate.title
+            : this.getSourceLabel(candidate.url),
+          date: typeof candidate.date === 'string' && candidate.date.trim()
+            ? candidate.date
+            : undefined
+        });
+      }
+    }
+
+    const citations = metadata.citations;
+    if (Array.isArray(citations)) {
+      for (const citation of citations) {
+        if (typeof citation !== 'string' || !citation.trim() || deduped.has(citation)) {
+          continue;
+        }
+
+        deduped.set(citation, {
+          url: citation,
+          title: this.getSourceLabel(citation)
+        });
+      }
+    }
+
+    return Array.from(deduped.values());
+  }
+
+  private getSourceLabel(url: string): string {
+    try {
+      return new URL(url).hostname.replace(/^www\./, '') || url;
+    } catch {
+      return url;
+    }
   }
 
   /**

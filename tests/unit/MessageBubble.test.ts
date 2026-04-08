@@ -400,6 +400,61 @@ describe('MessageBubble', () => {
     expect(mockCreateTextBubble).toHaveBeenCalledTimes(1);
   });
 
+  it('renders source links from assistant metadata', async () => {
+    const message = createAssistantMessage({
+      id: 'msg_with_sources',
+      toolCalls: undefined,
+      metadata: {
+        webSearchResults: [
+          {
+            title: 'Perplexity streaming docs',
+            url: 'https://docs.perplexity.ai/docs/sonar/pro-search/stream-mode',
+            date: '2026-04-08'
+          }
+        ],
+        citations: [
+          'https://docs.perplexity.ai/docs/sonar/pro-search/stream-mode',
+          'https://docs.perplexity.ai/api-reference/chat-completions-post'
+        ]
+      }
+    });
+
+    mockCreateToolBubble.mockImplementation(() => {
+      const shell = createElement('div');
+      shell.createDiv('tool-bubble-content');
+      return shell;
+    });
+    mockCreateTextBubble.mockImplementation(() => createBubbleShell());
+
+    const bubble = new MessageBubble(
+      message,
+      app,
+      jest.fn(),
+      jest.fn(),
+      jest.fn(),
+      jest.fn(),
+      jest.fn(),
+      jest.fn()
+    );
+    activeBubble = bubble;
+
+    const element = bubble.createElement() as MockElement;
+    await Promise.resolve();
+
+    const content = element.querySelector('.message-content') as MockElement | null;
+    expect(content).not.toBeNull();
+
+    const sourcesFooter = content?.querySelector('.message-sources') as MockElement | null;
+    expect(sourcesFooter).not.toBeNull();
+
+    const sourceList = sourcesFooter?.querySelector('.message-source-list') as MockElement | null;
+    expect(sourceList).not.toBeNull();
+    expect(sourceList?.children).toHaveLength(2);
+    expect(sourceList?.children[0]?.getAttribute('href')).toBe('https://docs.perplexity.ai/docs/sonar/pro-search/stream-mode');
+    expect(sourceList?.children[0]?.textContent).toBe('Perplexity streaming docs');
+    expect(sourceList?.children[1]?.textContent).toBe('docs.perplexity.ai');
+  });
+
   it('creates the branch navigator lazily when branches appear later and reuses it on subsequent updates', () => {
     const initialMessage = createAssistantMessage({
       id: 'msg_ai_base',
