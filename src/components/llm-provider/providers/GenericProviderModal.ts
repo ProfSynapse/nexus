@@ -63,37 +63,36 @@ export class GenericProviderModal implements IProviderModal {
         app: deps.app,
         callbacks: {
           onConnect: (result) => {
-            this.apiKey = result.apiKey;
-            this.config.config.apiKey = result.apiKey;
+            return this.persistPrimaryConfig((config) => {
+              this.apiKey = result.apiKey;
+              config.apiKey = result.apiKey;
 
-            if (this.apiKeyInput) {
-              this.apiKeyInput.value = result.apiKey;
-            }
+              if (this.apiKeyInput) {
+                this.apiKeyInput.value = result.apiKey;
+              }
 
-            this.config.config.oauth = {
-              connected: true,
-              providerId: this.config.providerId,
-              connectedAt: Date.now(),
-              refreshToken: result.refreshToken,
-              expiresAt: result.expiresAt,
-              metadata: result.metadata,
-            };
+              config.oauth = {
+                connected: true,
+                providerId: this.config.providerId,
+                connectedAt: Date.now(),
+                refreshToken: result.refreshToken,
+                expiresAt: result.expiresAt,
+                metadata: result.metadata,
+              };
 
-            this.config.config.enabled = true;
-            this.saveConfig();
-            this.refreshPrimaryBanner();
+              config.enabled = true;
+            });
           },
           onDisconnect: () => {
-            this.apiKey = '';
-            this.config.config.apiKey = '';
-            this.config.config.oauth = undefined;
+            return this.persistPrimaryConfig((config) => {
+              this.apiKey = '';
+              config.apiKey = '';
+              config.oauth = undefined;
 
-            if (this.apiKeyInput) {
-              this.apiKeyInput.value = '';
-            }
-
-            this.saveConfig();
-            this.refreshPrimaryBanner();
+              if (this.apiKeyInput) {
+                this.apiKeyInput.value = '';
+              }
+            });
           },
           onConnectingChange: (connecting) => {
             updateConnectButtonState(
@@ -122,24 +121,25 @@ export class GenericProviderModal implements IProviderModal {
         app: deps.app,
         callbacks: {
           onConnect: (result) => {
-            secondary.config.apiKey = result.apiKey;
-            secondary.config.oauth = {
-              connected: true,
-              providerId: secondary.providerId,
-              connectedAt: Date.now(),
-              refreshToken: result.refreshToken,
-              expiresAt: result.expiresAt,
-              metadata: result.metadata,
-            };
-            secondary.config.enabled = true;
-            secondary.onConfigChange(secondary.config);
-            this.refreshSecondaryBanner();
+            return this.persistSecondaryConfig((config) => {
+              config.apiKey = result.apiKey;
+              config.oauth = {
+                connected: true,
+                providerId: secondary.providerId,
+                connectedAt: Date.now(),
+                refreshToken: result.refreshToken,
+                expiresAt: result.expiresAt,
+                metadata: result.metadata,
+              };
+              config.enabled = true;
+            });
           },
           onDisconnect: () => {
-            secondary.config.apiKey = '';
-            secondary.config.oauth = undefined;
-            secondary.onConfigChange(secondary.config);
-            this.refreshSecondaryBanner();
+            return this.persistSecondaryConfig((config) => {
+              config.apiKey = '';
+              config.oauth = undefined;
+              config.enabled = false;
+            });
           },
           onConnectingChange: (connecting) => {
             updateConnectButtonState(
@@ -262,12 +262,8 @@ export class GenericProviderModal implements IProviderModal {
     const result = renderOAuthBanner(this.oauthBannerContainer, {
       providerLabel: this.config.oauthConfig.providerLabel,
       isConnected: !!this.config.config.oauth?.connected,
-      onConnect: () => {
-        void this.primaryFlowManager?.connect();
-      },
-      onDisconnect: () => {
-        void this.primaryFlowManager?.disconnect();
-      },
+      onConnect: () => this.primaryFlowManager?.connect(),
+      onDisconnect: () => this.primaryFlowManager?.disconnect(),
     });
     this.connectButton = result.connectButton;
   }
@@ -317,12 +313,8 @@ export class GenericProviderModal implements IProviderModal {
       const result = renderOAuthBanner(this.secondaryBannerContainer, {
         providerLabel: secondary.oauthConfig.providerLabel,
         isConnected: !!secondary.config.oauth?.connected,
-        onConnect: () => {
-          void this.secondaryFlowManager?.connect();
-        },
-        onDisconnect: () => {
-          void this.secondaryFlowManager?.disconnect();
-        },
+        onConnect: () => this.secondaryFlowManager?.connect(),
+        onDisconnect: () => this.secondaryFlowManager?.disconnect(),
       });
       this.secondaryConnectButton = result.connectButton;
     }
@@ -338,31 +330,39 @@ export class GenericProviderModal implements IProviderModal {
     if (!secondary) return;
 
     updateCheckStatusButtonState(this.secondaryCheckStatusButton, true);
+    let persistenceAttempted = false;
 
     try {
       const result = await secondary.oauthConfig.startFlow({});
 
       if (result.success && result.apiKey) {
-        secondary.config.apiKey = result.apiKey;
-        secondary.config.oauth = {
-          connected: true,
-          providerId: secondary.providerId,
-          connectedAt: Date.now(),
-          metadata: result.metadata,
-        };
-        secondary.config.enabled = true;
-        secondary.onConfigChange(secondary.config);
+        const apiKey = result.apiKey;
+        persistenceAttempted = true;
+        await this.persistSecondaryConfig((config) => {
+          config.apiKey = apiKey;
+          config.oauth = {
+            connected: true,
+            providerId: secondary.providerId,
+            connectedAt: Date.now(),
+            metadata: result.metadata,
+          };
+          config.enabled = true;
+        });
         new Notice(`${secondary.oauthConfig.providerLabel} authenticated`);
       } else {
-        secondary.config.apiKey = '';
-        secondary.config.oauth = undefined;
-        secondary.config.enabled = false;
-        secondary.onConfigChange(secondary.config);
+        persistenceAttempted = true;
+        await this.persistSecondaryConfig((config) => {
+          config.apiKey = '';
+          config.oauth = undefined;
+          config.enabled = false;
+        });
         new Notice(result.error || `${secondary.oauthConfig.providerLabel} not authenticated`);
       }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      new Notice(`Status check failed: ${errorMessage}`);
+      if (!persistenceAttempted) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        new Notice(`Status check failed: ${errorMessage}`);
+      }
     } finally {
       updateCheckStatusButtonState(this.secondaryCheckStatusButton, false);
       this.refreshSecondaryBanner();
@@ -558,7 +558,59 @@ export class GenericProviderModal implements IProviderModal {
    * Save configuration
    */
   private saveConfig(): void {
-    this.config.onConfigChange(this.config.config);
+    void this.config.onConfigChange(this.config.config);
+  }
+
+  private cloneProviderConfig(config: import('../../../types').LLMProviderConfig): import('../../../types').LLMProviderConfig {
+    return {
+      ...config,
+      oauth: config.oauth ? {
+        ...config.oauth,
+        metadata: config.oauth.metadata ? { ...config.oauth.metadata } : undefined,
+      } : undefined,
+    };
+  }
+
+  private async persistPrimaryConfig(
+    applyChange: (config: import('../../../types').LLMProviderConfig) => void,
+  ): Promise<void> {
+    const previousConfig = this.cloneProviderConfig(this.config.config);
+    const previousApiKey = this.apiKey;
+    const previousInputValue = this.apiKeyInput?.value;
+
+    applyChange(this.config.config);
+
+    try {
+      await Promise.resolve(this.config.onConfigChange(this.config.config));
+    } catch (error) {
+      this.config.config = previousConfig;
+      this.apiKey = previousApiKey;
+      if (this.apiKeyInput) {
+        this.apiKeyInput.value = previousInputValue ?? '';
+      }
+      throw error;
+    } finally {
+      this.refreshPrimaryBanner();
+    }
+  }
+
+  private async persistSecondaryConfig(
+    applyChange: (config: import('../../../types').LLMProviderConfig) => void,
+  ): Promise<void> {
+    const secondary = this.config.secondaryOAuthProvider;
+    if (!secondary) return;
+
+    const previousConfig = this.cloneProviderConfig(secondary.config);
+    applyChange(secondary.config);
+
+    try {
+      await secondary.onConfigChange(secondary.config);
+    } catch (error) {
+      secondary.config = previousConfig;
+      throw error;
+    } finally {
+      this.refreshSecondaryBanner();
+    }
   }
 
   /**

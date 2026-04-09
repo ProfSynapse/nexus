@@ -345,6 +345,51 @@ export class ProvidersTab {
         }
     }
 
+    private async persistSecondaryProviderConfig(
+        settings: LLMProviderSettings,
+        providerId: string,
+        updatedConfig: LLMProviderConfig
+    ): Promise<void> {
+        try {
+            settings.providers[providerId] = updatedConfig;
+            await this.saveSettings();
+        } catch (error) {
+            console.error(`[ProvidersTab] Failed to save secondary provider config for ${providerId}:`, error);
+            new Notice('Failed to save provider settings. Please try again.');
+            throw error;
+        }
+    }
+
+    private async persistProviderConfig(
+        settings: LLMProviderSettings,
+        providerId: string,
+        updatedConfig: LLMProviderConfig,
+        displayName: string
+    ): Promise<void> {
+        try {
+            settings.providers[providerId] = updatedConfig;
+
+            // Handle Ollama model update
+            if (providerId === 'ollama' && '__ollamaModel' in updatedConfig) {
+                const ollamaModel = (updatedConfig as LLMProviderConfig & { __ollamaModel: string }).__ollamaModel;
+                if (ollamaModel) {
+                    delete (updatedConfig as LLMProviderConfig & { __ollamaModel?: string }).__ollamaModel;
+                    if (settings.defaultModel.provider === 'ollama') {
+                        settings.defaultModel.model = ollamaModel;
+                    }
+                }
+            }
+
+            await this.saveSettings();
+            this.render();
+            new Notice(`${displayName} settings saved`);
+        } catch (error) {
+            console.error(`[ProvidersTab] Failed to save provider config for ${providerId}:`, error);
+            new Notice(`Failed to save ${displayName} settings. Please try again.`);
+            throw error;
+        }
+    }
+
     /**
      * Main render method
      */
@@ -519,11 +564,8 @@ export class ProvidersTab {
                     description: 'Connect your ChatGPT Plus/Pro account to use GPT-5 models via OAuth.',
                     config: { ...codexConfig },
                     oauthConfig: codexDisplay.oauthConfig,
-                    onConfigChange: (updatedCodexConfig: LLMProviderConfig) => {
-                        void (async () => {
-                        settings.providers['openai-codex'] = updatedCodexConfig;
-                        await this.saveSettings();
-                        })();
+                    onConfigChange: async (updatedCodexConfig: LLMProviderConfig) => {
+                        await this.persistSecondaryProviderConfig(settings, 'openai-codex', updatedCodexConfig);
                     },
                 };
             }
@@ -542,11 +584,8 @@ export class ProvidersTab {
                     providerLabel: 'Claude Code',
                     startFlow: () => this.startClaudeCodeConnectFlow(),
                 },
-                onConfigChange: (updatedClaudeCodeConfig: LLMProviderConfig) => {
-                    void (async () => {
-                    settings.providers['anthropic-claude-code'] = updatedClaudeCodeConfig;
-                    await this.saveSettings();
-                    })();
+                onConfigChange: async (updatedClaudeCodeConfig: LLMProviderConfig) => {
+                    await this.persistSecondaryProviderConfig(settings, 'anthropic-claude-code', updatedClaudeCodeConfig);
                 },
                 statusOnly: true,
                 statusHint: 'run `claude auth login` in your terminal',
@@ -566,11 +605,8 @@ export class ProvidersTab {
                     providerLabel: 'Gemini CLI',
                     startFlow: () => this.startGeminiCliConnectFlow(),
                 },
-                onConfigChange: (updatedGeminiCliConfig: LLMProviderConfig) => {
-                    void (async () => {
-                    settings.providers['google-gemini-cli'] = updatedGeminiCliConfig;
-                    await this.saveSettings();
-                    })();
+                onConfigChange: async (updatedGeminiCliConfig: LLMProviderConfig) => {
+                    await this.persistSecondaryProviderConfig(settings, 'google-gemini-cli', updatedGeminiCliConfig);
                 },
                 statusOnly: true,
                 statusHint: 'run `gemini auth` in your terminal',
@@ -586,25 +622,8 @@ export class ProvidersTab {
             oauthConfig: displayConfig.oauthConfig,
             secondaryOAuthProvider,
             oauthOnly: providerId === 'github-copilot',
-            onSave: (updatedConfig: LLMProviderConfig) => {
-                void (async () => {
-                settings.providers[providerId] = updatedConfig;
-
-                // Handle Ollama model update
-                if (providerId === 'ollama' && '__ollamaModel' in updatedConfig) {
-                    const ollamaModel = (updatedConfig as LLMProviderConfig & { __ollamaModel: string }).__ollamaModel;
-                    if (ollamaModel) {
-                        delete (updatedConfig as LLMProviderConfig & { __ollamaModel?: string }).__ollamaModel;
-                        if (settings.defaultModel.provider === 'ollama') {
-                            settings.defaultModel.model = ollamaModel;
-                        }
-                    }
-                }
-
-                await this.saveSettings();
-                this.render(); // Refresh the view
-                new Notice(`${displayConfig.name} settings saved`);
-                })();
+            onSave: async (updatedConfig: LLMProviderConfig) => {
+                await this.persistProviderConfig(settings, providerId, updatedConfig, displayConfig.name);
             }
         };
 

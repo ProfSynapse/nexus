@@ -26,9 +26,9 @@ export interface OAuthConnectResult {
  */
 export interface OAuthFlowCallbacks {
   /** Called on successful connection with the result data */
-  onConnect: (result: OAuthConnectResult) => void;
+  onConnect: (result: OAuthConnectResult) => void | Promise<void>;
   /** Called on disconnect */
-  onDisconnect: () => void;
+  onDisconnect: () => void | Promise<void>;
   /** Called when connecting state changes (for UI updates) */
   onConnectingChange: (connecting: boolean) => void;
   /** Called when a device flow provides a user code for manual entry */
@@ -111,9 +111,14 @@ export class OAuthFlowManager {
   /**
    * Handle OAuth disconnect
    */
-  disconnect(): void {
-    this.config.callbacks.onDisconnect();
-    new Notice(`Disconnected from ${this.config.oauthConfig.providerLabel}`);
+  async disconnect(): Promise<void> {
+    try {
+      await Promise.resolve(this.config.callbacks.onDisconnect());
+      new Notice(`Disconnected from ${this.config.oauthConfig.providerLabel}`);
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      new Notice(`Failed to disconnect from ${this.config.oauthConfig.providerLabel}: ${errorMsg}`);
+    }
   }
 
   /**
@@ -135,12 +140,12 @@ export class OAuthFlowManager {
       const result = await this.config.oauthConfig.startFlow(params, this.config.callbacks.onDeviceCode);
 
       if (result.success && result.apiKey) {
-        this.config.callbacks.onConnect({
+        await Promise.resolve(this.config.callbacks.onConnect({
           apiKey: result.apiKey,
           refreshToken: result.refreshToken,
           expiresAt: result.expiresAt,
           metadata: result.metadata,
-        });
+        }));
 
         new Notice(`Connected to ${this.config.oauthConfig.providerLabel} successfully`);
       } else {
