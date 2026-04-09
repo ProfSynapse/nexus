@@ -1,9 +1,88 @@
 jest.mock('@dao-xyz/sqlite3-vec/wasm', () => jest.fn(), { virtual: true });
+jest.mock('../../src/database/storage/canonical/CanonicalNexusEventStore', () => ({
+  CanonicalNexusEventStore: jest.fn()
+}));
 
 import { HybridStorageAdapter } from '../../src/database/adapters/HybridStorageAdapter';
 import { ConversationEventApplier } from '../../src/database/sync/ConversationEventApplier';
 
 describe('HybridStorageAdapter', () => {
+  describe('applyStoragePlan', () => {
+    it('routes event writes to the canonical root and SQLite to plugin data', () => {
+      const mockCanonicalStore = { __canonicalStore: true };
+      const { CanonicalNexusEventStore: MockCanonicalNexusEventStore } = jest.requireMock(
+        '../../src/database/storage/canonical/CanonicalNexusEventStore'
+      ) as {
+        CanonicalNexusEventStore: jest.Mock;
+      };
+      MockCanonicalNexusEventStore.mockImplementation(() => mockCanonicalStore);
+
+      const adapter = Object.create(HybridStorageAdapter.prototype) as HybridStorageAdapter & {
+        applyStoragePlan: (plan: {
+          canonicalWriteBasePath: string;
+          legacyReadBasePaths: string[];
+          pluginCacheDbPath: string;
+          canonicalRoot: {
+            resolvedRootPath: string;
+            maxShardBytes: number;
+          };
+        }) => void;
+        app: unknown;
+        jsonlWriter: {
+          setBasePath: jest.Mock<void, [string]>;
+          setReadBasePaths: jest.Mock<void, [string[]]>;
+          setCanonicalStore: jest.Mock<void, [unknown]>;
+        };
+        sqliteCache: {
+          setDbPath: jest.Mock<void, [string]>;
+        };
+        basePath: string;
+      };
+
+      adapter.app = {};
+      adapter.jsonlWriter = {
+        setBasePath: jest.fn(),
+        setReadBasePaths: jest.fn(),
+        setCanonicalStore: jest.fn()
+      };
+      adapter.sqliteCache = {
+        setDbPath: jest.fn()
+      } as never;
+
+      adapter.applyStoragePlan({
+        canonicalWriteBasePath: 'Nexus',
+        legacyReadBasePaths: [
+          '.obsidian/plugins/claudesidian-mcp/data',
+          '.nexus'
+        ],
+        pluginCacheDbPath: '.obsidian/plugins/claudesidian-mcp/data/cache.db',
+        canonicalRoot: {
+          resolvedRootPath: 'Nexus',
+          maxShardBytes: 4 * 1024 * 1024
+        }
+      });
+
+      expect(adapter.basePath).toBe('Nexus');
+      expect(MockCanonicalNexusEventStore).toHaveBeenCalledWith({
+        app: adapter.app,
+        resolution: {
+          resolvedRootPath: 'Nexus',
+          maxShardBytes: 4 * 1024 * 1024
+        }
+      });
+      expect(adapter.jsonlWriter.setCanonicalStore).toHaveBeenCalledWith(mockCanonicalStore);
+      expect(adapter.jsonlWriter.setBasePath).toHaveBeenCalledWith('Nexus');
+      expect(adapter.jsonlWriter.setReadBasePaths).toHaveBeenCalledWith([
+        'Nexus',
+        '.obsidian/plugins/claudesidian-mcp/data',
+        '.nexus'
+      ]);
+      expect(adapter.sqliteCache.setDbPath).toHaveBeenCalledWith(
+        '.obsidian/plugins/claudesidian-mcp/data/cache.db'
+      );
+    });
+  });
+
   describe('reconcileMissingConversations', () => {
     it('replays missing conversation JSONL files into SQLite cache', async () => {
       const adapter = Object.create(HybridStorageAdapter.prototype) as HybridStorageAdapter & {

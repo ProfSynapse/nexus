@@ -197,7 +197,6 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
         // Ignore adapter errors and continue trying other candidates.
       }
     }
-
     throw new Error(
       `[SQLiteCacheManager] sqlite3.wasm not found. Looked in: ${candidates.join(', ')}`
     );

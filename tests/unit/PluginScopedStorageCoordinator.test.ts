@@ -71,6 +71,85 @@ function createMockAdapter(initialFiles: Record<string, string>): MockAdapter {
 }
 
 describe('PluginScopedStorageCoordinator', () => {
+  it('returns a canonical vault-root write plan with local cache and legacy read roots', async () => {
+    const adapter = createMockAdapter({});
+    const saveData = jest.fn(async () => undefined);
+    const coordinator = new PluginScopedStorageCoordinator(
+      {
+        vault: { adapter, configDir: '.obsidian' }
+      } as never,
+      {
+        manifest: {
+          id: 'nexus',
+          dir: '/mock/.obsidian/plugins/claudesidian-mcp'
+        },
+        loadData: jest.fn(async () => ({
+          storage: {
+            rootPath: 'storage/nexus',
+            maxShardBytes: 2_097_152,
+            schemaVersion: 3
+          }
+        })),
+        saveData
+      } as never,
+      '.nexus'
+    );
+
+    const plan = await coordinator.prepareStoragePlan();
+
+    expect(plan.canonicalWriteBasePath).toBe('storage/nexus');
+    expect(plan.pluginCacheDbPath).toBe('.obsidian/plugins/claudesidian-mcp/data/cache.db');
+    expect(plan.legacyReadBasePaths).toEqual([
+      '.obsidian/plugins/claudesidian-mcp/data',
+      '.obsidian/plugins/nexus/data',
+      '.nexus'
+    ]);
+    expect(plan.state.sourceOfTruthLocation).toBe('canonical-vault-root');
+    expect(plan.state.migration.activeDestination).toBe('storage/nexus');
+    expect(plan.canonicalRoot.resolvedRootPath).toBe('storage/nexus');
+
+    expect(saveData).toHaveBeenCalledTimes(1);
+    const savedState = saveData.mock.calls[0][0];
+    expect(savedState.pluginStorage?.sourceOfTruthLocation).toBe('canonical-vault-root');
+    expect(savedState.pluginStorage?.migration.activeDestination).toBe('storage/nexus');
+  });
+
+  it('records legacy event roots that still need to be read during migration', async () => {
+    const adapter = createMockAdapter({
+      '.obsidian/plugins/claudesidian-mcp/data/conversations/conv_alpha.jsonl': '{"id":"plugin-evt"}\n',
+      '.nexus/workspaces/ws_alpha.jsonl': '{"id":"legacy-evt"}\n'
+    });
+    const saveData = jest.fn(async () => undefined);
+    const coordinator = new PluginScopedStorageCoordinator(
+      {
+        vault: { adapter, configDir: '.obsidian' }
+      } as never,
+      {
+        manifest: {
+          id: 'nexus',
+          dir: '/mock/.obsidian/plugins/claudesidian-mcp'
+        },
+        loadData: jest.fn(async () => ({})),
+        saveData
+      } as never,
+      '.nexus'
+    );
+
+    const plan = await coordinator.prepareStoragePlan();
+
+    expect(plan.canonicalWriteBasePath).toBe('Nexus');
+    expect(plan.state.sourceOfTruthLocation).toBe('canonical-vault-root');
+    expect(plan.state.migration.legacySourcesDetected).toEqual([
+      '.obsidian/plugins/claudesidian-mcp/data',
+      '.nexus'
+    ]);
+    expect(plan.legacyReadBasePaths).toEqual([
+      '.obsidian/plugins/claudesidian-mcp/data',
+      '.obsidian/plugins/nexus/data',
+      '.nexus'
+    ]);
+  });
+
   it('resolves the active plugin directory from manifest.dir', () => {
     const roots = resolvePluginStorageRoot(
       {
@@ -88,169 +167,5 @@ describe('PluginScopedStorageCoordinator', () => {
 
     expect(roots.pluginDir).toBe('.obsidian/plugins/claudesidian-mcp');
     expect(roots.dataRoot).toBe('.obsidian/plugins/claudesidian-mcp/data');
-  });
-
-  it('returns legacy paths on first boot with legacy data, kicks off background copy', async () => {
-    const adapter = createMockAdapter({
-      '.nexus/workspaces/ws_alpha.jsonl': '{"id":"evt-ws"}\n',
-      '.nexus/conversations/conv_alpha.jsonl': '{"id":"evt-conv"}\n'
-    });
-    const saveData = jest.fn(async () => undefined);
-    const coordinator = new PluginScopedStorageCoordinator(
-      {
-        vault: { adapter, configDir: '.obsidian' }
-      } as never,
-      {
-        manifest: {
-          id: 'nexus',
-          dir: '/mock/.obsidian/plugins/claudesidian-mcp'
-        },
-        loadData: jest.fn(async () => ({})),
-        saveData
-      } as never,
-      '.nexus'
-    );
-
-    const plan = await coordinator.prepareStoragePlan();
-
-    // Stage 1: returns legacy paths immediately
-    expect(plan.writeBasePath).toBe('.nexus');
-    expect(plan.readBasePaths).toEqual(['.nexus']);
-    expect(plan.state.sourceOfTruthLocation).toBe('legacy-dotnexus');
-
-    // Background migration was started
-    expect(coordinator.backgroundMigration).not.toBeNull();
-
-    // Wait for background migration to complete
-    await coordinator.backgroundMigration;
-
-    // Verify files were copied in the background
-    expect(adapter.write).toHaveBeenCalledWith(
-      '.obsidian/plugins/claudesidian-mcp/data/workspaces/ws_alpha.jsonl',
-      '{"id":"evt-ws"}\n'
-    );
-    expect(adapter.write).toHaveBeenCalledWith(
-      '.obsidian/plugins/claudesidian-mcp/data/conversations/conv_alpha.jsonl',
-      '{"id":"evt-conv"}\n'
-    );
-
-    // State was persisted as verified
-    const lastSaveCall = saveData.mock.calls[saveData.mock.calls.length - 1][0];
-    expect(lastSaveCall.pluginStorage.migration.state).toBe('verified');
-  });
-
-  it('returns plugin-data paths on second boot after verified migration', async () => {
-    const adapter = createMockAdapter({
-      '.nexus/workspaces/ws_alpha.jsonl': '{"id":"evt-ws"}\n',
-      '.obsidian/plugins/claudesidian-mcp/data/workspaces/ws_alpha.jsonl': '{"id":"evt-ws"}\n'
-    });
-    const coordinator = new PluginScopedStorageCoordinator(
-      {
-        vault: { adapter, configDir: '.obsidian' }
-      } as never,
-      {
-        manifest: {
-          id: 'nexus',
-          dir: '/mock/.obsidian/plugins/claudesidian-mcp'
-        },
-        loadData: jest.fn(async () => ({
-          pluginStorage: {
-            storageVersion: 1,
-            sourceOfTruthLocation: 'plugin-data',
-            migration: {
-              state: 'verified',
-              verifiedAt: Date.now(),
-              legacySourcesDetected: ['.nexus'],
-              activeDestination: '.obsidian/plugins/claudesidian-mcp/data'
-            }
-          }
-        })),
-        saveData: jest.fn(async () => undefined)
-      } as never,
-      '.nexus'
-    );
-
-    const plan = await coordinator.prepareStoragePlan();
-
-    // Stage 2: instant cutover to plugin-data paths
-    expect(plan.writeBasePath).toBe('.obsidian/plugins/claudesidian-mcp/data');
-    expect(plan.readBasePaths).toEqual([
-      '.obsidian/plugins/claudesidian-mcp/data',
-      '.nexus'
-    ]);
-    expect(plan.state.sourceOfTruthLocation).toBe('plugin-data');
-    expect(plan.state.migration.state).toBe('verified');
-
-    // No background migration started
-    expect(coordinator.backgroundMigration).toBeNull();
-  });
-
-  it('does not overwrite newer plugin-scoped data and records failure in background', async () => {
-    const adapter = createMockAdapter({
-      '.nexus/workspaces/ws_alpha.jsonl': '{"id":"legacy-evt"}\n',
-      '.obsidian/plugins/claudesidian-mcp/data/workspaces/ws_alpha.jsonl': '{"id":"plugin-evt","newer":true}\n'
-    });
-    const saveData = jest.fn(async () => undefined);
-    const coordinator = new PluginScopedStorageCoordinator(
-      {
-        vault: { adapter, configDir: '.obsidian' }
-      } as never,
-      {
-        manifest: {
-          id: 'nexus',
-          dir: '/mock/.obsidian/plugins/claudesidian-mcp'
-        },
-        loadData: jest.fn(async () => ({})),
-        saveData
-      } as never,
-      '.nexus'
-    );
-
-    const plan = await coordinator.prepareStoragePlan();
-
-    // Returns legacy paths immediately (Stage 1)
-    expect(plan.writeBasePath).toBe('.nexus');
-    expect(plan.readBasePaths).toEqual(['.nexus']);
-    expect(plan.state.sourceOfTruthLocation).toBe('legacy-dotnexus');
-
-    // Wait for background migration to complete (it will fail due to conflict)
-    await coordinator.backgroundMigration;
-
-    // Plugin-scoped data was NOT overwritten
-    await expect(
-      adapter.read('.obsidian/plugins/claudesidian-mcp/data/workspaces/ws_alpha.jsonl')
-    ).resolves.toBe('{"id":"plugin-evt","newer":true}\n');
-
-    // State was persisted as failed
-    const lastSaveCall = saveData.mock.calls[saveData.mock.calls.length - 1][0];
-    expect(lastSaveCall.pluginStorage.migration.state).toBe('failed');
-    expect(lastSaveCall.pluginStorage.migration.lastError).toContain(
-      'destination already exists with different content'
-    );
-  });
-
-  it('goes straight to plugin-data paths when no legacy files exist', async () => {
-    const adapter = createMockAdapter({});
-    const saveData = jest.fn(async () => undefined);
-    const coordinator = new PluginScopedStorageCoordinator(
-      {
-        vault: { adapter, configDir: '.obsidian' }
-      } as never,
-      {
-        manifest: {
-          id: 'nexus',
-          dir: '/mock/.obsidian/plugins/claudesidian-mcp'
-        },
-        loadData: jest.fn(async () => ({})),
-        saveData
-      } as never,
-      '.nexus'
-    );
-
-    const plan = await coordinator.prepareStoragePlan();
-
-    expect(plan.writeBasePath).toBe('.obsidian/plugins/claudesidian-mcp/data');
-    expect(plan.readBasePaths).toEqual(['.obsidian/plugins/claudesidian-mcp/data']);
-    expect(coordinator.backgroundMigration).toBeNull();
   });
 });

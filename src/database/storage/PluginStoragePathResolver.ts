@@ -5,7 +5,10 @@ export interface ResolvedPluginStorageRoot {
   dataJsonPath: string;
   dataRoot: string;
   migrationRoot: string;
+  compatibilityDataRoots: string[];
 }
+
+const KNOWN_PLUGIN_FOLDER_NAMES = ['nexus', 'claudesidian-mcp'] as const;
 
 export function resolveActivePluginFolderName(plugin: Plugin): string {
   const manifestDir = plugin.manifest.dir;
@@ -21,14 +24,22 @@ export function resolveActivePluginFolderName(plugin: Plugin): string {
 }
 
 export function resolvePluginStorageRoot(app: App, plugin: Plugin): ResolvedPluginStorageRoot {
-  const pluginFolderName = resolveActivePluginFolderName(plugin);
-  const pluginDir = normalizePath(`${app.vault.configDir}/plugins/${pluginFolderName}`);
+  const activePluginFolderName = resolveActivePluginFolderName(plugin);
+  const pluginDir = normalizePath(`${app.vault.configDir}/plugins/${activePluginFolderName}`);
   const dataRoot = normalizePath(`${pluginDir}/data`);
+  const compatibilityFolderNames = Array.from(new Set([
+    plugin.manifest.id,
+    ...KNOWN_PLUGIN_FOLDER_NAMES
+  ])).filter(folderName => folderName !== activePluginFolderName);
+  const compatibilityDataRoots = compatibilityFolderNames.map(folderName =>
+    normalizePath(`${app.vault.configDir}/plugins/${folderName}/data`)
+  );
 
   return {
     pluginDir,
     dataJsonPath: normalizePath(`${pluginDir}/data.json`),
     dataRoot,
-    migrationRoot: normalizePath(`${dataRoot}/migration`)
+    migrationRoot: normalizePath(`${dataRoot}/migration`),
+    compatibilityDataRoots
   };
 }

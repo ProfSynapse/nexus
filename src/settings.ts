@@ -1,6 +1,35 @@
 import { Plugin } from 'obsidian';
-import { MCPSettings, DEFAULT_SETTINGS, type LLMProviderConfig } from './types';
+import {
+    MCPSettings,
+    DEFAULT_SETTINGS,
+    DEFAULT_STORAGE_SETTINGS,
+    type LLMProviderConfig,
+    type MCPStorageSettings
+} from './types';
 import { pluginDataLock } from './utils/pluginDataLock';
+
+function mergeStorageSettings(
+    defaults: MCPStorageSettings,
+    storage: Record<string, unknown> | undefined
+): MCPStorageSettings {
+    const merged: MCPStorageSettings = {
+        ...defaults
+    };
+
+    if (typeof storage?.schemaVersion === 'number' && Number.isFinite(storage.schemaVersion)) {
+        merged.schemaVersion = storage.schemaVersion;
+    }
+
+    if (typeof storage?.rootPath === 'string' && storage.rootPath.trim().length > 0) {
+        merged.rootPath = storage.rootPath;
+    }
+
+    if (typeof storage?.maxShardBytes === 'number' && Number.isFinite(storage.maxShardBytes) && storage.maxShardBytes > 0) {
+        merged.maxShardBytes = Math.floor(storage.maxShardBytes);
+    }
+
+    return merged;
+}
 
 /**
  * Settings manager
@@ -39,17 +68,24 @@ export class Settings {
         if (!loadedData || typeof loadedData !== 'object') {
             return; // Use defaults
         }
-        
-        // Start with default settings (includes memory)
+
+        // Start with default settings (includes storage)
         this.settings = Object.assign({}, DEFAULT_SETTINGS);
-        
+
         // Quick shallow merge for startup - detailed validation deferred
         try {
-            const { llmProviders, ...otherSettings } = loadedData as Record<string, unknown>;
+            const { llmProviders, storage, ...otherSettings } = loadedData as Record<string, unknown>;
             Object.assign(this.settings, otherSettings);
-            
+
             // Ensure memory settings exist
             this.settings.memory = DEFAULT_SETTINGS.memory;
+
+            // Merge storage settings with nested defaults
+            if (storage && typeof storage === 'object' && DEFAULT_SETTINGS.storage) {
+                this.settings.storage = mergeStorageSettings(DEFAULT_SETTINGS.storage, storage as Record<string, unknown>);
+            } else {
+                this.settings.storage = mergeStorageSettings(DEFAULT_STORAGE_SETTINGS, undefined);
+            }
 
             // Basic LLM provider settings merge
             if (llmProviders && typeof llmProviders === 'object' && DEFAULT_SETTINGS.llmProviders) {

@@ -63,13 +63,12 @@ export default class NexusPlugin extends Plugin {
 
     private async loadPlugin(): Promise<void> {
         try {
-            // Ensure sqlite3.wasm exists (desktop only - SQLite not used on mobile)
-            if (Platform.isDesktop) {
-                const wasmEnsurer = new WasmEnsurer(this);
-                const wasmReady = await wasmEnsurer.ensureWasmExists();
-                if (!wasmReady) {
-                    console.warn(`[${BRAND_NAME}] SQLite WASM not available - some features may be limited`);
-                }
+            // Ensure sqlite3.wasm exists on every platform before the hybrid
+            // storage adapter tries to initialize SQLite-backed sync.
+            const wasmEnsurer = new WasmEnsurer(this);
+            const wasmReady = await wasmEnsurer.ensureWasmExists();
+            if (!wasmReady) {
+                console.warn(`[${BRAND_NAME}] SQLite WASM not available - some features may be limited`);
             }
 
             // Create service manager and settings

@@ -16,6 +16,7 @@ import { CORE_SERVICE_DEFINITIONS, ADDITIONAL_SERVICE_FACTORIES } from './Servic
 import type { ServiceCreationContext, AdditionalServiceFactory } from './ServiceDefinitions';
 import type { VaultOperations } from '../VaultOperations';
 import type { ChatService } from '../../services/chat/ChatService';
+import { resolvePluginStorageRoot } from '../../database/storage/PluginStoragePathResolver';
 
 export class ServiceRegistrar {
     private context: ServiceCreationContext;
@@ -106,14 +107,15 @@ export class ServiceRegistrar {
      */
     async initializeDataDirectories(): Promise<void> {
         try {
-            const { plugin, settings, manifest, serviceManager } = this.context;
+            const { app, plugin, settings, serviceManager } = this.context;
 
             // Get vaultOperations service with proper typing
             const vaultOperations = await serviceManager.getService<VaultOperations>('vaultOperations');
 
-            // Legacy data directory handling - quick directory creation
-            const pluginDir = `.obsidian/plugins/${manifest.id}`;
-            const dataDir = `${pluginDir}/data`;
+            // Use the actual installed plugin folder, not manifest.id, so legacy
+            // installs under claudesidian-mcp do not recreate a nexus folder.
+            const { dataRoot } = resolvePluginStorageRoot(app, plugin);
+            const dataDir = dataRoot;
             const storageDir = `${dataDir}/storage`;
 
             try {

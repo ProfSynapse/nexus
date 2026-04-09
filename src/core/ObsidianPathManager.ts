@@ -105,10 +105,11 @@ export class ObsidianPathManager {
    * Plugin-specific path construction
    */
   getPluginDataPath(): string {
-    if (!this.manifest?.id) {
+    const pluginFolderName = this.getPluginFolderName();
+    if (!pluginFolderName) {
       throw new Error('Plugin manifest ID not available for path construction');
     }
-    return this.normalizePath(`${this.vault.configDir}/plugins/${this.manifest.id}/data`);
+    return this.normalizePath(`${this.vault.configDir}/plugins/${pluginFolderName}/data`);
   }
 
   /**
@@ -285,16 +286,17 @@ export class ObsidianPathManager {
   private extractPluginPathPattern(path: string): string {
     const normalized = this.normalizePath(path);
     const configDir = this.normalizePath(this.vault.configDir);
+    const pluginFolderName = this.getPluginFolderName();
     
     // Look for plugin directory pattern
-    if (this.manifest?.id) {
-      const pluginPattern = `/${configDir}/plugins/${this.manifest.id}/`;
+    if (pluginFolderName) {
+      const pluginPattern = `/${configDir}/plugins/${pluginFolderName}/`;
       const pluginIndex = normalized.indexOf(pluginPattern);
       
       if (pluginIndex >= 0) {
         // Extract from plugin directory onwards
         const remaining = normalized.substring(pluginIndex + pluginPattern.length);
-        return this.normalizePath(`${configDir}/plugins/${this.manifest.id}/${remaining}`);
+        return this.normalizePath(`${configDir}/plugins/${pluginFolderName}/${remaining}`);
       }
     }
     
@@ -321,6 +323,24 @@ export class ObsidianPathManager {
     } catch {
       return null;
     }
+  }
+
+  private getPluginFolderName(): string | null {
+    if (!this.manifest) {
+      return null;
+    }
+
+    const manifestDir = this.manifest.dir;
+    if (typeof manifestDir === 'string' && manifestDir.trim().length > 0) {
+      const normalizedDir = manifestDir.replace(/\\/g, '/');
+      const segments = normalizedDir.split('/').filter(Boolean);
+      const folderName = segments[segments.length - 1];
+      if (folderName) {
+        return folderName;
+      }
+    }
+
+    return this.manifest.id ?? null;
   }
 
   /**

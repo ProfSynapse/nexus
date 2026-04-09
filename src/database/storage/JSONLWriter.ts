@@ -23,10 +23,11 @@
  * - src/database/services/cache/EntityCache.ts - In-memory cache layer
  */
 
-import { App } from 'obsidian';
+import { App, normalizePath } from 'obsidian';
 import { StorageEvent, BaseStorageEvent } from '../interfaces/StorageEvents';
 import { v4 as uuidv4 } from '../../utils/uuid';
 import { NamedLocks } from '../../utils/AsyncLock';
+import { CanonicalNexusEventStore } from './canonical/CanonicalNexusEventStore';
 
 /**
  * Configuration options for JSONLWriter
@@ -38,6 +39,8 @@ export interface JSONLWriterOptions {
   basePath: string;
   /** Ordered read roots for verified/fallback lookups */
   readBasePaths?: string[];
+  /** Optional canonical vault-root store for sharded storage routing */
+  canonicalStore?: CanonicalNexusEventStore | null;
 }
 
 /**
@@ -74,12 +77,14 @@ export class JSONLWriter {
   private readBasePaths: string[];
   private deviceId: string;
   private locks: NamedLocks;
+  private canonicalStore: CanonicalNexusEventStore | null;
   private readonly deviceIdStorageKey = 'claudesidian-device-id';
 
   constructor(options: JSONLWriterOptions) {
     this.app = options.app;
     this.basePath = options.basePath;
     this.readBasePaths = this.normalizeReadBasePaths(options.readBasePaths ?? [options.basePath]);
+    this.canonicalStore = options.canonicalStore ?? null;
     this.deviceId = this.getOrCreateDeviceId();
     this.locks = new NamedLocks();
   }
@@ -90,6 +95,10 @@ export class JSONLWriter {
 
   setReadBasePaths(basePaths: string[]): void {
     this.readBasePaths = this.normalizeReadBasePaths(basePaths);
+  }
+
+  setCanonicalStore(canonicalStore: CanonicalNexusEventStore | null): void {
+    this.canonicalStore = canonicalStore;
   }
 
   // ============================================================================
@@ -133,12 +142,133 @@ export class JSONLWriter {
     return `${basePath}/${relativePath}`;
   }
 
+  private normalizeLogicalRelativePath(relativePath: string): string {
+    return normalizePath(relativePath).replace(/^\/+|\/+$/g, '');
+  }
+
+  private parseLogicalPath(relativePath: string): {
+    category: 'conversations' | 'workspaces' | 'tasks';
+    fileName: string;
+    fileStem: string;
+  } | null {
+    const normalizedPath = this.normalizeLogicalRelativePath(relativePath);
+    const match = normalizedPath.match(/^(conversations|workspaces|tasks)\/(.+)\.jsonl$/);
+    if (!match) {
+      return null;
+    }
+
+    const fileName = `${match[2]}.jsonl`;
+    return {
+      category: match[1] as 'conversations' | 'workspaces' | 'tasks',
+      fileName,
+      fileStem: match[2]
+    };
+  }
+
+  private normalizeConversationStem(fileStem: string): string {
+    let normalized = this.normalizeLogicalRelativePath(fileStem);
+
+    while (normalized.startsWith('conv_conv_')) {
+      normalized = normalized.slice('conv_'.length);
+    }
+
+    return normalized;
+  }
+
+  private normalizeStableLogicalPath(relativePath: string): string {
+    const parsed = this.parseLogicalPath(relativePath);
+    if (!parsed) {
+      return this.normalizeLogicalRelativePath(relativePath);
+    }
+
+    if (parsed.category !== 'conversations') {
+      return `${parsed.category}/${parsed.fileName}`;
+    }
+
+    return `conversations/${this.normalizeConversationStem(parsed.fileStem)}.jsonl`;
+  }
+
+  private getLogicalPathVariants(relativePath: string): string[] {
+    const parsed = this.parseLogicalPath(relativePath);
+    if (!parsed) {
+      return [this.normalizeLogicalRelativePath(relativePath)];
+    }
+
+    if (parsed.category !== 'conversations') {
+      return [`${parsed.category}/${parsed.fileName}`];
+    }
+
+    const normalizedStem = this.normalizeConversationStem(parsed.fileStem);
+    const variants = new Set<string>([`conversations/${normalizedStem}.jsonl`]);
+
+    if (normalizedStem.startsWith('conv_')) {
+      variants.add(`conversations/conv_${normalizedStem}.jsonl`);
+    }
+
+    return Array.from(variants);
+  }
+
+  private getCanonicalLogicalPath(relativePath: string): string | null {
+    const parsed = this.parseLogicalPath(relativePath);
+    if (!parsed) {
+      return null;
+    }
+
+    if (parsed.category !== 'conversations') {
+      return `${parsed.category}/${parsed.fileName}`;
+    }
+
+    return `conversations/${this.normalizeConversationStem(parsed.fileStem)}.jsonl`;
+  }
+
+  private getCanonicalCategoryRoot(category: 'conversations' | 'workspaces' | 'tasks'): string | null {
+    if (!this.canonicalStore) {
+      return null;
+    }
+
+    switch (category) {
+      case 'conversations':
+        return this.canonicalStore.getConversationsRootPath();
+      case 'workspaces':
+        return this.canonicalStore.getWorkspacesRootPath();
+      case 'tasks':
+        return this.canonicalStore.getTasksRootPath();
+    }
+  }
+
+  private getCategoryFromSubPath(subPath: string): 'conversations' | 'workspaces' | 'tasks' | null {
+    const normalizedSubPath = this.normalizeLogicalRelativePath(subPath);
+    if (normalizedSubPath === 'conversations' || normalizedSubPath === 'workspaces' || normalizedSubPath === 'tasks') {
+      return normalizedSubPath;
+    }
+    return null;
+  }
+
+  private async resolveCanonicalReadablePaths(relativePath: string): Promise<string[]> {
+    const canonicalPath = this.getCanonicalLogicalPath(relativePath);
+    if (!canonicalPath || !this.canonicalStore) {
+      return [];
+    }
+
+    const parsed = this.parseLogicalPath(relativePath);
+    if (!parsed) {
+      return [];
+    }
+
+    const files = await this.canonicalStore.listFiles(parsed.category);
+    return files.includes(canonicalPath) ? [canonicalPath] : [];
+  }
+
   private async resolveReadablePaths(relativePath: string): Promise<string[]> {
     const readablePaths: string[] = [];
+    const logicalPathVariants = this.getLogicalPathVariants(relativePath);
+
     for (const readBasePath of this.readBasePaths) {
-      const fullPath = this.buildFullPath(readBasePath, relativePath);
-      if (await this.app.vault.adapter.exists(fullPath)) {
-        readablePaths.push(fullPath);
+      for (const logicalPath of logicalPathVariants) {
+        const fullPath = this.buildFullPath(readBasePath, logicalPath);
+        if (await this.app.vault.adapter.exists(fullPath) && !readablePaths.includes(fullPath)) {
+          readablePaths.push(fullPath);
+        }
       }
     }
     return readablePaths;
@@ -155,6 +285,26 @@ export class JSONLWriter {
    * @throws Error if directory creation fails
    */
   async ensureDirectory(subPath?: string): Promise<void> {
+    const category = subPath ? this.getCategoryFromSubPath(subPath) : null;
+    if (category && this.canonicalStore) {
+      const canonicalRoot = this.getCanonicalCategoryRoot(category);
+      if (canonicalRoot) {
+        const folder = this.app.vault.getAbstractFileByPath(canonicalRoot);
+        if (!folder) {
+          try {
+            await this.app.vault.createFolder(canonicalRoot);
+          } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            if (!errorMessage.includes('already exists')) {
+              console.error(`[JSONLWriter] Failed to ensure canonical directory: ${subPath}`, error);
+              throw new Error(`Failed to create directory: ${errorMessage}`);
+            }
+          }
+        }
+        return;
+      }
+    }
+
     const fullPath = subPath ? `${this.basePath}/${subPath}` : this.basePath;
     const folder = this.app.vault.getAbstractFileByPath(fullPath);
 
@@ -202,8 +352,6 @@ export class JSONLWriter {
     eventData: Omit<T, 'id' | 'deviceId' | 'timestamp'>
   ): Promise<T> {
     try {
-      const fullPath = `${this.basePath}/${relativePath}`;
-
       // Create the full event with metadata
       const event: T = {
         ...eventData,
@@ -212,6 +360,13 @@ export class JSONLWriter {
         timestamp: Date.now(),
       } as T;
 
+      const canonicalPath = this.getCanonicalLogicalPath(relativePath);
+      if (canonicalPath && this.canonicalStore) {
+        await this.canonicalStore.appendEvent(canonicalPath, event);
+        return event;
+      }
+
+      const fullPath = `${this.basePath}/${this.normalizeLogicalRelativePath(relativePath)}`;
       const line = JSON.stringify(event) + '\n';
 
       // Ensure parent directory exists
@@ -265,8 +420,6 @@ export class JSONLWriter {
     }
 
     try {
-      const fullPath = `${this.basePath}/${relativePath}`;
-
       // Create all events with metadata
       const events: T[] = eventsData.map(eventData => ({
         ...eventData,
@@ -275,6 +428,13 @@ export class JSONLWriter {
         timestamp: Date.now(),
       } as T));
 
+      const canonicalPath = this.getCanonicalLogicalPath(relativePath);
+      if (canonicalPath && this.canonicalStore) {
+        await this.canonicalStore.appendEvents(canonicalPath, events);
+        return events;
+      }
+
+      const fullPath = `${this.basePath}/${this.normalizeLogicalRelativePath(relativePath)}`;
       const lines = events.map(event => JSON.stringify(event)).join('\n') + '\n';
 
       // Ensure parent directory exists
@@ -328,12 +488,24 @@ export class JSONLWriter {
    */
   async readEvents<T extends StorageEvent>(relativePath: string): Promise<T[]> {
     try {
-      const readablePaths = await this.resolveReadablePaths(relativePath);
-      if (readablePaths.length === 0) {
-        return [];
+      const dedupedEvents = new Map<string, T>();
+
+      if (this.canonicalStore) {
+        const canonicalPath = this.getCanonicalLogicalPath(relativePath);
+        if (canonicalPath) {
+          const canonicalEvents = await this.canonicalStore.readEvents<T>(canonicalPath);
+          for (const event of canonicalEvents) {
+            const eventId = typeof (event as { id?: unknown }).id === 'string'
+              ? String((event as { id: string }).id)
+              : JSON.stringify(event);
+            if (!dedupedEvents.has(eventId)) {
+              dedupedEvents.set(eventId, event);
+            }
+          }
+        }
       }
 
-      const dedupedEvents = new Map<string, T>();
+      const readablePaths = await this.resolveReadablePaths(relativePath);
       for (const fullPath of readablePaths) {
         const content = await this.app.vault.adapter.read(fullPath);
         const lines = content.split('\n').filter(line => line.trim());
@@ -454,8 +626,17 @@ export class JSONLWriter {
     try {
       const files = new Set<string>();
 
+      const category = this.getCategoryFromSubPath(subPath);
+      if (category && this.canonicalStore) {
+        const canonicalFiles = await this.canonicalStore.listFiles(category);
+        for (const logicalPath of canonicalFiles) {
+          files.add(this.normalizeStableLogicalPath(logicalPath));
+        }
+      }
+
       for (const readBasePath of this.readBasePaths) {
-        const fullPath = `${readBasePath}/${subPath}`;
+        const normalizedSubPath = this.normalizeLogicalRelativePath(subPath);
+        const fullPath = `${readBasePath}/${normalizedSubPath}`;
         const exists = await this.app.vault.adapter.exists(fullPath);
         if (!exists) {
           continue;
@@ -464,7 +645,8 @@ export class JSONLWriter {
         const listing = await this.app.vault.adapter.list(fullPath);
         for (const filePath of listing.files) {
           if (filePath.endsWith('.jsonl')) {
-            files.add(filePath.replace(`${readBasePath}/`, ''));
+            const logicalPath = filePath.replace(`${readBasePath}/`, '');
+            files.add(this.normalizeStableLogicalPath(logicalPath));
           }
         }
       }
@@ -483,6 +665,11 @@ export class JSONLWriter {
    * @returns True if file exists
    */
   async fileExists(relativePath: string): Promise<boolean> {
+    const canonicalFiles = await this.resolveCanonicalReadablePaths(relativePath);
+    if (canonicalFiles.length > 0) {
+      return true;
+    }
+
     const readablePaths = await this.resolveReadablePaths(relativePath);
     return readablePaths.length > 0;
   }
@@ -519,6 +706,16 @@ export class JSONLWriter {
    */
   async getFileModTime(relativePath: string): Promise<number | null> {
     try {
+      if (this.canonicalStore) {
+        const canonicalPath = this.getCanonicalLogicalPath(relativePath);
+        if (canonicalPath) {
+          const canonicalModTime = await this.canonicalStore.getFileModTime(canonicalPath);
+          if (canonicalModTime !== null) {
+            return canonicalModTime;
+          }
+        }
+      }
+
       const readablePaths = await this.resolveReadablePaths(relativePath);
       if (readablePaths.length === 0) {
         return null;
@@ -539,6 +736,16 @@ export class JSONLWriter {
    */
   async getFileSize(relativePath: string): Promise<number | null> {
     try {
+      if (this.canonicalStore) {
+        const canonicalPath = this.getCanonicalLogicalPath(relativePath);
+        if (canonicalPath) {
+          const canonicalSize = await this.canonicalStore.getFileSize(canonicalPath);
+          if (canonicalSize !== null) {
+            return canonicalSize;
+          }
+        }
+      }
+
       const readablePaths = await this.resolveReadablePaths(relativePath);
       if (readablePaths.length === 0) {
         return null;

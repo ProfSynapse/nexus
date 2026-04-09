@@ -27,6 +27,7 @@ import { JSONLWriter } from '../storage/JSONLWriter';
 import { SQLiteCacheManager } from '../storage/SQLiteCacheManager';
 import { SyncCoordinator } from '../sync/SyncCoordinator';
 import { QueryCache } from '../optimizations/QueryCache';
+import { CanonicalNexusEventStore } from '../storage/canonical/CanonicalNexusEventStore';
 import { PaginatedResult, PaginationParams } from '../../types/pagination/PaginationTypes';
 import {
   WorkspaceMetadata,
@@ -299,23 +300,6 @@ export class HybridStorageAdapter implements IStorageAdapter {
           console.error('[HybridStorageAdapter] Task reconciliation failed:', reconcileError);
         }
       }
-
-      // Copy fully-populated cache.db to plugin-scoped storage after sync completes.
-      // Must happen AFTER rebuild/sync so the copy includes sync state.
-      if (this.storageCoordinator.backgroundMigration) {
-        try {
-          await this.storageCoordinator.backgroundMigration;
-          const dataRoot = this.storageCoordinator.roots.dataRoot;
-          const legacyCacheDb = `${this.basePath}/cache.db`;
-          const newCacheDb = `${dataRoot}/cache.db`;
-          if (await this.app.vault.adapter.exists(legacyCacheDb)) {
-            const content = await this.app.vault.adapter.readBinary(legacyCacheDb);
-            await this.app.vault.adapter.writeBinary(newCacheDb, content);
-          }
-        } catch (cacheError) {
-          console.warn('[HybridStorageAdapter] cache.db copy failed (will rebuild on next boot):', cacheError);
-        }
-      }
     } catch (error) {
       console.error('[HybridStorageAdapter] Initialization failed:', error);
       this.initError = error as Error;
@@ -327,10 +311,18 @@ export class HybridStorageAdapter implements IStorageAdapter {
   }
 
   private applyStoragePlan(plan: PluginScopedStoragePlan): void {
-    this.basePath = plan.writeBasePath;
-    this.jsonlWriter.setBasePath(plan.writeBasePath);
-    this.jsonlWriter.setReadBasePaths(plan.readBasePaths);
-    this.sqliteCache.setDbPath(`${plan.writeBasePath}/cache.db`);
+    this.basePath = plan.canonicalWriteBasePath;
+    const canonicalStore = new CanonicalNexusEventStore({
+      app: this.app,
+      resolution: plan.canonicalRoot
+    });
+    this.jsonlWriter.setCanonicalStore(canonicalStore);
+    this.jsonlWriter.setBasePath(plan.canonicalWriteBasePath);
+    this.jsonlWriter.setReadBasePaths([
+      plan.canonicalWriteBasePath,
+      ...plan.legacyReadBasePaths
+    ]);
+    this.sqliteCache.setDbPath(plan.pluginCacheDbPath);
   }
 
   /**

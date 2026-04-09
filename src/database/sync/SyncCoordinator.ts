@@ -40,11 +40,12 @@ function isValidWorkspaceId(id: string): boolean {
 export interface IJSONLWriter {
   getDeviceId(): string;
   listFiles(category: 'workspaces' | 'conversations' | 'tasks'): Promise<string[]>;
+  getFileModTime(file: string): Promise<number | null>;
   readEvents<T extends StorageEvent>(file: string): Promise<T[]>;
   getEventsNotFromDevice<T extends StorageEvent>(
     file: string,
     deviceId: string,
-    sinceTimestamp: number
+    sinceTimestamp?: number
   ): Promise<T[]>;
 }
 
@@ -113,6 +114,7 @@ export class SyncCoordinator {
     let eventsApplied = 0;
     let eventsSkipped = 0;
     const filesProcessed: string[] = [];
+    const nextFileTimestamps: Record<string, number> = {};
 
     try {
       if (options.forceRebuild) {
@@ -120,28 +122,31 @@ export class SyncCoordinator {
       }
 
       const syncState = await this.sqliteCache.getSyncState(this.deviceId);
-      const lastSync = syncState?.lastEventTimestamp ?? 0;
+      const previousFileTimestamps = syncState?.fileTimestamps ?? {};
 
       // Process workspace files
-      const workspaceResult = await this.processWorkspaceFiles(lastSync, options, errors);
+      const workspaceResult = await this.processWorkspaceFiles(previousFileTimestamps, options, errors);
       eventsApplied += workspaceResult.applied;
       eventsSkipped += workspaceResult.skipped;
       filesProcessed.push(...workspaceResult.files);
+      Object.assign(nextFileTimestamps, workspaceResult.fileTimestamps);
 
       // Process conversation files
-      const conversationResult = await this.processConversationFiles(lastSync, options, errors);
+      const conversationResult = await this.processConversationFiles(previousFileTimestamps, options, errors);
       eventsApplied += conversationResult.applied;
       eventsSkipped += conversationResult.skipped;
       filesProcessed.push(...conversationResult.files);
+      Object.assign(nextFileTimestamps, conversationResult.fileTimestamps);
 
       // Process task files
-      const taskResult = await this.processTaskFiles(lastSync, options, errors);
+      const taskResult = await this.processTaskFiles(previousFileTimestamps, options, errors);
       eventsApplied += taskResult.applied;
       eventsSkipped += taskResult.skipped;
       filesProcessed.push(...taskResult.files);
+      Object.assign(nextFileTimestamps, taskResult.fileTimestamps);
 
       // Update sync state and save
-      await this.sqliteCache.updateSyncState(this.deviceId, Date.now(), {});
+      await this.sqliteCache.updateSyncState(this.deviceId, Date.now(), nextFileTimestamps);
       await this.sqliteCache.save();
 
       options.onProgress?.('Complete', 1, 1);
@@ -212,13 +217,14 @@ export class SyncCoordinator {
   // ============================================================================
 
   private async processWorkspaceFiles(
-    lastSync: number,
+    previousFileTimestamps: Record<string, number>,
     options: SyncOptions,
     errors: string[]
-  ): Promise<{ applied: number; skipped: number; files: string[] }> {
+  ): Promise<{ applied: number; skipped: number; files: string[]; fileTimestamps: Record<string, number> }> {
     let applied = 0;
     let skipped = 0;
     const files: string[] = [];
+    const fileTimestamps: Record<string, number> = {};
 
     const workspaceFiles = await this.jsonlWriter.listFiles('workspaces');
     options.onProgress?.('Processing workspaces', 0, workspaceFiles.length);
@@ -233,8 +239,18 @@ export class SyncCoordinator {
       }
 
       try {
+        const modTime = await this.jsonlWriter.getFileModTime(file);
+        if (typeof modTime === 'number' && Number.isFinite(modTime)) {
+          fileTimestamps[file] = modTime;
+          if ((previousFileTimestamps[file] ?? 0) >= modTime) {
+            files.push(file);
+            options.onProgress?.('Processing workspaces', i + 1, workspaceFiles.length);
+            continue;
+          }
+        }
+
         const events = await this.jsonlWriter.getEventsNotFromDevice<WorkspaceEvent>(
-          file, this.deviceId, lastSync
+          file, this.deviceId
         );
 
         for (const event of events) {
@@ -254,17 +270,18 @@ export class SyncCoordinator {
       }
     }
 
-    return { applied, skipped, files };
+    return { applied, skipped, files, fileTimestamps };
   }
 
   private async processConversationFiles(
-    lastSync: number,
+    previousFileTimestamps: Record<string, number>,
     options: SyncOptions,
     errors: string[]
-  ): Promise<{ applied: number; skipped: number; files: string[] }> {
+  ): Promise<{ applied: number; skipped: number; files: string[]; fileTimestamps: Record<string, number> }> {
     let applied = 0;
     let skipped = 0;
     const files: string[] = [];
+    const fileTimestamps: Record<string, number> = {};
 
     const conversationFiles = await this.jsonlWriter.listFiles('conversations');
     options.onProgress?.('Processing conversations', 0, conversationFiles.length);
@@ -272,8 +289,18 @@ export class SyncCoordinator {
     for (let i = 0; i < conversationFiles.length; i++) {
       const file = conversationFiles[i];
       try {
+        const modTime = await this.jsonlWriter.getFileModTime(file);
+        if (typeof modTime === 'number' && Number.isFinite(modTime)) {
+          fileTimestamps[file] = modTime;
+          if ((previousFileTimestamps[file] ?? 0) >= modTime) {
+            files.push(file);
+            options.onProgress?.('Processing conversations', i + 1, conversationFiles.length);
+            continue;
+          }
+        }
+
         const events = await this.jsonlWriter.getEventsNotFromDevice<ConversationEvent>(
-          file, this.deviceId, lastSync
+          file, this.deviceId
         );
 
         for (const event of events) {
@@ -293,7 +320,7 @@ export class SyncCoordinator {
       }
     }
 
-    return { applied, skipped, files };
+    return { applied, skipped, files, fileTimestamps };
   }
 
   private async rebuildWorkspaces(
@@ -399,13 +426,14 @@ export class SyncCoordinator {
   }
 
   private async processTaskFiles(
-    lastSync: number,
+    previousFileTimestamps: Record<string, number>,
     options: SyncOptions,
     errors: string[]
-  ): Promise<{ applied: number; skipped: number; files: string[] }> {
+  ): Promise<{ applied: number; skipped: number; files: string[]; fileTimestamps: Record<string, number> }> {
     let applied = 0;
     let skipped = 0;
     const files: string[] = [];
+    const fileTimestamps: Record<string, number> = {};
 
     const taskFiles = await this.jsonlWriter.listFiles('tasks');
     options.onProgress?.('Processing tasks', 0, taskFiles.length);
@@ -413,8 +441,18 @@ export class SyncCoordinator {
     for (let i = 0; i < taskFiles.length; i++) {
       const file = taskFiles[i];
       try {
+        const modTime = await this.jsonlWriter.getFileModTime(file);
+        if (typeof modTime === 'number' && Number.isFinite(modTime)) {
+          fileTimestamps[file] = modTime;
+          if ((previousFileTimestamps[file] ?? 0) >= modTime) {
+            files.push(file);
+            options.onProgress?.('Processing tasks', i + 1, taskFiles.length);
+            continue;
+          }
+        }
+
         const events = await this.jsonlWriter.getEventsNotFromDevice<TaskEvent>(
-          file, this.deviceId, lastSync
+          file, this.deviceId
         );
 
         for (const event of events) {
@@ -434,7 +472,7 @@ export class SyncCoordinator {
       }
     }
 
-    return { applied, skipped, files };
+    return { applied, skipped, files, fileTimestamps };
   }
 
   private async rebuildTasks(

@@ -48,8 +48,13 @@ export type {
 
 // Plugin configuration types
 export type {
-  MCPSettings
-} from './plugin';
+  MCPSettings,
+  MCPStorageSettings
+} from './plugin/PluginTypes';
+
+export {
+  DEFAULT_STORAGE_SETTINGS
+} from './plugin/PluginTypes';
 
 // Common/shared types
 export type {
@@ -108,7 +113,7 @@ export type {
 // Create default settings object
 import { DEFAULT_CUSTOM_PROMPTS_SETTINGS } from './mcp';
 import { DEFAULT_LLM_PROVIDER_SETTINGS } from './llm';
-import { MCPSettings } from './plugin';
+import { DEFAULT_STORAGE_SETTINGS, MCPSettings } from './plugin/PluginTypes';
 // DEFAULT_MEMORY_SETTINGS defined above in this file
 
 /**
@@ -118,6 +123,7 @@ export const DEFAULT_SETTINGS: MCPSettings = {
   enabledVault: true,
   configFilePath: undefined,
   memory: DEFAULT_MEMORY_SETTINGS,
+  storage: DEFAULT_STORAGE_SETTINGS,
   customPrompts: DEFAULT_CUSTOM_PROMPTS_SETTINGS,
   llmProviders: DEFAULT_LLM_PROVIDER_SETTINGS,
   lastUpdateVersion: undefined,
