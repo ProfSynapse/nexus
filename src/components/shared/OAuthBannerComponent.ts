@@ -18,9 +18,9 @@ export interface OAuthBannerConfig {
   /** Whether the provider is currently connected */
   isConnected: boolean;
   /** Called when the connect button is clicked */
-  onConnect: () => void;
+  onConnect: () => void | Promise<void>;
   /** Called when the disconnect button is clicked */
-  onDisconnect: () => void;
+  onDisconnect: () => void | Promise<void>;
 }
 
 /**
@@ -58,7 +58,9 @@ export function renderOAuthBanner(
       cls: 'oauth-disconnect-btn',
     });
     disconnectBtn.setAttribute('aria-label', `Disconnect ${config.providerLabel} OAuth`);
-    disconnectBtn.onclick = () => config.onDisconnect();
+    disconnectBtn.onclick = () => {
+      void config.onDisconnect();
+    };
 
     return { connectButton: null };
   } else {
@@ -69,7 +71,9 @@ export function renderOAuthBanner(
       cls: 'mod-cta oauth-connect-btn',
     });
     connectButton.setAttribute('aria-label', `Connect with ${config.providerLabel} via OAuth`);
-    connectButton.onclick = () => config.onConnect();
+    connectButton.onclick = () => {
+      void config.onConnect();
+    };
 
     return { connectButton: connectButton };
   }
@@ -86,7 +90,7 @@ export interface CliStatusBannerConfig {
   /** Error/instruction text when not authenticated (e.g., "run `gemini auth` in your terminal") */
   notAuthenticatedHint?: string;
   /** Called when the "Check status" button is clicked */
-  onCheckStatus: () => void;
+  onCheckStatus: () => void | Promise<void>;
 }
 
 /**
@@ -132,7 +136,9 @@ export function renderCliStatusBanner(
     cls: 'cli-status-check-btn',
   });
   checkStatusButton.setAttribute('aria-label', `Check ${config.providerLabel} authentication status`);
-  checkStatusButton.onclick = () => config.onCheckStatus();
+  checkStatusButton.onclick = () => {
+    void config.onCheckStatus();
+  };
 
   return { checkStatusButton };
 }

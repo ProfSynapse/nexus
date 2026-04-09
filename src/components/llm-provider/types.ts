@@ -57,7 +57,7 @@ export interface ProviderModalConfig {
   config: LLMProviderConfig;
 
   /** Callback when configuration changes (for auto-save) */
-  onConfigChange: (config: LLMProviderConfig) => void;
+  onConfigChange: (config: LLMProviderConfig) => void | Promise<void>;
 
   /** Optional OAuth configuration for providers that support OAuth connect */
   oauthConfig?: OAuthModalConfig;
@@ -85,7 +85,7 @@ export interface SecondaryOAuthProviderConfig {
   /** OAuth configuration for the secondary provider's connect button */
   oauthConfig: OAuthModalConfig;
   /** Callback when secondary provider configuration changes */
-  onConfigChange: (config: LLMProviderConfig) => void;
+  onConfigChange: (config: LLMProviderConfig) => Promise<void>;
   /** If true, render a CLI status indicator instead of OAuth connect/disconnect banner */
   statusOnly?: boolean;
   /** Hint text shown when not authenticated (e.g., "run `gemini auth` in your terminal") */
