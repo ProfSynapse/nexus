@@ -269,7 +269,7 @@ export class LMStudioProviderModal implements IProviderModal {
    * Save configuration
    */
   private saveConfig(): void {
-    this.config.onConfigChange(this.config.config);
+    void this.config.onConfigChange(this.config.config);
   }
 
   private parseJson(text: string): unknown {

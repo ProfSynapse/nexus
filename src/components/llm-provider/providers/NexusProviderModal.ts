@@ -104,7 +104,7 @@ export class NexusProviderModal implements IProviderModal {
       // Auto-enable provider
       if (!this.config.config.enabled) {
         this.config.config.enabled = true;
-        this.config.onConfigChange(this.config.config);
+        void this.config.onConfigChange(this.config.config);
       }
 
       // Show model section
@@ -222,7 +222,7 @@ export class NexusProviderModal implements IProviderModal {
             this.config.config.webllmQuantization = match[1] as 'q4f16' | 'q5f16' | 'q8f16';
           }
 
-          this.config.onConfigChange(this.config.config);
+          void this.config.onConfigChange(this.config.config);
           this.renderActionArea();
         });
       });
