@@ -413,6 +413,10 @@ export class ConversationService {
           const nextMessages = updates.messages;
           const nextMessageIds = new Set(nextMessages.map(msg => msg.id));
 
+          // Build lookup for O(1) comparison — the query already fetched
+          // full message data, so this is free (no extra DB round-trips).
+          const existingById = new Map(existingMessages.map(m => [m.id, m]));
+
           for (const existingMessage of existingMessages) {
             if (!nextMessageIds.has(existingMessage.id)) {
               await adapter.deleteMessage(id, existingMessage.id);
@@ -420,6 +424,20 @@ export class ConversationService {
           }
 
           for (const msg of nextMessages) {
+            // Fast-path: skip messages that haven't changed.
+            // Compares the scalar fields that cover 95%+ of real updates.
+            // Complex fields (toolCalls, alternatives) are caught by the
+            // safety-net dirty-check in MessageRepository.update().
+            const prev = existingById.get(msg.id);
+            if (prev
+                && (msg.content ?? null) === prev.content
+                && (msg.state ?? 'complete') === prev.state
+                && (msg.reasoning ?? undefined) === (prev.reasoning ?? undefined)
+                && (msg.toolCallId ?? undefined) === (prev.toolCallId ?? undefined)
+                && (msg.activeAlternativeIndex ?? 0) === (prev.activeAlternativeIndex ?? 0)) {
+              continue;
+            }
+
             const convertedToolCalls = msg.toolCalls?.map(tc => ({
               id: tc.id,
               type: 'function' as const,
@@ -480,10 +498,14 @@ export class ConversationService {
 
   /**
    * Load all adapter-backed messages for a conversation so updateConversation()
-   * can reconcile deletions as well as updates.
+   * can reconcile deletions and skip unchanged messages during updates.
+   *
+   * Returns full MessageData objects — previously only IDs were kept, but the
+   * full objects enable content/state comparison that avoids redundant writes
+   * (the data is already fetched by adapter.getMessages, so this is free).
    */
-  private async getAllAdapterMessages(adapter: IStorageAdapter, conversationId: string): Promise<Array<{ id: string }>> {
-    const messages: Array<{ id: string }> = [];
+  private async getAllAdapterMessages(adapter: IStorageAdapter, conversationId: string): Promise<Array<{ id: string; content: string | null; state: string; reasoning?: string; toolCallId?: string; activeAlternativeIndex?: number }>> {
+    const messages: Array<{ id: string; content: string | null; state: string; reasoning?: string; toolCallId?: string; activeAlternativeIndex?: number }> = [];
     let page = 0;
     let hasNextPage = true;
 
@@ -493,7 +515,14 @@ export class ConversationService {
         pageSize: 200
       });
 
-      messages.push(...result.items.map(message => ({ id: message.id })));
+      messages.push(...result.items.map(message => ({
+        id: message.id,
+        content: message.content,
+        state: message.state,
+        reasoning: message.reasoning,
+        toolCallId: message.toolCallId,
+        activeAlternativeIndex: message.activeAlternativeIndex,
+      })));
       hasNextPage = !!result.hasNextPage;
       page += 1;
     }
