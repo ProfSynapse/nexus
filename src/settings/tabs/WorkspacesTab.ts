@@ -209,8 +209,8 @@ export class WorkspacesTab {
         return {
             onNavigateList: () => this.showWorkspaceList(),
             onNavigateDetail: () => this.showWorkspaceDetail(),
-            onNavigateProjects: () => this.showProjectsPage(),
-            onNavigateProjectDetail: () => this.showProjectPage(),
+            onNavigateProjects: () => { void this.openProjectsPage(); },
+            onNavigateProjectDetail: () => { void this.openNewProjectAndRender(); },
             onSaveWorkspace: () => this.saveCurrentWorkspace(),
             onDeleteWorkspace: () => this.deleteCurrentWorkspace(),
             onOpenWorkflowEditor: (index) => this.openWorkflowEditor(index),
@@ -239,16 +239,6 @@ export class WorkspacesTab {
         }
         this.currentView = 'detail';
         this.router.showDetail(this.currentWorkspace.id);
-    }
-
-    private showProjectsPage(): void {
-        this.currentView = 'projects';
-        this.render();
-    }
-
-    private showProjectPage(): void {
-        this.currentView = 'project-detail';
-        this.render();
     }
 
     // --- Workspace CRUD ---
@@ -346,6 +336,14 @@ export class WorkspacesTab {
         await this.projectsManager.openProjectDetail(project);
         this.currentView = 'project-detail';
         this.render();
+    }
+
+    private async openNewProjectAndRender(): Promise<void> {
+        const success = await this.projectsManager.openNewProject();
+        if (success) {
+            this.currentView = 'project-detail';
+            this.render();
+        }
     }
 
     // --- Workflow and file picker (already delegated to existing renderers) ---
