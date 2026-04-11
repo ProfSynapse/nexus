@@ -1,3 +1,5 @@
+import type { Component } from 'obsidian';
+
 export interface ToolStatusEntry {
   text: string;
   state: 'present' | 'past' | 'failed';
@@ -8,8 +10,13 @@ export class ToolStatusLine {
   private lastUpdate = 0;
   private queuedEntry: ToolStatusEntry | null = null;
   private pendingTimeout: ReturnType<typeof setTimeout> | null = null;
+  private animationTimeouts = new Set<ReturnType<typeof setTimeout>>();
 
-  constructor(private readonly slot: HTMLElement) {}
+  constructor(private readonly slot: HTMLElement, component: Component) {
+    // Ensure Obsidian Component teardown cancels every pending timeout,
+    // even if the caller forgets to invoke clear() explicitly.
+    component.register(() => this.clear());
+  }
 
   public update(text: string, state: ToolStatusEntry['state']): void {
     const entry = { text, state };
@@ -38,6 +45,10 @@ export class ToolStatusLine {
       clearTimeout(this.pendingTimeout);
       this.pendingTimeout = null;
     }
+    for (const id of this.animationTimeouts) {
+      clearTimeout(id);
+    }
+    this.animationTimeouts.clear();
     this.queuedEntry = null;
     this.lastUpdate = 0;
     if (this.currentSlot) {
@@ -46,13 +57,21 @@ export class ToolStatusLine {
     }
   }
 
+  private trackAnimationTimeout(fn: () => void, ms: number): void {
+    const id = setTimeout(() => {
+      this.animationTimeouts.delete(id);
+      fn();
+    }, ms);
+    this.animationTimeouts.add(id);
+  }
+
   private forceUpdate(entry: ToolStatusEntry): void {
     this.lastUpdate = Date.now();
 
     if (this.currentSlot) {
       const oldSlot = this.currentSlot;
       oldSlot.classList.add('exiting');
-      setTimeout(() => oldSlot.remove(), 200);
+      this.trackAnimationTimeout(() => oldSlot.remove(), 200);
     }
 
     const nextSlot = this.slot.createEl('div', {
@@ -61,7 +80,7 @@ export class ToolStatusLine {
     });
 
     this.currentSlot = nextSlot;
-    setTimeout(() => {
+    this.trackAnimationTimeout(() => {
       nextSlot.removeClass('entering');
       nextSlot.addClass('active');
     }, 100);
