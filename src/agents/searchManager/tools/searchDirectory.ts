@@ -16,6 +16,8 @@ import { BaseTool } from '../../baseTool';
 import { getErrorMessage } from '../../../utils/errorUtils';
 import { CommonParameters } from '../../../types/mcp/AgentTypes';
 import { WorkspaceService, GLOBAL_WORKSPACE_ID } from '../../../services/WorkspaceService';
+import type { ToolStatusTense } from '../../interfaces/ITool';
+import { labelQuery, verbs } from '../../utils/toolStatusLabels';
 
 // Import refactored services
 import { DirectoryItemCollector } from '../services/DirectoryItemCollector';
@@ -86,6 +88,10 @@ export class SearchDirectoryTool extends BaseTool<SearchDirectoryParams, SearchD
     this.filterApplicator = new SearchFilterApplicator();
     this.searchEngine = new FuzzySearchEngine();
     this.resultFormatter = new SearchResultFormatter(plugin.app);
+  }
+
+  getStatusLabel(params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
+    return labelQuery(verbs('Searching directory', 'Searched directory', 'Failed to search directory'), params, tense);
   }
 
   async execute(params: SearchDirectoryParams): Promise<SearchDirectoryResult> {

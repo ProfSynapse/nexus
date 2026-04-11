@@ -9,6 +9,8 @@ import {
   WebViewerOpenMode,
 } from '../utils/webViewer';
 import { isDesktop, isElectron } from '../../../../utils/platform';
+import type { ToolStatusTense } from '../../../interfaces/ITool';
+import { labelWithUrl, verbs } from '../../../utils/toolStatusLabels';
 
 interface OpenWebpageParams extends CommonParameters {
   url: string;
@@ -29,6 +31,10 @@ export class OpenWebpageTool extends BaseTool<OpenWebpageParams, CommonResult> {
       '1.0.0'
     );
     this.agent = agent;
+  }
+
+  getStatusLabel(params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
+    return labelWithUrl(verbs('Opening', 'Opened', 'Failed to open'), params, tense);
   }
 
   async execute(params: OpenWebpageParams): Promise<CommonResult> {

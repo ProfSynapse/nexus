@@ -37,6 +37,9 @@ import { SubagentController } from './controllers/SubagentController';
 
 // Coordinators
 import { ToolStatusBar } from './components/ToolStatusBar';
+import { ToolStatusLabelResolver } from './services/ToolStatusLabelResolver';
+import { setToolStatusLabelResolver } from './utils/toolDisplayFormatter';
+import type { AgentManager } from '../../services/AgentManager';
 import { ToolInspectionModal } from './components/ToolInspectionModal';
 import { ToolStatusBarController } from './controllers/ToolStatusBarController';
 import { ToolEventCoordinator } from './coordinators/ToolEventCoordinator';
@@ -544,6 +547,23 @@ export class ChatView extends ItemView {
     );
 
     this.toolStatusBarController = new ToolStatusBarController(this.toolStatusBar, this.streamingController, this);
+
+    // Wire the colocated tool status label resolver. The resolver routes
+    // `technicalName` → owning tool → `getStatusLabel()` override, with a
+    // lazy agent lookup so it survives plugin init ordering. Installed
+    // via a module-level setter on toolDisplayFormatter so every caller
+    // of formatToolStepLabel shares the same route. Cleared in cleanup().
+    const resolver = new ToolStatusLabelResolver((agentName) => {
+      const plugin = getNexusPlugin<NexusPlugin>(this.app);
+      const agentManager = plugin?.getServiceIfReady<AgentManager>('agentManager');
+      try {
+        return agentManager?.getAgent(agentName);
+      } catch {
+        return undefined;
+      }
+    });
+    setToolStatusLabelResolver(resolver);
+    this.register(() => setToolStatusLabelResolver(null));
 
     // Initialize tool event coordinator after messageDisplay is created
     this.toolEventCoordinator = new ToolEventCoordinator(this.toolStatusBarController);

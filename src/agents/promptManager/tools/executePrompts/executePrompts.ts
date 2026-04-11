@@ -28,6 +28,8 @@ import {
 import { PromptParser } from './utils';
 import { Recommendation } from '../../../../utils/recommendationUtils';
 import { NudgeHelpers } from '../../../../utils/nudgeHelpers';
+import type { ToolStatusTense } from '../../../interfaces/ITool';
+import { verbs } from '../../../utils/toolStatusLabels';
 
 type BatchExecutePromptResultWithRecommendations = BatchExecutePromptResult & {
   recommendations: Recommendation[];
@@ -94,6 +96,28 @@ export class ExecutePromptsTool extends BaseTool<BatchExecutePromptParams, Batch
 
     // Initialize specialized services
     this.initializeServices();
+  }
+
+  getStatusLabel(params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
+    // executePrompts takes a `prompts: PromptConfig[]` array; pull a name from
+    // the first prompt entry if available.
+    const v = verbs('Running prompt', 'Ran prompt', 'Failed to run prompt');
+    const prompts = params?.prompts;
+    if (Array.isArray(prompts) && prompts.length > 0) {
+      const first = prompts[0];
+      if (first && typeof first === 'object') {
+        const candidate = (first as Record<string, unknown>).name ?? (first as Record<string, unknown>).promptName;
+        if (typeof candidate === 'string' && candidate.trim().length > 0) {
+          return prompts.length > 1
+            ? `${v[tense]} "${candidate.trim()}" (+${prompts.length - 1} more)`
+            : `${v[tense]} "${candidate.trim()}"`;
+        }
+      }
+      if (prompts.length > 1) {
+        return `${v[tense]} (${prompts.length} prompts)`;
+      }
+    }
+    return v[tense];
   }
 
   /**

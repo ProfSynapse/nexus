@@ -3,6 +3,8 @@ import { BaseTool } from '../../baseTool';
 import { CreatePromptParams, CreatePromptResult } from '../types';
 import { CustomPromptStorageService } from '../services/CustomPromptStorageService';
 import { getErrorMessage } from '../../../utils/errorUtils';
+import type { ToolStatusTense } from '../../interfaces/ITool';
+import { labelNamed, verbs } from '../../utils/toolStatusLabels';
 
 /**
  * Tool for creating a new custom prompt
@@ -23,6 +25,10 @@ export class CreatePromptTool extends BaseTool<CreatePromptParams, CreatePromptR
     );
 
     this.storageService = storageService;
+  }
+
+  getStatusLabel(params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
+    return labelNamed(verbs('Creating prompt', 'Created prompt', 'Failed to create prompt'), params, tense, ['name', 'promptName', 'title']);
   }
 
   /**

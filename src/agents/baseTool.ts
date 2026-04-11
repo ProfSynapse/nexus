@@ -1,4 +1,4 @@
-import { ITool } from './interfaces/ITool';
+import { ITool, ToolStatusTense } from './interfaces/ITool';
 import { CommonParameters, CommonResult } from '../types';
 import {
   getCommonParameterSchema,
@@ -81,6 +81,32 @@ export abstract class BaseTool<T extends CommonParameters = CommonParameters, R 
   getResultSchema(): JSONSchema {
     // Default implementation returns the common result schema
     return getCommonResultSchema();
+  }
+
+  /**
+   * Produce a human-readable, parameter-aware status label for the
+   * ToolStatusBar. Default implementation returns `undefined` so the
+   * status formatter falls back to "Running {name}" / "Ran {name}" /
+   * "Failed to run {name}".
+   *
+   * Subclasses that benefit from parameter interpolation should override
+   * this method. Keep the override a pure function of `params` and
+   * `tense` — it runs in the UI event loop and must be cheap.
+   *
+   * Example:
+   * ```ts
+   * getStatusLabel(params, tense) {
+   *   const verbs = { present: 'Reading', past: 'Read', failed: 'Failed to read' };
+   *   const target = getBaseName(params?.path) ?? 'file';
+   *   return `${verbs[tense]} ${target}`;
+   * }
+   * ```
+   */
+  getStatusLabel(
+    _params: Record<string, unknown> | undefined,
+    _tense: ToolStatusTense
+  ): string | undefined {
+    return undefined;
   }
 
   /**
