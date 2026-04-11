@@ -6,6 +6,8 @@ import { isGlobPattern, globToRegex, normalizePath } from '../../../utils/pathUt
 import { EmbeddingService } from '../../../services/embeddings/EmbeddingService';
 import { EmbeddingManager } from '../../../services/embeddings/EmbeddingManager';
 import { CommonParameters } from '../../../types';
+import type { ToolStatusTense } from '../../interfaces/ITool';
+import { labelQuery, verbs } from '../../utils/toolStatusLabels';
 
 type SearchContentSchema = ReturnType<BaseTool<ContentSearchParams, ContentSearchResult>['getMergedSchema']>;
 
@@ -64,6 +66,10 @@ export class SearchContentTool extends BaseTool<ContentSearchParams, ContentSear
       '2.0.0'
     );
     this.plugin = plugin;
+  }
+
+  getStatusLabel(params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
+    return labelQuery(verbs('Searching notes', 'Searched notes', 'Failed to search notes'), params, tense);
   }
 
   /**

@@ -25,6 +25,8 @@ import { TextComposer } from '../services/TextComposer';
 import { PdfComposer } from '../services/PdfComposer';
 import { AudioComposer } from '../services/AudioComposer';
 import { IFormatComposer } from '../types';
+import type { ToolStatusTense } from '../../../interfaces/ITool';
+import { verbs } from '../../../utils/toolStatusLabels';
 
 interface ComposeParams extends CommonParameters {
   files?: string[];
@@ -65,6 +67,16 @@ export class ComposeTool extends BaseTool<ComposeParams, CommonResult> {
       '1.0.0'
     );
     this.agent = agent;
+  }
+
+  getStatusLabel(params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
+    const v = verbs('Composing', 'Composed', 'Failed to compose');
+    const format = typeof params?.format === 'string' ? params.format : undefined;
+    const outputPath = typeof params?.outputPath === 'string' ? params.outputPath.split(/[\\/]/).pop() : undefined;
+    if (outputPath) {
+      return format ? `${v[tense]} ${format} → ${outputPath}` : `${v[tense]} ${outputPath}`;
+    }
+    return format ? `${v[tense]} ${format}` : v[tense];
   }
 
   async execute(params: ComposeParams): Promise<CommonResult> {

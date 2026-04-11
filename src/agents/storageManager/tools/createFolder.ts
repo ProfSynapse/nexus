@@ -3,6 +3,8 @@ import { BaseTool } from '../../baseTool';
 import { CreateFolderParams, CreateFolderResult } from '../types';
 import { FileOperations } from '../utils/FileOperations';
 import { createErrorMessage } from '../../../utils/errorUtils';
+import type { ToolStatusTense } from '../../interfaces/ITool';
+import { labelFileOp, verbs } from '../../utils/toolStatusLabels';
 
 /**
  * Tool to create a new folder
@@ -22,6 +24,15 @@ export class CreateFolderTool extends BaseTool<CreateFolderParams, CreateFolderR
       '1.0.0'
     );
     this.app = app;
+  }
+
+  getStatusLabel(params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
+    return labelFileOp(
+      verbs('Creating folder', 'Created folder', 'Failed to create folder'),
+      params,
+      tense,
+      { keys: ['path', 'folderPath', 'name'], fallback: 'folder' }
+    );
   }
 
   /**
