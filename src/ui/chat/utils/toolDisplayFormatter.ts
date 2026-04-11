@@ -229,6 +229,307 @@ export function formatToolStepLabel(step: Partial<Pick<ToolDisplayStep, 'technic
           ? `Listed contents of ${target}`
           : `Listing contents of ${target}`;
     }
+    case 'storageManager.createFolder': {
+      const target = getBaseName(getStringParameter(parameters, ['path', 'folderPath', 'name'])) || 'folder';
+      return status === 'failed'
+        ? `Failed to create folder ${target}`
+        : status === 'past'
+          ? `Created folder ${target}`
+          : `Creating folder ${target}`;
+    }
+    case 'searchManager.searchDirectory': {
+      const target = getBaseName(getStringParameter(parameters, ['path', 'directory', 'folderPath'])) || 'folder';
+      const query = formatQuery(parameters, ['query', 'text', 'term']);
+      const suffix = query ? ` for ${query}` : '';
+      return status === 'failed'
+        ? `Failed to search ${target}${suffix}`
+        : status === 'past'
+          ? `Searched ${target}${suffix}`
+          : `Searching ${target}${suffix}`;
+    }
+    case 'memoryManager.createSession': {
+      const name = getStringParameter(parameters, ['name', 'sessionName', 'title']);
+      const suffix = name ? ` "${name}"` : '';
+      return status === 'failed'
+        ? `Failed to create session${suffix}`
+        : status === 'past'
+          ? `Created session${suffix}`
+          : `Creating session${suffix}`;
+    }
+    case 'memoryManager.loadSession': {
+      const id = getStringParameter(parameters, ['id', 'sessionId', 'name']) || 'session';
+      return status === 'failed'
+        ? `Failed to load ${id}`
+        : status === 'past'
+          ? `Loaded ${id}`
+          : `Loading ${id}`;
+    }
+    case 'memoryManager.createWorkspace': {
+      const name = getStringParameter(parameters, ['name', 'workspaceName', 'title']);
+      const suffix = name ? ` "${name}"` : '';
+      return status === 'failed'
+        ? `Failed to create workspace${suffix}`
+        : status === 'past'
+          ? `Created workspace${suffix}`
+          : `Creating workspace${suffix}`;
+    }
+    case 'memoryManager.createState': {
+      const name = getStringParameter(parameters, ['name', 'stateName', 'title']);
+      const suffix = name ? ` "${name}"` : '';
+      return status === 'failed'
+        ? `Failed to save state${suffix}`
+        : status === 'past'
+          ? `Saved state${suffix}`
+          : `Saving state${suffix}`;
+    }
+    case 'taskManager.createProject': {
+      const name = getStringParameter(parameters, ['name', 'title', 'projectName']);
+      const suffix = name ? ` "${name}"` : '';
+      return status === 'failed'
+        ? `Failed to create project${suffix}`
+        : status === 'past'
+          ? `Created project${suffix}`
+          : `Creating project${suffix}`;
+    }
+    case 'taskManager.listProjects':
+      return status === 'failed'
+        ? 'Failed to list projects'
+        : status === 'past'
+          ? 'Listed projects'
+          : 'Listing projects';
+    case 'taskManager.updateProject': {
+      const id = getStringParameter(parameters, ['projectId', 'id', 'name']) || 'project';
+      return status === 'failed'
+        ? `Failed to update ${id}`
+        : status === 'past'
+          ? `Updated ${id}`
+          : `Updating ${id}`;
+    }
+    case 'taskManager.archiveProject': {
+      const id = getStringParameter(parameters, ['projectId', 'id', 'name']) || 'project';
+      return status === 'failed'
+        ? `Failed to archive ${id}`
+        : status === 'past'
+          ? `Archived ${id}`
+          : `Archiving ${id}`;
+    }
+    case 'taskManager.createTask': {
+      const name = getStringParameter(parameters, ['name', 'title', 'taskName', 'description']);
+      const suffix = name ? ` "${name}"` : '';
+      return status === 'failed'
+        ? `Failed to create task${suffix}`
+        : status === 'past'
+          ? `Created task${suffix}`
+          : `Creating task${suffix}`;
+    }
+    case 'taskManager.listTasks':
+      return status === 'failed'
+        ? 'Failed to list tasks'
+        : status === 'past'
+          ? 'Listed tasks'
+          : 'Listing tasks';
+    case 'taskManager.updateTask': {
+      const id = getStringParameter(parameters, ['taskId', 'id', 'name']) || 'task';
+      return status === 'failed'
+        ? `Failed to update ${id}`
+        : status === 'past'
+          ? `Updated ${id}`
+          : `Updating ${id}`;
+    }
+    case 'taskManager.moveTask': {
+      const id = getStringParameter(parameters, ['taskId', 'id', 'name']) || 'task';
+      return status === 'failed'
+        ? `Failed to move ${id}`
+        : status === 'past'
+          ? `Moved ${id}`
+          : `Moving ${id}`;
+    }
+    case 'taskManager.queryTasks': {
+      const query = formatQuery(parameters, ['query', 'filter', 'text']);
+      const suffix = query ? ` matching ${query}` : '';
+      return status === 'failed'
+        ? `Failed to query tasks${suffix}`
+        : status === 'past'
+          ? `Queried tasks${suffix}`
+          : `Querying tasks${suffix}`;
+    }
+    case 'taskManager.linkNote': {
+      const note = getBaseName(getStringParameter(parameters, ['notePath', 'path', 'filePath'])) || 'note';
+      return status === 'failed'
+        ? `Failed to link ${note}`
+        : status === 'past'
+          ? `Linked ${note}`
+          : `Linking ${note}`;
+    }
+    case 'promptManager.listModels':
+      return status === 'failed'
+        ? 'Failed to list models'
+        : status === 'past'
+          ? 'Listed models'
+          : 'Listing models';
+    case 'promptManager.executePrompts': {
+      const name = getStringParameter(parameters, ['promptName', 'name', 'prompt', 'title']);
+      const suffix = name ? ` "${name}"` : '';
+      return status === 'failed'
+        ? `Failed to run prompt${suffix}`
+        : status === 'past'
+          ? `Ran prompt${suffix}`
+          : `Running prompt${suffix}`;
+    }
+    case 'promptManager.createPrompt': {
+      const name = getStringParameter(parameters, ['name', 'promptName', 'title']);
+      const suffix = name ? ` "${name}"` : '';
+      return status === 'failed'
+        ? `Failed to create prompt${suffix}`
+        : status === 'past'
+          ? `Created prompt${suffix}`
+          : `Creating prompt${suffix}`;
+    }
+    case 'promptManager.updatePrompt': {
+      const name = getStringParameter(parameters, ['name', 'promptName', 'id']) || 'prompt';
+      return status === 'failed'
+        ? `Failed to update ${name}`
+        : status === 'past'
+          ? `Updated ${name}`
+          : `Updating ${name}`;
+    }
+    case 'promptManager.deletePrompt': {
+      const name = getStringParameter(parameters, ['name', 'promptName', 'id']) || 'prompt';
+      return status === 'failed'
+        ? `Failed to delete ${name}`
+        : status === 'past'
+          ? `Deleted ${name}`
+          : `Deleting ${name}`;
+    }
+    case 'promptManager.listPrompts':
+      return status === 'failed'
+        ? 'Failed to list prompts'
+        : status === 'past'
+          ? 'Listed prompts'
+          : 'Listing prompts';
+    case 'promptManager.getPrompt': {
+      const name = getStringParameter(parameters, ['name', 'promptName', 'id']) || 'prompt';
+      return status === 'failed'
+        ? `Failed to load ${name}`
+        : status === 'past'
+          ? `Loaded ${name}`
+          : `Loading ${name}`;
+    }
+    case 'promptManager.generateImage': {
+      const query = formatQuery(parameters, ['prompt', 'description', 'query']);
+      const suffix = query ? ` from ${query}` : '';
+      return status === 'failed'
+        ? `Failed to generate image${suffix}`
+        : status === 'past'
+          ? `Generated image${suffix}`
+          : `Generating image${suffix}`;
+    }
+    case 'canvasManager.read': {
+      const target = getBaseName(getStringParameter(parameters, ['path', 'filePath', 'canvasPath'])) || 'canvas';
+      return status === 'failed'
+        ? `Failed to read ${target}`
+        : status === 'past'
+          ? `Read ${target}`
+          : `Reading ${target}`;
+    }
+    case 'canvasManager.write': {
+      const target = getBaseName(getStringParameter(parameters, ['path', 'filePath', 'canvasPath'])) || 'canvas';
+      return status === 'failed'
+        ? `Failed to create ${target}`
+        : status === 'past'
+          ? `Created ${target}`
+          : `Creating ${target}`;
+    }
+    case 'canvasManager.update': {
+      const target = getBaseName(getStringParameter(parameters, ['path', 'filePath', 'canvasPath'])) || 'canvas';
+      return status === 'failed'
+        ? `Failed to update ${target}`
+        : status === 'past'
+          ? `Updated ${target}`
+          : `Updating ${target}`;
+    }
+    case 'canvasManager.list': {
+      const target = getBaseName(getStringParameter(parameters, ['path', 'directory', 'folderPath'])) || 'folder';
+      return status === 'failed'
+        ? `Failed to list canvases in ${target}`
+        : status === 'past'
+          ? `Listed canvases in ${target}`
+          : `Listing canvases in ${target}`;
+    }
+    case 'webTools.openWebpage': {
+      const url = getStringParameter(parameters, ['url', 'link', 'address']);
+      const suffix = url ? ` ${url}` : '';
+      return status === 'failed'
+        ? `Failed to open${suffix}`
+        : status === 'past'
+          ? `Opened${suffix}`
+          : `Opening${suffix}`;
+    }
+    case 'webTools.capturePagePdf': {
+      const url = getStringParameter(parameters, ['url', 'link']);
+      const suffix = url ? ` ${url}` : '';
+      return status === 'failed'
+        ? `Failed to capture PDF${suffix}`
+        : status === 'past'
+          ? `Captured PDF${suffix}`
+          : `Capturing PDF${suffix}`;
+    }
+    case 'webTools.capturePagePng': {
+      const url = getStringParameter(parameters, ['url', 'link']);
+      const suffix = url ? ` ${url}` : '';
+      return status === 'failed'
+        ? `Failed to capture screenshot${suffix}`
+        : status === 'past'
+          ? `Captured screenshot${suffix}`
+          : `Capturing screenshot${suffix}`;
+    }
+    case 'webTools.captureToMarkdown': {
+      const url = getStringParameter(parameters, ['url', 'link']);
+      const suffix = url ? ` ${url}` : '';
+      return status === 'failed'
+        ? `Failed to convert${suffix} to markdown`
+        : status === 'past'
+          ? `Converted${suffix} to markdown`
+          : `Converting${suffix} to markdown`;
+    }
+    case 'webTools.extractLinks': {
+      const url = getStringParameter(parameters, ['url', 'link']);
+      const suffix = url ? ` from ${url}` : '';
+      return status === 'failed'
+        ? `Failed to extract links${suffix}`
+        : status === 'past'
+          ? `Extracted links${suffix}`
+          : `Extracting links${suffix}`;
+    }
+    case 'composer.compose': {
+      const format = getStringParameter(parameters, ['format', 'outputFormat', 'type']);
+      const suffix = format ? ` ${format}` : '';
+      return status === 'failed'
+        ? `Failed to compose${suffix}`
+        : status === 'past'
+          ? `Composed${suffix}`
+          : `Composing${suffix}`;
+    }
+    case 'composer.listFormats':
+      return status === 'failed'
+        ? 'Failed to list formats'
+        : status === 'past'
+          ? 'Listed formats'
+          : 'Listing formats';
+    case 'ingestManager.ingest': {
+      const target = getBaseName(getStringParameter(parameters, ['path', 'filePath', 'file', 'source'])) || 'file';
+      return status === 'failed'
+        ? `Failed to ingest ${target}`
+        : status === 'past'
+          ? `Ingested ${target}`
+          : `Ingesting ${target}`;
+    }
+    case 'ingestManager.listCapabilities':
+      return status === 'failed'
+        ? 'Failed to list ingest capabilities'
+        : status === 'past'
+          ? 'Listed ingest capabilities'
+          : 'Listing ingest capabilities';
   }
 
   const fallbackAction = toTitleCase(action);
