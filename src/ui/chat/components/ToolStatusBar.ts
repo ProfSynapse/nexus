@@ -43,7 +43,7 @@ export class ToolStatusBar {
     // Setup row 1 (primary)
     this.row1El = this.statusBarEl.createEl('div', { cls: 'tool-status-row--primary' });
     this.slotEl = this.row1El.createEl('div', { cls: 'tool-status-slot' });
-    this.statusLine = new ToolStatusLine(this.slotEl);
+    this.statusLine = new ToolStatusLine(this.slotEl, this.component);
     
     // Setup row 2 (meta)
     this.row2El = this.statusBarEl.createEl('div', { cls: 'tool-status-row--meta' });
