@@ -12,6 +12,7 @@
 
 import { ConversationData, ChatMessage } from '../../types/chat/ChatTypes';
 import { PaginationParams, PaginatedResult, calculatePaginationMetadata, createEmptyPaginatedResult } from '../../types/pagination/PaginationTypes';
+import type { ToolCallMessageHistoryOptions } from '../../database/repositories/interfaces/IMessageRepository';
 
 /** Default number of conversations per page */
 const DEFAULT_PAGE_SIZE = 50;
@@ -32,6 +33,10 @@ interface ConversationServiceLike {
   listConversations: (vaultName?: string, limit?: number, page?: number) => Promise<ConversationMetadata[]>;
   searchConversations: (query: string, limit?: number) => Promise<ConversationMetadata[]>;
   getMessages?: (conversationId: string, options?: PaginationParams) => Promise<PaginatedResult<ChatMessage>>;
+  getToolCallMessagesForConversation?: (
+    conversationId: string,
+    options?: ToolCallMessageHistoryOptions
+  ) => Promise<PaginatedResult<ChatMessage>>;
   getRepository?: () => unknown;
   count?: () => Promise<number>;
 }
@@ -98,6 +103,25 @@ export class ConversationQueryService {
         hasNextPage: false,
         hasPreviousPage: false
       };
+    }
+  }
+
+  /**
+   * Get conversation-wide tool call history using the conversation-service facade.
+   */
+  async getToolCallMessagesForConversation(
+    conversationId: string,
+    options?: ToolCallMessageHistoryOptions
+  ): Promise<PaginatedResult<ChatMessage>> {
+    try {
+      if (!this.conversationService.getToolCallMessagesForConversation) {
+        return createEmptyPaginatedResult<ChatMessage>(0, options?.pageSize ?? 50);
+      }
+
+      return await this.conversationService.getToolCallMessagesForConversation(conversationId, options);
+    } catch (error) {
+      console.error('Failed to get tool call messages for conversation:', error);
+      return createEmptyPaginatedResult<ChatMessage>(0, options?.pageSize ?? 50);
     }
   }
 

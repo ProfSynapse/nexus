@@ -76,7 +76,7 @@ interface ChatSubagentIntegrationDependencies {
   getModelAgentManager: () => ModelAgentManagerLike | null;
   getStreamingController: () => StreamingController | null;
   getToolEventCoordinator: () => ToolEventCoordinator | null;
-  getSettingsButtonContainer: () => HTMLElement | undefined;
+  getAgentStatusSlot: () => HTMLElement | undefined;
   getSettingsButton: () => HTMLElement | undefined;
   getNavigationTarget: () => NavigationTarget | null;
   getPlugin?: () => PluginServiceLocator | null;
@@ -156,7 +156,7 @@ export class ChatSubagentIntegration {
         contextProvider,
         streamingController,
         toolEventCoordinator,
-        this.deps.getSettingsButtonContainer(),
+        this.deps.getAgentStatusSlot(),
         this.deps.getSettingsButton()
       );
 

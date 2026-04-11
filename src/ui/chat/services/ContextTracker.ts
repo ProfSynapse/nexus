@@ -6,7 +6,7 @@
  * Delegates token calculation to TokenCalculator utility.
  */
 
-import { ContextUsage } from '../components/ContextProgressBar';
+import type { ContextUsage } from '../types/ContextTypes';
 import { TokenCalculator } from '../utils/TokenCalculator';
 import type { ModelAgentManager } from './ModelAgentManager';
 import type { ConversationManager } from './ConversationManager';

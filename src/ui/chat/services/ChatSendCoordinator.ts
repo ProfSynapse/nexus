@@ -154,13 +154,8 @@ export class ChatSendCoordinator {
         messageOptions.systemPrompt || null,
         messageOptions.provider
       )) {
-        this.setPreSendCompactionState(true);
-        try {
-          await this.performContextCompaction(currentConversation);
-          messageOptions = await modelAgentManager.getMessageOptions();
-        } finally {
-          this.setPreSendCompactionState(false);
-        }
+        await this.runContextCompaction(currentConversation);
+        messageOptions = await modelAgentManager.getMessageOptions();
       }
 
       await messageManager.sendMessage(
@@ -174,6 +169,25 @@ export class ChatSendCoordinator {
       modelAgentManager.clearMessageEnhancement();
       chatInput?.clearMessageEnhancer();
     }
+  }
+
+  async compactCurrentConversation(): Promise<void> {
+    const messageManager = this.deps.getMessageManager();
+    const conversationManager = this.deps.getConversationManager();
+    if (!messageManager || !conversationManager) {
+      return;
+    }
+
+    if (messageManager.getIsLoading()) {
+      await messageManager.interruptCurrentGeneration();
+    }
+
+    const currentConversation = conversationManager.getCurrentConversation();
+    if (!currentConversation) {
+      return;
+    }
+
+    await this.runContextCompaction(currentConversation);
   }
 
   async handleRetryMessage(messageId: string): Promise<void> {
@@ -316,6 +330,15 @@ export class ChatSendCoordinator {
       ? `Context saved (${compactedContext.messagesRemoved} messages compacted)`
       : `Context compacted (${compactedContext.messagesRemoved} messages)`;
     new Notice(savedMsg, 2500);
+  }
+
+  private async runContextCompaction(conversation: ConversationData): Promise<void> {
+    this.setPreSendCompactionState(true);
+    try {
+      await this.performContextCompaction(conversation);
+    } finally {
+      this.setPreSendCompactionState(false);
+    }
   }
 
   private async buildCompactionTranscriptCoverage(

@@ -226,6 +226,16 @@ export class StreamingController {
   }
 
   /**
+   * Get the message ID of the currently streaming message.
+   * Returns the most recently started streaming message.
+   */
+  getCurrentMessageId(): string | null {
+    // Array.from(map.keys()) returns keys in insertion order. The last one is the most recent.
+    const keys = Array.from(this.streamingStates.keys());
+    return keys.length > 0 ? keys[keys.length - 1] : null;
+  }
+
+  /**
    * Cleanup all resources
    */
   cleanup(): void {

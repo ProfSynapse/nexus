@@ -19,6 +19,7 @@ import type { ConversationMessage as LegacyConversationMessage, ToolCall as Lega
 export type { IndividualConversation, ConversationMessage } from '../types/storage/StorageTypes';
 import { IStorageAdapter } from '../database/interfaces/IStorageAdapter';
 import { PaginationParams, PaginatedResult, calculatePaginationMetadata } from '../types/pagination/PaginationTypes';
+import type { ToolCallMessageHistoryOptions } from '../database/repositories/interfaces/IMessageRepository';
 import { StorageAdapterOrGetter, resolveAdapter, withDualBackend } from './helpers/DualBackendExecutor';
 import { convertToLegacyMetadata, convertToLegacyConversation, populateMessageBranches } from './helpers/ConversationTypeConverters';
 
@@ -298,6 +299,81 @@ export class ConversationService {
   }
 
   /**
+   * Get conversation-wide tool call history using a sequence-number cursor.
+   *
+   * The newest tool-call messages are returned first when no cursor is given.
+   * Subsequent requests pass the oldest returned sequenceNumber as cursor to fetch older history.
+   */
+  async getToolCallMessagesForConversation(
+    conversationId: string,
+    options?: ToolCallMessageHistoryOptions
+  ): Promise<PaginatedResult<ConversationMessageResult>> {
+    return withDualBackend<PaginatedResult<ConversationMessageResult>>(
+      this.storageAdapterOrGetter,
+      async (adapter) => {
+        if (adapter.messages?.getToolCallMessagesForConversation) {
+          return adapter.messages.getToolCallMessagesForConversation(conversationId, options);
+        }
+
+        return {
+          items: [],
+          page: 0,
+          pageSize: options?.pageSize ?? 50,
+          totalItems: 0,
+          totalPages: 0,
+          hasNextPage: false,
+          hasPreviousPage: false
+        };
+      },
+      async () => {
+        const conversation = await this.fileSystem.readConversation(conversationId);
+        if (!conversation) {
+          return {
+            items: [],
+            page: 0,
+            pageSize: options?.pageSize ?? 50,
+            totalItems: 0,
+            totalPages: 0,
+            hasNextPage: false,
+            hasPreviousPage: false
+          };
+        }
+
+        const pageSize = Math.max(1, Math.min(options?.pageSize ?? 50, 200));
+        const cursorSequenceNumber = this.parseToolCallHistoryCursor(options?.cursor);
+
+        const toolCallMessages = conversation.messages
+          .map((message, index) => toMessageData(message, conversationId, index))
+          .filter((message) => (message.toolCalls?.length ?? 0) > 0);
+
+        const totalItems = toolCallMessages.length;
+        const newerItemCount = cursorSequenceNumber === undefined
+          ? 0
+          : toolCallMessages.filter((message) => message.sequenceNumber >= cursorSequenceNumber).length;
+
+        const availableMessages = cursorSequenceNumber === undefined
+          ? toolCallMessages
+          : toolCallMessages.filter((message) => message.sequenceNumber < cursorSequenceNumber);
+
+        const items = availableMessages.slice(-pageSize);
+        const consumedItems = newerItemCount + items.length;
+        const olderRemaining = Math.max(0, totalItems - consumedItems);
+
+        return {
+          items,
+          page: cursorSequenceNumber === undefined ? 0 : Math.floor(newerItemCount / pageSize),
+          pageSize,
+          totalItems,
+          totalPages: Math.ceil(totalItems / pageSize),
+          hasNextPage: olderRemaining > 0,
+          hasPreviousPage: newerItemCount > 0,
+          nextCursor: olderRemaining > 0 && items.length > 0 ? String(items[0].sequenceNumber) : undefined
+        };
+      }
+    );
+  }
+
+  /**
    * Get all conversations with full data (expensive - avoid if possible)
    */
   async getAllConversations(): Promise<IndividualConversation[]> {
@@ -528,6 +604,19 @@ export class ConversationService {
     }
 
     return messages;
+  }
+
+  private parseToolCallHistoryCursor(cursor?: string): number | undefined {
+    if (cursor === undefined || cursor.trim() === '') {
+      return undefined;
+    }
+
+    const parsed = Number.parseInt(cursor, 10);
+    if (!Number.isInteger(parsed) || parsed < 0) {
+      throw new Error(`[ConversationService] Invalid tool call history cursor: ${cursor}`);
+    }
+
+    return parsed;
   }
 
   /**

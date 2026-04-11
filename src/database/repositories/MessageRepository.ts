@@ -18,7 +18,12 @@
  */
 
 import { BaseRepository, RepositoryDependencies } from './base/BaseRepository';
-import { IMessageRepository, CreateMessageData, UpdateMessageData } from './interfaces/IMessageRepository';
+import {
+  IMessageRepository,
+  CreateMessageData,
+  UpdateMessageData,
+  ToolCallMessageHistoryOptions
+} from './interfaces/IMessageRepository';
 import { MessageData, AlternativeMessage } from '../../types/storage/HybridStorageTypes';
 import { MessageEvent, MessageUpdatedEvent, MessageDeletedEvent, AlternativeMessageEvent } from '../interfaces/StorageEvents';
 import { PaginatedResult, PaginationParams } from '../../types/pagination/PaginationTypes';
@@ -203,6 +208,78 @@ export class MessageRepository
       totalPages: Math.ceil(totalItems / pageSize),
       hasNextPage: (page + 1) * pageSize < totalItems,
       hasPreviousPage: page > 0
+    };
+  }
+
+  /**
+   * Get conversation-wide tool call history using a sequence-number cursor.
+   *
+   * The cursor represents the oldest already-loaded tool-call message.
+   * When omitted, the newest page is returned. When present, older messages
+   * with sequenceNumber < cursor are returned.
+   */
+  async getToolCallMessagesForConversation(
+    conversationId: string,
+    options?: ToolCallMessageHistoryOptions
+  ): Promise<PaginatedResult<MessageData>> {
+    const pageSize = Math.max(1, Math.min(options?.pageSize ?? 50, 200));
+    const cursorSequenceNumber = this.parseSequenceCursor(options?.cursor);
+
+    const totalResult = await this.sqliteCache.queryOne<{ count: number }>(
+      `SELECT COUNT(*) as count
+       FROM ${this.tableName}
+       WHERE conversationId = ?
+         AND toolCallsJson IS NOT NULL
+         AND toolCallsJson != '[]'`,
+      [conversationId]
+    );
+    const totalItems = totalResult?.count ?? 0;
+
+    let newerItemCount = 0;
+    if (cursorSequenceNumber !== undefined) {
+      const newerResult = await this.sqliteCache.queryOne<{ count: number }>(
+        `SELECT COUNT(*) as count
+         FROM ${this.tableName}
+         WHERE conversationId = ?
+           AND toolCallsJson IS NOT NULL
+           AND toolCallsJson != '[]'
+           AND sequenceNumber >= ?`,
+        [conversationId, cursorSequenceNumber]
+      );
+      newerItemCount = newerResult?.count ?? 0;
+    }
+
+    const queryParams: QueryParams = [conversationId];
+    let cursorClause = '';
+    if (cursorSequenceNumber !== undefined) {
+      cursorClause = ' AND sequenceNumber < ?';
+      queryParams.push(cursorSequenceNumber);
+    }
+
+    const descendingRows = await this.sqliteCache.query<MessageRow>(
+      `SELECT *
+       FROM ${this.tableName}
+       WHERE conversationId = ?
+         AND toolCallsJson IS NOT NULL
+         AND toolCallsJson != '[]'${cursorClause}
+       ORDER BY sequenceNumber DESC
+       LIMIT ?`,
+      [...queryParams, pageSize]
+    );
+
+    const rows = descendingRows.reverse();
+    const consumedItems = newerItemCount + rows.length;
+    const olderRemaining = Math.max(0, totalItems - consumedItems);
+
+    return {
+      items: rows.map((row) => this.rowToMessage(row)),
+      page: cursorSequenceNumber === undefined ? 0 : Math.floor(newerItemCount / pageSize),
+      pageSize,
+      totalItems,
+      totalPages: Math.ceil(totalItems / pageSize),
+      hasNextPage: olderRemaining > 0,
+      hasPreviousPage: newerItemCount > 0,
+      nextCursor: olderRemaining > 0 && rows.length > 0 ? String(rows[0].sequenceNumber) : undefined
     };
   }
 
@@ -589,6 +666,19 @@ export class MessageRepository
       alternatives,
       activeAlternativeIndex: row.activeAlternativeIndex ?? 0
     };
+  }
+
+  private parseSequenceCursor(cursor?: string): number | undefined {
+    if (cursor === undefined || cursor.trim() === '') {
+      return undefined;
+    }
+
+    const parsed = Number.parseInt(cursor, 10);
+    if (!Number.isInteger(parsed) || parsed < 0) {
+      throw new Error(`[MessageRepository] Invalid sequence cursor: ${cursor}`);
+    }
+
+    return parsed;
   }
 
   private parseJsonValue<T>(json: string): T | undefined {

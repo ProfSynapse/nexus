@@ -10,11 +10,12 @@
  * - Extracting and normalizing tool parameters
  *
  * Used by ChatView to coordinate tool events from MessageManager
- * to MessageBubble components, following the Coordinator pattern.
+ * to the status bar controller, following the Coordinator pattern.
  */
 
 import { getToolNameMetadata } from '../../../utils/toolNameUtils';
-import { MessageDisplay } from '../components/MessageDisplay';
+import { ToolStatusBarController } from '../controllers/ToolStatusBarController';
+import type { ToolStatusEventData } from '../controllers/ToolStatusBarController';
 import { ToolEventParser } from '../utils/ToolEventParser';
 
 type ToolEventPayload = NonNullable<Parameters<typeof ToolEventParser.getToolEventInfo>[0]>;
@@ -22,15 +23,13 @@ type ToolCallLike = NonNullable<ToolEventPayload['toolCall']>;
 type ToolEventData = ToolEventPayload;
 
 export class ToolEventCoordinator {
-  constructor(private messageDisplay: MessageDisplay) {}
+  constructor(private controller: ToolStatusBarController) {}
 
   /**
    * Handle tool calls detected event
    */
   handleToolCallsDetected(messageId: string, toolCalls: ToolCallLike[]): void {
-    const messageBubble = this.messageDisplay.findMessageBubble(messageId);
-
-    if (messageBubble && toolCalls && toolCalls.length > 0) {
+    if (toolCalls && toolCalls.length > 0) {
       for (const toolCall of toolCalls) {
 
         const metadata = getToolNameMetadata(
@@ -49,8 +48,8 @@ export class ToolEventCoordinator {
           }
         }
 
-        // Extract the tool call data in the format expected by MessageBubble
-        const toolData = {
+        // Extract the tool call data in the format expected by the status bar controller.
+        const toolData: ToolStatusEventData = {
           id: toolCall.id,
           name: metadata.displayName,
           displayName: metadata.displayName,
@@ -68,7 +67,7 @@ export class ToolEventCoordinator {
           success: toolCall.success
         };
 
-        messageBubble.handleToolEvent('detected', toolData as ToolEventData);
+        this.controller.handleToolEvent(messageId, 'detected', toolData);
 
         if (
           toolCall.providerExecuted &&
@@ -78,8 +77,8 @@ export class ToolEventCoordinator {
             toolCall.error !== undefined
           )
         ) {
-          messageBubble.handleToolEvent('completed', {
-            toolId: toolCall.id,
+          this.controller.handleToolEvent(messageId, 'completed', {
+            toolId: toolCall.id ?? undefined,
             result: toolCall.result,
             success: toolCall.success !== false,
             error: toolCall.error
@@ -93,29 +92,22 @@ export class ToolEventCoordinator {
    * Handle tool execution started event
    */
   handleToolExecutionStarted(messageId: string, toolCall: { id: string; name: string; parameters?: unknown }): void {
-    const messageBubble = this.messageDisplay.findMessageBubble(messageId);
-    messageBubble?.handleToolEvent('started', toolCall);
+    this.controller.handleToolEvent(messageId, 'started', toolCall);
   }
 
   /**
    * Handle tool execution completed event
    */
   handleToolExecutionCompleted(messageId: string, toolId: string, result: unknown, success: boolean, error?: string): void {
-    const messageBubble = this.messageDisplay.findMessageBubble(messageId);
-    messageBubble?.handleToolEvent('completed', { toolId, result, success, error });
+    this.controller.handleToolEvent(messageId, 'completed', { toolId, result, success, error });
   }
 
   /**
    * Handle generic tool event with data enrichment
    */
   handleToolEvent(messageId: string, event: 'detected' | 'updated' | 'started' | 'completed', data: ToolEventData): void {
-    const messageBubble = this.messageDisplay.findMessageBubble(messageId);
-    if (!messageBubble) {
-      return;
-    }
-
     const enriched = this.enrichToolEventData(data);
-    messageBubble.handleToolEvent(event, enriched);
+    this.controller.handleToolEvent(messageId, event, enriched as ToolStatusEventData);
   }
 
   /**
