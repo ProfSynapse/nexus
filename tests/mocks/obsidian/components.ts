@@ -267,3 +267,64 @@ export class Notice {
 export function setIcon(_element: HTMLElement, _iconId: string): void {
   // Mock implementation
 }
+
+// Debouncer<Args, V> — structural type matching Obsidian's public API.
+// Consumers import only for type positions, so a minimal shape is enough.
+export interface Debouncer<Args extends unknown[], V = void> {
+  (...args: Args): V | undefined;
+  cancel(): this;
+  run(): V | undefined;
+}
+
+// debounce mock — faithful implementation of Obsidian's debounce signature
+// Supports leading-edge behavior required by ToolStatusBarController.
+// Does not use fake timers — real setTimeout with real Date.now for accurate timing tests.
+type DebouncedFn<T extends (...args: unknown[]) => unknown> = T & {
+  cancel: () => void;
+};
+
+export function debounce<T extends (...args: unknown[]) => unknown>(
+  fn: T,
+  timeout: number,
+  leading = false
+): DebouncedFn<T> {
+  let pendingHandle: ReturnType<typeof setTimeout> | null = null;
+  let pendingArgs: unknown[] | null = null;
+  let lastInvokeAt = 0;
+
+  const wrapped = ((...args: unknown[]): unknown => {
+    const now = Date.now();
+
+    if (leading && (lastInvokeAt === 0 || now - lastInvokeAt >= timeout)) {
+      // Leading-edge fire
+      lastInvokeAt = now;
+      return fn(...args);
+    }
+
+    // Trailing-edge queue (or suppressed during active window for leading mode)
+    pendingArgs = args;
+    if (!pendingHandle) {
+      const delay = leading ? timeout - (now - lastInvokeAt) : timeout;
+      pendingHandle = setTimeout(() => {
+        pendingHandle = null;
+        lastInvokeAt = Date.now();
+        if (pendingArgs) {
+          const finalArgs = pendingArgs;
+          pendingArgs = null;
+          fn(...finalArgs);
+        }
+      }, Math.max(0, delay));
+    }
+    return undefined;
+  }) as DebouncedFn<T>;
+
+  wrapped.cancel = () => {
+    if (pendingHandle) {
+      clearTimeout(pendingHandle);
+      pendingHandle = null;
+    }
+    pendingArgs = null;
+  };
+
+  return wrapped;
+}
