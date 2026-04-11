@@ -405,11 +405,6 @@
 
 /* Chat Selectors Container - REMOVED (now in modal) */
 
-/* Context Container */
-.chat-context-container {
-    flex-shrink: 0;
-}
-
 /* Chat Main Area */
 .chat-main {
     flex: 1;
@@ -7479,6 +7474,13 @@ body.is-mobile .nexus-task-board-shell {
     -webkit-text-fill-color: initial;
     background: none;
     color: var(--text-normal);
+  }
+
+  /* Context badge at 100% threshold has an infinite pulse animation — disable
+     it for motion-sensitive users. Keeps the danger state readable via color
+     alone, which meets accessibility requirements. */
+  .context-badge-danger {
+    animation: none;
   }
 }
 

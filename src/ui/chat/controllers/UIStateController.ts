@@ -184,14 +184,6 @@ export class UIStateController {
   }
 
   /**
-   * Update context progress display
-   */
-  updateContextProgress(): void {
-    // This is handled by the ToolStatusBar context badge.
-    // Method exists for consistency with the original ChatView interface
-  }
-
-  /**
    * Initialize UI event listeners
    */
   initializeEventListeners(): void {

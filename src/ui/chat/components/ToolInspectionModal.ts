@@ -65,7 +65,9 @@ export class ToolInspectionModal extends Modal {
     this.emptyEl = shellEl.createDiv({ cls: 'tool-inspection-empty' });
     this.loadingEl = shellEl.createDiv({ cls: 'tool-inspection-loading' });
 
-    this.registerModalDomEvent(this.scrollEl, 'scroll', () => {
+    // Modal extends Component at runtime but Obsidian's type declarations
+    // don't expose Component methods through Modal — the cast is load-bearing.
+    (this as unknown as Component).registerDomEvent(this.scrollEl, 'scroll', () => {
       if (this.scrollEl.scrollTop <= SCROLL_THRESHOLD_PX) {
         void this.loadPreviousPage();
       }
@@ -79,14 +81,6 @@ export class ToolInspectionModal extends Modal {
     this.isDisposed = true;
     this.modalEl.removeClass('tool-inspection-modal');
     this.contentEl.empty();
-  }
-
-  private registerModalDomEvent<K extends keyof HTMLElementEventMap>(
-    element: HTMLElement,
-    type: K,
-    handler: (event: HTMLElementEventMap[K]) => void
-  ): void {
-    (this as unknown as Component).registerDomEvent(element, type, handler as EventListener);
   }
 
   private async loadInitialPages(): Promise<void> {

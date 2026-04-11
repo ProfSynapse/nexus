@@ -1,11 +1,10 @@
-import type { Component } from 'obsidian';
 import { percentageToState } from '../constants/ContextThresholds';
 
 export class ContextBadge {
   private badgeEl: HTMLElement;
   private percentage = 0;
 
-  constructor(container: HTMLElement, _component?: Component) {
+  constructor(container: HTMLElement) {
     this.badgeEl = container.createEl('div', {
       cls: 'context-badge context-badge-safe',
     });

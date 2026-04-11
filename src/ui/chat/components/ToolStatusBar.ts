@@ -20,6 +20,7 @@ export class ToolStatusBar {
   private slotEl!: HTMLElement;
   private row2El!: HTMLElement;
   private statusLine!: ToolStatusLine;
+  private isDisposed = false;
   
   // Elements
   private inspectBtn!: HTMLButtonElement;
@@ -77,7 +78,7 @@ export class ToolStatusBar {
     
     // Right group
     this.costEl = this.row2El.createEl('div', { cls: 'tool-status-cost' });
-    this.contextBadge = new ContextBadge(this.row2El, this.component);
+    this.contextBadge = new ContextBadge(this.row2El);
   }
 
   public pushStatus(entry: ToolStatusEntry): void {
@@ -106,7 +107,11 @@ export class ToolStatusBar {
   }
   
   public async updateContext(): Promise<void> {
+    if (this.isDisposed) return;
     const usage = await this.contextTracker.getContextUsage();
+    // Obsidian Component.onClose() does not await — the view may have torn
+    // down during the await above, leaving us holding detached DOM refs.
+    if (this.isDisposed) return;
     this.contextBadge.setPercentage(usage.percentage);
 
     const cost = this.contextTracker.getConversationCost();
@@ -118,8 +123,9 @@ export class ToolStatusBar {
 
     this.show();
   }
-  
+
   public cleanup(): void {
+    this.isDisposed = true;
     this.statusLine.clear();
     this.contextBadge?.cleanup();
     if (this.statusBarEl && this.statusBarEl.parentElement) {

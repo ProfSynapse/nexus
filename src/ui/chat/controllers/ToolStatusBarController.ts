@@ -1,4 +1,4 @@
-import { debounce } from 'obsidian';
+import { Component, Debouncer, debounce } from 'obsidian';
 import { ToolStatusBar, ToolStatusEntry } from '../components/ToolStatusBar';
 import { formatToolStepLabel } from '../utils/toolDisplayFormatter';
 import type { StreamingController } from './StreamingController';
@@ -69,22 +69,34 @@ function toStep(data: ToolStatusEventData, status: ToolDisplayStatus): Partial<T
 };
 
 export class ToolStatusBarController {
-  private pushStatusDebounced: (entry: ToolStatusEntry) => void;
+  private pushStatusDebounced: Debouncer<[ToolStatusEntry], void>;
+  private isDisposed = false;
 
   constructor(
     private toolStatusBar: ToolStatusBar,
-    private streamingController: StreamingController
+    private streamingController: StreamingController,
+    component: Component
   ) {
     // Phase 3 requirement: 400ms debounce
     this.pushStatusDebounced = debounce((entry: ToolStatusEntry) => {
+      if (this.isDisposed) return;
       this.toolStatusBar.pushStatus(entry);
     }, 400, true);
+
+    // Ensure debounced pushStatus is cancelled when the owning Component
+    // tears down, so a pending trailing call cannot fire against a detached
+    // status bar after ChatView closes.
+    component.register(() => {
+      this.isDisposed = true;
+      this.pushStatusDebounced.cancel();
+    });
   }
 
   /**
    * Handle generic tool event, mapping it to status bar updates
    */
   handleToolEvent(messageId: string, event: 'detected' | 'updated' | 'started' | 'completed', data: ToolStatusEventData): void {
+    if (this.isDisposed) return;
     // Phase 3 requirement: filter events to the current streaming turn
     if (messageId !== this.streamingController.getCurrentMessageId()) {
       return;

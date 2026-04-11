@@ -543,7 +543,7 @@ export class ChatView extends ItemView {
       this
     );
 
-    this.toolStatusBarController = new ToolStatusBarController(this.toolStatusBar, this.streamingController);
+    this.toolStatusBarController = new ToolStatusBarController(this.toolStatusBar, this.streamingController, this);
 
     // Initialize tool event coordinator after messageDisplay is created
     this.toolEventCoordinator = new ToolEventCoordinator(this.toolStatusBarController);
@@ -762,7 +762,9 @@ export class ChatView extends ItemView {
     const conversation = this.conversationManager.getCurrentConversation();
 
     if (this.layoutElements.chatTitle) {
-      this.layoutElements.chatTitle.textContent = conversation?.title || 'Nexus Chat';
+      const title = conversation?.title || 'Nexus Chat';
+      this.layoutElements.chatTitle.textContent = title;
+      this.layoutElements.chatTitle.setAttr('title', title);
     }
   }
 
