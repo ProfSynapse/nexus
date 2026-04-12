@@ -12,7 +12,6 @@ import { ItemView, WorkspaceLeaf } from 'obsidian';
 import { ConversationList } from './components/ConversationList';
 import { MessageDisplay } from './components/MessageDisplay';
 import { ChatInput } from './components/ChatInput';
-import { ContextProgressBar } from './components/ContextProgressBar';
 import { ChatSettingsModal } from './components/ChatSettingsModal';
 import { ChatService } from '../../services/chat/ChatService';
 import { ConversationData, ConversationMessage } from '../../types/chat/ChatTypes';
@@ -37,6 +36,12 @@ import { NexusLoadingController } from './controllers/NexusLoadingController';
 import { SubagentController } from './controllers/SubagentController';
 
 // Coordinators
+import { ToolStatusBar } from './components/ToolStatusBar';
+import { ToolStatusLabelResolver } from './services/ToolStatusLabelResolver';
+import { setToolStatusLabelResolver } from './utils/toolDisplayFormatter';
+import type { AgentManager } from '../../services/AgentManager';
+import { ToolInspectionModal } from './components/ToolInspectionModal';
+import { ToolStatusBarController } from './controllers/ToolStatusBarController';
 import { ToolEventCoordinator } from './coordinators/ToolEventCoordinator';
 
 // Builders and Utilities
@@ -69,7 +74,6 @@ export class ChatView extends ItemView {
   private conversationList!: ConversationList;
   private messageDisplay!: MessageDisplay;
   private chatInput!: ChatInput;
-  private contextProgressBar!: ContextProgressBar;
 
   // Services
   private conversationManager!: ConversationManager;
@@ -84,6 +88,8 @@ export class ChatView extends ItemView {
   private streamingController!: StreamingController;
   private nexusLoadingController!: NexusLoadingController;
   private toolEventCoordinator!: ToolEventCoordinator;
+  private toolStatusBar!: ToolStatusBar;
+  private toolStatusBarController!: ToolStatusBarController;
 
   // Subagent infrastructure (delegated to SubagentController)
   private subagentController: SubagentController | null = null;
@@ -148,7 +154,7 @@ export class ChatView extends ItemView {
       getModelAgentManager: () => this.modelAgentManager ?? null,
       getStreamingController: () => this.streamingController ?? null,
       getToolEventCoordinator: () => this.toolEventCoordinator ?? null,
-      getSettingsButtonContainer: () => this.layoutElements.settingsButton?.parentElement ?? undefined,
+      getAgentStatusSlot: () => this.toolStatusBar?.getAgentSlotEl(),
       getSettingsButton: () => this.layoutElements.settingsButton,
       getNavigationTarget: () => this.branchViewCoordinator ?? null,
     });
@@ -522,17 +528,45 @@ export class ChatView extends ItemView {
       (messageId, newContent) => {
         void this.sendCoordinator.handleEditMessage(messageId, newContent);
       },
-      (messageId, event, data) => this.handleToolEvent(messageId, event, data as unknown as ChatToolEventData),
       (messageId: string, alternativeIndex: number) => {
         void this.branchViewCoordinator.handleBranchSwitchedByIndex(messageId, alternativeIndex);
-      },
-      (branchId: string) => {
-        void this.branchViewCoordinator.navigateToBranch(branchId);
       }
     );
 
+    this.toolStatusBar = new ToolStatusBar(
+      this.layoutElements.toolStatusBarContainer,
+      this.contextTracker,
+      {
+        onInspectClick: () => this.handleInspectTools(),
+        onTaskClick: () => this.handleOpenTasks(),
+        onCompactClick: () => {
+          void this.sendCoordinator.compactCurrentConversation();
+        }
+      },
+      this
+    );
+
+    this.toolStatusBarController = new ToolStatusBarController(this.toolStatusBar, this.streamingController, this);
+
+    // Wire the colocated tool status label resolver. The resolver routes
+    // `technicalName` → owning tool → `getStatusLabel()` override, with a
+    // lazy agent lookup so it survives plugin init ordering. Installed
+    // via a module-level setter on toolDisplayFormatter so every caller
+    // of formatToolStepLabel shares the same route. Cleared in cleanup().
+    const resolver = new ToolStatusLabelResolver((agentName) => {
+      const plugin = getNexusPlugin<NexusPlugin>(this.app);
+      const agentManager = plugin?.getServiceIfReady<AgentManager>('agentManager');
+      try {
+        return agentManager?.getAgent(agentName);
+      } catch {
+        return undefined;
+      }
+    });
+    setToolStatusLabelResolver(resolver);
+    this.register(() => setToolStatusLabelResolver(null));
+
     // Initialize tool event coordinator after messageDisplay is created
-    this.toolEventCoordinator = new ToolEventCoordinator(this.messageDisplay);
+    this.toolEventCoordinator = new ToolEventCoordinator(this.toolStatusBarController);
 
     this.chatInput = new ChatInput(
       this.layoutElements.inputContainer,
@@ -546,12 +580,6 @@ export class ChatView extends ItemView {
       },
       () => this.conversationManager.getCurrentConversation() !== null,
       this // Pass Component for registerDomEvent
-    );
-
-    this.contextProgressBar = new ContextProgressBar(
-      this.layoutElements.contextContainer,
-      () => this.getContextUsage(),
-      () => this.getConversationCost()
     );
 
     // Update conversation list if conversations were already loaded
@@ -602,7 +630,7 @@ export class ChatView extends ItemView {
       });
     }
 
-    // Refresh context bar when user switches back to this tab
+    // Refresh chat chrome when user switches back to this tab
     this.registerEvent(
       this.app.workspace.on('active-leaf-change', (leaf) => {
         if (leaf === this.leaf) {
@@ -725,26 +753,38 @@ export class ChatView extends ItemView {
     // Prompt changed
   }
 
-  private async getContextUsage() {
-    return await this.contextTracker.getContextUsage();
-  }
-
-  private getConversationCost(): { totalCost: number; currency: string } | null {
-    return this.contextTracker.getConversationCost();
-  }
-
   private async updateContextProgress(): Promise<void> {
-    if (this.contextProgressBar) {
-      await this.contextProgressBar.update();
-      this.contextProgressBar.checkWarningThresholds();
+    if (this.toolStatusBar) {
+      await this.toolStatusBar.updateContext();
     }
+  }
+
+  private handleOpenTasks(): void {
+    void this.app.commands.executeCommandById('open-task-board');
+  }
+
+  private handleInspectTools(): void {
+    const conversation = this.conversationManager.getCurrentConversation();
+    if (!conversation) {
+      return;
+    }
+
+    new ToolInspectionModal(this.app, {
+      conversationId: conversation.id,
+      historySource: {
+        getToolCallMessagesForConversation: (conversationId, options) =>
+          this.chatService.getToolCallMessagesForConversation(conversationId, options),
+      },
+    }).open();
   }
 
   private updateChatTitle(): void {
     const conversation = this.conversationManager.getCurrentConversation();
 
     if (this.layoutElements.chatTitle) {
-      this.layoutElements.chatTitle.textContent = conversation?.title || 'Nexus Chat';
+      const title = conversation?.title || 'Nexus Chat';
+      this.layoutElements.chatTitle.textContent = title;
+      this.layoutElements.chatTitle.setAttr('title', title);
     }
   }
 
@@ -781,7 +821,7 @@ export class ChatView extends ItemView {
     this.conversationList?.cleanup();
     this.messageDisplay?.cleanup();
     this.chatInput?.cleanup();
-    this.contextProgressBar?.cleanup();
+    this.toolStatusBar?.cleanup();
     this.uiStateController?.cleanup();
     this.streamingController?.cleanup();
     this.nexusLoadingController?.unload();

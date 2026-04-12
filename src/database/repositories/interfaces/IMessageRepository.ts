@@ -15,6 +15,14 @@ import { PaginatedResult, PaginationParams } from '../../../types/pagination/Pag
 import { MessageData, AlternativeMessage } from '../../../types/storage/HybridStorageTypes';
 
 /**
+ * Cursor-based pagination options for conversation-wide tool call history.
+ *
+ * The cursor is the oldest loaded message sequence number. Passing it returns
+ * older tool-call messages with sequenceNumber < cursor.
+ */
+export type ToolCallMessageHistoryOptions = Pick<PaginationParams, 'pageSize' | 'cursor'>;
+
+/**
  * Data for creating a new message
  */
 export interface CreateMessageData extends Omit<MessageData, 'id' | 'conversationId' | 'sequenceNumber'> {
@@ -48,6 +56,17 @@ export interface IMessageRepository {
    * Get messages for a conversation (paginated, ordered by sequence number)
    */
   getMessages(conversationId: string, options?: PaginationParams): Promise<PaginatedResult<MessageData>>;
+
+  /**
+   * Get assistant/tool messages in a conversation that contain persisted tool call history.
+   *
+   * Results are windowed from newest to oldest using a sequenceNumber cursor,
+   * but each returned page is ordered by sequenceNumber ASC for stable transcript rendering.
+   */
+  getToolCallMessagesForConversation(
+    conversationId: string,
+    options?: ToolCallMessageHistoryOptions
+  ): Promise<PaginatedResult<MessageData>>;
 
   /**
    * Add a new message to a conversation

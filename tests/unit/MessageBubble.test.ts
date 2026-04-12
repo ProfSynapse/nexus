@@ -1,32 +1,19 @@
 /**
  * MessageBubble Unit Tests
  *
- * Characterization coverage for the MessageBubble refactor seam.
  * Verifies:
- * - active alternative data is passed through to the tool bubble render path
- * - branch navigator is created lazily when branches appear later and reused
- * - retry-style layout switches rebuild the DOM and clear accordion state
+ * - active branch content is rendered for assistant alternatives
+ * - assistant metadata sources render into the footer
+ * - branch navigator is created lazily and reused across updates
+ * - generated image results still render in the transcript without the legacy tool bubble UI
  */
 
 import { App, createMockElement } from 'obsidian';
 import { createAssistantMessage, createBranch, createCompletedToolCall } from '../fixtures/chatBugs';
 
-const mockCreateToolBubble = jest.fn();
-const mockCreateToolBubbleOnDemand = jest.fn();
-const mockCreateTextBubble = jest.fn();
 const mockRenderContent = jest.fn().mockResolvedValue(undefined);
 const mockGetReferenceMetadata = jest.fn(() => ({ references: [] }));
-const mockGetToolEventInfo = jest.fn();
 const mockHandleEdit = jest.fn();
-const mockAccordionInstances: Array<{
-  createElement: jest.Mock;
-  setDisplayGroup: jest.Mock;
-  completeTool: jest.Mock;
-  getDisplayGroup: jest.Mock;
-  getElement: jest.Mock;
-  cleanup: jest.Mock;
-  setCallbacks: jest.Mock;
-}> = [];
 let mockNavigatorCache: {
   instance: {
     updateMessage: jest.Mock;
@@ -36,40 +23,7 @@ let mockNavigatorCache: {
 const mockNavigatorInstances: Array<{
   updateMessage: jest.Mock;
   destroy: jest.Mock;
-  setMessage?: jest.Mock;
 }> = [];
-
-jest.mock('../../src/ui/chat/components/factories/ToolBubbleFactory', () => ({
-  ToolBubbleFactory: {
-    createToolBubble: (...args: unknown[]) => mockCreateToolBubble(...args),
-    createTextBubble: (...args: unknown[]) => mockCreateTextBubble(...args),
-    createToolBubbleOnDemand: (...args: unknown[]) => mockCreateToolBubbleOnDemand(...args)
-  }
-}));
-
-jest.mock('../../src/ui/chat/components/ProgressiveToolAccordion', () => ({
-  ProgressiveToolAccordion: jest.fn().mockImplementation(() => {
-    const element = createElement('div');
-    element.addClass('progressive-tool-accordion');
-    const instance = {
-      createElement: jest.fn(() => element),
-      setDisplayGroup: jest.fn(),
-      completeTool: jest.fn(),
-      getDisplayGroup: jest.fn(() => null),
-      getElement: jest.fn(() => element),
-      cleanup: jest.fn(),
-      setCallbacks: jest.fn()
-    };
-    mockAccordionInstances.push(instance);
-    return instance;
-  })
-}));
-
-jest.mock('../../src/ui/chat/utils/ToolEventParser', () => ({
-  ToolEventParser: {
-    getToolEventInfo: (...args: unknown[]) => mockGetToolEventInfo(...args)
-  }
-}));
 
 jest.mock('../../src/ui/chat/components/renderers/MessageContentRenderer', () => ({
   MessageContentRenderer: {
@@ -108,7 +62,6 @@ jest.mock('../../src/ui/chat/components/MessageBranchNavigator', () => ({
 
 import { MessageBubble } from '../../src/ui/chat/components/MessageBubble';
 import { MessageBranchNavigator } from '../../src/ui/chat/components/MessageBranchNavigator';
-import { ToolBubbleFactory } from '../../src/ui/chat/components/factories/ToolBubbleFactory';
 
 type MockElement = HTMLElement & {
   children: MockElement[];
@@ -249,28 +202,6 @@ function createElement(tag = 'div'): MockElement {
   return element;
 }
 
-function createBubbleShell(): MockElement {
-  const bubble = createElement('div');
-  bubble.addClass('message-container');
-
-  const wrapper = bubble.createDiv('message-bubble');
-  wrapper.createDiv('message-actions-external');
-  wrapper.createDiv('message-content');
-
-  return bubble;
-}
-
-function createToolBubbleShell(): MockElement {
-  const bubble = createElement('div');
-  bubble.addClass('message-container');
-  bubble.addClass('message-tool');
-
-  const wrapper = bubble.createDiv('message-bubble');
-  wrapper.createDiv('tool-bubble-content');
-
-  return bubble;
-}
-
 describe('MessageBubble', () => {
   let originalDocument: typeof globalThis.document | undefined;
   let originalHTMLElement: typeof globalThis.HTMLElement | undefined;
@@ -306,18 +237,8 @@ describe('MessageBubble', () => {
     jest.clearAllMocks();
     mockNavigatorCache = null;
     mockNavigatorInstances.length = 0;
-    mockAccordionInstances.length = 0;
     activeBubble = null;
-    mockGetToolEventInfo.mockReset();
     app = new App();
-    mockCreateToolBubbleOnDemand.mockImplementation((message: { id: string }, parentElement?: MockElement | null) => {
-      const bubble = createToolBubbleShell();
-      bubble.setAttribute('data-message-id', `${message.id}_tools`);
-      if (parentElement) {
-        parentElement.insertBefore(bubble, parentElement.firstChild ?? null);
-      }
-      return bubble;
-    });
     (app as unknown as {
       vault: {
         adapter: {
@@ -369,19 +290,6 @@ describe('MessageBubble', () => {
       activeAlternativeIndex: 1
     });
 
-    mockCreateToolBubble.mockImplementation(({ message: renderMessage }: { message: typeof message }) => {
-      const shell = createElement('div');
-      shell.createDiv('tool-bubble-content');
-      expect(renderMessage.toolCalls).toEqual([activeBranchToolCall]);
-      expect(renderMessage.reasoning).toBe('Branch reasoning');
-      return shell;
-    });
-
-    mockCreateTextBubble.mockImplementation(() => {
-      const shell = createBubbleShell();
-      return shell;
-    });
-
     const bubble = new MessageBubble(
       message,
       app,
@@ -396,8 +304,9 @@ describe('MessageBubble', () => {
 
     bubble.createElement();
 
-    expect(mockCreateToolBubble).toHaveBeenCalledTimes(1);
-    expect(mockCreateTextBubble).toHaveBeenCalledTimes(1);
+    expect(mockRenderContent).toHaveBeenCalledTimes(1);
+    expect(mockRenderContent.mock.calls[0][1]).toBe('Branch response');
+    expect(activeBranchToolCall.id).toBe('tc_branch_active');
   });
 
   it('renders source links from assistant metadata', async () => {
@@ -418,13 +327,6 @@ describe('MessageBubble', () => {
         ]
       }
     });
-
-    mockCreateToolBubble.mockImplementation(() => {
-      const shell = createElement('div');
-      shell.createDiv('tool-bubble-content');
-      return shell;
-    });
-    mockCreateTextBubble.mockImplementation(() => createBubbleShell());
 
     const bubble = new MessageBubble(
       message,
@@ -462,14 +364,6 @@ describe('MessageBubble', () => {
       branches: undefined,
       activeAlternativeIndex: 0
     });
-
-    mockCreateToolBubble.mockImplementation(() => {
-      const shell = createElement('div');
-      shell.createDiv('tool-bubble-content');
-      return shell;
-    });
-
-    mockCreateTextBubble.mockImplementation(() => createBubbleShell());
 
     const bubble = new MessageBubble(
       initialMessage,
@@ -534,135 +428,23 @@ describe('MessageBubble', () => {
     );
   });
 
-  it('rebuilds the bubble when retry-style state changes switch layouts and clears accordion state', () => {
-    const initialMessage = createAssistantMessage({
-      id: 'msg_ai_retry',
-      content: 'Tool-backed response',
-      toolCalls: [createCompletedToolCall({ id: 'tc_retry' })],
-      activeAlternativeIndex: 0
-    });
-
-    mockCreateToolBubble.mockImplementation(() => {
-      const shell = createElement('div');
-      shell.createDiv('tool-bubble-content');
-      return shell;
-    });
-    mockCreateTextBubble.mockImplementation(() => createBubbleShell());
-
-    const bubble = new MessageBubble(
-      initialMessage,
-      app,
-      jest.fn(),
-      jest.fn(),
-      jest.fn(),
-      jest.fn(),
-      jest.fn(),
-      jest.fn()
-    );
-    activeBubble = bubble;
-
-    const originalElement = bubble.createElement();
-    originalElement.parentElement = createElement('div');
-
-    const accordionElement = createElement('div');
-    const fakeAccordion = {
-      getElement: jest.fn(() => accordionElement),
-      cleanup: jest.fn()
-    };
-    bubble.getProgressiveToolAccordions().set('fake_tool', fakeAccordion as never);
-
-    const createElementSpy = jest.spyOn(bubble, 'createElement');
-
-    const retryMessage = createAssistantMessage({
-      id: 'msg_ai_retry',
-      content: '',
-      toolCalls: undefined,
-      isLoading: true,
-      state: 'streaming'
-    });
-
-    bubble.updateWithNewMessage(retryMessage);
-
-    expect(createElementSpy).toHaveBeenCalledTimes(1);
-    expect(originalElement.replaceWith).toHaveBeenCalledTimes(1);
-    expect(fakeAccordion.getElement).toHaveBeenCalledTimes(1);
-    expect(accordionElement.remove).toHaveBeenCalledTimes(1);
-    expect(fakeAccordion.cleanup).toHaveBeenCalledTimes(1);
-    expect(mockCreateToolBubble).toHaveBeenCalledTimes(1);
-    expect(mockCreateTextBubble).toHaveBeenCalledTimes(1);
-    expect(bubble.getElement()).not.toBe(originalElement);
-  });
-
-  it('creates progressive accordions from streaming tool events and attaches them to an on-demand tool bubble', () => {
-    const bubble = new MessageBubble(
-      createAssistantMessage({
-        id: 'msg_tool_stream',
-        content: ''
-      }),
-      app,
-      jest.fn(),
-      jest.fn(),
-      jest.fn(),
-      jest.fn(),
-      jest.fn(),
-      jest.fn()
-    );
-    activeBubble = bubble;
-
-    const root = bubble.createElement();
-
-    mockGetToolEventInfo.mockReturnValue({
-      toolId: 'tool_stream_1',
-      batchId: null,
-      stepId: 'tool_stream_1',
-      parentToolCallId: null,
-      callIndex: undefined,
-      totalCalls: undefined,
-      strategy: undefined,
-      isBatchStepEvent: false,
-      displayName: 'Search vault',
-      technicalName: 'searchVault',
-      parameters: undefined,
-      isComplete: false,
-      displayGroup: { kind: 'batch', steps: [] },
-      type: undefined,
-      result: undefined,
-      status: 'executing',
-      isVirtual: undefined
-    });
-
-    bubble.handleToolEvent('detected', {
-      toolCall: {
-        id: 'tool_stream_1',
-        name: 'Search vault',
-        technicalName: 'searchVault'
-      }
-    } as never);
-
-    expect(mockGetToolEventInfo).toHaveBeenCalledTimes(1);
-    expect(mockAccordionInstances).toHaveLength(1);
-    expect(mockAccordionInstances[0].createElement).toHaveBeenCalledTimes(1);
-    expect(mockAccordionInstances[0].setCallbacks).toHaveBeenCalledWith(
-      expect.objectContaining({
-        onViewBranch: expect.any(Function)
-      })
-    );
-    expect(mockAccordionInstances[0].setDisplayGroup).toHaveBeenCalledTimes(1);
-    expect(bubble.getProgressiveToolAccordions().size).toBe(1);
-
-    const toolBubble = root.querySelector('.message-tool');
-    expect(toolBubble).toBeDefined();
-  });
-
   it('renders generated images from completed tool results', () => {
     const bubble = new MessageBubble(
       createAssistantMessage({
         id: 'msg_image_result',
-        content: ''
+        content: '',
+        toolCalls: [createCompletedToolCall({
+          id: 'tool_image_1',
+          result: {
+            data: {
+              imagePath: 'images/generated.png',
+              prompt: 'A black cat in a window'
+            }
+          },
+          success: true
+        })]
       }),
       app,
-      jest.fn(),
-      jest.fn(),
       jest.fn(),
       jest.fn(),
       jest.fn(),
@@ -671,51 +453,6 @@ describe('MessageBubble', () => {
     activeBubble = bubble;
 
     const root = bubble.createElement();
-
-    mockGetToolEventInfo.mockReturnValue({
-      toolId: 'tool_image_1',
-      batchId: null,
-      stepId: 'tool_image_1',
-      parentToolCallId: null,
-      callIndex: undefined,
-      totalCalls: undefined,
-      strategy: undefined,
-      isBatchStepEvent: false,
-      displayName: 'Generate image',
-      technicalName: 'generateImage',
-      parameters: undefined,
-      isComplete: true,
-      displayGroup: { kind: 'batch', steps: [] },
-      type: undefined,
-      result: {
-        data: {
-          imagePath: 'images/generated.png',
-          prompt: 'A black cat in a window'
-        }
-      },
-      status: 'completed',
-      isVirtual: undefined
-    });
-
-    bubble.handleToolEvent('completed', {
-      toolCall: {
-        id: 'tool_image_1',
-        name: 'Generate image',
-        technicalName: 'generateImage'
-      },
-      result: {
-        data: {
-          imagePath: 'images/generated.png',
-          prompt: 'A black cat in a window'
-        }
-      },
-      success: true
-    } as never);
-
-    expect(mockGetToolEventInfo).toHaveBeenCalledTimes(1);
-    expect(mockAccordionInstances).toHaveLength(1);
-    expect(mockAccordionInstances[0].setDisplayGroup).toHaveBeenCalledTimes(1);
-    expect(mockAccordionInstances[0].completeTool).not.toHaveBeenCalled();
 
     const imageBubble = root.querySelector('.message-image');
     expect(imageBubble).toBeDefined();

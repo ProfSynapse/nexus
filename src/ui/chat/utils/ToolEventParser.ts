@@ -7,8 +7,8 @@
  * - Parsing tool parameters from various formats
  * - Normalizing tool names and metadata
  *
- * Used by MessageBubble to process tool events from the MessageManager,
- * ensuring consistent data structure for ProgressiveToolAccordion.
+ * Used by the chat tool-status flow to normalize tool events from MessageManager
+ * into a consistent display shape.
  */
 
 import { normalizeToolCallForDisplay, ToolDisplayGroup } from './toolDisplayNormalizer';

@@ -1,14 +1,13 @@
 /**
  * MessageDisplay - Main chat message display area
  *
- * Shows conversation messages with user/AI bubbles and tool execution displays
+ * Shows conversation messages with user and assistant bubbles.
  */
 
 import { ConversationData, ConversationMessage } from '../../../types/chat/ChatTypes';
 import { MessageBubble } from './MessageBubble';
 import { BranchManager } from '../services/BranchManager';
 import { App, setIcon, ButtonComponent } from 'obsidian';
-import { ToolEventInfo, ToolEventParser } from '../utils/ToolEventParser';
 
 export class MessageDisplay {
   private conversation: ConversationData | null = null;
@@ -22,9 +21,7 @@ export class MessageDisplay {
     private branchManager: BranchManager,
     private onRetryMessage?: (messageId: string) => void,
     private onEditMessage?: (messageId: string, newContent: string) => void,
-    private onToolEvent?: (messageId: string, event: 'detected' | 'updated' | 'started' | 'completed', data: ToolEventInfo) => void,
-    private onMessageAlternativeChanged?: (messageId: string, alternativeIndex: number) => void,
-    private onViewBranch?: (branchId: string) => void
+    private onMessageAlternativeChanged?: (messageId: string, alternativeIndex: number) => void
   ) {
     this.render();
   }
@@ -312,18 +309,12 @@ export class MessageDisplay {
       (messageId: string) => this.onCopyMessage(messageId),
       (messageId: string) => this.handleRetryMessage(messageId),
       (messageId: string, newContent: string) => this.handleEditMessage(messageId, newContent),
-      this.onToolEvent
-        ? (messageId, event, data) => this.onToolEvent?.(messageId, event, ToolEventParser.getToolEventInfo(data, event))
-        : undefined,
-      this.onMessageAlternativeChanged ? (messageId: string, alternativeIndex: number) => this.handleMessageAlternativeChanged(messageId, alternativeIndex) : undefined,
-      this.onViewBranch
+      this.onMessageAlternativeChanged ? (messageId: string, alternativeIndex: number) => this.handleMessageAlternativeChanged(messageId, alternativeIndex) : undefined
     );
 
     this.messageBubbles.set(message.id, bubble);
 
     const bubbleEl = bubble.createElement();
-
-    // Tool accordion is now rendered inside MessageBubble's content area
 
     return bubbleEl;
   }
@@ -405,18 +396,6 @@ export class MessageDisplay {
         element.setAttribute('data-message-id', newId);
       }
     }
-  }
-
-  /**
-   * Check if any message bubbles have progressive tool accordions
-   */
-  hasProgressiveToolAccordions(): boolean {
-    for (const bubble of this.messageBubbles.values()) {
-      if (bubble.getProgressiveToolAccordions().size > 0) {
-        return true;
-      }
-    }
-    return false;
   }
 
   /**

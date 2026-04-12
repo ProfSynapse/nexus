@@ -2,8 +2,6 @@
  * MessageDisplay Unit Tests
  *
  * Tests for incremental message reconciliation.
- * Bug #7: Full re-render destroyed live tool accordions.
- * Bug #12: Full re-render lost progressive tool accordion state.
  *
  * Key behaviors verified:
  * - Reconciliation reuses existing MessageBubble instances
@@ -26,7 +24,6 @@ const mockCleanup = jest.fn();
 const mockGetElement = jest.fn();
 const mockUpdateWithNewMessage = jest.fn();
 const mockCreateElement = jest.fn();
-const mockGetProgressiveToolAccordions = jest.fn(() => new Map());
 
 type MessageLike = {
   content: string;
@@ -84,7 +81,6 @@ jest.mock('../../src/ui/chat/components/MessageBubble', () => {
       getElement: mockGetElement,
       updateWithNewMessage: mockUpdateWithNewMessage,
       createElement: mockCreateElement,
-      getProgressiveToolAccordions: mockGetProgressiveToolAccordions,
       updateContent: jest.fn()
     }))
   };

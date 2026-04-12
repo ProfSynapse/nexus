@@ -184,14 +184,6 @@ export class UIStateController {
   }
 
   /**
-   * Update context progress display
-   */
-  updateContextProgress(): void {
-    // This will be handled by the ContextProgressBar component
-    // Method exists for consistency with the original ChatView interface
-  }
-
-  /**
    * Initialize UI event listeners
    */
   initializeEventListeners(): void {

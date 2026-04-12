@@ -405,11 +405,6 @@
 
 /* Chat Selectors Container - REMOVED (now in modal) */
 
-/* Context Container */
-.chat-context-container {
-    flex-shrink: 0;
-}
-
 /* Chat Main Area */
 .chat-main {
     flex: 1;
@@ -649,12 +644,6 @@
     max-width: none;
 }
 
-.message-container.message-tool {
-    align-self: stretch;
-    width: 100%;
-    max-width: none;
-}
-
 .message-container.message-image {
     align-self: stretch;
     width: 100%;
@@ -728,13 +717,6 @@
     border: 1px solid var(--background-modifier-border);
 }
 
-.message-container.message-tool .message-bubble {
-    background: var(--tool-bubble-background, #7e1dfb);
-    color: var(--text-on-accent);
-    border: none;
-    box-shadow: 0 0 12px rgba(var(--tool-bubble-background-rgb, 126, 29, 251), 0.35);
-}
-
 .message-header {
     display: flex;
     align-items: center;
@@ -763,11 +745,6 @@
 }
 
 /* Tool section (separate from bubble, contains tool accordions) */
-.message-tool-section {
-    margin-top: 0.5rem;
-    width: 100%;
-}
-
 /* External message actions (pill-grouped, positioned based on role) */
 .message-actions-external {
     display: flex;
@@ -799,13 +776,6 @@
     margin-right: 0.75rem;
     margin-top: 0.5rem;
     z-index: 20;
-}
-
-/* Tool messages: pill in top-right, absolute positioning outside bubble */
-.message-container.message-tool .message-actions-external {
-    position: absolute;
-    top: 0.5rem;
-    right: 0.75rem;
 }
 
 .message-container:hover .message-actions-external {
@@ -991,456 +961,6 @@
     border-color: var(--interactive-accent);
     background: var(--background-modifier-hover);
     color: var(--text-accent-hover);
-}
-
-/* Tool Accordion */
-.tool-accordion {
-    margin-top: 0.75rem;
-    border: 1px solid var(--background-modifier-border);
-    border-radius: 6px;
-    overflow: hidden;
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
-}
-
-.tool-accordion:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.25);
-}
-
-.tool-accordion-header {
-    padding: 0.5rem 0.75rem;
-    background: var(--background-secondary);
-    cursor: pointer;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    transition: background-color 0.2s ease;
-}
-
-.tool-accordion-header:hover {
-    background: var(--background-secondary);
-}
-
-.tool-summary {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-size: 0.85rem;
-}
-
-.tool-icon {
-    font-size: 0.9rem;
-}
-
-.tool-status-success .tool-icon {
-    color: var(--text-success);
-}
-
-.tool-status-partial .tool-icon {
-    color: var(--text-warning);
-}
-
-.tool-expand-icon {
-    transition: transform 0.2s;
-    font-size: 0.8rem;
-    color: var(--text-muted);
-}
-
-.tool-accordion.expanded .tool-expand-icon {
-    transform: rotate(90deg);
-}
-
-.tool-accordion-content {
-    background: var(--background-primary);
-    border-top: 1px solid var(--background-modifier-border);
-}
-
-.tool-call-item {
-    padding: 0.75rem;
-    border-bottom: 1px solid var(--background-modifier-border);
-}
-
-.tool-call-item:last-child {
-    border-bottom: none;
-}
-
-.tool-call-header {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    margin-bottom: 0.5rem;
-    font-size: 0.85rem;
-}
-
-.tool-status-icon {
-    font-size: 0.9rem;
-}
-
-.tool-name {
-    font-weight: 500;
-    color: var(--text-normal);
-}
-
-.tool-meta {
-    color: var(--text-muted);
-    font-size: 0.75rem;
-}
-
-.tool-section {
-    margin-top: 0.5rem;
-}
-
-.tool-section-header {
-    font-weight: 500;
-    color: var(--text-normal);
-    font-size: 0.8rem;
-    margin-bottom: 0.25rem;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-}
-
-.tool-copy-button {
-    opacity: 0.5;
-    cursor: pointer;
-    padding: 2px 4px;
-    border-radius: 4px;
-    transition: opacity 0.2s, background 0.2s;
-}
-
-.tool-copy-button:hover {
-    opacity: 1;
-    background: var(--background-modifier-hover);
-}
-
-.tool-copy-button.tool-copy-success {
-    color: var(--text-success);
-    opacity: 1;
-}
-
-.tool-code {
-    background: var(--background-modifier-border);
-    padding: 0.5rem;
-    border-radius: 4px;
-    font-family: var(--font-monospace);
-    font-size: 0.75rem;
-    line-height: 1.4;
-    overflow-x: auto;
-    margin: 0;
-}
-
-.tool-error-section {
-    background: var(--background-modifier-error);
-    border-radius: 4px;
-    padding: 0.5rem;
-    margin-top: 0.5rem;
-}
-
-.tool-error-content {
-    color: var(--text-normal);
-    font-size: 0.8rem;
-    font-family: var(--font-monospace);
-    white-space: pre-wrap;
-    word-wrap: break-word;
-    line-height: 1.4;
-}
-
-/* Progressive Tool Accordion - Real-time execution display */
-.progressive-tool-accordion {
-    margin-top: 0.75rem;
-    border: 1px solid var(--background-modifier-border);
-    border-radius: 6px;
-    overflow: hidden;
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
-}
-
-.progressive-tool-accordion:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.25);
-}
-
-.progressive-tool-header {
-    padding: 0.5rem 0.75rem;
-    background: var(--background-secondary);
-    cursor: pointer;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    transition: background-color 0.2s ease;
-}
-
-.progressive-tool-header:hover {
-    background: var(--background-secondary);
-}
-
-/* Glow effect during tool execution */
-.progressive-tool-header.tool-executing {
-    background: var(--interactive-accent);
-    background-image: linear-gradient(90deg, 
-        var(--interactive-accent) 0%, 
-        var(--interactive-accent-hover) 50%, 
-        var(--interactive-accent) 100%);
-    background-size: 200% 100%;
-    animation: toolGlow 2s ease-in-out infinite;
-    box-shadow: 0 0 12px var(--interactive-accent);
-}
-
-@keyframes toolGlow {
-    0% { 
-        background-position: -200% 0;
-        box-shadow: 0 0 8px var(--interactive-accent);
-    }
-    50% {
-        background-position: 200% 0;
-        box-shadow: 0 0 16px var(--interactive-accent);
-    }
-    100% { 
-        background-position: -200% 0;
-        box-shadow: 0 0 8px var(--interactive-accent);
-    }
-}
-
-/* Executing tool icon animation */
-.tool-icon.tool-executing {
-    animation: toolSpin 1s linear infinite;
-}
-
-/* Success state - green checkmark */
-.tool-icon.tool-success {
-    color: #22c55e;
-}
-
-/* Failure state - orange hazard */
-.tool-icon.tool-failed {
-    color: #f59e0b;
-}
-
-@keyframes toolSpin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
-}
-
-/* Spinning status icons */
-.tool-status-icon.spinning {
-    animation: toolSpin 1s linear infinite;
-}
-
-.progressive-tool-content {
-    background: var(--background-primary);
-    border-top: 1px solid var(--background-modifier-border);
-}
-
-/* Progressive tool items */
-.progressive-tool-item {
-    padding: 0.75rem;
-    border-bottom: 1px solid var(--background-modifier-border);
-    transition: all 0.3s ease;
-}
-
-.progressive-tool-item:last-child {
-    border-bottom: none;
-}
-
-/* Tool execution states */
-.progressive-tool-item.tool-pending {
-    opacity: 0.6;
-    background: var(--background-secondary);
-}
-
-.progressive-tool-item.tool-streaming {
-    background: var(--background-secondary);
-    border-left: 3px solid var(--text-accent);
-    opacity: 0.8;
-}
-
-.progressive-tool-item.tool-executing {
-    background: linear-gradient(90deg,
-        var(--background-primary) 0%,
-        var(--background-modifier-hover) 50%,
-        var(--background-primary) 100%);
-    background-size: 200% 100%;
-    animation: toolExecuting 2s ease-in-out infinite;
-    border-left: 3px solid var(--interactive-accent);
-}
-
-@keyframes toolExecuting {
-    0% { background-position: -200% 0; }
-    50% { background-position: 200% 0; }
-    100% { background-position: -200% 0; }
-}
-
-.progressive-tool-item.tool-completed {
-    background: var(--background-success);
-    border-left: 3px solid var(--text-success);
-    animation: toolCompleted 0.5s ease-out;
-}
-
-@keyframes toolCompleted {
-    0% { 
-        transform: scale(1.02);
-        box-shadow: 0 0 12px var(--color-green);
-    }
-    100% { 
-        transform: scale(1);
-        box-shadow: none;
-    }
-}
-
-.progressive-tool-item.tool-failed {
-    background: var(--background-modifier-error);
-    border-left: 3px solid var(--text-error);
-    animation: toolFailed 0.5s ease-out;
-}
-
-@keyframes toolFailed {
-    0% { 
-        transform: scale(1.02);
-        box-shadow: 0 0 12px var(--color-red);
-    }
-    100% { 
-        transform: scale(1);
-        box-shadow: none;
-    }
-}
-
-.progressive-tool-header-item {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    margin-bottom: 0.5rem;
-    font-size: 0.85rem;
-}
-
-/* Enhanced color coding for different states */
-.tool-executing .tool-text {
-    color: var(--interactive-accent);
-    font-weight: 500;
-}
-
-.tool-completed .tool-text {
-    color: var(--text-success);
-}
-
-.tool-failed .tool-text {
-    color: var(--text-error);
-}
-
-/* Tool parameter streaming states */
-.tool-parameters-streaming {
-    opacity: 0.7;
-    font-style: italic;
-    color: var(--text-muted);
-}
-
-.tool-streaming-indicator {
-    margin-top: 8px;
-    font-size: 0.9em;
-    color: var(--text-accent);
-    font-style: italic;
-    animation: pulse 1.5s ease-in-out infinite;
-}
-
-/* Pulsing animation for streaming status icon */
-.tool-status-icon.pulsing {
-    animation: pulse 1.5s ease-in-out infinite;
-}
-
-@keyframes pulse {
-    0%, 100% {
-        opacity: 0.6;
-    }
-    50% {
-        opacity: 1;
-    }
-}
-
-/* =================================================================
-   Reasoning Accordion - LLM Thinking/Reasoning Display
-   ================================================================= */
-
-/* Reasoning item container */
-.progressive-tool-item.reasoning-item {
-    background: var(--background-secondary);
-    border-left: 3px solid var(--text-accent);
-    padding: 0.5rem 0.75rem;
-}
-
-.progressive-tool-item.reasoning-item[data-type="reasoning"] {
-    border-left-color: var(--color-purple);
-}
-
-/* Reasoning header styling */
-.reasoning-header {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    cursor: pointer;
-}
-
-.reasoning-icon {
-    display: flex;
-    align-items: center;
-    color: var(--color-purple);
-}
-
-.reasoning-icon svg {
-    width: 16px;
-    height: 16px;
-}
-
-/* Reasoning streaming state */
-.reasoning-streaming {
-    color: var(--text-accent);
-    font-style: italic;
-    animation: pulse 1.5s ease-in-out infinite;
-}
-
-/* Reasoning content section */
-.reasoning-content-section {
-    margin-top: 0.5rem;
-    padding: 0.5rem;
-    background: var(--background-primary);
-    border-radius: 4px;
-    max-height: 300px;
-    overflow-y: auto;
-}
-
-/* Reasoning text display */
-.reasoning-text {
-    white-space: pre-wrap;
-    font-family: var(--font-text);
-    font-size: 0.9em;
-    line-height: 1.5;
-    color: var(--text-muted);
-}
-
-/* Streaming indicator for reasoning */
-.reasoning-streaming-indicator {
-    display: inline-block;
-    color: var(--text-accent);
-    font-size: 1.2em;
-    animation: blink 1s step-end infinite;
-}
-
-@keyframes blink {
-    0%, 50% { opacity: 1; }
-    51%, 100% { opacity: 0; }
-}
-
-/* Reasoning item when streaming */
-.progressive-tool-item.reasoning-item.tool-streaming {
-    opacity: 1;
-    border-left-color: var(--color-purple);
-}
-
-/* Reasoning item when complete */
-.progressive-tool-item.reasoning-item.tool-completed {
-    background: var(--background-primary);
-    border-left-color: var(--text-success);
-}
-
-.progressive-tool-item.reasoning-item.tool-completed .reasoning-icon {
-    color: var(--text-success);
 }
 
 /* Chat Input */
@@ -1710,10 +1230,6 @@
 /* Dark Theme Adjustments */
 .theme-dark .chat-textarea {
     background: var(--background-primary);
-}
-
-.theme-dark .tool-accordion-header {
-    background: var(--background-primary-alt);
 }
 
 .theme-dark .message-assistant {
@@ -3248,93 +2764,6 @@ a:hover {
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
-}
-
-/* Context Progress Bar */
-.context-progress-container {
-    padding: 8px 12px;
-    background: var(--background-secondary);
-    border-top: 1px solid var(--background-modifier-border);
-}
-
-.context-progress-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 6px;
-}
-
-.context-progress-label {
-    font-size: 12px;
-    color: var(--text-muted);
-    font-weight: 500;
-}
-
-.context-progress-usage {
-    font-size: 11px;
-    color: var(--text-faint);
-}
-
-/* Cost Badge */
-.chat-cost-badge {
-    margin-left: 12px;
-    padding: 2px 8px;
-    background: var(--interactive-accent);
-    color: var(--text-on-accent);
-    border-radius: 10px;
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.3px;
-}
-
-.context-progress-bar-container {
-    position: relative;
-    height: 6px;
-    background: var(--background-modifier-border);
-    border-radius: 3px;
-    overflow: hidden;
-}
-
-.context-progress-bar-bg {
-    width: 100%;
-    height: 100%;
-    position: relative;
-}
-
-.context-progress-bar-fill {
-    height: 100%;
-    border-radius: 3px;
-    transition: width 0.3s ease;
-    background: linear-gradient(to right,
-        var(--color-green) 0%,
-        var(--color-green) 25%,
-        var(--color-yellow) 50%,
-        var(--color-orange) 75%,
-        var(--color-red) 100%
-    );
-}
-
-.context-progress-segment {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    width: 1px;
-    background: var(--background-primary);
-    opacity: 0.5;
-}
-
-.context-warning-message {
-    margin-top: 6px;
-    padding: 4px 8px;
-    border-radius: 4px;
-    font-size: 11px;
-    text-align: center;
-}
-
-.context-warning-warning {
-    background: rgba(var(--color-orange-rgb), 0.1);
-    color: var(--color-orange);
-    border: 1px solid var(--color-orange);
 }
 
 .context-warning-critical {
@@ -5953,13 +5382,6 @@ body.is-mobile .message-content {
     text-align: left;
 }
 
-/* Tool messages - better spacing */
-body.is-mobile .message-container.message-tool .message-bubble {
-    padding: 0.875rem 1rem;
-    word-break: break-word;
-    text-align: left;
-}
-
 /* Mobile: conversation action buttons always visible */
 body.is-mobile .conversation-actions {
     opacity: 0.7;
@@ -5985,13 +5407,6 @@ body.is-mobile .chat-settings-btn {
     min-width: 44px;
     min-height: 44px;
     padding: 0.5rem;
-}
-
-/* Tool accordion headers need larger tap targets */
-body.is-mobile .tool-accordion-header,
-body.is-mobile .progressive-tool-header {
-    min-height: 44px;
-    padding: 0.75rem 1rem;
 }
 
 body.is-mobile .message-container:active .message-actions-external {
@@ -6085,17 +5500,8 @@ body.is-mobile .modal {
 /* ------------------------------ */
 /* REDUCED ANIMATIONS             */
 /* ------------------------------ */
-/* Simpler animations for better mobile performance */
-
-body.is-mobile .progressive-tool-header.tool-executing {
-    animation: none;
-    border-left: 3px solid var(--interactive-accent);
-}
-
 /* Respect user preference for reduced motion */
 @media (prefers-reduced-motion: reduce) {
-    .tool-accordion,
-    .progressive-tool-accordion,
     .message-bubble,
     .loading-spinner,
     .chat-sidebar,
@@ -6260,24 +5666,6 @@ body.is-mobile .chat-loading-overlay {
     pointer-events: none;
 }
 
-/* ------------------------------ */
-/* CONTEXT PROGRESS BAR           */
-/* ------------------------------ */
-
-.context-progress-bar-fill-initial {
-    width: 0%;
-}
-
-.context-progress-segment-positioned {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    width: 1px;
-    background: var(--background-modifier-border);
-}
-
-/* ------------------------------ */
-/* PROGRESS BAR UTILITIES         */
 /* ------------------------------ */
 
 .mcp-progress-container-hidden {
@@ -6479,7 +5867,7 @@ body.is-mobile .chat-loading-overlay {
     font-size: var(--font-ui-smaller);
     padding: 2px 8px;
     border-radius: var(--radius-s);
-    background: var(--tool-bubble-background, #7e1dfb);
+    background: var(--interactive-accent);
     color: var(--text-on-accent);
     white-space: nowrap;
     font-weight: 500;
@@ -8007,3 +7395,370 @@ body.is-mobile .nexus-task-board-shell {
     min-width: 80px;
     min-height: 44px;
 }
+
+/* ========================================================================= */
+/* TOOL STATUS BAR (Mobile Chat Glass Phase 1)                           */
+/* ========================================================================= */
+
+.tool-status-bar-container {
+  flex: 0 0 auto;
+}
+
+.tool-status-bar {
+  display: flex;
+  flex-direction: column;
+  height: 68px; /* 28px + 40px */
+  overflow: hidden;
+  transition: height 0.2s ease-in-out;
+  padding: 0 12px;
+  background: color-mix(in srgb, var(--background-primary) 88%, transparent);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.22), inset 0 0 0 1px rgba(255, 255, 255, 0.08); /* Faux-glass */
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.tool-status-bar-hidden {
+  height: 0;
+  padding: 0 12px;
+  border-top: none;
+}
+
+.tool-status-row--primary {
+  height: 28px;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+}
+
+.tool-status-slot {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  font-size: 14px;
+  color: var(--text-muted);
+}
+
+.tool-status-text-active,
+.tool-status-text-done,
+.tool-status-text-failed {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  transition: transform 0.2s, opacity 0.2s;
+}
+
+/* Shimmer animation for active status */
+.tool-status-text-active {
+  background: linear-gradient(
+    90deg, 
+    var(--text-muted) 0%, 
+    var(--text-muted) 40%, 
+    var(--text-normal) 50%, 
+    var(--text-muted) 60%, 
+    var(--text-muted) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: shimmer-sweep 2s linear infinite;
+}
+
+@keyframes shimmer-sweep {
+  0% { background-position: -100% 0; }
+  100% { background-position: 100% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tool-status-text-active {
+    animation: none;
+    -webkit-text-fill-color: initial;
+    background: none;
+    color: var(--text-normal);
+  }
+
+  /* Context badge at 100% threshold has an infinite pulse animation — disable
+     it for motion-sensitive users. Keeps the danger state readable via color
+     alone, which meets accessibility requirements. */
+  .context-badge-danger {
+    animation: none;
+  }
+}
+
+.tool-status-text-failed {
+  color: var(--text-error);
+}
+
+.tool-status-row--meta {
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.tool-status-row--meta > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tool-status-row--meta button {
+  min-width: 24px;
+  min-height: 24px;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.tool-status-row--meta button:hover {
+  color: var(--text-normal);
+}
+
+.tool-status-cost {
+  font-size: 14px;
+  color: var(--text-muted);
+  margin-right: 8px;
+}
+
+/* Context Badge */
+.context-badge {
+  font-size: 16px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: var(--radius-s);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.context-badge-safe {
+  color: var(--color-green);
+}
+
+.context-badge-warm {
+  color: var(--color-yellow);
+}
+
+.context-badge-hot {
+  color: var(--color-orange);
+}
+
+.context-badge-danger {
+  color: var(--color-red);
+  animation: pulse-badge 2s infinite;
+}
+
+@keyframes pulse-badge {
+  0% { box-shadow: 0 0 0 0 rgba(var(--color-red-rgb), 0.4); }
+  70% { box-shadow: 0 0 0 4px rgba(var(--color-red-rgb), 0); }
+  100% { box-shadow: 0 0 0 0 rgba(var(--color-red-rgb), 0); }
+}
+
+.tool-inspection-modal {
+    width: min(720px, calc(100vw - 32px));
+    max-width: min(720px, calc(100vw - 32px));
+}
+
+.tool-inspection-modal__content {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px;
+}
+
+.tool-inspection-shell {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.tool-inspection-summary,
+.tool-inspection-loading,
+.tool-inspection-empty {
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+}
+
+.tool-inspection-loading,
+.tool-inspection-empty {
+    text-align: center;
+    padding: 8px 0 0;
+}
+
+.tool-inspection-loading-hidden,
+.tool-inspection-empty-hidden {
+    display: none;
+}
+
+.tool-inspection-scroll {
+    max-height: min(70vh, 620px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+.tool-inspection-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.tool-inspection-message {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 12px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 12px;
+    background: var(--background-secondary);
+}
+
+.tool-inspection-message-header {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.tool-inspection-message-meta {
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+}
+
+.tool-inspection-message-preview {
+    font-size: var(--font-ui-small);
+    color: var(--text-normal);
+    line-height: 1.4;
+}
+
+.tool-inspection-calls {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.tool-inspection-card {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px;
+    border-radius: 10px;
+    border: 1px solid var(--background-modifier-border);
+    background: color-mix(in srgb, var(--background-primary) 92%, transparent);
+}
+
+.tool-inspection-card--complete {
+    border-color: color-mix(in srgb, var(--color-green) 28%, var(--background-modifier-border));
+}
+
+.tool-inspection-card--failed {
+    border-color: color-mix(in srgb, var(--text-error) 36%, var(--background-modifier-border));
+}
+
+.tool-inspection-card-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.tool-inspection-card-title-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+.tool-inspection-card-title {
+    font-size: var(--font-ui-medium);
+    font-weight: 600;
+    color: var(--text-normal);
+}
+
+.tool-inspection-card-summary,
+.tool-inspection-card-technical,
+.tool-inspection-card-id {
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+    word-break: break-word;
+}
+
+.tool-inspection-card-error {
+    color: var(--text-error);
+    font-size: var(--font-ui-small);
+    line-height: 1.4;
+}
+
+.tool-inspection-pill {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: var(--font-ui-smaller);
+    font-weight: 600;
+}
+
+.tool-inspection-pill--pending {
+    color: var(--text-muted);
+    background: color-mix(in srgb, var(--background-modifier-border) 70%, transparent);
+}
+
+.tool-inspection-pill--complete {
+    color: var(--color-green);
+    background: color-mix(in srgb, var(--color-green) 16%, transparent);
+}
+
+.tool-inspection-pill--failed {
+    color: var(--text-error);
+    background: color-mix(in srgb, var(--text-error) 14%, transparent);
+}
+
+.tool-inspection-block {
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 8px;
+    background: var(--background-primary);
+    overflow: hidden;
+}
+
+.tool-inspection-block-summary {
+    cursor: pointer;
+    padding: 10px 12px;
+    font-size: var(--font-ui-smaller);
+    font-weight: 600;
+    color: var(--text-normal);
+}
+
+.tool-inspection-code {
+    margin: 0;
+    padding: 0 12px 12px;
+    color: var(--text-normal);
+    font-family: var(--font-monospace);
+    font-size: var(--font-ui-smaller);
+    line-height: 1.45;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+@media (max-width: 768px) {
+    .tool-inspection-modal {
+        width: calc(100vw - 24px);
+        max-width: calc(100vw - 24px);
+    }
+
+    .tool-inspection-modal__content {
+        padding: 12px;
+    }
+
+    .tool-inspection-scroll {
+        max-height: 72vh;
+    }
+
+    .tool-inspection-card-header {
+        flex-direction: column;
+    }
+}
+

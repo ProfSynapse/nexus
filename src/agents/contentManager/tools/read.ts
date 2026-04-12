@@ -6,6 +6,8 @@ import { createErrorMessage } from '../../../utils/errorUtils';
 import { Recommendation } from '../../../utils/recommendationUtils';
 import { NudgeHelpers } from '../../../utils/nudgeHelpers';
 import { JSONSchema } from '../../../types/schema/JSONSchemaTypes';
+import type { ToolStatusTense } from '../../interfaces/ITool';
+import { labelFileOp, verbs } from '../../utils/toolStatusLabels';
 
 type ReadResultWithRecommendations = ReadResult & { recommendations: Recommendation[] };
 
@@ -44,6 +46,10 @@ export class ReadTool extends BaseTool<ReadParams, ReadResult> {
     );
 
     this.app = app;
+  }
+
+  getStatusLabel(params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
+    return labelFileOp(verbs('Reading', 'Read', 'Failed to read'), params, tense);
   }
 
   /**

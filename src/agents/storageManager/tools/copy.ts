@@ -4,6 +4,8 @@ import { BaseTool } from '../../baseTool';
 import { CopyParams, CopyResult } from '../types';
 import { FileOperations } from '../utils/FileOperations';
 import { createErrorMessage } from '../../../utils/errorUtils';
+import type { ToolStatusTense } from '../../interfaces/ITool';
+import { labelFileMove, verbs } from '../../utils/toolStatusLabels';
 
 /**
  * Location: src/agents/storageManager/tools/copy.ts
@@ -30,6 +32,19 @@ export class CopyTool extends BaseTool<CopyParams, CopyResult> {
     );
 
     this.app = app;
+  }
+
+  getStatusLabel(params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
+    return labelFileMove(
+      verbs('Copying', 'Copied', 'Failed to copy'),
+      params,
+      tense,
+      {
+        sourceKeys: ['sourcePath', 'path', 'from', 'source'],
+        destKeys: ['destinationPath', 'newPath', 'to', 'destination'],
+        sourceFallback: 'item',
+      }
+    );
   }
 
   /**

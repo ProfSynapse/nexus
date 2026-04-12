@@ -3,6 +3,8 @@ import { BaseTool } from '../../baseTool';
 import { WriteParams, WriteResult } from '../types';
 import { ContentOperations } from '../utils/ContentOperations';
 import { createErrorMessage } from '../../../utils/errorUtils';
+import type { ToolStatusTense } from '../../interfaces/ITool';
+import { labelFileOp, verbs } from '../../utils/toolStatusLabels';
 
 /**
  * Location: src/agents/contentManager/tools/write.ts
@@ -36,6 +38,10 @@ export class WriteTool extends BaseTool<WriteParams, WriteResult> {
     );
 
     this.app = app;
+  }
+
+  getStatusLabel(params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
+    return labelFileOp(verbs('Updating', 'Updated', 'Failed to update'), params, tense);
   }
 
   /**

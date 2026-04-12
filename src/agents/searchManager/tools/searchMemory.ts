@@ -17,6 +17,8 @@ import { WorkspaceService, GLOBAL_WORKSPACE_ID } from '../../../services/Workspa
 import { IStorageAdapter } from '../../../database/interfaces/IStorageAdapter';
 import { Recommendation } from '../../../utils/recommendationUtils';
 import { NudgeHelpers } from '../../../utils/nudgeHelpers';
+import type { ToolStatusTense } from '../../interfaces/ITool';
+import { labelQuery, verbs } from '../../utils/toolStatusLabels';
 
 type SearchMemoryResultWithRecommendations = SearchMemoryResult & {
   recommendations: Recommendation[];
@@ -129,6 +131,10 @@ export class SearchMemoryTool extends BaseTool<SearchMemoryParams, SearchMemoryR
     this.processor = processor || new MemorySearchProcessor(plugin, undefined, workspaceService, storageAdapter);
     this.filters = filters || new MemorySearchFilters();
     this.formatter = formatter || new ResultFormatter();
+  }
+
+  getStatusLabel(params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
+    return labelQuery(verbs('Searching memory', 'Searched memory', 'Failed to search memory'), params, tense);
   }
 
   private isThinContext(context: unknown): boolean {

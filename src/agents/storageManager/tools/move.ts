@@ -5,6 +5,8 @@ import { MoveParams, MoveResult } from '../types';
 import { FileOperations } from '../utils/FileOperations';
 import { createErrorMessage } from '../../../utils/errorUtils';
 import { normalizePath } from '../../../utils/pathUtils';
+import type { ToolStatusTense } from '../../interfaces/ITool';
+import { labelFileMove, verbs } from '../../utils/toolStatusLabels';
 
 /**
  * Location: src/agents/storageManager/tools/move.ts
@@ -31,6 +33,19 @@ export class MoveTool extends BaseTool<MoveParams, MoveResult> {
     );
 
     this.app = app;
+  }
+
+  getStatusLabel(params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
+    return labelFileMove(
+      verbs('Moving', 'Moved', 'Failed to move'),
+      params,
+      tense,
+      {
+        sourceKeys: ['sourcePath', 'path', 'from', 'source'],
+        destKeys: ['destinationPath', 'newPath', 'to', 'destination'],
+        sourceFallback: 'item',
+      }
+    );
   }
 
   /**
