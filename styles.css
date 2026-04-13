@@ -7667,7 +7667,7 @@ body.is-mobile .nexus-task-board-shell {
   align-items: center;
   justify-content: center;
   align-self: center;
-  color: var(--interactive-accent);
+  color: inherit;
 }
 
 .thinking-loader-icon svg {
