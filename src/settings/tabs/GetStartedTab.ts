@@ -13,6 +13,7 @@ import { App, Setting, Notice, Platform, Component } from 'obsidian';
 import { BackButton } from '../components/BackButton';
 import { getPrimaryServerKey } from '../../constants/branding';
 import { ConfigStatus, getClaudeDesktopConfigPath, getConfigStatus } from '../getStartedStatus';
+import { resolveDesktopBinaryPath } from '../../utils/binaryDiscovery';
 
 type GetStartedView = 'paths' | 'internal-chat' | 'mcp-setup';
 type DesktopModuleMap = {
@@ -433,22 +434,8 @@ export class GetStartedTab {
             this.cachedNodePath = '';
             return '';
         }
-        try {
-            const { execSync: nodeExecSync } = this.loadDesktopModule('child_process');
-            const nodeFs = this.loadDesktopModule('fs');
-            const cmd = Platform.isWin ? 'where node' : 'which node';
-            const result = nodeExecSync(cmd, { encoding: 'utf-8', timeout: 5000 }).trim();
-            // `where` on Windows may return multiple lines; take the first
-            const firstLine = result.split('\n')[0].trim();
-            if (firstLine && nodeFs.existsSync(firstLine)) {
-                this.cachedNodePath = firstLine;
-                return firstLine;
-            }
-        } catch {
-            // Node not found in PATH
-        }
-        this.cachedNodePath = '';
-        return '';
+        this.cachedNodePath = resolveDesktopBinaryPath('node') ?? '';
+        return this.cachedNodePath;
     }
 
     private loadDesktopModule<TModuleName extends keyof DesktopModuleMap>(
