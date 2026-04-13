@@ -18,7 +18,6 @@ export class ThinkingLoader extends Component {
     this.iconElement = this.container.createDiv('thinking-loader-icon');
     this.wordElement = this.container.createDiv('thinking-loader-text');
 
-    this.updateIcon('brain');
     this.startCycle();
   }
 
@@ -48,7 +47,11 @@ export class ThinkingLoader extends Component {
         this.stop();
         return;
       }
-      this.currentWordIndex = (this.currentWordIndex + 1) % THINKING_WORDS.length;
+      let next: number;
+      do {
+        next = Math.floor(Math.random() * THINKING_WORDS.length);
+      } while (next === this.currentWordIndex && THINKING_WORDS.length > 1);
+      this.currentWordIndex = next;
       this.renderCurrentWord();
     }, 2500);
     this.registerInterval(this.cycleInterval);
@@ -62,7 +65,9 @@ export class ThinkingLoader extends Component {
       this.typewriterInterval = null;
     }
 
-    const word = THINKING_WORDS[this.currentWordIndex];
+    const entry = THINKING_WORDS[this.currentWordIndex];
+    const text = entry.word;
+    this.updateIcon(entry.icon);
     this.wordElement.textContent = '';
     let charIndex = 0;
 
@@ -72,8 +77,8 @@ export class ThinkingLoader extends Component {
         return;
       }
 
-      if (charIndex < word.length) {
-        this.wordElement.textContent += word.charAt(charIndex);
+      if (charIndex < text.length) {
+        this.wordElement.textContent += text.charAt(charIndex);
         charIndex += 1;
         return;
       }
@@ -90,10 +95,10 @@ export class ThinkingLoader extends Component {
           return;
         }
         dotsCount = (dotsCount + 1) % 4;
-        this.wordElement.textContent = word + '.'.repeat(dotsCount);
+        this.wordElement.textContent = text + '.'.repeat(dotsCount);
       }, 300);
       this.registerInterval(this.typewriterInterval);
-    }, 30);
+    }, 90);
 
     this.registerInterval(this.typewriterInterval);
   }
