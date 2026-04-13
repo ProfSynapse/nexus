@@ -10,7 +10,9 @@ import { JSONSchema } from '../../../../types/schema/JSONSchemaTypes';
 
 import { App } from 'obsidian';
 import { BaseTool } from '../../../baseTool';
-import { MemoryManagerAgent } from '../../memoryManager'
+import { MemoryManagerAgent } from '../../memoryManager';
+import { labelNamed, verbs } from '../../../utils/toolStatusLabels';
+import type { ToolStatusTense } from '../../../interfaces/ITool';
 import { createServiceIntegration } from '../../services/ValidationService';
 import type { IndividualWorkspace } from '../../../../types/storage/StorageTypes';
 
@@ -186,6 +188,10 @@ export class CreateWorkspaceTool extends BaseTool<CreateWorkspaceParameters, Cre
         } catch {
             return [];
         }
+    }
+
+    getStatusLabel(params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
+        return labelNamed(verbs('Creating workspace', 'Created workspace', 'Failed to create workspace'), params, tense, ['name']);
     }
 
     getParameterSchema(): JSONSchema {

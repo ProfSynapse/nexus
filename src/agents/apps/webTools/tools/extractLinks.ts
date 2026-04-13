@@ -3,6 +3,8 @@ import { CommonParameters, CommonResult } from '../../../../types';
 import { JSONSchema } from '../../../../types/schema/JSONSchemaTypes';
 import { BaseAppAgent } from '../../BaseAppAgent';
 import { isDesktop, isElectron } from '../../../../utils/platform';
+import type { ToolStatusTense } from '../../../interfaces/ITool';
+import { labelWithUrl, verbs } from '../../../utils/toolStatusLabels';
 import {
   getWebViewerContents,
   getWebViewerLeaf,
@@ -36,6 +38,10 @@ export class ExtractLinksTool extends BaseTool<ExtractLinksParams, CommonResult>
       '1.0.0'
     );
     this.agent = agent;
+  }
+
+  getStatusLabel(params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
+    return labelWithUrl(verbs('Extracting links', 'Extracted links', 'Failed to extract links'), params, tense, 'page');
   }
 
   async execute(params: ExtractLinksParams): Promise<CommonResult> {

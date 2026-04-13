@@ -5,6 +5,8 @@ import { JSONSchema } from '../../../types/schema/JSONSchemaTypes';
  */
 
 import { BaseTool } from '../../baseTool';
+import { ToolStatusTense } from '../../interfaces/ITool';
+import { verbs, labelNamed } from '../../utils/toolStatusLabels';
 import { CommonResult, CommonParameters } from '../../../types';
 import { createResult } from '../../../utils/schemaUtils';
 import { ImageGenerationService } from '../../../services/llm/ImageGenerationService';
@@ -323,6 +325,11 @@ export class GenerateImageTool extends BaseTool<GenerateImageParams, GenerateIma
     };
 
     return this.getMergedSchema(toolSchema);
+  }
+
+  getStatusLabel(params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
+    const v = verbs('Generating image', 'Generated image', 'Failed to generate image');
+    return labelNamed(v, params, tense, ['prompt']);
   }
 
   /**

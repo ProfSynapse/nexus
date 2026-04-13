@@ -2,6 +2,8 @@ import { App, TFile } from 'obsidian';
 import { BaseTool } from '../../baseTool';
 import { SetPropertyParams, SetPropertyResult } from '../types';
 import { createErrorMessage } from '../../../utils/errorUtils';
+import type { ToolStatusTense } from '../../interfaces/ITool';
+import { labelFileOp, verbs } from '../../utils/toolStatusLabels';
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every(item => typeof item === 'string');
@@ -36,6 +38,10 @@ export class SetPropertyTool extends BaseTool<SetPropertyParams, SetPropertyResu
       '1.0.0'
     );
     this.app = app;
+  }
+
+  getStatusLabel(params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
+    return labelFileOp(verbs('Setting property on', 'Set property on', 'Failed to set property on'), params, tense);
   }
 
   async execute(params: SetPropertyParams): Promise<SetPropertyResult> {

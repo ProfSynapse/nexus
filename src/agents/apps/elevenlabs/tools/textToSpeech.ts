@@ -10,6 +10,8 @@ import { CommonParameters, CommonResult } from '../../../../types';
 import { JSONSchema } from '../../../../types/schema/JSONSchemaTypes';
 import { BaseAppAgent } from '../../BaseAppAgent';
 import { requestUrl, normalizePath, TFolder } from 'obsidian';
+import { labelNamed, verbs } from '../../../utils/toolStatusLabels';
+import type { ToolStatusTense } from '../../../interfaces/ITool';
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -136,6 +138,10 @@ export class TextToSpeechTool extends BaseTool<TextToSpeechParams, CommonResult>
       return this.prepareResult(false, undefined,
         `Text-to-speech failed${status !== undefined ? ` (${status})` : ''}: ${body}`);
     }
+  }
+
+  getStatusLabel(params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
+    return labelNamed(verbs('Converting to speech', 'Converted to speech', 'Failed to convert to speech'), params, tense, ['prompt']);
   }
 
   getParameterSchema(): JSONSchema {

@@ -10,6 +10,8 @@ import { CommonParameters, CommonResult } from '../../../../types';
 import { JSONSchema } from '../../../../types/schema/JSONSchemaTypes';
 import { BaseAppAgent } from '../../BaseAppAgent';
 import { requestUrl, normalizePath, TFolder } from 'obsidian';
+import { labelNamed, verbs } from '../../../utils/toolStatusLabels';
+import type { ToolStatusTense } from '../../../interfaces/ITool';
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -128,6 +130,10 @@ export class SoundEffectsTool extends BaseTool<SoundEffectsParams, CommonResult>
       return this.prepareResult(false, undefined,
         `Sound effect generation failed${status !== undefined ? ` (${status})` : ''}: ${body}`);
     }
+  }
+
+  getStatusLabel(params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
+    return labelNamed(verbs('Generating sound effect', 'Generated sound effect', 'Failed to generate sound effect'), params, tense, ['prompt']);
   }
 
   getParameterSchema(): JSONSchema {

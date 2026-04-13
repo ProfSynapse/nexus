@@ -4,6 +4,8 @@ import { UpdateCanvasParams, UpdateCanvasResult } from '../types';
 import { CanvasOperations } from '../utils/CanvasOperations';
 import { createErrorMessage } from '../../../utils/errorUtils';
 import { JSONSchema } from '../../../types/schema/JSONSchemaTypes';
+import type { ToolStatusTense } from '../../interfaces/ITool';
+import { labelFileOp, verbs } from '../../utils/toolStatusLabels';
 
 /**
  * Update an EXISTING canvas file (fails if doesn't exist)
@@ -19,6 +21,13 @@ export class UpdateCanvasTool extends BaseTool<UpdateCanvasParams, UpdateCanvasR
       '1.0.0'
     );
     this.app = app;
+  }
+
+  getStatusLabel(params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
+    return labelFileOp(verbs('Updating canvas', 'Updated canvas', 'Failed to update canvas'), params, tense, {
+      keys: ['path'],
+      fallback: 'canvas',
+    });
   }
 
   async execute(params: UpdateCanvasParams): Promise<UpdateCanvasResult> {

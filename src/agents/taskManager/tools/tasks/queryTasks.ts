@@ -11,6 +11,8 @@ import { TaskService } from '../../services/TaskService';
 import { QueryTasksParameters, QueryTasksResult } from '../../types';
 import { JSONSchema } from '../../../../types/schema/JSONSchemaTypes';
 import { createErrorMessage } from '../../../../utils/errorUtils';
+import { ToolStatusTense } from '../../../interfaces/ITool';
+import { verbs, labelNamed } from '../../../utils/toolStatusLabels';
 
 export class QueryTasksTool extends BaseTool<QueryTasksParameters, QueryTasksResult> {
   constructor(private taskService: TaskService) {
@@ -72,6 +74,11 @@ export class QueryTasksTool extends BaseTool<QueryTasksParameters, QueryTasksRes
       },
       required: ['projectId', 'query']
     });
+  }
+
+  getStatusLabel(params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
+    const v = verbs('Querying tasks', 'Queried tasks', 'Failed to query tasks');
+    return labelNamed(v, params, tense, ['query']);
   }
 
   getResultSchema(): JSONSchema {

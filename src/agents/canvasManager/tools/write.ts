@@ -4,6 +4,8 @@ import { WriteCanvasParams, WriteCanvasResult } from '../types';
 import { CanvasOperations } from '../utils/CanvasOperations';
 import { createErrorMessage } from '../../../utils/errorUtils';
 import { JSONSchema } from '../../../types/schema/JSONSchemaTypes';
+import type { ToolStatusTense } from '../../interfaces/ITool';
+import { labelFileOp, verbs } from '../../utils/toolStatusLabels';
 
 /**
  * Create a NEW canvas file (fails if already exists)
@@ -19,6 +21,13 @@ export class WriteCanvasTool extends BaseTool<WriteCanvasParams, WriteCanvasResu
       '1.0.0'
     );
     this.app = app;
+  }
+
+  getStatusLabel(params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
+    return labelFileOp(verbs('Creating canvas', 'Created canvas', 'Failed to create canvas'), params, tense, {
+      keys: ['path'],
+      fallback: 'canvas',
+    });
   }
 
   async execute(params: WriteCanvasParams): Promise<WriteCanvasResult> {

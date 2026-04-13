@@ -4,6 +4,8 @@ import { BaseDirectoryTool } from './baseDirectory';
 import { ListParams, ListResult } from '../types';
 import { createErrorMessage } from '../../../utils/errorUtils';
 import { filterByName, FILTER_DESCRIPTION } from '../../../utils/filterUtils';
+import type { ToolStatusTense } from '../../interfaces/ITool';
+import { labelFileOp, verbs } from '../../utils/toolStatusLabels';
 
 /**
  * Location: src/agents/storageManager/tools/list.ts
@@ -28,6 +30,13 @@ export class ListTool extends BaseDirectoryTool<ListParams, ListResult> {
       '1.0.0',
       app
     );
+  }
+
+  getStatusLabel(params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
+    return labelFileOp(verbs('Listing', 'Listed', 'Failed to list'), params, tense, {
+      keys: ['path'],
+      fallback: 'directory',
+    });
   }
 
   /**

@@ -11,6 +11,8 @@ import { TaskService } from '../../services/TaskService';
 import { ListProjectsParameters, ListProjectsResult } from '../../types';
 import { JSONSchema } from '../../../../types/schema/JSONSchemaTypes';
 import { createErrorMessage } from '../../../../utils/errorUtils';
+import { ToolStatusTense } from '../../../interfaces/ITool';
+import { verbs } from '../../../utils/toolStatusLabels';
 
 export class ListProjectsTool extends BaseTool<ListProjectsParameters, ListProjectsResult> {
   constructor(private taskService: TaskService) {
@@ -61,6 +63,11 @@ export class ListProjectsTool extends BaseTool<ListProjectsParameters, ListProje
       },
       required: ['workspaceId']
     });
+  }
+
+  getStatusLabel(_params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
+    const v = verbs('Listing projects', 'Listed projects', 'Failed to list projects');
+    return v[tense];
   }
 
   getResultSchema(): JSONSchema {

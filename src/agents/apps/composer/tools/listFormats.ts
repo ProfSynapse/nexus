@@ -12,6 +12,8 @@ import { BaseTool } from '../../../baseTool';
 import { BaseAppAgent } from '../../BaseAppAgent';
 import { CommonParameters, CommonResult } from '../../../../types';
 import { JSONSchema } from '../../../../types/schema/JSONSchemaTypes';
+import type { ToolStatusTense } from '../../../interfaces/ITool';
+import { verbs } from '../../../utils/toolStatusLabels';
 
 export class ListFormatsTool extends BaseTool<CommonParameters, CommonResult> {
   constructor(_agent: BaseAppAgent) {
@@ -21,6 +23,11 @@ export class ListFormatsTool extends BaseTool<CommonParameters, CommonResult> {
       'List supported composition formats, their file extensions, and platform availability.',
       '1.0.0'
     );
+  }
+
+  getStatusLabel(_params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
+    const v = verbs('Listing formats', 'Listed formats', 'Failed to list formats');
+    return v[tense];
   }
 
   // eslint-disable-next-line @typescript-eslint/require-await -- implements abstract BaseTool.execute()

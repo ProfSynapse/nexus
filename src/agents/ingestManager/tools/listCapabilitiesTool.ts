@@ -8,6 +8,8 @@
  */
 
 import { BaseTool } from '../../baseTool';
+import { verbs } from '../../utils/toolStatusLabels';
+import type { ToolStatusTense } from '../../interfaces/ITool';
 import {
   ListCapabilitiesParameters,
   ListCapabilitiesResult,
@@ -28,6 +30,11 @@ export class ListCapabilitiesTool extends BaseTool<ListCapabilitiesParameters, L
       'Transcription providers expose explicit speech or audio-capable ingest models.',
       '1.0.0'
     );
+  }
+
+  getStatusLabel(_params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
+    const v = verbs('Listing ingest capabilities', 'Listed ingest capabilities', 'Failed to list ingest capabilities');
+    return v[tense];
   }
 
   async execute(_params: ListCapabilitiesParameters): Promise<ListCapabilitiesResult> {

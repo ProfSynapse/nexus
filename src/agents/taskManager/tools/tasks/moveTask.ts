@@ -11,6 +11,8 @@ import { TaskService } from '../../services/TaskService';
 import { MoveTaskParameters, MoveTaskResult } from '../../types';
 import { JSONSchema } from '../../../../types/schema/JSONSchemaTypes';
 import { createErrorMessage } from '../../../../utils/errorUtils';
+import { ToolStatusTense } from '../../../interfaces/ITool';
+import { verbs, labelWithId } from '../../../utils/toolStatusLabels';
 
 export class MoveTaskTool extends BaseTool<MoveTaskParameters, MoveTaskResult> {
   constructor(private taskService: TaskService) {
@@ -55,6 +57,11 @@ export class MoveTaskTool extends BaseTool<MoveTaskParameters, MoveTaskResult> {
       },
       required: ['taskId']
     });
+  }
+
+  getStatusLabel(params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
+    const v = verbs('Moving task', 'Moved task', 'Failed to move task');
+    return labelWithId(v, params, tense, { keys: ['taskId'], fallback: 'task' });
   }
 
   getResultSchema(): JSONSchema {

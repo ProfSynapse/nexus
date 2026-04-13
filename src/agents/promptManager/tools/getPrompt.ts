@@ -4,6 +4,8 @@ import { GetPromptParams, GetPromptResult } from '../types';
 import { CustomPromptStorageService } from '../services/CustomPromptStorageService';
 import { getCommonResultSchema, createResult } from '../../../utils/schemaUtils';
 import { getErrorMessage } from '../../../utils/errorUtils';
+import { ToolStatusTense } from '../../interfaces/ITool';
+import { verbs, labelNamed } from '../../utils/toolStatusLabels';
 
 /**
  * Tool for getting a specific custom prompt for persona adoption
@@ -103,6 +105,11 @@ To execute tasks: User must explicitly request promptManager_executePrompts`;
     };
 
     return this.getMergedSchema(toolSchema);
+  }
+
+  getStatusLabel(params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
+    const v = verbs('Getting prompt', 'Got prompt', 'Failed to get prompt');
+    return labelNamed(v, params, tense, ['name', 'id']);
   }
 
   /**
