@@ -109,7 +109,7 @@ export class ToolCallStateManager {
     }
 
     const previousPhase = existing?.phase ?? null;
-    console.log(`[StateManager] ${previousPhase ?? 'new'} → ${targetPhase}: ${toolCallId}`, { name: metadata?.technicalName || existing?.metadata?.technicalName });
+
 
     const state: ToolCallState = {
       id: resolvedId,

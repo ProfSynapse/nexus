@@ -130,7 +130,7 @@ export class ToolEventCoordinator {
 
 
         for (let i = 0; i < innerCalls.length; i++) {
-          const inner = innerCalls[i];
+          const inner: unknown = innerCalls[i];
           if (!inner || typeof inner !== 'object') continue;
           const call = inner as Record<string, unknown>;
           const agent = typeof call.agent === 'string' ? call.agent : '';
