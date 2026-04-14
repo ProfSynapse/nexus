@@ -133,6 +133,7 @@ export class MessageAlternativeService {
         if (targetBranch) {
           targetBranch.messages.push(...continuationMessages);
           targetBranch.updated = Date.now();
+          await this.branchManager.addMessagesToBranch(branchId, continuationMessages);
           // Persist the branch with its continuation messages
           await this.chatService.updateConversation(conversation);
         }

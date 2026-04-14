@@ -29,11 +29,11 @@
        chat-view-container therefore gets a subtle radial+linear gradient
        backdrop (see .chat-view-container rule) so the blur has something
        to mush. The gradient is theme-aware via body.theme-light. */
-    --glass-fill: rgba(30, 34, 42, 0.55);
-    --glass-fill-strong: rgba(22, 26, 34, 0.72);
-    --glass-stroke: rgba(255, 255, 255, 0.14);
-    --glass-highlight: rgba(255, 255, 255, 0.22);
-    --glass-rim: rgba(255, 255, 255, 0.06);
+    --glass-fill: color-mix(in srgb, var(--background-primary) 55%, transparent);
+    --glass-fill-strong: color-mix(in srgb, var(--background-primary) 72%, transparent);
+    --glass-stroke: color-mix(in srgb, var(--text-normal) 14%, transparent);
+    --glass-highlight: color-mix(in srgb, var(--text-normal) 22%, transparent);
+    --glass-rim: color-mix(in srgb, var(--text-normal) 6%, transparent);
     --glass-blur: saturate(180%) blur(22px);
     --glass-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
 
@@ -57,21 +57,20 @@ body.theme-light .chat-textarea {
 /* LIGHT THEME OVERRIDES — Glass Material   */
 /* ======================================== */
 
-/* Glass tokens: lighten fills, darken strokes for light backgrounds */
+/* Glass tokens: lighter strokes for light backgrounds (fills auto-adapt via color-mix) */
 body.theme-light {
-    --glass-fill: rgba(255, 255, 255, 0.55);
-    --glass-fill-strong: rgba(255, 255, 255, 0.72);
-    --glass-stroke: rgba(0, 0, 0, 0.08);
-    --glass-highlight: rgba(255, 255, 255, 0.6);
-    --glass-rim: rgba(0, 0, 0, 0.04);
+    --glass-stroke: color-mix(in srgb, var(--text-normal) 8%, transparent);
+    --glass-highlight: color-mix(in srgb, var(--background-primary) 60%, transparent);
+    --glass-rim: color-mix(in srgb, var(--text-normal) 4%, transparent);
     --glass-shadow: 0 24px 60px rgba(0, 0, 0, 0.12);
 }
 
 /* Chat layout gradient: light version uses soft tints instead of dark */
 body.theme-light .chat-layout {
     background:
-        radial-gradient(ellipse at 80% 10%, rgba(var(--interactive-accent-rgb), 0.08) 0%, transparent 55%),
-        radial-gradient(ellipse at 15% 90%, rgba(var(--interactive-accent-rgb), 0.06) 0%, transparent 55%),
+        radial-gradient(ellipse at 80% 10%, color-mix(in srgb, var(--interactive-accent) 20%, var(--background-primary)) 0%, transparent 55%),
+        radial-gradient(ellipse at 15% 90%, color-mix(in srgb, var(--interactive-accent) 12%, var(--background-primary)) 0%, transparent 55%),
+        radial-gradient(ellipse at 50% 50%, color-mix(in srgb, var(--interactive-accent) 6%, var(--background-primary)) 0%, transparent 70%),
         var(--background-primary) !important;
 }
 
@@ -173,10 +172,10 @@ body.theme-light .message-content {
     position: relative;
     overflow: hidden;
     background:
-        radial-gradient(ellipse at 80% 10%, #2a1750 0%, transparent 55%),
-        radial-gradient(ellipse at 15% 90%, #0f2435 0%, transparent 55%),
-        radial-gradient(ellipse at 50% 50%, #171225 0%, transparent 70%),
-        #131216 !important;
+        radial-gradient(ellipse at 15% 10%, color-mix(in srgb, var(--interactive-accent) 24%, var(--background-primary)) 0%, transparent 55%),
+        radial-gradient(ellipse at 85% 50%, color-mix(in srgb, var(--interactive-accent) 15%, var(--background-primary)) 0%, transparent 55%),
+        radial-gradient(ellipse at 20% 90%, color-mix(in srgb, var(--interactive-accent) 8%, var(--background-primary)) 0%, transparent 70%),
+        var(--background-primary) !important;
 }
 
 /* Chat Sidebar */

@@ -939,21 +939,30 @@ export class ConversationService {
     return withReadableBackend(
       this.storageAdapterOrGetter,
       async (adapter) => {
-        const result = await adapter.getConversations({
-          pageSize: 100,
-          page: 0,
-          sortBy: 'created',
-          sortOrder: 'asc',
-          includeBranches: true
-        });
-
         const branches: IndividualConversation[] = [];
-        for (const item of result.items) {
-          if (item.metadata?.parentConversationId === parentConversationId) {
-            const conv = await this.getConversation(item.id);
-            if (conv) branches.push(conv);
+        let page = 0;
+        let hasNextPage = true;
+
+        while (hasNextPage) {
+          const result = await adapter.getConversations({
+            pageSize: 100,
+            page,
+            sortBy: 'created',
+            sortOrder: 'asc',
+            includeBranches: true
+          });
+
+          for (const item of result.items) {
+            if (item.metadata?.parentConversationId === parentConversationId) {
+              const conv = await this.getConversation(item.id);
+              if (conv) branches.push(conv);
+            }
           }
+
+          hasNextPage = result.hasNextPage;
+          page += 1;
         }
+
         return branches;
       },
       async () => {
@@ -1027,7 +1036,7 @@ export class ConversationService {
         branchType,
         subagentTask: task,
         subagent: subagentMetadata,  // Full subagent state (atomic creation)
-        inheritContext: false,
+        inheritContext: branchType === 'alternative',
       }
     });
 

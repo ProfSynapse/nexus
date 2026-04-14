@@ -44,6 +44,7 @@ import type { AgentManager } from '../../services/AgentManager';
 import { ToolInspectionModal } from './components/ToolInspectionModal';
 import { ToolStatusBarController } from './controllers/ToolStatusBarController';
 import { ToolEventCoordinator } from './coordinators/ToolEventCoordinator';
+import { ToolCallStateManager } from './services/ToolCallStateManager';
 
 // Builders and Utilities
 import { ChatLayoutBuilder, ChatLayoutElements } from './builders/ChatLayoutBuilder';
@@ -88,6 +89,7 @@ export class ChatView extends ItemView {
   private uiStateController!: UIStateController;
   private streamingController!: StreamingController;
   private nexusLoadingController!: NexusLoadingController;
+  private toolCallStateManager!: ToolCallStateManager;
   private toolEventCoordinator!: ToolEventCoordinator;
   private toolStatusBar!: ToolStatusBar;
   private toolStatusBarController!: ToolStatusBarController;
@@ -642,8 +644,10 @@ export class ChatView extends ItemView {
     setToolStatusLabelResolver(resolver);
     this.register(() => setToolStatusLabelResolver(null));
 
-    // Initialize tool event coordinator after messageDisplay is created
-    this.toolEventCoordinator = new ToolEventCoordinator(this.toolStatusBarController);
+    // Initialize tool call state machine and event coordinator
+    this.toolCallStateManager = new ToolCallStateManager();
+    this.toolEventCoordinator = new ToolEventCoordinator(this.toolStatusBarController, this.toolCallStateManager);
+    this.register(() => this.toolCallStateManager.clear());
 
     this.chatInput = new ChatInput(
       this.layoutElements.inputContainer,
@@ -792,9 +796,11 @@ export class ChatView extends ItemView {
     } else if (isComplete) {
       this.streamingController.finalizeStreaming(messageId, content);
       this.messageDisplay.updateMessageContent(messageId, content);
+      this.toolEventCoordinator.clearToolNameCache();
     } else {
       this.streamingController.startStreaming(messageId);
       this.streamingController.updateStreamingChunk(messageId, content);
+      this.toolEventCoordinator.ensureListening();
     }
   }
 
