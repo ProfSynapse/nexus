@@ -796,9 +796,11 @@ export class ChatView extends ItemView {
     } else if (isComplete) {
       this.streamingController.finalizeStreaming(messageId, content);
       this.messageDisplay.updateMessageContent(messageId, content);
+      this.toolEventCoordinator.clearToolNameCache();
     } else {
       this.streamingController.startStreaming(messageId);
       this.streamingController.updateStreamingChunk(messageId, content);
+      this.toolEventCoordinator.ensureListening();
     }
   }
 

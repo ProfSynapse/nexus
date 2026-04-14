@@ -27,6 +27,7 @@ type ToolEventData = ToolEventPayload;
 
 export class ToolEventCoordinator {
   private unsubscribe: (() => void) | null = null;
+  private hideTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     private controller: ToolStatusBarController,
@@ -39,11 +40,54 @@ export class ToolEventCoordinator {
   }
 
   /**
-   * Clear the tool state. Call when streaming ends or the coordinator
-   * is no longer needed, to prevent unbounded growth from orphaned entries.
+   * Clear the tool state and hide the status bar after a delay.
+   * Call when streaming ends or the coordinator is no longer needed.
    */
   clearToolNameCache(): void {
+    // Unsubscribe from state changes so late-arriving events
+    // (from the detection path) don't cancel the hide timer.
+    if (this.unsubscribe) {
+      this.unsubscribe();
+      this.unsubscribe = null;
+    }
     this.stateManager.clear();
+    // Hide the status bar after a short delay so the user can see the
+    // final completed/failed status before it disappears.
+    this.scheduleHide(2000);
+  }
+
+  /**
+   * Re-subscribe to state changes if not currently listening.
+   * Called when a new streaming turn begins after a previous clearToolNameCache.
+   */
+  ensureListening(): void {
+    this.cancelHide();
+    if (!this.unsubscribe) {
+      this.unsubscribe = this.stateManager.onStateChange((event) => {
+        this.emitToStatusBar(event);
+      });
+    }
+  }
+
+  /**
+   * Schedule hiding the status bar. Cancels any pending hide timer.
+   */
+  private scheduleHide(delayMs: number): void {
+    if (this.hideTimer) clearTimeout(this.hideTimer);
+    this.hideTimer = setTimeout(() => {
+      this.hideTimer = null;
+      this.controller.getStatusBar().clearStatus();
+    }, delayMs);
+  }
+
+  /**
+   * Cancel any pending hide timer (e.g., when new tool events arrive).
+   */
+  private cancelHide(): void {
+    if (this.hideTimer) {
+      clearTimeout(this.hideTimer);
+      this.hideTimer = null;
+    }
   }
 
   /**
@@ -71,8 +115,12 @@ export class ToolEventCoordinator {
         try { parameters = JSON.parse(parameters); } catch { /* leave as string */ }
       }
 
-      // Unwrap useTools: extract inner calls and emit each as its own event.
+      // Filter useTools/getTools wrapper events — same filter as handleToolEvent()
       const normalized = rawName?.replace(/_/g, '.');
+      const isGetTools = normalized === 'getTools' || (normalized?.endsWith('.getTools') ?? false);
+      if (isGetTools) continue;
+
+      // Unwrap useTools: extract inner calls and emit each as its own event.
       const isUseTools = normalized === 'useTools' || (normalized?.endsWith('.useTools') ?? false);
 
 
@@ -201,8 +249,11 @@ export class ToolEventCoordinator {
       return;
     }
 
-    // Map event type to phase
-    const phase: ToolCallPhase = event === 'updated' ? 'detected' : event;
+    // Map event type to phase. Check for failure on completed events.
+    let phase: ToolCallPhase = event === 'updated' ? 'detected' : event;
+    if (event === 'completed' && (data?.success === false || (typeof data?.error === 'string' && data.error.length > 0))) {
+      phase = 'failed';
+    }
 
     // Extract tool ID
     const toolId = (data?.id as string) || (data?.toolId as string) || `generic_${rawName}_${Date.now()}`;
@@ -232,6 +283,8 @@ export class ToolEventCoordinator {
    * display step from state metadata, and pushes to the controller.
    */
   private emitToStatusBar(event: StateChangeEvent): void {
+    // New tool activity cancels any pending auto-hide
+    this.cancelHide();
     const { state, messageId } = event;
 
     const tense: 'present' | 'past' | 'failed' =

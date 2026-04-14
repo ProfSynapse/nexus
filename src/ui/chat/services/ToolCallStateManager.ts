@@ -83,12 +83,25 @@ export class ToolCallStateManager {
     metadata?: Partial<ToolCallMetadata>,
     result?: { result?: unknown; success?: boolean; error?: string }
   ): boolean {
-    const existing = this.states.get(toolCallId);
+    // Look up by exact ID first, then check for ID correlation.
+    // Execution path appends `_N` suffix (e.g., call_abc_0) while detection
+    // path uses the raw LLM ID (call_abc). Match if either is a prefix of
+    // the other so they share state instead of creating duplicates.
+    let existing = this.states.get(toolCallId);
+    let resolvedId = toolCallId;
+
+    if (!existing) {
+      for (const [id, state] of this.states) {
+        if (id.startsWith(toolCallId) || toolCallId.startsWith(id)) {
+          existing = state;
+          resolvedId = id; // Use the existing entry's ID as canonical
+          break;
+        }
+      }
+    }
 
     // Reject regressions and same-phase re-emissions
     if (existing && PHASE_ORDER[targetPhase] <= PHASE_ORDER[existing.phase]) {
-      // Allow metadata enrichment on same-phase updates (e.g., detected→detected
-      // with more parameter info), but don't re-emit state change
       if (metadata && targetPhase === existing.phase) {
         this.mergeMetadata(existing, metadata);
       }
@@ -96,9 +109,10 @@ export class ToolCallStateManager {
     }
 
     const previousPhase = existing?.phase ?? null;
+    console.log(`[StateManager] ${previousPhase ?? 'new'} → ${targetPhase}: ${toolCallId}`, { name: metadata?.technicalName || existing?.metadata?.technicalName });
 
     const state: ToolCallState = {
-      id: toolCallId,
+      id: resolvedId,
       phase: targetPhase,
       parentId: existing?.parentId ?? metadata?.batchId,
       metadata: this.buildMetadata(existing?.metadata, metadata),
@@ -108,7 +122,7 @@ export class ToolCallStateManager {
       lastUpdated: Date.now(),
     };
 
-    this.states.set(toolCallId, state);
+    this.states.set(resolvedId, state);
 
     // Track which tool calls belong to which message
     let messageSet = this.messageToolCalls.get(messageId);
@@ -116,11 +130,11 @@ export class ToolCallStateManager {
       messageSet = new Set();
       this.messageToolCalls.set(messageId, messageSet);
     }
-    messageSet.add(toolCallId);
+    messageSet.add(resolvedId);
 
     // Notify listeners
     const event: StateChangeEvent = {
-      toolCallId,
+      toolCallId: resolvedId,
       previousPhase,
       newPhase: targetPhase,
       state,
