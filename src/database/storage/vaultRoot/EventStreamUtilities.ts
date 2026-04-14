@@ -21,6 +21,11 @@ function normalizeLogicalIdSegments(logicalId: string): string {
     throw new Error('Event stream ID cannot be empty.');
   }
 
+  const segments = normalizedId.split('/');
+  if (segments.some(segment => segment === '.' || segment === '..')) {
+    throw new Error('Path traversal segments not allowed in event stream IDs.');
+  }
+
   return normalizedId;
 }
 

@@ -1,127 +1,12 @@
-import type { App } from 'obsidian';
-
 import { VaultEventStore } from '../../src/database/storage/vaultRoot/VaultEventStore';
 import {
   VaultRootRelocationService
 } from '../../src/database/migration/VaultRootRelocationService';
-
-type AdapterFileEntry = {
-  content: string;
-  mtime: number;
-  size: number;
-};
-
-type MockAdapter = {
-  exists: jest.Mock<Promise<boolean>, [string]>;
-  read: jest.Mock<Promise<string>, [string]>;
-  write: jest.Mock<Promise<void>, [string, string]>;
-  append: jest.Mock<Promise<void>, [string, string]>;
-  stat: jest.Mock<Promise<{ mtime: number; size: number } | null>, [string]>;
-  list: jest.Mock<Promise<{ files: string[]; folders: string[] }>, [string]>;
-  mkdir: jest.Mock<Promise<void>, [string]>;
-};
-
-function createMockApp(initialFiles: Record<string, string> = {}): {
-  app: App;
-  adapter: MockAdapter;
-} {
-  const files = new Map<string, AdapterFileEntry>();
-  const directories = new Set<string>();
-  let tick = 1;
-
-  const addDirectoryTree = (path: string): void => {
-    const parts = path.split('/').filter(Boolean);
-    let current = '';
-    for (const part of parts) {
-      current = current.length > 0 ? `${current}/${part}` : part;
-      directories.add(current);
-    }
-  };
-
-  const setFile = (path: string, content: string): void => {
-    const normalizedPath = path.replace(/\\/g, '/');
-    const parent = normalizedPath.includes('/')
-      ? normalizedPath.slice(0, normalizedPath.lastIndexOf('/'))
-      : '';
-    if (parent) {
-      addDirectoryTree(parent);
-    }
-    files.set(normalizedPath, {
-      content,
-      mtime: tick++,
-      size: new TextEncoder().encode(content).byteLength
-    });
-  };
-
-  for (const [path, content] of Object.entries(initialFiles)) {
-    setFile(path, content);
-  }
-
-  const adapter: MockAdapter = {
-    exists: jest.fn(async (path: string) => {
-      const normalizedPath = path.replace(/\\/g, '/');
-      return files.has(normalizedPath) || directories.has(normalizedPath);
-    }),
-    read: jest.fn(async (path: string) => {
-      const normalizedPath = path.replace(/\\/g, '/');
-      const entry = files.get(normalizedPath);
-      if (!entry) {
-        throw new Error(`Missing file: ${normalizedPath}`);
-      }
-      return entry.content;
-    }),
-    write: jest.fn(async (path: string, content: string) => {
-      setFile(path, content);
-    }),
-    append: jest.fn(async (path: string, content: string) => {
-      const normalizedPath = path.replace(/\\/g, '/');
-      const existing = files.get(normalizedPath);
-      if (!existing) {
-        setFile(normalizedPath, content);
-        return;
-      }
-      setFile(normalizedPath, `${existing.content}${content}`);
-    }),
-    stat: jest.fn(async (path: string) => {
-      const normalizedPath = path.replace(/\\/g, '/');
-      const entry = files.get(normalizedPath);
-      if (!entry) {
-        return null;
-      }
-      return { mtime: entry.mtime, size: entry.size };
-    }),
-    list: jest.fn(async (path: string) => {
-      const normalizedPath = path.replace(/\\/g, '/').replace(/\/+$/g, '');
-      const filePaths = Array.from(files.keys()).filter(filePath => {
-        const parent = filePath.includes('/') ? filePath.slice(0, filePath.lastIndexOf('/')) : '';
-        return parent === normalizedPath;
-      });
-
-      const folderPaths = Array.from(directories.values()).filter(dirPath => {
-        const parent = dirPath.includes('/') ? dirPath.slice(0, dirPath.lastIndexOf('/')) : '';
-        return parent === normalizedPath;
-      });
-
-      return { files: filePaths, folders: folderPaths };
-    }),
-    mkdir: jest.fn(async (path: string) => {
-      addDirectoryTree(path.replace(/\\/g, '/'));
-    })
-  };
-
-  const app = {
-    vault: {
-      configDir: '.obsidian',
-      adapter
-    }
-  } as unknown as App;
-
-  return { app, adapter };
-}
+import { createMockApp } from '../helpers/mockVaultAdapter';
 
 describe('VaultRootRelocationService', () => {
   it('copies event streams into a new vault root without deleting the source root', async () => {
-    const { app, adapter } = createMockApp();
+    const { app, adapter } = createMockApp({ configDir: '.obsidian' });
     const sourceStore = new VaultEventStore({
       app,
       resolution: {
@@ -228,7 +113,7 @@ describe('VaultRootRelocationService', () => {
   });
 
   it('fails safely when destination content conflicts with source content', async () => {
-    const { app, adapter } = createMockApp();
+    const { app, adapter } = createMockApp({ configDir: '.obsidian' });
     const sourceStore = new VaultEventStore({
       app,
       resolution: {

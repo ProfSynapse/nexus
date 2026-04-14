@@ -48,11 +48,19 @@ export class Settings {
             const sanitizedLoadedData = { ...(loadedData as Record<string, unknown>) };
             delete sanitizedLoadedData.pluginStorage;
 
-            const { llmProviders, ...otherSettings } = sanitizedLoadedData;
+            const { llmProviders, storage, ...otherSettings } = sanitizedLoadedData;
             Object.assign(this.settings, otherSettings);
-            
+
             // Ensure memory settings exist
             this.settings.memory = DEFAULT_SETTINGS.memory;
+
+            // Deep merge storage settings to preserve defaults for missing keys
+            if (storage && typeof storage === 'object') {
+                this.settings.storage = {
+                    ...DEFAULT_SETTINGS.storage,
+                    ...(storage as Record<string, unknown>)
+                } as typeof DEFAULT_SETTINGS.storage;
+            }
 
             // Basic LLM provider settings merge
             if (llmProviders && typeof llmProviders === 'object' && DEFAULT_SETTINGS.llmProviders) {

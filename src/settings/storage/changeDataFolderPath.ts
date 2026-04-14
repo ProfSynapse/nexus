@@ -96,9 +96,12 @@ export async function changeDataFolderPath(
     context.serviceManager?.getServiceIfReady<DataFolderRuntimeAdapter>('hybridStorageAdapter') ?? null;
 
   if (!runtimeAdapter?.isReady()) {
+    const previousRoots = new Set(currentStorage.previousRootPaths ?? []);
+    previousRoots.add(currentStorage.rootPath);
     context.settings.settings.storage = {
       ...currentStorage,
-      rootPath: validation.normalizedPath
+      rootPath: validation.normalizedPath,
+      previousRootPaths: Array.from(previousRoots)
     };
     await context.settings.saveSettings();
 

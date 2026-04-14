@@ -1,9 +1,10 @@
-import type { App } from 'obsidian';
+import { type App, requestUrl } from 'obsidian';
 import type { VaultOperations } from '../../core/VaultOperations';
 import { resolveVaultRoot } from '../../database/storage/VaultRootResolver';
 import type { LoadWorkspaceResult } from '../../database/types/workspace/ParameterTypes';
 import type { WorkspaceContext } from '../../database/types/workspace/WorkspaceTypes';
 import {
+  type ManagedGuideDefinition,
   MANAGED_GUIDES,
   MANAGED_GUIDES_MANIFEST_PATH,
   MANAGED_GUIDES_VERSION
@@ -13,6 +14,19 @@ import type { IndividualWorkspace } from '../../types/storage/StorageTypes';
 
 export const SYSTEM_GUIDES_WORKSPACE_ID = '__system_guides__';
 export const SYSTEM_GUIDES_WORKSPACE_NAME = 'Assistant guides';
+
+/**
+ * URL for the bundled guides manifest hosted on GitHub.
+ * Contains all guide content and a version string. Fetched on startup
+ * so that guide content can be updated without a plugin release.
+ */
+const REMOTE_GUIDES_URL =
+  'https://raw.githubusercontent.com/ProfSynapse/nexus/main/src/guides/guides-manifest.json';
+
+interface RemoteGuidesManifest {
+  version: string;
+  guides: ManagedGuideDefinition[];
+}
 
 interface ManagedGuideManifestFile {
   path: string;
@@ -71,7 +85,10 @@ export class SystemGuidesWorkspaceProvider {
     const manifestPath = `${guidesPath}/${MANAGED_GUIDES_MANIFEST_PATH}`;
     const previousManifest = await this.readManifest(manifestPath);
 
-    for (const guide of MANAGED_GUIDES) {
+    // Use remote guides if available and newer, otherwise fall back to hardcoded defaults
+    const guides = await this.resolveGuideSource(previousManifest);
+
+    for (const guide of guides) {
       const filePath = `${guidesPath}/${guide.path}`;
       const previousHash = previousManifest?.files.find(file => file.path === guide.path)?.hash;
       const existingContent = await this.vaultOperations.readFile(filePath, false);
@@ -86,17 +103,107 @@ export class SystemGuidesWorkspaceProvider {
       }
     }
 
+    const effectiveVersion = guides === MANAGED_GUIDES
+      ? MANAGED_GUIDES_VERSION
+      : (this.lastRemoteVersion ?? MANAGED_GUIDES_VERSION);
+
     const manifest: ManagedGuideManifest = {
-      version: MANAGED_GUIDES_VERSION,
+      version: effectiveVersion,
       pluginVersion: this.pluginVersion,
       updatedAt: new Date().toISOString(),
-      files: MANAGED_GUIDES.map(guide => ({
+      files: guides.map(guide => ({
         path: guide.path,
         hash: this.hashContent(guide.content)
       }))
     };
 
     await this.vaultOperations.writeFile(manifestPath, JSON.stringify(manifest, null, 2));
+  }
+
+  /**
+   * Track the version from the last successful remote fetch so it can be
+   * written into the local manifest.
+   */
+  private lastRemoteVersion: string | null = null;
+
+  /**
+   * Determine which guide source to use: remote (GitHub) or hardcoded fallback.
+   * Fetches remote manifest and compares its version against the local manifest.
+   * Returns the hardcoded defaults on any failure (offline, rate limited, parse error).
+   */
+  private async resolveGuideSource(
+    localManifest: ManagedGuideManifest | null
+  ): Promise<readonly ManagedGuideDefinition[]> {
+    try {
+      const remote = await this.fetchRemoteGuides();
+      if (!remote) {
+        return MANAGED_GUIDES;
+      }
+
+      const localVersion = localManifest?.version ?? MANAGED_GUIDES_VERSION;
+      if (this.compareVersionStrings(remote.version, localVersion) > 0) {
+        this.lastRemoteVersion = remote.version;
+        return remote.guides;
+      }
+
+      // Remote is not newer — use hardcoded defaults (which match the bundled version)
+      return MANAGED_GUIDES;
+    } catch {
+      return MANAGED_GUIDES;
+    }
+  }
+
+  /**
+   * Fetch the bundled guides manifest from GitHub using Obsidian's requestUrl.
+   * Returns null on any network or parse failure — callers fall back to hardcoded content.
+   */
+  private async fetchRemoteGuides(): Promise<RemoteGuidesManifest | null> {
+    try {
+      const response = await requestUrl({
+        url: REMOTE_GUIDES_URL,
+        method: 'GET',
+        headers: { 'Accept': 'application/json' }
+      });
+
+      if (response.status !== 200) {
+        return null;
+      }
+
+      const data = response.json as RemoteGuidesManifest;
+      if (!data?.version || !Array.isArray(data?.guides) || data.guides.length === 0) {
+        return null;
+      }
+
+      // Basic structural validation — each guide needs path and content
+      const valid = data.guides.every(
+        (g: ManagedGuideDefinition) => typeof g.path === 'string' && typeof g.content === 'string'
+      );
+      if (!valid) {
+        return null;
+      }
+
+      return data;
+    } catch {
+      // Network failure, rate limit, timeout — silent fallback
+      return null;
+    }
+  }
+
+  /**
+   * Simple lexicographic version comparison for dot-separated version strings.
+   * Returns positive if a > b, negative if a < b, zero if equal.
+   */
+  private compareVersionStrings(a: string, b: string): number {
+    const partsA = a.split('.').map(Number);
+    const partsB = b.split('.').map(Number);
+    const length = Math.max(partsA.length, partsB.length);
+    for (let i = 0; i < length; i++) {
+      const diff = (partsA[i] ?? 0) - (partsB[i] ?? 0);
+      if (diff !== 0) {
+        return diff;
+      }
+    }
+    return 0;
   }
 
   getWorkspaceSummary(): SystemGuidesWorkspaceSummary {

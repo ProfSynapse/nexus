@@ -21,6 +21,7 @@
  * Related Files:
  * - src/database/interfaces/StorageEvents.ts - Event type definitions
  * - src/database/services/cache/EntityCache.ts - In-memory cache layer
+ * - src/database/storage/StorageRouter.ts - Dual-path routing (vault-root vs legacy)
  */
 
 import { App, normalizePath } from 'obsidian';
@@ -28,6 +29,7 @@ import { StorageEvent, BaseStorageEvent } from '../interfaces/StorageEvents';
 import { v4 as uuidv4 } from '../../utils/uuid';
 import { NamedLocks } from '../../utils/AsyncLock';
 import { VaultEventStore } from './vaultRoot/VaultEventStore';
+import { StorageRouter } from './StorageRouter';
 
 /**
  * Configuration options for JSONLWriter
@@ -74,36 +76,49 @@ export interface JSONLWriterOptions {
 export class JSONLWriter {
   private app: App;
   private basePath: string;
-  private readBasePaths: string[];
   private deviceId: string;
-  private locks: NamedLocks;
-  private vaultEventStore: VaultEventStore | null;
-  private vaultEventStoreReadEnabled = true;
+  private router: StorageRouter;
   private readonly deviceIdStorageKey = 'claudesidian-device-id';
 
   constructor(options: JSONLWriterOptions) {
     this.app = options.app;
     this.basePath = options.basePath;
-    this.readBasePaths = this.normalizeReadBasePaths(options.readBasePaths ?? [options.basePath]);
-    this.vaultEventStore = options.vaultEventStore ?? null;
     this.deviceId = this.getOrCreateDeviceId();
-    this.locks = new NamedLocks();
+
+    const readBasePaths = this.normalizeReadBasePaths(options.readBasePaths ?? [options.basePath]);
+    const vaultEventStore = options.vaultEventStore ?? null;
+
+    this.router = new StorageRouter({
+      app: this.app,
+      basePath: this.basePath,
+      readBasePaths,
+      vaultEventStore,
+      vaultEventStoreReadEnabled: true,
+      locks: new NamedLocks(),
+      normalizeLogicalRelativePath: this.normalizeLogicalRelativePath.bind(this),
+      normalizeStableLogicalPath: this.normalizeStableLogicalPath.bind(this),
+      getLogicalPathVariants: this.getLogicalPathVariants.bind(this),
+      parseLogicalPath: this.parseLogicalPath.bind(this),
+      getVaultEventLogicalPath: this.getVaultEventLogicalPath.bind(this),
+      getCategoryFromSubPath: this.getCategoryFromSubPath.bind(this),
+    });
   }
 
   setBasePath(basePath: string): void {
     this.basePath = basePath;
+    this.router.setBasePath(basePath);
   }
 
   setReadBasePaths(basePaths: string[]): void {
-    this.readBasePaths = this.normalizeReadBasePaths(basePaths);
+    this.router.setReadBasePaths(this.normalizeReadBasePaths(basePaths));
   }
 
   setVaultEventStore(vaultEventStore: VaultEventStore | null): void {
-    this.vaultEventStore = vaultEventStore;
+    this.router.setVaultEventStore(vaultEventStore);
   }
 
   setVaultEventStoreReadEnabled(enabled: boolean): void {
-    this.vaultEventStoreReadEnabled = enabled;
+    this.router.setVaultEventStoreReadEnabled(enabled);
   }
 
   // ============================================================================
@@ -138,13 +153,13 @@ export class JSONLWriter {
     return this.deviceId;
   }
 
+  // ============================================================================
+  // Path Normalization (used by StorageRouter via bound callbacks)
+  // ============================================================================
+
   private normalizeReadBasePaths(basePaths: string[]): string[] {
     const ordered = basePaths.length > 0 ? basePaths : [this.basePath];
     return Array.from(new Set(ordered));
-  }
-
-  private buildFullPath(basePath: string, relativePath: string): string {
-    return `${basePath}/${relativePath}`;
   }
 
   private normalizeLogicalRelativePath(relativePath: string): string {
@@ -226,57 +241,12 @@ export class JSONLWriter {
     return `conversations/${this.normalizeConversationStem(parsed.fileStem)}.jsonl`;
   }
 
-  private getVaultEventCategoryRoot(category: 'conversations' | 'workspaces' | 'tasks'): string | null {
-    if (!this.vaultEventStore) {
-      return null;
-    }
-
-    switch (category) {
-      case 'conversations':
-        return this.vaultEventStore.getConversationsRootPath();
-      case 'workspaces':
-        return this.vaultEventStore.getWorkspacesRootPath();
-      case 'tasks':
-        return this.vaultEventStore.getTasksRootPath();
-    }
-  }
-
   private getCategoryFromSubPath(subPath: string): 'conversations' | 'workspaces' | 'tasks' | null {
     const normalizedSubPath = this.normalizeLogicalRelativePath(subPath);
     if (normalizedSubPath === 'conversations' || normalizedSubPath === 'workspaces' || normalizedSubPath === 'tasks') {
       return normalizedSubPath;
     }
     return null;
-  }
-
-  private async resolveVaultEventReadablePaths(relativePath: string): Promise<string[]> {
-    const eventPath = this.getVaultEventLogicalPath(relativePath);
-    if (!eventPath || !this.vaultEventStore || !this.vaultEventStoreReadEnabled) {
-      return [];
-    }
-
-    const parsed = this.parseLogicalPath(relativePath);
-    if (!parsed) {
-      return [];
-    }
-
-    const files = await this.vaultEventStore.listFiles(parsed.category);
-    return files.includes(eventPath) ? [eventPath] : [];
-  }
-
-  private async resolveReadablePaths(relativePath: string): Promise<string[]> {
-    const readablePaths: string[] = [];
-    const logicalPathVariants = this.getLogicalPathVariants(relativePath);
-
-    for (const readBasePath of this.readBasePaths) {
-      for (const logicalPath of logicalPathVariants) {
-        const fullPath = this.buildFullPath(readBasePath, logicalPath);
-        if (await this.app.vault.adapter.exists(fullPath) && !readablePaths.includes(fullPath)) {
-          readablePaths.push(fullPath);
-        }
-      }
-    }
-    return readablePaths;
   }
 
   // ============================================================================
@@ -290,42 +260,7 @@ export class JSONLWriter {
    * @throws Error if directory creation fails
    */
   async ensureDirectory(subPath?: string): Promise<void> {
-    const category = subPath ? this.getCategoryFromSubPath(subPath) : null;
-    if (category && this.vaultEventStore) {
-      const vaultRoot = this.getVaultEventCategoryRoot(category);
-      if (vaultRoot) {
-        const folder = this.app.vault.getAbstractFileByPath(vaultRoot);
-        if (!folder) {
-          try {
-            await this.app.vault.createFolder(vaultRoot);
-          } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            if (!errorMessage.includes('already exists')) {
-              console.error(`[JSONLWriter] Failed to ensure vault-root directory: ${subPath}`, error);
-              throw new Error(`Failed to create directory: ${errorMessage}`);
-            }
-          }
-        }
-        return;
-      }
-    }
-
-    const fullPath = subPath ? `${this.basePath}/${subPath}` : this.basePath;
-    const folder = this.app.vault.getAbstractFileByPath(fullPath);
-
-    if (!folder) {
-      try {
-        await this.app.vault.createFolder(fullPath);
-      } catch (error) {
-        // Ignore "already exists" errors (race condition with metadata cache)
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        if (!errorMessage.includes('already exists')) {
-          console.error(`[JSONLWriter] Failed to ensure directory: ${subPath}`, error);
-          throw new Error(`Failed to create directory: ${errorMessage}`);
-        }
-        // Folder exists on disk but wasn't in metadata cache - that's fine
-      }
-    }
+    await this.router.ensureDirectory(subPath, this.basePath);
   }
 
   // ============================================================================
@@ -357,7 +292,6 @@ export class JSONLWriter {
     eventData: Omit<T, 'id' | 'deviceId' | 'timestamp'>
   ): Promise<T> {
     try {
-      // Create the full event with metadata
       const event: T = {
         ...eventData,
         id: uuidv4(),
@@ -365,39 +299,7 @@ export class JSONLWriter {
         timestamp: Date.now(),
       } as T;
 
-      const eventPath = this.getVaultEventLogicalPath(relativePath);
-      if (eventPath && this.vaultEventStore) {
-        await this.vaultEventStore.appendEvent(eventPath, event);
-        return event;
-      }
-
-      const fullPath = `${this.basePath}/${this.normalizeLogicalRelativePath(relativePath)}`;
-      const line = JSON.stringify(event) + '\n';
-
-      // Ensure parent directory exists
-      const lastSlashIndex = fullPath.lastIndexOf('/');
-      if (lastSlashIndex > 0) {
-        const parentPath = fullPath.substring(0, lastSlashIndex);
-        const relativeParent = parentPath.replace(this.basePath + '/', '');
-        await this.ensureDirectory(relativeParent);
-      }
-
-      // Use adapter methods for hidden folder support (.nexus/)
-      // Use lock to prevent race conditions
-      await this.locks.acquire(fullPath, async () => {
-        const exists = await this.app.vault.adapter.exists(fullPath);
-
-        if (exists) {
-          // Use atomic append (DataAdapter always has append method)
-          // Blind append: Safety first -> always add newline prefix to ensure separation
-          // This might result in double newlines (harmless), but prevents merged lines (fatal)
-          await this.app.vault.adapter.append(fullPath, '\n' + line);
-        } else {
-          // Create new file with this line
-          await this.app.vault.adapter.write(fullPath, line);
-        }
-      });
-
+      await this.router.appendEvent(relativePath, event);
       return event;
     } catch (error) {
       console.error(`[JSONLWriter] Failed to append event to ${relativePath}:`, error);
@@ -425,7 +327,6 @@ export class JSONLWriter {
     }
 
     try {
-      // Create all events with metadata
       const events: T[] = eventsData.map(eventData => ({
         ...eventData,
         id: uuidv4(),
@@ -433,38 +334,7 @@ export class JSONLWriter {
         timestamp: Date.now(),
       } as T));
 
-      const eventPath = this.getVaultEventLogicalPath(relativePath);
-      if (eventPath && this.vaultEventStore) {
-        await this.vaultEventStore.appendEvents(eventPath, events);
-        return events;
-      }
-
-      const fullPath = `${this.basePath}/${this.normalizeLogicalRelativePath(relativePath)}`;
-      const lines = events.map(event => JSON.stringify(event)).join('\n') + '\n';
-
-      // Ensure parent directory exists
-      const lastSlashIndex = fullPath.lastIndexOf('/');
-      if (lastSlashIndex > 0) {
-        const parentPath = fullPath.substring(0, lastSlashIndex);
-        const relativeParent = parentPath.replace(this.basePath + '/', '');
-        await this.ensureDirectory(relativeParent);
-      }
-
-      // Use adapter methods for hidden folder support (.nexus/)
-      // Use lock to prevent race conditions
-      await this.locks.acquire(fullPath, async () => {
-        const exists = await this.app.vault.adapter.exists(fullPath);
-
-        if (exists) {
-          // Use atomic append (DataAdapter always has append method)
-          // Blind append: Safety first -> always add newline prefix
-          await this.app.vault.adapter.append(fullPath, '\n' + lines);
-        } else {
-          // Create new file with all lines
-          await this.app.vault.adapter.write(fullPath, lines);
-        }
-      });
-
+      await this.router.appendEvents(relativePath, events);
       return events;
     } catch (error) {
       console.error(`[JSONLWriter] Failed to append ${eventsData.length} events to ${relativePath}:`, error);
@@ -493,44 +363,7 @@ export class JSONLWriter {
    */
   async readEvents<T extends StorageEvent>(relativePath: string): Promise<T[]> {
     try {
-      const dedupedEvents = new Map<string, T>();
-      const eventPath = this.getVaultEventLogicalPath(relativePath);
-
-      if (this.vaultEventStore && this.vaultEventStoreReadEnabled) {
-        if (eventPath) {
-          const vaultEvents = await this.vaultEventStore.readEvents<T>(eventPath);
-          for (const event of vaultEvents) {
-            const eventId = typeof (event as { id?: unknown }).id === 'string'
-              ? String((event as { id: string }).id)
-              : JSON.stringify(event);
-            if (!dedupedEvents.has(eventId)) {
-              dedupedEvents.set(eventId, event);
-            }
-          }
-        }
-      }
-
-      const readablePaths = await this.resolveReadablePaths(relativePath);
-      for (const fullPath of readablePaths) {
-        const content = await this.app.vault.adapter.read(fullPath);
-        const lines = content.split('\n').filter(line => line.trim());
-
-        for (let i = 0; i < lines.length; i++) {
-          try {
-            const event = JSON.parse(lines[i]) as T;
-            const eventId = typeof (event as { id?: unknown }).id === 'string'
-              ? String((event as { id: string }).id)
-              : `${fullPath}:${i}:${lines[i]}`;
-            if (!dedupedEvents.has(eventId)) {
-              dedupedEvents.set(eventId, event);
-            }
-          } catch {
-            continue;
-          }
-        }
-      }
-
-      return Array.from(dedupedEvents.values());
+      return await this.router.readEvents<T>(relativePath);
     } catch (error) {
       console.error(`[JSONLWriter] Failed to read events from ${relativePath}:`, error);
       return [];
@@ -629,39 +462,7 @@ export class JSONLWriter {
    */
   async listFiles(subPath: string): Promise<string[]> {
     try {
-      const files = new Set<string>();
-      const sourceCounts: Record<string, number> = {};
-
-      const category = this.getCategoryFromSubPath(subPath);
-      if (category && this.vaultEventStore && this.vaultEventStoreReadEnabled) {
-        const eventFiles = await this.vaultEventStore.listFiles(category);
-        sourceCounts[`vault:${category}`] = eventFiles.length;
-        for (const logicalPath of eventFiles) {
-          files.add(this.normalizeStableLogicalPath(logicalPath));
-        }
-      }
-
-      for (const readBasePath of this.readBasePaths) {
-        const normalizedSubPath = this.normalizeLogicalRelativePath(subPath);
-        const fullPath = `${readBasePath}/${normalizedSubPath}`;
-        const exists = await this.app.vault.adapter.exists(fullPath);
-        if (!exists) {
-          sourceCounts[fullPath] = 0;
-          continue;
-        }
-
-        const listing = await this.app.vault.adapter.list(fullPath);
-        const jsonlCount = listing.files.filter(filePath => filePath.endsWith('.jsonl')).length;
-        sourceCounts[fullPath] = jsonlCount;
-        for (const filePath of listing.files) {
-          if (filePath.endsWith('.jsonl')) {
-            const logicalPath = filePath.replace(`${readBasePath}/`, '');
-            files.add(this.normalizeStableLogicalPath(logicalPath));
-          }
-        }
-      }
-
-      return Array.from(files).sort();
+      return await this.router.listFiles(subPath);
     } catch (error) {
       console.error(`[JSONLWriter] Failed to list files in ${subPath}:`, error);
       return [];
@@ -675,13 +476,7 @@ export class JSONLWriter {
    * @returns True if file exists
    */
   async fileExists(relativePath: string): Promise<boolean> {
-    const eventFiles = await this.resolveVaultEventReadablePaths(relativePath);
-    if (eventFiles.length > 0) {
-      return true;
-    }
-
-    const readablePaths = await this.resolveReadablePaths(relativePath);
-    return readablePaths.length > 0;
+    return this.router.fileExists(relativePath);
   }
 
   /**
@@ -695,12 +490,7 @@ export class JSONLWriter {
    */
   async deleteFile(relativePath: string): Promise<void> {
     try {
-      const fullPath = `${this.basePath}/${relativePath}`;
-      // Use adapter for hidden folder support (.nexus/)
-      const exists = await this.app.vault.adapter.exists(fullPath);
-      if (exists) {
-        await this.app.vault.adapter.remove(fullPath);
-      }
+      await this.router.deleteFile(relativePath, this.basePath);
     } catch (error) {
       console.error(`[JSONLWriter] Failed to delete file ${relativePath}:`, error);
       const message = error instanceof Error ? error.message : String(error);
@@ -716,22 +506,7 @@ export class JSONLWriter {
    */
   async getFileModTime(relativePath: string): Promise<number | null> {
     try {
-      if (this.vaultEventStore && this.vaultEventStoreReadEnabled) {
-        const eventPath = this.getVaultEventLogicalPath(relativePath);
-        if (eventPath) {
-          const vaultStoreModTime = await this.vaultEventStore.getFileModTime(eventPath);
-          if (vaultStoreModTime !== null) {
-            return vaultStoreModTime;
-          }
-        }
-      }
-
-      const readablePaths = await this.resolveReadablePaths(relativePath);
-      if (readablePaths.length === 0) {
-        return null;
-      }
-      const stat = await this.app.vault.adapter.stat(readablePaths[0]);
-      return stat?.mtime ?? null;
+      return await this.router.getFileModTime(relativePath);
     } catch (error) {
       console.error(`[JSONLWriter] Failed to get mod time for ${relativePath}:`, error);
       return null;
@@ -746,22 +521,7 @@ export class JSONLWriter {
    */
   async getFileSize(relativePath: string): Promise<number | null> {
     try {
-      if (this.vaultEventStore && this.vaultEventStoreReadEnabled) {
-        const eventPath = this.getVaultEventLogicalPath(relativePath);
-        if (eventPath) {
-          const vaultStoreSize = await this.vaultEventStore.getFileSize(eventPath);
-          if (vaultStoreSize !== null) {
-            return vaultStoreSize;
-          }
-        }
-      }
-
-      const readablePaths = await this.resolveReadablePaths(relativePath);
-      if (readablePaths.length === 0) {
-        return null;
-      }
-      const stat = await this.app.vault.adapter.stat(readablePaths[0]);
-      return stat?.size ?? null;
+      return await this.router.getFileSize(relativePath);
     } catch (error) {
       console.error(`[JSONLWriter] Failed to get size for ${relativePath}:`, error);
       return null;

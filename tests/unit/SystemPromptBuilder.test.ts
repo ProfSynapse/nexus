@@ -196,6 +196,25 @@ describe('SystemPromptBuilder', () => {
     expect(prompt).toContain('"extraField": "kept"');
   });
 
+  it('includes a guides workspace hint in the working strategy section', async () => {
+    const builder = new SystemPromptBuilder(async () => '');
+
+    const prompt = await builder.build({
+      sessionId: 'session-1',
+      workspaceId: 'workspace-1'
+    });
+
+    expect(prompt).toContain('__system_guides__');
+    expect(prompt).toContain('Assistant guides workspace');
+
+    // Verify the hint is inside the working_strategy section
+    const strategyStart = prompt!.indexOf('<working_strategy>');
+    const strategyEnd = prompt!.indexOf('</working_strategy>');
+    const hintIndex = prompt!.indexOf('__system_guides__');
+    expect(hintIndex).toBeGreaterThan(strategyStart);
+    expect(hintIndex).toBeLessThan(strategyEnd);
+  });
+
   it('escapes suggester-driven note, tool, prompt, and workspace insertions', async () => {
     const builder = new SystemPromptBuilder(
       async () => '[unused]',

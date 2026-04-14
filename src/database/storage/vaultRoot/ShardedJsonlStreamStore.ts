@@ -164,15 +164,19 @@ export class ShardedJsonlStreamStore<TEvent extends object> {
   }
 
   async readEvents(relativeStreamPath: string): Promise<TEvent[]> {
-    const shards = await this.listShards(relativeStreamPath);
-    const events: TEvent[] = [];
+    const streamPath = this.getStreamPath(relativeStreamPath);
 
-    for (const shard of shards) {
-      const content = await this.app.vault.adapter.read(shard.fullPath);
-      events.push(...this.parseJsonlContent(content, shard.fullPath));
-    }
+    return this.locks.acquire(streamPath, async () => {
+      const shards = await this.listShards(relativeStreamPath);
+      const events: TEvent[] = [];
 
-    return events;
+      for (const shard of shards) {
+        const content = await this.app.vault.adapter.read(shard.fullPath);
+        events.push(...this.parseJsonlContent(content, shard.fullPath));
+      }
+
+      return events;
+    });
   }
 
   private normalizeRelativeStreamPath(relativeStreamPath: string): string {
@@ -225,9 +229,8 @@ export class ShardedJsonlStreamStore<TEvent extends object> {
 
       try {
         events.push(JSON.parse(trimmed) as TEvent);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        throw new Error(`Failed to parse JSONL shard ${filePath}: ${message}`);
+      } catch {
+        console.warn(`[ShardedJsonlStreamStore] Skipping malformed line in ${filePath}`);
       }
     }
 

@@ -1,0 +1,21 @@
+{
+  "version": "1",
+  "guides": [
+    {
+      "path": "index.md",
+      "content": "# Assistant guides\n\nThis folder contains built-in guidance for how the assistant works inside this vault.\n\n## Start here\n\n- Read this file first when you need guidance about built-in capabilities or workflows.\n- Load deeper guide files selectively instead of reading the whole folder.\n- Treat `../data/` as storage, not documentation.\n\n## Guide map\n\n- [Capabilities](capabilities.md): what the assistant can help with and how to approach requests\n- [Workspaces](workspaces.md): how workspace context is meant to be used\n- [Troubleshooting](troubleshooting.md): common failure modes and what to verify\n"
+    },
+    {
+      "path": "capabilities.md",
+      "content": "# Capabilities\n\nThe assistant can help with:\n\n- code changes and debugging\n- Obsidian vault operations through the plugin tool layer\n- workspace, state, and task context when those systems are enabled\n- prompt-driven workflows and structured note operations\n\n## Preferred behavior\n\n- gather context before editing\n- use narrow, relevant tools instead of broad dumps\n- preserve user content unless a request explicitly changes it\n- explain constraints and tradeoffs when a request touches system behavior\n"
+    },
+    {
+      "path": "workspaces.md",
+      "content": "# Workspaces\n\nWorkspaces provide focused context for ongoing work.\n\n## Guidance\n\n- use a selected workspace as the primary context for related work\n- prefer loading a workspace before creating a new one when a relevant workspace already exists\n- keep workspace context focused on purpose, key files, and operating preferences\n- do not confuse the guides workspace with a user project workspace\n"
+    },
+    {
+      "path": "troubleshooting.md",
+      "content": "# Troubleshooting\n\nWhen behavior looks wrong:\n\n- verify the selected workspace and prompt\n- confirm the relevant files or vault paths are actually present\n- distinguish local cache issues from synced source-of-truth issues\n- prefer reading a narrow set of files before making assumptions\n\n## Storage note\n\n- guides live under `guides/`\n- synced assistant data lives under `data/`\n- local-only cache artifacts should not be treated as the synced source of truth\n"
+    }
+  ]
+}

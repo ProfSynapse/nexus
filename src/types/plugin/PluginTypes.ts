@@ -20,6 +20,8 @@ export interface MCPStorageSettings {
   schemaVersion?: number;
   rootPath: string;
   maxShardBytes: number;
+  /** Root paths from previous configurations, used as legacy read sources on next startup */
+  previousRootPaths?: string[];
 }
 
 export const DEFAULT_STORAGE_SETTINGS: MCPStorageSettings = {

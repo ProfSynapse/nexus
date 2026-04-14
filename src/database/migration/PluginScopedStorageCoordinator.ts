@@ -101,10 +101,13 @@ export class PluginScopedStorageCoordinator {
     const rootExists = await this.app.vault.adapter.exists(vaultRoot.resolvedPath);
     const vaultWriteBasePath = vaultRoot.dataPath;
     const mobileLogPath = normalizePath(`${vaultWriteBasePath}/_meta/mobile-sync-log.md`);
+    const previousRootDataPaths = (pluginData.storage?.previousRootPaths ?? [])
+      .map(root => normalizePath(`${root}/data`));
     const legacyReadBasePaths = buildUniquePaths(
       this.roots.dataRoot,
       ...this.roots.compatibilityDataRoots,
-      this.legacyBasePath
+      this.legacyBasePath,
+      ...previousRootDataPaths
     );
     traceMigration(this.app, mobileLogPath, 'prepareStoragePlan', {
       configuredRootPath: vaultRoot.configuredPath,

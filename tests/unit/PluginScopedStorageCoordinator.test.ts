@@ -1,83 +1,13 @@
 import { PluginScopedStorageCoordinator } from '../../src/database/migration/PluginScopedStorageCoordinator';
 import { resolvePluginStorageRoot } from '../../src/database/storage/PluginStoragePathResolver';
-
-type AdapterFileEntry = {
-  content?: string;
-  mtime: number;
-  size: number;
-};
-
-type MockAdapter = {
-  exists: jest.Mock<Promise<boolean>, [string]>;
-  read: jest.Mock<Promise<string>, [string]>;
-  write: jest.Mock<Promise<void>, [string, string]>;
-  stat: jest.Mock<Promise<{ mtime: number; size: number } | null>, [string]>;
-  list: jest.Mock<Promise<{ files: string[]; folders: string[] }>, [string]>;
-  mkdir: jest.Mock<Promise<void>, [string]>;
-};
-
-function createMockAdapter(initialFiles: Record<string, string>): MockAdapter {
-  const files = new Map<string, AdapterFileEntry>();
-  const directories = new Set<string>();
-
-  const addDirectoryTree = (path: string): void => {
-    const parts = path.split('/').filter(Boolean);
-    let current = '';
-    for (const part of parts) {
-      current = current ? `${current}/${part}` : part;
-      directories.add(current);
-    }
-  };
-
-  for (const [path, content] of Object.entries(initialFiles)) {
-    files.set(path, { content, mtime: Date.now(), size: content.length });
-    const parent = path.includes('/') ? path.substring(0, path.lastIndexOf('/')) : '';
-    if (parent) {
-      addDirectoryTree(parent);
-    }
-  }
-
-  return {
-    exists: jest.fn(async (path: string) => files.has(path) || directories.has(path)),
-    read: jest.fn(async (path: string) => {
-      const entry = files.get(path);
-      if (!entry?.content) {
-        throw new Error(`Missing file: ${path}`);
-      }
-      return entry.content;
-    }),
-    write: jest.fn(async (path: string, content: string) => {
-      const parent = path.includes('/') ? path.substring(0, path.lastIndexOf('/')) : '';
-      if (parent) {
-        addDirectoryTree(parent);
-      }
-      files.set(path, { content, mtime: Date.now(), size: content.length });
-    }),
-    stat: jest.fn(async (path: string) => {
-      const entry = files.get(path);
-      if (!entry) {
-        return null;
-      }
-      return { mtime: entry.mtime, size: entry.size };
-    }),
-    list: jest.fn(async (path: string) => {
-      const directFiles = Array.from(files.keys()).filter(filePath => filePath.startsWith(`${path}/`));
-      return { files: directFiles, folders: [] };
-    }),
-    mkdir: jest.fn(async (path: string) => {
-      addDirectoryTree(path);
-    })
-  };
-}
+import { createMockApp } from '../helpers/mockVaultAdapter';
 
 describe('PluginScopedStorageCoordinator', () => {
   it('returns a not-needed state when no legacy event roots exist', async () => {
-    const adapter = createMockAdapter({});
+    const { app } = createMockApp({ configDir: '.obsidian' });
     const saveData = jest.fn(async () => undefined);
     const coordinator = new PluginScopedStorageCoordinator(
-      {
-        vault: { adapter, configDir: '.obsidian' }
-      } as never,
+      app as never,
       {
         manifest: {
           id: 'nexus',
@@ -121,15 +51,13 @@ describe('PluginScopedStorageCoordinator', () => {
   });
 
   it('returns a pending state when legacy event roots are detected', async () => {
-    const adapter = createMockAdapter({
+    const { app } = createMockApp({ configDir: '.obsidian', initialFiles: {
       '.obsidian/plugins/claudesidian-mcp/data/conversations/conv_alpha.jsonl': '{"id":"plugin-evt"}\n',
       '.nexus/workspaces/ws_alpha.jsonl': '{"id":"legacy-evt"}\n'
-    });
+    }});
     const saveData = jest.fn(async () => undefined);
     const coordinator = new PluginScopedStorageCoordinator(
-      {
-        vault: { adapter, configDir: '.obsidian' }
-      } as never,
+      app as never,
       {
         manifest: {
           id: 'nexus',
@@ -159,15 +87,13 @@ describe('PluginScopedStorageCoordinator', () => {
   });
 
   it('persists verified and failed migration outcomes', async () => {
-    const adapter = createMockAdapter({
+    const { app } = createMockApp({ configDir: '.obsidian', initialFiles: {
       '.nexus/conversations/conv_alpha.jsonl': '{"id":"legacy-evt"}\n'
-    });
+    }});
 
     const saveData = jest.fn(async () => undefined);
     const coordinator = new PluginScopedStorageCoordinator(
-      {
-        vault: { adapter, configDir: '.obsidian' }
-      } as never,
+      app as never,
       {
         manifest: {
           id: 'nexus',
@@ -203,18 +129,16 @@ describe('PluginScopedStorageCoordinator', () => {
   });
 
   it('downgrades a stale verified state when vault-root has no event data yet legacy roots do', async () => {
-    const adapter = createMockAdapter({
+    const { app, adapter } = createMockApp({ configDir: '.obsidian', initialFiles: {
       '.obsidian/plugins/claudesidian-mcp/data/conversations/conv_alpha.jsonl': '{"id":"plugin-evt"}\n'
-    });
+    }});
     await adapter.mkdir('Nexus/data/conversations');
     await adapter.mkdir('Nexus/data/workspaces');
     await adapter.mkdir('Nexus/data/tasks');
 
     const saveData = jest.fn(async () => undefined);
     const coordinator = new PluginScopedStorageCoordinator(
-      {
-        vault: { adapter, configDir: '.obsidian' }
-      } as never,
+      app as never,
       {
         manifest: {
           id: 'nexus',
@@ -248,15 +172,13 @@ describe('PluginScopedStorageCoordinator', () => {
   });
 
   it('retries a previously failed migration on the next boot when legacy roots still exist', async () => {
-    const adapter = createMockAdapter({
+    const { app } = createMockApp({ configDir: '.obsidian', initialFiles: {
       '.nexus/conversations/conv_alpha.jsonl': '{"id":"legacy-evt"}\n'
-    });
+    }});
 
     const saveData = jest.fn(async () => undefined);
     const coordinator = new PluginScopedStorageCoordinator(
-      {
-        vault: { adapter, configDir: '.obsidian' }
-      } as never,
+      app as never,
       {
         manifest: {
           id: 'nexus',

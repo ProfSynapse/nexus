@@ -255,6 +255,8 @@ Gather context progressively:
 3. then write or edit once you have enough context
 
 Prefer targeted context gathering over large dumps.
+
+If you are unclear on capabilities or how to approach a request, load the Assistant guides workspace (__system_guides__) and review the relevant guide files.
 </working_strategy>`;
   }
 

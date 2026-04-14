@@ -55,8 +55,14 @@ import {
 } from '../migration/PluginScopedStorageCoordinator';
 import { appendMobileMarkdownLog } from '../migration/MobileMarkdownLogger';
 import { VaultRootMigrationService } from '../migration/VaultRootMigrationService';
+import {
+  VaultRootRelocationService,
+  type VaultRootRelocationResult
+} from '../migration/VaultRootRelocationService';
 import { resolvePluginStorageRoot } from '../storage/PluginStoragePathResolver';
+import { resolveVaultRoot } from '../storage/VaultRootResolver';
 import { VaultEventStore } from '../storage/vaultRoot/VaultEventStore';
+import { DEFAULT_STORAGE_SETTINGS } from '../../types/plugin/PluginTypes';
 
 // Import all repositories
 import { WorkspaceRepository } from '../repositories/WorkspaceRepository';
@@ -761,13 +767,18 @@ export class HybridStorageAdapter implements IStorageAdapter {
     return this.initialized && !this.initError;
   }
 
-  async waitForQueryReady(): Promise<boolean> {
+  async waitForQueryReady(maxWaitMs = 60_000): Promise<boolean> {
     const ready = await this.waitForReady();
     if (!ready) {
       return false;
     }
 
+    const deadline = Date.now() + maxWaitMs;
     while (this.startupHydrationState.phase === 'running') {
+      if (Date.now() >= deadline) {
+        console.error('[HybridStorageAdapter] waitForQueryReady timed out after', maxWaitMs, 'ms');
+        return false;
+      }
       await new Promise(resolve => setTimeout(resolve, 250));
     }
 
@@ -889,6 +900,75 @@ export class HybridStorageAdapter implements IStorageAdapter {
       });
       throw error;
     }
+  }
+
+  /**
+   * Relocate the vault-root event store to a new path.
+   *
+   * Copies all events from the current store to the destination, verifies
+   * integrity, then hot-swaps internal state so all subsequent reads and
+   * writes use the new location. Returns `switched: true` only when the
+   * swap completed successfully.
+   */
+  async relocateVaultRoot(
+    targetRootPath: string,
+    options?: { maxShardBytes?: number }
+  ): Promise<VaultRootRelocationResult & { switched: boolean }> {
+    if (!this.vaultEventStore) {
+      return {
+        success: false,
+        verified: false,
+        relation: 'conflict',
+        durationMs: 0,
+        sourceRootPath: '',
+        destinationRootPath: targetRootPath,
+        sourceStreamCount: 0,
+        destinationStreamCountBefore: 0,
+        destinationStreamCountAfter: 0,
+        copiedEventCount: 0,
+        skippedEventCount: 0,
+        fileResults: [],
+        conflicts: [],
+        errors: ['Vault event store is not initialized.'],
+        switched: false
+      };
+    }
+
+    const maxShardBytes = options?.maxShardBytes ?? DEFAULT_STORAGE_SETTINGS.maxShardBytes;
+
+    const relocationService = new VaultRootRelocationService({
+      app: this.app,
+      sourceStore: this.vaultEventStore,
+      targetRootPath,
+      maxShardBytes
+    });
+
+    const result = await relocationService.relocateVaultRoot();
+
+    if (!result.success || !result.verified || !result.destinationStore) {
+      return { ...result, switched: false };
+    }
+
+    const resolution = resolveVaultRoot(
+      { storage: { rootPath: targetRootPath, maxShardBytes } },
+      { configDir: this.app.vault.configDir }
+    );
+
+    this.vaultEventStore = result.destinationStore;
+    this.basePath = resolution.dataPath;
+    this.jsonlWriter.setBasePath(resolution.dataPath);
+    this.jsonlWriter.setVaultEventStore(this.vaultEventStore);
+    this.jsonlWriter.setVaultEventStoreReadEnabled(true);
+    this.queryCache.clear();
+
+    this.traceMobile('vault root relocated', {
+      sourceRootPath: result.sourceRootPath,
+      destinationRootPath: result.destinationRootPath,
+      copiedEventCount: result.copiedEventCount,
+      skippedEventCount: result.skippedEventCount
+    });
+
+    return { ...result, switched: true };
   }
 
   // ============================================================================
