@@ -38,7 +38,7 @@ Native chat works on mobile (iOS and Android). Desktop-only features gracefully 
 | Ingestion (PDF, audio, DOCX) | No | Yes |
 | Composer and Web Tools | No | Yes |
 
-Mobile support is new and may have bugs. Please [report issues on GitHub](https://github.com/ProfSynapse/claudesidian-mcp/issues).
+Mobile support is new and may have bugs. Please [report issues on GitHub](https://github.com/ProfSynapse/nexus/issues).
 
 ## Use Cases
 
@@ -87,20 +87,6 @@ When a config file needs to be edited, show the exact snippet with my vault path
 - [Apps](guide/apps.md)
 - [Workflow examples](guide/workflow-examples.md)
 - [Two-tool architecture](guide/two-tool-architecture.md)
-
-## Multi-Device Sync
-
-Nexus stores conversations, workspaces, and tasks as JSONL files inside the plugin directory at `.obsidian/plugins/<plugin-folder>/data/`. Because this is inside the plugin folder, Obsidian Sync includes it automatically.
-
-The SQLite cache (`cache.db`) is local-only and rebuilt from JSONL on each device -- it is not synced.
-
-### Migrating from `.nexus/`
-
-If you previously used Nexus when data was stored in the `.nexus/` folder at your vault root:
-
-- **Migration is automatic.** On first launch after updating, Nexus copies your existing data from `.nexus/` into the plugin directory. No manual steps required.
-- **Your original data is preserved.** The `.nexus/` folder is kept as a read-only fallback and is never deleted automatically. You can remove it manually after confirming everything works.
-- **Mobile sync timing.** If your vault finishes syncing after Nexus has already loaded on mobile, run **Nexus: Refresh synced data** from the command palette to pick up the latest files.
 
 ## Development
 
