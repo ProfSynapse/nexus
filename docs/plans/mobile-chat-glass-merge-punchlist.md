@@ -1,8 +1,9 @@
 # Mobile Chat Glass Merge Punchlist
 
 Generated: 2026-04-14
-Scope: `feat/mobile-chat-glass-phase1` (`ad2cab26`) compared against `main` (`f4ce05f9`)
-Merge base: `a0cc7e6d`
+Scope: `feat/mobile-chat-glass-phase1` rebased onto `main` (`f4ce05f9`)
+Current audited branch tip: `04c8deaf`
+Merge base after rebase: `f4ce05f9`
 Related plan: `docs/plans/mobile-chat-glass-migration-plan.md`
 
 ---
@@ -15,16 +16,39 @@ The glass branch is not just a CSS pass. It changes chat UI chrome, tool-event p
 
 This means the remaining work is not "finish the glass styles." The real task is:
 
-1. rebase the branch over current `main`
-2. preserve the new `main` storage/workspace behavior
-3. fix the glass-specific regressions
-4. make the branch green again
+1. rebase the branch over current `main` ✅
+2. preserve the new `main` storage/workspace behavior ✅
+3. fix the glass-specific regressions ✅
+4. make the branch green again ✅
 
-Note: the worktree currently contains additional uncommitted voice-input files that are not part of the audited branch tip. This punchlist is based on the committed branch state at `ad2cab26`.
+Note: the unrelated voice-input work that was present in the dirty worktree was committed separately as `04c8deaf` so the glass stabilization commit could remain reviewable.
 
 ---
 
 ## Progress Log
+
+### 2026-04-14 — Rebase and final verification complete
+
+Rebased `feat/mobile-chat-glass-phase1` onto current `main` at `f4ce05f9`.
+
+Conflict decisions:
+
+- preserved `main` readable-backend routing in `ConversationService` while keeping glass tool-call history pagination
+- preserved `main` built-in system-guides workspace support in `SystemPromptBuilder` while keeping glass tool catalog / compaction context support
+- preserved `main` storage settings defaults in `src/types.ts`
+- kept the generated `connectorContent.ts` content aligned with `main`; build-only timestamp churn was reverted
+- removed tracked `main.js.map` from the branch because it is a generated artifact and should not be part of the merge
+
+Post-rebase verification:
+
+- `npm run build` ✅
+- `npm test -- --runInBand` ✅ (`151` suites, `2051` passing tests, `5` skipped)
+
+Remaining blocker:
+
+- manual Obsidian/mobile QA for the glass chat loop, especially live subagent status visibility, tool inspection pagination, compaction divider persistence, and startup hydration behavior
+
+---
 
 ### 2026-04-14 — Safe implementation batch 3 complete
 
@@ -105,8 +129,9 @@ At the end of batch 1, 21 `no-console` warnings still remained in compaction/deb
 ## Current Audit Snapshot
 
 - Branch under audit: `feat/mobile-chat-glass-phase1`
-- Branch status relative to `main`: behind by 4 commits
-- Diff size vs `main...branch`: 137 files, `+9437 / -4548`
+- Branch status relative to `main`: rebased onto `f4ce05f9`
+- Automated verification: build and full Jest suite passing after rebase
+- Diff size vs `main...branch`: broad glass/chat/voice-input branch surface; review should focus on chat UI, tool status, compaction, and voice-input commits separately
 - Highest-risk overlap with newer `main` work:
   - `src/ui/chat/ChatView.ts`
   - `src/ui/chat/services/SystemPromptBuilder.ts`
@@ -225,24 +250,24 @@ Commits:
 
 ## Batch 1: Rebase And Conflict Resolution
 
-- [ ] Rebase `feat/mobile-chat-glass-phase1` onto current `main`
-- [ ] Resolve conflicts in `src/ui/chat/ChatView.ts` by preserving both:
+- [x] Rebase `feat/mobile-chat-glass-phase1` onto current `main`
+- [x] Resolve conflicts in `src/ui/chat/ChatView.ts` by preserving both:
   - glass status-bar / inspection-modal wiring
   - `main` startup hydration and database-loading behavior
-- [ ] Resolve conflicts in `src/ui/chat/services/SystemPromptBuilder.ts` by preserving both:
+- [x] Resolve conflicts in `src/ui/chat/services/SystemPromptBuilder.ts` by preserving both:
   - glass tool catalog / compaction frontier support
   - `main` built-in system-guides workspace support
-- [ ] Resolve conflicts in `src/services/ConversationService.ts` by preserving both:
+- [x] Resolve conflicts in `src/services/ConversationService.ts` by preserving both:
   - glass tool-call history pagination API
   - `main` readable-backend read paths
-- [ ] Resolve conflicts in `src/agents/memoryManager/tools/workspaces/loadWorkspace.ts` by preserving `main` system-workspace loading
-- [ ] Resolve conflicts in `src/types.ts` by preserving `main` storage settings defaults
-- [ ] Regenerate or reconcile `src/utils/connectorContent.ts` after the rebase
+- [x] Resolve conflicts in `src/agents/memoryManager/tools/workspaces/loadWorkspace.ts` by preserving `main` system-workspace loading
+- [x] Resolve conflicts in `src/types.ts` by preserving `main` storage settings defaults
+- [x] Regenerate or reconcile `src/utils/connectorContent.ts` after the rebase
 
 **Exit criteria**
 
-- Branch rebases cleanly onto `main`
-- No `main` vault-root or workspace-system behavior is dropped during conflict resolution
+- Branch rebases cleanly onto `main` ✅
+- No `main` vault-root or workspace-system behavior is dropped during conflict resolution ✅
 
 ---
 
@@ -259,14 +284,14 @@ Commits:
 
 ### Context compaction accounting
 
-- [ ] Reconcile the compaction-boundary behavior with the `ContextTracker` regression test
-- [ ] Confirm that context percentage after compaction reflects only the post-boundary message set plus system-prompt frontier content
+- [x] Reconcile the compaction-boundary behavior with the `ContextTracker` regression test
+- [x] Confirm that context percentage after compaction reflects only the post-boundary message set plus system-prompt frontier content
 - [ ] Verify the visual compaction divider still aligns with the saved compaction boundary after reload
 
 ### Tool status bar contract
 
-- [ ] Align `ToolStatusBar` implementation and tests on the intended class/DOM contract
-- [ ] Confirm the row-2 controls still match the migration spec:
+- [x] Align `ToolStatusBar` implementation and tests on the intended class/DOM contract
+- [x] Confirm the row-2 controls still match the migration spec:
   - inspect
   - task board
   - agents
@@ -303,13 +328,13 @@ Commits:
 
 - [x] Remove compaction-related `console.log` debugging from production chat/LLM paths
 - [x] Re-check for any other newly introduced debug instrumentation in glass files
-- [ ] Confirm no generated artifact such as `main.js.map` is being accidentally introduced or tracked unless that is now intentional
-- [ ] Update branch version metadata from `5.7.2` to the current `main` baseline or newer
+- [x] Confirm no generated artifact such as `main.js.map` is being accidentally introduced or tracked unless that is now intentional
+- [x] Update branch version metadata from `5.7.2` to the current `main` baseline or newer
 
 **Exit criteria**
 
 - Branch is not shipping debug noise ✅
-- Version/build metadata is current
+- Version/build metadata is current ✅
 
 ---
 
@@ -343,10 +368,10 @@ Commits:
 
 ## Recommended Order
 
-1. Rebase onto `main`
-2. Fix subagent status integration
-3. Fix failing tests and build hygiene
-4. Remove debug logging
+1. Rebase onto `main` ✅
+2. Fix subagent status integration ✅
+3. Fix failing tests and build hygiene ✅
+4. Remove debug logging ✅
 5. Run manual mobile QA
 
-This order matters. Doing more UI polish before the rebase risks duplicating work on files that will conflict anyway.
+The remaining work is now manual QA and any fixes found during that pass.
