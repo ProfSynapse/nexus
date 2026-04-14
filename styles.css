@@ -172,9 +172,9 @@ body.theme-light .message-content {
     position: relative;
     overflow: hidden;
     background:
-        radial-gradient(ellipse at 80% 10%, color-mix(in srgb, var(--interactive-accent) 24%, var(--background-primary)) 0%, transparent 55%),
-        radial-gradient(ellipse at 15% 90%, color-mix(in srgb, var(--interactive-accent) 15%, var(--background-primary)) 0%, transparent 55%),
-        radial-gradient(ellipse at 50% 50%, color-mix(in srgb, var(--interactive-accent) 8%, var(--background-primary)) 0%, transparent 70%),
+        radial-gradient(ellipse at 15% 10%, color-mix(in srgb, var(--interactive-accent) 24%, var(--background-primary)) 0%, transparent 55%),
+        radial-gradient(ellipse at 85% 50%, color-mix(in srgb, var(--interactive-accent) 15%, var(--background-primary)) 0%, transparent 55%),
+        radial-gradient(ellipse at 20% 90%, color-mix(in srgb, var(--interactive-accent) 8%, var(--background-primary)) 0%, transparent 70%),
         var(--background-primary) !important;
 }
 
