@@ -154,7 +154,17 @@ describe('SystemPromptBuilder compaction projection', () => {
 
 describe('SystemPromptBuilder', () => {
   it('builds the lean prompt and escapes dynamic XML content', async () => {
-    const builder = new SystemPromptBuilder(async () => 'alpha <beta>');
+    const builder = new SystemPromptBuilder(
+      async () => 'alpha <beta>',
+      undefined,
+      async () => ({
+        id: '__system_guides__',
+        name: 'Assistant guides',
+        description: 'Built-in docs',
+        rootFolder: 'Assistant data/guides',
+        entrypoint: 'Assistant data/guides/index.md'
+      })
+    );
 
     const prompt = await builder.build({
       sessionId: 'session-123',
@@ -173,6 +183,10 @@ describe('SystemPromptBuilder', () => {
     expect(prompt).toContain('<working_strategy>');
     expect(prompt).toContain('If a workspace is selected, use it as the primary context.');
     expect(prompt).toContain('Ask before creating a new workspace.');
+    expect(prompt).toContain('<built_in_docs_workspace>');
+    expect(prompt).toContain('workspaceId: "__system_guides__"');
+    expect(prompt).toContain('entrypoint: "Assistant data/guides/index.md"');
+    expect(prompt).not.toContain('# Assistant guides');
 
     expect(prompt).toContain('Notes/Test &lt;File&gt;.md');
     expect(prompt).toContain('alpha &lt;beta&gt;');

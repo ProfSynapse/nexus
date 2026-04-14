@@ -23,7 +23,7 @@ export interface MCPStorageSettings {
 }
 
 export const DEFAULT_STORAGE_SETTINGS: MCPStorageSettings = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   rootPath: 'Nexus',
   maxShardBytes: 4 * 1024 * 1024
 };

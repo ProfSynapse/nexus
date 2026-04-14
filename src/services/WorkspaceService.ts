@@ -11,28 +11,51 @@ import { IndexManager } from './storage/IndexManager';
 import { IndividualWorkspace, WorkspaceMetadata, SessionData, MemoryTrace, StateData } from '../types/storage/StorageTypes';
 import { IStorageAdapter } from '../database/interfaces/IStorageAdapter';
 import * as HybridTypes from '../types/storage/HybridStorageTypes';
-import { StorageAdapterOrGetter, resolveAdapter, withDualBackend } from './helpers/DualBackendExecutor';
+import type { VaultOperations } from '../core/VaultOperations';
+import type { MCPSettings } from '../types/plugin/PluginTypes';
+import { StorageAdapterOrGetter, resolveAdapter, withDualBackend, withReadableBackend } from './helpers/DualBackendExecutor';
 import { convertWorkspaceMetadata } from './helpers/WorkspaceTypeConverters';
 import { normalizeWorkspaceData, normalizeWorkspaceContext } from './helpers/WorkspaceNormalizer';
 import { WorkspaceSessionService } from './workspace/WorkspaceSessionService';
 import { WorkspaceStateService } from './workspace/WorkspaceStateService';
+import {
+  SystemGuidesWorkspaceProvider,
+  type SystemGuidesWorkspaceSummary,
+  type SystemGuidesLoadResult
+} from './workspace/SystemGuidesWorkspaceProvider';
 
 // Export constant for backward compatibility
 export const GLOBAL_WORKSPACE_ID = 'default';
 const DEFAULT_WORKSPACE_NAME = 'Default Workspace';
 
+interface WorkspaceServiceOptions {
+  vaultOperations?: VaultOperations;
+  getSettings?: () => Pick<MCPSettings, 'storage'> | undefined;
+}
+
 export class WorkspaceService {
   private storageAdapterOrGetter: StorageAdapterOrGetter;
   private sessionService: WorkspaceSessionService;
   private stateService: WorkspaceStateService;
+  private systemGuidesProvider: SystemGuidesWorkspaceProvider | null;
 
   constructor(
     private plugin: Plugin,
     private fileSystem: FileSystemService,
     private indexManager: IndexManager,
-    storageAdapter?: StorageAdapterOrGetter
+    storageAdapter?: StorageAdapterOrGetter,
+    options?: WorkspaceServiceOptions
   ) {
     this.storageAdapterOrGetter = storageAdapter;
+    this.systemGuidesProvider =
+      options?.vaultOperations && options.getSettings
+        ? new SystemGuidesWorkspaceProvider(
+          this.plugin.app,
+          this.plugin.manifest.version,
+          options.vaultOperations,
+          options.getSettings
+        )
+        : null;
 
     this.sessionService = new WorkspaceSessionService(
       fileSystem,
@@ -84,6 +107,41 @@ export class WorkspaceService {
     return this.getWorkspaceByNameOrId(data.name);
   }
 
+  isSystemWorkspaceId(identifier: string): boolean {
+    return this.systemGuidesProvider?.matchesWorkspaceId(identifier) ?? false;
+  }
+
+  getSystemGuidesWorkspaceSummary(): SystemGuidesWorkspaceSummary | null {
+    return this.systemGuidesProvider?.getWorkspaceSummary() ?? null;
+  }
+
+  async loadSystemGuidesWorkspace(limit = 5): Promise<SystemGuidesLoadResult | null> {
+    if (!this.systemGuidesProvider) {
+      return null;
+    }
+
+    return this.systemGuidesProvider.loadWorkspaceData(limit);
+  }
+
+  private isSystemWorkspaceName(identifier: string): boolean {
+    const summary = this.systemGuidesProvider?.getWorkspaceSummary();
+    return summary ? summary.name.toLowerCase() === identifier.toLowerCase() : false;
+  }
+
+  private isSystemWorkspaceIdentifier(identifier: string): boolean {
+    return this.isSystemWorkspaceId(identifier) || this.isSystemWorkspaceName(identifier);
+  }
+
+  private getSystemWorkspace(): IndividualWorkspace | null {
+    return this.systemGuidesProvider?.getWorkspace() ?? null;
+  }
+
+  private ensureSystemWorkspaceMutable(id: string): void {
+    if (this.isSystemWorkspaceId(id)) {
+      throw new Error('The system-managed guides workspace cannot be modified.');
+    }
+  }
+
   // ============================================================================
   // Workspace CRUD (kept in this file — core responsibility)
   // ============================================================================
@@ -92,7 +150,7 @@ export class WorkspaceService {
    * List workspaces (uses index only - lightweight and fast)
    */
   async listWorkspaces(limit?: number): Promise<WorkspaceMetadata[]> {
-    return withDualBackend(
+    return withReadableBackend(
       this.storageAdapterOrGetter,
       async (adapter) => {
         const result = await adapter.getWorkspaces({
@@ -122,7 +180,7 @@ export class WorkspaceService {
     sortOrder?: 'asc' | 'desc',
     limit?: number
   }): Promise<WorkspaceMetadata[]> {
-    return withDualBackend(
+    return withReadableBackend(
       this.storageAdapterOrGetter,
       async (adapter) => {
         const result = await adapter.getWorkspaces({
@@ -169,7 +227,11 @@ export class WorkspaceService {
    * Use getSessions/getTraces methods separately for full data.
    */
   async getWorkspace(id: string): Promise<IndividualWorkspace | null> {
-    return withDualBackend(
+    if (this.isSystemWorkspaceId(id)) {
+      return this.getSystemWorkspace();
+    }
+
+    return withReadableBackend(
       this.storageAdapterOrGetter,
       async (adapter) => {
         const metadata = await adapter.getWorkspace(id);
@@ -208,7 +270,7 @@ export class WorkspaceService {
    * Get all workspaces with full data (expensive - avoid if possible)
    */
   async getAllWorkspaces(): Promise<IndividualWorkspace[]> {
-    return withDualBackend(
+    return withReadableBackend(
       this.storageAdapterOrGetter,
       async (adapter) => {
         const result = await adapter.getWorkspaces({
@@ -334,6 +396,7 @@ export class WorkspaceService {
    * Update workspace (updates file + index metadata)
    */
   async updateWorkspace(id: string, updates: Partial<IndividualWorkspace>): Promise<void> {
+    this.ensureSystemWorkspaceMutable(id);
     return withDualBackend(
       this.storageAdapterOrGetter,
       async (adapter) => {
@@ -387,6 +450,7 @@ export class WorkspaceService {
    * Update last accessed timestamp for a workspace
    */
   async updateLastAccessed(id: string): Promise<void> {
+    this.ensureSystemWorkspaceMutable(id);
     return withDualBackend(
       this.storageAdapterOrGetter,
       async (adapter) => {
@@ -408,6 +472,7 @@ export class WorkspaceService {
    * Delete workspace (deletes file + removes from index)
    */
   async deleteWorkspace(id: string): Promise<void> {
+    this.ensureSystemWorkspaceMutable(id);
     return withDualBackend(
       this.storageAdapterOrGetter,
       async (adapter) => {
@@ -480,7 +545,7 @@ export class WorkspaceService {
       return this.listWorkspaces(limit);
     }
 
-    return withDualBackend(
+    return withReadableBackend(
       this.storageAdapterOrGetter,
       async (adapter) => {
         const results = await adapter.searchWorkspaces(query);
@@ -515,7 +580,7 @@ export class WorkspaceService {
    * Get workspace by folder (uses index)
    */
   async getWorkspaceByFolder(folder: string): Promise<WorkspaceMetadata | null> {
-    return withDualBackend(
+    return withReadableBackend(
       this.storageAdapterOrGetter,
       async (adapter) => {
         const result = await adapter.getWorkspaces({
@@ -542,7 +607,7 @@ export class WorkspaceService {
    * Get active workspace (uses index)
    */
   async getActiveWorkspace(): Promise<WorkspaceMetadata | null> {
-    return withDualBackend(
+    return withReadableBackend(
       this.storageAdapterOrGetter,
       async (adapter) => {
         const result = await adapter.getWorkspaces({
@@ -569,12 +634,16 @@ export class WorkspaceService {
    * @returns Full workspace data or null if not found
    */
   async getWorkspaceByNameOrId(identifier: string): Promise<IndividualWorkspace | null> {
+    if (this.isSystemWorkspaceIdentifier(identifier)) {
+      return this.getSystemWorkspace();
+    }
+
     const byId = await this.getWorkspace(identifier);
     if (byId) {
       return byId;
     }
 
-    const matchId = await withDualBackend<string | null>(
+    const matchId = await withReadableBackend<string | null>(
       this.storageAdapterOrGetter,
       async (adapter) => {
         const result = await adapter.getWorkspaces({

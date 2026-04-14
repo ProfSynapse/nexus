@@ -94,7 +94,8 @@ export class ModelAgentManager {
     });
     this.systemPromptBuilder = new SystemPromptBuilder(
       this.workspaceIntegration.readNoteContent.bind(this.workspaceIntegration),
-      this.workspaceIntegration.loadWorkspace.bind(this.workspaceIntegration)
+      this.workspaceIntegration.loadWorkspace.bind(this.workspaceIntegration),
+      this.workspaceIntegration.getBuiltInDocsWorkspaceInfo.bind(this.workspaceIntegration)
     );
     this.promptContextAssembler = new ModelAgentPromptContextAssembler({
       systemPromptBuilder: this.systemPromptBuilder,

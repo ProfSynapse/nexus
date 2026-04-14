@@ -1,7 +1,7 @@
 import type { MCPSettings, MCPStorageSettings } from '../../types/plugin/PluginTypes';
 import { DEFAULT_STORAGE_SETTINGS } from '../../types/plugin/PluginTypes';
 
-export interface CanonicalVaultRootPathValidation {
+export interface VaultRootPathValidation {
   inputPath: string;
   normalizedPath: string;
   segments: string[];
@@ -10,15 +10,17 @@ export interface CanonicalVaultRootPathValidation {
   warnings: string[];
 }
 
-export interface CanonicalVaultRootResolution {
+export interface VaultRootResolution {
   schemaVersion: number;
-  configuredRootPath: string;
-  resolvedRootPath: string;
+  configuredPath: string;
+  resolvedPath: string;
+  guidesPath: string;
+  dataPath: string;
   maxShardBytes: number;
-  validation: CanonicalVaultRootPathValidation;
+  validation: VaultRootPathValidation;
 }
 
-export interface CanonicalVaultRootResolverOptions {
+export interface VaultRootResolverOptions {
   configDir?: string;
 }
 
@@ -61,10 +63,19 @@ function normalizeConfigDirPath(configDir: string | undefined): string {
   return normalizeVaultRelativePath(configDir ?? '');
 }
 
+function buildManagedSubpath(rootPath: string, subfolder: 'guides' | 'data'): string {
+  const normalizedRootPath = normalizeVaultRelativePath(rootPath);
+  if (!normalizedRootPath) {
+    return subfolder;
+  }
+
+  return `${normalizedRootPath}/${subfolder}`;
+}
+
 export function validateVaultRelativePath(
   path: string,
-  options: CanonicalVaultRootResolverOptions = {}
-): CanonicalVaultRootPathValidation {
+  options: VaultRootResolverOptions = {}
+): VaultRootPathValidation {
   const normalizedPath = normalizeVaultRelativePath(path);
   const segments = normalizedPath ? normalizedPath.split('/') : [];
   const errors: string[] = [];
@@ -89,9 +100,9 @@ export function validateVaultRelativePath(
       normalizedPath === configDirPath || normalizedPath.startsWith(`${configDirPath}/`);
     if (isUnderConfigDir) {
       if (segments[configDirSegments.length]?.toLowerCase() === 'plugins') {
-        errors.push(`Paths under ${configDirPath}/plugins are not allowed for canonical storage.`);
+        errors.push(`Paths under ${configDirPath}/plugins are not allowed for data folder.`);
       } else {
-        errors.push(`Paths under ${configDirPath} are not allowed for canonical storage.`);
+        errors.push(`Paths under ${configDirPath} are not allowed for data folder.`);
       }
     }
   }
@@ -119,18 +130,20 @@ function resolveMaxShardBytes(storage: MCPStorageSettings | undefined): number {
   return DEFAULT_STORAGE_SETTINGS.maxShardBytes;
 }
 
-export function resolveCanonicalVaultRoot(
+export function resolveVaultRoot(
   settings: Pick<MCPSettings, 'storage'> | undefined,
-  options: CanonicalVaultRootResolverOptions = {}
-): CanonicalVaultRootResolution {
+  options: VaultRootResolverOptions = {}
+): VaultRootResolution {
   const storage = settings?.storage;
-  const configuredRootPath = storage?.rootPath ?? DEFAULT_STORAGE_SETTINGS.rootPath;
-  const validation = validateVaultRelativePath(configuredRootPath, options);
+  const configuredPath = storage?.rootPath ?? DEFAULT_STORAGE_SETTINGS.rootPath;
+  const validation = validateVaultRelativePath(configuredPath, options);
 
   return {
     schemaVersion: storage?.schemaVersion ?? DEFAULT_STORAGE_SETTINGS.schemaVersion ?? 1,
-    configuredRootPath,
-    resolvedRootPath: validation.normalizedPath,
+    configuredPath,
+    resolvedPath: validation.normalizedPath,
+    guidesPath: buildManagedSubpath(validation.normalizedPath, 'guides'),
+    dataPath: buildManagedSubpath(validation.normalizedPath, 'data'),
     maxShardBytes: resolveMaxShardBytes(storage),
     validation
   };

@@ -26,7 +26,7 @@ describe('Settings', () => {
     await settings.loadSettings();
 
     expect(settings.settings.storage).toEqual({
-      schemaVersion: 1,
+      schemaVersion: 2,
       rootPath: 'Nexus',
       maxShardBytes: 4 * 1024 * 1024
     });
@@ -37,7 +37,7 @@ describe('Settings', () => {
       loadData: jest.fn(async () => ({
         enabledVault: true,
         storage: {
-          rootPath: 'storage/nexus'
+          rootPath: 'storage/assistant-data'
         }
       })),
       saveData: jest.fn(async () => undefined)
@@ -47,9 +47,45 @@ describe('Settings', () => {
     await settings.loadSettings();
 
     expect(settings.settings.storage).toEqual({
-      schemaVersion: 1,
-      rootPath: 'storage/nexus',
+      schemaVersion: 2,
+      rootPath: 'storage/assistant-data',
       maxShardBytes: 4 * 1024 * 1024
     });
+  });
+
+  it('does not load or overwrite runtime pluginStorage state through normal settings saves', async () => {
+    const initialData = {
+      enabledVault: true,
+      pluginStorage: {
+        storageVersion: 2,
+        sourceOfTruthLocation: 'vault-root',
+        migration: {
+          state: 'verified',
+          activeDestination: 'Nexus/data',
+          legacySourcesDetected: []
+        }
+      }
+    };
+
+    const plugin = {
+      loadData: jest.fn(async () => initialData),
+      saveData: jest.fn(async () => undefined)
+    } as unknown as Plugin;
+
+    const settings = new Settings(plugin);
+    await settings.loadSettings();
+
+    expect((settings.settings as { pluginStorage?: unknown }).pluginStorage).toBeUndefined();
+
+    settings.settings.enabledVault = false;
+    await settings.saveSettings();
+
+    expect(plugin.saveData).toHaveBeenCalledTimes(1);
+    const savedData = plugin.saveData.mock.calls[0][0] as {
+      enabledVault: boolean;
+      pluginStorage?: unknown;
+    };
+    expect(savedData.enabledVault).toBe(false);
+    expect(savedData.pluginStorage).toEqual(initialData.pluginStorage);
   });
 });

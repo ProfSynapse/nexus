@@ -73,6 +73,14 @@ export interface LoadedWorkspaceData {
   [key: string]: unknown;
 }
 
+export interface BuiltInDocsWorkspaceInfo {
+  id: string;
+  name: string;
+  description: string;
+  rootFolder: string;
+  entrypoint: string;
+}
+
 export interface SystemPromptOptions {
   sessionId?: string;
   workspaceId?: string;
@@ -82,6 +90,7 @@ export interface SystemPromptOptions {
   workspaceContext?: WorkspaceContext | null;
   // Full comprehensive workspace data from LoadWorkspaceTool (when workspace selected in settings)
   loadedWorkspaceData?: LoadedWorkspaceData | null;
+  builtInDocsWorkspace?: BuiltInDocsWorkspaceInfo | null;
   // Skip the tools section for models that are pre-trained on the toolset (e.g., Nexus)
   skipToolsSection?: boolean;
   // Context status for token-limited models (enables context awareness)
@@ -97,7 +106,8 @@ export interface SystemPromptOptions {
 export class SystemPromptBuilder {
   constructor(
     private readNoteContent: (notePath: string) => Promise<string>,
-    private loadWorkspace?: (workspaceId: string) => Promise<LoadedWorkspaceData | null>
+    private loadWorkspace?: (workspaceId: string) => Promise<LoadedWorkspaceData | null>,
+    private getBuiltInDocsWorkspaceInfo?: () => Promise<BuiltInDocsWorkspaceInfo | null>
   ) {}
 
   /**
@@ -140,6 +150,13 @@ export class SystemPromptBuilder {
     const workingStrategySection = this.buildWorkingStrategySection();
     if (workingStrategySection) {
       sections.push(workingStrategySection);
+    }
+
+    const builtInDocsWorkspace = options.builtInDocsWorkspace ??
+      (this.getBuiltInDocsWorkspaceInfo ? await this.getBuiltInDocsWorkspaceInfo() : null);
+    const builtInDocsWorkspaceSection = this.buildBuiltInDocsWorkspaceSection(builtInDocsWorkspace);
+    if (builtInDocsWorkspaceSection) {
+      sections.push(builtInDocsWorkspaceSection);
     }
 
     // 3. Context files section
@@ -239,6 +256,27 @@ Gather context progressively:
 
 Prefer targeted context gathering over large dumps.
 </working_strategy>`;
+  }
+
+  private buildBuiltInDocsWorkspaceSection(
+    workspace: BuiltInDocsWorkspaceInfo | null | undefined
+  ): string | null {
+    if (!workspace) {
+      return null;
+    }
+
+    return `<built_in_docs_workspace>
+A built-in documentation workspace is available when you need guidance about built-in capabilities, workflows, or product behavior.
+
+- workspaceId: "${this.escapeXmlAttribute(workspace.id)}"
+- name: "${this.escapeXmlAttribute(workspace.name)}"
+- rootFolder: "${this.escapeXmlAttribute(workspace.rootFolder)}"
+- entrypoint: "${this.escapeXmlAttribute(workspace.entrypoint)}"
+
+Do not treat this as the selected user workspace.
+Use loadWorkspace with the workspaceId above only when documentation is relevant.
+Start with the entrypoint and load deeper guide files selectively.
+</built_in_docs_workspace>`;
   }
 
   /**

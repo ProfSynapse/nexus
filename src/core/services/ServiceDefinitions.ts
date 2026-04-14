@@ -86,7 +86,10 @@ export const CORE_SERVICE_DEFINITIONS: ServiceDefinition[] = [
             // (SQLite initializes in background) but becomes available later.
             const adapterGetter = () => context.serviceManager.getServiceIfReady<IStorageAdapter>('hybridStorageAdapter') ?? undefined;
 
-            return new WorkspaceService(context.plugin, fileSystem, indexManager, adapterGetter);
+            return new WorkspaceService(context.plugin, fileSystem, indexManager, adapterGetter, {
+                vaultOperations,
+                getSettings: () => context.settings.settings
+            });
         })
     },
 

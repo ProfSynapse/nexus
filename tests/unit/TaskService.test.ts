@@ -97,12 +97,32 @@ describe('TaskService', () => {
   let projectRepo: jest.Mocked<IProjectRepository>;
   let taskRepo: jest.Mocked<ITaskRepository>;
   let dagService: DAGService;
+  let waitForQueryReady: jest.Mock<Promise<boolean>, []>;
 
   beforeEach(() => {
     projectRepo = createMockProjectRepo();
     taskRepo = createMockTaskRepo();
     dagService = new DAGService();
-    service = new TaskService(projectRepo, taskRepo, dagService);
+    waitForQueryReady = jest.fn().mockResolvedValue(true);
+    service = new TaskService(projectRepo, taskRepo, dagService, undefined, undefined, waitForQueryReady);
+  });
+
+  describe('query readiness gating', () => {
+    it('waits for query readiness before reads', async () => {
+      projectRepo.getByWorkspace.mockResolvedValue(paginatedResult([]));
+
+      await service.listProjects('ws-1');
+
+      expect(waitForQueryReady).toHaveBeenCalled();
+      expect(projectRepo.getByWorkspace).toHaveBeenCalledWith('ws-1', expect.any(Object));
+    });
+
+    it('throws when query readiness does not complete', async () => {
+      waitForQueryReady.mockResolvedValue(false);
+
+      await expect(service.listProjects('ws-1')).rejects.toThrow('Task storage is not ready yet');
+      expect(projectRepo.getByWorkspace).not.toHaveBeenCalled();
+    });
   });
 
   // ============================================================================

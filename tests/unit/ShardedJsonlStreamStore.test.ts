@@ -1,6 +1,6 @@
 import type { App } from 'obsidian';
 
-import { ShardedJsonlStreamStore } from '../../src/database/storage/canonical/ShardedJsonlStreamStore';
+import { ShardedJsonlStreamStore } from '../../src/database/storage/vaultRoot/ShardedJsonlStreamStore';
 
 type AdapterFileEntry = {
   content: string;
@@ -128,7 +128,7 @@ describe('ShardedJsonlStreamStore', () => {
     const { app, adapter } = createMockApp();
     const store = new ShardedJsonlStreamStore({
       app,
-      rootPath: 'Nexus',
+      rootPath: 'Assistant data',
       maxShardBytes: 1024
     });
 
@@ -137,23 +137,23 @@ describe('ShardedJsonlStreamStore', () => {
     expect(result.createdShard).toBe(true);
     expect(result.rotated).toBe(false);
     expect(result.shard.fileName).toBe('shard-000001.jsonl');
-    expect(result.shard.fullPath).toBe('Nexus/conversations/conv-1/shard-000001.jsonl');
-    expect(adapter.mkdir).toHaveBeenCalledWith('Nexus');
-    expect(adapter.mkdir).toHaveBeenCalledWith('Nexus/conversations');
-    expect(adapter.mkdir).toHaveBeenCalledWith('Nexus/conversations/conv-1');
+    expect(result.shard.fullPath).toBe('Assistant data/conversations/conv-1/shard-000001.jsonl');
+    expect(adapter.mkdir).toHaveBeenCalledWith('Assistant data');
+    expect(adapter.mkdir).toHaveBeenCalledWith('Assistant data/conversations');
+    expect(adapter.mkdir).toHaveBeenCalledWith('Assistant data/conversations/conv-1');
     expect(adapter.write).toHaveBeenCalledWith(
-      'Nexus/conversations/conv-1/shard-000001.jsonl',
+      'Assistant data/conversations/conv-1/shard-000001.jsonl',
       `${JSON.stringify(makeEvent('evt-1'))}\n`
     );
   });
 
   it('appends to the current shard without rotating under the size limit', async () => {
     const { app, adapter } = createMockApp({
-      'Nexus/conversations/conv-1/shard-000001.jsonl': `${JSON.stringify(makeEvent('evt-1'))}\n`
+      'Assistant data/conversations/conv-1/shard-000001.jsonl': `${JSON.stringify(makeEvent('evt-1'))}\n`
     });
     const store = new ShardedJsonlStreamStore({
       app,
-      rootPath: 'Nexus',
+      rootPath: 'Assistant data',
       maxShardBytes: 1024
     });
 
@@ -163,11 +163,11 @@ describe('ShardedJsonlStreamStore', () => {
     expect(result.rotated).toBe(false);
     expect(result.shard.fileName).toBe('shard-000001.jsonl');
     expect(adapter.append).toHaveBeenCalledWith(
-      'Nexus/conversations/conv-1/shard-000001.jsonl',
+      'Assistant data/conversations/conv-1/shard-000001.jsonl',
       `${JSON.stringify(makeEvent('evt-2'))}\n`
     );
     expect(adapter.write).not.toHaveBeenCalledWith(
-      'Nexus/conversations/conv-1/shard-000002.jsonl',
+      'Assistant data/conversations/conv-1/shard-000002.jsonl',
       expect.any(String)
     );
   });
@@ -175,11 +175,11 @@ describe('ShardedJsonlStreamStore', () => {
   it('rotates to a new shard when the next append would cross the byte limit', async () => {
     const initialContent = `${JSON.stringify(makeEvent('evt-1', { payload: 'x'.repeat(20) }))}\n`;
     const { app, adapter } = createMockApp({
-      'Nexus/conversations/conv-1/shard-000001.jsonl': initialContent
+      'Assistant data/conversations/conv-1/shard-000001.jsonl': initialContent
     });
     const store = new ShardedJsonlStreamStore({
       app,
-      rootPath: 'Nexus',
+      rootPath: 'Assistant data',
       maxShardBytes: initialContent.length + 5
     });
 
@@ -189,25 +189,25 @@ describe('ShardedJsonlStreamStore', () => {
     expect(result.rotated).toBe(true);
     expect(result.shard.fileName).toBe('shard-000002.jsonl');
     expect(adapter.write).toHaveBeenCalledWith(
-      'Nexus/conversations/conv-1/shard-000002.jsonl',
+      'Assistant data/conversations/conv-1/shard-000002.jsonl',
       `${JSON.stringify(makeEvent('evt-2'))}\n`
     );
   });
 
   it('reads events across shards in shard order', async () => {
     const { app } = createMockApp({
-      'Nexus/conversations/conv-1/shard-000002.jsonl': [
+      'Assistant data/conversations/conv-1/shard-000002.jsonl': [
         `${JSON.stringify(makeEvent('evt-3'))}`,
         `${JSON.stringify(makeEvent('evt-4'))}`
       ].join('\n') + '\n',
-      'Nexus/conversations/conv-1/shard-000001.jsonl': [
+      'Assistant data/conversations/conv-1/shard-000001.jsonl': [
         `${JSON.stringify(makeEvent('evt-1'))}`,
         `${JSON.stringify(makeEvent('evt-2'))}`
       ].join('\n') + '\n'
     });
     const store = new ShardedJsonlStreamStore({
       app,
-      rootPath: 'Nexus',
+      rootPath: 'Assistant data',
       maxShardBytes: 1024
     });
 
@@ -218,13 +218,13 @@ describe('ShardedJsonlStreamStore', () => {
 
   it('returns shard descriptors in numeric order', async () => {
     const { app } = createMockApp({
-      'Nexus/conversations/conv-1/shard-000003.jsonl': `${JSON.stringify(makeEvent('evt-3'))}\n`,
-      'Nexus/conversations/conv-1/shard-000001.jsonl': `${JSON.stringify(makeEvent('evt-1'))}\n`,
-      'Nexus/conversations/conv-1/shard-000002.jsonl': `${JSON.stringify(makeEvent('evt-2'))}\n`
+      'Assistant data/conversations/conv-1/shard-000003.jsonl': `${JSON.stringify(makeEvent('evt-3'))}\n`,
+      'Assistant data/conversations/conv-1/shard-000001.jsonl': `${JSON.stringify(makeEvent('evt-1'))}\n`,
+      'Assistant data/conversations/conv-1/shard-000002.jsonl': `${JSON.stringify(makeEvent('evt-2'))}\n`
     });
     const store = new ShardedJsonlStreamStore({
       app,
-      rootPath: 'Nexus'
+      rootPath: 'Assistant data'
     });
 
     const shards = await store.listShards('conversations/conv-1');

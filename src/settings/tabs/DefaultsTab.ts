@@ -5,8 +5,7 @@
  * Saves to plugin settings (defaults for all new chats).
  */
 
-import { App, Setting, Notice, Platform } from 'obsidian';
-import { SettingsRouter } from '../SettingsRouter';
+import { App, Notice, Platform, Setting } from 'obsidian';
 import { LLMProviderSettings } from '../../types/llm/ProviderTypes';
 import { Settings } from '../../settings';
 import { WorkspaceService } from '../../services/WorkspaceService';
@@ -29,17 +28,14 @@ export interface DefaultsTabServices {
 
 export class DefaultsTab {
   private container: HTMLElement;
-  private router: SettingsRouter;
   private services: DefaultsTabServices;
   private renderer: ChatSettingsRenderer | null = null;
 
   constructor(
     container: HTMLElement,
-    router: SettingsRouter,
     services: DefaultsTabServices
   ) {
     this.container = container;
-    this.router = router;
     this.services = services;
 
     void this.loadDataAndRender();

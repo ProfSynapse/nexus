@@ -14,7 +14,7 @@ import {
 import { MemoryTraceData, SessionMetadata } from '../../../types/storage/HybridStorageTypes';
 import { PaginatedResult, PaginationParams, calculatePaginationMetadata } from '../../../types/pagination/PaginationTypes';
 import { normalizeLegacyTraceMetadata } from '../../../services/memory/LegacyTraceMetadataNormalizer';
-import { StorageAdapterOrGetter, resolveAdapter, withDualBackend } from '../../../services/helpers/DualBackendExecutor';
+import { StorageAdapterOrGetter, resolveAdapter, withDualBackend, withReadableBackend } from '../../../services/helpers/DualBackendExecutor';
 
 /**
  * MemoryService provides agent-specific logic for memory management
@@ -53,7 +53,7 @@ export class MemoryService {
     sessionId?: string,
     options?: PaginationParams
   ): Promise<PaginatedResult<WorkspaceMemoryTrace>> {
-    return withDualBackend(
+    return withReadableBackend(
       this.storageAdapterOrGetter,
       async (adapter) => {
         const result = await adapter.getTraces(workspaceId, sessionId, options);
@@ -234,7 +234,7 @@ export class MemoryService {
     workspaceId: string,
     options?: PaginationParams
   ): Promise<PaginatedResult<WorkspaceSession>> {
-    return withDualBackend(
+    return withReadableBackend(
       this.storageAdapterOrGetter,
       async (adapter) => {
         const result = await adapter.getSessions(workspaceId, options);
@@ -430,7 +430,7 @@ export class MemoryService {
   }>> {
     type StateItem = { id: string; name: string; created: number; state: WorkspaceState };
 
-    return withDualBackend(
+    return withReadableBackend(
       this.storageAdapterOrGetter,
       async (adapter) => {
         const result = await adapter.getStates(workspaceId, sessionId, options);

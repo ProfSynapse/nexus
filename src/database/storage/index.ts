@@ -8,6 +8,6 @@
 
 export * from './JSONLWriter';
 export * from './SQLiteCacheManager';
-export * from './CanonicalVaultRootResolver';
-export * from './canonical/CanonicalNexusEventStore';
-export * from './canonical/ShardedJsonlStreamStore';
+export * from './VaultRootResolver';
+export * from './vaultRoot/VaultEventStore';
+export * from './vaultRoot/ShardedJsonlStreamStore';

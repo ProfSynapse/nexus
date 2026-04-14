@@ -2,36 +2,40 @@ import {
   DEFAULT_STORAGE_SETTINGS
 } from '../../src/types/plugin/PluginTypes';
 import {
-  resolveCanonicalVaultRoot,
+  resolveVaultRoot,
   validateVaultRelativePath
-} from '../../src/database/storage/CanonicalVaultRootResolver';
+} from '../../src/database/storage/VaultRootResolver';
 
-describe('CanonicalVaultRootResolver', () => {
-  it('resolves the default Nexus root when storage settings are absent', () => {
-    const result = resolveCanonicalVaultRoot(undefined, { configDir: '.obsidian' });
+describe('VaultRootResolver', () => {
+  it('resolves the default data folder when storage settings are absent', () => {
+    const result = resolveVaultRoot(undefined, { configDir: '.obsidian' });
 
-    expect(result.configuredRootPath).toBe(DEFAULT_STORAGE_SETTINGS.rootPath);
-    expect(result.resolvedRootPath).toBe(DEFAULT_STORAGE_SETTINGS.rootPath);
+    expect(result.configuredPath).toBe(DEFAULT_STORAGE_SETTINGS.rootPath);
+    expect(result.resolvedPath).toBe(DEFAULT_STORAGE_SETTINGS.rootPath);
+    expect(result.guidesPath).toBe(`${DEFAULT_STORAGE_SETTINGS.rootPath}/guides`);
+    expect(result.dataPath).toBe(`${DEFAULT_STORAGE_SETTINGS.rootPath}/data`);
     expect(result.schemaVersion).toBe(DEFAULT_STORAGE_SETTINGS.schemaVersion);
     expect(result.maxShardBytes).toBe(DEFAULT_STORAGE_SETTINGS.maxShardBytes);
     expect(result.validation.isValid).toBe(true);
   });
 
   it('normalizes vault-relative paths from settings', () => {
-    const result = resolveCanonicalVaultRoot({
+    const result = resolveVaultRoot({
       storage: {
         schemaVersion: 7,
-        rootPath: '  storage\\\\nexus// ',
+        rootPath: '  storage\\\\assistant-data// ',
         maxShardBytes: 2_097_152
       }
     }, { configDir: '.obsidian' });
 
-    expect(result.configuredRootPath).toBe('  storage\\\\nexus// ');
-    expect(result.resolvedRootPath).toBe('storage/nexus');
+    expect(result.configuredPath).toBe('  storage\\\\assistant-data// ');
+    expect(result.resolvedPath).toBe('storage/assistant-data');
+    expect(result.guidesPath).toBe('storage/assistant-data/guides');
+    expect(result.dataPath).toBe('storage/assistant-data/data');
     expect(result.schemaVersion).toBe(7);
     expect(result.maxShardBytes).toBe(2_097_152);
     expect(result.validation.isValid).toBe(true);
-    expect(result.validation.normalizedPath).toBe('storage/nexus');
+    expect(result.validation.normalizedPath).toBe('storage/assistant-data');
   });
 
   it('rejects empty, absolute, obsidian, and traversal paths', () => {
@@ -41,27 +45,27 @@ describe('CanonicalVaultRootResolver', () => {
         error: 'Storage root path cannot be empty.'
       },
       {
-        input: '/Users/me/Nexus',
+        input: '/Users/me/Assistant data',
         error: 'Storage root path must be relative to the vault root.'
       },
       {
-        input: 'C:\\Users\\me\\Nexus',
+        input: 'C:\\Users\\me\\Assistant data',
         error: 'Storage root path must be relative to the vault root.'
       },
       {
         input: '.obsidian',
-        error: 'Paths under .obsidian are not allowed for canonical storage.'
+        error: 'Paths under .obsidian are not allowed for data folder.'
       },
       {
         input: '.obsidian/plugins/nexus',
-        error: 'Paths under .obsidian/plugins are not allowed for canonical storage.'
+        error: 'Paths under .obsidian/plugins are not allowed for data folder.'
       },
       {
-        input: '../Nexus',
+        input: '../Assistant data',
         error: 'Path traversal segments are not allowed.'
       },
       {
-        input: 'Archive/../Nexus',
+        input: 'Archive/../Assistant data',
         error: 'Path traversal segments are not allowed.'
       }
     ];
@@ -73,7 +77,7 @@ describe('CanonicalVaultRootResolver', () => {
     }
   });
 
-  it('warns when the canonical root is hidden but still valid', () => {
+  it('warns when the data folder is hidden but still valid', () => {
     const result = validateVaultRelativePath('storage/.nexus', { configDir: '.obsidian' });
 
     expect(result.isValid).toBe(true);

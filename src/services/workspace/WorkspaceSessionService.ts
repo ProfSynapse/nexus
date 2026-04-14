@@ -7,7 +7,7 @@ import { FileSystemService } from '../storage/FileSystemService';
 import { IndexManager } from '../storage/IndexManager';
 import { SessionData } from '../../types/storage/StorageTypes';
 import * as HybridTypes from '../../types/storage/HybridStorageTypes';
-import { StorageAdapterOrGetter, resolveAdapter, withDualBackend } from '../helpers/DualBackendExecutor';
+import { StorageAdapterOrGetter, resolveAdapter, withDualBackend, withReadableBackend } from '../helpers/DualBackendExecutor';
 
 const GLOBAL_WORKSPACE_ID = 'default';
 const DEFAULT_WORKSPACE_NAME = 'Default Workspace';
@@ -175,7 +175,7 @@ export class WorkspaceSessionService {
    * Get session from workspace
    */
   async getSession(workspaceId: string, sessionId: string): Promise<SessionData | null> {
-    return withDualBackend(
+    return withReadableBackend(
       this.storageAdapterOrGetter,
       async (adapter) => {
         const session = await adapter.getSession(sessionId);
@@ -216,7 +216,7 @@ export class WorkspaceSessionService {
       return byId;
     }
 
-    return withDualBackend<SessionData | null>(
+    return withReadableBackend<SessionData | null>(
       this.storageAdapterOrGetter,
       async (adapter) => {
         const result = await adapter.getSessions(workspaceId, { pageSize: 100 });

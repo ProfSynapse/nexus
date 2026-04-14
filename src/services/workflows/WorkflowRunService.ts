@@ -36,7 +36,8 @@ export class WorkflowRunService {
     this.workspaceIntegration = new WorkspaceIntegrationService(deps.app);
     this.systemPromptBuilder = new SystemPromptBuilder(
       this.workspaceIntegration.readNoteContent.bind(this.workspaceIntegration),
-      this.workspaceIntegration.loadWorkspace.bind(this.workspaceIntegration)
+      this.workspaceIntegration.loadWorkspace.bind(this.workspaceIntegration),
+      this.workspaceIntegration.getBuiltInDocsWorkspaceInfo.bind(this.workspaceIntegration)
     );
   }
 

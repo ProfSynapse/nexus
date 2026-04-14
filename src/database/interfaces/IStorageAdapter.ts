@@ -81,6 +81,18 @@ export interface IStorageAdapter {
   isReady(): boolean;
 
   /**
+   * Check if the adapter's query cache is safe to read from.
+   *
+   * This is stricter than isReady(). During certain startup transitions
+   * (for example the first verified vault-root cutover), SQLite can be open
+   * but still rebuilding from JSONL. Read-oriented consumers should prefer
+   * this signal when a partial cache would be harmful.
+   *
+   * @returns true when read queries should route through SQLite
+   */
+  isQueryReady?(): boolean;
+
+  /**
    * Initialize the storage adapter
    *
    * This should:
@@ -92,6 +104,14 @@ export interface IStorageAdapter {
    * @throws {Error} If initialization fails
    */
   initialize(): Promise<void>;
+
+  /**
+   * Wait until the adapter is safe for read queries.
+   *
+   * Implementations may return immediately when query safety is equivalent
+   * to normal readiness.
+   */
+  waitForQueryReady?(): Promise<boolean>;
 
   /**
    * Close the storage adapter and release resources

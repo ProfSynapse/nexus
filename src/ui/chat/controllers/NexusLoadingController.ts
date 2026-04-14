@@ -110,6 +110,29 @@ export class NexusLoadingController extends Component {
     this.overlayEl.addClass('is-visible');
   }
 
+  updateDatabaseLoadingProgress(progress: number, stage: string): void {
+    if (!this.overlayEl) return;
+
+    const statusEl = this.overlayEl.querySelector('[data-status-el]');
+    const progressBar = this.overlayEl.querySelector('[data-progress-el]') as HTMLElement;
+    const progressText = this.overlayEl.querySelector('[data-progress-text-el]');
+
+    const percent = Math.round(Math.max(0, Math.min(progress, 1)) * 100);
+
+    if (statusEl) {
+      statusEl.textContent = stage || 'Loading database...';
+    }
+
+    if (progressBar) {
+      progressBar.style.setProperty('width', `${percent}%`);
+      progressBar.removeClass('chat-progress-bar-reset');
+    }
+
+    if (progressText) {
+      progressText.textContent = `${percent}%`;
+    }
+  }
+
   /**
    * Hide database loading overlay
    */

@@ -9,7 +9,7 @@ import { MemoryTrace, StateData } from '../../types/storage/StorageTypes';
 import * as HybridTypes from '../../types/storage/HybridStorageTypes';
 import { TraceMetadata } from '../../database/types/memory/MemoryTypes';
 import { WorkspaceState } from '../../database/types/session/SessionTypes';
-import { StorageAdapterOrGetter, resolveAdapter, withDualBackend } from '../helpers/DualBackendExecutor';
+import { StorageAdapterOrGetter, resolveAdapter, withReadableBackend } from '../helpers/DualBackendExecutor';
 
 /**
  * Dependencies injected from WorkspaceService to avoid circular references.
@@ -105,7 +105,7 @@ export class WorkspaceStateService {
    * Get memory traces from session
    */
   async getMemoryTraces(workspaceId: string, sessionId: string): Promise<MemoryTrace[]> {
-    return withDualBackend(
+    return withReadableBackend(
       this.storageAdapterOrGetter,
       async (adapter) => {
         const result = await adapter.getTraces(workspaceId, sessionId);
@@ -210,7 +210,7 @@ export class WorkspaceStateService {
    * Get state from session
    */
   async getState(workspaceId: string, sessionId: string, stateId: string): Promise<StateData | null> {
-    return withDualBackend(
+    return withReadableBackend(
       this.storageAdapterOrGetter,
       async (adapter) => {
         const state = await adapter.getState(stateId);
@@ -248,7 +248,7 @@ export class WorkspaceStateService {
       return byId;
     }
 
-    return withDualBackend<StateData | null>(
+    return withReadableBackend<StateData | null>(
       this.storageAdapterOrGetter,
       async (adapter) => {
         const result = await adapter.getStates(workspaceId, sessionId, { pageSize: 100 });

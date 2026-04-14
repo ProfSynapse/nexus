@@ -45,6 +45,7 @@ export interface TaskBoardNotifier {
  * Returns the resolved UUID if found, or null if no match.
  */
 export type WorkspaceResolver = (workspaceId: string) => Promise<string | null>;
+export type TaskQueryReadyWaiter = () => Promise<boolean>;
 
 export class TaskService {
   private resolveWorkspace: WorkspaceResolver | null;
@@ -54,7 +55,8 @@ export class TaskService {
     private taskRepo: ITaskRepository,
     private dagService: IDAGService,
     resolveWorkspace?: WorkspaceResolver,
-    private taskBoardNotifier?: TaskBoardNotifier
+    private taskBoardNotifier?: TaskBoardNotifier,
+    private waitForQueryReady?: TaskQueryReadyWaiter
   ) {
     this.resolveWorkspace = resolveWorkspace ?? null;
   }
@@ -80,11 +82,22 @@ export class TaskService {
     this.taskBoardNotifier?.notify(event);
   }
 
+  private async ensureQueryReady(): Promise<void> {
+    if (!this.waitForQueryReady) return;
+
+    const ready = await this.waitForQueryReady();
+    if (!ready) {
+      throw new Error('Task storage is not ready yet');
+    }
+  }
+
   // ────────────────────────────────────────────────────────────────
   // Projects
   // ────────────────────────────────────────────────────────────────
 
   async createProject(workspaceId: string, data: CreateProjectData): Promise<string> {
+    await this.ensureQueryReady();
+
     // Resolve workspace name → UUID transparently
     workspaceId = await this.resolveWorkspaceId(workspaceId);
 
@@ -112,6 +125,8 @@ export class TaskService {
   }
 
   async listProjects(workspaceId: string, options?: ProjectListOptions): Promise<PaginatedResult<ProjectMetadata>> {
+    await this.ensureQueryReady();
+
     workspaceId = await this.resolveWorkspaceId(workspaceId);
     return this.projectRepo.getByWorkspace(workspaceId, {
       page: options?.page,
@@ -121,6 +136,8 @@ export class TaskService {
   }
 
   async updateProject(projectId: string, data: UpdateProjectData): Promise<void> {
+    await this.ensureQueryReady();
+
     const project = await this.projectRepo.getById(projectId);
     if (!project) {
       throw new Error(`Project "${projectId}" not found`);
@@ -148,6 +165,8 @@ export class TaskService {
   }
 
   async archiveProject(projectId: string): Promise<void> {
+    await this.ensureQueryReady();
+
     const project = await this.projectRepo.getById(projectId);
     if (!project) {
       throw new Error(`Project "${projectId}" not found`);
@@ -167,6 +186,8 @@ export class TaskService {
   }
 
   async deleteProject(projectId: string): Promise<void> {
+    await this.ensureQueryReady();
+
     const project = await this.projectRepo.getById(projectId);
     if (!project) {
       throw new Error(`Project "${projectId}" not found`);
@@ -187,6 +208,8 @@ export class TaskService {
   // ────────────────────────────────────────────────────────────────
 
   async createTask(projectId: string, data: CreateTaskData): Promise<string> {
+    await this.ensureQueryReady();
+
     // Verify project exists
     const project = await this.projectRepo.getById(projectId);
     if (!project) {
@@ -257,6 +280,8 @@ export class TaskService {
   }
 
   async listTasks(projectId: string, options?: TaskListOptions): Promise<PaginatedResult<TaskMetadata>> {
+    await this.ensureQueryReady();
+
     return this.taskRepo.getByProject(projectId, {
       page: options?.page,
       pageSize: options?.pageSize,
@@ -270,6 +295,8 @@ export class TaskService {
   }
 
   async listWorkspaceTasks(workspaceId: string, options?: TaskListOptions): Promise<PaginatedResult<TaskMetadata>> {
+    await this.ensureQueryReady();
+
     workspaceId = await this.resolveWorkspaceId(workspaceId);
     return this.taskRepo.getByWorkspace(workspaceId, {
       page: options?.page,
@@ -285,6 +312,8 @@ export class TaskService {
   }
 
   async updateTask(taskId: string, data: UpdateTaskData): Promise<void> {
+    await this.ensureQueryReady();
+
     const task = await this.taskRepo.getById(taskId);
     if (!task) {
       throw new Error(`Task "${taskId}" not found`);
@@ -316,6 +345,8 @@ export class TaskService {
   }
 
   async moveTask(taskId: string, target: { projectId?: string; parentTaskId?: string | null }): Promise<void> {
+    await this.ensureQueryReady();
+
     const task = await this.taskRepo.getById(taskId);
     if (!task) {
       throw new Error(`Task "${taskId}" not found`);
@@ -364,6 +395,8 @@ export class TaskService {
   }
 
   async deleteTask(taskId: string): Promise<void> {
+    await this.ensureQueryReady();
+
     const task = await this.taskRepo.getById(taskId);
     if (!task) {
       throw new Error(`Task "${taskId}" not found`);
@@ -385,6 +418,8 @@ export class TaskService {
   // ────────────────────────────────────────────────────────────────
 
   async addDependency(taskId: string, dependsOnTaskId: string): Promise<void> {
+    await this.ensureQueryReady();
+
     const task = await this.taskRepo.getById(taskId);
     if (!task) throw new Error(`Task "${taskId}" not found`);
 
@@ -405,6 +440,8 @@ export class TaskService {
   }
 
   async removeDependency(taskId: string, dependsOnTaskId: string): Promise<void> {
+    await this.ensureQueryReady();
+
     await this.taskRepo.removeDependency(taskId, dependsOnTaskId);
   }
 
@@ -413,6 +450,8 @@ export class TaskService {
   // ────────────────────────────────────────────────────────────────
 
   async getNextActions(projectId: string): Promise<TaskMetadata[]> {
+    await this.ensureQueryReady();
+
     const allTasks = await this.taskRepo.getByProject(projectId, { pageSize: 10000 });
     const allEdges = await this.taskRepo.getAllDependencyEdges(projectId);
 
@@ -431,6 +470,8 @@ export class TaskService {
   }
 
   async getBlockedTasks(projectId: string): Promise<TaskWithBlockers[]> {
+    await this.ensureQueryReady();
+
     const allTasks = await this.taskRepo.getByProject(projectId, { pageSize: 10000 });
     const allEdges = await this.taskRepo.getAllDependencyEdges(projectId);
 
@@ -463,6 +504,8 @@ export class TaskService {
   }
 
   async getDependencyTree(taskId: string): Promise<DependencyTree> {
+    await this.ensureQueryReady();
+
     const task = await this.taskRepo.getById(taskId);
     if (!task) throw new Error(`Task "${taskId}" not found`);
 
@@ -497,6 +540,8 @@ export class TaskService {
   // ────────────────────────────────────────────────────────────────
 
   async linkNote(taskId: string, notePath: string, linkType: LinkType): Promise<void> {
+    await this.ensureQueryReady();
+
     const task = await this.taskRepo.getById(taskId);
     if (!task) throw new Error(`Task "${taskId}" not found`);
 
@@ -504,14 +549,20 @@ export class TaskService {
   }
 
   async unlinkNote(taskId: string, notePath: string): Promise<void> {
+    await this.ensureQueryReady();
+
     await this.taskRepo.removeNoteLink(taskId, notePath);
   }
 
   async getNoteLinks(taskId: string): Promise<NoteLink[]> {
+    await this.ensureQueryReady();
+
     return this.taskRepo.getNoteLinks(taskId);
   }
 
   async getTasksForNote(notePath: string): Promise<TaskMetadata[]> {
+    await this.ensureQueryReady();
+
     return this.taskRepo.getByLinkedNote(notePath);
   }
 
@@ -520,6 +571,8 @@ export class TaskService {
   // ────────────────────────────────────────────────────────────────
 
   async getWorkspaceSummary(workspaceId: string): Promise<WorkspaceTaskSummary> {
+    await this.ensureQueryReady();
+
     workspaceId = await this.resolveWorkspaceId(workspaceId);
     const projects = await this.projectRepo.getByWorkspace(workspaceId, { pageSize: 1000 });
     const allTasks = await this.taskRepo.getByWorkspace(workspaceId, { pageSize: 10000 });

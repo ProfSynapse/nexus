@@ -203,12 +203,27 @@ export class ChatView extends ItemView {
    * Wait for database to be ready, showing loading overlay if needed
    * Uses getServiceIfReady to avoid blocking startup with SQLite WASM loading
    */
-  private async waitForDatabaseReady(): Promise<void> {
+  private async waitForDatabaseReady(): Promise<boolean> {
     const plugin = getNexusPlugin<NexusPlugin>(this.app);
-    if (!plugin) return;
+    if (!plugin) return false;
+
+    type StorageAdapterStartupState = {
+      phase: 'idle' | 'running' | 'complete' | 'error';
+      isBlocking: boolean;
+      percent: number;
+      statusText: string;
+      error?: string;
+    };
+
+    type StartupAwareStorageAdapter = {
+      isReady?: () => boolean;
+      waitForReady?: () => Promise<boolean>;
+      isStartupHydrationBlocking?: () => boolean;
+      getStartupHydrationState?: () => StorageAdapterStartupState;
+    };
 
     // Use getServiceIfReady to avoid triggering SQLite WASM loading during startup
-    let storageAdapter = plugin.getServiceIfReady<{ isReady?: () => boolean; waitForReady?: () => Promise<boolean> }>('hybridStorageAdapter');
+    let storageAdapter = plugin.getServiceIfReady<StartupAwareStorageAdapter>('hybridStorageAdapter');
 
     // If adapter doesn't exist yet or isn't ready, show loading overlay and poll
     if (!storageAdapter || !storageAdapter.isReady?.()) {
@@ -221,23 +236,80 @@ export class ChatView extends ItemView {
         await new Promise(resolve => setTimeout(resolve, ChatView.SERVICE_POLL_INTERVAL_MS));
 
         // Stop polling if view was closed during the wait
-        if (this.isClosing) return;
+        if (this.isClosing) return false;
 
-        storageAdapter = plugin.getServiceIfReady<{ isReady?: () => boolean; waitForReady?: () => Promise<boolean> }>('hybridStorageAdapter');
+        storageAdapter = plugin.getServiceIfReady<StartupAwareStorageAdapter>('hybridStorageAdapter');
         if (storageAdapter?.isReady?.()) {
           break;
         }
       }
 
       // View may have closed while we were polling - skip DOM operations
-      if (this.isClosing) return;
-
-      this.nexusLoadingController.hideDatabaseLoadingOverlay();
-      return;
+      if (this.isClosing) return false;
     }
 
-    // Adapter exists and is ready - delegate to controller for any remaining checks
+    if (!storageAdapter) {
+      this.nexusLoadingController.hideDatabaseLoadingOverlay();
+      return false;
+    }
+
     await this.nexusLoadingController.waitForDatabaseReady(storageAdapter);
+    return this.waitForStartupHydration(storageAdapter);
+  }
+
+  private async waitForStartupHydration(storageAdapter: {
+    isStartupHydrationBlocking?: () => boolean;
+    getStartupHydrationState?: () => {
+      phase: 'idle' | 'running' | 'complete' | 'error';
+      isBlocking: boolean;
+      percent: number;
+      statusText: string;
+      error?: string;
+    };
+  }): Promise<boolean> {
+    const snapshot = storageAdapter.getStartupHydrationState?.();
+    if (!snapshot || !storageAdapter.isStartupHydrationBlocking?.()) {
+      this.nexusLoadingController.hideDatabaseLoadingOverlay();
+      return true;
+    }
+
+    this.nexusLoadingController.showDatabaseLoadingOverlay();
+    this.nexusLoadingController.updateDatabaseLoadingProgress(
+      snapshot.percent / 100,
+      snapshot.statusText || 'Updating local chat index...'
+    );
+
+    while (true) {
+      await new Promise(resolve => setTimeout(resolve, ChatView.SERVICE_POLL_INTERVAL_MS));
+
+      if (this.isClosing) return false;
+
+      const nextSnapshot = storageAdapter.getStartupHydrationState?.();
+      if (!nextSnapshot) {
+        break;
+      }
+
+      this.nexusLoadingController.updateDatabaseLoadingProgress(
+        nextSnapshot.percent / 100,
+        nextSnapshot.statusText || 'Updating local chat index...'
+      );
+
+      if (nextSnapshot.phase === 'error') {
+        this.nexusLoadingController.updateDatabaseLoadingProgress(
+          0,
+          nextSnapshot.error || nextSnapshot.statusText || 'Local chat index update failed'
+        );
+        return false;
+      }
+
+      if (nextSnapshot.phase === 'complete' || !nextSnapshot.isBlocking) {
+        this.nexusLoadingController.hideDatabaseLoadingOverlay();
+        return true;
+      }
+    }
+
+    this.nexusLoadingController.hideDatabaseLoadingOverlay();
+    return true;
   }
 
   /**
@@ -323,7 +395,10 @@ export class ChatView extends ItemView {
     this.initializeArchitecture();
 
     // Check if database is still loading and show overlay
-    await this.waitForDatabaseReady();
+    const databaseReady = await this.waitForDatabaseReady();
+    if (!databaseReady) {
+      return;
+    }
 
     await this.loadInitialData();
 

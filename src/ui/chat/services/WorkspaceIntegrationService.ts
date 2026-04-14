@@ -9,7 +9,7 @@
  */
 
 import { App, TFile, TFolder } from 'obsidian';
-import { VaultStructure, WorkspaceSummary } from './SystemPromptBuilder';
+import type { BuiltInDocsWorkspaceInfo, VaultStructure, WorkspaceSummary } from './SystemPromptBuilder';
 import { getNexusPlugin } from '../../../utils/pluginLocator';
 import type NexusPlugin from '../../../main';
 import type { WorkspaceService } from '../../../services/WorkspaceService';
@@ -219,6 +219,36 @@ export class WorkspaceIntegrationService {
     } catch (error) {
       console.error('[WorkspaceIntegrationService] Failed to list workspaces:', error);
       return [];
+    }
+  }
+
+  async getBuiltInDocsWorkspaceInfo(): Promise<BuiltInDocsWorkspaceInfo | null> {
+    try {
+      const plugin = getNexusPlugin<NexusPlugin>(this.app);
+      if (!plugin) {
+        return null;
+      }
+
+      const workspaceService = await plugin.getService<WorkspaceService>('workspaceService');
+      if (!workspaceService) {
+        return null;
+      }
+
+      const summary = workspaceService.getSystemGuidesWorkspaceSummary();
+      if (!summary) {
+        return null;
+      }
+
+      return {
+        id: summary.id,
+        name: summary.name,
+        description: summary.description,
+        rootFolder: summary.rootFolder,
+        entrypoint: summary.entrypoint
+      };
+    } catch (error) {
+      console.error('[WorkspaceIntegrationService] Failed to get built-in docs workspace:', error);
+      return null;
     }
   }
 }

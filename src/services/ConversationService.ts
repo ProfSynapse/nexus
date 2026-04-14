@@ -19,7 +19,7 @@ import type { ConversationMessage as LegacyConversationMessage, ToolCall as Lega
 export type { IndividualConversation, ConversationMessage } from '../types/storage/StorageTypes';
 import { IStorageAdapter } from '../database/interfaces/IStorageAdapter';
 import { PaginationParams, PaginatedResult, calculatePaginationMetadata } from '../types/pagination/PaginationTypes';
-import { StorageAdapterOrGetter, resolveAdapter, withDualBackend } from './helpers/DualBackendExecutor';
+import { StorageAdapterOrGetter, resolveAdapter, withDualBackend, withReadableBackend } from './helpers/DualBackendExecutor';
 import { convertToLegacyMetadata, convertToLegacyConversation, populateMessageBranches } from './helpers/ConversationTypeConverters';
 
 type ConversationMessageResult = MessageData;
@@ -122,7 +122,7 @@ export class ConversationService {
    * List conversations (uses index only - lightweight and fast)
    */
   async listConversations(vaultName?: string, limit?: number, page?: number): Promise<LegacyConversationMetadata[]> {
-    return withDualBackend(
+    return withReadableBackend(
       this.storageAdapterOrGetter,
       async (adapter) => {
         const result = await adapter.getConversations({
@@ -163,7 +163,7 @@ export class ConversationService {
     id: string,
     paginationOptions?: PaginationParams
   ): Promise<IndividualConversation | null> {
-    return withDualBackend(
+    return withReadableBackend(
       this.storageAdapterOrGetter,
       async (adapter) => {
         const metadata = await adapter.getConversation(id);
@@ -240,7 +240,7 @@ export class ConversationService {
     conversationId: string,
     options?: PaginationParams
   ): Promise<PaginatedResult<ConversationMessageResult>> {
-    return withDualBackend<PaginatedResult<ConversationMessageResult>>(
+    return withReadableBackend<PaginatedResult<ConversationMessageResult>>(
       this.storageAdapterOrGetter,
       async (adapter) => {
         const messagesResult = await adapter.getMessages(conversationId, {
@@ -315,7 +315,7 @@ export class ConversationService {
   }
 
   async hasRunKey(runKey: string): Promise<boolean> {
-    return withDualBackend(
+    return withReadableBackend(
       this.storageAdapterOrGetter,
       async (adapter) => {
         const result = await adapter.getConversations({
@@ -701,7 +701,7 @@ export class ConversationService {
       return this.listConversations(undefined, limit);
     }
 
-    return withDualBackend(
+    return withReadableBackend(
       this.storageAdapterOrGetter,
       async (adapter) => {
         const results = await adapter.searchConversations(query);
@@ -774,7 +774,7 @@ export class ConversationService {
    * Count total conversations (excludes branches)
    */
   async count(): Promise<number> {
-    return withDualBackend(
+    return withReadableBackend(
       this.storageAdapterOrGetter,
       async (adapter) => {
         const result = await adapter.getConversations({
@@ -847,7 +847,7 @@ export class ConversationService {
    * @returns Array of branch conversations
    */
   async getBranchConversations(parentConversationId: string): Promise<IndividualConversation[]> {
-    return withDualBackend(
+    return withReadableBackend(
       this.storageAdapterOrGetter,
       async (adapter) => {
         const result = await adapter.getConversations({

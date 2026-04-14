@@ -64,7 +64,8 @@ interface StorageAdapterWithCache extends IStorageAdapter {
 }
 
 function hasMigratableCache(adapter: IStorageAdapter): adapter is StorageAdapterWithCache {
-  if (!adapter.isReady() || !('cache' in adapter)) {
+  const ready = typeof adapter.isQueryReady === 'function' ? adapter.isQueryReady() : adapter.isReady();
+  if (!ready || !('cache' in adapter)) {
     return false;
   }
 
@@ -362,7 +363,8 @@ export class AgentInitializationService {
       adapter.tasks,
       dagService,
       validateWorkspace,
-      TaskBoardEvents
+      TaskBoardEvents,
+      async () => typeof adapter.waitForQueryReady === 'function' ? adapter.waitForQueryReady() : adapter.isReady()
     );
     const taskManagerAgent = new TaskManagerAgent(this.app, this.plugin as NexusPlugin, taskService);
 
@@ -425,6 +427,9 @@ export class AgentInitializationService {
     if (!this.serviceManager) return false;
     const storageAdapter = this.serviceManager.getServiceIfReady<IStorageAdapter>('hybridStorageAdapter');
     if (storageAdapter) {
+      if (typeof storageAdapter.isQueryReady === 'function') {
+        return storageAdapter.isQueryReady();
+      }
       return storageAdapter.isReady();
     }
     return false;

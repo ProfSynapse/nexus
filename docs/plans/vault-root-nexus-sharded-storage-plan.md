@@ -1,66 +1,96 @@
-# Vault-Root Nexus Storage Plan
+# Vault-Root Data And Guides Plan
 
 ## Goal
 
-Move canonical synced Nexus storage out of plugin data and into a normal vault folder so cross-device chat state works with Obsidian Sync constraints.
+Move synced assistant data out of plugin data and into a normal vault folder so cross-device chat state works with Obsidian Sync constraints, while also introducing a system-managed guides workspace that lives alongside the synced data.
 
 The new design should:
 
 - use a vault-root `Nexus/` folder by default
-- allow the user to choose a different vault-relative folder such as `storage/nexus`
+- allow the user to choose a different vault-relative root such as `storage/nexus`
+- place all synced assistant-owned content under that configured root
+- split the root into fixed `guides/` and `data/` subfolders
 - shard append-only JSONL files before they exceed the Obsidian Sync per-file limit
 - keep `cache.db` as a local-only rebuildable cache
 - migrate existing data from legacy locations without losing conversations, workspaces, or tasks
+- expose a built-in docs workspace backed only by the `guides/` subtree
 
 ## Why This Change
 
 The current model is blocked by two constraints we have now confirmed:
 
 - Obsidian Sync does not reliably sync arbitrary plugin data files under `.obsidian/plugins/<plugin>/data/`
-- Obsidian Sync enforces per-file size limits, so a single ever-growing conversation JSONL is not a safe canonical format
+- Obsidian Sync enforces per-file size limits, so a single ever-growing conversation JSONL is not a safe synced format
 
 The existing plugin architecture is still directionally correct:
 
 - append-only event files are the right source of truth
 - SQLite is the right local query model
 
-The problem is only the location and file-shape of the canonical store.
+The problem is only the location and file-shape of the synced store.
 
 ## Product Direction
 
-### Canonical synced store
+### Configured root
 
-Canonical event data moves to a normal vault folder:
+The user configures a single vault-relative assistant root folder:
 
 - default path: `Nexus/`
 - configurable path: any vault-relative non-plugin path such as `storage/nexus`
 
-This folder becomes the only canonical write target for new synced conversation, workspace, and task events.
+Inside that root, the plugin owns a fixed internal structure:
+
+- `<root>/guides/`
+- `<root>/data/`
+
+The setting controls the root only. The plugin controls the internal subfolders.
+
+### Synced event store
+
+Synced event data moves under:
+
+- `<root>/data/`
+
+This becomes the only write target for new synced conversation, workspace, and task events.
+
+### Guides workspace
+
+System-managed documentation lives under:
+
+- `<root>/guides/`
+
+The `guides/` subtree is the backing store for a built-in docs workspace that the model can consult for self-knowledge, capabilities, and operational guidance.
+
+The navigator file is:
+
+- `<root>/guides/index.md`
 
 ### Local cache
 
 SQLite remains local-only:
 
 - path: `.obsidian/plugins/<active-plugin-folder>/data/cache.db`
-- rebuilt from the canonical vault-root event store
+- rebuilt from the vault-root event store
 - never treated as a cross-device source of truth
 
 ### User-configurable root
 
-The plugin exposes a storage setting for the Nexus root folder.
+The plugin exposes a storage setting for the assistant root folder.
 
 - default: `Nexus`
 - stored in plugin `data.json`
-- changing it triggers a managed migration from the previous canonical root to the new one
+- changing it triggers a managed migration from the previous root to the new one
 
 ## Non-Goals
 
 - Do not sync `cache.db`
 - Do not make `data.json` the full conversation payload store
-- Do not keep plugin data as the long-term canonical write target
+- Do not keep plugin data as the long-term synced write target
 - Do not rely on hidden root dotfolders for sync-critical content
+- Do not let the built-in guides workspace read conversation, task, workspace, shard, or metadata files
+- Do not treat the built-in guides workspace as a normal user-editable workspace entity
 
-## Storage Layout
+## Root Layout
 
 ## Default root
 
@@ -70,26 +100,137 @@ The plugin exposes a storage setting for the Nexus root folder.
 
 ```text
 Nexus/
-  _meta/
-    storage-manifest.json
-    migration-manifest.json
-  conversations/
-    <conversation-id>/
-      shard-000001.jsonl
-      shard-000002.jsonl
-  workspaces/
-    <workspace-id>/
-      shard-000001.jsonl
-  tasks/
-    <workspace-id>/
-      shard-000001.jsonl
+  guides/
+    _meta/
+      guides-manifest.json
+    index.md
+    capabilities/
+      ...
+    workflows/
+      ...
+    models/
+      ...
+    custom/
+      ...
+  data/
+    _meta/
+      storage-manifest.json
+      migration-manifest.json
+    conversations/
+      <conversation-id>/
+        shard-000001.jsonl
+        shard-000002.jsonl
+    workspaces/
+      <workspace-id>/
+        shard-000001.jsonl
+    tasks/
+      <workspace-id>/
+        shard-000001.jsonl
 ```
 
 Notes:
 
 - `conversation-id`, `workspace-id`, and task scope IDs should be stored exactly once, without double-prefix bugs like `conv_conv_...`
 - one directory per logical stream avoids giant flat folders and makes shard rotation explicit
-- `_meta/` holds small control files only
+- `guides/_meta/` and `data/_meta/` hold small control files only
+- `guides/custom/` is reserved for possible future user-authored additions and should not be overwritten by guide refreshes
+
+## Guides Workspace Model
+
+The built-in docs workspace should be treated as a system-managed, derived workspace rather than a normal user-authored workspace.
+
+### Scope
+
+Allowed:
+
+- `<root>/guides/index.md`
+- `<root>/guides/**/*.md`
+
+Explicitly excluded:
+
+- `<root>/data/**`
+- `<root>/guides/_meta/**`
+- any `.jsonl`, `.db`, shard, cache, or migration file outside markdown guide content
+
+### Semantics
+
+The workspace should be:
+
+- available to the model
+- hidden from normal user workspace CRUD flows by default
+- not renameable, deletable, or editable via Nexus workspace-management UI
+- dynamically resolved from the configured root path instead of persisted like a normal user workspace
+
+Important clarification:
+
+- the guide files are still normal vault files, so a user can technically inspect or edit them in Obsidian
+- Nexus should treat them as system-managed files and reserve the right to refresh managed guide files during plugin updates
+
+### Load behavior
+
+Do not load the entire `guides/` tree by default.
+
+Preferred load flow:
+
+1. start with `guides/index.md`
+2. use that file as the navigator
+3. load additional guide markdown files selectively as needed
+
+This keeps the workspace useful without bloating prompts or accidentally mixing in irrelevant docs.
+
+## Guides Content Model
+
+### Entry point
+
+`guides/index.md` is the single required navigator file.
+
+It should:
+
+- describe what the docs workspace is
+- explain what guide sections exist
+- link to the most important deeper guides
+- give the model clear directions about where to look for capability, workflow, and troubleshooting information
+
+### Managed files
+
+The plugin should own a set of managed guide files that ship with the plugin version and can be refreshed on update.
+
+Suggested examples:
+
+- `guides/index.md`
+- `guides/capabilities/*.md`
+- `guides/workflows/*.md`
+- `guides/models/*.md`
+
+### Manifest
+
+Add a guides manifest:
+
+- path: `<root>/guides/_meta/guides-manifest.json`
+
+Suggested fields:
+
+- plugin version
+- guide schema version
+- managed file list
+- content hashes
+- last refresh timestamp
+- last refresh source
+
+This manifest lets us:
+
+- update only managed files
+- avoid blind overwrites
+- distinguish system-owned files from user-added files
+
+### Refresh policy
+
+Recommended priority:
+
+1. bundled docs from the installed plugin version
+2. optional GitHub refresh after update, if we decide to support that later
+
+This keeps startup and upgrades deterministic even when offline.
 
 ## Sharding Strategy
 
@@ -181,18 +322,28 @@ Current sources to read during migration:
 - `.obsidian/plugins/claudesidian-mcp/data/`
 - `.obsidian/plugins/nexus/data/`
 
-New canonical destination:
+New root destination:
 
 - `settings.storage.rootPath ?? "Nexus"`
 
+New data destination:
+
+- `<root>/data`
+
+New guides destination:
+
+- `<root>/guides`
+
 ### Migration phases
 
-#### Phase 1: Introduce vault-root canonical path
+#### Phase 1: Introduce vault-root root resolution
 
-- add a new storage root resolver for the canonical vault folder
+- add a new storage root resolver for the configured vault folder
 - keep plugin data resolver only for local cache paths
 - update storage state to record:
-  - canonical root path
+  - configured root path
+  - resolved guides path
+  - resolved data path
   - migration state
   - legacy sources detected
   - last successful migration timestamp
@@ -203,11 +354,18 @@ For each legacy JSONL file:
 
 - identify the logical stream
 - read all events
-- write them into the new canonical stream directory
+- write them into the new stream directory under `<root>/data`
 - split into shards under `4 MB`
 - preserve event IDs and timestamps exactly
 
-#### Phase 3: Verify before cutover
+#### Phase 3: Materialize guides subtree
+
+- ensure `<root>/guides/` exists
+- write bundled managed guide files
+- write or refresh `guides/_meta/guides-manifest.json`
+- ensure `guides/index.md` exists before the system workspace becomes visible to the model
+
+#### Phase 4: Verify before cutover
 
 Verification should compare:
 
@@ -218,31 +376,31 @@ Verification should compare:
 
 Do not cut over until verification succeeds.
 
-#### Phase 4: Switch writes to canonical vault root
+#### Phase 5: Switch writes to vault-root data
 
 After verification:
 
-- write only to the configured canonical root
-- read from canonical root first
+- write only to `<root>/data`
+- read from `<root>/data` first
 - keep legacy roots as fallback read sources for one release cycle
 
-#### Phase 5: Rebuild local cache from canonical root
+#### Phase 6: Rebuild local cache from vault-root data
 
 On the next boot after cutover:
 
 - open or create local `cache.db`
-- rebuild or incrementally sync from canonical shards
+- rebuild or incrementally sync from `<root>/data` shards
 
 ## User-Driven Root Folder Changes
 
-When the user changes the Nexus root path in settings:
+When the user changes the configured root path in settings:
 
 1. Validate the new path.
 2. Acquire a storage migration lock.
 3. Flush pending writes.
-4. Copy current canonical root contents to the new root.
+4. Copy current root contents to the new root.
 5. Verify copied data.
-6. Update the stored canonical root setting.
+6. Update the stored root setting.
 7. Repoint future reads/writes to the new root.
 8. Rebuild local cache if needed.
 9. Offer cleanup of the old root after success.
@@ -264,7 +422,9 @@ If the destination folder already exists:
 
 ## Writes
 
-Canonical writes go to the configured vault-root path only.
+Event writes go to `<root>/data` only.
+
+Managed guide writes go to `<root>/guides` only.
 
 Local cache writes go to plugin data only.
 
@@ -272,8 +432,8 @@ Local cache writes go to plugin data only.
 
 Read priority:
 
-1. configured canonical vault-root path
-2. prior configured canonical root, if a move is in progress
+1. configured `<root>/data`
+2. prior configured `<root>/data`, if a move is in progress
 3. plugin data legacy roots
 4. `.nexus`
 
@@ -281,13 +441,53 @@ This fallback order is temporary and should be removable after one or two succes
 
 ## Cache Rebuild Rules
 
-`cache.db` is rebuilt from the canonical root only.
+`cache.db` is rebuilt from `<root>/data` only.
 
 The cache should not depend on plugin data JSONL anymore once migration is complete.
 
+## System Workspace Integration
+
+## Runtime representation
+
+Represent the guides workspace as a reserved system workspace rather than a standard persisted workspace record.
+
+Suggested properties:
+
+- reserved system ID
+- system-managed flag
+- root path resolved from `<root>/guides`
+- navigator path resolved from `<root>/guides/index.md`
+- special capability tag indicating docs/self-knowledge scope
+
+This should avoid polluting normal workspace CRUD storage and keep the feature resilient when the configured root changes.
+
+## Prompt behavior
+
+The system prompt should not inline the whole guides workspace.
+
+Instead it should:
+
+- mention that a built-in documentation workspace exists
+- instruct the model to start from `guides/index.md`
+- encourage selective loading of deeper guide files only when needed
+
+Good use cases:
+
+- capability questions
+- workflow guidance
+- provider/model behavior
+- troubleshooting
+- plugin self-knowledge and operational instructions
+
+Bad use cases:
+
+- routine chat where no guide lookup is needed
+- loading all guide files by default
+- treating guide docs as the same thing as user workspace state
+
 ## Sync Model
 
-The canonical synced store is sharded JSONL in a normal vault folder.
+The synced event store is sharded JSONL in a normal vault folder under `<root>/data`.
 
 That means:
 
@@ -295,6 +495,8 @@ That means:
 - Obsidian Sync transfers those shards
 - mobile replays them into local `cache.db`
 - mobile reads from `cache.db`
+
+Managed guide markdown files under `<root>/guides` also sync as normal vault files, but they are not part of the event-log replay model.
 
 This preserves SQLite speed on mobile without treating the DB file as a sync artifact.
 
@@ -318,8 +520,8 @@ Mitigation:
 
 - keep legacy roots in fallback reads temporarily
 - preserve event IDs so dedupe still works
-- prefer canonical root for all new writes immediately after a device migrates
-- on later boots, merge any straggler legacy events into canonical shards
+- prefer `<root>/data` for all new writes immediately after a device migrates
+- on later boots, merge any straggler legacy events into vault-root shards
 
 ## Root path changes syncing across devices
 
@@ -329,9 +531,11 @@ Mitigation:
 
 - store migration state alongside the configured root
 - if a device sees a new configured root but local migration is incomplete, it should:
-  - read configured canonical root first
-  - read previous canonical root as fallback
+  - read configured `<root>/data` first
+  - read previous `<root>/data` as fallback
   - rebuild cache from whichever streams are actually present
+
+The guides workspace should also follow the new root automatically because it is derived from the configured root, not independently configured.
 
 ## Partial copy or app kill during migration
 
@@ -352,9 +556,38 @@ Behavior:
 - validate and warn before moving
 - refuse to merge into a non-Nexus-looking folder automatically
 
-## Empty canonical folder with valid local cache
+## Managed guide edits
 
-If the canonical root is empty but `cache.db` contains data, do not silently trust the DB as canonical.
+Users may manually edit markdown files under `<root>/guides/`.
+
+We need an explicit overwrite policy for managed files:
+
+- safest default: only overwrite a managed file when its current hash matches the previously-managed hash
+- if the file diverged, skip overwrite and mark the conflict in the guides manifest
+
+This avoids silently destroying user edits while still letting system-managed docs update.
+
+## Missing or broken guides
+
+If `guides/index.md` or the managed guides manifest is missing:
+
+- recreate missing managed guide files from the bundled plugin assets
+- keep the built-in docs workspace available if recovery succeeds
+- surface a degraded-state warning only if recovery fails
+
+## Search and retrieval pollution
+
+The built-in guides workspace should not dominate normal user workspace retrieval.
+
+Mitigation:
+
+- keep it out of normal workspace browsing by default
+- apply separate ranking or explicit invocation rules when the model is consulting docs
+- prefer `index.md` first, then selective file loads
+
+## Empty data folder with valid local cache
+
+If `<root>/data` is empty but `cache.db` contains data, do not silently trust the DB as authoritative.
 
 Behavior:
 
@@ -372,7 +605,7 @@ Current legacy logs show filenames like `conv_conv_<id>.jsonl`.
 
 Migration should normalize logical IDs once and only once:
 
-- canonical directory name should be the true conversation ID
+- the stream directory name should be the true conversation ID
 - fallback readers must still understand old prefixed filenames
 
 ## Files and Systems to Update
@@ -387,10 +620,13 @@ Migration should normalize logical IDs once and only once:
 
 ## New components likely needed
 
-- `src/database/storage/CanonicalStoragePathResolver.ts`
+- `src/database/storage/VaultRootResolver.ts`
 - `src/database/storage/ShardedEventStore.ts`
 - `src/database/migration/VaultRootStorageCoordinator.ts`
 - `src/database/migration/ShardMigrationService.ts`
+- `src/guides/GuidesManifestService.ts`
+- `src/guides/GuidesInstallerService.ts`
+- `src/guides/SystemGuidesWorkspaceProvider.ts`
 
 ## Local cache and startup
 
@@ -405,6 +641,12 @@ Migration should normalize logical IDs once and only once:
 - `src/settings.ts`
 - settings UI tab(s) where storage configuration belongs
 
+## Workspace and prompt systems
+
+- workspace listing/loading services that decide what the model can load
+- workspace CRUD/UI code so the built-in guides workspace is treated as system-managed
+- system prompt composition code so the docs workspace is discoverable but not eagerly inlined
+
 ## Read-model consumers
 
 - `src/services/ConversationService.ts`
@@ -417,8 +659,10 @@ Migration should normalize logical IDs once and only once:
 This likely needs to evolve into a broader storage state model, for example:
 
 - storage version
-- canonical root path
-- previous canonical root path
+- configured root path
+- previous root path
+- derived guides path
+- derived data path
 - migration status
 - legacy sources detected
 - verification metadata
@@ -427,7 +671,7 @@ The current `sourceOfTruthLocation: 'legacy-dotnexus' | 'plugin-data'` is too na
 
 - `'legacy-dotnexus'`
 - `'legacy-plugin-data'`
-- `'vault-root-canonical'`
+- `'vault-root-data'`
 
 ## Testing Plan
 
@@ -440,7 +684,11 @@ The current `sourceOfTruthLocation: 'legacy-dotnexus' | 'plugin-data'` is too na
 - root path validation
 - root path move copy-verify-switch flow
 - fallback read order when configured root is empty or partially migrated
-- canonical ID normalization for `conv_conv_*` legacy files
+- stream ID normalization for `conv_conv_*` legacy files
+- guides manifest installation and update rules
+- guides overwrite-skip behavior for user-modified files
+- built-in guides workspace scoping so only `guides/**/*.md` is visible
+- root-path change behavior for the built-in guides workspace
 
 ## Integration/manual tests
 
@@ -451,20 +699,24 @@ The current `sourceOfTruthLocation: 'legacy-dotnexus' | 'plugin-data'` is too na
 - app restarts mid-migration and resumes safely
 - two devices on different plugin versions during rollout
 - standard Sync account with files near limit
+- guides workspace appears after install/update and resolves from the configured root
+- model can load `guides/index.md` without seeing `data/**`
+- user edits a managed guide file and update behavior is correct
 
 ## Rollout Strategy
 
 ## Release 1
 
-- add canonical vault-root storage support
+- add vault-root storage support
+- add managed guides installation
 - migrate and verify
 - keep all legacy roots as fallback reads
-- write only to canonical vault-root
+- write only to `<root>/data`
 
 ## Release 2
 
 - keep fallback reads
-- add maintenance UI for re-run migration and inspect current canonical root
+- add maintenance UI for re-run migration and inspect current configured root
 
 ## Release 3
 
@@ -477,8 +729,10 @@ Implement this as a focused storage migration, not an incremental tweak to the p
 
 The safe target architecture is:
 
-- canonical sharded JSONL in a normal vault folder
-- configurable vault-relative Nexus root
+- a configurable vault-relative root folder
+- fixed `guides/` and `data/` subfolders inside that root
+- sharded JSONL event storage only under `data/`
+- a built-in docs workspace backed only by `guides/`
 - local-only SQLite cache
 - resumable migration from all legacy roots
 
@@ -490,12 +744,12 @@ This section is the execution order I would actually use in code.
 
 The sequence is designed to keep the app bootable at every step and avoid a flag day where all storage readers and writers change at once.
 
-### Phase 0: Introduce storage settings and canonical root resolver
+### Phase 0: Introduce root settings and root resolver
 
 Purpose:
 
 - create the new settings surface
-- define the canonical vault-root location
+- define the configured root plus fixed `guides/` and `data/` subpaths
 - avoid changing write behavior yet
 
 Files:
@@ -503,7 +757,7 @@ Files:
 - `src/types/plugin/PluginTypes.ts`
 - `src/types.ts`
 - `src/settings.ts`
-- new resolver: `src/database/storage/CanonicalStoragePathResolver.ts`
+- new or updated resolver: `src/database/storage/VaultRootResolver.ts`
 - settings UI tab file(s)
 
 Changes:
@@ -512,9 +766,12 @@ Changes:
 - add `storage.maxShardBytes`
 - default to `Nexus`
 - validate vault-relative, non-plugin, non-hidden-by-default paths
-- add a canonical resolver that returns:
+- add a root resolver that returns:
   - `rootPath`
-  - `metaPath`
+  - `guidesRoot`
+  - `guidesMetaRoot`
+  - `dataRoot`
+  - `dataMetaRoot`
   - `conversationsRoot`
   - `workspacesRoot`
   - `tasksRoot`
@@ -522,33 +779,36 @@ Changes:
 Code sketch:
 
 ```ts
-export interface NexusStorageSettings {
+export interface RootStorageSettings {
   rootPath: string;
   maxShardBytes: number;
 }
 
-export function getDefaultStorageSettings(): NexusStorageSettings {
+export function getDefaultStorageSettings(): RootStorageSettings {
   return {
     rootPath: 'Nexus',
     maxShardBytes: 4 * 1024 * 1024
   };
 }
 
-export function resolveCanonicalStorageRoot(app: App, rootPath: string) {
+export function resolveVaultRoot(rootPath: string) {
   const normalizedRoot = normalizePath(rootPath);
   return {
     rootPath: normalizedRoot,
-    metaRoot: normalizePath(`${normalizedRoot}/_meta`),
-    conversationsRoot: normalizePath(`${normalizedRoot}/conversations`),
-    workspacesRoot: normalizePath(`${normalizedRoot}/workspaces`),
-    tasksRoot: normalizePath(`${normalizedRoot}/tasks`)
+    guidesRoot: normalizePath(`${normalizedRoot}/guides`),
+    guidesMetaRoot: normalizePath(`${normalizedRoot}/guides/_meta`),
+    dataRoot: normalizePath(`${normalizedRoot}/data`),
+    dataMetaRoot: normalizePath(`${normalizedRoot}/data/_meta`),
+    conversationsRoot: normalizePath(`${normalizedRoot}/data/conversations`),
+    workspacesRoot: normalizePath(`${normalizedRoot}/data/workspaces`),
+    tasksRoot: normalizePath(`${normalizedRoot}/data/tasks`)
   };
 }
 ```
 
 Exit criteria:
 
-- user can set a Nexus folder path in settings
+- user can set the configured root path in settings
 - resolver works without touching any existing storage behavior
 
 ### Phase 1: Add sharded event store primitives
@@ -570,11 +830,11 @@ Changes:
 - implement ordered shard reads
 - implement stream inventory helpers
 
-Canonical naming:
+Stream naming:
 
-- `Nexus/conversations/<conversation-id>/shard-000001.jsonl`
-- `Nexus/workspaces/<workspace-id>/shard-000001.jsonl`
-- `Nexus/tasks/<workspace-id>/shard-000001.jsonl`
+- `<root>/data/conversations/<conversation-id>/shard-000001.jsonl`
+- `<root>/data/workspaces/<workspace-id>/shard-000001.jsonl`
+- `<root>/data/tasks/<workspace-id>/shard-000001.jsonl`
 
 Code sketch:
 
@@ -616,7 +876,7 @@ Exit criteria:
 - reads across shards preserve stream order
 - conversation IDs are normalized once
 
-### Phase 2: Write new data to canonical vault-root storage
+### Phase 2: Write new data to vault-root data storage
 
 Purpose:
 
@@ -631,9 +891,9 @@ Files:
 
 Changes:
 
-- swap canonical write target from plugin data / `.nexus` to vault-root sharded store
+- swap the write target from plugin data / `.nexus` to the sharded store under `<root>/data`
 - keep read roots:
-  - configured canonical root
+  - configured `<root>/data`
   - prior configured root if migration in progress
   - plugin-data legacy roots
   - `.nexus`
@@ -646,8 +906,8 @@ Important:
 Code sketch:
 
 ```ts
-const canonicalRoots = resolveCanonicalStorageRoot(app, settings.storage.rootPath);
-const shardedStore = new ShardedEventStore(app, canonicalRoots.rootPath, settings.storage.maxShardBytes);
+const resolvedRoot = resolveVaultRoot(settings.storage.rootPath);
+const shardedStore = new ShardedEventStore(app, resolvedRoot.dataRoot, settings.storage.maxShardBytes);
 
 await shardedStore.appendEvent(
   { category: 'conversations', streamId: conversationId },
@@ -657,10 +917,59 @@ await shardedStore.appendEvent(
 
 Exit criteria:
 
-- new desktop conversations write into `Nexus/conversations/.../shard-*.jsonl`
+- new desktop conversations write into `<root>/data/conversations/.../shard-*.jsonl`
 - plugin-data conversations are read-only fallback
 
-### Phase 3: Migrate legacy data into canonical shards
+### Phase 3: Materialize managed guides and the built-in docs workspace
+
+Purpose:
+
+- create the system-managed guides area
+- expose the docs workspace without mixing it into normal workspace persistence
+
+Files:
+
+- new: `src/guides/GuidesManifestService.ts`
+- new: `src/guides/GuidesInstallerService.ts`
+- new: `src/guides/SystemGuidesWorkspaceProvider.ts`
+- workspace listing/loading services
+- prompt composition code
+
+Changes:
+
+- install bundled guides into `<root>/guides`
+- ensure `guides/index.md` and `guides/_meta/guides-manifest.json` exist
+- register a reserved system workspace backed only by `guides/**/*.md`
+- keep it out of normal workspace CRUD
+- update prompt guidance so the model starts with `guides/index.md`
+
+Code sketch:
+
+```ts
+const resolvedRoot = resolveVaultRoot(settings.storage.rootPath);
+
+await guidesInstaller.ensureManagedGuides({
+  guidesRoot: resolvedRoot.guidesRoot,
+  guidesMetaRoot: resolvedRoot.guidesMetaRoot
+});
+
+const guidesWorkspace = {
+  id: 'system-guides',
+  name: 'System guides',
+  rootPath: resolvedRoot.guidesRoot,
+  navigatorPath: normalizePath(`${resolvedRoot.guidesRoot}/index.md`),
+  systemManaged: true,
+  hiddenFromCrud: true
+};
+```
+
+Exit criteria:
+
+- `<root>/guides/index.md` exists
+- managed guides can refresh safely
+- the model can access guides without seeing `<root>/data/**`
+
+### Phase 4: Migrate legacy data into vault-root shards
 
 Purpose:
 
@@ -679,8 +988,8 @@ Changes:
   - `.nexus`
   - `.obsidian/plugins/claudesidian-mcp/data`
   - `.obsidian/plugins/nexus/data`
-- split oversized single-file logs into canonical shards
-- persist migration manifest and verification report in `Nexus/_meta/`
+- split oversized single-file logs into shards under `<root>/data`
+- persist migration manifest and verification report in `<root>/data/_meta/`
 
 Code sketch:
 
@@ -689,7 +998,7 @@ for (const legacyFile of legacyConversationFiles) {
   const streamId = normalizeConversationIdFromLegacyPath(legacyFile);
   const events = await legacyReader.readEvents(legacyFile);
   for (const event of events) {
-    await canonicalStore.appendEvent(
+    await vaultDataStore.appendEvent(
       { category: 'conversations', streamId },
       JSON.stringify(event) + '\n'
     );
@@ -715,11 +1024,11 @@ Exit criteria:
 - verification proves no event loss
 - cutover state is persisted in `data.json`
 
-### Phase 4: Rebuild cache from canonical root only
+### Phase 5: Rebuild cache from vault-root data only
 
 Purpose:
 
-- make the canonical store the only storage source that matters for cache rebuild
+- make `<root>/data` the only storage source that matters for cache rebuild
 
 Files:
 
@@ -729,16 +1038,16 @@ Files:
 
 Changes:
 
-- sync reads canonical shards first
+- sync reads `<root>/data` shards first
 - fallback legacy reads remain only for migration compatibility
 - `cache.db` rebuild no longer depends on plugin-data JSONL
 
 Code sketch:
 
 ```ts
-const conversationStreams = await canonicalStore.listStreams('conversations');
+const conversationStreams = await vaultDataStore.listStreams('conversations');
 for (const streamId of conversationStreams) {
-  const events = await canonicalStore.readTypedEvents<ConversationEvent>({
+  const events = await vaultDataStore.readTypedEvents<ConversationEvent>({
     category: 'conversations',
     streamId
   });
@@ -752,10 +1061,10 @@ for (const streamId of conversationStreams) {
 
 Exit criteria:
 
-- deleting `cache.db` and restarting rebuilds from `Nexus/`
-- mobile and desktop both repopulate cache from the same canonical root
+- deleting `cache.db` and restarting rebuilds from `<root>/data`
+- mobile and desktop both repopulate cache from the same configured root
 
-### Phase 5: Add user-driven folder move workflow
+### Phase 6: Add user-driven root move workflow
 
 Purpose:
 
@@ -771,17 +1080,17 @@ Changes:
 
 - when `storage.rootPath` changes:
   - validate destination
-  - copy current canonical root to destination
-  - verify
+  - copy the current root to destination
+  - verify both `guides/` and `data/`
   - update settings
   - retain old root as fallback until next successful boot
 
 Code sketch:
 
 ```ts
-async function moveCanonicalRoot(oldPath: string, newPath: string): Promise<void> {
+async function moveConfiguredRoot(oldPath: string, newPath: string): Promise<void> {
   await copyTree(oldPath, newPath);
-  await verifyCanonicalRoots(oldPath, newPath);
+  await verifyRootMove(oldPath, newPath);
   settings.storage.rootPath = newPath;
   await settings.saveSettings();
 }
@@ -793,7 +1102,7 @@ Exit criteria:
 - move survives restart
 - old root is not deleted until the new root is confirmed healthy
 
-### Phase 6: Cleanup and remove legacy write assumptions
+### Phase 7: Cleanup and remove legacy write assumptions
 
 Purpose:
 
@@ -807,7 +1116,7 @@ Changes:
 
 Exit criteria:
 
-- all new writes use canonical vault-root shards only
+- all new event writes use `<root>/data` shards only
 
 ## Detailed Code Examples
 
@@ -846,11 +1155,11 @@ async function getWritableShard(
 ## Example: settings validation
 
 ```ts
-export function validateCanonicalRootPath(path: string): { valid: boolean; error?: string } {
+export function validateRootPath(path: string): { valid: boolean; error?: string } {
   const normalized = normalizePath(path.trim());
   if (!normalized) return { valid: false, error: 'Path cannot be empty.' };
   if (normalized.startsWith('.obsidian/')) {
-    return { valid: false, error: 'Canonical Nexus storage cannot live under .obsidian.' };
+    return { valid: false, error: 'The configured root cannot live under .obsidian.' };
   }
   if (normalized.includes('..')) {
     return { valid: false, error: 'Path traversal is not allowed.' };
@@ -862,11 +1171,13 @@ export function validateCanonicalRootPath(path: string): { valid: boolean; error
 ## Example: migration state expansion
 
 ```ts
-export interface CanonicalStorageState {
+export interface RootStorageState {
   storageVersion: 2;
-  canonicalRootPath: string;
-  previousCanonicalRootPath?: string;
-  sourceOfTruthLocation: 'vault-root-canonical' | 'legacy-dotnexus' | 'legacy-plugin-data';
+  rootPath: string;
+  previousRootPath?: string;
+  guidesPath: string;
+  dataPath: string;
+  sourceOfTruthLocation: 'vault-root-data' | 'legacy-dotnexus' | 'legacy-plugin-data';
   migration: {
     state: 'not_started' | 'copying' | 'copied' | 'verified' | 'failed';
     startedAt?: number;
@@ -890,7 +1201,7 @@ Track 1: storage core
 
 - owner: implementation worker
 - scope:
-  - `src/database/storage/CanonicalStoragePathResolver.ts`
+  - `src/database/storage/VaultRootResolver.ts`
   - `src/database/storage/ShardedEventStore.ts`
   - `src/database/storage/JSONLWriter.ts`
 
@@ -947,7 +1258,7 @@ Revise only:
 - src/database/adapters/HybridStorageAdapter.ts
 Do not touch migration or settings files.
 Done means:
-- canonical writes go only to configured vault-root storage
+- event writes go only to configured `<root>/data`
 - plugin data remains local cache only
 - tests cover the no-plugin-write assertion
 ```
@@ -984,8 +1295,8 @@ Track 2 accepted only if:
 
 Track 3 accepted only if:
 
-- cache rebuild uses canonical root
-- mobile startup can rebuild from canonical root
+- cache rebuild uses `<root>/data`
+- mobile startup can rebuild from `<root>/data`
 - plugin-data JSONL is no longer required for healthy runtime
 
 Track 4 accepted only if:
@@ -998,4 +1309,4 @@ Track 4 accepted only if:
 
 When implementation starts, Phase 0 and Phase 1 should be done first in one branch because they define the contract the later phases rely on.
 
-I would not start migration code before the canonical resolver and sharded event store APIs are stable.
+I would not start migration code before the root resolver and sharded event store APIs are stable.

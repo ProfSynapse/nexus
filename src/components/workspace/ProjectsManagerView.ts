@@ -313,7 +313,8 @@ export class ProjectsManagerView {
                 adapter.tasks,
                 new DAGService(),
                 undefined,
-                TaskBoardEvents
+                TaskBoardEvents,
+                async () => typeof adapter.waitForQueryReady === 'function' ? adapter.waitForQueryReady() : adapter.isReady()
             );
             return this.taskService;
         } catch {

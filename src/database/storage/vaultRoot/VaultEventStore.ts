@@ -1,24 +1,45 @@
 import { App, normalizePath } from 'obsidian';
 
-import type { CanonicalVaultRootResolution } from '../CanonicalVaultRootResolver';
+import type { VaultRootResolution } from '../VaultRootResolver';
+import {
+  buildEventStreamPath,
+  normalizeEventStreamId,
+  parseEventStreamPath,
+  type EventStreamCategory
+} from './EventStreamUtilities';
 import { ShardedJsonlStreamStore } from './ShardedJsonlStreamStore';
 
-export type CanonicalStreamCategory = 'conversations' | 'workspaces' | 'tasks';
+export type { EventStreamCategory } from './EventStreamUtilities';
 
-export interface CanonicalNexusEventStoreOptions {
+export interface VaultEventStoreOptions {
   app: App;
-  resolution: Pick<CanonicalVaultRootResolution, 'resolvedRootPath' | 'maxShardBytes'>;
+  resolution: Pick<VaultRootResolution, 'resolvedPath' | 'dataPath' | 'maxShardBytes'>;
 }
 
-export interface CanonicalStreamHandle {
-  category: CanonicalStreamCategory;
+export interface VaultEventStorageManifest {
+  manifestType: 'storage';
+  schemaVersion: number;
+  rootPath: string;
+  maxShardBytes: number;
+  updatedAt: number;
+}
+
+export interface VaultEventStoreShardSummary {
+  fileName: string;
+  relativePath: string;
+  size: number;
+  modTime: number | null;
+}
+
+export interface EventStreamHandle {
+  category: EventStreamCategory;
   logicalId: string;
   relativeStreamPath: string;
   absoluteStreamPath: string;
   shardStore: ShardedJsonlStreamStore<object>;
 }
 
-export class CanonicalNexusEventStore {
+export class VaultEventStore {
   private readonly app: App;
   private readonly rootPath: string;
   private readonly maxShardBytes: number;
@@ -26,9 +47,9 @@ export class CanonicalNexusEventStore {
   private readonly workspaceStore: ShardedJsonlStreamStore<Record<string, unknown>>;
   private readonly taskStore: ShardedJsonlStreamStore<Record<string, unknown>>;
 
-  constructor(options: CanonicalNexusEventStoreOptions) {
+  constructor(options: VaultEventStoreOptions) {
     this.app = options.app;
-    this.rootPath = normalizePath(options.resolution.resolvedRootPath);
+    this.rootPath = normalizePath(options.resolution.dataPath);
     this.maxShardBytes = options.resolution.maxShardBytes;
     this.conversationStore = this.createShardStore<Record<string, unknown>>();
     this.workspaceStore = this.createShardStore<Record<string, unknown>>();
@@ -59,6 +80,23 @@ export class CanonicalNexusEventStore {
     return this.getMetaPath('migration-manifest.json');
   }
 
+  getMigrationReportPath(): string {
+    return this.getMetaPath('migration-report.json');
+  }
+
+  async writeStorageManifest(updatedAt = Date.now()): Promise<VaultEventStorageManifest> {
+    const manifest: VaultEventStorageManifest = {
+      manifestType: 'storage',
+      schemaVersion: 2,
+      rootPath: this.rootPath,
+      maxShardBytes: this.maxShardBytes,
+      updatedAt
+    };
+
+    await this.writeMetaJson(this.getStorageManifestPath(), manifest);
+    return manifest;
+  }
+
   async appendEvent<TEvent extends object>(
     relativePath: string,
     event: TEvent
@@ -85,7 +123,7 @@ export class CanonicalNexusEventStore {
     return (await handle.shardStore.readEvents(handle.relativeStreamPath)) as TEvent[];
   }
 
-  async listFiles(category: CanonicalStreamCategory): Promise<string[]> {
+  async listFiles(category: EventStreamCategory): Promise<string[]> {
     const categoryRoot = this.getCategoryRootPath(category);
     if (!(await this.app.vault.adapter.exists(categoryRoot))) {
       return [];
@@ -100,8 +138,8 @@ export class CanonicalNexusEventStore {
         continue;
       }
 
-      const logicalId = this.normalizeLogicalId(category, this.getPathLeaf(normalizedFolderPath));
-      files.add(this.buildLogicalPath(category, logicalId));
+      const logicalId = normalizeEventStreamId(category, this.getPathLeaf(normalizedFolderPath));
+      files.add(buildEventStreamPath(category, logicalId));
     }
 
     for (const filePath of listing.files) {
@@ -110,11 +148,11 @@ export class CanonicalNexusEventStore {
         continue;
       }
 
-      const logicalId = this.normalizeLogicalId(
+      const logicalId = normalizeEventStreamId(
         category,
         this.getPathLeaf(normalizedFilePath).slice(0, -'.jsonl'.length)
       );
-      files.add(this.buildLogicalPath(category, logicalId));
+      files.add(buildEventStreamPath(category, logicalId));
     }
 
     return Array.from(files).sort();
@@ -134,6 +172,18 @@ export class CanonicalNexusEventStore {
     }
 
     return latestModTime;
+  }
+
+  async listShardSummaries(relativePath: string): Promise<VaultEventStoreShardSummary[]> {
+    const handle = this.resolveStreamHandle(relativePath);
+    const shards = await handle.shardStore.listShards(handle.relativeStreamPath);
+
+    return shards.map(shard => ({
+      fileName: shard.fileName,
+      relativePath: shard.relativePath,
+      size: shard.size,
+      modTime: shard.modTime
+    }));
   }
 
   async getFileSize(relativePath: string): Promise<number | null> {
@@ -158,15 +208,15 @@ export class CanonicalNexusEventStore {
     return normalizePath(`${this.rootPath}/tasks`);
   }
 
-  getConversationStream(conversationId: string): CanonicalStreamHandle {
+  getConversationStream(conversationId: string): EventStreamHandle {
     return this.createStreamHandle('conversations', conversationId, this.conversationStore);
   }
 
-  getWorkspaceStream(workspaceId: string): CanonicalStreamHandle {
+  getWorkspaceStream(workspaceId: string): EventStreamHandle {
     return this.createStreamHandle('workspaces', workspaceId, this.workspaceStore);
   }
 
-  getTaskStream(workspaceId: string): CanonicalStreamHandle {
+  getTaskStream(workspaceId: string): EventStreamHandle {
     return this.createStreamHandle('tasks', workspaceId, this.taskStore);
   }
 
@@ -179,11 +229,11 @@ export class CanonicalNexusEventStore {
   }
 
   private createStreamHandle(
-    category: CanonicalStreamCategory,
+    category: EventStreamCategory,
     logicalId: string,
     shardStore: ShardedJsonlStreamStore<object>
-  ): CanonicalStreamHandle {
-    const normalizedId = this.normalizeLogicalId(category, logicalId);
+  ): EventStreamHandle {
+    const normalizedId = normalizeEventStreamId(category, logicalId);
     const relativeStreamPath = normalizePath(`${category}/${normalizedId}`);
     return {
       category,
@@ -194,16 +244,16 @@ export class CanonicalNexusEventStore {
     };
   }
 
-  private resolveStreamHandle(relativePath: string): CanonicalStreamHandle {
-    const parsed = this.parseLogicalPath(relativePath);
+  private resolveStreamHandle(relativePath: string): EventStreamHandle {
+    const parsed = parseEventStreamPath(relativePath);
     if (!parsed) {
-      throw new Error(`Canonical storage requires a logical JSONL path, got: ${relativePath}`);
+      throw new Error(`Data folder requires a logical JSONL path, got: ${relativePath}`);
     }
 
     return this.createStreamHandle(parsed.category, parsed.logicalId, this.getShardStore(parsed.category));
   }
 
-  private getShardStore(category: CanonicalStreamCategory): ShardedJsonlStreamStore<object> {
+  private getShardStore(category: EventStreamCategory): ShardedJsonlStreamStore<object> {
     switch (category) {
       case 'conversations':
         return this.conversationStore;
@@ -214,23 +264,7 @@ export class CanonicalNexusEventStore {
     }
   }
 
-  private parseLogicalPath(relativePath: string): {
-    category: CanonicalStreamCategory;
-    logicalId: string;
-  } | null {
-    const normalizedPath = normalizePath(relativePath).replace(/^\/+|\/+$/g, '');
-    const match = normalizedPath.match(/^(conversations|workspaces|tasks)\/(.+)\.jsonl$/);
-    if (!match) {
-      return null;
-    }
-
-    return {
-      category: match[1] as CanonicalStreamCategory,
-      logicalId: this.normalizeLogicalId(match[1] as CanonicalStreamCategory, match[2])
-    };
-  }
-
-  private getCategoryRootPath(category: CanonicalStreamCategory): string {
+  private getCategoryRootPath(category: EventStreamCategory): string {
     switch (category) {
       case 'conversations':
         return this.getConversationsRootPath();
@@ -253,34 +287,15 @@ export class CanonicalNexusEventStore {
     return lastSlashIndex === -1 ? '' : normalized.slice(0, lastSlashIndex);
   }
 
-  private buildLogicalPath(category: CanonicalStreamCategory, logicalId: string): string {
-    return normalizePath(`${category}/${logicalId}.jsonl`);
+  private async writeMetaJson(path: string, value: object): Promise<void> {
+    await this.ensureDirectory(this.getMetaRootPath());
+    await this.app.vault.adapter.write(path, JSON.stringify(value, null, 2));
   }
 
-  private normalizeLogicalId(category: CanonicalStreamCategory, logicalId: string): string {
-    if (category !== 'conversations') {
-      return this.normalizeLogicalIdSegments(logicalId);
+  private async ensureDirectory(path: string): Promise<void> {
+    if (!(await this.app.vault.adapter.exists(path))) {
+      await this.app.vault.adapter.mkdir(path);
     }
-
-    return this.normalizeConversationLogicalId(logicalId);
   }
 
-  private normalizeConversationLogicalId(logicalId: string): string {
-    let normalized = this.normalizeLogicalIdSegments(logicalId);
-
-    while (normalized.startsWith('conv_conv_')) {
-      normalized = normalized.slice('conv_'.length);
-    }
-
-    return normalized;
-  }
-
-  private normalizeLogicalIdSegments(logicalId: string): string {
-    const normalizedId = normalizePath(logicalId).replace(/^\/+|\/+$/g, '');
-    if (!normalizedId) {
-      throw new Error('Canonical stream logical ID cannot be empty.');
-    }
-
-    return normalizedId;
-  }
 }

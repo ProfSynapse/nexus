@@ -313,7 +313,7 @@ export class PluginLifecycleManager {
      */
     private async initializeEmbeddingsWhenReady(storageAdapter: HybridStorageAdapter): Promise<void> {
         try {
-            const ready = await storageAdapter.waitForReady();
+            const ready = await storageAdapter.waitForQueryReady();
             if (!ready) {
                 console.warn('[PluginLifecycleManager] Storage adapter failed to initialize; skipping embeddings');
                 return;

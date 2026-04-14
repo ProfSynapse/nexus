@@ -14,6 +14,10 @@ import { IStorageAdapter } from '../../database/interfaces/IStorageAdapter';
  */
 export type StorageAdapterOrGetter = IStorageAdapter | (() => IStorageAdapter | undefined) | undefined;
 
+type QueryAwareStorageAdapter = IStorageAdapter & {
+  isQueryReady?: () => boolean;
+};
+
 /**
  * Resolve a StorageAdapterOrGetter to a ready IStorageAdapter, or undefined.
  * Supports both direct adapter references and lazy getter functions.
@@ -36,6 +40,32 @@ export function resolveAdapter(adapterOrGetter: StorageAdapterOrGetter): IStorag
 }
 
 /**
+ * Resolve a StorageAdapterOrGetter to an adapter that is safe for read queries.
+ *
+ * If an adapter exposes isQueryReady(), that stronger signal is used.
+ * Otherwise this falls back to isReady().
+ */
+export function resolveReadableAdapter(adapterOrGetter: StorageAdapterOrGetter): IStorageAdapter | undefined {
+  let adapter: QueryAwareStorageAdapter | undefined;
+
+  if (typeof adapterOrGetter === 'function') {
+    adapter = adapterOrGetter() as QueryAwareStorageAdapter | undefined;
+  } else {
+    adapter = adapterOrGetter as QueryAwareStorageAdapter | undefined;
+  }
+
+  if (!adapter || !adapter.isReady()) {
+    return undefined;
+  }
+
+  if (typeof adapter.isQueryReady === 'function') {
+    return adapter.isQueryReady() ? adapter : undefined;
+  }
+
+  return adapter;
+}
+
+/**
  * Execute a dual-backend operation: if an adapter is available and ready,
  * run adapterFn; otherwise run legacyFn.
  *
@@ -53,6 +83,24 @@ export async function withDualBackend<T>(
   legacyFn: () => T | Promise<T>
 ): Promise<T> {
   const adapter = resolveAdapter(adapterOrGetter);
+  if (adapter) {
+    return adapterFn(adapter);
+  }
+  return legacyFn();
+}
+
+/**
+ * Execute a dual-backend read operation.
+ *
+ * Routes to SQLite only when the adapter reports that read queries are safe.
+ * Falls back to legacy storage during startup hydration windows.
+ */
+export async function withReadableBackend<T>(
+  adapterOrGetter: StorageAdapterOrGetter,
+  adapterFn: (adapter: IStorageAdapter) => T | Promise<T>,
+  legacyFn: () => T | Promise<T>
+): Promise<T> {
+  const adapter = resolveReadableAdapter(adapterOrGetter);
   if (adapter) {
     return adapterFn(adapter);
   }

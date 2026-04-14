@@ -1,6 +1,6 @@
 import type { App } from 'obsidian';
 
-import { CanonicalNexusEventStore } from '../../src/database/storage/canonical/CanonicalNexusEventStore';
+import { VaultEventStore } from '../../src/database/storage/vaultRoot/VaultEventStore';
 import { JSONLWriter } from '../../src/database/storage/JSONLWriter';
 
 type AdapterFileEntry = {
@@ -139,15 +139,16 @@ describe('JSONLWriter', () => {
     ]);
   });
 
-  it('routes canonical logical files through sharded storage without exposing shards to callers', async () => {
+  it('routes vault-root logical files through sharded storage without exposing shards to callers', async () => {
     const { app, adapter } = createMockApp({
       '.nexus/conversations/conv_alpha.jsonl': '{"id":"legacy-evt","deviceId":"legacy","timestamp":1}\n'
     });
 
-    const canonicalStore = new CanonicalNexusEventStore({
+    const vaultEventStore = new VaultEventStore({
       app,
       resolution: {
-        resolvedRootPath: 'Nexus',
+        resolvedPath: 'Assistant data',
+        dataPath: 'Assistant data/data',
         maxShardBytes: 1024
       }
     });
@@ -156,7 +157,7 @@ describe('JSONLWriter', () => {
       app,
       basePath: '.nexus',
       readBasePaths: ['.nexus'],
-      canonicalStore
+      vaultEventStore
     });
 
     const appended = await writer.appendEvent(
@@ -169,7 +170,7 @@ describe('JSONLWriter', () => {
     );
 
     expect(adapter.write).toHaveBeenCalledWith(
-      'Nexus/conversations/conv_alpha/shard-000001.jsonl',
+      'Assistant data/data/conversations/conv_alpha/shard-000001.jsonl',
       expect.stringContaining('"type":"message"')
     );
     expect(appended.id).toBeDefined();
@@ -190,7 +191,7 @@ describe('JSONLWriter', () => {
 
     expect(batchEvents).toHaveLength(2);
     expect(adapter.write).toHaveBeenCalledWith(
-      'Nexus/tasks/tasks_ws-1/shard-000001.jsonl',
+      'Assistant data/data/tasks/tasks_ws-1/shard-000001.jsonl',
       expect.stringContaining('"name":"Project 1"')
     );
 

@@ -1,35 +1,6 @@
 import { Plugin } from 'obsidian';
-import {
-    MCPSettings,
-    DEFAULT_SETTINGS,
-    DEFAULT_STORAGE_SETTINGS,
-    type LLMProviderConfig,
-    type MCPStorageSettings
-} from './types';
+import { MCPSettings, DEFAULT_SETTINGS, type LLMProviderConfig } from './types';
 import { pluginDataLock } from './utils/pluginDataLock';
-
-function mergeStorageSettings(
-    defaults: MCPStorageSettings,
-    storage: Record<string, unknown> | undefined
-): MCPStorageSettings {
-    const merged: MCPStorageSettings = {
-        ...defaults
-    };
-
-    if (typeof storage?.schemaVersion === 'number' && Number.isFinite(storage.schemaVersion)) {
-        merged.schemaVersion = storage.schemaVersion;
-    }
-
-    if (typeof storage?.rootPath === 'string' && storage.rootPath.trim().length > 0) {
-        merged.rootPath = storage.rootPath;
-    }
-
-    if (typeof storage?.maxShardBytes === 'number' && Number.isFinite(storage.maxShardBytes) && storage.maxShardBytes > 0) {
-        merged.maxShardBytes = Math.floor(storage.maxShardBytes);
-    }
-
-    return merged;
-}
 
 /**
  * Settings manager
@@ -68,24 +39,20 @@ export class Settings {
         if (!loadedData || typeof loadedData !== 'object') {
             return; // Use defaults
         }
-
-        // Start with default settings (includes storage)
+        
+        // Start with default settings (includes memory)
         this.settings = Object.assign({}, DEFAULT_SETTINGS);
-
+        
         // Quick shallow merge for startup - detailed validation deferred
         try {
-            const { llmProviders, storage, ...otherSettings } = loadedData as Record<string, unknown>;
-            Object.assign(this.settings, otherSettings);
+            const sanitizedLoadedData = { ...(loadedData as Record<string, unknown>) };
+            delete sanitizedLoadedData.pluginStorage;
 
+            const { llmProviders, ...otherSettings } = sanitizedLoadedData;
+            Object.assign(this.settings, otherSettings);
+            
             // Ensure memory settings exist
             this.settings.memory = DEFAULT_SETTINGS.memory;
-
-            // Merge storage settings with nested defaults
-            if (storage && typeof storage === 'object' && DEFAULT_SETTINGS.storage) {
-                this.settings.storage = mergeStorageSettings(DEFAULT_SETTINGS.storage, storage as Record<string, unknown>);
-            } else {
-                this.settings.storage = mergeStorageSettings(DEFAULT_STORAGE_SETTINGS, undefined);
-            }
 
             // Basic LLM provider settings merge
             if (llmProviders && typeof llmProviders === 'object' && DEFAULT_SETTINGS.llmProviders) {
@@ -113,9 +80,13 @@ export class Settings {
     async saveSettings(): Promise<void> {
         await pluginDataLock.acquire(async () => {
             const loadedData: unknown = await this.plugin.loadData();
+            const settingsWithoutRuntimeState = {
+                ...(this.settings as MCPSettings & { pluginStorage?: unknown })
+            };
+            delete settingsWithoutRuntimeState.pluginStorage;
             const mergedData = loadedData && typeof loadedData === 'object'
-                ? { ...(loadedData as Record<string, unknown>), ...this.settings }
-                : this.settings;
+                ? { ...(loadedData as Record<string, unknown>), ...settingsWithoutRuntimeState }
+                : settingsWithoutRuntimeState;
 
             await this.plugin.saveData(mergedData);
         });
