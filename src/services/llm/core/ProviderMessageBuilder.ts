@@ -86,6 +86,10 @@ export interface StreamingOptions {
   topP?: number;
   frequencyPenalty?: number;
   presencePenalty?: number;
+  imageProvider?: 'google' | 'openrouter';
+  imageModel?: string;
+  transcriptionProvider?: string;
+  transcriptionModel?: string;
   enableThinking?: boolean;
   thinkingEffort?: 'low' | 'medium' | 'high';
   // Responses API (OpenAI/LM Studio): ID from first response, reused for all continuations

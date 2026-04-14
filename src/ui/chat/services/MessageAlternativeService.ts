@@ -72,6 +72,11 @@ export class MessageAlternativeService {
       systemPrompt?: string;
       workspaceId?: string;
       sessionId?: string;
+      temperature?: number;
+      imageProvider?: 'google' | 'openrouter';
+      imageModel?: string;
+      transcriptionProvider?: string;
+      transcriptionModel?: string;
     }
   ): Promise<void> {
     // Concurrent retry guard: if a retry is already in progress for this message, bail

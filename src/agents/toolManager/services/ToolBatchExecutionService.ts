@@ -273,7 +273,8 @@ export class ToolBatchExecutionService {
     const { agent: agentName, tool: toolSlug } = call;
 
     const callWithAny = call as ToolCallParams & { parameters?: Record<string, unknown> };
-    const params = call.params || callWithAny.parameters || {};
+    const baseParams = call.params || callWithAny.parameters || {};
+    const params = this.applyContextDefaults(context, agentName, toolSlug, baseParams);
 
     if (!agentName) {
       const availableAgents = Array.from(this.agentRegistry.keys()).join(', ');
@@ -357,6 +358,31 @@ export class ToolBatchExecutionService {
         error: `Error executing ${agentName}_${toolSlug}: ${getErrorMessage(error)}`
       };
     }
+  }
+
+  private applyContextDefaults(
+    context: ToolContext,
+    agentName: string | undefined,
+    toolSlug: string | undefined,
+    params: Record<string, unknown>
+  ): Record<string, unknown> {
+    if (agentName === 'promptManager' && toolSlug === 'generateImage') {
+      return {
+        ...params,
+        provider: params.provider || context.imageProvider,
+        model: params.model || context.imageModel
+      };
+    }
+
+    if (agentName === 'ingestManager' && toolSlug === 'ingest') {
+      return {
+        ...params,
+        transcriptionProvider: params.transcriptionProvider || context.transcriptionProvider,
+        transcriptionModel: params.transcriptionModel || context.transcriptionModel
+      };
+    }
+
+    return params;
   }
 
   private formatUseToolResult(results: ToolCallResult[]): UseToolResult {

@@ -15,8 +15,8 @@ import { LLMProviderManager } from '../../services/llm/providers/ProviderManager
 import {
   getIngestCapabilityOptions,
   normalizeIngestSelection,
-  IngestProviderOption
 } from '../../agents/ingestManager/tools/services/IngestCapabilityService';
+import { renderIngestModelDropdowns } from '../../components/shared/IngestModelDropdownRenderer';
 
 export interface DefaultsTabServices {
   app: App;
@@ -96,6 +96,8 @@ export class DefaultsTab {
       temperature: llmSettings?.defaultTemperature ?? 0.5,
       imageProvider: llmSettings?.defaultImageModel?.provider || 'google',
       imageModel: llmSettings?.defaultImageModel?.model || 'gemini-2.5-flash-image',
+      transcriptionProvider: llmSettings?.defaultTranscriptionModel?.provider,
+      transcriptionModel: llmSettings?.defaultTranscriptionModel?.model,
       workspaceId: pluginSettings.defaultWorkspaceId || null,
       promptId: pluginSettings.defaultPromptId || null,
       contextNotes: pluginSettings.defaultContextNotes || []
@@ -142,6 +144,12 @@ export class DefaultsTab {
         provider: settings.imageProvider,
         model: settings.imageModel
       };
+      llmSettings.defaultTranscriptionModel = settings.transcriptionProvider && settings.transcriptionModel
+        ? {
+          provider: settings.transcriptionProvider,
+          model: settings.transcriptionModel
+        }
+        : undefined;
       pluginSettings.llmProviders = llmSettings;
     }
 
@@ -192,18 +200,8 @@ export class DefaultsTab {
 
     await this.renderIngestionSection(rendererContainer);
 
-    // Embeddings section (desktop only) - insert before Temperature
+    // Embeddings section (desktop only)
     if (!Platform.isMobile) {
-      // Find Temperature section to insert before it
-      const headers = rendererContainer.querySelectorAll('.csr-section-header');
-      let temperatureSection: Element | null = null;
-      for (const header of Array.from(headers)) {
-        if (header.textContent === 'Temperature') {
-          temperatureSection = header.parentElement;
-          break;
-        }
-      }
-
       const embeddingsSection = createDiv({ cls: 'csr-section' });
       const embeddingsHeader = embeddingsSection.createDiv({ cls: 'csr-section-header' });
       embeddingsHeader.setText('Embeddings');
@@ -222,12 +220,7 @@ export class DefaultsTab {
             });
         });
 
-      // Insert before Temperature, or append if not found
-      if (temperatureSection) {
-        rendererContainer.insertBefore(embeddingsSection, temperatureSection);
-      } else {
-        rendererContainer.appendChild(embeddingsSection);
-      }
+      rendererContainer.appendChild(embeddingsSection);
     }
   }
 
@@ -246,23 +239,11 @@ export class DefaultsTab {
       llmSettings.defaultOcrModel?.provider,
       llmSettings.defaultOcrModel?.model
     );
-    const normalizedTranscriptionSelection = normalizeIngestSelection(
-      capabilities.transcriptionProviders,
-      llmSettings.defaultTranscriptionModel?.provider,
-      llmSettings.defaultTranscriptionModel?.model
-    );
 
     if (normalizedOcrSelection.provider && normalizedOcrSelection.model) {
       llmSettings.defaultOcrModel = {
         provider: normalizedOcrSelection.provider,
         model: normalizedOcrSelection.model
-      };
-    }
-
-    if (normalizedTranscriptionSelection.provider && normalizedTranscriptionSelection.model) {
-      llmSettings.defaultTranscriptionModel = {
-        provider: normalizedTranscriptionSelection.provider,
-        model: normalizedTranscriptionSelection.model
       };
     }
 
@@ -337,142 +318,23 @@ export class DefaultsTab {
       ocrSettingsContainer.addClass('nexus-ingest-confirm-hidden');
     }
 
-    this.renderProviderModelDefaults(
+    renderIngestModelDropdowns(
       ocrSettingsContainer,
-      'Default OCR',
-      'Model for vision OCR when using vision mode.',
-      capabilities.ocrProviders,
-      () => llmSettings.defaultOcrModel,
-      async (provider, model) => {
-        llmSettings.defaultOcrModel = provider && model
-          ? { provider, model }
-          : undefined;
-        await this.services.settings.saveSettings();
-      }
-    );
-
-    this.renderProviderModelDefaults(
-      ingestionSettingsContainer,
-      'Default transcription',
-      'Model for audio transcription.',
-      capabilities.transcriptionProviders,
-      () => llmSettings.defaultTranscriptionModel,
-      async (provider, model) => {
-        llmSettings.defaultTranscriptionModel = provider && model
-          ? { provider, model }
-          : undefined;
-        await this.services.settings.saveSettings();
-      }
-    );
-
-    const temperatureSection = this.findSectionByHeader(parentEl, 'Temperature');
-    if (temperatureSection) {
-      parentEl.insertBefore(section, temperatureSection);
-    } else {
-      parentEl.appendChild(section);
-    }
-  }
-
-  private findSectionByHeader(parentEl: HTMLElement, headerText: string): HTMLElement | null {
-    const headers = parentEl.querySelectorAll('.csr-section-header');
-    for (const header of Array.from(headers)) {
-      if (header.textContent === headerText && header.parentElement instanceof HTMLElement) {
-        return header.parentElement;
-      }
-    }
-
-    return null;
-  }
-
-  private renderProviderModelDefaults(
-    container: HTMLElement,
-    labelPrefix: string,
-    description: string,
-    providers: IngestProviderOption[],
-    getSelection: () => { provider: string; model: string } | undefined,
-    onChange: (provider: string | undefined, model: string | undefined) => Promise<void>
-  ): void {
-    let modelDropdown: HTMLSelectElement | null = null;
-
-    const updateModelOptions = (): void => {
-      if (!modelDropdown) {
-        return;
-      }
-
-      const selection = getSelection();
-      const providerId = selection?.provider;
-      const provider = providers.find(option => option.id === providerId);
-      const normalizedSelection = normalizeIngestSelection(
-        providers,
-        selection?.provider,
-        selection?.model
-      );
-
-      modelDropdown.empty();
-
-      if (!providerId || !provider || provider.models.length === 0) {
-        modelDropdown.createEl('option', {
-          value: '',
-          text: providers.length === 0 ? `No ${labelPrefix.toLowerCase()} models available` : 'Select a provider first'
-        });
-        modelDropdown.disabled = true;
-        return;
-      }
-
-      const currentModelDropdown = modelDropdown;
-      provider.models.forEach(model => {
-        currentModelDropdown.createEl('option', {
-          value: model.id,
-          text: model.name
-        });
-      });
-
-      modelDropdown.disabled = false;
-      modelDropdown.value = provider.models.some(model => model.id === normalizedSelection.model)
-        ? normalizedSelection.model || provider.models[0].id
-        : provider.models[0].id;
-    };
-
-    new Setting(container)
-      .setName(`${labelPrefix} provider`)
-      .setDesc(description)
-      .addDropdown(dropdown => {
-        if (providers.length === 0) {
-          dropdown.addOption('', `No ${labelPrefix.toLowerCase()} providers available`);
-          dropdown.setDisabled(true);
-          return;
+      {
+        labelPrefix: 'Default OCR',
+        description: 'Model for vision OCR when using vision mode.',
+        providers: capabilities.ocrProviders,
+        getSelection: () => llmSettings.defaultOcrModel,
+        onChange: async (provider, model) => {
+          llmSettings.defaultOcrModel = provider && model
+            ? { provider, model }
+            : undefined;
+          await this.services.settings.saveSettings();
         }
+      }
+    );
 
-        providers.forEach(provider => {
-          dropdown.addOption(provider.id, provider.name);
-        });
-
-        const normalizedSelection = normalizeIngestSelection(
-          providers,
-          getSelection()?.provider,
-          getSelection()?.model
-        );
-
-        dropdown.setValue(normalizedSelection.provider || providers[0].id);
-        dropdown.onChange(async (value) => {
-          const nextSelection = normalizeIngestSelection(providers, value, undefined);
-          await onChange(nextSelection.provider, nextSelection.model);
-          updateModelOptions();
-        });
-      });
-
-    new Setting(container)
-      .setName(`${labelPrefix} model`)
-      .addDropdown(dropdown => {
-        modelDropdown = dropdown.selectEl;
-        updateModelOptions();
-
-        dropdown.onChange(async (value) => {
-          const selection = getSelection();
-          await onChange(selection?.provider, value || undefined);
-          updateModelOptions();
-        });
-      });
+    parentEl.appendChild(section);
   }
 
   /**

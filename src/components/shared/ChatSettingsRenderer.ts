@@ -2,10 +2,11 @@
  * ChatSettingsRenderer - Shared settings UI for DefaultsTab and ChatSettingsModal
  *
  * Renders identical UI in both places:
- * - Provider + Model (same section)
+ * - Chat provider + model
  * - Reasoning toggle + Effort slider
  * - Image generation settings
- * - Workspace + Agent
+ * - Transcription settings
+ * - Workspace + prompt
  * - Context notes
  *
  * The difference is only WHERE data is saved (via callbacks).
@@ -20,6 +21,11 @@ import { FilePickerRenderer } from '../workspace/FilePickerRenderer';
 import { isDesktop, isProviderCompatible } from '../../utils/platform';
 import { LLMSettingsNotifier } from '../../services/llm/LLMSettingsNotifier';
 import { renderModelDropdownSection } from './ModelDropdownRenderer';
+import {
+  getIngestCapabilityOptions,
+  normalizeIngestSelection
+} from '../../agents/ingestManager/tools/services/IngestCapabilityService';
+import { renderIngestModelDropdowns } from './IngestModelDropdownRenderer';
 
 /**
  * Current settings state
@@ -27,14 +33,14 @@ import { renderModelDropdownSection } from './ModelDropdownRenderer';
 export interface ChatSettings {
   provider: string;
   model: string;
-  // Agent Model - used for executePrompt when chat model is local
+  // Subagent model - used for executePrompt when chat model is local
   agentProvider?: string;
   agentModel?: string;
   thinking: {
     enabled: boolean;
     effort: ThinkingEffort;
   };
-  // Agent Model thinking settings (separate from chat model)
+  // Subagent model thinking settings (separate from chat model)
   agentThinking?: {
     enabled: boolean;
     effort: ThinkingEffort;
@@ -42,6 +48,8 @@ export interface ChatSettings {
   temperature: number; // 0.0-1.0, controls randomness
   imageProvider: 'google' | 'openrouter';
   imageModel: string;
+  transcriptionProvider?: string;
+  transcriptionModel?: string;
   workspaceId: string | null;
   promptId: string | null;
   contextNotes: string[];
@@ -143,10 +151,11 @@ export class ChatSettingsRenderer {
     this.container.empty();
     this.container.addClass('chat-settings-renderer');
 
-    // Vertical layout - order: Chat (with Reasoning), Agent, Image, Temp, Context
+    // Vertical layout - order: Chat (with Reasoning), Agent, Image, Transcription, Temp, Context
     this.renderModelSection(this.container);
     this.renderAgentModelSection(this.container);
     this.renderImageSection(this.container);
+    this.renderTranscriptionSection(this.container);
     this.renderTemperatureSection(this.container);
     this.renderContextSection(this.container);
   }
@@ -228,7 +237,7 @@ export class ChatSettingsRenderer {
 
   private renderModelSection(parent: HTMLElement): void {
     renderModelDropdownSection(parent, {
-      sectionTitle: 'Chat Model',
+      sectionTitle: 'Chat model',
       getProviders: () => this.getEnabledProviders(),
       getCurrentProvider: () => this.settings.provider,
       getCurrentModel: () => this.settings.model,
@@ -336,15 +345,15 @@ export class ChatSettingsRenderer {
     });
   }
 
-  // ========== AGENT MODEL SECTION ==========
+  // ========== SUBAGENT MODEL SECTION ==========
 
   /**
-   * Render Agent Model section - always shown, excludes local providers.
+   * Render Subagent model section - always shown, excludes local providers.
    * This model is used for executePrompt and other API-dependent operations.
    */
   private renderAgentModelSection(parent: HTMLElement): void {
     renderModelDropdownSection(parent, {
-      sectionTitle: 'Agent Model',
+      sectionTitle: 'Subagent model',
       description: {
         text: 'Cloud model for AI actions',
         infoTooltip: 'Saved prompts and automations require a cloud API.',
@@ -519,6 +528,62 @@ export class ChatSettingsRenderer {
           this.notifyChange();
         });
       });
+  }
+
+  // ========== TRANSCRIPTION SECTION ==========
+
+  private renderTranscriptionSection(parent: HTMLElement): void {
+    const section = parent.createDiv('csr-section');
+    section.createDiv('csr-section-header').setText('Transcription model');
+    const content = section.createDiv('csr-section-content');
+    content.createDiv({
+      cls: 'setting-item-description',
+      text: 'Loading transcription models...'
+    });
+
+    void getIngestCapabilityOptions(this.providerManager).then(capabilities => {
+      content.empty();
+      const normalizedSelection = normalizeIngestSelection(
+        capabilities.transcriptionProviders,
+        this.settings.transcriptionProvider,
+        this.settings.transcriptionModel
+      );
+
+      const changed = normalizedSelection.provider !== this.settings.transcriptionProvider
+        || normalizedSelection.model !== this.settings.transcriptionModel;
+
+      this.settings.transcriptionProvider = normalizedSelection.provider;
+      this.settings.transcriptionModel = normalizedSelection.model;
+
+      if (changed) {
+        this.notifyChange();
+      }
+
+      renderIngestModelDropdowns(content, {
+        labelPrefix: 'Transcription',
+        description: 'Model for audio transcription.',
+        providers: capabilities.transcriptionProviders,
+        getSelection: () => this.settings.transcriptionProvider && this.settings.transcriptionModel
+          ? {
+            provider: this.settings.transcriptionProvider,
+            model: this.settings.transcriptionModel
+          }
+          : undefined,
+        onChange: (provider, model) => {
+          this.settings.transcriptionProvider = provider;
+          this.settings.transcriptionModel = model;
+          this.notifyChange();
+        },
+        providerSettingName: 'Provider',
+        modelSettingName: 'Model'
+      });
+    }).catch(() => {
+      content.empty();
+      content.createDiv({
+        cls: 'setting-item-description',
+        text: 'Transcription models are not available.'
+      });
+    });
   }
 
   // ========== CONTEXT SECTION ==========

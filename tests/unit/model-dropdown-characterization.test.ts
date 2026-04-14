@@ -6,7 +6,7 @@
  *   section div > header div > content div > Setting dropdowns
  *
  * Both render Provider + Model dropdowns with nearly identical logic.
- * The Agent Model section additionally filters out local providers.
+ * The Subagent model section additionally filters out local providers.
  *
  * These tests capture the structural pattern and key behavioral differences
  * that Wave 1b (ModelDropdownRenderer extraction) needs to preserve.
@@ -93,7 +93,7 @@ function createConfig(_container: unknown): ChatSettingsRendererConfig {
 }
 
 describe('ChatSettingsRenderer model section characterization', () => {
-  it('render() creates 5 sections in fixed order: Chat, Agent, Image, Temp, Context', () => {
+  it('render() creates sections in fixed order: Chat, Subagent, Image, Transcription, Temp, Context', () => {
     const container = createMockElement();
     const config = createConfig(container);
     const renderer = new ChatSettingsRenderer(container, config);
@@ -122,7 +122,7 @@ describe('ChatSettingsRenderer model section characterization', () => {
     expect(firstCall[0]).toBe('csr-section');
   });
 
-  it('renderModelSection header text is "Chat Model"', () => {
+  it('renderModelSection header text is "Chat model"', () => {
     const container = createMockElement();
     const config = createConfig(container);
     const renderer = new ChatSettingsRenderer(container, config);
@@ -134,12 +134,12 @@ describe('ChatSettingsRenderer model section characterization', () => {
     const sectionEl = container.createDiv.mock.results[0].value;
     expect(sectionEl.createDiv).toHaveBeenCalledWith('csr-section-header');
 
-    // The header element has setText called with 'Chat Model'
+    // The header element has setText called with 'Chat model'
     const headerEl = sectionEl.createDiv.mock.results[0].value;
-    expect(headerEl.setText).toHaveBeenCalledWith('Chat Model');
+    expect(headerEl.setText).toHaveBeenCalledWith('Chat model');
   });
 
-  it('renderAgentModelSection header text is "Agent Model"', () => {
+  it('renderAgentModelSection header text is "Subagent model"', () => {
     const container = createMockElement();
     const config = createConfig(container);
     const renderer = new ChatSettingsRenderer(container, config);
@@ -159,6 +159,6 @@ describe('ChatSettingsRenderer model section characterization', () => {
     const agentSectionIdx = allSectionCalls[1].idx;
     const agentSectionEl = container.createDiv.mock.results[agentSectionIdx].value;
     const agentHeaderEl = agentSectionEl.createDiv.mock.results[0].value;
-    expect(agentHeaderEl.setText).toHaveBeenCalledWith('Agent Model');
+    expect(agentHeaderEl.setText).toHaveBeenCalledWith('Subagent model');
   });
 });

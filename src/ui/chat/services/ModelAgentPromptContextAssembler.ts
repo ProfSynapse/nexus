@@ -32,6 +32,10 @@ export interface ModelAgentPromptContextSnapshot {
   currentSystemPrompt: string | null;
   thinkingSettings: ThinkingSettings;
   temperature: number;
+  imageProvider: 'google' | 'openrouter';
+  imageModel: string;
+  transcriptionProvider: string | null;
+  transcriptionModel: string | null;
   contextTokenTracker: ContextTokenTrackerLike | null;
   compactionFrontier: CompactionFrontierRecord[];
   latestCompactionRecord: CompactedContext | null;
@@ -46,6 +50,10 @@ export interface ModelAgentMessageOptions {
   enableThinking?: boolean;
   thinkingEffort?: 'low' | 'medium' | 'high';
   temperature?: number;
+  imageProvider?: 'google' | 'openrouter';
+  imageModel?: string;
+  transcriptionProvider?: string;
+  transcriptionModel?: string;
 }
 
 interface ModelAgentPromptContextAssemblerDependencies {
@@ -89,7 +97,11 @@ export class ModelAgentPromptContextAssembler {
       sessionId,
       enableThinking: snapshot.thinkingSettings.enabled,
       thinkingEffort: snapshot.thinkingSettings.effort,
-      temperature: snapshot.temperature
+      temperature: snapshot.temperature,
+      imageProvider: snapshot.imageProvider,
+      imageModel: snapshot.imageModel,
+      transcriptionProvider: snapshot.transcriptionProvider || undefined,
+      transcriptionModel: snapshot.transcriptionModel || undefined
     };
   }
 

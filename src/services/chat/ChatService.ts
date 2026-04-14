@@ -378,6 +378,11 @@ export class ChatService {
       excludeFromMessageId?: string;
       enableThinking?: boolean;
       thinkingEffort?: 'low' | 'medium' | 'high';
+      temperature?: number;
+      imageProvider?: 'google' | 'openrouter';
+      imageModel?: string;
+      transcriptionProvider?: string;
+      transcriptionModel?: string;
     }
   ): AsyncGenerator<ChatStreamingChunk, void, unknown> {
     // Store current provider and session for backward compatibility

@@ -71,6 +71,18 @@ export interface ToolContext {
 
   /** Optional rules/limits to follow (1-3 sentences) */
   constraints?: string;
+
+  /** Chat-scoped image provider preference for image tools */
+  imageProvider?: 'google' | 'openrouter';
+
+  /** Chat-scoped image model preference for image tools */
+  imageModel?: string;
+
+  /** Chat-scoped transcription provider preference for audio ingestion */
+  transcriptionProvider?: string;
+
+  /** Chat-scoped transcription model preference for audio ingestion */
+  transcriptionModel?: string;
 }
 
 /**

@@ -18,6 +18,10 @@ export interface ConversationSettingsMetadata {
   agentProvider?: string | null;
   agentModel?: string | null;
   agentThinking?: ThinkingSettings;
+  imageProvider?: 'google' | 'openrouter';
+  imageModel?: string;
+  transcriptionProvider?: string | null;
+  transcriptionModel?: string | null;
 }
 
 export interface ConversationMetadataWithCompaction {

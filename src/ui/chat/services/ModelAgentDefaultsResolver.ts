@@ -15,6 +15,8 @@ interface PluginWithSettings {
         defaultTemperature?: number;
         agentModel?: { provider: string; model: string };
         agentThinking?: ThinkingSettings;
+        defaultImageModel?: { provider: 'google' | 'openrouter'; model: string };
+        defaultTranscriptionModel?: { provider: string; model: string };
       };
       defaultWorkspaceId?: string;
       defaultPromptId?: string;
@@ -33,6 +35,10 @@ export interface ModelAgentDefaultState {
   agentProvider: string | null;
   agentModel: string | null;
   agentThinkingSettings: ThinkingSettings;
+  imageProvider: 'google' | 'openrouter';
+  imageModel: string;
+  transcriptionProvider: string | null;
+  transcriptionModel: string | null;
   temperature: number;
 }
 
@@ -92,6 +98,10 @@ export class ModelAgentDefaultsResolver {
       agentProvider: llmProviders?.agentModel?.provider || null,
       agentModel: llmProviders?.agentModel?.model || null,
       agentThinkingSettings,
+      imageProvider: llmProviders?.defaultImageModel?.provider || 'google',
+      imageModel: llmProviders?.defaultImageModel?.model || 'gemini-2.5-flash-image',
+      transcriptionProvider: llmProviders?.defaultTranscriptionModel?.provider || null,
+      transcriptionModel: llmProviders?.defaultTranscriptionModel?.model || null,
       temperature: llmProviders?.defaultTemperature ?? 0.5
     };
   }

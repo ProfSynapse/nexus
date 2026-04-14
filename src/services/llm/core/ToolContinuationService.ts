@@ -167,7 +167,14 @@ export class ToolContinuationService {
         mcpToolCalls,
         provider as SupportedProvider,
         generateOptions.onToolEvent,
-        { sessionId: options?.sessionId, workspaceId: options?.workspaceId }
+        {
+          sessionId: options?.sessionId,
+          workspaceId: options?.workspaceId,
+          imageProvider: options?.imageProvider,
+          imageModel: options?.imageModel,
+          transcriptionProvider: options?.transcriptionProvider,
+          transcriptionModel: options?.transcriptionModel
+        }
       );
 
       // Small delay to allow file system operations to complete (prevents race conditions)
@@ -378,7 +385,14 @@ export class ToolContinuationService {
         recursiveMcpToolCalls,
         provider as SupportedProvider,
         generateOptions.onToolEvent,
-        { sessionId: options?.sessionId, workspaceId: options?.workspaceId }
+        {
+          sessionId: options?.sessionId,
+          workspaceId: options?.workspaceId,
+          imageProvider: options?.imageProvider,
+          imageModel: options?.imageModel,
+          transcriptionProvider: options?.transcriptionProvider,
+          transcriptionModel: options?.transcriptionModel
+        }
       );
 
       // Small delay to allow file system operations to complete

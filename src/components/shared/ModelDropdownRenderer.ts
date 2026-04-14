@@ -35,7 +35,7 @@ const PROVIDER_NAMES: Record<string, string> = {
 export { PROVIDER_NAMES };
 
 export interface ModelDropdownConfig {
-  /** Section header text (e.g., "Chat Model", "Agent Model") */
+  /** Section header text (e.g., "Chat model", "Subagent model") */
   sectionTitle: string;
 
   /** Optional description text below the header */
