@@ -53,7 +53,6 @@ import {
   PluginScopedStorageState,
   PluginScopedStoragePlan
 } from '../migration/PluginScopedStorageCoordinator';
-import { appendMobileMarkdownLog } from '../migration/MobileMarkdownLogger';
 import { VaultRootMigrationService } from '../migration/VaultRootMigrationService';
 import {
   VaultRootRelocationService,
@@ -157,7 +156,6 @@ export class HybridStorageAdapter implements IStorageAdapter {
   private queryCache: QueryCache;
   private storageCoordinator: PluginScopedStorageCoordinator;
   private vaultEventStore: VaultEventStore | null = null;
-  private mobileLogPath?: string;
 
   // Repositories (composed)
   private workspaceRepo!: WorkspaceRepository;
@@ -292,11 +290,6 @@ export class HybridStorageAdapter implements IStorageAdapter {
 
       let storagePlan = await this.storageCoordinator.prepareStoragePlan();
       this.applyStoragePlan(storagePlan);
-      this.traceMobile('storage plan applied', {
-        activeRootPath: storagePlan.vaultWriteBasePath,
-        cacheDbPath: storagePlan.pluginCacheDbPath,
-        migrationState: storagePlan.state.migration.state
-      });
       storagePlan = await this.backfillVaultEventStore(storagePlan);
 
       // 1. Initialize SQLite cache
@@ -305,10 +298,8 @@ export class HybridStorageAdapter implements IStorageAdapter {
       const shouldBlockStartupHydration = await this.shouldBlockStartupHydration(storagePlan);
       if (shouldBlockStartupHydration) {
         this.startBlockingStartupHydration();
-        this.traceMobile('startup hydration blocking enabled');
       } else {
         this.clearStartupHydrationState();
-        this.traceMobile('startup hydration blocking not needed');
       }
 
       // 2. Ensure JSONL directories exist
@@ -329,89 +320,50 @@ export class HybridStorageAdapter implements IStorageAdapter {
       const syncState = await this.sqliteCache.getSyncState(this.jsonlWriter.getDeviceId());
       if (!syncState || actuallyMigrated || shouldBlockStartupHydration) {
         try {
-          this.traceMobile('full rebuild starting', {
-            reason: !syncState ? 'missing-sync-state' : actuallyMigrated ? 'legacy-migrated' : 'blocking-hydration'
-          });
-          let lastStage = '';
           await this.syncCoordinator.fullRebuild({
             onProgress: (stage, progress, total) => {
-              if (stage !== lastStage) {
-                lastStage = stage;
-                this.traceMobile('full rebuild stage', { stage, progress, total });
-              }
               this.updateStartupHydrationProgress(stage, progress, total, shouldBlockStartupHydration);
             }
           });
-          this.traceMobile('full rebuild complete');
         } catch (rebuildError) {
           console.error('[HybridStorageAdapter] Full rebuild failed:', rebuildError);
-          this.traceMobile('full rebuild failed', {
-            message: rebuildError instanceof Error ? rebuildError.message : String(rebuildError)
-          });
           this.failStartupHydration(rebuildError instanceof Error ? rebuildError.message : String(rebuildError));
         }
       } else {
         try {
-          this.traceMobile('incremental sync starting');
-          const syncResult = await this.syncCoordinator.sync();
-          this.traceMobile('incremental sync complete', {
-            success: syncResult.success,
-            eventsApplied: syncResult.eventsApplied,
-            eventsSkipped: syncResult.eventsSkipped,
-            filesProcessed: syncResult.filesProcessed.length,
-            errors: syncResult.errors
-          });
+          await this.syncCoordinator.sync();
         } catch (syncError) {
           console.error('[HybridStorageAdapter] Incremental sync failed:', syncError);
-          this.traceMobile('incremental sync failed', {
-            message: syncError instanceof Error ? syncError.message : String(syncError)
-          });
         }
 
         // 5. Reconcile JSONL workspaces missing from SQLite
         try {
-          const reconciled = await this.reconcileMissingWorkspaces();
-          this.traceMobile('workspace reconciliation complete', { reconciled });
+          await this.reconcileMissingWorkspaces();
         } catch (reconcileError) {
           console.error('[HybridStorageAdapter] Workspace reconciliation failed:', reconcileError);
-          this.traceMobile('workspace reconciliation failed', {
-            message: reconcileError instanceof Error ? reconcileError.message : String(reconcileError)
-          });
         }
 
         // 6. Reconcile JSONL conversations missing from SQLite
         try {
-          const reconciled = await this.reconcileMissingConversations();
-          this.traceMobile('conversation reconciliation complete', { reconciled });
+          await this.reconcileMissingConversations();
         } catch (reconcileError) {
           console.error('[HybridStorageAdapter] Conversation reconciliation failed:', reconcileError);
-          this.traceMobile('conversation reconciliation failed', {
-            message: reconcileError instanceof Error ? reconcileError.message : String(reconcileError)
-          });
         }
 
         // 7. Reconcile JSONL tasks missing from SQLite
         try {
-          const reconciled = await this.reconcileMissingTasks();
-          this.traceMobile('task reconciliation complete', { reconciled });
+          await this.reconcileMissingTasks();
         } catch (reconcileError) {
           console.error('[HybridStorageAdapter] Task reconciliation failed:', reconcileError);
-          this.traceMobile('task reconciliation failed', {
-            message: reconcileError instanceof Error ? reconcileError.message : String(reconcileError)
-          });
         }
       }
 
       if (shouldBlockStartupHydration && this.startupHydrationState.phase !== 'error') {
         this.completeStartupHydration();
-        this.traceMobile('startup hydration complete');
       }
 
     } catch (error) {
       console.error('[HybridStorageAdapter] Initialization failed:', error);
-      this.traceMobile('storage initialization failed', {
-        message: error instanceof Error ? error.message : String(error)
-      });
       this.initError = error as Error;
       if (this.initResolve) {
         this.initResolve(); // Resolve even on error so waiters don't hang
@@ -422,7 +374,6 @@ export class HybridStorageAdapter implements IStorageAdapter {
 
   private applyStoragePlan(plan: PluginScopedStoragePlan): void {
     this.basePath = plan.vaultWriteBasePath;
-    this.mobileLogPath = plan.mobileLogPath;
     this.vaultEventStore = new VaultEventStore({
       app: this.app,
       resolution: plan.vaultRoot
@@ -441,29 +392,13 @@ export class HybridStorageAdapter implements IStorageAdapter {
       return plan;
     }
 
-    this.traceMobile('backfill start', {
-      reportRoot: plan.vaultWriteBasePath,
-      legacyRootsDetected: plan.state.migration.legacySourcesDetected
-    });
-
     try {
       const migrationService = new VaultRootMigrationService({
         app: this.app,
         vaultEventStore: this.vaultEventStore,
-        legacyRoots: plan.legacyReadBasePaths,
-        mobileLogPath: plan.mobileLogPath
+        legacyRoots: plan.legacyReadBasePaths
       });
       const result = await migrationService.backfillLegacyRoots();
-      this.traceMobile('backfill finished', {
-        needed: result.needed,
-        success: result.success,
-        verified: result.verified,
-        message: result.message,
-        filesScanned: result.filesScanned,
-        filesProcessed: result.filesProcessed,
-        eventsCopied: result.eventsCopied,
-        eventsSkipped: result.eventsSkipped
-      });
 
       if (result.success && result.verified) {
         const nextState = await this.storageCoordinator.persistMigrationState(plan, 'verified', {
@@ -488,7 +423,6 @@ export class HybridStorageAdapter implements IStorageAdapter {
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.traceMobile('backfill exception', { message });
       const nextState = await this.storageCoordinator.persistMigrationState(plan, 'failed', {
         completedAt: Date.now(),
         lastError: message
@@ -498,10 +432,6 @@ export class HybridStorageAdapter implements IStorageAdapter {
         state: nextState
       };
     }
-  }
-
-  private traceMobile(message: string, details?: unknown): void {
-    appendMobileMarkdownLog(this.app, this.mobileLogPath, message, details);
   }
 
   private async shouldBlockStartupHydration(plan: PluginScopedStoragePlan): Promise<boolean> {
@@ -860,44 +790,25 @@ export class HybridStorageAdapter implements IStorageAdapter {
 
   async sync(): Promise<SyncResult> {
     try {
-      this.traceMobile('manual sync starting');
       const result = await this.syncCoordinator.sync();
 
       try {
-        const [workspaces, conversations, tasks] = await Promise.all([
+        await Promise.all([
           this.reconcileMissingWorkspaces(),
           this.reconcileMissingConversations(),
           this.reconcileMissingTasks()
         ]);
-        this.traceMobile('manual sync reconciliation complete', {
-          workspaces,
-          conversations,
-          tasks
-        });
       } catch (reconcileError) {
         console.error('[HybridStorageAdapter] Post-sync reconciliation failed:', reconcileError);
-        this.traceMobile('manual sync reconciliation failed', {
-          message: reconcileError instanceof Error ? reconcileError.message : String(reconcileError)
-        });
       }
 
       // Invalidate all query cache on sync
       this.queryCache.clear();
-      this.traceMobile('manual sync complete', {
-        success: result.success,
-        eventsApplied: result.eventsApplied,
-        eventsSkipped: result.eventsSkipped,
-        filesProcessed: result.filesProcessed.length,
-        errors: result.errors
-      });
 
       return result;
 
     } catch (error) {
       console.error('[HybridStorageAdapter] Sync failed:', error);
-      this.traceMobile('manual sync failed', {
-        message: error instanceof Error ? error.message : String(error)
-      });
       throw error;
     }
   }
@@ -960,13 +871,6 @@ export class HybridStorageAdapter implements IStorageAdapter {
     this.jsonlWriter.setVaultEventStore(this.vaultEventStore);
     this.jsonlWriter.setVaultEventStoreReadEnabled(true);
     this.queryCache.clear();
-
-    this.traceMobile('vault root relocated', {
-      sourceRootPath: result.sourceRootPath,
-      destinationRootPath: result.destinationRootPath,
-      copiedEventCount: result.copiedEventCount,
-      skippedEventCount: result.skippedEventCount
-    });
 
     return { ...result, switched: true };
   }
