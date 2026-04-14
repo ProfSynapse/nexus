@@ -68,8 +68,9 @@ body.theme-light {
 /* Chat layout gradient: light version uses soft tints instead of dark */
 body.theme-light .chat-layout {
     background:
-        radial-gradient(ellipse at 80% 10%, rgba(var(--interactive-accent-rgb), 0.08) 0%, transparent 55%),
-        radial-gradient(ellipse at 15% 90%, rgba(var(--interactive-accent-rgb), 0.06) 0%, transparent 55%),
+        radial-gradient(ellipse at 80% 10%, rgba(var(--interactive-accent-rgb), 0.20) 0%, transparent 55%),
+        radial-gradient(ellipse at 15% 90%, rgba(var(--interactive-accent-rgb), 0.12) 0%, transparent 55%),
+        radial-gradient(ellipse at 50% 50%, rgba(var(--interactive-accent-rgb), 0.06) 0%, transparent 70%),
         var(--background-primary) !important;
 }
 
@@ -171,9 +172,9 @@ body.theme-light .message-content {
     position: relative;
     overflow: hidden;
     background:
-        radial-gradient(ellipse at 80% 10%, rgba(var(--interactive-accent-rgb), 0.15) 0%, transparent 55%),
-        radial-gradient(ellipse at 15% 90%, rgba(var(--interactive-accent-rgb), 0.10) 0%, transparent 55%),
-        radial-gradient(ellipse at 50% 50%, rgba(var(--interactive-accent-rgb), 0.05) 0%, transparent 70%),
+        radial-gradient(ellipse at 80% 10%, rgba(var(--interactive-accent-rgb), 0.45) 0%, transparent 55%),
+        radial-gradient(ellipse at 15% 90%, rgba(var(--interactive-accent-rgb), 0.30) 0%, transparent 55%),
+        radial-gradient(ellipse at 50% 50%, rgba(var(--interactive-accent-rgb), 0.15) 0%, transparent 70%),
         var(--background-primary) !important;
 }
 
