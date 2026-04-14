@@ -1,5 +1,5 @@
-import { Component, Debouncer, debounce } from 'obsidian';
-import { ToolStatusBar, ToolStatusEntry } from '../components/ToolStatusBar';
+import { Component } from 'obsidian';
+import { ToolStatusBar } from '../components/ToolStatusBar';
 import { formatToolStepLabel } from '../utils/toolDisplayFormatter';
 import type { StreamingController } from './StreamingController';
 import type { ToolDisplayStatus, ToolDisplayStep } from '../utils/toolDisplayNormalizer';
@@ -69,7 +69,6 @@ function toStep(data: ToolStatusEventData, status: ToolDisplayStatus): Partial<T
 };
 
 export class ToolStatusBarController {
-  private pushStatusDebounced: Debouncer<[ToolStatusEntry], void>;
   private isDisposed = false;
 
   constructor(
@@ -77,18 +76,8 @@ export class ToolStatusBarController {
     private streamingController: StreamingController,
     component: Component
   ) {
-    // Phase 3 requirement: 400ms debounce
-    this.pushStatusDebounced = debounce((entry: ToolStatusEntry) => {
-      if (this.isDisposed) return;
-      this.toolStatusBar.pushStatus(entry);
-    }, 400, true);
-
-    // Ensure debounced pushStatus is cancelled when the owning Component
-    // tears down, so a pending trailing call cannot fire against a detached
-    // status bar after ChatView closes.
     component.register(() => {
       this.isDisposed = true;
-      this.pushStatusDebounced.cancel();
     });
   }
 
@@ -97,9 +86,13 @@ export class ToolStatusBarController {
    */
   handleToolEvent(messageId: string, event: 'detected' | 'updated' | 'started' | 'completed', data: ToolStatusEventData): void {
     if (this.isDisposed) return;
-    // Phase 3 requirement: filter events to the current streaming turn
+    // Filter events to the current streaming turn.
+    // Allow 'completed' events through even if the streaming messageId has
+    // been cleared by finalizeStreaming() — they are terminal, per-execution
+    // events with no stale-data risk, and dropping them prevents the status
+    // bar from ever showing past-tense ("Opened note") labels.
     if (messageId !== this.streamingController.getCurrentMessageId()) {
-      return;
+      if (event !== 'completed') return;
     }
 
     let statusType: ToolDisplayStatus = 'executing';
@@ -122,11 +115,9 @@ export class ToolStatusBarController {
       return;
     }
 
-    // Apply debounce function
-    this.pushStatusDebounced({
-      text,
-      state: tense
-    });
+    // Push directly — tool events are low-frequency (handful per message).
+    // ToolStatusLine.update() provides its own 400ms visual throttle.
+    this.toolStatusBar.pushStatus({ text, state: tense });
   }
 
   getStatusBar(): ToolStatusBar {

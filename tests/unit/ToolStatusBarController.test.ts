@@ -2,15 +2,11 @@
  * ToolStatusBarController unit tests
  *
  * Plan-critical coverage:
- *   1. Events from a NON-current messageId (subagent turns) MUST NOT reach the bar
- *   2. Leading-edge 400ms debounce fires immediately on the first call
+ *   1. Non-completed events from a NON-current messageId are dropped (subagent filter)
+ *   2. Completed events pass through even when messageId is null/mismatched (post-finalize)
  *   3. Tense mapping: completed+success → past, completed+failure → failed, else → present
- *   4. Component.register wires a cleanup that cancels pending debounced calls
- *
- * Constraints:
- *   - No jest.useFakeTimers()
- *   - Uses the real debounce mock from tests/mocks/obsidian (leading-edge faithful)
- *   - Real setTimeout waits on a known-short interval (≤ 50ms) to verify suppression
+ *   4. All batch tool events reach the bar synchronously (no debounce coalescing)
+ *   5. Component.register wires a cleanup that blocks all events after disposal
  */
 
 import { Component } from 'obsidian';
@@ -27,11 +23,6 @@ function makeBar(): MockStatusBar {
 
 function makeStreaming(currentId: string | null): MockStreaming {
   return { getCurrentMessageId: jest.fn(() => currentId) };
-}
-
-/** Sleep via real setTimeout — no fake timers. */
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 describe('ToolStatusBarController — subagent filter (PLAN CRITICAL)', () => {
@@ -82,7 +73,7 @@ describe('ToolStatusBarController — subagent filter (PLAN CRITICAL)', () => {
     expect(entry.text.length).toBeGreaterThan(0);
   });
 
-  it('drops events when streamingController returns null (no active stream)', () => {
+  it('drops non-completed events when streamingController returns null (no active stream)', () => {
     const bar = makeBar();
     const streaming = makeStreaming(null);
     const component = new Component();
@@ -99,6 +90,50 @@ describe('ToolStatusBarController — subagent filter (PLAN CRITICAL)', () => {
     });
 
     expect(bar.pushStatus).not.toHaveBeenCalled();
+  });
+
+  it('allows completed events through when streamingController returns null (post-finalize)', () => {
+    const bar = makeBar();
+    const streaming = makeStreaming(null);
+    const component = new Component();
+    const controller = new ToolStatusBarController(
+      bar as unknown as ToolStatusBar,
+      streaming as unknown as StreamingController,
+      component
+    );
+
+    controller.handleToolEvent('msg-any', 'completed', {
+      name: 'read',
+      technicalName: 'contentManager_read',
+      parameters: { filePath: 'a.md' },
+      success: true,
+      result: { ok: true },
+    });
+
+    expect(bar.pushStatus).toHaveBeenCalledTimes(1);
+    const entry = bar.pushStatus.mock.calls[0][0] as ToolStatusEntry;
+    expect(entry.state).toBe('past');
+  });
+
+  it('allows completed events through when messageId mismatches (post-finalize)', () => {
+    const bar = makeBar();
+    const streaming = makeStreaming('msg-old');
+    const component = new Component();
+    const controller = new ToolStatusBarController(
+      bar as unknown as ToolStatusBar,
+      streaming as unknown as StreamingController,
+      component
+    );
+
+    controller.handleToolEvent('msg-current', 'completed', {
+      name: 'read',
+      technicalName: 'contentManager_read',
+      parameters: { filePath: 'a.md' },
+      success: true,
+    });
+
+    expect(bar.pushStatus).toHaveBeenCalledTimes(1);
+    expect((bar.pushStatus.mock.calls[0][0] as ToolStatusEntry).state).toBe('past');
   });
 });
 
@@ -194,8 +229,8 @@ describe('ToolStatusBarController — tense mapping', () => {
   });
 });
 
-describe('ToolStatusBarController — 400ms leading-edge debounce', () => {
-  it('fires the first call immediately (leading edge)', () => {
+describe('ToolStatusBarController — batch tool events (no debounce)', () => {
+  it('pushes each event synchronously to the status bar', () => {
     const bar = makeBar();
     const component = new Component();
     const controller = new ToolStatusBarController(
@@ -210,11 +245,10 @@ describe('ToolStatusBarController — 400ms leading-edge debounce', () => {
       parameters: { filePath: 'a.md' },
     });
 
-    // Leading-edge: first call fires synchronously via debounce
     expect(bar.pushStatus).toHaveBeenCalledTimes(1);
   });
 
-  it('suppresses follow-up calls within the 400ms window', async () => {
+  it('forwards all rapid-fire events (no coalescing)', () => {
     const bar = makeBar();
     const component = new Component();
     const controller = new ToolStatusBarController(
@@ -223,31 +257,24 @@ describe('ToolStatusBarController — 400ms leading-edge debounce', () => {
       component
     );
 
-    // Fire three events in rapid succession (well under 400ms)
-    controller.handleToolEvent('m1', 'started', {
+    // Fire three events in rapid succession — all should reach the bar
+    controller.handleToolEvent('m1', 'detected', {
       name: 'read',
       technicalName: 'contentManager_read',
       parameters: { filePath: 'a.md' },
     });
-    controller.handleToolEvent('m1', 'started', {
-      name: 'read',
-      technicalName: 'contentManager_read',
+    controller.handleToolEvent('m1', 'detected', {
+      name: 'write',
+      technicalName: 'contentManager_write',
       parameters: { filePath: 'b.md' },
     });
-    controller.handleToolEvent('m1', 'started', {
-      name: 'read',
-      technicalName: 'contentManager_read',
-      parameters: { filePath: 'c.md' },
+    controller.handleToolEvent('m1', 'detected', {
+      name: 'list',
+      technicalName: 'storageManager_list',
+      parameters: { folderPath: '/' },
     });
 
-    // Only the leading-edge call should be observed immediately.
-    expect(bar.pushStatus).toHaveBeenCalledTimes(1);
-
-    // Give the trailing timeout a chance to fire the latest queued call.
-    await sleep(450);
-
-    // After the window expires, the trailing call for 'c.md' should have fired.
-    expect(bar.pushStatus.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(bar.pushStatus).toHaveBeenCalledTimes(3);
   });
 });
 
@@ -282,7 +309,7 @@ describe('ToolStatusBarController — disposal via Component.register', () => {
     expect(bar.pushStatus).toHaveBeenCalledTimes(1);
   });
 
-  it('cancels pending trailing debounced calls on component unload', async () => {
+  it('drops completed events after component unload (isDisposed guard)', () => {
     const bar = makeBar();
     const component = new Component();
     const controller = new ToolStatusBarController(
@@ -291,29 +318,23 @@ describe('ToolStatusBarController — disposal via Component.register', () => {
       component
     );
 
-    // Burn the leading call, then queue a trailing call
     controller.handleToolEvent('m1', 'started', {
       name: 'read',
       technicalName: 'contentManager_read',
       parameters: { filePath: 'a.md' },
     });
-    controller.handleToolEvent('m1', 'started', {
-      name: 'read',
-      technicalName: 'contentManager_read',
-      parameters: { filePath: 'b.md' },
-    });
-
     expect(bar.pushStatus).toHaveBeenCalledTimes(1);
 
-    // Unload BEFORE the trailing timeout fires (400ms window)
     component.unload();
 
-    // Wait past the window — the trailing fire, if it wasn't cancelled,
-    // would reach the isDisposed guard and be blocked anyway.
-    await sleep(500);
+    // Even completed events should be blocked after disposal
+    controller.handleToolEvent('m1', 'completed', {
+      name: 'read',
+      technicalName: 'contentManager_read',
+      parameters: { filePath: 'a.md' },
+      success: true,
+    });
 
-    // Either the cancel worked OR the isDisposed guard tripped;
-    // either way, no SECOND pushStatus should reach the bar.
     expect(bar.pushStatus).toHaveBeenCalledTimes(1);
   });
 });
