@@ -1,4 +1,5 @@
 import { ConversationData } from '../../types/chat/ChatTypes';
+import { ContextCompactionService } from './ContextCompactionService';
 
 export interface NormalizedTokenUsage {
   promptTokens: number;
@@ -210,24 +211,9 @@ export class ContextBudgetService {
    * If no boundary exists, returns all messages.
    */
   private static getMessagesAfterCompactionBoundary(conversation: ConversationData): ConversationData['messages'] {
-    const metadata = conversation.metadata as Record<string, unknown> | undefined;
-    const compaction = metadata?.compaction as { frontier?: Array<{ boundaryMessageId?: string }> } | undefined;
-    const frontier = compaction?.frontier;
-    if (!frontier || frontier.length === 0) {
-      return conversation.messages;
-    }
-
-    const latestRecord = frontier[frontier.length - 1];
-    const boundaryId = latestRecord?.boundaryMessageId;
-    if (!boundaryId) {
-      return conversation.messages;
-    }
-
-    const boundaryIndex = conversation.messages.findIndex(m => m.id === boundaryId);
-    if (boundaryIndex <= 0) {
-      return conversation.messages;
-    }
-
-    return conversation.messages.slice(boundaryIndex);
+    return ContextCompactionService.getMessagesAfterBoundary(
+      conversation.messages,
+      conversation.metadata
+    );
   }
 }

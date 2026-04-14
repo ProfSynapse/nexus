@@ -53,6 +53,92 @@ body.theme-light .chat-textarea {
     border-color: rgba(0, 0, 0, 0.08);
 }
 
+/* ======================================== */
+/* LIGHT THEME OVERRIDES — Glass Material   */
+/* ======================================== */
+
+/* Glass tokens: lighten fills, darken strokes for light backgrounds */
+body.theme-light {
+    --glass-fill: rgba(255, 255, 255, 0.55);
+    --glass-fill-strong: rgba(255, 255, 255, 0.72);
+    --glass-stroke: rgba(0, 0, 0, 0.08);
+    --glass-highlight: rgba(255, 255, 255, 0.6);
+    --glass-rim: rgba(0, 0, 0, 0.04);
+    --glass-shadow: 0 24px 60px rgba(0, 0, 0, 0.12);
+}
+
+/* Chat layout gradient: light version uses soft tints instead of dark */
+body.theme-light .chat-layout {
+    background:
+        radial-gradient(ellipse at 80% 10%, rgba(var(--interactive-accent-rgb), 0.08) 0%, transparent 55%),
+        radial-gradient(ellipse at 15% 90%, rgba(var(--interactive-accent-rgb), 0.06) 0%, transparent 55%),
+        var(--background-primary) !important;
+}
+
+/* User bubble: light accent tint */
+body.theme-light .message-container.message-user .message-bubble {
+    background: rgba(var(--interactive-accent-rgb), 0.12);
+    border-color: rgba(0, 0, 0, 0.06);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.5),
+        0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+/* Input field */
+body.theme-light .chat-textarea {
+    background: rgba(255, 255, 255, 0.5);
+    border-color: rgba(0, 0, 0, 0.1);
+    color: var(--text-normal);
+}
+
+/* Send button */
+body.theme-light .chat-send-button {
+    background: rgba(var(--interactive-accent-rgb), 0.15);
+    border-color: rgba(0, 0, 0, 0.08);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+body.theme-light .chat-send-button:hover:not(:disabled) {
+    background: rgba(var(--interactive-accent-rgb), 0.25);
+}
+
+/* Welcome elements */
+body.theme-light .chat-welcome-hotkeys-container {
+    background: rgba(var(--interactive-accent-rgb), 0.08);
+    border-color: rgba(0, 0, 0, 0.06);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.5),
+        0 4px 12px rgba(0, 0, 0, 0.06);
+}
+
+body.theme-light .chat-welcome-button.mod-cta {
+    background: rgba(var(--interactive-accent-rgb), 0.12);
+    border-color: rgba(0, 0, 0, 0.08);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
+
+/* Header and input container glass surfaces */
+body.theme-light .chat-header {
+    background: var(--glass-fill);
+    border-bottom-color: var(--glass-stroke);
+}
+
+body.theme-light .chat-input-container {
+    background: var(--glass-fill);
+    border-top-color: var(--glass-stroke);
+}
+
+/* Sidebar */
+body.theme-light .chat-sidebar {
+    background: var(--background-secondary);
+    border-right-color: rgba(0, 0, 0, 0.08);
+}
+
+/* Message content readability */
+body.theme-light .message-content {
+    color: var(--text-normal);
+}
+
 /* =========================== */
 /* NATIVE CHATBOT STYLES      */
 /* =========================== */
@@ -1193,74 +1279,6 @@ body.theme-light .chat-textarea {
     content: attr(data-placeholder);
     color: var(--text-muted);
     pointer-events: none;
-}
-
-.chat-voice-visual {
-    display: none;
-    width: 100%;
-    min-height: 60px;
-    max-height: 146px;
-    padding: 0 55px 0 13px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 11px;
-    background: rgba(0, 0, 0, 0.2);
-    box-shadow: none;
-    align-items: center;
-    gap: 4px;
-    overflow: hidden;
-    box-sizing: border-box;
-}
-
-.chat-input-wrapper.chat-input-voice-recording .chat-textarea {
-    display: none;
-}
-
-.chat-input-wrapper.chat-input-voice-recording .chat-voice-visual {
-    display: flex;
-}
-
-.chat-input-wrapper.chat-input-voice-transcribing .chat-voice-visual {
-    opacity: 0.85;
-}
-
-.chat-voice-bar {
-    flex: 0 0 auto;
-    width: 3px;
-    border-radius: 999px;
-    background: var(--interactive-accent);
-    opacity: 0.9;
-    animation: chat-voice-pulse 920ms ease-in-out infinite;
-    transform-origin: center;
-}
-
-.chat-voice-bar-phase-0 { height: 10px; }
-.chat-voice-bar-phase-1 { height: 14px; }
-.chat-voice-bar-phase-2 { height: 20px; }
-.chat-voice-bar-phase-3 { height: 28px; }
-.chat-voice-bar-phase-4 { height: 18px; }
-.chat-voice-bar-phase-5 { height: 24px; }
-.chat-voice-bar-phase-6 { height: 16px; }
-.chat-voice-bar-phase-7 { height: 12px; }
-
-.chat-voice-bar-delay-0 { animation-delay: 0ms; }
-.chat-voice-bar-delay-1 { animation-delay: 55ms; }
-.chat-voice-bar-delay-2 { animation-delay: 110ms; }
-.chat-voice-bar-delay-3 { animation-delay: 165ms; }
-.chat-voice-bar-delay-4 { animation-delay: 220ms; }
-.chat-voice-bar-delay-5 { animation-delay: 275ms; }
-.chat-voice-bar-delay-6 { animation-delay: 330ms; }
-.chat-voice-bar-delay-7 { animation-delay: 385ms; }
-
-@keyframes chat-voice-pulse {
-    0%, 100% {
-        transform: scaleY(0.65);
-        opacity: 0.45;
-    }
-
-    50% {
-        transform: scaleY(1.08);
-        opacity: 1;
-    }
 }
 
 /* Reference badges in contenteditable */
@@ -5709,12 +5727,6 @@ body.is-mobile .chat-textarea {
     padding: 12px 52px 12px 14px; /* More room for send button */
 }
 
-body.is-mobile .chat-voice-visual {
-    min-height: 64px;
-    max-height: 160px;
-    padding: 0 52px 0 14px;
-}
-
 /* ------------------------------ */
 /* MESSAGE CONTAINER ADJUSTMENTS  */
 /* ------------------------------ */
@@ -7691,24 +7703,46 @@ body.is-mobile .nexus-task-board-shell {
   color: var(--text-muted);
 }
 
-.tool-status-text-active,
-.tool-status-text-done,
+.tool-status-text-present,
+.tool-status-text-past,
 .tool-status-text-failed {
   position: absolute;
   inset: 0;
   display: flex;
   align-items: center;
-  transition: transform 0.2s, opacity 0.2s;
+  transition: transform 0.2s ease-out, opacity 0.2s ease-out;
 }
 
-/* Shimmer animation for active status */
-.tool-status-text-active {
+/* Slot-machine animation states */
+.tool-status-text-present.entering,
+.tool-status-text-past.entering,
+.tool-status-text-failed.entering {
+  transform: translateY(100%);
+  opacity: 0;
+}
+
+.tool-status-text-present.active,
+.tool-status-text-past.active,
+.tool-status-text-failed.active {
+  transform: translateY(0);
+  opacity: 1;
+}
+
+.tool-status-text-present.exiting,
+.tool-status-text-past.exiting,
+.tool-status-text-failed.exiting {
+  transform: translateY(-100%);
+  opacity: 0;
+}
+
+/* Shimmer animation for active/present status */
+.tool-status-text-present {
   background: linear-gradient(
-    90deg, 
-    var(--text-muted) 0%, 
-    var(--text-muted) 40%, 
-    var(--text-normal) 50%, 
-    var(--text-muted) 60%, 
+    90deg,
+    var(--text-muted) 0%,
+    var(--text-muted) 40%,
+    var(--text-normal) 50%,
+    var(--text-muted) 60%,
     var(--text-muted) 100%
   );
   background-size: 200% 100%;
@@ -7754,11 +7788,20 @@ body.is-mobile .nexus-task-board-shell {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .tool-status-text-active {
+  .tool-status-text-present {
     animation: none;
     -webkit-text-fill-color: initial;
     background: none;
     color: var(--text-normal);
+  }
+
+  .tool-status-text-present.entering,
+  .tool-status-text-past.entering,
+  .tool-status-text-failed.entering,
+  .tool-status-text-present.exiting,
+  .tool-status-text-past.exiting,
+  .tool-status-text-failed.exiting {
+    transition: none;
   }
 
   /* Context badge at 100% threshold has an infinite pulse animation — disable

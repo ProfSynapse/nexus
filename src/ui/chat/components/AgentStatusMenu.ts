@@ -74,6 +74,8 @@ export class AgentStatusMenu {
   private eventRef: ReturnType<Events['on']> | null = null;
   private hasShownSuccess = false; // Track if green state was shown
   private isShowingSpinner = false; // Track current icon state
+  private manualClickHandler: (() => void) | null = null;
+  private manualClickTarget: HTMLElement | null = null;
 
   constructor(
     private container: HTMLElement,
@@ -108,16 +110,16 @@ export class AgentStatusMenu {
     this.badgeEl = badge;
 
     // Click handler - clears success state when modal opens
+    const clickHandler = () => {
+      this.clearSuccessState();
+      this.callbacks.onOpenModal();
+    };
     if (this.component) {
-      this.component.registerDomEvent(button, 'click', () => {
-        this.clearSuccessState();
-        this.callbacks.onOpenModal();
-      });
+      this.component.registerDomEvent(button, 'click', clickHandler);
     } else {
-      button.addEventListener('click', () => {
-        this.clearSuccessState();
-        this.callbacks.onOpenModal();
-      });
+      this.manualClickHandler = clickHandler;
+      this.manualClickTarget = button;
+      button.addEventListener('click', clickHandler);
     }
 
     this.element = button;
@@ -247,6 +249,13 @@ export class AgentStatusMenu {
     if (this.eventRef) {
       getSubagentEventBus().offref(this.eventRef);
       this.eventRef = null;
+    }
+
+    // Remove manually attached click handler if component was not provided
+    if (this.manualClickHandler && this.manualClickTarget) {
+      this.manualClickTarget.removeEventListener('click', this.manualClickHandler);
+      this.manualClickHandler = null;
+      this.manualClickTarget = null;
     }
 
     this.element?.remove();

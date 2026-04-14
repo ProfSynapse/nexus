@@ -25,6 +25,7 @@ import { CostTrackingService } from './CostTrackingService';
 import type { MessageQueueService } from './MessageQueueService';
 import { ContextBudgetService, type NormalizedTokenUsage } from './ContextBudgetService';
 import { shouldPassToolSchemasToProvider } from '../llm/utils/ToolSchemaSupport';
+import { ContextCompactionService } from './ContextCompactionService';
 
 export interface StreamingOptions {
   provider?: string;
@@ -419,28 +420,18 @@ export class StreamingResponseService {
    * the boundary are summarized in the compaction frontier (system prompt).
    */
   private applyCompactionBoundary(conversation: ConversationData): ConversationData {
-    const metadata = conversation.metadata as Record<string, unknown> | undefined;
-    const compaction = metadata?.compaction as { frontier?: Array<{ boundaryMessageId?: string }> } | undefined;
-    const frontier = compaction?.frontier;
-    if (!frontier || frontier.length === 0) {
-      return conversation;
-    }
+    const filtered = ContextCompactionService.getMessagesAfterBoundary(
+      conversation.messages,
+      conversation.metadata
+    );
 
-    // Use the latest frontier record's boundary
-    const latestRecord = frontier[frontier.length - 1];
-    const boundaryId = latestRecord?.boundaryMessageId;
-    if (!boundaryId) {
-      return conversation;
-    }
-
-    const boundaryIndex = conversation.messages.findIndex(m => m.id === boundaryId);
-    if (boundaryIndex <= 0) {
+    if (filtered === conversation.messages) {
       return conversation;
     }
 
     return {
       ...conversation,
-      messages: conversation.messages.slice(boundaryIndex),
+      messages: filtered,
     };
   }
 

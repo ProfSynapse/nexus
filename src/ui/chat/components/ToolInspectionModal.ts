@@ -1,4 +1,4 @@
-import { App, Modal } from 'obsidian';
+import { App, Component, Modal } from 'obsidian';
 import type { ChatMessage, ToolCall } from '../../../types/chat/ChatTypes';
 import type { PaginatedResult } from '../../../types/pagination/PaginationTypes';
 import { formatToolStepLabel } from '../utils/toolDisplayFormatter';
@@ -44,12 +44,14 @@ export class ToolInspectionModal extends Modal {
   private isLoading = false;
   private isDisposed = false;
   private scrollHandler: (() => void) | null = null;
+  private readonly cleanupComponent: Component | null;
 
-  constructor(app: App, options: ToolInspectionModalOptions) {
+  constructor(app: App, options: ToolInspectionModalOptions, component?: Component) {
     super(app);
     this.conversationId = options.conversationId;
     this.historySource = options.historySource;
     this.pageSize = options.pageSize ?? DEFAULT_PAGE_SIZE;
+    this.cleanupComponent = component ?? null;
   }
 
   onOpen(): void {
@@ -71,7 +73,11 @@ export class ToolInspectionModal extends Modal {
         void this.loadPreviousPage();
       }
     };
-    this.scrollEl.addEventListener('scroll', this.scrollHandler);
+    if (this.cleanupComponent) {
+      this.cleanupComponent.registerDomEvent(this.scrollEl, 'scroll', this.scrollHandler);
+    } else {
+      this.scrollEl.addEventListener('scroll', this.scrollHandler);
+    }
 
     this.setLoadingState(true, 'Loading tool history...');
     void this.loadInitialPages();
@@ -79,10 +85,10 @@ export class ToolInspectionModal extends Modal {
 
   onClose(): void {
     this.isDisposed = true;
-    if (this.scrollHandler && this.scrollEl) {
+    if (this.scrollHandler && this.scrollEl && !this.cleanupComponent) {
       this.scrollEl.removeEventListener('scroll', this.scrollHandler);
-      this.scrollHandler = null;
     }
+    this.scrollHandler = null;
     this.modalEl.removeClass('tool-inspection-modal');
     this.contentEl.empty();
   }

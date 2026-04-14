@@ -15,6 +15,8 @@ export class ThinkingLoader extends Component {
     this.stop();
 
     this.container = parent.createDiv('thinking-loader');
+    this.container.setAttribute('role', 'status');
+    this.container.setAttribute('aria-live', 'polite');
     this.iconElement = this.container.createDiv('thinking-loader-icon');
     this.wordElement = this.container.createDiv('thinking-loader-text');
 
@@ -57,6 +59,14 @@ export class ThinkingLoader extends Component {
     this.registerInterval(this.cycleInterval);
   }
 
+  private prefersReducedMotion(): boolean {
+    try {
+      return window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches ?? false;
+    } catch {
+      return false;
+    }
+  }
+
   private renderCurrentWord(): void {
     if (!this.wordElement || this.isDisposed) return;
 
@@ -68,6 +78,12 @@ export class ThinkingLoader extends Component {
     const entry = THINKING_WORDS[this.currentWordIndex];
     const text = entry.word;
     this.updateIcon(entry.icon);
+
+    if (this.prefersReducedMotion()) {
+      this.wordElement.textContent = text + '...';
+      return;
+    }
+
     this.wordElement.textContent = '';
     let charIndex = 0;
 

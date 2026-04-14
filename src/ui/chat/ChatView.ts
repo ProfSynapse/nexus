@@ -852,7 +852,7 @@ export class ChatView extends ItemView {
         getToolCallMessagesForConversation: (conversationId, options) =>
           this.chatService.getToolCallMessagesForConversation(conversationId, options),
       },
-    }).open();
+    }, this).open();
   }
 
   private async ensurePreservationServiceAndCompact(): Promise<void> {

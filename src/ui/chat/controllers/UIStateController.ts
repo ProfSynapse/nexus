@@ -11,6 +11,7 @@ export interface UIStateControllerEvents {
 export class UIStateController {
   private sidebarVisible = false;
   private onOpenSettings?: () => void;
+  private manualListeners: Array<{ element: HTMLElement; handler: () => void }> = [];
 
   constructor(
     private containerEl: HTMLElement,
@@ -22,6 +23,7 @@ export class UIStateController {
     if (this.component) {
       this.component.registerDomEvent(element, 'click', handler);
     } else {
+      this.manualListeners.push({ element, handler });
       element.addEventListener('click', handler);
     }
   }
@@ -210,7 +212,9 @@ export class UIStateController {
    * Clean up event listeners
    */
   cleanup(): void {
-    // Remove event listeners if needed
-    // Most listeners are attached to elements that will be removed with the container
+    for (const { element, handler } of this.manualListeners) {
+      element.removeEventListener('click', handler);
+    }
+    this.manualListeners = [];
   }
 }

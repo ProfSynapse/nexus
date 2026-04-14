@@ -138,13 +138,29 @@ export class ChatLayoutBuilder {
     link.rel = 'noopener noreferrer';
     warningBanner.createEl('span', { cls: 'warning-text', text: 'Use at your own risk.' });
 
-    // Auto-hide warning after 5 seconds
-    setTimeout(() => {
+    // Auto-hide warning after 5 seconds — guard against detached DOM
+    let fadeoutTimer: ReturnType<typeof setTimeout> | null = null;
+    const hideTimer = setTimeout(() => {
+      if (!warningBanner.isConnected) return;
       warningBanner.addClass('chat-warning-banner-fadeout');
-      setTimeout(() => {
+      fadeoutTimer = setTimeout(() => {
+        if (!warningBanner.isConnected) return;
         warningBanner.addClass('chat-loading-overlay-hidden');
+        fadeoutTimer = null;
       }, 500);
     }, 5000);
+
+    // Clear timers if the banner is removed early (e.g., view closed)
+    const observer = new MutationObserver(() => {
+      if (!warningBanner.isConnected) {
+        clearTimeout(hideTimer);
+        if (fadeoutTimer) clearTimeout(fadeoutTimer);
+        observer.disconnect();
+      }
+    });
+    if (warningBanner.parentElement) {
+      observer.observe(warningBanner.parentElement, { childList: true });
+    }
   }
 
   /**

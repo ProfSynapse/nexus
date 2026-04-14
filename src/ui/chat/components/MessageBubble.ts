@@ -24,7 +24,8 @@ import { ThinkingLoader } from './ThinkingLoader';
 
 export class MessageBubble extends Component {
   private element: HTMLElement | null = null;
-  private loadingInterval: ReturnType<typeof setInterval> | null = null;
+  private loadingInterval: number | null = null;
+  private copyFeedbackTimeout: ReturnType<typeof setTimeout> | null = null;
   private thinkingLoader: ThinkingLoader | null = null;
   private branchNavigatorBinder: MessageBubbleBranchNavigatorBinder;
   private imageRenderer: MessageBubbleImageRenderer;
@@ -308,10 +309,11 @@ export class MessageBubble extends Component {
     const dotsElement = container.querySelector('.dots');
     if (dotsElement) {
       let dotCount = 0;
-      this.loadingInterval = setInterval(() => {
+      this.loadingInterval = window.setInterval(() => {
         dotCount = (dotCount + 1) % 4;
         dotsElement.textContent = '.'.repeat(dotCount);
       }, 500);
+      this.registerInterval(this.loadingInterval);
     }
   }
 
@@ -450,12 +452,18 @@ export class MessageBubble extends Component {
    * Show visual feedback when copy button is clicked
    */
   private showCopyFeedback(button: HTMLElement): void {
+    if (this.copyFeedbackTimeout) {
+      clearTimeout(this.copyFeedbackTimeout);
+      this.copyFeedbackTimeout = null;
+    }
+
     const originalTitle = button.getAttribute('title') || '';
     setIcon(button, 'check');
     button.setAttribute('title', 'Copied!');
     button.classList.add('copy-success');
 
-    setTimeout(() => {
+    this.copyFeedbackTimeout = setTimeout(() => {
+      this.copyFeedbackTimeout = null;
       setIcon(button, 'copy');
       button.setAttribute('title', originalTitle);
       button.classList.remove('copy-success');
@@ -469,6 +477,10 @@ export class MessageBubble extends Component {
   private isUnloaded = false;
 
   cleanup(): void {
+    if (this.copyFeedbackTimeout) {
+      clearTimeout(this.copyFeedbackTimeout);
+      this.copyFeedbackTimeout = null;
+    }
     this.stopLoadingAnimation();
     this.imageRenderer.clear();
 
