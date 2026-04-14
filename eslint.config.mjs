@@ -11,6 +11,7 @@ export default defineConfig([
             "node_modules/",
             "dist/",
             "main.js",
+            "coverage/",
             "connector.js",
             "mlc-venv/",
             ".worktrees/",

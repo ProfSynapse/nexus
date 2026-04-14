@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nexus mobile voice input mockup</title>
+  <link rel="stylesheet" href="./mobile-chat-voice-input.css">
+</head>
+<body class="mock-page is-mobile theme-dark">
+  <div class="mock-layout">
+    <section class="mock-intro">
+      <div class="mock-eyebrow">Mobile chat glass</div>
+      <h1>Minimal voice composer</h1>
+      <div class="mock-toolbar" aria-label="Voice input states">
+        <button type="button" class="mock-toolbar-button is-active" data-state="mic-ready">Empty</button>
+        <button type="button" class="mock-toolbar-button" data-state="recording">Recording</button>
+        <button type="button" class="mock-toolbar-button" data-state="draft-filled">Transcript</button>
+      </div>
+    </section>
+
+    <section class="mock-stage">
+      <article class="mock-device">
+        <div class="mock-device-label">Chat input only</div>
+
+        <div class="mock-phone">
+          <div class="mock-phone-notch"></div>
+
+          <div class="mock-screen">
+            <div class="chat-view-container">
+              <div class="chat-layout">
+                <div class="chat-main">
+                  <header class="chat-header">
+                    <button type="button" class="chat-hamburger-button clickable-icon" aria-label="Toggle conversations">
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M3 6h18"></path>
+                        <path d="M3 12h18"></path>
+                        <path d="M3 18h18"></path>
+                      </svg>
+                    </button>
+
+                    <div class="chat-title">Chat</div>
+
+                    <button type="button" class="chat-settings-button clickable-icon" aria-label="Chat settings">
+                      <svg viewBox="0 0 24 24" aria-hidden="true">
+                        <circle cx="12" cy="12" r="3"></circle>
+                        <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-.4-1.1 1.7 1.7 0 0 0-1-.6 1.7 1.7 0 0 0-1.82.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H2.8a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.1-.4 1.7 1.7 0 0 0 .6-1A1.7 1.7 0 0 0 4.26 6.4l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V2.8a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 .4 1.1 1.7 1.7 0 0 0 1 .6 1.7 1.7 0 0 0 1.82-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 .6 1 1.7 1.7 0 0 0 1.1.4h.1a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.1.4 1.7 1.7 0 0 0-.6 1z"></path>
+                      </svg>
+                    </button>
+                  </header>
+
+                  <div class="message-display">
+                    <div class="messages-container">
+                      <div class="message-container message-assistant">
+                        <div class="message-bubble">
+                          Use the current composer, just swap the empty send button for a mic and make recording minimal.
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="chat-input-container">
+                    <div class="chat-input">
+                      <div class="chat-input-wrapper" data-role="composer-shell">
+                        <div
+                          class="chat-textarea"
+                          data-role="chat-input"
+                          role="textbox"
+                          aria-multiline="true"
+                          data-placeholder="Type your message..."
+                          contenteditable="true"
+                        ></div>
+
+                        <div class="chat-voice-visual" data-role="voice-visual" aria-hidden="true"></div>
+
+                        <button type="button" class="chat-send-button clickable-icon" data-role="composer-button" aria-label="Start recording">
+                          <svg viewBox="0 0 24 24" aria-hidden="true" data-role="button-icon">
+                            <path d="M12 3a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3Z"></path>
+                            <path d="M19 10a7 7 0 0 1-14 0"></path>
+                            <path d="M12 17v4"></path>
+                            <path d="M8 21h8"></path>
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="mock-keyboard" aria-hidden="true">
+            <div class="mock-keyboard-handle"></div>
+            <div class="mock-keyboard-grid">
+              <span></span><span></span><span></span><span></span><span></span><span></span>
+              <span></span><span></span><span></span><span></span><span></span><span></span>
+              <span></span><span></span><span></span><span></span><span></span><span></span>
+            </div>
+          </div>
+        </div>
+      </article>
+    </section>
+  </div>
+
+  <script src="./mobile-chat-voice-input.js"></script>
+</body>
+</html>

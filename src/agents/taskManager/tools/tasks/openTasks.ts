@@ -4,6 +4,8 @@ import { OpenTasksParameters, OpenTasksResult } from '../../types';
 import { openTaskBoardView, type TaskBoardOpenMode } from '../../../../ui/tasks/taskBoardNavigation';
 import { createErrorMessage } from '../../../../utils/errorUtils';
 import type { App } from 'obsidian';
+import { ToolStatusTense } from '../../../interfaces/ITool';
+import { verbs, labelQuery } from '../../../utils/toolStatusLabels';
 
 export class OpenTasksTool extends BaseTool<OpenTasksParameters, OpenTasksResult> {
   constructor(private app: App) {
@@ -68,6 +70,11 @@ export class OpenTasksTool extends BaseTool<OpenTasksParameters, OpenTasksResult
         }
       }
     });
+  }
+
+  getStatusLabel(params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
+    const v = verbs('Opening task board', 'Opened task board', 'Failed to open task board');
+    return labelQuery(v, params, tense, ['search']);
   }
 
   getResultSchema(): JSONSchema {

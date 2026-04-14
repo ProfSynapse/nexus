@@ -28,6 +28,8 @@ import {
 import { PromptParser } from './utils';
 import { Recommendation } from '../../../../utils/recommendationUtils';
 import { NudgeHelpers } from '../../../../utils/nudgeHelpers';
+import type { ToolStatusTense } from '../../../interfaces/ITool';
+import { verbs } from '../../../utils/toolStatusLabels';
 
 type BatchExecutePromptResultWithRecommendations = BatchExecutePromptResult & {
   recommendations: Recommendation[];
@@ -94,6 +96,10 @@ export class ExecutePromptsTool extends BaseTool<BatchExecutePromptParams, Batch
 
     // Initialize specialized services
     this.initializeServices();
+  }
+
+  getStatusLabel(_params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
+    return verbs('Prompting', 'Prompted', 'Prompt failed')[tense];
   }
 
   /**

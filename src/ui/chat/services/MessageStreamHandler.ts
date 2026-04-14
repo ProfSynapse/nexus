@@ -70,8 +70,8 @@ export interface StreamResult {
 }
 
 /**
- * Create a synthetic tool call to represent reasoning/thinking in the UI
- * This allows reasoning to be displayed in the ProgressiveToolAccordion
+ * Create a synthetic tool call to represent reasoning/thinking in the UI.
+ * This keeps reasoning visible to the status bar and inspection history.
  */
 function createReasoningToolCall(messageId: string, reasoningText: string, isComplete: boolean): StreamToolCall {
   return {

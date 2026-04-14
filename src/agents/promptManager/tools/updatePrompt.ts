@@ -3,6 +3,8 @@ import { BaseTool } from '../../baseTool';
 import { UpdatePromptParams, UpdatePromptResult } from '../types';
 import { CustomPromptStorageService } from '../services/CustomPromptStorageService';
 import { getErrorMessage } from '../../../utils/errorUtils';
+import { ToolStatusTense } from '../../interfaces/ITool';
+import { verbs, labelWithId } from '../../utils/toolStatusLabels';
 
 /**
  * Tool for updating an existing custom prompt
@@ -121,6 +123,11 @@ export class UpdatePromptTool extends BaseTool<UpdatePromptParams, UpdatePromptR
     };
 
     return this.getMergedSchema(toolSchema);
+  }
+
+  getStatusLabel(params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
+    const v = verbs('Updating prompt', 'Updated prompt', 'Failed to update prompt');
+    return labelWithId(v, params, tense, { keys: ['id'], fallback: 'prompt' });
   }
 
   getResultSchema(): Record<string, unknown> {

@@ -7,6 +7,8 @@ import { Recommendation } from '../../../utils/recommendationUtils';
 import { NudgeHelpers } from '../../../utils/nudgeHelpers';
 import { parseWorkspaceContext } from '../../../utils/contextUtils';
 import { getErrorMessage } from '../../../utils/errorUtils';
+import { ToolStatusTense } from '../../interfaces/ITool';
+import { verbs } from '../../utils/toolStatusLabels';
 
 type ListPromptsResultWithRecommendations = ListPromptsResult & {
   recommendations: Recommendation[];
@@ -114,6 +116,11 @@ export class ListPromptsTool extends BaseTool<ListPromptsParams, ListPromptsResu
     };
 
     return this.getMergedSchema(toolSchema);
+  }
+
+  getStatusLabel(_params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
+    const v = verbs('Listing prompts', 'Listed prompts', 'Failed to list prompts');
+    return v[tense];
   }
 
   /**

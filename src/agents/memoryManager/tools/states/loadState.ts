@@ -15,7 +15,9 @@ import { JSONSchema } from '../../../../types/schema/JSONSchemaTypes';
 
 import { App } from 'obsidian';
 import { BaseTool } from '../../../baseTool';
-import { MemoryManagerAgent } from '../../memoryManager'
+import { MemoryManagerAgent } from '../../memoryManager';
+import { labelNamed, verbs } from '../../../utils/toolStatusLabels';
+import type { ToolStatusTense } from '../../../interfaces/ITool';
 import { LoadStateParams, StateResult } from '../../types';
 import { createErrorMessage } from '../../../../utils/errorUtils';
 import { extractContextFromParams } from '../../../../utils/contextUtils';
@@ -352,6 +354,10 @@ export class LoadStateTool extends BaseTool<LoadStateParams, StateResult> {
                 type: trace.type,
                 importance: (trace.metadata as { importance?: number } | undefined)?.importance
             }));
+    }
+
+    getStatusLabel(params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
+        return labelNamed(verbs('Loading state', 'Loaded state', 'Failed to load state'), params, tense, ['name']);
     }
 
     /**

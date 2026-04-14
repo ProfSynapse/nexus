@@ -11,6 +11,8 @@ import { TaskService } from '../../services/TaskService';
 import { LinkNoteParameters, LinkNoteResult } from '../../types';
 import { JSONSchema } from '../../../../types/schema/JSONSchemaTypes';
 import { createErrorMessage } from '../../../../utils/errorUtils';
+import { ToolStatusTense } from '../../../interfaces/ITool';
+import { verbs, labelFileOp } from '../../../utils/toolStatusLabels';
 
 export class LinkNoteTool extends BaseTool<LinkNoteParameters, LinkNoteResult> {
   constructor(private taskService: TaskService) {
@@ -65,6 +67,14 @@ export class LinkNoteTool extends BaseTool<LinkNoteParameters, LinkNoteResult> {
       },
       required: ['taskId', 'notePath']
     });
+  }
+
+  getStatusLabel(params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
+    const isUnlink = params?.action === 'unlink';
+    const v = isUnlink
+      ? verbs('Unlinking note', 'Unlinked note', 'Failed to unlink note')
+      : verbs('Linking note', 'Linked note', 'Failed to link note');
+    return labelFileOp(v, params, tense, { keys: ['notePath'] });
   }
 
   getResultSchema(): JSONSchema {

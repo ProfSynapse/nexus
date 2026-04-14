@@ -244,7 +244,6 @@ export class ChatBranchViewCoordinator {
   openAgentStatusModal(): void {
     const subagentController = this.deps.getSubagentController();
     if (!subagentController?.isInitialized()) {
-      console.warn('[ChatBranchViewCoordinator] SubagentController not initialized - cannot open modal');
       return;
     }
 

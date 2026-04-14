@@ -5,7 +5,9 @@ import { JSONSchema } from '../../../../types/schema/JSONSchemaTypes';
  */
 
 import { BaseTool } from '../../../baseTool';
-import { MemoryManagerAgent } from '../../memoryManager'
+import { MemoryManagerAgent } from '../../memoryManager';
+import { verbs } from '../../../utils/toolStatusLabels';
+import type { ToolStatusTense } from '../../../interfaces/ITool';
 import { ListStatesParams, StateResult } from '../../types';
 import { createErrorMessage } from '../../../../utils/errorUtils';
 import { WorkspaceService, GLOBAL_WORKSPACE_ID } from '../../../../services/WorkspaceService';
@@ -185,6 +187,11 @@ export class ListStatesTool extends BaseTool<ListStatesParams, StateResult> {
     }));
   }
 
+
+  getStatusLabel(_params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
+    const v = verbs('Listing states', 'Listed states', 'Failed to list states');
+    return v[tense];
+  }
 
   getParameterSchema(): JSONSchema {
     const toolSchema = {

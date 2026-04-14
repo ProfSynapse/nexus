@@ -11,6 +11,8 @@ import { TaskService } from '../../services/TaskService';
 import { CreateTaskParameters, CreateTaskResult } from '../../types';
 import { JSONSchema } from '../../../../types/schema/JSONSchemaTypes';
 import { createErrorMessage } from '../../../../utils/errorUtils';
+import type { ToolStatusTense } from '../../../interfaces/ITool';
+import { labelNamed, verbs } from '../../../utils/toolStatusLabels';
 
 export class CreateTaskTool extends BaseTool<CreateTaskParameters, CreateTaskResult> {
   constructor(private taskService: TaskService) {
@@ -20,6 +22,10 @@ export class CreateTaskTool extends BaseTool<CreateTaskParameters, CreateTaskRes
       'Create a task within a project. Requires a projectId (from createProject or listProjects). Supports optional priority (critical/high/medium/low), assignee, dueDate, tags, dependsOn[] for DAG edges (cycles rejected), parentTaskId for subtask nesting, and linkedNotes[] for vault note links. Returns the new taskId.',
       '1.0.0'
     );
+  }
+
+  getStatusLabel(params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
+    return labelNamed(verbs('Creating task', 'Created task', 'Failed to create task'), params, tense, ['title', 'name']);
   }
 
   async execute(params: CreateTaskParameters): Promise<CreateTaskResult> {

@@ -4,6 +4,8 @@ import { ReadCanvasParams, ReadCanvasResult } from '../types';
 import { CanvasOperations } from '../utils/CanvasOperations';
 import { createErrorMessage } from '../../../utils/errorUtils';
 import { JSONSchema } from '../../../types/schema/JSONSchemaTypes';
+import type { ToolStatusTense } from '../../interfaces/ITool';
+import { labelFileOp, verbs } from '../../utils/toolStatusLabels';
 
 /**
  * Read the structure of a canvas file (nodes and edges)
@@ -19,6 +21,13 @@ export class ReadCanvasTool extends BaseTool<ReadCanvasParams, ReadCanvasResult>
       '1.0.0'
     );
     this.app = app;
+  }
+
+  getStatusLabel(params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
+    return labelFileOp(verbs('Reading canvas', 'Read canvas', 'Failed to read canvas'), params, tense, {
+      keys: ['path'],
+      fallback: 'canvas',
+    });
   }
 
   async execute(params: ReadCanvasParams): Promise<ReadCanvasResult> {

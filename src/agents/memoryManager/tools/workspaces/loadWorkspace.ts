@@ -15,6 +15,8 @@ import { JSONSchema } from '../../../../types/schema/JSONSchemaTypes';
 
 import { BaseTool } from '../../../baseTool';
 import type { MemoryManagerAgent } from '../../memoryManager';
+import { labelWithId, verbs } from '../../../utils/toolStatusLabels';
+import type { ToolStatusTense } from '../../../interfaces/ITool';
 import {
   LoadWorkspaceParameters,
   LoadWorkspaceResult
@@ -308,6 +310,10 @@ export class LoadWorkspaceTool extends BaseTool<LoadWorkspaceParameters, LoadWor
         ? parseWorkspaceContext(params.workspaceContext) || undefined
         : params.workspaceContext
     };
+  }
+
+  getStatusLabel(params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
+    return labelWithId(verbs('Loading workspace', 'Loaded workspace', 'Failed to load workspace'), params, tense, { keys: ['id'], fallback: 'workspace' });
   }
 
   /**

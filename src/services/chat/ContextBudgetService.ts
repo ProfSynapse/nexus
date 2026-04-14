@@ -1,4 +1,5 @@
 import { ConversationData } from '../../types/chat/ChatTypes';
+import { ContextCompactionService } from './ContextCompactionService';
 
 export interface NormalizedTokenUsage {
   promptTokens: number;
@@ -116,7 +117,11 @@ export class ContextBudgetService {
   ): number {
     let totalTokens = this.estimateTextTokens(systemPrompt);
 
-    for (const message of conversation.messages) {
+    // Respect compaction boundary: only count messages that will be sent to the LLM.
+    // Messages before the boundary are summarized in the compaction frontier (system prompt).
+    const messages = this.getMessagesAfterCompactionBoundary(conversation);
+
+    for (const message of messages) {
       const normalizedUsage = this.normalizeUsage((message as { usage?: unknown }).usage);
 
       if (normalizedUsage) {
@@ -199,5 +204,16 @@ export class ContextBudgetService {
     }
 
     return undefined;
+  }
+
+  /**
+   * Return only messages after the latest compaction boundary.
+   * If no boundary exists, returns all messages.
+   */
+  private static getMessagesAfterCompactionBoundary(conversation: ConversationData): ConversationData['messages'] {
+    return ContextCompactionService.getMessagesAfterBoundary(
+      conversation.messages,
+      conversation.metadata
+    );
   }
 }

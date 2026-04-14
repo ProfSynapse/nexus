@@ -3,6 +3,8 @@ import { CommonParameters, CommonResult } from '../../../../types';
 import { JSONSchema } from '../../../../types/schema/JSONSchemaTypes';
 import { BaseAppAgent } from '../../BaseAppAgent';
 import { isDesktop, isElectron } from '../../../../utils/platform';
+import type { ToolStatusTense } from '../../../interfaces/ITool';
+import { labelWithUrl, verbs } from '../../../utils/toolStatusLabels';
 import {
   ensureParentFolderExists,
   getWebViewerContents,
@@ -34,6 +36,10 @@ export class CapturePagePdfTool extends BaseTool<CapturePagePdfParams, CommonRes
       '1.0.0'
     );
     this.agent = agent;
+  }
+
+  getStatusLabel(params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
+    return labelWithUrl(verbs('Capturing PDF', 'Captured PDF', 'Failed to capture PDF'), params, tense, 'page');
   }
 
   async execute(params: CapturePagePdfParams): Promise<CommonResult> {

@@ -11,6 +11,8 @@ import { TaskService } from '../../services/TaskService';
 import { UpdateProjectParameters, UpdateProjectResult } from '../../types';
 import { JSONSchema } from '../../../../types/schema/JSONSchemaTypes';
 import { createErrorMessage } from '../../../../utils/errorUtils';
+import { ToolStatusTense } from '../../../interfaces/ITool';
+import { verbs, labelWithId } from '../../../utils/toolStatusLabels';
 
 export class UpdateProjectTool extends BaseTool<UpdateProjectParameters, UpdateProjectResult> {
   constructor(private taskService: TaskService) {
@@ -53,6 +55,11 @@ export class UpdateProjectTool extends BaseTool<UpdateProjectParameters, UpdateP
       },
       required: ['projectId']
     });
+  }
+
+  getStatusLabel(params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
+    const v = verbs('Updating project', 'Updated project', 'Failed to update project');
+    return labelWithId(v, params, tense, { keys: ['projectId'], fallback: 'project' });
   }
 
   getResultSchema(): JSONSchema {

@@ -93,6 +93,7 @@ function createHarness() {
   const messageDisplay = {
     showTransientEventRow: jest.fn(),
     clearTransientEventRow: jest.fn(),
+    showCompactionDivider: jest.fn(),
     findMessageBubble: jest.fn().mockReturnValue(bubble)
   };
 
@@ -162,14 +163,15 @@ function createHarness() {
 describe('ChatSendCoordinator', () => {
   it('compacts context before sending when the selected model requires it', async () => {
     const harness = createHarness();
-    harness.modelAgentManager.shouldCompactBeforeSending.mockReturnValue(true);
+    // Return true only for the first call (user's message).
+    // Auto-continue after compaction calls handleSendMessage again — return false to avoid infinite loop.
+    harness.modelAgentManager.shouldCompactBeforeSending.mockReturnValueOnce(true);
 
     await harness.coordinator.handleSendMessage('next message');
 
     expect(harness.compactionService.compact).toHaveBeenCalledTimes(1);
-    expect(harness.modelAgentManager.getMessageOptions).toHaveBeenCalledTimes(2);
     expect(harness.chatInput.setPreSendCompacting).toHaveBeenCalledWith(true);
-    expect(harness.messageDisplay.showTransientEventRow).toHaveBeenCalledWith('Compacting context before sending...');
+    expect(harness.messageDisplay.showTransientEventRow).toHaveBeenCalledWith('Compacting');
     expect(harness.modelAgentManager.appendCompactionRecord).toHaveBeenCalledTimes(1);
     expect(harness.modelAgentManager.resetTokenTracker).toHaveBeenCalledTimes(1);
     expect(harness.updateConversation).toHaveBeenCalledWith('conv-1', expect.objectContaining({
@@ -177,6 +179,7 @@ describe('ChatSendCoordinator', () => {
       messages: harness.conversation.messages
     }));
     expect(harness.onUpdateContextProgress).toHaveBeenCalledTimes(1);
+    // sendMessage is called twice: once for the user's message, once for auto-continue
     expect(harness.messageManager.sendMessage).toHaveBeenCalledWith(
       harness.conversation,
       'next message',
@@ -186,8 +189,9 @@ describe('ChatSendCoordinator', () => {
       }),
       undefined
     );
-    expect(harness.modelAgentManager.clearMessageEnhancement).toHaveBeenCalledTimes(1);
-    expect(harness.chatInput.clearMessageEnhancer).toHaveBeenCalledTimes(1);
+    expect(harness.messageManager.sendMessage).toHaveBeenCalledTimes(2);
+    expect(harness.modelAgentManager.clearMessageEnhancement).toHaveBeenCalled();
+    expect(harness.chatInput.clearMessageEnhancer).toHaveBeenCalled();
     expect(harness.messageDisplay.clearTransientEventRow).toHaveBeenCalled();
   });
 

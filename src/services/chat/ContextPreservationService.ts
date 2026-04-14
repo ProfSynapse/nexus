@@ -15,6 +15,7 @@
 
 import { ConversationMessage } from '../../types/chat/ChatTypes';
 import type { IAgent } from '../../agents/interfaces/IAgent';
+import { GLOBAL_WORKSPACE_ID } from '../WorkspaceService';
 
 /**
  * System prompt that forces the model to use createState
@@ -243,6 +244,23 @@ export class ContextPreservationService {
   }
 
   /**
+   * Serialize conversation messages into a readable transcript string.
+   * This is used to pack the conversation into a single user message
+   * so that ProviderMessageBuilder always sees a user-role last message.
+   */
+  private serializeMessagesToTranscript(messages: ConversationMessage[]): string {
+    const lines: string[] = [];
+    for (const msg of messages) {
+      if (msg.role === 'tool' || !msg.content?.trim()) {
+        continue;
+      }
+      const label = msg.role === 'user' ? 'User' : 'Assistant';
+      lines.push(`[${label}]: ${msg.content}`);
+    }
+    return lines.join('\n\n');
+  }
+
+  /**
    * Single attempt to get the LLM to save state
    */
   private async attemptStateSave(
@@ -257,12 +275,27 @@ export class ContextPreservationService {
     },
     createStateSchema: OpenAIToolSchema
   ): Promise<Omit<PreservationResult, 'attempts'>> {
+    // Serialize the conversation into a single user message containing the transcript.
+    // ProviderMessageBuilder.buildInitialOptions extracts only the last message and
+    // requires it to be role=user — passing raw messages fails when the last message
+    // is an assistant message (empty prompt → HTTP 400).
+    const transcript = this.serializeMessagesToTranscript(messages);
+
+    const conversationId = messages[0]?.conversationId || 'context_save';
+    const wrappedMessage: ConversationMessage = {
+      id: `state_save_${Date.now()}`,
+      role: 'user',
+      content: `Here is the conversation to preserve:\n\n${transcript}`,
+      timestamp: Date.now(),
+      conversationId,
+    };
+
     // Stream response from LLM with save state prompt
     let toolCalls: ToolCall[] = [];
 
     try {
       for await (const chunk of this.deps.llmService.generateResponseStream(
-        messages,
+        [wrappedMessage],
         {
           provider: llmOptions.provider,
           model: llmOptions.model,
@@ -272,6 +305,12 @@ export class ContextPreservationService {
       )) {
         if (chunk.toolCalls && chunk.toolCalls.length > 0) {
           toolCalls = chunk.toolCalls;
+          // Break early once we have a createState call — prevents ping-pong loop
+          const hasCreateState = toolCalls.some(tc => {
+            const name = tc.function?.name || tc.name || '';
+            return name === 'createState' || name.includes('createState');
+          });
+          if (hasCreateState) break;
         }
       }
     } catch (error) {
@@ -280,6 +319,8 @@ export class ContextPreservationService {
         error: `LLM generation failed: ${error instanceof Error ? error.message : String(error)}`,
       };
     }
+
+    const toolNames = toolCalls.map(tc => tc.function?.name || tc.name || '(unknown)');
 
     // Validate we got a createState tool call
     const createStateCall = toolCalls.find((tc) => {
@@ -290,17 +331,39 @@ export class ContextPreservationService {
     if (!createStateCall) {
       return {
         success: false,
-        error: 'No createState tool call in response',
+        error: `No createState tool call in response (found: ${JSON.stringify(toolNames)})`,
       };
     }
 
-    // Extract and validate parameters
+    // Get raw arguments for tool execution — the createState tool expects
+    // the original LLM arguments (name, conversationContext, activeTask, etc.),
+    // not our mapped id/content.
+    const rawArgs = createStateCall.function?.arguments || '{}';
+
+    // Extract id/content only for validation and our return value
     const params = this.extractToolParams(createStateCall);
     if (!params.id || !params.content) {
       return {
         success: false,
-        error: 'createState call missing required id or content',
+        error: 'createState call missing required fields',
       };
+    }
+
+    // Override hallucinated workspace/session IDs with real values from context
+    let finalArgs = rawArgs;
+    try {
+      const parsedArgs = JSON.parse(rawArgs) as Record<string, unknown>;
+      if (parsedArgs.context && typeof parsedArgs.context === 'object' && parsedArgs.context !== null) {
+        const ctx = parsedArgs.context as Record<string, unknown>;
+        // Use real workspace/session IDs, falling back to GLOBAL_WORKSPACE_ID
+        ctx.workspaceId = contextOptions.workspaceId || GLOBAL_WORKSPACE_ID;
+        if (contextOptions.sessionId) {
+          ctx.sessionId = contextOptions.sessionId;
+        }
+      }
+      finalArgs = JSON.stringify(parsedArgs);
+    } catch {
+      // If parsing fails, use raw args as-is
     }
 
     // Format as DirectToolCall for executor
@@ -308,8 +371,8 @@ export class ContextPreservationService {
       id: createStateCall.id || `createState_${Date.now()}`,
       type: 'function',
       function: {
-        name: 'memoryManager.createState', // Full tool path for DirectToolExecutor
-        arguments: JSON.stringify(params),
+        name: 'memoryManager_createState', // Full tool path for DirectToolExecutor (underscore format)
+        arguments: finalArgs, // Pass original LLM args with corrected workspace/session IDs
       },
     };
 
@@ -353,10 +416,15 @@ export class ContextPreservationService {
             ? (JSON.parse(toolCall.function.arguments) as unknown)
             : (toolCall.function.arguments as unknown);
         const argsObj = args as Record<string, unknown>;
-        return {
-          id: typeof argsObj.id === 'string' ? argsObj.id : undefined,
-          content: typeof argsObj.content === 'string' ? argsObj.content : undefined
-        };
+        // createState schema uses `name` for the state identifier and
+        // `conversationContext` for the summary text. Map to id/content.
+        const id = typeof argsObj.name === 'string' ? argsObj.name
+          : typeof argsObj.id === 'string' ? argsObj.id
+          : undefined;
+        const content = typeof argsObj.conversationContext === 'string' ? argsObj.conversationContext
+          : typeof argsObj.content === 'string' ? argsObj.content
+          : undefined;
+        return { id, content };
       } catch {
         // Fall through
       }
@@ -364,9 +432,12 @@ export class ContextPreservationService {
 
     // Try direct params/parameters/input format
     const params = toolCall.params || toolCall.parameters || toolCall.input || {};
-    return {
-      id: typeof params.id === 'string' ? params.id : undefined,
-      content: typeof params.content === 'string' ? params.content : undefined
-    };
+    const id = typeof params.name === 'string' ? params.name
+      : typeof params.id === 'string' ? params.id
+      : undefined;
+    const content = typeof params.conversationContext === 'string' ? params.conversationContext
+      : typeof params.content === 'string' ? params.content
+      : undefined;
+    return { id, content };
   }
 }

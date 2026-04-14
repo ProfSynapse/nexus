@@ -11,6 +11,8 @@ import { JSONSchema } from '../../../../types/schema/JSONSchemaTypes';
 
 import { BaseTool } from '../../../baseTool';
 import type { MemoryManagerAgent } from '../../memoryManager';
+import { verbs } from '../../../utils/toolStatusLabels';
+import type { ToolStatusTense } from '../../../interfaces/ITool';
 import { 
   ListWorkspacesParameters, 
   ListWorkspacesResult
@@ -106,6 +108,11 @@ export class ListWorkspacesTool extends BaseTool<ListWorkspacesParameters, ListW
     }
   }
   
+  getStatusLabel(_params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
+    const v = verbs('Listing workspaces', 'Listed workspaces', 'Failed to list workspaces');
+    return v[tense];
+  }
+
   /**
    * Get the parameter schema
    */

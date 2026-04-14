@@ -11,6 +11,8 @@ import { TaskService } from '../../services/TaskService';
 import { UpdateTaskParameters, UpdateTaskResult } from '../../types';
 import { JSONSchema } from '../../../../types/schema/JSONSchemaTypes';
 import { createErrorMessage } from '../../../../utils/errorUtils';
+import { ToolStatusTense } from '../../../interfaces/ITool';
+import { verbs, labelWithId } from '../../../utils/toolStatusLabels';
 
 export class UpdateTaskTool extends BaseTool<UpdateTaskParameters, UpdateTaskResult> {
   constructor(private taskService: TaskService) {
@@ -111,6 +113,11 @@ export class UpdateTaskTool extends BaseTool<UpdateTaskParameters, UpdateTaskRes
       },
       required: ['taskId']
     });
+  }
+
+  getStatusLabel(params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
+    const v = verbs('Updating task', 'Updated task', 'Failed to update task');
+    return labelWithId(v, params, tense, { keys: ['taskId'], fallback: 'task' });
   }
 
   getResultSchema(): JSONSchema {

@@ -71,16 +71,15 @@ beforeAll(() => {
 
 // Load test audio file
 const TEST_AUDIO_PATH = '/tmp/test-transcription.wav';
+const RUN_LIVE_TRANSCRIPTION_TESTS = process.env.RUN_LIVE_TRANSCRIPTION_TESTS === '1';
+const HAS_TEST_AUDIO_FIXTURE = fs.existsSync(TEST_AUDIO_PATH);
+const LIVE_TRANSCRIPTION_ENABLED = RUN_LIVE_TRANSCRIPTION_TESTS && HAS_TEST_AUDIO_FIXTURE;
 let testAudioData: ArrayBuffer;
 let testChunk: AudioChunk;
 
 beforeAll(() => {
-  if (!fs.existsSync(TEST_AUDIO_PATH)) {
-    throw new Error(
-      `Test audio file not found at ${TEST_AUDIO_PATH}. ` +
-      'Generate it with: say -o /tmp/test-transcription.aiff "Hello, this is a test." && ' +
-      'afconvert -f WAVE -d LEI16 /tmp/test-transcription.aiff /tmp/test-transcription.wav'
-    );
+  if (!LIVE_TRANSCRIPTION_ENABLED) {
+    return;
   }
 
   const buffer = fs.readFileSync(TEST_AUDIO_PATH);
@@ -136,7 +135,7 @@ const mistralKey = process.env.MISTRAL_API_KEY;
 // --- Speech-API providers (Whisper format) ---
 
 describe('Live Transcription: OpenAI', () => {
-  const runTest = openaiKey ? it : it.skip;
+  const runTest = openaiKey && LIVE_TRANSCRIPTION_ENABLED ? it : it.skip;
 
   runTest('transcribes with whisper-1', async () => {
     const adapter = new OpenAITranscriptionAdapter({ apiKey: openaiKey! });
@@ -148,7 +147,7 @@ describe('Live Transcription: OpenAI', () => {
 });
 
 describe('Live Transcription: Groq', () => {
-  const runTest = groqKey ? it : it.skip;
+  const runTest = groqKey && LIVE_TRANSCRIPTION_ENABLED ? it : it.skip;
 
   runTest('transcribes with whisper-large-v3-turbo', async () => {
     const adapter = new GroqTranscriptionAdapter({ apiKey: groqKey! });
@@ -160,7 +159,7 @@ describe('Live Transcription: Groq', () => {
 });
 
 describe('Live Transcription: Mistral', () => {
-  const runTest = mistralKey ? it : it.skip;
+  const runTest = mistralKey && LIVE_TRANSCRIPTION_ENABLED ? it : it.skip;
 
   runTest('transcribes with voxtral-mini-latest', async () => {
     const adapter = new MistralTranscriptionAdapter({ apiKey: mistralKey! });
@@ -174,7 +173,7 @@ describe('Live Transcription: Mistral', () => {
 // --- Deepgram (raw binary body) ---
 
 describe('Live Transcription: Deepgram', () => {
-  const runTest = deepgramKey ? it : it.skip;
+  const runTest = deepgramKey && LIVE_TRANSCRIPTION_ENABLED ? it : it.skip;
 
   runTest('transcribes with nova-3', async () => {
     const adapter = new DeepgramTranscriptionAdapter({ apiKey: deepgramKey! });
@@ -188,7 +187,7 @@ describe('Live Transcription: Deepgram', () => {
 // --- AssemblyAI (async upload + poll) ---
 
 describe('Live Transcription: AssemblyAI', () => {
-  const runTest = assemblyaiKey ? it : it.skip;
+  const runTest = assemblyaiKey && LIVE_TRANSCRIPTION_ENABLED ? it : it.skip;
 
   runTest('transcribes with universal-3-pro model', async () => {
     const adapter = new AssemblyAITranscriptionAdapter({ apiKey: assemblyaiKey! });
@@ -211,6 +210,15 @@ const configuredProviders = [
 
 describe('Provider summary', () => {
   it('lists configured providers', () => {
+    if (!RUN_LIVE_TRANSCRIPTION_TESTS) {
+      console.log('Live transcription tests skipped: set RUN_LIVE_TRANSCRIPTION_TESTS=1 to enable.');
+    } else if (!HAS_TEST_AUDIO_FIXTURE) {
+      console.log(
+        `Live transcription tests skipped: missing fixture at ${TEST_AUDIO_PATH}. ` +
+        'Generate it with: say -o /tmp/test-transcription.aiff "Hello, this is a test." && ' +
+        'afconvert -f WAVE -d LEI16 /tmp/test-transcription.aiff /tmp/test-transcription.wav'
+      );
+    }
     console.log(`\nConfigured providers (${configuredProviders.length}/5): ${configuredProviders.join(', ')}`);
     const missing = ['openai', 'groq', 'mistral', 'deepgram', 'assemblyai']
       .filter(p => !configuredProviders.includes(p));

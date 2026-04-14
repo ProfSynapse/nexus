@@ -5,6 +5,8 @@ import { ArchiveParams, ArchiveResult } from '../types';
 import { FileOperations } from '../utils/FileOperations';
 import { createErrorMessage } from '../../../utils/errorUtils';
 import { normalizePath } from '../../../utils/pathUtils';
+import type { ToolStatusTense } from '../../interfaces/ITool';
+import { labelFileOp, verbs } from '../../utils/toolStatusLabels';
 
 /**
  * Location: src/agents/storageManager/tools/archive.ts
@@ -31,6 +33,10 @@ export class ArchiveTool extends BaseTool<ArchiveParams, ArchiveResult> {
     );
 
     this.app = app;
+  }
+
+  getStatusLabel(params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
+    return labelFileOp(verbs('Archiving', 'Archived', 'Failed to archive'), params, tense);
   }
 
   /**

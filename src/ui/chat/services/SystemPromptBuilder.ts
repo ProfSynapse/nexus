@@ -81,9 +81,16 @@ export interface BuiltInDocsWorkspaceInfo {
   entrypoint: string;
 }
 
+export interface ToolCatalogEntry {
+  agent: string;
+  tools: string[];
+}
+
 export interface SystemPromptOptions {
   sessionId?: string;
   workspaceId?: string;
+  /** Live agent→tools catalog, populated from the agent registry at call time */
+  toolCatalog?: ToolCatalogEntry[];
   contextNotes?: string[];
   messageEnhancement?: MessageEnhancement | null;
   customPrompt?: string | null;
@@ -140,7 +147,7 @@ export class SystemPromptBuilder {
 
     // 1. Session context with tools overview (skip for pre-trained models like Nexus)
     if (!options.skipToolsSection) {
-      const sessionSection = this.buildSessionContext(options.sessionId, options.workspaceId);
+      const sessionSection = this.buildSessionContext(options.sessionId, options.workspaceId, options.toolCatalog);
       if (sessionSection) {
         sections.push(sessionSection);
       }
@@ -208,14 +215,14 @@ export class SystemPromptBuilder {
    * Build session context section for tool calls
    * Includes tools overview and context parameter instructions
    */
-  private buildSessionContext(sessionId?: string, workspaceId?: string): string | null {
+  private buildSessionContext(sessionId?: string, workspaceId?: string, toolCatalog?: ToolCatalogEntry[]): string | null {
     const effectiveSessionId = sessionId || `session_${Date.now()}`;
     const effectiveWorkspaceId = workspaceId || 'default';
 
     let prompt = '<tools_and_context>\n';
 
     prompt += `You have two meta-tools:
-- getTools: discover the tools and schemas needed for the next step
+- getTools: discover the exact parameter schemas for tools before calling them
 - useTools: execute tool calls
 
 Context (REQUIRED in every useTools call):
@@ -226,8 +233,20 @@ Context (REQUIRED in every useTools call):
 - constraints: (optional) any rules or limits
 
 Calls array: [{ agent: "agentName", tool: "toolName", params: {...} }]
+`;
 
-Use getTools narrowly. Do not assume schemas from memory. Use "params" for tool arguments.
+    // Inject the live agent→tools catalog so the LLM knows what's available
+    if (toolCatalog && toolCatalog.length > 0) {
+      prompt += '\nAvailable agents and tools:\n';
+      for (const entry of toolCatalog) {
+        if (entry.tools.length > 0) {
+          prompt += `${entry.agent}: [${entry.tools.join(', ')}]\n`;
+        }
+      }
+    }
+
+    prompt += `
+Call getTools first to get the exact schema, then useTools with correct params.
 Keep workspaceId and sessionId exactly as shown.
 `;
 

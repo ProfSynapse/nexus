@@ -18,7 +18,7 @@ import { setIcon } from 'obsidian';
 export interface ChatLayoutElements {
   messageContainer: HTMLElement;
   inputContainer: HTMLElement;
-  contextContainer: HTMLElement;
+  toolStatusBarContainer: HTMLElement;
   conversationListContainer: HTMLElement;
   newChatButton: HTMLElement;
   settingsButton: HTMLElement;
@@ -55,8 +55,8 @@ export class ChatLayoutBuilder {
 
     // Main content areas
     const messageContainer = mainContainer.createDiv('message-display-container');
+    const toolStatusBarContainer = mainContainer.createDiv('tool-status-bar-container');
     const inputContainer = mainContainer.createDiv('chat-input-container');
-    const contextContainer = mainContainer.createDiv('chat-context-container');
 
     // Nexus model loading overlay (hidden by default)
     const loadingOverlay = this.createLoadingOverlay(mainContainer);
@@ -68,7 +68,7 @@ export class ChatLayoutBuilder {
     return {
       messageContainer,
       inputContainer,
-      contextContainer,
+      toolStatusBarContainer,
       conversationListContainer,
       newChatButton,
       settingsButton,
@@ -138,13 +138,29 @@ export class ChatLayoutBuilder {
     link.rel = 'noopener noreferrer';
     warningBanner.createEl('span', { cls: 'warning-text', text: 'Use at your own risk.' });
 
-    // Auto-hide warning after 5 seconds
-    setTimeout(() => {
+    // Auto-hide warning after 5 seconds — guard against detached DOM
+    let fadeoutTimer: ReturnType<typeof setTimeout> | null = null;
+    const hideTimer = setTimeout(() => {
+      if (!warningBanner.isConnected) return;
       warningBanner.addClass('chat-warning-banner-fadeout');
-      setTimeout(() => {
+      fadeoutTimer = setTimeout(() => {
+        if (!warningBanner.isConnected) return;
         warningBanner.addClass('chat-loading-overlay-hidden');
+        fadeoutTimer = null;
       }, 500);
     }, 5000);
+
+    // Clear timers if the banner is removed early (e.g., view closed)
+    const observer = new MutationObserver(() => {
+      if (!warningBanner.isConnected) {
+        clearTimeout(hideTimer);
+        if (fadeoutTimer) clearTimeout(fadeoutTimer);
+        observer.disconnect();
+      }
+    });
+    if (warningBanner.parentElement) {
+      observer.observe(warningBanner.parentElement, { childList: true });
+    }
   }
 
   /**

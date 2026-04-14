@@ -13,12 +13,11 @@ import { getErrorMessage } from '../../../utils/errorUtils';
 import { SchemaData } from '../toolManager';
 
 /**
- * Internal-only tools hidden from external MCP clients (Claude Desktop)
- * These tools require internal chat context and won't work via MCP.
- */
-const INTERNAL_ONLY_TOOLS = new Set<string>([
-  'subagent'  // Internal chat UI only - requires conversation context
-]);
+ * Internal-only tools — currently empty. The subagent tool was previously
+ * hidden here but it needs to be discoverable in the chat UI. If called
+ * via external MCP without conversation context, it fails gracefully
+ * at execution time rather than being silently hidden at discovery. */
+const INTERNAL_ONLY_TOOLS = new Set<string>([]);
 
 /**
  * Tool for discovering available tools and their schemas
@@ -134,9 +133,14 @@ export class GetToolsTool implements ITool<GetToolsParams, GetToolsResult> {
           continue;
         }
 
-        // Validate tools array
+        // If tools array is empty or omitted, return ALL tools for this agent
         if (!toolNames || !Array.isArray(toolNames) || toolNames.length === 0) {
-          notFound.push(`Agent "${agentName}" requires "tools" array with at least one tool name`);
+          const allTools = agent.getTools()
+            .filter(t => !INTERNAL_ONLY_TOOLS.has(t.slug));
+          for (const tool of allTools) {
+            const schema = this.buildToolSchema(agentName, tool);
+            resultSchemas.push(schema);
+          }
           continue;
         }
 
@@ -240,11 +244,10 @@ export class GetToolsTool implements ITool<GetToolsParams, GetToolsResult> {
               tools: {
                 type: 'array',
                 items: { type: 'string' },
-                minItems: 1,
-                description: 'Tool names to get schemas for'
+                description: 'Tool names to get schemas for. Empty array or omit to get ALL tools for this agent.'
               }
             },
-            required: ['agent', 'tools']
+            required: ['agent']
           },
           minItems: 1,
           description: 'Array of agent/tools requests'

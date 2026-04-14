@@ -4,22 +4,28 @@
  * Provides text input, send button, and model selection
  */
 
-import { setIcon, App, Component } from 'obsidian';
+import { setIcon, App, Component, Notice } from 'obsidian';
 import { initializeSuggesters, SuggesterInstances } from './suggesters/initializeSuggesters';
 import { ContentEditableHelper } from '../utils/ContentEditableHelper';
 import { ReferenceExtractor, ReferenceMetadata } from '../utils/ReferenceExtractor';
 import { MessageEnhancement } from './suggesters/base/SuggesterInterfaces';
 import { MessageEnhancer } from '../services/MessageEnhancer';
 import { isMobile, isIOS } from '../../../utils/platform';
+import { ChatVoiceInputController, ChatVoiceInputState } from '../controllers/ChatVoiceInputController';
 
 export class ChatInput {
   private element: HTMLElement | null = null;
   private inputElement: HTMLElement | null = null;
+  private inputWrapper: HTMLElement | null = null;
+  private voiceVisualElement: HTMLElement | null = null;
   private sendButton: HTMLButtonElement | null = null;
   private isLoading = false;
   private isPreSendCompacting = false;
   private hasConversation = false;
   private suggesters: SuggesterInstances | null = null;
+  private voiceInputState: ChatVoiceInputState = 'idle';
+  private voiceInputController: ChatVoiceInputController | null = null;
+  private voiceVisualResizeObserver: ResizeObserver | null = null;
 
   constructor(
     private container: HTMLElement,
@@ -79,14 +85,17 @@ export class ChatInput {
     const component = this.component;
 
     // Input wrapper - contains both textarea and embedded send button
-    const inputWrapper = this.container.createDiv('chat-input-wrapper');
+    this.inputWrapper = this.container.createDiv('chat-input-wrapper');
 
     // Contenteditable input
-    this.inputElement = inputWrapper.createDiv('chat-textarea');
+    this.inputElement = this.inputWrapper.createDiv('chat-textarea');
     this.inputElement.contentEditable = 'true';
     this.inputElement.setAttribute('data-placeholder', 'Type your message...');
     this.inputElement.setAttribute('role', 'textbox');
     this.inputElement.setAttribute('aria-multiline', 'true');
+
+    this.voiceVisualElement = this.inputWrapper.createDiv('chat-voice-visual');
+    this.voiceVisualElement.setAttribute('aria-hidden', 'true');
 
     // Handle Enter key (send) and Shift+Enter (new line)
     const keydownHandler = (e: KeyboardEvent) => {
@@ -129,12 +138,12 @@ export class ChatInput {
 
     // Mobile: Add mobile-specific class for styling
     if (isMobile()) {
-      inputWrapper.addClass('chat-input-mobile');
+      this.inputWrapper.addClass('chat-input-mobile');
     }
 
     // Send button - embedded inside the input wrapper (bottom-right)
     // Uses Obsidian's clickable-icon class for proper icon sizing
-    this.sendButton = inputWrapper.createEl('button', {
+    this.sendButton = this.inputWrapper.createEl('button', {
       cls: 'chat-send-button clickable-icon'
     });
 
@@ -152,6 +161,24 @@ export class ChatInput {
       this.suggesters = initializeSuggesters(this.app, this.inputElement, this.component);
     }
 
+    this.voiceInputController = new ChatVoiceInputController(this.app, {
+      onStateChange: (state) => {
+        this.voiceInputState = state;
+        this.updateVoiceVisual();
+        this.updateUI();
+      },
+      onTranscriptReady: (text) => {
+        this.setValue(text);
+        this.focus();
+      },
+      onError: (message) => {
+        new Notice(message);
+      }
+    });
+
+    this.initializeVoiceVisualResizeHandling();
+    this.buildVoiceBars();
+
     this.element = this.container;
     this.updateUI();
   }
@@ -162,12 +189,24 @@ export class ChatInput {
   private handleSendOrStop(): void {
     const actuallyLoading = this.isLoading || this.getLoadingState();
     const hasPendingInput = this.hasPendingInput();
+    const canUseVoiceInput = this.canUseVoiceInput();
+
+    if (this.voiceInputState === 'recording') {
+      void this.voiceInputController?.stopRecording();
+      return;
+    }
+
+    if (this.voiceInputState === 'transcribing') {
+      return;
+    }
 
     if (actuallyLoading && !hasPendingInput) {
       // Stop generation
       if (this.onStopGeneration) {
         this.onStopGeneration();
       }
+    } else if (!hasPendingInput && canUseVoiceInput) {
+      void this.voiceInputController?.startRecording();
     } else {
       // Send message
       this.handleSendMessage();
@@ -247,6 +286,7 @@ export class ChatInput {
     const actuallyLoading = this.isLoading || this.getLoadingState();
     const hasConversation = this.getHasConversation ? this.getHasConversation() : this.hasConversation;
     const hasPendingInput = this.hasPendingInput();
+    const canUseVoiceInput = this.canUseVoiceInput();
     this.inputElement.setAttribute('aria-busy', this.isPreSendCompacting ? 'true' : 'false');
 
     if (this.isPreSendCompacting) {
@@ -271,9 +311,9 @@ export class ChatInput {
       this.sendButton.classList.add('disabled-mode');
       this.sendButton.empty();
       setIcon(this.sendButton, 'arrow-up');
-      this.sendButton.setAttribute('aria-label', 'Compacting context before sending');
+      this.sendButton.setAttribute('aria-label', 'Compacting');
       this.inputElement.contentEditable = 'false';
-      this.inputElement.setAttribute('data-placeholder', 'Compacting context before sending...');
+      this.inputElement.setAttribute('data-placeholder', 'Compacting');
     } else if (actuallyLoading) {
       // Keep the input active so a new message can interrupt the current turn.
       this.sendButton.disabled = false;
@@ -293,6 +333,33 @@ export class ChatInput {
         this.sendButton.setAttribute('aria-label', 'Stop generation');
         this.inputElement.setAttribute('data-placeholder', 'Type to interrupt, or stop generation');
       }
+    } else if (this.voiceInputState === 'recording') {
+      this.sendButton.disabled = false;
+      this.sendButton.classList.add('stop-mode');
+      this.sendButton.classList.remove('disabled-mode');
+      this.sendButton.empty();
+      setIcon(this.sendButton, 'square');
+      this.sendButton.setAttribute('aria-label', 'Stop recording');
+      this.inputElement.contentEditable = 'false';
+      this.inputElement.setAttribute('data-placeholder', 'Type your message...');
+    } else if (this.voiceInputState === 'transcribing') {
+      this.sendButton.disabled = true;
+      this.sendButton.classList.add('stop-mode');
+      this.sendButton.classList.remove('disabled-mode');
+      this.sendButton.empty();
+      setIcon(this.sendButton, 'square');
+      this.sendButton.setAttribute('aria-label', 'Finishing transcription');
+      this.inputElement.contentEditable = 'false';
+      this.inputElement.setAttribute('data-placeholder', 'Type your message...');
+    } else if (!hasPendingInput && canUseVoiceInput) {
+      this.sendButton.disabled = false;
+      this.sendButton.classList.remove('stop-mode');
+      this.sendButton.classList.remove('disabled-mode');
+      this.sendButton.empty();
+      setIcon(this.sendButton, 'mic');
+      this.sendButton.setAttribute('aria-label', 'Start voice input');
+      this.inputElement.contentEditable = 'true';
+      this.inputElement.setAttribute('data-placeholder', 'Type your message...');
     } else {
       // Show normal send button
       this.sendButton.disabled = false;
@@ -304,6 +371,8 @@ export class ChatInput {
       this.inputElement.contentEditable = 'true';
       this.inputElement.setAttribute('data-placeholder', 'Type your message...');
     }
+
+    this.updateVoiceVisual();
   }
 
   private hasPendingInput(): boolean {
@@ -372,6 +441,11 @@ export class ChatInput {
    * Cleanup resources
    */
   cleanup(): void {
+    this.voiceVisualResizeObserver?.disconnect();
+    this.voiceVisualResizeObserver = null;
+    this.voiceInputController?.cleanup();
+    this.voiceInputController = null;
+
     if (this.suggesters) {
       this.suggesters.cleanup();
       this.suggesters = null;
@@ -379,6 +453,79 @@ export class ChatInput {
 
     this.element = null;
     this.inputElement = null;
+    this.inputWrapper = null;
+    this.voiceVisualElement = null;
     this.sendButton = null;
+  }
+
+  private canUseVoiceInput(): boolean {
+    return this.voiceInputController?.isAvailable() ?? false;
+  }
+
+  private updateVoiceVisual(): void {
+    if (!this.inputWrapper) {
+      return;
+    }
+
+    const isVoiceMode = this.voiceInputState === 'recording' || this.voiceInputState === 'transcribing';
+    if (isVoiceMode) {
+      this.inputWrapper.addClass('chat-input-voice-recording');
+    } else {
+      this.inputWrapper.removeClass('chat-input-voice-recording');
+    }
+
+    if (this.voiceInputState === 'transcribing') {
+      this.inputWrapper.addClass('chat-input-voice-transcribing');
+    } else {
+      this.inputWrapper.removeClass('chat-input-voice-transcribing');
+    }
+
+    if (isVoiceMode) {
+      this.buildVoiceBars();
+    }
+  }
+
+  private initializeVoiceVisualResizeHandling(): void {
+    if (!this.voiceVisualElement) {
+      return;
+    }
+
+    if (typeof ResizeObserver !== 'undefined') {
+      this.voiceVisualResizeObserver = new ResizeObserver(() => this.buildVoiceBars());
+      this.voiceVisualResizeObserver.observe(this.voiceVisualElement);
+      return;
+    }
+
+    if (this.component && typeof window !== 'undefined') {
+      this.component.registerDomEvent(window, 'resize', () => this.buildVoiceBars());
+    }
+  }
+
+  private buildVoiceBars(): void {
+    if (!this.voiceVisualElement || typeof window === 'undefined') {
+      return;
+    }
+
+    const computedStyle = window.getComputedStyle(this.voiceVisualElement);
+    const paddingLeft = Number.parseFloat(computedStyle.paddingLeft || '0');
+    const paddingRight = Number.parseFloat(computedStyle.paddingRight || '0');
+    const availableWidth = this.voiceVisualElement.clientWidth - paddingLeft - paddingRight;
+
+    if (availableWidth <= 0) {
+      return;
+    }
+
+    const gap = 4;
+    const barWidth = 3;
+    const barSlot = barWidth + gap;
+    const barCount = Math.max(12, Math.floor(availableWidth / barSlot));
+
+    this.voiceVisualElement.empty();
+
+    for (let index = 0; index < barCount; index += 1) {
+      const phaseIndex = index % 8;
+      const delayIndex = index % 8;
+      this.voiceVisualElement.createSpan(`chat-voice-bar chat-voice-bar-phase-${phaseIndex} chat-voice-bar-delay-${delayIndex}`);
+    }
   }
 }

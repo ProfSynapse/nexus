@@ -10,6 +10,8 @@ import { CommonParameters, CommonResult } from '../../../../types';
 import { JSONSchema } from '../../../../types/schema/JSONSchemaTypes';
 import { BaseAppAgent } from '../../BaseAppAgent';
 import { requestUrl, normalizePath, TFolder } from 'obsidian';
+import { labelNamed, verbs } from '../../../utils/toolStatusLabels';
+import type { ToolStatusTense } from '../../../interfaces/ITool';
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -131,6 +133,10 @@ export class MusicGenerationTool extends BaseTool<MusicGenerationParams, CommonR
       return this.prepareResult(false, undefined,
         `Music generation failed${status !== undefined ? ` (${status})` : ''}: ${body}`);
     }
+  }
+
+  getStatusLabel(params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
+    return labelNamed(verbs('Generating music', 'Generated music', 'Failed to generate music'), params, tense, ['prompt']);
   }
 
   getParameterSchema(): JSONSchema {

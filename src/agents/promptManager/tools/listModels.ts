@@ -7,6 +7,8 @@ import { BaseTool } from '../../baseTool';
 import { CommonResult, CommonParameters } from '../../../types';
 import { createResult } from '../../../utils/schemaUtils';
 import { LLMProviderManager } from '../../../services/llm/providers/ProviderManager';
+import { ToolStatusTense } from '../../interfaces/ITool';
+import { verbs } from '../../utils/toolStatusLabels';
 
 export type ListModelsParams = CommonParameters
 
@@ -79,6 +81,11 @@ export class ListModelsTool extends BaseTool<ListModelsParams, ListModelsResult>
       required: []
     };
     return this.getMergedSchema(toolSchema);
+  }
+
+  getStatusLabel(_params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
+    const v = verbs('Listing models', 'Listed models', 'Failed to list models');
+    return v[tense];
   }
 
   getResultSchema(): Record<string, unknown> {

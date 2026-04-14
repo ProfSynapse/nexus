@@ -31,7 +31,7 @@ describe('ChatInput pre-send compaction state', () => {
     expect(inputElement.setAttribute).toHaveBeenCalledWith('aria-busy', 'true');
     expect(inputElement.setAttribute).toHaveBeenCalledWith(
       'data-placeholder',
-      'Compacting context before sending...'
+      'Compacting'
     );
     expect(sendButton.disabled).toBe(true);
   });

@@ -16,6 +16,8 @@ import { processFile, PipelineDeps } from './services/IngestionPipelineService';
 import type { LLMProviderManager } from '../../../services/llm/providers/ProviderManager';
 import { TranscriptionService } from '../../../services/llm/TranscriptionService';
 import { getTranscriptionProviders } from '../../../services/llm/types/VoiceTypes';
+import type { ToolStatusTense } from '../../interfaces/ITool';
+import { labelFileOp, verbs } from '../../utils/toolStatusLabels';
 
 export class IngestTool extends BaseTool<IngestToolParameters, IngestToolResult> {
   private cachedTranscriptionService: TranscriptionService | null = null;
@@ -30,6 +32,15 @@ export class IngestTool extends BaseTool<IngestToolParameters, IngestToolResult>
       'Ingest File',
       buildToolDescription(),
       '1.0.0'
+    );
+  }
+
+  getStatusLabel(params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
+    return labelFileOp(
+      verbs('Ingesting', 'Ingested', 'Failed to ingest'),
+      params,
+      tense,
+      { keys: ['filePath', 'path', 'file', 'source'], fallback: 'file' }
     );
   }
 

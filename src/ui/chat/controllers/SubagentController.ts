@@ -208,8 +208,10 @@ export class SubagentController {
         () => this.buildSubagentContext(contextProvider)
       );
 
-      // Initialize status menu if container provided
-      if (settingsButtonContainer && settingsButton) {
+      // Initialize status menu if a container is provided. The optional
+      // insertBefore target is used by the legacy header mount; the glass
+      // status bar appends directly into its dedicated agent slot.
+      if (settingsButtonContainer) {
         this.agentStatusMenu = new AgentStatusMenu(
           settingsButtonContainer,
           this.subagentExecutor,

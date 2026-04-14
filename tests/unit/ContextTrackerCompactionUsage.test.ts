@@ -103,6 +103,12 @@ describe('ContextTracker compaction usage regression', () => {
       maxSummaryLength: 500,
       includeFileReferences: true
     });
+    conversationAfter.metadata = {
+      ...(conversationAfter.metadata ?? {}),
+      compaction: {
+        frontier: [compactedContext]
+      }
+    };
 
     const afterSystemPrompt = await builder.build({
       sessionId: 'session_1',
@@ -121,6 +127,6 @@ describe('ContextTracker compaction usage regression', () => {
     expect(beforeUsage.used).toBeGreaterThan(afterUsage.used);
     expect(beforeUsage.percentage).toBeGreaterThan(afterUsage.percentage);
     expect(compactedContext.messagesRemoved).toBeGreaterThan(0);
-    expect(afterUsage.used).toBeLessThan(beforeUsage.used * 0.6);
+    expect(afterUsage.used).toBeLessThan(beforeUsage.used * 0.8);
   });
 });

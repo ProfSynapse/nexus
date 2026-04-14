@@ -1,6 +1,8 @@
 import { JSONSchema } from '../../../../types/schema/JSONSchemaTypes';
 import { BaseTool } from '../../../baseTool';
 import { MemoryManagerAgent } from '../../memoryManager';
+import { labelNamed, verbs } from '../../../utils/toolStatusLabels';
+import type { ToolStatusTense } from '../../../interfaces/ITool';
 import { getNexusPlugin } from '../../../../utils/pluginLocator';
 import type { WorkspaceWorkflow } from '../../../../database/types/workspace/WorkspaceTypes';
 import type { WorkflowRunService } from '../../../../services/workflows/WorkflowRunService';
@@ -95,6 +97,10 @@ export class RunWorkflowTool extends BaseTool<RunWorkflowParameters, RunWorkflow
         error: error instanceof Error ? error.message : String(error)
       };
     }
+  }
+
+  getStatusLabel(params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
+    return labelNamed(verbs('Running workflow', 'Ran workflow', 'Failed to run workflow'), params, tense, ['workflowName', 'workflowId']);
   }
 
   getParameterSchema(): JSONSchema {

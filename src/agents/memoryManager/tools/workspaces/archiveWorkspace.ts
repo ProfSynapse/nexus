@@ -8,6 +8,8 @@
 import { App } from 'obsidian';
 import { BaseTool } from '../../../baseTool';
 import { MemoryManagerAgent } from '../../memoryManager';
+import { labelNamed, verbs } from '../../../utils/toolStatusLabels';
+import type { ToolStatusTense } from '../../../interfaces/ITool';
 import { createServiceIntegration } from '../../services/ValidationService';
 import { createErrorMessage } from '../../../../utils/errorUtils';
 import { CommonResult, CommonParameters } from '../../../../types/mcp/AgentTypes';
@@ -108,6 +110,14 @@ export class ArchiveWorkspaceTool extends BaseTool<ArchiveWorkspaceParameters, A
         } catch (error) {
             return this.prepareResult(false, undefined, createErrorMessage('Error archiving workspace: ', error));
         }
+    }
+
+    getStatusLabel(params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
+        const isRestore = params?.restore === true;
+        const v = isRestore
+            ? verbs('Restoring workspace', 'Restored workspace', 'Failed to restore workspace')
+            : verbs('Archiving workspace', 'Archived workspace', 'Failed to archive workspace');
+        return labelNamed(v, params, tense, ['name']);
     }
 
     getParameterSchema(): Record<string, unknown> {

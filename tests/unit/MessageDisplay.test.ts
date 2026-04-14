@@ -2,8 +2,6 @@
  * MessageDisplay Unit Tests
  *
  * Tests for incremental message reconciliation.
- * Bug #7: Full re-render destroyed live tool accordions.
- * Bug #12: Full re-render lost progressive tool accordion state.
  *
  * Key behaviors verified:
  * - Reconciliation reuses existing MessageBubble instances
@@ -26,7 +24,6 @@ const mockCleanup = jest.fn();
 const mockGetElement = jest.fn();
 const mockUpdateWithNewMessage = jest.fn();
 const mockCreateElement = jest.fn();
-const mockGetProgressiveToolAccordions = jest.fn(() => new Map());
 
 type MessageLike = {
   content: string;
@@ -52,6 +49,7 @@ type MockDisplayElement = {
   appendChild: jest.Mock<void, [MockDisplayElement]>;
   prepend: jest.Mock<void, [MockDisplayElement]>;
   removeChild: jest.Mock<void, [MockDisplayElement]>;
+  insertBefore: jest.Mock<void, [MockDisplayElement, MockDisplayElement | null]>;
   querySelector: jest.Mock<MockDisplayElement | null, [string]>;
   querySelectorAll: jest.Mock<MockDisplayElement[], [string]>;
   setAttribute: jest.Mock<void, [string, string]>;
@@ -84,7 +82,6 @@ jest.mock('../../src/ui/chat/components/MessageBubble', () => {
       getElement: mockGetElement,
       updateWithNewMessage: mockUpdateWithNewMessage,
       createElement: mockCreateElement,
-      getProgressiveToolAccordions: mockGetProgressiveToolAccordions,
       updateContent: jest.fn()
     }))
   };
@@ -128,6 +125,7 @@ function createDeepMockElement(tag = 'div'): MockDisplayElement {
     appendChild: jest.fn(),
     prepend: jest.fn(),
     removeChild: jest.fn(),
+    insertBefore: jest.fn(),
     querySelector: jest.fn(() => null),
     querySelectorAll: jest.fn(() => []),
     setAttribute: jest.fn(),
@@ -273,7 +271,7 @@ describe('MessageDisplay', () => {
       display.setConversation(conversation);
       jest.clearAllMocks();
 
-      display.showTransientEventRow('Compacting context before sending...');
+      display.showTransientEventRow('Compacting');
 
       const eventRow = (display as MessageDisplayAccess).transientEventRow;
       expect(eventRow).toBeDefined();
@@ -335,6 +333,112 @@ describe('MessageDisplay', () => {
       // Old key should be gone, new key should work
       expect(display.findMessageBubble('temp_123')).toBeUndefined();
       expect(display.findMessageBubble('real_456')).toBeDefined();
+    });
+  });
+
+  // ==========================================================================
+  // showCompactionDivider
+  // ==========================================================================
+
+  describe('showCompactionDivider', () => {
+    let mockCreatedElements: MockDisplayElement[];
+
+    beforeEach(() => {
+      mockCreatedElements = [];
+
+      // showCompactionDivider uses document.createElement directly, so
+      // we shim it to return trackable mock elements.
+      (global as any).document = {
+        createElement: jest.fn((tag: string) => {
+          const el = createDeepMockElement(tag);
+          mockCreatedElements.push(el);
+          return el;
+        }),
+      };
+
+      // querySelector('.messages-container') must return the messagesContainer
+      // (already set up by createMockDisplayContainer)
+    });
+
+    afterEach(() => {
+      delete (global as any).document;
+    });
+
+    it('creates a .compaction-divider element with separator role', () => {
+      display.showCompactionDivider(5);
+
+      // The first createElement call is the outer divider div
+      const divider = mockCreatedElements[0];
+      expect(divider).toBeDefined();
+      expect(divider.className).toBe('compaction-divider');
+      expect(divider.setAttribute).toHaveBeenCalledWith('role', 'separator');
+    });
+
+    it('sets aria-label with the correct message count', () => {
+      display.showCompactionDivider(12);
+
+      const divider = mockCreatedElements[0];
+      expect(divider.setAttribute).toHaveBeenCalledWith(
+        'aria-label',
+        '12 messages compacted'
+      );
+    });
+
+    it('creates two rule spans and one label span', () => {
+      display.showCompactionDivider(3);
+
+      // Elements created: [0] = divider, [1] = rule1, [2] = label, [3] = rule2
+      expect(mockCreatedElements).toHaveLength(4);
+
+      const rule1 = mockCreatedElements[1];
+      const label = mockCreatedElements[2];
+      const rule2 = mockCreatedElements[3];
+
+      expect(rule1.className).toBe('compaction-divider-rule');
+      expect(label.className).toBe('compaction-divider-label');
+      expect(label.textContent).toBe('Compacted');
+      expect(rule2.className).toBe('compaction-divider-rule');
+    });
+
+    it('appends divider to messages container', () => {
+      display.showCompactionDivider(5);
+
+      // The divider should be appended to messagesContainer
+      expect(messagesContainer.appendChild).toHaveBeenCalled();
+    });
+
+    it('does nothing when .messages-container is not found', () => {
+      // Override querySelector to return null
+      container.querySelector = jest.fn(() => null);
+
+      // Re-create display with the modified container
+      const display2 = new MessageDisplay(
+        container,
+        mockApp,
+        mockBranchManager
+      );
+
+      display2.showCompactionDivider(5);
+
+      // No elements should be created
+      expect(mockCreatedElements).toHaveLength(0);
+    });
+
+    it('inserts before transientEventRow when present', () => {
+      // Set up a transient event row in the messages container
+      const transientRow = createDeepMockElement('div');
+      // Set parentElement to match messagesContainer by making insertBefore available
+      Object.defineProperty(transientRow, 'parentElement', {
+        value: messagesContainer,
+        configurable: true,
+      });
+
+      // Access the private transientEventRow field
+      (display as unknown as MessageDisplayAccess).transientEventRow = transientRow;
+
+      display.showCompactionDivider(5);
+
+      expect(messagesContainer.insertBefore).toHaveBeenCalled();
     });
   });
 });

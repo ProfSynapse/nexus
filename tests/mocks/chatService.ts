@@ -27,6 +27,7 @@ interface MockChatService {
 
 interface MockBranchManager {
   createHumanBranch: jest.Mock<Promise<string>, [ConversationData, string, unknown]>;
+  addMessagesToBranch: jest.Mock<Promise<boolean>, [string, unknown[]]>;
   switchToBranch: jest.Mock<Promise<boolean>, [string]>;
   switchToOriginal: jest.Mock<Promise<boolean>, []>;
   switchToBranchByIndex: jest.Mock<Promise<boolean>, [number]>;
@@ -109,6 +110,7 @@ export function createMockChatService(config: MockChatServiceConfig = {}): MockC
 export function createMockBranchManager(): MockBranchManager {
   return {
     createHumanBranch: jest.fn(async () => 'branch_new'),
+    addMessagesToBranch: jest.fn(async () => true),
     switchToBranch: jest.fn(async () => true),
     switchToOriginal: jest.fn(async () => true),
     switchToBranchByIndex: jest.fn(async () => true),

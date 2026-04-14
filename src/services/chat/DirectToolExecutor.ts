@@ -288,8 +288,8 @@ export class DirectToolExecutor {
             }
 
             // Legacy/direct tool calls: "agentName_toolName" format
-            let agentName: string;
-            let modeName: string;
+            let agentName = '';
+            let modeName = '';
             const paramsTyped = params as Record<string, unknown> & { mode?: string; context?: Record<string, unknown> };
 
             if (paramsTyped.mode) {
@@ -302,10 +302,24 @@ export class DirectToolExecutor {
                 agentName = parts[0];
                 modeName = parts.slice(1).join('_');
             } else {
-                // Unknown tool name
-                throw new Error(
-                    `Unknown tool "${toolName}". Expected "getTools", "useTool", or "agentName_toolName" format.`
-                );
+                // Bare tool name (e.g. "createState" from ContextPreservationService).
+                // Scan all agents to find which one owns this tool slug.
+                const agents = this.getAgentsAsArray();
+                let found = false;
+                for (const a of agents) {
+                    const tool = a.getTool(toolName);
+                    if (tool) {
+                        agentName = a.name;
+                        modeName = toolName;
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    throw new Error(
+                        `Unknown tool "${toolName}". Expected "getTools", "useTool", or "agentName_toolName" format.`
+                    );
+                }
             }
 
             // Determine sessionId and workspaceId with priority:

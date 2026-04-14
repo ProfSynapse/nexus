@@ -9,6 +9,7 @@ import type {
   ContextStatusInfo,
   LoadedWorkspaceData,
   SystemPromptBuilder,
+  ToolCatalogEntry,
 } from './SystemPromptBuilder';
 
 interface ContextTokenTrackerLike {
@@ -50,6 +51,7 @@ export interface ModelAgentMessageOptions {
 interface ModelAgentPromptContextAssemblerDependencies {
   systemPromptBuilder: Pick<SystemPromptBuilder, 'build'>;
   getSessionId: () => Promise<string | undefined>;
+  getToolCatalog?: () => ToolCatalogEntry[];
 }
 
 export class ModelAgentPromptContextAssembler {
@@ -69,7 +71,8 @@ export class ModelAgentPromptContextAssembler {
       skipToolsSection: !shouldPassToolSchemasToProvider(snapshot.selectedModel?.providerId),
       contextStatus: this.buildContextStatus(snapshot.contextTokenTracker),
       compactionFrontier: snapshot.compactionFrontier,
-      legacyCompactionRecord: snapshot.latestCompactionRecord
+      legacyCompactionRecord: snapshot.latestCompactionRecord,
+      toolCatalog: this.deps.getToolCatalog?.(),
     });
   }
 

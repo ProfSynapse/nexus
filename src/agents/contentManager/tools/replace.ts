@@ -16,6 +16,8 @@ import { BaseTool } from '../../baseTool';
 import { ReplaceParams, ReplaceResult } from '../types';
 import { createErrorMessage } from '../../../utils/errorUtils';
 import { generateUnifiedDiff } from '../utils/unifiedDiff';
+import type { ToolStatusTense } from '../../interfaces/ITool';
+import { labelFileOp, verbs } from '../../utils/toolStatusLabels';
 
 /**
  * Normalize line endings to LF for consistent comparison.
@@ -65,6 +67,10 @@ export class ReplaceTool extends BaseTool<ReplaceParams, ReplaceResult> {
     );
 
     this.app = app;
+  }
+
+  getStatusLabel(params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
+    return labelFileOp(verbs('Replacing in', 'Replaced in', 'Failed to replace in'), params, tense);
   }
 
   /**

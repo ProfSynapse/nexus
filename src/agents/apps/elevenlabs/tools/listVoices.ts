@@ -10,6 +10,8 @@ import { CommonParameters, CommonResult } from '../../../../types';
 import { JSONSchema } from '../../../../types/schema/JSONSchemaTypes';
 import { BaseAppAgent } from '../../BaseAppAgent';
 import { requestUrl } from 'obsidian';
+import { verbs } from '../../../utils/toolStatusLabels';
+import type { ToolStatusTense } from '../../../interfaces/ITool';
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -131,6 +133,11 @@ export class ListVoicesTool extends BaseTool<ListVoicesParams, CommonResult> {
       return this.prepareResult(false, undefined,
         `Failed to list voices${status !== undefined ? ` (${status})` : ''}: ${body}`);
     }
+  }
+
+  getStatusLabel(_params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
+    const v = verbs('Listing voices', 'Listed voices', 'Failed to list voices');
+    return v[tense];
   }
 
   getParameterSchema(): JSONSchema {

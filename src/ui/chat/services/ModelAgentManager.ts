@@ -7,6 +7,9 @@ import { ModelOption, PromptOption } from '../types/SelectionTypes';
 import { WorkspaceContext } from '../../../database/types/workspace/WorkspaceTypes';
 import { MessageEnhancement } from '../components/suggesters/base/SuggesterInterfaces';
 import { SystemPromptBuilder } from './SystemPromptBuilder';
+import { getNexusPlugin } from '../../../utils/pluginLocator';
+import type { AgentManager } from '../../../services/AgentManager';
+import type { IAgent } from '../../../agents/interfaces/IAgent';
 import { ContextNotesManager } from './ContextNotesManager';
 import {
   ModelAgentConversationSettingsStore,
@@ -99,7 +102,22 @@ export class ModelAgentManager {
     );
     this.promptContextAssembler = new ModelAgentPromptContextAssembler({
       systemPromptBuilder: this.systemPromptBuilder,
-      getSessionId: async () => await this.getCurrentSessionId()
+      getSessionId: async () => await this.getCurrentSessionId(),
+      getToolCatalog: () => {
+        try {
+          const plugin = getNexusPlugin(this.app) as { getServiceIfReady?<T>(name: string): T | null } | null;
+          const agentManager = plugin?.getServiceIfReady?.<AgentManager>('agentManager');
+          if (!agentManager) return [];
+          return agentManager.getAgents()
+            .filter((a: IAgent) => a.name !== 'toolManager')
+            .map((a: IAgent) => ({
+              agent: a.name,
+              tools: a.getTools().map(t => t.slug),
+            }));
+        } catch {
+          return [];
+        }
+      },
     });
   }
 

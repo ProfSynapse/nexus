@@ -11,6 +11,8 @@
 import { App } from 'obsidian';
 import { BaseTool } from '../../../baseTool';
 import { MemoryManagerAgent } from '../../memoryManager';
+import { labelWithId, verbs } from '../../../utils/toolStatusLabels';
+import type { ToolStatusTense } from '../../../interfaces/ITool';
 import { createServiceIntegration } from '../../services/ValidationService';
 import { createErrorMessage } from '../../../../utils/errorUtils';
 import { CommonResult, CommonParameters } from '../../../../types/mcp/AgentTypes';
@@ -162,6 +164,10 @@ export class UpdateWorkspaceTool extends BaseTool<UpdateWorkspaceParameters, Upd
         } catch (error) {
             return this.prepareResult(false, undefined, createErrorMessage('Error updating workspace: ', error));
         }
+    }
+
+    getStatusLabel(params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
+        return labelWithId(verbs('Updating workspace', 'Updated workspace', 'Failed to update workspace'), params, tense, { keys: ['workspaceId'], fallback: 'workspace' });
     }
 
     getParameterSchema(): Record<string, unknown> {

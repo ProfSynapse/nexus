@@ -11,6 +11,8 @@ import { TaskService } from '../../services/TaskService';
 import { ArchiveProjectParameters, ArchiveProjectResult } from '../../types';
 import { JSONSchema } from '../../../../types/schema/JSONSchemaTypes';
 import { createErrorMessage } from '../../../../utils/errorUtils';
+import { ToolStatusTense } from '../../../interfaces/ITool';
+import { verbs, labelWithId } from '../../../utils/toolStatusLabels';
 
 export class ArchiveProjectTool extends BaseTool<ArchiveProjectParameters, ArchiveProjectResult> {
   constructor(private taskService: TaskService) {
@@ -43,6 +45,11 @@ export class ArchiveProjectTool extends BaseTool<ArchiveProjectParameters, Archi
       },
       required: ['projectId']
     });
+  }
+
+  getStatusLabel(params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
+    const v = verbs('Archiving project', 'Archived project', 'Failed to archive project');
+    return labelWithId(v, params, tense, { keys: ['projectId'], fallback: 'project' });
   }
 
   getResultSchema(): JSONSchema {

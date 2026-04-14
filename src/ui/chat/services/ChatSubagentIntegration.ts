@@ -76,7 +76,7 @@ interface ChatSubagentIntegrationDependencies {
   getModelAgentManager: () => ModelAgentManagerLike | null;
   getStreamingController: () => StreamingController | null;
   getToolEventCoordinator: () => ToolEventCoordinator | null;
-  getSettingsButtonContainer: () => HTMLElement | undefined;
+  getAgentStatusSlot: () => HTMLElement | undefined;
   getSettingsButton: () => HTMLElement | undefined;
   getNavigationTarget: () => NavigationTarget | null;
   getPlugin?: () => PluginServiceLocator | null;
@@ -107,37 +107,44 @@ export class ChatSubagentIntegration {
     try {
       const plugin = this.getPlugin();
       if (!plugin) {
+        console.warn('[ChatSubagentIntegration] Cannot initialize: plugin not available');
         return { preservationService: null, subagentController: null };
       }
 
       const directToolExecutor = await plugin.getService<DirectToolExecutor>('directToolExecutor');
       if (!directToolExecutor) {
+        console.warn('[ChatSubagentIntegration] Cannot initialize: directToolExecutor not available');
         return { preservationService: null, subagentController: null };
       }
 
       const agentManager = await plugin.getService<AgentManager>('agentManager');
       if (!agentManager) {
+        console.warn('[ChatSubagentIntegration] Cannot initialize: agentManager not available');
         return { preservationService: null, subagentController: null };
       }
 
       const promptManagerAgent = agentManager.getAgent('promptManager') as PromptManagerAgent | null;
       if (!promptManagerAgent) {
+        console.warn('[ChatSubagentIntegration] Cannot initialize: promptManager agent not available');
         return { preservationService: null, subagentController: null };
       }
 
       const storageAdapter = plugin.getServiceIfReady<HybridStorageAdapter>('hybridStorageAdapter');
       if (!storageAdapter) {
+        console.warn('[ChatSubagentIntegration] Cannot initialize: hybridStorageAdapter not available');
         return { preservationService: null, subagentController: null };
       }
 
       const llmService = this.deps.chatService.getLLMService();
       if (!llmService) {
+        console.warn('[ChatSubagentIntegration] Cannot initialize: llmService not available');
         return { preservationService: null, subagentController: null };
       }
 
       const streamingController = this.deps.getStreamingController();
       const toolEventCoordinator = this.deps.getToolEventCoordinator();
       if (!streamingController || !toolEventCoordinator) {
+        console.warn('[ChatSubagentIntegration] Cannot initialize: streamingController or toolEventCoordinator not available');
         return { preservationService: null, subagentController: null };
       }
 
@@ -156,7 +163,7 @@ export class ChatSubagentIntegration {
         contextProvider,
         streamingController,
         toolEventCoordinator,
-        this.deps.getSettingsButtonContainer(),
+        this.deps.getAgentStatusSlot(),
         this.deps.getSettingsButton()
       );
 

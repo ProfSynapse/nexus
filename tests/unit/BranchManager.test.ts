@@ -273,6 +273,74 @@ describe('BranchManager', () => {
       expect(mockEvents.onBranchCreated).toHaveBeenCalledWith(aiMsg.id, branchId);
     });
 
+    it('should persist a branch conversation when unified branch storage is available', async () => {
+      const conversation = createConversation();
+      const aiMsg = conversation.messages[1];
+      const altResponse = createAssistantMessage({
+        id: 'alt_new',
+        content: 'Persisted alternative',
+        reasoning: 'Stored reasoning'
+      });
+      const unifiedRepo = {
+        ...mockRepo,
+        createBranchConversation: jest.fn(async () => ({
+          id: 'branch_unified',
+          title: 'Alternative response 1',
+          created: 1000,
+          updated: 1000
+        })),
+        addMessage: jest.fn(async () => ({ success: true })),
+        updateMessage: jest.fn(async () => ({ success: true }))
+      };
+      const manager = new BranchManager(unifiedRepo, mockEvents);
+
+      const branchId = await manager.createHumanBranch(conversation, aiMsg.id, altResponse);
+
+      expect(branchId).toBe('branch_unified');
+      expect(unifiedRepo.createBranchConversation).toHaveBeenCalledWith(
+        conversation.id,
+        aiMsg.id,
+        'alternative',
+        'Alternative response 1'
+      );
+      expect(unifiedRepo.addMessage).toHaveBeenCalledWith(expect.objectContaining({
+        conversationId: 'branch_unified',
+        id: 'alt_new',
+        role: 'assistant',
+        content: 'Persisted alternative'
+      }));
+      expect(unifiedRepo.updateMessage).toHaveBeenCalledWith(
+        'branch_unified',
+        'alt_new',
+        expect.objectContaining({ reasoning: 'Stored reasoning' })
+      );
+      expect(expectDefined(aiMsg.branches)[0].id).toBe('branch_unified');
+    });
+
+    it('should persist continuation messages into unified branch storage', async () => {
+      const continuation = createAssistantMessage({
+        id: 'follow_up',
+        content: 'Follow-up content'
+      });
+      const unifiedRepo = {
+        ...mockRepo,
+        createBranchConversation: jest.fn(),
+        addMessage: jest.fn(async () => ({ success: true })),
+        updateMessage: jest.fn(async () => ({ success: true }))
+      };
+      const manager = new BranchManager(unifiedRepo, mockEvents);
+
+      const result = await manager.addMessagesToBranch('branch_unified', [continuation]);
+
+      expect(result).toBe(true);
+      expect(unifiedRepo.addMessage).toHaveBeenCalledWith(expect.objectContaining({
+        conversationId: 'branch_unified',
+        id: 'follow_up',
+        role: 'assistant',
+        content: 'Follow-up content'
+      }));
+    });
+
     it('should return null if message is not found', async () => {
       const conversation = createConversation();
       const altResponse = createAssistantMessage({ id: 'alt_new' });

@@ -3,6 +3,8 @@ import { CommonParameters, CommonResult } from '../../../../types';
 import { JSONSchema } from '../../../../types/schema/JSONSchemaTypes';
 import { BaseAppAgent } from '../../BaseAppAgent';
 import { isDesktop, isElectron } from '../../../../utils/platform';
+import type { ToolStatusTense } from '../../../interfaces/ITool';
+import { labelWithUrl, verbs } from '../../../utils/toolStatusLabels';
 import {
   ensureParentFolderExists,
   getWebViewerContents,
@@ -34,6 +36,10 @@ export class CapturePagePngTool extends BaseTool<CapturePagePngParams, CommonRes
       '1.0.0'
     );
     this.agent = agent;
+  }
+
+  getStatusLabel(params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
+    return labelWithUrl(verbs('Capturing PNG', 'Captured PNG', 'Failed to capture PNG'), params, tense, 'page');
   }
 
   async execute(params: CapturePagePngParams): Promise<CommonResult> {

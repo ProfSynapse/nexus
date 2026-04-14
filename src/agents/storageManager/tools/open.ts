@@ -4,6 +4,8 @@ import { BaseTool } from '../../baseTool';
 import { OpenParams, OpenResult } from '../types';
 import { createErrorMessage } from '../../../utils/errorUtils';
 import { smartNormalizePath } from '../../../utils/pathUtils';
+import type { ToolStatusTense } from '../../interfaces/ITool';
+import { labelFileOp, verbs } from '../../utils/toolStatusLabels';
 
 /**
  * Location: src/agents/storageManager/tools/open.ts
@@ -29,6 +31,10 @@ export class OpenTool extends BaseTool<OpenParams, OpenResult> {
       '1.0.0'
     );
     this.app = app;
+  }
+
+  getStatusLabel(params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
+    return labelFileOp(verbs('Opening', 'Opened', 'Failed to open'), params, tense);
   }
 
   /**

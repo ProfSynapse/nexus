@@ -4,7 +4,6 @@ export interface MessageBubbleResolvedState {
   activeContent: string;
   activeToolCalls: ConversationMessage['toolCalls'] | undefined;
   activeReasoning: string | undefined;
-  renderMode: 'group' | 'standard';
   shouldRenderTextBubble: boolean;
 }
 
@@ -18,13 +17,12 @@ export class MessageBubbleStateResolver {
       activeContent,
       activeToolCalls,
       activeReasoning,
-      renderMode: message.role === 'assistant' && ((activeToolCalls?.length ?? 0) > 0 || !!activeReasoning)
-        ? 'group'
-        : 'standard',
       shouldRenderTextBubble: message.role === 'assistant' && (
         !!activeContent.trim() ||
         message.state === 'streaming' ||
-        !!message.isLoading
+        !!message.isLoading ||
+        (activeToolCalls?.length ?? 0) > 0 ||
+        !!activeReasoning
       )
     };
   }

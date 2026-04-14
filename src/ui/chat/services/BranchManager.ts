@@ -16,6 +16,64 @@ interface ConversationRepository {
   updateConversation(id: string, updates: Partial<ConversationData>): Promise<void>;
 }
 
+interface BranchConversationRecord {
+  id: string;
+  title: string;
+  created: number;
+  updated: number;
+}
+
+interface AddBranchMessageResult {
+  success: boolean;
+  messageId?: string;
+  error?: string;
+}
+
+interface BranchMessageCreateParams {
+  conversationId: string;
+  role: 'user' | 'assistant' | 'tool';
+  content: string;
+  id?: string;
+  toolCalls?: ToolCall[];
+  metadata?: Record<string, unknown>;
+}
+
+interface BranchMessageUpdateParams {
+  content?: string;
+  state?: 'draft' | 'streaming' | 'complete' | 'aborted' | 'invalid';
+  toolCalls?: ToolCall[];
+  reasoning?: string;
+  metadata?: Record<string, unknown>;
+}
+
+interface UnifiedBranchRepository extends ConversationRepository {
+  createBranchConversation(
+    parentConversationId: string,
+    parentMessageId: string,
+    branchType: 'subagent' | 'alternative',
+    title: string,
+    task?: string,
+    subagentMetadata?: Record<string, unknown>
+  ): Promise<BranchConversationRecord>;
+  addMessage(params: BranchMessageCreateParams): Promise<AddBranchMessageResult | void>;
+  updateMessage?(
+    conversationId: string,
+    messageId: string,
+    updates: BranchMessageUpdateParams
+  ): Promise<AddBranchMessageResult | void>;
+}
+
+interface MaybeUnifiedBranchRepository extends ConversationRepository {
+  createBranchConversation?: unknown;
+  addMessage?: unknown;
+}
+
+function supportsUnifiedBranchStorage(repo: ConversationRepository): repo is UnifiedBranchRepository {
+  const candidate = repo as MaybeUnifiedBranchRepository;
+  return typeof candidate.createBranchConversation === 'function'
+    && typeof candidate.addMessage === 'function';
+}
+
 export interface BranchManagerEvents {
   onBranchCreated: (messageId: string, branchId: string) => void;
   onBranchSwitched: (messageId: string, branchId: string) => void;
@@ -59,14 +117,20 @@ export class BranchManager {
       const metadata: HumanBranchMetadata = {
         description: description || `Alternative response ${message.branches.length + 1}`,
       };
+      const branchConversation = supportsUnifiedBranchStorage(this.conversationRepo)
+        ? await this.createUnifiedHumanBranch(conversation.id, messageId, alternativeResponse, metadata.description)
+        : null;
 
       const newBranch: ConversationBranch = {
-        id: branchId,
+        id: branchConversation?.id ?? branchId,
         type: 'human',
         inheritContext: true,
-        messages: [alternativeResponse],
-        created: now,
-        updated: now,
+        messages: [{
+          ...alternativeResponse,
+          conversationId: branchConversation?.id ?? alternativeResponse.conversationId,
+        }],
+        created: branchConversation?.created ?? now,
+        updated: branchConversation?.updated ?? now,
         metadata,
       };
 
@@ -81,14 +145,109 @@ export class BranchManager {
         messages: conversation.messages,
       });
 
-      this.events.onBranchCreated(messageId, branchId);
+      const createdBranchId = newBranch.id;
+      this.events.onBranchCreated(messageId, createdBranchId);
 
-      return branchId;
+      return createdBranchId;
     } catch (error) {
       console.error('[BranchManager] Failed to create branch:', error);
       this.events.onError('Failed to create alternative response');
       return null;
     }
+  }
+
+  /**
+   * Persist extra messages into a branch conversation.
+   *
+   * Embedded branch storage is handled by updateConversation(); unified branch
+   * storage needs explicit message inserts because branches are conversations.
+   */
+  async addMessagesToBranch(branchId: string, messages: ConversationMessage[]): Promise<boolean> {
+    if (messages.length === 0 || !supportsUnifiedBranchStorage(this.conversationRepo)) {
+      return true;
+    }
+
+    try {
+      for (const message of messages) {
+        await this.addMessageToUnifiedBranch(this.conversationRepo, branchId, message);
+      }
+      return true;
+    } catch (error) {
+      console.error('[BranchManager] Failed to add messages to branch:', error);
+      this.events.onError('Failed to save branch messages');
+      return false;
+    }
+  }
+
+  private async createUnifiedHumanBranch(
+    conversationId: string,
+    messageId: string,
+    firstMessage: ConversationMessage,
+    description?: string
+  ): Promise<BranchConversationRecord> {
+    if (!supportsUnifiedBranchStorage(this.conversationRepo)) {
+      throw new Error('Unified branch storage is not available');
+    }
+
+    const branchConversation = await this.conversationRepo.createBranchConversation(
+      conversationId,
+      messageId,
+      'alternative',
+      description || 'Alternative response'
+    );
+
+    await this.addMessageToUnifiedBranch(this.conversationRepo, branchConversation.id, firstMessage);
+    return branchConversation;
+  }
+
+  private async addMessageToUnifiedBranch(
+    repo: UnifiedBranchRepository,
+    branchId: string,
+    message: ConversationMessage
+  ): Promise<void> {
+    const role = this.getPersistableBranchRole(message);
+    if (!role) {
+      throw new Error(`Unsupported branch message role: ${message.role}`);
+    }
+
+    const result = await repo.addMessage({
+      conversationId: branchId,
+      id: message.id,
+      role,
+      content: message.content || '',
+      toolCalls: message.toolCalls,
+      metadata: message.metadata,
+    });
+
+    if (result && !result.success) {
+      throw new Error(result.error || `Failed to add message ${message.id} to branch ${branchId}`);
+    }
+
+    if (!repo.updateMessage) {
+      return;
+    }
+
+    const state = message.state ?? 'complete';
+    const updates: BranchMessageUpdateParams = {
+      state,
+      reasoning: message.reasoning,
+    };
+
+    if (message.toolCalls) {
+      updates.toolCalls = message.toolCalls;
+    }
+
+    const updateResult = await repo.updateMessage(branchId, message.id, updates);
+    if (updateResult && !updateResult.success) {
+      throw new Error(updateResult.error || `Failed to update message ${message.id} in branch ${branchId}`);
+    }
+  }
+
+  private getPersistableBranchRole(message: ConversationMessage): 'user' | 'assistant' | 'tool' | null {
+    if (message.role === 'user' || message.role === 'assistant' || message.role === 'tool') {
+      return message.role;
+    }
+    return null;
   }
 
   /**

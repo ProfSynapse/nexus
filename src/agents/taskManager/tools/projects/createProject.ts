@@ -11,6 +11,8 @@ import { TaskService } from '../../services/TaskService';
 import { CreateProjectParameters, CreateProjectResult } from '../../types';
 import { JSONSchema } from '../../../../types/schema/JSONSchemaTypes';
 import { createErrorMessage } from '../../../../utils/errorUtils';
+import type { ToolStatusTense } from '../../../interfaces/ITool';
+import { labelNamed, verbs } from '../../../utils/toolStatusLabels';
 
 export class CreateProjectTool extends BaseTool<CreateProjectParameters, CreateProjectResult> {
   constructor(private taskService: TaskService) {
@@ -20,6 +22,10 @@ export class CreateProjectTool extends BaseTool<CreateProjectParameters, CreateP
       'Create a new project within a workspace. Projects organize tasks and must have a unique name per workspace. Requires a workspaceId (from loadWorkspace or createWorkspace). Returns the new projectId.',
       '1.0.0'
     );
+  }
+
+  getStatusLabel(params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
+    return labelNamed(verbs('Creating project', 'Created project', 'Failed to create project'), params, tense, ['name', 'title']);
   }
 
   async execute(params: CreateProjectParameters): Promise<CreateProjectResult> {

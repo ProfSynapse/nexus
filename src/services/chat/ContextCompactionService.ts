@@ -16,6 +16,22 @@
 
 import { ConversationMessage, ConversationData } from '../../types/chat/ChatTypes';
 
+/**
+ * A single entry in the compaction frontier array stored in conversation metadata.
+ */
+export interface CompactionFrontierEntry {
+  boundaryMessageId?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * Shape of the `compaction` field within conversation metadata.
+ */
+export interface CompactionMetadata {
+  frontier?: CompactionFrontierEntry[];
+  [key: string]: unknown;
+}
+
 export interface CompactedTranscriptCoverageRef {
   /** Conversation whose transcript range was compacted */
   conversationId: string;
@@ -43,6 +59,8 @@ export interface CompactedContext {
   compactedAt: number;
   /** Exact transcript coverage for the compacted range, when available */
   transcriptCoverage?: CompactedTranscriptCoverageRef;
+  /** ID of the first message in the "kept" window — messages before this are compacted context */
+  boundaryMessageId?: string;
 }
 
 /**
@@ -131,15 +149,18 @@ export class ContextCompactionService {
       : [];
     const topics = this.extractTopics(removedMessages);
 
-    // 5. Calculate kept messages
+    // 5. Calculate kept messages (for counting only — messages are NOT deleted)
     const keptUnits = units.slice(unitsToRemove);
     const keptMessages: ConversationMessage[] = [];
     for (const unit of keptUnits) {
       keptMessages.push(...unit.messages);
     }
 
-    // 6. Update conversation messages in place
-    conversation.messages = keptMessages;
+    // 6. Return compaction boundary — do NOT mutate conversation.messages.
+    // The boundary marks the first kept message; messages before it are
+    // summarized context. The caller stores this in metadata and the LLM
+    // prompt assembly layer filters messages based on this boundary.
+    const boundaryMessageId = keptMessages.length > 0 ? keptMessages[0].id : undefined;
 
     return {
       summary,
@@ -148,6 +169,7 @@ export class ContextCompactionService {
       filesReferenced,
       topics,
       compactedAt: Date.now(),
+      boundaryMessageId,
     };
   }
 
@@ -347,5 +369,37 @@ export class ContextCompactionService {
    */
   shouldCompactByMessageCount(conversation: ConversationData, maxMessages = 20): boolean {
     return conversation.messages.length > maxMessages;
+  }
+
+  /**
+   * Return only messages at or after the latest compaction boundary.
+   * If no boundary exists or the boundary message is not found, returns all messages.
+   *
+   * Shared utility — used by StreamingResponseService and ContextBudgetService
+   * to avoid duplicating boundary-extraction logic.
+   */
+  static getMessagesAfterBoundary(
+    messages: ConversationMessage[],
+    metadata: ConversationData['metadata']
+  ): ConversationMessage[] {
+    const metadataRecord = metadata as Record<string, unknown> | undefined;
+    const compaction = metadataRecord?.compaction as CompactionMetadata | undefined;
+    const frontier = compaction?.frontier;
+    if (!frontier || frontier.length === 0) {
+      return messages;
+    }
+
+    const latestRecord = frontier[frontier.length - 1];
+    const boundaryId = latestRecord?.boundaryMessageId;
+    if (!boundaryId) {
+      return messages;
+    }
+
+    const boundaryIndex = messages.findIndex(m => m.id === boundaryId);
+    if (boundaryIndex <= 0) {
+      return messages;
+    }
+
+    return messages.slice(boundaryIndex);
   }
 }

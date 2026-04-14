@@ -25,6 +25,7 @@ import { CostTrackingService } from './CostTrackingService';
 import type { MessageQueueService } from './MessageQueueService';
 import { ContextBudgetService, type NormalizedTokenUsage } from './ContextBudgetService';
 import { shouldPassToolSchemasToProvider } from '../llm/utils/ToolSchemaSupport';
+import { ContextCompactionService } from './ContextCompactionService';
 
 export interface StreamingOptions {
   provider?: string;
@@ -377,6 +378,10 @@ export class StreamingResponseService {
   private buildLLMMessages(conversation: ConversationData, provider?: string, systemPrompt?: string): Array<{ role: string; content: string }> {
     const currentProvider = provider || this.getCurrentProvider();
 
+    // Apply compaction boundary: only send messages at or after the boundary to the LLM.
+    // The compaction summary is injected via the system prompt (compaction frontier).
+    const filteredConversation = this.applyCompactionBoundary(conversation);
+
     // For Google, return simple format - StreamingOrchestrator handles Google conversion
     if (currentProvider === 'google') {
       const messages: Array<{ role: string; content: string }> = [];
@@ -387,7 +392,7 @@ export class StreamingResponseService {
       }
 
       // Add conversation messages in simple format
-      for (const msg of conversation.messages) {
+      for (const msg of filteredConversation.messages) {
         if (msg.role === 'user' && msg.content && msg.content.trim()) {
           messages.push({ role: 'user', content: msg.content });
         } else if (msg.role === 'assistant' && msg.content && msg.content.trim()) {
@@ -400,13 +405,34 @@ export class StreamingResponseService {
 
     // For other providers, use ConversationContextBuilder
     return ConversationContextBuilder.buildContextForProvider(
-      conversation,
+      filteredConversation,
       currentProvider,
       systemPrompt
     ).map((message) => ({
       role: message.role,
       content: 'content' in message && typeof message.content === 'string' ? message.content : ''
     }));
+  }
+
+  /**
+   * Apply compaction boundary filter: return a conversation view with only
+   * messages at or after the latest compaction boundary. Messages before
+   * the boundary are summarized in the compaction frontier (system prompt).
+   */
+  private applyCompactionBoundary(conversation: ConversationData): ConversationData {
+    const filtered = ContextCompactionService.getMessagesAfterBoundary(
+      conversation.messages,
+      conversation.metadata
+    );
+
+    if (filtered === conversation.messages) {
+      return conversation;
+    }
+
+    return {
+      ...conversation,
+      messages: filtered,
+    };
   }
 
   /**

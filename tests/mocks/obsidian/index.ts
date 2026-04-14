@@ -36,6 +36,8 @@ export {
   ButtonComponent,
   Notice,
   setIcon,
+  debounce,
+  Debouncer,
 } from './components';
 
 export {

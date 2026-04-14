@@ -4,7 +4,7 @@
 
 import { ConversationData } from '../../../types/chat/ChatTypes';
 import { ModelOption } from '../types/SelectionTypes';
-import { ContextUsage } from '../components/ContextProgressBar';
+import type { ContextUsage } from '../types/ContextTypes';
 import { ContextBudgetService, NormalizedTokenUsage } from '../../../services/chat/ContextBudgetService';
 
 export class TokenCalculator {
