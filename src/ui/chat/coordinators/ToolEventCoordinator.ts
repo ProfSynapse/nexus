@@ -34,6 +34,14 @@ export class ToolEventCoordinator {
    */
   private toolNameCache = new Map<string, ToolStatusEventData>();
 
+  /**
+   * Tracks the most advanced event stage reached per message. Once the generic
+   * path has emitted 'started' or 'completed' events, handleToolCallsDetected
+   * (which fires late from the streaming chunk parser) should not regress the
+   * status bar back to 'detected'.
+   */
+  private messageEventStage = new Map<string, 'detected' | 'started' | 'completed'>();
+
   constructor(private controller: ToolStatusBarController) {}
 
   /**
@@ -42,6 +50,7 @@ export class ToolEventCoordinator {
    */
   clearToolNameCache(): void {
     this.toolNameCache.clear();
+    this.messageEventStage.clear();
   }
 
   /**
@@ -56,6 +65,12 @@ export class ToolEventCoordinator {
    */
   handleToolCallsDetected(messageId: string, toolCalls: ToolCallLike[]): void {
     if (!toolCalls || toolCalls.length === 0) return;
+
+    // If the generic event path has already emitted started/completed events
+    // for this message, skip detection — the status bar has moved past this
+    // stage and re-emitting detected events would regress it.
+    const stage = this.messageEventStage.get(messageId);
+    if (stage === 'started' || stage === 'completed') return;
 
 
     for (const toolCall of toolCalls) {
@@ -217,6 +232,12 @@ export class ToolEventCoordinator {
     if (normalized === 'useTools' || normalized === 'getTools' ||
         normalized.endsWith('.useTools') || normalized.endsWith('.getTools')) {
       return;
+    }
+
+    // Track the most advanced event stage for this message so
+    // handleToolCallsDetected (which fires late) doesn't regress the status bar.
+    if (event === 'started' || event === 'completed') {
+      this.messageEventStage.set(messageId, event);
     }
 
     const enriched = this.enrichToolEventData(data);
