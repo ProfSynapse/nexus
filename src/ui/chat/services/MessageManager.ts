@@ -151,6 +151,11 @@ export class MessageManager {
       sessionId?: string;
       enableThinking?: boolean;
       thinkingEffort?: 'low' | 'medium' | 'high';
+      temperature?: number;
+      imageProvider?: 'google' | 'openrouter';
+      imageModel?: string;
+      transcriptionProvider?: string;
+      transcriptionModel?: string;
     },
     metadata?: ReferenceMetadata
   ): Promise<void> {
@@ -233,6 +238,11 @@ export class MessageManager {
       sessionId?: string;
       enableThinking?: boolean;
       thinkingEffort?: 'low' | 'medium' | 'high';
+      temperature?: number;
+      imageProvider?: 'google' | 'openrouter';
+      imageModel?: string;
+      transcriptionProvider?: string;
+      transcriptionModel?: string;
     }
   ): Promise<void> {
     return this.trackGeneration(async () => {
@@ -270,6 +280,11 @@ export class MessageManager {
       systemPrompt?: string;
       workspaceId?: string;
       sessionId?: string;
+      temperature?: number;
+      imageProvider?: 'google' | 'openrouter';
+      imageModel?: string;
+      transcriptionProvider?: string;
+      transcriptionModel?: string;
     }
   ): Promise<void> {
     const userMessage = conversation.messages.find(msg => msg.id === userMessageId);
@@ -303,6 +318,11 @@ export class MessageManager {
       systemPrompt?: string;
       workspaceId?: string;
       sessionId?: string;
+      temperature?: number;
+      imageProvider?: 'google' | 'openrouter';
+      imageModel?: string;
+      transcriptionProvider?: string;
+      transcriptionModel?: string;
     }
   ): Promise<void> {
     try {
@@ -369,6 +389,11 @@ export class MessageManager {
       systemPrompt?: string;
       workspaceId?: string;
       sessionId?: string;
+      temperature?: number;
+      imageProvider?: 'google' | 'openrouter';
+      imageModel?: string;
+      transcriptionProvider?: string;
+      transcriptionModel?: string;
     }
   ): Promise<void> {
     await this.stateManager.updateMessageContent(conversation, messageId, newContent);

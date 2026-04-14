@@ -52,6 +52,11 @@ export interface StreamOptions {
   abortSignal?: AbortSignal;
   enableThinking?: boolean;
   thinkingEffort?: 'low' | 'medium' | 'high';
+  temperature?: number;
+  imageProvider?: 'google' | 'openrouter';
+  imageModel?: string;
+  transcriptionProvider?: string;
+  transcriptionModel?: string;
 }
 
 export interface StreamResult {

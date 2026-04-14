@@ -78,6 +78,15 @@ export interface DirectToolResult {
     executionTime?: number;
 }
 
+export interface DirectToolExecutionContext {
+    sessionId?: string;
+    workspaceId?: string;
+    imageProvider?: 'google' | 'openrouter';
+    imageModel?: string;
+    transcriptionProvider?: string;
+    transcriptionModel?: string;
+}
+
 export interface DirectToolExecutorConfig {
     /** Agent provider - can be AgentRegistry, AgentRegistrationService, or any compatible provider */
     agentProvider: AgentProvider;
@@ -274,7 +283,7 @@ export class DirectToolExecutor {
     async executeTool(
         toolName: string,
         params: Record<string, unknown>,
-        context?: { sessionId?: string; workspaceId?: string }
+        context?: DirectToolExecutionContext
     ): Promise<unknown> {
         try {
             // Two-tool architecture: getTools and useTool
@@ -333,12 +342,17 @@ export class DirectToolExecutor {
                 || (paramsTyped.context?.workspaceId as string | undefined)
                 || 'default';
 
+            const paramsWithDefaults = this.applyChatMediaDefaults(agentName, modeName, params, context);
             const paramsWithContext = {
-                ...params,
+                ...paramsWithDefaults,
                 context: {
                     ...paramsTyped.context,
                     sessionId: effectiveSessionId,
-                    workspaceId: effectiveWorkspaceId
+                    workspaceId: effectiveWorkspaceId,
+                    imageProvider: paramsTyped.context?.imageProvider || context?.imageProvider,
+                    imageModel: paramsTyped.context?.imageModel || context?.imageModel,
+                    transcriptionProvider: paramsTyped.context?.transcriptionProvider || context?.transcriptionProvider,
+                    transcriptionModel: paramsTyped.context?.transcriptionModel || context?.transcriptionModel
                 }
             };
 
@@ -368,7 +382,7 @@ export class DirectToolExecutor {
      */
     private async handleGetTools(
         params: Record<string, unknown>,
-        context?: { sessionId?: string; workspaceId?: string }
+        context?: DirectToolExecutionContext
     ): Promise<unknown> {
         // Get toolManager agent to use its getTools implementation (with lazy init)
         const toolManagerAgent = await this.getAgentByNameAsync('toolManager');
@@ -394,7 +408,11 @@ export class DirectToolExecutor {
             context: {
                 ...paramsContext,
                 sessionId: context?.sessionId || paramsContext.sessionId || `session_${Date.now()}`,
-                workspaceId: context?.workspaceId || paramsContext.workspaceId || 'default'
+                workspaceId: context?.workspaceId || paramsContext.workspaceId || 'default',
+                imageProvider: context?.imageProvider || paramsContext.imageProvider,
+                imageModel: context?.imageModel || paramsContext.imageModel,
+                transcriptionProvider: context?.transcriptionProvider || paramsContext.transcriptionProvider,
+                transcriptionModel: context?.transcriptionModel || paramsContext.transcriptionModel
             }
         };
 
@@ -408,7 +426,7 @@ export class DirectToolExecutor {
      */
     private async handleUseTool(
         params: Record<string, unknown>,
-        context?: { sessionId?: string; workspaceId?: string },
+        context?: DirectToolExecutionContext,
         options?: {
             batchId?: string;
             onToolEvent?: (event: 'started' | 'completed', data: ToolEventData) => void;
@@ -430,7 +448,11 @@ export class DirectToolExecutor {
             context: {
                 ...paramsContext,
                 sessionId: context?.sessionId || paramsContext.sessionId || `session_${Date.now()}`,
-                workspaceId: context?.workspaceId || paramsContext.workspaceId || 'default'
+                workspaceId: context?.workspaceId || paramsContext.workspaceId || 'default',
+                imageProvider: context?.imageProvider || paramsContext.imageProvider,
+                imageModel: context?.imageModel || paramsContext.imageModel,
+                transcriptionProvider: context?.transcriptionProvider || paramsContext.transcriptionProvider,
+                transcriptionModel: context?.transcriptionModel || paramsContext.transcriptionModel
             }
         };
 
@@ -516,7 +538,7 @@ export class DirectToolExecutor {
      */
     async executeToolCalls(
         toolCalls: DirectToolCall[],
-        context?: { sessionId?: string; workspaceId?: string },
+        context?: DirectToolExecutionContext,
         onToolEvent?: (event: 'started' | 'completed', data: ToolEventData) => void
     ): Promise<DirectToolResult[]> {
         const results: DirectToolResult[] = [];
@@ -608,6 +630,35 @@ export class DirectToolExecutor {
         }
 
         return results;
+    }
+
+    private applyChatMediaDefaults(
+        agentName: string,
+        toolName: string,
+        params: Record<string, unknown>,
+        context?: DirectToolExecutionContext
+    ): Record<string, unknown> {
+        if (!context) {
+            return params;
+        }
+
+        if (agentName === 'promptManager' && toolName === 'generateImage') {
+            return {
+                ...params,
+                provider: params.provider || context.imageProvider,
+                model: params.model || context.imageModel
+            };
+        }
+
+        if (agentName === 'ingestManager' && toolName === 'ingest') {
+            return {
+                ...params,
+                transcriptionProvider: params.transcriptionProvider || context.transcriptionProvider,
+                transcriptionModel: params.transcriptionModel || context.transcriptionModel
+            };
+        }
+
+        return params;
     }
 
     /**

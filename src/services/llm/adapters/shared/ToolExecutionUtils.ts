@@ -63,6 +63,15 @@ export interface ToolMetadata {
   }>;
 }
 
+export interface ToolExecutionContext {
+  sessionId?: string;
+  workspaceId?: string;
+  imageProvider?: 'google' | 'openrouter';
+  imageModel?: string;
+  transcriptionProvider?: string;
+  transcriptionModel?: string;
+}
+
 /**
  * Interface for tool executors
  * DirectToolExecutor implements this interface
@@ -70,7 +79,7 @@ export interface ToolMetadata {
 export interface IToolExecutor {
   executeToolCalls(
     toolCalls: ToolCall[],
-    context?: { sessionId?: string; workspaceId?: string },
+    context?: ToolExecutionContext,
     onToolEvent?: (event: 'started' | 'completed', data: unknown) => void
   ): Promise<ToolResult[]>;
 }
@@ -90,7 +99,7 @@ export class ToolExecutionUtils {
     toolCalls: ToolCall[],
     provider: SupportedProvider,
     onToolEvent?: (event: 'started' | 'completed', data: unknown) => void,
-    context?: { sessionId?: string; workspaceId?: string }
+    context?: ToolExecutionContext
   ): Promise<ToolResult[]> {
     if (!toolExecutor) {
       return toolCalls.map(tc => ({

@@ -142,8 +142,10 @@ export class ChatSettingsModal extends Modal {
         effort: agentThinking?.effort ?? 'medium'
       },
       temperature: temperature,
-      imageProvider: llmSettings?.defaultImageModel?.provider || 'google',
-      imageModel: llmSettings?.defaultImageModel?.model || 'gemini-2.5-flash-image',
+      imageProvider: this.modelAgentManager.getImageProvider() || llmSettings?.defaultImageModel?.provider || 'google',
+      imageModel: this.modelAgentManager.getImageModel() || llmSettings?.defaultImageModel?.model || 'gemini-2.5-flash-image',
+      transcriptionProvider: this.modelAgentManager.getTranscriptionProvider() || llmSettings?.defaultTranscriptionModel?.provider,
+      transcriptionModel: this.modelAgentManager.getTranscriptionModel() || llmSettings?.defaultTranscriptionModel?.model,
       workspaceId: this.modelAgentManager.getSelectedWorkspaceId(),
       promptId: prompt?.id || prompt?.name || null,
       contextNotes: [...contextNotes]
@@ -205,15 +207,13 @@ export class ChatSettingsModal extends Modal {
       await this.modelAgentManager.setContextNotes(settings.contextNotes);
 
       // Update image model
-      const plugin = getNexusPlugin<NexusPluginWithSettings>(this.app);
-      const llmSettings = plugin?.settings?.settings?.llmProviders;
-      if (llmSettings && plugin?.settings) {
-        llmSettings.defaultImageModel = {
-          provider: settings.imageProvider,
-          model: settings.imageModel
-        };
-        await plugin.settings.saveSettings();
-      }
+      this.modelAgentManager.setImageModel(settings.imageProvider, settings.imageModel);
+
+      // Update transcription model
+      this.modelAgentManager.setTranscriptionModel(
+        settings.transcriptionProvider || null,
+        settings.transcriptionModel || null
+      );
 
       // Save to conversation metadata
       if (this.conversationId) {

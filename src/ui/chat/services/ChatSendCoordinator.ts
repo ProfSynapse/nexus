@@ -21,6 +21,11 @@ export interface MessageExecutionOptions {
   sessionId?: string;
   enableThinking?: boolean;
   thinkingEffort?: 'low' | 'medium' | 'high';
+  temperature?: number;
+  imageProvider?: 'google' | 'openrouter';
+  imageModel?: string;
+  transcriptionProvider?: string;
+  transcriptionModel?: string;
 }
 
 interface ConversationManagerLike {

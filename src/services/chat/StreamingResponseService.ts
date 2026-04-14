@@ -39,6 +39,10 @@ export interface StreamingOptions {
   enableThinking?: boolean;
   thinkingEffort?: 'low' | 'medium' | 'high';
   temperature?: number; // 0.0-1.0, controls randomness
+  imageProvider?: 'google' | 'openrouter';
+  imageModel?: string;
+  transcriptionProvider?: string;
+  transcriptionModel?: string;
 }
 
 export interface StreamingChunk {
@@ -202,6 +206,10 @@ export class StreamingResponseService {
         enableThinking: options?.enableThinking,
         thinkingEffort: options?.thinkingEffort,
         temperature: options?.temperature,
+        imageProvider: options?.imageProvider,
+        imageModel: options?.imageModel,
+        transcriptionProvider: options?.transcriptionProvider,
+        transcriptionModel: options?.transcriptionModel,
         // Responses API (OpenAI/LM Studio): Load persisted ID for conversation continuity
         responsesApiId: filteredConversation?.metadata?.responsesApiId
       };
