@@ -1,11 +1,16 @@
 /**
  * ToolStatusBarController unit tests
  *
+ * After the ToolCallStateManager migration, the controller is a thin
+ * pass-through: it receives pre-formatted ToolStatusEntry objects via
+ * pushStatus() and forwards them to the ToolStatusBar after filtering
+ * by the current streaming message ID.
+ *
  * Plan-critical coverage:
- *   1. Non-completed events from a NON-current messageId are dropped (subagent filter)
- *   2. Completed events pass through even when messageId is null/mismatched (post-finalize)
- *   3. Tense mapping: completed+success → past, completed+failure → failed, else → present
- *   4. All batch tool events reach the bar synchronously (no debounce coalescing)
+ *   1. Non-terminal entries from a NON-current messageId are dropped (subagent filter)
+ *   2. Terminal entries (past/failed) pass through even when messageId mismatches
+ *   3. Entries pass through when streamingController returns null (early streaming phase)
+ *   4. All entries reach the bar synchronously (no debounce coalescing)
  *   5. Component.register wires a cleanup that blocks all events after disposal
  */
 
@@ -26,7 +31,7 @@ function makeStreaming(currentId: string | null): MockStreaming {
 }
 
 describe('ToolStatusBarController — subagent filter (PLAN CRITICAL)', () => {
-  it('drops events whose messageId does not match the current streaming message', () => {
+  it('drops present-tense entries whose messageId does not match the current streaming message', () => {
     const bar = makeBar();
     const streaming = makeStreaming('msg-current');
     const component = new Component();
@@ -36,19 +41,13 @@ describe('ToolStatusBarController — subagent filter (PLAN CRITICAL)', () => {
       component
     );
 
-    // Subagent tool event arrives with a DIFFERENT message id
-    controller.handleToolEvent('msg-subagent-branch', 'started', {
-      name: 'searchContent',
-      displayName: 'Search content',
-      technicalName: 'searchManager_searchContent',
-      parameters: { query: 'notes' },
-    });
+    controller.pushStatus('msg-subagent-branch', { text: 'Running Read', state: 'present' });
 
     expect(bar.pushStatus).not.toHaveBeenCalled();
     expect(streaming.getCurrentMessageId).toHaveBeenCalled();
   });
 
-  it('forwards events whose messageId matches the current streaming message', () => {
+  it('forwards entries whose messageId matches the current streaming message', () => {
     const bar = makeBar();
     const streaming = makeStreaming('msg-current');
     const component = new Component();
@@ -58,22 +57,15 @@ describe('ToolStatusBarController — subagent filter (PLAN CRITICAL)', () => {
       component
     );
 
-    controller.handleToolEvent('msg-current', 'started', {
-      name: 'searchContent',
-      displayName: 'Search content',
-      technicalName: 'searchManager_searchContent',
-      parameters: { query: 'meeting notes' },
-    });
+    controller.pushStatus('msg-current', { text: 'Running Search Content', state: 'present' });
 
     expect(bar.pushStatus).toHaveBeenCalledTimes(1);
     const entry = bar.pushStatus.mock.calls[0][0] as ToolStatusEntry;
     expect(entry.state).toBe('present');
-    // Label text is produced by formatToolStepLabel — should be non-empty
-    expect(typeof entry.text).toBe('string');
-    expect(entry.text.length).toBeGreaterThan(0);
+    expect(entry.text).toBe('Running Search Content');
   });
 
-  it('allows events through when streamingController returns null (early streaming phase)', () => {
+  it('allows entries through when streamingController returns null (early streaming phase)', () => {
     const bar = makeBar();
     const streaming = makeStreaming(null);
     const component = new Component();
@@ -83,18 +75,12 @@ describe('ToolStatusBarController — subagent filter (PLAN CRITICAL)', () => {
       component
     );
 
-    controller.handleToolEvent('msg-any', 'started', {
-      name: 'test',
-      technicalName: 'contentManager_read',
-      parameters: { filePath: 'a.md' },
-    });
+    controller.pushStatus('msg-any', { text: 'Running Read', state: 'present' });
 
-    // Events are allowed through when currentMsgId is null — streaming
-    // may have just started and not registered the messageId yet.
     expect(bar.pushStatus).toHaveBeenCalledTimes(1);
   });
 
-  it('allows completed events through when streamingController returns null (post-finalize)', () => {
+  it('allows past-tense entries through when streamingController returns null (post-finalize)', () => {
     const bar = makeBar();
     const streaming = makeStreaming(null);
     const component = new Component();
@@ -104,20 +90,14 @@ describe('ToolStatusBarController — subagent filter (PLAN CRITICAL)', () => {
       component
     );
 
-    controller.handleToolEvent('msg-any', 'completed', {
-      name: 'read',
-      technicalName: 'contentManager_read',
-      parameters: { filePath: 'a.md' },
-      success: true,
-      result: { ok: true },
-    });
+    controller.pushStatus('msg-any', { text: 'Ran Read', state: 'past' });
 
     expect(bar.pushStatus).toHaveBeenCalledTimes(1);
     const entry = bar.pushStatus.mock.calls[0][0] as ToolStatusEntry;
     expect(entry.state).toBe('past');
   });
 
-  it('allows completed events through when messageId mismatches (post-finalize)', () => {
+  it('allows past-tense entries through when messageId mismatches (post-finalize)', () => {
     const bar = makeBar();
     const streaming = makeStreaming('msg-old');
     const component = new Component();
@@ -127,112 +107,31 @@ describe('ToolStatusBarController — subagent filter (PLAN CRITICAL)', () => {
       component
     );
 
-    controller.handleToolEvent('msg-current', 'completed', {
-      name: 'read',
-      technicalName: 'contentManager_read',
-      parameters: { filePath: 'a.md' },
-      success: true,
-    });
+    controller.pushStatus('msg-current', { text: 'Ran Read', state: 'past' });
 
     expect(bar.pushStatus).toHaveBeenCalledTimes(1);
     expect((bar.pushStatus.mock.calls[0][0] as ToolStatusEntry).state).toBe('past');
   });
-});
 
-describe('ToolStatusBarController — tense mapping', () => {
-  it('maps completed+success → past tense', () => {
+  it('allows failed entries through when messageId mismatches', () => {
     const bar = makeBar();
+    const streaming = makeStreaming('msg-old');
     const component = new Component();
     const controller = new ToolStatusBarController(
       bar as unknown as ToolStatusBar,
-      makeStreaming('m1') as unknown as StreamingController,
+      streaming as unknown as StreamingController,
       component
     );
 
-    controller.handleToolEvent('m1', 'completed', {
-      name: 'read',
-      technicalName: 'contentManager_read',
-      parameters: { filePath: 'a.md' },
-      success: true,
-      result: { ok: true },
-    });
-
-    expect(bar.pushStatus).toHaveBeenCalledTimes(1);
-    const entry = bar.pushStatus.mock.calls[0][0] as ToolStatusEntry;
-    expect(entry.state).toBe('past');
-  });
-
-  it('maps completed+success=false → failed tense', () => {
-    const bar = makeBar();
-    const component = new Component();
-    const controller = new ToolStatusBarController(
-      bar as unknown as ToolStatusBar,
-      makeStreaming('m1') as unknown as StreamingController,
-      component
-    );
-
-    controller.handleToolEvent('m1', 'completed', {
-      name: 'read',
-      technicalName: 'contentManager_read',
-      parameters: { filePath: 'a.md' },
-      success: false,
-    });
+    controller.pushStatus('msg-current', { text: 'Failed to run Read', state: 'failed' });
 
     expect(bar.pushStatus).toHaveBeenCalledTimes(1);
     expect((bar.pushStatus.mock.calls[0][0] as ToolStatusEntry).state).toBe('failed');
   });
-
-  it('maps completed with error string → failed tense', () => {
-    const bar = makeBar();
-    const component = new Component();
-    const controller = new ToolStatusBarController(
-      bar as unknown as ToolStatusBar,
-      makeStreaming('m1') as unknown as StreamingController,
-      component
-    );
-
-    controller.handleToolEvent('m1', 'completed', {
-      name: 'read',
-      technicalName: 'contentManager_read',
-      parameters: { filePath: 'a.md' },
-      error: 'File not found',
-    });
-
-    expect(bar.pushStatus).toHaveBeenCalledTimes(1);
-    expect((bar.pushStatus.mock.calls[0][0] as ToolStatusEntry).state).toBe('failed');
-  });
-
-  it('maps non-completed events → present tense', () => {
-    const bar = makeBar();
-    const component = new Component();
-    const controller = new ToolStatusBarController(
-      bar as unknown as ToolStatusBar,
-      makeStreaming('m1') as unknown as StreamingController,
-      component
-    );
-
-    controller.handleToolEvent('m1', 'started', {
-      name: 'read',
-      technicalName: 'contentManager_read',
-      parameters: { filePath: 'a.md' },
-    });
-
-    controller.handleToolEvent('m1', 'detected', {
-      name: 'read',
-      technicalName: 'contentManager_read',
-      parameters: { filePath: 'b.md' },
-    });
-
-    expect(bar.pushStatus).toHaveBeenCalled();
-    // All non-completed events should use present tense
-    for (const call of bar.pushStatus.mock.calls) {
-      expect((call[0] as ToolStatusEntry).state).toBe('present');
-    }
-  });
 });
 
-describe('ToolStatusBarController — batch tool events (no debounce)', () => {
-  it('pushes each event synchronously to the status bar', () => {
+describe('ToolStatusBarController — batch entries (no debounce)', () => {
+  it('pushes each entry synchronously to the status bar', () => {
     const bar = makeBar();
     const component = new Component();
     const controller = new ToolStatusBarController(
@@ -241,16 +140,12 @@ describe('ToolStatusBarController — batch tool events (no debounce)', () => {
       component
     );
 
-    controller.handleToolEvent('m1', 'started', {
-      name: 'read',
-      technicalName: 'contentManager_read',
-      parameters: { filePath: 'a.md' },
-    });
+    controller.pushStatus('m1', { text: 'Running Read', state: 'present' });
 
     expect(bar.pushStatus).toHaveBeenCalledTimes(1);
   });
 
-  it('forwards all rapid-fire events (no coalescing)', () => {
+  it('forwards all rapid-fire entries (no coalescing)', () => {
     const bar = makeBar();
     const component = new Component();
     const controller = new ToolStatusBarController(
@@ -259,29 +154,16 @@ describe('ToolStatusBarController — batch tool events (no debounce)', () => {
       component
     );
 
-    // Fire three events in rapid succession — all should reach the bar
-    controller.handleToolEvent('m1', 'detected', {
-      name: 'read',
-      technicalName: 'contentManager_read',
-      parameters: { filePath: 'a.md' },
-    });
-    controller.handleToolEvent('m1', 'detected', {
-      name: 'write',
-      technicalName: 'contentManager_write',
-      parameters: { filePath: 'b.md' },
-    });
-    controller.handleToolEvent('m1', 'detected', {
-      name: 'list',
-      technicalName: 'storageManager_list',
-      parameters: { folderPath: '/' },
-    });
+    controller.pushStatus('m1', { text: 'Running Read', state: 'present' });
+    controller.pushStatus('m1', { text: 'Running Write', state: 'present' });
+    controller.pushStatus('m1', { text: 'Running List', state: 'present' });
 
     expect(bar.pushStatus).toHaveBeenCalledTimes(3);
   });
 });
 
 describe('ToolStatusBarController — disposal via Component.register', () => {
-  it('stops forwarding events after the owning component unloads', () => {
+  it('stops forwarding entries after the owning component unloads', () => {
     const bar = makeBar();
     const component = new Component();
     const controller = new ToolStatusBarController(
@@ -290,28 +172,16 @@ describe('ToolStatusBarController — disposal via Component.register', () => {
       component
     );
 
-    // First event fires normally
-    controller.handleToolEvent('m1', 'started', {
-      name: 'read',
-      technicalName: 'contentManager_read',
-      parameters: { filePath: 'a.md' },
-    });
+    controller.pushStatus('m1', { text: 'Running Read', state: 'present' });
     expect(bar.pushStatus).toHaveBeenCalledTimes(1);
 
-    // Unload the component — registered cleanup runs and marks disposed
     component.unload();
 
-    // Subsequent events are dropped
-    controller.handleToolEvent('m1', 'started', {
-      name: 'read',
-      technicalName: 'contentManager_read',
-      parameters: { filePath: 'b.md' },
-    });
-
+    controller.pushStatus('m1', { text: 'Running Write', state: 'present' });
     expect(bar.pushStatus).toHaveBeenCalledTimes(1);
   });
 
-  it('drops completed events after component unload (isDisposed guard)', () => {
+  it('drops entries after component unload (isDisposed guard)', () => {
     const bar = makeBar();
     const component = new Component();
     const controller = new ToolStatusBarController(
@@ -320,23 +190,12 @@ describe('ToolStatusBarController — disposal via Component.register', () => {
       component
     );
 
-    controller.handleToolEvent('m1', 'started', {
-      name: 'read',
-      technicalName: 'contentManager_read',
-      parameters: { filePath: 'a.md' },
-    });
+    controller.pushStatus('m1', { text: 'Running Read', state: 'present' });
     expect(bar.pushStatus).toHaveBeenCalledTimes(1);
 
     component.unload();
 
-    // Even completed events should be blocked after disposal
-    controller.handleToolEvent('m1', 'completed', {
-      name: 'read',
-      technicalName: 'contentManager_read',
-      parameters: { filePath: 'a.md' },
-      success: true,
-    });
-
+    controller.pushStatus('m1', { text: 'Ran Read', state: 'past' });
     expect(bar.pushStatus).toHaveBeenCalledTimes(1);
   });
 });

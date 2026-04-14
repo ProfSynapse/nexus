@@ -9,48 +9,41 @@
  * - Enriching tool event data with metadata
  * - Extracting and normalizing tool parameters
  *
- * Used by ChatView to coordinate tool events from MessageManager
- * to the status bar controller, following the Coordinator pattern.
+ * All event handler methods route through ToolCallStateManager.transition()
+ * instead of calling the controller directly. The state manager enforces
+ * forward-only phase transitions to prevent race-condition regressions.
+ * State change events are converted to status bar text via emitToStatusBar().
  */
 
 import { getToolNameMetadata } from '../../../utils/toolNameUtils';
 import { ToolStatusBarController } from '../controllers/ToolStatusBarController';
-import type { ToolStatusEventData } from '../controllers/ToolStatusBarController';
 import { ToolEventParser } from '../utils/ToolEventParser';
+import { formatToolStepLabel } from '../utils/toolDisplayFormatter';
+import type { ToolCallStateManager, ToolCallPhase, StateChangeEvent, ToolCallMetadata } from '../services/ToolCallStateManager';
 
 type ToolEventPayload = NonNullable<Parameters<typeof ToolEventParser.getToolEventInfo>[0]>;
 type ToolCallLike = NonNullable<ToolEventPayload['toolCall']>;
 type ToolEventData = ToolEventPayload;
 
 export class ToolEventCoordinator {
-  /**
-   * Caches tool metadata (technicalName, displayName, parameters, etc.) from
-   * 'detected' and 'started' events so that 'completed' events — which arrive
-   * without a tool name — can still produce meaningful status-bar labels.
-   *
-   * Entries are deleted on completion. As a safety net against leaks (e.g. a
-   * tool that starts but never completes), call {@link clearToolNameCache}
-   * when streaming ends.
-   */
-  private toolNameCache = new Map<string, ToolStatusEventData>();
+  private unsubscribe: (() => void) | null = null;
+
+  constructor(
+    private controller: ToolStatusBarController,
+    private stateManager: ToolCallStateManager
+  ) {
+    // Subscribe to state changes — this is the ONLY path to the status bar
+    this.unsubscribe = this.stateManager.onStateChange((event) => {
+      this.emitToStatusBar(event);
+    });
+  }
 
   /**
-   * Tracks the most advanced event stage reached per message. Once the generic
-   * path has emitted 'started' or 'completed' events, handleToolCallsDetected
-   * (which fires late from the streaming chunk parser) should not regress the
-   * status bar back to 'detected'.
-   */
-  private messageEventStage = new Map<string, 'detected' | 'started' | 'completed'>();
-
-  constructor(private controller: ToolStatusBarController) {}
-
-  /**
-   * Clear the tool name cache. Call when streaming ends or the coordinator
+   * Clear the tool state. Call when streaming ends or the coordinator
    * is no longer needed, to prevent unbounded growth from orphaned entries.
    */
   clearToolNameCache(): void {
-    this.toolNameCache.clear();
-    this.messageEventStage.clear();
+    this.stateManager.clear();
   }
 
   /**
@@ -59,19 +52,12 @@ export class ToolEventCoordinator {
    * In the two-tool architecture, the LLM only ever calls `useTools`.
    * The individual tool invocations (contentManager.read, etc.) are
    * buried inside useTools' `parameters.calls[]` array. This method
-   * unwraps that array and emits a synthetic `detected` event for each
+   * unwraps that array and emits a synthetic `detected` transition for each
    * inner call so the status bar shows "Reading foo.md" instead of the
    * generic "Preparing actions".
    */
   handleToolCallsDetected(messageId: string, toolCalls: ToolCallLike[]): void {
     if (!toolCalls || toolCalls.length === 0) return;
-
-    // If the generic event path has already emitted started/completed events
-    // for this message, skip detection — the status bar has moved past this
-    // stage and re-emitting detected events would regress it.
-    const stage = this.messageEventStage.get(messageId);
-    if (stage === 'started' || stage === 'completed') return;
-
 
     for (const toolCall of toolCalls) {
       const rawName = toolCall.function?.name || toolCall.name;
@@ -108,24 +94,16 @@ export class ToolEventCoordinator {
             ? call.parameters as Record<string, unknown>
             : undefined;
 
-          const innerToolData: ToolStatusEventData = {
-            id: toolCall.id,
-            name: innerMeta.displayName,
-            displayName: innerMeta.displayName,
+          const toolCallId = toolCall.id || `detected_${innerTechnical}_${Date.now()}`;
+
+          this.stateManager.transition(messageId, toolCallId, 'detected', {
             technicalName: innerMeta.technicalName,
+            displayName: innerMeta.displayName,
             agentName: innerMeta.agentName,
             actionName: innerMeta.actionName,
             rawName: innerTechnical,
             parameters: innerParams,
-            isComplete: toolCall.isComplete,
-          };
-
-          if (toolCall.id) {
-
-            this.toolNameCache.set(toolCall.id, innerToolData);
-          }
-
-          this.controller.handleToolEvent(messageId, 'detected', innerToolData);
+          });
         }
 
         // If no inner calls were extracted, fall through to the generic path
@@ -135,26 +113,16 @@ export class ToolEventCoordinator {
 
       // Default path: emit the tool call as-is (getTools, or useTools with no parseable calls).
       const metadata = getToolNameMetadata(rawName);
-      const toolData: ToolStatusEventData = {
-        id: toolCall.id,
-        name: metadata.displayName,
-        displayName: metadata.displayName,
+      const toolCallId = toolCall.id || `detected_${rawName}_${Date.now()}`;
+
+      this.stateManager.transition(messageId, toolCallId, 'detected', {
         technicalName: metadata.technicalName,
+        displayName: metadata.displayName,
         agentName: metadata.agentName,
         actionName: metadata.actionName,
         rawName: toolCall.function?.name || toolCall.name,
         parameters: parameters,
-        isComplete: toolCall.isComplete,
-        type: toolCall.type,
-        result: toolCall.result,
-        status: toolCall.status,
-        isVirtual: toolCall.isVirtual,
-        success: toolCall.success
-      };
-
-      if (toolCall.id) this.toolNameCache.set(toolCall.id, toolData);
-
-      this.controller.handleToolEvent(messageId, 'detected', toolData);
+      });
 
       if (
         toolCall.providerExecuted &&
@@ -164,12 +132,17 @@ export class ToolEventCoordinator {
           toolCall.error !== undefined
         )
       ) {
-        this.controller.handleToolEvent(messageId, 'completed', {
-          toolId: toolCall.id ?? undefined,
-          result: toolCall.result,
-          success: toolCall.success !== false,
-          error: toolCall.error
-        });
+        this.stateManager.transition(
+          messageId,
+          toolCallId,
+          toolCall.success !== false ? 'completed' : 'failed',
+          undefined,
+          {
+            result: toolCall.result,
+            success: toolCall.success !== false,
+            error: typeof toolCall.error === 'string' ? toolCall.error : undefined,
+          }
+        );
       }
     }
   }
@@ -182,66 +155,105 @@ export class ToolEventCoordinator {
    * fallbacks ("Running Open").
    */
   handleToolExecutionStarted(messageId: string, toolCall: { id: string; name: string; parameters?: unknown }): void {
-
     const metadata = getToolNameMetadata(toolCall.name);
-    const enriched: ToolStatusEventData = {
-      ...toolCall,
+
+    this.stateManager.transition(messageId, toolCall.id, 'started', {
       technicalName: metadata.technicalName,
       displayName: metadata.displayName,
       agentName: metadata.agentName,
       actionName: metadata.actionName,
       rawName: toolCall.name,
-    };
-
-    if (toolCall.id) this.toolNameCache.set(toolCall.id, enriched);
-
-    this.controller.handleToolEvent(messageId, 'started', enriched);
+      parameters: toolCall.parameters,
+    });
   }
 
   /**
    * Handle tool execution completed event.
    *
-   * Merges cached metadata from earlier 'detected'/'started' events so the
-   * status bar can produce past-tense labels ("Opened note") instead of
-   * silently dropping the update due to missing technicalName.
+   * The state machine preserves metadata from earlier phases, so the
+   * status bar can produce past-tense labels even though completion
+   * events arrive without a tool name.
    */
   handleToolExecutionCompleted(messageId: string, toolId: string, result: unknown, success: boolean, error?: string): void {
-    const cached = this.toolNameCache.get(toolId);
-
-    this.controller.handleToolEvent(messageId, 'completed', {
-      ...cached,
+    this.stateManager.transition(
+      messageId,
       toolId,
-      result,
-      success,
-      error,
-    });
-    this.toolNameCache.delete(toolId);
+      success ? 'completed' : 'failed',
+      undefined,
+      { result, success, error }
+    );
   }
 
   /**
-   * Handle generic tool event with data enrichment
+   * Handle generic tool event with data enrichment.
+   * Filters useTools/getTools wrapper events before transitioning.
    */
   handleToolEvent(messageId: string, event: 'detected' | 'updated' | 'started' | 'completed', data: ToolEventData): void {
     // Filter out useTools/getTools wrapper events — the inner tool events
     // (unwrapped in handleToolCallsDetected or emitted directly by
     // DirectToolExecutor) provide the meaningful status labels.
     // Without this filter, useTools completion overwrites the inner tool's
-    // past-tense label ("Ran Read" → "Prepared actions").
+    // past-tense label ("Ran Read" -> "Prepared actions").
     const rawName = (data?.name as string) || (data?.technicalName as string) || '';
-    const normalized = rawName.replace(/_/g, '.');
-    if (normalized === 'useTools' || normalized === 'getTools' ||
-        normalized.endsWith('.useTools') || normalized.endsWith('.getTools')) {
+    const normalizedName = rawName.replace(/_/g, '.');
+    if (normalizedName === 'useTools' || normalizedName === 'getTools' ||
+        normalizedName.endsWith('.useTools') || normalizedName.endsWith('.getTools')) {
       return;
     }
 
-    // Track the most advanced event stage for this message so
-    // handleToolCallsDetected (which fires late) doesn't regress the status bar.
-    if (event === 'started' || event === 'completed') {
-      this.messageEventStage.set(messageId, event);
-    }
+    // Map event type to phase
+    const phase: ToolCallPhase = event === 'updated' ? 'detected' : event;
 
+    // Extract tool ID
+    const toolId = (data?.id as string) || (data?.toolId as string) || `generic_${rawName}_${Date.now()}`;
+
+    // Enrich metadata
     const enriched = this.enrichToolEventData(data);
-    this.controller.handleToolEvent(messageId, event, enriched as ToolStatusEventData);
+    const metadata: Partial<ToolCallMetadata> = {
+      technicalName: typeof enriched.technicalName === 'string' ? enriched.technicalName : undefined,
+      displayName: typeof enriched.displayName === 'string' ? enriched.displayName : undefined,
+      agentName: typeof enriched.agentName === 'string' ? enriched.agentName : undefined,
+      actionName: typeof enriched.actionName === 'string' ? enriched.actionName : undefined,
+      rawName: typeof enriched.rawName === 'string' ? enriched.rawName : undefined,
+      parameters: enriched.parameters,
+    };
+
+    const resultData = event === 'completed' ? {
+      result: data?.result,
+      success: data?.success !== false,
+      error: typeof data?.error === 'string' ? data.error : undefined,
+    } : undefined;
+
+    this.stateManager.transition(messageId, toolId, phase, metadata, resultData);
+  }
+
+  /**
+   * State change -> status bar text. Converts phase to tense, builds a
+   * display step from state metadata, and pushes to the controller.
+   */
+  private emitToStatusBar(event: StateChangeEvent): void {
+    const { state, messageId } = event;
+
+    const tense: 'present' | 'past' | 'failed' =
+      state.phase === 'completed' ? 'past'
+      : state.phase === 'failed' ? 'failed'
+      : 'present';
+
+    const step = {
+      technicalName: state.metadata.technicalName || state.metadata.rawName,
+      displayName: state.metadata.displayName,
+      actionName: state.metadata.actionName,
+      parameters: typeof state.metadata.parameters === 'object' && state.metadata.parameters !== null && !Array.isArray(state.metadata.parameters)
+        ? state.metadata.parameters as Record<string, unknown>
+        : undefined,
+      result: state.result,
+      error: state.error,
+    };
+
+    const text = formatToolStepLabel(step, tense);
+    if (text) {
+      this.controller.pushStatus(messageId, { text, state: tense });
+    }
   }
 
   /**

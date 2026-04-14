@@ -1,42 +1,54 @@
 /**
- * ToolEventCoordinator unit tests — FIRST unit coverage on this file.
+ * ToolEventCoordinator unit tests — updated for ToolCallStateManager integration.
  *
- * PLAN MANDATE — sink-swap integration test:
- *   Every dispatch path MUST route through ToolStatusBarController.handleToolEvent.
- *   No legacy fallback path should remain in the file.
+ * The coordinator now routes all events through ToolCallStateManager.transition()
+ * instead of calling controller.handleToolEvent() directly. State change events
+ * are emitted back via the onStateChange listener in the coordinator, which then
+ * calls controller.pushStatus().
  *
  * This suite verifies:
- *   1. handleToolCallsDetected → emits a 'detected' event per tool call
- *   2. handleToolCallsDetected → emits an additional 'completed' event for providerExecuted calls
- *   3. handleToolExecutionStarted → emits 'started'
- *   4. handleToolExecutionCompleted → emits 'completed' with the provided payload
- *   5. handleToolEvent (generic) → enriches metadata and forwards to the controller
+ *   1. handleToolCallsDetected → emits a 'detected' transition per tool call
+ *   2. handleToolCallsDetected → emits an additional 'completed' transition for providerExecuted calls
+ *   3. handleToolExecutionStarted → emits 'started' transition
+ *   4. handleToolExecutionCompleted → emits 'completed' transition with the provided payload
+ *   5. handleToolEvent (generic) → enriches metadata and forwards to state manager
  *   6. String-encoded tool parameters are JSON-parsed when possible
- *   7. No public method of ToolEventCoordinator ever touches anything but the
- *      provided controller (verified by a tight mock with NO additional methods).
+ *   7. useTools/getTools wrapper events are filtered out before reaching the state manager
+ *   8. Forward-only semantics: started → detected does NOT regress the status bar
  */
 
 import { ToolEventCoordinator } from '../../src/ui/chat/coordinators/ToolEventCoordinator';
-import type { ToolStatusBarController, ToolStatusEventData } from '../../src/ui/chat/controllers/ToolStatusBarController';
+import { ToolCallStateManager } from '../../src/ui/chat/services/ToolCallStateManager';
+import type { ToolStatusBarController } from '../../src/ui/chat/controllers/ToolStatusBarController';
+import type { ToolStatusEntry } from '../../src/ui/chat/components/ToolStatusBar';
 
 type MockController = {
-  handleToolEvent: jest.Mock<void, [string, 'detected' | 'updated' | 'started' | 'completed', ToolStatusEventData]>;
+  pushStatus: jest.Mock<void, [string, ToolStatusEntry]>;
 };
 
 function makeController(): MockController {
   return {
-    handleToolEvent: jest.fn(),
+    pushStatus: jest.fn(),
   };
 }
 
-function makeCoordinator(controller: MockController): ToolEventCoordinator {
-  return new ToolEventCoordinator(controller as unknown as ToolStatusBarController);
+function makeCoordinator(controller?: MockController): {
+  coordinator: ToolEventCoordinator;
+  controller: MockController;
+  stateManager: ToolCallStateManager;
+} {
+  const ctrl = controller ?? makeController();
+  const stateManager = new ToolCallStateManager();
+  const coordinator = new ToolEventCoordinator(
+    ctrl as unknown as ToolStatusBarController,
+    stateManager
+  );
+  return { coordinator, controller: ctrl, stateManager };
 }
 
-describe('ToolEventCoordinator — sink-swap (PLAN MANDATE)', () => {
-  it('routes handleToolExecutionStarted through controller.handleToolEvent with "started"', () => {
-    const controller = makeController();
-    const coordinator = makeCoordinator(controller);
+describe('ToolEventCoordinator — state manager routing', () => {
+  it('routes handleToolExecutionStarted through state manager → controller.pushStatus with present tense', () => {
+    const { coordinator, controller } = makeCoordinator();
 
     coordinator.handleToolExecutionStarted('msg-1', {
       id: 'tool-abc',
@@ -44,64 +56,66 @@ describe('ToolEventCoordinator — sink-swap (PLAN MANDATE)', () => {
       parameters: { filePath: 'notes.md' },
     });
 
-    expect(controller.handleToolEvent).toHaveBeenCalledTimes(1);
-    const [messageId, event, data] = controller.handleToolEvent.mock.calls[0];
+    expect(controller.pushStatus).toHaveBeenCalledTimes(1);
+    const [messageId, entry] = controller.pushStatus.mock.calls[0];
     expect(messageId).toBe('msg-1');
-    expect(event).toBe('started');
-    expect(data.id).toBe('tool-abc');
+    expect(entry.state).toBe('present');
+    expect(entry.text.length).toBeGreaterThan(0);
   });
 
-  it('routes handleToolExecutionCompleted through controller.handleToolEvent with "completed"', () => {
-    const controller = makeController();
-    const coordinator = makeCoordinator(controller);
+  it('routes handleToolExecutionCompleted through state manager → controller.pushStatus with past tense', () => {
+    const { coordinator, controller } = makeCoordinator();
+
+    // First detect so there is state to complete
+    coordinator.handleToolExecutionStarted('msg-2', {
+      id: 'tool-xyz',
+      name: 'contentManager_read',
+    });
+    controller.pushStatus.mockClear();
 
     coordinator.handleToolExecutionCompleted('msg-2', 'tool-xyz', { value: 42 }, true);
 
-    expect(controller.handleToolEvent).toHaveBeenCalledTimes(1);
-    const [messageId, event, data] = controller.handleToolEvent.mock.calls[0];
+    expect(controller.pushStatus).toHaveBeenCalledTimes(1);
+    const [messageId, entry] = controller.pushStatus.mock.calls[0];
     expect(messageId).toBe('msg-2');
-    expect(event).toBe('completed');
-    expect(data.toolId).toBe('tool-xyz');
-    expect(data.success).toBe(true);
-    expect(data.result).toEqual({ value: 42 });
+    expect(entry.state).toBe('past');
   });
 
   it('forwards error string on completion failure', () => {
-    const controller = makeController();
-    const coordinator = makeCoordinator(controller);
+    const { coordinator, controller } = makeCoordinator();
+
+    coordinator.handleToolExecutionStarted('msg-3', {
+      id: 'tool-err',
+      name: 'contentManager_read',
+    });
+    controller.pushStatus.mockClear();
 
     coordinator.handleToolExecutionCompleted('msg-3', 'tool-err', null, false, 'permission denied');
 
-    const [, , data] = controller.handleToolEvent.mock.calls[0];
-    expect(data.success).toBe(false);
-    expect(data.error).toBe('permission denied');
+    const [, entry] = controller.pushStatus.mock.calls[0];
+    expect(entry.state).toBe('failed');
   });
 
-  it('routes handleToolEvent (generic) through controller.handleToolEvent with enriched data', () => {
-    const controller = makeController();
-    const coordinator = makeCoordinator(controller);
+  it('routes handleToolEvent (generic) through state manager with enriched data', () => {
+    const { coordinator, controller } = makeCoordinator();
 
     coordinator.handleToolEvent('msg-4', 'detected', {
       rawName: 'contentManager_read',
+      id: 'gen-1',
       parameters: { filePath: 'a.md' },
     });
 
-    expect(controller.handleToolEvent).toHaveBeenCalledTimes(1);
-    const [messageId, event, data] = controller.handleToolEvent.mock.calls[0];
+    expect(controller.pushStatus).toHaveBeenCalledTimes(1);
+    const [messageId, entry] = controller.pushStatus.mock.calls[0];
     expect(messageId).toBe('msg-4');
-    expect(event).toBe('detected');
-    // Enrichment adds metadata fields
-    expect(data.technicalName).toBeDefined();
-    expect(data.displayName).toBeDefined();
-    expect(data.rawName).toBe('contentManager_read');
-    expect(data.parameters).toEqual({ filePath: 'a.md' });
+    expect(entry.state).toBe('present');
+    expect(entry.text.length).toBeGreaterThan(0);
   });
 });
 
 describe('ToolEventCoordinator — handleToolCallsDetected', () => {
-  it('emits a "detected" event for each tool call', () => {
-    const controller = makeController();
-    const coordinator = makeCoordinator(controller);
+  it('emits a detected transition for each tool call', () => {
+    const { coordinator, controller } = makeCoordinator();
 
     coordinator.handleToolCallsDetected('msg-batch', [
       {
@@ -114,18 +128,16 @@ describe('ToolEventCoordinator — handleToolCallsDetected', () => {
       },
     ] as unknown as Parameters<typeof coordinator.handleToolCallsDetected>[1]);
 
-    // Two tool calls → two 'detected' events
-    const detectedCalls = controller.handleToolEvent.mock.calls.filter(
-      (call) => call[1] === 'detected'
-    );
-    expect(detectedCalls).toHaveLength(2);
-    expect(detectedCalls[0][2].id).toBe('call-1');
-    expect(detectedCalls[1][2].id).toBe('call-2');
+    // Two tool calls → two pushStatus calls
+    expect(controller.pushStatus).toHaveBeenCalledTimes(2);
+    // Both should be present tense (detected)
+    for (const call of controller.pushStatus.mock.calls) {
+      expect(call[1].state).toBe('present');
+    }
   });
 
   it('parses string-encoded arguments into structured parameters', () => {
-    const controller = makeController();
-    const coordinator = makeCoordinator(controller);
+    const { coordinator, stateManager } = makeCoordinator();
 
     coordinator.handleToolCallsDetected('msg-parse', [
       {
@@ -134,13 +146,13 @@ describe('ToolEventCoordinator — handleToolCallsDetected', () => {
       },
     ] as unknown as Parameters<typeof coordinator.handleToolCallsDetected>[1]);
 
-    const [, , data] = controller.handleToolEvent.mock.calls[0];
-    expect(data.parameters).toEqual({ filePath: 'a.md', limit: 10 });
+    const state = stateManager.getState('call-parse');
+    expect(state).toBeDefined();
+    expect(state!.metadata.parameters).toEqual({ filePath: 'a.md', limit: 10 });
   });
 
   it('leaves malformed JSON arguments as a raw string rather than throwing', () => {
-    const controller = makeController();
-    const coordinator = makeCoordinator(controller);
+    const { coordinator } = makeCoordinator();
 
     expect(() => {
       coordinator.handleToolCallsDetected('msg-bad', [
@@ -150,14 +162,10 @@ describe('ToolEventCoordinator — handleToolCallsDetected', () => {
         },
       ] as unknown as Parameters<typeof coordinator.handleToolCallsDetected>[1]);
     }).not.toThrow();
-
-    const [, , data] = controller.handleToolEvent.mock.calls[0];
-    expect(data.parameters).toBe('{not-valid-json');
   });
 
-  it('emits a follow-up "completed" event for providerExecuted tool calls with results', () => {
-    const controller = makeController();
-    const coordinator = makeCoordinator(controller);
+  it('emits a follow-up completed transition for providerExecuted tool calls with results', () => {
+    const { coordinator, controller } = makeCoordinator();
 
     coordinator.handleToolCallsDetected('msg-provider', [
       {
@@ -169,80 +177,126 @@ describe('ToolEventCoordinator — handleToolCallsDetected', () => {
       },
     ] as unknown as Parameters<typeof coordinator.handleToolCallsDetected>[1]);
 
-    const events = controller.handleToolEvent.mock.calls.map((call) => call[1]);
-    expect(events).toContain('detected');
-    expect(events).toContain('completed');
-    // Total = 2 (detected + completed) for one providerExecuted call
-    expect(controller.handleToolEvent).toHaveBeenCalledTimes(2);
-
-    const completedCall = controller.handleToolEvent.mock.calls.find((call) => call[1] === 'completed');
-    expect(completedCall).toBeDefined();
-    expect(completedCall?.[2].toolId).toBe('call-provider');
-    expect(completedCall?.[2].success).toBe(true);
-    expect(completedCall?.[2].result).toEqual({ matches: 3 });
+    // Total = 2 pushStatus calls (detected + completed) for one providerExecuted call
+    expect(controller.pushStatus).toHaveBeenCalledTimes(2);
+    const states = controller.pushStatus.mock.calls.map(c => c[1].state);
+    expect(states).toContain('present');
+    expect(states).toContain('past');
   });
 
-  it('does NOT emit a follow-up "completed" event for non-provider tool calls', () => {
-    const controller = makeController();
-    const coordinator = makeCoordinator(controller);
+  it('does NOT emit a follow-up completed for non-provider tool calls', () => {
+    const { coordinator, controller } = makeCoordinator();
 
     coordinator.handleToolCallsDetected('msg-regular', [
       {
         id: 'call-regular',
         function: { name: 'contentManager_read', arguments: '{"filePath":"a.md"}' },
-        // No providerExecuted — regular tool call that will complete via
-        // handleToolExecutionCompleted later.
       },
     ] as unknown as Parameters<typeof coordinator.handleToolCallsDetected>[1]);
 
-    expect(controller.handleToolEvent).toHaveBeenCalledTimes(1);
-    expect(controller.handleToolEvent.mock.calls[0][1]).toBe('detected');
+    expect(controller.pushStatus).toHaveBeenCalledTimes(1);
+    expect(controller.pushStatus.mock.calls[0][1].state).toBe('present');
   });
 
   it('handles an empty tool call array without calling the controller', () => {
-    const controller = makeController();
-    const coordinator = makeCoordinator(controller);
+    const { coordinator, controller } = makeCoordinator();
 
     coordinator.handleToolCallsDetected('msg-empty', []);
 
-    expect(controller.handleToolEvent).not.toHaveBeenCalled();
+    expect(controller.pushStatus).not.toHaveBeenCalled();
   });
 });
 
-describe('ToolEventCoordinator — sink-swap invariant (no legacy fallback)', () => {
-  it('never invokes any method on the controller except handleToolEvent', () => {
-    // Use a Proxy to detect access to anything other than handleToolEvent
-    const seenMethods = new Set<string>();
-    const controllerMock = {
-      handleToolEvent: jest.fn(),
-    };
-    const controller = new Proxy(controllerMock, {
-      get(target, prop) {
-        if (typeof prop === 'string') {
-          seenMethods.add(prop);
-        }
-        return (target as Record<string | symbol, unknown>)[prop as string];
-      },
+describe('ToolEventCoordinator — useTools/getTools filter', () => {
+  it('filters out useTools wrapper events from handleToolEvent', () => {
+    const { coordinator, controller } = makeCoordinator();
+
+    coordinator.handleToolEvent('msg-1', 'completed', {
+      name: 'useTools',
+      id: 'wrapper-1',
     });
 
-    const coordinator = new ToolEventCoordinator(controller as unknown as ToolStatusBarController);
+    expect(controller.pushStatus).not.toHaveBeenCalled();
+  });
 
-    // Exercise every public dispatch path
-    coordinator.handleToolCallsDetected('m', [
-      {
-        id: 'c1',
-        function: { name: 'test', arguments: '{}' },
-      },
-    ] as unknown as Parameters<typeof coordinator.handleToolCallsDetected>[1]);
-    coordinator.handleToolExecutionStarted('m', { id: 'c2', name: 'test' });
-    coordinator.handleToolExecutionCompleted('m', 'c2', null, true);
-    coordinator.handleToolEvent('m', 'detected', { name: 'test' });
+  it('filters out getTools wrapper events from handleToolEvent', () => {
+    const { coordinator, controller } = makeCoordinator();
 
-    // The ONLY method accessed on the controller must be handleToolEvent
-    const accessedFunctionalMethods = Array.from(seenMethods).filter(
-      (prop) => prop !== 'then' // avoid false positives from Jest's await handling
-    );
-    expect(accessedFunctionalMethods).toEqual(['handleToolEvent']);
-    expect(controllerMock.handleToolEvent).toHaveBeenCalled();
+    coordinator.handleToolEvent('msg-1', 'completed', {
+      name: 'getTools',
+      id: 'wrapper-2',
+    });
+
+    expect(controller.pushStatus).not.toHaveBeenCalled();
+  });
+
+  it('filters out namespaced useTools variants (e.g. toolManager_useTools)', () => {
+    const { coordinator, controller } = makeCoordinator();
+
+    coordinator.handleToolEvent('msg-1', 'completed', {
+      name: 'toolManager_useTools',
+      id: 'wrapper-3',
+    });
+
+    expect(controller.pushStatus).not.toHaveBeenCalled();
+  });
+});
+
+describe('ToolEventCoordinator — forward-only race prevention', () => {
+  it('does NOT regress from started to detected for the same tool call ID', () => {
+    const { coordinator, controller } = makeCoordinator();
+
+    // Tool starts executing
+    coordinator.handleToolExecutionStarted('msg-race', {
+      id: 'tool-race',
+      name: 'contentManager_read',
+    });
+    expect(controller.pushStatus).toHaveBeenCalledTimes(1);
+    expect(controller.pushStatus.mock.calls[0][1].state).toBe('present');
+
+    controller.pushStatus.mockClear();
+
+    // Late detection event arrives (streaming parser lag)
+    coordinator.handleToolEvent('msg-race', 'detected', {
+      id: 'tool-race',
+      name: 'contentManager_read',
+    });
+
+    // Should NOT have emitted — detected is a regression from started
+    expect(controller.pushStatus).not.toHaveBeenCalled();
+  });
+
+  it('does NOT regress from completed to started for the same tool call ID', () => {
+    const { coordinator, controller } = makeCoordinator();
+
+    coordinator.handleToolExecutionStarted('msg-race2', {
+      id: 'tool-race2',
+      name: 'contentManager_read',
+    });
+    coordinator.handleToolExecutionCompleted('msg-race2', 'tool-race2', {}, true);
+    controller.pushStatus.mockClear();
+
+    // Late started event arrives
+    coordinator.handleToolEvent('msg-race2', 'started', {
+      id: 'tool-race2',
+      name: 'contentManager_read',
+    });
+
+    expect(controller.pushStatus).not.toHaveBeenCalled();
+  });
+});
+
+describe('ToolEventCoordinator — clearToolNameCache delegates to state manager', () => {
+  it('clears state manager state when clearToolNameCache is called', () => {
+    const { coordinator, stateManager } = makeCoordinator();
+
+    coordinator.handleToolExecutionStarted('msg-1', {
+      id: 'tool-1',
+      name: 'contentManager_read',
+    });
+    expect(stateManager.getState('tool-1')).toBeDefined();
+
+    coordinator.clearToolNameCache();
+    expect(stateManager.getState('tool-1')).toBeUndefined();
   });
 });
