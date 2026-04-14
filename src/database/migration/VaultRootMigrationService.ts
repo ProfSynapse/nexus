@@ -10,25 +10,11 @@ import {
   EVENT_STREAM_CATEGORIES,
   parseEventStreamPath
 } from '../storage/vaultRoot/EventStreamUtilities';
-import { appendMobileMarkdownLog } from './MobileMarkdownLogger';
-
-const MIGRATION_TRACE_PREFIX = '[NexusMigrationTrace]';
-
-function traceMigration(message: string, details?: unknown): void {
-  if (details !== undefined) {
-    console.error(`${MIGRATION_TRACE_PREFIX} ${message}`, details);
-    return;
-  }
-
-  console.error(`${MIGRATION_TRACE_PREFIX} ${message}`);
-}
-
 export interface VaultRootMigrationServiceOptions {
   app: App;
   vaultEventStore: VaultEventStore;
   legacyRoots: string[];
   categories?: EventStreamCategory[];
-  mobileLogPath?: string;
 }
 
 export interface VaultRootMigrationSourceFile {
@@ -184,7 +170,6 @@ export class VaultRootMigrationService {
   private readonly vaultEventStore: VaultEventStore;
   private readonly legacyRoots: string[];
   private readonly categories: EventStreamCategory[];
-  private readonly mobileLogPath?: string;
 
   constructor(options: VaultRootMigrationServiceOptions) {
     this.app = options.app;
@@ -193,12 +178,6 @@ export class VaultRootMigrationService {
     this.categories = options.categories && options.categories.length > 0
       ? options.categories
       : DEFAULT_CATEGORIES;
-    this.mobileLogPath = options.mobileLogPath;
-  }
-
-  private trace(message: string, details?: unknown): void {
-    traceMigration(message, details);
-    appendMobileMarkdownLog(this.app, this.mobileLogPath, message, details);
   }
 
   async backfillLegacyRoots(): Promise<VaultRootMigrationResult> {
@@ -218,9 +197,6 @@ export class VaultRootMigrationService {
 
     const legacySnapshots = await this.collectLegacySnapshots();
     const eventPaths = Array.from(legacySnapshots.keys()).sort((left, right) => left.localeCompare(right));
-    this.trace('legacy snapshots collected', {
-      streamCount: eventPaths.length
-    });
 
     filesScanned = Array.from(legacySnapshots.values()).reduce((total, snapshots) => total + snapshots.length, 0);
     needed = filesScanned > 0;
@@ -232,19 +208,7 @@ export class VaultRootMigrationService {
       const snapshots = legacySnapshots.get(streamPath) ?? [];
       let result: VaultRootMigrationFileResult;
 
-      try {
-        result = await this.backfillFile(streamPath, snapshots);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        this.trace('backfill stream failed', {
-          streamIndex: streamIndex + 1,
-          streamTotal,
-          streamPath,
-          snapshotCount: snapshots.length,
-          message
-        });
-        throw error;
-      }
+      result = await this.backfillFile(streamPath, snapshots);
 
       fileResults.push(result);
       conflicts.push(...result.conflicts);
@@ -267,17 +231,6 @@ export class VaultRootMigrationService {
         success = false;
         verified = false;
       }
-      this.trace('backfill stream complete', {
-        streamIndex: streamIndex + 1,
-        streamTotal,
-        streamPath,
-        snapshotCount: snapshots.length,
-        copiedEventCount: result.copiedEventCount,
-        skippedEventCount: result.skippedEventCount,
-        verified: result.verified,
-        conflictCount: result.conflicts.length,
-        errorCount: result.errors.length
-      });
     }
 
     if (errors.length > 0) {
@@ -325,15 +278,6 @@ export class VaultRootMigrationService {
           : 'Backfill completed with conflicts or errors.'
       };
 
-    this.trace('backfillLegacyRoots complete', {
-      needed: result.needed,
-      success: result.success,
-      verified: result.verified,
-      filesScanned: result.filesScanned,
-      filesProcessed: result.filesProcessed,
-      eventsCopied: result.eventsCopied,
-      eventsSkipped: result.eventsSkipped
-    });
     return result;
   }
 
