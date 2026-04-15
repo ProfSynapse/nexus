@@ -138,7 +138,7 @@ export class MessageBubble extends Component {
       if (this.onEdit) {
         const editBtn = actions.createEl('button', {
           cls: 'message-action-btn clickable-icon',
-          attr: { title: 'Edit message' }
+          attr: { title: 'Edit message', 'aria-label': 'Edit message' }
         });
         setIcon(editBtn, 'edit');
         const onEdit = this.onEdit;
@@ -152,7 +152,7 @@ export class MessageBubble extends Component {
       // Retry button for user messages
       const retryBtn = actions.createEl('button', {
         cls: 'message-action-btn clickable-icon',
-        attr: { title: 'Retry message' }
+        attr: { title: 'Retry message', 'aria-label': 'Retry message' }
       });
       setIcon(retryBtn, 'rotate-ccw');
       this.registerDomEvent(retryBtn, 'click', (event) => {
@@ -166,7 +166,7 @@ export class MessageBubble extends Component {
       // Tool messages get minimal actions - just copy for debugging
       const copyBtn = actions.createEl('button', {
         cls: 'message-action-btn clickable-icon',
-        attr: { title: 'Copy tool execution details' }
+        attr: { title: 'Copy tool execution details', 'aria-label': 'Copy tool execution details' }
       });
       setIcon(copyBtn, 'copy');
       this.registerDomEvent(copyBtn, 'click', () => {
@@ -177,7 +177,7 @@ export class MessageBubble extends Component {
       // Copy button for AI messages
       const copyBtn = actions.createEl('button', {
         cls: 'message-action-btn clickable-icon',
-        attr: { title: 'Copy message' }
+        attr: { title: 'Copy message', 'aria-label': 'Copy message' }
       });
       setIcon(copyBtn, 'copy');
       this.registerDomEvent(copyBtn, 'click', () => {

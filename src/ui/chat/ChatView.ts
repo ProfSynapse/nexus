@@ -8,7 +8,7 @@
  * and tool event coordination to ToolEventCoordinator.
  */
 
-import { ItemView, Notice, WorkspaceLeaf } from 'obsidian';
+import { ItemView, Notice, Platform, WorkspaceLeaf } from 'obsidian';
 import { ConversationList } from './components/ConversationList';
 import { MessageDisplay } from './components/MessageDisplay';
 import { ChatInput } from './components/ChatInput';
@@ -583,6 +583,7 @@ export class ChatView extends ItemView {
       this.layoutElements.conversationListContainer,
       (conversation) => {
         void this.conversationManager.selectConversation(conversation);
+        this.closeConversationListOnMobile();
       },
       (conversationId) => {
         void this.conversationManager.deleteConversation(conversationId);
@@ -678,6 +679,7 @@ export class ChatView extends ItemView {
       this.layoutElements.newChatButton,
       () => {
         void this.conversationManager.createNewConversation();
+        this.closeConversationListOnMobile();
       },
       this
     );
@@ -981,6 +983,14 @@ export class ChatView extends ItemView {
       console.warn('[ChatView] Failed to open agent status modal:', error);
       new Notice('Subagent system unavailable', 2500);
     }
+  }
+
+  private closeConversationListOnMobile(): void {
+    if (!Platform.isMobile || !this.uiStateController?.getSidebarVisible()) {
+      return;
+    }
+
+    this.uiStateController.toggleConversationList();
   }
 
   private updateChatTitle(): void {

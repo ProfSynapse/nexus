@@ -1,7 +1,7 @@
 /**
  * OpenRouter Model Specifications
  * OpenRouter provides access to multiple providers through a unified API
- * Updated March 2026 with GPT-5.3, Claude Sonnet 4.6, and Gemini 3.1 models
+ * Updated April 2026 with GPT-5.4, Claude Sonnet 4.6, and Gemini 3.1 models
  */
 
 import { ModelSpec } from '../modelTypes';
@@ -10,6 +10,22 @@ import { ModelSpec } from '../modelTypes';
 // Each model has its own specific API name in OpenRouter
 export const OPENROUTER_MODELS: ModelSpec[] = [
   // OpenAI GPT-5.4 models via OpenRouter
+  {
+    provider: 'openrouter',
+    name: 'GPT-5.4',
+    apiName: 'openai/gpt-5.4',
+    contextWindow: 1050000,
+    maxTokens: 128000,
+    inputCostPerMillion: 2.50,
+    outputCostPerMillion: 15.00,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
   {
     provider: 'openrouter',
     name: 'GPT-5.4 Mini',
@@ -36,6 +52,22 @@ export const OPENROUTER_MODELS: ModelSpec[] = [
     outputCostPerMillion: 1.25,
     capabilities: {
       supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    provider: 'openrouter',
+    name: 'GPT-5.4 Pro',
+    apiName: 'openai/gpt-5.4-pro',
+    contextWindow: 1050000,
+    maxTokens: 128000,
+    inputCostPerMillion: 30.00,
+    outputCostPerMillion: 180.00,
+    capabilities: {
+      supportsJSON: false,
       supportsImages: true,
       supportsFunctions: true,
       supportsStreaming: true,
@@ -390,4 +422,4 @@ export const OPENROUTER_MODELS: ModelSpec[] = [
   },
 ];
 
-export const OPENROUTER_DEFAULT_MODEL = 'openai/gpt-5.1';
+export const OPENROUTER_DEFAULT_MODEL = 'openai/gpt-5.4';

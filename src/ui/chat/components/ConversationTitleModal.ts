@@ -4,18 +4,20 @@
  * Properly extends Obsidian's Modal class for proper focus management
  */
 
-import { App, Modal, Setting } from 'obsidian';
+import { App, Component, Modal, Setting } from 'obsidian';
 
 export class ConversationTitleModal extends Modal {
   private result: string | null = null;
   private submitted = false;
   private inputEl: HTMLInputElement | null = null;
+  private modalEvents: Component | null = null;
 
   constructor(app: App, private onSubmit: (title: string | null) => void) {
     super(app);
   }
 
   onOpen(): void {
+    this.modalEvents = new Component();
     const { contentEl } = this;
     contentEl.addClass('chat-conversation-title-modal');
 
@@ -33,7 +35,7 @@ export class ConversationTitleModal extends Modal {
             this.result = value;
           });
 
-        text.inputEl.addEventListener('keydown', (e: KeyboardEvent) => {
+        this.modalEvents?.registerDomEvent(text.inputEl, 'keydown', (e: KeyboardEvent) => {
           if (e.key === 'Enter') {
             e.preventDefault();
             this.submit();
@@ -49,13 +51,13 @@ export class ConversationTitleModal extends Modal {
       text: 'Cancel',
       cls: 'mod-cancel'
     });
-    cancelBtn.addEventListener('click', () => this.close());
+    this.modalEvents.registerDomEvent(cancelBtn, 'click', () => this.close());
 
     const createBtn = buttonContainer.createEl('button', {
       text: 'Create chat',
       cls: 'mod-cta'
     });
-    createBtn.addEventListener('click', () => this.submit());
+    this.modalEvents.registerDomEvent(createBtn, 'click', () => this.submit());
 
     // Focus the input after modal is fully rendered
     setTimeout(() => {
@@ -87,6 +89,8 @@ export class ConversationTitleModal extends Modal {
 
     const { contentEl } = this;
     contentEl.empty();
+    this.modalEvents?.unload();
+    this.modalEvents = null;
 
     // Call the callback with result (or null if cancelled)
     if (this.submitted && this.result?.trim()) {

@@ -517,8 +517,8 @@ body.theme-light .message-content {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 8px;
     padding: 6px 10px;
-    padding-top: calc(6px + env(safe-area-inset-top, 0px));
     border: none;
     background: transparent;
     box-shadow: none;
@@ -568,7 +568,11 @@ body.theme-light .message-content {
     color: var(--text-normal);
     font-size: 16px;
     flex: 1;
+    min-width: 0;
     text-align: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 /* Chat Selectors Container - REMOVED (now in modal) */
@@ -742,7 +746,7 @@ body.theme-light .message-content {
     padding: 1rem;
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: 0.16rem;
 }
 
 .message-display-event-row {
@@ -963,7 +967,7 @@ body.theme-light .message-content {
 }
 
 .message-container.message-assistant {
-    margin-top: 1.08rem;
+    margin-top: 0.28rem;
 }
 
 .message-header {
@@ -1014,11 +1018,21 @@ body.theme-light .message-content {
    actions pushed to the right edge. Mockup line 2270-2277. */
 .message-container.message-user .message-actions-external {
     align-self: flex-start;
+    align-items: flex-start;
     width: 100%;
+    height: 22px;
+    min-height: 22px;
     box-sizing: border-box;
     padding: 0 1.08rem;
     justify-content: flex-end;
+    gap: 0.22rem;
+    margin-top: -3px;
     margin-left: 0;
+    overflow: visible;
+}
+
+.message-container.message-user .message-action-btn {
+    transform: translateY(-1px);
 }
 
 /* Assistant row: full width, padded to match content inset, left-aligned.
@@ -5598,16 +5612,16 @@ a:hover {
 body.is-mobile .chat-send-button {
     width: 44px;
     height: 44px;
-    right: 6px;
+    right: 8px;
     /* Inherits top: 50% and transform: translateY(-50%) from base style */
     --icon-size: 18px;
 }
 
-/* Message action buttons - reasonable size that doesn't overlap content */
+/* Message action buttons - 44px touch targets for phones */
 body.is-mobile .message-action-btn {
-    width: 36px;
-    height: 36px;
-    padding: 0.4rem;
+    width: 44px;
+    height: 44px;
+    padding: 0;
     --icon-size: 16px;
 }
 
@@ -5619,30 +5633,54 @@ body.is-mobile .message-actions-external {
     opacity: 0.85;
     pointer-events: auto;
     transform: translateY(0);
+    height: 32px;
+    min-height: 32px;
+    margin-top: -2px;
+    overflow: visible;
+}
+
+body.is-mobile .message-container.message-user .message-actions-external {
+    align-items: flex-start;
+    gap: 0;
+    height: 24px;
+    min-height: 24px;
+    margin-top: -7px;
+    padding: 0 0.72rem;
+}
+
+body.is-mobile .message-container.message-user .message-action-btn {
+    transform: translateY(-3px);
 }
 
 /* Assistant messages: keep in corner but smaller on mobile */
 body.is-mobile .message-container.message-assistant .message-actions-external {
     top: 0.25rem;
     right: 0.25rem;
+    padding: 0 0.78rem;
+}
+
+body.is-mobile .message-container.message-assistant .message-action-btn {
+    justify-content: flex-start;
 }
 
 /* Message bubbles - more padding and margin on mobile */
 body.is-mobile .message-bubble {
-    padding: 0.875rem 1rem;
     font-size: 16px;
     line-height: 1.5;
-    margin-bottom: 0.75rem;
+    margin-bottom: 0;
 }
 
 /* Message content - ensure left alignment */
 body.is-mobile .message-content {
     text-align: left;
+    font-size: 16px;
+    line-height: 1.5;
 }
 
 /* Mobile: conversation action buttons always visible */
 body.is-mobile .conversation-actions {
     opacity: 0.7;
+    pointer-events: auto;
 }
 
 body.is-mobile .conversation-item:active .conversation-actions {
@@ -5650,9 +5688,13 @@ body.is-mobile .conversation-item:active .conversation-actions {
 }
 
 body.is-mobile .conversation-action-btn {
-    width: 36px;
-    height: 36px;
+    width: 44px;
+    height: 44px;
     --icon-size: 16px;
+}
+
+body.is-mobile .conversation-content {
+    padding-right: 6.25rem;
 }
 
 body.is-mobile .chat-new-button {
@@ -5660,11 +5702,13 @@ body.is-mobile .chat-new-button {
     min-height: 44px;
 }
 
-body.is-mobile .chat-hamburger,
-body.is-mobile .chat-settings-btn {
+body.is-mobile .chat-hamburger-button,
+body.is-mobile .chat-settings-button {
+    width: 44px;
+    height: 44px;
     min-width: 44px;
     min-height: 44px;
-    padding: 0.5rem;
+    padding: 0;
 }
 
 body.is-mobile .message-container:active .message-actions-external {
@@ -5672,11 +5716,11 @@ body.is-mobile .message-container:active .message-actions-external {
     pointer-events: auto;
 }
 
-body.is-mobile .conversation-delete {
+body.is-mobile .conversation-delete-btn {
     opacity: 0.6;
 }
 
-body.is-mobile .conversation-item:active .conversation-delete {
+body.is-mobile .conversation-item:active .conversation-delete-btn {
     opacity: 1;
 }
 
@@ -5688,6 +5732,8 @@ body.is-mobile .conversation-item:active .conversation-delete {
 body.is-mobile .chat-sidebar {
     width: 100%;
     max-width: 320px;
+    box-sizing: border-box;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
     z-index: 1000;
 }
 
@@ -5698,10 +5744,12 @@ body.is-mobile .chat-backdrop {
 body.is-mobile .chat-main {
     width: 100%;
     margin-left: 0;
+    min-width: 0;
+    --chat-keyboard-offset: 0px;
 }
 
 /* Hamburger always visible on mobile */
-body.is-mobile .chat-hamburger {
+body.is-mobile .chat-hamburger-button {
     display: flex !important;
 }
 
@@ -5714,13 +5762,76 @@ body.is-mobile .chat-input-container {
     padding: 8px 12px;
     /* Handle iOS safe area for home indicator */
     padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+    position: relative;
+    z-index: 2;
+    transform: translateY(calc(-1 * var(--chat-keyboard-offset, 0px)));
+    transition: transform 120ms ease-out;
+    will-change: transform;
+}
+
+body.is-mobile .chat-main.chat-keyboard-active .chat-input-container {
+    order: 2;
+    padding: 10px 12px 14px;
+    background: color-mix(in srgb, var(--background-primary) 82%, transparent);
+    backdrop-filter: blur(18px) saturate(130%);
+    -webkit-backdrop-filter: blur(18px) saturate(130%);
+    transform: none;
+}
+
+body.is-mobile .chat-main.chat-keyboard-active .tool-status-bar-container {
+    order: 3;
+    margin-top: 0;
+    position: relative;
+    z-index: 3;
+    transform: none;
+    transition: transform 120ms ease-out;
+    will-change: transform;
+}
+
+body.is-mobile .chat-main.chat-keyboard-active .message-display-container,
+body.is-mobile .chat-main.chat-keyboard-active .nexus-branch-header-container {
+    display: none;
+}
+
+body.is-mobile .chat-main.chat-keyboard-active .chat-input-wrapper {
+    min-height: var(--chat-keyboard-editor-height, clamp(185px, 42vh, 280px));
 }
 
 body.is-mobile .chat-textarea {
     font-size: 16px; /* Prevents iOS zoom on focus */
     min-height: 64px; /* Taller for better touch UX */
     max-height: 160px;
-    padding: 12px 52px 12px 14px; /* More room for send button */
+    padding: 12px 60px 12px 14px; /* More room for the 44px send button */
+}
+
+body.is-mobile .chat-main.chat-keyboard-active .chat-textarea {
+    min-height: var(--chat-keyboard-editor-height, clamp(185px, 42vh, 280px));
+    max-height: var(--chat-keyboard-editor-height, min(54vh, 320px));
+    padding: 14px 60px 56px 14px;
+    border-radius: 14px;
+}
+
+body.is-mobile .chat-main.chat-keyboard-active .chat-send-button {
+    top: auto;
+    bottom: 14px;
+    transform: none;
+}
+
+body.is-mobile .chat-main.chat-keyboard-active .chat-send-button:hover:not(:disabled),
+body.is-mobile .chat-main.chat-keyboard-active .chat-send-button:active:not(:disabled),
+body.is-mobile .chat-main.chat-keyboard-active .chat-send-button:focus,
+body.is-mobile .chat-main.chat-keyboard-active .chat-send-button:focus-visible {
+    transform: none;
+}
+
+body.is-mobile .chat-send-button:focus:not(:focus-visible) {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+body.is-mobile .chat-main:not(.chat-keyboard-active) .chat-input-container {
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
 }
 
 /* ------------------------------ */
@@ -5728,12 +5839,71 @@ body.is-mobile .chat-textarea {
 /* ------------------------------ */
 
 body.is-mobile .message-container {
-    width: 95%;
+    width: 100%;
     max-width: none;
 }
 
-body.is-mobile .message-bubble {
-    padding: 0.875rem;
+body.is-mobile .messages-container {
+    padding: 0.75rem 0.65rem;
+    gap: 0.12rem;
+    scroll-padding-bottom: calc(0.75rem + var(--chat-keyboard-offset, 0px));
+}
+
+body.is-mobile .chat-main.chat-keyboard-active .messages-container {
+    padding-bottom: 0.75rem;
+}
+
+body.is-mobile .message-container.message-user .message-bubble {
+    padding: 0.65rem 0.78rem;
+}
+
+body.is-mobile .message-container.message-assistant .message-bubble {
+    padding: 0 0.78rem;
+    margin-bottom: 0;
+}
+
+body.is-mobile .message-container.message-assistant {
+    margin-top: 0.35rem;
+}
+
+body.is-mobile .tool-status-bar {
+    padding: 4px 12px 0;
+    font-size: 14px;
+}
+
+body.is-mobile .tool-status-bar-hidden {
+    padding: 0 12px;
+}
+
+body.is-mobile .tool-status-row--primary {
+    height: 24px;
+}
+
+body.is-mobile .tool-status-row--meta {
+    min-height: 44px;
+    height: 44px;
+    gap: 4px;
+}
+
+body.is-mobile .tool-status-row--meta button {
+    flex: 0 0 44px;
+    width: 44px;
+    height: 44px;
+}
+
+body.is-mobile .tool-status-agent-slot {
+    flex: 0 0 44px;
+}
+
+body.is-mobile .tool-status-cost {
+    font-size: 13px;
+    margin-right: 2px;
+}
+
+body.is-mobile .context-badge {
+    flex-basis: 48px;
+    width: 48px;
+    font-size: 13px;
 }
 
 /* ------------------------------ */
@@ -5744,15 +5914,22 @@ body.is-mobile .message-bubble {
 body.is-mobile .chat-modal,
 body.is-mobile .chat-settings-modal {
     width: 100%;
+    min-width: 0;
     max-width: 100%;
     height: 100%;
     max-height: 100%;
     border-radius: 0;
+    overflow-y: auto;
 }
 
 body.is-mobile .modal {
     max-width: 100vw;
     max-height: 100vh;
+}
+
+body.is-mobile .modal-content {
+    max-height: 100vh;
+    overflow-y: auto;
 }
 
 /* ------------------------------ */
@@ -5761,6 +5938,7 @@ body.is-mobile .modal {
 /* Respect user preference for reduced motion */
 @media (prefers-reduced-motion: reduce) {
     .message-bubble,
+    .message-container,
     .loading-spinner,
     .chat-sidebar,
     .chat-backdrop {
@@ -5775,20 +5953,22 @@ body.is-mobile .modal {
 
 body.is-mobile .chat-header {
     padding: 8px 12px;
-    /* Handle iOS safe area for notch */
-    padding-top: calc(8px + env(safe-area-inset-top, 0px));
 }
 
-body.is-mobile .chat-header-title {
+body.is-mobile .chat-experimental-warning {
+    display: none;
+}
+
+body.is-mobile .chat-title {
     font-size: 0.9rem;
-    max-width: 40%;
+    max-width: min(60vw, 18rem);
 }
 
 /* ------------------------------ */
 /* WELCOME SCREEN                 */
 /* ------------------------------ */
 
-body.is-mobile .chat-welcome-container {
+body.is-mobile .chat-welcome {
     padding: 1.5rem;
 }
 
@@ -5801,20 +5981,102 @@ body.is-mobile .chat-welcome-title {
 /* ------------------------------ */
 
 body.is-mobile .branch-navigator {
-    min-height: 36px;
+    min-height: 44px;
 }
 
 body.is-mobile .branch-navigator button {
-    min-width: 36px;
-    min-height: 36px;
+    min-width: 44px;
+    min-height: 44px;
 }
 
 /* ------------------------------ */
 /* LOADING OVERLAY                */
 /* ------------------------------ */
 
-body.is-mobile .chat-loading-overlay {
+body.is-mobile .nexus-loading-overlay {
     padding: 1rem;
+}
+
+/* ------------------------------ */
+/* CHAT MODALS AND MENUS          */
+/* ------------------------------ */
+
+body.is-mobile .suggester-container,
+body.is-mobile .suggestion-container {
+    max-width: calc(100vw - 24px);
+    max-height: min(45vh, 320px);
+}
+
+body.is-mobile .nexus-agent-status-button {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0;
+    justify-content: center;
+}
+
+body.is-mobile .nexus-agent-status-modal {
+    width: calc(100vw - 24px);
+    max-width: calc(100vw - 24px);
+}
+
+body.is-mobile .nexus-agent-list {
+    max-height: 60vh;
+    gap: 8px;
+}
+
+body.is-mobile .nexus-agent-row-compact {
+    align-items: stretch;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 10px 12px;
+}
+
+body.is-mobile .nexus-agent-info {
+    flex: 1 1 calc(100% - 96px);
+}
+
+body.is-mobile .nexus-agent-tool-container {
+    flex: 1 1 100%;
+    min-width: 0;
+    justify-content: flex-start;
+}
+
+body.is-mobile .nexus-agent-actions {
+    margin-top: 0;
+    margin-left: auto;
+}
+
+body.is-mobile .nexus-agent-view-btn,
+body.is-mobile .nexus-agent-stop-btn {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0;
+}
+
+body.is-mobile .nexus-branch-header {
+    align-items: stretch;
+    gap: 8px;
+    padding: 8px 10px;
+}
+
+body.is-mobile .nexus-branch-back,
+body.is-mobile .nexus-branch-action-btn {
+    min-height: 44px;
+}
+
+body.is-mobile .nexus-branch-info {
+    flex: 1 1 100%;
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 6px;
+}
+
+body.is-mobile .nexus-branch-task {
+    max-width: 100%;
 }
 
 /* ------------------------------ */
@@ -5829,7 +6091,7 @@ body.is-mobile .chat-loading-overlay {
         transform: translateY(0);
     }
 
-    .conversation-item:hover .conversation-delete {
+    .conversation-item:hover .conversation-delete-btn {
         opacity: 1;
     }
 }
@@ -5845,18 +6107,29 @@ body.is-mobile .chat-loading-overlay {
         pointer-events: auto;
     }
 
-    .conversation-delete {
+    .conversation-actions {
+        opacity: 0.7;
+        pointer-events: auto;
+    }
+
+    .conversation-delete-btn {
         opacity: 0.6;
     }
 
     .chat-send-button {
-        width: 40px;
-        height: 40px;
+        width: 44px;
+        height: 44px;
     }
 
     .message-action-btn {
-        width: 36px;
-        height: 36px;
+        width: 44px;
+        height: 44px;
+    }
+
+    .suggester-container,
+    .suggestion-container {
+        max-width: calc(100vw - 24px);
+        max-height: min(45vh, 320px);
     }
 }
 
