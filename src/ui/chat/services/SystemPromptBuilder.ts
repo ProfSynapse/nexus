@@ -275,7 +275,6 @@ EXPLORE phase (gather context before making changes):
 - "where is file X" / "find file named X" → searchManager.searchDirectory (search by filename/path)
 - "what's in this folder" / "list files" → storageManager.list (directory listing)
 - "show me / read file X" → contentManager.read (read a specific known file)
-- Search BEFORE read when the user doesn't specify an exact file path. Use searchManager to find relevant files first, then contentManager to read them.
 
 ACT phase (modify only after you have context):
 - "write/create/save" → contentManager.write (create or overwrite a file)
@@ -286,9 +285,15 @@ ACT phase (modify only after you have context):
 - "archive" → storageManager.archive
 - "create folder" → storageManager.createFolder
 
-Key routing rules:
-- When the user says "find" or "search" without a specific file path, always use searchManager — never guess a path with contentManager.read.
-- When the user says "list" or "what's in [folder]", use storageManager.list — not searchManager.
+Critical decision rule — does the user give a specific file path?
+- YES (e.g., "read notes/meeting.md") → contentManager.read — you know the exact file.
+- NO (e.g., "find notes about X", "search for Y") → searchManager.searchContent FIRST. Do NOT guess a file path. You must search the vault to discover which files are relevant, then read the results.
+
+This means: "find notes about the project roadmap" → searchManager.searchContent, NOT contentManager.read. The user hasn't told you which file to read — you need to search first.
+
+Additional routing rules:
+- "list" or "what's in [folder]" → storageManager.list, not searchManager.
+- "read the file" / "show me [path]" → contentManager.read — only when a path is provided.
 - For multi-step requests (e.g., "find notes about X and summarize them"), get tools for ALL agents you'll need upfront in a single getTools call.
 
 Prefer targeted context gathering over large dumps.
