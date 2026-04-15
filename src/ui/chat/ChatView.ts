@@ -57,7 +57,7 @@ import { getNexusPlugin } from '../../utils/pluginLocator';
 import { getWebLLMLifecycleManager } from '../../services/llm/adapters/webllm/WebLLMLifecycleManager';
 
 // Subagent infrastructure (delegated to SubagentController)
-import type { HybridStorageAdapter } from '../../database/adapters/HybridStorageAdapter';
+import type { HybridStorageAdapter, ExternalSyncEvent } from '../../database/adapters/HybridStorageAdapter';
 import type { ModelOption, PromptOption } from './types/SelectionTypes';
 import type { ToolEventData as ChatServiceToolEventData } from '../../services/chat/ToolCallService';
 import type { BranchViewContext } from './components/BranchHeader';
@@ -719,6 +719,67 @@ export class ChatView extends ItemView {
         }
       })
     );
+
+    // Refresh conversation list / active conversation when Obsidian Sync
+    // lands JSONL updates from another device. The adapter has already
+    // reconciled SQLite by the time this fires — we just re-query.
+    this.subscribeToExternalSync();
+  }
+
+  /**
+   * Subscribe to the HybridStorageAdapter `external-sync` event so
+   * desktop→mobile chat changes (and vice versa) appear without a
+   * manual refresh. The subscription is registered with `registerEvent`
+   * so it auto-detaches when the view unloads.
+   */
+  private subscribeToExternalSync(): void {
+    const plugin = getNexusPlugin<NexusPlugin>(this.app);
+    const adapter = plugin?.getServiceIfReady<HybridStorageAdapter>('hybridStorageAdapter') ?? null;
+    if (!adapter || typeof adapter.onExternalSync !== 'function') {
+      return;
+    }
+
+    const ref = adapter.onExternalSync((event) => {
+      void this.handleExternalSync(event);
+    });
+    this.registerEvent(ref);
+  }
+
+  /**
+   * Handle an external-sync event:
+   * - If any conversation stream changed, reload the conversation list
+   *   (a new conversation may have arrived, titles may be stale, etc.).
+   * - If the *currently-open* conversation was one of the modified
+   *   streams, re-select it to pull the new messages from SQLite.
+   *
+   * Other categories (workspaces, tasks) are handled by their own views.
+   */
+  private async handleExternalSync(event: ExternalSyncEvent): Promise<void> {
+    if (!this.conversationManager) {
+      return;
+    }
+
+    const conversationChanges = event.modified.filter((m) => m.category === 'conversations');
+    if (conversationChanges.length === 0) {
+      return;
+    }
+
+    try {
+      // Refresh list first so the sidebar reflects any new arrivals.
+      await this.conversationManager.loadConversations();
+
+      // If the user is currently viewing one of the changed conversations,
+      // re-select it so new messages show up in the main pane.
+      const current = this.conversationManager.getCurrentConversation();
+      if (current) {
+        const hitCurrent = conversationChanges.some((m) => m.businessId === current.id);
+        if (hitCurrent) {
+          await this.conversationManager.selectConversation(current);
+        }
+      }
+    } catch (error) {
+      console.error('[ChatView] Failed to apply external-sync refresh:', error);
+    }
   }
 
   /**

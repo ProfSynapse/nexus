@@ -21,11 +21,12 @@
  * - src/database/interfaces/IStorageAdapter.ts - Interface definition
  */
 
-import { App, Plugin } from 'obsidian';
+import { App, Events, EventRef, Plugin } from 'obsidian';
 import { IStorageAdapter, QueryOptions, ImportOptions } from '../interfaces/IStorageAdapter';
 import { JSONLWriter } from '../storage/JSONLWriter';
 import { SQLiteCacheManager } from '../storage/SQLiteCacheManager';
 import { SyncCoordinator } from '../sync/SyncCoordinator';
+import { JsonlVaultWatcher, ModifiedStream } from '../sync/JsonlVaultWatcher';
 import { QueryCache } from '../optimizations/QueryCache';
 import { PaginatedResult, PaginationParams } from '../../types/pagination/PaginationTypes';
 import {
@@ -97,6 +98,22 @@ export interface HybridStorageAdapterOptions {
   cacheMaxSize?: number;
 }
 
+/**
+ * Payload delivered to subscribers of the adapter's `external-sync` event.
+ * Fired after the JSONL vault watcher detects a change and the resulting
+ * reconciliation has been applied to SQLite.
+ */
+export interface ExternalSyncEvent {
+  /** Result of the reconciliation run that landed the remote JSONL events. */
+  result: SyncResult;
+  /**
+   * The logical streams that triggered this sync (deduped across the
+   * debounce window). UI consumers use this to decide whether content
+   * they are currently displaying needs to re-query from SQLite.
+   */
+  modified: ModifiedStream[];
+}
+
 export interface StartupHydrationState {
   phase: 'idle' | 'running' | 'complete' | 'error';
   isBlocking: boolean;
@@ -134,6 +151,18 @@ export class HybridStorageAdapter implements IStorageAdapter {
   private basePath: string;
   private initialized = false;
   private syncInterval?: NodeJS.Timeout;
+  /**
+   * Watches the plugin's vault data folder for JSONL changes landed by
+   * Obsidian Sync (or otherwise) and triggers reconciliation + emits the
+   * `external-sync` event. See JsonlVaultWatcher for design notes.
+   */
+  private jsonlVaultWatcher?: JsonlVaultWatcher;
+  /**
+   * Typed event bus for adapter consumers. Currently emits one event:
+   *   `external-sync` — payload: { result: SyncResult, modified: ModifiedStream[] }
+   * fired after a watcher-triggered sync completes.
+   */
+  private readonly externalEvents = new Events();
   private startupHydrationState: StartupHydrationState = {
     phase: 'idle',
     isBlocking: false,
@@ -362,6 +391,10 @@ export class HybridStorageAdapter implements IStorageAdapter {
         this.completeStartupHydration();
       }
 
+      // Watch the plugin data folder for JSONL changes landed by Obsidian
+      // Sync (or external tools). When something changes, reconcile SQLite
+      // and emit `external-sync` so open views can refresh.
+      this.startJsonlVaultWatcher();
     } catch (error) {
       console.error('[HybridStorageAdapter] Initialization failed:', error);
       this.initError = error as Error;
@@ -774,6 +807,9 @@ export class HybridStorageAdapter implements IStorageAdapter {
         this.syncInterval = undefined;
       }
 
+      // Stop the JSONL vault watcher and its before-write hook on the writer.
+      this.stopJsonlVaultWatcher();
+
       // Clear query cache
       this.queryCache.clear();
 
@@ -785,6 +821,87 @@ export class HybridStorageAdapter implements IStorageAdapter {
     } catch (error) {
       console.error('[HybridStorageAdapter] Error during close:', error);
       throw error;
+    }
+  }
+
+  // ============================================================================
+  // External sync: vault-event-driven reconciliation
+  // ============================================================================
+
+  /**
+   * Subscribe to external-sync events. Fired after the JSONL vault watcher
+   * detects a change (e.g. a Sync-pushed JSONL from another device) and
+   * the resulting reconciliation has been applied to SQLite. Subscribers
+   * use the `modified` stream list to decide whether their currently-viewed
+   * content needs to re-query.
+   *
+   * Returns an Obsidian EventRef. Pass it to `offExternalSync()` (or use
+   * the plugin's `registerEvent(ref)` for auto-cleanup on unload).
+   */
+  onExternalSync(callback: (event: ExternalSyncEvent) => void): EventRef {
+    // Obsidian's Events.on takes a variadic `unknown[]` handler; we narrow
+    // here by wrapping so callers get a typed API.
+    return this.externalEvents.on('external-sync', (...data: unknown[]) => {
+      callback(data[0] as ExternalSyncEvent);
+    });
+  }
+
+  /** Remove a subscription previously added via `onExternalSync`. */
+  offExternalSync(ref: EventRef): void {
+    this.externalEvents.offref(ref);
+  }
+
+  /**
+   * Start the JSONL vault watcher. Idempotent. Wires the before-write hook
+   * on `JSONLWriter` so self-writes don't echo back as sync triggers.
+   */
+  private startJsonlVaultWatcher(): void {
+    if (this.jsonlVaultWatcher) {
+      return;
+    }
+
+    const watcher = new JsonlVaultWatcher({
+      app: this.app,
+      dataPath: this.basePath,
+      onChange: async (modified) => {
+        await this.handleExternalJsonlChange(modified);
+      }
+    });
+
+    this.jsonlVaultWatcher = watcher;
+    this.jsonlWriter.setBeforeWriteHook((logicalPath) => {
+      watcher.suppressLogicalPath(logicalPath);
+    });
+
+    watcher.start();
+  }
+
+  /**
+   * Stop the watcher and tear down its hook. Safe if never started.
+   */
+  private stopJsonlVaultWatcher(): void {
+    if (!this.jsonlVaultWatcher) {
+      return;
+    }
+    this.jsonlWriter.setBeforeWriteHook(undefined);
+    this.jsonlVaultWatcher.stop();
+    this.jsonlVaultWatcher = undefined;
+  }
+
+  /**
+   * Reconcile after the watcher detects a modified stream set and emit
+   * `external-sync` so open UI can refresh only the affected content.
+   * Called by JsonlVaultWatcher's onChange callback.
+   */
+  private async handleExternalJsonlChange(modified: ModifiedStream[]): Promise<void> {
+    if (modified.length === 0) {
+      return;
+    }
+    try {
+      const result = await this.sync();
+      this.externalEvents.trigger('external-sync', { result, modified } satisfies ExternalSyncEvent);
+    } catch (error) {
+      console.error('[HybridStorageAdapter] External JSONL change sync failed:', error);
     }
   }
 
@@ -870,6 +987,7 @@ export class HybridStorageAdapter implements IStorageAdapter {
     this.jsonlWriter.setBasePath(resolution.dataPath);
     this.jsonlWriter.setVaultEventStore(this.vaultEventStore);
     this.jsonlWriter.setVaultEventStoreReadEnabled(true);
+    this.jsonlVaultWatcher?.setDataPath(resolution.dataPath);
     this.queryCache.clear();
 
     return { ...result, switched: true };

@@ -46,6 +46,18 @@ export interface JSONLWriterOptions {
 }
 
 /**
+ * Optional callback invoked just before `JSONLWriter` writes to a logical
+ * JSONL path. Used by `JsonlVaultWatcher` to suppress the echo modify
+ * event that would otherwise round-trip back through `vault.on('modify')`
+ * and trigger a pointless self-triggered sync.
+ *
+ * The callback receives the LOGICAL path (e.g. `conversations/conv_X.jsonl`),
+ * not the physical shard path — the watcher maps it to `(category, streamId)`
+ * and suppresses all shards for that stream for a short TTL.
+ */
+export type JSONLWriterBeforeWriteHook = (logicalPath: string) => void;
+
+/**
  * JSONL Writer for sync-safe append-only storage
  *
  * Provides methods to append events to JSONL files and read them back.
@@ -78,6 +90,7 @@ export class JSONLWriter {
   private basePath: string;
   private deviceId: string;
   private router: StorageRouter;
+  private beforeWriteHook?: JSONLWriterBeforeWriteHook;
   private readonly deviceIdStorageKey = 'claudesidian-device-id';
 
   constructor(options: JSONLWriterOptions) {
@@ -119,6 +132,30 @@ export class JSONLWriter {
 
   setVaultEventStoreReadEnabled(enabled: boolean): void {
     this.router.setVaultEventStoreReadEnabled(enabled);
+  }
+
+  /**
+   * Register (or clear) a callback fired just before each append. Used by
+   * the vault-event watcher to suppress echo modify events from the plugin's
+   * own writes. Pass `undefined` to remove a previously-registered hook.
+   */
+  setBeforeWriteHook(hook: JSONLWriterBeforeWriteHook | undefined): void {
+    this.beforeWriteHook = hook;
+  }
+
+  /**
+   * Invoke the registered before-write hook if any. Swallows errors from
+   * the hook so a misbehaving watcher never blocks a JSONL write.
+   */
+  private notifyBeforeWrite(logicalPath: string): void {
+    if (!this.beforeWriteHook) {
+      return;
+    }
+    try {
+      this.beforeWriteHook(logicalPath);
+    } catch (error) {
+      console.error('[JSONLWriter] beforeWrite hook threw:', error);
+    }
   }
 
   // ============================================================================
@@ -299,6 +336,7 @@ export class JSONLWriter {
         timestamp: Date.now(),
       } as T;
 
+      this.notifyBeforeWrite(relativePath);
       await this.router.appendEvent(relativePath, event);
       return event;
     } catch (error) {
@@ -334,6 +372,7 @@ export class JSONLWriter {
         timestamp: Date.now(),
       } as T));
 
+      this.notifyBeforeWrite(relativePath);
       await this.router.appendEvents(relativePath, events);
       return events;
     } catch (error) {

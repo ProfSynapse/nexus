@@ -25,6 +25,7 @@ import { v4 as uuidv4 } from '../../utils/uuid';
 import type { ServiceManager } from '../../core/ServiceManager';
 import type { WorkflowRunService } from '../../services/workflows/WorkflowRunService';
 import type { ProjectMetadata } from '../../database/repositories/interfaces/IProjectRepository';
+import type { ExternalSyncEvent, HybridStorageAdapter } from '../../database/adapters/HybridStorageAdapter';
 
 export interface WorkspacesTabServices {
     app: App;
@@ -92,6 +93,70 @@ export class WorkspacesTab {
                 this.isLoading = false;
                 this.render();
             });
+        }
+
+        // Refresh the list / active detail when Obsidian Sync lands remote
+        // workspace or task JSONL changes from another device.
+        this.subscribeToExternalSync();
+    }
+
+    /**
+     * Subscribe to the HybridStorageAdapter `external-sync` event so the
+     * workspace list, active workspace detail, and projects pane stay
+     * current when remote edits arrive. Uses `services.component.registerEvent`
+     * for automatic cleanup when the tab's owning component unloads.
+     */
+    private subscribeToExternalSync(): void {
+        const component = this.services.component;
+        const serviceManager = this.services.serviceManager;
+        if (!component || !serviceManager) {
+            return;
+        }
+
+        // getServiceIfReady is sync; tolerate a not-yet-ready adapter —
+        // it just means no subscription (the tab will still reflect the
+        // initial load).
+        const adapter = serviceManager.getServiceIfReady<HybridStorageAdapter>('hybridStorageAdapter');
+        if (!adapter || typeof adapter.onExternalSync !== 'function') {
+            return;
+        }
+
+        const ref = adapter.onExternalSync((event) => {
+            void this.handleExternalSync(event);
+        });
+        component.registerEvent(ref);
+    }
+
+    /**
+     * Re-query and re-render whatever is currently visible. Specifically:
+     * - Any workspace changed → reload list and re-render current view.
+     * - Tasks for the currently-viewed workspace changed → refreshProjects.
+     */
+    private async handleExternalSync(event: ExternalSyncEvent): Promise<void> {
+        const workspaceChanges = event.modified.filter((m) => m.category === 'workspaces');
+        const taskChanges = event.modified.filter((m) => m.category === 'tasks');
+
+        if (workspaceChanges.length > 0) {
+            try {
+                await this.loadWorkspaces();
+                this.render();
+            } catch (error) {
+                console.error('[WorkspacesTab] Failed to refresh workspaces on external-sync:', error);
+            }
+        }
+
+        const currentWorkspaceId = this.currentWorkspace?.id;
+        if (
+            taskChanges.length > 0 &&
+            currentWorkspaceId &&
+            (this.currentView === 'projects' || this.currentView === 'project-detail' || this.currentView === 'task-detail') &&
+            taskChanges.some((m) => m.businessId === currentWorkspaceId)
+        ) {
+            try {
+                await this.projectsManager.refreshProjects();
+            } catch (error) {
+                console.error('[WorkspacesTab] Failed to refresh projects on external-sync:', error);
+            }
         }
     }
 
