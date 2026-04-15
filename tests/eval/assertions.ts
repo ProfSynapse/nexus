@@ -41,17 +41,7 @@ export function assertToolCalls(
     // Check params if specified
     if (exp.params) {
       const actualArgs = actual[matchIndex].args;
-      for (const [key, expectedValue] of Object.entries(exp.params)) {
-        if (!(key in actualArgs)) {
-          errors.push(
-            `Tool "${exp.name}": expected param "${key}" not found in args ${JSON.stringify(actualArgs)}`
-          );
-        } else if (!deepPartialMatch(actualArgs[key], expectedValue)) {
-          errors.push(
-            `Tool "${exp.name}": param "${key}" expected ${JSON.stringify(expectedValue)}, got ${JSON.stringify(actualArgs[key])}`
-          );
-        }
-      }
+      checkToolParams(exp.name, exp.params, actualArgs, errors);
     }
   }
 
@@ -111,17 +101,7 @@ export function assertToolCallRounds(
       // Check params if specified
       if (exp.params) {
         const actualArgs = roundCalls[matchIndex].args;
-        for (const [key, expectedValue] of Object.entries(exp.params)) {
-          if (!(key in actualArgs)) {
-            errors.push(
-              `Round ${roundIdx}, tool "${exp.name}": expected param "${key}" not found in args ${JSON.stringify(actualArgs)}`
-            );
-          } else if (!deepPartialMatch(actualArgs[key], expectedValue)) {
-            errors.push(
-              `Round ${roundIdx}, tool "${exp.name}": param "${key}" expected ${JSON.stringify(expectedValue)}, got ${JSON.stringify(actualArgs[key])}`
-            );
-          }
-        }
+        checkToolParams(exp.name, exp.params, actualArgs, errors, `Round ${roundIdx}, `);
       }
     }
 
@@ -177,6 +157,70 @@ export function assertNoHallucinatedTools(
     passed: errors.length === 0,
     errors,
   };
+}
+
+/**
+ * Check tool params with special handling for getTools agent format normalization.
+ * For getTools calls, `request` and `agents` are treated as equivalent — both
+ * are normalized to a sorted agent name list before comparison.
+ */
+function checkToolParams(
+  toolName: string,
+  expectedParams: Record<string, unknown>,
+  actualArgs: Record<string, unknown>,
+  errors: string[],
+  prefix = '',
+): void {
+  // Special case: getTools agent format normalization
+  if (toolName === 'getTools' && ('request' in expectedParams || 'agents' in expectedParams)) {
+    const expectedAgents = normalizeGetToolsAgents(expectedParams as Record<string, unknown>);
+    const actualAgents = normalizeGetToolsAgents(actualArgs);
+
+    if (expectedAgents && actualAgents) {
+      // Compare agent name sets — order doesn't matter, check containment
+      const missing = expectedAgents.filter(a => !actualAgents.includes(a));
+      if (missing.length > 0) {
+        errors.push(
+          `${prefix}tool "${toolName}": expected agents [${expectedAgents.join(', ')}] but got [${actualAgents.join(', ')}], missing: [${missing.join(', ')}]`
+        );
+      }
+      return;
+    }
+  }
+
+  // Standard param checking
+  for (const [key, expectedValue] of Object.entries(expectedParams)) {
+    if (!(key in actualArgs)) {
+      errors.push(
+        `${prefix}tool "${toolName}": expected param "${key}" not found in args ${JSON.stringify(actualArgs)}`
+      );
+    } else if (!deepPartialMatch(actualArgs[key], expectedValue)) {
+      errors.push(
+        `${prefix}tool "${toolName}": param "${key}" expected ${JSON.stringify(expectedValue)}, got ${JSON.stringify(actualArgs[key])}`
+      );
+    }
+  }
+}
+
+/**
+ * Normalize getTools params so both `agents` (string[]) and `request` (object[])
+ * formats are comparable. The real getTools schema accepts `request: [{agent, tools?}]`,
+ * but models often use the simpler `agents: ["X", "Y"]` shorthand.
+ *
+ * This extracts the agent names from either format into a sorted string[] so
+ * assertion matching works regardless of which format the model chose.
+ */
+function normalizeGetToolsAgents(args: Record<string, unknown>): string[] | null {
+  if (args.request && Array.isArray(args.request)) {
+    return (args.request as Array<{ agent: string }>)
+      .map(r => r.agent)
+      .filter(Boolean)
+      .sort();
+  }
+  if (args.agents && Array.isArray(args.agents)) {
+    return (args.agents as string[]).filter(Boolean).sort();
+  }
+  return null;
 }
 
 /**
