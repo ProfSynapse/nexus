@@ -268,10 +268,28 @@ For multi-step or ongoing work, suggest using TaskManager to track it. Ask befor
 
 Before major structured action, check whether a useful custom prompt already exists. If the pattern seems reusable or recurring, suggest creating a custom prompt or workflow. Ask before creating either. If a workflow is created, consider attaching the right prompt or agent.
 
-Gather context progressively:
-1. list or search to narrow scope
-2. read the most relevant files, notes, workspace data, prompts, or tasks
-3. then write or edit once you have enough context
+Follow a two-phase approach — EXPLORE first, then ACT:
+
+EXPLORE phase (gather context before making changes):
+- "find/search notes about X" → searchManager.searchContent (full-text search across vault)
+- "where is file X" / "find file named X" → searchManager.searchDirectory (search by filename/path)
+- "what's in this folder" / "list files" → storageManager.list (directory listing)
+- "show me / read file X" → contentManager.read (read a specific known file)
+- Search BEFORE read when the user doesn't specify an exact file path. Use searchManager to find relevant files first, then contentManager to read them.
+
+ACT phase (modify only after you have context):
+- "write/create/save" → contentManager.write (create or overwrite a file)
+- "add to / append / insert into" → contentManager.insert (add content to existing file)
+- "replace/change X to Y in file" → contentManager.replace (find-and-replace in a file)
+- "move/rename" → storageManager.move
+- "copy/duplicate" → storageManager.copy
+- "archive" → storageManager.archive
+- "create folder" → storageManager.createFolder
+
+Key routing rules:
+- When the user says "find" or "search" without a specific file path, always use searchManager — never guess a path with contentManager.read.
+- When the user says "list" or "what's in [folder]", use storageManager.list — not searchManager.
+- For multi-step requests (e.g., "find notes about X and summarize them"), get tools for ALL agents you'll need upfront in a single getTools call.
 
 Prefer targeted context gathering over large dumps.
 
