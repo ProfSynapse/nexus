@@ -78,6 +78,13 @@ export interface EvalScenario {
   timeout?: number;
   systemPrompt?: string;
   toolSet?: ToolSetType;
+  /**
+   * When true, tool call round ordering is not enforced.
+   * All expected tools must appear across all rounds, but the round
+   * assignment doesn't matter. Use for scenarios where the model may
+   * execute search before read or vice versa.
+   */
+  allowReorder?: boolean;
   turns: EvalTurn[];
 }
 

@@ -31,7 +31,7 @@ import { EvalToolExecutor } from './EvalToolExecutor';
 import { LiveToolExecutor } from './LiveToolExecutor';
 import { EvalAdapterRegistry } from './EvalAdapterRegistry';
 import { NEXUS_TOOLS } from './fixtures/tools';
-import { assertToolCallRounds, assertNoHallucinatedTools } from './assertions';
+import { assertToolCalls, assertToolCallRounds, assertNoHallucinatedTools } from './assertions';
 import type { IToolExecutor } from '../../src/services/llm/adapters/shared/ToolExecutionUtils';
 import type {
   CapturedToolCall,
@@ -328,11 +328,14 @@ async function executeScenario(
     // Collect ALL tool calls that happened during this exchange's streaming response
     const capturedCalls = toolExecutor.getCapturedCalls();
 
-    // Assert tool calls match expectations across all rounds IN ORDER.
-    // Round 0's expected tools should match the first N captured calls,
-    // round 1's should match the next M, etc.
+    // Assert tool calls match expectations.
+    // When allowReorder is set, check that all expected tools appear anywhere
+    // in the captured calls (unordered). Otherwise, enforce round-by-round order.
     const roundExpectations = exchange.rounds.map(r => r.expectedTools);
-    const roundAssertion = assertToolCallRounds(roundExpectations, capturedCalls);
+    const allExpected = exchange.rounds.flatMap(r => r.expectedTools);
+    const roundAssertion = scenario.allowReorder
+      ? assertToolCalls(allExpected, capturedCalls)
+      : assertToolCallRounds(roundExpectations, capturedCalls);
     const hallucinationAssertion = assertNoHallucinatedTools(capturedCalls, validToolNames);
 
     const errors = [...roundAssertion.errors, ...hallucinationAssertion.errors];

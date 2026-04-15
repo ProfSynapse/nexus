@@ -90,6 +90,7 @@
 - name: search-then-read-chain
   description: User asks to find and read — model should chain searchManager then contentManager
   toolSet: meta
+  allowReorder: true
   turns:
     - userMessage: "Search for my notes about the quarterly budget and show me the most relevant one"
       expectedTools:

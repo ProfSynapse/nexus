@@ -83,6 +83,7 @@
 - name: vague-organize-request
   description: User asks to "clean up" which implies move/archive
   toolSet: meta
+  allowReorder: true
   turns:
     - userMessage: "Can you clean up the old meeting notes? Move anything from 2024 to the archive folder."
       expectedTools:

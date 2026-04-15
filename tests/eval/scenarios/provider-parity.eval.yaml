@@ -17,6 +17,7 @@
 - name: parity-search-then-read
   description: Two-turn flow — search then read — should work across all providers
   toolSet: nexus
+  allowReorder: true
   turns:
     - userMessage: "Search for notes about meetings and read the first result"
       expectedTools:

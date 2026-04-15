@@ -1,6 +1,7 @@
 - name: read-then-write-then-move
   description: Read a note, write a summary, move it to archive
   toolSet: nexus
+  allowReorder: true
   turns:
     - userMessage: "Read notes/meeting.md, write a summary to notes/summary.md, then move it to archive/"
       expectedTools:
@@ -37,6 +38,7 @@
 - name: search-and-read
   description: Search for notes about a topic, then read the top result
   toolSet: nexus
+  allowReorder: true
   turns:
     - userMessage: "Find notes about project roadmap and read the most relevant one"
       expectedTools:

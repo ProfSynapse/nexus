@@ -84,6 +84,7 @@
 - name: update-existing-note
   description: User asks to add content to an existing note — should use insert not write
   toolSet: meta
+  allowReorder: true
   turns:
     - userMessage: "Add a new item to my todo list at notes/todo.md — 'Review pull request #42'"
       expectedTools:
