@@ -96,6 +96,11 @@ export class SyncCoordinator {
   private conversationApplier: ConversationEventApplier;
   private taskApplier: TaskEventApplier;
 
+  /** Guards against overlapping sync() calls. */
+  private syncing = false;
+  /** Set when a sync() call arrives while another is in-flight. */
+  private syncQueued = false;
+
   constructor(jsonlWriter: IJSONLWriter, sqliteCache: ISQLiteCacheManager) {
     this.jsonlWriter = jsonlWriter;
     this.sqliteCache = sqliteCache;
@@ -107,8 +112,34 @@ export class SyncCoordinator {
 
   /**
    * Synchronize JSONL files to SQLite cache.
+   *
+   * Guarded by an async mutex: if a sync is already running, the call is
+   * queued and the in-flight run will re-check for pending changes when it
+   * finishes. This prevents two overlapping runs from applying the same
+   * events twice or writing stale timestamps.
    */
   async sync(options: SyncOptions = {}): Promise<SyncResult> {
+    if (this.syncing) {
+      this.syncQueued = true;
+      return this.createResult(true, 0, 0, [], Date.now(), []);
+    }
+
+    this.syncing = true;
+    try {
+      return await this.syncInner(options);
+    } finally {
+      this.syncing = false;
+      if (this.syncQueued) {
+        this.syncQueued = false;
+        // Re-run to pick up changes that landed during the previous sync.
+        // Don't await — callers of the queued sync already got their
+        // early-return result above.
+        void this.sync(options);
+      }
+    }
+  }
+
+  private async syncInner(options: SyncOptions = {}): Promise<SyncResult> {
     const startTime = Date.now();
     const errors: string[] = [];
     let eventsApplied = 0;

@@ -138,8 +138,30 @@ export class WorkspacesTab {
 
         if (workspaceChanges.length > 0) {
             try {
+                // If the user is editing a workspace detail form, avoid
+                // destroying unsaved inputs with a full re-render.
+                const isEditingDetail = this.currentView === 'detail' && !!this.currentWorkspace?.id;
+                const editedWorkspaceModified = isEditingDetail &&
+                    workspaceChanges.some((m) => m.businessId === this.currentWorkspace!.id);
+
                 await this.loadWorkspaces();
-                this.render();
+
+                if (isEditingDetail) {
+                    // The user has a detail form open.  If the externally-
+                    // modified workspace is NOT the one being edited we can
+                    // silently refresh the backing list — the detail view
+                    // stays untouched.  If it IS the edited workspace we
+                    // still skip the re-render to preserve dirty form state;
+                    // the user will pick up the remote changes next time
+                    // they navigate away and back.
+                    if (!editedWorkspaceModified) {
+                        // List data refreshed; no visual change needed.
+                    }
+                    // else: edited workspace was modified externally — keep
+                    // the user's unsaved edits intact.
+                } else {
+                    this.render();
+                }
             } catch (error) {
                 console.error('[WorkspacesTab] Failed to refresh workspaces on external-sync:', error);
             }

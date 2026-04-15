@@ -222,19 +222,19 @@ describe('JsonlVaultWatcher', () => {
     expect(onChange).not.toHaveBeenCalled();
   });
 
-  it('only suppresses one event per suppressLogicalPath call', async () => {
-    const { watcher, fire, onChange } = build({ debounceMs: 100 });
+  it('suppresses all events within TTL window (e.g. shard rotation)', async () => {
+    const { watcher, fire, onChange } = build({ debounceMs: 100, suppressTtlMs: 500 });
     watcher.start();
 
     watcher.suppressLogicalPath('conversations/conv_abc.jsonl');
 
-    // First modify: consumed by suppression.
+    // Both modifies (e.g. shard rotation producing two vault events) are
+    // suppressed within the TTL window — no needless sync triggered.
     fire('modify', makeTFile('Nexus/data/conversations/conv_abc/shard-000.jsonl'));
-    // Second modify (e.g. remote write lands right after): NOT suppressed.
-    fire('modify', makeTFile('Nexus/data/conversations/conv_abc/shard-000.jsonl'));
+    fire('modify', makeTFile('Nexus/data/conversations/conv_abc/shard-001.jsonl'));
 
     await jest.advanceTimersByTimeAsync(100);
-    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).not.toHaveBeenCalled();
   });
 
   it('expires suppression after TTL', async () => {
@@ -351,5 +351,195 @@ describe('JsonlVaultWatcher', () => {
     await jest.advanceTimersByTimeAsync(50);
     expect(onChange).toHaveBeenCalledTimes(1);
     expect(onChange.mock.calls[0][0][0].streamId).toBe('conv_xyz');
+  });
+
+  describe('create and delete events', () => {
+    it('fires onChange for a create event on a new JSONL shard', async () => {
+      const { watcher, fire, onChange } = build({ debounceMs: 50 });
+      watcher.start();
+
+      fire('create', makeTFile('Nexus/data/conversations/conv_sync/shard-000.jsonl'));
+      await jest.advanceTimersByTimeAsync(50);
+
+      expect(onChange).toHaveBeenCalledTimes(1);
+      const modified: ModifiedStream[] = onChange.mock.calls[0][0];
+      expect(modified).toHaveLength(1);
+      expect(modified[0]).toMatchObject({
+        category: 'conversations',
+        streamId: 'conv_sync',
+        businessId: 'sync'
+      });
+    });
+
+    it('fires onChange for a delete event on a JSONL shard', async () => {
+      const { watcher, fire, onChange } = build({ debounceMs: 50 });
+      watcher.start();
+
+      fire('delete', makeTFile('Nexus/data/workspaces/ws_work-1/shard-000.jsonl'));
+      await jest.advanceTimersByTimeAsync(50);
+
+      expect(onChange).toHaveBeenCalledTimes(1);
+      const modified: ModifiedStream[] = onChange.mock.calls[0][0];
+      expect(modified).toHaveLength(1);
+      expect(modified[0]).toMatchObject({
+        category: 'workspaces',
+        streamId: 'ws_work-1',
+        businessId: 'work-1'
+      });
+    });
+
+    it('classifies stream types correctly for create events across categories', async () => {
+      const { watcher, fire, onChange } = build({ debounceMs: 50 });
+      watcher.start();
+
+      fire('create', makeTFile('Nexus/data/conversations/conv_chat-1/shard-000.jsonl'));
+      fire('create', makeTFile('Nexus/data/workspaces/ws_ws-2/shard-000.jsonl'));
+      fire('create', makeTFile('Nexus/data/tasks/tasks_proj-3/shard-000.jsonl'));
+
+      await jest.advanceTimersByTimeAsync(50);
+
+      expect(onChange).toHaveBeenCalledTimes(1);
+      const modified: ModifiedStream[] = onChange.mock.calls[0][0];
+      expect(modified).toHaveLength(3);
+
+      const byCategory = Object.fromEntries(modified.map((m) => [m.category, m]));
+      expect(byCategory['conversations']).toMatchObject({
+        streamId: 'conv_chat-1',
+        businessId: 'chat-1'
+      });
+      expect(byCategory['workspaces']).toMatchObject({
+        streamId: 'ws_ws-2',
+        businessId: 'ws-2'
+      });
+      expect(byCategory['tasks']).toMatchObject({
+        streamId: 'tasks_proj-3',
+        businessId: 'proj-3'
+      });
+    });
+
+    it('ignores create events for non-jsonl files inside the data path', async () => {
+      const { watcher, fire, onChange } = build({ debounceMs: 50 });
+      watcher.start();
+
+      fire('create', makeTFile('Nexus/data/_meta/storage-manifest.json'));
+      fire('create', makeTFile('Nexus/data/conversations/conv_abc/metadata.json'));
+
+      await jest.advanceTimersByTimeAsync(50);
+      expect(onChange).not.toHaveBeenCalled();
+    });
+
+    it('respects self-write suppression for create events', async () => {
+      const { watcher, fire, onChange } = build({ debounceMs: 50 });
+      watcher.start();
+
+      watcher.suppressLogicalPath('conversations/conv_local.jsonl');
+      fire('create', makeTFile('Nexus/data/conversations/conv_local/shard-000.jsonl'));
+
+      await jest.advanceTimersByTimeAsync(50);
+      expect(onChange).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('error resilience', () => {
+    it('continues processing events after onChange throws synchronously', async () => {
+      const onChange = jest.fn<Promise<void>, [ModifiedStream[]]>();
+      const { app, fire } = createMockApp();
+      const watcher = new JsonlVaultWatcher({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        app: app as any,
+        dataPath: 'Nexus/data',
+        onChange,
+        debounceMs: 50
+      });
+
+      // First call throws.
+      onChange.mockImplementationOnce(() => { throw new Error('boom'); });
+      // Second call succeeds.
+      onChange.mockImplementationOnce(() => Promise.resolve());
+
+      watcher.start();
+
+      // First event — onChange throws.
+      fire('modify', makeTFile('Nexus/data/conversations/conv_a/shard-000.jsonl'));
+      await jest.advanceTimersByTimeAsync(50);
+      expect(onChange).toHaveBeenCalledTimes(1);
+
+      // Second event — should still work (dispatching flag was reset).
+      fire('modify', makeTFile('Nexus/data/conversations/conv_b/shard-000.jsonl'));
+      await jest.advanceTimersByTimeAsync(50);
+      expect(onChange).toHaveBeenCalledTimes(2);
+    });
+
+    it('continues processing events after onChange rejects', async () => {
+      const onChange = jest.fn<Promise<void>, [ModifiedStream[]]>();
+      const { app, fire } = createMockApp();
+      const watcher = new JsonlVaultWatcher({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        app: app as any,
+        dataPath: 'Nexus/data',
+        onChange,
+        debounceMs: 50
+      });
+
+      // First call rejects.
+      onChange.mockImplementationOnce(() => Promise.reject(new Error('async boom')));
+      // Second call succeeds.
+      onChange.mockImplementationOnce(() => Promise.resolve());
+
+      watcher.start();
+
+      // First event — onChange rejects.
+      fire('modify', makeTFile('Nexus/data/conversations/conv_a/shard-000.jsonl'));
+      await jest.advanceTimersByTimeAsync(50);
+      // Allow the rejected promise to settle.
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(onChange).toHaveBeenCalledTimes(1);
+
+      // Second event — should still work (dispatching flag was reset by finally).
+      fire('modify', makeTFile('Nexus/data/conversations/conv_b/shard-000.jsonl'));
+      await jest.advanceTimersByTimeAsync(50);
+      expect(onChange).toHaveBeenCalledTimes(2);
+    });
+
+    it('processes queued changes after onChange throws during dispatch', async () => {
+      const onChange = jest.fn<Promise<void>, [ModifiedStream[]]>();
+      const { app, fire } = createMockApp();
+      const watcher = new JsonlVaultWatcher({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        app: app as any,
+        dataPath: 'Nexus/data',
+        onChange,
+        debounceMs: 50
+      });
+
+      // First call: long-running then throws. Second: succeeds.
+      let rejectFirst: ((err: Error) => void) | undefined;
+      onChange.mockImplementationOnce(
+        () => new Promise<void>((_, reject) => { rejectFirst = reject; })
+      );
+      onChange.mockImplementationOnce(() => Promise.resolve());
+
+      watcher.start();
+
+      // First event triggers dispatch.
+      fire('modify', makeTFile('Nexus/data/conversations/conv_a/shard-000.jsonl'));
+      await jest.advanceTimersByTimeAsync(50);
+      expect(onChange).toHaveBeenCalledTimes(1);
+
+      // While first dispatch is in-flight, a new change lands (queued).
+      fire('modify', makeTFile('Nexus/data/conversations/conv_b/shard-000.jsonl'));
+      await jest.advanceTimersByTimeAsync(50);
+
+      // First dispatch fails — queued dispatch should still fire.
+      rejectFirst?.(new Error('dispatch failure'));
+      await Promise.resolve();
+      await Promise.resolve();
+      await jest.advanceTimersByTimeAsync(50);
+
+      expect(onChange).toHaveBeenCalledTimes(2);
+      const secondBatch = onChange.mock.calls[1][0];
+      expect(secondBatch.map((s: ModifiedStream) => s.streamId)).toEqual(['conv_b']);
+    });
   });
 });
