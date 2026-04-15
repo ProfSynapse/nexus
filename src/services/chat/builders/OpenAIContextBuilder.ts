@@ -156,7 +156,7 @@ export class OpenAIContextBuilder implements IContextBuilder {
     const reasoningToolCalls = toolCalls as unknown as ReasoningToolCallLike[];
     const assistantMessage = ReasoningPreserver.buildAssistantMessageWithReasoning(
       reasoningToolCalls,
-      null
+      ''
     ) as unknown as OpenAIMessage;
 
     messages.push(assistantMessage);
@@ -194,7 +194,7 @@ export class OpenAIContextBuilder implements IContextBuilder {
     const reasoningToolCalls = toolCalls as unknown as ReasoningToolCallLike[];
     const assistantMessage = ReasoningPreserver.buildAssistantMessageWithReasoning(
       reasoningToolCalls,
-      null
+      ''
     ) as unknown as OpenAIMessage;
 
     messages.push(assistantMessage);

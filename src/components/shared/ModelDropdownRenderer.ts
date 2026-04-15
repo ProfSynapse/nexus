@@ -280,6 +280,7 @@ function renderModelDropdown(
             const firstOptionKey = buildModelOptionKey(models[0].provider, models[0].id);
             const firstEntry = config.modelOptionMap.get(firstOptionKey);
             config.onModelChange(models[0].id, firstEntry?.provider);
+            config.notifyChange();
             dropdown.setValue(firstOptionKey);
           }
         }

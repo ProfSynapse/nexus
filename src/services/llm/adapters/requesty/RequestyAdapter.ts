@@ -114,7 +114,7 @@ export class RequestyAdapter extends BaseAdapter {
         },
         body: JSON.stringify({
           model: options?.model || this.currentModel,
-          messages: this.buildMessages(prompt, options?.systemPrompt),
+          messages: this.buildMessagesForRequest(prompt, options),
           temperature: options?.temperature,
           max_tokens: options?.maxTokens,
           response_format: options?.jsonMode ? { type: 'json_object' } : undefined,
@@ -317,5 +317,23 @@ export class RequestyAdapter extends BaseAdapter {
       rateOutputPerMillion: costs.output * 1000,
       currency: 'USD'
     });
+  }
+
+  /**
+   * Build messages array, using conversationHistory for tool continuations
+   * and prepending system prompt if it was stripped by the context builder.
+   */
+  private buildMessagesForRequest(prompt: string, options?: GenerateOptions): Array<Record<string, unknown>> {
+    if (options?.conversationHistory && options.conversationHistory.length > 0) {
+      const messages = options.conversationHistory;
+      if (options.systemPrompt) {
+        const hasSystem = (messages as Array<{ role: string }>).some(m => m.role === 'system');
+        if (!hasSystem) {
+          return [{ role: 'system', content: options.systemPrompt }, ...messages];
+        }
+      }
+      return messages;
+    }
+    return this.buildMessages(prompt, options?.systemPrompt);
   }
 }

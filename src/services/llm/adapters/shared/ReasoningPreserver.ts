@@ -197,7 +197,7 @@ export class ReasoningPreserver {
    */
   static buildAssistantMessageWithReasoning(
     toolCalls: ReasoningToolCall[],
-    content: string | null = null
+    content: string = ''
   ): JsonObject {
     const reasoning = this.extractFromToolCalls(toolCalls);
 

@@ -366,4 +366,22 @@ export class GroqAdapter extends BaseAdapter {
       currency: 'USD'
     });
   }
+
+  /**
+   * Build messages array, using conversationHistory for tool continuations
+   * and prepending system prompt if it was stripped by the context builder.
+   */
+  private buildMessagesForRequest(prompt: string, options?: GenerateOptions): Array<Record<string, unknown>> {
+    if (options?.conversationHistory && options.conversationHistory.length > 0) {
+      const messages = options.conversationHistory;
+      if (options.systemPrompt) {
+        const hasSystem = (messages as Array<{ role: string }>).some(m => m.role === 'system');
+        if (!hasSystem) {
+          return [{ role: 'system', content: options.systemPrompt }, ...messages];
+        }
+      }
+      return messages;
+    }
+    return this.buildMessages(prompt, options?.systemPrompt);
+  }
 }

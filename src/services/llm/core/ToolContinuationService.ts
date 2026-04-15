@@ -12,7 +12,8 @@
 import { BaseAdapter } from '../adapters/BaseAdapter';
 import { ConversationContextBuilder } from '../../chat/ConversationContextBuilder';
 import { MCPToolExecution, IToolExecutor, ToolResult } from '../adapters/shared/ToolExecutionUtils';
-import { Tool, TokenUsage, SupportedProvider, ToolCall as AdapterToolCall, GenerateOptions } from '../adapters/types';
+import { ProviderHttpError } from '../adapters/shared/ProviderHttpClient';
+import { Tool, TokenUsage, SupportedProvider, ToolCall as AdapterToolCall, GenerateOptions, LLMProviderError } from '../adapters/types';
 import { ToolCall as ChatToolCall } from '../../../types/chat/ChatTypes';
 import { checkForTerminalTool } from './TerminalToolHandler';
 import {
@@ -323,7 +324,13 @@ export class ToolContinuationService {
       console.error('Streaming tool execution error:', {
         error: toolError,
         message: toolError instanceof Error ? toolError.message : String(toolError),
-        stack: toolError instanceof Error ? toolError.stack : undefined
+        stack: toolError instanceof Error ? toolError.stack : undefined,
+        // Surface provider error response body for debugging (e.g., OpenRouter 500s)
+        ...(toolError instanceof LLMProviderError && toolError.originalError instanceof ProviderHttpError && {
+          status: toolError.originalError.response.status,
+          responseBody: toolError.originalError.response.text,
+          responseJson: toolError.originalError.response.json
+        })
       });
 
       yield {

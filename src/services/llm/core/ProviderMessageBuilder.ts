@@ -223,9 +223,30 @@ export class ProviderMessageBuilder {
       // Build a full input array: prior messages + user prompt + function_call + function_call_output items.
       const inputItems: Array<Record<string, unknown>> = [];
 
-      // Add prior conversation messages
+      // Add prior conversation messages, converting tool-related messages to Responses API format
       for (const msg of previousMessages) {
         if (msg.role === 'system') continue; // system prompt goes in instructions
+        if (msg.role === 'tool') continue; // tool results are represented as function_call_output below
+
+        // Convert assistant messages with tool_calls to function_call items
+        if (msg.role === 'assistant' && msg.tool_calls && msg.tool_calls.length > 0) {
+          // Add any text content as a regular message first
+          if (msg.content) {
+            inputItems.push({ role: 'assistant', content: msg.content });
+          }
+          for (const tc of msg.tool_calls) {
+            const name = ('name' in tc && tc.name) ? tc.name : tc.function?.name || '';
+            const args = tc.function?.arguments || '{}';
+            inputItems.push({
+              type: 'function_call',
+              call_id: tc.id,
+              name,
+              arguments: args
+            });
+          }
+          continue;
+        }
+
         inputItems.push({ role: msg.role, content: msg.content });
       }
 
