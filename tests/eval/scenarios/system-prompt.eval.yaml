@@ -1,0 +1,49 @@
+- name: default-prompt-routes-correctly
+  description: Default system prompt routes a read request to contentManager_read
+  toolSet: nexus
+  turns:
+    - userMessage: "Read the file notes/meeting.md"
+      expectedTools:
+        - name: contentManager_read
+          params:
+            path: notes/meeting.md
+      mockResponses:
+        contentManager_read:
+          success: true
+          result:
+            content: "# Meeting Notes\n- Reviewed roadmap"
+            path: notes/meeting.md
+
+- name: minimal-prompt-still-uses-tools
+  description: Even a minimal system prompt should trigger tool usage
+  toolSet: nexus
+  systemPrompt: "You are a helpful assistant. Use the provided tools when the user asks for information. Always use tools rather than guessing. Call one tool at a time."
+  turns:
+    - userMessage: "Read the file notes/meeting.md"
+      expectedTools:
+        - name: contentManager_read
+          params:
+            path: notes/meeting.md
+      mockResponses:
+        contentManager_read:
+          success: true
+          result:
+            content: "# Meeting Notes"
+            path: notes/meeting.md
+
+- name: restrictive-prompt-limits-tools
+  description: A restrictive prompt should still use tools when explicitly asked
+  toolSet: nexus
+  systemPrompt: "You are a read-only assistant. You may only use contentManager_read. Never write or modify files."
+  turns:
+    - userMessage: "Read notes/meeting.md"
+      expectedTools:
+        - name: contentManager_read
+          params:
+            path: notes/meeting.md
+      mockResponses:
+        contentManager_read:
+          success: true
+          result:
+            content: "# Meeting"
+            path: notes/meeting.md

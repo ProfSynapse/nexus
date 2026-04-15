@@ -1,0 +1,45 @@
+- name: get-tools-then-use-tools
+  description: Two-tool architecture — discover tools then execute
+  toolSet: meta
+  systemPrompt: |
+    You are Nexus, an AI assistant with a two-tool architecture:
+    1. First, call getTools to discover available tools for the agents you need
+    2. Then, call useTools to execute the discovered tools
+    Always follow this two-step pattern.
+  turns:
+    - userMessage: "Read the file notes/meeting.md"
+      expectedTools:
+        - name: getTools
+          params:
+            agents:
+              - contentManager
+      mockResponses:
+        getTools:
+          success: true
+          result:
+            tools:
+              - name: contentManager_read
+                description: Read the content of a note file
+                inputSchema:
+                  type: object
+                  properties:
+                    path:
+                      type: string
+                    startLine:
+                      type: number
+                  required:
+                    - path
+                    - startLine
+
+    - expectedTools:
+        - name: useTools
+      mockResponses:
+        useTools:
+          success: true
+          result:
+            results:
+              - tool: contentManager_read
+                success: true
+                result:
+                  content: "# Meeting Notes\n\n- Discussed roadmap\n- Budget approved"
+                  path: notes/meeting.md
