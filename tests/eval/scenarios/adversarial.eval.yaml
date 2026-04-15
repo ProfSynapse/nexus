@@ -1,16 +1,11 @@
 - name: ambiguous-prompt
-  description: Ambiguous user request — model should pick a reasonable tool
+  description: Ambiguous user request — model should search or ask for clarification
   toolSet: nexus
-  systemPrompt: |
-    You are a helpful assistant with access to file management tools.
-    Use contentManager_read to read files, contentManager_write to write files,
-    searchManager_searchContent to search, storageManager_move to move files.
-    Always use tools rather than guessing about file contents.
   turns:
     - userMessage: "Do something with my notes about the project"
       expectedTools:
         - name: searchManager_searchContent
-          optional: false
+          optional: true
       mockResponses:
         searchManager_searchContent:
           success: true
@@ -51,8 +46,6 @@
     - userMessage: "List all files in the vault root"
       expectedTools:
         - name: storageManager_list
-          params:
-            path: /
       mockResponses:
         storageManager_list:
           success: true

@@ -1,5 +1,5 @@
 - name: default-prompt-routes-correctly
-  description: Default system prompt routes a read request to contentManager_read
+  description: Production prompt routes a read request to contentManager_read
   toolSet: nexus
   turns:
     - userMessage: "Read the file notes/meeting.md"
@@ -15,35 +15,33 @@
             path: notes/meeting.md
 
 - name: minimal-prompt-still-uses-tools
-  description: Even a minimal system prompt should trigger tool usage
+  description: Production prompt triggers tool usage for a direct request
   toolSet: nexus
-  systemPrompt: "You are a helpful assistant. Use the provided tools when the user asks for information. Always use tools rather than guessing. Call one tool at a time."
   turns:
-    - userMessage: "Read the file notes/meeting.md"
+    - userMessage: "Show me what's in notes/daily.md"
       expectedTools:
         - name: contentManager_read
           params:
-            path: notes/meeting.md
+            path: notes/daily.md
       mockResponses:
         contentManager_read:
           success: true
           result:
-            content: "# Meeting Notes"
-            path: notes/meeting.md
+            content: "# Daily Notes\n- Standup at 10am"
+            path: notes/daily.md
 
 - name: restrictive-prompt-limits-tools
-  description: A restrictive prompt should still use tools when explicitly asked
+  description: Production prompt routes search request to searchManager
   toolSet: nexus
-  systemPrompt: "You are a read-only assistant. You may only use contentManager_read. Never write or modify files."
   turns:
-    - userMessage: "Read notes/meeting.md"
+    - userMessage: "Search for any notes about the quarterly review"
       expectedTools:
-        - name: contentManager_read
-          params:
-            path: notes/meeting.md
+        - name: searchManager_searchContent
       mockResponses:
-        contentManager_read:
+        searchManager_searchContent:
           success: true
           result:
-            content: "# Meeting"
-            path: notes/meeting.md
+            results:
+              - path: notes/q2-review.md
+                score: 0.91
+            totalResults: 1

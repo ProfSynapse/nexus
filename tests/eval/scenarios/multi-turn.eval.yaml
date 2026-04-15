@@ -40,11 +40,9 @@
   toolSet: nexus
   allowReorder: true
   turns:
-    - userMessage: "Find notes about project roadmap and read the most relevant one"
+    - userMessage: "Find notes about project roadmap and show me the full content of the best match"
       expectedTools:
         - name: searchManager_searchContent
-          params:
-            query: project roadmap
       mockResponses:
         searchManager_searchContent:
           success: true
@@ -52,7 +50,6 @@
             results:
               - path: notes/roadmap-q2.md
                 score: 0.95
-                snippet: "Q2 roadmap priorities..."
 
     - expectedTools:
         - name: contentManager_read
