@@ -1,0 +1,23 @@
+mode: mock
+testVaultPath: tests/eval/test-vault/
+
+providers:
+  openrouter:
+    apiKeyEnv: OPENROUTER_API_KEY
+    models:
+      - openai/gpt-5.4-mini
+    enabled: true
+
+defaults:
+  temperature: 0
+  maxRetries: 0
+  retryDelayMs: 0
+  timeout: 60000
+  systemPrompt: default
+
+capture:
+  enabled: true
+  dumpOnFailure: true
+  artifactsDir: test-artifacts/
+
+scenarios: tests/eval/scenarios/**/*.eval.yaml

@@ -348,30 +348,46 @@ async function executeScenario(
     });
 
     // Append assistant response and tool call/result pairs to conversation
-    // history for multi-turn fidelity. Production renders previous exchanges
-    // via ProviderMessageBuilder.buildConversationHistory() which handles
-    // assistant messages with tool_calls and tool result messages.
+    // history for multi-turn fidelity.
+    //
+    // In production, each tool round is a separate assistant→tool message pair:
+    //   assistant: {tool_calls: [getTools]}
+    //   tool: {tool_call_id: "...", content: "schemas..."}
+    //   assistant: {tool_calls: [useTools]}
+    //   tool: {tool_call_id: "...", content: "result..."}
+    //   assistant: {content: "Here's what I found..."}
+    //
+    // We approximate this by putting each captured call into its own
+    // assistant→tool pair. This gives the model proper multi-round context.
     if (capturedCalls.length > 0) {
-      // Assistant message with tool_calls (how the LLM sees its own prior output)
-      conversationMessages.push({
-        role: 'assistant',
-        content: textContent.trim() || '',
-        tool_calls: capturedCalls.map(tc => ({
-          id: tc.id,
-          type: 'function' as const,
-          function: {
-            name: tc.name,
-            arguments: JSON.stringify(tc.args),
-          },
-        })),
-      });
-
-      // Tool result messages (one per call) — buildConversationHistory
-      // renders these as "Tool Result: {content}" in the history text
       for (const tc of capturedCalls) {
+        // Assistant message with this tool call
+        conversationMessages.push({
+          role: 'assistant',
+          content: '',
+          tool_calls: [{
+            id: tc.id,
+            type: 'function' as const,
+            function: {
+              name: tc.name,
+              arguments: JSON.stringify(tc.args),
+            },
+          }],
+        });
+
+        // Tool result with matching tool_call_id (required by OpenAI API)
         conversationMessages.push({
           role: 'tool',
+          tool_call_id: tc.id,
           content: JSON.stringify({ success: true, name: tc.name }),
+        } as ConversationMessage);
+      }
+
+      // Final assistant text response (if any)
+      if (textContent.trim()) {
+        conversationMessages.push({
+          role: 'assistant',
+          content: textContent.trim(),
         });
       }
     } else if (textContent.trim()) {

@@ -1,0 +1,76 @@
+# Debug scenario: minimal two-exchange flow to isolate multi-turn failure
+
+- name: debug-two-exchange
+  description: Minimal two-exchange — read then search
+  toolSet: meta
+  turns:
+    # Exchange 1: simple read
+    - userMessage: "Read notes/daily.md"
+      expectedTools:
+        - name: getTools
+      mockResponses:
+        getTools:
+          success: true
+          result:
+            tools:
+              - agent: contentManager
+                tool: read
+                description: Read content from a file
+                inputSchema:
+                  type: object
+                  properties:
+                    path:
+                      type: string
+                    startLine:
+                      type: number
+                  required:
+                    - path
+                    - startLine
+
+    - expectedTools:
+        - name: useTools
+      mockResponses:
+        useTools:
+          success: true
+          result:
+            results:
+              - agent: contentManager
+                tool: read
+                success: true
+                data:
+                  content: "# Daily Notes\n\nTodo: review PR"
+
+    # Exchange 2: search — model must call getTools again then useTools
+    - userMessage: "Now search for notes about the PR review"
+      expectedTools:
+        - name: getTools
+      mockResponses:
+        getTools:
+          success: true
+          result:
+            tools:
+              - agent: searchManager
+                tool: searchContent
+                description: Search for notes containing specific content
+                inputSchema:
+                  type: object
+                  properties:
+                    query:
+                      type: string
+                  required:
+                    - query
+
+    - expectedTools:
+        - name: useTools
+      mockResponses:
+        useTools:
+          success: true
+          result:
+            results:
+              - agent: searchManager
+                tool: searchContent
+                success: true
+                data:
+                  results:
+                    - path: work/pr-review.md
+                      score: 0.9
