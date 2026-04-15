@@ -28,10 +28,13 @@ import type { ConversationMessage, StreamingOptions } from '../../src/services/l
 import type { Tool } from '../../src/services/llm/adapters/types';
 import type { LLMProviderSettings } from '../../src/types';
 import { EvalToolExecutor } from './EvalToolExecutor';
+import { LiveToolExecutor } from './LiveToolExecutor';
 import { EvalAdapterRegistry } from './EvalAdapterRegistry';
 import { NEXUS_TOOLS } from './fixtures/tools';
 import { assertToolCallRounds, assertNoHallucinatedTools } from './assertions';
+import type { IToolExecutor } from '../../src/services/llm/adapters/shared/ToolExecutionUtils';
 import type {
+  CapturedToolCall,
   EvalConfig,
   EvalScenario,
   EvalTurn,
@@ -205,6 +208,30 @@ function buildValidToolNames(tools: Tool[]): string[] {
  * Execute a scenario by grouping turns into exchanges and running each
  * exchange as a single generateResponseStream() call — matching production.
  */
+/**
+ * Create and initialize the appropriate tool executor for the current mode.
+ * - mock: EvalToolExecutor with registered mock responses
+ * - live: LiveToolExecutor backed by real agents on a test vault
+ */
+async function createToolExecutor(
+  config: EvalConfig,
+  tools: Tool[],
+): Promise<{ executor: IToolExecutor & { getCapturedCalls(): CapturedToolCall[]; resetCalls(): void }; cleanup?: () => void }> {
+  if (config.mode === 'live') {
+    const path = await import('node:path');
+    const testVaultPath = path.resolve(config.testVaultPath || 'tests/eval/test-vault');
+    const liveExecutor = new LiveToolExecutor({ testVaultPath });
+    await liveExecutor.initialize();
+    return { executor: liveExecutor };
+  }
+
+  const mockExecutor = new EvalToolExecutor();
+  if (isMetaToolSet(tools)) {
+    mockExecutor.setDomainTools(NEXUS_TOOLS);
+  }
+  return { executor: mockExecutor };
+}
+
 async function executeScenario(
   scenario: EvalScenario,
   provider: ProviderEntry,
@@ -214,14 +241,9 @@ async function executeScenario(
   temperature: number,
   config: EvalConfig
 ): Promise<TurnResult[]> {
-  const toolExecutor = new EvalToolExecutor();
+  const { executor: toolExecutor } = await createToolExecutor(config, tools);
   const adapter = await createAdapter(provider);
   const registry = new EvalAdapterRegistry([[provider.id, adapter]]);
-
-  // Wire domain tools for two-tool architecture scenarios
-  if (isMetaToolSet(tools)) {
-    toolExecutor.setDomainTools(NEXUS_TOOLS);
-  }
 
   const settings: LLMProviderSettings = {
     providers: {
@@ -247,9 +269,11 @@ async function executeScenario(
     // The orchestrator's internal pingpong will call the tool executor
     // multiple times — each time it needs the right response ready.
     toolExecutor.resetCalls(); // clear captured calls but keep any prior handlers
-    for (const round of exchange.rounds) {
-      if (round.mockResponses && config.mode === 'mock') {
-        toolExecutor.registerTurnResponses(round.mockResponses);
+    if (config.mode === 'mock' && toolExecutor instanceof EvalToolExecutor) {
+      for (const round of exchange.rounds) {
+        if (round.mockResponses) {
+          toolExecutor.registerTurnResponses(round.mockResponses);
+        }
       }
     }
 

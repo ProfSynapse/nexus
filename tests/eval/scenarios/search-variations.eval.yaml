@@ -1,0 +1,204 @@
+# Search and list operation variations — tests correct tool routing
+# for different flavors of "find/search/list" user requests.
+
+- name: search-by-content-keyword
+  description: User asks to find notes about a topic — should use searchManager_searchContent
+  toolSet: meta
+  turns:
+    - userMessage: "Find all my notes about machine learning"
+      expectedTools:
+        - name: getTools
+          params:
+            request:
+              - agent: searchManager
+      mockResponses:
+        getTools:
+          success: true
+          result:
+            tools:
+              - agent: searchManager
+                tool: searchContent
+                description: Search for notes containing specific content
+                inputSchema:
+                  type: object
+                  properties:
+                    query:
+                      type: string
+                    limit:
+                      type: number
+                  required:
+                    - query
+
+    - expectedTools:
+        - name: useTools
+      mockResponses:
+        useTools:
+          success: true
+          result:
+            results:
+              - tool: searchContent
+                success: true
+                data:
+                  results:
+                    - path: notes/ml-intro.md
+                      score: 0.92
+                    - path: research/transformers.md
+                      score: 0.87
+
+- name: list-folder-contents
+  description: User asks what's in a folder — should use storageManager_list not searchManager
+  toolSet: meta
+  turns:
+    - userMessage: "What files are in my projects folder?"
+      expectedTools:
+        - name: getTools
+          params:
+            request:
+              - agent: storageManager
+      mockResponses:
+        getTools:
+          success: true
+          result:
+            tools:
+              - agent: storageManager
+                tool: list
+                description: List files and folders in a directory
+                inputSchema:
+                  type: object
+                  properties:
+                    path:
+                      type: string
+                  required:
+                    - path
+
+    - expectedTools:
+        - name: useTools
+      mockResponses:
+        useTools:
+          success: true
+          result:
+            results:
+              - tool: list
+                success: true
+                data:
+                  items:
+                    - name: project-a
+                      type: folder
+                    - name: README.md
+                      type: file
+
+- name: search-then-read-chain
+  description: User asks to find and read — model should chain searchManager then contentManager
+  toolSet: meta
+  turns:
+    - userMessage: "Search for my notes about the quarterly budget and show me the most relevant one"
+      expectedTools:
+        - name: getTools
+          params:
+            request:
+              - agent: searchManager
+              - agent: contentManager
+      mockResponses:
+        getTools:
+          success: true
+          result:
+            tools:
+              - agent: searchManager
+                tool: searchContent
+                description: Search for notes containing specific content
+                inputSchema:
+                  type: object
+                  properties:
+                    query:
+                      type: string
+                  required:
+                    - query
+              - agent: contentManager
+                tool: read
+                description: Read content from a file
+                inputSchema:
+                  type: object
+                  properties:
+                    path:
+                      type: string
+                    startLine:
+                      type: number
+                  required:
+                    - path
+                    - startLine
+
+    - expectedTools:
+        - name: useTools
+      mockResponses:
+        useTools:
+          success: true
+          result:
+            results:
+              - tool: searchContent
+                success: true
+                data:
+                  results:
+                    - path: finance/q2-budget.md
+                      score: 0.94
+
+    - expectedTools:
+        - name: useTools
+      mockResponses:
+        useTools:
+          success: true
+          result:
+            results:
+              - tool: read
+                success: true
+                data:
+                  content: "# Q2 Budget\n\nTotal: $1.2M\n- Engineering: $800K\n- Marketing: $400K"
+
+- name: directory-search-not-content-search
+  description: User asks to find a specific file by name — should use searchManager_searchDirectory not searchContent
+  toolSet: meta
+  turns:
+    - userMessage: "Where is the file called meeting-notes.md?"
+      expectedTools:
+        - name: getTools
+          params:
+            request:
+              - agent: searchManager
+      mockResponses:
+        getTools:
+          success: true
+          result:
+            tools:
+              - agent: searchManager
+                tool: searchDirectory
+                description: Search for files and folders by name pattern
+                inputSchema:
+                  type: object
+                  properties:
+                    query:
+                      type: string
+                  required:
+                    - query
+              - agent: searchManager
+                tool: searchContent
+                description: Search for notes containing specific content
+                inputSchema:
+                  type: object
+                  properties:
+                    query:
+                      type: string
+                  required:
+                    - query
+
+    - expectedTools:
+        - name: useTools
+      mockResponses:
+        useTools:
+          success: true
+          result:
+            results:
+              - tool: searchDirectory
+                success: true
+                data:
+                  results:
+                    - path: meetings/meeting-notes.md
+                      type: file

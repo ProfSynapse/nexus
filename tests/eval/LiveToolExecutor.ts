@@ -9,6 +9,9 @@
  * The two-tool architecture (getTools/useTools) is handled transparently:
  * when the LLM emits a getTools or useTools tool call, this executor
  * routes it through the real ToolManager.
+ *
+ * Also tracks captured calls for assertion checking by EvalRunner, matching
+ * the interface of EvalToolExecutor.getCapturedCalls().
  */
 
 import type { IToolExecutor, ToolResult, ToolExecutionContext } from '../../src/services/llm/adapters/shared/ToolExecutionUtils';
@@ -18,6 +21,7 @@ import {
   HeadlessAgentStackResult,
 } from './headless/HeadlessAgentStack';
 import { TestVaultManager } from './headless/TestVaultManager';
+import type { CapturedToolCall } from './types';
 
 export interface LiveToolExecutorOptions {
   /** Absolute path to the test vault directory on disk. */
@@ -30,6 +34,7 @@ export class LiveToolExecutor implements IToolExecutor {
   private stack: HeadlessAgentStackResult | null = null;
   private vaultManager: TestVaultManager;
   private options: LiveToolExecutorOptions;
+  private capturedCalls: CapturedToolCall[] = [];
 
   constructor(options: LiveToolExecutorOptions) {
     this.options = options;
@@ -69,12 +74,22 @@ export class LiveToolExecutor implements IToolExecutor {
     return this.stack;
   }
 
+  /** Get all captured tool calls since last reset. Matches EvalToolExecutor API. */
+  getCapturedCalls(): CapturedToolCall[] {
+    return [...this.capturedCalls];
+  }
+
+  /** Clear captured calls (keep stack initialized). */
+  resetCalls(): void {
+    this.capturedCalls = [];
+  }
+
   /**
    * IToolExecutor implementation — routes tool calls through the real agent stack.
    *
    * Handles the two-tool architecture:
    * - getTools → stack.getTools(parsed args)
-   * - useTools → stack.useTools(parsed args)
+   * - useTools → stack.useTools(parsed args), also captures inner domain calls
    * - Other tool names → error (should go through useTools in production)
    */
   async executeToolCalls(
@@ -108,6 +123,9 @@ export class LiveToolExecutor implements IToolExecutor {
         continue;
       }
 
+      // Capture the meta-tool call
+      this.capturedCalls.push({ name: toolName, args, id: toolId });
+
       try {
         if (toolName === 'getTools') {
           const result = await this.stack.getTools(args as never);
@@ -119,6 +137,21 @@ export class LiveToolExecutor implements IToolExecutor {
             error: result.error,
           });
         } else if (toolName === 'useTools') {
+          // Also capture inner domain tool calls for assertions
+          const calls = args.calls as Array<{ agent?: string; tool?: string; params?: unknown }> | undefined;
+          if (calls) {
+            for (const call of calls) {
+              const innerName = call.agent && call.tool
+                ? `${call.agent}_${call.tool}`
+                : (call.tool ?? 'unknown');
+              this.capturedCalls.push({
+                name: innerName,
+                args: (call.params ?? {}) as Record<string, unknown>,
+                id: `${toolId}_inner_${innerName}`,
+              });
+            }
+          }
+
           const result = await this.stack.useTools(args as never);
           results.push({
             id: toolId,
@@ -128,8 +161,6 @@ export class LiveToolExecutor implements IToolExecutor {
             error: result.error,
           });
         } else {
-          // In the two-tool architecture, all domain tools go through useTools.
-          // If we receive a bare domain tool name, return an error.
           results.push({
             id: toolId,
             name: toolName,

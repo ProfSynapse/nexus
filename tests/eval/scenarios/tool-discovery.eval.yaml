@@ -1,0 +1,278 @@
+# Mid-conversation tool discovery — user changes topic mid-conversation
+# and the model needs to fetch schemas for different agents.
+
+- name: topic-switch-needs-new-tools
+  description: User starts with content ops, then pivots to search — model must call getTools again for the new agent
+  toolSet: meta
+  turns:
+    - userMessage: "Read my notes/daily.md file"
+      expectedTools:
+        - name: getTools
+          params:
+            request:
+              - agent: contentManager
+      mockResponses:
+        getTools:
+          success: true
+          result:
+            tools:
+              - agent: contentManager
+                tool: read
+                description: Read content from a file
+                inputSchema:
+                  type: object
+                  properties:
+                    path:
+                      type: string
+                    startLine:
+                      type: number
+                  required:
+                    - path
+                    - startLine
+
+    - expectedTools:
+        - name: useTools
+      mockResponses:
+        useTools:
+          success: true
+          result:
+            results:
+              - tool: read
+                success: true
+                data:
+                  content: "# Daily Notes\n\nTodo: review PR, update docs"
+
+    # New exchange — user pivots to a search task
+    - userMessage: "Actually, can you search for all notes mentioning the PR review?"
+      expectedTools:
+        - name: getTools
+          params:
+            request:
+              - agent: searchManager
+      mockResponses:
+        getTools:
+          success: true
+          result:
+            tools:
+              - agent: searchManager
+                tool: searchContent
+                description: Search for notes containing specific content
+                inputSchema:
+                  type: object
+                  properties:
+                    query:
+                      type: string
+                  required:
+                    - query
+
+    - expectedTools:
+        - name: useTools
+      mockResponses:
+        useTools:
+          success: true
+          result:
+            results:
+              - tool: searchContent
+                success: true
+                data:
+                  results:
+                    - path: notes/daily.md
+                      score: 0.9
+                    - path: work/pr-review-checklist.md
+                      score: 0.85
+
+- name: expand-toolset-mid-conversation
+  description: Model initially uses contentManager, then user asks something requiring storageManager too — model should fetch additional tools
+  toolSet: meta
+  turns:
+    - userMessage: "Show me what's in notes/readme.md"
+      expectedTools:
+        - name: getTools
+          params:
+            request:
+              - agent: contentManager
+      mockResponses:
+        getTools:
+          success: true
+          result:
+            tools:
+              - agent: contentManager
+                tool: read
+                description: Read content from a file
+                inputSchema:
+                  type: object
+                  properties:
+                    path:
+                      type: string
+                    startLine:
+                      type: number
+                  required:
+                    - path
+                    - startLine
+
+    - expectedTools:
+        - name: useTools
+      mockResponses:
+        useTools:
+          success: true
+          result:
+            results:
+              - tool: read
+                success: true
+                data:
+                  content: "# README\n\nProject documentation"
+
+    # User now wants to move/copy — needs storageManager
+    - userMessage: "Great, now copy that file to the backup folder"
+      expectedTools:
+        - name: getTools
+          params:
+            request:
+              - agent: storageManager
+      mockResponses:
+        getTools:
+          success: true
+          result:
+            tools:
+              - agent: storageManager
+                tool: copy
+                description: Copy a file or folder
+                inputSchema:
+                  type: object
+                  properties:
+                    path:
+                      type: string
+                    destination:
+                      type: string
+                  required:
+                    - path
+                    - destination
+
+    - expectedTools:
+        - name: useTools
+      mockResponses:
+        useTools:
+          success: true
+          result:
+            results:
+              - tool: copy
+                success: true
+                data:
+                  newPath: backup/readme.md
+
+- name: all-agents-conversation
+  description: Long conversation that touches content, storage, and search across multiple exchanges
+  toolSet: meta
+  turns:
+    # Exchange 1: search for something
+    - userMessage: "Find notes about the product launch"
+      expectedTools:
+        - name: getTools
+          params:
+            request:
+              - agent: searchManager
+      mockResponses:
+        getTools:
+          success: true
+          result:
+            tools:
+              - agent: searchManager
+                tool: searchContent
+                description: Search for notes
+                inputSchema:
+                  type: object
+                  properties:
+                    query:
+                      type: string
+                  required:
+                    - query
+
+    - expectedTools:
+        - name: useTools
+      mockResponses:
+        useTools:
+          success: true
+          result:
+            results:
+              - tool: searchContent
+                success: true
+                data:
+                  results:
+                    - path: marketing/launch-plan.md
+                      score: 0.93
+
+    # Exchange 2: read the found note
+    - userMessage: "Read that launch plan"
+      expectedTools:
+        - name: getTools
+          params:
+            request:
+              - agent: contentManager
+      mockResponses:
+        getTools:
+          success: true
+          result:
+            tools:
+              - agent: contentManager
+                tool: read
+                description: Read content from a file
+                inputSchema:
+                  type: object
+                  properties:
+                    path:
+                      type: string
+                    startLine:
+                      type: number
+                  required:
+                    - path
+                    - startLine
+
+    - expectedTools:
+        - name: useTools
+      mockResponses:
+        useTools:
+          success: true
+          result:
+            results:
+              - tool: read
+                success: true
+                data:
+                  content: "# Launch Plan\n\nDate: March 15\nChannels: Blog, Twitter, Newsletter"
+
+    # Exchange 3: organize — move to a different folder
+    - userMessage: "Move it to the archive folder, we already launched"
+      expectedTools:
+        - name: getTools
+          params:
+            request:
+              - agent: storageManager
+      mockResponses:
+        getTools:
+          success: true
+          result:
+            tools:
+              - agent: storageManager
+                tool: move
+                description: Move a file or folder
+                inputSchema:
+                  type: object
+                  properties:
+                    path:
+                      type: string
+                    destination:
+                      type: string
+                  required:
+                    - path
+                    - destination
+
+    - expectedTools:
+        - name: useTools
+      mockResponses:
+        useTools:
+          success: true
+          result:
+            results:
+              - tool: move
+                success: true
+                data:
+                  newPath: archive/launch-plan.md

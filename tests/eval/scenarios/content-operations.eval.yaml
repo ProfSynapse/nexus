@@ -1,0 +1,199 @@
+# Content read/write/update variations — tests correct tool selection
+# within the contentManager agent for different write operations.
+
+- name: simple-read
+  description: Direct request to read a specific file
+  toolSet: meta
+  turns:
+    - userMessage: "Show me the contents of docs/api-reference.md"
+      expectedTools:
+        - name: getTools
+          params:
+            request:
+              - agent: contentManager
+      mockResponses:
+        getTools:
+          success: true
+          result:
+            tools:
+              - agent: contentManager
+                tool: read
+                description: Read content from a file
+                inputSchema:
+                  type: object
+                  properties:
+                    path:
+                      type: string
+                    startLine:
+                      type: number
+                  required:
+                    - path
+                    - startLine
+
+    - expectedTools:
+        - name: useTools
+      mockResponses:
+        useTools:
+          success: true
+          result:
+            results:
+              - tool: read
+                success: true
+                data:
+                  content: "# API Reference\n\nEndpoints:\n- GET /users\n- POST /users"
+
+- name: create-new-note
+  description: User asks to create a brand new note
+  toolSet: meta
+  turns:
+    - userMessage: "Create a new note called ideas/feature-requests.md with a heading and empty bullet list"
+      expectedTools:
+        - name: getTools
+          params:
+            request:
+              - agent: contentManager
+      mockResponses:
+        getTools:
+          success: true
+          result:
+            tools:
+              - agent: contentManager
+                tool: write
+                description: Write content to a note file
+                inputSchema:
+                  type: object
+                  properties:
+                    path:
+                      type: string
+                    content:
+                      type: string
+                  required:
+                    - path
+                    - content
+
+    - expectedTools:
+        - name: useTools
+      mockResponses:
+        useTools:
+          success: true
+          result:
+            results:
+              - tool: write
+                success: true
+
+- name: update-existing-note
+  description: User asks to add content to an existing note — should use insert not write
+  toolSet: meta
+  turns:
+    - userMessage: "Add a new item to my todo list at notes/todo.md — 'Review pull request #42'"
+      expectedTools:
+        - name: getTools
+          params:
+            request:
+              - agent: contentManager
+      mockResponses:
+        getTools:
+          success: true
+          result:
+            tools:
+              - agent: contentManager
+                tool: read
+                description: Read content from a file
+                inputSchema:
+                  type: object
+                  properties:
+                    path:
+                      type: string
+                    startLine:
+                      type: number
+                  required:
+                    - path
+                    - startLine
+              - agent: contentManager
+                tool: insert
+                description: Insert content at a specific position
+                inputSchema:
+                  type: object
+                  properties:
+                    path:
+                      type: string
+                    content:
+                      type: string
+                    position:
+                      type: string
+                      enum:
+                        - beginning
+                        - end
+                        - after-line
+                    lineNumber:
+                      type: number
+                  required:
+                    - path
+                    - content
+                    - position
+
+    - expectedTools:
+        - name: useTools
+      mockResponses:
+        useTools:
+          success: true
+          result:
+            results:
+              - tool: read
+                success: true
+                data:
+                  content: "# Todo\n\n- Fix login bug\n- Update docs"
+
+    - expectedTools:
+        - name: useTools
+      mockResponses:
+        useTools:
+          success: true
+          result:
+            results:
+              - tool: insert
+                success: true
+
+- name: replace-content
+  description: User asks to replace specific text in a note
+  toolSet: meta
+  turns:
+    - userMessage: "In notes/config.md, replace 'staging' with 'production' everywhere"
+      expectedTools:
+        - name: getTools
+          params:
+            request:
+              - agent: contentManager
+      mockResponses:
+        getTools:
+          success: true
+          result:
+            tools:
+              - agent: contentManager
+                tool: replace
+                description: Replace or delete content in a file
+                inputSchema:
+                  type: object
+                  properties:
+                    path:
+                      type: string
+                    search:
+                      type: string
+                    replace:
+                      type: string
+                  required:
+                    - path
+                    - search
+                    - replace
+
+    - expectedTools:
+        - name: useTools
+      mockResponses:
+        useTools:
+          success: true
+          result:
+            results:
+              - tool: replace
+                success: true
+                data:
+                  replacements: 3
