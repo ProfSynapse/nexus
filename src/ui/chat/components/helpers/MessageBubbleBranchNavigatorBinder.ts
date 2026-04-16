@@ -4,7 +4,7 @@ import { ConversationMessage } from '../../../../types/chat/ChatTypes';
 import { MessageBranchNavigator, MessageBranchNavigatorEvents } from '../MessageBranchNavigator';
 
 interface MessageBubbleBranchNavigatorBinderDependencies {
-  component?: Component;
+  component: Component;
   onMessageAlternativeChanged?: (messageId: string, alternativeIndex: number) => void;
 }
 

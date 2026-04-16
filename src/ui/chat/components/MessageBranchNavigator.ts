@@ -23,7 +23,7 @@ export class MessageBranchNavigator {
   constructor(
     container: HTMLElement,
     private events: MessageBranchNavigatorEvents,
-    private component?: Component
+    private component: Component
   ) {
     this.container = container;
     this.createBranchNavigator();
@@ -58,16 +58,8 @@ export class MessageBranchNavigator {
     });
     setIcon(this.nextButton, 'chevron-right');
 
-    // Event listeners
-    const prevHandler = () => this.handlePreviousAlternative();
-    const nextHandler = () => this.handleNextAlternative();
-    if (this.component) {
-      this.component.registerDomEvent(this.prevButton, 'click', prevHandler);
-      this.component.registerDomEvent(this.nextButton, 'click', nextHandler);
-    } else {
-      this.prevButton.addEventListener('click', prevHandler);
-      this.nextButton.addEventListener('click', nextHandler);
-    }
+    this.component.registerDomEvent(this.prevButton, 'click', () => this.handlePreviousAlternative());
+    this.component.registerDomEvent(this.nextButton, 'click', () => this.handleNextAlternative());
   }
 
   /**
@@ -197,12 +189,6 @@ export class MessageBranchNavigator {
     return this.container.hasClass('message-branch-navigator-visible');
   }
 
-  /**
-   * Clean up resources.
-   * Note: Event listeners registered via component.registerDomEvent() are
-   * automatically cleaned up when the Obsidian Component unloads, so no
-   * manual removeEventListener calls are needed here.
-   */
   destroy(): void {
     this.container.empty();
     this.currentMessage = null;

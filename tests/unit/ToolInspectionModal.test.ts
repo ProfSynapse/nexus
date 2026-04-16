@@ -18,7 +18,7 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import { App, createMockElement } from 'obsidian';
+import { App, Component, createMockElement } from 'obsidian';
 import type { ChatMessage } from '../../src/types/chat/ChatTypes';
 import type { PaginatedResult } from '../../src/types/pagination/PaginationTypes';
 
@@ -75,6 +75,10 @@ function makeApp(): App {
   return new App();
 }
 
+function makeComponent(): Component {
+  return new Component();
+}
+
 describe('ToolInspectionModal — lifecycle', () => {
   it('starts with isDisposed=false after onOpen and flips to true after onClose', async () => {
     const app = makeApp();
@@ -83,7 +87,7 @@ describe('ToolInspectionModal — lifecycle', () => {
       conversationId: 'conv-1',
       historySource: history as never,
       pageSize: 10,
-    });
+    }, makeComponent());
 
     modal.onOpen();
     // Flush the initial load microtask
@@ -104,7 +108,7 @@ describe('ToolInspectionModal — lifecycle', () => {
       conversationId: 'conv-2',
       historySource: history as never,
       pageSize: 25,
-    });
+    }, makeComponent());
 
     modal.onOpen();
     await Promise.resolve();
@@ -122,7 +126,7 @@ describe('ToolInspectionModal — lifecycle', () => {
     const modal = new ToolInspectionModal(app, {
       conversationId: 'conv-3',
       historySource: history as never,
-    });
+    }, makeComponent());
 
     modal.onOpen();
     await Promise.resolve();
@@ -151,7 +155,7 @@ describe('ToolInspectionModal — initial load', () => {
       conversationId: 'conv-4',
       historySource: history as never,
       pageSize: 10,
-    });
+    }, makeComponent());
 
     modal.onOpen();
     // Allow the awaited getToolCallMessagesForConversation to resolve
@@ -173,7 +177,7 @@ describe('ToolInspectionModal — initial load', () => {
     const modal = new ToolInspectionModal(app, {
       conversationId: 'conv-5',
       historySource: history as never,
-    });
+    }, makeComponent());
 
     modal.onOpen();
     await Promise.resolve();
@@ -191,7 +195,7 @@ describe('ToolInspectionModal — initial load', () => {
     const modal = new ToolInspectionModal(app, {
       conversationId: 'conv-6',
       historySource: history as never,
-    });
+    }, makeComponent());
 
     expect(() => modal.onOpen()).not.toThrow();
     await Promise.resolve();
@@ -227,7 +231,7 @@ describe('ToolInspectionModal — loadPreviousPage (infinite scroll up)', () => 
       conversationId: 'conv-7',
       historySource: history as never,
       pageSize: 10,
-    });
+    }, makeComponent());
 
     modal.onOpen();
     await Promise.resolve();
@@ -261,7 +265,7 @@ describe('ToolInspectionModal — loadPreviousPage (infinite scroll up)', () => 
     const modal = new ToolInspectionModal(app, {
       conversationId: 'conv-8',
       historySource: history as never,
-    });
+    }, makeComponent());
 
     modal.onOpen();
     await Promise.resolve();
@@ -283,7 +287,7 @@ describe('ToolInspectionModal — loadPreviousPage (infinite scroll up)', () => 
     const modal = new ToolInspectionModal(app, {
       conversationId: 'conv-9',
       historySource: history as never,
-    });
+    }, makeComponent());
 
     modal.onOpen();
     await Promise.resolve();
@@ -314,7 +318,7 @@ describe('ToolInspectionModal — isDisposed guards on async paths', () => {
     const modal = new ToolInspectionModal(app, {
       conversationId: 'conv-disposed',
       historySource: history as never,
-    });
+    }, makeComponent());
 
     modal.onOpen();
     // Close BEFORE the fetch resolves
@@ -357,7 +361,7 @@ describe('ToolInspectionModal — isDisposed guards on async paths', () => {
       conversationId: 'conv-dispose-2',
       historySource: history as never,
       pageSize: 10,
-    });
+    }, makeComponent());
 
     modal.onOpen();
     await Promise.resolve();
@@ -413,7 +417,7 @@ describe('ToolInspectionModal — mergeMessages de-dup + sort', () => {
       conversationId: 'conv-merge',
       historySource: history as never,
       pageSize: 10,
-    });
+    }, makeComponent());
 
     modal.onOpen();
     await Promise.resolve();
