@@ -2,17 +2,15 @@ import { Component, setIcon } from 'obsidian';
 import { ContextBadge } from './ContextBadge';
 import { ContextTracker } from '../services/ContextTracker';
 import { ToolStatusLine } from './toolStatusLine';
+import type { ToolStatusEntry } from '../types/ToolStatus';
+
+export type { ToolStatusEntry };
 
 export interface ToolStatusBarCallbacks {
   onInspectClick?: () => void;
   onTaskClick?: () => void;
   onCompactClick?: () => void;
   onAgentClick?: () => void;
-}
-
-export interface ToolStatusEntry {
-  text: string;
-  state: 'present' | 'past' | 'failed';
 }
 
 export class ToolStatusBar {
@@ -46,6 +44,8 @@ export class ToolStatusBar {
     // Setup row 1 (primary)
     this.row1El = this.statusBarEl.createEl('div', { cls: 'tool-status-row--primary' });
     this.slotEl = this.row1El.createEl('div', { cls: 'tool-status-slot' });
+    this.slotEl.setAttribute('role', 'status');
+    this.slotEl.setAttribute('aria-live', 'polite');
     this.statusLine = new ToolStatusLine(this.slotEl, this.component);
     
     // Setup row 2 (meta)

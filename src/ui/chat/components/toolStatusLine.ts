@@ -1,10 +1,8 @@
 import type { Component } from 'obsidian';
 import { ManagedTimeoutTracker } from '../utils/ManagedTimeoutTracker';
+import type { ToolStatusEntry } from '../types/ToolStatus';
 
-export interface ToolStatusEntry {
-  text: string;
-  state: 'present' | 'past' | 'failed';
-}
+export type { ToolStatusEntry };
 
 export class ToolStatusLine {
   private currentSlot: HTMLElement | null = null;

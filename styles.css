@@ -11,30 +11,27 @@
     --space-xl: 24px;
     --space-xxl: 32px;
 
-    /* Glass (Liquid Glass) material tokens — ported verbatim from
-       docs/mockups/mobile-chat-sidebar-redesign.css :root (lines 49-55).
+    /* Faux-glass material tokens — layered light cues on opaque fill via
+       color-mix(), replacing the earlier backdrop-filter approach.
 
-       This is real frosted glass via backdrop-filter, NOT the faux-glass
-       approach the original plan called for. The plan rejected
-       backdrop-filter for Android perf reasons, but the user explicitly
-       wants the "looking through a frosted block" effect that only
-       backdrop-filter produces. Bounded scope: only 4 fixed-position
-       chrome surfaces use backdrop-filter (chat-header, chat-input-container,
-       tool-status-bar, modal overlay), not per-conversation-item or
-       message bubbles, so the perf cost stays constrained.
+       The faux-glass technique uses the theme's accent color radial gradient
+       as a backdrop (see .chat-layout), then each chrome surface applies a
+       semi-opaque color-mix fill so the gradient reads through without
+       requiring Obsidian's "Translucent Window" setting or any GPU-composited
+       blur pass. This avoids Android perf regressions while preserving the
+       "frosted" visual impression on all platforms.
 
-       Per the mockup's own comment (line 2464): backdrop-filter needs
-       content variance behind the surface to actually read as a material.
-       A flat solid background makes the blur invisible. Production
-       chat-view-container therefore gets a subtle radial+linear gradient
-       backdrop (see .chat-view-container rule) so the blur has something
-       to mush. The gradient is theme-aware via body.theme-light. */
+       One intentional exception: .chat-modal-overlay retains
+       backdrop-filter: blur(2px) because modal overlays are fixed-position,
+       infrequently repainted, and serve a distinct "dim the world behind me"
+       function that opaque fill cannot replicate. All per-message or
+       per-scroll surfaces (user bubble, textarea, send button, welcome card)
+       use the opaque color-mix approach. */
     --glass-fill: color-mix(in srgb, var(--background-primary) 55%, transparent);
     --glass-fill-strong: color-mix(in srgb, var(--background-primary) 72%, transparent);
     --glass-stroke: color-mix(in srgb, var(--text-normal) 14%, transparent);
     --glass-highlight: color-mix(in srgb, var(--text-normal) 22%, transparent);
     --glass-rim: color-mix(in srgb, var(--text-normal) 6%, transparent);
-    --glass-blur: saturate(180%) blur(22px);
     --glass-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
 
     /* Backdrop gradient for the chat view, so the chrome surfaces'
@@ -49,7 +46,7 @@
 }
 
 body.theme-light .chat-textarea {
-    background: rgba(255, 255, 255, 0.25);
+    background: var(--background-primary);
     border-color: rgba(0, 0, 0, 0.08);
 }
 
@@ -85,7 +82,7 @@ body.theme-light .message-container.message-user .message-bubble {
 
 /* Input field */
 body.theme-light .chat-textarea {
-    background: rgba(255, 255, 255, 0.5);
+    background: var(--background-primary);
     border-color: rgba(0, 0, 0, 0.1);
     color: var(--text-normal);
 }
@@ -563,6 +560,13 @@ body.theme-light .message-content {
     color: var(--text-normal);
 }
 
+.chat-hamburger-button:focus-visible,
+.chat-settings-button:focus-visible {
+    outline: 2px solid var(--interactive-accent);
+    outline-offset: 2px;
+    border-radius: 4px;
+}
+
 .chat-title {
     font-weight: 600;
     color: var(--text-normal);
@@ -658,11 +662,9 @@ body.theme-light .message-content {
     margin: 0 0 0.75rem 0;
 }
 
-/* Welcome hotkeys card — frosted glass over the gradient */
+/* Welcome hotkeys card — faux-glass: opaque accent-tinted fill over the gradient */
 .chat-welcome-hotkeys-container {
-    background: rgba(var(--interactive-accent-rgb), 0.25);
-    backdrop-filter: blur(24px) saturate(140%);
-    -webkit-backdrop-filter: blur(24px) saturate(140%);
+    background: color-mix(in srgb, var(--interactive-accent) 22%, var(--background-primary));
     border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 12px;
     padding: 0.75rem 1rem;
@@ -721,9 +723,7 @@ body.theme-light .message-content {
 }
 
 .chat-welcome-button.mod-cta {
-    background: rgba(var(--interactive-accent-rgb), 0.35);
-    backdrop-filter: blur(16px) saturate(140%);
-    -webkit-backdrop-filter: blur(16px) saturate(140%);
+    background: color-mix(in srgb, var(--interactive-accent) 30%, var(--background-primary));
     color: var(--text-normal);
     border: 1px solid rgba(255, 255, 255, 0.12);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.15);
@@ -935,17 +935,15 @@ body.theme-light .message-content {
     min-height: fit-content;
 }
 
-/* User bubble — frosted glass over the gradient background. The accent
-   color tints the translucent fill so the bubble reads as "the user's
-   color" while still showing the blurred gradient through. */
+/* User bubble — faux-glass: opaque accent-tinted fill so the bubble reads
+   as "the user's color" without a blur pass on every message (avoids
+   per-message GPU compositing cost). */
 .message-container.message-user .message-bubble {
     width: 100%;
     max-width: none;
     padding: 0.82rem 1.08rem 0.76rem;
     border-radius: 1.15rem;
-    background: rgba(var(--interactive-accent-rgb), 0.35);
-    backdrop-filter: blur(24px) saturate(140%);
-    -webkit-backdrop-filter: blur(24px) saturate(140%);
+    background: color-mix(in srgb, var(--interactive-accent) 28%, var(--background-primary));
     border: 1px solid rgba(255, 255, 255, 0.12);
     box-shadow:
         inset 0 1px 0 rgba(255, 255, 255, 0.15),
@@ -1245,16 +1243,18 @@ body.theme-light .message-content {
 }
 
 
-/* Chat textarea — slightly opaque so typed text stays legible against
-   the glass. Subtle border for the input field boundary only. */
+/* Chat textarea — opaque background so typed text stays legible against
+   the gradient backdrop. Subtle border for the input field boundary only.
+   --chat-input-height is set dynamically by ChatInput.autoResizeInput(). */
 .chat-textarea {
     width: 100%;
     min-height: 60px;
     max-height: 146px;
+    height: var(--chat-input-height, auto);
     padding: 11px 55px 11px 13px;
     border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 11px;
-    background: rgba(0, 0, 0, 0.2);
+    background: var(--background-primary);
     box-shadow: none;
     color: var(--text-normal);
     font-family: var(--font-interface);
@@ -1343,7 +1343,7 @@ body.theme-light .message-content {
 }
 
 /* Send button - circular, embedded and vertically centered in input */
-/* Send button — frosted glass circle matching the message bubble treatment */
+/* Send button — faux-glass circle: opaque accent-tinted fill matching the message bubble treatment */
 .chat-send-button {
     position: absolute;
     top: 50%;
@@ -1354,9 +1354,7 @@ body.theme-light .message-content {
     padding: 0;
     border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 50%;
-    background: rgba(var(--interactive-accent-rgb), 0.35);
-    backdrop-filter: blur(24px) saturate(140%);
-    -webkit-backdrop-filter: blur(24px) saturate(140%);
+    background: color-mix(in srgb, var(--interactive-accent) 28%, var(--background-primary));
     color: var(--text-normal);
     cursor: pointer;
     display: flex;
@@ -1384,6 +1382,20 @@ body.theme-light .message-content {
     background: var(--background-modifier-border);
     color: var(--text-muted);
     opacity: 0.5;
+}
+
+/* Compacting state — distinct from plain disabled: accent ring pulse so
+   sighted users can tell compaction is running, not that the app is broken. */
+.chat-input-compacting .chat-send-button.disabled-mode {
+    background: color-mix(in srgb, var(--interactive-accent) 20%, var(--background-primary));
+    color: var(--interactive-accent);
+    opacity: 1;
+    animation: pulse-compacting 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse-compacting {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(var(--interactive-accent-rgb), 0.5); }
+    50% { box-shadow: 0 0 0 4px rgba(var(--interactive-accent-rgb), 0); }
 }
 
 /* Icon sizing via Obsidian's --icon-size variable (used by clickable-icon class) */
@@ -5773,8 +5785,6 @@ body.is-mobile .chat-main.chat-keyboard-active .chat-input-container {
     order: 2;
     padding: 10px 12px 14px;
     background: color-mix(in srgb, var(--background-primary) 82%, transparent);
-    backdrop-filter: blur(18px) saturate(130%);
-    -webkit-backdrop-filter: blur(18px) saturate(130%);
     transform: none;
 }
 
@@ -5830,8 +5840,6 @@ body.is-mobile .chat-send-button:focus:not(:focus-visible) {
 
 body.is-mobile .chat-main:not(.chat-keyboard-active) .chat-input-container {
     background: transparent;
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
 }
 
 /* ------------------------------ */
@@ -5944,6 +5952,10 @@ body.is-mobile .modal-content {
     .chat-backdrop {
         animation: none !important;
         transition: none !important;
+    }
+
+    .chat-input-compacting .chat-send-button.disabled-mode {
+        animation: none;
     }
 }
 
@@ -8073,9 +8085,10 @@ body.is-mobile .nexus-task-board-shell {
     transition: none;
   }
 
-  /* Context badge at 100% threshold has an infinite pulse animation — disable
-     it for motion-sensitive users. Keeps the danger state readable via color
-     alone, which meets accessibility requirements. */
+  /* Context badge at 100% threshold: disable the pulse animation for
+     motion-sensitive users. Danger state remains readable because the
+     percentage number and the aria-label ("danger") carry the meaning;
+     color is a visual reinforcement, not the sole indicator (WCAG 1.4.1). */
   .context-badge-danger {
     animation: none;
   }
@@ -8130,9 +8143,16 @@ body.is-mobile .nexus-task-board-shell {
   background: none !important;
 }
 
+.tool-status-row--meta button:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
 .tool-status-agent-slot {
   display: inline-flex;
   align-items: center;
+  overflow: hidden;
 }
 
 /* Tool status cost readout — ported from .mock-device--glass .tool-status-cost

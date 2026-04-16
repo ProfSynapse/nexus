@@ -275,7 +275,7 @@ export class ChatInput {
     if (!this.inputElement) return;
 
     // Reset height to auto to get the correct scrollHeight
-    this.inputElement.style.removeProperty('height');
+    this.inputElement.style.removeProperty('--chat-input-height');
 
     // Set height limits - matches CSS min/max heights
     const keyboardActive = isMobile() && this.keyboardViewportRoot?.hasClass('chat-keyboard-active');
@@ -290,8 +290,8 @@ export class ChatInput {
     const maxHeight = keyboardActive ? keyboardMaxHeight : isMobile() ? 160 : 200;
     const newHeight = Math.min(Math.max(this.inputElement.scrollHeight, minHeight), maxHeight);
 
-    // Set specific height
-    this.inputElement.style.setProperty('height', newHeight + 'px');
+    // Write computed height as a CSS custom property consumed by styles.css
+    this.inputElement.style.setProperty('--chat-input-height', newHeight + 'px');
 
     // Enable scrolling if content exceeds max height
     if (this.inputElement.scrollHeight > maxHeight) {
