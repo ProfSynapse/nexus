@@ -25,6 +25,8 @@ export interface ConversationMessage {
   role: 'user' | 'assistant' | 'system' | 'tool';
   content: string;
   tool_calls?: ToolCallUnion[];
+  /** Required on `role: 'tool'` messages — must match an assistant's tool_calls[i].id */
+  tool_call_id?: string;
 }
 
 // Google-specific message format

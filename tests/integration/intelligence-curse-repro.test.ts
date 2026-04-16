@@ -174,4 +174,55 @@ describe('Intelligence Curse reproduction', () => {
 
     expect(foreignFormatIds).toEqual([]);
   });
+
+  it('full flow: buildLLMMessages → LLMService re-map preserves tool_call_id', () => {
+    const conversation = loadActualConversation();
+    const lastIdx = conversation.messages.length - 1;
+    const filteredConversation: ConversationData = {
+      ...conversation,
+      messages: conversation.messages.slice(0, lastIdx),
+    } as ConversationData;
+
+    // Step 1: buildContextForProvider (mirrors StreamingResponseService.buildLLMMessages)
+    const built = ConversationContextBuilder.buildContextForProvider(
+      filteredConversation,
+      'openrouter',
+      'You are a helpful assistant.'
+    );
+
+    // Step 2: StreamingResponseService.buildLLMMessages mapping (preserves fields)
+    const afterStreamingService = built.map((message) => {
+      const m = message as { role: string; content?: unknown; tool_calls?: unknown; tool_call_id?: string };
+      const out: Record<string, unknown> = {
+        role: m.role,
+        content: typeof m.content === 'string' ? m.content : '',
+      };
+      if (m.tool_calls) out.tool_calls = m.tool_calls;
+      if (m.tool_call_id) out.tool_call_id = m.tool_call_id;
+      return out;
+    });
+
+    // Step 3: LLMService.generateResponseStream re-mapping (the FIXED version)
+    const afterLLMService = afterStreamingService.map(msg => {
+      const m = msg as { role: string; content: string; tool_calls?: unknown; tool_call_id?: string };
+      const out: Record<string, unknown> = { role: m.role, content: m.content };
+      if (Array.isArray(m.tool_calls)) out.tool_calls = m.tool_calls;
+      if (m.tool_call_id) out.tool_call_id = m.tool_call_id;
+      return out;
+    });
+
+    console.log('\n=== After full flow (the messages that reach OpenRouter) ===');
+    let orphans = 0;
+    for (let i = 0; i < afterLLMService.length; i++) {
+      const m = afterLLMService[i] as { role: string; tool_call_id?: string; tool_calls?: Array<{ id?: string }> };
+      const tcIds = m.tool_calls?.map(tc => tc.id).join(',');
+      const info = m.tool_call_id ? ` tool_call_id=${m.tool_call_id}`
+        : m.tool_calls ? ` tool_calls=[${tcIds}]`
+        : '';
+      console.log(`  [${i}] role=${m.role}${info}`);
+      if (m.role === 'tool' && !m.tool_call_id) orphans++;
+    }
+
+    expect(orphans).toBe(0);
+  });
 });

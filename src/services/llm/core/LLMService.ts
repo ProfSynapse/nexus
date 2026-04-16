@@ -294,20 +294,28 @@ export class LLMService {
       this.settings,
       this.toolExecutor
     );
-    // Convert messages to ConversationMessage format
+    // Convert messages to ConversationMessage format.
+    // CRITICAL: preserve tool_call_id on tool messages — without it, tool
+    // result messages reach the provider unpaired and Azure (via OpenRouter)
+    // rejects continuations with "Missing required parameter: 'input[N].call_id'".
     const conversationMessages: ConversationMessage[] = messages.map(msg => {
-      // Type guard to check for tool_calls property
-      if ('tool_calls' in msg && Array.isArray((msg as { tool_calls?: unknown }).tool_calls)) {
-        return {
-          role: msg.role as 'user' | 'assistant' | 'system' | 'tool',
-          content: msg.content,
-          tool_calls: (msg as { tool_calls: ConversationMessage['tool_calls'] }).tool_calls
-        };
-      }
-      return {
-        role: msg.role as 'user' | 'assistant' | 'system' | 'tool',
-        content: msg.content
+      const m = msg as {
+        role: string;
+        content: string;
+        tool_calls?: ConversationMessage['tool_calls'];
+        tool_call_id?: string;
       };
+      const out: ConversationMessage = {
+        role: m.role as 'user' | 'assistant' | 'system' | 'tool',
+        content: m.content,
+      };
+      if (Array.isArray(m.tool_calls)) {
+        out.tool_calls = m.tool_calls;
+      }
+      if (m.tool_call_id) {
+        (out as ConversationMessage & { tool_call_id?: string }).tool_call_id = m.tool_call_id;
+      }
+      return out;
     });
     yield* orchestrator.generateResponseStream(conversationMessages, options);
   }
