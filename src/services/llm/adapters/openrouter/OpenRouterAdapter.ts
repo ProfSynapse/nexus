@@ -260,7 +260,16 @@ export class OpenRouterAdapter extends BaseAdapter {
       // Add :online suffix for web search
       const model = options?.webSearch ? `${baseModel}:online` : baseModel;
 
-      const messages = options?.conversationHistory || this.buildMessages(prompt, options?.systemPrompt);
+      let messages = options?.conversationHistory || this.buildMessages(prompt, options?.systemPrompt);
+
+      // Ensure system prompt is included when using conversationHistory
+      // (buildToolContinuation strips system messages, expecting the adapter to re-add them)
+      if (options?.conversationHistory && options?.systemPrompt) {
+        const hasSystem = (messages as Array<{ role: string }>).some(m => m.role === 'system');
+        if (!hasSystem) {
+          messages = [{ role: 'system', content: options.systemPrompt }, ...messages];
+        }
+      }
 
       // Check if this model requires reasoning preservation (Gemini via OpenRouter)
       const needsReasoning = ReasoningPreserver.requiresReasoningPreservation(baseModel, 'openrouter');

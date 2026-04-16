@@ -1,0 +1,41 @@
+- name: get-tools-then-use-tools
+  description: Two-tool architecture — discover tools then execute
+  toolSet: meta
+  turns:
+    - userMessage: "Read the file notes/meeting.md"
+      expectedTools:
+        - name: getTools
+          params:
+            request:
+              - agent: contentManager
+      mockResponses:
+        getTools:
+          success: true
+          result:
+            tools:
+              - agent: contentManager
+                tool: read
+                description: Read the content of a note file
+                inputSchema:
+                  type: object
+                  properties:
+                    path:
+                      type: string
+                    startLine:
+                      type: number
+                  required:
+                    - path
+                    - startLine
+
+    - expectedTools:
+        - name: useTools
+      mockResponses:
+        useTools:
+          success: true
+          result:
+            results:
+              - tool: contentManager_read
+                success: true
+                result:
+                  content: "# Meeting Notes\n\n- Discussed roadmap\n- Budget approved"
+                  path: notes/meeting.md

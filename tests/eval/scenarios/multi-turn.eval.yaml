@@ -1,0 +1,62 @@
+- name: read-then-write-then-move
+  description: Read a note, write a summary, move it to archive
+  toolSet: nexus
+  allowReorder: true
+  turns:
+    - userMessage: "Read notes/meeting.md, write a summary to notes/summary.md, then move it to archive/"
+      expectedTools:
+        - name: contentManager_read
+          params:
+            path: notes/meeting.md
+      mockResponses:
+        contentManager_read:
+          success: true
+          result:
+            content: "# Q2 Meeting\n- Roadmap reviewed\n- Budget approved\n- Launch date: June 15"
+
+    - expectedTools:
+        - name: contentManager_write
+          params:
+            path: notes/summary.md
+      mockResponses:
+        contentManager_write:
+          success: true
+          result:
+            path: notes/summary.md
+
+    - expectedTools:
+        - name: storageManager_move
+          params:
+            path: notes/summary.md
+            destination: archive/
+      mockResponses:
+        storageManager_move:
+          success: true
+          result:
+            newPath: archive/summary.md
+
+- name: search-and-read
+  description: Search for notes about a topic, then read the top result
+  toolSet: nexus
+  allowReorder: true
+  turns:
+    - userMessage: "Find notes about project roadmap and show me the full content of the best match"
+      expectedTools:
+        - name: searchManager_searchContent
+      mockResponses:
+        searchManager_searchContent:
+          success: true
+          result:
+            results:
+              - path: notes/roadmap-q2.md
+                score: 0.95
+
+    - expectedTools:
+        - name: contentManager_read
+          params:
+            path: notes/roadmap-q2.md
+      mockResponses:
+        contentManager_read:
+          success: true
+          result:
+            content: "# Q2 Roadmap\n1. Mobile launch\n2. Plugin store\n3. Performance"

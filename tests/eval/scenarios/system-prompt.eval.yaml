@@ -1,0 +1,47 @@
+- name: default-prompt-routes-correctly
+  description: Production prompt routes a read request to contentManager_read
+  toolSet: nexus
+  turns:
+    - userMessage: "Read the file notes/meeting.md"
+      expectedTools:
+        - name: contentManager_read
+          params:
+            path: notes/meeting.md
+      mockResponses:
+        contentManager_read:
+          success: true
+          result:
+            content: "# Meeting Notes\n- Reviewed roadmap"
+            path: notes/meeting.md
+
+- name: minimal-prompt-still-uses-tools
+  description: Production prompt triggers tool usage for a direct request
+  toolSet: nexus
+  turns:
+    - userMessage: "Show me what's in notes/daily.md"
+      expectedTools:
+        - name: contentManager_read
+          params:
+            path: notes/daily.md
+      mockResponses:
+        contentManager_read:
+          success: true
+          result:
+            content: "# Daily Notes\n- Standup at 10am"
+            path: notes/daily.md
+
+- name: restrictive-prompt-limits-tools
+  description: Production prompt routes search request to searchManager
+  toolSet: nexus
+  turns:
+    - userMessage: "Search for any notes about the quarterly review"
+      expectedTools:
+        - name: searchManager_searchContent
+      mockResponses:
+        searchManager_searchContent:
+          success: true
+          result:
+            results:
+              - path: notes/q2-review.md
+                score: 0.91
+            totalResults: 1

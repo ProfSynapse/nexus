@@ -1,0 +1,209 @@
+# Vague and ambiguous user prompts — tests that the model still
+# routes to the right tools even without explicit instructions.
+
+- name: vague-find-request
+  description: User says "find something" without specifying search vs list
+  toolSet: meta
+  turns:
+    - userMessage: "I need that thing about the project timeline"
+      expectedTools:
+        - name: getTools
+          params:
+            request:
+              - agent: searchManager
+      mockResponses:
+        getTools:
+          success: true
+          result:
+            tools:
+              - agent: searchManager
+                tool: searchContent
+                description: Search for notes containing specific content
+                inputSchema:
+                  type: object
+                  properties:
+                    query:
+                      type: string
+                  required:
+                    - query
+
+    - expectedTools:
+        - name: useTools
+      mockResponses:
+        useTools:
+          success: true
+          result:
+            results:
+              - tool: searchContent
+                success: true
+                data:
+                  results:
+                    - path: projects/timeline.md
+                      score: 0.88
+
+- name: vague-write-request
+  description: User says "save this" without specifying a path or format
+  toolSet: meta
+  turns:
+    - userMessage: "Save this: The meeting is moved to Thursday at 3pm"
+      expectedTools:
+        - name: getTools
+          params:
+            request:
+              - agent: contentManager
+      mockResponses:
+        getTools:
+          success: true
+          result:
+            tools:
+              - agent: contentManager
+                tool: write
+                description: Write content to a note file
+                inputSchema:
+                  type: object
+                  properties:
+                    path:
+                      type: string
+                    content:
+                      type: string
+                  required:
+                    - path
+                    - content
+
+    - expectedTools:
+        - name: useTools
+      mockResponses:
+        useTools:
+          success: true
+          result:
+            results:
+              - tool: write
+                success: true
+
+- name: vague-organize-request
+  description: User asks to "clean up" which implies move/archive
+  toolSet: meta
+  allowReorder: true
+  turns:
+    - userMessage: "Can you clean up the old meeting notes? Move anything from 2024 to the archive folder."
+      expectedTools:
+        - name: getTools
+          params:
+            request:
+              - agent: storageManager
+      mockResponses:
+        getTools:
+          success: true
+          result:
+            tools:
+              - agent: storageManager
+                tool: list
+                description: List files and folders
+                inputSchema:
+                  type: object
+                  properties:
+                    path:
+                      type: string
+                  required:
+                    - path
+              - agent: storageManager
+                tool: move
+                description: Move a file or folder
+                inputSchema:
+                  type: object
+                  properties:
+                    path:
+                      type: string
+                    destination:
+                      type: string
+                  required:
+                    - path
+                    - destination
+
+    - expectedTools:
+        - name: useTools
+      mockResponses:
+        useTools:
+          success: true
+          result:
+            results:
+              - tool: list
+                success: true
+                data:
+                  items:
+                    - name: "2024-q1-meeting.md"
+                      type: file
+                    - name: "2024-q2-meeting.md"
+                      type: file
+                    - name: "2025-q1-meeting.md"
+                      type: file
+
+    - expectedTools:
+        - name: useTools
+      mockResponses:
+        useTools:
+          success: true
+          result:
+            results:
+              - tool: move
+                success: true
+              - tool: move
+                success: true
+
+- name: multi-intent-single-message
+  description: User asks multiple things in one message — model needs multiple agents
+  toolSet: meta
+  turns:
+    - userMessage: "Read my todo list and also search for any notes about the API redesign"
+      expectedTools:
+        - name: getTools
+          params:
+            request:
+              - agent: contentManager
+              - agent: searchManager
+      mockResponses:
+        getTools:
+          success: true
+          result:
+            tools:
+              - agent: contentManager
+                tool: read
+                description: Read content from a file
+                inputSchema:
+                  type: object
+                  properties:
+                    path:
+                      type: string
+                    startLine:
+                      type: number
+                  required:
+                    - path
+                    - startLine
+              - agent: searchManager
+                tool: searchContent
+                description: Search for notes containing specific content
+                inputSchema:
+                  type: object
+                  properties:
+                    query:
+                      type: string
+                  required:
+                    - query
+
+    - expectedTools:
+        - name: useTools
+      mockResponses:
+        useTools:
+          success: true
+          result:
+            results:
+              - tool: read
+                success: true
+                data:
+                  content: "# Todo\n- Fix login bug\n- Update docs"
+              - tool: searchContent
+                success: true
+                data:
+                  results:
+                    - path: engineering/api-redesign.md
+                      score: 0.91

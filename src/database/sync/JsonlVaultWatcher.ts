@@ -279,11 +279,11 @@ export class JsonlVaultWatcher {
       this.suppressed.delete(key);
       return false;
     }
-    // Consume the suppression so later remote writes aren't silently
-    // dropped if Obsidian Sync lands quickly after ours. If the plugin
-    // appends multiple events to the same stream in rapid succession,
-    // `JSONLWriter` re-suppresses before each append.
-    this.suppressed.delete(key);
+    // Don't consume: let the entry live until its TTL expires so that
+    // shard rotation (which fires two vault events for the same stream)
+    // doesn't trigger a needless sync on the second event. JSONLWriter
+    // re-suppresses before each separate append, so remote writes that
+    // land after the TTL window are never silently dropped.
     return true;
   }
 
@@ -291,6 +291,16 @@ export class JsonlVaultWatcher {
     if (this.debounceTimer !== undefined) {
       clearTimeout(this.debounceTimer);
     }
+
+    // Sweep expired suppression entries to prevent unbounded Map growth
+    // in long-running sessions. Runs at most once per debounce cycle.
+    const now = Date.now();
+    for (const [key, expiry] of this.suppressed) {
+      if (now > expiry) {
+        this.suppressed.delete(key);
+      }
+    }
+
     this.debounceTimer = setTimeout(() => {
       this.debounceTimer = undefined;
       if (!this.running) {

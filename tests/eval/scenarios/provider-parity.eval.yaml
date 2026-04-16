@@ -1,0 +1,42 @@
+- name: parity-single-tool-call
+  description: Same basic tool call scenario — should pass across all configured providers
+  toolSet: nexus
+  turns:
+    - userMessage: "Read the file notes/meeting.md"
+      expectedTools:
+        - name: contentManager_read
+          params:
+            path: notes/meeting.md
+      mockResponses:
+        contentManager_read:
+          success: true
+          result:
+            content: "# Meeting Notes\n- Discussed roadmap\n- Budget approved"
+            path: notes/meeting.md
+
+- name: parity-search-then-read
+  description: Two-turn flow — search then read — should work across all providers
+  toolSet: nexus
+  allowReorder: true
+  turns:
+    - userMessage: "Search for notes about meetings and read the first result"
+      expectedTools:
+        - name: searchManager_searchContent
+      mockResponses:
+        searchManager_searchContent:
+          success: true
+          result:
+            results:
+              - path: notes/meeting.md
+                score: 0.92
+                snippet: "Meeting notes..."
+            totalResults: 1
+
+    - expectedTools:
+        - name: contentManager_read
+      mockResponses:
+        contentManager_read:
+          success: true
+          result:
+            content: "# Meeting\n- Items discussed"
+            path: notes/meeting.md

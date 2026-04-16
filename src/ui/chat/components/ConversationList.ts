@@ -75,6 +75,9 @@ export class ConversationList {
    * Render the conversation list
    */
   private render(): void {
+    // Preserve scroll position across re-renders (M4 fix)
+    const savedScrollTop = this.container.scrollTop;
+
     this.container.empty();
     this.loadMoreBtn = null; // container.empty() destroys child nodes
     this.container.addClass('conversation-list');
@@ -151,6 +154,9 @@ export class ConversationList {
 
     // Load More button
     this.renderLoadMoreButton();
+
+    // Restore scroll position after DOM rebuild
+    this.container.scrollTop = savedScrollTop;
   }
 
   /**

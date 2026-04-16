@@ -24,6 +24,20 @@ import type { WebLLMAdapter as WebLLMAdapterType } from '../adapters/webllm/WebL
 import type { CodexOAuthTokens } from '../adapters/openai-codex/OpenAICodexAdapter';
 
 /**
+ * Provider alias pairs: API-key providers ↔ OAuth/CLI counterparts.
+ * When getAdapter() can't find the requested provider, it checks this map
+ * for a counterpart that may be registered instead.
+ */
+const PROVIDER_ALIASES: Record<string, string> = {
+  'openai': 'openai-codex',
+  'openai-codex': 'openai',
+  'anthropic': 'anthropic-claude-code',
+  'anthropic-claude-code': 'anthropic',
+  'google': 'google-gemini-cli',
+  'google-gemini-cli': 'google',
+};
+
+/**
  * Interface for adapter registry operations
  */
 export interface IAdapterRegistry {
@@ -115,10 +129,24 @@ export class AdapterRegistry implements IAdapterRegistry {
   }
 
   /**
-   * Get adapter instance for a specific provider
+   * Get adapter instance for a specific provider.
+   * Falls back to the provider's alias counterpart if the requested one
+   * isn't registered (e.g. 'openai' → 'openai-codex' and vice versa).
    */
   getAdapter(providerId: string): BaseAdapter | undefined {
-    return this.adapters.get(providerId);
+    const adapter = this.adapters.get(providerId);
+    if (adapter) return adapter;
+
+    const alias = PROVIDER_ALIASES[providerId];
+    if (alias) {
+      const fallback = this.adapters.get(alias);
+      if (fallback) {
+        console.warn(`AdapterRegistry: '${providerId}' not found, falling back to '${alias}'`);
+        return fallback;
+      }
+    }
+
+    return undefined;
   }
 
   /**
@@ -129,10 +157,12 @@ export class AdapterRegistry implements IAdapterRegistry {
   }
 
   /**
-   * Check if a provider is available
+   * Check if a provider is available (includes alias fallback)
    */
   isProviderAvailable(providerId: string): boolean {
-    return this.adapters.has(providerId);
+    if (this.adapters.has(providerId)) return true;
+    const alias = PROVIDER_ALIASES[providerId];
+    return alias ? this.adapters.has(alias) : false;
   }
 
   /**

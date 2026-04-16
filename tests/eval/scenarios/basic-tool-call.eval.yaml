@@ -1,0 +1,54 @@
+- name: read-single-note
+  description: Basic single tool call — read a note by path
+  toolSet: nexus
+  turns:
+    - userMessage: "Read the file at notes/meeting.md"
+      expectedTools:
+        - name: contentManager_read
+          params:
+            path: notes/meeting.md
+      mockResponses:
+        contentManager_read:
+          success: true
+          result:
+            content: "# Q2 Meeting\n- Roadmap reviewed\n- Budget approved\n- Launch date: June 15"
+            path: notes/meeting.md
+            totalLines: 4
+            startLine: 1
+            endLine: 4
+
+- name: write-new-note
+  description: Basic single tool call — write a new note
+  toolSet: nexus
+  turns:
+    - userMessage: "Create a note at notes/todo.md with the content 'Buy groceries'"
+      expectedTools:
+        - name: contentManager_write
+          params:
+            path: notes/todo.md
+      mockResponses:
+        contentManager_write:
+          success: true
+          result:
+            path: notes/todo.md
+            created: true
+
+- name: search-notes
+  description: Basic single tool call — search for notes
+  toolSet: nexus
+  turns:
+    - userMessage: "Find notes about project roadmap"
+      expectedTools:
+        - name: searchManager_searchContent
+          params:
+            query: project roadmap
+      mockResponses:
+        searchManager_searchContent:
+          success: true
+          result:
+            results:
+              - path: notes/roadmap-q2.md
+                score: 0.95
+                snippet: "Q2 roadmap priorities..."
+            totalResults: 1
+            query: project roadmap

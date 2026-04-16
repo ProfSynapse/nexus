@@ -1,0 +1,151 @@
+# Storage operations — move, copy, archive, create folder
+
+- name: move-file
+  description: User asks to move a file to a different folder
+  toolSet: meta
+  turns:
+    - userMessage: "Move notes/draft.md to the published folder"
+      expectedTools:
+        - name: getTools
+          params:
+            request:
+              - agent: storageManager
+      mockResponses:
+        getTools:
+          success: true
+          result:
+            tools:
+              - agent: storageManager
+                tool: move
+                description: Move a file or folder
+                inputSchema:
+                  type: object
+                  properties:
+                    path:
+                      type: string
+                    destination:
+                      type: string
+                  required:
+                    - path
+                    - destination
+
+    - expectedTools:
+        - name: useTools
+      mockResponses:
+        useTools:
+          success: true
+          result:
+            results:
+              - tool: move
+                success: true
+
+- name: create-folder-structure
+  description: User asks to create a new folder
+  toolSet: meta
+  turns:
+    - userMessage: "Create a new folder called projects/2026/q2"
+      expectedTools:
+        - name: getTools
+          params:
+            request:
+              - agent: storageManager
+      mockResponses:
+        getTools:
+          success: true
+          result:
+            tools:
+              - agent: storageManager
+                tool: createFolder
+                description: Create a new folder
+                inputSchema:
+                  type: object
+                  properties:
+                    path:
+                      type: string
+                  required:
+                    - path
+
+    - expectedTools:
+        - name: useTools
+      mockResponses:
+        useTools:
+          success: true
+          result:
+            results:
+              - tool: createFolder
+                success: true
+
+- name: copy-and-rename
+  description: User asks to copy a file — should use copy not move
+  toolSet: meta
+  turns:
+    - userMessage: "Make a copy of templates/weekly-review.md and put it in notes/this-week.md"
+      expectedTools:
+        - name: getTools
+          params:
+            request:
+              - agent: storageManager
+      mockResponses:
+        getTools:
+          success: true
+          result:
+            tools:
+              - agent: storageManager
+                tool: copy
+                description: Copy a file or folder
+                inputSchema:
+                  type: object
+                  properties:
+                    path:
+                      type: string
+                    destination:
+                      type: string
+                  required:
+                    - path
+                    - destination
+
+    - expectedTools:
+        - name: useTools
+      mockResponses:
+        useTools:
+          success: true
+          result:
+            results:
+              - tool: copy
+                success: true
+
+- name: archive-old-files
+  description: User asks to archive a file — should use archive tool
+  toolSet: meta
+  turns:
+    - userMessage: "Archive the file at notes/old-project.md"
+      expectedTools:
+        - name: getTools
+          params:
+            request:
+              - agent: storageManager
+      mockResponses:
+        getTools:
+          success: true
+          result:
+            tools:
+              - agent: storageManager
+                tool: archive
+                description: Archive a file or folder
+                inputSchema:
+                  type: object
+                  properties:
+                    path:
+                      type: string
+                  required:
+                    - path
+
+    - expectedTools:
+        - name: useTools
+      mockResponses:
+        useTools:
+          success: true
+          result:
+            results:
+              - tool: archive
+                success: true

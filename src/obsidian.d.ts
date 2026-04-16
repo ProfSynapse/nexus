@@ -13,6 +13,20 @@ declare module 'obsidian' {
 }
 
 declare global {
+  interface CapacitorKeyboardEvent extends Event {
+    keyboardHeight?: number;
+    detail?: {
+      keyboardHeight?: number;
+    };
+  }
+
+  interface WindowEventMap {
+    keyboardWillShow: CapacitorKeyboardEvent;
+    keyboardDidShow: CapacitorKeyboardEvent;
+    keyboardWillHide: Event;
+    keyboardDidHide: Event;
+  }
+
   interface Window {
     app: App;
     mcpProgressHandlers?: {

@@ -10,7 +10,7 @@
  * Fixed height (~200px) with scroll for many agents.
  */
 
-import { App, Modal, setIcon, Events } from 'obsidian';
+import { App, Component, Modal, setIcon, Events } from 'obsidian';
 import type { SubagentExecutor } from '../../../services/chat/SubagentExecutor';
 import type { BranchService } from '../../../services/chat/BranchService';
 import type { AgentStatusItem, SubagentBranchMetadata } from '../../../types/branch/BranchTypes';
@@ -30,6 +30,7 @@ export class AgentStatusModal extends Modal {
   private callbacks: AgentStatusModalCallbacks;
   private eventRef: ReturnType<Events['on']> | null = null;
   private cachedCompletedAgents: AgentStatusItem[] = [];
+  private renderEvents: Component | null = null;
 
   constructor(
     app: App,
@@ -112,6 +113,8 @@ export class AgentStatusModal extends Modal {
 
   private renderContent(): void {
     const { contentEl } = this;
+    this.renderEvents?.unload();
+    this.renderEvents = new Component();
     contentEl.empty();
 
     // Get running agents from executor (in-memory, has lastToolUsed)
@@ -158,6 +161,11 @@ export class AgentStatusModal extends Modal {
    * Layout: [Task description + iterations] | [Tool badge] | [View + Stop/Icon]
    */
   private renderCompactRow(container: HTMLElement, agent: AgentStatusItem, isRunning: boolean): void {
+    const renderEvents = this.renderEvents;
+    if (!renderEvents) {
+      return;
+    }
+
     const row = container.createDiv({ cls: 'nexus-agent-row-compact' });
 
     // Left: Task description with iterations inline
@@ -181,7 +189,7 @@ export class AgentStatusModal extends Modal {
       attr: { 'aria-label': 'View agent conversation' },
     });
     setIcon(viewBtn, 'eye');
-    viewBtn.addEventListener('click', () => {
+    renderEvents.registerDomEvent(viewBtn, 'click', () => {
       this.close();
       this.callbacks.onViewBranch(agent.branchId);
     });
@@ -192,7 +200,7 @@ export class AgentStatusModal extends Modal {
         attr: { 'aria-label': 'Stop agent' },
       });
       setIcon(stopBtn, 'square');
-      stopBtn.addEventListener('click', () => {
+      renderEvents.registerDomEvent(stopBtn, 'click', () => {
         this.subagentExecutor.cancelSubagent(agent.subagentId);
         this.renderContent();
       });
@@ -216,6 +224,8 @@ export class AgentStatusModal extends Modal {
       getSubagentEventBus().offref(this.eventRef);
       this.eventRef = null;
     }
+    this.renderEvents?.unload();
+    this.renderEvents = null;
     this.contentEl.empty();
   }
 }

@@ -1,0 +1,68 @@
+- name: ambiguous-prompt
+  description: Ambiguous user request — model should search or ask for clarification
+  toolSet: nexus
+  turns:
+    - userMessage: "Do something with my notes about the project"
+      expectedTools:
+        - name: searchManager_searchContent
+          optional: true
+      mockResponses:
+        searchManager_searchContent:
+          success: true
+          result:
+            results:
+              - path: notes/project.md
+                score: 0.88
+                snippet: "Project overview and status..."
+            totalResults: 1
+
+- name: tool-returns-error
+  description: Tool call returns an error — model should handle gracefully
+  toolSet: nexus
+  turns:
+    - userMessage: "Read the file at notes/secret.md"
+      expectedTools:
+        - name: contentManager_read
+          params:
+            path: notes/secret.md
+      mockResponses:
+        contentManager_read:
+          success: false
+          error: "Permission denied: cannot access protected file"
+
+- name: model-refuses-tools
+  description: Model responds with text instead of calling tools — acceptable fallback
+  toolSet: nexus
+  temperature: 0.3
+  turns:
+    - userMessage: "What do you think about the weather today?"
+      expectedTools: []
+      mockResponses: {}
+
+- name: large-tool-response
+  description: Tool returns a large payload — continuation should not break
+  toolSet: nexus
+  turns:
+    - userMessage: "List all files in the vault root"
+      expectedTools:
+        - name: storageManager_list
+      mockResponses:
+        storageManager_list:
+          success: true
+          result:
+            path: /
+            files:
+              - {name: "note1.md", type: "file"}
+              - {name: "note2.md", type: "file"}
+              - {name: "note3.md", type: "file"}
+              - {name: "note4.md", type: "file"}
+              - {name: "note5.md", type: "file"}
+              - {name: "note6.md", type: "file"}
+              - {name: "note7.md", type: "file"}
+              - {name: "note8.md", type: "file"}
+              - {name: "note9.md", type: "file"}
+              - {name: "note10.md", type: "file"}
+            folders:
+              - {name: "archive", type: "folder"}
+              - {name: "notes", type: "folder"}
+              - {name: "projects", type: "folder"}

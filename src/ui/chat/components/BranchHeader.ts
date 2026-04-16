@@ -101,6 +101,7 @@ export class BranchHeader {
     // Back button
     const backBtn = header.createEl('button', {
       cls: 'nexus-branch-back clickable-icon',
+      attr: { 'aria-label': 'Back to parent conversation' },
     });
     const backIcon = backBtn.createSpan('nexus-branch-back-icon');
     setIcon(backIcon, 'arrow-left');
@@ -147,6 +148,7 @@ export class BranchHeader {
         const cancelBtn = header.createEl('button', {
           cls: 'nexus-branch-action-btn nexus-branch-cancel-btn clickable-icon',
           text: 'Cancel',
+          attr: { 'aria-label': 'Cancel subagent' },
         });
         const subagentId = metadata.subagentId;
         const onCancel = this.callbacks.onCancel;
@@ -165,6 +167,7 @@ export class BranchHeader {
         const continueBtn = header.createEl('button', {
           cls: 'nexus-branch-action-btn nexus-branch-continue-btn mod-cta',
           text: 'Continue',
+          attr: { 'aria-label': 'Continue subagent' },
         });
         const branchId = this.context.branchId;
         const onContinue = this.callbacks.onContinue;
