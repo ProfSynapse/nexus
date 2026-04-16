@@ -286,7 +286,7 @@ export class LLMService {
 
   /** Generate streaming LLM response with tool execution support */
   async* generateResponseStream(
-    messages: Array<{ role: string; content: string }>,
+    messages: Array<ConversationMessage>,
     options?: StreamingOptions
   ): AsyncGenerator<StreamYield, void, unknown> {
     const orchestrator = new StreamingOrchestrator(
@@ -302,24 +302,20 @@ export class LLMService {
     // these has caused (or is a latent risk for) silent degradations with
     // Gemini-via-OpenRouter, Gemini direct, and legacy OpenAI function-role
     // messages respectively. See docs/plans/canonical-message-pipeline-plan.md.
-    const conversationMessages: ConversationMessage[] = messages.map(msg => {
-      const m = msg as {
-        role: string;
-        content: string;
-        tool_calls?: ConversationMessage['tool_calls'];
-        tool_call_id?: string;
-        reasoning_details?: unknown[];
-        thought_signature?: string;
-        name?: string;
-      };
+    const conversationMessages: ConversationMessage[] = messages.map(m => {
       const out: ConversationMessage = {
-        role: m.role as 'user' | 'assistant' | 'system' | 'tool',
+        role: m.role,
         content: m.content,
       };
       if (Array.isArray(m.tool_calls)) {
         out.tool_calls = m.tool_calls;
       }
-      if (m.tool_call_id) {
+      // Use `!== undefined` so an empty-string tool_call_id is preserved.
+      // Downstream synthesis sites (e.g. OpenAIContextBuilder, BaseAdapter)
+      // own the policy for what to do with an empty id; stripping here
+      // hides it from them and causes Azure-via-OpenRouter to reject the
+      // continuation with "Missing required parameter: 'input[N].call_id'".
+      if (m.tool_call_id !== undefined) {
         out.tool_call_id = m.tool_call_id;
       }
       if (Array.isArray(m.reasoning_details)) {

@@ -440,8 +440,13 @@ export class StreamingResponseService {
         role: m.role,
         content: typeof m.content === 'string' ? m.content : '',
       };
-      if (m.tool_calls) out.tool_calls = m.tool_calls;
-      if (m.tool_call_id) out.tool_call_id = m.tool_call_id;
+      if (Array.isArray(m.tool_calls)) out.tool_calls = m.tool_calls;
+      // Use `!== undefined` so an empty-string tool_call_id is preserved.
+      // Downstream synthesis sites (e.g. OpenAIContextBuilder, BaseAdapter)
+      // own the policy for what to do with an empty id; stripping here
+      // causes Azure-via-OpenRouter to reject the continuation with
+      // "Missing required parameter: 'input[N].call_id'".
+      if (m.tool_call_id !== undefined) out.tool_call_id = m.tool_call_id;
       if (Array.isArray(m.reasoning_details)) out.reasoning_details = m.reasoning_details;
       if (m.thought_signature) out.thought_signature = m.thought_signature;
       if (m.name) out.name = m.name;

@@ -152,10 +152,13 @@ export class InlineEditService {
       userPrompt = `[File: ${context.fileName}]\n\n${userPrompt}`;
     }
 
-    // Build messages array for LLM
+    // Build messages array for LLM.
+    // `as const` narrows `role` to its literal type so the array is
+    // assignable to `ConversationMessage[]` after the M7 widening of
+    // LLMService.generateResponseStream.
     const messages = [
-      { role: 'system', content: INLINE_EDIT_SYSTEM_PROMPT },
-      { role: 'user', content: userPrompt }
+      { role: 'system' as const, content: INLINE_EDIT_SYSTEM_PROMPT },
+      { role: 'user' as const, content: userPrompt }
     ];
 
     // Stream options
