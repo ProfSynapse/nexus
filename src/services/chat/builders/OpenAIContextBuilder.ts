@@ -78,18 +78,29 @@ export class OpenAIContextBuilder implements IContextBuilder {
         }
       } else if (msg.role === 'assistant') {
         if (msg.toolCalls && msg.toolCalls.length > 0) {
-          // Synthesize stable ids for any tool calls missing them. Stored
-          // conversations from before BaseAdapter id-fallback may have empty
-          // ids, which causes Azure (via OpenRouter) to reject continuations
-          // with "Missing required parameter: 'input[N].call_id'".
-          const msgIdSeed = msg.id || `msg_${Date.now()}`;
-          const synthesizedIds = msg.toolCalls.map((tc: ToolCall, idx: number) =>
-            tc.id || `call_synth_${msgIdSeed}_${idx}`
-          );
+          // CRITICAL: Always normalize tool_call ids to OpenAI-compatible format
+          // (`call_*` prefix). Conversations may have ids from other providers
+          // (e.g., Bedrock's `toolu_bdrk_*`, Anthropic's `toolu_*`) which can
+          // confuse Azure's Responses API converter when OpenRouter routes
+          // OpenAI models through Azure, causing "Missing required parameter:
+          // 'input[N].call_id'" errors.
+          //
+          // We use a deterministic id derived from message id + index so that
+          // assistant tool_calls and the corresponding tool result messages
+          // always reference the same id within this conversation.
+          const msgIdSeed = (msg.id || `msg_${Date.now()}`).replace(/[^a-zA-Z0-9_-]/g, '_');
+          const normalizedIds = msg.toolCalls.map((tc: ToolCall, idx: number) => {
+            // Keep the existing id only if it already looks like an OpenAI id
+            // (starts with `call_`). Otherwise normalize.
+            if (tc.id && /^call_[A-Za-z0-9_-]+$/.test(tc.id)) {
+              return tc.id;
+            }
+            return `call_${msgIdSeed}_${idx}`;
+          });
 
           // Build proper OpenAI tool_calls format for continuations
           const toolCallsFormatted: LLMToolCall[] = msg.toolCalls.map((tc: ToolCall, idx: number) => ({
-            id: synthesizedIds[idx],
+            id: normalizedIds[idx],
             type: 'function' as const,
             function: {
               name: tc.function?.name || tc.name || '',
@@ -113,7 +124,7 @@ export class OpenAIContextBuilder implements IContextBuilder {
 
             messages.push({
               role: 'tool',
-              tool_call_id: synthesizedIds[idx],
+              tool_call_id: normalizedIds[idx],
               content: resultContent
             });
           });

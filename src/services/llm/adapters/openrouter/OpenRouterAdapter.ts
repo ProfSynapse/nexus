@@ -291,6 +291,25 @@ export class OpenRouterAdapter extends BaseAdapter {
         ...ReasoningPreserver.getReasoningRequestParams(baseModel, 'openrouter', hasTools || false)
       };
 
+      // DIAGNOSTIC: log message structure for tool call debugging.
+      // Helps diagnose Azure "Missing required parameter: input[N].call_id" errors.
+      try {
+        const summary = (messages as Array<{ role: string; tool_call_id?: string; tool_calls?: Array<{ id?: string; function?: { name?: string } }>; content?: unknown }>).map((m, i) => {
+          const tcIds = m.tool_calls?.map(tc => tc.id || '<MISSING>').join(',');
+          const tcNames = m.tool_calls?.map(tc => tc.function?.name || '?').join(',');
+          const contentPreview = typeof m.content === 'string'
+            ? (m.content.length > 60 ? m.content.slice(0, 60) + '…' : m.content)
+            : '[non-string]';
+          return `[${i}] role=${m.role}` +
+            (m.tool_call_id !== undefined ? ` tool_call_id=${m.tool_call_id || '<EMPTY>'}` : '') +
+            (m.tool_calls ? ` tool_calls=[${tcIds}] (${tcNames})` : '') +
+            ` content="${contentPreview}"`;
+        }).join('\n  ');
+        console.log(`[OpenRouter] Request to ${model} with ${(messages as unknown[]).length} messages:\n  ${summary}`);
+      } catch (e) {
+        console.warn('[OpenRouter] Failed to log message structure:', e);
+      }
+
       const nodeStream = await this.requestStream({
         url: `${this.baseUrl}/chat/completions`,
         operation: 'streaming generation',
