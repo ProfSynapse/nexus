@@ -14,6 +14,7 @@
 import { IContextBuilder, LLMMessage, LLMToolCall, ToolExecutionResult, OpenAIMessage } from './IContextBuilder';
 import { ConversationData, ChatMessage, ToolCall } from '../../../types/chat/ChatTypes';
 import { ReasoningPreserver } from '../../llm/adapters/shared/ReasoningPreserver';
+import { synthesizeToolCallId } from '../../llm/utils/toolCallId';
 
 type ReasoningToolCallLike = {
   id?: string;
@@ -91,8 +92,10 @@ export class OpenAIContextBuilder implements IContextBuilder {
           const msgIdSeed = (msg.id || `msg_${Date.now()}`).replace(/[^a-zA-Z0-9_-]/g, '_');
           const normalizedIds = msg.toolCalls.map((tc: ToolCall, idx: number) => {
             // Keep the existing id only if it already looks like an OpenAI id
-            // (starts with `call_`). Otherwise normalize.
-            if (tc.id && /^call_[A-Za-z0-9_-]+$/.test(tc.id)) {
+            // (starts with `call_`). Prefix-only check — OpenAI ids routinely
+            // contain characters like `.` that a strict [A-Za-z0-9_-] regex
+            // rejects, causing unnecessary renormalization.
+            if (tc.id && /^call_/.test(tc.id)) {
               return tc.id;
             }
             return `call_${msgIdSeed}_${idx}`;
@@ -176,8 +179,8 @@ export class OpenAIContextBuilder implements IContextBuilder {
     // Synthesize ids for any tool calls missing them. Both the assistant's
     // tool_calls and the tool result messages must reference the same id —
     // empty/mismatched ids cause Azure-via-OpenRouter to reject continuations.
-    const synthesizedIds = toolCalls.map((tc, idx) =>
-      tc.id || `call_synth_continuation_${Date.now()}_${idx}`
+    const synthesizedIds = toolCalls.map((tc) =>
+      tc.id || synthesizeToolCallId('continuation')
     );
     const toolCallsWithIds = toolCalls.map((tc, idx) => ({ ...tc, id: synthesizedIds[idx] }));
 
@@ -220,8 +223,8 @@ export class OpenAIContextBuilder implements IContextBuilder {
 
     // Synthesize ids for any tool calls missing them — assistant tool_calls
     // and tool result tool_call_ids must match.
-    const synthesizedIds = toolCalls.map((tc, idx) =>
-      tc.id || `call_synth_append_${Date.now()}_${idx}`
+    const synthesizedIds = toolCalls.map((tc) =>
+      tc.id || synthesizeToolCallId('append')
     );
     const toolCallsWithIds = toolCalls.map((tc, idx) => ({ ...tc, id: synthesizedIds[idx] }));
 

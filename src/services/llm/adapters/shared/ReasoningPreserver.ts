@@ -13,6 +13,8 @@
  * Follows Single Responsibility Principle - only handles reasoning preservation.
  */
 
+import { synthesizeToolCallId } from '../../utils/toolCallId';
+
 export interface ReasoningDetails {
   /** OpenRouter format: array of reasoning detail objects */
   reasoning_details?: unknown[];
@@ -204,10 +206,10 @@ export class ReasoningPreserver {
     const message: JsonObject = {
       role: 'assistant',
       content,
-      tool_calls: toolCalls.map((tc, index) => {
+      tool_calls: toolCalls.map((tc) => {
         // Generate a synthetic id if missing — empty call_ids cause Azure
         // Responses API to reject the request with "Missing required parameter".
-        const id = tc.id || `call_synth_${Date.now()}_${index}`;
+        const id = tc.id || synthesizeToolCallId();
         const toolCall: ReasoningToolCall = {
           id,
           type: 'function',

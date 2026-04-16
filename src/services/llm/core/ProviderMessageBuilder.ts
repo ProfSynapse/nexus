@@ -15,6 +15,7 @@ import { ConversationContextBuilder } from '../../chat/ConversationContextBuilde
 import { ToolResult } from '../adapters/shared/ToolExecutionUtils';
 import { Tool, ToolCall as AdapterToolCall } from '../adapters/types';
 import { shouldPassToolSchemasToProvider } from '../utils/ToolSchemaSupport';
+import { synthesizeToolCallId } from '../utils/toolCallId';
 import { ToolCall as ChatToolCall } from '../../../types/chat/ChatTypes';
 
 // Union type for tool calls from different sources
@@ -276,8 +277,8 @@ export class ProviderMessageBuilder {
 
       // Synthesize ids for any tool calls missing them. Codex/Responses API
       // strictly requires call_id on every function_call and function_call_output.
-      const synthesizedIds = toolCalls.map((tc, idx) =>
-        tc.id || `call_synth_codex_${Date.now()}_${idx}`
+      const synthesizedIds = toolCalls.map((tc) =>
+        tc.id || synthesizeToolCallId('codex')
       );
 
       // Add function_call items (what the model called)
