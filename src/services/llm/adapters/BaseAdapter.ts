@@ -232,8 +232,12 @@ export abstract class BaseAdapter {
           for (const toolCall of toolCalls) {
             const index = toolCall.index || 0;
             if (!toolCallsAccumulator.has(index)) {
+              // Generate a synthetic id if the provider didn't supply one.
+              // Empty/undefined ids cause downstream failures (e.g., Azure
+              // Responses API rejects function_call_output with missing call_id).
+              const synthesizedId = toolCall.id || `call_synth_${Date.now()}_${index}`;
               const accumulated: ToolCall = {
-                id: toolCall.id || '',
+                id: synthesizedId,
                 type: 'function',
                 function: {
                   name: toolCall.function?.name || '',

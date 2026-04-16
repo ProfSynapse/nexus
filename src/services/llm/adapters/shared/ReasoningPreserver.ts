@@ -204,9 +204,12 @@ export class ReasoningPreserver {
     const message: JsonObject = {
       role: 'assistant',
       content,
-      tool_calls: toolCalls.map(tc => {
+      tool_calls: toolCalls.map((tc, index) => {
+        // Generate a synthetic id if missing — empty call_ids cause Azure
+        // Responses API to reject the request with "Missing required parameter".
+        const id = tc.id || `call_synth_${Date.now()}_${index}`;
         const toolCall: ReasoningToolCall = {
-          id: tc.id || '',
+          id,
           type: 'function',
           function: {
             name: tc.function?.name || tc.name || '',

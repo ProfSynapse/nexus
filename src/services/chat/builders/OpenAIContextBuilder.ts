@@ -78,9 +78,18 @@ export class OpenAIContextBuilder implements IContextBuilder {
         }
       } else if (msg.role === 'assistant') {
         if (msg.toolCalls && msg.toolCalls.length > 0) {
+          // Synthesize stable ids for any tool calls missing them. Stored
+          // conversations from before BaseAdapter id-fallback may have empty
+          // ids, which causes Azure (via OpenRouter) to reject continuations
+          // with "Missing required parameter: 'input[N].call_id'".
+          const msgIdSeed = msg.id || `msg_${Date.now()}`;
+          const synthesizedIds = msg.toolCalls.map((tc: ToolCall, idx: number) =>
+            tc.id || `call_synth_${msgIdSeed}_${idx}`
+          );
+
           // Build proper OpenAI tool_calls format for continuations
-          const toolCallsFormatted: LLMToolCall[] = msg.toolCalls.map((tc: ToolCall) => ({
-            id: tc.id,
+          const toolCallsFormatted: LLMToolCall[] = msg.toolCalls.map((tc: ToolCall, idx: number) => ({
+            id: synthesizedIds[idx],
             type: 'function' as const,
             function: {
               name: tc.function?.name || tc.name || '',
@@ -95,15 +104,16 @@ export class OpenAIContextBuilder implements IContextBuilder {
             tool_calls: toolCallsFormatted
           });
 
-          // Add tool result messages with proper tool_call_id
-          msg.toolCalls.forEach((toolCall: ToolCall) => {
+          // Add tool result messages with matching tool_call_id (must equal
+          // assistant's tool_calls[i].id — empty/mismatched ids cause API errors)
+          msg.toolCalls.forEach((toolCall: ToolCall, idx: number) => {
             const resultContent = toolCall.success !== false
               ? JSON.stringify(toolCall.result || {})
               : JSON.stringify({ error: toolCall.error || 'Tool execution failed' });
 
             messages.push({
               role: 'tool',
-              tool_call_id: toolCall.id,
+              tool_call_id: synthesizedIds[idx],
               content: resultContent
             });
           });
@@ -152,8 +162,16 @@ export class OpenAIContextBuilder implements IContextBuilder {
       messages.push({ role: 'user', content: userPrompt });
     }
 
+    // Synthesize ids for any tool calls missing them. Both the assistant's
+    // tool_calls and the tool result messages must reference the same id —
+    // empty/mismatched ids cause Azure-via-OpenRouter to reject continuations.
+    const synthesizedIds = toolCalls.map((tc, idx) =>
+      tc.id || `call_synth_continuation_${Date.now()}_${idx}`
+    );
+    const toolCallsWithIds = toolCalls.map((tc, idx) => ({ ...tc, id: synthesizedIds[idx] }));
+
     // Build assistant message with reasoning preserved using centralized utility
-    const reasoningToolCalls = toolCalls as unknown as ReasoningToolCallLike[];
+    const reasoningToolCalls = toolCallsWithIds as unknown as ReasoningToolCallLike[];
     const assistantMessage = ReasoningPreserver.buildAssistantMessageWithReasoning(
       reasoningToolCalls,
       ''
@@ -161,16 +179,15 @@ export class OpenAIContextBuilder implements IContextBuilder {
 
     messages.push(assistantMessage);
 
-    // Add tool result messages
+    // Add tool result messages with ids matching the assistant's tool_calls
     toolResults.forEach((result, index) => {
-      const toolCall = toolCalls[index];
       const resultContent = result.success
         ? JSON.stringify(result.result || {})
         : JSON.stringify({ error: result.error || 'Tool execution failed' });
 
       messages.push({
         role: 'tool',
-        tool_call_id: toolCall.id,
+        tool_call_id: synthesizedIds[index],
         content: resultContent
       });
     });
@@ -190,8 +207,15 @@ export class OpenAIContextBuilder implements IContextBuilder {
     // Filter out system messages - they should be handled separately
     const messages: OpenAIMessage[] = (previousMessages as OpenAIMessage[]).filter(msg => msg.role !== 'system');
 
+    // Synthesize ids for any tool calls missing them — assistant tool_calls
+    // and tool result tool_call_ids must match.
+    const synthesizedIds = toolCalls.map((tc, idx) =>
+      tc.id || `call_synth_append_${Date.now()}_${idx}`
+    );
+    const toolCallsWithIds = toolCalls.map((tc, idx) => ({ ...tc, id: synthesizedIds[idx] }));
+
     // Build assistant message with reasoning preserved using centralized utility
-    const reasoningToolCalls = toolCalls as unknown as ReasoningToolCallLike[];
+    const reasoningToolCalls = toolCallsWithIds as unknown as ReasoningToolCallLike[];
     const assistantMessage = ReasoningPreserver.buildAssistantMessageWithReasoning(
       reasoningToolCalls,
       ''
@@ -199,12 +223,11 @@ export class OpenAIContextBuilder implements IContextBuilder {
 
     messages.push(assistantMessage);
 
-    // Add tool result messages
+    // Add tool result messages with ids matching the assistant's tool_calls
     toolResults.forEach((result, index) => {
-      const toolCall = toolCalls[index];
       messages.push({
         role: 'tool',
-        tool_call_id: toolCall.id,
+        tool_call_id: synthesizedIds[index],
         content: result.success
           ? JSON.stringify(result.result || {})
           : JSON.stringify({ error: result.error || 'Tool execution failed' })

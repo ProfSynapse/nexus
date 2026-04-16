@@ -255,25 +255,31 @@ export class ProviderMessageBuilder {
         inputItems.push({ role: 'user', content: userPrompt });
       }
 
+      // Synthesize ids for any tool calls missing them. Codex/Responses API
+      // strictly requires call_id on every function_call and function_call_output.
+      const synthesizedIds = toolCalls.map((tc, idx) =>
+        tc.id || `call_synth_codex_${Date.now()}_${idx}`
+      );
+
       // Add function_call items (what the model called)
-      for (const tc of toolCalls) {
+      for (let i = 0; i < toolCalls.length; i++) {
+        const tc = toolCalls[i];
         const name = ('name' in tc && tc.name) ? tc.name : tc.function?.name || '';
         const args = tc.function?.arguments || '{}';
         inputItems.push({
           type: 'function_call',
-          call_id: tc.id,
+          call_id: synthesizedIds[i],
           name,
           arguments: args
         });
       }
 
-      // Add function_call_output items (what the tools returned)
+      // Add function_call_output items (what the tools returned) with matching call_id
       for (let i = 0; i < toolResults.length; i++) {
         const result = toolResults[i];
-        const tc = toolCalls[i];
         inputItems.push({
           type: 'function_call_output',
-          call_id: tc?.id || result.id,
+          call_id: synthesizedIds[i] || result.id || `call_synth_codex_result_${Date.now()}_${i}`,
           output: result.success
             ? JSON.stringify(result.result || {})
             : JSON.stringify({ error: result.error || 'Tool execution failed' })
