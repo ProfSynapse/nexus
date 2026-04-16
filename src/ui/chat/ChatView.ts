@@ -484,7 +484,7 @@ export class ChatView extends ItemView {
     if (!container) {
       return;
     }
-    this.layoutElements = ChatLayoutBuilder.buildLayout(container);
+    this.layoutElements = ChatLayoutBuilder.buildLayout(container, this);
   }
 
   /**

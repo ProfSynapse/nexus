@@ -443,6 +443,7 @@ export class MessageBubble extends Component {
 
     const loader = new ThinkingLoader();
     this.thinkingLoader = loader;
+    this.addChild(loader);
     loader.start(container);
   }
 

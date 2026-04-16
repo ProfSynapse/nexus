@@ -13,7 +13,7 @@
  * following the Builder pattern for complex UI construction.
  */
 
-import { setIcon } from 'obsidian';
+import { Component, setIcon } from 'obsidian';
 
 export interface ChatLayoutElements {
   messageContainer: HTMLElement;
@@ -35,7 +35,7 @@ export class ChatLayoutBuilder {
   /**
    * Build the complete chat interface layout
    */
-  static buildLayout(container: HTMLElement): ChatLayoutElements {
+  static buildLayout(container: HTMLElement, component: Component): ChatLayoutElements {
     container.empty();
     container.addClass('chat-view-container');
 
@@ -44,7 +44,7 @@ export class ChatLayoutBuilder {
     const mainContainer = chatLayout.createDiv('chat-main');
 
     // Experimental warning banner
-    this.createWarningBanner(mainContainer);
+    this.createWarningBanner(mainContainer, component);
 
     // Header
     const { chatTitle, hamburgerButton, settingsButton } = this.createHeader(mainContainer);
@@ -127,7 +127,7 @@ export class ChatLayoutBuilder {
   /**
    * Create experimental warning banner with auto-hide
    */
-  private static createWarningBanner(container: HTMLElement): void {
+  private static createWarningBanner(container: HTMLElement, component: Component): void {
     const warningBanner = container.createDiv('chat-experimental-warning');
 
     warningBanner.createEl('span', { cls: 'warning-icon', text: '⚠️' });
@@ -161,6 +161,7 @@ export class ChatLayoutBuilder {
     if (warningBanner.parentElement) {
       observer.observe(warningBanner.parentElement, { childList: true });
     }
+    component.register(() => observer.disconnect());
   }
 
   /**
