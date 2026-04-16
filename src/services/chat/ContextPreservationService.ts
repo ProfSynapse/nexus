@@ -13,6 +13,11 @@
  * 6. Return saved state content for injection into previous_context
  */
 
+// NOTE: ConversationMessage here is ChatTypes.ConversationMessage (= ChatMessage),
+// the storage/UI shape — intentionally distinct from the wire-format
+// ProviderMessageBuilder.ConversationMessage. Phase 4 of the canonical message
+// pipeline plan (docs/plans/canonical-message-pipeline-plan.md) collapses both
+// into a single canonical type; until then, do not unify by aliasing or extending.
 import { ConversationMessage } from '../../types/chat/ChatTypes';
 import type { IAgent } from '../../agents/interfaces/IAgent';
 import { GLOBAL_WORKSPACE_ID } from '../WorkspaceService';
