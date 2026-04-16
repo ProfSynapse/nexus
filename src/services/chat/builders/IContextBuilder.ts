@@ -115,6 +115,27 @@ export type LLMMessage = OpenAIMessage | AnthropicMessage | GoogleMessage;
 // Re-export for convenience
 export type { ChatMessage, ToolCall, ConversationData };
 
+/**
+ * Provider-specific conversation context builder.
+ *
+ * **Wire-format normalization contract**: Implementers own all per-provider
+ * wire-format normalization for the messages they emit, including (but not
+ * limited to) tool_call_id rewriting. Tool-call ids flowing through our
+ * conversation store can originate from any provider and therefore may not
+ * match the target provider's accepted ID format. Each builder is
+ * responsible for translating incoming ids into something its wire protocol
+ * will accept, and keeping the rewrite consistent between
+ * `assistant.tool_calls[].id` and the paired `tool.tool_call_id`.
+ *
+ * Example: `OpenAIContextBuilder` normalizes foreign tool_call ids
+ * (AWS Bedrock `toolu_bdrk_*`, Anthropic `toolu_*`) to the OpenAI `call_*`
+ * format before emitting messages, since Azure-backed OpenRouter routes
+ * reject non-`call_*` ids. Future builders with their own constraints
+ * (e.g., Mistral's 9-character alphanumeric-only `tool_call_id`) should
+ * perform equivalent normalization in their builder, not in upstream
+ * services. Keep the rewrite map stable within a single `buildContext`
+ * call so assistant/tool pairings stay consistent.
+ */
 export interface IContextBuilder {
   /**
    * Provider identifier for this builder

@@ -6,16 +6,29 @@
  * through buildContextForProvider and inspect what the OpenAI/OpenRouter
  * messages array looks like — every tool message should have a tool_call_id
  * that matches one of the assistant's tool_calls[i].id.
+ *
+ * ENV-GATED DEBUG TEST:
+ * This test depends on a JSONL file that lives only on the original
+ * reporter's machine (Joseph's vault). When the fixture is not present
+ * the whole suite is skipped rather than failing, so it's safe to run in
+ * CI or on any other developer's machine. Move the reproduction fixture
+ * next to this file (or set DEBUG_REPRO_JSONL) to re-enable the run.
  */
 
 import * as fs from 'node:fs';
 import { ConversationContextBuilder } from '../../src/services/chat/ConversationContextBuilder';
 import type { ConversationData, ConversationMessage } from '../../src/types';
 
+const REPRO_JSONL =
+  process.env.DEBUG_REPRO_JSONL ||
+  '/Users/jrosenbaum/Documents/Professor Synapse/Nexus/data/conversations/conv_3dde535c-1c26-4a8e-9b2c-42a33a0561bd/shard-000001.jsonl';
+
+const fixtureExists = fs.existsSync(REPRO_JSONL);
+const describeIfFixture = fixtureExists ? describe : describe.skip;
+
 function loadActualConversation(): ConversationData {
   // Apply JSONL events to build current state
-  const fp = '/Users/jrosenbaum/Documents/Professor Synapse/Nexus/data/conversations/conv_3dde535c-1c26-4a8e-9b2c-42a33a0561bd/shard-000001.jsonl';
-  const events = fs.readFileSync(fp, 'utf-8')
+  const events = fs.readFileSync(REPRO_JSONL, 'utf-8')
     .split('\n')
     .filter(l => l.trim())
     .map(l => JSON.parse(l));
@@ -69,7 +82,7 @@ function loadActualConversation(): ConversationData {
   } as unknown as ConversationData;
 }
 
-describe('Intelligence Curse reproduction', () => {
+describeIfFixture('Intelligence Curse reproduction', () => {
   it('loads conversation and replays through buildContextForProvider', () => {
     const conversation = loadActualConversation();
 
@@ -226,3 +239,12 @@ describe('Intelligence Curse reproduction', () => {
     expect(orphans).toBe(0);
   });
 });
+
+if (!fixtureExists) {
+  // Surface one-time context so CI logs explain the skip.
+  // eslint-disable-next-line no-console
+  console.info(
+    `[intelligence-curse-repro] Fixture not found at ${REPRO_JSONL}; suite skipped. ` +
+    `Set DEBUG_REPRO_JSONL to a valid JSONL shard to enable.`
+  );
+}
