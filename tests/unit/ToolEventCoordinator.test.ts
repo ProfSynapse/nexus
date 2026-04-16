@@ -286,6 +286,357 @@ describe('ToolEventCoordinator — forward-only race prevention', () => {
   });
 });
 
+describe('ToolEventCoordinator — enrichToolEventData edge cases', () => {
+  it('uses toolCall.parameters directly when present on the toolCall object', () => {
+    const { coordinator, stateManager } = makeCoordinator();
+
+    coordinator.handleToolEvent('msg-params', 'detected', {
+      id: 'call-tp',
+      rawName: 'contentManager_read',
+      // No top-level `parameters` — provide via toolCall.parameters
+      toolCall: {
+        id: 'call-tp',
+        parameters: { filePath: 'x.md' },
+      },
+    } as unknown as Parameters<typeof coordinator.handleToolEvent>[2]);
+
+    const state = stateManager.getState('call-tp');
+    expect(state).toBeDefined();
+    // parameters should be taken from toolCall.parameters
+    expect(state!.metadata.parameters).toEqual({ filePath: 'x.md' });
+  });
+
+  it('extracts parameters from toolCall.arguments (non-function path)', () => {
+    const { coordinator, stateManager } = makeCoordinator();
+
+    coordinator.handleToolEvent('msg-args', 'detected', {
+      id: 'call-args',
+      rawName: 'storageManager_move',
+      toolCall: {
+        id: 'call-args',
+        arguments: '{"source":"a.md","target":"b.md"}',
+      },
+    } as unknown as Parameters<typeof coordinator.handleToolEvent>[2]);
+
+    const state = stateManager.getState('call-args');
+    expect(state?.metadata.parameters).toEqual({ source: 'a.md', target: 'b.md' });
+  });
+
+  it('returns raw object parameters unchanged when they are already an object', () => {
+    const { coordinator, stateManager } = makeCoordinator();
+
+    const rawParams = { filePath: 'notes.md', limit: 5 };
+    coordinator.handleToolEvent('msg-obj', 'detected', {
+      id: 'call-obj',
+      rawName: 'contentManager_read',
+      toolCall: {
+        id: 'call-obj',
+        arguments: rawParams, // already an object, not a string
+      },
+    } as unknown as Parameters<typeof coordinator.handleToolEvent>[2]);
+
+    const state = stateManager.getState('call-obj');
+    expect(state?.metadata.parameters).toEqual(rawParams);
+  });
+
+  it('returns the raw string when JSON.parse fails (malformed JSON via toolCall.function.arguments)', () => {
+    const { coordinator, stateManager } = makeCoordinator();
+
+    coordinator.handleToolEvent('msg-malformed', 'detected', {
+      id: 'call-mal',
+      rawName: 'contentManager_read',
+      toolCall: {
+        id: 'call-mal',
+        function: { name: 'contentManager_read', arguments: '{not valid json' }, // malformed
+      },
+    } as unknown as Parameters<typeof coordinator.handleToolEvent>[2]);
+
+    const state = stateManager.getState('call-mal');
+    expect(state?.metadata.parameters).toBe('{not valid json'); // raw string preserved
+  });
+
+  it('returns undefined when toolCall has no arguments (undefined raw path)', () => {
+    const { coordinator, stateManager } = makeCoordinator();
+
+    coordinator.handleToolEvent('msg-noargs', 'detected', {
+      id: 'call-noargs',
+      rawName: 'storageManager_list',
+      toolCall: {
+        id: 'call-noargs',
+        // no parameters, no arguments, no function.arguments
+      },
+    } as unknown as Parameters<typeof coordinator.handleToolEvent>[2]);
+
+    const state = stateManager.getState('call-noargs');
+    expect(state?.metadata.parameters).toBeUndefined();
+  });
+
+  it('uses top-level parameters field when provided, ignoring toolCall', () => {
+    const { coordinator, stateManager } = makeCoordinator();
+
+    const topLevelParams = { query: 'hello' };
+    coordinator.handleToolEvent('msg-toplevel', 'detected', {
+      id: 'call-toplevel',
+      rawName: 'searchManager_searchContent',
+      parameters: topLevelParams,
+      toolCall: {
+        id: 'call-toplevel',
+        parameters: { query: 'ignored' }, // should be ignored
+      },
+    } as unknown as Parameters<typeof coordinator.handleToolEvent>[2]);
+
+    const state = stateManager.getState('call-toplevel');
+    expect(state?.metadata.parameters).toEqual(topLevelParams);
+  });
+});
+
+describe('ToolEventCoordinator — handleToolCallsDetected inner call edge cases', () => {
+  it('handles toolCall with no function field — uses toolCall.name directly', () => {
+    const { coordinator, controller } = makeCoordinator();
+
+    coordinator.handleToolCallsDetected('msg-no-func', [
+      {
+        id: 'call-nf',
+        name: 'contentManager_read', // no .function field at all
+        arguments: '{"filePath":"a.md"}',
+      },
+    ] as unknown as Parameters<typeof coordinator.handleToolCallsDetected>[1]);
+
+    expect(controller.pushStatus).toHaveBeenCalledTimes(1);
+  });
+
+  it('handles toolCall with no id — uses fallback ID pattern', () => {
+    const { coordinator, controller } = makeCoordinator();
+
+    coordinator.handleToolCallsDetected('msg-no-id', [
+      {
+        // no id field — should generate a fallback ID
+        function: { name: 'contentManager_read', arguments: '{}' },
+      },
+    ] as unknown as Parameters<typeof coordinator.handleToolCallsDetected>[1]);
+
+    expect(controller.pushStatus).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses toolCall.parameters when provided directly (line 110 branch)', () => {
+    const { coordinator, stateManager } = makeCoordinator();
+
+    coordinator.handleToolCallsDetected('msg-direct-params', [
+      {
+        id: 'call-dp',
+        name: 'contentManager_read', // using .name, not .function.name
+        parameters: { filePath: 'direct.md' }, // parameters at top level
+      },
+    ] as unknown as Parameters<typeof coordinator.handleToolCallsDetected>[1]);
+
+    const state = stateManager.getState('call-dp');
+    expect(state).toBeDefined();
+    expect(state!.metadata.parameters).toEqual({ filePath: 'direct.md' });
+  });
+
+  it('skips inner calls that are not objects (null/primitive entries in calls array)', () => {
+    const { coordinator, controller } = makeCoordinator();
+
+    coordinator.handleToolCallsDetected('msg-bad-inner', [
+      {
+        id: 'call-usetools',
+        function: {
+          name: 'toolManager_useTools',
+          arguments: JSON.stringify({
+            context: {},
+            calls: [null, 'not-an-object', 42], // all skipped by the inner type guard
+          }),
+        },
+      },
+    ] as unknown as Parameters<typeof coordinator.handleToolCallsDetected>[1]);
+
+    // All inner calls are invalid — falls through to generic path (useTools with 0 extracted calls)
+    // The generic path emits useTools which is then filtered, so nothing reaches the controller
+    expect(controller.pushStatus).not.toHaveBeenCalled();
+  });
+
+  it('skips inner calls that are missing agent or tool fields', () => {
+    const { coordinator, controller } = makeCoordinator();
+
+    coordinator.handleToolCallsDetected('msg-missing-fields', [
+      {
+        id: 'call-usetools-bad',
+        function: {
+          name: 'toolManager_useTools',
+          arguments: JSON.stringify({
+            context: {},
+            calls: [
+              { agent: '', tool: 'read' }, // empty agent — skipped
+              { agent: 'contentManager', tool: '' }, // empty tool — skipped
+            ],
+          }),
+        },
+      },
+    ] as unknown as Parameters<typeof coordinator.handleToolCallsDetected>[1]);
+
+    // Both calls skipped — falls through with innerCalls.length > 0 (continue fires)
+    // but no events emitted since both inner calls were skipped
+    expect(controller.pushStatus).not.toHaveBeenCalled();
+  });
+
+  it('handles useTools with empty calls array by falling through to generic path', () => {
+    const { coordinator, controller } = makeCoordinator();
+
+    // Empty calls array → innerCalls.length === 0 → does NOT continue → falls through
+    // to the generic emit path at lines 167+. The generic path emits useTools to the
+    // state manager. The state change fires emitToStatusBar which calls controller.pushStatus.
+    // (useTools IS emitted in the generic fallthrough — it's only filtered in handleToolEvent)
+    expect(() => {
+      coordinator.handleToolCallsDetected('msg-empty-calls', [
+        {
+          id: 'call-usetools-empty',
+          function: {
+            name: 'toolManager_useTools',
+            arguments: JSON.stringify({ context: {}, calls: [] }),
+          },
+        },
+      ] as unknown as Parameters<typeof coordinator.handleToolCallsDetected>[1]);
+    }).not.toThrow();
+  });
+
+  it('handles inner call with non-object parameters (null) → parameters become undefined', () => {
+    const { coordinator, stateManager } = makeCoordinator();
+
+    coordinator.handleToolCallsDetected('msg-null-params', [
+      {
+        id: 'call-usetools-np',
+        function: {
+          name: 'toolManager_useTools',
+          arguments: JSON.stringify({
+            context: {},
+            calls: [
+              { agent: 'contentManager', tool: 'read', parameters: null }, // null params
+            ],
+          }),
+        },
+      },
+    ] as unknown as Parameters<typeof coordinator.handleToolCallsDetected>[1]);
+
+    const state = stateManager.getState('call-usetools-np_0');
+    expect(state).toBeDefined();
+    expect(state!.metadata.parameters).toBeUndefined(); // null params → undefined
+  });
+});
+
+describe('ToolEventCoordinator — handleToolEvent phase mapping edge cases', () => {
+  it('maps "updated" event type to "detected" phase', () => {
+    const { coordinator, stateManager } = makeCoordinator();
+
+    coordinator.handleToolEvent('msg-1', 'updated', {
+      id: 'call-updated',
+      rawName: 'contentManager_read',
+    });
+
+    const state = stateManager.getState('call-updated');
+    expect(state?.phase).toBe('detected');
+  });
+
+  it('maps completed event with error string to "failed" phase (line 259)', () => {
+    const { coordinator, controller } = makeCoordinator();
+
+    coordinator.handleToolEvent('msg-err', 'detected', {
+      id: 'call-err-phase',
+      rawName: 'contentManager_write',
+    });
+
+    coordinator.handleToolEvent('msg-err', 'completed', {
+      id: 'call-err-phase',
+      rawName: 'contentManager_write',
+      error: 'disk full', // non-empty error string → phase becomes 'failed'
+    });
+
+    const lastEntry = controller.pushStatus.mock.calls[controller.pushStatus.mock.calls.length - 1];
+    expect(lastEntry[1].state).toBe('failed');
+  });
+
+  it('uses data.toolId as fallback when id is absent', () => {
+    const { coordinator, stateManager } = makeCoordinator();
+
+    coordinator.handleToolEvent('msg-1', 'detected', {
+      toolId: 'fallback-id',
+      rawName: 'contentManager_read',
+    } as unknown as Parameters<typeof coordinator.handleToolEvent>[2]);
+
+    const state = stateManager.getState('fallback-id');
+    expect(state).toBeDefined();
+  });
+});
+
+describe('ToolEventCoordinator — providerExecuted with success=undefined', () => {
+  it('treats success as true when success is undefined on providerExecuted call', () => {
+    const { coordinator, controller } = makeCoordinator();
+
+    coordinator.handleToolCallsDetected('msg-prov-undef', [
+      {
+        id: 'call-prov-undef',
+        function: { name: 'contentManager_read', arguments: '{}' },
+        providerExecuted: true,
+        result: { data: 'ok' },
+        // success: undefined — should default to true (success !== false)
+      },
+    ] as unknown as Parameters<typeof coordinator.handleToolCallsDetected>[1]);
+
+    const states = controller.pushStatus.mock.calls.map((c: unknown[]) => (c[1] as { state: string }).state);
+    expect(states).toContain('present');
+    expect(states).toContain('past'); // completed as success
+  });
+});
+
+describe('ToolEventCoordinator — ensureListening idempotency', () => {
+  it('does NOT re-subscribe when already listening (ensureListening called twice)', () => {
+    const { coordinator, controller } = makeCoordinator();
+
+    // Already listening from constructor — ensureListening should be a no-op
+    coordinator.ensureListening();
+
+    coordinator.handleToolExecutionStarted('msg-1', {
+      id: 'call-idem',
+      name: 'contentManager_read',
+    });
+
+    // Should still receive exactly 1 push (not 2 from double-subscribe)
+    expect(controller.pushStatus).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('ToolEventCoordinator — scheduleHide timer replacement', () => {
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => jest.useRealTimers());
+
+  it('cancels the previous hide timer when clearToolNameCache is called twice', () => {
+    const { coordinator, controller } = makeCoordinator();
+
+    coordinator.handleToolExecutionStarted('msg-1', { id: 'call-a', name: 'contentManager_read' });
+    coordinator.clearToolNameCache();
+
+    // Calling clearToolNameCache again while timer is pending replaces the old timer
+    // (exercises the `if (this.hideTimer) clearTimeout(...)` branch in scheduleHide)
+    coordinator.clearToolNameCache();
+
+    // Cancel the timer before it fires to avoid mock controller's missing getStatusBar
+    coordinator.ensureListening();
+
+    // pushStatus was called once for the started event
+    expect(controller.pushStatus).toHaveBeenCalledTimes(1);
+  });
+
+  it('ensureListening cancels hide timer even when no timer is pending (cancelHide false branch)', () => {
+    const { coordinator, controller } = makeCoordinator();
+
+    // No timer is active — calling ensureListening should not throw
+    expect(() => coordinator.ensureListening()).not.toThrow();
+
+    // Still works after
+    coordinator.handleToolExecutionStarted('msg-1', { id: 'call-b', name: 'contentManager_read' });
+    expect(controller.pushStatus).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('ToolEventCoordinator — clearToolNameCache delegates to state manager', () => {
   it('clears state manager state when clearToolNameCache is called', () => {
     const { coordinator, stateManager } = makeCoordinator();

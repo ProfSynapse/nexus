@@ -49,6 +49,7 @@ module.exports = {
     'src/services/chat/ContextPreservationService.ts',
     'src/services/chat/StreamingResponseService.ts',
     // Mobile chat glass migration (Phase 1 chrome)
+    'src/ui/chat/components/helpers/MessageBubbleStateResolver.ts',
     'src/ui/chat/components/ToolStatusBar.ts',
     'src/ui/chat/components/ContextBadge.ts',
     'src/ui/chat/components/ThinkingLoader.ts',
@@ -288,6 +289,13 @@ module.exports = {
       lines: 14,
       statements: 14
     },
+    // MessageBubbleStateResolver: pure static methods on every render path (high bar)
+    './src/ui/chat/components/helpers/MessageBubbleStateResolver.ts': {
+      branches: 90,
+      functions: 100,
+      lines: 95,
+      statements: 95
+    },
     // Mobile chat glass migration (Phase 1): pure logic + constants (high bar)
     './src/ui/chat/constants/ContextThresholds.ts': {
       branches: 100,
@@ -304,14 +312,17 @@ module.exports = {
       lines: 90,
       statements: 90
     },
-    // Coordinator: sink-swap integration — first unit coverage on this file.
-    // Uncovered lines 156-177 are ToolCallTrace legacy event forwarding path
-    // invoked only when TOOL_TRACE feature flag is active (separate test pass).
+    // Coordinator: comprehensive unit + integration coverage (Test M4 raise).
+    // Branches capped at 82%: 2 unreachable paths prevent 90% —
+    //   (1) enrichToolEventData null guard (line 321): passing null crashes downstream,
+    //       TypeScript prevents this in practice.
+    //   (2) emitToStatusBar `if (text)` false branch (line 311): formatToolStepLabel
+    //       always returns non-empty string for any tool name.
     './src/ui/chat/coordinators/ToolEventCoordinator.ts': {
-      branches: 60,
-      functions: 95,
-      lines: 70,
-      statements: 70
+      branches: 82,
+      functions: 100,
+      lines: 98,
+      statements: 98
     },
     // ToolStatusBar: status lifecycle + accessors + updateContext async path.
     // Construction + pushStatus/show/hide + cleanup() all exercised via lightweight mocks.

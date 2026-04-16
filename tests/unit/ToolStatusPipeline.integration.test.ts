@@ -172,7 +172,7 @@ describe('ToolStatusPipeline — integration', () => {
 
       // started is forward from detected, so this advances the state
       const startedEntries = entries.filter(e => e.state === 'present');
-      expect(startedEntries.length).toBeGreaterThanOrEqual(2);
+      expect(startedEntries.length).toBe(3); // detected x2 + started for call_0
 
       // First inner tool completes
       coordinator.handleToolExecutionCompleted('msg-1', 'call_usetools_1_0', {}, true);
@@ -494,6 +494,8 @@ describe('ToolStatusPipeline — integration', () => {
 
       // clearStatus should NOT have been called — the timer was cancelled
       expect(statusBar.raw.clearStatus).not.toHaveBeenCalled();
+      // Status bar still has entries — the status was not wiped
+      expect(statusBar.raw.pushStatus).toHaveBeenCalled();
     });
   });
 

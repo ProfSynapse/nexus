@@ -368,6 +368,48 @@ describe('ToolCallStateManager — race scenario simulation', () => {
   });
 });
 
+describe('ToolCallStateManager — bidirectional prefix correlation', () => {
+  it('correlates when execution ID (call_abc_0) arrives before detection ID (call_abc)', () => {
+    // This exercises the `toolCallId.startsWith(id)` branch at line 95 —
+    // the reverse direction from the integration test's detection-first path.
+    const sm = new ToolCallStateManager();
+    const events: StateChangeEvent[] = [];
+    sm.onStateChange((e) => events.push(e));
+
+    // Execution path registers the suffixed ID first
+    sm.transition('msg-1', 'call_abc_0', 'started', { rawName: 'read' });
+    expect(sm.getState('call_abc_0')?.phase).toBe('started');
+    expect(events).toHaveLength(1);
+
+    // Detection path arrives late with the base (un-suffixed) ID
+    const result = sm.transition('msg-1', 'call_abc', 'detected', { displayName: 'Read File' });
+
+    // Forward-only: detected is a regression from started — state unchanged
+    expect(result).toBe(false);
+    expect(sm.getState('call_abc_0')?.phase).toBe('started');
+    // But the metadata merge DID run (detected = same rank as started? No — detected < started)
+    // The key assertion: no duplicate entry created — both IDs share the same slot
+    expect(sm.getState('call_abc')).toBeUndefined(); // no separate entry for the base ID
+    expect(events).toHaveLength(1); // no extra listener call
+  });
+
+  it('correlates when execution ID arrives first and then completes via base ID', () => {
+    const sm = new ToolCallStateManager();
+
+    // Execution registers suffixed ID
+    sm.transition('msg-1', 'call_xyz_0', 'started', { rawName: 'write' });
+
+    // Detection arrives with base ID — correlates, regression suppressed
+    sm.transition('msg-1', 'call_xyz', 'detected');
+
+    // Completion fires with base ID — should advance the canonical (suffixed) entry
+    const completed = sm.transition('msg-1', 'call_xyz', 'completed', undefined, { success: true });
+    expect(completed).toBe(true);
+    expect(sm.getState('call_xyz_0')?.phase).toBe('completed');
+    expect(sm.getState('call_xyz')).toBeUndefined(); // still no separate entry
+  });
+});
+
 describe('ToolCallStateManager — parentId tracking', () => {
   it('captures batchId as parentId from metadata', () => {
     const sm = new ToolCallStateManager();
