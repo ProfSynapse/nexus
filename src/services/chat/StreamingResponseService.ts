@@ -19,6 +19,7 @@
  */
 
 import { ConversationData, ConversationMessage, MessageCost, MessageUsage, ToolCall } from '../../types/chat/ChatTypes';
+import type { ConversationMessage as LLMConversationMessage } from '../llm/core/ProviderMessageBuilder';
 import { ConversationContextBuilder } from './ConversationContextBuilder';
 import { ToolCallService } from './ToolCallService';
 import { CostTrackingService } from './CostTrackingService';
@@ -89,7 +90,11 @@ interface LLMChunkLike {
 
 interface LLMServiceLike {
   getDefaultModel(): LLMDefaultModel;
-  generateResponseStream(messages: Array<{ role: string; content: string }>, options: Record<string, unknown>): AsyncGenerator<LLMChunkLike, void, unknown>;
+  // Post-Phase-3: the signature matches LLMService.generateResponseStream exactly.
+  // Previously narrowed to `{role, content}[]`, which hid type errors at the
+  // boundary — notably, buildLLMMessages produced richer objects than the
+  // duck type admitted, masking the vestigial remap we just removed.
+  generateResponseStream(messages: LLMConversationMessage[], options: Record<string, unknown>): AsyncGenerator<LLMChunkLike, void, unknown>;
 }
 
 interface ConversationServiceLike {
@@ -383,7 +388,7 @@ export class StreamingResponseService {
    * NOTE: For Google, we return simple {role, content} format because
    * StreamingOrchestrator will convert to Google format ({role, parts})
    */
-  private buildLLMMessages(conversation: ConversationData, provider?: string, systemPrompt?: string): Array<{ role: string; content: string }> {
+  private buildLLMMessages(conversation: ConversationData, provider?: string, systemPrompt?: string): LLMConversationMessage[] {
     const currentProvider = provider || this.getCurrentProvider();
 
     // Apply compaction boundary: only send messages at or after the boundary to the LLM.
@@ -392,7 +397,7 @@ export class StreamingResponseService {
 
     // For Google, return simple format - StreamingOrchestrator handles Google conversion
     if (currentProvider === 'google') {
-      const messages: Array<{ role: string; content: string }> = [];
+      const messages: LLMConversationMessage[] = [];
 
       // Add system prompt if provided
       if (systemPrompt) {
@@ -428,7 +433,7 @@ export class StreamingResponseService {
       systemPrompt
     ).map((message) => {
       const m = message as {
-        role: string;
+        role: 'user' | 'assistant' | 'system' | 'tool';
         content?: unknown;
         tool_calls?: unknown;
         tool_call_id?: string;
@@ -436,7 +441,7 @@ export class StreamingResponseService {
         thought_signature?: string;
         name?: string;
       };
-      const out: Record<string, unknown> = {
+      const out: LLMConversationMessage = {
         role: m.role,
         content: typeof m.content === 'string' ? m.content : '',
       };
@@ -450,7 +455,7 @@ export class StreamingResponseService {
       if (Array.isArray(m.reasoning_details)) out.reasoning_details = m.reasoning_details;
       if (m.thought_signature) out.thought_signature = m.thought_signature;
       if (m.name) out.name = m.name;
-      return out as { role: string; content: string };
+      return out;
     });
   }
 

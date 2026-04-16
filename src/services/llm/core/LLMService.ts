@@ -294,42 +294,12 @@ export class LLMService {
       this.settings,
       this.toolExecutor
     );
-    // Convert messages to ConversationMessage format.
-    // CRITICAL: preserve tool_call_id on tool messages — without it, tool
-    // result messages reach the provider unpaired and Azure (via OpenRouter)
-    // rejects continuations with "Missing required parameter: 'input[N].call_id'".
-    // Also preserve reasoning_details / thought_signature / name — stripping
-    // these has caused (or is a latent risk for) silent degradations with
-    // Gemini-via-OpenRouter, Gemini direct, and legacy OpenAI function-role
-    // messages respectively. See docs/plans/canonical-message-pipeline-plan.md.
-    const conversationMessages: ConversationMessage[] = messages.map(m => {
-      const out: ConversationMessage = {
-        role: m.role,
-        content: m.content,
-      };
-      if (Array.isArray(m.tool_calls)) {
-        out.tool_calls = m.tool_calls;
-      }
-      // Use `!== undefined` so an empty-string tool_call_id is preserved.
-      // Downstream synthesis sites (e.g. OpenAIContextBuilder, BaseAdapter)
-      // own the policy for what to do with an empty id; stripping here
-      // hides it from them and causes Azure-via-OpenRouter to reject the
-      // continuation with "Missing required parameter: 'input[N].call_id'".
-      if (m.tool_call_id !== undefined) {
-        out.tool_call_id = m.tool_call_id;
-      }
-      if (Array.isArray(m.reasoning_details)) {
-        out.reasoning_details = m.reasoning_details;
-      }
-      if (m.thought_signature) {
-        out.thought_signature = m.thought_signature;
-      }
-      if (m.name) {
-        out.name = m.name;
-      }
-      return out;
-    });
-    yield* orchestrator.generateResponseStream(conversationMessages, options);
+    // Pass messages straight through — input is already `ConversationMessage[]`
+    // post-M7, so the previous shallow-copy remap was a vestigial no-op. The
+    // 5-field preservation (tool_call_id / tool_calls / reasoning_details /
+    // thought_signature / name) is now guaranteed by type, not by an inline
+    // mapper. See docs/plans/canonical-message-pipeline-plan.md (Phase 3).
+    yield* orchestrator.generateResponseStream(messages, options);
   }
 
   /** Get a specific adapter instance for direct access */
