@@ -417,6 +417,11 @@ export class StreamingResponseService {
     // OpenRouter to reject continuations with "Missing required parameter:
     // 'input[N].call_id'" because tool result messages arrived without
     // the id linking them to the assistant's tool calls.
+    //
+    // Also preserve reasoning_details / thought_signature / name — latent
+    // risks for Gemini-via-OpenRouter (loses chain-of-thought between tool
+    // turns), Gemini direct (thought signature echo required), and legacy
+    // OpenAI function-role messages. See the canonical-message-pipeline plan.
     return ConversationContextBuilder.buildContextForProvider(
       filteredConversation,
       currentProvider,
@@ -427,6 +432,9 @@ export class StreamingResponseService {
         content?: unknown;
         tool_calls?: unknown;
         tool_call_id?: string;
+        reasoning_details?: unknown[];
+        thought_signature?: string;
+        name?: string;
       };
       const out: Record<string, unknown> = {
         role: m.role,
@@ -434,6 +442,9 @@ export class StreamingResponseService {
       };
       if (m.tool_calls) out.tool_calls = m.tool_calls;
       if (m.tool_call_id) out.tool_call_id = m.tool_call_id;
+      if (Array.isArray(m.reasoning_details)) out.reasoning_details = m.reasoning_details;
+      if (m.thought_signature) out.thought_signature = m.thought_signature;
+      if (m.name) out.name = m.name;
       return out as { role: string; content: string };
     });
   }

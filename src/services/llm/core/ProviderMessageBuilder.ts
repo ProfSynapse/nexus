@@ -27,6 +27,23 @@ export interface ConversationMessage {
   tool_calls?: ToolCallUnion[];
   /** Required on `role: 'tool'` messages — must match an assistant's tool_calls[i].id */
   tool_call_id?: string;
+  /**
+   * OpenRouter reasoning detail entries (opaque provider payload).
+   * Must be preserved on tool-continuation turns for Gemini-via-OpenRouter
+   * or the model loses its chain-of-thought between turns.
+   */
+  reasoning_details?: unknown[];
+  /**
+   * Google Gemini thought signature. Must be echoed back on continuation
+   * requests after a tool call; dropping it degrades reasoning silently.
+   */
+  thought_signature?: string;
+  /**
+   * Legacy OpenAI `function` role name field. Some older stored conversations
+   * and some OpenAI-compatible providers still attach this to tool/function
+   * messages; stripping it can break strict schema validation.
+   */
+  name?: string;
 }
 
 // Google-specific message format

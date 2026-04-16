@@ -298,12 +298,19 @@ export class LLMService {
     // CRITICAL: preserve tool_call_id on tool messages — without it, tool
     // result messages reach the provider unpaired and Azure (via OpenRouter)
     // rejects continuations with "Missing required parameter: 'input[N].call_id'".
+    // Also preserve reasoning_details / thought_signature / name — stripping
+    // these has caused (or is a latent risk for) silent degradations with
+    // Gemini-via-OpenRouter, Gemini direct, and legacy OpenAI function-role
+    // messages respectively. See docs/plans/canonical-message-pipeline-plan.md.
     const conversationMessages: ConversationMessage[] = messages.map(msg => {
       const m = msg as {
         role: string;
         content: string;
         tool_calls?: ConversationMessage['tool_calls'];
         tool_call_id?: string;
+        reasoning_details?: unknown[];
+        thought_signature?: string;
+        name?: string;
       };
       const out: ConversationMessage = {
         role: m.role as 'user' | 'assistant' | 'system' | 'tool',
@@ -313,7 +320,16 @@ export class LLMService {
         out.tool_calls = m.tool_calls;
       }
       if (m.tool_call_id) {
-        (out as ConversationMessage & { tool_call_id?: string }).tool_call_id = m.tool_call_id;
+        out.tool_call_id = m.tool_call_id;
+      }
+      if (Array.isArray(m.reasoning_details)) {
+        out.reasoning_details = m.reasoning_details;
+      }
+      if (m.thought_signature) {
+        out.thought_signature = m.thought_signature;
+      }
+      if (m.name) {
+        out.name = m.name;
       }
       return out;
     });
