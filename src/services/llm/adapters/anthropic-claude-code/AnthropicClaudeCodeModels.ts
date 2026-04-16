@@ -35,6 +35,22 @@ export const ANTHROPIC_CLAUDE_CODE_MODELS: ModelSpec[] = [
   },
   {
     provider: 'anthropic-claude-code',
+    name: 'Claude Opus 4.7',
+    apiName: 'claude-opus-4-7',
+    contextWindow: 200000,
+    maxTokens: 128000,
+    inputCostPerMillion: 0,
+    outputCostPerMillion: 0,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    provider: 'anthropic-claude-code',
     name: 'Claude Opus 4.6',
     apiName: 'claude-opus-4-6',
     contextWindow: 200000,
