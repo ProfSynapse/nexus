@@ -50,8 +50,6 @@ export class MessageBubble extends Component {
       component: this,
       getMessage: () => this.message,
       getElement: () => this.element,
-      getToolBubbleElement: () => null,
-      getTextBubbleElement: () => this.textBubbleElement,
       getImageBubbleElement: () => this.imageBubbleElement,
       setImageBubbleElement: (element) => {
         this.imageBubbleElement = element;

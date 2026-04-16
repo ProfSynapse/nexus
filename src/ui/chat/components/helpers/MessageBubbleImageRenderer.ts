@@ -7,8 +7,6 @@ interface MessageBubbleImageRendererDependencies {
   component: Component;
   getMessage: () => ConversationMessage;
   getElement: () => HTMLElement | null;
-  getToolBubbleElement: () => HTMLElement | null;
-  getTextBubbleElement: () => HTMLElement | null;
   getImageBubbleElement: () => HTMLElement | null;
   setImageBubbleElement: (element: HTMLElement | null) => void;
 }
@@ -54,16 +52,7 @@ export class MessageBubbleImageRenderer {
       return;
     }
 
-    const toolBubbleElement = this.deps.getToolBubbleElement();
-    const textBubbleElement = this.deps.getTextBubbleElement();
-
-    if (toolBubbleElement && textBubbleElement) {
-      hostElement.insertBefore(imageBubble, textBubbleElement);
-    } else if (toolBubbleElement) {
-      hostElement.appendChild(imageBubble);
-    } else {
-      hostElement.appendChild(imageBubble);
-    }
+    hostElement.appendChild(imageBubble);
 
     this.deps.setImageBubbleElement(imageBubble);
   }
