@@ -201,6 +201,50 @@ function coerceValue(raw: string, type: string): unknown {
   return raw;
 }
 
+/**
+ * Descriptor of a single CLI segment parsed for display.
+ * Registry-free: agent and tool are the CLI aliases as written by the LLM,
+ * not the canonical slugs the executor resolves them to. Use only for
+ * streaming-phase UI previews; live execution events emit canonical names.
+ */
+export interface CliDisplaySegment {
+  agent: string;
+  tool: string;
+  parameters: Record<string, unknown>;
+}
+
+/**
+ * Parse a `useTools` `tool:` CLI string for display purposes (accordion
+ * bubbles, status bar) without touching the agent registry. Returns one
+ * entry per comma-separated segment. Tokens inside a segment are: the
+ * agent alias, the tool slug, then `--flag value` pairs or positional
+ * values. Flags not followed by a value are treated as boolean-true.
+ */
+export function parseCliForDisplay(toolString: string): CliDisplaySegment[] {
+  return splitTopLevelSegments(toolString).flatMap(segment => {
+    const tokens = tokenize(segment);
+    if (tokens.length < 2) {
+      return [];
+    }
+    const [agent, tool, ...rest] = tokens;
+    const parameters: Record<string, unknown> = {};
+    for (let i = 0; i < rest.length; i += 1) {
+      const token = rest[i];
+      if (token.startsWith('--')) {
+        const key = token.slice(2);
+        const next = rest[i + 1];
+        if (next === undefined || next.startsWith('--')) {
+          parameters[key] = true;
+        } else {
+          parameters[key] = next;
+          i += 1;
+        }
+      }
+    }
+    return [{ agent, tool, parameters }];
+  });
+}
+
 export class ToolCliNormalizer {
   constructor(private agentRegistry: Map<string, IAgent>) {}
 

@@ -1,4 +1,5 @@
 import { getToolNameMetadata, normalizeToolName } from '../../../utils/toolNameUtils';
+import { parseCliForDisplay } from '../../../agents/toolManager/services/ToolCliNormalizer';
 import { formatToolDisplayLabel, formatToolGroupHeader, formatToolStepLabel } from './toolDisplayFormatter';
 
 export type ToolDisplayStatus = 'pending' | 'streaming' | 'queued' | 'executing' | 'completed' | 'failed' | 'skipped';
@@ -492,7 +493,20 @@ function buildUseToolGroup(toolCall: ToolCallLike): ToolDisplayGroup {
   const technicalName = normalizeTechnicalName(toolCall);
   const params = normalizeUseToolParams(toolCall);
   const strategy = params.strategy === 'parallel' ? 'parallel' : 'serial';
-  const calls = Array.isArray(params.calls) ? params.calls : [];
+  // New CLI contract: params.tool is a comma-separated command string.
+  // Legacy contract (WebLLM/Nexus, pre-refactor conversations): params.calls[].
+  const legacyCalls: UseToolCallLike[] = Array.isArray(params.calls)
+    ? params.calls.filter(isRecord)
+    : [];
+  const calls: UseToolCallLike[] = legacyCalls.length > 0
+    ? legacyCalls
+    : typeof params.tool === 'string'
+      ? parseCliForDisplay(params.tool).map(segment => ({
+          agent: segment.agent,
+          tool: segment.tool,
+          parameters: segment.parameters
+        }))
+      : [];
   let results = normalizeUseToolResults(toolCall.result as UseToolResultLike | undefined);
   const rawStatus = (toolCall.status) || '';
   const isCompleted = rawStatus === 'completed' || Boolean(toolCall.result && toolCall.success !== false);
@@ -511,7 +525,7 @@ function buildUseToolGroup(toolCall: ToolCallLike): ToolDisplayGroup {
 
   if (calls.length > 0) {
     for (let index = 0; index < calls.length; index += 1) {
-      const call = calls[index] as UseToolCallLike;
+      const call = calls[index];
       const result = results[index];
       const fullTechnicalName = getInnerCallTechnicalName(call, result) || technicalName;
       const paramsValue = parseParameterValue(call.params || call.parameters || {});
