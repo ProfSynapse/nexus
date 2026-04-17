@@ -457,13 +457,11 @@ export class MessageBubble extends Component {
     }
 
     const originalTitle = button.getAttribute('title') || '';
-    setIcon(button, 'check');
     button.setAttribute('title', 'Copied!');
     button.classList.add('copy-success');
 
     this.copyFeedbackTimeout = setTimeout(() => {
       this.copyFeedbackTimeout = null;
-      setIcon(button, 'copy');
       button.setAttribute('title', originalTitle);
       button.classList.remove('copy-success');
     }, 1500);
