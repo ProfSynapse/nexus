@@ -3,6 +3,7 @@
  */
 
 import { setIcon, Component } from 'obsidian';
+import { ManagedTimeoutTracker } from '../utils/ManagedTimeoutTracker';
 
 export interface UIStateControllerEvents {
   onSidebarToggled: (visible: boolean) => void;
@@ -11,21 +12,18 @@ export interface UIStateControllerEvents {
 export class UIStateController {
   private sidebarVisible = false;
   private onOpenSettings?: () => void;
-  private manualListeners: Array<{ element: HTMLElement; handler: () => void }> = [];
+  private timeouts: ManagedTimeoutTracker;
 
   constructor(
     private containerEl: HTMLElement,
     private events: UIStateControllerEvents,
-    private component?: Component
-  ) {}
+    private component: Component
+  ) {
+    this.timeouts = new ManagedTimeoutTracker(component);
+  }
 
   private registerClickHandler(element: HTMLElement, handler: () => void): void {
-    if (this.component) {
-      this.component.registerDomEvent(element, 'click', handler);
-    } else {
-      this.manualListeners.push({ element, handler });
-      element.addEventListener('click', handler);
-    }
+    this.component.registerDomEvent(element, 'click', handler);
   }
 
   /**
@@ -158,10 +156,7 @@ export class UIStateController {
       const errorEl = container.createDiv('chat-error');
       errorEl.textContent = message;
       
-      // Auto-remove after 5 seconds
-      setTimeout(() => {
-        errorEl.remove();
-      }, 5000);
+      this.timeouts.setTimeout(() => errorEl.remove(), 5000);
     }
   }
 
@@ -208,13 +203,7 @@ export class UIStateController {
     }
   }
 
-  /**
-   * Clean up event listeners
-   */
   cleanup(): void {
-    for (const { element, handler } of this.manualListeners) {
-      element.removeEventListener('click', handler);
-    }
-    this.manualListeners = [];
+    // Event listeners are cleaned up via component.registerDomEvent on Component teardown.
   }
 }
