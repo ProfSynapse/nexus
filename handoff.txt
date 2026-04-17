@@ -1,0 +1,10 @@
+HANDOFF:
+1. Produced:
+   - Created `src/ui/chat/constants/thinkingWords.ts` with the list of 45 words and icon substitutions.
+   - Created `src/ui/chat/components/ThinkingLoader.ts` representing the loader using `registerInterval` and `isDisposed` checks for async operations, including the safe try-catch for `setIcon`.
+   - Updated `src/ui/chat/components/MessageBubble.ts` by removing old tool rendering structures.
+2. Key decisions:
+   - Used `registerInterval` consistently to prevent dangling loops.
+   - Simplified `MessageBubble` significantly by tearing out dead legacy code related to the tool bubble.
+3. Areas of uncertainty:
+   - [LOW] Precise integration into `MessageBubble.ts`: It might need further tuning by the next frontend dev.

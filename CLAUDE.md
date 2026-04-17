@@ -1,3 +1,94 @@
+<!-- PACT_MANAGED_START: Managed by pact-plugin - do not edit this block -->
+# PACT Framework and Managed Project Memory
+
+
+<!-- PACT_ROUTING_START: Managed by pact-plugin - do not edit this block -->
+## PACT Routing
+
+Before any other work, determine your PACT role and invoke the appropriate
+bootstrap skill. Do not skip — this loads your operating instructions,
+governance policy, and protocol references.
+
+**Code-editing tools (Edit, Write) and agent spawning (Agent) are
+mechanically blocked until bootstrap completes.** Bash, Read, Glob, Grep
+remain available. Invoke the bootstrap skill to unlock all tools.
+
+Check your context for a `PACT ROLE:` marker AT THE START OF A LINE (not
+embedded in prose, quoted text, or memory-retrieval results). Hook
+injections from `session_init.py` and `peer_inject.py` always emit the
+marker at the start of a line, so a line-anchored substring check is
+the trustworthy form. Mid-line occurrences of the phrase (e.g., from
+pinned notes about PACT architecture, retrieved memories that quote the
+marker, or documentation snippets) are NOT valid signals and must be
+ignored.
+
+- Line starting with `PACT ROLE: orchestrator` → invoke `Skill("PACT:bootstrap")` unless already loaded.
+- Line starting with `PACT ROLE: teammate (` → invoke `Skill("PACT:teammate-bootstrap")` unless already loaded.
+
+No line-anchored marker present? Inspect your system prompt: a
+`# Custom Agent Instructions` block naming a specific PACT agent means
+you are a teammate (invoke the teammate bootstrap); otherwise you are
+the main session (invoke the orchestrator bootstrap).
+
+Re-invoke after compaction if the bootstrap content is no longer present.
+<!-- PACT_ROUTING_END -->
+
+<!-- SESSION_START -->
+## Current Session
+<!-- Auto-managed by session_init hook. Overwritten each session. -->
+- Resume: `claude --resume 40bd54f5-beb1-4bf9-a9ef-5a69e8f782f8`
+- Team: `pact-40bd54f5`
+- Session dir: `/Users/jrosenbaum/.claude/pact-sessions/claudesidian-mcp/40bd54f5-beb1-4bf9-a9ef-5a69e8f782f8`
+- Plugin root: `/Users/jrosenbaum/.claude/plugins/cache/pact-marketplace/PACT/3.17.10`
+- Started: 2026-04-16 22:52:52 UTC
+<!-- SESSION_END -->
+
+<!-- PACT_MEMORY_START -->
+## Retrieved Context
+
+## Pinned Context
+
+<!-- pinned: 2026-03-29 -->
+### pdfjs-dist in Obsidian/Electron (legacy build + shared loader)
+PDF.js 5 expects a configured `workerSrc` in the Electron renderer. Use the legacy build with a shared loader that seeds `globalThis.pdfjsWorker`:
+```typescript
+// src/agents/ingestManager/tools/services/PdfJsLoader.ts
+const [pdfjsLib, pdfjsWorker] = await Promise.all([
+  import('pdfjs-dist/legacy/build/pdf.mjs'),
+  import('pdfjs-dist/legacy/build/pdf.worker.mjs'),
+]);
+if (!globalThis.pdfjsWorker) globalThis.pdfjsWorker = pdfjsWorker;
+```
+Use `loadPdfJs()` from `PdfJsLoader.ts` in both `PdfTextExtractor.ts` and `PdfPageRenderer.ts`. Do NOT use `import('pdfjs-dist')` directly — the main entry fails in Electron without a worker URL.
+
+<!-- pinned: 2026-04-05 -->
+### Shared Transcription Infrastructure
+Transcription extracted from ingest into shared service at `src/services/llm/TranscriptionService.ts`. Five providers fully integrated:
+- **OpenAI** (`whisper-1`, `gpt-4o-transcribe`) — word timestamps via `verbose_json`
+- **Groq** — word timestamps, fastest inference
+- **Mistral** (`voxtral-mini`) — word timestamps + diarization
+- **Deepgram** — word timestamps, utterances, diarization, keyword biasing
+- **AssemblyAI** — word timestamps, speaker labels
+
+Adapters at `src/services/llm/adapters/{provider}/`. Types at `src/services/llm/types/VoiceTypes.ts`.
+⚠️ Ingest shim at `src/agents/ingestManager/tools/services/TranscriptionService.ts` strips word-level data — audio editor must call shared service directly.
+- **Drag-drop file path**: Browser `File.name` is basename only — use `vault.getFiles().find(f => f.name === file.name)` to get vault-relative path in `handleIngestFiles`.
+
+## Working Memory
+<!-- Auto-managed by pact-memory skill. Last 3 memories shown. Full history searchable via pact-memory skill. -->
+
+### 2026-04-16 13:00
+**Context**: Orchestrator framing error during PR #142 peer review synthesis in session pact-3d1e653b (2026-04-16). The architect reviewer explicitly deferred 2 findings to Future tier with the qualifier 'out of scope for PR #142' (items: ContextPreservationService divergent ConversationMessage + 3-site call_synth_ id duplication). When the orchestrator synthesized the review for the user, the 'out of scope' qualifier was dropped and the findings were re-presented at 'Address now' tier. The user caught the drift and asked for this to be saved as feedback so future review-synthesis work preserves severity-tier qualifiers verbatim from the reviewer.
+**Goal**: Establish a durable norm: when synthesizing reviewer findings for the user, preserve severity-tier qualifiers exactly as the reviewer wrote them. Do not silently re-escalate Future-tier findings to 'Address now' tier. If synthesis requires compressing multiple findings, keep the original tier labels and qualifying phrases (e.g., 'out of scope for this PR', 'Phase 3 candidate', 'deferred pending X') verbatim. This memory is cross-agent — any agent doing review synthesis or finding triage should apply this norm.
+**Decisions**: When synthesizing reviews for user, preserve severity-tier qualifiers verbatim, When orchestrator disagrees with reviewer's tier, flag explicitly to user
+**Lessons**: Severity tiers are semantic contracts, not editorial shorthand. When a reviewer writes 'Future — out of scope for PR #142', those 4 words encode a deliberate triage decision: the reviewer has determined the finding is real but should not block this PR. Dropping 'out of scope for PR #142' and promoting the finding to 'Address now' overrides the reviewer's judgment without consulting them. This is a form of silent disagreement resolution, which violates the Communication Charter's constructive-challenge norm (disagree with evidence, don't silently override)., Synthesis failure mode: orchestrator reads architect review -> sees 5 findings -> summarizes to user as 5 Minor items -> user sees uniform tier and assumes all need addressing now. The reviewer's tier labels were the signal that 2 of the 5 were Future, not Minor. Preserving the labels would have made the triage decision visible to the user., Fix pattern: when synthesizing reviews for user, preserve the reviewer's exact tier label (Blocking / Minor / Future / Doc-only) and any qualifying clause ('out of scope for PR #X', 'Phase N candidate', 'deferred pending Y'). If the synthesis compresses items, use a structure like 'Blocking: 1, Minor: 5, Future: 3, Doc-only: 1 — details below' rather than flattening to a single list. The user can then ask to expand any tier., Broader principle: the orchestrator is a messenger between reviewer and user, not a re-judge. If the orchestrator thinks a Future finding should actually be addressed now, the correct move is to flag that to the user EXPLICITLY: 'architect tiered X as Future but I'd recommend addressing now because Y — thoughts?' This makes the disagreement visible instead of hiding it in a silent re-tiering., This applies beyond review synthesis — any time an orchestrator or synthesizing agent summarizes another agent's tiered/prioritized output for the user, the priority labels must survive the compression. This includes uncertainty tiers (HIGH/MEDIUM/LOW), blocker status, phase deferrals, and scope qualifiers. Compression is fine; re-labeling is not.
+**Reasoning chains**: Architect tiers a finding Future with 'out of scope for PR #142' qualifier -> orchestrator synthesizes review -> qualifier dropped -> finding appears in 'Address now' tier -> user sees it as work to do -> reviewer's deliberate deferral is silently overridden -> fix: preserve tier + qualifier verbatim, Severity tiers are semantic contracts -> dropping them is silent re-judgment -> silent re-judgment violates constructive-challenge norm (disagree with evidence, don't hide the disagreement) -> fix: preserve tiers, flag orchestrator disagreements explicitly
+**Agreements**: Severity tiers + qualifying clauses are preserved verbatim when synthesizing reviews for user, Orchestrator disagreements with reviewer tiers are flagged explicitly, not silently re-tiered
+**Memory ID**: f561dbc9ae030d7b41adcb82283f902e
+<!-- PACT_MEMORY_END -->
+
+<!-- PACT_MANAGED_END -->
+
 # Claude Code Context Document
 Last Updated: 2026-04-06
 
@@ -140,11 +231,30 @@ None.
 
 ### Current Work
 
-**PR #97 Review (Midway65)** — Community PR "Improvements to the chat panel". 37 files, +2058/-1702. Auditing in progress. UI bug fixes are legitimate; action bar feature (Insert/Append/Create File) rejected as UI noise. Schema migrations v12-v19 are fork-specific cleanup that should not be merged. Key findings:
-- 3 confirmed chat UI bugs: click-blocking invisible pill, text not selectable, copy returns wrong branch content
-- ProviderHttpClient timeout fix and `require()` switch are real fixes but undisclosed in PR scope
-- Orphaned JSONL pruning at startup inverts JSONL-as-source-of-truth assumption — risky
-- Massive whitespace noise across service/database files inflates diff
+**Glass Chrome Audit + Remediation (2026-04-16)** — Post-merge audit of PR #131 + followups + 5 remediation bundles shipped in parallel waves. Reports: `docs/review/glass-chrome-{architect,frontend,qa,test}-review.md`. Triage walked 31 findings one-at-a-time; 23 queued, 3 skipped (QA M3/M4/M5), 1 Future overridden (Frontend F1), ~11 deferred as Future with qualifiers preserved.
+
+**Remediation PRs shipped**:
+- **PR #145** — Bundle A: strip dead `addEventListener` fallbacks in ToolInspectionModal + MessageBranchNavigator + BranchHeader (Architect M3 + Frontend M5/M6/D1).
+- **PR #146** — Bundle G: test coverage for `ToolCallStateManager` + `MessageBubbleStateResolver` + `ToolEventCoordinator` (raised threshold 70/60 → 98/82) + tightened 2 integration-test fake-pass risks.
+- **PR #147** — Wave 4: delete vestigial `getToolBubbleElement` + plug `ThinkingLoader` into Component tree via `addChild` + tie `ChatLayoutBuilder` MutationObserver cleanup to Component lifecycle (Architect M1 + Frontend M2/M9).
+- **PR #148** — Wave 3: finish faux-glass pivot (strip 5 `backdrop-filter` sites, keep modal overlay as intentional carve-out, rewrite `styles.css:14-31`) + a11y sweep (`:focus-visible` on glass icon buttons, `aria-live` on `.tool-status-slot`, agent-slot overflow clip, opaque textarea, compacting-state pulse, WCAG comment fix, `ToolStatusEntry` dedup, `--chat-input-height` CSS var).
+- **PR #149** — Bundle D: extract `ManagedTimeoutTracker` helper + migrate 5 fire-and-forget setTimeout sites + promote `AgentStatusMenu`/`UIStateController` `component` params to required (Frontend M1/M3/M4/M7 + original 8d881e6d pattern DRY'd).
+
+**Pending**: Wave 5 (#17 extract `ChatKeyboardViewportController` from ChatInput + F2 cascade refactor + #23 rAF-throttle ToolInspectionModal scroll handler) — dispatching now.
+
+**Session lessons pinned for future dispatches**:
+- **CRLF/LF churn**: `ChatInput.ts`, `NexusLoadingController.ts` have mixed CRLF+LF line endings; Edit tool LF-normalization produces massive whitespace churn. Fix: byte-level Python patch preserving line endings. Coders must detect before editing and STOP on first bad diff rather than retry.
+- **Reassign via fresh Agent spawn**: SendMessage reassignments across worktrees don't force `cd`, resulting in commits landing on wrong branch (hit on coder-invariant Wave 4 — recovered via cherry-pick + reset).
+- **Shut down teammates at PR open**: idle hooks turn rest state into self-prodding work loops. Shut down as soon as their PR is live.
+
+**Canonical Message Pipeline Refactor** — `docs/plans/canonical-message-pipeline-plan.md`. 4-phase plan to eliminate lossy `.map()` remap sites between storage and provider:
+- **Phase 1+2 (DONE, PR #142 merged as `08b55cd9`)**: 11 commits. Phase 1 fixed Azure `Missing required parameter: 'input[N].call_id'` (root cause: `LLMService.generateResponseStream` remap stripped `tool_call_id`). Phase 2 preserved 3 latent fields (`reasoning_details`, `thought_signature`, `name`). Review remediation: 1 Blocking (removed leaky OpenRouter `console.log`), 8 Minor + 5 Future addressed across 4 parallel coders + 1 test-engineer. New helper `src/services/llm/utils/toolCallId.ts` (uses `crypto.randomUUID`). Foreign-id regex relaxed to `/^call_/`. Logger.logToConsole switch bug fixed (debug/info/warn now wired). Repro test moved to `tests/debug/` with env-gate.
+- **Phase 3 (next, ~3-5h, medium risk)**: Drop the redundant `LLMService.generateResponseStream` remap entirely. Accept `ConversationMessage[]` directly. M7 widening already removed the parameter-type lie that made this look harder.
+- **Phase 4 (later, 1-2 days)**: Single canonical message type. Worth doing when adding next provider (bedrock direct, vertex AI direct). F1 (storage vs wire `ConversationMessage` distinction) already documented at `ContextPreservationService.ts:16`.
+
+**LLM Eval Harness** (`tests/eval/`, ~3500 lines, plan at `docs/plans/llm-eval-harness-plan.md`):
+- 27/30 pass (90%) with multi-model coverage: Sonnet 4.6 (97%), GPT 5.4-mini (94%), GPT 5.4 (77%), Gemini 3 Flash (46%)
+- **Next — Headless Agent Stack**: Replace fake tool schemas with real agents on TestVault. Plan in `docs/plans/`.
 
 **Issue #88 — CustomPromptStorageService dual-write desync** — Fix on `fix/issue-88-dual-write-desync` branch (worktree). Committed (3447d8c5), awaiting PR.
 
@@ -290,62 +400,9 @@ Key files: `src/ui/chat/components/suggesters/`, `MessageEnhancer.ts`, `SystemPr
 - **Storage**: Branches as JSONL events, SQLite v11 schema (4 task tables added in v9, workflow columns in v10, archive flag in v11), tool names use `agent_tool` format.
 - **Apps & Vault Access**: App agents that produce files must have vault access wired through `BaseAppAgent`. Use `vault.createBinary()` for binary outputs (audio, images) and `vault.create()` for text. Always ensure parent directories exist before writing.
 
-## Pinned Context
-
-<!-- pinned: 2026-03-29 -->
-### pdfjs-dist in Obsidian/Electron (legacy build + shared loader)
-PDF.js 5 expects a configured `workerSrc` in the Electron renderer. Use the legacy build with a shared loader that seeds `globalThis.pdfjsWorker`:
-```typescript
-// src/agents/ingestManager/tools/services/PdfJsLoader.ts
-const [pdfjsLib, pdfjsWorker] = await Promise.all([
-  import('pdfjs-dist/legacy/build/pdf.mjs'),
-  import('pdfjs-dist/legacy/build/pdf.worker.mjs'),
-]);
-if (!globalThis.pdfjsWorker) globalThis.pdfjsWorker = pdfjsWorker;
-```
-Use `loadPdfJs()` from `PdfJsLoader.ts` in both `PdfTextExtractor.ts` and `PdfPageRenderer.ts`. Do NOT use `import('pdfjs-dist')` directly — the main entry fails in Electron without a worker URL.
-
-<!-- pinned: 2026-04-05 -->
-### Shared Transcription Infrastructure
-Transcription extracted from ingest into shared service at `src/services/llm/TranscriptionService.ts`. Five providers fully integrated:
-- **OpenAI** (`whisper-1`, `gpt-4o-transcribe`) — word timestamps via `verbose_json`
-- **Groq** — word timestamps, fastest inference
-- **Mistral** (`voxtral-mini`) — word timestamps + diarization
-- **Deepgram** — word timestamps, utterances, diarization, keyword biasing
-- **AssemblyAI** — word timestamps, speaker labels
-
-Adapters at `src/services/llm/adapters/{provider}/`. Types at `src/services/llm/types/VoiceTypes.ts`.
-⚠️ Ingest shim at `src/agents/ingestManager/tools/services/TranscriptionService.ts` strips word-level data — audio editor must call shared service directly.
-- **Drag-drop file path**: Browser `File.name` is basename only — use `vault.getFiles().find(f => f.name === file.name)` to get vault-relative path in `handleIngestFiles`.
-
-## Working Memory
-<!-- Auto-managed by pact-memory skill. Last 3 memories shown. Full history searchable via pact-memory skill. -->
-
-### 2026-04-06 22:09
-**Context**: Fixed a critical crash-on-launch bug for Nexus (claudesidian-mcp) on Obsidian mobile. The plugin loaded fine on desktop but immediately crashed on mobile (iOS/Android) because Obsidian mobile runs in a JavaScript-only environment WITHOUT Node.js built-ins. The crash occurred during plugin initialization — before any runtime guards like Platform.isDesktop could execute — because ES module top-level imports are evaluated at module load time. This affected 14 files across settings, services, utils, server transports, and agents. The fix introduced a shared desktopRequire() utility and converted all problematic imports to dynamic import() or lazy require() patterns. This is a fundamental Obsidian plugin development constraint that applies to ALL plugins targeting both desktop and mobile.
-**Goal**: Establish institutional knowledge about the 'mobile-hostile imports' pattern so that future development on claudesidian-mcp (and any Obsidian plugin work) avoids introducing top-level imports of Node.js-dependent packages, which silently work on desktop but crash on mobile.
-**Decisions**: Use dynamic import() for npm packages with Node.js internals instead of top-level imports, Created shared desktopRequire() utility at src/utils/desktopRequire.ts
-**Lessons**: On Obsidian mobile, Node.js built-ins do NOT exist: fs, path, http, crypto, events, stream, net, os, url, process, buffer are all unavailable. Any npm package that transitively depends on these will crash if imported at the top level during plugin initialization., ES module top-level imports execute during module initialization BEFORE any runtime guard (like Platform.isDesktop) can run. This means even code like 'if (Platform.isDesktop) { useNodeFeature() }' will crash if the import at the top of the file pulls in Node.js dependencies — the import itself fails before the guard is reached., Three categories of mobile-hostile imports were identified: (1) Direct Node.js imports in our code (e.g., import * as nodeFs from 'node:fs', import { EventEmitter } from 'events'), (2) npm packages with transitive Node.js deps (mammoth→jszip→stream/events/fs, xlsx→stream, jszip→stream/events, yaml→process/buffer), (3) Desktop-only features that should never load on mobile (OAuth server, CLI utils, MCP transports, ingestion agents, composer agent)., The fix for direct Node.js imports is to use a desktopRequire() helper that wraps globalThis.require for lazy loading, or replace with Obsidian equivalents (e.g., Node's EventEmitter → Obsidian's Events class which provides on/off/trigger)., The fix for npm packages with Node.js internals is to convert top-level 'import X from "package"' to dynamic 'await import("package")' inside async functions. This defers module loading to runtime when the feature is actually used, avoiding the crash during plugin init., A shared utility was created at src/utils/desktopRequire.ts that wraps the globalThis.require pattern for ESLint compatibility. This is the canonical way to lazily require Node.js modules in this codebase., When adding ANY new npm dependency to an Obsidian plugin, check its dependency tree for Node.js built-in usage. Tools like 'npm ls' or checking the package's package.json for 'node:' imports can reveal transitive Node.js dependencies that will break mobile.
-**Memory ID**: c1bc3267ec04afc02b1cb6df52f6f916
-
-### 2026-04-06 21:10
-**Summary**: Orchestration retrospective for conversation list pagination and search feature (PR #99) in claudesidian-mcp v5.6.8.
-
-### 2026-04-06 21:06
-**Summary**: PR #99 peer review for conversation list pagination and search feature in claudesidian-mcp.
 ## Current Session
 <!-- Auto-managed by session_init hook. Overwritten each session. -->
 - Resume: `claude --resume a89883a5-9570-4c8e-a9b5-b53f8ae4ad39`
 - Team: `pact-a89883a5`
 - Started: 2026-04-06 20:25:34 UTC
-<!-- SESSION_END -->
-
-<!-- SESSION_START -->
-## Current Session
-<!-- Auto-managed by session_init hook. Overwritten each session. -->
-- Resume: `claude --resume c5de3df6-8deb-4276-8c92-e89422ce357f`
-- Team: `pact-c5de3df6`
-- Session dir: `/Users/jrosenbaum/.claude/pact-sessions/claudesidian-mcp/c5de3df6-8deb-4276-8c92-e89422ce357f`
-- Plugin root: `/Users/jrosenbaum/.claude/plugins/marketplaces/pact-marketplace/pact-plugin`
-- Started: 2026-04-08 11:05:59 UTC
 <!-- SESSION_END -->

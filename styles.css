@@ -1029,7 +1029,7 @@ body.theme-light .message-content {
 }
 
 .message-container.message-user .message-action-btn {
-    transform: translateY(4px);
+    transform: translateY(8px);
 }
 
 /* Assistant row: full width, padded to match content inset, left-aligned.
@@ -3290,9 +3290,7 @@ a:hover {
   display: flex;
   align-items: center;
   gap: 4px;
-  padding-right: 8px;
-  margin-right: 8px;
-  border-right: 1px solid var(--background-modifier-border);
+  margin-left: -6px;
 }
 
 .message-branch-navigator-hidden {
