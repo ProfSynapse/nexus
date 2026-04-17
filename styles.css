@@ -5617,8 +5617,8 @@ body.is-mobile .chat-send-button {
 
 /* Message action buttons - 44px touch targets for phones */
 body.is-mobile .message-action-btn {
-    width: 44px;
-    height: 44px;
+    width: 32px;
+    height: 32px;
     padding: 0;
     --icon-size: 16px;
 }
