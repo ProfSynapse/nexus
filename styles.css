@@ -3328,6 +3328,14 @@ a:hover {
   color: var(--text-faint);
 }
 
+/* Branch nav buttons sit as a tight cluster around the indicator — shrink to
+   icon-size so the 12px chevron isn't dwarfed by touch-target padding. */
+.message-action-btn.message-branch-prev,
+.message-action-btn.message-branch-next {
+  width: 20px;
+  height: 20px;
+}
+
 /* Dark mode adjustments */
 .theme-dark .message-branch-navigator {
   border-right-color: var(--background-modifier-border-hover);
