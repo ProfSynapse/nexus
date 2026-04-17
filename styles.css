@@ -965,7 +965,7 @@ body.theme-light .message-content {
 }
 
 .message-container.message-assistant {
-    margin-top: 1.1rem;
+    margin-top: 1.7rem;
 }
 
 .message-header {
@@ -1038,7 +1038,7 @@ body.theme-light .message-content {
 .message-container.message-assistant .message-actions-external {
     width: 100%;
     box-sizing: border-box;
-    padding: 0 1.08rem;
+    padding: 0 1.4rem;
 }
 
 /* Action button — ported from .mock-device--glass .minimal-action-btn
