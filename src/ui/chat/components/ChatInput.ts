@@ -12,6 +12,7 @@ import { MessageEnhancement } from './suggesters/base/SuggesterInterfaces';
 import { MessageEnhancer } from '../services/MessageEnhancer';
 import { isMobile, isIOS } from '../../../utils/platform';
 import { ChatVoiceInputController, ChatVoiceInputState } from '../controllers/ChatVoiceInputController';
+import { ManagedTimeoutTracker } from '../utils/ManagedTimeoutTracker';
 
 export class ChatInput {
   private element: HTMLElement | null = null;
@@ -33,6 +34,7 @@ export class ChatInput {
   private nativeKeyboardOffset = 0;
   private keyboardViewportBaselineHeight = 0;
   private keyboardEditorHeight = 0;
+  private timeouts: ManagedTimeoutTracker | null = null;
 
   constructor(
     private container: HTMLElement,
@@ -47,6 +49,9 @@ export class ChatInput {
     private getHasConversation?: () => boolean,
     private component?: Component
   ) {
+    if (component) {
+      this.timeouts = new ManagedTimeoutTracker(component);
+    }
     this.render();
   }
 
@@ -128,10 +133,15 @@ export class ChatInput {
 
     // iOS: keep the focused input visible while the keyboard animates.
     const focusHandler = () => {
-      setTimeout(() => {
+      const run = () => {
         this.updateKeyboardViewportOffset();
         this.inputElement?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      }, 300);
+      };
+      if (this.timeouts) {
+        this.timeouts.setTimeout(run, 300);
+      } else {
+        setTimeout(run, 300);
+      }
     };
 
     // Register events with component for auto-cleanup

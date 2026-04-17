@@ -7,15 +7,18 @@
  */
 
 import { Component } from 'obsidian';
+import { ManagedTimeoutTracker } from '../utils/ManagedTimeoutTracker';
 
 /**
  * Controller for Nexus/WebLLM and database loading overlays
  */
 export class NexusLoadingController extends Component {
   private overlayEl: HTMLElement | null = null;
+  private timeouts: ManagedTimeoutTracker;
 
   constructor(private containerEl: HTMLElement) {
     super();
+    this.timeouts = new ManagedTimeoutTracker(this);
     this.findOverlayElement();
   }
 
@@ -74,8 +77,7 @@ export class NexusLoadingController extends Component {
 
     this.overlayEl.removeClass('is-visible');
 
-    // Wait for transition then hide
-    setTimeout(() => {
+    this.timeouts.setTimeout(() => {
       const overlayEl = this.overlayEl;
       if (!overlayEl) return;
 
@@ -140,7 +142,7 @@ export class NexusLoadingController extends Component {
     if (!this.overlayEl) return;
 
     this.overlayEl.removeClass('is-visible');
-    setTimeout(() => {
+    this.timeouts.setTimeout(() => {
       const overlayEl = this.overlayEl;
       if (!overlayEl) return;
 

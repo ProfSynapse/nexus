@@ -11,6 +11,7 @@
  */
 
 import { setIcon, Component, Events } from 'obsidian';
+import { ManagedTimeoutTracker } from '../utils/ManagedTimeoutTracker';
 import type { SubagentExecutor } from '../../../services/chat/SubagentExecutor';
 import type { SubagentExecutorEvents } from '../../../types/branch/BranchTypes';
 
@@ -74,16 +75,17 @@ export class AgentStatusMenu {
   private eventRef: ReturnType<Events['on']> | null = null;
   private hasShownSuccess = false; // Track if green state was shown
   private isShowingSpinner = false; // Track current icon state
-  private manualClickHandler: (() => void) | null = null;
-  private manualClickTarget: HTMLElement | null = null;
+  private timeouts: ManagedTimeoutTracker;
 
   constructor(
     private container: HTMLElement,
     private subagentExecutor: SubagentExecutor | null,
     private callbacks: AgentStatusMenuCallbacks,
-    private component?: Component,
+    private component: Component,
     private insertBefore?: HTMLElement // Insert before this element (e.g., settings button)
-  ) {}
+  ) {
+    this.timeouts = new ManagedTimeoutTracker(component);
+  }
 
   /**
    * Create and render the status menu button
@@ -110,17 +112,10 @@ export class AgentStatusMenu {
     this.badgeEl = badge;
 
     // Click handler - clears success state when modal opens
-    const clickHandler = () => {
+    this.component.registerDomEvent(button, 'click', () => {
       this.clearSuccessState();
       this.callbacks.onOpenModal();
-    };
-    if (this.component) {
-      this.component.registerDomEvent(button, 'click', clickHandler);
-    } else {
-      this.manualClickHandler = clickHandler;
-      this.manualClickTarget = button;
-      button.addEventListener('click', clickHandler);
-    }
+    });
 
     this.element = button;
 
@@ -236,26 +231,16 @@ export class AgentStatusMenu {
     if (!this.element) return;
 
     this.element.addClass('nexus-agent-completion-pulse');
-    setTimeout(() => {
-      this.element?.removeClass('nexus-agent-completion-pulse');
-    }, 1000);
+    this.timeouts.setTimeout(() => this.element?.removeClass('nexus-agent-completion-pulse'), 1000);
   }
 
   /**
    * Cleanup
    */
   cleanup(): void {
-    // Unsubscribe from events
     if (this.eventRef) {
       getSubagentEventBus().offref(this.eventRef);
       this.eventRef = null;
-    }
-
-    // Remove manually attached click handler if component was not provided
-    if (this.manualClickHandler && this.manualClickTarget) {
-      this.manualClickTarget.removeEventListener('click', this.manualClickHandler);
-      this.manualClickHandler = null;
-      this.manualClickTarget = null;
     }
 
     this.element?.remove();
