@@ -1,28 +1,12 @@
-/**
- * MessageEditController - Manages message edit mode functionality
- * Location: /src/ui/chat/controllers/MessageEditController.ts
- *
- * This class is responsible for:
- * - Entering edit mode with textarea interface
- * - Managing edit controls (save/cancel)
- * - Handling keyboard shortcuts (ESC to cancel)
- * - Exiting edit mode and restoring original content
- *
- * Used by MessageBubble to enable editing of user messages,
- * following the Controller pattern for state management.
- */
-
 import { ConversationMessage } from '../../../types/chat/ChatTypes';
-import { Component } from 'obsidian';
+import { Component, setIcon } from 'obsidian';
 
 export class MessageEditController {
-  /**
-   * Enter edit mode for a message
-   */
   static handleEdit(
     message: ConversationMessage,
     element: HTMLElement | null,
     onEdit: (messageId: string, newContent: string) => void,
+    onRetry: (messageId: string) => void,
     component?: Component
   ): void {
     if (!element) return;
@@ -30,69 +14,88 @@ export class MessageEditController {
     const contentDiv = element.querySelector('.message-bubble .message-content');
     if (!contentDiv) return;
 
+    if (!component) {
+      throw new Error('MessageEditController requires a component to register DOM events');
+    }
+
+    // Find the sibling actions container
+    const actionsContainerEl = element.querySelector('.message-actions-external');
+    const actionsContainer = actionsContainerEl instanceof HTMLElement ? actionsContainerEl : null;
+
+    // Hide existing action buttons and track them for restore
+    const originalChildren: HTMLElement[] = [];
+    if (actionsContainer) {
+      Array.from(actionsContainer.children).forEach(child => {
+        if (child instanceof HTMLElement) {
+          child.addClass('is-hidden');
+          originalChildren.push(child);
+        }
+      });
+    }
+
+    // Append ✕ (cancel) and ✓ (confirm) buttons into the actions container
+    const cancelBtn = actionsContainer
+      ? actionsContainer.createEl('button', {
+          cls: 'message-action-btn clickable-icon message-edit-cancel-btn',
+          attr: { title: 'Cancel edit', 'aria-label': 'Cancel edit' }
+        })
+      : null;
+    if (cancelBtn) setIcon(cancelBtn, 'x');
+
+    const confirmBtn = actionsContainer
+      ? actionsContainer.createEl('button', {
+          cls: 'message-action-btn clickable-icon message-edit-confirm',
+          attr: { title: 'Save and retry', 'aria-label': 'Save and retry' }
+        })
+      : null;
+    if (confirmBtn) setIcon(confirmBtn, 'check');
+
     // Create textarea for editing
     const textarea = document.createElement('textarea');
     textarea.className = 'message-edit-textarea';
     textarea.value = message.content;
 
-    // Create edit controls
-    const editControls = document.createElement('div');
-    editControls.className = 'message-edit-controls';
-
-    const saveBtn = editControls.createEl('button', {
-      text: 'Save',
-      cls: 'message-edit-save'
-    });
-
-    const cancelBtn = editControls.createEl('button', {
-      text: 'Cancel',
-      cls: 'message-edit-cancel'
-    });
-
-    // Clone original DOM for cancel/restore (avoids innerHTML capture)
+    // Clone original DOM for cancel restore
     const originalClone = contentDiv.cloneNode(true) as Element;
 
-    // Replace content with edit interface
     contentDiv.empty();
     contentDiv.appendChild(textarea);
-    contentDiv.appendChild(editControls);
-
-    // Focus textarea
     textarea.focus();
 
-    // Save handler
-    const saveHandler = () => {
+    const exitEditMode = () => {
+      originalChildren.forEach(el => { el.removeClass('is-hidden'); });
+      cancelBtn?.remove();
+      confirmBtn?.remove();
+      MessageEditController.exitEditMode(contentDiv, originalClone);
+    };
+
+    const confirmHandler = () => {
       const newContent = textarea.value.trim();
       if (newContent && newContent !== message.content) {
         onEdit(message.id, newContent);
       }
-      MessageEditController.exitEditMode(contentDiv, originalClone);
+      exitEditMode();
+      onRetry(message.id);
     };
 
-    // Cancel handler
     const cancelHandler = () => {
-      MessageEditController.exitEditMode(contentDiv, originalClone);
+      exitEditMode();
     };
 
-    // ESC key handler
     const keydownHandler = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        MessageEditController.exitEditMode(contentDiv, originalClone);
+        exitEditMode();
+      } else if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        confirmHandler();
       }
     };
 
-    if (!component) {
-      throw new Error('MessageEditController requires a component to register DOM events');
-    }
-
-    component.registerDomEvent(saveBtn, 'click', saveHandler);
-    component.registerDomEvent(cancelBtn, 'click', cancelHandler);
+    if (confirmBtn) component.registerDomEvent(confirmBtn, 'click', confirmHandler);
+    if (cancelBtn) component.registerDomEvent(cancelBtn, 'click', cancelHandler);
     component.registerDomEvent(textarea, 'keydown', keydownHandler);
   }
 
-  /**
-   * Exit edit mode and restore original content
-   */
   static exitEditMode(contentDiv: Element, originalClone: Element): void {
     contentDiv.replaceChildren(...Array.from(originalClone.childNodes).map(n => n.cloneNode(true)));
   }

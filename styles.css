@@ -1009,7 +1009,6 @@ body.theme-light .message-content {
     box-shadow: none;
     opacity: 1;
     pointer-events: auto;
-    width: fit-content;
 }
 
 /* User row: align self left, full width, padded to match bubble inset,
@@ -1070,57 +1069,48 @@ body.theme-light .message-content {
     color: var(--text-normal);
 }
 
+.message-action-btn:active,
+.message-action-btn:focus-visible {
+    background: transparent;
+}
+
+.message-action-btn:active {
+    color: var(--interactive-accent);
+}
+
+.message-action-btn:focus-visible {
+    outline: 2px solid var(--interactive-accent);
+    outline-offset: 1px;
+}
+
 .message-action-btn.copy-success {
     color: var(--text-success);
+}
+
+.message-action-btn.message-edit-confirm:not(:hover):not(:active) {
+    color: var(--interactive-accent);
+}
+
+.message-action-btn.is-hidden {
+    display: none;
 }
 
 .message-edit-textarea {
     width: 100%;
     min-height: 60px;
-    padding: 0.5rem;
-    border: 1px solid var(--background-modifier-border);
-    border-radius: 4px;
-    background: var(--background-primary);
-    color: var(--text-normal);
+    padding: 0.5rem 0.75rem;
+    background: transparent;
+    border: none;
+    color: inherit;
     font-family: inherit;
     font-size: inherit;
     resize: vertical;
 }
 
-.message-edit-controls {
-    display: flex;
-    gap: 0.5rem;
-    margin-top: 0.5rem;
-    justify-content: flex-end;
-}
-
-.message-edit-save,
-.message-edit-cancel {
-    padding: 0.4rem 0.8rem;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 0.9rem;
-    transition: background-color 0.2s;
-}
-
-.message-edit-save {
-    background: var(--interactive-accent);
-    color: var(--text-on-accent);
-    border: none;
-}
-
-.message-edit-save:hover {
-    background: var(--interactive-accent-hover);
-}
-
-.message-edit-cancel {
-    background: var(--background-secondary);
-    color: var(--text-normal);
-    border: 1px solid var(--background-modifier-border);
-}
-
-.message-edit-cancel:hover {
-    background: var(--background-modifier-hover);
+.message-edit-textarea:focus {
+    outline: 2px solid var(--interactive-accent);
+    outline-offset: 2px;
+    border-radius: 1.15rem;
 }
 
 /* Message content typography — ported from .mock-device--glass
@@ -5666,6 +5656,7 @@ body.is-mobile .message-container.message-assistant .message-actions-external {
     right: 0.25rem;
     padding: 0 0.78rem;
     justify-content: flex-start;
+    width: fit-content;
 }
 
 body.is-mobile .message-container.message-assistant .message-action-btn {
@@ -6963,16 +6954,6 @@ body.is-mobile .nexus-branch-task {
     display: none;
     width: 0;
     height: 0;
-}
-
-/* ------------------------------ */
-/* MESSAGE EDIT TEXTAREA          */
-/* ------------------------------ */
-
-.message-edit-textarea {
-    width: 100%;
-    min-height: 60px;
-    resize: vertical;
 }
 
 /* ------------------------------ */

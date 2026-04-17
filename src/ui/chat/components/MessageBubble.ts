@@ -142,7 +142,7 @@ export class MessageBubble extends Component {
         const onEdit = this.onEdit;
         this.registerDomEvent(editBtn, 'click', () => {
           if (onEdit) {
-            MessageEditController.handleEdit(this.message, this.element, onEdit, this);
+            MessageEditController.handleEdit(this.message, this.element, onEdit, this.onRetry.bind(this), this);
           }
         });
       }
