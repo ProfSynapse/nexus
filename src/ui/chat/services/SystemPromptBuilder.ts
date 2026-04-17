@@ -15,6 +15,7 @@ import { WorkspaceContext } from '../../../database/types/workspace/WorkspaceTyp
 import { MessageEnhancement } from '../components/suggesters/base/SuggesterInterfaces';
 import { CompactedContext } from '../../../services/chat/ContextCompactionService';
 import { CompactionFrontierRecord } from '../../../services/chat/CompactionFrontierService';
+import { toKebabCase } from '../../../agents/toolManager/services/ToolCliNormalizer';
 
 /**
  * Vault structure for system prompt context
@@ -253,12 +254,16 @@ Exact useTools payload shape:
 }
 `;
 
-    // Inject the live agent→tools catalog so the LLM knows what's available
+    // Inject the live agent→tools catalog so the LLM knows what's available.
+    // Format mirrors the CLI shape used in the example payloads ("agent tool")
+    // so the LLM composes "storage open" rather than "storageManager.open".
     if (toolCatalog && toolCatalog.length > 0) {
-      prompt += '\nAvailable agents and tools:\n';
+      prompt += '\nAvailable agents and tools (invoke as `agent tool`, never `agent.tool`):\n';
       for (const entry of toolCatalog) {
         if (entry.tools.length > 0) {
-          prompt += `${entry.agent}: [${entry.tools.join(', ')}]\n`;
+          const agentAlias = toKebabCase(entry.agent);
+          const toolList = entry.tools.map(toKebabCase).join('  ');
+          prompt += `  ${agentAlias}  ${toolList}\n`;
         }
       }
     }

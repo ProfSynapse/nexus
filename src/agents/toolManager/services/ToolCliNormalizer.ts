@@ -48,7 +48,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function toKebabCase(value: string): string {
+export function toKebabCase(value: string): string {
   return value
     .replace(/Manager$/i, '')
     .replace(/Agent$/i, '')
