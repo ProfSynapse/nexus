@@ -13,6 +13,7 @@ import { MessageEnhancer } from '../services/MessageEnhancer';
 import { isMobile, isIOS } from '../../../utils/platform';
 import { ChatVoiceInputController, ChatVoiceInputState } from '../controllers/ChatVoiceInputController';
 import { ManagedTimeoutTracker } from '../utils/ManagedTimeoutTracker';
+import { ChatKeyboardViewportController } from '../controllers/ChatKeyboardViewportController';
 
 export class ChatInput {
   private element: HTMLElement | null = null;
@@ -27,14 +28,8 @@ export class ChatInput {
   private voiceInputState: ChatVoiceInputState = 'idle';
   private voiceInputController: ChatVoiceInputController | null = null;
   private voiceVisualResizeObserver: ResizeObserver | null = null;
-  private keyboardViewportRoot: HTMLElement | null = null;
-  private keyboardViewportFrame: number | null = null;
-  private keyboardViewportCleanup: (() => void) | null = null;
-  private keyboardViewportTimers: number[] = [];
-  private nativeKeyboardOffset = 0;
-  private keyboardViewportBaselineHeight = 0;
-  private keyboardEditorHeight = 0;
   private timeouts: ManagedTimeoutTracker | null = null;
+  private keyboardViewportController: ChatKeyboardViewportController | null = null;
 
   constructor(
     private container: HTMLElement,
@@ -132,9 +127,10 @@ export class ChatInput {
     };
 
     // iOS: keep the focused input visible while the keyboard animates.
+    // The controller's own focus handler schedules settling probes at
+    // 0/60/180/320ms so we only need to scroll the input into view here.
     const focusHandler = () => {
       const run = () => {
-        this.updateKeyboardViewportOffset();
         this.inputElement?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       };
       if (this.timeouts) {
@@ -278,13 +274,14 @@ export class ChatInput {
     this.inputElement.style.removeProperty('--chat-input-height');
 
     // Set height limits - matches CSS min/max heights
-    const keyboardActive = isMobile() && this.keyboardViewportRoot?.hasClass('chat-keyboard-active');
+    const keyboardActive = isMobile() && (this.keyboardViewportController?.isActive() ?? false);
+    const keyboardEditorHeight = this.keyboardViewportController?.getEditorHeight() ?? 0;
     const visualHeight = window.visualViewport?.height ?? window.innerHeight;
-    const keyboardMinHeight = this.keyboardEditorHeight > 0
-      ? this.keyboardEditorHeight
+    const keyboardMinHeight = keyboardEditorHeight > 0
+      ? keyboardEditorHeight
       : Math.min(280, Math.max(185, Math.round(visualHeight * 0.42)));
-    const keyboardMaxHeight = this.keyboardEditorHeight > 0
-      ? this.keyboardEditorHeight
+    const keyboardMaxHeight = keyboardEditorHeight > 0
+      ? keyboardEditorHeight
       : Math.min(320, Math.max(235, Math.round(visualHeight * 0.54)));
     const minHeight = keyboardActive ? keyboardMinHeight : isMobile() ? 64 : 72;
     const maxHeight = keyboardActive ? keyboardMaxHeight : isMobile() ? 160 : 200;
@@ -467,16 +464,8 @@ export class ChatInput {
    * Cleanup resources
    */
   cleanup(): void {
-    if (this.keyboardViewportFrame !== null && typeof window !== 'undefined') {
-      window.cancelAnimationFrame(this.keyboardViewportFrame);
-      this.keyboardViewportFrame = null;
-    }
-
-    this.clearKeyboardViewportTimers();
-    this.keyboardViewportCleanup?.();
-    this.keyboardViewportCleanup = null;
-    this.nativeKeyboardOffset = 0;
-    this.resetKeyboardViewportOffset();
+    this.keyboardViewportController?.detach();
+    this.keyboardViewportController = null;
     this.voiceVisualResizeObserver?.disconnect();
     this.voiceVisualResizeObserver = null;
     this.voiceInputController?.cleanup();
@@ -495,213 +484,19 @@ export class ChatInput {
   }
 
   private initializeKeyboardViewportHandling(): void {
-    if (!this.component || typeof window === 'undefined') {
+    if (!this.component || !this.inputElement) {
       return;
     }
 
-    this.keyboardViewportCleanup?.();
-    this.keyboardViewportRoot = this.container.closest('.chat-main');
-    this.keyboardViewportBaselineHeight = window.innerHeight;
-    if (!this.keyboardViewportRoot) {
-      return;
-    }
-
-    const scheduleUpdate = () => this.scheduleKeyboardViewportOffsetUpdate();
-    const scheduleSettledUpdates = () => this.scheduleKeyboardViewportSettledUpdates();
-    const handleNativeKeyboardShow = (event: CapacitorKeyboardEvent) => {
-      this.updateNativeKeyboardOffset(event);
-      this.scheduleKeyboardViewportSettledUpdates();
-    };
-    const handleNativeKeyboardHide = () => {
-      this.nativeKeyboardOffset = 0;
-      this.clearKeyboardViewportTimers();
-      window.setTimeout(() => {
-        this.keyboardViewportBaselineHeight = window.innerHeight;
-        this.resetKeyboardViewportOffset();
-      }, 160);
-    };
-    const clearOffset = () => {
-      window.setTimeout(() => {
-        if (!this.inputElement?.matches(':focus')) {
-          if (this.sendButton && document.activeElement === this.sendButton) {
-            this.sendButton.blur();
-          }
-          this.nativeKeyboardOffset = 0;
-          this.keyboardViewportBaselineHeight = window.innerHeight;
-          this.resetKeyboardViewportOffset();
-        }
-      }, 120);
-    };
-
-    window.visualViewport?.addEventListener('resize', scheduleSettledUpdates);
-    window.visualViewport?.addEventListener('scroll', scheduleUpdate);
-
-    const cleanup = () => {
-      window.visualViewport?.removeEventListener('resize', scheduleSettledUpdates);
-      window.visualViewport?.removeEventListener('scroll', scheduleUpdate);
-      this.clearKeyboardViewportTimers();
-      this.resetKeyboardViewportOffset();
-    };
-    this.keyboardViewportCleanup = cleanup;
-    this.component.register(cleanup);
-
-    this.component.registerDomEvent(this.inputElement as HTMLElement, 'focus', scheduleSettledUpdates);
-    this.component.registerDomEvent(this.inputElement as HTMLElement, 'blur', clearOffset);
-    this.component.registerDomEvent(window, 'resize', scheduleSettledUpdates);
-    this.component.registerDomEvent(window, 'orientationchange', scheduleSettledUpdates);
-    this.component.registerDomEvent(window, 'keyboardWillShow', handleNativeKeyboardShow);
-    this.component.registerDomEvent(window, 'keyboardDidShow', handleNativeKeyboardShow);
-    this.component.registerDomEvent(window, 'keyboardWillHide', handleNativeKeyboardHide);
-    this.component.registerDomEvent(window, 'keyboardDidHide', handleNativeKeyboardHide);
-    this.updateKeyboardViewportOffset();
-  }
-
-  private scheduleKeyboardViewportSettledUpdates(): void {
-    this.clearKeyboardViewportTimers();
-    this.scheduleKeyboardViewportOffsetUpdate();
-
-    for (const delay of [60, 180, 320]) {
-      const timer = window.setTimeout(() => {
-        this.keyboardViewportTimers = this.keyboardViewportTimers.filter((timerId) => timerId !== timer);
-        this.scheduleKeyboardViewportOffsetUpdate();
-      }, delay);
-      this.keyboardViewportTimers.push(timer);
-    }
-  }
-
-  private scheduleKeyboardViewportOffsetUpdate(): void {
-    if (this.keyboardViewportFrame !== null) {
-      window.cancelAnimationFrame(this.keyboardViewportFrame);
-    }
-
-    this.keyboardViewportFrame = window.requestAnimationFrame(() => {
-      this.keyboardViewportFrame = null;
-      this.updateKeyboardViewportOffset();
+    this.keyboardViewportController?.detach();
+    this.keyboardViewportController = new ChatKeyboardViewportController({
+      container: this.container,
+      inputElement: this.inputElement,
+      getSendButton: () => this.sendButton,
+      onOffsetChanged: () => this.autoResizeInput(),
+      component: this.component,
     });
-  }
-
-  private updateKeyboardViewportOffset(): void {
-    if (!this.keyboardViewportRoot || typeof window === 'undefined') {
-      return;
-    }
-
-    const currentOffset = this.getCurrentKeyboardOffset();
-    const inputBottom = this.container.getBoundingClientRect().bottom + currentOffset;
-    const keyboardTop = this.getKeyboardTop();
-    const visualViewportOffset = keyboardTop !== null
-      ? Math.max(0, inputBottom - keyboardTop)
-      : 0;
-    const keyboardOffset = visualViewportOffset > 1 ? visualViewportOffset : this.nativeKeyboardOffset;
-    const roundedOffset = Math.ceil(keyboardOffset);
-
-    if (roundedOffset > 1) {
-      this.keyboardViewportRoot.addClass('chat-keyboard-active');
-      const liftOffset = Math.max(0, roundedOffset - 22);
-      this.keyboardViewportRoot.style.setProperty('--chat-keyboard-offset', `${liftOffset}px`);
-      this.updateKeyboardEditorHeight(keyboardTop);
-      this.autoResizeInput();
-    } else {
-      this.resetKeyboardViewportOffset();
-    }
-  }
-
-  private resetKeyboardViewportOffset(): void {
-    this.keyboardViewportRoot?.removeClass('chat-keyboard-active');
-    this.keyboardViewportRoot?.style.removeProperty('--chat-keyboard-offset');
-    this.keyboardViewportRoot?.style.removeProperty('--chat-keyboard-editor-height');
-    this.keyboardEditorHeight = 0;
-    this.autoResizeInput();
-  }
-
-  private updateNativeKeyboardOffset(event: CapacitorKeyboardEvent): void {
-    const keyboardHeight = this.getKeyboardHeight(event);
-    if (keyboardHeight <= 0 || typeof window === 'undefined') {
-      this.nativeKeyboardOffset = 0;
-      return;
-    }
-
-    if (this.keyboardViewportBaselineHeight <= 0) {
-      this.keyboardViewportBaselineHeight = window.innerHeight;
-    }
-
-    const layoutResizeAmount = Math.max(0, this.keyboardViewportBaselineHeight - window.innerHeight);
-    this.nativeKeyboardOffset = Math.max(0, keyboardHeight - layoutResizeAmount);
-  }
-
-  private getKeyboardHeight(event: CapacitorKeyboardEvent): number {
-    const directHeight = event.keyboardHeight;
-    if (typeof directHeight === 'number' && Number.isFinite(directHeight)) {
-      return Math.round(directHeight);
-    }
-
-    const detailHeight = event.detail?.keyboardHeight;
-    if (typeof detailHeight === 'number' && Number.isFinite(detailHeight)) {
-      return Math.round(detailHeight);
-    }
-
-    return 0;
-  }
-
-  private clearKeyboardViewportTimers(): void {
-    if (typeof window === 'undefined') {
-      this.keyboardViewportTimers = [];
-      return;
-    }
-
-    for (const timer of this.keyboardViewportTimers) {
-      window.clearTimeout(timer);
-    }
-    this.keyboardViewportTimers = [];
-  }
-
-  private getCurrentKeyboardOffset(): number {
-    if (!this.keyboardViewportRoot) {
-      return 0;
-    }
-
-    const rawOffset = window.getComputedStyle(this.keyboardViewportRoot).getPropertyValue('--chat-keyboard-offset');
-    const parsedOffset = Number.parseFloat(rawOffset);
-    return Number.isFinite(parsedOffset) ? parsedOffset : 0;
-  }
-
-  private getKeyboardTop(): number | null {
-    if (!this.keyboardViewportRoot || typeof window === 'undefined') {
-      return null;
-    }
-
-    if (window.visualViewport) {
-      return window.visualViewport.height + window.visualViewport.offsetTop;
-    }
-
-    if (this.nativeKeyboardOffset > 0) {
-      return this.keyboardViewportRoot.getBoundingClientRect().bottom - this.nativeKeyboardOffset;
-    }
-
-    return null;
-  }
-
-  private updateKeyboardEditorHeight(keyboardTop: number | null): void {
-    if (!this.keyboardViewportRoot || keyboardTop === null) {
-      this.keyboardEditorHeight = 0;
-      this.keyboardViewportRoot?.style.removeProperty('--chat-keyboard-editor-height');
-      return;
-    }
-
-    const header = this.keyboardViewportRoot.querySelector('.chat-header');
-    const branchHeaderContainer = this.keyboardViewportRoot.querySelector('.nexus-branch-header-container');
-    const statusBarContainer = this.keyboardViewportRoot.querySelector('.tool-status-bar-container');
-
-    const headerBottom = header?.getBoundingClientRect().bottom ?? this.keyboardViewportRoot.getBoundingClientRect().top;
-    const branchBottom = branchHeaderContainer && branchHeaderContainer.childElementCount > 0
-      ? branchHeaderContainer.getBoundingClientRect().bottom
-      : headerBottom;
-    const topBoundary = Math.max(headerBottom, branchBottom);
-    const statusHeight = statusBarContainer?.getBoundingClientRect().height ?? 0;
-    const availableHeight = keyboardTop - topBoundary - statusHeight - 18;
-    const clampedHeight = Math.max(150, Math.min(320, Math.round(availableHeight)));
-
-    this.keyboardEditorHeight = clampedHeight;
-    this.keyboardViewportRoot.style.setProperty('--chat-keyboard-editor-height', `${clampedHeight}px`);
+    this.keyboardViewportController.attach();
   }
 
   private canUseVoiceInput(): boolean {
