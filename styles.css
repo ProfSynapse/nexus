@@ -3328,12 +3328,27 @@ a:hover {
   color: var(--text-faint);
 }
 
-/* Branch nav buttons sit as a tight cluster around the indicator — shrink to
-   icon-size so the 12px chevron isn't dwarfed by touch-target padding. */
+/* Branch nav buttons keep a usable click target (24px) but the chevron is
+   aligned to the edge nearest the indicator so there's no visible free space
+   between chevron and "x/y". Prev's chevron hugs the button's right edge;
+   next's chevron hugs the button's left edge. */
 .message-action-btn.message-branch-prev,
 .message-action-btn.message-branch-next {
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
+}
+.message-action-btn.message-branch-prev {
+  justify-content: flex-end;
+}
+.message-action-btn.message-branch-next {
+  justify-content: flex-start;
+}
+/* Mobile touch-target override — restore comfortable tap size but keep the
+   edge-align so the chevrons still cluster tightly to the indicator. */
+body.is-mobile .message-action-btn.message-branch-prev,
+body.is-mobile .message-action-btn.message-branch-next {
+  width: 32px;
+  height: 32px;
 }
 
 /* Dark mode adjustments */
