@@ -965,7 +965,7 @@ body.theme-light .message-content {
 }
 
 .message-container.message-assistant {
-    margin-top: 1.7rem;
+    margin-top: 1.4rem;
 }
 
 .message-header {
@@ -1038,7 +1038,8 @@ body.theme-light .message-content {
 .message-container.message-assistant .message-actions-external {
     width: 100%;
     box-sizing: border-box;
-    padding: 0 1.4rem;
+    padding: 0 1.2rem;
+    margin-top: 4px;
 }
 
 /* Action button — ported from .mock-device--glass .minimal-action-btn
@@ -5679,9 +5680,10 @@ body.is-mobile .message-container.message-user .message-action-btn {
 body.is-mobile .message-container.message-assistant .message-actions-external {
     top: 0.25rem;
     right: 0.25rem;
-    padding: 0 1.1rem;
+    padding: 0 0.95rem;
     justify-content: flex-start;
     width: fit-content;
+    margin-top: 4px;
 }
 
 body.is-mobile .message-container.message-assistant .message-action-btn {
@@ -5884,7 +5886,7 @@ body.is-mobile .message-container.message-assistant .message-bubble {
 }
 
 body.is-mobile .message-container.message-assistant {
-    margin-top: 1.7rem;
+    margin-top: 1.4rem;
 }
 
 body.is-mobile .tool-status-bar {
