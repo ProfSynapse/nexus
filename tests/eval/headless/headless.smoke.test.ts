@@ -61,8 +61,8 @@ describe('HeadlessAgentStack', () => {
 
   it('should return real tool schemas from getTools', async () => {
     const result = await stack.getTools({
-      context: TEST_CONTEXT,
-      request: [{ agent: 'contentManager' }],
+      ...TEST_CONTEXT,
+      tool: 'content',
     });
 
     expect(result.success).toBe(true);
@@ -78,12 +78,8 @@ describe('HeadlessAgentStack', () => {
 
   it('should return schemas for multiple agents', async () => {
     const result = await stack.getTools({
-      context: TEST_CONTEXT,
-      request: [
-        { agent: 'contentManager' },
-        { agent: 'storageManager' },
-        { agent: 'searchManager' },
-      ],
+      ...TEST_CONTEXT,
+      tool: 'content, storage, search',
     });
 
     expect(result.success).toBe(true);
@@ -95,19 +91,9 @@ describe('HeadlessAgentStack', () => {
   });
 
   it('should execute useTools contentManager_read on real vault file', async () => {
-    // Real useTools calls format: { agent, tool, params } — NOT agent_tool combined
     const result = await stack.useTools({
-      context: TEST_CONTEXT,
-      calls: [
-        {
-          agent: 'contentManager',
-          tool: 'read',
-          params: {
-            path: 'notes/hello.md',
-            startLine: 1,
-          },
-        },
-      ],
+      ...TEST_CONTEXT,
+      tool: 'content read "notes/hello.md" 1',
     });
 
     if (!result.success) console.log('useTools read error:', JSON.stringify(result, null, 2));
@@ -119,17 +105,8 @@ describe('HeadlessAgentStack', () => {
 
   it('should execute useTools contentManager_write to create a new file', async () => {
     const result = await stack.useTools({
-      context: TEST_CONTEXT,
-      calls: [
-        {
-          agent: 'contentManager',
-          tool: 'write',
-          params: {
-            path: 'notes/new-note.md',
-            content: '# New Note\n\nCreated by test.',
-          },
-        },
-      ],
+      ...TEST_CONTEXT,
+      tool: 'content write "notes/new-note.md" "# New Note\\n\\nCreated by test."',
     });
 
     if (!result.success) console.log('useTools write error:', JSON.stringify(result, null, 2));
@@ -142,16 +119,8 @@ describe('HeadlessAgentStack', () => {
 
   it('should execute storageManager_list on real vault', async () => {
     const result = await stack.useTools({
-      context: TEST_CONTEXT,
-      calls: [
-        {
-          agent: 'storageManager',
-          tool: 'list',
-          params: {
-            path: 'notes',
-          },
-        },
-      ],
+      ...TEST_CONTEXT,
+      tool: 'storage list --path "notes"',
     });
 
     if (!result.success) console.log('useTools list error:', JSON.stringify(result, null, 2));

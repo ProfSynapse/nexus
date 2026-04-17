@@ -9,8 +9,7 @@
       expectedTools:
         - name: getTools
           params:
-            request:
-              - agent: searchManager
+            tool: "search"
       mockResponses:
         getTools:
           success: true
@@ -19,18 +18,26 @@
               - agent: searchManager
                 tool: searchContent
                 description: Search for notes containing specific content
-                inputSchema:
-                  type: object
-                  properties:
-                    query:
-                      type: string
-                    limit:
-                      type: number
-                  required:
-                    - query
+                command: "search search-content"
+                usage: "search search-content <query> [--limit <limit>]"
+                arguments:
+                  - name: query
+                    flag: --query
+                    type: string
+                    required: true
+                    positional: true
+                  - name: limit
+                    flag: --limit
+                    type: number
+                    required: false
+                    positional: false
+                examples:
+                  - 'search search-content "query-value"'
 
     - expectedTools:
         - name: useTools
+          params:
+            tool: "search search-content"
       mockResponses:
         useTools:
           success: true
@@ -53,8 +60,7 @@
       expectedTools:
         - name: getTools
           params:
-            request:
-              - agent: storageManager
+            tool: "storage"
       mockResponses:
         getTools:
           success: true
@@ -63,16 +69,21 @@
               - agent: storageManager
                 tool: list
                 description: List files and folders in a directory
-                inputSchema:
-                  type: object
-                  properties:
-                    path:
-                      type: string
-                  required:
-                    - path
+                command: "storage list"
+                usage: "storage list <path>"
+                arguments:
+                  - name: path
+                    flag: --path
+                    type: string
+                    required: true
+                    positional: true
+                examples:
+                  - 'storage list "path-value"'
 
     - expectedTools:
         - name: useTools
+          params:
+            tool: "storage list"
       mockResponses:
         useTools:
           success: true
@@ -96,9 +107,7 @@
       expectedTools:
         - name: getTools
           params:
-            request:
-              - agent: searchManager
-              - agent: contentManager
+            tool: "search, content"
       mockResponses:
         getTools:
           success: true
@@ -107,29 +116,39 @@
               - agent: searchManager
                 tool: searchContent
                 description: Search for notes containing specific content
-                inputSchema:
-                  type: object
-                  properties:
-                    query:
-                      type: string
-                  required:
-                    - query
+                command: "search search-content"
+                usage: "search search-content <query>"
+                arguments:
+                  - name: query
+                    flag: --query
+                    type: string
+                    required: true
+                    positional: true
+                examples:
+                  - 'search search-content "query-value"'
               - agent: contentManager
                 tool: read
                 description: Read content from a file
-                inputSchema:
-                  type: object
-                  properties:
-                    path:
-                      type: string
-                    startLine:
-                      type: number
-                  required:
-                    - path
-                    - startLine
+                command: "content read"
+                usage: "content read <path> <startLine>"
+                arguments:
+                  - name: path
+                    flag: --path
+                    type: string
+                    required: true
+                    positional: true
+                  - name: startLine
+                    flag: --start-line
+                    type: number
+                    required: true
+                    positional: true
+                examples:
+                  - 'content read "path-value" 1'
 
     - expectedTools:
         - name: useTools
+          params:
+            tool: "search search-content"
       mockResponses:
         useTools:
           success: true
@@ -144,6 +163,8 @@
 
     - expectedTools:
         - name: useTools
+          params:
+            tool: "content read"
       mockResponses:
         useTools:
           success: true
@@ -162,8 +183,7 @@
       expectedTools:
         - name: getTools
           params:
-            request:
-              - agent: searchManager
+            tool: "search"
       mockResponses:
         getTools:
           success: true
@@ -172,26 +192,34 @@
               - agent: searchManager
                 tool: searchDirectory
                 description: Search for files and folders by name pattern
-                inputSchema:
-                  type: object
-                  properties:
-                    query:
-                      type: string
-                  required:
-                    - query
+                command: "search search-directory"
+                usage: "search search-directory <query>"
+                arguments:
+                  - name: query
+                    flag: --query
+                    type: string
+                    required: true
+                    positional: true
+                examples:
+                  - 'search search-directory "query-value"'
               - agent: searchManager
                 tool: searchContent
                 description: Search for notes containing specific content
-                inputSchema:
-                  type: object
-                  properties:
-                    query:
-                      type: string
-                  required:
-                    - query
+                command: "search search-content"
+                usage: "search search-content <query>"
+                arguments:
+                  - name: query
+                    flag: --query
+                    type: string
+                    required: true
+                    positional: true
+                examples:
+                  - 'search search-content "query-value"'
 
     - expectedTools:
         - name: useTools
+          params:
+            tool: "search search-directory"
       mockResponses:
         useTools:
           success: true

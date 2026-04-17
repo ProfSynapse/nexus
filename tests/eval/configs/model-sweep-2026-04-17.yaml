@@ -1,0 +1,37 @@
+mode: mock
+testVaultPath: tests/eval/test-vault/
+
+providers:
+  openrouter:
+    apiKeyEnv: OPENROUTER_API_KEY
+    models:
+      - openrouter/elephant-alpha
+      - z-ai/glm-5.1
+      - google/gemma-4-26b-a4b-it
+      - google/gemma-4-31b-it
+      - z-ai/glm-5v-turbo
+      - xiaomi/mimo-v2-omni
+      - xiaomi/mimo-v2-pro
+      - minimax/minimax-m2.7
+      - nvidia/nemotron-3-super-120b-a12b
+      - qwen/qwen3.5-9b
+      - inception/mercury-2
+      - qwen/qwen3.5-35b-a3b
+      - qwen/qwen3.5-27b
+      - qwen/qwen3.5-122b-a10b
+      - liquid/lfm-2-24b-a2b
+    enabled: true
+
+defaults:
+  temperature: 0
+  maxRetries: 0
+  retryDelayMs: 0
+  timeout: 120000
+  systemPrompt: default
+
+capture:
+  enabled: true
+  dumpOnFailure: true
+  artifactsDir: test-artifacts/
+
+scenarios: tests/eval/scenarios/**/*.eval.yaml

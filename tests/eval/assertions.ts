@@ -1,9 +1,9 @@
 /**
  * tests/eval/assertions.ts — Tool call matchers and text content assertions.
  *
- * Provides flexible assertion helpers for eval scenarios. Tool name matching
- * is exact; parameter matching uses partial (objectContaining) semantics.
- * Used by EvalRunner to evaluate turn results.
+ * Provides CLI-first assertion helpers for eval scenarios. Meta-tool checks
+ * verify top-level `tool` selector/command strings rather than the old
+ * structured `request` / `calls` payloads.
  */
 
 import type { ExpectedToolCall, CapturedToolCall } from './types';
@@ -13,18 +13,198 @@ export interface AssertionResult {
   errors: string[];
 }
 
+type NormalizedSelector = {
+  agent: string;
+  tool?: string;
+};
+
+function splitTopLevelSegments(input: string): string[] {
+  const segments: string[] = [];
+  let current = '';
+  let quote: '"' | '\'' | null = null;
+  let escaped = false;
+
+  for (const char of input) {
+    if (escaped) {
+      current += char;
+      escaped = false;
+      continue;
+    }
+
+    if (char === '\\') {
+      current += char;
+      escaped = true;
+      continue;
+    }
+
+    if ((char === '"' || char === '\'') && (!quote || quote === char)) {
+      quote = quote === char ? null : char;
+      current += char;
+      continue;
+    }
+
+    if (char === ',' && !quote) {
+      const trimmed = current.trim();
+      if (trimmed.length > 0) {
+        segments.push(trimmed);
+      }
+      current = '';
+      continue;
+    }
+
+    current += char;
+  }
+
+  const trimmed = current.trim();
+  if (trimmed.length > 0) {
+    segments.push(trimmed);
+  }
+
+  return segments;
+}
+
+function tokenize(input: string): string[] {
+  const tokens: string[] = [];
+  let current = '';
+  let quote: '"' | '\'' | null = null;
+  let escaped = false;
+
+  for (const char of input) {
+    if (escaped) {
+      current += char;
+      escaped = false;
+      continue;
+    }
+
+    if (char === '\\') {
+      current += char;
+      escaped = true;
+      continue;
+    }
+
+    if (quote) {
+      if (char === quote) {
+        quote = null;
+      } else {
+        current += char;
+      }
+      continue;
+    }
+
+    if (char === '"' || char === '\'') {
+      quote = char;
+      continue;
+    }
+
+    if (/\s/.test(char)) {
+      if (current.length > 0) {
+        tokens.push(current);
+        current = '';
+      }
+      continue;
+    }
+
+    current += char;
+  }
+
+  if (current.length > 0) {
+    tokens.push(current);
+  }
+
+  return tokens;
+}
+
+function toKebabCase(value: string): string {
+  return value
+    .replace(/Manager$/i, '')
+    .replace(/Agent$/i, '')
+    .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
+    .replace(/[_\s]+/g, '-')
+    .replace(/--+/g, '-')
+    .toLowerCase();
+}
+
+function parseSelectors(value: string): NormalizedSelector[] {
+  return splitTopLevelSegments(value)
+    .map((segment) => tokenize(segment))
+    .filter((tokens) => tokens.length > 0)
+    .map((tokens) => ({
+      agent: toKebabCase(tokens[0]),
+      ...(tokens[1] ? { tool: toKebabCase(tokens[1].replace(/^--/, '')) } : {}),
+    }));
+}
+
+function parseCommands(value: string): NormalizedSelector[] {
+  return splitTopLevelSegments(value)
+    .map((segment) => tokenize(segment))
+    .filter((tokens) => tokens.length >= 2)
+    .map((tokens) => ({
+      agent: toKebabCase(tokens[0]),
+      tool: toKebabCase(tokens[1].replace(/^--/, '')),
+    }));
+}
+
+function formatSelector(selector: NormalizedSelector): string {
+  return selector.tool ? `${selector.agent}.${selector.tool}` : selector.agent;
+}
+
+function prefixForRound(roundIdx: number): string {
+  return `Round ${roundIdx}, `;
+}
+
+function assertCliMetaArgs(
+  toolName: string,
+  actualArgs: Record<string, unknown>,
+  errors: string[],
+  prefix = '',
+): void {
+  if (toolName !== 'getTools' && toolName !== 'useTools') {
+    return;
+  }
+
+  const value = actualArgs.tool;
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    const label = toolName === 'getTools' ? 'CLI selector string' : 'CLI command string';
+    errors.push(`${prefix}tool "${toolName}": expected top-level ${label} in args.tool, got ${JSON.stringify(actualArgs)}`);
+  }
+}
+
+function paramsMatch(
+  toolName: string,
+  expectedParams: Record<string, unknown> | undefined,
+  actualArgs: Record<string, unknown>,
+): boolean {
+  if (!expectedParams) {
+    return true;
+  }
+
+  if (toolName === 'getTools' && typeof expectedParams.tool === 'string') {
+    const expectedSelectors = parseSelectors(expectedParams.tool);
+    const actualSelectors = typeof actualArgs.tool === 'string' ? parseSelectors(actualArgs.tool) : [];
+    return expectedSelectors.every((expected) => actualSelectors.some((actual) => {
+      if (actual.agent !== expected.agent) return false;
+      if (!expected.tool) return true;
+      return actual.tool === expected.tool;
+    }));
+  }
+
+  if (toolName === 'useTools' && typeof expectedParams.tool === 'string') {
+    const expectedCommands = parseCommands(expectedParams.tool);
+    const actualCommands = typeof actualArgs.tool === 'string' ? parseCommands(actualArgs.tool) : [];
+    return expectedCommands.every((expected) => actualCommands.some((actual) =>
+      actual.agent === expected.agent && actual.tool === expected.tool,
+    ));
+  }
+
+  return Object.entries(expectedParams).every(([key, value]) => deepPartialMatch(actualArgs[key], value));
+}
+
 /**
  * Assert that captured tool calls match expected tool calls.
- *
- * Rules:
- * - All non-optional expected tools must appear (by name) in actual calls
- * - Order is not enforced (LLMs may reorder)
- * - If params are specified on an expected tool, actual args must contain them (partial match)
- * - Extra tool calls (not in expected list) are noted but not failures
  */
 export function assertToolCalls(
   expected: ExpectedToolCall[],
-  actual: CapturedToolCall[]
+  actual: CapturedToolCall[],
 ): AssertionResult {
   const errors: string[] = [];
   const actualNames = actual.map((c) => c.name);
@@ -32,15 +212,19 @@ export function assertToolCalls(
   for (const exp of expected) {
     if (exp.optional) continue;
 
-    const matchIndex = actual.findIndex((a) => a.name === exp.name);
+    let matchIndex = actual.findIndex((entry) => entry.name === exp.name && paramsMatch(exp.name, exp.params, entry.args));
+    if (matchIndex === -1) {
+      matchIndex = actual.findIndex((entry) => entry.name === exp.name);
+    }
     if (matchIndex === -1) {
       errors.push(`Expected tool "${exp.name}" was not called. Actual calls: [${actualNames.join(', ')}]`);
       continue;
     }
 
-    // Check params if specified
+    const actualArgs = actual[matchIndex].args;
+    assertCliMetaArgs(exp.name, actualArgs, errors);
+
     if (exp.params) {
-      const actualArgs = actual[matchIndex].args;
       checkToolParams(exp.name, exp.params, actualArgs, errors);
     }
   }
@@ -52,60 +236,70 @@ export function assertToolCalls(
 }
 
 /**
- * Assert that captured tool calls match expected tool call ROUNDS in order.
- *
- * In production, a single generateResponseStream() call can produce multiple
- * rounds of tool calls via ToolContinuationService's internal pingpong.
- * This asserts that the captured calls match the expected rounds sequentially:
- *   round 0's expected tools → first N captured calls
- *   round 1's expected tools → next M captured calls
- *   etc.
- *
- * Within each round, order is not enforced (model may reorder parallel calls).
+ * Assert that captured tool calls match expected tool call rounds in order.
  */
 export function assertToolCallRounds(
   roundExpectations: ExpectedToolCall[][],
-  actualCalls: CapturedToolCall[]
+  actualCalls: CapturedToolCall[],
 ): AssertionResult {
   const errors: string[] = [];
   let callOffset = 0;
 
   for (let roundIdx = 0; roundIdx < roundExpectations.length; roundIdx++) {
     const expected = roundExpectations[roundIdx];
-    const requiredCount = expected.filter(e => !e.optional).length;
+    const required = expected.filter((entry) => !entry.optional);
+    const requiredCount = required.length;
 
-    // Determine how many actual calls belong to this round.
-    // We consume `requiredCount` calls from the actual list for this round.
-    // If the model made more calls than expected (parallel calls), we allow extras.
-    const roundCalls = actualCalls.slice(callOffset, callOffset + Math.max(requiredCount, 1));
+    let endIndex = callOffset;
+    const matched = new Set<number>();
+    for (; endIndex < actualCalls.length; endIndex++) {
+      const call = actualCalls[endIndex];
+      for (let expectedIdx = 0; expectedIdx < required.length; expectedIdx++) {
+        if (matched.has(expectedIdx)) continue;
+        const candidate = required[expectedIdx];
+        if (call.name !== candidate.name) continue;
+        if (!paramsMatch(candidate.name, candidate.params, call.args)) continue;
+        matched.add(expectedIdx);
+        break;
+      }
+      if (matched.size === requiredCount) {
+        endIndex += 1;
+        break;
+      }
+    }
+
+    const roundCalls = actualCalls.slice(callOffset, Math.max(endIndex, callOffset + Math.max(requiredCount, 1)));
 
     if (roundCalls.length === 0 && requiredCount > 0) {
       errors.push(
-        `Round ${roundIdx}: Expected ${requiredCount} tool call(s) [${expected.map(e => e.name).join(', ')}] but no more calls were captured. Total captured: ${actualCalls.length}, consumed so far: ${callOffset}`
+        `Round ${roundIdx}: Expected ${requiredCount} tool call(s) [${expected.map((entry) => entry.name).join(', ')}] but no more calls were captured. Total captured: ${actualCalls.length}, consumed so far: ${callOffset}`,
       );
       continue;
     }
 
-    // Check each expected tool appears in this round's calls
     for (const exp of expected) {
       if (exp.optional) continue;
 
-      const matchIndex = roundCalls.findIndex(a => a.name === exp.name);
+      let matchIndex = roundCalls.findIndex((entry) => entry.name === exp.name && paramsMatch(exp.name, exp.params, entry.args));
+      if (matchIndex === -1) {
+        matchIndex = roundCalls.findIndex((entry) => entry.name === exp.name);
+      }
       if (matchIndex === -1) {
         errors.push(
-          `Round ${roundIdx}: Expected tool "${exp.name}" not found. Round calls: [${roundCalls.map(c => c.name).join(', ')}]`
+          `Round ${roundIdx}: Expected tool "${exp.name}" not found. Round calls: [${roundCalls.map((entry) => entry.name).join(', ')}]`,
         );
         continue;
       }
 
-      // Check params if specified
+      const actualArgs = roundCalls[matchIndex].args;
+      assertCliMetaArgs(exp.name, actualArgs, errors, prefixForRound(roundIdx));
+
       if (exp.params) {
-        const actualArgs = roundCalls[matchIndex].args;
-        checkToolParams(exp.name, exp.params, actualArgs, errors, `Round ${roundIdx}, `);
+        checkToolParams(exp.name, exp.params, actualArgs, errors, prefixForRound(roundIdx));
       }
     }
 
-    callOffset += Math.max(roundCalls.length, requiredCount);
+    callOffset += roundCalls.length;
   }
 
   return {
@@ -114,12 +308,9 @@ export function assertToolCallRounds(
   };
 }
 
-/**
- * Assert that the response text contains expected keywords/phrases.
- */
 export function assertTextContains(
   text: string,
-  expectedPhrases: string[]
+  expectedPhrases: string[],
 ): AssertionResult {
   const errors: string[] = [];
   const lowerText = text.toLowerCase();
@@ -136,13 +327,9 @@ export function assertTextContains(
   };
 }
 
-/**
- * Assert that no hallucinated tool names appear in the actual calls.
- * Hallucinated = tool name not in the set of defined tool names.
- */
 export function assertNoHallucinatedTools(
   actual: CapturedToolCall[],
-  validToolNames: string[]
+  validToolNames: string[],
 ): AssertionResult {
   const errors: string[] = [];
   const validSet = new Set(validToolNames);
@@ -159,11 +346,6 @@ export function assertNoHallucinatedTools(
   };
 }
 
-/**
- * Check tool params with special handling for getTools agent format normalization.
- * For getTools calls, `request` and `agents` are treated as equivalent — both
- * are normalized to a sorted agent name list before comparison.
- */
 function checkToolParams(
   toolName: string,
   expectedParams: Record<string, unknown>,
@@ -171,69 +353,59 @@ function checkToolParams(
   errors: string[],
   prefix = '',
 ): void {
-  // Special case: getTools agent format normalization
-  if (toolName === 'getTools' && ('request' in expectedParams || 'agents' in expectedParams)) {
-    const expectedAgents = normalizeGetToolsAgents(expectedParams as Record<string, unknown>);
-    const actualAgents = normalizeGetToolsAgents(actualArgs);
+  if (toolName === 'getTools' && typeof expectedParams.tool === 'string') {
+    const expectedSelectors = parseSelectors(expectedParams.tool);
+    const actualSelectors = typeof actualArgs.tool === 'string' ? parseSelectors(actualArgs.tool) : [];
 
-    if (expectedAgents && actualAgents) {
-      // Compare agent name sets — order doesn't matter, check containment
-      const missing = expectedAgents.filter(a => !actualAgents.includes(a));
-      if (missing.length > 0) {
-        errors.push(
-          `${prefix}tool "${toolName}": expected agents [${expectedAgents.join(', ')}] but got [${actualAgents.join(', ')}], missing: [${missing.join(', ')}]`
-        );
-      }
-      return;
+    const missing = expectedSelectors.filter((expected) => !actualSelectors.some((actual) => {
+      if (actual.agent !== expected.agent) return false;
+      if (!expected.tool) return true;
+      return actual.tool === expected.tool;
+    }));
+
+    if (missing.length > 0) {
+      errors.push(
+        `${prefix}tool "${toolName}": expected selectors [${expectedSelectors.map(formatSelector).join(', ')}] but got [${actualSelectors.map(formatSelector).join(', ')}], missing: [${missing.map(formatSelector).join(', ')}]`,
+      );
     }
+    return;
   }
 
-  // Standard param checking
+  if (toolName === 'useTools' && typeof expectedParams.tool === 'string') {
+    const expectedCommands = parseCommands(expectedParams.tool);
+    const actualCommands = typeof actualArgs.tool === 'string' ? parseCommands(actualArgs.tool) : [];
+
+    const missing = expectedCommands.filter((expected) => !actualCommands.some((actual) =>
+      actual.agent === expected.agent && actual.tool === expected.tool,
+    ));
+
+    if (missing.length > 0) {
+      errors.push(
+        `${prefix}tool "${toolName}": expected command prefixes [${expectedCommands.map(formatSelector).join(', ')}] but got [${actualCommands.map(formatSelector).join(', ')}], missing: [${missing.map(formatSelector).join(', ')}]`,
+      );
+    }
+    return;
+  }
+
   for (const [key, expectedValue] of Object.entries(expectedParams)) {
     if (!(key in actualArgs)) {
       errors.push(
-        `${prefix}tool "${toolName}": expected param "${key}" not found in args ${JSON.stringify(actualArgs)}`
+        `${prefix}tool "${toolName}": expected param "${key}" not found in args ${JSON.stringify(actualArgs)}`,
       );
     } else if (!deepPartialMatch(actualArgs[key], expectedValue)) {
       errors.push(
-        `${prefix}tool "${toolName}": param "${key}" expected ${JSON.stringify(expectedValue)}, got ${JSON.stringify(actualArgs[key])}`
+        `${prefix}tool "${toolName}": param "${key}" expected ${JSON.stringify(expectedValue)}, got ${JSON.stringify(actualArgs[key])}`,
       );
     }
   }
 }
 
-/**
- * Normalize getTools params so both `agents` (string[]) and `request` (object[])
- * formats are comparable. The real getTools schema accepts `request: [{agent, tools?}]`,
- * but models often use the simpler `agents: ["X", "Y"]` shorthand.
- *
- * This extracts the agent names from either format into a sorted string[] so
- * assertion matching works regardless of which format the model chose.
- */
-function normalizeGetToolsAgents(args: Record<string, unknown>): string[] | null {
-  if (args.request && Array.isArray(args.request)) {
-    return (args.request as Array<{ agent: string }>)
-      .map(r => r.agent)
-      .filter(Boolean)
-      .sort();
-  }
-  if (args.agents && Array.isArray(args.agents)) {
-    return (args.agents as string[]).filter(Boolean).sort();
-  }
-  return null;
-}
-
-/**
- * Deep partial match: check if `actual` contains all fields from `expected`.
- * For objects, recurses into nested fields. For primitives, uses strict equality.
- */
 function deepPartialMatch(actual: unknown, expected: unknown): boolean {
   if (expected === undefined || expected === null) {
     return true;
   }
 
   if (typeof expected !== 'object' || expected === null) {
-    // Primitive comparison — use loose string matching for flexibility
     if (typeof expected === 'string' && typeof actual === 'string') {
       return actual.toLowerCase().includes(expected.toLowerCase());
     }
@@ -244,7 +416,6 @@ function deepPartialMatch(actual: unknown, expected: unknown): boolean {
     return false;
   }
 
-  // Object partial match
   for (const [key, value] of Object.entries(expected as Record<string, unknown>)) {
     if (!deepPartialMatch((actual as Record<string, unknown>)[key], value)) {
       return false;

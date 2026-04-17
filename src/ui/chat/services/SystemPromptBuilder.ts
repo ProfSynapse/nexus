@@ -15,6 +15,7 @@ import { WorkspaceContext } from '../../../database/types/workspace/WorkspaceTyp
 import { MessageEnhancement } from '../components/suggesters/base/SuggesterInterfaces';
 import { CompactedContext } from '../../../services/chat/ContextCompactionService';
 import { CompactionFrontierRecord } from '../../../services/chat/CompactionFrontierService';
+import { toKebabCase } from '../../../agents/toolManager/services/ToolCliNormalizer';
 
 /**
  * Vault structure for system prompt context
@@ -232,22 +233,44 @@ Context (REQUIRED in every useTools call):
 - goal: brief statement of the current objective
 - constraints: (optional) any rules or limits
 
-Calls array: [{ agent: "agentName", tool: "toolName", params: {...} }]
+Exact getTools payload shape:
+{
+  "workspaceId": "${effectiveWorkspaceId}",
+  "sessionId": "${effectiveSessionId}",
+  "memory": "brief summary of the conversation so far",
+  "goal": "brief statement of the current objective",
+  "constraints": "optional rules or limits",
+  "tool": "storage move, content read"
+}
+
+Exact useTools payload shape:
+{
+  "workspaceId": "${effectiveWorkspaceId}",
+  "sessionId": "${effectiveSessionId}",
+  "memory": "brief summary of the conversation so far",
+  "goal": "brief statement of the current objective",
+  "constraints": "optional rules or limits",
+  "tool": "storage move --path notes/a.md --new-path archive/a.md, content read --path archive/a.md"
+}
 `;
 
-    // Inject the live agent→tools catalog so the LLM knows what's available
+    // Inject the live agent→tools catalog so the LLM knows what's available.
+    // Format mirrors the CLI shape used in the example payloads ("agent tool")
+    // so the LLM composes "storage open" rather than "storageManager.open".
     if (toolCatalog && toolCatalog.length > 0) {
-      prompt += '\nAvailable agents and tools:\n';
+      prompt += '\nAvailable agents and tools (invoke as `agent tool`, never `agent.tool`):\n';
       for (const entry of toolCatalog) {
         if (entry.tools.length > 0) {
-          prompt += `${entry.agent}: [${entry.tools.join(', ')}]\n`;
+          const agentAlias = toKebabCase(entry.agent);
+          const toolList = entry.tools.map(toKebabCase).join('  ');
+          prompt += `  ${agentAlias}  ${toolList}\n`;
         }
       }
     }
 
     prompt += `
-Call getTools first to get the exact schema, then useTools with correct params.
-Keep workspaceId and sessionId exactly as shown.
+Call getTools first to get the exact command metadata, then useTools with correct CLI arguments.
+Keep workspaceId and sessionId at the top level exactly as shown. Do not place them inside the "tool" string as CLI flags.
 `;
 
     prompt += '</tools_and_context>';

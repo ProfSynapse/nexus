@@ -216,10 +216,13 @@ function buildValidToolNames(tools: Tool[]): string[] {
 async function createToolExecutor(
   config: EvalConfig,
   tools: Tool[],
+  runId: string,
 ): Promise<{ executor: IToolExecutor & { getCapturedCalls(): CapturedToolCall[]; resetCalls(): void }; cleanup?: () => void }> {
   if (config.mode === 'live') {
     const path = await import('node:path');
-    const testVaultPath = path.resolve(config.testVaultPath || 'tests/eval/test-vault');
+    const testVaultRoot = path.resolve(config.testVaultPath || 'tests/eval/test-vault');
+    const sanitizedRunId = runId.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const testVaultPath = path.join(testVaultRoot, sanitizedRunId);
     const liveExecutor = new LiveToolExecutor({ testVaultPath });
     await liveExecutor.initialize();
     return { executor: liveExecutor };
@@ -241,7 +244,8 @@ async function executeScenario(
   temperature: number,
   config: EvalConfig
 ): Promise<TurnResult[]> {
-  const { executor: toolExecutor } = await createToolExecutor(config, tools);
+  const runId = `${provider.id}-${model.replace(/[\\/]/g, '_')}-${scenario.name}`;
+  const { executor: toolExecutor } = await createToolExecutor(config, tools, runId);
   const adapter = await createAdapter(provider);
   const registry = new EvalAdapterRegistry([[provider.id, adapter]]);
 

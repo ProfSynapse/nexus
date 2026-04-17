@@ -17,6 +17,124 @@ import type { CapturedToolCall, MockToolResponse } from './types';
 
 type ResponseHandler = (args: Record<string, unknown>) => ToolResult;
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function toKebabCase(value: string): string {
+  return value
+    .replace(/Manager$/i, '')
+    .replace(/Agent$/i, '')
+    .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
+    .replace(/[_\s]+/g, '-')
+    .replace(/--+/g, '-')
+    .toLowerCase();
+}
+
+function splitTopLevelSegments(input: string): string[] {
+  const segments: string[] = [];
+  let current = '';
+  let quote: '"' | '\'' | null = null;
+  let escaped = false;
+
+  for (const char of input) {
+    if (escaped) {
+      current += char;
+      escaped = false;
+      continue;
+    }
+
+    if (char === '\\') {
+      current += char;
+      escaped = true;
+      continue;
+    }
+
+    if ((char === '"' || char === '\'') && (!quote || quote === char)) {
+      quote = quote === char ? null : char;
+      current += char;
+      continue;
+    }
+
+    if (char === ',' && !quote) {
+      const trimmed = current.trim();
+      if (trimmed.length > 0) {
+        segments.push(trimmed);
+      }
+      current = '';
+      continue;
+    }
+
+    current += char;
+  }
+
+  const trimmed = current.trim();
+  if (trimmed.length > 0) {
+    segments.push(trimmed);
+  }
+
+  return segments;
+}
+
+function tokenize(input: string): string[] {
+  const tokens: string[] = [];
+  let current = '';
+  let quote: '"' | '\'' | null = null;
+  let escaped = false;
+
+  for (const char of input) {
+    if (escaped) {
+      current += char;
+      escaped = false;
+      continue;
+    }
+
+    if (char === '\\') {
+      current += char;
+      escaped = true;
+      continue;
+    }
+
+    if (quote) {
+      if (char === quote) {
+        quote = null;
+      } else {
+        current += char;
+      }
+      continue;
+    }
+
+    if (char === '"' || char === '\'') {
+      quote = char;
+      continue;
+    }
+
+    if (/\s/.test(char)) {
+      if (current.length > 0) {
+        tokens.push(current);
+        current = '';
+      }
+      continue;
+    }
+
+    current += char;
+  }
+
+  if (current.length > 0) {
+    tokens.push(current);
+  }
+
+  return tokens;
+}
+
+function getSchemaType(schema: Record<string, unknown>): string {
+  if (schema.type === 'array') {
+    const items = isRecord(schema.items) ? schema.items : {};
+    return `array<${typeof items.type === 'string' ? items.type : 'unknown'}>`;
+  }
+  return typeof schema.type === 'string' ? schema.type : 'unknown';
+}
+
 export class EvalToolExecutor implements IToolExecutor {
   private responseHandlers: Map<string, ResponseHandler> = new Map();
   private capturedCalls: CapturedToolCall[] = [];
@@ -134,12 +252,10 @@ export class EvalToolExecutor implements IToolExecutor {
    * Handle getTools calls by returning domain tool schemas.
    *
    * Production getTools returns { success: true, data: { tools: [...] } }
-   * where each tool has { agent, tool, description, inputSchema }.
-   *
-   * parseAndMergeTools in ToolContinuationService checks for the name
-   * 'get_tools' (underscore) so it won't auto-merge these. That's fine —
-   * in both production and eval, the LLM uses the schemas from the
-   * getTools response to construct its useTools call parameters.
+   * where each tool has { agent, tool, description, inputSchema }. In both
+   * production and eval, the LLM uses those schemas to construct its
+   * useTools call parameters — the 2-tool surface never exposes them as
+   * individually-callable functions.
    *
    * The mock handler is checked first (for scenario-specific responses),
    * then falls back to generating schemas from domainTools.
@@ -159,21 +275,28 @@ export class EvalToolExecutor implements IToolExecutor {
     }
 
     // Auto-generate from domain tools
-    const requestedAgents = (args.agents as string[] | undefined)
-      ?? (args.request as Array<{ agent: string }> | undefined)?.map(r => r.agent)
-      ?? [];
+    const requestedSelectors = typeof args.tool === 'string'
+      ? splitTopLevelSegments(args.tool)
+      : [];
 
     const schemas = this.domainTools
       .filter(tool => {
-        if (requestedAgents.length === 0) return true;
-        const name = tool.function?.name ?? '';
-        return requestedAgents.some(agent => name.startsWith(`${agent}_`));
+        if (requestedSelectors.length === 0) return true;
+        const functionName = tool.function?.name ?? '';
+        const [rawAgent, rawTool] = functionName.split('_');
+        const agentAlias = toKebabCase(rawAgent);
+        const toolAlias = toKebabCase(rawTool ?? '');
+
+        return requestedSelectors.some((selector) => {
+          const tokens = tokenize(selector);
+          if (tokens.length === 0) return false;
+          const expectedAgent = toKebabCase(tokens[0]);
+          const expectedTool = tokens[1] ? toKebabCase(tokens[1].replace(/^--/, '')) : undefined;
+          if (expectedAgent !== agentAlias) return false;
+          return expectedTool ? expectedTool === toolAlias : true;
+        });
       })
-      .map(tool => ({
-        name: tool.function?.name ?? '',
-        description: tool.function?.description ?? '',
-        inputSchema: tool.function?.parameters ?? { type: 'object', properties: {} },
-      }));
+      .map(tool => this.buildCliSchema(tool));
 
     return {
       id,
@@ -186,7 +309,7 @@ export class EvalToolExecutor implements IToolExecutor {
   /**
    * Handle useTools calls by unwrapping inner tool calls and executing them.
    *
-   * Production useTools accepts { context: {...}, calls: [{ tool, params }] }
+   * Production useTools accepts { tool: "agent tool-name --flag value" }
    * and returns results for each inner call.
    *
    * The mock handler is checked first (for scenario-specific responses),
@@ -207,12 +330,12 @@ export class EvalToolExecutor implements IToolExecutor {
     }
 
     // Unwrap and execute inner calls
-    const calls = (args.calls as Array<{ tool: string; params?: Record<string, unknown> }>) ?? [];
+    const calls = this.parseCliCommands(typeof args.tool === 'string' ? args.tool : '');
     const innerResults: Array<{ tool: string; success: boolean; result?: unknown; error?: string }> = [];
 
     for (const call of calls) {
-      const innerName = call.tool;
-      const innerArgs = call.params ?? {};
+      const innerName = call.name;
+      const innerArgs = call.args ?? {};
 
       // Capture the inner domain tool call for assertions
       this.capturedCalls.push({
@@ -267,5 +390,83 @@ export class EvalToolExecutor implements IToolExecutor {
    */
   resetCalls(): void {
     this.capturedCalls = [];
+  }
+
+  private buildCliSchema(tool: Tool): Record<string, unknown> {
+    const functionName = tool.function?.name ?? '';
+    const [rawAgent, rawTool] = functionName.split('_');
+    const command = `${toKebabCase(rawAgent)} ${toKebabCase(rawTool ?? '')}`;
+    const schema = isRecord(tool.function?.parameters)
+      ? tool.function?.parameters
+      : { type: 'object', properties: {} };
+    const properties = isRecord(schema.properties) ? schema.properties : {};
+    const required = new Set(
+      Array.isArray(schema.required)
+        ? schema.required.filter((value): value is string => typeof value === 'string')
+        : [],
+    );
+
+    const argumentsSchema = Object.entries(properties).map(([name, rawSchema]) => {
+      const property = isRecord(rawSchema) ? rawSchema : {};
+      const type = getSchemaType(property);
+      const requiredArg = required.has(name);
+      const positional = requiredArg && type !== 'boolean' && type !== 'object' && !type.startsWith('array<');
+      return {
+        name,
+        flag: `--${toKebabCase(name)}`,
+        type,
+        required: requiredArg,
+        positional,
+        ...(typeof property.description === 'string' ? { description: property.description } : {}),
+      };
+    });
+
+    const usage = [
+      command,
+      ...argumentsSchema.map((arg) => {
+        if (Boolean(arg.positional)) {
+          return `<${String(arg.name)}>`;
+        }
+        if (String(arg.type) === 'boolean') {
+          return Boolean(arg.required) ? String(arg.flag) : `[${String(arg.flag)}]`;
+        }
+        return Boolean(arg.required)
+          ? `${String(arg.flag)} <${String(arg.name)}>`
+          : `[${String(arg.flag)} <${String(arg.name)}>]`;
+      }),
+    ].join(' ');
+
+    return {
+      agent: rawAgent,
+      tool: rawTool,
+      description: tool.function?.description ?? '',
+      command,
+      usage,
+      arguments: argumentsSchema,
+      examples: [command],
+    };
+  }
+
+  private parseCliCommands(commandString: string): Array<{ name: string; args: Record<string, unknown> }> {
+    if (!commandString.trim()) {
+      return [];
+    }
+
+    return splitTopLevelSegments(commandString)
+      .map((segment) => tokenize(segment))
+      .filter((tokens) => tokens.length >= 2)
+      .map((tokens) => {
+        const agentAlias = toKebabCase(tokens[0]);
+        const toolAlias = toKebabCase(tokens[1].replace(/^--/, ''));
+        const tool = this.domainTools.find((candidate) => {
+          const [rawAgent, rawTool] = (candidate.function?.name ?? '').split('_');
+          return toKebabCase(rawAgent) === agentAlias && toKebabCase(rawTool ?? '') === toolAlias;
+        });
+        const innerName = tool?.function?.name ?? `${tokens[0]}_${tokens[1]}`;
+        return {
+          name: innerName,
+          args: {},
+        };
+      });
   }
 }

@@ -99,17 +99,21 @@ export const META_TOOLS: Tool[] = [
     type: 'function',
     function: {
       name: 'getTools',
-      description: 'Discover available tools. Returns schemas for requested agents/tools.',
+      description: 'Discover available tools. Returns CLI-oriented metadata for one or more selectors.',
       parameters: {
         type: 'object',
         properties: {
-          agents: {
-            type: 'array',
-            items: { type: 'string' },
-            description: 'List of agent names to get tools for (e.g., ["contentManager", "storageManager"])',
+          workspaceId: { type: 'string', description: 'Workspace ID' },
+          sessionId: { type: 'string', description: 'Session identifier' },
+          memory: { type: 'string', description: 'Brief summary of the conversation so far' },
+          goal: { type: 'string', description: 'Brief statement of the current objective' },
+          constraints: { type: 'string', description: 'Optional rules or limits' },
+          tool: {
+            type: 'string',
+            description: 'Selector string such as "--help", "content", or "content read, storage list"',
           },
         },
-        required: ['agents'],
+        required: ['memory', 'goal', 'tool'],
       },
     },
   },
@@ -117,27 +121,21 @@ export const META_TOOLS: Tool[] = [
     type: 'function',
     function: {
       name: 'useTools',
-      description: 'Execute tools. Pass context and an array of tool calls.',
+      description: 'Execute one or more CLI-style tool commands.',
       parameters: {
         type: 'object',
         properties: {
-          context: {
-            type: 'object',
-            description: 'Execution context with workspaceId, sessionId, memory, goal',
-          },
-          calls: {
-            type: 'array',
-            items: {
-              type: 'object',
-              properties: {
-                tool: { type: 'string', description: 'Tool name (e.g., contentManager_read)' },
-                params: { type: 'object', description: 'Tool parameters' },
-              },
-            },
-            description: 'Array of tool calls to execute',
+          workspaceId: { type: 'string', description: 'Workspace ID' },
+          sessionId: { type: 'string', description: 'Session identifier' },
+          memory: { type: 'string', description: 'Brief summary of the conversation so far' },
+          goal: { type: 'string', description: 'Brief statement of the current objective' },
+          constraints: { type: 'string', description: 'Optional rules or limits' },
+          tool: {
+            type: 'string',
+            description: 'CLI-style command string such as "content read --path notes/today.md, storage list notes"',
           },
         },
-        required: ['context', 'calls'],
+        required: ['memory', 'goal', 'tool'],
       },
     },
   },

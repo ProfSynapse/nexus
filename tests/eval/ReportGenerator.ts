@@ -7,7 +7,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import type { EvalRunResult, ScenarioResult, EvalConfig } from './types';
+import type { EvalRunResult, EvalConfig } from './types';
 
 /**
  * Generate a markdown report string from eval results.
@@ -97,14 +97,15 @@ export function generateReport(runResult: EvalRunResult, config: EvalConfig): st
 /**
  * Save report to a timestamped file.
  */
-export function saveReport(report: string, artifactsDir: string): string {
+export function saveReport(report: string, artifactsDir: string, prefix = 'eval-report'): string {
   const dir = path.resolve(process.cwd(), artifactsDir);
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
 
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-  const filePath = path.join(dir, `eval-report-${timestamp}.md`);
+  const safePrefix = prefix.replace(/[^a-zA-Z0-9_-]/g, '-');
+  const filePath = path.join(dir, `${safePrefix}-${timestamp}.md`);
   fs.writeFileSync(filePath, report, 'utf-8');
   return filePath;
 }

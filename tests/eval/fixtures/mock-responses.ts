@@ -105,28 +105,29 @@ export const GET_TOOLS_RESPONSE: MockToolResponse = {
   result: {
     tools: [
       {
-        name: 'contentManager_read',
+        agent: 'contentManager',
+        tool: 'read',
         description: 'Read the content of a note file.',
-        parameters: {
-          type: 'object',
-          properties: {
-            path: { type: 'string' },
-            startLine: { type: 'number' },
-          },
-          required: ['path', 'startLine'],
-        },
+        command: 'content read',
+        usage: 'content read <path> <startLine> [--end-line <endLine>]',
+        arguments: [
+          { name: 'path', flag: '--path', type: 'string', required: true, positional: true },
+          { name: 'startLine', flag: '--start-line', type: 'number', required: true, positional: true },
+          { name: 'endLine', flag: '--end-line', type: 'number', required: false, positional: false },
+        ],
+        examples: ['content read "notes/meeting.md" 1 --end-line 20'],
       },
       {
-        name: 'contentManager_write',
+        agent: 'contentManager',
+        tool: 'write',
         description: 'Write content to a note file.',
-        parameters: {
-          type: 'object',
-          properties: {
-            path: { type: 'string' },
-            content: { type: 'string' },
-          },
-          required: ['path', 'content'],
-        },
+        command: 'content write',
+        usage: 'content write <path> <content>',
+        arguments: [
+          { name: 'path', flag: '--path', type: 'string', required: true, positional: true },
+          { name: 'content', flag: '--content', type: 'string', required: true, positional: true },
+        ],
+        examples: ['content write "notes/summary.md" "# Summary"'],
       },
     ],
   },

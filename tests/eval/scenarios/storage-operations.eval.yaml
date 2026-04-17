@@ -8,8 +8,7 @@
       expectedTools:
         - name: getTools
           params:
-            request:
-              - agent: storageManager
+            tool: "storage"
       mockResponses:
         getTools:
           success: true
@@ -18,19 +17,26 @@
               - agent: storageManager
                 tool: move
                 description: Move a file or folder
-                inputSchema:
-                  type: object
-                  properties:
-                    path:
-                      type: string
-                    destination:
-                      type: string
-                  required:
-                    - path
-                    - destination
+                command: "storage move"
+                usage: "storage move <path> <destination>"
+                arguments:
+                  - name: path
+                    flag: --path
+                    type: string
+                    required: true
+                    positional: true
+                  - name: destination
+                    flag: --destination
+                    type: string
+                    required: true
+                    positional: true
+                examples:
+                  - 'storage move "path-value" "destination-value"'
 
     - expectedTools:
         - name: useTools
+          params:
+            tool: "storage move"
       mockResponses:
         useTools:
           success: true
@@ -47,8 +53,7 @@
       expectedTools:
         - name: getTools
           params:
-            request:
-              - agent: storageManager
+            tool: "storage"
       mockResponses:
         getTools:
           success: true
@@ -57,16 +62,21 @@
               - agent: storageManager
                 tool: createFolder
                 description: Create a new folder
-                inputSchema:
-                  type: object
-                  properties:
-                    path:
-                      type: string
-                  required:
-                    - path
+                command: "storage create-folder"
+                usage: "storage create-folder <path>"
+                arguments:
+                  - name: path
+                    flag: --path
+                    type: string
+                    required: true
+                    positional: true
+                examples:
+                  - 'storage create-folder "path-value"'
 
     - expectedTools:
         - name: useTools
+          params:
+            tool: "storage create-folder"
       mockResponses:
         useTools:
           success: true
@@ -83,8 +93,7 @@
       expectedTools:
         - name: getTools
           params:
-            request:
-              - agent: storageManager
+            tool: "storage"
       mockResponses:
         getTools:
           success: true
@@ -93,19 +102,26 @@
               - agent: storageManager
                 tool: copy
                 description: Copy a file or folder
-                inputSchema:
-                  type: object
-                  properties:
-                    path:
-                      type: string
-                    destination:
-                      type: string
-                  required:
-                    - path
-                    - destination
+                command: "storage copy"
+                usage: "storage copy <path> <destination>"
+                arguments:
+                  - name: path
+                    flag: --path
+                    type: string
+                    required: true
+                    positional: true
+                  - name: destination
+                    flag: --destination
+                    type: string
+                    required: true
+                    positional: true
+                examples:
+                  - 'storage copy "path-value" "destination-value"'
 
     - expectedTools:
         - name: useTools
+          params:
+            tool: "storage copy"
       mockResponses:
         useTools:
           success: true
@@ -122,8 +138,7 @@
       expectedTools:
         - name: getTools
           params:
-            request:
-              - agent: storageManager
+            tool: "storage"
       mockResponses:
         getTools:
           success: true
@@ -132,16 +147,21 @@
               - agent: storageManager
                 tool: archive
                 description: Archive a file or folder
-                inputSchema:
-                  type: object
-                  properties:
-                    path:
-                      type: string
-                  required:
-                    - path
+                command: "storage archive"
+                usage: "storage archive <path>"
+                arguments:
+                  - name: path
+                    flag: --path
+                    type: string
+                    required: true
+                    positional: true
+                examples:
+                  - 'storage archive "path-value"'
 
     - expectedTools:
         - name: useTools
+          params:
+            tool: "storage archive"
       mockResponses:
         useTools:
           success: true

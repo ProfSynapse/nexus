@@ -3,6 +3,11 @@
  *
  * Reads scenario YAML files from disk and parses them into EvalScenario[].
  * Each YAML file contains an array of scenario objects. Used by eval.test.ts.
+ *
+ * Scenarios are now authored directly in the native CLI shape (`params.tool:
+ * "<agent> <tool> --flag value"` and native `command`/`usage`/`arguments`/
+ * `examples` mock responses). The prior legacy-shape auto-upgrade pass has
+ * been removed — see Test M5 in docs/review/toolmanager-cli-test-review.md.
  */
 
 import * as fs from 'fs';

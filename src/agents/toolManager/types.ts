@@ -1,170 +1,154 @@
 /**
- * Type definitions for ToolManager agent
- * Follows existing CommonParameters/CommonResult patterns
+ * Type definitions for ToolManager agent.
  */
 
 import type { CommonResult } from '../../types';
 import type { ToolContext } from '../../types/mcp/AgentTypes';
 
-// Re-export ToolContext from central location
 export type { ToolContext } from '../../types/mcp/AgentTypes';
 
-// ==================== GetTools Types ====================
-
-/**
- * Single request item for getTools
- * Explicit structure with named fields for LLM clarity
- */
 export interface ToolRequestItem {
-  /** Agent name (e.g., "storageManager", "contentManager") */
   agent: string;
-
-  /** Array of tool names to get schemas for */
-  tools: string[];
+  tools?: string[];
 }
 
-/**
- * GetTools parameters - requires context for session tracking
- */
-export interface GetToolsParams {
-  /** Context for this request (required for session tracking) */
-  context: ToolContext;
+export interface ToolCallParams {
+  agent: string;
+  tool: string;
+  params: Record<string, unknown>;
+  continueOnFailure?: boolean;
+}
+
+export interface CliArgumentSchema {
+  name: string;
+  flag: string;
+  type: string;
+  required: boolean;
+  positional: boolean;
+  description?: string;
+}
+
+export interface CliToolSchema {
+  agent: string;
+  tool: string;
+  description: string;
+  command: string;
+  usage: string;
+  arguments: CliArgumentSchema[];
+  examples: string[];
+}
+
+interface LegacyContextCarrier {
+  context?: Partial<ToolContext>;
+}
+
+export interface GetToolsParams extends LegacyContextCarrier {
+  workspaceId?: string;
+  sessionId?: string;
+  memory?: string;
+  goal?: string;
+  constraints?: string;
+  imageProvider?: ToolContext['imageProvider'];
+  imageModel?: string;
+  transcriptionProvider?: string;
+  transcriptionModel?: string;
 
   /**
-   * Array of agent/tools requests
-   * Example: [{ agent: "storageManager", tools: ["list"] }]
+   * CLI selector string. Examples:
+   * - "--help"
+   * - "storage"
+   * - "storage move"
+   * - "storage move, content read"
    */
-  request: ToolRequestItem[];
+  tool?: string;
+
+  /**
+   * Legacy/internal fallback.
+   * Hidden from public schema; retained so internal tests and adapters can be migrated incrementally.
+   */
+  request?: ToolRequestItem[];
 }
 
-/**
- * Shared JSON schema for ToolContext
- * Used by both getTools and useTool parameter schemas
- */
-export function getToolContextSchema(): Record<string, unknown> {
-  return {
-    type: 'object',
-    properties: {
-      workspaceId: {
-        type: 'string',
-        description: 'Workspace ID. Use "default" for global workspace, or use memoryManager_listWorkspaces to see available workspaces. Do NOT make up workspace IDs.'
-      },
-      sessionId: {
-        type: 'string',
-        description: 'Session identifier - provide any name, a standard ID will be assigned and returned. Use the assigned ID for subsequent calls.'
-      },
-      memory: { type: 'string', description: 'Essence of conversation so far (1-3 sentences)' },
-      goal: { type: 'string', description: 'Current objective (1-3 sentences)' },
-      constraints: { type: 'string', description: 'Rules/limits to follow (optional, 1-3 sentences)' }
-    },
-    required: ['workspaceId', 'sessionId', 'memory', 'goal'],
-    description: 'Context for session tracking. Fill this FIRST before other parameters.'
-  };
-}
-
-/**
- * Tool schema returned by getTools
- * Organized by agent for clarity
- */
-export interface ToolSchema {
-  /** Agent that owns this tool */
-  agent: string;
-
-  /** Tool name (without agent prefix) */
-  tool: string;
-
-  /** Tool description */
-  description: string;
-
-  /** Parameter schema WITHOUT common parameters (context stripped) */
-  inputSchema: Record<string, unknown>;
-}
-
-/**
- * GetTools result - organized by agent
- */
 export interface GetToolsResult extends CommonResult {
   success: boolean;
   error?: string;
   data?: {
-    tools: ToolSchema[];
+    tools: CliToolSchema[];
   };
 }
 
-// ==================== UseTool Types ====================
-
-/**
- * Individual tool call within useTool
- */
-export interface ToolCallParams {
-  /** Agent name (e.g., "storageManager") */
-  agent: string;
-
-  /** Tool name (e.g., "list") */
-  tool: string;
-
-  /** Tool-specific parameters (context injected automatically) */
-  params: Record<string, unknown>;
-
-  /** If true, continue executing remaining calls even if this one fails */
-  continueOnFailure?: boolean;
-}
-
-/**
- * UseToolParams uses the new ToolContext schema (memory/goal/constraints)
- */
-export interface UseToolParams {
-  /** Context shared by all tool calls */
-  context: ToolContext;
+export interface UseToolParams extends LegacyContextCarrier {
+  workspaceId?: string;
+  sessionId?: string;
+  memory?: string;
+  goal?: string;
+  constraints?: string;
+  imageProvider?: ToolContext['imageProvider'];
+  imageModel?: string;
+  transcriptionProvider?: string;
+  transcriptionModel?: string;
 
   /**
-   * Execution strategy (default: 'serial')
-   * - serial: Execute one at a time, stop on first error (unless continueOnFailure)
-   * - parallel: Execute all concurrently
+   * CLI command string. Supports one or more commands separated by commas.
+   */
+  tool?: string;
+
+  /**
+   * Legacy/internal fallback.
+   * Hidden from public schema; retained so internal tests and adapters can be migrated incrementally.
    */
   strategy?: 'serial' | 'parallel';
+  calls?: ToolCallParams[];
+}
 
-  /** Tool calls to execute */
+export interface NormalizedUseToolParams {
+  context: ToolContext;
+  strategy?: 'serial' | 'parallel';
   calls: ToolCallParams[];
 }
 
-/**
- * Result for a single tool call
- */
 export interface ToolCallResult {
-  /** Agent that executed the tool */
   agent: string;
-
-  /** Tool that was executed */
   tool: string;
-
-  /** Whether this call succeeded */
   success: boolean;
-
-  /** Error message if this call failed */
+  params?: Record<string, unknown>;
   error?: string;
-
-  /** Result data - only for tools that return data (readContent, searches) */
   data?: unknown;
 }
 
-/**
- * Failure detail for lean error reporting
- */
 export interface ToolFailure {
   agent: string;
   tool: string;
   error?: string;
 }
 
-/**
- * UseTool result - lean format
- * - Success single: { success: true, data: <tool's data directly> }
- * - Success multiple: { success: true, data: { results: [data1, data2] } }
- * - Failure: { success: false, error: "...", data: { failures: [...] } }
- */
 export interface UseToolResult extends CommonResult {
   success: boolean;
   error?: string;
-  data?: unknown; // Flexible: can be tool's data directly, or { results: [] } or { failures: [] }
+  data?: unknown;
+}
+
+export function getTopLevelToolContextSchema(): Record<string, unknown> {
+  return {
+    workspaceId: {
+      type: 'string',
+      description: 'Workspace ID. Use "default" for the global workspace. Do not invent workspace IDs.'
+    },
+    sessionId: {
+      type: 'string',
+      description: 'Session identifier for trace continuity. Reuse the provided value for subsequent calls.'
+    },
+    memory: {
+      type: 'string',
+      description: 'Brief summary of the conversation so far.'
+    },
+    goal: {
+      type: 'string',
+      description: 'Brief statement of the current objective.'
+    },
+    constraints: {
+      type: 'string',
+      description: 'Optional rules or limits.'
+    }
+  };
 }

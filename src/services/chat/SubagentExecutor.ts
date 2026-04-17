@@ -536,15 +536,11 @@ ${toolSchemas}
 **To call a tool**, use toolManager_useTool with:
 \`\`\`json
 {
-  "context": {
-    "workspaceId": "${params.workspaceId || 'default'}",
-    "sessionId": "${params.sessionId || 'subagent'}",
-    "memory": "Subagent working on: ${params.task.substring(0, 50)}...",
-    "goal": "Complete the assigned task"
-  },
-  "calls": [
-    { "agent": "agentName", "tool": "toolName", "params": { ... } }
-  ]
+  "workspaceId": "${params.workspaceId || 'default'}",
+  "sessionId": "${params.sessionId || 'subagent'}",
+  "memory": "Subagent working on: ${params.task.substring(0, 50)}...",
+  "goal": "Complete the assigned task",
+  "tool": "agent tool-name --flag value, another-agent another-tool --flag value"
 }
 \`\`\`
 
@@ -556,7 +552,7 @@ Call toolManager_getTools first to discover available tools, then toolManager_us
 
 Example flow:
 1. Call getTools to see what's available
-2. Call useTool with the appropriate agent/tool/params
+2. Call useTool with the appropriate CLI-style tool string
 3. Continue until task is complete
 4. Respond with final results (no tool calls)
 

@@ -8,12 +8,15 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { __setRequestUrlMock } from 'obsidian';
 import type { CapturedRequest, CaptureConfig } from './types';
 
 export class RequestCapture {
   private requests: CapturedRequest[] = [];
   private installed = false;
+  private scopedRequests = new Map<string, CapturedRequest[]>();
+  private scopeStorage = new AsyncLocalStorage<string | null>();
 
   /**
    * Install the capture layer by wrapping __setRequestUrlMock with a real
@@ -74,7 +77,7 @@ export class RequestCapture {
         requestBody = request.body;
       }
 
-      this.requests.push({
+      const capturedRequest: CapturedRequest = {
         url: request.url,
         method: request.method || 'GET',
         headers,
@@ -85,7 +88,16 @@ export class RequestCapture {
           body: text.length > 50_000 ? text.slice(0, 50_000) + '...[truncated]' : text,
         },
         timestamp: startTime,
-      });
+      };
+
+      this.requests.push(capturedRequest);
+
+      const scopeId = this.scopeStorage.getStore();
+      if (scopeId) {
+        const scoped = this.scopedRequests.get(scopeId) ?? [];
+        scoped.push(capturedRequest);
+        this.scopedRequests.set(scopeId, scoped);
+      }
 
       return {
         status: resp.status,
@@ -153,6 +165,15 @@ export class RequestCapture {
   }
 
   /**
+   * Run work inside a scenario-scoped capture context so requests can be
+   * dumped independently even when scenarios execute in parallel.
+   */
+  async runWithScope<T>(scopeId: string, fn: () => Promise<T>): Promise<T> {
+    this.scopedRequests.set(scopeId, []);
+    return await this.scopeStorage.run(scopeId, fn);
+  }
+
+  /**
    * Dump captured requests to a file for a failed test.
    */
   dumpOnFailure(testName: string, artifactsDir: string): string | null {
@@ -182,9 +203,39 @@ export class RequestCapture {
   }
 
   /**
+   * Dump only the requests captured inside a given scope.
+   */
+  dumpScopeOnFailure(scopeId: string, artifactsDir: string): string | null {
+    const scopedRequests = this.scopedRequests.get(scopeId) ?? [];
+    if (scopedRequests.length === 0) return null;
+
+    const dir = path.resolve(process.cwd(), artifactsDir);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+
+    const safeName = scopeId.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const filePath = path.join(dir, `capture-${safeName}-${Date.now()}.json`);
+
+    const sanitized = scopedRequests.map((request) => ({
+      ...request,
+      response: {
+        ...request.response,
+        body: request.response.body.length > 5000
+          ? request.response.body.slice(0, 5000) + '...[truncated]'
+          : request.response.body,
+      },
+    }));
+
+    fs.writeFileSync(filePath, JSON.stringify(sanitized, null, 2));
+    return filePath;
+  }
+
+  /**
    * Clear all captured requests.
    */
   reset(): void {
     this.requests = [];
+    this.scopedRequests.clear();
   }
 }

@@ -9,8 +9,7 @@
       expectedTools:
         - name: getTools
           params:
-            request:
-              - agent: contentManager
+            tool: "content"
       mockResponses:
         getTools:
           success: true
@@ -19,19 +18,26 @@
               - agent: contentManager
                 tool: read
                 description: Read content from a file
-                inputSchema:
-                  type: object
-                  properties:
-                    path:
-                      type: string
-                    startLine:
-                      type: number
-                  required:
-                    - path
-                    - startLine
+                command: "content read"
+                usage: "content read <path> <startLine>"
+                arguments:
+                  - name: path
+                    flag: --path
+                    type: string
+                    required: true
+                    positional: true
+                  - name: startLine
+                    flag: --start-line
+                    type: number
+                    required: true
+                    positional: true
+                examples:
+                  - 'content read "path-value" 1'
 
     - expectedTools:
         - name: useTools
+          params:
+            tool: "content read"
       mockResponses:
         useTools:
           success: true
@@ -50,8 +56,7 @@
       expectedTools:
         - name: getTools
           params:
-            request:
-              - agent: contentManager
+            tool: "content"
       mockResponses:
         getTools:
           success: true
@@ -60,19 +65,26 @@
               - agent: contentManager
                 tool: write
                 description: Write content to a note file
-                inputSchema:
-                  type: object
-                  properties:
-                    path:
-                      type: string
-                    content:
-                      type: string
-                  required:
-                    - path
-                    - content
+                command: "content write"
+                usage: "content write <path> <content>"
+                arguments:
+                  - name: path
+                    flag: --path
+                    type: string
+                    required: true
+                    positional: true
+                  - name: content
+                    flag: --content
+                    type: string
+                    required: true
+                    positional: true
+                examples:
+                  - 'content write "path-value" "content-value"'
 
     - expectedTools:
         - name: useTools
+          params:
+            tool: "content write"
       mockResponses:
         useTools:
           success: true
@@ -82,16 +94,14 @@
                 success: true
 
 - name: update-existing-note
-  description: User asks to add content to an existing note — should use insert not write
+  description: User asks to add content to an existing note — should use insert rather than write, with or without a preparatory read
   toolSet: meta
-  allowReorder: true
   turns:
     - userMessage: "Add a new item to my todo list at notes/todo.md — 'Review pull request #42'"
       expectedTools:
         - name: getTools
           params:
-            request:
-              - agent: contentManager
+            tool: "content"
       mockResponses:
         getTools:
           success: true
@@ -100,53 +110,54 @@
               - agent: contentManager
                 tool: read
                 description: Read content from a file
-                inputSchema:
-                  type: object
-                  properties:
-                    path:
-                      type: string
-                    startLine:
-                      type: number
-                  required:
-                    - path
-                    - startLine
+                command: "content read"
+                usage: "content read <path> <startLine>"
+                arguments:
+                  - name: path
+                    flag: --path
+                    type: string
+                    required: true
+                    positional: true
+                  - name: startLine
+                    flag: --start-line
+                    type: number
+                    required: true
+                    positional: true
+                examples:
+                  - 'content read "path-value" 1'
               - agent: contentManager
                 tool: insert
                 description: Insert content at a specific position
-                inputSchema:
-                  type: object
-                  properties:
-                    path:
-                      type: string
-                    content:
-                      type: string
-                    position:
-                      type: string
-                      enum:
-                        - beginning
-                        - end
-                        - after-line
-                    lineNumber:
-                      type: number
-                  required:
-                    - path
-                    - content
-                    - position
+                command: "content insert"
+                usage: "content insert <path> <content> <position> [--line-number <lineNumber>]"
+                arguments:
+                  - name: path
+                    flag: --path
+                    type: string
+                    required: true
+                    positional: true
+                  - name: content
+                    flag: --content
+                    type: string
+                    required: true
+                    positional: true
+                  - name: position
+                    flag: --position
+                    type: string
+                    required: true
+                    positional: true
+                  - name: lineNumber
+                    flag: --line-number
+                    type: number
+                    required: false
+                    positional: false
+                examples:
+                  - 'content insert "path-value" "content-value" "position-value"'
 
     - expectedTools:
         - name: useTools
-      mockResponses:
-        useTools:
-          success: true
-          result:
-            results:
-              - tool: read
-                success: true
-                data:
-                  content: "# Todo\n\n- Fix login bug\n- Update docs"
-
-    - expectedTools:
-        - name: useTools
+          params:
+            tool: "content insert"
       mockResponses:
         useTools:
           success: true
@@ -163,8 +174,7 @@
       expectedTools:
         - name: getTools
           params:
-            request:
-              - agent: contentManager
+            tool: "content"
       mockResponses:
         getTools:
           success: true
@@ -173,22 +183,31 @@
               - agent: contentManager
                 tool: replace
                 description: Replace or delete content in a file
-                inputSchema:
-                  type: object
-                  properties:
-                    path:
-                      type: string
-                    search:
-                      type: string
-                    replace:
-                      type: string
-                  required:
-                    - path
-                    - search
-                    - replace
+                command: "content replace"
+                usage: "content replace <path> <search> <replace>"
+                arguments:
+                  - name: path
+                    flag: --path
+                    type: string
+                    required: true
+                    positional: true
+                  - name: search
+                    flag: --search
+                    type: string
+                    required: true
+                    positional: true
+                  - name: replace
+                    flag: --replace
+                    type: string
+                    required: true
+                    positional: true
+                examples:
+                  - 'content replace "path-value" "search-value" "replace-value"'
 
     - expectedTools:
         - name: useTools
+          params:
+            tool: "content replace"
       mockResponses:
         useTools:
           success: true

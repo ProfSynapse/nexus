@@ -1,28 +1,12 @@
-/**
- * GetToolsTool - Discovery tool for the two-tool architecture
- * Returns tool schemas for requested agents/tools
- *
- * Note: This tool implements ITool directly instead of extending BaseTool
- * because it's a discovery tool that doesn't require context parameters.
- */
-
 import { ITool } from '../../interfaces/ITool';
-import { GetToolsParams, GetToolsResult, ToolSchema, getToolContextSchema } from '../types';
 import { IAgent } from '../../interfaces/IAgent';
 import { getErrorMessage } from '../../../utils/errorUtils';
 import { SchemaData } from '../toolManager';
+import { GetToolsParams, GetToolsResult } from '../types';
+import { ToolCliNormalizer } from '../services/ToolCliNormalizer';
 
-/**
- * Internal-only tools — currently empty. The subagent tool was previously
- * hidden here but it needs to be discoverable in the chat UI. If called
- * via external MCP without conversation context, it fails gracefully
- * at execution time rather than being silently hidden at discovery. */
 const INTERNAL_ONLY_TOOLS = new Set<string>([]);
 
-/**
- * Tool for discovering available tools and their schemas
- * Implements ITool directly since it doesn't need context parameters
- */
 export class GetToolsTool implements ITool<GetToolsParams, GetToolsResult> {
   slug: string;
   name: string;
@@ -30,50 +14,38 @@ export class GetToolsTool implements ITool<GetToolsParams, GetToolsResult> {
   version: string;
 
   private agentRegistry: Map<string, IAgent>;
+  private cliNormalizer: ToolCliNormalizer;
 
-  /**
-   * Create a new GetToolsTool
-   * @param agentRegistry Map of agent name to agent instance
-   * @param schemaData Dynamic data for description (workspaces, custom agents, vault structure)
-   */
   constructor(agentRegistry: Map<string, IAgent>, schemaData: SchemaData) {
     this.slug = 'getTools';
     this.name = 'Get Tools';
     this.version = '1.0.0';
     this.agentRegistry = agentRegistry;
-
-    // Build description AFTER agentRegistry is set (uses actual registered agents)
+    this.cliNormalizer = new ToolCliNormalizer(agentRegistry);
     this.description = this.buildDescription(schemaData);
   }
 
-  /**
-   * Build the dynamic description from actual registered agents
-   * Filters out internal-only tools that should not be exposed to MCP clients
-   */
   private buildDescription(schemaData: SchemaData): string {
     const lines = [
       'REQUIRED FIRST STEP: You MUST call getTools BEFORE calling useTools.',
-      'This returns the exact parameter schemas for tools. Without calling getTools first, you will not know the correct parameters and your useTools call will fail.',
+      'This returns CLI-oriented command metadata for the tools you need next.',
       '',
-      'Workflow: 1) Call getTools to get schemas → 2) Call useTools with correct params',
-      ''
+      'Workflow: 1) Call getTools with one or more selectors → 2) Call useTools with one or more CLI-style commands',
+      'Example selectors: tool="--help", tool="storage", tool="storage move", tool="storage move, content read"',
+      '',
+      'Agents:'
     ];
 
-    // Build from actual registered agents (single source of truth)
-    // Filter out internal-only tools that shouldn't be exposed externally
-    lines.push('Agents:');
     for (const [agentName, agent] of this.agentRegistry) {
       if (agentName === 'toolManager') continue;
       const tools = agent.getTools()
-        .map(t => t.slug)
+        .map(tool => tool.slug)
         .filter(slug => !INTERNAL_ONLY_TOOLS.has(slug));
-      // Only list agent if it has visible tools
       if (tools.length > 0) {
         lines.push(`${agentName}: [${tools.join(',')}]`);
       }
     }
 
-    // Custom agents section
     if (schemaData.customAgents.length > 0) {
       lines.push('');
       lines.push('Custom Agents:');
@@ -82,96 +54,63 @@ export class GetToolsTool implements ITool<GetToolsParams, GetToolsResult> {
       }
     }
 
-    // Workspaces section
     lines.push('');
-    lines.push('Workspaces: [default' + (schemaData.workspaces.length > 0 ? ',' + schemaData.workspaces.map(w => w.name).join(',') : '') + ']');
+    lines.push(`Workspaces: [default${schemaData.workspaces.length > 0 ? `,${schemaData.workspaces.map(w => w.name).join(',')}` : ''}]`);
 
-    // Vault structure section (compact)
     if (schemaData.vaultRoot.length > 0) {
       const folders = schemaData.vaultRoot.slice(0, 5);
       if (schemaData.vaultRoot.length > 5) folders.push('...');
-      lines.push('Vault: [' + folders.join(',') + ']');
+      lines.push(`Vault: [${folders.join(',')}]`);
     }
 
     return lines.join('\n');
   }
 
-  /**
-   * Execute the tool
-   * @param params Tool parameters with request array
-   * @returns Promise that resolves with tool schemas
-   */
   // eslint-disable-next-line @typescript-eslint/require-await -- implements ITool.execute() async interface
   async execute(params: GetToolsParams): Promise<GetToolsResult> {
     try {
-      const { request } = params;
-      const resultSchemas: ToolSchema[] = [];
+      const requests = this.cliNormalizer.normalizeDiscoveryRequests(params);
+      const resultSchemas = [];
       const notFound: string[] = [];
 
-      // REQUIRE at least 1 agent/tool - don't allow empty requests
-      if (!request || !Array.isArray(request) || request.length === 0) {
-        return {
-          success: false,
-          error: 'Request array is required. Example: { "request": [{ "agent": "storageManager", "tools": ["list"] }] }. See tool description for available agents and tools.'
-        };
-      }
-
-      // Process each request item in the array
-      for (const item of request) {
-        const agentName = item.agent;
-        const toolNames = item.tools;
-
-        // Validate item structure
-        if (!agentName || typeof agentName !== 'string') {
-          notFound.push('Missing or invalid "agent" field in request item');
-          continue;
-        }
-
-        const agent = this.agentRegistry.get(agentName);
+      for (const item of requests) {
+        const agent = this.agentRegistry.get(item.agent);
         if (!agent) {
-          notFound.push(`Agent "${agentName}" not found`);
+          notFound.push(`Agent "${item.agent}" not found`);
           continue;
         }
 
-        // If tools array is empty or omitted, return ALL tools for this agent
-        if (!toolNames || !Array.isArray(toolNames) || toolNames.length === 0) {
-          const allTools = agent.getTools()
-            .filter(t => !INTERNAL_ONLY_TOOLS.has(t.slug));
+        if (!item.tools || item.tools.length === 0) {
+          const allTools = agent.getTools().filter(tool => !INTERNAL_ONLY_TOOLS.has(tool.slug));
           for (const tool of allTools) {
-            const schema = this.buildToolSchema(agentName, tool);
-            resultSchemas.push(schema);
+            resultSchemas.push(this.cliNormalizer.buildCliSchema(item.agent, tool));
           }
           continue;
         }
 
-        // Get specific tools (skip internal-only tools)
-        for (const toolSlug of toolNames) {
+        for (const toolSlug of item.tools) {
           if (INTERNAL_ONLY_TOOLS.has(toolSlug)) {
-            notFound.push(`Tool "${toolSlug}" not found in agent "${agentName}"`);
+            notFound.push(`Tool "${toolSlug}" not found in agent "${item.agent}"`);
             continue;
           }
+
           const tool = agent.getTool(toolSlug);
           if (!tool) {
-            notFound.push(`Tool "${toolSlug}" not found in agent "${agentName}"`);
+            notFound.push(`Tool "${toolSlug}" not found in agent "${item.agent}"`);
             continue;
           }
-          const schema = this.buildToolSchema(agentName, tool);
-          resultSchemas.push(schema);
+
+          resultSchemas.push(this.cliNormalizer.buildCliSchema(item.agent, tool));
         }
       }
 
-      // Build result
-      const result: GetToolsResult = {
+      return {
         success: true,
-        data: { tools: resultSchemas }
+        ...(notFound.length > 0 ? { error: `Some items not found: ${notFound.join(', ')}` } : {}),
+        data: {
+          tools: resultSchemas
+        }
       };
-
-      // Add warning about not found items
-      if (notFound.length > 0) {
-        result.error = `Some items not found: ${notFound.join(', ')}`;
-      }
-
-      return result;
     } catch (error) {
       return {
         success: false,
@@ -180,86 +119,39 @@ export class GetToolsTool implements ITool<GetToolsParams, GetToolsResult> {
     }
   }
 
-  /**
-   * Build a ToolSchema from an agent and tool
-   */
-  private buildToolSchema(agentName: string, tool: { slug: string; description: string; getParameterSchema(): unknown }): ToolSchema {
-    // Get the full parameter schema
-    const fullSchema = tool.getParameterSchema() as Record<string, unknown>;
-
-    // Strip common parameters (context, workspaceContext) - LLM doesn't need to see these
-    // since useTool handles context at the top level
-    const strippedSchema = this.stripCommonParams(fullSchema);
-
-    return {
-      agent: agentName,
-      tool: tool.slug,
-      description: tool.description,
-      inputSchema: strippedSchema
-    };
-  }
-
-  /**
-   * Strip common parameters from schema that are handled by useTool
-   */
-  private stripCommonParams(schema: Record<string, unknown>): Record<string, unknown> {
-    const result = { ...schema };
-
-    // Remove common params from properties
-    if (result.properties && typeof result.properties === 'object') {
-      const props = { ...(result.properties as Record<string, unknown>) };
-      delete props.context;
-      delete props.workspaceContext;
-      result.properties = props;
-    }
-
-    // Remove from required array if present
-    if (result.required && Array.isArray(result.required)) {
-      result.required = result.required.filter(
-        (r: string) => r !== 'context' && r !== 'workspaceContext'
-      );
-    }
-
-    return result;
-  }
-
-  /**
-   * Get the JSON schema for the tool's parameters
-   * Context is REQUIRED - provides session tracking and memory/goal for traces
-   */
   getParameterSchema(): Record<string, unknown> {
     return {
       type: 'object',
       properties: {
-        context: getToolContextSchema(),
-        request: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              agent: {
-                type: 'string',
-                description: 'Agent name'
-              },
-              tools: {
-                type: 'array',
-                items: { type: 'string' },
-                description: 'Tool names to get schemas for. Empty array or omit to get ALL tools for this agent.'
-              }
-            },
-            required: ['agent']
-          },
-          minItems: 1,
-          description: 'Array of agent/tools requests'
+        workspaceId: {
+          type: 'string',
+          description: 'Workspace ID. Optional. Defaults to "default".'
+        },
+        sessionId: {
+          type: 'string',
+          description: 'Session identifier for traces. Optional; auto-generated if omitted.'
+        },
+        memory: {
+          type: 'string',
+          description: 'Brief summary of the conversation so far.'
+        },
+        goal: {
+          type: 'string',
+          description: 'Brief statement of the current objective.'
+        },
+        constraints: {
+          type: 'string',
+          description: 'Optional rules or limits.'
+        },
+        tool: {
+          type: 'string',
+          description: 'CLI-style selector string. Supports one or more selectors separated by commas. Examples: "--help", "storage", "storage move", "storage move, content read".'
         }
       },
-      required: ['context', 'request']
+      required: ['memory', 'goal', 'tool']
     };
   }
 
-  /**
-   * Get the JSON schema for the tool's result
-   */
   getResultSchema(): Record<string, unknown> {
     return {
       type: 'object',
@@ -274,12 +166,32 @@ export class GetToolsTool implements ITool<GetToolsParams, GetToolsResult> {
               items: {
                 type: 'object',
                 properties: {
-                  agent: { type: 'string', description: 'Agent name' },
-                  tool: { type: 'string', description: 'Tool name' },
-                  description: { type: 'string', description: 'Tool description' },
-                  inputSchema: { type: 'object', description: 'Parameter schema' }
+                  agent: { type: 'string' },
+                  tool: { type: 'string' },
+                  description: { type: 'string' },
+                  command: { type: 'string' },
+                  usage: { type: 'string' },
+                  arguments: {
+                    type: 'array',
+                    items: {
+                      type: 'object',
+                      properties: {
+                        name: { type: 'string' },
+                        flag: { type: 'string' },
+                        type: { type: 'string' },
+                        required: { type: 'boolean' },
+                        positional: { type: 'boolean' },
+                        description: { type: 'string' }
+                      },
+                      required: ['name', 'flag', 'type', 'required', 'positional']
+                    }
+                  },
+                  examples: {
+                    type: 'array',
+                    items: { type: 'string' }
+                  }
                 },
-                required: ['agent', 'tool', 'description', 'inputSchema']
+                required: ['agent', 'tool', 'description', 'command', 'usage', 'arguments', 'examples']
               }
             }
           }

@@ -19,6 +19,7 @@ import { getToolNameMetadata } from '../../../utils/toolNameUtils';
 import { ToolStatusBarController } from '../controllers/ToolStatusBarController';
 import { ToolEventParser } from '../utils/ToolEventParser';
 import { formatToolStepLabel } from '../utils/toolDisplayFormatter';
+import { parseCliForDisplay } from '../../../agents/toolManager/services/ToolCliNormalizer';
 import type { ToolCallStateManager, ToolCallPhase, StateChangeEvent, ToolCallMetadata } from '../services/ToolCallStateManager';
 
 type ToolEventPayload = NonNullable<Parameters<typeof ToolEventParser.getToolEventInfo>[0]>;
@@ -126,22 +127,35 @@ export class ToolEventCoordinator {
 
       if (isUseTools && parameters && typeof parameters === 'object') {
         const params = parameters as Record<string, unknown>;
-        const innerCalls = Array.isArray(params.calls) ? params.calls : [];
+        // New CLI contract: params.tool is a comma-separated command string.
+        // Legacy contract (WebLLM/Nexus, stored conversations): params.calls[].
+        // Prefer params.calls when present (even if entries are invalid — the
+        // loop below skips bad entries and the `continue` on non-empty suppresses
+        // the default useTools fallthrough). Fall to CLI only when calls is absent.
+        const innerCalls: Array<{ agent: string; tool: string; parameters?: Record<string, unknown> }> =
+          Array.isArray(params.calls)
+            ? params.calls
+                .map(inner => (inner && typeof inner === 'object') ? inner as Record<string, unknown> : null)
+                .map(inner => ({
+                  agent: typeof inner?.agent === 'string' ? inner.agent : '',
+                  tool: typeof inner?.tool === 'string' ? inner.tool : '',
+                  parameters: (typeof inner?.parameters === 'object' && inner.parameters !== null)
+                    ? inner.parameters as Record<string, unknown>
+                    : undefined
+                }))
+            : typeof params.tool === 'string'
+              ? parseCliForDisplay(params.tool)
+              : [];
 
 
         for (let i = 0; i < innerCalls.length; i++) {
-          const inner: unknown = innerCalls[i];
-          if (!inner || typeof inner !== 'object') continue;
-          const call = inner as Record<string, unknown>;
-          const agent = typeof call.agent === 'string' ? call.agent : '';
-          const tool = typeof call.tool === 'string' ? call.tool : '';
+          const call = innerCalls[i];
+          const { agent, tool } = call;
           if (!agent || !tool) continue;
 
           const innerTechnical = `${agent}.${tool}`;
           const innerMeta = getToolNameMetadata(innerTechnical);
-          const innerParams = (typeof call.parameters === 'object' && call.parameters !== null)
-            ? call.parameters as Record<string, unknown>
-            : undefined;
+          const innerParams = call.parameters;
 
           // Append _N index to match execution path IDs (ToolBatchExecutionService
           // generates stepIds like `call_abc_0`, `call_abc_1` for each inner call).

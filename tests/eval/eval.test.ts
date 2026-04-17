@@ -62,6 +62,14 @@ function resolveToolSet(toolSet: ToolSetType | undefined): Tool[] {
   }
 }
 
+function sanitizeScopeId(value: string): string {
+  return value.replace(/[^a-zA-Z0-9_-]/g, '_');
+}
+
+function buildModelReportPrefix(providerId: string, model: string): string {
+  return `eval-report-${providerId}-${model.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
+}
+
 // ---------------------------------------------------------------------------
 // Scenario loading + test generation
 // ---------------------------------------------------------------------------
@@ -109,28 +117,29 @@ describe('LLM Eval Harness', () => {
     }
   });
 
-  // Create test cases for each provider+model
+  // Create test cases for each provider+model.
+  // Each model test runs concurrently, and each test already fans out all
+  // runnable scenarios in parallel via Promise.all.
   for (const provider of enabledProviders) {
     for (const model of provider.models) {
       const shortModel = model.split('/').pop() || model;
 
       describe(`${provider.id}/${shortModel}`, () => {
-        // We use a dynamic test that loads and runs all scenarios
-        // since scenarios are loaded asynchronously in beforeAll
-        it('runs all eval scenarios', async () => {
+        // We use a dynamic concurrent test that loads and runs all scenarios
+        // since scenarios are loaded asynchronously in beforeAll.
+        it.concurrent('runs all eval scenarios', async () => {
           if (scenarios.length === 0) {
             console.warn('No scenarios to run');
             return;
           }
 
-          const results: ScenarioResult[] = [];
+          const runnableScenarios = scenarios.filter((scenario) => {
+            if (scenario.providers && !scenario.providers.includes(provider.id)) return false;
+            if (scenario.models && !scenario.models.includes(model)) return false;
+            return true;
+          });
 
-          for (const scenario of scenarios) {
-            // Skip if scenario restricts providers/models
-            if (scenario.providers && !scenario.providers.includes(provider.id)) continue;
-            if (scenario.models && !scenario.models.includes(model)) continue;
-
-            // Resolve system prompt
+          const results = await Promise.all(runnableScenarios.map(async (scenario) => {
             const resolvedScenario = {
               ...scenario,
               systemPrompt: resolveSystemPrompt(
@@ -141,31 +150,27 @@ describe('LLM Eval Harness', () => {
             console.log(`  [${shortModel}] Running: ${scenario.name}`);
 
             const tools = resolveToolSet(scenario.toolSet);
+            const captureScopeId = sanitizeScopeId(`${provider.id}_${shortModel}_${scenario.name}`);
 
-            const result = await runScenario(
-              resolvedScenario,
-              provider,
-              model,
-              tools,
-              config
-            );
+            const result = await capture.runWithScope(captureScopeId, async () => {
+              return await runScenario(
+                resolvedScenario,
+                provider,
+                model,
+                tools,
+                config
+              );
+            });
 
-            results.push(result);
-            allResults.push(result);
-
-            // Dump captures on failure
             if (!result.passed && config.capture.dumpOnFailure) {
-              const dumpPath = capture.dumpOnFailure(
-                `${scenario.name}_${shortModel}`,
+              const dumpPath = capture.dumpScopeOnFailure(
+                captureScopeId,
                 config.capture.artifactsDir
               );
               if (dumpPath) {
                 console.log(`  [${shortModel}] Request capture dumped: ${dumpPath}`);
               }
             }
-
-            // Reset capture between scenarios
-            capture.reset();
 
             const status = result.passed ? 'PASS' : 'FAIL';
             const turnsPassed = result.turns.filter((t) => t.passed).length;
@@ -178,10 +183,31 @@ describe('LLM Eval Harness', () => {
                 console.log(`    Turn ${turn.turnIndex + 1}: ${turn.errors.join('; ')}`);
               }
             }
-          }
+
+            return result;
+          }));
+
+          allResults.push(...results);
 
           // Assert at least one scenario ran
           expect(results.length).toBeGreaterThan(0);
+
+          const modelRunResult = {
+            config: process.env.EVAL_CONFIG || 'default',
+            mode: config.mode,
+            results,
+            startTime,
+            endTime: Date.now(),
+          };
+
+          const modelReport = generateReport(modelRunResult, config);
+          const modelReportPath = saveReport(
+            modelReport,
+            config.capture.artifactsDir,
+            buildModelReportPrefix(provider.id, shortModel),
+          );
+
+          console.log(`  [${shortModel}] Report saved: ${modelReportPath}`);
 
           // Log summary
           const passed = results.filter((r) => r.passed).length;

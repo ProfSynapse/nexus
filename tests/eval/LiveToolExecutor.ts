@@ -22,6 +22,7 @@ import {
 } from './headless/HeadlessAgentStack';
 import { TestVaultManager } from './headless/TestVaultManager';
 import type { CapturedToolCall } from './types';
+import { ToolCliNormalizer } from '../../src/agents/toolManager/services/ToolCliNormalizer';
 
 export interface LiveToolExecutorOptions {
   /** Absolute path to the test vault directory on disk. */
@@ -148,6 +149,35 @@ export class LiveToolExecutor implements IToolExecutor {
                 name: innerName,
                 args: (call.params ?? {}) as Record<string, unknown>,
                 id: `${toolId}_inner_${innerName}`,
+              });
+            }
+          } else if (typeof args.tool === 'string') {
+            const cliNormalizer = new ToolCliNormalizer(this.stack.agentRegistry);
+            try {
+              const parsedCalls = cliNormalizer.normalizeExecutionCalls(args as never);
+              for (const call of parsedCalls) {
+                const innerName = `${call.agent}_${call.tool}`;
+                this.capturedCalls.push({
+                  name: innerName,
+                  args: call.params,
+                  id: `${toolId}_inner_${innerName}`,
+                });
+              }
+            } catch (parseError) {
+              // Surface the parse error instead of swallowing it: a failed
+              // mirror-parse used to leave the scenario with "tool not
+              // called" noise, hiding the real cause. We now (a) warn to
+              // the test log and (b) push a synthetic captured call so
+              // assertion dumps point at the parser error, not a missing
+              // domain call. See Test M2 in
+              // docs/review/toolmanager-cli-test-review.md.
+              const errorMessage = parseError instanceof Error ? parseError.message : String(parseError);
+              // eslint-disable-next-line no-console
+              console.warn(`[LiveToolExecutor] CLI mirror-parse failed for tool="${args.tool}": ${errorMessage}`);
+              this.capturedCalls.push({
+                name: '__cli_parse_error__',
+                args: { error: errorMessage, tool: args.tool },
+                id: `${toolId}_inner_cli_parse_error`,
               });
             }
           }

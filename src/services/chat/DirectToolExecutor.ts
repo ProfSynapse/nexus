@@ -18,7 +18,8 @@ import { SessionContextManager } from '../SessionContextManager';
 import { ToolListService } from '../../handlers/services/ToolListService';
 import { IAgent } from '../../agents/interfaces/IAgent';
 import { ToolManagerAgent } from '../../agents/toolManager/toolManager';
-import type { UseToolParams } from '../../agents/toolManager/types';
+import type { NormalizedUseToolParams } from '../../agents/toolManager/types';
+import { ToolCliNormalizer } from '../../agents/toolManager/services/ToolCliNormalizer';
 import type { JSONSchema } from '../../types/schema/JSONSchemaTypes';
 import type { AgentProvider } from '../agent/LazyAgentProvider';
 
@@ -401,20 +402,7 @@ export class DirectToolExecutor {
             };
         }
 
-        // Merge context from params and external context
-        const paramsContext = (params.context || {}) as Record<string, unknown>;
-        const mergedParams = {
-            ...params,
-            context: {
-                ...paramsContext,
-                sessionId: context?.sessionId || paramsContext.sessionId || `session_${Date.now()}`,
-                workspaceId: context?.workspaceId || paramsContext.workspaceId || 'default',
-                imageProvider: context?.imageProvider || paramsContext.imageProvider,
-                imageModel: context?.imageModel || paramsContext.imageModel,
-                transcriptionProvider: context?.transcriptionProvider || paramsContext.transcriptionProvider,
-                transcriptionModel: context?.transcriptionModel || paramsContext.transcriptionModel
-            }
-        };
+        const mergedParams = this.mergeToolManagerContext(params, context);
 
         // Execute via toolManager's getTools
         return await getToolsTool.execute(mergedParams);
@@ -442,26 +430,22 @@ export class DirectToolExecutor {
 
         const batchId = options?.batchId;
         const onToolEvent = options?.onToolEvent;
-        const paramsContext = (params.context || {}) as Record<string, unknown>;
-        const mergedParams = {
-            ...params,
-            context: {
-                ...paramsContext,
-                sessionId: context?.sessionId || paramsContext.sessionId || `session_${Date.now()}`,
-                workspaceId: context?.workspaceId || paramsContext.workspaceId || 'default',
-                imageProvider: context?.imageProvider || paramsContext.imageProvider,
-                imageModel: context?.imageModel || paramsContext.imageModel,
-                transcriptionProvider: context?.transcriptionProvider || paramsContext.transcriptionProvider,
-                transcriptionModel: context?.transcriptionModel || paramsContext.transcriptionModel
-            }
-        };
+        const mergedParams = this.mergeToolManagerContext(params, context);
 
         const batchExecutionService = toolManagerAgent instanceof ToolManagerAgent
             ? toolManagerAgent.getToolBatchExecutionService()
             : null;
 
         if (batchExecutionService) {
-            return await batchExecutionService.execute(mergedParams as UseToolParams, {
+            const cliNormalizer = toolManagerAgent instanceof ToolManagerAgent
+                ? toolManagerAgent.getToolCliNormalizer()
+                : new ToolCliNormalizer(new Map<string, IAgent>());
+            const normalizedParams: NormalizedUseToolParams = {
+                context: cliNormalizer.normalizeContext(mergedParams),
+                calls: cliNormalizer.normalizeExecutionCalls(mergedParams),
+                strategy: mergedParams.strategy as 'serial' | 'parallel' | undefined
+            };
+            return await batchExecutionService.execute(normalizedParams, {
                 batchId,
                 observer: onToolEvent
                     ? {
@@ -659,6 +643,45 @@ export class DirectToolExecutor {
         }
 
         return params;
+    }
+
+    private mergeToolManagerContext(
+        params: Record<string, unknown>,
+        context?: DirectToolExecutionContext
+    ): Record<string, unknown> {
+        const paramsContext = (params.context || {}) as Record<string, unknown>;
+
+        return {
+            ...params,
+            workspaceId: (params.workspaceId as string | undefined)
+                || context?.workspaceId
+                || (paramsContext.workspaceId as string | undefined)
+                || 'default',
+            sessionId: (params.sessionId as string | undefined)
+                || context?.sessionId
+                || (paramsContext.sessionId as string | undefined)
+                || `session_${Date.now()}`,
+            memory: (params.memory as string | undefined)
+                || (paramsContext.memory as string | undefined)
+                || '',
+            goal: (params.goal as string | undefined)
+                || (paramsContext.goal as string | undefined)
+                || '',
+            constraints: (params.constraints as string | undefined)
+                || (paramsContext.constraints as string | undefined),
+            imageProvider: (params.imageProvider as DirectToolExecutionContext['imageProvider'] | undefined)
+                || context?.imageProvider
+                || (paramsContext.imageProvider as DirectToolExecutionContext['imageProvider'] | undefined),
+            imageModel: (params.imageModel as string | undefined)
+                || context?.imageModel
+                || (paramsContext.imageModel as string | undefined),
+            transcriptionProvider: (params.transcriptionProvider as string | undefined)
+                || context?.transcriptionProvider
+                || (paramsContext.transcriptionProvider as string | undefined),
+            transcriptionModel: (params.transcriptionModel as string | undefined)
+                || context?.transcriptionModel
+                || (paramsContext.transcriptionModel as string | undefined)
+        };
     }
 
     /**

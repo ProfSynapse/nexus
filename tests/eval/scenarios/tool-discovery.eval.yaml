@@ -9,8 +9,7 @@
       expectedTools:
         - name: getTools
           params:
-            request:
-              - agent: contentManager
+            tool: "content"
       mockResponses:
         getTools:
           success: true
@@ -19,19 +18,26 @@
               - agent: contentManager
                 tool: read
                 description: Read content from a file
-                inputSchema:
-                  type: object
-                  properties:
-                    path:
-                      type: string
-                    startLine:
-                      type: number
-                  required:
-                    - path
-                    - startLine
+                command: "content read"
+                usage: "content read <path> <startLine>"
+                arguments:
+                  - name: path
+                    flag: --path
+                    type: string
+                    required: true
+                    positional: true
+                  - name: startLine
+                    flag: --start-line
+                    type: number
+                    required: true
+                    positional: true
+                examples:
+                  - 'content read "path-value" 1'
 
     - expectedTools:
         - name: useTools
+          params:
+            tool: "content read"
       mockResponses:
         useTools:
           success: true
@@ -47,8 +53,7 @@
       expectedTools:
         - name: getTools
           params:
-            request:
-              - agent: searchManager
+            tool: "search"
       mockResponses:
         getTools:
           success: true
@@ -57,16 +62,21 @@
               - agent: searchManager
                 tool: searchContent
                 description: Search for notes containing specific content
-                inputSchema:
-                  type: object
-                  properties:
-                    query:
-                      type: string
-                  required:
-                    - query
+                command: "search search-content"
+                usage: "search search-content <query>"
+                arguments:
+                  - name: query
+                    flag: --query
+                    type: string
+                    required: true
+                    positional: true
+                examples:
+                  - 'search search-content "query-value"'
 
     - expectedTools:
         - name: useTools
+          params:
+            tool: "search search-content"
       mockResponses:
         useTools:
           success: true
@@ -89,8 +99,7 @@
       expectedTools:
         - name: getTools
           params:
-            request:
-              - agent: contentManager
+            tool: "content"
       mockResponses:
         getTools:
           success: true
@@ -99,19 +108,26 @@
               - agent: contentManager
                 tool: read
                 description: Read content from a file
-                inputSchema:
-                  type: object
-                  properties:
-                    path:
-                      type: string
-                    startLine:
-                      type: number
-                  required:
-                    - path
-                    - startLine
+                command: "content read"
+                usage: "content read <path> <startLine>"
+                arguments:
+                  - name: path
+                    flag: --path
+                    type: string
+                    required: true
+                    positional: true
+                  - name: startLine
+                    flag: --start-line
+                    type: number
+                    required: true
+                    positional: true
+                examples:
+                  - 'content read "path-value" 1'
 
     - expectedTools:
         - name: useTools
+          params:
+            tool: "content read"
       mockResponses:
         useTools:
           success: true
@@ -127,8 +143,7 @@
       expectedTools:
         - name: getTools
           params:
-            request:
-              - agent: storageManager
+            tool: "storage"
       mockResponses:
         getTools:
           success: true
@@ -137,19 +152,26 @@
               - agent: storageManager
                 tool: copy
                 description: Copy a file or folder
-                inputSchema:
-                  type: object
-                  properties:
-                    path:
-                      type: string
-                    destination:
-                      type: string
-                  required:
-                    - path
-                    - destination
+                command: "storage copy"
+                usage: "storage copy <path> <destination>"
+                arguments:
+                  - name: path
+                    flag: --path
+                    type: string
+                    required: true
+                    positional: true
+                  - name: destination
+                    flag: --destination
+                    type: string
+                    required: true
+                    positional: true
+                examples:
+                  - 'storage copy "path-value" "destination-value"'
 
     - expectedTools:
         - name: useTools
+          params:
+            tool: "storage copy"
       mockResponses:
         useTools:
           success: true
@@ -169,8 +191,7 @@
       expectedTools:
         - name: getTools
           params:
-            request:
-              - agent: searchManager
+            tool: "search"
       mockResponses:
         getTools:
           success: true
@@ -179,16 +200,21 @@
               - agent: searchManager
                 tool: searchContent
                 description: Search for notes
-                inputSchema:
-                  type: object
-                  properties:
-                    query:
-                      type: string
-                  required:
-                    - query
+                command: "search search-content"
+                usage: "search search-content <query>"
+                arguments:
+                  - name: query
+                    flag: --query
+                    type: string
+                    required: true
+                    positional: true
+                examples:
+                  - 'search search-content "query-value"'
 
     - expectedTools:
         - name: useTools
+          params:
+            tool: "search search-content"
       mockResponses:
         useTools:
           success: true
@@ -206,8 +232,7 @@
       expectedTools:
         - name: getTools
           params:
-            request:
-              - agent: contentManager
+            tool: "content"
       mockResponses:
         getTools:
           success: true
@@ -216,19 +241,26 @@
               - agent: contentManager
                 tool: read
                 description: Read content from a file
-                inputSchema:
-                  type: object
-                  properties:
-                    path:
-                      type: string
-                    startLine:
-                      type: number
-                  required:
-                    - path
-                    - startLine
+                command: "content read"
+                usage: "content read <path> <startLine>"
+                arguments:
+                  - name: path
+                    flag: --path
+                    type: string
+                    required: true
+                    positional: true
+                  - name: startLine
+                    flag: --start-line
+                    type: number
+                    required: true
+                    positional: true
+                examples:
+                  - 'content read "path-value" 1'
 
     - expectedTools:
         - name: useTools
+          params:
+            tool: "content read"
       mockResponses:
         useTools:
           success: true
@@ -244,8 +276,7 @@
       expectedTools:
         - name: getTools
           params:
-            request:
-              - agent: storageManager
+            tool: "storage"
       mockResponses:
         getTools:
           success: true
@@ -254,19 +285,26 @@
               - agent: storageManager
                 tool: move
                 description: Move a file or folder
-                inputSchema:
-                  type: object
-                  properties:
-                    path:
-                      type: string
-                    destination:
-                      type: string
-                  required:
-                    - path
-                    - destination
+                command: "storage move"
+                usage: "storage move <path> <destination>"
+                arguments:
+                  - name: path
+                    flag: --path
+                    type: string
+                    required: true
+                    positional: true
+                  - name: destination
+                    flag: --destination
+                    type: string
+                    required: true
+                    positional: true
+                examples:
+                  - 'storage move "path-value" "destination-value"'
 
     - expectedTools:
         - name: useTools
+          params:
+            tool: "storage move"
       mockResponses:
         useTools:
           success: true
