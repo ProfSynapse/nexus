@@ -44,6 +44,8 @@ export class ToolInspectionModal extends Modal {
   private isLoading = false;
   private isDisposed = false;
   private readonly component: Component;
+  private scrollHandler: (() => void) | null = null;
+  private pendingScrollFrame: number | null = null;
 
   constructor(app: App, options: ToolInspectionModalOptions, component: Component) {
     super(app);
@@ -67,11 +69,21 @@ export class ToolInspectionModal extends Modal {
     this.emptyEl = shellEl.createDiv({ cls: 'tool-inspection-empty' });
     this.loadingEl = shellEl.createDiv({ cls: 'tool-inspection-loading' });
 
-    this.component.registerDomEvent(this.scrollEl, 'scroll', () => {
-      if (this.scrollEl.scrollTop <= SCROLL_THRESHOLD_PX) {
-        void this.loadPreviousPage();
+    this.scrollHandler = () => {
+      if (this.pendingScrollFrame !== null) {
+        return;
       }
-    });
+      this.pendingScrollFrame = requestAnimationFrame(() => {
+        this.pendingScrollFrame = null;
+        if (this.isDisposed) {
+          return;
+        }
+        if (this.scrollEl.scrollTop <= SCROLL_THRESHOLD_PX) {
+          void this.loadPreviousPage();
+        }
+      });
+    };
+    this.component.registerDomEvent(this.scrollEl, 'scroll', this.scrollHandler);
 
     this.setLoadingState(true, 'Loading tool history...');
     void this.loadInitialPages();
@@ -79,6 +91,11 @@ export class ToolInspectionModal extends Modal {
 
   onClose(): void {
     this.isDisposed = true;
+    if (this.pendingScrollFrame !== null) {
+      cancelAnimationFrame(this.pendingScrollFrame);
+      this.pendingScrollFrame = null;
+    }
+    this.scrollHandler = null;
     this.modalEl.removeClass('tool-inspection-modal');
     this.contentEl.empty();
   }
