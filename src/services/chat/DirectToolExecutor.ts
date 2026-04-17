@@ -437,10 +437,9 @@ export class DirectToolExecutor {
             : null;
 
         if (batchExecutionService) {
-            const agentRegistryForCli = toolManagerAgent instanceof ToolManagerAgent
-                ? toolManagerAgent.getAgentRegistry()
-                : new Map<string, IAgent>();
-            const cliNormalizer = new ToolCliNormalizer(agentRegistryForCli);
+            const cliNormalizer = toolManagerAgent instanceof ToolManagerAgent
+                ? toolManagerAgent.getToolCliNormalizer()
+                : new ToolCliNormalizer(new Map<string, IAgent>());
             const normalizedParams: NormalizedUseToolParams = {
                 context: cliNormalizer.normalizeContext(mergedParams),
                 calls: cliNormalizer.normalizeExecutionCalls(mergedParams),

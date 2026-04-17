@@ -84,4 +84,13 @@ export class ToolManagerAgent extends BaseAgent {
   getToolBatchExecutionService(): ToolBatchExecutionService {
     return this.toolBatchExecutionService;
   }
+
+  /**
+   * Get the shared CLI normalizer used by useTools. Callers outside the agent
+   * (e.g. DirectToolExecutor) should reuse this instance instead of building
+   * a parallel normalizer, so parser behavior stays single-source.
+   */
+  getToolCliNormalizer(): ToolCliNormalizer {
+    return this.toolCliNormalizer;
+  }
 }
