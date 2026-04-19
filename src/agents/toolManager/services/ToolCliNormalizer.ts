@@ -187,6 +187,17 @@ function coerceValue(raw: string, type: string): unknown {
   }
 
   if (type.startsWith('array<')) {
+    const trimmed = raw.trim();
+    if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed) && parsed.every(item => typeof item === 'string')) {
+          return parsed;
+        }
+      } catch {
+        // Fall through to CSV split for malformed JSON.
+      }
+    }
     return raw.split(',').map(part => part.trim()).filter(Boolean);
   }
 

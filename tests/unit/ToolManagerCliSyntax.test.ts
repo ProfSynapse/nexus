@@ -443,6 +443,51 @@ describe('ToolCliNormalizer — direct parser coverage', () => {
   });
 
   // -------------------------------------------------------------------------
+  // array<string> JSON syntax — Bug #2 fix
+  // -------------------------------------------------------------------------
+  // Previous behavior: `array<string>` values were always split on `,`, so
+  // items containing literal commas could not be expressed. Fix accepts a
+  // JSON-array prefix (`[...]`) of strings and falls back to CSV split
+  // otherwise — strictly additive, zero breakage for the old syntax.
+
+  describe('normalizeExecutionCalls — array<string> JSON syntax (Bug #2)', () => {
+    it('parses JSON array and preserves literal commas inside items', () => {
+      const [call] = makeNormalizer().normalizeExecutionCalls({
+        tool: 'numeric convert --tags \'["alpha, with comma","beta"]\'',
+      });
+      expect(call.params.tags).toEqual(['alpha, with comma', 'beta']);
+    });
+
+    it('falls back to CSV split when JSON parse fails', () => {
+      const [call] = makeNormalizer().normalizeExecutionCalls({
+        tool: 'numeric convert --tags "[broken"',
+      });
+      expect(call.params.tags).toEqual(['[broken']);
+    });
+
+    it('preserves existing CSV syntax (no regression)', () => {
+      const [call] = makeNormalizer().normalizeExecutionCalls({
+        tool: 'numeric convert --tags "a,b,c"',
+      });
+      expect(call.params.tags).toEqual(['a', 'b', 'c']);
+    });
+
+    it('empty JSON array yields empty array', () => {
+      const [call] = makeNormalizer().normalizeExecutionCalls({
+        tool: 'numeric convert --tags "[]"',
+      });
+      expect(call.params.tags).toEqual([]);
+    });
+
+    it('single-item JSON array with unicode is preserved', () => {
+      const [call] = makeNormalizer().normalizeExecutionCalls({
+        tool: 'numeric convert --tags \'["só um"]\'',
+      });
+      expect(call.params.tags).toEqual(['só um']);
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // Edge cases — quoting, escapes, multi-command
   // -------------------------------------------------------------------------
 
