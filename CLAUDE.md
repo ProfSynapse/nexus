@@ -132,7 +132,7 @@ Full guidelines: `docs/obsidian-plugin-guidelines.md`
 
 ## Recent Changes
 
-**Current Version**: 5.8.0
+**Current Version**: 5.8.1
 Full changelog: `docs/changelog.md`
 
 **Latest features** (Apr 2026):
