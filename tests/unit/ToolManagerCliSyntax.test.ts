@@ -552,3 +552,217 @@ describe('ToolCliNormalizer — direct parser coverage', () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// CLI migration audit — 25 characterization cases (A.1–G.3).
+// Each `it` asserts what the parser SHOULD do. Initial audit state:
+//   CHAR (passing, current behavior is correct):
+//     A.1, A.2, A.3, B.1–B.5, C.1, C.4, C.5, C.6, D.1, D.3, E.1, E.2, E.3, F.1, G.3
+//   Fixed in this PR (originally failing, now passing):
+//     A.4 (unescape ordering), D.2 (empty-quote token emission)
+//   DOCUMENTED BUG (failing, intentionally not fixed — see PR description):
+//     C.2, C.3 (bool flag explicit value), G.1, G.2 (flag/positional conflict)
+// ---------------------------------------------------------------------------
+
+describe('parser characterization — CLI migration audit', () => {
+  // A — quoting & escapes
+  it('A.1: nested double quotes preserve inner quotes', () => {
+    const [call] = makeNormalizer().normalizeExecutionCalls({
+      tool: 'content write "a.md" "say \\"hi\\""',
+    });
+    expect(call.params.content).toBe('say "hi"');
+  });
+
+  it('A.2: single-quoted tokens work equivalently to double-quoted', () => {
+    const [call] = makeNormalizer().normalizeExecutionCalls({
+      tool: "content write 'a.md' 'hello'",
+    });
+    expect(call.params.path).toBe('a.md');
+    expect(call.params.content).toBe('hello');
+  });
+
+  it('A.3: mixed quotes preserve literal apostrophes inside double quotes', () => {
+    const [call] = makeNormalizer().normalizeExecutionCalls({
+      tool: `content write 'a.md' "body has 'inner'"`,
+    });
+    expect(call.params.content).toBe("body has 'inner'");
+  });
+
+  it('A.4: literal backslash+n in content stays as two chars (not newline)', () => {
+    // CLI input: content write "a.md" "foo\\nbar"  (token content = foo\\nbar, 9 chars)
+    // Correct parse: foo\nbar (8 chars: f,o,o,\,n,b,a,r) — the double-backslash
+    // consumes the single-backslash first, then `n` stays literal.
+    const [call] = makeNormalizer().normalizeExecutionCalls({
+      tool: 'content write "a.md" "foo\\\\nbar"',
+    });
+    expect(call.params.content).toBe('foo\\nbar');
+  });
+
+  // B — whitespace & unicode
+  it('B.1: leading/trailing whitespace in command is tolerated', () => {
+    const [call] = makeNormalizer().normalizeExecutionCalls({
+      tool: '   content read "a.md"   ',
+    });
+    expect(call.params.path).toBe('a.md');
+  });
+
+  it('B.2: multiple spaces between tokens collapse to delimiters', () => {
+    const [call] = makeNormalizer().normalizeExecutionCalls({
+      tool: 'content     read    "a.md"',
+    });
+    expect(call.params.path).toBe('a.md');
+  });
+
+  it('B.3: tab whitespace separates tokens', () => {
+    const [call] = makeNormalizer().normalizeExecutionCalls({
+      tool: 'content\tread\t"a.md"',
+    });
+    expect(call.params.path).toBe('a.md');
+  });
+
+  it('B.4: unicode text passes through unchanged', () => {
+    const [call] = makeNormalizer().normalizeExecutionCalls({
+      tool: 'content write "a.md" "café ☕ ñoño"',
+    });
+    expect(call.params.content).toBe('café ☕ ñoño');
+  });
+
+  it('B.5: emoji passes through unchanged', () => {
+    const [call] = makeNormalizer().normalizeExecutionCalls({
+      tool: 'content write "a.md" "hello 🎉 world 👋"',
+    });
+    expect(call.params.content).toBe('hello 🎉 world 👋');
+  });
+
+  // C — numbers & booleans
+  it('C.1: boolean bare flag yields true', () => {
+    const [call] = makeNormalizer().normalizeExecutionCalls({
+      tool: 'numeric convert --enabled',
+    });
+    expect(call.params.enabled).toBe(true);
+  });
+
+  it('C.2: --enabled followed by literal "true" — value should be accepted', () => {
+    // Correct: --enabled true → enabled=true, no positional consumed.
+    const [call] = makeNormalizer().normalizeExecutionCalls({
+      tool: 'numeric convert --enabled true',
+    });
+    expect(call.params.enabled).toBe(true);
+  });
+
+  it('C.3: --enabled followed by literal "false" — value should be accepted', () => {
+    const [call] = makeNormalizer().normalizeExecutionCalls({
+      tool: 'numeric convert --enabled false',
+    });
+    expect(call.params.enabled).toBe(false);
+  });
+
+  it('C.4: negative number coerced as negative integer', () => {
+    const [call] = makeNormalizer().normalizeExecutionCalls({
+      tool: 'numeric convert --count -5',
+    });
+    expect(call.params.count).toBe(-5);
+  });
+
+  it('C.5: large integer within Number precision is preserved', () => {
+    const [call] = makeNormalizer().normalizeExecutionCalls({
+      tool: 'numeric convert --count 9999999999',
+    });
+    expect(call.params.count).toBe(9999999999);
+  });
+
+  it('C.6: float with fractional part coerced to number', () => {
+    const [call] = makeNormalizer().normalizeExecutionCalls({
+      tool: 'numeric convert --factor 3.14159',
+    });
+    expect(call.params.factor).toBeCloseTo(3.14159);
+  });
+
+  // D — empties
+  it('D.1: empty quoted positional raises missing-required-arg', () => {
+    // Duplicates existing L450 characterization; pinned here for migration completeness.
+    const err = captureError(() =>
+      makeNormalizer().normalizeExecutionCalls({ tool: 'content write "" "body"' })
+    );
+    expect(err.message).toMatch(/Missing required argument "content" for contentManager\.write/);
+  });
+
+  it('D.2: empty quoted flag value does not silently consume next token', () => {
+    // Correct: --label "" → label=''; --tags "a" → tags=['a'].
+    const [call] = makeNormalizer().normalizeExecutionCalls({
+      tool: 'numeric convert --label "" --tags "a"',
+    });
+    expect(call.params.label).toBe('');
+    expect(call.params.tags).toEqual(['a']);
+  });
+
+  it('D.3: omitted optional flag stays undefined', () => {
+    const [call] = makeNormalizer().normalizeExecutionCalls({
+      tool: 'numeric convert --factor 1.5',
+    });
+    expect(call.params.factor).toBe(1.5);
+    expect(call.params.count).toBeUndefined();
+    expect(call.params.enabled).toBeUndefined();
+  });
+
+  // E — multi-command
+  it('E.1: comma inside quoted content does not split segments', () => {
+    const calls = makeNormalizer().normalizeExecutionCalls({
+      tool: 'content write "a.md" "alpha, beta, gamma"',
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0].params.content).toBe('alpha, beta, gamma');
+  });
+
+  it('E.2: comma inside JSON array-flag value does not split segments', () => {
+    const calls = makeNormalizer().normalizeExecutionCalls({
+      tool: 'numeric convert --tags \'["a, with comma","b"]\'',
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0].params.tags).toEqual(['a, with comma', 'b']);
+  });
+
+  it('E.3: command-like tokens inside quoted content stay literal', () => {
+    const [call] = makeNormalizer().normalizeExecutionCalls({
+      tool: 'content write "a.md" "content read fake"',
+    });
+    expect(call.params.content).toBe('content read fake');
+  });
+
+  // F — objects
+  it('F.1: JSON object flag value is parsed via JSON.parse', () => {
+    const [call] = makeNormalizer().normalizeExecutionCalls({
+      tool: 'numeric convert --config \'{"nested":{"a":1}}\'',
+    });
+    expect(call.params.config).toEqual({ nested: { a: 1 } });
+  });
+
+  // G — positionals
+  it('G.1: flag set first, then positional fills remaining required slot', () => {
+    // Correct: --path "x.md" fills `path`; subsequent positional "body" should
+    // skip the already-filled `path` slot and fill `content`.
+    const [call] = makeNormalizer().normalizeExecutionCalls({
+      tool: 'content write --path "x.md" "body"',
+    });
+    expect(call.params.path).toBe('x.md');
+    expect(call.params.content).toBe('body');
+  });
+
+  it('G.2: extra positional should not silently overwrite flag-set arg', () => {
+    // Correct: either throw (too many) or keep flag-set value. Current parser
+    // silently overwrites — treat as a bug.
+    const err = captureError(() =>
+      makeNormalizer().normalizeExecutionCalls({
+        tool: 'content write --path "a.md" "b.md" "body"',
+      })
+    );
+    expect(err.message).toMatch(/Too many positional|already set|overwrite/);
+  });
+
+  it('G.3: positional omitted raises missing-required-arg for that slot', () => {
+    const err = captureError(() =>
+      makeNormalizer().normalizeExecutionCalls({ tool: 'content write --path "a.md"' })
+    );
+    expect(err.message).toMatch(/Missing required argument "content"/);
+  });
+});
