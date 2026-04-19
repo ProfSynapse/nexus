@@ -115,13 +115,28 @@ export function splitTopLevelSegments(input: string): string[] {
 }
 
 function unescapeQuotedContent(value: string): string {
-  return value
-    .replace(/\\n/g, '\n')
-    .replace(/\\r/g, '\r')
-    .replace(/\\t/g, '\t')
-    .replace(/\\"/g, '"')
-    .replace(/\\'/g, '\'')
-    .replace(/\\\\/g, '\\');
+  // Single-pass scan so `\\` consumes the backslash first. A sequential
+  // .replace() chain would let `\\n` collide with `\n` when the double
+  // backslash ran last.
+  let out = '';
+  for (let i = 0; i < value.length; i += 1) {
+    if (value[i] !== '\\' || i + 1 >= value.length) {
+      out += value[i];
+      continue;
+    }
+    const next = value[i + 1];
+    switch (next) {
+      case 'n': out += '\n'; break;
+      case 'r': out += '\r'; break;
+      case 't': out += '\t'; break;
+      case '"': out += '"'; break;
+      case '\'': out += '\''; break;
+      case '\\': out += '\\'; break;
+      default: out += '\\' + next;
+    }
+    i += 1;
+  }
+  return out;
 }
 
 export function tokenize(input: string): string[] {
