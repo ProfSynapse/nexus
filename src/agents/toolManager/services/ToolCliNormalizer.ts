@@ -234,6 +234,12 @@ function coerceValue(raw: string, type: string): unknown {
   if (type === 'boolean') {
     if (raw === 'true') return true;
     if (raw === 'false') return false;
+    // Previously fell through to `return raw`, silently stringifying bool
+    // inputs. `--foo "maybe"` for a boolean slot would reach schema validation
+    // as the string "maybe" — schema type-check catches it, but the error
+    // message is generic. Throw a canonical-literal error at the parser layer
+    // so the LLM sees the exact shape it needs to emit.
+    throw new Error(`Boolean value accepts only "true" or "false", got "${raw}".`);
   }
 
   if (type.startsWith('array<')) {
@@ -243,15 +249,22 @@ function coerceValue(raw: string, type: string): unknown {
     // dropped here so JSON-typed items (numbers, objects) flow through.
     const itemType = type.slice('array<'.length, -1);
     const trimmed = raw.trim();
+    let jsonItems: unknown[] | null = null;
     if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
       try {
         const parsed: unknown = JSON.parse(trimmed);
         if (Array.isArray(parsed)) {
-          return parsed.map((item: unknown) => coerceArrayItem(item, itemType));
+          jsonItems = parsed;
         }
       } catch {
-        // Fall through to CSV split for malformed JSON.
+        // Malformed JSON → fall through to CSV split.
       }
+    }
+    // Coerce items OUTSIDE the try/catch so per-item canonical-literal errors
+    // (e.g., `array<boolean>` with "maybe") propagate instead of being caught
+    // by the JSON-parse catch and silently re-routed to CSV split.
+    if (jsonItems !== null) {
+      return jsonItems.map((item: unknown) => coerceArrayItem(item, itemType));
     }
     return splitCsvRespectingQuotes(raw).map(item => coerceValue(item, itemType));
   }
@@ -359,18 +372,55 @@ export function parseCliForDisplay(toolString: string): CliDisplaySegment[] {
     const parameters: Record<string, unknown> = {};
     const looksLikeFlag = (token: QuotedToken): boolean =>
       !token.wasQuoted && token.value.startsWith('--');
+    // Display parser is registry-free, so it can't consult a schema to know
+    // which flags are booleans. Instead it applies the same SHAPE-level
+    // conventions as `parseCommandSegment` and leaves type disambiguation
+    // to post-resolution events that have canonical names + types.
+    //
+    // Conventions mirrored here (so the chat bubble matches the executor):
+    //   - `--flag=value` GNU long-option: split on first `=`.
+    //   - `--no-foo` (no `=value`) means `{foo: false}`, per §C.1.
+    //   - `--foo true` / `--foo false` (unquoted) means `{foo: true/false}`,
+    //     per §C.2/§C.3. Quoted `"true"`/`"false"` stays as a string.
+    //   - `--foo` with no following value or followed by another flag means
+    //     `{foo: true}` (bare boolean flag).
     for (let i = 0; i < rest.length; i += 1) {
       const token = rest[i];
-      if (looksLikeFlag(token)) {
-        const key = token.value.slice(2);
-        const next = rest[i + 1];
-        if (next === undefined || looksLikeFlag(next)) {
-          parameters[key] = true;
-        } else {
-          parameters[key] = next.value;
-          i += 1;
-        }
+      if (!looksLikeFlag(token)) {
+        continue;
       }
+      let key = token.value.slice(2);
+      let inlineValue: string | undefined;
+      const equalsIdx = key.indexOf('=');
+      if (equalsIdx >= 0) {
+        inlineValue = key.slice(equalsIdx + 1);
+        key = key.slice(0, equalsIdx);
+      }
+
+      if (key.startsWith('no-') && inlineValue === undefined) {
+        parameters[key.slice(3)] = false;
+        continue;
+      }
+
+      if (inlineValue !== undefined) {
+        if (inlineValue === 'true') parameters[key] = true;
+        else if (inlineValue === 'false') parameters[key] = false;
+        else parameters[key] = inlineValue;
+        continue;
+      }
+
+      const next = rest[i + 1];
+      if (next === undefined || looksLikeFlag(next)) {
+        parameters[key] = true;
+        continue;
+      }
+
+      if (!next.wasQuoted && (next.value === 'true' || next.value === 'false')) {
+        parameters[key] = next.value === 'true';
+      } else {
+        parameters[key] = next.value;
+      }
+      i += 1;
     }
     return [{ agent: agentToken.value, tool: toolToken.value, parameters }];
   });
@@ -621,6 +671,17 @@ export class ToolCliNormalizer {
 
         let value: string;
         if (inlineValue !== undefined) {
+          // Reject `--flag=` with empty RHS for non-bool slots. Previously the
+          // empty string passed the schema-required check (not `undefined`)
+          // and validators that accept any string silently accepted "". The
+          // space-separated form `--flag ""` is still legal and goes through
+          // the `next.value` branch below — that one is an explicit empty
+          // string, not a dropped value. (Bool slots are already guarded
+          // above: `=` with no RHS on a bool throws earlier because "" is
+          // neither "true" nor "false".)
+          if (inlineValue === '') {
+            throw new Error(`Flag "${flagSpec}" requires a non-empty value after "=". Use '${flagSpec} ""' if an empty string is intended.`);
+          }
           value = inlineValue;
         } else {
           const next = tokens[index + 1];
