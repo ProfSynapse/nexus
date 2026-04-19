@@ -139,16 +139,24 @@ function unescapeQuotedContent(value: string): string {
   return out;
 }
 
-export function tokenize(input: string): string[] {
-  const tokens: string[] = [];
+export interface QuotedToken {
+  value: string;
+  wasQuoted: boolean;
+}
+
+export function tokenizeWithMeta(input: string): QuotedToken[] {
+  const tokens: QuotedToken[] = [];
   let current = '';
   let quote: '"' | '\'' | null = null;
   let escaped = false;
-  // Tracks whether we have started a token during the current run — needed so
-  // that a bare `""` emits an empty-string token rather than being silently
+  // `hasToken` tracks whether we have started a token during the current run
+  // so a bare `""` emits an empty-string token rather than being silently
   // dropped (which would let downstream flag/positional parsing consume the
-  // wrong next token).
+  // wrong next token). `wasQuoted` tracks whether any quote opened in the
+  // current token — used downstream to distinguish a positional value whose
+  // text happens to start with `--` from a real flag.
   let hasToken = false;
+  let wasQuoted = false;
 
   for (const char of input) {
     if (escaped) {
@@ -175,14 +183,16 @@ export function tokenize(input: string): string[] {
     if (char === '"' || char === '\'') {
       quote = char;
       hasToken = true;
+      wasQuoted = true;
       continue;
     }
 
     if (/\s/.test(char)) {
       if (hasToken || current.length > 0) {
-        tokens.push(unescapeQuotedContent(current));
+        tokens.push({ value: unescapeQuotedContent(current), wasQuoted });
         current = '';
         hasToken = false;
+        wasQuoted = false;
       }
       continue;
     }
@@ -192,10 +202,14 @@ export function tokenize(input: string): string[] {
   }
 
   if (hasToken || current.length > 0) {
-    tokens.push(unescapeQuotedContent(current));
+    tokens.push({ value: unescapeQuotedContent(current), wasQuoted });
   }
 
   return tokens;
+}
+
+export function tokenize(input: string): string[] {
+  return tokenizeWithMeta(input).map(token => token.value);
 }
 
 function coerceValue(raw: string, type: string): unknown {
@@ -256,26 +270,28 @@ export interface CliDisplaySegment {
  */
 export function parseCliForDisplay(toolString: string): CliDisplaySegment[] {
   return splitTopLevelSegments(toolString).flatMap(segment => {
-    const tokens = tokenize(segment);
+    const tokens = tokenizeWithMeta(segment);
     if (tokens.length < 2) {
       return [];
     }
-    const [agent, tool, ...rest] = tokens;
+    const [agentToken, toolToken, ...rest] = tokens;
     const parameters: Record<string, unknown> = {};
+    const looksLikeFlag = (token: QuotedToken): boolean =>
+      !token.wasQuoted && token.value.startsWith('--');
     for (let i = 0; i < rest.length; i += 1) {
       const token = rest[i];
-      if (token.startsWith('--')) {
-        const key = token.slice(2);
+      if (looksLikeFlag(token)) {
+        const key = token.value.slice(2);
         const next = rest[i + 1];
-        if (next === undefined || next.startsWith('--')) {
+        if (next === undefined || looksLikeFlag(next)) {
           parameters[key] = true;
         } else {
-          parameters[key] = next;
+          parameters[key] = next.value;
           i += 1;
         }
       }
     }
-    return [{ agent, tool, parameters }];
+    return [{ agent: agentToken.value, tool: toolToken.value, parameters }];
   });
 }
 
@@ -435,14 +451,14 @@ export class ToolCliNormalizer {
   }
 
   private parseCommandSegment(segment: string): ToolCallParams {
-    const tokens = tokenize(segment);
+    const tokens = tokenizeWithMeta(segment);
     if (tokens.length < 2) {
       throw new Error(`Invalid command "${segment}". Expected "agent tool-name [flags...]"`);
     }
 
-    const resolved = this.resolveTarget(tokens[0], tokens[1]);
+    const resolved = this.resolveTarget(tokens[0].value, tokens[1].value);
     if (!resolved.toolSlug) {
-      throw new Error(`Command "${segment}" is missing a tool name after "${tokens[0]}".`);
+      throw new Error(`Command "${segment}" is missing a tool name after "${tokens[0].value}".`);
     }
 
     const agent = this.agentRegistry.get(resolved.agentName);
@@ -463,8 +479,9 @@ export class ToolCliNormalizer {
 
     for (let index = 2; index < tokens.length; index += 1) {
       const token = tokens[index];
-      if (token.startsWith('--')) {
-        const normalizedFlag = token.slice(2);
+      const isFlag = !token.wasQuoted && token.value.startsWith('--');
+      if (isFlag) {
+        const normalizedFlag = token.value.slice(2);
         if (CONTEXT_FLAG_NAMES.has(normalizedFlag)) {
           throw new Error(`Do not include --${normalizedFlag} inside "tool". Keep context fields at the top level of useTools/getTools.`);
         }
@@ -472,15 +489,15 @@ export class ToolCliNormalizer {
         if (normalizedFlag.startsWith('no-')) {
           const boolArg = cliSchema.arguments.find(arg => arg.flag === `--${normalizedFlag.slice(3)}` && arg.type === 'boolean');
           if (!boolArg) {
-            throw new Error(`Unknown flag "${token}" for ${resolved.agentName}.${resolved.toolSlug}. Call getTools first to inspect supported flags.`);
+            throw new Error(`Unknown flag "${token.value}" for ${resolved.agentName}.${resolved.toolSlug}. Call getTools first to inspect supported flags.`);
           }
           params[boolArg.name] = false;
           continue;
         }
 
-        const arg = cliSchema.arguments.find(item => item.flag === token);
+        const arg = cliSchema.arguments.find(item => item.flag === token.value);
         if (!arg) {
-          throw new Error(`Unknown flag "${token}" for ${resolved.agentName}.${resolved.toolSlug}. Call getTools first to inspect supported flags.`);
+          throw new Error(`Unknown flag "${token.value}" for ${resolved.agentName}.${resolved.toolSlug}. Call getTools first to inspect supported flags.`);
         }
 
         if (arg.type === 'boolean') {
@@ -490,10 +507,10 @@ export class ToolCliNormalizer {
 
         const next = tokens[index + 1];
         if (next === undefined) {
-          throw new Error(`Flag "${token}" requires a value.`);
+          throw new Error(`Flag "${token.value}" requires a value.`);
         }
 
-        params[arg.name] = coerceValue(next, arg.type);
+        params[arg.name] = coerceValue(next.value, arg.type);
         index += 1;
         continue;
       }
@@ -503,7 +520,7 @@ export class ToolCliNormalizer {
         throw new Error(`Too many positional arguments for ${resolved.agentName}.${resolved.toolSlug}. Call getTools first to inspect supported flags.`);
       }
 
-      params[positional.name] = coerceValue(token, positional.type);
+      params[positional.name] = coerceValue(token.value, positional.type);
       positionalIndex += 1;
     }
 

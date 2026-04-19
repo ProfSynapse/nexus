@@ -551,6 +551,63 @@ describe('ToolCliNormalizer — direct parser coverage', () => {
       expect(result).toEqual(calls);
     });
   });
+
+  // -------------------------------------------------------------------------
+  // Quoted positional values that look like flags — Bug #1 regression pins
+  // -------------------------------------------------------------------------
+  //
+  // Parser must not misclassify a *quoted* positional token whose text starts
+  // with `--` (or `---`, `----`, etc.) as a CLI flag. Quoting carries intent:
+  // quoted tokens stay positional regardless of leading characters. Regression
+  // was accidentally reintroduced during the tokenize refactor that added
+  // `hasToken` (D.2 fix) without preserving `wasQuoted` metadata.
+
+  describe('normalizeExecutionCalls — positional values that look like flags', () => {
+    it('accepts quoted positional starting with --- (YAML frontmatter)', () => {
+      const [call] = makeNormalizer().normalizeExecutionCalls({
+        tool: 'content write "notes/fm.md" "---\\nkey: value\\n---\\nbody"',
+      });
+      expect(call.params.path).toBe('notes/fm.md');
+      expect(call.params.content).toBe('---\nkey: value\n---\nbody');
+    });
+
+    it('accepts quoted positional equal to --content (literal flag-looking text)', () => {
+      const [call] = makeNormalizer().normalizeExecutionCalls({
+        tool: 'content write "notes/weird.md" "--content"',
+      });
+      expect(call.params.path).toBe('notes/weird.md');
+      expect(call.params.content).toBe('--content');
+    });
+
+    it('accepts quoted positional starting with -- that does not match any flag', () => {
+      const [call] = makeNormalizer().normalizeExecutionCalls({
+        tool: 'content write "notes/dash.md" "--no-such-flag"',
+      });
+      expect(call.params.content).toBe('--no-such-flag');
+    });
+
+    it('explicit named flags still work when value starts with --- (no regression)', () => {
+      const [call] = makeNormalizer().normalizeExecutionCalls({
+        tool: 'content write --path "notes/named.md" --content "---\\nheader"',
+      });
+      expect(call.params.path).toBe('notes/named.md');
+      expect(call.params.content).toBe('---\nheader');
+    });
+
+    it('unquoted -- prefix still classifies as a flag (no regression)', () => {
+      const err = captureError(() =>
+        makeNormalizer().normalizeExecutionCalls({ tool: 'content read --bogus 1 --path foo.md' })
+      );
+      expect(err.message).toMatch(/Unknown flag "--bogus" for contentManager\.read/);
+    });
+
+    it('plain-content positional without -- prefix still succeeds (baseline)', () => {
+      const [call] = makeNormalizer().normalizeExecutionCalls({
+        tool: 'content write "notes/plain.md" "normal content"',
+      });
+      expect(call.params.content).toBe('normal content');
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
