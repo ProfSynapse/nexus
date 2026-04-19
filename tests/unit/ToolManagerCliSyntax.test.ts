@@ -471,6 +471,28 @@ describe('ToolCliNormalizer — direct parser coverage', () => {
       expect(call.params.tags).toEqual(['[broken']);
     });
 
+    it('falls back to CSV split on multi-item malformed JSON and preserves all items', () => {
+      // `[a,b,c]` wraps with [] so the JSON-parse branch IS attempted, then
+      // throws (unquoted identifiers). The catch falls through to
+      // splitCsvRespectingQuotes, which splits on top-level commas. This is
+      // the real proof that the fallback preserves every item, not just the
+      // single-token case above.
+      const [call] = makeNormalizer().normalizeExecutionCalls({
+        tool: 'numeric convert --tags "[a,b,c]"',
+      });
+      expect(call.params.tags).toEqual(['[a', 'b', 'c]']);
+    });
+
+    it('non-wrapped multi-item raw input skips JSON branch and CSV-splits', () => {
+      // No bracket wrapping, so the JSON-parse branch is never entered. This
+      // exercises the non-JSON path of the array<string> coercer with a
+      // multi-item input, complementing the malformed-JSON fallback above.
+      const [call] = makeNormalizer().normalizeExecutionCalls({
+        tool: 'numeric convert --tags "alpha,beta,gamma"',
+      });
+      expect(call.params.tags).toEqual(['alpha', 'beta', 'gamma']);
+    });
+
     it('preserves existing CSV syntax (no regression)', () => {
       const [call] = makeNormalizer().normalizeExecutionCalls({
         tool: 'numeric convert --tags "a,b,c"',
@@ -678,13 +700,13 @@ describe('ToolCliNormalizer — direct parser coverage', () => {
 
 // ---------------------------------------------------------------------------
 // CLI migration audit — 25 characterization cases (A.1–G.3).
-// Each `it` asserts what the parser SHOULD do. Initial audit state:
-//   CHAR (passing, current behavior is correct):
+// Each `it` asserts what the parser SHOULD do. All 25 cases currently pass:
+//   CHAR (current behavior is correct):
 //     A.1, A.2, A.3, B.1–B.5, C.1, C.4, C.5, C.6, D.1, D.3, E.1, E.2, E.3, F.1, G.3
-//   Fixed in this PR (originally failing, now passing):
-//     A.4 (unescape ordering), D.2 (empty-quote token emission)
-//   DOCUMENTED BUG (failing, intentionally not fixed — see PR description):
-//     C.2, C.3 (bool flag explicit value), G.1, G.2 (flag/positional conflict)
+//   Fixed in prior PRs (originally failing, now passing):
+//     A.4 (unescape ordering), D.2 (empty-quote token emission),
+//     C.2, C.3 (bool flag explicit value — fixed in 215a77a6),
+//     G.1, G.2 (flag/positional conflict — fixed in 215a77a6)
 // ---------------------------------------------------------------------------
 
 describe('parser characterization — CLI migration audit', () => {
@@ -1205,12 +1227,179 @@ describe('EC-5: --flag=value GNU long-option syntax', () => {
     expect(err.message).toMatch(/Negation flag "--no-enabled" cannot be combined with =value/);
   });
 
-  it('--flag= (empty inline value) still coerces through the type', () => {
-    // Empty inline string → for number flag, EC-4 preserves it as the raw
-    // empty string. End-to-end this exercises the EC-4 + EC-5 interaction.
+  it('--flag= (empty inline value) throws for non-bool flags (Backend M1)', () => {
+    // Parser now rejects `--flag=` with empty RHS at the CLI layer instead of
+    // silently coercing through to `""` and deferring to schema validation.
+    // The `""` previously passed the `required !== undefined` check and only
+    // string validators caught it. See task #5 Item 2. The bare form
+    // `--count ""` (space-separated, explicit empty string) stays legal.
+    const err = captureError(() =>
+      makeNormalizer().normalizeExecutionCalls({
+        tool: 'numeric convert --count=',
+      })
+    );
+    expect(err.message).toMatch(/Flag "--count" requires a non-empty value after "="/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task #5 Minor bundle — parseCliForDisplay catches up to parseCommandSegment
+// ---------------------------------------------------------------------------
+//
+// The display parser is registry-free (used by the streaming chat bubble
+// before the executor resolves names), so it can't consult a schema. But it
+// now mirrors the SHAPE-level conventions of the execution parser so the
+// preview matches what the executor will produce post-resolution.
+
+describe('parseCliForDisplay — Minor bundle (task #5 Item 1)', () => {
+  it('splits --flag=value on first `=` (previously keyed as "flag=value")', () => {
+    // Unquoted RHS: mirrors the execution parser, which also treats
+    // `--flag="quoted"` as a single wasQuoted positional token (the `"`
+    // opens mid-token → whole token flips to wasQuoted → not recognized as
+    // a flag). Inline form with quoted RHS is out of scope; use the
+    // space-separated form for that.
+    const [segment] = parseCliForDisplay('content write --path=notes/today.md --content=body');
+    expect(segment.parameters.path).toBe('notes/today.md');
+    expect(segment.parameters.content).toBe('body');
+    expect(Object.keys(segment.parameters)).not.toContain('path=notes/today.md');
+  });
+
+  it('multiple `=` chars keep the first as the separator (--label=key=value)', () => {
+    const [segment] = parseCliForDisplay('numeric convert --label=key=value');
+    expect(segment.parameters.label).toBe('key=value');
+  });
+
+  it('coerces canonical true/false in --flag=value inline form to boolean', () => {
+    const [segment] = parseCliForDisplay('numeric convert --enabled=true --other=false');
+    expect(segment.parameters.enabled).toBe(true);
+    expect(segment.parameters.other).toBe(false);
+  });
+
+  it('--no-foo negation displays as {foo: false} (previously {"no-foo": true})', () => {
+    const [segment] = parseCliForDisplay('numeric convert --no-enabled');
+    expect(segment.parameters.enabled).toBe(false);
+    expect(Object.keys(segment.parameters)).not.toContain('no-enabled');
+  });
+
+  it('--no-foo is not treated as negation when combined with =value (displays inline key literally)', () => {
+    // Execution parser throws for `--no-foo=value`; display parser preserves
+    // the split for forensic visibility — the chat bubble will show an odd
+    // key but the actual executor error is the source of truth.
+    const [segment] = parseCliForDisplay('numeric convert --no-enabled=true');
+    expect(segment.parameters['no-enabled']).toBe(true);
+  });
+
+  it('unquoted --verbose true peek coerces to boolean (previously string "true")', () => {
+    const [segment] = parseCliForDisplay('numeric convert --verbose true --after extra');
+    expect(segment.parameters.verbose).toBe(true);
+    expect(segment.parameters.after).toBe('extra');
+  });
+
+  it('quoted --verbose "true" stays a string (quote is the "data not bool" signal)', () => {
+    const [segment] = parseCliForDisplay('numeric convert --verbose "true"');
+    expect(segment.parameters.verbose).toBe('true');
+  });
+
+  it('bare --flag followed by another flag stays boolean true', () => {
+    const [segment] = parseCliForDisplay('numeric convert --enabled --path=x');
+    expect(segment.parameters.enabled).toBe(true);
+    expect(segment.parameters.path).toBe('x');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task #5 Items 3 + 4 — coerceValue canonical-literal throw for booleans
+// ---------------------------------------------------------------------------
+
+describe('coerceValue — boolean canonical-literal enforcement (Backend M2)', () => {
+  // Note on reachability: `coerceValue(raw, 'boolean')` is ONLY reached via
+  // the `array<boolean>` item path — scalar boolean flags are handled earlier
+  // in parseCommandSegment via the C.2/C.3 bool-peek without ever calling
+  // coerceValue. Item 3 is therefore a defensive tightening that materializes
+  // through the array path (see block below for array<boolean> coverage).
+  // The scalar-flag-with-bogus-value case (`--enabled "maybe"`) intentionally
+  // does NOT reach coerceValue — the quoted token is treated as the next
+  // positional, which for numericAgent.convert (no positional slots) raises
+  // "Too many positional arguments". This is the pre-existing behavior and
+  // is left unchanged by Item 3.
+
+  it('throws for non-canonical boolean via inline =value (EC-5, unchanged by Item 3)', () => {
+    // The inline `--flag=value` branch has its own canonical-literal check
+    // (EC-5). Pin the message so future refactors don't drift from the
+    // array<boolean> canonical-literal message.
+    const err = captureError(() =>
+      makeNormalizer().normalizeExecutionCalls({
+        tool: 'numeric convert --enabled=yes',
+      })
+    );
+    expect(err.message).toMatch(/Boolean flag "--enabled" only accepts =true or =false, got "yes"/);
+  });
+
+  it('accepts canonical "true"/"false" via space-separated bool-peek (regression guard)', () => {
     const [call] = makeNormalizer().normalizeExecutionCalls({
-      tool: 'numeric convert --count=',
+      tool: 'numeric convert --enabled true',
     });
-    expect(call.params.count).toBe('');
+    expect(call.params.enabled).toBe(true);
+  });
+
+  it('treats quoted "maybe" after a bool flag as the next positional (unchanged)', () => {
+    // Documents the current reachability boundary: the quoted value stays
+    // a positional because wasQuoted=true blocks the bool-peek. For
+    // numericAgent.convert this raises "Too many positional arguments".
+    // If the tool had a positional slot, the quoted "maybe" would land
+    // there — coerceValue for bool is never reached on this path.
+    const err = captureError(() =>
+      makeNormalizer().normalizeExecutionCalls({
+        tool: 'numeric convert --enabled "maybe"',
+      })
+    );
+    expect(err.message).toMatch(/Too many positional arguments/);
+  });
+});
+
+describe('coerceValue — array<boolean> canonical-literal enforcement (Backend M3)', () => {
+  // numericAgent.convert doesn't declare an array<boolean> slot, so define a
+  // local stub just for this block.
+  function makeBoolArrayNormalizer(): ToolCliNormalizer {
+    const flagsAgent = makeStubAgent('flagsAgent', [
+      makeStubTool('toggle', {
+        type: 'object',
+        properties: {
+          values: { type: 'array', items: { type: 'boolean' } },
+        },
+        required: [],
+      }),
+    ]);
+    return new ToolCliNormalizer(new Map<string, IAgent>([
+      ['flagsAgent', flagsAgent],
+      ['toolManager', makeStubAgent('toolManager', [])],
+    ]));
+  }
+
+  it('coerces CSV of canonical true/false to boolean[]', () => {
+    const [call] = makeBoolArrayNormalizer().normalizeExecutionCalls({
+      tool: 'flags toggle --values "true,false,true"',
+    });
+    expect(call.params.values).toEqual([true, false, true]);
+  });
+
+  it('throws when any CSV item is non-canonical (Item 4)', () => {
+    const err = captureError(() =>
+      makeBoolArrayNormalizer().normalizeExecutionCalls({
+        tool: 'flags toggle --values "true,maybe,false"',
+      })
+    );
+    expect(err.message).toMatch(/Boolean value accepts only "true" or "false", got "maybe"/);
+  });
+
+  it('throws for non-canonical items inside a JSON-array literal', () => {
+    // JSON-parsed string items flow through coerceArrayItem → coerceValue,
+    // so the canonical check fires there too.
+    const err = captureError(() =>
+      makeBoolArrayNormalizer().normalizeExecutionCalls({
+        tool: 'flags toggle --values \'["true","nope"]\'',
+      })
+    );
+    expect(err.message).toMatch(/Boolean value accepts only "true" or "false", got "nope"/);
   });
 });
