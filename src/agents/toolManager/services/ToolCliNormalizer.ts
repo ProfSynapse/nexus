@@ -213,8 +213,8 @@ function coerceValue(raw: string, type: string): unknown {
     const trimmed = raw.trim();
     if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
       try {
-        const parsed = JSON.parse(trimmed);
-        if (Array.isArray(parsed) && parsed.every(item => typeof item === 'string')) {
+        const parsed: unknown = JSON.parse(trimmed);
+        if (Array.isArray(parsed) && parsed.every((item: unknown) => typeof item === 'string')) {
           return parsed;
         }
       } catch {
