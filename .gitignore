@@ -72,3 +72,4 @@ local-models/
 agentic-flow-main/
 local-models/
 .worktrees/
+claude-code-sourcemap-main/
