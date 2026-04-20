@@ -92,7 +92,7 @@ Last Updated: 2026-04-06
 
 ## Project Overview
 - **Name**: Nexus (package: claudesidian-mcp)
-- **Version**: 5.7.4
+- **Version**: 5.8.2
 - **Type**: Obsidian Community Plugin
 - **Purpose**: MCP integration for Obsidian with AI-powered vault operations
 - **Architecture**: Agent-Tool pattern with domain-driven design
@@ -132,10 +132,11 @@ Full guidelines: `docs/obsidian-plugin-guidelines.md`
 
 ## Recent Changes
 
-**Current Version**: 5.8.1
+**Current Version**: 5.8.2
 Full changelog: `docs/changelog.md`
 
 **Latest features** (Apr 2026):
+- v5.8.2 — ToolManager content alignment (PR #170): CLI-first contract finalized (nested `context`/`calls` rejected), CLI `\uXXXX` escape decoding, `executePrompts` action schema aligned with `insert`/`replace`/`write` (replace takes `oldContent`+`startLine`+`endLine`; `position` deprecated). Line-ending normalization (PR #169): `.gitattributes` establishes LF canonical.
 - v5.8.0 — Glass-chrome chat UI redesign (ToolStatusBar, ContextBadge, ThinkingLoader, ToolInspectionModal), CLI-first MCP tool-calling contract (PR #157), Claude Opus 4.7 added, LLM pipeline fixes (Azure call_id + latent field preservation), new OpenRouter models (GPT 5.4/5.4-pro, Gemini 3 family, GLM 5.1, MiMo v2, Qwen 3.5, MiniMax M2.7), SQLite-from-JSONL sync trigger, branch management fixes, chat media model persistence
 - v5.7.1 — Claude Code desktop auth status/login fix for Electron renderer imports (issue #120)
 - v5.7.0 — Plugin-scoped storage migration, mobile support (experimental), major refactors (PRs #102–#119)

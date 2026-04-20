@@ -2,6 +2,20 @@
 
 ## April 2026
 
+**Apr 20**: v5.8.2 — ToolManager content alignment + repo line-ending normalization
+
+**ToolManager content alignment** (PR #170)
+- CLI-first MCP contract finalized: `useTools`/`getTools` now accept only top-level `tool` string + top-level context fields; legacy nested `{context, calls}` and `{request}` arrays now rejected with a clear error message
+- CLI parser decodes `\uXXXX` escapes inside quoted strings (e.g., `"\u2014"` → `—`); double-escaped `\\u2014` kept literal
+- `executePrompts` actions aligned with modern `insert`/`replace`/`write` contract: `replace` takes `oldContent` + `startLine` + `endLine` for line-range edits; `position` still accepted but deprecated (normalized to startLine/endLine); `append`/`prepend` route to `insert`
+- Behavioral tightening: `position < 1` now rejected (was `< 0`)
+- 10 new tests in `ExecutePromptsActionAlignment.test.ts`; existing ToolManager/ExecutePrompts suites updated
+
+**Line-ending normalization** (PR #169)
+- Added `.gitattributes` establishing LF as canonical across the repo
+- Renormalized all tracked text files to LF (whitespace-only, no behavior change)
+- `.codex-temp/` and `.vscode/` added to `.gitignore`
+
 **Apr 8**: v5.7.0 — Plugin-Scoped Storage Migration, Mobile Support, Major Refactors
 
 > **Note**: Mobile support is experimental and may have bugs.
