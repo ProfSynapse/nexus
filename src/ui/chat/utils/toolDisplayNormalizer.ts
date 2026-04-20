@@ -493,20 +493,13 @@ function buildUseToolGroup(toolCall: ToolCallLike): ToolDisplayGroup {
   const technicalName = normalizeTechnicalName(toolCall);
   const params = normalizeUseToolParams(toolCall);
   const strategy = params.strategy === 'parallel' ? 'parallel' : 'serial';
-  // New CLI contract: params.tool is a comma-separated command string.
-  // Legacy contract (WebLLM/Nexus, pre-refactor conversations): params.calls[].
-  const legacyCalls: UseToolCallLike[] = Array.isArray(params.calls)
-    ? params.calls.filter(isRecord)
+  const calls: UseToolCallLike[] = typeof params.tool === 'string'
+    ? parseCliForDisplay(params.tool).map(segment => ({
+        agent: segment.agent,
+        tool: segment.tool,
+        parameters: segment.parameters
+      }))
     : [];
-  const calls: UseToolCallLike[] = legacyCalls.length > 0
-    ? legacyCalls
-    : typeof params.tool === 'string'
-      ? parseCliForDisplay(params.tool).map(segment => ({
-          agent: segment.agent,
-          tool: segment.tool,
-          parameters: segment.parameters
-        }))
-      : [];
   let results = normalizeUseToolResults(toolCall.result as UseToolResultLike | undefined);
   const rawStatus = (toolCall.status) || '';
   const isCompleted = rawStatus === 'completed' || Boolean(toolCall.result && toolCall.success !== false);
@@ -570,8 +563,7 @@ function buildUseToolGroup(toolCall: ToolCallLike): ToolDisplayGroup {
     }
   } else if (results.length > 0) {
     results.forEach((result, index) => {
-      const fallbackCall = Array.isArray(params.calls) ? params.calls[index] as UseToolCallLike | undefined : undefined;
-      const fullTechnicalName = getInnerCallTechnicalName(fallbackCall, result) || technicalName;
+      const fullTechnicalName = getInnerCallTechnicalName(undefined, result) || technicalName;
       const metadata = getToolNameMetadata(fullTechnicalName);
       const parameters = result.params;
       const status: ToolDisplayStatus = result.success === false ? 'failed' : 'completed';

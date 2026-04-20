@@ -59,6 +59,29 @@ describe('HeadlessAgentStack', () => {
     expect(stack.toolManager).toBeDefined();
   });
 
+  it('should expose CLI-first meta-tool schemas with required top-level context fields', () => {
+    const getToolsSchema = stack.toolManager.getTool('getTools')?.getParameterSchema() as {
+      required?: string[];
+      properties?: Record<string, unknown>;
+    };
+    const useToolsSchema = stack.toolManager.getTool('useTools')?.getParameterSchema() as {
+      required?: string[];
+      properties?: Record<string, unknown>;
+    };
+
+    expect(getToolsSchema.required).toEqual(
+      expect.arrayContaining(['workspaceId', 'sessionId', 'memory', 'goal', 'tool'])
+    );
+    expect(useToolsSchema.required).toEqual(
+      expect.arrayContaining(['workspaceId', 'sessionId', 'memory', 'goal', 'tool'])
+    );
+
+    expect(getToolsSchema.properties).toHaveProperty('workspaceId');
+    expect(getToolsSchema.properties).toHaveProperty('sessionId');
+    expect(useToolsSchema.properties).toHaveProperty('workspaceId');
+    expect(useToolsSchema.properties).toHaveProperty('sessionId');
+  });
+
   it('should return real tool schemas from getTools', async () => {
     const result = await stack.getTools({
       ...TEST_CONTEXT,

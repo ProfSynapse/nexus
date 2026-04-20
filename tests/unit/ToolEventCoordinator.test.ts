@@ -24,11 +24,15 @@ import type { ToolStatusEntry } from '../../src/ui/chat/components/ToolStatusBar
 
 type MockController = {
   pushStatus: jest.Mock<void, [string, ToolStatusEntry]>;
+  getStatusBar: jest.Mock<{ clearStatus: jest.Mock<void, []> }, []>;
 };
 
 function makeController(): MockController {
   return {
     pushStatus: jest.fn(),
+    getStatusBar: jest.fn(() => ({
+      clearStatus: jest.fn(),
+    })),
   };
 }
 
@@ -434,7 +438,7 @@ describe('ToolEventCoordinator — handleToolCallsDetected inner call edge cases
     expect(state!.metadata.parameters).toEqual({ filePath: 'direct.md' });
   });
 
-  it('skips inner calls that are not objects (null/primitive entries in calls array)', () => {
+  it('falls through safely when useTools omits the CLI tool string', () => {
     const { coordinator, controller } = makeCoordinator();
 
     coordinator.handleToolCallsDetected('msg-bad-inner', [
@@ -442,20 +446,17 @@ describe('ToolEventCoordinator — handleToolCallsDetected inner call edge cases
         id: 'call-usetools',
         function: {
           name: 'toolManager_useTools',
-          arguments: JSON.stringify({
-            context: {},
-            calls: [null, 'not-an-object', 42], // all skipped by the inner type guard
-          }),
+          arguments: JSON.stringify({}),
         },
       },
     ] as unknown as Parameters<typeof coordinator.handleToolCallsDetected>[1]);
 
     // All inner calls are invalid — falls through to generic path (useTools with 0 extracted calls)
     // The generic path emits useTools which is then filtered, so nothing reaches the controller
-    expect(controller.pushStatus).not.toHaveBeenCalled();
+    expect(controller.pushStatus).toHaveBeenCalledTimes(1);
   });
 
-  it('skips inner calls that are missing agent or tool fields', () => {
+  it('skips CLI segments that do not parse into inner calls', () => {
     const { coordinator, controller } = makeCoordinator();
 
     coordinator.handleToolCallsDetected('msg-missing-fields', [
@@ -464,42 +465,33 @@ describe('ToolEventCoordinator — handleToolCallsDetected inner call edge cases
         function: {
           name: 'toolManager_useTools',
           arguments: JSON.stringify({
-            context: {},
-            calls: [
-              { agent: '', tool: 'read' }, // empty agent — skipped
-              { agent: 'contentManager', tool: '' }, // empty tool — skipped
-            ],
+            tool: 'content, storage',
           }),
         },
       },
     ] as unknown as Parameters<typeof coordinator.handleToolCallsDetected>[1]);
 
-    // Both calls skipped — falls through with innerCalls.length > 0 (continue fires)
-    // but no events emitted since both inner calls were skipped
-    expect(controller.pushStatus).not.toHaveBeenCalled();
+    expect(controller.pushStatus).toHaveBeenCalledTimes(1);
   });
 
-  it('handles useTools with empty calls array by falling through to generic path', () => {
+  it('handles useTools with an empty CLI tool string by falling through to generic path', () => {
     const { coordinator, controller } = makeCoordinator();
 
-    // Empty calls array → innerCalls.length === 0 → does NOT continue → falls through
-    // to the generic emit path at lines 167+. The generic path emits useTools to the
-    // state manager. The state change fires emitToStatusBar which calls controller.pushStatus.
-    // (useTools IS emitted in the generic fallthrough — it's only filtered in handleToolEvent)
     expect(() => {
       coordinator.handleToolCallsDetected('msg-empty-calls', [
         {
           id: 'call-usetools-empty',
           function: {
             name: 'toolManager_useTools',
-            arguments: JSON.stringify({ context: {}, calls: [] }),
+            arguments: JSON.stringify({ tool: '' }),
           },
         },
       ] as unknown as Parameters<typeof coordinator.handleToolCallsDetected>[1]);
     }).not.toThrow();
+    expect(controller.pushStatus).toHaveBeenCalledTimes(1);
   });
 
-  it('handles inner call with non-object parameters (null) → parameters become undefined', () => {
+  it('handles CLI-parsed inner calls with no flags and empty parameter objects', () => {
     const { coordinator, stateManager } = makeCoordinator();
 
     coordinator.handleToolCallsDetected('msg-null-params', [
@@ -507,20 +499,16 @@ describe('ToolEventCoordinator — handleToolCallsDetected inner call edge cases
         id: 'call-usetools-np',
         function: {
           name: 'toolManager_useTools',
-          arguments: JSON.stringify({
-            context: {},
-            calls: [
-              { agent: 'contentManager', tool: 'read', parameters: null }, // null params
-            ],
-          }),
+          arguments: JSON.stringify({ tool: 'content read "note.md"' }),
         },
       },
     ] as unknown as Parameters<typeof coordinator.handleToolCallsDetected>[1]);
 
     const state = stateManager.getState('call-usetools-np_0');
     expect(state).toBeDefined();
-    expect(state!.metadata.parameters).toBeUndefined(); // null params → undefined
+    expect(state!.metadata.parameters).toEqual({});
   });
+
 });
 
 describe('ToolEventCoordinator — handleToolEvent phase mapping edge cases', () => {
@@ -651,3 +639,4 @@ describe('ToolEventCoordinator — clearToolNameCache delegates to state manager
     expect(stateManager.getState('tool-1')).toBeUndefined();
   });
 });
+

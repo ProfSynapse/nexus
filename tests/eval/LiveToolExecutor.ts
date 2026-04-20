@@ -90,7 +90,7 @@ export class LiveToolExecutor implements IToolExecutor {
    *
    * Handles the two-tool architecture:
    * - getTools → stack.getTools(parsed args)
-   * - useTools → stack.useTools(parsed args), also captures inner domain calls
+   * - useTools → stack.useTools(parsed args), also captures inner domain calls parsed from the top-level CLI string
    * - Other tool names → error (should go through useTools in production)
    */
   async executeToolCalls(
@@ -138,20 +138,8 @@ export class LiveToolExecutor implements IToolExecutor {
             error: result.error,
           });
         } else if (toolName === 'useTools') {
-          // Also capture inner domain tool calls for assertions
-          const calls = args.calls as Array<{ agent?: string; tool?: string; params?: unknown }> | undefined;
-          if (calls) {
-            for (const call of calls) {
-              const innerName = call.agent && call.tool
-                ? `${call.agent}_${call.tool}`
-                : (call.tool ?? 'unknown');
-              this.capturedCalls.push({
-                name: innerName,
-                args: (call.params ?? {}) as Record<string, unknown>,
-                id: `${toolId}_inner_${innerName}`,
-              });
-            }
-          } else if (typeof args.tool === 'string') {
+          // Capture inner domain tool calls by mirror-parsing the public CLI string.
+          if (typeof args.tool === 'string') {
             const cliNormalizer = new ToolCliNormalizer(this.stack.agentRegistry);
             try {
               const parsedCalls = cliNormalizer.normalizeExecutionCalls(args as never);

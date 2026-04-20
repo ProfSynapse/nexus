@@ -124,11 +124,14 @@ export interface ImagePromptConfig {
 export interface ContentAction {
   type: 'create' | 'append' | 'prepend' | 'replace' | 'findReplace';
   targetPath: string;
-  position?: number;
   findText?: string;
   replaceAll?: boolean;
   caseSensitive?: boolean;
   wholeWord?: boolean;
+  oldContent?: string;
+  startLine?: number;
+  endLine?: number;
+  position?: number;
 }
 
 /**

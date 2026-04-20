@@ -12,6 +12,9 @@ type ActionConfigLike = {
   type?: string;
   targetPath?: string;
   findText?: string;
+  oldContent?: string;
+  startLine?: number;
+  endLine?: number;
   position?: number;
 };
 
@@ -133,8 +136,45 @@ export class PromptParser {
       errors.push(`${prefix}: action.findText is required for findReplace action`);
     }
 
-    if (action.position !== undefined && (typeof action.position !== 'number' || action.position < 0)) {
-      errors.push(`${prefix}: action.position must be a non-negative number`);
+    if (action.type === 'replace') {
+      const hasOldContent = typeof action.oldContent === 'string';
+      const hasStartLine = action.startLine !== undefined;
+      const hasEndLine = action.endLine !== undefined;
+      const hasPosition = action.position !== undefined;
+
+      if (hasPosition) {
+        if (typeof action.position !== 'number' || action.position < 1) {
+          errors.push(`${prefix}: action.position must be a positive line number`);
+        }
+        if (hasStartLine || hasEndLine) {
+          errors.push(`${prefix}: action.position cannot be combined with action.startLine or action.endLine`);
+        }
+        if (!hasOldContent) {
+          errors.push(`${prefix}: action.oldContent is required when using deprecated action.position for replace`);
+        }
+      }
+
+      if (!hasPosition && (hasOldContent || hasStartLine || hasEndLine)) {
+        if (!hasOldContent || !hasStartLine || !hasEndLine) {
+          errors.push(`${prefix}: action.replace line-range mode requires action.oldContent, action.startLine, and action.endLine`);
+        }
+      }
+
+      if (hasStartLine && (typeof action.startLine !== 'number' || action.startLine < 1)) {
+        errors.push(`${prefix}: action.startLine must be a positive line number`);
+      }
+
+      if (hasEndLine && (typeof action.endLine !== 'number' || action.endLine < 1)) {
+        errors.push(`${prefix}: action.endLine must be a positive line number`);
+      }
+
+      if (
+        typeof action.startLine === 'number' &&
+        typeof action.endLine === 'number' &&
+        action.endLine < action.startLine
+      ) {
+        errors.push(`${prefix}: action.endLine cannot be less than action.startLine`);
+      }
     }
 
     return errors;

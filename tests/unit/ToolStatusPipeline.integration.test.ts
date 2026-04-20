@@ -147,11 +147,7 @@ describe('ToolStatusPipeline — integration', () => {
           function: {
             name: 'toolManager_useTools',
             arguments: JSON.stringify({
-              context: {},
-              calls: [
-                { agent: 'storageManager', tool: 'move', parameters: { source: 'a.md', target: 'b.md' } },
-                { agent: 'storageManager', tool: 'open', parameters: { path: 'b.md' } },
-              ],
+              tool: 'storage move --source a.md --target b.md, storage open --path b.md',
             }),
           },
         },
@@ -372,10 +368,7 @@ describe('ToolStatusPipeline — integration', () => {
           function: {
             name: 'toolManager_useTools',
             arguments: JSON.stringify({
-              context: {},
-              calls: [
-                { agent: 'contentManager', tool: 'read', parameters: { filePath: 'x.md' } },
-              ],
+              tool: 'content read --file-path x.md',
             }),
           },
         },

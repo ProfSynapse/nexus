@@ -84,7 +84,7 @@ export class WriteTool extends BaseTool<WriteParams, WriteResult> {
       if (existingFile) {
         if (!overwrite) {
           return this.prepareResult(false, undefined,
-            `File already exists: "${path}". Use read to view it, update to modify it, or write with overwrite: true to replace it completely.`
+            `File already exists: "${path}". Use read to inspect it, insert to add content, replace to edit validated ranges, or write with overwrite: true to replace it completely.`
           );
         }
 

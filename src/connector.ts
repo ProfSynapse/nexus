@@ -43,6 +43,10 @@ interface ToolExecutionParams extends Record<string, unknown> {
     };
 }
 
+function isToolManagerMetaTool(agent: string, tool: string): boolean {
+    return agent === 'toolManager' && (tool === 'getTools' || tool === 'useTools');
+}
+
 interface ToolSchemaLike extends Record<string, unknown> {
     properties?: Record<string, unknown>;
     required?: string[];
@@ -516,8 +520,10 @@ Keep workspaceId and sessionId values EXACTLY as shown above throughout the conv
                 workspaceContext?: { workspaceId?: string };
             };
 
+            const toolManagerMetaTool = isToolManagerMetaTool(agent, tool);
+
             // 1. SESSION ID VALIDATION: Extract and validate/generate sessionId first
-            const providedSessionId = (typedParams.context?.sessionId || typedParams.sessionId) as string | undefined;
+            const providedSessionId = (toolManagerMetaTool ? typedParams.sessionId : (typedParams.context?.sessionId || typedParams.sessionId)) as string | undefined;
             let validatedSessionId: string;
 
             if (!providedSessionId || !isStandardSessionId(providedSessionId)) {
@@ -529,11 +535,13 @@ Keep workspaceId and sessionId values EXACTLY as shown above throughout the conv
             }
 
             // 2. INJECT VALIDATED SESSION ID into all relevant locations
-            if (!typedParams.context) {
-                typedParams.context = {};
-            }
-            typedParams.context.sessionId = validatedSessionId;
             typedParams.sessionId = validatedSessionId;
+            if (!toolManagerMetaTool) {
+                if (!typedParams.context) {
+                    typedParams.context = {};
+                }
+                typedParams.context.sessionId = validatedSessionId;
+            }
 
             // 3. WORKSPACE CONTEXT LOOKUP FROM SESSION
             const sessionContextManager = this.getSessionContextManagerFromService();
@@ -542,7 +550,10 @@ Keep workspaceId and sessionId values EXACTLY as shown above throughout the conv
             if (workspaceContext) {
                 // Inject workspace context from session
                 typedParams.workspaceContext = workspaceContext;
-                typedParams.context.workspaceId = workspaceContext.workspaceId;
+                typedParams.workspaceId = (typedParams.workspaceId as string | undefined) || workspaceContext.workspaceId;
+                if (!toolManagerMetaTool && typedParams.context) {
+                    typedParams.context.workspaceId = workspaceContext.workspaceId;
+                }
             } else {
                 // Fallback to default if no session workspace
                 if (!typedParams.workspaceContext) {
@@ -551,7 +562,8 @@ Keep workspaceId and sessionId values EXACTLY as shown above throughout the conv
                     typedParams.workspaceContext.workspaceId = 'default';
                 }
 
-                if (typedParams.context && !typedParams.context.workspaceId) {
+                typedParams.workspaceId = (typedParams.workspaceId as string | undefined) || typedParams.workspaceContext.workspaceId;
+                if (!toolManagerMetaTool && typedParams.context && !typedParams.context.workspaceId) {
                     typedParams.context.workspaceId = typedParams.workspaceContext.workspaceId;
                 }
             }

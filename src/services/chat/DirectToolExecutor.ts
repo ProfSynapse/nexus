@@ -385,6 +385,8 @@ export class DirectToolExecutor {
         params: Record<string, unknown>,
         context?: DirectToolExecutionContext
     ): Promise<unknown> {
+        this.assertCliFirstToolManagerShape(params, 'getTools');
+
         // Get toolManager agent to use its getTools implementation (with lazy init)
         const toolManagerAgent = await this.getAgentByNameAsync('toolManager');
         if (!toolManagerAgent) {
@@ -410,7 +412,7 @@ export class DirectToolExecutor {
 
     /**
      * Handle useTool calls (two-tool architecture)
-     * Executes the calls array and returns results
+     * Executes one or more top-level CLI commands and returns results
      */
     private async handleUseTool(
         params: Record<string, unknown>,
@@ -420,6 +422,8 @@ export class DirectToolExecutor {
             onToolEvent?: (event: 'started' | 'completed', data: ToolEventData) => void;
         }
     ): Promise<unknown> {
+        this.assertCliFirstToolManagerShape(params, 'useTools');
+
         const toolManagerAgent = await this.getAgentByNameAsync('toolManager');
         if (!toolManagerAgent) {
             return {
@@ -649,39 +653,47 @@ export class DirectToolExecutor {
         params: Record<string, unknown>,
         context?: DirectToolExecutionContext
     ): Record<string, unknown> {
-        const paramsContext = (params.context || {}) as Record<string, unknown>;
-
         return {
             ...params,
             workspaceId: (params.workspaceId as string | undefined)
                 || context?.workspaceId
-                || (paramsContext.workspaceId as string | undefined)
                 || 'default',
             sessionId: (params.sessionId as string | undefined)
                 || context?.sessionId
-                || (paramsContext.sessionId as string | undefined)
                 || `session_${Date.now()}`,
             memory: (params.memory as string | undefined)
-                || (paramsContext.memory as string | undefined)
                 || '',
             goal: (params.goal as string | undefined)
-                || (paramsContext.goal as string | undefined)
                 || '',
             constraints: (params.constraints as string | undefined)
-                || (paramsContext.constraints as string | undefined),
+                || undefined,
             imageProvider: (params.imageProvider as DirectToolExecutionContext['imageProvider'] | undefined)
                 || context?.imageProvider
-                || (paramsContext.imageProvider as DirectToolExecutionContext['imageProvider'] | undefined),
+                || undefined,
             imageModel: (params.imageModel as string | undefined)
                 || context?.imageModel
-                || (paramsContext.imageModel as string | undefined),
+                || undefined,
             transcriptionProvider: (params.transcriptionProvider as string | undefined)
                 || context?.transcriptionProvider
-                || (paramsContext.transcriptionProvider as string | undefined),
+                || undefined,
             transcriptionModel: (params.transcriptionModel as string | undefined)
                 || context?.transcriptionModel
-                || (paramsContext.transcriptionModel as string | undefined)
+                || undefined
         };
+    }
+
+    private assertCliFirstToolManagerShape(params: Record<string, unknown>, toolName: 'getTools' | 'useTools'): void {
+        if ('context' in params) {
+            throw new Error(`Deprecated ${toolName} payload: move workspaceId, sessionId, memory, goal, and constraints out of "context" and onto the top level.`);
+        }
+
+        if (toolName === 'getTools' && 'request' in params) {
+            throw new Error('Deprecated getTools payload: use the top-level "tool" selector string instead of "request".');
+        }
+
+        if (toolName === 'useTools' && 'calls' in params) {
+            throw new Error('Deprecated useTools payload: put one or more CLI commands in the top-level "tool" string instead of "calls".');
+        }
     }
 
     /**

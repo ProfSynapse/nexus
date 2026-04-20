@@ -48,6 +48,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function hasOwn(value: unknown, key: string): boolean {
+  return isRecord(value) && Object.prototype.hasOwnProperty.call(value, key);
+}
+
 export function toKebabCase(value: string): string {
   return value
     .replace(/Manager$/i, '')
@@ -125,6 +129,14 @@ function unescapeQuotedContent(value: string): string {
       continue;
     }
     const next = value[i + 1];
+    if (next === 'u') {
+      const hex = value.slice(i + 2, i + 6);
+      if (/^[0-9a-fA-F]{4}$/.test(hex)) {
+        out += String.fromCodePoint(Number.parseInt(hex, 16));
+        i += 5;
+        continue;
+      }
+    }
     switch (next) {
       case 'n': out += '\n'; break;
       case 'r': out += '\r'; break;
@@ -430,24 +442,26 @@ export class ToolCliNormalizer {
   constructor(private agentRegistry: Map<string, IAgent>) {}
 
   normalizeContext(params: GetToolsParams | UseToolParams): ToolContext {
-    const legacy = params.context || {};
+    if (hasOwn(params, 'context')) {
+      throw new Error('Deprecated payload shape: move workspaceId, sessionId, memory, goal, and constraints out of "context" and onto the top level.');
+    }
 
     return {
-      workspaceId: params.workspaceId || legacy.workspaceId || 'default',
-      sessionId: params.sessionId || legacy.sessionId || `session_${Date.now()}`,
-      memory: params.memory || legacy.memory || '',
-      goal: params.goal || legacy.goal || '',
-      ...(params.constraints || legacy.constraints ? { constraints: params.constraints || legacy.constraints } : {}),
-      ...(params.imageProvider || legacy.imageProvider ? { imageProvider: params.imageProvider || legacy.imageProvider } : {}),
-      ...(params.imageModel || legacy.imageModel ? { imageModel: params.imageModel || legacy.imageModel } : {}),
-      ...(params.transcriptionProvider || legacy.transcriptionProvider ? { transcriptionProvider: params.transcriptionProvider || legacy.transcriptionProvider } : {}),
-      ...(params.transcriptionModel || legacy.transcriptionModel ? { transcriptionModel: params.transcriptionModel || legacy.transcriptionModel } : {})
+      workspaceId: params.workspaceId || 'default',
+      sessionId: params.sessionId || `session_${Date.now()}`,
+      memory: params.memory || '',
+      goal: params.goal || '',
+      ...(params.constraints ? { constraints: params.constraints } : {}),
+      ...(params.imageProvider ? { imageProvider: params.imageProvider } : {}),
+      ...(params.imageModel ? { imageModel: params.imageModel } : {}),
+      ...(params.transcriptionProvider ? { transcriptionProvider: params.transcriptionProvider } : {}),
+      ...(params.transcriptionModel ? { transcriptionModel: params.transcriptionModel } : {})
     };
   }
 
   normalizeDiscoveryRequests(params: GetToolsParams): ToolRequestItem[] {
-    if (Array.isArray(params.request) && params.request.length > 0) {
-      return params.request;
+    if (hasOwn(params, 'request')) {
+      throw new Error('Deprecated payload shape: getTools no longer accepts "request". Use the top-level "tool" selector string instead.');
     }
 
     const selector = typeof params.tool === 'string' ? params.tool.trim() : '';
@@ -479,13 +493,13 @@ export class ToolCliNormalizer {
   }
 
   normalizeExecutionCalls(params: UseToolParams): ToolCallParams[] {
-    if (Array.isArray(params.calls) && params.calls.length > 0) {
-      return params.calls;
+    if (hasOwn(params, 'calls')) {
+      throw new Error('Deprecated payload shape: useTools no longer accepts "calls". Put one or more CLI commands in the top-level "tool" string.');
     }
 
     const command = typeof params.tool === 'string' ? params.tool.trim() : '';
     if (!command) {
-      throw new Error('tool is required. Use a CLI command string such as "content read --path notes/today.md".');
+      throw new Error('tool is required. Use a top-level CLI command string such as "content read --path notes/today.md".');
     }
 
     return splitTopLevelSegments(command).map(segment => this.parseCommandSegment(segment));

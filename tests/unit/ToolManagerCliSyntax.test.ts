@@ -94,6 +94,33 @@ describe('ToolManager CLI syntax', () => {
     const written = fs.readFileSync(path.join(testDir, 'notes/generated.md'), 'utf-8');
     expect(written).toBe('# Title\n\n- Item 1\n- Item 2');
   });
+
+  it('decodes escaped unicode sequences in quoted CLI content', async () => {
+    const result = await stack.useTools({
+      ...TEST_CONTEXT,
+      tool: 'content write "notes/unicode.md" "dash \\u2014 multiply \\u00D7"',
+    });
+
+    expect(result.success).toBe(true);
+    const written = fs.readFileSync(path.join(testDir, 'notes/unicode.md'), 'utf-8');
+    expect(written).toBe('dash — multiply ×');
+  });
+
+  it('rejects deprecated structured calls payloads', async () => {
+    await expect(stack.useTools({
+      ...TEST_CONTEXT,
+      calls: [
+        {
+          agent: 'contentManager',
+          tool: 'write',
+          params: {
+            path: 'notes/structured.md',
+            content: 'Structured body',
+          },
+        },
+      ],
+    } as unknown as Parameters<typeof stack.useTools>[0])).rejects.toThrow(/no longer accepts "calls"/i);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -285,11 +312,13 @@ describe('ToolCliNormalizer — direct parser coverage', () => {
         .toThrow(/Unknown agent "content-manager"/);
     });
 
-    it('returns preserved params.request array when provided (legacy path)', () => {
-      const normalizer = makeNormalizer();
-      const request = [{ agent: 'storageManager', tools: ['list'] }];
-      const result = normalizer.normalizeDiscoveryRequests({ request });
-      expect(result).toEqual(request);
+    it('rejects deprecated request-array discovery payloads', () => {
+      const err = captureError(() =>
+        makeNormalizer().normalizeDiscoveryRequests({
+          request: [{ agent: 'storageManager', tools: ['list'] }],
+        } as unknown as Parameters<ToolCliNormalizer['normalizeDiscoveryRequests']>[0])
+      );
+      expect(err.message).toMatch(/no longer accepts "request"/i);
     });
   });
 
@@ -298,6 +327,21 @@ describe('ToolCliNormalizer — direct parser coverage', () => {
   // -------------------------------------------------------------------------
 
   describe('normalizeExecutionCalls — throw sites', () => {
+    it('rejects deprecated structured calls payloads', () => {
+      const err = captureError(() =>
+        makeNormalizer().normalizeExecutionCalls({
+          calls: [
+            {
+              agent: 'contentManager',
+              tool: 'read',
+              params: { path: 'notes/test.md' },
+            },
+          ],
+        } as unknown as Parameters<ToolCliNormalizer['normalizeExecutionCalls']>[0])
+      );
+      expect(err.message).toMatch(/no longer accepts "calls"/i);
+    });
+
     it('throws when tool command is missing/empty', () => {
       const err = captureError(() => makeNormalizer().normalizeExecutionCalls({}));
       expect(err.message).toMatch(/tool is required/);
@@ -573,10 +617,13 @@ describe('ToolCliNormalizer — direct parser coverage', () => {
       expect(err.message).toMatch(/Unknown agent "ghost"/);
     });
 
-    it('returns preserved calls array when provided (legacy path)', () => {
-      const calls = [{ agent: 'contentManager', tool: 'read', params: { path: 'x.md' } }];
-      const result = makeNormalizer().normalizeExecutionCalls({ calls });
-      expect(result).toEqual(calls);
+    it('rejects deprecated structured calls payloads consistently', () => {
+      const err = captureError(() =>
+        makeNormalizer().normalizeExecutionCalls({
+          calls: [{ agent: 'contentManager', tool: 'read', params: { path: 'x.md' } }],
+        } as unknown as Parameters<ToolCliNormalizer['normalizeExecutionCalls']>[0])
+      );
+      expect(err.message).toMatch(/no longer accepts "calls"/i);
     });
   });
 

@@ -38,6 +38,7 @@
     ],
     "exclude": [
       "node_modules",
+      "src/services/claude-code-sourcemap-main/**",
       "**/*.spec.ts",
       "node_modules/.svelte2tsx-language-server-files/**"
     ]

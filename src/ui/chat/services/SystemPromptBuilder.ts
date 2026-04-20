@@ -270,7 +270,10 @@ Exact useTools payload shape:
 
     prompt += `
 Call getTools first to get the exact command metadata, then useTools with correct CLI arguments.
-Keep workspaceId and sessionId at the top level exactly as shown. Do not place them inside the "tool" string as CLI flags.
+Keep workspaceId, sessionId, memory, goal, and constraints at the top level exactly as shown.
+Do not send a nested "context" object.
+Do not send a "calls" array.
+Do not place context fields inside the "tool" string as CLI flags.
 `;
 
     prompt += '</tools_and_context>';

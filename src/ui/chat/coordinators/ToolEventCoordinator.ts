@@ -96,8 +96,8 @@ export class ToolEventCoordinator {
    *
    * In the two-tool architecture, the LLM only ever calls `useTools`.
    * The individual tool invocations (contentManager.read, etc.) are
-   * buried inside useTools' `parameters.calls[]` array. This method
-   * unwraps that array and emits a synthetic `detected` transition for each
+   * encoded inside useTools' top-level CLI `parameters.tool` string. This method
+   * unwraps that command list and emits a synthetic `detected` transition for each
    * inner call so the status bar shows "Reading foo.md" instead of the
    * generic "Preparing actions".
    */
@@ -127,25 +127,10 @@ export class ToolEventCoordinator {
 
       if (isUseTools && parameters && typeof parameters === 'object') {
         const params = parameters as Record<string, unknown>;
-        // New CLI contract: params.tool is a comma-separated command string.
-        // Legacy contract (WebLLM/Nexus, stored conversations): params.calls[].
-        // Prefer params.calls when present (even if entries are invalid — the
-        // loop below skips bad entries and the `continue` on non-empty suppresses
-        // the default useTools fallthrough). Fall to CLI only when calls is absent.
         const innerCalls: Array<{ agent: string; tool: string; parameters?: Record<string, unknown> }> =
-          Array.isArray(params.calls)
-            ? params.calls
-                .map(inner => (inner && typeof inner === 'object') ? inner as Record<string, unknown> : null)
-                .map(inner => ({
-                  agent: typeof inner?.agent === 'string' ? inner.agent : '',
-                  tool: typeof inner?.tool === 'string' ? inner.tool : '',
-                  parameters: (typeof inner?.parameters === 'object' && inner.parameters !== null)
-                    ? inner.parameters as Record<string, unknown>
-                    : undefined
-                }))
-            : typeof params.tool === 'string'
-              ? parseCliForDisplay(params.tool)
-              : [];
+          typeof params.tool === 'string'
+            ? parseCliForDisplay(params.tool)
+            : [];
 
 
         for (let i = 0; i < innerCalls.length; i++) {

@@ -427,7 +427,26 @@ export class ExecutePromptsTool extends BaseTool<BatchExecutePromptParams, Batch
                   findText: { type: 'string' },
                   replaceAll: { type: 'boolean' },
                   caseSensitive: { type: 'boolean' },
-                  wholeWord: { type: 'boolean' }
+                  wholeWord: { type: 'boolean' },
+                  oldContent: {
+                    type: 'string',
+                    description: 'Required for line-range replace actions. Must match the exact current content being replaced.'
+                  },
+                  startLine: {
+                    type: 'integer',
+                    minimum: 1,
+                    description: 'Required for line-range replace actions. 1-indexed start line.'
+                  },
+                  endLine: {
+                    type: 'integer',
+                    minimum: 1,
+                    description: 'Required for line-range replace actions. 1-indexed end line.'
+                  },
+                  position: {
+                    type: 'integer',
+                    minimum: 1,
+                    description: 'Deprecated single-line replace alias. Use startLine/endLine instead.'
+                  }
                 },
                 required: ['type', 'targetPath']
               },

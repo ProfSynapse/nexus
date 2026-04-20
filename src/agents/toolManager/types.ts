@@ -38,11 +38,7 @@ export interface CliToolSchema {
   examples: string[];
 }
 
-interface LegacyContextCarrier {
-  context?: Partial<ToolContext>;
-}
-
-export interface GetToolsParams extends LegacyContextCarrier {
+export interface GetToolsParams {
   workspaceId?: string;
   sessionId?: string;
   memory?: string;
@@ -61,12 +57,6 @@ export interface GetToolsParams extends LegacyContextCarrier {
    * - "storage move, content read"
    */
   tool?: string;
-
-  /**
-   * Legacy/internal fallback.
-   * Hidden from public schema; retained so internal tests and adapters can be migrated incrementally.
-   */
-  request?: ToolRequestItem[];
 }
 
 export interface GetToolsResult extends CommonResult {
@@ -77,7 +67,7 @@ export interface GetToolsResult extends CommonResult {
   };
 }
 
-export interface UseToolParams extends LegacyContextCarrier {
+export interface UseToolParams {
   workspaceId?: string;
   sessionId?: string;
   memory?: string;
@@ -90,15 +80,10 @@ export interface UseToolParams extends LegacyContextCarrier {
 
   /**
    * CLI command string. Supports one or more commands separated by commas.
+   * Required.
    */
   tool?: string;
-
-  /**
-   * Legacy/internal fallback.
-   * Hidden from public schema; retained so internal tests and adapters can be migrated incrementally.
-   */
   strategy?: 'serial' | 'parallel';
-  calls?: ToolCallParams[];
 }
 
 export interface NormalizedUseToolParams {

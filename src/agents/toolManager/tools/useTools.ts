@@ -15,7 +15,7 @@ export class UseToolTool implements ITool<UseToolParams, UseToolResult> {
   ) {
     this.slug = 'useTools';
     this.name = 'Use Tools';
-    this.description = 'Execute one or more CLI-style tool commands. IMPORTANT: You MUST call getTools first to inspect the exact command signatures before calling this tool.';
+    this.description = 'Execute one or more CLI-style tool commands from the top-level "tool" field. Known-good example: {"workspaceId":"default","sessionId":"session_123","memory":"Summarize work so far.","goal":"Inspect available workspaces.","tool":"memory list-workspaces"}. IMPORTANT: You MUST call getTools first to inspect the exact command signatures before calling this tool.';
     this.version = '1.0.0';
   }
 
@@ -55,9 +55,14 @@ export class UseToolTool implements ITool<UseToolParams, UseToolResult> {
         tool: {
           type: 'string',
           description: 'CLI-style tool command string. Supports one or more commands separated by commas. Example: "storage move --path notes/a.md --new-path archive/a.md, content read --path archive/a.md".'
+        },
+        strategy: {
+          type: 'string',
+          enum: ['serial', 'parallel'],
+          description: 'Execution strategy for multiple CLI commands. Defaults to serial.'
         }
       },
-      required: ['memory', 'goal', 'tool']
+      required: ['workspaceId', 'sessionId', 'memory', 'goal', 'tool']
     };
   }
 

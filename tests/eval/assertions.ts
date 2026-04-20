@@ -162,6 +162,31 @@ function assertCliMetaArgs(
     return;
   }
 
+  const requiredStrings: Array<[keyof typeof actualArgs | string, string]> = [
+    ['workspaceId', 'workspace ID'],
+    ['sessionId', 'session ID'],
+    ['memory', 'memory summary'],
+    ['goal', 'goal statement'],
+  ];
+
+  for (const [key, label] of requiredStrings) {
+    const value = actualArgs[key];
+    if (typeof value !== 'string' || value.trim().length === 0) {
+      errors.push(`${prefix}tool "${toolName}": expected top-level ${label} in args.${key}, got ${JSON.stringify(actualArgs)}`);
+    }
+  }
+
+  if ('constraints' in actualArgs && actualArgs.constraints !== undefined && typeof actualArgs.constraints !== 'string') {
+    errors.push(`${prefix}tool "${toolName}": expected optional top-level constraints to be a string when present, got ${JSON.stringify(actualArgs.constraints)}`);
+  }
+
+  const forbiddenKeys = ['context', 'calls', 'request'];
+  for (const key of forbiddenKeys) {
+    if (key in actualArgs) {
+      errors.push(`${prefix}tool "${toolName}": deprecated args.${key} is not allowed; use the top-level CLI-first fields instead.`);
+    }
+  }
+
   const value = actualArgs.tool;
   if (typeof value !== 'string' || value.trim().length === 0) {
     const label = toolName === 'getTools' ? 'CLI selector string' : 'CLI command string';

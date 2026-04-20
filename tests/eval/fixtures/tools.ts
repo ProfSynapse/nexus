@@ -113,7 +113,7 @@ export const META_TOOLS: Tool[] = [
             description: 'Selector string such as "--help", "content", or "content read, storage list"',
           },
         },
-        required: ['memory', 'goal', 'tool'],
+        required: ['workspaceId', 'sessionId', 'memory', 'goal', 'tool'],
       },
     },
   },
@@ -121,7 +121,7 @@ export const META_TOOLS: Tool[] = [
     type: 'function',
     function: {
       name: 'useTools',
-      description: 'Execute one or more CLI-style tool commands.',
+      description: 'Execute one or more CLI-style tool commands using top-level workspaceId, sessionId, memory, goal, optional constraints, and tool.',
       parameters: {
         type: 'object',
         properties: {
@@ -135,7 +135,7 @@ export const META_TOOLS: Tool[] = [
             description: 'CLI-style command string such as "content read --path notes/today.md, storage list notes"',
           },
         },
-        required: ['memory', 'goal', 'tool'],
+        required: ['workspaceId', 'sessionId', 'memory', 'goal', 'tool'],
       },
     },
   },

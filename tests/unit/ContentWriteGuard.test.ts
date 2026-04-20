@@ -5,8 +5,8 @@
  * files behind when an LLM or parser dropped the path by mistake. The tool
  * now rejects empty/whitespace paths explicitly.
  *
- * Bypasses the CLI parser via `calls:` so the guard is exercised in
- * isolation from any parser behavior.
+ * Exercises the public CLI-first `useTools` surface so regressions at the
+ * parser boundary are caught alongside the tool guard.
  */
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -64,9 +64,7 @@ describe('contentManager.write — empty-path guard', () => {
   it('rejects empty string path with a clear error', async () => {
     const result = await stack.useTools({
       ...TEST_CONTEXT,
-      calls: [
-        { agent: 'contentManager', tool: 'write', params: { path: '', content: 'body' } },
-      ],
+      tool: 'content write "" "body"',
     });
 
     const call = getCallResult(result);
@@ -77,9 +75,7 @@ describe('contentManager.write — empty-path guard', () => {
   it('rejects whitespace-only path', async () => {
     const result = await stack.useTools({
       ...TEST_CONTEXT,
-      calls: [
-        { agent: 'contentManager', tool: 'write', params: { path: '   ', content: 'body' } },
-      ],
+      tool: 'content write "   " "body"',
     });
 
     const call = getCallResult(result);
@@ -90,9 +86,7 @@ describe('contentManager.write — empty-path guard', () => {
   it('does not create any orphan file when path is empty', async () => {
     await stack.useTools({
       ...TEST_CONTEXT,
-      calls: [
-        { agent: 'contentManager', tool: 'write', params: { path: '', content: 'body' } },
-      ],
+      tool: 'content write "" "body"',
     });
 
     // No untitled-*.md should have been created at vault root.
@@ -104,9 +98,7 @@ describe('contentManager.write — empty-path guard', () => {
   it('still accepts "/" as a "pick a filename in vault root" shortcut', async () => {
     const result = await stack.useTools({
       ...TEST_CONTEXT,
-      calls: [
-        { agent: 'contentManager', tool: 'write', params: { path: '/', content: 'body' } },
-      ],
+      tool: 'content write "/" "body"',
     });
 
     const call = getCallResult(result);
@@ -119,9 +111,7 @@ describe('contentManager.write — empty-path guard', () => {
   it('still accepts normal paths', async () => {
     const result = await stack.useTools({
       ...TEST_CONTEXT,
-      calls: [
-        { agent: 'contentManager', tool: 'write', params: { path: 'notes/regular.md', content: 'hello' } },
-      ],
+      tool: 'content write "notes/regular.md" "hello"',
     });
 
     const call = getCallResult(result);

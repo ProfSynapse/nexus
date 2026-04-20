@@ -14,7 +14,10 @@ export default defineConfig([
             "coverage/",
             "connector.js",
             "mlc-venv/",
+            ".codex-temp/",
+            ".history/",
             ".worktrees/",
+            "src/services/claude-code-sourcemap-main/**",
             // Config/build files — not application code
             "jest.config.js",
             "esbuild.config.mjs",
