@@ -94,3 +94,7 @@ agentic-flow-main/
 local-models/
 .worktrees/
 claude-code-sourcemap-main/
+
+# Editor / agent scratch (user-side, not part of the repo)
+.codex-temp/
+.vscode/
