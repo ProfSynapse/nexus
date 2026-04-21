@@ -147,6 +147,59 @@ describe('OpenAICodexAdapter', () => {
     expect(finalChunk.metadata?.responseId).toBe('resp_1');
   });
 
+  it('captures assistant text when Responses API finalizes it on message/content events', async () => {
+    const adapter = new OpenAICodexAdapter(createTokens());
+    __setRequestUrlMock(async () => ({
+      status: 200,
+      headers: {},
+      text: [
+        'data: {"type":"response.output_item.added","output_index":0,"item":{"id":"msg_1","type":"message","status":"in_progress","role":"assistant","content":[]}}\n\n',
+        'data: {"type":"response.content_part.added","item_id":"msg_1","output_index":0,"content_index":0,"part":{"type":"output_text","text":"","annotations":[]}}\n\n',
+        'data: {"type":"response.output_text.done","item_id":"msg_1","output_index":0,"content_index":0,"text":"FINAL_TEXT"}\n\n',
+        'data: {"type":"response.output_item.done","output_index":0,"item":{"id":"msg_1","type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"FINAL_TEXT","annotations":[]}]}}\n\n',
+        'data: {"type":"response.completed","response":{"id":"resp_1"}}\n\n'
+      ].join(''),
+      json: {},
+      arrayBuffer: new ArrayBuffer(0)
+    }));
+
+    const chunks = [];
+    for await (const chunk of adapter.generateStreamAsync('hello')) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks.some((chunk) => chunk.content === 'FINAL_TEXT')).toBe(true);
+    const finalChunk = chunks[chunks.length - 1];
+    expect(finalChunk.complete).toBe(true);
+    expect(finalChunk.metadata?.responseId).toBe('resp_1');
+  });
+
+  it('does not duplicate finalized text when deltas already streamed for the same output item', async () => {
+    const adapter = new OpenAICodexAdapter(createTokens());
+    __setRequestUrlMock(async () => ({
+      status: 200,
+      headers: {},
+      text: [
+        'data: {"type":"response.output_text.delta","output_index":0,"delta":"FINAL"}\n\n',
+        'data: {"type":"response.output_text.delta","output_index":0,"delta":"_TEXT"}\n\n',
+        'data: {"type":"response.output_text.done","item_id":"msg_1","output_index":0,"text":"FINAL_TEXT"}\n\n',
+        'data: {"type":"response.output_item.done","output_index":0,"item":{"id":"msg_1","type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"FINAL_TEXT","annotations":[]}]}}\n\n',
+        'data: {"type":"response.completed","response":{"id":"resp_1"}}\n\n'
+      ].join(''),
+      json: {},
+      arrayBuffer: new ArrayBuffer(0)
+    }));
+
+    const textChunks: string[] = [];
+    for await (const chunk of adapter.generateStreamAsync('hello')) {
+      if (chunk.content) {
+        textChunks.push(chunk.content);
+      }
+    }
+
+    expect(textChunks).toEqual(['FINAL', '_TEXT']);
+  });
+
   it('maps authentication and rate limit failures to provider errors', async () => {
     const adapter = new OpenAICodexAdapter(createTokens());
 

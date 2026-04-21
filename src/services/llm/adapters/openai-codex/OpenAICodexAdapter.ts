@@ -61,18 +61,28 @@ interface CodexResponsesEvent {
   response?: {
     id?: string;
   };
+  text?: string;
   delta?: string | {
     text?: string;
     content?: string;
   };
   content?: string;
   output_index?: number;
+  item_id?: string;
+  part?: {
+    type?: string;
+    text?: string;
+  };
   item?: {
     type?: string;
     call_id?: string;
     id?: string;
     name?: string;
     arguments?: string;
+    content?: Array<{
+      type?: string;
+      text?: string;
+    }>;
   };
 }
 
@@ -415,6 +425,8 @@ export class OpenAICodexAdapter extends BaseAdapter {
     const toolCallsMap = new Map<number, ToolCall>();
     let currentResponseId: string | null = null;
     let isCompleted = false;
+    const textSeenByOutputIndex = new Set<number>();
+    const finalizedTextItemIds = new Set<string>();
 
     const parser = createParser((sseEvent) => {
       if (sseEvent.type === 'reconnect-interval' || isCompleted) return;
@@ -440,8 +452,23 @@ export class OpenAICodexAdapter extends BaseAdapter {
           {
             const text = this.extractDeltaText(event);
             if (text) {
+              if (typeof event.output_index === 'number') {
+                textSeenByOutputIndex.add(event.output_index);
+              }
               eventQueue.push({ content: text, complete: false });
             }
+          }
+          break;
+
+        case 'response.content_part.added':
+          // Some Responses streams emit assistant text by first adding an
+          // output_text part to a message item, sometimes without a
+          // corresponding output_text.delta event.
+          if (event.part?.type === 'output_text' && event.part.text) {
+            if (typeof event.output_index === 'number') {
+              textSeenByOutputIndex.add(event.output_index);
+            }
+            eventQueue.push({ content: event.part.text, complete: false });
           }
           break;
 
@@ -456,6 +483,45 @@ export class OpenAICodexAdapter extends BaseAdapter {
                 arguments: event.item.arguments || '{}'
               }
             });
+          } else if (event.item?.type === 'message' && event.item.content) {
+            // The Responses API can finalize assistant text on the completed
+            // message item itself. We need to surface that text if it never
+            // arrived as output_text.delta events.
+            const outputIndex = typeof event.output_index === 'number' ? event.output_index : -1;
+            const itemId = event.item.id;
+            const shouldEmitMessageText = !textSeenByOutputIndex.has(outputIndex) &&
+              !(itemId && finalizedTextItemIds.has(itemId));
+
+            if (shouldEmitMessageText) {
+              for (const contentPart of event.item.content) {
+                const isTextPart = contentPart.type === 'output_text' || contentPart.type === 'text';
+                if (isTextPart && contentPart.text) {
+                  eventQueue.push({ content: contentPart.text, complete: false });
+                }
+              }
+            }
+          }
+          break;
+
+        case 'response.output_text.done':
+          // Finalized text can also arrive as a single terminal event. Emit it
+          // so callers do not miss assistant text when no deltas were streamed.
+          if (event.text) {
+            const outputIndex = typeof event.output_index === 'number' ? event.output_index : -1;
+            const shouldEmitDoneText = !textSeenByOutputIndex.has(outputIndex) &&
+              !(event.item_id && finalizedTextItemIds.has(event.item_id));
+
+            if (!shouldEmitDoneText) {
+              break;
+            }
+
+            if (outputIndex >= 0) {
+              textSeenByOutputIndex.add(outputIndex);
+            }
+            if (event.item_id) {
+              finalizedTextItemIds.add(event.item_id);
+            }
+            eventQueue.push({ content: event.text, complete: false });
           }
           break;
 

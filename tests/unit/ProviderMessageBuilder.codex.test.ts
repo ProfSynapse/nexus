@@ -186,6 +186,76 @@ describe('ProviderMessageBuilder — openai-codex continuation', () => {
     expect(input[4]).toMatchObject({ type: 'function_call_output', call_id: 'call_2' });
   });
 
+  it('should preserve prior tool outputs when reconstructing stateless Codex input', () => {
+    const previousMessages: ConversationMessage[] = [
+      {
+        role: 'assistant',
+        content: '',
+        tool_calls: [
+          {
+            id: 'call_getTools',
+            type: 'function' as const,
+            function: { name: 'getTools', arguments: '{"tool":"content read"}' },
+          },
+        ],
+      },
+      {
+        role: 'tool',
+        tool_call_id: 'call_getTools',
+        content: '{"tools":["content read"]}',
+      },
+    ];
+
+    const result = builder.buildContinuationOptions(
+      'openai-codex',
+      'Read notes/hello.md',
+      [
+        {
+          id: 'call_useTools',
+          type: 'function' as const,
+          function: { name: 'useTools', arguments: '{"tool":"content read --path notes/hello.md"}' },
+        },
+      ],
+      [
+        {
+          id: 'call_useTools',
+          success: true,
+          result: { ok: true },
+        },
+      ],
+      previousMessages,
+      baseGenerateOptions,
+    );
+
+    const input = result.conversationHistory as Array<Record<string, unknown>>;
+
+    expect(input).toEqual([
+      {
+        type: 'function_call',
+        call_id: 'call_getTools',
+        name: 'getTools',
+        arguments: '{"tool":"content read"}',
+      },
+      {
+        type: 'function_call_output',
+        call_id: 'call_getTools',
+        output: '{"tools":["content read"]}',
+      },
+      { role: 'user', content: 'Read notes/hello.md' },
+      {
+        type: 'function_call',
+        call_id: 'call_useTools',
+        name: 'useTools',
+        arguments: '{"tool":"content read --path notes/hello.md"}',
+      },
+      {
+        type: 'function_call_output',
+        call_id: 'call_useTools',
+        output: JSON.stringify({ ok: true }),
+      },
+    ]);
+  });
+
   it('should format failed tool results with error JSON', () => {
     const toolCalls = [
       {
