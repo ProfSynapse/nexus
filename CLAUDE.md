@@ -34,11 +34,11 @@ the main session (invoke the orchestrator bootstrap).
 <!-- SESSION_START -->
 ## Current Session
 <!-- Auto-managed by session_init hook. Overwritten each session. -->
-- Resume: `claude --resume 25c1d333-55ce-4a65-9bea-28f821f534d0`
-- Team: `pact-25c1d333`
-- Session dir: `/Users/jrosenbaum/.claude/pact-sessions/claudesidian-mcp/25c1d333-55ce-4a65-9bea-28f821f534d0`
+- Resume: `claude --resume 04055e6a-5973-4e79-8746-594974997e13`
+- Team: `pact-04055e6a`
+- Session dir: `/Users/jrosenbaum/.claude/pact-sessions/claudesidian-mcp/04055e6a-5973-4e79-8746-594974997e13`
 - Plugin root: `/Users/jrosenbaum/.claude/plugins/cache/pact-marketplace/PACT/3.17.11`
-- Started: 2026-04-17 20:20:15 UTC
+- Started: 2026-04-21 10:48:32 UTC
 <!-- SESSION_END -->
 
 <!-- PACT_MEMORY_START -->
@@ -100,7 +100,7 @@ Last Updated: 2026-04-06
 
 ## Project Overview
 - **Name**: Nexus (package: claudesidian-mcp)
-- **Version**: 5.8.2
+- **Version**: 5.8.3
 - **Type**: Obsidian Community Plugin
 - **Purpose**: MCP integration for Obsidian with AI-powered vault operations
 - **Architecture**: Agent-Tool pattern with domain-driven design
