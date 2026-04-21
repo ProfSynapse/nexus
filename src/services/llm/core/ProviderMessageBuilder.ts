@@ -243,10 +243,24 @@ export class ProviderMessageBuilder {
       // Build a full input array: prior messages + user prompt + function_call + function_call_output items.
       const inputItems: Array<Record<string, unknown>> = [];
 
-      // Add prior conversation messages, converting tool-related messages to Responses API format
+      // Reconstruct prior conversation messages in order. Unlike stateful
+      // OpenAI Responses, Codex requires every prior function_call to still have
+      // its matching function_call_output in the replayed input array.
       for (const msg of previousMessages) {
         if (msg.role === 'system') continue; // system prompt goes in instructions
-        if (msg.role === 'tool') continue; // tool results are represented as function_call_output below
+
+        if (msg.role === 'tool') {
+          if (!msg.tool_call_id) {
+            continue;
+          }
+
+          inputItems.push({
+            type: 'function_call_output',
+            call_id: msg.tool_call_id,
+            output: msg.content || '{}'
+          });
+          continue;
+        }
 
         // Convert assistant messages with tool_calls to function_call items
         if (msg.role === 'assistant' && msg.tool_calls && msg.tool_calls.length > 0) {

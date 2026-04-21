@@ -1,374 +1,474 @@
 /**
- * Generate Tool Validation Schemas Script
+ * Export CLI-first tool schemas from the live ToolCliNormalizer path.
  *
- * Dynamically extracts schemas from actual tool implementations.
- * Parses TypeScript files to extract getParameterSchema() return values.
- *
- * Run with: node scripts/generate-tool-schemas.mjs
+ * Usage:
+ *   node scripts/generate-tool-schemas.mjs
+ *   node scripts/generate-tool-schemas.mjs --selector "storage"
+ *   node scripts/generate-tool-schemas.mjs --selector "storage move, content read"
+ *   node scripts/generate-tool-schemas.mjs --output docs/generated/storage-schemas.json
+ *   node scripts/generate-tool-schemas.mjs --output -
  */
 
-import * as fs from 'fs';
-import * as path from 'path';
-import { fileURLToPath } from 'url';
+import fs from 'node:fs';
+import path from 'node:path';
+import Module from 'node:module';
+import { fileURLToPath } from 'node:url';
+import ts from 'typescript';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const srcDir = path.join(__dirname, '..', 'src');
+const projectRoot = path.join(__dirname, '..');
+const obsidianMockPath = path.join(projectRoot, 'tests', 'mocks', 'obsidian', 'index.ts');
+const require = Module.createRequire(import.meta.url);
 
-/**
- * Extract balanced braces content starting from a position
- */
-function extractBalancedBraces(content, startIdx) {
-  let braceCount = 1;
-  let idx = startIdx + 1;
+const DEFAULT_OUTPUT = path.join('docs', 'generated', 'cli-first-tool-schemas.json');
+const DEFAULT_SELECTOR = '--help';
+const originalTsLoader = Module._extensions['.ts'];
+const originalLoad = Module._load;
 
-  while (braceCount > 0 && idx < content.length) {
-    const char = content[idx];
-    if (char === '{') braceCount++;
-    else if (char === '}') braceCount--;
-    idx++;
+function parseArgs(argv) {
+  const options = {
+    output: DEFAULT_OUTPUT,
+    selectors: [],
+    help: false
+  };
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+
+    if (arg === '--help' || arg === '-h') {
+      options.help = true;
+      continue;
+    }
+
+    if (arg === '--output') {
+      const value = argv[index + 1];
+      if (!value) {
+        throw new Error('Missing value after --output');
+      }
+      options.output = value;
+      index += 1;
+      continue;
+    }
+
+    if (arg.startsWith('--output=')) {
+      options.output = arg.slice('--output='.length);
+      continue;
+    }
+
+    if (arg === '--selector') {
+      const value = argv[index + 1];
+      if (!value) {
+        throw new Error('Missing value after --selector');
+      }
+      options.selectors.push(value);
+      index += 1;
+      continue;
+    }
+
+    if (arg.startsWith('--selector=')) {
+      options.selectors.push(arg.slice('--selector='.length));
+      continue;
+    }
+
+    throw new Error(`Unknown argument: ${arg}`);
   }
 
-  return content.substring(startIdx, idx);
+  return options;
 }
 
-/**
- * Extract tool metadata from a tool file
- */
-function extractToolFromFile(filePath) {
-  const content = fs.readFileSync(filePath, 'utf-8');
-  const fileName = path.basename(filePath, '.ts');
+function printUsage() {
+  console.log([
+    'Export live CLI-first tool schemas from the runtime normalizer.',
+    '',
+    'Options:',
+    `  --output <path>      Output file path (default: ${DEFAULT_OUTPUT})`,
+    `  --selector <value>   CLI selector string, same shape as getTools (default: ${DEFAULT_SELECTOR})`,
+    '  --help               Show this message',
+    '',
+    'Examples:',
+    '  node scripts/generate-tool-schemas.mjs',
+    '  node scripts/generate-tool-schemas.mjs --selector "storage"',
+    '  node scripts/generate-tool-schemas.mjs --selector "storage move, content read"',
+    '  node scripts/generate-tool-schemas.mjs --output docs/generated/task-tools.json --selector "task"',
+    '  node scripts/generate-tool-schemas.mjs --output - --selector "prompt generate-image"',
+  ].join('\n'));
+}
 
-  // Skip index files and non-tool files
-  if (fileName === 'index' || fileName.startsWith('base') || fileName.startsWith('Base')) {
-    return null;
+function makeMockFn(implementation) {
+  let currentImpl = implementation || (() => undefined);
+  const fn = (...args) => currentImpl(...args);
+  fn.mockImplementation = (next) => {
+    currentImpl = next;
+    return fn;
+  };
+  fn.mockReturnValue = (value) => {
+    currentImpl = () => value;
+    return fn;
+  };
+  fn.mockResolvedValue = (value) => {
+    currentImpl = async () => value;
+    return fn;
+  };
+  fn.mockRejectedValue = (value) => {
+    currentImpl = async () => {
+      throw value;
+    };
+    return fn;
+  };
+  return fn;
+}
+
+function createMockElement(tagName = 'div') {
+  return {
+    tagName: String(tagName).toUpperCase(),
+    classList: {
+      add() {},
+      remove() {},
+      toggle() {},
+      contains() {
+        return false;
+      }
+    },
+    addClass() {},
+    removeClass() {},
+    hasClass() {
+      return false;
+    },
+    toggleClass() {},
+    setText(text) {
+      this.textContent = text;
+    },
+    createEl(tag) {
+      return createMockElement(tag);
+    },
+    createDiv() {
+      return createMockElement('div');
+    },
+    createSpan() {
+      return createMockElement('span');
+    },
+    empty() {},
+    remove() {},
+    appendChild() {},
+    removeChild() {},
+    addEventListener() {},
+    removeEventListener() {},
+    setAttribute() {},
+    getAttribute() {
+      return null;
+    },
+    removeAttribute() {},
+    querySelector() {
+      return null;
+    },
+    querySelectorAll() {
+      return [];
+    },
+    parentElement: null,
+    style: {},
+    textContent: '',
+    innerHTML: '',
+    value: '',
+    rows: 0,
+    scrollTop: 0,
+    scrollHeight: 0,
+    focus() {}
+  };
+}
+
+function installGlobals() {
+  globalThis.jest = { fn: makeMockFn };
+  globalThis.document = {
+    createElement: createMockElement,
+    body: createMockElement('body')
+  };
+  globalThis.window = {
+    setTimeout,
+    clearTimeout,
+    setInterval,
+    clearInterval,
+    navigator: {
+      clipboard: {
+        async writeText() {},
+        async readText() {
+          return '';
+        }
+      }
+    }
+  };
+  try {
+    globalThis.navigator = globalThis.window.navigator;
+  } catch {
+    Object.defineProperty(globalThis, 'navigator', {
+      configurable: true,
+      value: globalThis.window.navigator
+    });
+  }
+  globalThis.performance = globalThis.performance || { now: () => Date.now() };
+}
+
+function installTypeScriptLoader() {
+  Module._extensions['.ts'] = function compileTypeScript(module, filename) {
+    const source = fs.readFileSync(filename, 'utf8');
+    const { outputText } = ts.transpileModule(source, {
+      compilerOptions: {
+        module: ts.ModuleKind.CommonJS,
+        target: ts.ScriptTarget.ES2020,
+        esModuleInterop: true,
+        allowSyntheticDefaultImports: true,
+        moduleResolution: ts.ModuleResolutionKind.NodeJs,
+        skipLibCheck: true
+      },
+      fileName: filename
+    });
+    module._compile(outputText, filename);
+  };
+}
+
+function installObsidianMock() {
+  Module._load = function patchedLoad(request, parent, isMain) {
+    if (request === 'obsidian') {
+      const base = originalLoad.call(this, obsidianMockPath, parent, isMain);
+      class Events {
+        on() {
+          return {};
+        }
+
+        off() {}
+
+        trigger() {}
+      }
+      return { ...base, Events };
+    }
+
+    return originalLoad.call(this, request, parent, isMain);
+  };
+}
+
+function restoreLoaders() {
+  if (originalTsLoader) {
+    Module._extensions['.ts'] = originalTsLoader;
+  } else {
+    delete Module._extensions['.ts'];
+  }
+  Module._load = originalLoad;
+}
+
+function createRuntime() {
+  const { App, Plugin } = require('obsidian');
+
+  const app = new App();
+  app.vault.getName = () => 'claudesidian-mcp';
+  app.vault.getRoot = () => ({ children: [] });
+  app.vault.getMarkdownFiles = () => [];
+  app.vault.getFiles = () => [];
+  app.vault.getAllLoadedFiles = () => [];
+  app.vault.getAbstractFileByPath = () => null;
+  app.vault.createFolder = async () => undefined;
+  app.vault.createBinary = async () => undefined;
+  app.vault.create = async () => undefined;
+  app.vault.adapter = {
+    exists: async () => false,
+    read: async () => '',
+    write: async () => undefined,
+    append: async () => undefined,
+    stat: async () => ({ mtime: Date.now(), ctime: Date.now(), size: 0 }),
+    mkdir: async () => undefined,
+    remove: async () => undefined,
+    rename: async () => undefined,
+    list: async () => ({ files: [], folders: [] }),
+    writeBinary: async () => undefined
+  };
+
+  app.workspace.onLayoutReady = (callback) => callback();
+  app.workspace.on = () => ({});
+  app.workspace.off = () => undefined;
+  app.workspace.getLeavesOfType = () => [];
+  app.workspace.getMostRecentLeaf = () => null;
+  app.workspace.getLeaf = () => null;
+  app.workspace.openLinkText = async () => undefined;
+  app.workspace.activeLeaf = null;
+  app.plugins = undefined;
+
+  const plugin = new Plugin(app, { id: 'nexus', name: 'Nexus', version: '0.0.0' });
+  plugin.loadData = async () => ({});
+  plugin.saveData = async () => undefined;
+  plugin.registerEvent = () => undefined;
+  plugin.registerDomEvent = () => undefined;
+  plugin.addStatusBarItem = () => createMockElement('div');
+
+  return { app, plugin };
+}
+
+function instantiateAgents() {
+  const { DEFAULT_LLM_PROVIDER_SETTINGS } = require(path.join(projectRoot, 'src', 'types', 'llm', 'ProviderTypes'));
+  const { ToolCliNormalizer } = require(path.join(projectRoot, 'src', 'agents', 'toolManager', 'services', 'ToolCliNormalizer'));
+  const { ContentManagerAgent } = require(path.join(projectRoot, 'src', 'agents', 'contentManager', 'contentManager'));
+  const { StorageManagerAgent } = require(path.join(projectRoot, 'src', 'agents', 'storageManager', 'storageManager'));
+  const { SearchManagerAgent } = require(path.join(projectRoot, 'src', 'agents', 'searchManager', 'searchManager'));
+  const { MemoryManagerAgent } = require(path.join(projectRoot, 'src', 'agents', 'memoryManager', 'memoryManager'));
+  const { PromptManagerAgent } = require(path.join(projectRoot, 'src', 'agents', 'promptManager', 'promptManager'));
+  const { CanvasManagerAgent } = require(path.join(projectRoot, 'src', 'agents', 'canvasManager', 'canvasManager'));
+  const { TaskManagerAgent } = require(path.join(projectRoot, 'src', 'agents', 'taskManager', 'taskManager'));
+  const { IngestManagerAgent } = require(path.join(projectRoot, 'src', 'agents', 'ingestManager', 'ingestManager'));
+  const { AgentManager } = require(path.join(projectRoot, 'src', 'services', 'AgentManager'));
+  const { ElevenLabsAgent } = require(path.join(projectRoot, 'src', 'agents', 'apps', 'elevenlabs', 'ElevenLabsAgent'));
+  const { ComposerAgent } = require(path.join(projectRoot, 'src', 'agents', 'apps', 'composer', 'ComposerAgent'));
+  const { WebToolsAgent } = require(path.join(projectRoot, 'src', 'agents', 'apps', 'webTools', 'WebToolsAgent'));
+
+  const { app, plugin } = createRuntime();
+  const llmSettings = JSON.parse(JSON.stringify(DEFAULT_LLM_PROVIDER_SETTINGS));
+  llmSettings.providers.google.apiKey = 'mock-google-key';
+  llmSettings.providers.google.enabled = true;
+  llmSettings.providers.openrouter.apiKey = 'mock-openrouter-key';
+  llmSettings.providers.openrouter.enabled = true;
+  llmSettings.defaultImageModel = {
+    provider: 'google',
+    model: 'gemini-2.5-flash-image'
+  };
+
+  const settings = {
+    settings: {
+      llmProviders: llmSettings,
+      customPrompts: { prompts: [] }
+    }
+  };
+
+  const providerManager = {
+    getLLMService: () => ({}),
+    getSettings: () => llmSettings
+  };
+
+  const agentManager = new AgentManager(app, plugin, undefined);
+  const usageTracker = {};
+  const memoryService = {};
+  const workspaceService = {
+    listWorkspaces: async () => [],
+    getWorkspace: async () => null
+  };
+  const taskService = {
+    getWorkspaceSummary: async () => ({})
+  };
+
+  const agents = [
+    new ContentManagerAgent(app),
+    new StorageManagerAgent(app),
+    new SearchManagerAgent(app),
+    new MemoryManagerAgent(app, plugin, memoryService, workspaceService),
+    new PromptManagerAgent(settings, providerManager, agentManager, usageTracker, app, app.vault, null),
+    new CanvasManagerAgent(app),
+    new TaskManagerAgent(app, plugin, taskService),
+    new IngestManagerAgent(app.vault, () => null),
+    new ElevenLabsAgent(),
+    new ComposerAgent(),
+    new WebToolsAgent()
+  ];
+
+  for (const agent of agents) {
+    if (typeof agent.setApp === 'function') {
+      agent.setApp(app);
+    }
+    if (typeof agent.setVault === 'function') {
+      agent.setVault(app.vault);
+    }
   }
 
-  // Extract tool name from super() call: super('toolName', ...
-  const superMatch = content.match(/super\s*\(\s*['"]([^'"]+)['"]/);
-  if (!superMatch) {
-    return null;
-  }
-
-  const toolName = superMatch[1];
-
-  // Extract description from super() call (second param)
-  const descMatch = content.match(/super\s*\(\s*['"][^'"]+['"]\s*,\s*['"]([^'"]+)['"]/);
-  const description = descMatch ? descMatch[1] : `${toolName} tool`;
-
-  // Find getParameterSchema method and extract its body using balanced braces
-  const methodMatch = content.match(/getParameterSchema\s*\([^)]*\)\s*(?::\s*[^{]+)?\s*\{/);
-  if (!methodMatch) {
-    return null;
-  }
-
-  const methodStart = content.indexOf(methodMatch[0]) + methodMatch[0].length - 1;
-  const methodBody = extractBalancedBraces(content, methodStart);
-
-  // Find toolSchema = { in method body
-  const schemaVarMatch = methodBody.match(/const\s+toolSchema\s*=\s*\{/);
-  if (!schemaVarMatch) {
-    return null;
-  }
-
-  const schemaStart = methodBody.indexOf(schemaVarMatch[0]) + schemaVarMatch[0].length - 1;
-  let schemaStr = extractBalancedBraces(methodBody, schemaStart);
-
-  // Replace template literals and expressions with placeholders
-  schemaStr = schemaStr.replace(/\$\{[^}]+\}/g, '');
-
-  const schema = extractPropertiesFromSchema(schemaStr);
-
-  // Only skip if schema parsing failed - empty properties is valid (e.g., listModels)
-  if (!schema) {
-    return null;
+  const registry = new Map();
+  for (const agent of agents) {
+    registry.set(agent.name, agent);
   }
 
   return {
-    name: toolName,
-    description,
-    schema
+    agents,
+    registry,
+    normalizer: new ToolCliNormalizer(registry)
   };
 }
 
-/**
- * Extract properties from a schema string using balanced brace matching
- */
-function extractPropertiesFromSchema(schemaStr) {
-  const result = {
-    properties: {},
-    required: []
+function collectSchemas(agents, registry, normalizer, selectorInput) {
+  const requests = normalizer.normalizeDiscoveryRequests({ tool: selectorInput });
+  const tools = [];
+
+  for (const request of requests) {
+    const agent = registry.get(request.agent);
+    if (!agent) {
+      throw new Error(`Agent "${request.agent}" not found`);
+    }
+
+    if (!request.tools || request.tools.length === 0) {
+      for (const tool of agent.getTools()) {
+        tools.push(normalizer.buildCliSchema(agent.name, tool));
+      }
+      continue;
+    }
+
+    for (const toolSlug of request.tools) {
+      const tool = agent.getTool(toolSlug);
+      if (!tool) {
+        throw new Error(`Tool "${toolSlug}" not found in agent "${agent.name}"`);
+      }
+      tools.push(normalizer.buildCliSchema(agent.name, tool));
+    }
+  }
+
+  tools.sort((left, right) => left.command.localeCompare(right.command));
+
+  const byAgent = {};
+  for (const tool of tools) {
+    byAgent[tool.agent] = (byAgent[tool.agent] || 0) + 1;
+  }
+
+  return {
+    generatedAt: new Date().toISOString(),
+    selector: selectorInput,
+    toolCount: tools.length,
+    agentCount: Object.keys(byAgent).length,
+    agents: byAgent,
+    tools
   };
-
-  // Find properties: { and extract with balanced braces
-  const propsStartMatch = schemaStr.match(/properties\s*:\s*\{/);
-  let propsEndIdx = 0;
-
-  if (propsStartMatch) {
-    const startIdx = schemaStr.indexOf(propsStartMatch[0]) + propsStartMatch[0].length - 1;
-    const propsBlock = extractBalancedBraces(schemaStr, startIdx);
-    propsEndIdx = startIdx + propsBlock.length;
-
-    // Remove outer braces
-    const propsContent = propsBlock.substring(1, propsBlock.length - 1);
-
-    // Find each property using balanced braces
-    let pos = 0;
-    while (pos < propsContent.length) {
-      // Find property name: {
-      const propStartMatch = propsContent.substring(pos).match(/(\w+)\s*:\s*\{/);
-      if (!propStartMatch) break;
-
-      const propName = propStartMatch[1];
-      const propStart = pos + propsContent.substring(pos).indexOf(propStartMatch[0]) + propStartMatch[0].length - 1;
-      const propBlock = extractBalancedBraces(propsContent, propStart);
-
-      const prop = {};
-
-      // Extract type
-      const typeMatch = propBlock.match(/type\s*:\s*['"]?(\w+)['"]?/);
-      if (typeMatch) prop.type = typeMatch[1];
-
-      // Extract description
-      const descMatch = propBlock.match(/description\s*:\s*['"]([^'"]+)['"]/);
-      if (descMatch) prop.description = descMatch[1];
-
-      // Extract enum
-      const enumMatch = propBlock.match(/enum\s*:\s*\[([^\]]+)\]/);
-      if (enumMatch) {
-        prop.enum = enumMatch[1].split(',').map(s => s.trim().replace(/['"]/g, ''));
-      }
-
-      // Extract default
-      const defaultMatch = propBlock.match(/default\s*:\s*([^,\n}]+)/);
-      if (defaultMatch) {
-        const val = defaultMatch[1].trim();
-        if (val === 'true') prop.default = true;
-        else if (val === 'false') prop.default = false;
-        else if (!isNaN(Number(val))) prop.default = Number(val);
-        else prop.default = val.replace(/['"]/g, '');
-      }
-
-      // Extract minimum/maximum
-      const minMatch = propBlock.match(/minimum\s*:\s*(\d+)/);
-      if (minMatch) prop.minimum = Number(minMatch[1]);
-
-      const maxMatch = propBlock.match(/maximum\s*:\s*(\d+)/);
-      if (maxMatch) prop.maximum = Number(maxMatch[1]);
-
-      result.properties[propName] = prop;
-      pos = propStart + propBlock.length;
-    }
-  }
-
-  // Extract TOP-LEVEL required array (after properties block ends, not nested ones)
-  const afterProps = schemaStr.substring(propsEndIdx);
-  const reqMatch = afterProps.match(/required\s*:\s*\[([^\]]*)\]/);
-  if (reqMatch) {
-    result.required = reqMatch[1]
-      .split(',')
-      .map(s => s.trim().replace(/['"]/g, ''))
-      .filter(s => s.length > 0);
-  }
-
-  return result;
 }
 
-/**
- * Get agent name from file path
- */
-function getAgentName(filePath) {
-  const parts = filePath.split(path.sep);
-  const agentsIndex = parts.indexOf('agents');
-  if (agentsIndex >= 0 && agentsIndex + 1 < parts.length) {
-    return parts[agentsIndex + 1];
+function writeOutput(outputPath, payload) {
+  const json = `${JSON.stringify(payload, null, 2)}\n`;
+  if (outputPath === '-') {
+    process.stdout.write(json);
+    return;
   }
-  return 'unknown';
+
+  const resolvedOutput = path.resolve(process.cwd(), outputPath);
+  fs.mkdirSync(path.dirname(resolvedOutput), { recursive: true });
+  fs.writeFileSync(resolvedOutput, json, 'utf8');
+  console.log(JSON.stringify({
+    outPath: resolvedOutput,
+    toolCount: payload.toolCount,
+    agentCount: payload.agentCount,
+    agents: payload.agents
+  }, null, 2));
 }
 
-/**
- * Context schema - required for every useTools call
- */
-const contextSchema = {
-  type: 'object',
-  description: 'Context for session tracking (required in every useTools call)',
-  properties: {
-    workspaceId: { type: 'string', description: 'Scope identifier (use "default" for global)' },
-    sessionId: { type: 'string', description: 'Session name (system assigns ID)' },
-    memory: { type: 'string', description: 'Conversation essence (1-3 sentences)' },
-    goal: { type: 'string', description: 'Current objective (1-3 sentences)' },
-    constraints: { type: 'string', description: 'Rules/limits (optional, 1-3 sentences)' }
-  },
-  required: ['workspaceId', 'sessionId', 'memory', 'goal'],
-  additionalProperties: false
-};
-
-/**
- * Recursively find tool files
- */
-function findToolFiles(dir, results = []) {
-  const items = fs.readdirSync(dir, { withFileTypes: true });
-
-  for (const item of items) {
-    const fullPath = path.join(dir, item.name);
-
-    if (item.isDirectory()) {
-      // Skip services directories
-      if (item.name !== 'services') {
-        findToolFiles(fullPath, results);
-      }
-    } else if (item.isFile() && item.name.endsWith('.ts')) {
-      // Skip index, base, types files
-      if (item.name !== 'index.ts' &&
-          !item.name.startsWith('base') &&
-          !item.name.startsWith('Base') &&
-          item.name !== 'types.ts') {
-        results.push(fullPath);
-      }
-    }
+function main() {
+  const options = parseArgs(process.argv.slice(2));
+  if (options.help) {
+    printUsage();
+    return;
   }
 
-  return results;
-}
+  const selectorInput = options.selectors.length > 0
+    ? options.selectors.join(', ')
+    : DEFAULT_SELECTOR;
 
-/**
- * Agents to exclude from schema generation
- */
-const EXCLUDED_AGENTS = ['toolManager'];
+  installGlobals();
+  installTypeScriptLoader();
+  installObsidianMock();
 
-/**
- * Name migration mapping (old -> new)
- * Used for migrating conversation datasets
- */
-const NAME_MIGRATIONS = {
-  // Agent renames
-  agents: {
-    'agentManager': 'promptManager',
-    'vaultManager': 'storageManager',
-    'vaultLibrarian': 'searchManager'
-  },
-  // Tool renames (old_tool -> new_tool)
-  tools: {
-    // agentManager -> promptManager
-    'agentManager_createAgent': 'promptManager_createPrompt',
-    'agentManager_updateAgent': 'promptManager_updatePrompt',
-    'agentManager_deleteAgent': 'promptManager_deletePrompt',
-    'agentManager_listAgents': 'promptManager_listPrompts',
-    'agentManager_getAgent': 'promptManager_getPrompt',
-    'agentManager_archiveAgent': 'promptManager_archivePrompt',
-    'agentManager_executePrompts': 'promptManager_executePrompts',
-    'agentManager_generateImage': 'promptManager_generateImage',
-    'agentManager_listModels': 'promptManager_listModels',
-    // vaultManager -> storageManager
-    'vaultManager_listDirectory': 'storageManager_list',
-    'vaultManager_createFolder': 'storageManager_createFolder',
-    'vaultManager_moveNote': 'storageManager_move',
-    'vaultManager_deleteNote': 'storageManager_archive',
-    'vaultManager_duplicateNote': 'storageManager_copy',
-    'vaultManager_deleteFolder': 'storageManager_archive',
-    'vaultManager_openNote': 'storageManager_open',
-    // vaultLibrarian -> searchManager
-    'vaultLibrarian_searchContent': 'searchManager_searchContent',
-    'vaultLibrarian_searchDirectory': 'searchManager_searchDirectory',
-    'vaultLibrarian_searchMemory': 'searchManager_searchMemory'
-  },
-  // Parameter renames within tools
-  params: {
-    'promptManager_executePrompts': {
-      'agent': 'customPrompt'
-    }
-  }
-};
-
-/**
- * Main function
- */
-async function main() {
-  console.log('Scanning for tool files...\n');
-
-  // Find all tool files in agent directories
-  const agentsDir = path.join(__dirname, '..', 'src', 'agents');
-  const toolFiles = [];
-
-  // Look in each agent's tools folder
-  const agents = fs.readdirSync(agentsDir, { withFileTypes: true })
-    .filter(d => d.isDirectory())
-    .filter(d => !EXCLUDED_AGENTS.includes(d.name));
-
-  for (const agent of agents) {
-    const toolsDir = path.join(agentsDir, agent.name, 'tools');
-    if (fs.existsSync(toolsDir)) {
-      findToolFiles(toolsDir, toolFiles);
-    }
-  }
-
-  console.log(`Found ${toolFiles.length} potential tool files\n`);
-
-  const output = {
-    $schema: 'http://json-schema.org/draft-07/schema#',
-    title: 'Claudesidian Tool Schemas',
-    description: 'JSON Schema definitions for all Claudesidian MCP tools (auto-generated)',
-    version: '2.0.0',
-    generated: new Date().toISOString(),
-    migrations: NAME_MIGRATIONS,
-    context: contextSchema,
-    tools: {},
-    agents: {}
-  };
-
-  const agentTools = {};
-
-  for (const fullPath of toolFiles) {
-    const agentName = getAgentName(fullPath);
-
-    try {
-      const tool = extractToolFromFile(fullPath);
-      if (tool) {
-        const key = `${agentName}_${tool.name}`;
-
-        output.tools[key] = {
-          $schema: 'http://json-schema.org/draft-07/schema#',
-          title: key,
-          description: tool.description,
-          type: 'object',
-          properties: tool.schema.properties,
-          required: tool.schema.required,
-          additionalProperties: false
-        };
-
-        if (!agentTools[agentName]) {
-          agentTools[agentName] = [];
-        }
-        agentTools[agentName].push(tool.name);
-      }
-    } catch (e) {
-      console.error(`Error processing ${relPath}: ${e.message}`);
-    }
-  }
-
-  // Build agent summaries
-  for (const [agent, tools] of Object.entries(agentTools)) {
-    output.agents[agent] = {
-      toolCount: tools.length,
-      tools: tools.sort()
-    };
-  }
-
-  // Write output
-  const outputPath = path.join(__dirname, '..', 'tool-schemas.json');
-  fs.writeFileSync(outputPath, JSON.stringify(output, null, 2));
-
-  // Summary
-  const toolCount = Object.keys(output.tools).length;
-  const agentCount = Object.keys(output.agents).length;
-
-  console.log(`Generated: ${outputPath}`);
-  console.log(`\nTotal: ${agentCount} agents, ${toolCount} tools\n`);
-
-  for (const [agent, info] of Object.entries(output.agents).sort()) {
-    console.log(`  ${agent}: ${info.toolCount} tools`);
-    console.log(`    ${info.tools.join(', ')}`);
+  try {
+    const runtime = instantiateAgents();
+    const payload = collectSchemas(runtime.agents, runtime.registry, runtime.normalizer, selectorInput);
+    writeOutput(options.output, payload);
+  } finally {
+    restoreLoaders();
   }
 }
 
-main().catch(console.error);
+main();
