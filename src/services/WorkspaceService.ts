@@ -38,6 +38,7 @@ export class WorkspaceService {
   private sessionService: WorkspaceSessionService;
   private stateService: WorkspaceStateService;
   private systemGuidesProvider: SystemGuidesWorkspaceProvider | null;
+  private onChange: (() => void) | null = null;
 
   constructor(
     private plugin: Plugin,
@@ -77,6 +78,29 @@ export class WorkspaceService {
         addSession: (wId, data) => this.addSession(wId, data)
       }
     );
+  }
+
+  /**
+   * Register a change listener fired after any workspace-level mutation
+   * (create/update/delete). Best-effort hook for consumers that need to refresh
+   * derived data (e.g. ToolManager getTools description). Replaces any previously
+   * registered listener. Pass null to detach.
+   */
+  setOnChange(listener: (() => void) | null): void {
+    this.onChange = listener;
+  }
+
+  /**
+   * Fire the change listener safely — errors are swallowed so mutations never
+   * fail due to listener bugs.
+   */
+  private notifyChange(): void {
+    if (!this.onChange) return;
+    try {
+      this.onChange();
+    } catch (error) {
+      console.error('[WorkspaceService] onChange listener threw:', error);
+    }
   }
 
   /**
@@ -316,6 +340,12 @@ export class WorkspaceService {
    * Create new workspace (writes file + updates index)
    */
   async createWorkspace(data: Partial<IndividualWorkspace>): Promise<IndividualWorkspace> {
+    const result = await this.createWorkspaceInternal(data);
+    this.notifyChange();
+    return result;
+  }
+
+  private async createWorkspaceInternal(data: Partial<IndividualWorkspace>): Promise<IndividualWorkspace> {
     // Use new adapter if available and ready (avoids blocking on SQLite initialization)
     const adapterForCreate = this.getReadyAdapter();
     if (adapterForCreate) {
@@ -397,7 +427,7 @@ export class WorkspaceService {
    */
   async updateWorkspace(id: string, updates: Partial<IndividualWorkspace>): Promise<void> {
     this.ensureSystemWorkspaceMutable(id);
-    return withDualBackend(
+    await withDualBackend(
       this.storageAdapterOrGetter,
       async (adapter) => {
         const hybridUpdates: Partial<HybridTypes.WorkspaceMetadata> = {};
@@ -444,6 +474,7 @@ export class WorkspaceService {
         await this.indexManager.updateWorkspaceInIndex(updatedWorkspace);
       }
     );
+    this.notifyChange();
   }
 
   /**
@@ -473,7 +504,7 @@ export class WorkspaceService {
    */
   async deleteWorkspace(id: string): Promise<void> {
     this.ensureSystemWorkspaceMutable(id);
-    return withDualBackend(
+    await withDualBackend(
       this.storageAdapterOrGetter,
       async (adapter) => {
         await adapter.deleteWorkspace(id);
@@ -483,6 +514,7 @@ export class WorkspaceService {
         await this.indexManager.removeWorkspaceFromIndex(id);
       }
     );
+    this.notifyChange();
   }
 
   // ============================================================================

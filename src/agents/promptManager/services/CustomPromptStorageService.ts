@@ -65,6 +65,7 @@ export class CustomPromptStorageService {
     private db: MigratableDatabase | null;
     private settings: Settings;
     private migrated = false;
+    private onChange: (() => void) | null = null;
 
     constructor(rawDb: DatabaseInput, settings: Settings) {
         // Wrap raw db in adapter if provided
@@ -79,6 +80,27 @@ export class CustomPromptStorageService {
         }
         this.settings = settings;
         this.initialize();
+    }
+
+    /**
+     * Register a change listener fired after any prompt mutation (create/update/delete/toggle/setEnabled).
+     * Best-effort notification for consumers that need to refresh derived data (e.g. ToolManager schema).
+     * Replaces any previously registered listener. Pass null to detach.
+     */
+    setOnChange(listener: (() => void) | null): void {
+        this.onChange = listener;
+    }
+
+    /**
+     * Fire the change listener safely — errors are swallowed so mutations never fail due to listener bugs.
+     */
+    private notifyChange(): void {
+        if (!this.onChange) return;
+        try {
+            this.onChange();
+        } catch (error) {
+            console.error('[CustomPromptStorageService] onChange listener threw:', error);
+        }
     }
 
     /**
@@ -285,6 +307,7 @@ export class CustomPromptStorageService {
         customPromptsSettings.prompts.push(newPrompt);
         await this.settings.saveSettings();
 
+        this.notifyChange();
         return newPrompt;
     }
 
@@ -352,6 +375,8 @@ export class CustomPromptStorageService {
 
         prompts[index] = { ...prompts[index], ...updates };
         await this.settings.saveSettings();
+
+        this.notifyChange();
     }
 
     /**
@@ -376,6 +401,7 @@ export class CustomPromptStorageService {
         if (index !== -1) {
             prompts.splice(index, 1);
             await this.settings.saveSettings();
+            this.notifyChange();
         }
     }
 
@@ -410,6 +436,7 @@ export class CustomPromptStorageService {
     async setEnabled(enabled: boolean): Promise<void> {
         this.ensureCustomPromptsSettings().enabled = enabled;
         await this.settings.saveSettings();
+        this.notifyChange();
     }
 
     /**
