@@ -9,6 +9,13 @@ function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every(item => typeof item === 'string');
 }
 
+// Typed predicate so `Array.isArray` narrowing yields `unknown[]` instead of
+// `any[]`. Lets us spread `existing` at the scalar-into-array branch without
+// tripping @typescript-eslint/no-unsafe-assignment.
+function isUnknownArray(value: unknown): value is unknown[] {
+  return Array.isArray(value);
+}
+
 /**
  * Outcome of a merge-mode decision for `setProperty`. Extracted as a pure
  * function so every branch (including the scalar-into-array promotion added
@@ -50,8 +57,8 @@ export function computeMergeResult(existing: unknown, value: unknown): MergeResu
     return { kind: 'replace', value: merged };
   }
 
-  if (Array.isArray(existing) && !Array.isArray(value)) {
-    const merged = [...existing];
+  if (isUnknownArray(existing) && !Array.isArray(value)) {
+    const merged: unknown[] = [...existing];
     if (!merged.includes(value)) {
       merged.push(value);
     }

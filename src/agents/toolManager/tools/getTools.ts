@@ -15,6 +15,7 @@ export class GetToolsTool implements ITool<GetToolsParams, GetToolsResult> {
 
   private agentRegistry: Map<string, IAgent>;
   private cliNormalizer: ToolCliNormalizer;
+  private schemaData: SchemaData;
 
   constructor(agentRegistry: Map<string, IAgent>, schemaData: SchemaData) {
     this.slug = 'getTools';
@@ -22,7 +23,15 @@ export class GetToolsTool implements ITool<GetToolsParams, GetToolsResult> {
     this.version = '1.0.0';
     this.agentRegistry = agentRegistry;
     this.cliNormalizer = new ToolCliNormalizer(agentRegistry);
+    this.schemaData = schemaData;
     this.description = this.buildDescription(schemaData);
+  }
+
+  refreshDescription(schemaData?: SchemaData): void {
+    if (schemaData) {
+      this.schemaData = schemaData;
+    }
+    this.description = this.buildDescription(this.schemaData);
   }
 
   private buildDescription(schemaData: SchemaData): string {

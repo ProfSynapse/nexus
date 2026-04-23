@@ -43,6 +43,8 @@ export class ToolManagerAgent extends BaseAgent {
   private allAgents: Map<string, IAgent>;
   private toolBatchExecutionService: ToolBatchExecutionService;
   private toolCliNormalizer: ToolCliNormalizer;
+  private getToolsTool: GetToolsTool;
+  private useToolTool: UseToolTool;
 
   /**
    * Create a new ToolManagerAgent
@@ -66,8 +68,10 @@ export class ToolManagerAgent extends BaseAgent {
     this.toolCliNormalizer = new ToolCliNormalizer(agentRegistry);
 
     // Register the two tools with schema data
-    this.registerTool(new GetToolsTool(agentRegistry, data));
-    this.registerTool(new UseToolTool(this.toolBatchExecutionService, this.toolCliNormalizer));
+    this.getToolsTool = new GetToolsTool(agentRegistry, data);
+    this.useToolTool = new UseToolTool(this.toolBatchExecutionService, this.toolCliNormalizer);
+    this.registerTool(this.getToolsTool);
+    this.registerTool(this.useToolTool);
   }
 
   /**
@@ -92,5 +96,19 @@ export class ToolManagerAgent extends BaseAgent {
    */
   getToolCliNormalizer(): ToolCliNormalizer {
     return this.toolCliNormalizer;
+  }
+
+  registerDynamicAgent(agent: IAgent): void {
+    this.allAgents.set(agent.name, agent);
+    this.getToolsTool.refreshDescription();
+  }
+
+  unregisterDynamicAgent(agentName: string): void {
+    this.allAgents.delete(agentName);
+    this.getToolsTool.refreshDescription();
+  }
+
+  refreshSchemaData(schemaData: SchemaData): void {
+    this.getToolsTool.refreshDescription(schemaData);
   }
 }

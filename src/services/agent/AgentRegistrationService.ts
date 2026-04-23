@@ -19,6 +19,7 @@ import { AgentInitializationService } from './AgentInitializationService';
 import { AgentValidationService } from './AgentValidationService';
 import type { AppManager } from '../apps/AppManager';
 import type { IAgent } from '../../agents/interfaces/IAgent';
+import { ToolManagerAgent } from '../../agents/toolManager/toolManager';
 import type { MemorySettings } from '../../types';
 
 export interface AgentRegistrationServiceInterface {
@@ -78,6 +79,23 @@ export class AgentRegistrationService implements AgentRegistrationServiceInterfa
   private isInitialized = false;
   private initializationPromise: Promise<Map<string, IAgent>> | null = null;
   private appManagerInstance: AppManager | null = null;
+
+  private syncToolManagerAgent(action: 'register' | 'unregister', agentOrName: IAgent | string): void {
+    try {
+      const toolManager = this.agentManager.getAgent('toolManager');
+      if (!(toolManager instanceof ToolManagerAgent)) {
+        return;
+      }
+
+      if (action === 'register') {
+        toolManager.registerDynamicAgent(agentOrName as IAgent);
+      } else {
+        toolManager.unregisterDynamicAgent(agentOrName as string);
+      }
+    } catch {
+      // ToolManager is not available during early startup, which is fine.
+    }
+  }
 
   constructor(
     private app: App,
@@ -182,8 +200,14 @@ export class AgentRegistrationService implements AgentRegistrationServiceInterfa
         const appsSettings = pluginSettings?.apps || { apps: {} };
         const appManager = new AppManagerClass(
           appsSettings,
-          (agent) => this.agentManager.registerAgent(agent),
-          (name) => this.agentManager.unregisterAgent(name),
+          (agent) => {
+            this.agentManager.registerAgent(agent);
+            this.syncToolManagerAgent('register', agent);
+          },
+          (name) => {
+            this.agentManager.unregisterAgent(name);
+            this.syncToolManagerAgent('unregister', name);
+          },
           this.app
         );
         appManager.loadInstalledApps();

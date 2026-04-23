@@ -1,0 +1,7 @@
+interface:
+  display_name: "Nexus Tool Schemas"
+  short_description: "Export live CLI-first tool schemas"
+  default_prompt: "Use $nexus-tool-schemas to export CLI-first tool schemas for the current Nexus repo."
+
+policy:
+  allow_implicit_invocation: true
