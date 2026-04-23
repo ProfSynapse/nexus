@@ -132,4 +132,43 @@ describe('TaskBoardSyncCoordinator', () => {
     expect(renderBoard).toHaveBeenCalledTimes(2);
     expect(refreshColumns).not.toHaveBeenCalled();
   });
+
+  it('reloads the board for relevant external sync updates', async () => {
+    const coordinator = createCoordinator();
+
+    await coordinator.handleExternalSync(['ws-1'], false);
+
+    expect(loadBoardData).toHaveBeenCalledTimes(1);
+    expect(renderBoard).toHaveBeenCalledTimes(1);
+    expect(refreshColumns).not.toHaveBeenCalled();
+  });
+
+  it('ignores unrelated external sync updates', async () => {
+    const coordinator = createCoordinator();
+
+    await coordinator.handleExternalSync(['ws-2'], false);
+
+    expect(loadBoardData).not.toHaveBeenCalled();
+    expect(renderBoard).not.toHaveBeenCalled();
+  });
+
+  it('defers external sync updates while the edit modal is open', async () => {
+    isEditModalOpen = true;
+    const coordinator = createCoordinator();
+
+    await coordinator.handleExternalSync(['ws-1'], false);
+
+    expect(pendingEvent).toEqual({
+      workspaceId: 'ws-1',
+      entity: 'task',
+      action: 'updated'
+    });
+    expect(loadBoardData).not.toHaveBeenCalled();
+
+    isEditModalOpen = false;
+    await coordinator.flushPendingEvent();
+
+    expect(loadBoardData).toHaveBeenCalledTimes(1);
+    expect(refreshColumns).toHaveBeenCalledTimes(1);
+  });
 });

@@ -73,6 +73,34 @@ export class TaskBoardSyncCoordinator {
     await this.syncFromEvent(event);
   }
 
+  async handleExternalSync(taskWorkspaceIds: string[], hasWorkspaceChanges: boolean): Promise<void> {
+    if (this.deps.getIsClosing() || !this.deps.getIsReady()) {
+      return;
+    }
+
+    const filterState = this.deps.getFilterState();
+    const isRelevantWorkspace = hasWorkspaceChanges ||
+      taskWorkspaceIds.length === 0 ||
+      !filterState.workspaceId ||
+      filterState.workspaceId === 'all' ||
+      taskWorkspaceIds.includes(filterState.workspaceId);
+
+    if (!isRelevantWorkspace) {
+      return;
+    }
+
+    if (this.deps.getIsEditModalOpen() || this.deps.getDragTaskId() || this.deps.getIsSyncingBoardData()) {
+      this.deps.setPendingEvent({
+        workspaceId: taskWorkspaceIds[0] ?? filterState.workspaceId ?? 'all',
+        entity: hasWorkspaceChanges ? 'project' : 'task',
+        action: 'updated'
+      });
+      return;
+    }
+
+    await this.syncFromEvent();
+  }
+
   async flushPendingEvent(): Promise<void> {
     const pendingEvent = this.deps.getPendingEvent();
     if (!pendingEvent) {

@@ -4,6 +4,7 @@ import {
   type ViewStateResult
 } from 'obsidian';
 import type NexusPlugin from '../../main';
+import type { ExternalSyncEvent, HybridStorageAdapter } from '../../database/adapters/HybridStorageAdapter';
 import type { ProjectMetadata } from '../../database/repositories/interfaces/IProjectRepository';
 import type { TaskStatus } from '../../database/repositories/interfaces/ITaskRepository';
 import type { WorkspaceMetadata } from '../../types/storage/StorageTypes';
@@ -44,6 +45,7 @@ export class TaskBoardView extends ItemView {
   private projectSelect: HTMLSelectElement | null = null;
   private collapsedSwimlanes = new Set<string>();
   private hasRegisteredTaskBoardEvents = false;
+  private hasRegisteredExternalSync = false;
   private editCoordinator: TaskBoardEditCoordinator;
   private renderer: TaskBoardRenderer;
   private syncCoordinator: TaskBoardSyncCoordinator;
@@ -146,6 +148,7 @@ export class TaskBoardView extends ItemView {
     this.statsContainer = null;
     this.projectSelect = null;
     this.hasRegisteredTaskBoardEvents = false;
+    this.hasRegisteredExternalSync = false;
   }
 
   private get contentContainer(): HTMLElement {
@@ -202,6 +205,16 @@ export class TaskBoardView extends ItemView {
         void this.handleTaskBoardEvent(event);
       }));
       this.hasRegisteredTaskBoardEvents = true;
+    }
+
+    if (!this.hasRegisteredExternalSync) {
+      const adapter = this.plugin.getServiceIfReady<HybridStorageAdapter>('hybridStorageAdapter');
+      if (adapter?.onExternalSync) {
+        this.registerEvent(adapter.onExternalSync((event) => {
+          void this.handleExternalSync(event);
+        }));
+        this.hasRegisteredExternalSync = true;
+      }
     }
   }
 
@@ -427,6 +440,21 @@ export class TaskBoardView extends ItemView {
 
   private async handleTaskBoardEvent(event: TaskBoardDataChangedEvent): Promise<void> {
     await this.syncCoordinator.handleTaskBoardEvent(event);
+  }
+
+  private async handleExternalSync(event: ExternalSyncEvent): Promise<void> {
+    const hasWorkspaceChanges = event.modified.some((entry) => entry.category === 'workspaces');
+    const taskWorkspaceIds = Array.from(new Set(
+      event.modified
+        .filter((entry) => entry.category === 'tasks')
+        .map((entry) => entry.businessId)
+    ));
+
+    if (!hasWorkspaceChanges && taskWorkspaceIds.length === 0) {
+      return;
+    }
+
+    await this.syncCoordinator.handleExternalSync(taskWorkspaceIds, hasWorkspaceChanges);
   }
 
   private async syncFromEvent(event?: TaskBoardDataChangedEvent): Promise<void> {

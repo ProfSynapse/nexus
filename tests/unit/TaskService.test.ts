@@ -12,6 +12,7 @@ import { DAGService } from '../../src/agents/taskManager/services/DAGService';
 import type { IProjectRepository, ProjectMetadata } from '../../src/database/repositories/interfaces/IProjectRepository';
 import type { ITaskRepository, TaskMetadata } from '../../src/database/repositories/interfaces/ITaskRepository';
 import { PaginatedResult } from '../../src/types/pagination/PaginationTypes';
+import type { TaskBoardNotifier } from '../../src/agents/taskManager/services/TaskService';
 
 // ============================================================================
 // Mock Factories
@@ -98,13 +99,17 @@ describe('TaskService', () => {
   let taskRepo: jest.Mocked<ITaskRepository>;
   let dagService: DAGService;
   let waitForQueryReady: jest.Mock<Promise<boolean>, []>;
+  let taskBoardNotifier: jest.Mocked<TaskBoardNotifier>;
 
   beforeEach(() => {
     projectRepo = createMockProjectRepo();
     taskRepo = createMockTaskRepo();
     dagService = new DAGService();
     waitForQueryReady = jest.fn().mockResolvedValue(true);
-    service = new TaskService(projectRepo, taskRepo, dagService, undefined, undefined, waitForQueryReady);
+    taskBoardNotifier = {
+      notify: jest.fn()
+    };
+    service = new TaskService(projectRepo, taskRepo, dagService, undefined, taskBoardNotifier, waitForQueryReady);
   });
 
   describe('query readiness gating', () => {
@@ -792,6 +797,13 @@ describe('TaskService', () => {
       await service.linkNote('task-1', 'path/to/note.md', 'reference');
 
       expect(taskRepo.addNoteLink).toHaveBeenCalledWith('task-1', 'path/to/note.md', 'reference');
+      expect(taskBoardNotifier.notify).toHaveBeenCalledWith({
+        workspaceId: 'ws-1',
+        entity: 'task',
+        action: 'updated',
+        taskId: 'task-1',
+        projectId: 'proj-1'
+      });
     });
 
     it('should throw if task not found', async () => {
@@ -813,8 +825,18 @@ describe('TaskService', () => {
 
   describe('unlinkNote', () => {
     it('should delegate to repository', async () => {
+      taskRepo.getById.mockResolvedValue(createMockTask());
+
       await service.unlinkNote('task-1', 'path.md');
+
       expect(taskRepo.removeNoteLink).toHaveBeenCalledWith('task-1', 'path.md');
+      expect(taskBoardNotifier.notify).toHaveBeenCalledWith({
+        workspaceId: 'ws-1',
+        entity: 'task',
+        action: 'updated',
+        taskId: 'task-1',
+        projectId: 'proj-1'
+      });
     });
   });
 

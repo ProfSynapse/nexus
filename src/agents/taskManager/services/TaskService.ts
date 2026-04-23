@@ -546,12 +546,31 @@ export class TaskService {
     if (!task) throw new Error(`Task "${taskId}" not found`);
 
     await this.taskRepo.addNoteLink(taskId, notePath, linkType);
+
+    this.notifyTaskBoard({
+      workspaceId: task.workspaceId,
+      entity: 'task',
+      action: 'updated',
+      taskId,
+      projectId: task.projectId
+    });
   }
 
   async unlinkNote(taskId: string, notePath: string): Promise<void> {
     await this.ensureQueryReady();
 
+    const task = await this.taskRepo.getById(taskId);
     await this.taskRepo.removeNoteLink(taskId, notePath);
+
+    if (task) {
+      this.notifyTaskBoard({
+        workspaceId: task.workspaceId,
+        entity: 'task',
+        action: 'updated',
+        taskId,
+        projectId: task.projectId
+      });
+    }
   }
 
   async getNoteLinks(taskId: string): Promise<NoteLink[]> {
