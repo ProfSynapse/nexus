@@ -99,6 +99,15 @@ describe('ToolManagerAgent dynamic registry updates', () => {
     });
   });
 
+  it('throws when the same agent name is registered twice', () => {
+    const toolManager = createToolManager();
+    toolManager.registerDynamicAgent(new StubAgent());
+
+    expect(() => toolManager.registerDynamicAgent(new StubAgent())).toThrow(
+      'Agent webTools is already registered'
+    );
+  });
+
   it('removes dynamically unregistered agents from discovery', async () => {
     const toolManager = createToolManager();
     toolManager.registerDynamicAgent(new StubAgent());
