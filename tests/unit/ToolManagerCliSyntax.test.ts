@@ -1592,3 +1592,99 @@ describe('coerceValue — array<boolean> canonical-literal enforcement (Backend 
     expect(err.message).toMatch(/Boolean value accepts only "true" or "false", got "nope"/);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Issue #179 — `\X` default-branch policy in unescapeQuotedContent
+// ---------------------------------------------------------------------------
+//
+// Before the fix, the switch's `default` branch re-emitted the backslash, so
+// `\`` / `\$` / `\#` etc. carried a phantom backslash into the content
+// payload — silently corrupting backticks, code fences, and any shell-ish
+// character an LLM might defensively escape. Post-fix, `\X` for X outside
+// the canonical set (`n r t " ' \ u`) drops the backslash (POSIX-shell
+// double-quoted convention). Literal `\X` is still reachable via `\\X`,
+// which collapses through the `\\` case.
+describe('Issue #179: unescapeQuotedContent — `\\X` default-branch policy', () => {
+  it('drops the backslash before a backtick inside a double-quoted positional (fix target)', () => {
+    // Wire input: content write "x.md" "teste \`code\` fim"
+    const [call] = makeNormalizer().normalizeExecutionCalls({
+      tool: 'content write "x.md" "teste \\`code\\` fim"',
+    });
+    expect(call.params.content).toBe('teste `code` fim');
+  });
+
+  it('preserves naked backticks (regression guard — no escape, no transform)', () => {
+    const [call] = makeNormalizer().normalizeExecutionCalls({
+      tool: 'content write "x.md" "teste `code` fim"',
+    });
+    expect(call.params.content).toBe('teste `code` fim');
+  });
+
+  it('preserves a literal backslash+backtick via double-escape (`\\\\` then `\\\\`)', () => {
+    // Wire input: content write "x.md" "\\`code\\`"
+    // The `\\` consumes to a single backslash (canonical case), then `` ` ``
+    // stays naked, giving the literal bytes `\` + `` ` ``.
+    const [call] = makeNormalizer().normalizeExecutionCalls({
+      tool: 'content write "x.md" "\\\\`code\\\\`"',
+    });
+    expect(call.params.content).toBe('\\`code\\`');
+  });
+
+  it('preserves naked fenced code block (triple backticks, no escapes)', () => {
+    const [call] = makeNormalizer().normalizeExecutionCalls({
+      tool: 'content write "x.md" "```dataview\nLIST\n```"',
+    });
+    expect(call.params.content).toBe('```dataview\nLIST\n```');
+  });
+
+  it('drops the backslash for non-canonical letter escapes (\\a \\b \\f \\v)', () => {
+    // Characterization: these were previously preserved as `\a\b\f\v` (8
+    // bytes). The fix aligns with shell double-quoted semantics — X with
+    // no special meaning becomes X.
+    const [call] = makeNormalizer().normalizeExecutionCalls({
+      tool: 'content write "x.md" "\\a\\b\\f\\v"',
+    });
+    expect(call.params.content).toBe('abfv');
+  });
+
+  it('drops the backslash for shell-meta chars (\\$ \\# \\( \\))', () => {
+    const [call] = makeNormalizer().normalizeExecutionCalls({
+      tool: 'content write "x.md" "\\$var \\# heading \\(group\\)"',
+    });
+    expect(call.params.content).toBe('$var # heading (group)');
+  });
+
+  it('canonical escape set remains unchanged (\\n \\r \\t \\" \\\\)', () => {
+    const [call] = makeNormalizer().normalizeExecutionCalls({
+      tool: 'content write "x.md" "line1\\nline2\\tend\\r\\"q\\"\\\\done"',
+    });
+    expect(call.params.content).toBe('line1\nline2\tend\r"q"\\done');
+  });
+
+  it('valid `\\uXXXX` still decodes (unchanged)', () => {
+    const [call] = makeNormalizer().normalizeExecutionCalls({
+      tool: 'content write "x.md" "dash \\u2014 ok"',
+    });
+    expect(call.params.content).toBe('dash — ok');
+  });
+
+  it('invalid `\\u` followed by non-hex drops the backslash (falls through to default)', () => {
+    // `\u` only takes the 4-hex fast path when the next 4 chars match
+    // /^[0-9a-fA-F]{4}$/. Otherwise it falls through to the switch, and
+    // post-fix the default branch drops the backslash. So `\user` → `user`.
+    const [call] = makeNormalizer().normalizeExecutionCalls({
+      tool: 'content write "x.md" "\\user"',
+    });
+    expect(call.params.content).toBe('user');
+  });
+
+  it('tokenizeWithMeta surface: backtick escape drops backslash', () => {
+    const tokens = tokenizeWithMeta('content write "x.md" "\\`code\\`"');
+    expect(tokens[tokens.length - 1]).toEqual({ value: '`code`', wasQuoted: true });
+  });
+
+  it('parseCliForDisplay surface: display path inherits the fix', () => {
+    const [segment] = parseCliForDisplay('content write --content "teste \\`code\\` fim"');
+    expect(segment.parameters.content).toBe('teste `code` fim');
+  });
+});

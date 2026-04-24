@@ -158,7 +158,13 @@ function unescapeQuotedContent(value: string): string {
       case '"': out += '"'; break;
       case '\'': out += '\''; break;
       case '\\': out += '\\'; break;
-      default: out += '\\' + next;
+      // POSIX-style: `\X` for any X outside the canonical set drops the
+      // backslash (aligns with shell double-quoted behavior, where `\"`
+      // already drops the backslash above). A literal `\X` is expressible
+      // via `\\X`, which collapses through the `\\` case. Without this,
+      // backticks / `$` / `#` etc. carry a phantom backslash into the
+      // content payload (see issue #179).
+      default: out += next;
     }
     i += 1;
   }
