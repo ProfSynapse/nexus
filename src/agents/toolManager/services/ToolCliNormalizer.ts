@@ -93,7 +93,8 @@ export function splitTopLevelSegments(input: string): string[] {
   let quote: '"' | '\'' | null = null;
   let escaped = false;
 
-  for (const char of input) {
+  for (let i = 0; i < input.length; i += 1) {
+    const char = input[i];
     if (escaped) {
       current += char;
       escaped = false;
@@ -113,11 +114,23 @@ export function splitTopLevelSegments(input: string): string[] {
     }
 
     if (char === ',' && !quote) {
-      const trimmed = current.trim();
-      if (trimmed.length > 0) {
-        segments.push(trimmed);
+      // A comma is a top-level command separator only when followed by
+      // whitespace (or end of input) — the canonical `cmd1, cmd2` form.
+      // A comma glued to a non-whitespace character is textual (typically
+      // a CSV array flag value like `--paths a,b,c`) and stays in the
+      // current segment; the schema-layer `splitCsvRespectingQuotes`
+      // then does the per-item split at coercion time. See issue #181.
+      const next = input[i + 1];
+      const isCommandSeparator = next === undefined || /\s/.test(next);
+      if (isCommandSeparator) {
+        const trimmed = current.trim();
+        if (trimmed.length > 0) {
+          segments.push(trimmed);
+        }
+        current = '';
+        continue;
       }
-      current = '';
+      current += char;
       continue;
     }
 
