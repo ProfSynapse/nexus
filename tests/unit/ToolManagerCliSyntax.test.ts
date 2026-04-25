@@ -19,7 +19,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { createHeadlessAgentStack, HeadlessAgentStackResult } from '../eval/headless/HeadlessAgentStack';
 import { TestVaultManager } from '../eval/headless/TestVaultManager';
-import { ToolCliNormalizer, parseCliForDisplay, tokenizeWithMeta } from '../../src/agents/toolManager/services/ToolCliNormalizer';
+import { ToolCliNormalizer, parseCliForDisplay, splitTopLevelSegments, tokenizeWithMeta } from '../../src/agents/toolManager/services/ToolCliNormalizer';
 import type { IAgent } from '../../src/agents/interfaces/IAgent';
 import type { ITool } from '../../src/agents/interfaces/ITool';
 
@@ -1686,5 +1686,95 @@ describe('Issue #179: unescapeQuotedContent — `\\X` default-branch policy', ()
   it('parseCliForDisplay surface: display path inherits the fix', () => {
     const [segment] = parseCliForDisplay('content write --content "teste \\`code\\` fim"');
     expect(segment.parameters.content).toBe('teste `code` fim');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Issue #181 — splitTopLevelSegments: whitespace-gated comma separator
+// ---------------------------------------------------------------------------
+//
+// Before the fix, every unquoted comma at top level was a command separator,
+// so a raw CSV flag value like `--paths a,b,c` exploded into three
+// pseudo-commands and the second fragment failed `Unknown agent "b"`. The
+// fix narrows the rule: a comma is a separator only when followed by
+// whitespace (or end of input). CSV values glued to a non-whitespace char
+// stay in the current segment, and the schema-layer `splitCsvRespectingQuotes`
+// (#163) does the per-item split at coercion time.
+describe('Issue #181: splitTopLevelSegments — whitespace-gated comma separator', () => {
+  it('raw CSV after array flag stays in one segment (fix target)', () => {
+    const [call] = makeNormalizer().normalizeExecutionCalls({
+      tool: 'storage archive --paths a,b,c',
+    });
+    expect(call.params.paths).toEqual(['a', 'b', 'c']);
+  });
+
+  it('multi-command idiom with comma + space still splits (regression guard)', () => {
+    const calls = makeNormalizer().normalizeExecutionCalls({
+      tool: 'content read "a.md", content read "b.md"',
+    });
+    expect(calls).toHaveLength(2);
+    expect(calls[0].params.path).toBe('a.md');
+    expect(calls[1].params.path).toBe('b.md');
+  });
+
+  it('mixed: first command has raw CSV + second command after ", "', () => {
+    const calls = makeNormalizer().normalizeExecutionCalls({
+      tool: 'storage archive --paths a,b,c, content read "x.md"',
+    });
+    expect(calls).toHaveLength(2);
+    expect(calls[0].params.paths).toEqual(['a', 'b', 'c']);
+    expect(calls[1].params.path).toBe('x.md');
+  });
+
+  it('comma inside "..." stays shielded by existing quote-tracking', () => {
+    const [call] = makeNormalizer().normalizeExecutionCalls({
+      tool: 'content write "x.md" "one, two, three"',
+    });
+    expect(call.params.content).toBe('one, two, three');
+  });
+
+  it('comma immediately followed by tab separates', () => {
+    // Whitespace gate accepts any \s, not just spaces — a comma at
+    // end-of-line is still structurally a separator.
+    const calls = makeNormalizer().normalizeExecutionCalls({
+      tool: 'content read "a.md",\tcontent read "b.md"',
+    });
+    expect(calls).toHaveLength(2);
+    expect(calls[0].params.path).toBe('a.md');
+    expect(calls[1].params.path).toBe('b.md');
+  });
+
+  it('comma immediately followed by newline separates', () => {
+    const calls = makeNormalizer().normalizeExecutionCalls({
+      tool: 'content read "a.md",\ncontent read "b.md"',
+    });
+    expect(calls).toHaveLength(2);
+    expect(calls[0].params.path).toBe('a.md');
+    expect(calls[1].params.path).toBe('b.md');
+  });
+
+  it('trailing comma at end of input drops empty tail (matches pre-fix)', () => {
+    const calls = makeNormalizer().normalizeExecutionCalls({
+      tool: 'content read "a.md",',
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0].params.path).toBe('a.md');
+  });
+
+  it('quoted CSV via the #163 workaround still parses (backward compat)', () => {
+    const [call] = makeNormalizer().normalizeExecutionCalls({
+      tool: 'storage archive --paths "a,b,c"',
+    });
+    expect(call.params.paths).toEqual(['a', 'b', 'c']);
+  });
+
+  it('splitTopLevelSegments direct: raw CSV stays one segment, canonical form splits', () => {
+    expect(splitTopLevelSegments('storage archive --paths a,b,c')).toEqual([
+      'storage archive --paths a,b,c',
+    ]);
+    expect(splitTopLevelSegments('content read "a.md", content read "b.md"')).toEqual([
+      'content read "a.md"',
+      'content read "b.md"',
+    ]);
   });
 });
