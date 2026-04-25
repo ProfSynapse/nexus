@@ -516,10 +516,22 @@ describe('ReplaceTool', () => {
   // both for the line-range check and for the sliding-window fallback.
   // ========================================================================
   describe('Unicode normalization tolerance', () => {
-    // Visually: "é defensiva" / "hipótese" / "não" / "Ré" / "determinação"
-    // The two strings are visually identical; bytes differ.
+    // Both lines render identically as "O pedido (e.3) é defensiva: cogita a
+    // hipótese" — the bytes differ. We use explicit escape sequences for the
+    // NFD line so that no editor / Prettier pass / git filter can quietly re-
+    // compose it into NFC and turn the tests below into tautologies.
+    //   NFC: é = U+00E9, ó = U+00F3                (one code point each)
+    //   NFD: é = U+0065 U+0301, ó = U+006F U+0301  (base + combining acute)
     const NFC_LINE = 'O pedido (e.3) é defensiva: cogita a hipótese';
-    const NFD_LINE = 'O pedido (e.3) é defensiva: cogita a hipótese';
+    const NFD_LINE = 'O pedido (e.3) \u0065\u0301 defensiva: cogita a hip\u006F\u0301tese';
+
+    it('test fixtures are byte-distinct (sanity)', () => {
+      // If this fails, the constants above have been collapsed to the same
+      // Unicode form — every test in this block would then reduce to NFC===NFC
+      // and silently pass even if the comparator's NFC tolerance regresses.
+      expect(NFC_LINE).not.toBe(NFD_LINE);
+      expect(NFC_LINE.normalize('NFC')).toBe(NFD_LINE.normalize('NFC'));
+    });
 
     it('matches when file is NFC and oldContent is NFD (real-world repro)', async () => {
       mockFileContent = `head\n${NFC_LINE}\ntail`;
