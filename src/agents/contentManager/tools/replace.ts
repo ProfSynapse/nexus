@@ -27,6 +27,28 @@ function normalizeCRLF(text: string): string {
 }
 
 /**
+ * Normalize line endings AND Unicode form for the equality check only.
+ *
+ * NFC tolerance: an LLM-authored `oldContent` may arrive in a different
+ * Unicode normalization form than what `vault.read()` returns — same code
+ * points, different bytes — typically when accented PT-BR text round-trips
+ * through a pipeline that NFD-decomposes (legacy Cocoa APIs, some JSON
+ * encoders, copy-paste through certain editors). Pre-NFC, the comparator
+ * was strict byte-equality and silently failed with "Content not found"
+ * even though the visible content was identical, forcing the operator to
+ * escalate to overwrite (which violates the minimum-edit rule).
+ *
+ * We normalize ONLY for the comparison, not for the rebuild — the file's
+ * original normalization form is preserved in the parts the operator did
+ * not touch, and the `newContent` payload is written verbatim. This keeps
+ * the side-effect of the fix bounded to "the comparator stops being byte-
+ * strict" without converting the whole file behind the operator's back.
+ */
+function normalizeForCompare(text: string): string {
+  return normalizeCRLF(text).normalize('NFC');
+}
+
+/**
  * Search for a multi-line content block in a file's lines array.
  * Returns all 1-based line ranges where the block appears as a contiguous match.
  */
@@ -39,10 +61,16 @@ function findContentInLines(
 
   if (searchLen === 0 || searchLen > fileLines.length) return matches;
 
-  for (let i = 0; i <= fileLines.length - searchLen; i++) {
+  // Pre-normalize both sides once so the inner loop stays cheap. The fileLines
+  // pre-normalization buys us O(N) instead of O(N*M) calls into String.prototype
+  // .normalize, which is non-trivial for files with many accented chars.
+  const normalizedSearch = searchLines.map(normalizeForCompare);
+  const normalizedFile = fileLines.map(normalizeForCompare);
+
+  for (let i = 0; i <= normalizedFile.length - searchLen; i++) {
     let found = true;
     for (let j = 0; j < searchLen; j++) {
-      if (fileLines[i + j] !== searchLines[j]) {
+      if (normalizedFile[i + j] !== normalizedSearch[j]) {
         found = false;
         break;
       }
@@ -139,13 +167,17 @@ export class ReplaceTool extends BaseTool<ReplaceParams, ReplaceResult> {
         );
       }
 
-      // Extract content at the specified line range and compare with oldContent
+      // Extract content at the specified line range and compare with oldContent.
+      // Compare in NFC form so an oldContent that decomposed somewhere in the
+      // pipeline (LLM tokenizer, JSON layer, copy-paste) still matches the file.
       const targetContent = fileLines.slice(startLine - 1, endLine).join('\n');
-      const normalizedTarget = normalizeCRLF(targetContent);
-      const normalizedOld = normalizeCRLF(oldContent);
+      const normalizedTarget = normalizeForCompare(targetContent);
+      const normalizedOld = normalizeForCompare(oldContent);
 
       if (normalizedTarget !== normalizedOld) {
-        // Content mismatch — search the entire file for where it actually is
+        // Content mismatch — search the entire file for where it actually is.
+        // Use normalized search lines (CRLF + NFC) so the fallback survives the
+        // same drift the line-range check tolerates.
         const searchLines = normalizedOld.split('\n');
         const matches = findContentInLines(fileLines, searchLines);
 

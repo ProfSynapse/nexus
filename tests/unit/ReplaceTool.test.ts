@@ -500,4 +500,131 @@ describe('ReplaceTool', () => {
       expect(tool.description).toContain('line numbers');
     });
   });
+
+  // ========================================================================
+  // Unicode normalization (CODE-NexusReplaceF2Recurrence / issue #XXX)
+  //
+  // F2 was first reported 2026-04-24 and re-reproduced 2026-04-25 in a file
+  // with no escaped backticks (only PT-BR accents). Pre-fix, the comparator at
+  // replace.ts:147 ran a strict byte-equality check after CRLF normalization
+  // only — visually identical strings differing only in Unicode normalization
+  // form (NFC vs NFD) failed silently with "Content not found", forcing the
+  // operator to escalate to overwrite (which violates the minimum-edit rule).
+  //
+  // This block proves the class exists and pins the new tolerance contract:
+  // replace MUST treat NFC and NFD forms of the same code points as equal,
+  // both for the line-range check and for the sliding-window fallback.
+  // ========================================================================
+  describe('Unicode normalization tolerance', () => {
+    // Visually: "é defensiva" / "hipótese" / "não" / "Ré" / "determinação"
+    // The two strings are visually identical; bytes differ.
+    const NFC_LINE = 'O pedido (e.3) é defensiva: cogita a hipótese';
+    const NFD_LINE = 'O pedido (e.3) é defensiva: cogita a hipótese';
+
+    it('matches when file is NFC and oldContent is NFD (real-world repro)', async () => {
+      mockFileContent = `head\n${NFC_LINE}\ntail`;
+      const result = await tool.execute({
+        ...baseParams,
+        path: 'test/note.md',
+        oldContent: NFD_LINE,
+        newContent: 'O pedido (e.3) tem natureza defensiva.',
+        startLine: 2,
+        endLine: 2,
+      });
+
+      expect(result.success).toBe(true);
+      expect(mockFileContent).toBe('head\nO pedido (e.3) tem natureza defensiva.\ntail');
+    });
+
+    it('matches when file is NFD and oldContent is NFC (inverse drift)', async () => {
+      mockFileContent = `head\n${NFD_LINE}\ntail`;
+      const result = await tool.execute({
+        ...baseParams,
+        path: 'test/note.md',
+        oldContent: NFC_LINE,
+        newContent: 'CHANGED',
+        startLine: 2,
+        endLine: 2,
+      });
+
+      expect(result.success).toBe(true);
+      expect(mockFileContent).toBe('head\nCHANGED\ntail');
+    });
+
+    it('finds NFD oldContent at NFC location via sliding-window fallback', async () => {
+      // Caller provides wrong startLine/endLine; sliding-window must still
+      // recover the location even with normalization-form drift.
+      mockFileContent = `head\nfiller\n${NFC_LINE}\ntail`;
+      const result = await tool.execute({
+        ...baseParams,
+        path: 'test/note.md',
+        oldContent: NFD_LINE,
+        newContent: 'CHANGED',
+        startLine: 1,
+        endLine: 1,
+      });
+
+      // Either the fallback recovers (preferred), or it reports the correct
+      // line. Both are acceptable; what is NOT acceptable is "Content not
+      // found anywhere in the note" — that's the F2 silent failure.
+      if (result.success === false) {
+        expect(result.error).toContain('Found at lines 3-3');
+      } else {
+        // If your fix routes the comparator through a normalize step before
+        // the line-range check too, the operation succeeds outright.
+        expect(mockFileContent).toBe('head\nfiller\nCHANGED\ntail');
+      }
+    });
+
+    it('multi-line oldContent with mixed normalization matches', async () => {
+      mockFileContent = `${NFC_LINE}\nsegunda linha com ação\nterceira`;
+      const oldContent = `${NFD_LINE}\nsegunda linha com ação`;
+      const result = await tool.execute({
+        ...baseParams,
+        path: 'test/note.md',
+        oldContent,
+        newContent: 'BLOCO REESCRITO',
+        startLine: 1,
+        endLine: 2,
+      });
+
+      expect(result.success).toBe(true);
+      expect(mockFileContent).toBe('BLOCO REESCRITO\nterceira');
+    });
+
+    it('regression: truly-absent oldContent still fails with Content not found', async () => {
+      // The fix must not accidentally make every replace succeed. Content
+      // that genuinely does not exist (in any normalization) must still be
+      // reported as missing.
+      mockFileContent = `head\n${NFC_LINE}\ntail`;
+      const result = await tool.execute({
+        ...baseParams,
+        path: 'test/note.md',
+        oldContent: 'this string is genuinely not in the file',
+        newContent: 'CHANGED',
+        startLine: 2,
+        endLine: 2,
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Content not found');
+    });
+
+    it('regression: ASCII-only content unchanged by normalization step', async () => {
+      // No accented chars → NFC normalization is a no-op. Confirms the fix
+      // is non-disruptive for the common case.
+      mockFileContent = 'line 1\nline 2\nline 3';
+      const result = await tool.execute({
+        ...baseParams,
+        path: 'test/note.md',
+        oldContent: 'line 2',
+        newContent: 'CHANGED',
+        startLine: 2,
+        endLine: 2,
+      });
+
+      expect(result.success).toBe(true);
+      expect(mockFileContent).toBe('line 1\nCHANGED\nline 3');
+    });
+  });
 });
