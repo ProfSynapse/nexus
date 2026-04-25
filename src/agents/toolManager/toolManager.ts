@@ -99,6 +99,9 @@ export class ToolManagerAgent extends BaseAgent {
   }
 
   registerDynamicAgent(agent: IAgent): void {
+    if (this.allAgents.has(agent.name)) {
+      throw new Error(`Agent ${agent.name} is already registered`);
+    }
     this.allAgents.set(agent.name, agent);
     this.getToolsTool.refreshDescription();
   }
