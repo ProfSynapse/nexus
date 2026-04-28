@@ -436,11 +436,23 @@ export class AgentInitializationService {
   }
 
   /**
+   * Get the internal CustomPromptStorageService instance used to build SchemaData.
+   * Returns undefined if not set (plugin settings were unavailable at init time).
+   * Callers use this to register change listeners for live schema refresh.
+   */
+  getCustomPromptStorage(): CustomPromptStorageService | undefined {
+    return this.customPromptStorage;
+  }
+
+  /**
    * Build schema data for ToolManager
    * Fetches workspaces, custom agents, and vault root structure
    * Non-blocking: uses JSONL/data.json fallback if SQLite isn't ready
+   *
+   * Also invoked by AgentRegistrationService to rebuild SchemaData on mutation
+   * events so the getTools description stays fresh after startup.
    */
-  private async buildSchemaData(): Promise<{
+  async buildSchemaData(): Promise<{
     workspaces: { name: string; description?: string }[];
     customAgents: { name: string; description?: string }[];
     vaultRoot: string[];

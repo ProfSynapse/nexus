@@ -8,7 +8,7 @@
  * Dependencies: AgentInitializationService, AgentValidationService
  */
 
-import { App, Plugin, Events } from 'obsidian';
+import { App, Plugin, Events, TAbstractFile } from 'obsidian';
 import NexusPlugin from '../../main';
 import { AgentManager } from '../AgentManager';
 import type { ServiceManager } from '../../core/ServiceManager';
@@ -21,6 +21,8 @@ import type { AppManager } from '../apps/AppManager';
 import type { IAgent } from '../../agents/interfaces/IAgent';
 import { ToolManagerAgent } from '../../agents/toolManager/toolManager';
 import type { MemorySettings } from '../../types';
+import { WorkspaceService } from '../WorkspaceService';
+import { PromptManagerAgent } from '../../agents/promptManager/promptManager';
 
 export interface AgentRegistrationServiceInterface {
   /**
@@ -94,6 +96,109 @@ export class AgentRegistrationService implements AgentRegistrationServiceInterfa
       }
     } catch {
       // ToolManager is not available during early startup, which is fine.
+    }
+  }
+
+  /**
+   * Get the ToolManagerAgent from the agent registry, or null if unavailable.
+   * ToolManager may be absent during early startup or if PHASE 4 init failed.
+   */
+  private getToolManagerAgent(): ToolManagerAgent | null {
+    try {
+      const toolManager = this.agentManager.getAgent('toolManager');
+      return toolManager instanceof ToolManagerAgent ? toolManager : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Rebuild SchemaData from the current project state and push it to ToolManager
+   * so the getTools description stays fresh after startup. Best-effort: swallows
+   * errors so mutation paths never fail due to a schema refresh.
+   *
+   * Fire-and-forget by default — callers on hot save paths should not await.
+   */
+  private refreshToolManagerSchema(): void {
+    const toolManager = this.getToolManagerAgent();
+    if (!toolManager) return;
+
+    void (async () => {
+      try {
+        const schemaData = await this.initializationService.buildSchemaData();
+        toolManager.refreshSchemaData(schemaData);
+      } catch (error) {
+        // Best-effort: stale schema is acceptable; failing the mutation isn't.
+        logger.systemWarn(`Failed to refresh ToolManager schema: ${(error as Error).message}`);
+      }
+    })();
+  }
+
+  /**
+   * Attach change listeners to WorkspaceService, CustomPromptStorageService, and
+   * the vault root so ToolManager's getTools description tracks project state.
+   *
+   * Invoked after PHASE 4 (ToolManager init) so all dependencies are available.
+   * Called from doInitializeAllAgents; no external caller should invoke this.
+   */
+  private wireSchemaRefreshListeners(): void {
+    // Workspaces — single shared instance via ServiceManager.
+    try {
+      if (this.serviceManager) {
+        const workspaceService = this.serviceManager.getServiceIfReady<WorkspaceService>('workspaceService');
+        if (workspaceService) {
+          workspaceService.setOnChange(() => this.refreshToolManagerSchema());
+        }
+      }
+    } catch (error) {
+      logger.systemWarn(`Failed to wire WorkspaceService change listener: ${(error as Error).message}`);
+    }
+
+    // Custom agents — mutations run through PromptManagerAgent.storageService (the
+    // instance the tool handlers write to). The AgentInitializationService holds
+    // a separate reader instance used by buildSchemaData; they share the underlying
+    // data.json + SQLite store, so wiring the mutation instance is sufficient.
+    try {
+      const promptManager = this.agentManager.getAgent('promptManager');
+      if (promptManager instanceof PromptManagerAgent) {
+        promptManager.getStorageService().setOnChange(() => this.refreshToolManagerSchema());
+      }
+
+      // Also wire the reader instance if it exists and is a separate object — cheap
+      // defensive coverage for settings-panel mutations that might hit that path.
+      const readerStorage = this.initializationService.getCustomPromptStorage();
+      if (readerStorage && (!(promptManager instanceof PromptManagerAgent)
+        || readerStorage !== promptManager.getStorageService())) {
+        readerStorage.setOnChange(() => this.refreshToolManagerSchema());
+      }
+    } catch (error) {
+      logger.systemWarn(`Failed to wire CustomPromptStorageService change listener: ${(error as Error).message}`);
+    }
+
+    // Vault root — listen for top-level file/folder create/delete/rename so the
+    // `Vault: [...]` hint in getTools tracks actual structure. Obsidian's vault
+    // events fire for the whole tree, so filter to root-level children only.
+    try {
+      const isRootChild = (file: TAbstractFile | null | undefined): boolean => {
+        if (!file) return false;
+        // Root children have paths with no '/' separator (e.g. 'Inbox' or 'note.md')
+        // whereas nested files look like 'Folder/note.md'.
+        return !file.path.includes('/');
+      };
+      const handler = (file: TAbstractFile): void => {
+        if (isRootChild(file)) this.refreshToolManagerSchema();
+      };
+      const renameHandler = (file: TAbstractFile, oldPath: string): void => {
+        if (isRootChild(file) || !oldPath.includes('/')) this.refreshToolManagerSchema();
+      };
+
+      // Register via plugin.registerEvent so they unhook on plugin unload.
+      const pluginWithRegister = this.plugin as Plugin;
+      pluginWithRegister.registerEvent(this.app.vault.on('create', handler));
+      pluginWithRegister.registerEvent(this.app.vault.on('delete', handler));
+      pluginWithRegister.registerEvent(this.app.vault.on('rename', renameHandler));
+    } catch (error) {
+      logger.systemWarn(`Failed to wire vault root listeners for schema refresh: ${(error as Error).message}`);
     }
   }
 
@@ -217,6 +322,10 @@ export class AgentRegistrationService implements AgentRegistrationServiceInterfa
 
       // PHASE 4: ToolManager MUST be last (needs all other agents including apps)
       await this.safeInitialize('toolManager', () => this.initializationService.initializeToolManager());
+
+      // PHASE 5: Wire change listeners for live SchemaData refresh. Non-fatal —
+      // listener registration failures log a warning but don't break init.
+      this.wireSchemaRefreshListeners();
 
       logger.systemLog('Using native chatbot UI instead of ChatAgent');
 
