@@ -1,7 +1,7 @@
 /**
  * OpenRouter Model Specifications
  * OpenRouter provides access to multiple providers through a unified API
- * Updated April 2026 with GPT-5.4, Claude Sonnet 4.6, and Gemini 3.1 models
+ * Updated April 2026 with GPT-5.5, Claude Sonnet 4.6, and Gemini 3.1 models
  */
 
 import { ModelSpec } from '../modelTypes';
@@ -475,6 +475,38 @@ export const OPENROUTER_MODELS: ModelSpec[] = [
   },
   {
     provider: 'openrouter',
+    name: 'GPT-5.5',
+    apiName: 'openai/gpt-5.5',
+    contextWindow: 1050000,
+    maxTokens: 128000,
+    inputCostPerMillion: 5.00,
+    outputCostPerMillion: 30.00,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    provider: 'openrouter',
+    name: 'GPT-5.5 Pro',
+    apiName: 'openai/gpt-5.5-pro',
+    contextWindow: 1050000,
+    maxTokens: 128000,
+    inputCostPerMillion: 30.00,
+    outputCostPerMillion: 180.00,
+    capabilities: {
+      supportsJSON: false,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    provider: 'openrouter',
     name: 'MiMo-V2-Omni',
     apiName: 'xiaomi/mimo-v2-omni',
     contextWindow: 262144,
@@ -539,4 +571,4 @@ export const OPENROUTER_MODELS: ModelSpec[] = [
   },
 ];
 
-export const OPENROUTER_DEFAULT_MODEL = 'openai/gpt-5.4';
+export const OPENROUTER_DEFAULT_MODEL = 'openai/gpt-5.5';

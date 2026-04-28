@@ -137,7 +137,7 @@ export class OpenAIAdapter extends BaseAdapter {
   private deepResearch: DeepResearchHandler;
 
   constructor(apiKey: string) {
-    super(apiKey, 'gpt-5.4');
+    super(apiKey, 'gpt-5.5');
     this.deepResearch = new DeepResearchHandler(this.apiKey, this.baseUrl);
     this.initializeCache();
   }

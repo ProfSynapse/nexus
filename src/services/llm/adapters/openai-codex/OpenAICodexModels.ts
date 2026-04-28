@@ -14,6 +14,22 @@ import { ModelSpec } from '../modelTypes';
 export const OPENAI_CODEX_MODELS: ModelSpec[] = [
   {
     provider: 'openai-codex',
+    name: 'GPT-5.5',
+    apiName: 'gpt-5.5',
+    contextWindow: 400000,
+    maxTokens: 128000,
+    inputCostPerMillion: 0,
+    outputCostPerMillion: 0,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    provider: 'openai-codex',
     name: 'GPT-5.4',
     apiName: 'gpt-5.4',
     contextWindow: 1050000,
@@ -126,4 +142,4 @@ export const OPENAI_CODEX_MODELS: ModelSpec[] = [
   }
 ];
 
-export const OPENAI_CODEX_DEFAULT_MODEL = 'gpt-5.4';
+export const OPENAI_CODEX_DEFAULT_MODEL = 'gpt-5.5';

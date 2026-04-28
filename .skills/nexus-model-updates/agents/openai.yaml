@@ -1,0 +1,4 @@
+interface:
+  display_name: "Nexus Model Updates"
+  short_description: "Add and test Nexus LLM models"
+  default_prompt: "Use $nexus-model-updates to add a new Nexus LLM model and verify it with the reusable live smoke test."

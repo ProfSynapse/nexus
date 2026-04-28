@@ -112,7 +112,7 @@ describe('OpenAICodexAdapter', () => {
 
     expect(request.headers.Authorization).toBe('Bearer test-access-token');
     expect(request.headers['ChatGPT-Account-Id']).toBe('acct-test-123');
-    expect(body.model).toBe('gpt-5.4');
+    expect(body.model).toBe('gpt-5.5');
     expect(body.stream).toBe(true);
     expect(body.tool_choice).toBe('auto');
     expect(body.instructions).toContain('System message');

@@ -83,7 +83,8 @@ export class DeepResearchHandler {
   isDeepResearchModel(model: string): boolean {
     return model.includes('deep-research')
       || model.includes('gpt-5.2-pro')
-      || model.includes('gpt-5.4-pro');
+      || model.includes('gpt-5.4-pro')
+      || model.includes('gpt-5.5-pro');
   }
 
   async generate(prompt: string, options?: GenerateOptions): Promise<LLMResponse> {
@@ -168,6 +169,7 @@ export class DeepResearchHandler {
       model.includes('o4-mini')
       || model.includes('gpt-5.2-pro')
       || model.includes('gpt-5.4-pro')
+      || model.includes('gpt-5.5-pro')
     ) ? 2000 : 5000;
 
     while (Date.now() - startTime < maxWaitTime) {

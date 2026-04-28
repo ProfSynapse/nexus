@@ -157,7 +157,7 @@ export class OpenRouterAdapter extends BaseAdapter {
     apiKey: string,
     options?: { httpReferer?: string; xTitle?: string }
   ) {
-    super(apiKey, 'anthropic/claude-3.5-sonnet');
+    super(apiKey, 'openai/gpt-5.5');
     this.httpReferer = options?.httpReferer?.trim() || 'https://synapticlabs.ai';
     this.xTitle = options?.xTitle?.trim() || BRAND_NAME;
     this.initializeCache();
