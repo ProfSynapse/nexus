@@ -117,7 +117,7 @@ export class MemoryManagerAgent extends BaseAgent {
     });
     this.registerLazyTool({
       slug: 'loadState', name: 'Load State',
-      description: 'Load a saved state and optionally create a continuation session with restored context',
+      description: 'Load a saved workspace-scoped state with restored context',
       version: '2.0.0',
       factory: () => new LoadStateTool(this),
     });

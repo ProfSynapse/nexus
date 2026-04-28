@@ -325,7 +325,7 @@ export class LoadWorkspaceTool extends BaseTool<LoadWorkspaceParameters, LoadWor
       properties: {
         id: {
           type: 'string',
-          description: 'Workspace ID or name to load (REQUIRED). Accepts either the unique workspace ID or the workspace name.'
+          description: 'Workspace ID or name to load (REQUIRED). Accepts either the unique workspace ID or the workspace name. Using the name returned by create-workspace is fine; you do not need to call list-workspaces just to find the UUID.'
         },
         limit: {
           type: 'number',
@@ -494,7 +494,7 @@ export class LoadWorkspaceTool extends BaseTool<LoadWorkspaceParameters, LoadWor
                     description: 'State tags'
                   }
                 },
-                required: ['id', 'name', 'sessionId', 'created']
+                required: ['id', 'name', 'created']
               },
               description: 'States in this workspace (paginated)'
             },

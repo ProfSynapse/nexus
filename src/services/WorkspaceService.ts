@@ -5,7 +5,7 @@
 // Dependencies: FileSystemService, IndexManager for data access (legacy)
 //               IStorageAdapter for new hybrid storage backend
 
-import { Plugin } from 'obsidian';
+import { EventRef, Events, Plugin } from 'obsidian';
 import { FileSystemService } from './storage/FileSystemService';
 import { IndexManager } from './storage/IndexManager';
 import { IndividualWorkspace, WorkspaceMetadata, SessionData, MemoryTrace, StateData } from '../types/storage/StorageTypes';
@@ -33,11 +33,20 @@ interface WorkspaceServiceOptions {
   getSettings?: () => Pick<MCPSettings, 'storage'> | undefined;
 }
 
+export type WorkspaceChangeAction = 'created' | 'updated' | 'deleted';
+
+export interface WorkspaceChangeEvent {
+  workspaceId: string;
+  action: WorkspaceChangeAction;
+  workspace?: IndividualWorkspace;
+}
+
 export class WorkspaceService {
   private storageAdapterOrGetter: StorageAdapterOrGetter;
   private sessionService: WorkspaceSessionService;
   private stateService: WorkspaceStateService;
   private systemGuidesProvider: SystemGuidesWorkspaceProvider | null;
+  private readonly workspaceEvents = new Events();
 
   constructor(
     private plugin: Plugin,
@@ -140,6 +149,20 @@ export class WorkspaceService {
     if (this.isSystemWorkspaceId(id)) {
       throw new Error('The system-managed guides workspace cannot be modified.');
     }
+  }
+
+  onWorkspaceChange(callback: (event: WorkspaceChangeEvent) => void): EventRef {
+    return this.workspaceEvents.on('workspace-change', (...data: unknown[]) => {
+      callback(data[0] as WorkspaceChangeEvent);
+    });
+  }
+
+  offWorkspaceChange(ref: EventRef): void {
+    this.workspaceEvents.offref(ref);
+  }
+
+  private notifyWorkspaceChange(event: WorkspaceChangeEvent): void {
+    this.workspaceEvents.trigger('workspace-change', event);
   }
 
   // ============================================================================
@@ -340,8 +363,7 @@ export class WorkspaceService {
 
       try {
         const id = await adapterForCreate.createWorkspace(hybridData);
-
-        return {
+        const workspace: IndividualWorkspace = {
           id,
           name: hybridData.name,
           description: hybridData.description,
@@ -353,6 +375,8 @@ export class WorkspaceService {
           context: data.context,
           sessions: {}
         };
+        this.notifyWorkspaceChange({ workspaceId: id, action: 'created', workspace });
+        return workspace;
       } catch (error) {
         const isDefaultWorkspace =
           hybridData.id === GLOBAL_WORKSPACE_ID || hybridData.name === DEFAULT_WORKSPACE_NAME;
@@ -389,6 +413,7 @@ export class WorkspaceService {
     // Update index
     await this.indexManager.updateWorkspaceInIndex(workspace);
 
+    this.notifyWorkspaceChange({ workspaceId: id, action: 'created', workspace });
     return workspace;
   }
 
@@ -397,7 +422,7 @@ export class WorkspaceService {
    */
   async updateWorkspace(id: string, updates: Partial<IndividualWorkspace>): Promise<void> {
     this.ensureSystemWorkspaceMutable(id);
-    return withDualBackend(
+    await withDualBackend(
       this.storageAdapterOrGetter,
       async (adapter) => {
         const hybridUpdates: Partial<HybridTypes.WorkspaceMetadata> = {};
@@ -444,6 +469,12 @@ export class WorkspaceService {
         await this.indexManager.updateWorkspaceInIndex(updatedWorkspace);
       }
     );
+    const workspace = await this.getWorkspace(id);
+    this.notifyWorkspaceChange({
+      workspaceId: id,
+      action: 'updated',
+      workspace: workspace ?? undefined
+    });
   }
 
   /**
@@ -473,7 +504,7 @@ export class WorkspaceService {
    */
   async deleteWorkspace(id: string): Promise<void> {
     this.ensureSystemWorkspaceMutable(id);
-    return withDualBackend(
+    await withDualBackend(
       this.storageAdapterOrGetter,
       async (adapter) => {
         await adapter.deleteWorkspace(id);
@@ -483,6 +514,7 @@ export class WorkspaceService {
         await this.indexManager.removeWorkspaceFromIndex(id);
       }
     );
+    this.notifyWorkspaceChange({ workspaceId: id, action: 'deleted' });
   }
 
   // ============================================================================
@@ -643,15 +675,16 @@ export class WorkspaceService {
       return byId;
     }
 
+    const lookupName = identifier === GLOBAL_WORKSPACE_ID ? DEFAULT_WORKSPACE_NAME : identifier;
     const matchId = await withReadableBackend<string | null>(
       this.storageAdapterOrGetter,
       async (adapter) => {
         const result = await adapter.getWorkspaces({
-          search: identifier,
+          search: lookupName,
           pageSize: 100
         });
         const match = result.items.find(
-          ws => ws.name.toLowerCase() === identifier.toLowerCase()
+          ws => ws.name.toLowerCase() === lookupName.toLowerCase()
         );
         return match?.id ?? null;
       },
@@ -659,7 +692,7 @@ export class WorkspaceService {
         const index = await this.indexManager.loadWorkspaceIndex();
         const workspaces = Object.values(index.workspaces);
         const match = workspaces.find(
-          ws => ws.name.toLowerCase() === identifier.toLowerCase()
+          ws => ws.name.toLowerCase() === lookupName.toLowerCase()
         );
         return match?.id ?? null;
       }

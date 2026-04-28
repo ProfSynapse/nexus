@@ -15,6 +15,8 @@ import { labelNamed, verbs } from '../../../utils/toolStatusLabels';
 import type { ToolStatusTense } from '../../../interfaces/ITool';
 import { createServiceIntegration } from '../../services/ValidationService';
 import type { IndividualWorkspace } from '../../../../types/storage/StorageTypes';
+import { addRecommendations, Recommendation } from '../../../../utils/recommendationUtils';
+import { NudgeHelpers } from '../../../../utils/nudgeHelpers';
 
 // Import types from existing workspace mode
 import { 
@@ -23,6 +25,10 @@ import {
 } from '../../../../database/types/workspace/ParameterTypes';
 import { WorkspaceContext } from '../../../../database/types/workspace/WorkspaceTypes';
 import { createErrorMessage } from '../../../../utils/errorUtils';
+
+type CreateWorkspaceResultWithRecommendations = CreateWorkspaceResult & {
+    recommendations: Recommendation[];
+};
 
 interface WorkspaceServiceLike {
     getWorkspaceByNameOrId(identifier: string): Promise<IndividualWorkspace | null>;
@@ -40,7 +46,7 @@ export class CreateWorkspaceTool extends BaseTool<CreateWorkspaceParameters, Cre
         super(
             'createWorkspace',
             'Create Workspace',
-            'Create a new workspace with structured context data',
+            'Create a new workspace with structured context data. Follow-up workspace tools accept the workspace name.',
             '2.0.0'
         );
 
@@ -86,10 +92,6 @@ export class CreateWorkspaceTool extends BaseTool<CreateWorkspaceParameters, Cre
                 // Ignore folder creation errors
             }
             
-            // Store dedicatedAgentId as-is (name or ID)
-            // Lookup will happen in WorkspacePromptResolver when loading (which runs in plugin context)
-            console.error('[CreateWorkspace] Storing dedicatedAgentId:', params.dedicatedAgentId);
-
             // Combine provided key files with auto-detected ones
             const providedKeyFiles = params.keyFiles || [];
             const autoDetectedKeyFiles = this.detectSimpleKeyFiles(params.rootFolder);
@@ -102,8 +104,6 @@ export class CreateWorkspaceTool extends BaseTool<CreateWorkspaceParameters, Cre
                 keyFiles: allKeyFiles,
                 preferences: params.preferences || ''
             };
-
-            console.error('[CreateWorkspace] Creating workspace with dedicatedAgentId:', params.dedicatedAgentId);
 
             // Create workspace data
             const now = Date.now();
@@ -143,10 +143,12 @@ export class CreateWorkspaceTool extends BaseTool<CreateWorkspaceParameters, Cre
             }
 
             // Save workspace
-            await workspaceService.createWorkspace(workspaceData);
+            const workspace = await workspaceService.createWorkspace(workspaceData);
 
-            // Success - LLM already knows the workspace details it passed
-            return this.prepareResult(true);
+            const result = this.prepareResult(true);
+            return addRecommendations(result, [
+                NudgeHelpers.suggestWorkspaceNameFollowup(workspace.name)
+            ]) as CreateWorkspaceResultWithRecommendations;
 
         } catch (error) {
             return this.prepareResult(false, undefined, createErrorMessage('Error creating workspace: ', error));
@@ -198,11 +200,11 @@ export class CreateWorkspaceTool extends BaseTool<CreateWorkspaceParameters, Cre
         const toolSchema = {
             type: 'object',
             title: 'Create Workspace',
-            description: 'Create a new workspace with structured workflows and context.',
+            description: 'Create a new workspace with structured workflows and context. Follow-up workspace commands accept the workspace name; do not list workspaces solely to recover a UUID.',
             properties: {
                 name: {
                     type: 'string',
-                    description: 'Workspace name'
+                    description: 'Workspace name. This name can be used directly in follow-up workspace commands such as load-workspace and update-workspace; the UUID is not required unless you prefer it.'
                 },
                 description: {
                     type: 'string',
@@ -318,6 +320,18 @@ export class CreateWorkspaceTool extends BaseTool<CreateWorkspaceParameters, Cre
                         workspaceId: { type: 'string' },
                         workspace: { type: 'object' },
                         validationPrompt: { type: 'string' }
+                    }
+                },
+                recommendations: {
+                    type: 'array',
+                    description: 'Agent-facing nudges and recommendations.',
+                    items: {
+                        type: 'object',
+                        properties: {
+                            type: { type: 'string' },
+                            message: { type: 'string' }
+                        },
+                        required: ['type', 'message']
                     }
                 }
             }

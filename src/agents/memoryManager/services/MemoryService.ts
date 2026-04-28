@@ -11,7 +11,7 @@ import {
   WorkspaceSession,
   WorkspaceState
 } from '../../../database/workspace-types';
-import { MemoryTraceData, SessionMetadata } from '../../../types/storage/HybridStorageTypes';
+import { MemoryTraceData, SessionMetadata, StateMetadata } from '../../../types/storage/HybridStorageTypes';
 import { PaginatedResult, PaginationParams, calculatePaginationMetadata } from '../../../types/pagination/PaginationTypes';
 import { normalizeLegacyTraceMetadata } from '../../../services/memory/LegacyTraceMetadataNormalizer';
 import { StorageAdapterOrGetter, resolveAdapter, withDualBackend, withReadableBackend } from '../../../services/helpers/DualBackendExecutor';
@@ -146,7 +146,7 @@ export class MemoryService {
    */
   async recordActivityTrace(trace: Omit<WorkspaceMemoryTrace, 'id'>): Promise<string> {
     const workspaceId = trace.workspaceId;
-    const sessionId = trace.sessionId || 'default-session';
+    const sessionId = trace.sessionId || this.createSessionId();
 
     const tracePayload = {
       timestamp: trace.timestamp || Date.now(),
@@ -168,7 +168,8 @@ export class MemoryService {
         } catch (error) {
           if ((error as Error).message?.includes('session')) {
             await adapter.createSession(workspaceId, {
-              name: 'Default Session',
+              id: sessionId,
+              name: `Session ${new Date().toLocaleString()}`,
               description: 'Auto-created session',
               startTime: Date.now(),
               isActive: true
@@ -187,7 +188,7 @@ export class MemoryService {
         if (!workspace.sessions[sessionId]) {
           await this.workspaceService.addSession(workspaceId, {
             id: sessionId,
-            name: 'Default Session',
+            name: `Session ${new Date().toLocaleString()}`,
             startTime: Date.now(),
             isActive: true,
             memoryTraces: {},
@@ -205,13 +206,16 @@ export class MemoryService {
    * Create memory trace
    */
   async createMemoryTrace(trace: Omit<WorkspaceMemoryTrace, 'id'>): Promise<WorkspaceMemoryTrace> {
-    const traceId = await this.recordActivityTrace(trace);
     const workspaceId = trace.workspaceId;
-    const sessionId = trace.sessionId || 'default-session';
+    const sessionId = trace.sessionId || this.createSessionId();
+    const traceId = await this.recordActivityTrace({
+      ...trace,
+      sessionId
+    });
 
     // Retrieve the created trace
-    const traces = await this.workspaceService.getMemoryTraces(workspaceId, sessionId);
-    const createdTrace = traces.find(t => t.id === traceId);
+    const traces = await this.getMemoryTraces(workspaceId, sessionId);
+    const createdTrace = traces.items.find((traceItem) => traceItem.id === traceId);
 
     if (!createdTrace) {
       throw new Error('Failed to retrieve created memory trace');
@@ -359,7 +363,9 @@ export class MemoryService {
     const state = await this.workspaceService.addState(workspaceId, sessionId, {
       id: stateData.id,  // Pass the ID to preserve it
       name: name || stateData.name || 'Unnamed State',
+      description: stateData.description,
       created: stateData.created || Date.now(),
+      tags: this.extractStateTags(stateData),
       state: stateData
     });
 
@@ -402,16 +408,6 @@ export class MemoryService {
   }
 
   /**
-   * State item type for getStates return
-   */
-  private static readonly StateItem = {} as {
-    id: string;
-    name: string;
-    created: number;
-    state: WorkspaceState;
-  };
-
-  /**
    * Get all states for a session (or all sessions in workspace if sessionId not provided)
    * @param workspaceId - Workspace ID
    * @param sessionId - Optional session ID to filter by
@@ -425,20 +421,41 @@ export class MemoryService {
   ): Promise<PaginatedResult<{
     id: string;
     name: string;
+    description?: string;
+    sessionId?: string;
+    workspaceId?: string;
     created: number;
+    tags?: string[];
     state: WorkspaceState;
   }>> {
-    type StateItem = { id: string; name: string; created: number; state: WorkspaceState };
+    type StateItem = {
+      id: string;
+      name: string;
+      description?: string;
+      sessionId?: string;
+      workspaceId?: string;
+      created: number;
+      tags?: string[];
+      state: WorkspaceState;
+    };
 
     return withReadableBackend(
       this.storageAdapterOrGetter,
       async (adapter) => {
         const result = await adapter.getStates(workspaceId, sessionId, options);
-        const convertedItems: StateItem[] = result.items.map(stateMeta => ({
-          id: stateMeta.id,
-          name: stateMeta.name,
-          created: stateMeta.created,
-          state: {} as WorkspaceState
+        const convertedItems: StateItem[] = await Promise.all(result.items.map(async stateMeta => {
+          const fullState = stateMeta.tags ? null : await adapter.getState(stateMeta.id);
+          const tags = stateMeta.tags || this.extractStateTagsFromContent(fullState?.content);
+          return {
+            id: stateMeta.id,
+            name: stateMeta.name,
+            description: stateMeta.description,
+            sessionId: stateMeta.sessionId,
+            workspaceId: stateMeta.workspaceId,
+            created: stateMeta.created,
+            tags,
+            state: this.stateMetadataToWorkspaceState(stateMeta, fullState?.content, tags)
+          };
         }));
         return {
           ...result,
@@ -464,6 +481,84 @@ export class MemoryService {
         return this.wrapInPaginatedResult(allStates, options);
       }
     );
+  }
+
+  private extractStateTags(state: WorkspaceState): string[] | undefined {
+    const tags = state.state?.metadata?.tags;
+    return Array.isArray(tags) ? tags.filter((tag): tag is string => typeof tag === 'string') : undefined;
+  }
+
+  private extractStateTagsFromContent(content: unknown): string[] | undefined {
+    if (typeof content !== 'object' || content === null || Array.isArray(content)) {
+      return undefined;
+    }
+
+    const state = content as { state?: { metadata?: { tags?: unknown } } };
+    const tags = state.state?.metadata?.tags;
+    return Array.isArray(tags) ? tags.filter((tag): tag is string => typeof tag === 'string') : undefined;
+  }
+
+  private stateMetadataToWorkspaceState(state: StateMetadata, content?: unknown, tags: string[] = state.tags || []): WorkspaceState {
+    if (typeof content === 'object' && content !== null && !Array.isArray(content)) {
+      const workspaceState = content as Partial<WorkspaceState>;
+      return {
+        ...workspaceState,
+        id: workspaceState.id || state.id,
+        name: workspaceState.name || state.name,
+        workspaceId: workspaceState.workspaceId || state.workspaceId,
+        sessionId: workspaceState.sessionId || state.sessionId,
+        description: workspaceState.description || state.description,
+        created: workspaceState.created || state.created,
+        context: workspaceState.context || {
+          workspaceContext: {
+            purpose: ''
+          },
+          conversationContext: '',
+          activeTask: state.description || '',
+          activeFiles: [],
+          nextSteps: []
+        },
+        state: {
+          workspace: workspaceState.state?.workspace ?? null,
+          recentTraces: workspaceState.state?.recentTraces ?? [],
+          contextFiles: workspaceState.state?.contextFiles ?? [],
+          metadata: {
+            ...workspaceState.state?.metadata,
+            tags
+          }
+        }
+      };
+    }
+
+    return {
+      id: state.id,
+      name: state.name,
+      workspaceId: state.workspaceId,
+      sessionId: state.sessionId,
+      description: state.description,
+      created: state.created,
+      context: {
+        workspaceContext: {
+          purpose: ''
+        },
+        conversationContext: '',
+        activeTask: state.description || '',
+        activeFiles: [],
+        nextSteps: []
+      },
+      state: {
+        workspace: null,
+        recentTraces: [],
+        contextFiles: [],
+        metadata: {
+          tags
+        }
+      }
+    };
+  }
+
+  private createSessionId(): string {
+    return `session_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
   }
 
   /**

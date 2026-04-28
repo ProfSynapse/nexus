@@ -21,7 +21,16 @@ import type { WorkspaceWorkflow } from '../../../../database/types/workspace/Wor
 
 // Define parameter and result types for workspace updates
 export interface UpdateWorkspaceParameters extends CommonParameters {
-    workspaceId: string;
+    /**
+     * Workspace ID or name to update. This is the explicit tool argument used
+     * by the CLI because `workspaceId` is reserved for ToolManager context.
+     */
+    id?: string;
+    /**
+     * Legacy/internal fallback. ToolManager strips this from CLI metadata
+     * because it is a top-level context key, so new callers should use `id`.
+     */
+    workspaceId?: string;
     // Top-level fields (all optional)
     name?: string;
     description?: string;
@@ -72,11 +81,15 @@ export class UpdateWorkspaceTool extends BaseTool<UpdateWorkspaceParameters, Upd
             }
 
             const workspaceService = serviceResult.service;
+            const workspaceIdentifier = this.resolveWorkspaceIdentifier(params);
+            if (!workspaceIdentifier) {
+                return this.prepareResult(false, undefined, 'Workspace identifier is required. Pass the workspace ID or name as the first argument. Example: memory update-workspace "Project Workspace" --description "Updated description".');
+            }
 
             // Validate workspace exists using unified lookup (ID or name)
-            const existingWorkspace = await workspaceService.getWorkspaceByNameOrId(params.workspaceId);
+            const existingWorkspace = await workspaceService.getWorkspaceByNameOrId(workspaceIdentifier);
             if (!existingWorkspace) {
-                return this.prepareResult(false, undefined, `Workspace "${params.workspaceId}" not found. Use listWorkspaces to see available workspaces.`);
+                return this.prepareResult(false, undefined, `Workspace "${workspaceIdentifier}" not found. Use listWorkspaces to see available workspaces.`);
             }
 
             // Check that at least one field is being updated
@@ -92,10 +105,6 @@ export class UpdateWorkspaceTool extends BaseTool<UpdateWorkspaceParameters, Upd
             if (!hasTopLevelUpdates && !hasContextUpdates) {
                 return this.prepareResult(false, undefined, 'No updates provided. Pass at least one field to update (name, description, rootFolder, purpose, workflows, keyFiles, preferences, or dedicatedAgentId).');
             }
-
-            // Store dedicatedAgentId as-is (name or ID)
-            // Lookup will happen in WorkspacePromptResolver when loading
-            console.error('[UpdateWorkspace] Updating dedicatedAgentId to:', params.dedicatedAgentId);
 
             // Create a deep copy for updating
             const workspaceCopy: IndividualWorkspace = {
@@ -166,22 +175,32 @@ export class UpdateWorkspaceTool extends BaseTool<UpdateWorkspaceParameters, Upd
         }
     }
 
+    private resolveWorkspaceIdentifier(params: UpdateWorkspaceParameters): string | null {
+        const explicitId = params.id?.trim();
+        if (explicitId) {
+            return explicitId;
+        }
+
+        const legacyWorkspaceId = params.workspaceId?.trim();
+        return legacyWorkspaceId || null;
+    }
+
     getStatusLabel(params: Record<string, unknown> | undefined, tense: ToolStatusTense): string | undefined {
-        return labelWithId(verbs('Updating workspace', 'Updated workspace', 'Failed to update workspace'), params, tense, { keys: ['workspaceId'], fallback: 'workspace' });
+        return labelWithId(verbs('Updating workspace', 'Updated workspace', 'Failed to update workspace'), params, tense, { keys: ['id', 'workspaceId'], fallback: 'workspace' });
     }
 
     getParameterSchema(): Record<string, unknown> {
         const toolSchema = {
             type: 'object',
             properties: {
-                workspaceId: {
+                id: {
                     type: 'string',
-                    description: 'ID or name of the workspace to update (REQUIRED)'
+                    description: 'Workspace ID or name to update (REQUIRED). This selects the target workspace; using the workspace name is fine and the UUID is not required.'
                 },
                 // Top-level optional fields
                 name: {
                     type: 'string',
-                    description: 'New workspace name (optional)'
+                    description: 'New workspace name (optional). This renames the workspace; it is not the target identifier.'
                 },
                 description: {
                     type: 'string',
@@ -241,7 +260,7 @@ export class UpdateWorkspaceTool extends BaseTool<UpdateWorkspaceParameters, Upd
                     description: 'ID of custom agent to set as workspace dedicated agent (optional, updates context.dedicatedAgent). Pass empty string to remove dedicated agent.'
                 }
             },
-            required: ['workspaceId']
+            required: ['id']
         };
 
         return this.getMergedSchema(toolSchema);

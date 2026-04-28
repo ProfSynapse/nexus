@@ -168,6 +168,16 @@ export class NudgeHelpers {
   }
 
   /**
+   * Remind agents that workspace names are valid handles for follow-up workspace commands.
+   */
+  static suggestWorkspaceNameFollowup(workspaceName: string): Recommendation {
+    return {
+      type: "workspace_reference",
+      message: `Workspace created as "${workspaceName}". You can use this workspace name in follow-up workspace commands; do not call list-workspaces solely to recover a workspace ID.`
+    };
+  }
+
+  /**
    * Check for large workspace (>20 files) to suggest exploration tools
    */
   static checkLargeWorkspace(fileCount: number): Recommendation | null {
@@ -187,6 +197,16 @@ export class NudgeHelpers {
     return {
       type: "next_steps",
       message: "Progress saved. Consider what you'd like to work on next, or use promptManager if you want to automate similar future workflows."
+    };
+  }
+
+  /**
+   * Remind agents that saved states can be loaded by name.
+   */
+  static suggestStateNameFollowup(stateName: string): Recommendation {
+    return {
+      type: "state_reference",
+      message: `State saved as "${stateName}". You can load this state later by name with MemoryManager loadState; do not call list-states solely to recover a state ID.`
     };
   }
 

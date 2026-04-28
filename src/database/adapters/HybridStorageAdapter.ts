@@ -1041,7 +1041,7 @@ export class HybridStorageAdapter implements IStorageAdapter {
     return this.sessionRepo.getByWorkspaceId(workspaceId, options);
   };
 
-  createSession = async (workspaceId: string, session: Omit<SessionMetadata, 'id' | 'workspaceId'>): Promise<string> => {
+  createSession = async (workspaceId: string, session: Omit<SessionMetadata, 'id' | 'workspaceId'> & { id?: string }): Promise<string> => {
     await this.ensureInitialized();
     return this.sessionRepo.create({ ...session, workspaceId });
   };

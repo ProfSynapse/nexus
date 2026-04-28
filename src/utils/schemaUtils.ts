@@ -68,7 +68,7 @@ export function getContextSchema(): ValidationSchema {
           },
           sessionId: {
             type: 'string',
-            description: 'Session identifier for tracking'
+            description: 'Current chat session ID assigned once by the runtime and reused for every tool call'
           },
           memory: {
             type: 'string',
@@ -84,7 +84,7 @@ export function getContextSchema(): ValidationSchema {
           }
         },
         required: ['workspaceId', 'sessionId', 'memory', 'goal'],
-        description: 'Context for this tool call. Use toolManager_useTool for automatic context handling.'
+        description: 'Context for this tool call. sessionId is the current chat session ID and must stay stable across all tool calls in the conversation.'
       }
     }
   });

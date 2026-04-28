@@ -440,6 +440,54 @@ describe('ToolCliNormalizer — direct parser coverage', () => {
     });
   });
 
+  describe('workspace command targets', () => {
+    it('keeps update-workspace target separate from --name rename value', () => {
+      const updateWorkspaceTool = makeStubTool('updateWorkspace', {
+        type: 'object',
+        properties: {
+          id: {
+            type: 'string',
+            description: 'Workspace ID or name to update'
+          },
+          workspaceId: {
+            type: 'string',
+            description: 'Context workspace ID, not a CLI tool argument'
+          },
+          name: {
+            type: 'string',
+            description: 'New workspace name'
+          },
+          description: {
+            type: 'string',
+            description: 'New workspace description'
+          }
+        },
+        required: ['id']
+      });
+      const normalizer = new ToolCliNormalizer(new Map<string, IAgent>([
+        ['memoryManager', makeStubAgent('memoryManager', [updateWorkspaceTool])]
+      ]));
+
+      const schema = normalizer.buildCliSchema('memoryManager', updateWorkspaceTool);
+      expect(schema.usage).toContain('memory update-workspace <id>');
+      expect(schema.arguments.find(arg => arg.name === 'id')?.positional).toBe(true);
+      expect(schema.arguments.find(arg => arg.name === 'name')?.flag).toBe('--name');
+      expect(schema.arguments.some(arg => arg.name === 'workspaceId')).toBe(false);
+
+      const [call] = normalizer.normalizeExecutionCalls({
+        tool: 'memory update-workspace "E2E Workspace Name Handle Test" --name "Renamed Workspace"'
+      });
+      expect(call).toMatchObject({
+        agent: 'memoryManager',
+        tool: 'updateWorkspace',
+        params: {
+          id: 'E2E Workspace Name Handle Test',
+          name: 'Renamed Workspace'
+        }
+      });
+    });
+  });
+
   // -------------------------------------------------------------------------
   // Value coercion — coerceValue branches
   // -------------------------------------------------------------------------

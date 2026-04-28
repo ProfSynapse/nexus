@@ -13,12 +13,17 @@ import { createErrorMessage } from '../../../../utils/errorUtils';
 import { WorkspaceService, GLOBAL_WORKSPACE_ID } from '../../../../services/WorkspaceService';
 
 interface StateLike {
+  id?: string;
   name: string;
   description?: string;
+  sessionId?: string;
+  tags?: string[];
   timestamp?: number;
   created?: number;
   workspaceId?: string;
   state?: {
+    sessionId?: string;
+    workspaceId?: string;
     context?: {
       activeFiles?: string[];
       activeTask?: string;
@@ -68,11 +73,14 @@ export class ListStatesTool extends BaseTool<ListStatesParams, StateResult> {
         return this.prepareResult(false, undefined, 'Memory service not available');
       }
 
-      // Get workspace ID from context
-      let workspaceId: string | undefined;
-      const inheritedContext = super.getInheritedWorkspaceContext(params);
-      if (inheritedContext?.workspaceId) {
-        workspaceId = inheritedContext.workspaceId;
+      const workspaceService = await this.agent.getWorkspaceServiceAsync();
+      if (!workspaceService) {
+        return this.prepareResult(false, undefined, 'Workspace service not available');
+      }
+
+      const workspaceResult = await this.resolveWorkspaceId(params, workspaceService);
+      if (!workspaceResult.success || !workspaceResult.workspaceId) {
+        return this.prepareResult(false, undefined, workspaceResult.error);
       }
 
       // Prepare pagination options for DB-level pagination
@@ -83,10 +91,10 @@ export class ListStatesTool extends BaseTool<ListStatesParams, StateResult> {
         pageSize: pageSize
       };
 
-      // Get states with true DB-level pagination (use '_workspace' as sessionId)
+      // Get states with true DB-level pagination across the workspace
       const statesResult = await memoryService.getStates(
-        workspaceId || GLOBAL_WORKSPACE_ID,
-        '_workspace',
+        workspaceResult.workspaceId,
+        undefined,
         paginationOptions
       );
 
@@ -111,7 +119,7 @@ export class ListStatesTool extends BaseTool<ListStatesParams, StateResult> {
           const stateData = state.state as unknown as Record<string, unknown> | undefined;
           const nestedState = stateData?.state as Record<string, unknown> | undefined;
           const metadata = nestedState?.metadata as Record<string, unknown> | undefined;
-          const stateTags = (metadata?.tags as string[]) || [];
+          const stateTags = state.tags || (metadata?.tags as string[]) || [];
           return tags.some(tag => stateTags.includes(tag));
         });
       }
@@ -119,13 +127,17 @@ export class ListStatesTool extends BaseTool<ListStatesParams, StateResult> {
       // Sort states (in-memory sorting for now - TODO: move to DB level)
       const sortedStates = this.sortStates(processedStates, params.order || 'desc');
 
-      // Simplify state data to just name and description
-      const simplifiedStates = sortedStates.map(state => ({
+      const listedStates = sortedStates.map(state => ({
+        id: state.id,
         name: state.name,
-        description: state.description || state.state?.context?.activeTask || 'No description'
+        description: state.description || state.state?.context?.activeTask || 'No description',
+        sessionId: state.sessionId || state.state?.sessionId,
+        workspaceId: state.workspaceId || state.state?.workspaceId,
+        created: state.created ?? state.timestamp ?? 0,
+        tags: state.tags || state.state?.state?.metadata?.tags || []
       }));
 
-      return this.prepareResult(true, simplifiedStates);
+      return this.prepareResult(true, listedStates);
 
     } catch (error) {
       return this.prepareResult(false, undefined, createErrorMessage('Error listing states: ', error));
@@ -141,6 +153,23 @@ export class ListStatesTool extends BaseTool<ListStatesParams, StateResult> {
       const timeB = b.timestamp || b.created || 0;
       return order === 'asc' ? timeA - timeB : timeB - timeA;
     });
+  }
+
+  private async resolveWorkspaceId(
+    params: ListStatesParams,
+    workspaceService: WorkspaceService
+  ): Promise<{ success: boolean; workspaceId?: string; error?: string }> {
+    const inheritedContext = super.getInheritedWorkspaceContext(params);
+    const workspaceIdentifier = inheritedContext?.workspaceId || GLOBAL_WORKSPACE_ID;
+    const workspace = await workspaceService.getWorkspaceByNameOrId(workspaceIdentifier);
+    if (!workspace) {
+      return {
+        success: false,
+        error: `Workspace not found: ${workspaceIdentifier}. Workspace names are accepted, but the name must match an existing workspace.`
+      };
+    }
+
+    return { success: true, workspaceId: workspace.id };
   }
 
   /**

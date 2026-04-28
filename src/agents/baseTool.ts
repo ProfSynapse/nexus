@@ -199,10 +199,11 @@ export abstract class BaseTool<T extends CommonParameters = CommonParameters, R 
    */
   protected getInheritedWorkspaceContext(params: CommonParameters): CommonResult['workspaceContext'] | null {
     // 1. Use explicitly provided context if available
-    if (params.workspaceContext) {
+    const contextParam = this.getContextWorkspaceIdParam(params);
+    if (params.workspaceContext || contextParam) {
       // Use the utility function to safely parse context
       const fallbackId = this.parentContext?.workspaceId || 'default-workspace';
-      return parseWorkspaceContext(params.workspaceContext, fallbackId);
+      return parseWorkspaceContext(params.workspaceContext, fallbackId, contextParam);
     }
 
     // 2. Fall back to parent context
@@ -211,6 +212,19 @@ export abstract class BaseTool<T extends CommonParameters = CommonParameters, R 
     }
 
     // 3. No context available
+    return null;
+  }
+
+  private getContextWorkspaceIdParam(params: CommonParameters): { workspaceId: string } | null {
+    const directWorkspaceId = (params as unknown as { workspaceId?: unknown }).workspaceId;
+    if (typeof directWorkspaceId === 'string' && directWorkspaceId.trim() !== '') {
+      return { workspaceId: directWorkspaceId };
+    }
+
+    if (params.context?.workspaceId) {
+      return { workspaceId: params.context.workspaceId };
+    }
+
     return null;
   }
 

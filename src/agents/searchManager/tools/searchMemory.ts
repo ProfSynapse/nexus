@@ -239,7 +239,7 @@ export class SearchMemoryTool extends BaseTool<SearchMemoryParams, SearchMemoryR
         },
         sessionId: {
           type: 'string',
-          description: 'Provide a session ID to switch to Scoped mode: search is limited to this session and returns surrounding messages around each match. Use MemoryManager listSessions to find session IDs.'
+          description: 'Provide a known session ID to switch to Scoped mode: search is limited to this session and returns surrounding messages around each match.'
         },
         windowSize: {
           type: 'number',

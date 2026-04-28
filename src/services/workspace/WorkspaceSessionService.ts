@@ -63,7 +63,8 @@ export class WorkspaceSessionService {
         }
       }
 
-      const hybridSession: Omit<HybridTypes.SessionMetadata, 'id' | 'workspaceId'> = {
+      const hybridSession: Omit<HybridTypes.SessionMetadata, 'id' | 'workspaceId'> & { id?: string } = {
+        id: sessionData.id,
         name: sessionData.name || 'Untitled Session',
         description: sessionData.description,
         startTime: sessionData.startTime || Date.now(),

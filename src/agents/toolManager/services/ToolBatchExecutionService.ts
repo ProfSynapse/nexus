@@ -213,7 +213,7 @@ export class ToolBatchExecutionService {
     }
 
     if (!context.sessionId || typeof context.sessionId !== 'string') {
-      errors.push('context.sessionId is required (any descriptive name, e.g. "blog_writing_session")');
+      errors.push('context.sessionId is required. Use the current chat session ID assigned by the runtime; do not generate a new one per tool call.');
     }
 
     if (!context.memory || typeof context.memory !== 'string') {
@@ -370,7 +370,8 @@ export class ToolBatchExecutionService {
   ): Record<string, unknown> {
     const defaulted: Record<string, unknown> = {
       ...params,
-      workspaceId: params.workspaceId || context.workspaceId
+      workspaceId: params.workspaceId || context.workspaceId,
+      sessionId: params.sessionId || context.sessionId
     };
 
     if (agentName === 'promptManager' && toolSlug === 'generateImage') {
@@ -402,22 +403,20 @@ export class ToolBatchExecutionService {
             agent: result.agent,
             tool: result.tool,
             success: true,
-            ...(result.params ? { params: result.params } : {}),
             ...(result.data as Record<string, unknown>)
           };
         }
 
         if (result.data !== undefined) {
-          return { agent: result.agent, tool: result.tool, ...(result.params ? { params: result.params } : {}), success: true, data: result.data };
+          return { agent: result.agent, tool: result.tool, success: true, data: result.data };
         }
 
-        return { agent: result.agent, tool: result.tool, ...(result.params ? { params: result.params } : {}), success: true };
+        return { agent: result.agent, tool: result.tool, success: true };
       }
 
       return {
         agent: result.agent,
         tool: result.tool,
-        ...(result.params ? { params: result.params } : {}),
         success: false,
         error: result.error || 'Unknown error'
       };

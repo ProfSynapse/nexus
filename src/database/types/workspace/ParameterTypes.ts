@@ -5,7 +5,6 @@
 
 import { CommonParameters, CommonResult } from '../../../types/mcp';
 import {
-  ProjectWorkspace,
   WorkspaceWorkflow
 } from './WorkspaceTypes';
 
@@ -76,10 +75,7 @@ export interface CreateWorkspaceParameters extends CommonParameters {
  * Create workspace result
  */
 export interface CreateWorkspaceResult extends CommonResult {
-  data: {
-    workspaceId: string;
-    workspace: ProjectWorkspace;
-  };
+  data?: never;
 }
 
 /**
@@ -113,7 +109,7 @@ export interface LoadWorkspaceResult extends CommonResult {
       id: string;
       name: string;
       description?: string;
-      sessionId: string;
+      sessionId?: string;
       created: number;
       tags?: string[];
     }>;

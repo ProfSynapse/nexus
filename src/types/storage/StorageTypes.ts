@@ -208,9 +208,12 @@ export interface MemoryTrace {
  */
 export interface StateData {
   id: string;
+  workspaceId?: string;
+  sessionId?: string;
   name: string;
   description?: string;
   created: number;
+  tags?: string[];
   state: WorkspaceState;
 }
 

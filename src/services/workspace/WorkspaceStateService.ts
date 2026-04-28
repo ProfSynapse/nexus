@@ -138,36 +138,44 @@ export class WorkspaceStateService {
     if (adapter) {
       // Ensure session exists before saving state (referential integrity)
       const existingSession = await this.sessionDeps.getSession(workspaceId, sessionId);
+      let effectiveSessionId = sessionId;
       if (!existingSession) {
-        await this.sessionDeps.addSession(workspaceId, {
-          id: sessionId,
+        const sessionIdToCreate = this.isReservedSessionId(sessionId) ? this.createSessionId() : sessionId;
+        const createdSession = await this.sessionDeps.addSession(workspaceId, {
+          id: sessionIdToCreate,
           name: `Session ${new Date().toLocaleString()}`,
           description: `Auto-created session for state storage`,
           startTime: Date.now(),
           isActive: true
         });
+        effectiveSessionId = createdSession.id;
       }
 
       // Support both new 'state' property and legacy 'snapshot' property
       const stateContent = stateData.state ||
         (stateData as Partial<StateData> & { snapshot?: WorkspaceState }).snapshot ||
         {};
+      const tags = this.extractTags(stateData, stateContent);
 
       const hybridState: Omit<HybridTypes.StateData, 'id' | 'workspaceId' | 'sessionId'> = {
         name: stateData.name || 'Untitled State',
         created: stateData.created || Date.now(),
-        description: undefined,
-        tags: undefined,
+        description: stateData.description,
+        tags,
         content: stateContent
       };
 
-      const stateId = await adapter.saveState(workspaceId, sessionId, hybridState);
+      const stateId = await adapter.saveState(workspaceId, effectiveSessionId, hybridState);
       await adapter.updateWorkspace(workspaceId, { lastAccessed: Date.now() });
 
       return {
         id: stateId,
+        workspaceId,
+        sessionId: effectiveSessionId,
         name: hybridState.name,
+        description: hybridState.description,
         created: hybridState.created,
+        tags,
         state: this.coerceWorkspaceState(hybridState.content)
       };
     }
@@ -193,8 +201,12 @@ export class WorkspaceStateService {
 
     const state: StateData = {
       id: stateId,
+      workspaceId,
+      sessionId,
       name: stateData.name || 'Untitled State',
+      description: stateData.description,
       created: stateData.created || Date.now(),
+      tags: this.extractTags(stateData, stateContent),
       state: stateContent
     };
 
@@ -219,8 +231,12 @@ export class WorkspaceStateService {
         }
         return {
           id: state.id,
+          workspaceId: state.workspaceId,
+          sessionId: state.sessionId,
           name: state.name,
+          description: state.description,
           created: state.created,
+          tags: state.tags,
           state: this.coerceWorkspaceState(state.content)
         };
       },
@@ -275,5 +291,27 @@ export class WorkspaceStateService {
 
   private coerceWorkspaceState(state: unknown): WorkspaceState {
     return state as WorkspaceState;
+  }
+
+  private extractTags(stateData: Partial<StateData>, stateContent: unknown): string[] | undefined {
+    if (Array.isArray(stateData.tags)) {
+      return stateData.tags;
+    }
+
+    if (typeof stateContent !== 'object' || stateContent === null || Array.isArray(stateContent)) {
+      return undefined;
+    }
+
+    const workspaceState = stateContent as { state?: { metadata?: { tags?: unknown } } };
+    const tags = workspaceState.state?.metadata?.tags;
+    return Array.isArray(tags) ? tags.filter((tag): tag is string => typeof tag === 'string') : undefined;
+  }
+
+  private isReservedSessionId(sessionId: string): boolean {
+    return sessionId === 'default-session' || sessionId === '_workspace';
+  }
+
+  private createSessionId(): string {
+    return `session_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
   }
 }

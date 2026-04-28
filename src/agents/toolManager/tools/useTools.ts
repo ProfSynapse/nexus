@@ -15,7 +15,7 @@ export class UseToolTool implements ITool<UseToolParams, UseToolResult> {
   ) {
     this.slug = 'useTools';
     this.name = 'Use Tools';
-    this.description = 'Execute one or more CLI-style tool commands from the top-level "tool" field. Known-good example: {"workspaceId":"default","sessionId":"session_123","memory":"Summarize work so far.","goal":"Inspect available workspaces.","tool":"memory list-workspaces"}. IMPORTANT: You MUST call getTools first to inspect the exact command signatures before calling this tool.';
+    this.description = 'Execute one or more CLI-style tool commands from the top-level "tool" field. Known-good example: {"workspaceId":"default","sessionId":"session_123","memory":"Summarize work so far.","goal":"Inspect available workspaces.","tool":"memory list-workspaces"}. The chat runtime assigns one sessionId for the conversation; reuse that same sessionId for every useTools call so traces and saved states attach to the current session. IMPORTANT: You MUST call getTools first to inspect the exact command signatures before calling this tool.';
     this.version = '1.0.0';
   }
 
@@ -38,7 +38,7 @@ export class UseToolTool implements ITool<UseToolParams, UseToolResult> {
         },
         sessionId: {
           type: 'string',
-          description: 'Session identifier for traces. Optional; auto-generated if omitted.'
+          description: 'Current chat session ID. Required. The chat runtime assigns this once per conversation; reuse the same value for every useTools call so traces and saved states attach to the current session.'
         },
         memory: {
           type: 'string',

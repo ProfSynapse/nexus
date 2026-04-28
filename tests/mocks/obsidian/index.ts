@@ -21,6 +21,7 @@ export {
   requestUrl,
   __setRequestUrlMock,
   normalizePath,
+  Events,
   EventRef,
   MarkdownFileInfo,
   createMockElement,

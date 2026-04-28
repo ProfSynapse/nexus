@@ -234,7 +234,7 @@ export interface IStorageAdapter {
    */
   createSession(
     workspaceId: string,
-    session: Omit<SessionMetadata, 'id' | 'workspaceId'>
+    session: Omit<SessionMetadata, 'id' | 'workspaceId'> & { id?: string }
   ): Promise<string>;
 
   /**

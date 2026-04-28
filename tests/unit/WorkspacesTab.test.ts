@@ -1,9 +1,9 @@
-import { App } from 'obsidian';
+import { App, Component, createMockElement } from 'obsidian';
 import { WorkspacesTab } from '../../src/settings/tabs/WorkspacesTab';
 import { WorkspaceDetailRenderer } from '../../src/components/workspace/WorkspaceDetailRenderer';
 import { SettingsRouter } from '../../src/settings/SettingsRouter';
 import { TaskService } from '../../src/agents/taskManager/services/TaskService';
-import { createMockElement } from '../helpers/mockFactories';
+import { ProjectWorkspace } from '../../src/database/workspace-types';
 
 /**
  * Test-only interface exposing private WorkspacesTab members needed for testing.
@@ -12,6 +12,7 @@ import { createMockElement } from '../helpers/mockFactories';
 interface TestableWorkspacesTab {
   currentWorkspace: { id: string; name: string } | null;
   currentView: string;
+  isDraftWorkspace: boolean;
   projectsManager: {
     taskService: jest.Mocked<TaskService>;
     getCurrentProject(): { name: string };
@@ -21,6 +22,10 @@ interface TestableWorkspacesTab {
     currentProject: Record<string, unknown> | null;
   };
   render: jest.Mock;
+  workspaces: ProjectWorkspace[];
+  createNewWorkspace(): void;
+  deleteCurrentWorkspace(): Promise<void>;
+  confirmDeleteWorkspace(workspaceName?: string): Promise<boolean>;
   openProjectsPage(): Promise<void>;
   openProjectDetailAndRender(project: Record<string, unknown>): Promise<void>;
 }
@@ -63,7 +68,7 @@ function createMockTaskService(): jest.Mocked<TaskService> {
 
 describe('WorkspacesTab task management', () => {
   function createTab(): TestableWorkspacesTab {
-    const container = createMockElement();
+    const container = createMockElement('div');
     const router = new SettingsRouter();
     const tab = new WorkspacesTab(container, router, {
       app: new App(),
@@ -104,6 +109,85 @@ describe('WorkspacesTab task management', () => {
 
     expect(taskService.listProjects).toHaveBeenCalledWith('ws-1', { pageSize: 1000 });
     expect(tab.currentView).toBe('projects');
+    expect(tab.render).toHaveBeenCalled();
+  });
+
+  it('keeps a new workspace draft in detail view after rendering', () => {
+    const tab = createTab();
+
+    tab.createNewWorkspace();
+
+    expect(tab.currentView).toBe('detail');
+    expect(tab.isDraftWorkspace).toBe(true);
+    expect(tab.currentWorkspace?.id).toBeTruthy();
+  });
+
+  it('confirms before deleting the current workspace', async () => {
+    const container = createMockElement('div');
+    const router = new SettingsRouter();
+    const workspace: ProjectWorkspace = {
+      id: 'ws-delete',
+      name: 'Delete me',
+      rootFolder: '/',
+      created: 1,
+      lastAccessed: 1,
+      isActive: true,
+      sessions: {}
+    };
+    const workspaceService = {
+      deleteWorkspace: jest.fn().mockResolvedValue(undefined),
+      getAllWorkspaces: jest.fn().mockResolvedValue([])
+    };
+    const tab = new WorkspacesTab(container, router, {
+      app: new App(),
+      prefetchedWorkspaces: [workspace],
+      workspaceService: workspaceService as never
+    }) as unknown as TestableWorkspacesTab;
+
+    tab.currentWorkspace = workspace;
+    tab.confirmDeleteWorkspace = jest.fn().mockResolvedValue(true);
+
+    await tab.deleteCurrentWorkspace();
+
+    expect(tab.confirmDeleteWorkspace).toHaveBeenCalled();
+    expect(workspaceService.deleteWorkspace).toHaveBeenCalledWith('ws-delete');
+    expect(workspaceService.getAllWorkspaces).toHaveBeenCalled();
+    expect(tab.currentWorkspace).toBeNull();
+  });
+
+  it('refreshes the workspace list when the workspace service emits a change', async () => {
+    const container = createMockElement('div');
+    const router = new SettingsRouter();
+    const workspace: ProjectWorkspace = {
+      id: 'ws-agent',
+      name: 'Agent workspace',
+      rootFolder: '/',
+      created: 1,
+      lastAccessed: 1,
+      isActive: true,
+      sessions: {}
+    };
+    let emitChange: ((event: { workspaceId: string; action: 'created' }) => void) | undefined;
+    const workspaceService = {
+      getAllWorkspaces: jest.fn().mockResolvedValue([workspace]),
+      onWorkspaceChange: jest.fn((callback: (event: { workspaceId: string; action: 'created' }) => void) => {
+        emitChange = callback;
+        return { id: 'workspace-change-ref' };
+      })
+    };
+    const tab = new WorkspacesTab(container, router, {
+      app: new App(),
+      prefetchedWorkspaces: [],
+      workspaceService: workspaceService as never,
+      component: new Component()
+    }) as unknown as TestableWorkspacesTab;
+    tab.render = jest.fn();
+
+    emitChange?.({ workspaceId: 'ws-agent', action: 'created' });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(workspaceService.getAllWorkspaces).toHaveBeenCalled();
     expect(tab.render).toHaveBeenCalled();
   });
 

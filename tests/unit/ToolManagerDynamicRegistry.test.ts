@@ -7,7 +7,10 @@ class StubAgent extends BaseAgent {
   constructor() {
     super('webTools', 'Web tools test agent', '1.0.0');
 
-    const tool: ITool<{ url: string }, { success: boolean; data?: { opened: string } }> = {
+    const tool: ITool<
+      { url: string; workspaceId?: string; sessionId?: string },
+      { success: boolean; data?: { opened: string; workspaceId?: string; sessionId?: string } }
+    > = {
       slug: 'openWebpage',
       name: 'Open Webpage',
       description: 'Open a webpage',
@@ -15,7 +18,11 @@ class StubAgent extends BaseAgent {
       async execute(params) {
         return {
           success: true,
-          data: { opened: params.url }
+          data: {
+            opened: params.url,
+            workspaceId: params.workspaceId,
+            sessionId: params.sessionId
+          }
         };
       },
       getParameterSchema() {
@@ -95,8 +102,11 @@ describe('ToolManagerAgent dynamic registry updates', () => {
       agent: 'webTools',
       tool: 'openWebpage',
       success: true,
-      opened: 'https://example.com'
+      opened: 'https://example.com',
+      workspaceId: 'default',
+      sessionId: 'session_test'
     });
+    expect(execution).not.toHaveProperty('params');
   });
 
   it('removes dynamically unregistered agents from discovery', async () => {

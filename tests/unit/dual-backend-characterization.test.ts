@@ -14,6 +14,7 @@
 import { WorkspaceService } from '../../src/services/WorkspaceService';
 import { ConversationService } from '../../src/services/ConversationService';
 import { MemoryService } from '../../src/agents/memoryManager/services/MemoryService';
+import { WorkspaceStateService } from '../../src/services/workspace/WorkspaceStateService';
 import { createMockPlugin, createMockFileSystem, createMockIndexManager, createMockAdapter } from '../helpers/mockFactories';
 
 // ============================================================================
@@ -381,6 +382,8 @@ describe('MemoryService dual-backend characterization', () => {
   type WorkspaceServiceLike = {
     getWorkspace: jest.Mock;
     getMemoryTraces: jest.Mock;
+    addSession?: jest.Mock;
+    addMemoryTrace?: jest.Mock;
   };
 
   describe('when adapter IS ready (adapter path)', () => {
@@ -402,6 +405,165 @@ describe('MemoryService dual-backend characterization', () => {
       expect(result.items).toHaveLength(1);
       expect(result.items[0].id).toBe('t1');
     });
+
+    it('getStates preserves adapter metadata needed for tags and session display', async () => {
+      const ws = { getWorkspace: jest.fn(), getMemoryTraces: jest.fn() } as WorkspaceServiceLike;
+      const adapter = createMockAdapter(true);
+      adapter.getStates.mockResolvedValue({
+        items: [
+          {
+            id: 'state-1',
+            workspaceId: 'ws1',
+            sessionId: 'session-1',
+            name: 'Verification checkpoint',
+            description: 'Checkpoint description',
+            created: 1000,
+            tags: ['test', 'verification']
+          }
+        ],
+        page: 0,
+        pageSize: 100,
+        totalItems: 1,
+        totalPages: 1,
+        hasNextPage: false,
+        hasPreviousPage: false
+      });
+
+      const service = new MemoryService(plugin, ws, adapter);
+      const result = await service.getStates('ws1', 'session-1');
+
+      expect(result.items[0]).toEqual(expect.objectContaining({
+        id: 'state-1',
+        name: 'Verification checkpoint',
+        description: 'Checkpoint description',
+        sessionId: 'session-1',
+        workspaceId: 'ws1',
+        tags: ['test', 'verification']
+      }));
+      expect(result.items[0].state.state?.metadata.tags).toEqual(['test', 'verification']);
+    });
+
+    it('getStates backfills missing tag metadata from full state content', async () => {
+      const ws = { getWorkspace: jest.fn(), getMemoryTraces: jest.fn() } as WorkspaceServiceLike;
+      const adapter = createMockAdapter(true);
+      adapter.getStates.mockResolvedValue({
+        items: [
+          {
+            id: 'state-1',
+            workspaceId: 'ws1',
+            sessionId: 'session-1',
+            name: 'Verification checkpoint',
+            created: 1000
+          }
+        ],
+        page: 0,
+        pageSize: 100,
+        totalItems: 1,
+        totalPages: 1,
+        hasNextPage: false,
+        hasPreviousPage: false
+      });
+      adapter.getState.mockResolvedValue({
+        id: 'state-1',
+        workspaceId: 'ws1',
+        sessionId: 'session-1',
+        name: 'Verification checkpoint',
+        created: 1000,
+        content: {
+          id: 'state-1',
+          name: 'Verification checkpoint',
+          workspaceId: 'ws1',
+          sessionId: 'session-1',
+          created: 1000,
+          context: {
+            workspaceContext: { purpose: 'Testing' },
+            conversationContext: 'Diagnostic context',
+            activeTask: 'Verify state metadata',
+            activeFiles: [],
+            nextSteps: []
+          },
+          state: {
+            workspace: null,
+            recentTraces: [],
+            contextFiles: [],
+            metadata: {
+              tags: ['test', 'verification']
+            }
+          }
+        }
+      });
+
+      const service = new MemoryService(plugin, ws, adapter);
+      const result = await service.getStates('ws1');
+
+      expect(adapter.getState).toHaveBeenCalledWith('state-1');
+      expect(result.items[0].tags).toEqual(['test', 'verification']);
+      expect(result.items[0].state.state?.metadata.tags).toEqual(['test', 'verification']);
+    });
+
+    it('recordActivityTrace creates the missing adapter session with the same generated ID', async () => {
+      const ws = { getWorkspace: jest.fn(), getMemoryTraces: jest.fn() } as WorkspaceServiceLike;
+      const adapter = createMockAdapter(true);
+      adapter.addTrace
+        .mockRejectedValueOnce(new Error('session not found'))
+        .mockResolvedValueOnce('trace-1');
+
+      const service = new MemoryService(plugin, ws, adapter);
+      const result = await service.recordActivityTrace({
+        workspaceId: 'ws1',
+        timestamp: 1000,
+        type: 'action',
+        content: 'created from diagnostic'
+      });
+
+      const createdSessionId = adapter.createSession.mock.calls[0][1].id;
+      expect(createdSessionId).toMatch(/^session_/);
+      expect(adapter.createSession).toHaveBeenCalledWith('ws1', expect.objectContaining({
+        id: createdSessionId
+      }));
+      expect(adapter.addTrace).toHaveBeenNthCalledWith(2, 'ws1', createdSessionId, expect.objectContaining({
+        content: 'created from diagnostic'
+      }));
+      expect(result).toBe('trace-1');
+    });
+
+    it('createMemoryTrace reuses one generated session ID for save and reload', async () => {
+      const ws = { getWorkspace: jest.fn(), getMemoryTraces: jest.fn() } as WorkspaceServiceLike;
+      const adapter = createMockAdapter(true);
+      adapter.addTrace.mockResolvedValue('trace-1');
+      adapter.getTraces.mockImplementation((_workspaceId, sessionId) => Promise.resolve({
+        items: [
+          {
+            id: 'trace-1',
+            workspaceId: 'ws1',
+            sessionId,
+            timestamp: 1000,
+            type: 'action',
+            content: 'created from diagnostic'
+          }
+        ],
+        page: 0,
+        pageSize: 100,
+        totalItems: 1,
+        totalPages: 1,
+        hasNextPage: false,
+        hasPreviousPage: false
+      }));
+
+      const service = new MemoryService(plugin, ws, adapter);
+      const result = await service.createMemoryTrace({
+        workspaceId: 'ws1',
+        timestamp: 1000,
+        type: 'action',
+        content: 'created from diagnostic'
+      });
+
+      const savedSessionId = adapter.addTrace.mock.calls[0][1];
+      expect(savedSessionId).toMatch(/^session_/);
+      expect(adapter.getTraces).toHaveBeenCalledWith('ws1', savedSessionId, undefined);
+      expect(result.sessionId).toBe(savedSessionId);
+      expect(result.id).toBe('trace-1');
+    });
   });
 
   describe('when adapter is NOT ready (legacy path)', () => {
@@ -422,5 +584,97 @@ describe('MemoryService dual-backend characterization', () => {
       expect(result.items).toHaveLength(1);
       expect(result.items[0].content).toBe('legacy trace');
     });
+  });
+});
+
+describe('WorkspaceStateService adapter path', () => {
+  it('persists state tags and preserves the provided unique session ID', async () => {
+    const adapter = createMockAdapter(true);
+    const sessionDeps = {
+      getSession: jest.fn().mockResolvedValue(null),
+      addSession: jest.fn().mockResolvedValue({ id: 'session-1' })
+    };
+    const service = new WorkspaceStateService(
+      createMockFileSystem(),
+      createMockIndexManager(),
+      adapter,
+      sessionDeps
+    );
+
+    await service.addState('ws1', 'session-1', {
+      id: 'state-1',
+      name: 'Verification checkpoint',
+      created: 1000,
+      state: {
+        id: 'state-1',
+        name: 'Verification checkpoint',
+        workspaceId: 'ws1',
+        sessionId: 'session-1',
+        created: 1000,
+        context: {
+          workspaceContext: { purpose: 'Testing' },
+          conversationContext: 'Diagnostic context',
+          activeTask: 'Verify state metadata',
+          activeFiles: [],
+          nextSteps: []
+        },
+        state: {
+          workspace: null,
+          recentTraces: [],
+          contextFiles: [],
+          metadata: {
+            tags: ['test', 'verification']
+          }
+        }
+      }
+    });
+
+    expect(sessionDeps.addSession).toHaveBeenCalledWith('ws1', expect.objectContaining({
+      id: 'session-1'
+    }));
+    expect(adapter.saveState).toHaveBeenCalledWith('ws1', 'session-1', expect.objectContaining({
+      tags: ['test', 'verification']
+    }));
+  });
+
+  it('replaces reserved fallback session IDs with generated unique IDs before saving', async () => {
+    const adapter = createMockAdapter(true);
+    const sessionDeps = {
+      getSession: jest.fn().mockResolvedValue(null),
+      addSession: jest.fn().mockResolvedValue({ id: 'session-generated' })
+    };
+    const service = new WorkspaceStateService(
+      createMockFileSystem(),
+      createMockIndexManager(),
+      adapter,
+      sessionDeps
+    );
+
+    await service.addState('ws1', 'default-session', {
+      id: 'state-1',
+      name: 'Verification checkpoint',
+      created: 1000,
+      state: {
+        id: 'state-1',
+        name: 'Verification checkpoint',
+        workspaceId: 'ws1',
+        sessionId: 'default-session',
+        created: 1000,
+        context: {
+          workspaceContext: { purpose: 'Testing' },
+          conversationContext: 'Diagnostic context',
+          activeTask: 'Verify state metadata',
+          activeFiles: [],
+          nextSteps: []
+        }
+      }
+    });
+
+    expect(sessionDeps.addSession).toHaveBeenCalledWith('ws1', expect.objectContaining({
+      id: expect.stringMatching(/^session_/)
+    }));
+    expect(adapter.saveState).toHaveBeenCalledWith('ws1', 'session-generated', expect.objectContaining({
+      name: 'Verification checkpoint'
+    }));
   });
 });

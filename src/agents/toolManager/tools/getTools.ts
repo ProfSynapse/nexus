@@ -39,6 +39,7 @@ export class GetToolsTool implements ITool<GetToolsParams, GetToolsResult> {
       'REQUIRED FIRST STEP: You MUST call getTools BEFORE calling useTools.',
       'This returns CLI-oriented command metadata for the tools you need next.',
       'Send workspaceId, sessionId, memory, goal, and constraints at the top level.',
+      'The chat runtime assigns one sessionId for the conversation. Reuse that same sessionId for every getTools/useTools call in the chat; do not invent a new sessionId per tool or per saved state.',
       'Do not send a nested "context" object or legacy "request" array.',
       '',
       'Workflow: 1) Call getTools with one or more selectors → 2) Call useTools with one or more CLI-style commands',
@@ -141,7 +142,7 @@ export class GetToolsTool implements ITool<GetToolsParams, GetToolsResult> {
         },
         sessionId: {
           type: 'string',
-          description: 'Session identifier for traces. Optional; auto-generated if omitted.'
+          description: 'Current chat session ID. Required. The chat runtime assigns this once per conversation; reuse the same value for every getTools/useTools call so traces and saved states attach to the current session.'
         },
         memory: {
           type: 'string',

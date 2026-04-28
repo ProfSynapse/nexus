@@ -19,6 +19,7 @@ import { PaginatedResult, PaginationParams } from '../../../types/pagination/Pag
  * Data required to create a new session
  */
 export interface CreateSessionData {
+  id?: string;
   name: string;
   description?: string;
   startTime?: number;

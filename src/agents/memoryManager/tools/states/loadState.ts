@@ -80,7 +80,7 @@ export class LoadStateTool extends BaseTool<LoadStateParams, StateResult> {
         super(
             'loadState',
             'Load State',
-            'Load a saved state and optionally create a continuation session with restored context',
+            'Load a saved workspace-scoped state with restored context',
             '2.0.0'
         );
 
@@ -111,16 +111,22 @@ export class LoadStateTool extends BaseTool<LoadStateParams, StateResult> {
                 return this.prepareResult(false, undefined, 'Memory service not available', extractContextFromParams(params));
             }
 
-            // Extract workspaceId from params (use '_workspace' as sessionId for workspace-scoped states)
-            const parsedContext = parseWorkspaceContext(params.workspaceContext);
-            const workspaceId = parsedContext?.workspaceId || GLOBAL_WORKSPACE_ID;
-
             // Use name (required) or fall back to deprecated stateId for backward compatibility
             const stateName = params.name ?? getLegacyStateId(params);
             if (!stateName) {
                 return this.prepareResult(false, undefined, 'State name is required. Use listStates to see available states.', extractContextFromParams(params));
             }
-            const stateResult = await this.loadStateData(workspaceId, '_workspace', stateName, memoryService);
+            if (!workspaceService) {
+                return this.prepareResult(false, undefined, 'Workspace service not available', extractContextFromParams(params));
+            }
+
+            // Extract and canonicalize workspace ID from tool context.
+            const workspaceResult = await this.resolveWorkspaceId(params, workspaceService);
+            if (!workspaceResult.success || !workspaceResult.workspaceId) {
+                return this.prepareResult(false, undefined, workspaceResult.error, extractContextFromParams(params));
+            }
+
+            const stateResult = await this.loadStateData(workspaceResult.workspaceId, stateName, memoryService);
             if (!stateResult.success) {
                 return this.prepareResult(false, undefined, stateResult.error, extractContextFromParams(params));
             }
@@ -129,9 +135,6 @@ export class LoadStateTool extends BaseTool<LoadStateParams, StateResult> {
             }
 
             // Phase 3: Process and restore context (consolidated from FileCollector and TraceProcessor logic)
-            if (!workspaceService) {
-                return this.prepareResult(false, undefined, 'Workspace service not available', extractContextFromParams(params));
-            }
             const contextResult = await this.processAndRestoreContext(stateResult.data, workspaceService, memoryService);
 
             // Phase 4: Prepare simplified result (no session continuation, just return state data)
@@ -173,10 +176,18 @@ export class LoadStateTool extends BaseTool<LoadStateParams, StateResult> {
      * Load state data (consolidated from StateRetriever logic)
      * Looks up state by name
      */
-    private async loadStateData(workspaceId: string, sessionId: string, stateName: string, memoryService: MemoryService): Promise<{success: boolean; error?: string; data?: LoadedStateResult}> {
+    private async loadStateData(workspaceId: string, stateName: string, memoryService: MemoryService): Promise<{success: boolean; error?: string; data?: LoadedStateResult}> {
         try {
-            // Get state from memory service by name
-            const loadedState = await memoryService.getStateByNameOrId(workspaceId, sessionId, stateName);
+            const statesResult = await memoryService.getStates(workspaceId, undefined, { pageSize: 100 });
+            const matchingState = statesResult.items.find(state =>
+                state.id === stateName || state.name?.toLowerCase() === stateName.toLowerCase()
+            );
+            if (!matchingState?.sessionId) {
+                return { success: false, error: `State "${stateName}" not found. Use listStates to see available states.` };
+            }
+
+            // Get full state from memory service by resolved ID/session.
+            const loadedState = await memoryService.getState(workspaceId, matchingState.sessionId, matchingState.id);
             if (!loadedState) {
                 return { success: false, error: `State "${stateName}" not found. Use listStates to see available states.` };
             }
@@ -184,7 +195,7 @@ export class LoadStateTool extends BaseTool<LoadStateParams, StateResult> {
             // Get related traces if available using the actual state's session ID
             let relatedTraces: WorkspaceMemoryTrace[] = [];
             try {
-                const effectiveSessionId = loadedState.sessionId || sessionId;
+                const effectiveSessionId = loadedState.sessionId || matchingState.sessionId;
                 if (effectiveSessionId && effectiveSessionId !== 'current') {
                     const tracesResult = await memoryService.getMemoryTraces(workspaceId, effectiveSessionId);
                     relatedTraces = tracesResult.items;
@@ -204,6 +215,22 @@ export class LoadStateTool extends BaseTool<LoadStateParams, StateResult> {
         } catch (error) {
             return { success: false, error: createErrorMessage('Error loading state data: ', error) };
         }
+    }
+
+    private async resolveWorkspaceId(
+        params: LoadStateParams,
+        workspaceService: WorkspaceService
+    ): Promise<{ success: boolean; workspaceId?: string; error?: string }> {
+        const workspaceIdentifier = resolveWorkspaceIdentifier(params);
+        const workspace = await workspaceService.getWorkspaceByNameOrId(workspaceIdentifier);
+        if (!workspace) {
+            return {
+                success: false,
+                error: `Workspace not found: ${workspaceIdentifier}. Workspace names are accepted, but the name must match an existing workspace.`
+            };
+        }
+
+        return { success: true, workspaceId: workspace.id };
     }
 
     /**
@@ -401,6 +428,20 @@ function parseWorkspaceContext(value: unknown): WorkspaceContextInput | null {
     }
 
     return isWorkspaceContextInput(value) ? value : null;
+}
+
+function resolveWorkspaceIdentifier(params: LoadStateParams): string {
+    const directWorkspaceId = (params as unknown as { workspaceId?: unknown }).workspaceId;
+    if (typeof directWorkspaceId === 'string' && directWorkspaceId.trim() !== '') {
+        return directWorkspaceId;
+    }
+
+    if (params.context?.workspaceId) {
+        return params.context.workspaceId;
+    }
+
+    const parsedContext = parseWorkspaceContext(params.workspaceContext);
+    return parsedContext?.workspaceId || GLOBAL_WORKSPACE_ID;
 }
 
 function isWorkspaceContextInput(value: unknown): value is WorkspaceContextInput {

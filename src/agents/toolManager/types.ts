@@ -121,7 +121,7 @@ export function getTopLevelToolContextSchema(): Record<string, unknown> {
     },
     sessionId: {
       type: 'string',
-      description: 'Session identifier for trace continuity. Reuse the provided value for subsequent calls.'
+      description: 'Current chat session ID assigned by the runtime. Reuse the same value for every tool call in the conversation so traces and saved states attach to the current session.'
     },
     memory: {
       type: 'string',

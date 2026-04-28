@@ -3,7 +3,6 @@
  * Extracted from WorkspacesTab to keep the tab under 600 lines.
  */
 
-import { Notice } from 'obsidian';
 import { CardItem } from '../CardManager';
 import { SearchableCardManager } from '../SearchableCardManager';
 import { ProjectWorkspace } from '../../database/workspace-types';
@@ -17,8 +16,6 @@ export interface WorkspaceListCallbacks {
 
 export class WorkspaceListRenderer {
     private cardManager?: SearchableCardManager<CardItem>;
-    private pendingDeleteWorkspaceId: string | null = null;
-    private pendingDeleteTimer: number | null = null;
 
     render(
         container: HTMLElement,
@@ -71,7 +68,7 @@ export class WorkspaceListRenderer {
                     callbacks.onEdit(item.id);
                 },
                 onDelete: (item) => {
-                    this.requestDelete(item, callbacks);
+                    void callbacks.onDelete(item.id, item.name);
                 }
             },
             items: cardItems,
@@ -97,39 +94,6 @@ export class WorkspaceListRenderer {
             skeleton.createDiv('nexus-skeleton-title');
             skeleton.createDiv('nexus-skeleton-description');
             skeleton.createDiv('nexus-skeleton-actions');
-        }
-    }
-
-    private requestDelete(item: CardItem, callbacks: WorkspaceListCallbacks): void {
-        if (this.pendingDeleteWorkspaceId === item.id) {
-            this.clearPendingDelete();
-            void callbacks.onDelete(item.id, item.name)
-                .then(() => {
-                    new Notice('Workspace deleted');
-                })
-                .catch((error: unknown) => {
-                    console.error('[WorkspaceListRenderer] Failed to delete workspace:', error);
-                    new Notice('Failed to delete workspace');
-                });
-            return;
-        }
-
-        this.pendingDeleteWorkspaceId = item.id;
-        if (this.pendingDeleteTimer !== null) {
-            window.clearTimeout(this.pendingDeleteTimer);
-        }
-        this.pendingDeleteTimer = window.setTimeout(() => {
-            this.clearPendingDelete();
-        }, 5000);
-
-        new Notice(`Click delete again to remove workspace "${item.name}".`, 4000);
-    }
-
-    private clearPendingDelete(): void {
-        this.pendingDeleteWorkspaceId = null;
-        if (this.pendingDeleteTimer !== null) {
-            window.clearTimeout(this.pendingDeleteTimer);
-            this.pendingDeleteTimer = null;
         }
     }
 }

@@ -92,7 +92,7 @@ export class SessionRepository
   }
 
   async create(data: CreateSessionData & { workspaceId: string }): Promise<string> {
-    const id = this.generateId();
+    const id = data.id || this.generateId();
     const now = Date.now();
 
     try {

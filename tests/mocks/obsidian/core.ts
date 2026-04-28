@@ -189,8 +189,35 @@ export function normalizePath(path: string): string {
   return path.replace(/\\/g, '/').replace(/\/+/g, '/');
 }
 
-// EventRef mock
-export type EventRef = Record<string, never>;
+// Events / EventRef mocks
+export interface EventRef {
+  name?: string;
+  callback?: (...data: unknown[]) => unknown;
+}
+
+export class Events {
+  private listeners = new Map<string, Set<(...data: unknown[]) => unknown>>();
+
+  on(name: string, callback: (...data: unknown[]) => unknown): EventRef {
+    const callbacks = this.listeners.get(name) ?? new Set<(...data: unknown[]) => unknown>();
+    callbacks.add(callback);
+    this.listeners.set(name, callbacks);
+    return { name, callback };
+  }
+
+  offref(ref: EventRef): void {
+    if (!ref.name || !ref.callback) {
+      return;
+    }
+    this.listeners.get(ref.name)?.delete(ref.callback);
+  }
+
+  trigger(name: string, ...data: unknown[]): void {
+    this.listeners.get(name)?.forEach(callback => {
+      callback(...data);
+    });
+  }
+}
 
 // MarkdownFileInfo mock (used in editorCallback context)
 export interface MarkdownFileInfo {

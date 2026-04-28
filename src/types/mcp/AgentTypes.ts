@@ -60,7 +60,7 @@ export interface ToolContext {
   /** Workspace scope identifier */
   workspaceId: string;
 
-  /** Session identifier for tracking */
+  /** Current chat session ID assigned once by the runtime and reused for every tool call */
   sessionId: string;
 
   /** Compressed essence of conversation so far (1-3 sentences) */

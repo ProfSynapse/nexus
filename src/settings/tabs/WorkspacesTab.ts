@@ -18,7 +18,7 @@ import { WorkspaceListRenderer } from '../../components/workspace/WorkspaceListR
 import { WorkspaceDetailRenderer, DetailCallbacks } from '../../components/workspace/WorkspaceDetailRenderer';
 import { ProjectsManagerView } from '../../components/workspace/ProjectsManagerView';
 import { ProjectWorkspace } from '../../database/workspace-types';
-import { WorkspaceService } from '../../services/WorkspaceService';
+import { WorkspaceService, type WorkspaceChangeEvent } from '../../services/WorkspaceService';
 import { CustomPromptStorageService } from '../../agents/promptManager/services/CustomPromptStorageService';
 import { CustomPrompt } from '../../types/mcp/CustomPromptTypes';
 import { v4 as uuidv4 } from '../../utils/uuid';
@@ -44,9 +44,11 @@ export class WorkspacesTab {
     private services: WorkspacesTabServices;
     private workspaces: ProjectWorkspace[] = [];
     private currentWorkspace: Partial<ProjectWorkspace> | null = null;
+    private isDraftWorkspace = false;
     private currentWorkflowIndex = -1;
     private currentFileIndex = -1;
     private currentView: WorkspacesView = 'list';
+    private workspaceChangeService?: WorkspaceService;
 
     // Renderers
     private listRenderer: WorkspaceListRenderer;
@@ -98,6 +100,7 @@ export class WorkspacesTab {
         // Refresh the list / active detail when Obsidian Sync lands remote
         // workspace or task JSONL changes from another device.
         this.subscribeToExternalSync();
+        this.subscribeToWorkspaceChanges(this.services.workspaceService);
     }
 
     /**
@@ -125,6 +128,19 @@ export class WorkspacesTab {
             void this.handleExternalSync(event);
         });
         component.registerEvent(ref);
+    }
+
+    private subscribeToWorkspaceChanges(workspaceService?: WorkspaceService): void {
+        const component = this.services.component;
+        if (!component || !workspaceService || this.workspaceChangeService === workspaceService) {
+            return;
+        }
+
+        const ref = workspaceService.onWorkspaceChange((event) => {
+            void this.handleWorkspaceChange(event);
+        });
+        component.registerEvent(ref);
+        this.workspaceChangeService = workspaceService;
     }
 
     /**
@@ -182,25 +198,65 @@ export class WorkspacesTab {
         }
     }
 
+    private async handleWorkspaceChange(event: WorkspaceChangeEvent): Promise<void> {
+        try {
+            await this.loadWorkspaces();
+
+            if (
+                event.action === 'deleted' &&
+                this.currentWorkspace?.id === event.workspaceId
+            ) {
+                this.currentWorkspace = null;
+                this.isDraftWorkspace = false;
+                this.currentView = 'list';
+                this.router.back();
+                return;
+            }
+
+            if (
+                this.currentView === 'detail' &&
+                !this.isDraftWorkspace &&
+                this.currentWorkspace?.id === event.workspaceId
+            ) {
+                const updatedWorkspace = this.workspaces.find(w => w.id === event.workspaceId);
+                if (updatedWorkspace) {
+                    this.currentWorkspace = { ...updatedWorkspace };
+                    this.render();
+                }
+                return;
+            }
+
+            if (this.currentView === 'list') {
+                this.render();
+            }
+        } catch (error) {
+            console.error('[WorkspacesTab] Failed to refresh workspaces on workspace-change:', error);
+        }
+    }
+
     private async loadWorkspaces(): Promise<void> {
         let workspaceService = this.services.workspaceService;
 
         if (this.services.serviceManager) {
             const timeout = <T>(ms: number) => new Promise<T | undefined>(r => setTimeout(() => r(undefined), ms));
             try {
-                const [service] = await Promise.all([
+                const [service, adapter] = await Promise.all([
                     Promise.race([
                         this.services.serviceManager.getService<WorkspaceService>('workspaceService'),
                         timeout<WorkspaceService>(10000)
                     ]),
                     Promise.race([
-                        this.services.serviceManager.getService('hybridStorageAdapter'),
-                        timeout(10000)
+                        this.services.serviceManager.getService<HybridStorageAdapter>('hybridStorageAdapter'),
+                        timeout<HybridStorageAdapter>(10000)
                     ])
                 ]);
                 if (service) {
                     workspaceService = service;
                     this.services.workspaceService = workspaceService;
+                    this.subscribeToWorkspaceChanges(workspaceService);
+                }
+                if (adapter && typeof adapter.waitForQueryReady === 'function') {
+                    await adapter.waitForQueryReady();
                 }
             } catch {
                 // Service unavailable
@@ -251,6 +307,7 @@ export class WorkspacesTab {
             this.currentView = 'detail';
             const workspace = this.workspaces.find(w => w.id === state.detailId);
             if (workspace) {
+                this.isDraftWorkspace = false;
                 this.currentWorkspace = { ...workspace };
                 this.detailRenderer.renderDetail(
                     this.container,
@@ -260,6 +317,16 @@ export class WorkspacesTab {
                 );
                 return;
             }
+        }
+
+        if (this.currentView === 'detail' && this.currentWorkspace && this.isDraftWorkspace) {
+            this.detailRenderer.renderDetail(
+                this.container,
+                this.currentWorkspace,
+                this.workspaces,
+                this.buildDetailCallbacks()
+            );
+            return;
         }
 
         // Default to list view
@@ -281,11 +348,21 @@ export class WorkspacesTab {
                         workspace.isActive = enabled;
                     }
                 },
-                onDelete: async (id) => {
-                    if (this.services.workspaceService) {
+                onDelete: async (id, name) => {
+                    if (!this.services.workspaceService) return;
+
+                    const confirmed = await this.confirmDeleteWorkspace(name);
+                    if (!confirmed) return;
+
+                    try {
                         await this.services.workspaceService.deleteWorkspace(id);
                         this.workspaces = this.workspaces.filter(w => w.id !== id);
+                        await this.loadWorkspaces();
                         this.listRenderer.updateItems(this.workspaces);
+                        new Notice('Workspace deleted');
+                    } catch (error) {
+                        console.error('[WorkspacesTab] Failed to delete workspace:', error);
+                        new Notice('Failed to delete workspace');
                     }
                 }
             }
@@ -346,6 +423,7 @@ export class WorkspacesTab {
             created: Date.now(),
             lastAccessed: Date.now()
         };
+        this.isDraftWorkspace = true;
         this.currentView = 'detail';
         this.render();
     }
@@ -366,11 +444,13 @@ export class WorkspacesTab {
                     this.currentWorkspace
                 );
                 this.workspaces[existingIndex] = this.currentWorkspace as ProjectWorkspace;
+                this.isDraftWorkspace = false;
                 return this.currentWorkspace as ProjectWorkspace;
             } else {
                 const created = await this.services.workspaceService.createWorkspace(this.currentWorkspace);
                 this.workspaces.push(created);
                 this.currentWorkspace = created;
+                this.isDraftWorkspace = false;
                 return created;
             }
         } catch (error) {
@@ -388,8 +468,9 @@ export class WorkspacesTab {
 
         try {
             await this.services.workspaceService.deleteWorkspace(this.currentWorkspace.id);
-            this.workspaces = this.workspaces.filter(w => w.id !== this.currentWorkspace?.id);
+            await this.loadWorkspaces();
             this.currentWorkspace = null;
+            this.isDraftWorkspace = false;
             this.router.back();
             new Notice('Workspace deleted');
         } catch (error) {
@@ -398,11 +479,11 @@ export class WorkspacesTab {
         }
     }
 
-    private async confirmDeleteWorkspace(): Promise<boolean> {
+    private async confirmDeleteWorkspace(workspaceName = this.currentWorkspace?.name || 'Workspace'): Promise<boolean> {
         return new Promise<boolean>((resolve) => {
             const modal = new WorkspaceDeleteConfirmModal(
                 this.services.app,
-                this.currentWorkspace?.name || 'Workspace',
+                workspaceName,
                 resolve
             );
             modal.open();
@@ -721,7 +802,7 @@ class WorkspaceDeleteConfirmModal extends Modal {
 
         new ButtonComponent(buttonRow)
             .setButtonText('Delete')
-            .setCta()
+            .setWarning()
             .onClick(() => {
                 this.resolve(true);
                 this.close();

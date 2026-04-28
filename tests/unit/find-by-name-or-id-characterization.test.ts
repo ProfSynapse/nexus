@@ -76,6 +76,37 @@ describe('getWorkspaceByNameOrId characterization', () => {
     expect(expectDefined(result).id).toBe('ws-actual-id');
   });
 
+  it('treats default as an alias for Default Workspace when no literal default ID exists', async () => {
+    const fs = createMockFileSystem();
+    const idx = createMockIndexManager();
+    const adapter = createMockAdapter(true);
+
+    adapter.getWorkspace
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        id: 'default-workspace-uuid', name: 'Default Workspace', description: 'desc',
+        rootFolder: '/', created: 1000, lastAccessed: 2000, isActive: true,
+      });
+
+    adapter.getWorkspaces.mockResolvedValue({
+      items: [
+        { id: 'default-workspace-uuid', name: 'Default Workspace', description: 'desc',
+          rootFolder: '/', created: 1000, lastAccessed: 2000, isActive: true },
+      ],
+      page: 0, pageSize: 100, totalItems: 1, totalPages: 1, hasNextPage: false,
+    });
+
+    const service = new WorkspaceService(plugin, fs, idx, adapter);
+    const result = await service.getWorkspaceByNameOrId('default');
+
+    expect(result).not.toBeNull();
+    expect(expectDefined(result).id).toBe('default-workspace-uuid');
+    expect(adapter.getWorkspaces).toHaveBeenCalledWith({
+      search: 'Default Workspace',
+      pageSize: 100
+    });
+  });
+
   it('returns null when neither ID nor name matches (legacy path)', async () => {
     const fs = createMockFileSystem();
     const idx = createMockIndexManager();
