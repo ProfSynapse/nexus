@@ -3,6 +3,7 @@ import type { ChildProcessByStdio } from 'child_process';
 import type { Readable, Writable } from 'stream';
 import { getPrimaryServerKey } from '../../constants/branding';
 import { resolveDesktopBinaryPath } from '../../utils/binaryDiscovery';
+import { spawnDesktopProcess } from '../../utils/desktopProcess';
 
 const MAX_SAFE_WINDOWS_ARGV_CHARS = 24_000;
 
@@ -231,7 +232,7 @@ export class ClaudeHeadlessService {
             const stdio: ['pipe', 'pipe', 'pipe'] | ['ignore', 'pipe', 'pipe'] = stdinText !== undefined
                 ? ['pipe', 'pipe', 'pipe']
                 : ['ignore', 'pipe', 'pipe'];
-            const child = childProcess.spawn(command, args, {
+            const child = spawnDesktopProcess(childProcess, command, args, {
                 cwd,
                 env,
                 stdio

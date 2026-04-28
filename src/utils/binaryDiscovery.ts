@@ -16,7 +16,7 @@ const COMMON_UNIX_BIN_DIRS = [
     '/sbin'
 ];
 
-const COMMON_WINDOWS_BIN_DIRS = [
+const STATIC_COMMON_WINDOWS_BIN_DIRS = [
     'C:\\Program Files\\nodejs',
     'C:\\Program Files\\Claude',
     'C:\\Program Files\\Anthropic\\Claude'
@@ -73,9 +73,22 @@ function resolveFromCurrentPath(binaryName: string): string | null {
             env: { ...process.env }
         }).trim();
 
-        const firstLine = result.split(/\r?\n/)[0]?.trim();
-        if (firstLine && nodeFs.existsSync(firstLine)) {
-            return firstLine;
+        const lines = result
+            .split(/\r?\n/)
+            .map((line) => line.trim())
+            .filter(Boolean);
+        const preferredLine = Platform.isWin
+            ? lines.find((line) => isWindowsCommandWrapperPath(line) && nodeFs.existsSync(line))
+            : null;
+
+        if (preferredLine) {
+            return preferredLine;
+        }
+
+        for (const line of lines) {
+            if (nodeFs.existsSync(line)) {
+                return line;
+            }
         }
     } catch {
         // Fall through to deterministic location checks.
@@ -92,8 +105,10 @@ function resolveFromCommonLocations(binaryName: string): string | null {
     try {
         const nodeFs = loadDesktopModule('fs');
         const pathMod = loadDesktopModule('path');
-        const binDirs = Platform.isWin ? COMMON_WINDOWS_BIN_DIRS : COMMON_UNIX_BIN_DIRS;
-        const candidateNames = Platform.isWin ? [binaryName, `${binaryName}.exe`, `${binaryName}.cmd`] : [binaryName];
+        const binDirs = Platform.isWin ? getCommonWindowsBinDirs() : COMMON_UNIX_BIN_DIRS;
+        const candidateNames = Platform.isWin
+            ? [`${binaryName}.cmd`, `${binaryName}.bat`, `${binaryName}.exe`, binaryName]
+            : [binaryName];
 
         for (const dir of binDirs) {
             for (const candidateName of candidateNames) {
@@ -108,6 +123,17 @@ function resolveFromCommonLocations(binaryName: string): string | null {
     }
 
     return null;
+}
+
+function isWindowsCommandWrapperPath(path: string): boolean {
+    return /\.(cmd|bat)$/i.test(path);
+}
+
+function getCommonWindowsBinDirs(): string[] {
+    return [
+        process.env.APPDATA ? `${process.env.APPDATA}\\npm` : null,
+        ...STATIC_COMMON_WINDOWS_BIN_DIRS
+    ].filter((dir): dir is string => typeof dir === 'string' && dir.length > 0);
 }
 
 function resolveFromLoginShell(binaryName: string): string | null {
