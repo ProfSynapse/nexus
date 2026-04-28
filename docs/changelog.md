@@ -2,6 +2,24 @@
 
 ## April 2026
 
+**Apr 28**: v5.8.6 — Content safety, GPT-5.5 support, Windows Claude Code auth
+
+**Content safety and replacement matching** (PRs #183, #184, #187)
+- `content replace` now compares `oldContent` with NFC/NFKC tolerance so visually identical accented or compatibility-normalized text can be matched without forcing overwrite.
+- Replace still writes only the requested `newContent`; untouched file bytes are preserved.
+- Leading Obsidian frontmatter is validated before content write/create/overwrite; malformed or non-mapping YAML is rejected without rewriting valid bytes.
+- Regression tests now protect against editor/tool normalization collapsing NFD fixtures into tautologies.
+
+**Model/provider updates** (PR #188)
+- Added GPT-5.5 and GPT-5.5 Pro to OpenAI and OpenRouter model registries.
+- Added GPT-5.5 to Codex defaults and adapter fallbacks.
+- Added a reusable live provider/model smoke test for future model updates.
+
+**Windows CLI auth fix** (PR #189)
+- Claude Code auth detection now prefers `.cmd`/`.bat` npm wrappers on Windows.
+- `%APPDATA%\npm` is included in common CLI discovery with wrapper-first ordering.
+- Claude headless spawning now uses the shared wrapper-aware process path.
+
 **Apr 20**: v5.8.2 — ToolManager content alignment + repo line-ending normalization
 
 **ToolManager content alignment** (PR #170)

@@ -61,9 +61,9 @@ git push origin main
 Always attach the **4 build artifacts**:
 
 ```bash
-gh release create vX.Y.Z \
+gh release create X.Y.Z \
   main.js connector.js manifest.json styles.css \
-  --title "vX.Y.Z — Short Description" \
+  --title "X.Y.Z" \
   --notes "$(cat <<'EOF'
 ## What's New / Fixes
 
@@ -75,6 +75,9 @@ Download `main.js`, `connector.js`, `manifest.json`, and `styles.css` into your 
 EOF
 )"
 ```
+
+Release title rule: the GitHub release name must be the tag number only, with no
+`v` prefix and no descriptive suffix. Example: `5.8.6`.
 
 ### Release Artifacts Checklist
 

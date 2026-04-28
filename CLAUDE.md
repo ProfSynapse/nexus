@@ -110,7 +110,7 @@ Last Updated: 2026-04-06
 
 ## Project Overview
 - **Name**: Nexus (package: claudesidian-mcp)
-- **Version**: 5.8.5
+- **Version**: 5.8.6
 - **Type**: Obsidian Community Plugin
 - **Purpose**: MCP integration for Obsidian with AI-powered vault operations
 - **Architecture**: Agent-Tool pattern with domain-driven design
@@ -150,10 +150,11 @@ Full guidelines: `docs/obsidian-plugin-guidelines.md`
 
 ## Recent Changes
 
-**Current Version**: 5.8.5
+**Current Version**: 5.8.6
 Full changelog: `docs/changelog.md`
 
 **Latest features** (Apr 2026):
+- v5.8.6 - Content safety + model/provider fixes: PR #183 makes `content replace` tolerate Unicode normalization drift between file bytes and `oldContent`, while preserving untouched file bytes; PR #184 hardens those regression fixtures so future editor/tool normalization cannot turn them into tautologies. PR #187 validates leading Obsidian frontmatter before write/create/overwrite, rejects malformed or non-mapping YAML without rewriting valid bytes, and extends replace comparison to NFKC compatibility-normalized text such as ordinals, ellipses, and NBSPs. PR #188 adds GPT-5.5 / GPT-5.5 Pro across OpenAI and OpenRouter, adds GPT-5.5 to Codex defaults/fallbacks, and introduces a reusable live provider smoke test. PR #189 fixes Claude Code auth detection on Windows by preferring `.cmd`/`.bat` npm wrappers, adding `%APPDATA%\npm` discovery, and routing Claude headless spawning through the shared wrapper-aware process path.
 - v5.8.5 — Tool Manager CLI parser hardening + Task Board liveness: PR #181 narrows `splitTopLevelSegments` so a comma is a structural command separator only when followed by whitespace/EOF (CSV array flag values like `--paths a,b,c` no longer explode into three pseudo-commands). PR #180 fixes `unescapeQuotedContent` default branch — `\X` outside the canonical set (`\n \r \t \" \' \\ \uXXXX`) now drops the phantom backslash (POSIX-shell semantics) instead of silently corrupting backticks/`$`/`#`/parens. PR #176 wires the Task Board view to storage external-sync events through the existing `TaskBoardSyncCoordinator` and emits update notifications on note-link mutations so card metadata stays live.
 - v5.8.4 — Dynamic tool registry for app agents: `AppManager` register/unregister callbacks now sync with `ToolManagerAgent` so app agents (WebTools, Composer) installed at runtime appear in `getTools` discovery and execute via `useTools`. `GetToolsTool.refreshDescription()` rebuilds the description when the agent map mutates. Lint carry-over fix from #173: `isUnknownArray` predicate in `setProperty.ts` for typed `unknown[]` narrowing.
 - v5.8.3 — setProperty CSV array parsing + scalar→array merge promotion (PR #173): `ToolCliNormalizer` handles `oneOf` array option (new `oneOfArray` marker) so `content set-property ... --value a,b,c` arrives as `["a","b","c"]` instead of the literal CSV string. `SetPropertyTool.execute` merge mode promotes scalar into existing array with union-dedup. Merge decision extracted as pure helper `computeMergeResult` (PR #172).
