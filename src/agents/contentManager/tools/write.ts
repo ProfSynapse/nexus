@@ -6,6 +6,60 @@ import { createErrorMessage } from '../../../utils/errorUtils';
 import type { ToolStatusTense } from '../../interfaces/ITool';
 import { labelFileOp, verbs } from '../../utils/toolStatusLabels';
 
+interface YamlParseError {
+  message?: string;
+  linePos?: Array<{ line: number; col: number }>;
+}
+
+/**
+ * Validate leading Obsidian frontmatter without rewriting caller bytes.
+ * A valid block is either empty or a YAML mapping/object; malformed YAML,
+ * lists, and scalar document roots are rejected because Obsidian properties
+ * are map-shaped.
+ */
+async function validateFrontmatter(content: string): Promise<string | null> {
+  const withoutBom = content.replace(/^\uFEFF/, '');
+  const match = withoutBom.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/);
+
+  if (!match) {
+    return null;
+  }
+
+  const frontmatterBody = match[1];
+
+  try {
+    const { parse } = await import('yaml');
+    const parsed: unknown = parse(frontmatterBody);
+
+    if (parsed === null || parsed === undefined) {
+      return null;
+    }
+
+    if (typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return 'Frontmatter must be a YAML mapping of property names to values. Use setProperty for metadata changes.';
+    }
+
+    return null;
+  } catch (error) {
+    return formatFrontmatterError(error, frontmatterBody);
+  }
+}
+
+function formatFrontmatterError(error: unknown, frontmatterBody: string): string {
+  const yamlError = error as YamlParseError;
+  const pos = yamlError.linePos?.[0];
+  const line = pos?.line ?? 1;
+  const col = pos?.col ?? 1;
+  const offendingLine = frontmatterBody.split('\n')[line - 1]?.slice(0, 120) ?? '';
+  const message = yamlError.message ?? 'Parse error';
+
+  return [
+    `Frontmatter is invalid YAML at line ${line}, column ${col}: ${message}`,
+    offendingLine ? `Offending line: ${offendingLine}` : null,
+    'Hint: quote values that contain reserved YAML syntax such as ": ", "#", leading "- ", brackets, or unmatched quotes.',
+  ].filter((part): part is string => part !== null).join('\n');
+}
+
 /**
  * Location: src/agents/contentManager/tools/write.ts
  *
@@ -75,6 +129,11 @@ export class WriteTool extends BaseTool<WriteParams, WriteResult> {
 
       if (content === undefined || content === null) {
         return this.prepareResult(false, undefined, 'Content is required');
+      }
+
+      const frontmatterError = await validateFrontmatter(content);
+      if (frontmatterError) {
+        return this.prepareResult(false, undefined, frontmatterError);
       }
 
       // Normalize path (remove leading slash)

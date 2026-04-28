@@ -639,4 +639,114 @@ describe('ReplaceTool', () => {
       expect(mockFileContent).toBe('line 1\nCHANGED\nline 3');
     });
   });
+
+  describe('Unicode compatibility normalization tolerance', () => {
+    const cases = [
+      {
+        name: 'masculine ordinal indicator',
+        fileLine: 'A multa do art. 1.026, §2º do CPC',
+        oldContent: 'A multa do art. 1.026, §2o do CPC',
+      },
+      {
+        name: 'feminine ordinal indicator',
+        fileLine: 'A 1ª instância julgou o pedido',
+        oldContent: 'A 1a instância julgou o pedido',
+      },
+      {
+        name: 'ellipsis',
+        fileLine: 'A parte deve… pagar',
+        oldContent: 'A parte deve... pagar',
+      },
+      {
+        name: 'non-breaking space',
+        fileLine: 'valor\u00A0devido',
+        oldContent: 'valor devido',
+      },
+    ];
+
+    it.each(cases)('matches compatibility-normalized oldContent for $name', async ({ fileLine, oldContent }) => {
+      mockFileContent = `head\n${fileLine}\ntail`;
+      const result = await tool.execute({
+        ...baseParams,
+        path: 'test/note.md',
+        oldContent,
+        newContent: 'CHANGED',
+        startLine: 2,
+        endLine: 2,
+      });
+
+      expect(result.success).toBe(true);
+      expect(mockFileContent).toBe('head\nCHANGED\ntail');
+    });
+
+    it('finds compatibility-normalized content via sliding-window fallback', async () => {
+      mockFileContent = 'head\nfiller\nA multa do art. 1.026, §2º do CPC\ntail';
+      const result = await tool.execute({
+        ...baseParams,
+        path: 'test/note.md',
+        oldContent: 'A multa do art. 1.026, §2o do CPC',
+        newContent: 'CHANGED',
+        startLine: 1,
+        endLine: 1,
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Found at lines 3-3');
+      expect(mockFileContent).toBe('head\nfiller\nA multa do art. 1.026, §2º do CPC\ntail');
+    });
+
+    it('preserves untouched file bytes and writes newContent verbatim', async () => {
+      const preservedPrefix = 'prefix com ordinal §2º';
+      const replacement = 'novo texto com NBSP\u00A0preservado';
+      mockFileContent = `${preservedPrefix}\nA parte deve… pagar\ntail`;
+
+      const result = await tool.execute({
+        ...baseParams,
+        path: 'test/note.md',
+        oldContent: 'A parte deve... pagar',
+        newContent: replacement,
+        startLine: 2,
+        endLine: 2,
+      });
+
+      expect(result.success).toBe(true);
+      expect(mockFileContent).toBe(`${preservedPrefix}\n${replacement}\ntail`);
+      expect(mockFileContent).toContain('§2º');
+      expect(mockFileContent).toContain('\u00A0');
+    });
+
+    it('reports multiple locations for duplicate compatibility-equivalent matches', async () => {
+      mockFileContent = '§2º\n§2o\nother';
+      const result = await tool.execute({
+        ...baseParams,
+        path: 'test/note.md',
+        oldContent: '§2o',
+        newContent: 'CHANGED',
+        startLine: 3,
+        endLine: 3,
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Found at multiple locations');
+      expect(result.error).toContain('lines 1-1');
+      expect(result.error).toContain('lines 2-2');
+      expect(mockFileContent).toBe('§2º\n§2o\nother');
+    });
+
+    it('regression: genuinely absent compatibility-normalized content still fails', async () => {
+      mockFileContent = 'head\nA parte deve… pagar\ntail';
+      const result = await tool.execute({
+        ...baseParams,
+        path: 'test/note.md',
+        oldContent: 'texto ausente',
+        newContent: 'CHANGED',
+        startLine: 2,
+        endLine: 2,
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Content not found');
+      expect(mockFileContent).toBe('head\nA parte deve… pagar\ntail');
+    });
+  });
 });
