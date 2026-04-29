@@ -9,8 +9,8 @@ export class ResponseFormatter implements IResponseFormatter {
             return this.formatDetailedError(result, sessionInfo);
         }
 
-        // Only show session ID message when Claude's ID was REPLACED (non-standard format)
-        // If Claude provided a valid format ID, no need to announce - just use it silently
+        // Only show a session handle message when the requested human-readable
+        // handle had to be changed to avoid ambiguity. Internal UUIDs stay hidden.
         if (sessionInfo && sessionInfo.isNonStandardId) {
             return this.formatWithSessionInstructions(result, sessionInfo);
         }
@@ -44,9 +44,9 @@ export class ResponseFormatter implements IResponseFormatter {
     private formatDetailedError(result: ToolExecutionResult, sessionInfo?: SessionInfo): MCPContentResponse {
         let errorText = "";
         
-        // Compact session ID notice when replaced
+        // Compact session handle notice when a duplicate readable name was adjusted.
         if (sessionInfo?.isNonStandardId && sessionInfo.originalSessionId) {
-            errorText += `[Session ID changed: Use "${sessionInfo.sessionId}" for all future requests]\n\n`;
+            errorText += `[Session name changed: "${sessionInfo.originalSessionId}" already exists. Use "${sessionInfo.displaySessionId || sessionInfo.originalSessionId}" for this chat moving forward]\n\n`;
         }
         
         errorText += `❌ Error: ${result.error}\n\n`;
@@ -86,13 +86,16 @@ export class ResponseFormatter implements IResponseFormatter {
     }
 
     private formatWithSessionInstructions(result: ToolExecutionResult, sessionInfo: SessionInfo): MCPContentResponse {
-        this.formatSessionInstructions(sessionInfo.sessionId, result);
-
+        // The pre-B4 implementation called this.formatSessionInstructions(sessionInfo.sessionId, result)
+        // here, which stamped the *internal* validated sessionId onto the result envelope
+        // for the model to echo back. That contradicted the B1/B4 contract where the
+        // internal UUID must stay hidden — the model is told to keep using its
+        // friendly handle (displaySessionId) instead. The call is intentionally omitted.
         let responseText = "";
 
-        // Compact session ID notice when replaced
+        // Compact session handle notice when a duplicate readable name was adjusted.
         if (sessionInfo.originalSessionId) {
-            responseText += `[Session ID changed: Use "${sessionInfo.sessionId}" for all future requests]\n\n`;
+            responseText += `[Session name changed: "${sessionInfo.originalSessionId}" already exists. Use "${sessionInfo.displaySessionId || sessionInfo.originalSessionId}" for this chat moving forward]\n\n`;
         }
 
         responseText += safeStringify(result);

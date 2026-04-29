@@ -5,7 +5,6 @@ import type { ServiceManager } from './core/ServiceManager';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { logger } from './utils/logger';
 import { CustomPromptStorageService } from "./agents/promptManager/services/CustomPromptStorageService";
-import { generateSessionId, isStandardSessionId } from './utils/sessionUtils';
 // ToolCallCaptureService removed in simplified architecture
 
 // Extracted services
@@ -522,29 +521,31 @@ Keep workspaceId and sessionId values EXACTLY as shown above throughout the conv
 
             const toolManagerMetaTool = isToolManagerMetaTool(agent, tool);
 
-            // 1. SESSION ID VALIDATION: Extract and validate/generate sessionId first
-            const providedSessionId = (toolManagerMetaTool ? typedParams.sessionId : (typedParams.context?.sessionId || typedParams.sessionId)) as string | undefined;
-            let validatedSessionId: string;
+            const sessionContextManager = this.getSessionContextManagerFromService();
 
-            if (!providedSessionId || !isStandardSessionId(providedSessionId)) {
-                // No sessionId or non-standard format - generate a new one
-                validatedSessionId = generateSessionId();
-            } else {
-                // Valid standard sessionId - use it
-                validatedSessionId = providedSessionId;
-            }
+            // 1. SESSION HANDLE VALIDATION: Extract and resolve the model-facing
+            // session name to an internal ID. The internal ID is not surfaced to
+            // the model; callers should keep sending the same readable handle.
+            const providedSessionId = (toolManagerMetaTool ? typedParams.sessionId : (typedParams.context?.sessionId || typedParams.sessionId)) as string | undefined;
+            const validationResult = await sessionContextManager.validateSessionId(
+                providedSessionId || 'Default Session',
+                typeof typedParams.memory === 'string' ? typedParams.memory : undefined,
+                typeof typedParams.workspaceId === 'string' ? typedParams.workspaceId : undefined
+            );
+            const validatedSessionId = validationResult.id;
 
             // 2. INJECT VALIDATED SESSION ID into all relevant locations
             typedParams.sessionId = validatedSessionId;
+            typedParams._displaySessionId = validationResult.displaySessionId;
             if (!toolManagerMetaTool) {
                 if (!typedParams.context) {
                     typedParams.context = {};
                 }
                 typedParams.context.sessionId = validatedSessionId;
+                typedParams.context.sessionName = validationResult.displaySessionId;
             }
 
             // 3. WORKSPACE CONTEXT LOOKUP FROM SESSION
-            const sessionContextManager = this.getSessionContextManagerFromService();
             const workspaceContext = sessionContextManager.getWorkspaceContext(validatedSessionId);
 
             if (workspaceContext) {

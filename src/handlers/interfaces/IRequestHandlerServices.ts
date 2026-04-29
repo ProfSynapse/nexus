@@ -11,6 +11,8 @@ export interface SessionInfo {
     isNewSession: boolean;
     isNonStandardId: boolean;
     originalSessionId?: string;
+    displaySessionId?: string;
+    displaySessionIdChanged?: boolean;
     shouldInjectInstructions?: boolean;
 }
 

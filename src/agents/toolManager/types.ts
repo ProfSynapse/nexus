@@ -121,7 +121,7 @@ export function getTopLevelToolContextSchema(): Record<string, unknown> {
     },
     sessionId: {
       type: 'string',
-      description: 'Current chat session ID assigned by the runtime. Reuse the same value for every tool call in the conversation so traces and saved states attach to the current session.'
+      description: 'Stable human-readable session name for this chat. Reuse the same value for every tool call in the conversation so traces and saved states attach to the current session; Nexus stores the internal UUID silently.'
     },
     memory: {
       type: 'string',
