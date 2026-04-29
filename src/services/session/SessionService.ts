@@ -34,11 +34,14 @@ export class SessionService {
     // Use provided ID if available, otherwise generate one
     const id = ('id' in sessionData && sessionData.id) ? sessionData.id : this.generateSessionId();
     const workspaceId = sessionData.workspaceId || 'default';
+    const existingSession = this.sessions.get(id);
 
     const session: SessionData = {
+      ...existingSession,
       ...sessionData,
       id,
-      workspaceId
+      workspaceId,
+      name: existingSession?.name || sessionData.name
     };
 
     // Store in memory cache

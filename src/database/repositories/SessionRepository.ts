@@ -177,6 +177,10 @@ export class SessionRepository
           setClauses.push('isActive = ?');
           params.push(data.isActive ? 1 : 0);
         }
+        if (data.workspaceId !== undefined) {
+          setClauses.push('workspaceId = ?');
+          params.push(data.workspaceId);
+        }
 
         if (setClauses.length > 0) {
           params.push(id);
@@ -286,6 +290,70 @@ export class SessionRepository
 
   async countByWorkspace(workspaceId: string): Promise<number> {
     return this.count({ workspaceId });
+  }
+
+  async moveToWorkspace(id: string, workspaceId: string): Promise<void> {
+    const session = await this.getById(id);
+    if (!session) {
+      throw new Error(`Session not found: ${id}`);
+    }
+
+    if (session.workspaceId === workspaceId) {
+      return;
+    }
+
+    try {
+      await this.transaction(async () => {
+        await this.writeEvent<SessionUpdatedEvent>(
+          this.jsonlPath(session.workspaceId),
+          {
+            type: 'session_updated',
+            workspaceId: session.workspaceId,
+            sessionId: id,
+            data: {
+              workspaceId
+            }
+          }
+        );
+
+        await this.writeEvent<SessionCreatedEvent>(
+          this.jsonlPath(workspaceId),
+          {
+            type: 'session_created',
+            workspaceId,
+            data: {
+              id,
+              name: session.name,
+              description: session.description,
+              startTime: session.startTime
+            }
+          }
+        );
+
+        await this.sqliteCache.run(
+          'UPDATE sessions SET workspaceId = ? WHERE id = ?',
+          [workspaceId, id]
+        );
+        await this.sqliteCache.run(
+          'UPDATE states SET workspaceId = ? WHERE sessionId = ?',
+          [workspaceId, id]
+        );
+        await this.sqliteCache.run(
+          'UPDATE memory_traces SET workspaceId = ? WHERE sessionId = ?',
+          [workspaceId, id]
+        );
+        await this.sqliteCache.run(
+          'UPDATE trace_embedding_metadata SET workspaceId = ? WHERE sessionId = ?',
+          [workspaceId, id]
+        );
+      });
+
+      this.invalidateCache(id);
+      this.log('moveToWorkspace', { id, workspaceId });
+    } catch (error) {
+      this.logError('moveToWorkspace', error);
+      throw error;
+    }
   }
 
   // ============================================================================

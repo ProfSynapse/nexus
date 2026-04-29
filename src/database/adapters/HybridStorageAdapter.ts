@@ -1053,6 +1053,11 @@ export class HybridStorageAdapter implements IStorageAdapter {
     return this.sessionRepo.update(sessionId, { name, description, endTime, isActive, workspaceId });
   };
 
+  moveSessionToWorkspace = async (sessionId: string, workspaceId: string): Promise<void> => {
+    await this.ensureInitialized();
+    return this.sessionRepo.moveToWorkspace(sessionId, workspaceId);
+  };
+
   deleteSession = async (sessionId: string): Promise<void> => {
     await this.ensureInitialized();
     return this.sessionRepo.delete(sessionId);

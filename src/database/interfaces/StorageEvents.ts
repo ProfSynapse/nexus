@@ -158,6 +158,7 @@ export interface SessionUpdatedEvent extends BaseStorageEvent {
     description: string;
     endTime: number;
     isActive: boolean;
+    workspaceId: string;
   }>;
 }
 

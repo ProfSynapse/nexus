@@ -251,6 +251,15 @@ export interface IStorageAdapter {
   ): Promise<void>;
 
   /**
+   * Move an existing session to another workspace. Implementations should also
+   * rehome dependent state and trace rows for that session.
+   */
+  moveSessionToWorkspace?(
+    sessionId: string,
+    workspaceId: string
+  ): Promise<void>;
+
+  /**
    * Delete a session
    *
    * @param sessionId - Session ID

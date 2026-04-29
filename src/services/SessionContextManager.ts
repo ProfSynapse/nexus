@@ -15,6 +15,7 @@ export interface WorkspaceContext {
 
 interface SessionServiceLike {
   getSession(sessionId: string): Promise<SessionData | null> | SessionData | null;
+  getAllSessions?(workspaceId?: string): Promise<SessionData[]> | SessionData[];
   createSession(sessionData: {
     name: string;
     description: string;
@@ -22,6 +23,13 @@ interface SessionServiceLike {
     id: string;
   }): Promise<unknown> | void;
   updateSession(sessionData: SessionData): Promise<unknown> | void;
+}
+
+export interface SessionValidationResult {
+  id: string;
+  created: boolean;
+  displaySessionId: string;
+  displaySessionIdChanged: boolean;
 }
 
 /**
@@ -37,6 +45,9 @@ export class SessionContextManager {
   
   // Map of sessionId -> workspace context
   private sessionContextMap: Map<string, WorkspaceContext> = new Map();
+
+  // Map of model-facing session handles to internal unique session IDs.
+  private sessionHandleMap: Map<string, { id: string; displaySessionId: string }> = new Map();
   
   // Default workspace context for new sessions (global)
   private defaultWorkspaceContext: WorkspaceContext | null = null;
@@ -174,6 +185,7 @@ export class SessionContextManager {
    */
   clearAll(): void {
     this.sessionContextMap.clear();
+    this.sessionHandleMap.clear();
     this.defaultWorkspaceContext = null;
   }
   
@@ -194,21 +206,48 @@ export class SessionContextManager {
    * @param sessionDescription Optional session description for auto-creation
    * @returns Object with validated session ID and creation status
    */
-  async validateSessionId(sessionId: string, sessionDescription?: string): Promise<{id: string, created: boolean}> {
+  async validateSessionId(
+    sessionId: string,
+    sessionDescription?: string,
+    workspaceId = 'default'
+  ): Promise<SessionValidationResult> {
     
     // If no session ID is provided, generate a new one in our standard format
     if (!sessionId) {
       logger.systemWarn('Empty sessionId provided for validation, generating a new one');
       const newId = generateSessionId();
       await this.createAutoSession(newId, 'Default Session', sessionDescription);
-      return {id: newId, created: true};
+      return {
+        id: newId,
+        created: true,
+        displaySessionId: 'Default Session',
+        displaySessionIdChanged: true
+      };
     }
     
     // If the session ID doesn't match our standard format, it's a friendly name - create session
     if (!isStandardSessionId(sessionId)) {
+      const existingHandle = this.sessionHandleMap.get(sessionId);
+      if (existingHandle) {
+        return {
+          id: existingHandle.id,
+          created: false,
+          displaySessionId: existingHandle.displaySessionId,
+          displaySessionIdChanged: existingHandle.displaySessionId !== sessionId
+        };
+      }
+
       const newId = generateSessionId();
-      await this.createAutoSession(newId, sessionId, sessionDescription);
-      return {id: newId, created: true};
+      const displaySessionId = await this.createUniqueSessionDisplayName(sessionId, workspaceId);
+      this.sessionHandleMap.set(sessionId, { id: newId, displaySessionId });
+      this.sessionHandleMap.set(displaySessionId, { id: newId, displaySessionId });
+      await this.createAutoSession(newId, displaySessionId, sessionDescription, workspaceId);
+      return {
+        id: newId,
+        created: true,
+        displaySessionId,
+        displaySessionIdChanged: displaySessionId !== sessionId
+      };
     }
     
     // Session ID is in standard format - check if it exists in our context map first
@@ -216,7 +255,7 @@ export class SessionContextManager {
     // it means the session was already bound - no need to check database
     if (this.sessionContextMap.has(sessionId)) {
       logger.systemLog(`Session ${sessionId} found in context map - already bound to workspace`);
-      return {id: sessionId, created: false};
+      return {id: sessionId, created: false, displaySessionId: sessionId, displaySessionIdChanged: false};
     }
 
     // Check database if not in context map
@@ -228,15 +267,15 @@ export class SessionContextManager {
     try {
       const existingSession = await this.sessionService.getSession(sessionId);
       if (existingSession) {
-        return {id: sessionId, created: false};
+        return {id: sessionId, created: false, displaySessionId: sessionId, displaySessionIdChanged: false};
       } else {
         await this.createAutoSession(sessionId, `Session ${sessionId}`, sessionDescription);
-        return {id: sessionId, created: true};
+        return {id: sessionId, created: true, displaySessionId: sessionId, displaySessionIdChanged: false};
       }
     } catch (error) {
       logger.systemWarn(`Error checking session existence: ${error instanceof Error ? error.message : String(error)}`);
       // Fallback to returning the session ID without verification
-      return {id: sessionId, created: false};
+      return {id: sessionId, created: false, displaySessionId: sessionId, displaySessionIdChanged: false};
     }
   }
 
@@ -247,10 +286,15 @@ export class SessionContextManager {
    * @param sessionName Friendly name provided by LLM
    * @param sessionDescription Optional session description
    */
-  private async createAutoSession(sessionId: string, sessionName: string, sessionDescription?: string): Promise<void> {
+  private async createAutoSession(
+    sessionId: string,
+    sessionName: string,
+    sessionDescription?: string,
+    explicitWorkspaceId?: string
+  ): Promise<void> {
     // ✅ CRITICAL FIX: Use workspace from sessionContextMap if available
     const context = this.sessionContextMap.get(sessionId);
-    const workspaceId = context?.workspaceId || 'default';
+    const workspaceId = explicitWorkspaceId || context?.workspaceId || 'default';
 
     logger.systemLog(`Auto-created session: ${sessionId} with name "${sessionName}", workspace "${workspaceId}", and description "${sessionDescription || 'No description'}"`);
 
@@ -272,6 +316,37 @@ export class SessionContextManager {
     } else {
       logger.systemWarn(`SessionService not available - session ${sessionId} not saved to database`);
     }
+  }
+
+  private async createUniqueSessionDisplayName(baseName: string, workspaceId: string): Promise<string> {
+    const usedNames = new Set<string>();
+    for (const entry of this.sessionHandleMap.values()) {
+      usedNames.add(entry.displaySessionId.toLowerCase());
+    }
+
+    if (this.sessionService?.getAllSessions) {
+      try {
+        const sessions = await this.sessionService.getAllSessions(workspaceId);
+        for (const session of sessions) {
+          if (session.name) {
+            usedNames.add(session.name.toLowerCase());
+          }
+        }
+      } catch {
+        // Best effort only; storage-level uniqueness is not required for the
+        // internal ID, but unique display handles prevent ambiguous future use.
+      }
+    }
+
+    const normalizedBaseName = baseName.trim() || 'Session';
+    let candidate = normalizedBaseName;
+    let suffix = 2;
+    while (usedNames.has(candidate.toLowerCase())) {
+      candidate = `${normalizedBaseName}-${suffix}`;
+      suffix += 1;
+    }
+
+    return candidate;
   }
   
   /**

@@ -233,14 +233,15 @@ export class TraceRepository
       let baseQuery = `
         SELECT mt.* FROM memory_traces mt
         WHERE mt.workspaceId = ?
-        AND mt.content LIKE ?
+        AND (mt.content LIKE ? OR mt.metadataJson LIKE ?)
       `;
       let countQuery = `
         SELECT COUNT(*) as count FROM memory_traces mt
         WHERE mt.workspaceId = ?
-        AND mt.content LIKE ?
+        AND (mt.content LIKE ? OR mt.metadataJson LIKE ?)
       `;
-    const params: QueryParams = [workspaceId, `%${query}%`];
+    const queryPattern = `%${query}%`;
+    const params: QueryParams = [workspaceId, queryPattern, queryPattern];
 
       if (sessionId) {
         baseQuery += ' AND mt.sessionId = ?';

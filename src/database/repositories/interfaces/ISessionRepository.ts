@@ -34,6 +34,7 @@ export interface UpdateSessionData {
   description?: string;
   endTime?: number;
   isActive?: boolean;
+  workspaceId?: string;
 }
 
 /**
@@ -74,4 +75,12 @@ export interface ISessionRepository extends IRepository<SessionMetadata> {
    * @returns Number of sessions
    */
   countByWorkspace(workspaceId: string): Promise<number>;
+
+  /**
+   * Move a session and its dependent state/trace rows to another workspace.
+   *
+   * @param id - Session ID
+   * @param workspaceId - Target workspace ID
+   */
+  moveToWorkspace(id: string, workspaceId: string): Promise<void>;
 }

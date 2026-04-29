@@ -135,7 +135,7 @@ describe('getSessionByNameOrId characterization', () => {
     const adapter = createMockAdapter(true);
 
     adapter.getSession.mockResolvedValue({
-      id: 'session-1', name: 'My Session', description: 'desc',
+      id: 'session-1', workspaceId: 'ws1', name: 'My Session', description: 'desc',
       startTime: 1000, isActive: true,
     });
 

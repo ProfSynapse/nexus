@@ -46,6 +46,7 @@ interface MockStorageAdapter {
   getSession: MockFn<[], Promise<unknown>>;
   getSessions: MockFn<[], Promise<Record<string, unknown>>>;
   updateSession: MockFn;
+  moveSessionToWorkspace?: MockFn;
   deleteSession: MockFn;
   addTrace: MockFn<[], Promise<string>>;
   getTraces: MockFn<[], Promise<Record<string, unknown>>>;
@@ -168,6 +169,7 @@ export function createMockAdapter(ready: boolean): MockStorageAdapter {
     getSession: jest.fn().mockResolvedValue(null),
     getSessions: jest.fn().mockResolvedValue({ ...EMPTY_PAGE }),
     updateSession: jest.fn(),
+    moveSessionToWorkspace: jest.fn(),
     deleteSession: jest.fn(),
     addTrace: jest.fn().mockResolvedValue('trace-new'),
     getTraces: jest.fn().mockResolvedValue({ ...EMPTY_PAGE }),

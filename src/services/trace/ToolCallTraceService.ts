@@ -10,6 +10,7 @@ import { WorkspaceService } from '../WorkspaceService';
 import { TraceMetadataBuilder } from '../memory/TraceMetadataBuilder';
 import { TraceContextMetadata, TraceOutcomeMetadata } from '../../database/workspace-types';
 import { formatTraceContent } from './TraceContentFormatter';
+import { splitTopLevelSegments, tokenizeWithMeta } from '../../agents/toolManager/services/ToolCliNormalizer';
 
 type ToolCallParams = unknown;
 type ToolCallResponse = unknown;
@@ -79,16 +80,12 @@ export class ToolCallTraceService {
         return;
       }
 
-      // 3. Get workspace context from SessionContextManager
-      const workspaceContext = this.sessionContextManager.getWorkspaceContext(sessionId);
-      const workspaceId = workspaceContext?.workspaceId ||
-                         getString(isRecord(paramsRecord.workspaceContext) ? paramsRecord.workspaceContext.workspaceId : undefined) ||
-                         getString(isRecord(paramsRecord.context) ? paramsRecord.context.workspaceId : undefined) ||
-                         'default';
-
+      // 3. Resolve workspace context from the session or explicit tool envelope
+      const workspaceId = await this.resolveWorkspaceId(paramsRecord, sessionId);
       if (!workspaceId) {
         return;
       }
+      this.sessionContextManager.setWorkspaceContext(sessionId, { workspaceId });
 
       // 4. Build trace content (human-readable description)
       const traceContent = formatTraceContent({ agent, mode, params: paramsRecord, success });
@@ -162,6 +159,56 @@ export class ToolCallTraceService {
     return null;
   }
 
+  private async resolveWorkspaceId(params: ToolCallParams, sessionId: string): Promise<string | null> {
+    const paramsRecord = asRecord(params);
+    const workspaceContext = this.sessionContextManager.getWorkspaceContext(sessionId);
+    const explicitCandidate =
+      getString(paramsRecord.workspaceId) ||
+      getString(isRecord(paramsRecord.workspaceContext) ? paramsRecord.workspaceContext.workspaceId : undefined) ||
+      getString(isRecord(paramsRecord.context) ? paramsRecord.context.workspaceId : undefined);
+    const commandWorkspaceCandidate = this.extractWorkspaceHandleFromUseTools(paramsRecord);
+    const candidate =
+      (explicitCandidate && explicitCandidate !== 'default' ? explicitCandidate : undefined) ||
+      commandWorkspaceCandidate ||
+      explicitCandidate ||
+      workspaceContext?.workspaceId ||
+      'default';
+
+    if (!candidate) {
+      return null;
+    }
+
+    try {
+      const workspace = await this.workspaceService.getWorkspaceByNameOrId(candidate);
+      return workspace?.id || candidate;
+    } catch {
+      return candidate;
+    }
+  }
+
+  private extractWorkspaceHandleFromUseTools(params: Record<string, unknown>): string | undefined {
+    const toolString = getString(params.tool);
+    if (!toolString) {
+      return undefined;
+    }
+
+    for (const segment of splitTopLevelSegments(toolString)) {
+      const tokens = tokenizeWithMeta(segment);
+      if (tokens.length < 3) {
+        continue;
+      }
+
+      const agent = tokens[0].value.replace(/[-_\s]/g, '').toLowerCase();
+      const tool = tokens[1].value.replace(/[-_\s]/g, '').toLowerCase();
+      if ((agent === 'memory' || agent === 'memorymanager') &&
+          (tool === 'loadworkspace' || tool === 'createworkspace')) {
+        return tokens[2].value;
+      }
+    }
+
+    return undefined;
+  }
+
   private buildCanonicalMetadata(options: {
     toolName: string;
     agent: string;
@@ -215,9 +262,14 @@ export class ToolCallTraceService {
     return {
       workspaceId,
       sessionId,
-      memory: getString(contextSource.memory) || '',
-      goal: getString(contextSource.goal) || '',
-      constraints: getString(contextSource.constraints)
+      memory: getString(contextSource.memory) || getString(paramsRecord.memory) || '',
+      goal: getString(contextSource.goal) || getString(paramsRecord.goal) || '',
+      sessionName:
+        getString(contextSource.sessionName) ||
+        getString(contextSource.displaySessionId) ||
+        getString(paramsRecord.sessionName) ||
+        getString(paramsRecord._displaySessionId),
+      constraints: getString(contextSource.constraints) || getString(paramsRecord.constraints)
     };
   }
 
@@ -229,6 +281,7 @@ export class ToolCallTraceService {
     const sanitized = { ...params };
     delete sanitized.context;
     delete sanitized.workspaceContext;
+    delete sanitized._displaySessionId;
     return Object.keys(sanitized).length > 0 ? sanitized : undefined;
   }
 
