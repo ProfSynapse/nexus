@@ -29,7 +29,7 @@ type SchemaNode = {
 type SearchMemoryToolResult = {
   success: boolean;
   error?: string;
-  data?: { results?: Array<{ type: string; question?: string; answer?: string; windowMessages?: unknown[] }> };
+  data?: { results?: Array<{ type: string; content?: string; question?: string; answer?: string; windowMessages?: unknown[] }> };
   recommendations?: Array<{ type: string; message: string }>;
 };
 
@@ -75,7 +75,7 @@ describe('SearchMemory Tool', () => {
       const props = schema.properties || {};
       const memoryTypes = props.memoryTypes;
 
-      expect(memoryTypes.default).toEqual(['traces', 'states', 'conversations']);
+      expect(memoryTypes.default).toEqual(['traces', 'states', 'sessions', 'workspaces', 'conversations']);
     });
   });
 
@@ -104,6 +104,12 @@ describe('SearchMemory Tool', () => {
       const props = schema.properties || {};
       expect(props.sessionId).toBeDefined();
       expect(props.sessionId.type).toBe('string');
+    });
+
+    it('should accept sessionName parameter', () => {
+      const props = schema.properties || {};
+      expect(props.sessionName).toBeDefined();
+      expect(props.sessionName.type).toBe('string');
     });
 
     it('should accept windowSize parameter', () => {
@@ -193,6 +199,11 @@ describe('SearchMemory Tool', () => {
     it('should accept states as a MemoryType value', () => {
       const validType: MemoryType = 'states';
       expect(validType).toBe('states');
+    });
+
+    it('should accept sessions as a MemoryType value', () => {
+      const validType: MemoryType = 'sessions';
+      expect(validType).toBe('sessions');
     });
 
     it('should accept SearchMemoryParams with all conversation fields', () => {
@@ -294,7 +305,7 @@ describe('SearchMemory Tool', () => {
       expect(result.error).toContain('only traces, states were searched');
     });
 
-    it('should suggest removing sessionId when scoped search returns empty', async () => {
+    it('should suggest removing the session filter when scoped search returns empty', async () => {
       (mockProcessor.process as jest.Mock).mockResolvedValue({
         results: [],
         metadata: { typesSearched: ['conversations'], typesUnavailable: [], typesFailed: [] }
@@ -306,7 +317,8 @@ describe('SearchMemory Tool', () => {
       }));
 
       expect(result.success).toBe(false);
-      expect(result.error).toContain('Remove sessionId');
+      expect(result.error).toContain('Remove the session filter');
+      expect(result.error).not.toContain('use MemoryManager listWorkspaces');
     });
 
     it('should warn about failed types in guidance', async () => {
@@ -385,6 +397,77 @@ describe('SearchMemory Tool', () => {
       expect(mockProcessor.process).toHaveBeenCalledWith(
         expect.objectContaining({ workspaceId: GLOBAL_WORKSPACE_ID })
       );
+    });
+
+    it('resolves workspace and session names before scoped search', async () => {
+      const memoryService = {
+        getSessionByNameOrId: jest.fn().mockResolvedValue({
+          id: 'session-uuid',
+          name: 'Human session name',
+          workspaceId: 'workspace-uuid'
+        })
+      };
+      const workspaceService = {
+        getWorkspaceByNameOrId: jest.fn().mockResolvedValue({
+          id: 'workspace-uuid',
+          name: 'Human workspace name'
+        })
+      };
+      execTool = new SearchMemoryTool(
+        {} as Plugin,
+        memoryService as never,
+        workspaceService as never,
+        undefined,
+        mockProcessor
+      );
+      (mockProcessor.process as jest.Mock).mockResolvedValue({
+        results: [mockConversationResult],
+        metadata: { typesSearched: ['conversations'], typesUnavailable: [], typesFailed: [] }
+      });
+
+      await execTool.execute(makeParams({
+        workspaceId: 'Human workspace name',
+        sessionName: 'Human session name'
+      }));
+
+      expect(workspaceService.getWorkspaceByNameOrId).toHaveBeenCalledWith('Human workspace name');
+      expect(memoryService.getSessionByNameOrId).toHaveBeenCalledWith('workspace-uuid', 'Human session name');
+      expect(mockProcessor.process).toHaveBeenCalledWith(
+        expect.objectContaining({
+          workspaceId: 'workspace-uuid',
+          sessionId: 'session-uuid',
+          sessionName: 'Human session name'
+        })
+      );
+    });
+
+    it('should return state name or description when trace content is empty', async () => {
+      (mockProcessor.process as jest.Mock).mockResolvedValue({
+        results: [
+          {
+            type: 'state' as const,
+            id: 'state-1',
+            highlight: 'E2E Activity Session State',
+            metadata: {},
+            context: { before: '', match: 'E2E', after: '' },
+            score: 0.9,
+            _rawTrace: {
+              id: 'state-1',
+              name: 'E2E Activity Session State',
+              description: 'Saved checkpoint',
+              sessionId: 'sess-1',
+              workspaceId: 'ws-1',
+              created: Date.now()
+            }
+          }
+        ],
+        metadata: { typesSearched: ['states'], typesUnavailable: [], typesFailed: [] }
+      });
+
+      const result = await execTool.execute(makeParams({ query: 'E2E', memoryTypes: ['states'] }));
+
+      expect(result.success).toBe(true);
+      expect((result as SearchMemoryToolResult).data?.results?.[0]?.content).toBe('Saved checkpoint');
     });
 
     it('should return error for empty query', async () => {

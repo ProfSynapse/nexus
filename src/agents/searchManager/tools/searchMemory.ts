@@ -9,12 +9,12 @@ import {
   MemorySearchTraceLike
 } from '../../../types/memory/MemorySearchTypes';
 import { MemorySearchProcessor, MemorySearchProcessorInterface, SearchMetadata } from '../services/MemorySearchProcessor';
+import type { StorageAdapterResolver } from '../services/ServiceAccessors';
 import { MemorySearchFilters, MemorySearchFiltersInterface } from '../services/MemorySearchFilters';
 import { ResultFormatter, ResultFormatterInterface } from '../services/ResultFormatter';
 import { CommonParameters } from '../../../types/mcp/AgentTypes';
 import { MemoryService } from "../../memoryManager/services/MemoryService";
 import { WorkspaceService, GLOBAL_WORKSPACE_ID } from '../../../services/WorkspaceService';
-import { IStorageAdapter } from '../../../database/interfaces/IStorageAdapter';
 import { Recommendation } from '../../../utils/recommendationUtils';
 import { NudgeHelpers } from '../../../utils/nudgeHelpers';
 import type { ToolStatusTense } from '../../interfaces/ITool';
@@ -37,7 +37,7 @@ function addSearchRecommendations(
  * - 'states': Workspace states (snapshots of work context)
  * - 'conversations': Conversation QA pairs via semantic embedding search
  */
-export type MemoryType = 'traces' | 'states' | 'conversations';
+export type MemoryType = 'traces' | 'states' | 'sessions' | 'workspaces' | 'conversations';
 
 /**
  * Session filtering options
@@ -76,6 +76,8 @@ export interface SearchMemoryParams extends CommonParameters {
   includeContent?: boolean;
   /** Optional session ID for scoped conversation search. When provided, search returns N-turn windows around matches. */
   sessionId?: string;
+  /** Optional human-readable session name. When provided, resolves within the selected workspace and switches to scoped search. */
+  sessionName?: string;
   /** Number of conversation turns before/after each match to include. Default 3. Only used in scoped mode. */
   windowSize?: number;
 
@@ -103,13 +105,13 @@ export class SearchMemoryTool extends BaseTool<SearchMemoryParams, SearchMemoryR
   private formatter: ResultFormatterInterface;
   private memoryService?: MemoryService;
   private workspaceService?: WorkspaceService;
-  private storageAdapter?: IStorageAdapter;
+  private storageAdapter?: StorageAdapterResolver;
 
   constructor(
     plugin: Plugin,
     memoryService?: MemoryService,
     workspaceService?: WorkspaceService,
-    storageAdapter?: IStorageAdapter,
+    storageAdapter?: StorageAdapterResolver,
     processor?: MemorySearchProcessorInterface,
     filters?: MemorySearchFiltersInterface,
     formatter?: ResultFormatterInterface
@@ -117,7 +119,7 @@ export class SearchMemoryTool extends BaseTool<SearchMemoryParams, SearchMemoryR
     super(
       'searchMemory',
       'Search Memory',
-      'Search workspace memory for past conversations, tool execution history, and workspace state snapshots.\n\nTWO MODES:\n- Discovery (default): Search all memory across a workspace. Best for finding past discussions, tool usage, or workspace context.\n- Scoped (provide sessionId): Search within a specific session and get surrounding message context around each match. Best for recovering what happened in a particular session.\n\nTIPS:\n- Use natural language queries for conversations (e.g., "how did we implement auth?").\n- Use specific terms for tool history (e.g., agent or tool names).\n- Narrow results with memoryTypes if you know what you\'re looking for.\n- Use sessionId + windowSize to get full context around a match.\n\nREQUIRES: query. Optional: workspaceId (defaults to global workspace if omitted; available from your useTools context, or use MemoryManager listWorkspaces).',
+      'Search workspace memory for past conversations, tool execution history, and workspace state snapshots.\n\nTWO MODES:\n- Discovery (default): Search all memory across a workspace. Best for finding past discussions, tool usage, or workspace context.\n- Scoped (provide sessionId or sessionName): Search within a specific session and get surrounding message context around each match. Best for recovering what happened in a particular session.\n\nTIPS:\n- Use natural language queries for conversations (e.g., "how did we implement auth?").\n- Use specific terms for tool history (e.g., agent or tool names).\n- Narrow results with memoryTypes if you know what you need.\n- Use sessionName + windowSize to get full context around a named session match.\n\nREQUIRES: query. Optional: workspaceId accepts the workspace name from load-workspace; omit it to search the global workspace.',
       '2.1.0'
     );
 
@@ -128,7 +130,7 @@ export class SearchMemoryTool extends BaseTool<SearchMemoryParams, SearchMemoryR
 
     // Initialize services with dependency injection support
     // Pass storageAdapter to processor for new backend support
-    this.processor = processor || new MemorySearchProcessor(plugin, undefined, workspaceService, storageAdapter);
+    this.processor = processor || new MemorySearchProcessor(plugin, undefined, workspaceService, storageAdapter, memoryService);
     this.filters = filters || new MemorySearchFilters();
     this.formatter = formatter || new ResultFormatter();
   }
@@ -158,9 +160,11 @@ export class SearchMemoryTool extends BaseTool<SearchMemoryParams, SearchMemoryR
         return this.prepareResult(false, undefined, 'Query parameter is required and cannot be empty');
       }
 
-      // Apply default workspace if not provided
-      const workspaceId = params.workspaceId || GLOBAL_WORKSPACE_ID;
-      const searchParams = { ...params, workspaceId };
+      // Apply default workspace if not provided, then resolve friendly names to IDs.
+      const searchParams = await this.resolveSearchScope({
+        ...params,
+        workspaceId: params.workspaceId || GLOBAL_WORKSPACE_ID
+      });
 
       // Core processing through extracted services
       const { results, metadata } = await this.processor.process(searchParams);
@@ -226,20 +230,24 @@ export class SearchMemoryTool extends BaseTool<SearchMemoryParams, SearchMemoryR
         },
         workspaceId: {
           type: 'string',
-          description: 'Workspace to search in. Optional — defaults to the global workspace if omitted. Available from your useTools context.workspaceId, or use MemoryManager listWorkspaces to discover workspaces.'
+          description: 'Workspace to search in. Optional — defaults to the global workspace if omitted. Accepts the workspace name returned by load-workspace.'
         },
         memoryTypes: {
           type: 'array',
           items: {
             type: 'string',
-            enum: ['traces', 'states', 'conversations']
+            enum: ['traces', 'states', 'sessions', 'workspaces', 'conversations']
           },
-          description: "Which memory to search. 'conversations' = past chat Q&A pairs, 'traces' = tool execution history, 'states' = workspace snapshots. Defaults to all three. Narrow to specific types if you know what you need.",
-          default: ['traces', 'states', 'conversations']
+          description: "Which memory to search. 'conversations' = past chat Q&A pairs, 'traces' = tool execution history, 'sessions' = named work sessions, 'states' = workspace snapshots. Defaults to all available types. Narrow to specific types if you know what you need.",
+          default: ['traces', 'states', 'sessions', 'workspaces', 'conversations']
         },
         sessionId: {
           type: 'string',
-          description: 'Provide a known session ID to switch to Scoped mode: search is limited to this session and returns surrounding messages around each match.'
+          description: 'Provide a known session ID or session name to switch to Scoped mode: search is limited to this session and returns surrounding messages around each match. Session names are returned by load-workspace.'
+        },
+        sessionName: {
+          type: 'string',
+          description: 'Human-readable session name returned by load-workspace. Use this to scope search to a named session without changing the top-level chat sessionId.'
         },
         windowSize: {
           type: 'number',
@@ -309,6 +317,57 @@ export class SearchMemoryTool extends BaseTool<SearchMemoryParams, SearchMemoryR
 
     // Merge with common schema (sessionId and context) - removing duplicate definitions
     return this.getMergedSchema(toolSchema);
+  }
+
+  private async resolveSearchScope(params: SearchMemoryParams): Promise<SearchMemoryParams> {
+    const workspaceId = await this.resolveWorkspaceIdentifier(params.workspaceId || GLOBAL_WORKSPACE_ID);
+    const sessionIdentifier = params.sessionName || params.sessionId;
+    const sessionId = sessionIdentifier
+      ? await this.resolveSessionIdentifier(workspaceId, sessionIdentifier)
+      : undefined;
+
+    return {
+      ...params,
+      workspaceId,
+      ...(sessionId ? { sessionId } : {})
+    };
+  }
+
+  private async resolveWorkspaceIdentifier(identifier: string): Promise<string> {
+    if (!this.workspaceService) {
+      return identifier;
+    }
+
+    try {
+      const workspace = await this.workspaceService.getWorkspaceByNameOrId(identifier);
+      return workspace?.id || identifier;
+    } catch {
+      return identifier;
+    }
+  }
+
+  private async resolveSessionIdentifier(workspaceId: string, identifier: string): Promise<string> {
+    if (this.memoryService) {
+      try {
+        const session = await this.memoryService.getSessionByNameOrId(workspaceId, identifier);
+        if (session?.id) {
+          return session.id;
+        }
+      } catch {
+        // Fall through to WorkspaceService lookup.
+      }
+    }
+
+    if (!this.workspaceService) {
+      return identifier;
+    }
+
+    try {
+      const session = await this.workspaceService.getSessionByNameOrId(workspaceId, identifier);
+      return session?.id || identifier;
+    } catch {
+      return identifier;
+    }
   }
 
   getResultSchema(): Record<string, unknown> {
@@ -456,7 +515,7 @@ export class SearchMemoryTool extends BaseTool<SearchMemoryParams, SearchMemoryR
     }
 
     const entry: Record<string, unknown> = {
-      content: (trace.content as string) || ''
+      content: this.getDisplayContent(trace)
     };
     if (metadata?.tool) {
       entry.tool = metadata.tool;
@@ -465,6 +524,25 @@ export class SearchMemoryTool extends BaseTool<SearchMemoryParams, SearchMemoryR
       entry.context = context;
     }
     return entry;
+  }
+
+  private getDisplayContent(trace: MemorySearchTraceLike): string {
+    const content = trace.content;
+    if (typeof content === 'string' && content.trim()) {
+      return content;
+    }
+
+    const description = trace.description;
+    if (typeof description === 'string' && description.trim()) {
+      return description;
+    }
+
+    const name = trace.name;
+    if (typeof name === 'string' && name.trim()) {
+      return name;
+    }
+
+    return '';
   }
 
   /**
@@ -483,10 +561,10 @@ export class SearchMemoryTool extends BaseTool<SearchMemoryParams, SearchMemoryR
       parts.push(`Warning: search failed for ${metadata.typesFailed.join(', ')}.`);
     }
 
-    parts.push('Try: (1) broader or rephrased search terms, (2) verify workspaceId is correct (use MemoryManager listWorkspaces), (3) try different memoryTypes.');
+    parts.push('Try: (1) broader or rephrased search terms, (2) verify the workspace name is correct, (3) try different memoryTypes.');
 
-    if (params.sessionId) {
-      parts.push('(4) Remove sessionId to search the full workspace instead of one session.');
+    if (params.sessionId || params.sessionName) {
+      parts.push('(4) Remove the session filter to search the full workspace instead of one session.');
     }
 
     return parts.join(' ');

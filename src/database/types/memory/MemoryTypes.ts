@@ -52,6 +52,9 @@ export interface TraceContextMetadataV2 {
   /** Current objective informed by memory (1-3 sentences) */
   goal: string;
 
+  /** Optional model-facing session display name */
+  sessionName?: string;
+
   /** Optional rules/limits to follow (1-3 sentences) */
   constraints?: string;
 

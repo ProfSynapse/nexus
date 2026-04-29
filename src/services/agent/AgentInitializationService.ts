@@ -250,6 +250,9 @@ export class AgentInitializationService {
     // Get required services
     let memoryService: MemoryService | null = null;
     let workspaceService: WorkspaceService | null = null;
+    const storageAdapterGetter = this.serviceManager
+      ? () => this.serviceManager?.getServiceIfReady<IStorageAdapter>('hybridStorageAdapter') ?? undefined
+      : undefined;
 
     if (this.serviceManager) {
       memoryService = this.serviceManager.getServiceIfReady<MemoryService>('memoryService');
@@ -264,7 +267,8 @@ export class AgentInitializationService {
       this.app,
       enableSearchModes,  // Pass search modes enabled status
       memoryService,
-      workspaceService
+      workspaceService,
+      storageAdapterGetter
     );
 
     // Update SearchManager with memory settings

@@ -30,8 +30,10 @@ import {
 import { WorkspaceService, GLOBAL_WORKSPACE_ID } from '../../../services/WorkspaceService';
 import { IStorageAdapter } from '../../../database/interfaces/IStorageAdapter';
 import { MemoryTraceData } from '../../../types/storage/HybridStorageTypes';
-import { ServiceAccessors } from './ServiceAccessors';
+import type { MemoryService } from '../../memoryManager/services/MemoryService';
+import { ServiceAccessors, StorageAdapterResolver } from './ServiceAccessors';
 import { ConversationSearchStrategy } from './ConversationSearchStrategy';
+import { splitTopLevelSegments, tokenizeWithMeta } from '../../toolManager/services/ToolCliNormalizer';
 
 /**
  * Metadata about which memory types were actually searched, unavailable, or failed.
@@ -64,7 +66,8 @@ export interface MemorySearchProcessorInterface {
 export class MemorySearchProcessor implements MemorySearchProcessorInterface {
   private configuration: MemoryProcessorConfiguration;
   private workspaceService?: WorkspaceService;
-  private storageAdapter?: IStorageAdapter;
+  private storageAdapter?: StorageAdapterResolver;
+  private memoryService?: MemoryService;
   private serviceAccessors: ServiceAccessors;
   private conversationSearch: ConversationSearchStrategy;
 
@@ -72,10 +75,12 @@ export class MemorySearchProcessor implements MemorySearchProcessorInterface {
     plugin: Plugin,
     config?: Partial<MemoryProcessorConfiguration>,
     workspaceService?: WorkspaceService,
-    storageAdapter?: IStorageAdapter
+    storageAdapter?: StorageAdapterResolver,
+    memoryService?: MemoryService
   ) {
     this.workspaceService = workspaceService;
     this.storageAdapter = storageAdapter;
+    this.memoryService = memoryService;
     this.serviceAccessors = new ServiceAccessors(plugin, storageAdapter);
     this.conversationSearch = new ConversationSearchStrategy({
       getEmbeddingService: () => this.serviceAccessors.getEmbeddingService(),
@@ -350,24 +355,36 @@ export class MemorySearchProcessor implements MemorySearchProcessorInterface {
 
   private async searchLegacyTraces(query: string, options: MemorySearchExecutionOptions): Promise<RawMemoryResult[]> {
     const workspaceId = options.workspaceId || GLOBAL_WORKSPACE_ID;
+    const storageAdapter = this.getStorageAdapter();
 
-    if (this.storageAdapter) {
+    if (storageAdapter) {
       try {
-        const result = await this.storageAdapter.searchTraces(workspaceId, query, options.sessionId);
-        return result.map((trace: MemoryTraceData) => ({
-          trace: {
-            id: trace.id,
-            workspaceId: trace.workspaceId,
-            sessionId: trace.sessionId,
-            timestamp: trace.timestamp,
-            type: trace.type || 'generic',
-            content: trace.content,
-            metadata: trace.metadata
-          } as unknown as RawMemoryResult['trace'],
-          similarity: 1.0
-        } as RawMemoryResult));
+        const [searchedTraces, recentTraces] = await Promise.all([
+          storageAdapter.searchTraces(workspaceId, query, options.sessionId),
+          storageAdapter.getTraces(workspaceId, options.sessionId, { pageSize: options.limit || this.configuration.defaultLimit })
+            .then(result => result.items)
+            .catch(() => [])
+        ]);
+        const traces = this.mergeTracesById(searchedTraces, recentTraces);
+        return this.buildTraceResults(traces, query);
       } catch (error) {
         console.error('[MemorySearchProcessor] Error searching traces via storage adapter:', error);
+        return [];
+      }
+    }
+
+    const memoryService = this.memoryService || this.serviceAccessors.getMemoryService();
+    if (memoryService) {
+      try {
+        const tracesResult = await memoryService.getMemoryTraces(workspaceId, options.sessionId, {
+          pageSize: options.limit || this.configuration.defaultLimit
+        });
+        return this.buildTraceResults(
+          tracesResult.items.map(trace => this.normalizeTraceData(trace as unknown as Record<string, unknown>, workspaceId, options.sessionId)),
+          query
+        );
+      } catch (error) {
+        console.error('[MemorySearchProcessor] Error searching traces via memory service:', error);
         return [];
       }
     }
@@ -411,8 +428,221 @@ export class MemorySearchProcessor implements MemorySearchProcessorInterface {
     }
   }
 
+  private getStorageAdapter(): IStorageAdapter | undefined {
+    return typeof this.storageAdapter === 'function'
+      ? this.storageAdapter()
+      : this.storageAdapter;
+  }
+
   private searchToolCallTraces(): Promise<RawMemoryResult[]> {
     return Promise.resolve([]);
+  }
+
+  private buildTraceResults(traces: MemoryTraceData[], query: string): RawMemoryResult[] {
+    const queryLower = query.toLowerCase();
+    return traces.flatMap((trace: MemoryTraceData) => {
+      const expanded = this.expandUseToolsTraceMatches(trace, query);
+      const traceCandidates = expanded.length > 0 ? expanded : [{
+        id: trace.id,
+        workspaceId: trace.workspaceId,
+        sessionId: trace.sessionId,
+        timestamp: trace.timestamp,
+        type: trace.type || 'generic',
+        content: trace.content,
+        metadata: trace.metadata
+      }];
+
+      return traceCandidates
+        .filter(expandedTrace => expanded.length > 0 || this.traceMatchesQuery(expandedTrace, queryLower))
+        .map(expandedTrace => ({
+          trace: expandedTrace as unknown as RawMemoryResult['trace'],
+          similarity: 1.0
+        } as RawMemoryResult));
+    });
+  }
+
+  private normalizeTraceData(
+    trace: Record<string, unknown>,
+    fallbackWorkspaceId: string,
+    fallbackSessionId?: string
+  ): MemoryTraceData {
+    return {
+      id: typeof trace.id === 'string' ? trace.id : '',
+      workspaceId: typeof trace.workspaceId === 'string' ? trace.workspaceId : fallbackWorkspaceId,
+      sessionId: typeof trace.sessionId === 'string' ? trace.sessionId : fallbackSessionId || '',
+      timestamp: typeof trace.timestamp === 'number' ? trace.timestamp : Date.now(),
+      type: typeof trace.type === 'string' ? trace.type : undefined,
+      content: typeof trace.content === 'string' ? trace.content : '',
+      metadata: trace.metadata && typeof trace.metadata === 'object' && !Array.isArray(trace.metadata)
+        ? trace.metadata as Record<string, unknown>
+        : undefined
+    };
+  }
+
+  private mergeTracesById(...traceLists: MemoryTraceData[][]): MemoryTraceData[] {
+    const traces = new Map<string, MemoryTraceData>();
+    for (const traceList of traceLists) {
+      for (const trace of traceList) {
+        traces.set(trace.id, trace);
+      }
+    }
+    return Array.from(traces.values());
+  }
+
+  private traceMatchesQuery(trace: MemoryTraceData, queryLower: string): boolean {
+    return [
+      trace.content,
+      trace.type,
+      JSON.stringify(trace.metadata || {})
+    ].some(value => typeof value === 'string' && value.toLowerCase().includes(queryLower));
+  }
+
+  private expandUseToolsTraceMatches(trace: MemoryTraceData, query: string): MemoryTraceData[] {
+    const metadata = trace.metadata;
+    const tool = metadata?.tool as Record<string, unknown> | undefined;
+    if (tool?.mode !== 'useTools' && tool?.mode !== 'useTool') {
+      return [];
+    }
+
+    const legacy = metadata?.legacy as Record<string, unknown> | undefined;
+    const result = legacy?.result as Record<string, unknown> | undefined;
+    const data = result?.data as Record<string, unknown> | undefined;
+    const results = Array.isArray(data?.results)
+      ? data.results
+      : result?.agent && result.tool
+        ? [result]
+        : [];
+
+    if (results.length === 0) {
+      return [];
+    }
+
+    const queryLower = query.toLowerCase();
+    const toolString = this.extractUseToolsCommand(metadata);
+    const segments = toolString ? splitTopLevelSegments(toolString) : [];
+
+    return results
+      .filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null && !Array.isArray(item))
+      .map((item, index) => {
+        const agent = typeof item.agent === 'string' ? item.agent : 'unknown';
+        const mode = typeof item.tool === 'string' ? item.tool : 'unknown';
+        const content = this.formatUseToolsResultContent(item, segments[index]);
+        return {
+          ...trace,
+          id: `${trace.id}:${index}`,
+          content,
+          metadata: {
+            ...metadata,
+            tool: {
+              id: `${agent}_${mode}`,
+              agent,
+              mode
+            }
+          }
+        } satisfies MemoryTraceData;
+      })
+      .filter(item => {
+        const tool = item.metadata?.tool as Record<string, unknown> | undefined;
+        return [
+          item.content,
+          tool?.id,
+          tool?.agent,
+          tool?.mode
+        ].some(value => typeof value === 'string' && value.toLowerCase().includes(queryLower));
+      });
+  }
+
+  private extractUseToolsCommand(metadata: Record<string, unknown> | undefined): string | undefined {
+    const input = metadata?.input as Record<string, unknown> | undefined;
+    const inputArgs = input?.arguments as Record<string, unknown> | undefined;
+    if (typeof inputArgs?.tool === 'string') {
+      return inputArgs.tool;
+    }
+
+    const legacy = metadata?.legacy as Record<string, unknown> | undefined;
+    const params = legacy?.params as Record<string, unknown> | undefined;
+    return typeof params?.tool === 'string' ? params.tool : undefined;
+  }
+
+  private formatUseToolsResultContent(result: Record<string, unknown>, segment?: string): string {
+    const agent = typeof result.agent === 'string' ? result.agent : 'unknown';
+    const tool = typeof result.tool === 'string' ? result.tool : 'unknown';
+    const params = result.params as Record<string, unknown> | undefined;
+    const segmentArgs = segment ? this.parseCliSegmentArgs(segment) : {};
+    const path = params && typeof params.path === 'string'
+      ? params.path
+      : typeof segmentArgs.path === 'string'
+        ? segmentArgs.path
+        : undefined;
+    const query = params && typeof params.query === 'string'
+      ? params.query
+      : typeof segmentArgs.query === 'string'
+        ? segmentArgs.query
+        : undefined;
+    const name = params && typeof params.name === 'string'
+      ? params.name
+      : typeof segmentArgs.name === 'string'
+        ? segmentArgs.name
+        : undefined;
+    const target = path || query || name || (typeof segmentArgs._positional0 === 'string' ? segmentArgs._positional0 : undefined);
+    const normalizedAgent = agent.replace(/[-_\s]/g, '').toLowerCase();
+    const normalizedTool = tool.replace(/[-_\s]/g, '').toLowerCase();
+    const activity = normalizedAgent === 'contentmanager' || normalizedAgent === 'content'
+      ? normalizedTool === 'write'
+        ? target ? `Wrote ${target}` : 'Wrote file'
+        : normalizedTool === 'replace'
+          ? target ? `Updated ${target}` : 'Updated file'
+          : normalizedTool === 'read'
+            ? target ? `Read ${target}` : 'Read file'
+            : undefined
+      : normalizedAgent === 'storagemanager' || normalizedAgent === 'storage'
+        ? normalizedTool === 'createfolder'
+          ? target ? `Created folder ${target}` : 'Created folder'
+          : normalizedTool === 'move'
+            ? target ? `Moved ${target}` : 'Moved item'
+            : undefined
+      : undefined;
+    const parts = [activity || `${agent}.${tool}`];
+
+    if (target && !parts[0].includes(target)) {
+      parts.push(target);
+    }
+
+    if (result.success === false) {
+      parts.push('failed');
+    }
+
+    return parts.join(' ');
+  }
+
+  private parseCliSegmentArgs(segment: string): Record<string, unknown> {
+    const tokens = tokenizeWithMeta(segment);
+    const args: Record<string, unknown> = {};
+    let positional = 0;
+
+    for (let index = 2; index < tokens.length; index += 1) {
+      const token = tokens[index];
+      const isFlag = !token.wasQuoted && token.value.startsWith('--');
+      if (isFlag) {
+        const key = token.value.slice(2);
+        const nextToken = tokens[index + 1];
+        if (nextToken && (nextToken.wasQuoted || !nextToken.value.startsWith('--'))) {
+          args[key] = nextToken.value;
+          index += 1;
+        } else {
+          args[key] = true;
+        }
+        continue;
+      }
+
+      args[`_positional${positional}`] = token.value;
+      if (positional === 0 && args.path === undefined) {
+        args.path = token.value;
+      }
+      positional += 1;
+    }
+
+    return args;
   }
 
   private async searchSessions(query: string, options: MemorySearchExecutionOptions): Promise<RawMemoryResult[]> {

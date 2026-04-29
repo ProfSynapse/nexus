@@ -16,6 +16,8 @@ import type { EmbeddingService } from '../../../services/embeddings/EmbeddingSer
 import type { IMessageRepository } from '../../../database/repositories/interfaces/IMessageRepository';
 import type { IStorageAdapter } from '../../../database/interfaces/IStorageAdapter';
 
+export type StorageAdapterResolver = IStorageAdapter | (() => IStorageAdapter | undefined);
+
 /**
  * Provides runtime service resolution for the search subsystem.
  *
@@ -25,9 +27,9 @@ import type { IStorageAdapter } from '../../../database/interfaces/IStorageAdapt
  */
 export class ServiceAccessors {
   private plugin: Plugin;
-  private storageAdapter?: IStorageAdapter;
+  private storageAdapter?: StorageAdapterResolver;
 
-  constructor(plugin: Plugin, storageAdapter?: IStorageAdapter) {
+  constructor(plugin: Plugin, storageAdapter?: StorageAdapterResolver) {
     this.plugin = plugin;
     this.storageAdapter = storageAdapter;
   }
@@ -85,6 +87,12 @@ export class ServiceAccessors {
    * Uses the optional `messages` getter defined on IStorageAdapter.
    */
   getMessageRepository(): IMessageRepository | undefined {
-    return this.storageAdapter?.messages;
+    return this.getStorageAdapter()?.messages;
+  }
+
+  getStorageAdapter(): IStorageAdapter | undefined {
+    return typeof this.storageAdapter === 'function'
+      ? this.storageAdapter()
+      : this.storageAdapter;
   }
 }

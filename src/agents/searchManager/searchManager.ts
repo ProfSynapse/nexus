@@ -12,6 +12,7 @@ import { IStorageAdapter } from '../../database/interfaces/IStorageAdapter';
 import { EmbeddingService } from '../../services/embeddings/EmbeddingService';
 import { getNexusPlugin } from '../../utils/pluginLocator';
 import { ServiceManager } from '../../core/ServiceManager';
+import type { StorageAdapterResolver } from './services/ServiceAccessors';
 
 const noop = (): void => {
   return;
@@ -50,7 +51,7 @@ export class SearchManagerAgent extends BaseAgent {
   public app: App;
   private memoryService: MemoryService | null = null;
   private workspaceService: WorkspaceService | null = null;
-  private storageAdapter: IStorageAdapter | null = null;
+  private storageAdapterResolver: (() => IStorageAdapter | undefined) | null = null;
   private embeddingService: EmbeddingService | null = null;
   private searchContentTool: SearchContentTool | null = null;
   private settings: MemorySettings;
@@ -61,12 +62,14 @@ export class SearchManagerAgent extends BaseAgent {
    * @param enableVectorModes Whether to enable vector-based tools (legacy parameter)
    * @param memoryService Optional injected memory service
    * @param workspaceService Optional injected workspace service
+   * @param storageAdapter Optional storage adapter or lazy resolver
    */
   constructor(
     app: App,
     _enableVectorModes = false,
     memoryService?: MemoryService | null,
-    workspaceService?: WorkspaceService | null
+    workspaceService?: WorkspaceService | null,
+    storageAdapter?: StorageAdapterResolver | null
   ) {
     super(
       'searchManager',
@@ -82,41 +85,37 @@ export class SearchManagerAgent extends BaseAgent {
     // Use injected services if provided
     this.memoryService = memoryService || null;
     this.workspaceService = workspaceService || null;
+    this.setStorageAdapterResolver(storageAdapter);
 
-    // If services not injected, try to get them from plugin (backward compatibility)
-    if (!this.memoryService || !this.workspaceService) {
-      let plugin: NexusPluginWithServices | null = null;
-      try {
-        if (app.plugins) {
-          plugin = getNexusPlugin<NexusPluginWithServices>(app);
-          if (plugin) {
-            const memorySettings = plugin.settings?.settings?.memory;
-            if (memorySettings) {
-              this.settings = memorySettings;
+    let plugin: NexusPluginWithServices | null = null;
+    try {
+      if (app.plugins) {
+        plugin = getNexusPlugin<NexusPluginWithServices>(app);
+        if (plugin) {
+          const memorySettings = plugin.settings?.settings?.memory;
+          if (memorySettings) {
+            this.settings = memorySettings;
+          }
+
+          const serviceContainer = plugin.getServiceContainer?.();
+          if (serviceContainer) {
+            if (!this.memoryService) {
+              this.memoryService = serviceContainer.getServiceIfReady<MemoryService>('memoryService');
             }
-
-            const serviceContainer = plugin.getServiceContainer?.();
-            if (serviceContainer) {
-              if (!this.memoryService) {
-                this.memoryService = serviceContainer.getServiceIfReady<MemoryService>('memoryService');
-              }
-              if (!this.workspaceService) {
-                this.workspaceService = serviceContainer.getServiceIfReady<WorkspaceService>('workspaceService');
-              }
-              // Get SQLite storage adapter for memory search
-              if (!this.storageAdapter) {
-                this.storageAdapter = serviceContainer.getServiceIfReady<IStorageAdapter>('hybridStorageAdapter');
-              }
-              // Get EmbeddingService for semantic search
-              if (!this.embeddingService) {
-                this.embeddingService = serviceContainer.getServiceIfReady<EmbeddingService>('embeddingService');
-              }
+            if (!this.workspaceService) {
+              this.workspaceService = serviceContainer.getServiceIfReady<WorkspaceService>('workspaceService');
+            }
+            if (!this.storageAdapterResolver) {
+              this.storageAdapterResolver = () => serviceContainer.getServiceIfReady<IStorageAdapter>('hybridStorageAdapter') || undefined;
+            }
+            if (!this.embeddingService) {
+              this.embeddingService = serviceContainer.getServiceIfReady<EmbeddingService>('embeddingService');
             }
           }
         }
-      } catch {
-        noop();
       }
+    } catch {
+      noop();
     }
 
     // Get plugin reference for tools that need it
@@ -154,15 +153,26 @@ export class SearchManagerAgent extends BaseAgent {
 
     this.registerLazyTool({
       slug: 'searchMemory', name: 'Search Memory',
-      description: 'Search workspace memory for past conversations, tool execution history, and workspace state snapshots.\n\nTWO MODES:\n- Discovery (default): Search all memory across a workspace. Best for finding past discussions, tool usage, or workspace context.\n- Scoped (provide sessionId): Search within a specific session and get surrounding message context around each match. Best for recovering what happened in a particular session.\n\nTIPS:\n- Use natural language queries for conversations (e.g., "how did we implement auth?").\n- Use specific terms for tool history (e.g., agent or tool names).\n- Narrow results with memoryTypes if you know what you\'re looking for.\n- Use sessionId + windowSize to get full context around a match.\n\nREQUIRES: query. Optional: workspaceId (defaults to global workspace if omitted; available from your useTools context, or use MemoryManager listWorkspaces).',
+      description: 'Search workspace memory for past conversations, tool execution history, and workspace state snapshots.\n\nTWO MODES:\n- Discovery (default): Search all memory across a workspace. Best for finding past discussions, tool usage, or workspace context.\n- Scoped (provide sessionId or sessionName): Search within a specific session and get surrounding message context around each match. Best for recovering what happened in a particular session.\n\nTIPS:\n- Use natural language queries for conversations (e.g., "how did we implement auth?").\n- Use specific terms for tool history (e.g., agent or tool names).\n- Narrow results with memoryTypes if you know what you need.\n- Use sessionName + windowSize to get full context around a named session match.\n\nREQUIRES: query. Optional: workspaceId accepts the workspace name from load-workspace; omit it to search the global workspace.',
       version: '2.1.0',
       factory: () => new SearchMemoryTool(
         pluginOrFallback,
         this.memoryService || undefined,
         this.workspaceService || undefined,
-        this.storageAdapter || undefined
+        this.storageAdapterResolver || undefined
       ),
     });
+  }
+
+  private setStorageAdapterResolver(storageAdapter?: StorageAdapterResolver | null): void {
+    if (!storageAdapter) {
+      this.storageAdapterResolver = null;
+      return;
+    }
+
+    this.storageAdapterResolver = typeof storageAdapter === 'function'
+      ? storageAdapter
+      : () => storageAdapter;
   }
 
 
