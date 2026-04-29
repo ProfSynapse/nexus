@@ -221,21 +221,31 @@ export class ToolExecutionStrategy implements IRequestStrategy<ToolExecutionRequ
         let sessionInfo: SessionInfo;
         if (this.sessionContextManager && sessionId) {
             try {
-                const validationResult = await this.sessionContextManager.validateSessionId(sessionId);
-                const isNonStandardId = validationResult.id !== sessionId;
+                const validationResult = await this.sessionContextManager.validateSessionId(
+                    sessionId,
+                    typeof params.memory === 'string' ? params.memory : undefined,
+                    typeof params.workspaceId === 'string'
+                        ? params.workspaceId
+                        : params.context?.workspaceId
+                );
+                const isNonStandardId = validationResult.displaySessionIdChanged;
                 
                 sessionInfo = {
                     sessionId: validationResult.id,
                     isNewSession: validationResult.created,
                     isNonStandardId: isNonStandardId,
-                    originalSessionId: isNonStandardId ? sessionId : undefined
+                    originalSessionId: isNonStandardId ? sessionId : undefined,
+                    displaySessionId: validationResult.displaySessionId,
+                    displaySessionIdChanged: validationResult.displaySessionIdChanged
                 };
                 
                 // Update params with validated session ID (both locations for compatibility)
                 if (params.context) {
                     params.context.sessionId = validationResult.id;
+                    params.context.sessionName = validationResult.displaySessionId;
                 }
                 params.sessionId = validationResult.id;
+                params._displaySessionId = validationResult.displaySessionId;
             } catch (error) {
                 logger.systemWarn(`SessionContextManager validation failed: ${getErrorMessage(error)}. Falling back to SessionService`);
                 // Fallback to original SessionService if SessionContextManager fails
@@ -294,11 +304,11 @@ export class ToolExecutionStrategy implements IRequestStrategy<ToolExecutionRequ
         );
         const enhancedParams = validatedParams as EnhancedToolParams;
 
-        // Session validation is now handled in buildRequestContext() to avoid duplication
-        // Session description updates: support both new format (goal) and legacy (sessionDescription)
-        // Note: In new format, 'goal' is the current objective. We update session description
-        // to keep track of what the session is working on.
-        const sessionGoal = enhancedParams.context?.goal || enhancedParams.context?.sessionDescription;
+        // Session validation is now handled in buildRequestContext() to avoid duplication.
+        // Keep the session *name* stable; only update the description with explicit
+        // long-lived session memory. The current goal changes every tool call and
+        // should not overwrite the human-readable session title.
+        const sessionGoal = enhancedParams.context?.sessionDescription;
         if (this.sessionContextManager &&
             enhancedParams.context?.sessionId &&
             sessionGoal) {

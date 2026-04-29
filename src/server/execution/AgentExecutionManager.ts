@@ -126,8 +126,14 @@ export class AgentExecutionManager {
 
         try {
             // Validate session ID - destructure the result to get the actual ID
-            const { id: validatedSessionId } = await this.sessionContextManager.validateSessionId(sessionId);
+            const validationResult = await this.sessionContextManager.validateSessionId(
+                sessionId,
+                typeof params.memory === 'string' ? params.memory : undefined,
+                typeof params.workspaceId === 'string' ? params.workspaceId : undefined
+            );
+            const validatedSessionId = validationResult.id;
             params.sessionId = validatedSessionId;
+            params._displaySessionId = validationResult.displaySessionId;
 
             // Apply workspace context
             params = this.sessionContextManager.applyWorkspaceContext(validatedSessionId, params);
@@ -183,13 +189,12 @@ export class AgentExecutionManager {
         if (params._isNonStandardId && originalSessionId) {
             resultObj.sessionIdCorrection = {
                 originalId: originalSessionId,
-                correctedId: sessionId,
-                message: "Your session ID has been standardized. Please use this corrected session ID for all future requests in this conversation."
+                correctedId: originalSessionId,
+                message: "Keep using the same human-readable session name for future requests in this conversation."
             };
         } else if (params._isNewSession && !originalSessionId) {
             resultObj.newSessionInfo = {
-                sessionId: sessionId,
-                message: "A new session has been created. This ID must be used for all future requests in this conversation."
+                message: "A new session has been created. Keep using the same human-readable session name for future requests in this conversation."
             };
         }
 
@@ -207,11 +212,9 @@ export class AgentExecutionManager {
             return result;
         }
 
-        result.newSessionId = params.sessionId;
         result.validSessionInfo = {
             originalId: null,
-            newId: params.sessionId,
-            message: "No session ID was provided. A new session has been created. Please use this session ID for future requests."
+            message: "No session name was provided. A new internal session has been created."
         };
 
         return result;

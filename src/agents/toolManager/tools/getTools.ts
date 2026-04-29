@@ -39,11 +39,11 @@ export class GetToolsTool implements ITool<GetToolsParams, GetToolsResult> {
       'REQUIRED FIRST STEP: You MUST call getTools BEFORE calling useTools.',
       'This returns CLI-oriented command metadata for the tools you need next.',
       'Send workspaceId, sessionId, memory, goal, and constraints at the top level.',
-      'The chat runtime assigns one sessionId for the conversation. Reuse that same sessionId for every getTools/useTools call in the chat; do not invent a new sessionId per tool or per saved state.',
+      'Use one stable human-readable session name for the conversation. Reuse that same sessionId value for every getTools/useTools call in the chat; do not invent a new sessionId per tool or per saved state. Nexus stores an internal UUID silently.',
       'Do not send a nested "context" object or legacy "request" array.',
       '',
       'Workflow: 1) Call getTools with one or more selectors → 2) Call useTools with one or more CLI-style commands',
-      'Known-good example: {"workspaceId":"default","sessionId":"session_123","memory":"Summarize work so far.","goal":"Inspect available storage tools.","tool":"storage move, content read"}',
+      'Known-good example: {"workspaceId":"default","sessionId":"workspace setup","memory":"Summarize work so far.","goal":"Inspect available storage tools.","tool":"storage move, content read"}',
       'Example selectors: tool="--help", tool="storage", tool="storage move", tool="storage move, content read"',
       '',
       'Agents:'
@@ -142,7 +142,7 @@ export class GetToolsTool implements ITool<GetToolsParams, GetToolsResult> {
         },
         sessionId: {
           type: 'string',
-          description: 'Current chat session ID. Required. The chat runtime assigns this once per conversation; reuse the same value for every getTools/useTools call so traces and saved states attach to the current session.'
+          description: 'Stable human-readable session name for this chat. Required. Reuse the same value for every getTools/useTools call so traces and saved states attach to the current session; Nexus stores the internal UUID silently.'
         },
         memory: {
           type: 'string',
