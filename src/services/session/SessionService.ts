@@ -18,13 +18,30 @@ export interface IMemoryService {
 }
 
 /**
+ * Listener fired after a session is deleted. Receives the deleted sessionId
+ * and the workspace it was scoped to. Used by SessionContextManager to evict
+ * cached friendly-handle entries.
+ */
+export type SessionDeletedListener = (sessionId: string, workspaceId: string) => void;
+
+/**
  * Session management service that delegates to MemoryService/WorkspaceService
  * Provides session tracking across workspaces with proper persistence
  */
 export class SessionService {
   private sessions = new Map<string, SessionData>();
+  private sessionDeletedListeners = new Set<SessionDeletedListener>();
 
   constructor(private memoryService: IMemoryService) {
+  }
+
+  /**
+   * Register a callback to be notified after a session is deleted.
+   * Returns an unsubscribe function.
+   */
+  registerOnSessionDeleted(listener: SessionDeletedListener): () => void {
+    this.sessionDeletedListeners.add(listener);
+    return () => this.sessionDeletedListeners.delete(listener);
   }
 
   /**
@@ -151,6 +168,16 @@ export class SessionService {
       await this.memoryService.deleteSession(workspaceId, sessionId);
     } catch (error) {
       console.error(`[SessionService] Failed to delete session ${sessionId}:`, error);
+    }
+
+    // Notify listeners (e.g. SessionContextManager) so friendly-handle caches
+    // do not retain stale references to the deleted session.
+    for (const listener of this.sessionDeletedListeners) {
+      try {
+        listener(sessionId, workspaceId);
+      } catch (error) {
+        console.error('[SessionService] sessionDeleted listener threw:', error);
+      }
     }
   }
   

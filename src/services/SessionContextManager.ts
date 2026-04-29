@@ -23,7 +23,10 @@ interface SessionServiceLike {
     id: string;
   }): Promise<unknown> | void;
   updateSession(sessionData: SessionData): Promise<unknown> | void;
+  registerOnSessionDeleted?(listener: SessionDeletedListener): () => void;
 }
+
+export type SessionDeletedListener = (sessionId: string, workspaceId: string) => void;
 
 export interface SessionValidationResult {
   id: string;
@@ -47,7 +50,17 @@ export class SessionContextManager {
   private sessionContextMap: Map<string, WorkspaceContext> = new Map();
 
   // Map of model-facing session handles to internal unique session IDs.
-  private sessionHandleMap: Map<string, { id: string; displaySessionId: string }> = new Map();
+  // Keyed by `${workspaceId}::${handle}` so the same friendly handle ("research")
+  // in different workspaces resolves to distinct internal sessions instead of
+  // aliasing — workspaces are UX scoping, and reusing names across them is
+  // expected. The map stores the originating workspaceId so eviction on session
+  // delete (registerOnSessionDeleted) can purge both the input handle entry and
+  // the display-name entry without scanning the whole map.
+  private sessionHandleMap: Map<string, { id: string; displaySessionId: string; workspaceId: string }> = new Map();
+
+  // Disposer for the session-deleted subscription so re-wiring or teardown can
+  // unregister cleanly.
+  private sessionDeletedUnsubscribe: (() => void) | null = null;
   
   // Default workspace context for new sessions (global)
   private defaultWorkspaceContext: WorkspaceContext | null = null;
@@ -60,7 +73,39 @@ export class SessionContextManager {
    * This is called during plugin initialization
    */
   setSessionService(sessionService: SessionServiceLike): void {
+    if (this.sessionDeletedUnsubscribe) {
+      this.sessionDeletedUnsubscribe();
+      this.sessionDeletedUnsubscribe = null;
+    }
     this.sessionService = sessionService;
+    if (sessionService.registerOnSessionDeleted) {
+      this.sessionDeletedUnsubscribe = sessionService.registerOnSessionDeleted(
+        (sessionId, workspaceId) => this.evictSessionHandles(sessionId, workspaceId)
+      );
+    }
+  }
+
+  /**
+   * Build the partition key used for sessionHandleMap lookups.
+   * Friendly handles are unique only within a workspace; the same string in two
+   * workspaces must map to two distinct sessions.
+   */
+  private handleKey(workspaceId: string, handle: string): string {
+    return `${workspaceId}::${handle}`;
+  }
+
+  /**
+   * Remove sessionHandleMap entries for a deleted session in a given workspace.
+   * Called from the session-deleted listener registered on SessionService.
+   */
+  evictSessionHandles(sessionId: string, workspaceId = 'default'): void {
+    for (const [key, entry] of this.sessionHandleMap.entries()) {
+      if (entry.id === sessionId && entry.workspaceId === workspaceId) {
+        this.sessionHandleMap.delete(key);
+      }
+    }
+    this.sessionContextMap.delete(sessionId);
+    this.instructedSessions.delete(sessionId);
   }
   
   /**
@@ -186,7 +231,21 @@ export class SessionContextManager {
   clearAll(): void {
     this.sessionContextMap.clear();
     this.sessionHandleMap.clear();
+    this.instructedSessions.clear();
     this.defaultWorkspaceContext = null;
+  }
+
+  /**
+   * ServiceContainer-detected cleanup hook. Runs on plugin teardown
+   * (ServiceContainer.clear) so the in-memory handle map and session-deleted
+   * subscription do not survive a plugin reload.
+   */
+  cleanup(): void {
+    if (this.sessionDeletedUnsubscribe) {
+      this.sessionDeletedUnsubscribe();
+      this.sessionDeletedUnsubscribe = null;
+    }
+    this.clearAll();
   }
   
   /**
@@ -227,7 +286,7 @@ export class SessionContextManager {
     
     // If the session ID doesn't match our standard format, it's a friendly name - create session
     if (!isStandardSessionId(sessionId)) {
-      const existingHandle = this.sessionHandleMap.get(sessionId);
+      const existingHandle = this.sessionHandleMap.get(this.handleKey(workspaceId, sessionId));
       if (existingHandle) {
         return {
           id: existingHandle.id,
@@ -239,8 +298,9 @@ export class SessionContextManager {
 
       const newId = generateSessionId();
       const displaySessionId = await this.createUniqueSessionDisplayName(sessionId, workspaceId);
-      this.sessionHandleMap.set(sessionId, { id: newId, displaySessionId });
-      this.sessionHandleMap.set(displaySessionId, { id: newId, displaySessionId });
+      const handleEntry = { id: newId, displaySessionId, workspaceId };
+      this.sessionHandleMap.set(this.handleKey(workspaceId, sessionId), handleEntry);
+      this.sessionHandleMap.set(this.handleKey(workspaceId, displaySessionId), handleEntry);
       await this.createAutoSession(newId, displaySessionId, sessionDescription, workspaceId);
       return {
         id: newId,
@@ -321,7 +381,11 @@ export class SessionContextManager {
   private async createUniqueSessionDisplayName(baseName: string, workspaceId: string): Promise<string> {
     const usedNames = new Set<string>();
     for (const entry of this.sessionHandleMap.values()) {
-      usedNames.add(entry.displaySessionId.toLowerCase());
+      // Only collide names within the same workspace — same handle in two
+      // workspaces is allowed (workspaces are UX scoping).
+      if (entry.workspaceId === workspaceId) {
+        usedNames.add(entry.displaySessionId.toLowerCase());
+      }
     }
 
     if (this.sessionService?.getAllSessions) {
