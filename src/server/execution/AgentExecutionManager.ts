@@ -187,6 +187,11 @@ export class AgentExecutionManager {
         // Add session instructions
         const originalSessionId = typeof params._originalSessionId === 'string' ? params._originalSessionId : undefined;
         if (params._isNonStandardId && originalSessionId) {
+            // correctedId mirrors the model-facing handle (originalSessionId), not the
+            // internal UUID. Under the B1 contract the friendly name is the stable
+            // model-facing id and the internal UUID stays hidden — so the model
+            // should keep emitting `originalSessionId` on every call. Returning the
+            // UUID here would defeat that and re-leak storage ids to the LLM.
             resultObj.sessionIdCorrection = {
                 originalId: originalSessionId,
                 correctedId: originalSessionId,
