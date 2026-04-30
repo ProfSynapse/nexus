@@ -47,7 +47,7 @@ export class IngestManagerAgent extends BaseAgent {
     this.getProviderManager = getProviderManager;
 
     this.registerLazyTool({
-      slug: 'ingest',
+      slug: 'run',
       name: 'Ingest File',
       description:
         'Ingest a PDF or audio file into a structured markdown note. ' +
@@ -59,7 +59,7 @@ export class IngestManagerAgent extends BaseAgent {
     });
 
     this.registerLazyTool({
-      slug: 'listCapabilities',
+      slug: 'capabilities',
       name: 'List Ingest Capabilities',
       description:
         'List available OCR models and audio transcription models that the ingest pipeline supports. ' +

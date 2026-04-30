@@ -370,7 +370,7 @@ export class ToolBatchExecutionService {
   ): Record<string, unknown> {
     const shouldInjectSessionId =
       !(agentName === 'searchManager' &&
-        toolSlug === 'searchMemory' &&
+        toolSlug === 'memory' &&
         params.sessionId === undefined &&
         params.sessionName === undefined);
     const defaulted: Record<string, unknown> = {
@@ -387,7 +387,7 @@ export class ToolBatchExecutionService {
       };
     }
 
-    if (agentName === 'ingestManager' && toolSlug === 'ingest') {
+    if (agentName === 'ingestManager' && toolSlug === 'run') {
       return {
         ...defaulted,
         transcriptionProvider: params.transcriptionProvider || context.transcriptionProvider,

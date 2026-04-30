@@ -10,7 +10,7 @@ import { verbs, labelQuery } from '../../../utils/toolStatusLabels';
 export class OpenTasksTool extends BaseTool<OpenTasksParameters, OpenTasksResult> {
   constructor(private app: App) {
     super(
-      'openTasks',
+      'open',
       'Open Tasks',
       'Open the native Task Board workspace view in Obsidian. Optional filters let you preselect a workspace, project, or search query before the board is shown.',
       '1.0.0'

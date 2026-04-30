@@ -47,7 +47,7 @@ export abstract class BaseDirectoryTool<T extends CommonParameters, R extends Co
     const folder = this.app.vault.getAbstractFileByPath(normalizedPath);
     if (!folder || !(folder instanceof TFolder)) {
       // Provide recovery guidance
-      throw new Error(`Folder not found: "${normalizedPath}". Try storageManager.list with path "" (root) to see available folders, or use searchManager.searchDirectory to find folders by name.`);
+      throw new Error(`Folder not found: "${normalizedPath}". Try storageManager.list with path "" (root) to see available folders, or use searchManager.directory to find folders by name.`);
     }
 
     return folder;

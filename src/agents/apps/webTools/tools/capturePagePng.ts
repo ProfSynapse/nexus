@@ -30,7 +30,7 @@ export class CapturePagePngTool extends BaseTool<CapturePagePngParams, CommonRes
 
   constructor(agent: BaseAppAgent) {
     super(
-      'capturePagePng',
+      'capture-png',
       'Capture Page PNG',
       'Capture the current Web Viewer page as a PNG image and save it to the vault. Desktop only.',
       '1.0.0'

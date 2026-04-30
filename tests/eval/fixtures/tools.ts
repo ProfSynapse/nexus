@@ -153,7 +153,7 @@ export const NEXUS_TOOLS: Tool[] = [
   {
     type: 'function',
     function: {
-      name: 'searchManager_searchContent',
+      name: 'searchManager_content',
       description: 'Search for notes containing specific content. Returns matching results with relevance scores.',
       parameters: {
         type: 'object',
@@ -168,7 +168,7 @@ export const NEXUS_TOOLS: Tool[] = [
   {
     type: 'function',
     function: {
-      name: 'searchManager_searchDirectory',
+      name: 'searchManager_directory',
       description: 'Search for files and folders by path or name.',
       parameters: {
         type: 'object',

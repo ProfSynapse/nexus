@@ -68,6 +68,7 @@ export class TaskService {
    */
   private async resolveWorkspaceId(rawId: string): Promise<string> {
     if (!this.resolveWorkspace) return rawId;
+    if (rawId === 'default') return rawId;
 
     const resolvedId = await this.resolveWorkspace(rawId);
     if (!resolvedId) {

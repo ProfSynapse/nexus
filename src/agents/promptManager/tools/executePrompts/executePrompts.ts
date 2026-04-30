@@ -81,7 +81,7 @@ export class ExecutePromptsTool extends BaseTool<BatchExecutePromptParams, Batch
     promptStorage?: CustomPromptStorageService
   ) {
     super(
-      'executePrompts',
+      'execute',
       'Execute LLM Prompts',
       'Execute one or more LLM prompts. For single: pass one item. For multiple: supports sequencing (sequence: 0,1,2), parallel groups, and result forwarding (includePreviousResults: true).',
       '1.0.0'

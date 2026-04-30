@@ -23,7 +23,7 @@ import { getIngestCapabilityOptions } from './services/IngestCapabilityService';
 export class ListCapabilitiesTool extends BaseTool<ListCapabilitiesParameters, ListCapabilitiesResult> {
   constructor(private getProviderManager: () => LLMProviderManager | null) {
     super(
-      'listCapabilities',
+      'capabilities',
       'List Ingest Capabilities',
       'List available OCR and transcription providers and models. ' +
       'OCR providers expose explicit OCR models. ' +

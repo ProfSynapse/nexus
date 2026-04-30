@@ -25,7 +25,7 @@ export class OpenWebpageTool extends BaseTool<OpenWebpageParams, CommonResult> {
 
   constructor(agent: BaseAppAgent) {
     super(
-      'openWebpage',
+      'open',
       'Open Webpage',
       'Open a webpage in Obsidian Web Viewer. Desktop only.',
       '1.0.0'

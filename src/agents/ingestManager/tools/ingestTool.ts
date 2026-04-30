@@ -28,7 +28,7 @@ export class IngestTool extends BaseTool<IngestToolParameters, IngestToolResult>
     private getProviderManager: () => LLMProviderManager | null
   ) {
     super(
-      'ingest',
+      'run',
       'Ingest File',
       buildToolDescription(),
       '1.0.0'

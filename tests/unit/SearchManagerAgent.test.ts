@@ -38,7 +38,7 @@ describe('SearchManagerAgent', () => {
       {} as never
     );
 
-    const result = await agent.executeTool('searchMemory', {
+    const result = await agent.executeTool('memory', {
       query: 'probe.md',
       workspaceId: 'workspace-1',
       memoryTypes: ['traces'],

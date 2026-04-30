@@ -297,7 +297,7 @@ Before major structured action, check whether a useful custom prompt already exi
 Follow a two-phase approach — EXPLORE first, then ACT:
 
 EXPLORE phase (gather context before making changes):
-- "find/search notes about X" → searchManager.searchContent (full-text search across vault)
+- "find/search notes about X" → searchManager.content (full-text search across vault)
 - "where is file X" / "find file named X" → searchManager.searchDirectory (search by filename/path)
 - "what's in this folder" / "list files" → storageManager.list (directory listing)
 - "show me / read file X" → contentManager.read (read a specific known file)
@@ -313,9 +313,9 @@ ACT phase (modify only after you have context):
 
 Critical decision rule — does the user give a specific file path?
 - YES (e.g., "read notes/meeting.md") → contentManager.read — you know the exact file.
-- NO (e.g., "find notes about X", "search for Y") → searchManager.searchContent FIRST. Do NOT guess a file path. You must search the vault to discover which files are relevant, then read the results.
+- NO (e.g., "find notes about X", "search for Y") → searchManager.content FIRST. Do NOT guess a file path. You must search the vault to discover which files are relevant, then read the results.
 
-This means: "find notes about the project roadmap" → searchManager.searchContent, NOT contentManager.read. The user hasn't told you which file to read — you need to search first.
+This means: "find notes about the project roadmap" → searchManager.content, NOT contentManager.read. The user hasn't told you which file to read — you need to search first.
 
 Additional routing rules:
 - "list" or "what's in [folder]" → storageManager.list, not searchManager.

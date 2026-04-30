@@ -209,7 +209,7 @@ export interface LoadStateResult extends CommonResult {
 
 // Legacy parameter types for backward compatibility
 export interface LoadWorkspaceParameters extends CommonParameters {
-  id: string;
+  workspace: string;
   limit?: number; // Optional limit for sessions, states, and recentActivity (default: 3)
   recursive?: boolean; // Show full recursive structure (true) or top-level folders only (false, default)
 }

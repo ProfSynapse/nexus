@@ -60,7 +60,7 @@ export class SearchContentTool extends BaseTool<ContentSearchParams, ContentSear
 
   constructor(plugin: Plugin) {
     super(
-      'searchContent',
+      'content',
       'Content Search',
       'Search vault files. Set semantic=true for AI-powered conceptual search using local embeddings (best for concepts/related ideas), or semantic=false for keyword/fuzzy search (best for exact matches). Semantic search is desktop-only and becomes available once the embedding system initializes in the background (first run may take longer while the model downloads).',
       '2.0.0'

@@ -17,7 +17,7 @@ import { verbs, labelNamed } from '../../../utils/toolStatusLabels';
 export class QueryTasksTool extends BaseTool<QueryTasksParameters, QueryTasksResult> {
   constructor(private taskService: TaskService) {
     super(
-      'queryTasks',
+      'query',
       'Query Tasks',
       'DAG-aware queries on a project\'s tasks. Three query types: nextActions returns tasks ready to start (status=todo and all dependencies done), blockedTasks returns tasks waiting on incomplete dependencies with their blocker details, dependencyTree returns the full upstream/downstream dependency graph for a specific task. Requires projectId; dependencyTree also requires taskId.',
       '1.0.0'

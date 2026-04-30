@@ -17,7 +17,7 @@ import { verbs } from '../../../utils/toolStatusLabels';
 export class ListTasksTool extends BaseTool<ListTasksParameters, ListTasksResult> {
   constructor(private taskService: TaskService) {
     super(
-      'listTasks',
+      'list',
       'List Tasks',
       'List tasks in a project with optional filters for status (todo/in_progress/done/cancelled), priority, assignee, and parentTaskId. Returns paginated task objects with full metadata including dependencies and timestamps.',
       '1.0.0'

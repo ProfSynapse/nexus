@@ -18,7 +18,7 @@ export class UpdatePromptTool extends BaseTool<UpdatePromptParams, UpdatePromptR
    */
   constructor(storageService: CustomPromptStorageService) {
     super(
-      'updatePrompt',
+      'update',
       'Update Prompt',
       'Update an existing custom prompt',
       '1.0.0'

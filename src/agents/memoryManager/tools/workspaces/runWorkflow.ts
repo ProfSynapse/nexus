@@ -31,7 +31,7 @@ interface RunWorkflowResult extends CommonResult {
 export class RunWorkflowTool extends BaseTool<RunWorkflowParameters, RunWorkflowResult> {
   constructor(private agent: MemoryManagerAgent) {
     super(
-      'runWorkflow',
+      'run',
       'Run Workflow',
       'Run a workspace workflow immediately and create a new conversation for it',
       '1.0.0'

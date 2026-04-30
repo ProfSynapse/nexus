@@ -83,31 +83,31 @@ export class TaskManagerAgent extends BaseAgent {
 
     // Register task tools (4) — lazy loaded
     this.registerLazyTool({
-      slug: 'createTask', name: 'Create Task',
+      slug: 'create', name: 'Create Task',
       description: 'Create a task within a project. Requires a projectId (from createProject or listProjects). Supports optional priority (critical/high/medium/low), assignee, dueDate, tags, dependsOn[] for DAG edges (cycles rejected), parentTaskId for subtask nesting, and linkedNotes[] for vault note links. Returns the new taskId.',
       version: '1.0.0',
       factory: () => new CreateTaskTool(this.taskService),
     });
     this.registerLazyTool({
-      slug: 'listTasks', name: 'List Tasks',
+      slug: 'list', name: 'List Tasks',
       description: 'List tasks in a project with optional filters for status (todo/in_progress/done/cancelled), priority, assignee, and parentTaskId. Returns paginated task objects with full metadata including dependencies and timestamps.',
       version: '1.0.0',
       factory: () => new ListTasksTool(this.taskService),
     });
     this.registerLazyTool({
-      slug: 'openTasks', name: 'Open Tasks',
+      slug: 'open', name: 'Open Tasks',
       description: 'Open the native Task Board workspace view in Obsidian. Optional filters let you preselect a workspace, project, or search query before the board is shown.',
       version: '1.0.0',
       factory: () => new OpenTasksTool(this.app),
     });
     this.registerLazyTool({
-      slug: 'updateTask', name: 'Update Task',
+      slug: 'update', name: 'Update Task',
       description: 'Update task fields (title, description, status, priority, dueDate, assignee, tags), manage DAG dependencies (addDependencies/removeDependencies), and manage note links (addNoteLinks/removeNoteLinks). Dependency additions are validated for cycles. Requires a taskId (from createTask or listTasks).',
       version: '1.0.0',
       factory: () => new UpdateTaskTool(this.taskService),
     });
     this.registerLazyTool({
-      slug: 'moveTask', name: 'Move Task',
+      slug: 'move', name: 'Move Task',
       description: 'Move a task to a different project within the same workspace, or change its parent task (set parentTaskId to nest as subtask, null to make top-level). Requires a taskId (from createTask or listTasks).',
       version: '1.0.0',
       factory: () => new MoveTaskTool(this.taskService),
@@ -115,7 +115,7 @@ export class TaskManagerAgent extends BaseAgent {
 
     // Register query tool (1) — lazy loaded
     this.registerLazyTool({
-      slug: 'queryTasks', name: 'Query Tasks',
+      slug: 'query', name: 'Query Tasks',
       description: 'DAG-aware queries on a project\'s tasks. Three query types: nextActions returns tasks ready to start (status=todo and all dependencies done), blockedTasks returns tasks waiting on incomplete dependencies with their blocker details, dependencyTree returns the full upstream/downstream dependency graph for a specific task. Requires projectId; dependencyTree also requires taskId.',
       version: '1.0.0',
       factory: () => new QueryTasksTool(this.taskService),

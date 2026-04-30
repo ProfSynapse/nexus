@@ -32,7 +32,7 @@ export class ExtractLinksTool extends BaseTool<ExtractLinksParams, CommonResult>
 
   constructor(agent: BaseAppAgent) {
     super(
-      'extractLinks',
+      'links',
       'Extract Links',
       'Extract links from the current Web Viewer page. Desktop only.',
       '1.0.0'

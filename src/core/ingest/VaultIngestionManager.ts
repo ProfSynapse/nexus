@@ -151,7 +151,7 @@ export class VaultIngestionManager {
         throw new Error('Ingest agent not available');
       }
 
-      const ingestTool = ingestAgent.getTool('ingest');
+      const ingestTool = ingestAgent.getTool('run');
       if (!ingestTool) {
         throw new Error('Ingest tool not available');
       }

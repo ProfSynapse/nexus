@@ -154,7 +154,7 @@ export class MemoryManagerAgent extends BaseAgent {
       factory: () => new ArchiveWorkspaceTool(this),
     });
     this.registerLazyTool({
-      slug: 'runWorkflow', name: 'Run Workflow',
+      slug: 'run', name: 'Run Workflow',
       description: 'Run a workflow immediately and create a fresh conversation for it.',
       version: '1.0.0',
       factory: () => new RunWorkflowTool(this),
