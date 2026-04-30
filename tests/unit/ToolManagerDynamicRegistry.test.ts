@@ -11,7 +11,7 @@ class StubAgent extends BaseAgent {
       { url: string; workspaceId?: string; sessionId?: string },
       { success: boolean; data?: { opened: string; workspaceId?: string; sessionId?: string } }
     > = {
-      slug: 'openWebpage',
+      slug: 'open',
       name: 'Open Webpage',
       description: 'Open a webpage',
       version: '1.0.0',
@@ -73,7 +73,7 @@ describe('ToolManagerAgent dynamic registry updates', () => {
       sessionId: 'session_test',
       memory: 'Testing dynamic app registration.',
       goal: 'Inspect dynamically registered tools.',
-      tool: 'web-tools open-webpage'
+      tool: 'web open'
     });
 
     expect(discovery).toMatchObject({
@@ -82,8 +82,8 @@ describe('ToolManagerAgent dynamic registry updates', () => {
         tools: [
           expect.objectContaining({
             agent: 'webTools',
-            tool: 'openWebpage',
-            command: 'web-tools open-webpage'
+            tool: 'open',
+            command: 'web open'
           })
         ]
       }
@@ -95,12 +95,12 @@ describe('ToolManagerAgent dynamic registry updates', () => {
       sessionId: 'session_test',
       memory: 'Testing dynamic app registration.',
       goal: 'Execute a dynamically registered tool.',
-      tool: 'web-tools open-webpage "https://example.com"'
+      tool: 'web open "https://example.com"'
     });
 
     expect(execution).toMatchObject({
       agent: 'webTools',
-      tool: 'openWebpage',
+      tool: 'open',
       success: true,
       opened: 'https://example.com',
       workspaceId: 'default',
@@ -120,12 +120,12 @@ describe('ToolManagerAgent dynamic registry updates', () => {
       sessionId: 'session_test',
       memory: 'Testing dynamic app removal.',
       goal: 'Ensure removed tools are no longer discoverable.',
-      tool: 'web-tools'
+      tool: 'web'
     });
 
     expect(discovery).toMatchObject({
       success: false,
-      error: expect.stringContaining('Unknown agent "web-tools"')
+      error: expect.stringContaining('Unknown agent "web"')
     });
   });
 });

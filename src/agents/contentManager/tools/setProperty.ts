@@ -123,7 +123,7 @@ export class SetPropertyTool extends BaseTool<SetPropertyParams, SetPropertyResu
 
       if (!file) {
         return this.prepareResult(false, undefined,
-          `File not found: "${path}". Use searchContent to find files by name, or storageManager.list to explore folders.`
+          `File not found: "${path}". Use search content to find files by name, or storageManager.list to explore folders.`
         );
       }
 

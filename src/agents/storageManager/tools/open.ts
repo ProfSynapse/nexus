@@ -58,7 +58,7 @@ export class OpenTool extends BaseTool<OpenParams, OpenResult> {
         return this.prepareResult(
           false,
           undefined,
-          `File not found: "${normalizedPath}". Use list to see available files, or searchContent to find files by name.`
+          `File not found: "${normalizedPath}". Use list to see available files, or search content to find files by name.`
         );
       }
 

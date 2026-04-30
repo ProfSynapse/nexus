@@ -32,7 +32,7 @@ export class CaptureToMarkdownTool extends BaseTool<CaptureToMarkdownParams, Com
 
   constructor(agent: BaseAppAgent) {
     super(
-      'captureToMarkdown',
+      'capture-markdown',
       'Capture To Markdown',
       'Save the active Web Viewer page to the vault as Markdown using Obsidian Web Viewer. Desktop only.',
       '1.0.0'

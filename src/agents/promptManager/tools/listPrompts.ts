@@ -33,7 +33,7 @@ export class ListPromptsTool extends BaseTool<ListPromptsParams, ListPromptsResu
    */
   constructor(storageService: CustomPromptStorageService) {
     super(
-      'listPrompts',
+      'list',
       'List Prompts',
       'List all custom prompts',
       '1.0.0'

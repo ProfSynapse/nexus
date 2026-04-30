@@ -109,14 +109,14 @@ export class AgentSchemaProvider extends BaseSchemaProvider {
             case 'batchExecutePrompt':
                 this.enhanceExecutePromptSchema(enhanced, data);
                 break;
-            case 'createPrompt':
-            case 'updatePrompt':
-            case 'getPrompt':
+            case 'create':
+            case 'update':
+            case 'get':
             case 'deletePrompt':
             case 'togglePrompt':
                 this.enhancePromptManagementSchema(enhanced, data);
                 break;
-            case 'listPrompts':
+            case 'list':
                 this.enhanceListPromptsSchema(enhanced, data);
                 break;
             default:

@@ -638,7 +638,7 @@ export class DirectToolExecutor {
             };
         }
 
-        if (agentName === 'ingestManager' && toolName === 'ingest') {
+        if (agentName === 'ingestManager' && toolName === 'run') {
             return {
                 ...params,
                 transcriptionProvider: params.transcriptionProvider || context.transcriptionProvider,

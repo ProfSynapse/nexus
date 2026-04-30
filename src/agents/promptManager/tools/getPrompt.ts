@@ -19,7 +19,7 @@ export class GetPromptTool extends BaseTool<GetPromptParams, GetPromptResult> {
    */
   constructor(storageService: CustomPromptStorageService) {
     super(
-      'getPrompt',
+      'get',
       'Get Prompt',
       'Get a custom prompt for persona adoption - does NOT execute tasks automatically',
       '1.0.0'

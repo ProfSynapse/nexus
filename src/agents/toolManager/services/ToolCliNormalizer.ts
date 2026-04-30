@@ -56,6 +56,7 @@ export function toKebabCase(value: string): string {
   return value
     .replace(/Manager$/i, '')
     .replace(/Agent$/i, '')
+    .replace(/Tools$/i, '')
     .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
     .replace(/[_\s]+/g, '-')
     .replace(/--+/g, '-')
@@ -835,7 +836,7 @@ export class ToolCliNormalizer {
     };
   }
 
-  private getAgentAlias(agentName: string): string {
+  public getAgentAlias(agentName: string): string {
     return toKebabCase(agentName);
   }
 }

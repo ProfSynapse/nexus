@@ -28,7 +28,7 @@ export class ArchivePromptTool extends BaseTool<ArchivePromptParams, ArchiveProm
    */
   constructor(storageService: CustomPromptStorageService) {
     super(
-      'archivePrompt',
+      'archive',
       'Archive Prompt',
       'Archive a custom prompt by disabling it (preserves configuration for restoration)',
       '1.0.0'

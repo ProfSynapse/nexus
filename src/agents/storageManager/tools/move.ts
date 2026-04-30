@@ -66,7 +66,7 @@ export class MoveTool extends BaseTool<MoveParams, MoveResult> {
         return this.prepareResult(
           false,
           undefined,
-          `File or folder not found: "${path}". Use list to see available items, or searchContent to find files by name.`
+          `File or folder not found: "${path}". Use list to see available items, or search content to find files by name.`
         );
       }
 

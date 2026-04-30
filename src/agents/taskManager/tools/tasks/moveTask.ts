@@ -17,7 +17,7 @@ import { verbs, labelWithId } from '../../../utils/toolStatusLabels';
 export class MoveTaskTool extends BaseTool<MoveTaskParameters, MoveTaskResult> {
   constructor(private taskService: TaskService) {
     super(
-      'moveTask',
+      'move',
       'Move Task',
       'Move a task to a different project within the same workspace, or change its parent task (set parentTaskId to nest as subtask, null to make top-level). Requires a taskId (from createTask or listTasks).',
       '1.0.0'

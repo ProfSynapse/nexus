@@ -114,31 +114,31 @@ export class PromptManagerAgent extends BaseAgent {
 
     // Register prompt management tools - lazy loaded
     this.registerLazyTool({
-      slug: 'listPrompts', name: 'List Prompts',
+      slug: 'list', name: 'List Prompts',
       description: 'List all custom prompts',
       version: '1.0.0',
       factory: () => new ListPromptsTool(this.storageService),
     });
     this.registerLazyTool({
-      slug: 'getPrompt', name: 'Get Prompt',
+      slug: 'get', name: 'Get Prompt',
       description: 'Get a custom prompt for persona adoption - does NOT execute tasks automatically',
       version: '1.0.0',
       factory: () => new GetPromptTool(this.storageService),
     });
     this.registerLazyTool({
-      slug: 'createPrompt', name: 'Create Prompt',
+      slug: 'create', name: 'Create Prompt',
       description: 'Create a new custom prompt',
       version: '1.0.0',
       factory: () => new CreatePromptTool(this.storageService),
     });
     this.registerLazyTool({
-      slug: 'updatePrompt', name: 'Update Prompt',
+      slug: 'update', name: 'Update Prompt',
       description: 'Update an existing custom prompt',
       version: '1.0.0',
       factory: () => new UpdatePromptTool(this.storageService),
     });
     this.registerLazyTool({
-      slug: 'archivePrompt', name: 'Archive Prompt',
+      slug: 'archive', name: 'Archive Prompt',
       description: 'Archive a custom prompt by disabling it (preserves configuration for restoration)',
       version: '1.0.0',
       factory: () => new ArchivePromptTool(this.storageService),

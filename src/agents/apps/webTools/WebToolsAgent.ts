@@ -18,11 +18,11 @@ const WEB_TOOLS_MANIFEST: AppManifest = {
     mode: 'none',
   },
   tools: [
-    { slug: 'openWebpage', description: 'Open a webpage in Obsidian Web Viewer' },
-    { slug: 'captureToMarkdown', description: 'Save a Web Viewer page into the vault as Markdown' },
-    { slug: 'capturePagePng', description: 'Capture a Web Viewer page as a PNG image' },
-    { slug: 'capturePagePdf', description: 'Print a Web Viewer page to PDF' },
-    { slug: 'extractLinks', description: 'Extract links from a Web Viewer page' },
+    { slug: 'open', description: 'Open a webpage in Obsidian Web Viewer' },
+    { slug: 'capture-markdown', description: 'Save a Web Viewer page into the vault as Markdown' },
+    { slug: 'capture-png', description: 'Capture a Web Viewer page as a PNG image' },
+    { slug: 'capture-pdf', description: 'Print a Web Viewer page to PDF' },
+    { slug: 'links', description: 'Extract links from a Web Viewer page' },
   ],
 };
 

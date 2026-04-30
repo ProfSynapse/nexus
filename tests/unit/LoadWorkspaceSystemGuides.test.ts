@@ -43,7 +43,7 @@ describe('LoadWorkspaceTool system guides workspace', () => {
       customPromptStorage: undefined
     } as never);
 
-    const result = await tool.execute({ id: SYSTEM_GUIDES_WORKSPACE_ID, limit: 2 });
+    const result = await tool.execute({ workspace: SYSTEM_GUIDES_WORKSPACE_ID, limit: 2 });
 
     expect(result.success).toBe(true);
     expect(result.data.context.name).toBe('Assistant guides');
@@ -93,7 +93,7 @@ describe('LoadWorkspaceTool system guides workspace', () => {
       customPromptStorage: undefined
     } as never);
 
-    const result = await tool.execute({ id: 'my workspace', limit: 5 });
+    const result = await tool.execute({ workspace: 'my workspace', limit: 5 });
 
     expect(result.success).toBe(true);
     expect(workspaceService.getWorkspaceByNameOrId).toHaveBeenCalledWith('my workspace');

@@ -344,7 +344,7 @@ export class MCPConnector {
      * Get schemas for specific tool names (called via get_tools meta-tool)
      * Returns clean schemas WITHOUT common parameters to reduce context bloat
      *
-     * @param toolNames Array of specific tool names like ["contentManager_createNote", "searchManager_searchDirectory"]
+     * @param toolNames Array of specific tool names like ["contentManager_createNote", "searchManager_directory"]
      */
     private getToolsForSpecificNames(toolNames: string[]): Array<{ name: string; description: string; inputSchema: Record<string, unknown> }> {
         const toolSchemas: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }> = [];
@@ -463,7 +463,7 @@ export class MCPConnector {
                         overview: overview,
                         sessionId: sessionId,
                         workspaceId: workspaceId,
-                        instruction: 'Above is the overview of all available agents and their tools. To use specific tools, call get_tools again with the exact tool names (e.g., get_tools({ tools: ["contentManager_createNote", "searchManager_searchDirectory"] }))'
+                        instruction: 'Above is the overview of all available agents and their tools. To use specific tools, call get_tools again with the exact tool names (e.g., get_tools({ tools: ["contentManager_createNote", "searchManager_directory"] }))'
                     };
                 }
 

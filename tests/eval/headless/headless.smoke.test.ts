@@ -110,7 +110,7 @@ describe('HeadlessAgentStack', () => {
     const toolIdentifiers = tools.map(t => `${t.agent}_${t.tool}`);
     expect(toolIdentifiers).toContain('contentManager_read');
     expect(toolIdentifiers).toContain('storageManager_list');
-    expect(toolIdentifiers).toContain('searchManager_searchContent');
+    expect(toolIdentifiers).toContain('searchManager_content');
   });
 
   it('should execute useTools contentManager_read on real vault file', async () => {

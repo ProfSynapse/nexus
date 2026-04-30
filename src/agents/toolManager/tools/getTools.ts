@@ -55,7 +55,8 @@ export class GetToolsTool implements ITool<GetToolsParams, GetToolsResult> {
         .map(tool => tool.slug)
         .filter(slug => !INTERNAL_ONLY_TOOLS.has(slug));
       if (tools.length > 0) {
-        lines.push(`${agentName}: [${tools.join(',')}]`);
+        const alias = this.cliNormalizer.getAgentAlias(agentName);
+        lines.push(`${alias}: [${tools.join(',')}]`);
       }
     }
 

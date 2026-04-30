@@ -19,7 +19,7 @@ describe('ToolBatchExecutionService', () => {
   it('does not inject the ambient chat sessionId into unscoped searchMemory calls', async () => {
     const execute = jest.fn().mockResolvedValue({ success: true, results: [] });
     const tool = {
-      slug: 'searchMemory',
+      slug: 'memory',
       name: 'Search memory',
       description: '',
       version: '1.0.0',
@@ -42,7 +42,7 @@ describe('ToolBatchExecutionService', () => {
       calls: [
         {
           agent: 'searchManager',
-          tool: 'searchMemory',
+          tool: 'memory',
           params: { query: 'replaced.md', memoryTypes: ['traces'] }
         }
       ]
@@ -56,7 +56,7 @@ describe('ToolBatchExecutionService', () => {
   it('preserves an explicit searchMemory session filter', async () => {
     const execute = jest.fn().mockResolvedValue({ success: true, results: [] });
     const tool = {
-      slug: 'searchMemory',
+      slug: 'memory',
       name: 'Search memory',
       description: '',
       version: '1.0.0',
@@ -79,7 +79,7 @@ describe('ToolBatchExecutionService', () => {
       calls: [
         {
           agent: 'searchManager',
-          tool: 'searchMemory',
+          tool: 'memory',
           params: {
             query: 'replaced.md',
             memoryTypes: ['traces'],

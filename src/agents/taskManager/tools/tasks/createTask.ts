@@ -17,7 +17,7 @@ import { labelNamed, verbs } from '../../../utils/toolStatusLabels';
 export class CreateTaskTool extends BaseTool<CreateTaskParameters, CreateTaskResult> {
   constructor(private taskService: TaskService) {
     super(
-      'createTask',
+      'create',
       'Create Task',
       'Create a task within a project. Requires a projectId (from createProject or listProjects). Supports optional priority (critical/high/medium/low), assignee, dueDate, tags, dependsOn[] for DAG edges (cycles rejected), parentTaskId for subtask nesting, and linkedNotes[] for vault note links. Returns the new taskId.',
       '1.0.0'

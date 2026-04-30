@@ -74,7 +74,7 @@ export class SearchDirectoryTool extends BaseTool<SearchDirectoryParams, SearchD
 
   constructor(plugin: Plugin, workspaceService?: WorkspaceService) {
     super(
-      'searchDirectory',
+      'directory',
       'Search Directory',
       'FOCUSED directory search with REQUIRED paths parameter. Search for files and/or folders within specific directory paths using fuzzy matching and optional workspace context. Requires: query (search terms) and paths (directory paths to search - cannot be empty).',
       '2.0.0'

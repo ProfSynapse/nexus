@@ -117,7 +117,7 @@ export class SearchMemoryTool extends BaseTool<SearchMemoryParams, SearchMemoryR
     formatter?: ResultFormatterInterface
   ) {
     super(
-      'searchMemory',
+      'memory',
       'Search Memory',
       'Search workspace memory for past conversations, tool execution history, and workspace state snapshots.\n\nTWO MODES:\n- Discovery (default): Search all memory across a workspace. Best for finding past discussions, tool usage, or workspace context.\n- Scoped (provide sessionId or sessionName): Search within a specific session and get surrounding message context around each match. Best for recovering what happened in a particular session.\n\nTIPS:\n- Use natural language queries for conversations (e.g., "how did we implement auth?").\n- Use specific terms for tool history (e.g., agent or tool names).\n- Narrow results with memoryTypes if you know what you need.\n- Use sessionName + windowSize to get full context around a named session match.\n\nREQUIRES: query. Optional: workspaceId accepts the workspace name from load-workspace; omit it to search the global workspace.',
       '2.1.0'

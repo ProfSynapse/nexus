@@ -30,7 +30,7 @@ export class CapturePagePdfTool extends BaseTool<CapturePagePdfParams, CommonRes
 
   constructor(agent: BaseAppAgent) {
     super(
-      'capturePagePdf',
+      'capture-pdf',
       'Capture Page PDF',
       'Print the current Web Viewer page to PDF and save it to the vault. Desktop only.',
       '1.0.0'

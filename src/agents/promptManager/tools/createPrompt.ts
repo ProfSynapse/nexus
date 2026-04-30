@@ -18,7 +18,7 @@ export class CreatePromptTool extends BaseTool<CreatePromptParams, CreatePromptR
    */
   constructor(storageService: CustomPromptStorageService) {
     super(
-      'createPrompt',
+      'create',
       'Create Prompt',
       'Create a new custom prompt',
       '1.0.0'

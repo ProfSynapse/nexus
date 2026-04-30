@@ -17,7 +17,7 @@ import { verbs, labelWithId } from '../../../utils/toolStatusLabels';
 export class UpdateTaskTool extends BaseTool<UpdateTaskParameters, UpdateTaskResult> {
   constructor(private taskService: TaskService) {
     super(
-      'updateTask',
+      'update',
       'Update Task',
       'Update task fields (title, description, status, priority, dueDate, assignee, tags), manage DAG dependencies (addDependencies/removeDependencies), and manage note links (addNoteLinks/removeNoteLinks). Dependency additions are validated for cycles. Requires a taskId (from createTask or listTasks).',
       '1.0.0'

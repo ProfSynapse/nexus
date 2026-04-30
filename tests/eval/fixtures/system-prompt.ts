@@ -17,11 +17,11 @@ import type { SystemPromptOptions, ToolCatalogEntry } from '../../../src/ui/chat
 export const DEFAULT_TOOL_CATALOG: ToolCatalogEntry[] = [
   { agent: 'contentManager', tools: ['read', 'write', 'replace', 'insert', 'setProperty'] },
   { agent: 'storageManager', tools: ['list', 'createFolder', 'move', 'copy', 'archive', 'open'] },
-  { agent: 'searchManager', tools: ['searchContent', 'searchDirectory', 'searchMemory'] },
+  { agent: 'searchManager', tools: ['content', 'directory', 'memory'] },
   { agent: 'memoryManager', tools: ['createSession', 'loadSession', 'createWorkspace', 'createState'] },
   { agent: 'canvasManager', tools: ['read', 'write', 'update', 'list'] },
-  { agent: 'taskManager', tools: ['createProject', 'listProjects', 'createTask', 'listTasks', 'updateTask'] },
-  { agent: 'promptManager', tools: ['listModels', 'executePrompts', 'createPrompt', 'updatePrompt', 'deletePrompt', 'listPrompts', 'getPrompt', 'generateImage'] },
+  { agent: 'taskManager', tools: ['createProject', 'listProjects', 'create', 'list', 'update'] },
+  { agent: 'promptManager', tools: ['listModels', 'execute', 'create', 'update', 'deletePrompt', 'list', 'get', 'generateImage'] },
 ];
 
 /**
