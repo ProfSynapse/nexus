@@ -123,6 +123,15 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
   }
 
   /**
+   * Expose the underlying sync-state store so `ReconcilePipeline` can read
+   * the cursor table directly. The store handles its own SQL; this getter
+   * is the only seam the pipeline needs to touch SQLite.
+   */
+  getSyncStateStore(): SQLiteSyncStateStore {
+    return this.syncStateStore;
+  }
+
+  /**
    * Update the database path before initialization.
    * Must be called before initialize() — has no effect after the DB is open.
    */

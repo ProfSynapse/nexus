@@ -10,6 +10,52 @@ type QueryFn = <T>(sql: string, params?: QueryParams) => Promise<T[]>;
 type QueryOneFn = <T>(sql: string, params?: QueryParams) => Promise<T | null>;
 type RunFn = (sql: string, params?: QueryParams) => Promise<RunResult>;
 
+/**
+ * Per-shard reconcile cursor. `shardPath` is the FULL filename (canonical or
+ * conflict-suffixed); a canonical shard and its conflict sibling are physically
+ * distinct files holding disjoint event sets, so each gets its own row.
+ */
+export interface ShardCursor {
+  deviceId: string;
+  shardPath: string;
+  lastEventId: string | null;
+  lastOffset: number;
+  lastTimestamp: number;
+  kind: string;
+  workspaceKey: string | null;
+  updatedAt: number;
+}
+
+export interface ShardCursorFilter {
+  deviceId?: string;
+  shardPath?: string;
+  kind?: string;
+}
+
+interface ShardCursorRow {
+  deviceId: string;
+  shardPath: string;
+  lastEventId: string | null;
+  lastOffset: number;
+  lastTimestamp: number;
+  kind: string;
+  workspaceKey: string | null;
+  updatedAt: number;
+}
+
+function rowToCursor(row: ShardCursorRow): ShardCursor {
+  return {
+    deviceId: row.deviceId,
+    shardPath: row.shardPath,
+    lastEventId: row.lastEventId,
+    lastOffset: row.lastOffset,
+    lastTimestamp: row.lastTimestamp,
+    kind: row.kind,
+    workspaceKey: row.workspaceKey,
+    updatedAt: row.updatedAt
+  };
+}
+
 export class SQLiteSyncStateStore {
   constructor(
     private readonly query: QueryFn,
@@ -77,5 +123,61 @@ export class SQLiteSyncStateStore {
        VALUES (?, ?, ?)`,
       [deviceId, lastEventTimestamp, JSON.stringify(fileTimestamps)]
     );
+  }
+
+  async getCursor(deviceId: string, shardPath: string): Promise<ShardCursor | null> {
+    const row = await this.queryOne<ShardCursorRow>(
+      `SELECT deviceId, shardPath, lastEventId, lastOffset, lastTimestamp, kind, workspaceKey, updatedAt
+       FROM shard_cursors
+       WHERE deviceId = ? AND shardPath = ?`,
+      [deviceId, shardPath]
+    );
+    return row ? rowToCursor(row) : null;
+  }
+
+  async upsertCursor(cursor: ShardCursor): Promise<void> {
+    await this.run(
+      `INSERT OR REPLACE INTO shard_cursors
+       (deviceId, shardPath, lastEventId, lastOffset, lastTimestamp, kind, workspaceKey, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        cursor.deviceId,
+        cursor.shardPath,
+        cursor.lastEventId,
+        cursor.lastOffset,
+        cursor.lastTimestamp,
+        cursor.kind,
+        cursor.workspaceKey,
+        cursor.updatedAt
+      ]
+    );
+  }
+
+  async listCursors(filter?: ShardCursorFilter): Promise<ShardCursor[]> {
+    const clauses: string[] = [];
+    const params: QueryParams = [];
+
+    if (filter?.deviceId !== undefined) {
+      clauses.push('deviceId = ?');
+      params.push(filter.deviceId);
+    }
+    if (filter?.shardPath !== undefined) {
+      clauses.push('shardPath = ?');
+      params.push(filter.shardPath);
+    }
+    if (filter?.kind !== undefined) {
+      clauses.push('kind = ?');
+      params.push(filter.kind);
+    }
+
+    const where = clauses.length > 0 ? ` WHERE ${clauses.join(' AND ')}` : '';
+    const rows = await this.query<ShardCursorRow>(
+      `SELECT deviceId, shardPath, lastEventId, lastOffset, lastTimestamp, kind, workspaceKey, updatedAt
+       FROM shard_cursors${where}
+       ORDER BY shardPath`,
+      params.length > 0 ? params : undefined
+    );
+
+    return rows.map(rowToCursor);
   }
 }

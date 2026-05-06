@@ -2,7 +2,7 @@
  * SQLite Schema for Hybrid Storage System
  * Location: src/database/schema/schema.ts
  * Purpose: Complete database schema with indexes and FTS
- * Current Version: 9
+ * Current Version: 12
  *
  * IMPORTANT: When updating the schema:
  * 1. Update SCHEMA_SQL below for new installs
@@ -240,6 +240,24 @@ CREATE TABLE IF NOT EXISTS applied_events (
 
 CREATE INDEX IF NOT EXISTS idx_applied_events_time ON applied_events(appliedAt);
 
+-- Per-file reconcile fast-path cursors. PK uses the FULL filename (canonical or
+-- conflict-suffixed) so a canonical shard and its conflict sibling each maintain
+-- independent offsets. See docs/architecture/sync-safe-storage-reconcile-adjustments.md §4.
+CREATE TABLE IF NOT EXISTS shard_cursors (
+  deviceId TEXT NOT NULL,
+  shardPath TEXT NOT NULL,
+  lastEventId TEXT,
+  lastOffset INTEGER NOT NULL DEFAULT 0,
+  lastTimestamp INTEGER NOT NULL DEFAULT 0,
+  kind TEXT NOT NULL,
+  workspaceKey TEXT,
+  updatedAt INTEGER NOT NULL,
+  PRIMARY KEY (deviceId, shardPath)
+);
+
+CREATE INDEX IF NOT EXISTS idx_shard_cursors_path ON shard_cursors(shardPath);
+CREATE INDEX IF NOT EXISTS idx_shard_cursors_kind ON shard_cursors(kind);
+
 -- ==================== NOTE EMBEDDINGS ====================
 
 -- Vector storage (vec0 virtual table)
@@ -422,5 +440,5 @@ CREATE INDEX IF NOT EXISTS idx_task_links_note ON task_note_links(notePath);
 
 -- ==================== INITIALIZATION ====================
 
-INSERT OR IGNORE INTO schema_version VALUES (9, strftime('%s', 'now') * 1000);
+INSERT OR IGNORE INTO schema_version VALUES (12, strftime('%s', 'now') * 1000);
 `;

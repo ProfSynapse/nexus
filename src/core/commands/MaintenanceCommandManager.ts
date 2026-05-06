@@ -92,7 +92,7 @@ export class MaintenanceCommandManager {
           }
 
           await service.sync();
-          new Notice('Nexus data refreshed. Reopen chat or workspace views if needed.');
+          new Notice('Reconciliation complete.');
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           console.error('[MaintenanceCommandManager] Failed to refresh synced Nexus data:', error);

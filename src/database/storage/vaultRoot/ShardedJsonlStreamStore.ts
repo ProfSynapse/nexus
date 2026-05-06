@@ -4,7 +4,26 @@ import { NamedLocks } from '../../../utils/AsyncLock';
 
 const DEFAULT_MAX_SHARD_BYTES = 4 * 1024 * 1024;
 const DEFAULT_SHARD_FILE_WIDTH = 6;
-const SHARD_FILE_PATTERN = /^shard-(\d+)\.jsonl$/;
+/**
+ * Canonical shard filename pattern. Group 1 captures the base shard index.
+ */
+export const SHARD_FILE_PATTERN = /^shard-(\d+)\.jsonl$/;
+/**
+ * Conflict-copy pattern produced by file-sync engines (GDrive, Dropbox, etc.)
+ * when two devices write to the same `shard-NNNNNN.jsonl` simultaneously.
+ *
+ * Group 1: base shard index (canonical or pre-conflict).
+ * Group 2: parenthetical/bracketed marker (e.g. `(1)`, `(2)`, `[Conflict]`,
+ *          `(Conflicted copy 2026-05-06)`).
+ * Group 3: bare numeric duplicate marker (whitespace/underscore-separated).
+ *
+ * The `[ _]+\d+` branch requires whitespace/underscore before bare digits, so
+ * `shard-0000012.jsonl` parses as canonical base=12, NOT as conflict
+ * base=000001 + marker=2. See `tests/unit/conflictCopyMatching.test.ts` for
+ * the full fixture corpus that locks this in.
+ */
+export const SHARD_CONFLICT_PATTERN =
+  /^shard-(\d+)(?:[ _]?\w*?(\(.+?\)|\[.+?\])|[ _]+(\d+))\.jsonl$/;
 const TEXT_ENCODER = new TextEncoder();
 
 export interface ShardedJsonlStreamStoreOptions {
@@ -35,14 +54,41 @@ export function formatShardFileName(index: number, width = DEFAULT_SHARD_FILE_WI
   return `shard-${String(index).padStart(width, '0')}.jsonl`;
 }
 
-export function parseShardFileName(fileName: string): number | null {
-  const match = fileName.match(SHARD_FILE_PATTERN);
-  if (!match) {
-    return null;
+/**
+ * Parse a shard filename into its base index and optional conflict marker.
+ *
+ * Returns `null` for non-shard filenames. For canonical shards (e.g.
+ * `shard-000001.jsonl`), `conflictMarker` is `null`. For conflict-copy
+ * siblings (e.g. `shard-000001 (1).jsonl`, `shard-000001 [Conflict].jsonl`),
+ * `conflictMarker` carries the suffix string for telemetry.
+ *
+ * Callers index by `baseIndex`; `conflictMarker` is consumed only at the
+ * telemetry warn site in `ShardedJsonlStreamStore.listShards`.
+ */
+export function parseShardFileNameWithConflict(
+  fileName: string
+): { baseIndex: number; conflictMarker: string | null } | null {
+  const canon = fileName.match(SHARD_FILE_PATTERN);
+  if (canon) {
+    const parsed = Number(canon[1]);
+    return Number.isInteger(parsed) && parsed > 0
+      ? { baseIndex: parsed, conflictMarker: null }
+      : null;
   }
 
-  const parsed = Number(match[1]);
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+  const conflict = fileName.match(SHARD_CONFLICT_PATTERN);
+  if (conflict) {
+    const parsed = Number(conflict[1]);
+    if (!Number.isInteger(parsed) || parsed <= 0) {
+      return null;
+    }
+    return {
+      baseIndex: parsed,
+      conflictMarker: conflict[2] ?? conflict[3] ?? null
+    };
+  }
+
+  return null;
 }
 
 export class ShardedJsonlStreamStore<TEvent extends object> {
@@ -104,10 +150,20 @@ export class ShardedJsonlStreamStore<TEvent extends object> {
       const normalizedFilePath = normalizePath(filePath);
       const parentPath = this.getParentPath(normalizedFilePath);
       const fileName = normalizedFilePath.slice(normalizedFilePath.lastIndexOf('/') + 1);
-      const index = parseShardFileName(fileName);
+      const parsed = parseShardFileNameWithConflict(fileName);
 
-      if (parentPath !== streamPath || index === null) {
+      if (parentPath !== streamPath || parsed === null) {
         continue;
+      }
+
+      // Telemetry: log once per shard discovery when a conflict-copy is
+      // observed. Reader is the single firing site (not the watcher) so the
+      // warning fires when the shard actually enters the reconcile pipeline.
+      if (parsed.conflictMarker !== null) {
+        console.warn('[Nexus] conflict-copy shard detected', {
+          fileName,
+          conflictMarker: parsed.conflictMarker
+        });
       }
 
       const stat = await this.app.vault.adapter.stat(normalizedFilePath);
@@ -118,7 +174,7 @@ export class ShardedJsonlStreamStore<TEvent extends object> {
       descriptors.push({
         fileName,
         fullPath: normalizedFilePath,
-        index,
+        index: parsed.baseIndex,
         relativePath: this.buildRelativePath(relativeStreamPath, fileName),
         size: stat.size,
         modTime: stat.mtime ?? null

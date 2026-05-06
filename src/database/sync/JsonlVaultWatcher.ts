@@ -66,8 +66,19 @@ export interface JsonlVaultWatcherOptions {
   suppressTtlMs?: number;
 }
 
-const MATCH_SHARDED = /^(conversations|workspaces|tasks)\/([^/]+)\/shard-\d+\.jsonl$/;
-const MATCH_FLAT = /^(conversations|workspaces|tasks)\/([^/]+)\.jsonl$/;
+/**
+ * Matches sharded JSONL paths under the data root. The non-capturing trailing
+ * group accepts conflict-copy suffixes from sync engines (GDrive, Dropbox)
+ * so external sync events on `shard-NNNNNN (1).jsonl` siblings still route
+ * to a reconcile instead of being silently dropped. Marker text is NOT
+ * captured here — the reader (`ShardedJsonlStreamStore.listShards`) is the
+ * single firing site for conflict telemetry; the watcher only needs to not
+ * drop the event.
+ */
+export const MATCH_SHARDED =
+  /^(conversations|workspaces|tasks)\/([^/]+)\/shard-\d+(?:[ _]?\w*?(?:\(.+?\)|\[.+?\])|[ _]+\d+)?\.jsonl$/;
+export const MATCH_FLAT =
+  /^(conversations|workspaces|tasks)\/([^/]+)(?:[ _]?\w*?(?:\(.+?\)|\[.+?\])|[ _]+\d+)?\.jsonl$/;
 
 const BUSINESS_ID_PREFIX: Record<WatchedCategory, string> = {
   conversations: 'conv_',

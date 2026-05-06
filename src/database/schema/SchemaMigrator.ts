@@ -73,7 +73,7 @@ export interface MigratableDatabase {
 // Alias for backward compatibility
 type Database = MigratableDatabase;
 
-export const CURRENT_SCHEMA_VERSION = 11;
+export const CURRENT_SCHEMA_VERSION = 12;
 
 export interface Migration {
   version: number;
@@ -402,6 +402,31 @@ export const MIGRATIONS: Migration[] = [
     sql: [
       'ALTER TABLE workspaces ADD COLUMN isArchived INTEGER DEFAULT 0',
       'CREATE INDEX IF NOT EXISTS idx_workspaces_archived ON workspaces(isArchived)'
+    ]
+  },
+
+  // Version 11 -> 12: Add shard_cursors table for sync-safe reconcile fast-path.
+  // PK is (deviceId, shardPath) where shardPath is the FULL filename — canonical
+  // OR conflict-suffixed. A canonical shard and a conflict sibling are physically
+  // distinct files holding disjoint event sets, so each gets its own cursor row.
+  // Do NOT collapse cursors by baseIndex.
+  {
+    version: 12,
+    description: 'Add shard_cursors table for per-file reconcile fast-path (sync-safe storage reconcile Phase 1)',
+    sql: [
+      `CREATE TABLE IF NOT EXISTS shard_cursors (
+        deviceId TEXT NOT NULL,
+        shardPath TEXT NOT NULL,
+        lastEventId TEXT,
+        lastOffset INTEGER NOT NULL DEFAULT 0,
+        lastTimestamp INTEGER NOT NULL DEFAULT 0,
+        kind TEXT NOT NULL,
+        workspaceKey TEXT,
+        updatedAt INTEGER NOT NULL,
+        PRIMARY KEY (deviceId, shardPath)
+      )`,
+      'CREATE INDEX IF NOT EXISTS idx_shard_cursors_path ON shard_cursors(shardPath)',
+      'CREATE INDEX IF NOT EXISTS idx_shard_cursors_kind ON shard_cursors(kind)'
     ]
   },
 ];

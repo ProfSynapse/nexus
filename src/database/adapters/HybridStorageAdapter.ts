@@ -27,6 +27,7 @@ import { JSONLWriter } from '../storage/JSONLWriter';
 import { SQLiteCacheManager } from '../storage/SQLiteCacheManager';
 import { SyncCoordinator } from '../sync/SyncCoordinator';
 import { JsonlVaultWatcher, ModifiedStream } from '../sync/JsonlVaultWatcher';
+import { ReconcilePipeline } from '../sync/ReconcilePipeline';
 import { QueryCache } from '../optimizations/QueryCache';
 import { PaginatedResult, PaginationParams } from '../../types/pagination/PaginationTypes';
 import {
@@ -183,6 +184,7 @@ export class HybridStorageAdapter implements IStorageAdapter {
   private jsonlWriter: JSONLWriter;
   private sqliteCache: SQLiteCacheManager;
   private syncCoordinator: SyncCoordinator;
+  private reconcilePipeline: ReconcilePipeline | null = null;
   private queryCache: QueryCache;
   private storageCoordinator: PluginScopedStorageCoordinator;
   private vaultEventStore: VaultEventStore | null = null;
@@ -419,6 +421,36 @@ export class HybridStorageAdapter implements IStorageAdapter {
       plan.state.migration.state === 'verified' || plan.state.migration.state === 'not_needed'
     );
     this.sqliteCache.setDbPath(plan.pluginCacheDbPath);
+    this.wireReconcilePipeline();
+  }
+
+  /**
+   * Construct the sync-safe reconcile pipeline once `vaultEventStore` is
+   * available and inject it into the `SyncCoordinator`. Called from
+   * `applyStoragePlan` and `relocateVaultRoot`. Idempotent: replaces the
+   * existing pipeline so cursor state from the old root is dropped.
+   */
+  private wireReconcilePipeline(): void {
+    if (!this.syncCoordinator || !this.sqliteCache || !this.jsonlWriter) {
+      this.reconcilePipeline = null;
+      return;
+    }
+    if (!this.vaultEventStore) {
+      this.reconcilePipeline = null;
+      this.syncCoordinator.setReconcilePipeline(null);
+      return;
+    }
+    const appliers = this.syncCoordinator.getAppliers();
+    this.reconcilePipeline = new ReconcilePipeline({
+      vaultEventStore: this.vaultEventStore,
+      syncStateStore: this.sqliteCache.getSyncStateStore(),
+      sqliteCache: this.sqliteCache,
+      workspaceApplier: appliers.workspace,
+      conversationApplier: appliers.conversation,
+      taskApplier: appliers.task,
+      deviceId: this.jsonlWriter.getDeviceId()
+    });
+    this.syncCoordinator.setReconcilePipeline(this.reconcilePipeline);
   }
 
   private async backfillVaultEventStore(plan: PluginScopedStoragePlan): Promise<PluginScopedStoragePlan> {
@@ -920,16 +952,58 @@ export class HybridStorageAdapter implements IStorageAdapter {
    * Reconcile after the watcher detects a modified stream set and emit
    * `external-sync` so open UI can refresh only the affected content.
    * Called by JsonlVaultWatcher's onChange callback.
+   *
+   * Phase 1 sync-safe reconcile: when the ReconcilePipeline is wired, scope
+   * reconcile to the precise streams that fired the modify event instead of
+   * sweeping the whole cache. Falls back to a full `sync()` if the pipeline
+   * isn't yet wired (e.g. legacy plugin-scoped storage layout) so behavior
+   * stays compatible.
    */
   private async handleExternalJsonlChange(modified: ModifiedStream[]): Promise<void> {
     if (modified.length === 0) {
       return;
     }
     try {
-      const result = await this.sync();
+      let result: SyncResult;
+      if (this.reconcilePipeline) {
+        for (const m of modified) {
+          await this.syncCoordinator.reconcileStream(m.category, m.streamId);
+        }
+        await this.runMissingEntityReconcilers();
+        this.queryCache.clear();
+        result = {
+          success: true,
+          eventsApplied: 0,
+          eventsSkipped: 0,
+          errors: [],
+          duration: 0,
+          filesProcessed: modified.map((m) => m.samplePath),
+          lastSyncTimestamp: Date.now()
+        };
+      } else {
+        result = await this.sync();
+      }
       this.externalEvents.trigger('external-sync', { result, modified } satisfies ExternalSyncEvent);
     } catch (error) {
       console.error('[HybridStorageAdapter] External JSONL change sync failed:', error);
+    }
+  }
+
+  /**
+   * Run the post-sync entity-existence reconcilers (workspaces, conversations,
+   * tasks). Mirrors the existing `sync()` post-step so scoped reconcile via
+   * `ReconcilePipeline` stays semantically equivalent to the full sweep for
+   * cache-fill purposes. Errors are logged but do not propagate.
+   */
+  private async runMissingEntityReconcilers(): Promise<void> {
+    try {
+      await Promise.all([
+        this.reconcileMissingWorkspaces(),
+        this.reconcileMissingConversations(),
+        this.reconcileMissingTasks()
+      ]);
+    } catch (reconcileError) {
+      console.error('[HybridStorageAdapter] Post-sync reconciliation failed:', reconcileError);
     }
   }
 
@@ -1016,6 +1090,7 @@ export class HybridStorageAdapter implements IStorageAdapter {
     this.jsonlWriter.setVaultEventStore(this.vaultEventStore);
     this.jsonlWriter.setVaultEventStoreReadEnabled(true);
     this.jsonlVaultWatcher?.setDataPath(resolution.dataPath);
+    this.wireReconcilePipeline();
     this.queryCache.clear();
 
     return { ...result, switched: true };

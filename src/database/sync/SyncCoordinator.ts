@@ -24,6 +24,8 @@ import {
 import { WorkspaceEventApplier } from './WorkspaceEventApplier';
 import { ConversationEventApplier } from './ConversationEventApplier';
 import { TaskEventApplier } from './TaskEventApplier';
+import type { ReconcilePipeline } from './ReconcilePipeline';
+import type { EventStreamCategory } from '../storage/vaultRoot/EventStreamUtilities';
 
 /**
  * Validate workspace ID to prevent ghost/orphan workspaces.
@@ -96,6 +98,16 @@ export class SyncCoordinator {
   private conversationApplier: ConversationEventApplier;
   private taskApplier: TaskEventApplier;
 
+  /**
+   * Optional sync-safe reconcile pipeline. When wired (via
+   * `setReconcilePipeline`), `sync()` delegates to it so cursor-based
+   * idempotency (Phase 1 of `docs/plans/sync-safe-storage-reconcile-plan.md`)
+   * replaces the per-file mod-time scan. Left null until HybridStorageAdapter
+   * constructs the pipeline; `fullRebuild()` keeps its existing applier loops
+   * regardless because cold-boot rebuild semantics are out of Phase 1 scope.
+   */
+  private reconcilePipeline: ReconcilePipeline | null = null;
+
   /** Guards against overlapping sync() calls. */
   private syncing = false;
   /** Set when a sync() call arrives while another is in-flight. */
@@ -108,6 +120,40 @@ export class SyncCoordinator {
     this.workspaceApplier = new WorkspaceEventApplier(sqliteCache);
     this.conversationApplier = new ConversationEventApplier(sqliteCache);
     this.taskApplier = new TaskEventApplier(sqliteCache);
+  }
+
+  /** Inject the ReconcilePipeline. Idempotent; pass `null` to detach. */
+  setReconcilePipeline(pipeline: ReconcilePipeline | null): void {
+    this.reconcilePipeline = pipeline;
+  }
+
+  /** Expose the sibling appliers so `ReconcilePipeline` can reuse them. */
+  getAppliers(): {
+    workspace: WorkspaceEventApplier;
+    conversation: ConversationEventApplier;
+    task: TaskEventApplier;
+  } {
+    return {
+      workspace: this.workspaceApplier,
+      conversation: this.conversationApplier,
+      task: this.taskApplier
+    };
+  }
+
+  /**
+   * Scoped reconcile for a single shard, invoked by the vault watcher when
+   * a remote-sync drop lands a new shard on disk. No-ops if the
+   * ReconcilePipeline isn't wired.
+   */
+  async reconcileShard(shardPath: string): Promise<void> {
+    if (!this.reconcilePipeline) return;
+    await this.reconcilePipeline.reconcileShard(shardPath);
+  }
+
+  /** Same shape as reconcileShard, scoped to a single logical stream. */
+  async reconcileStream(category: EventStreamCategory, streamId: string): Promise<void> {
+    if (!this.reconcilePipeline) return;
+    await this.reconcilePipeline.reconcileStream(category, streamId);
   }
 
   /**
@@ -150,6 +196,24 @@ export class SyncCoordinator {
     try {
       if (options.forceRebuild) {
         return this.fullRebuild(options);
+      }
+
+      // When ReconcilePipeline is wired (Phase 1 sync-safe reconcile), the
+      // cursor-based path replaces the per-file mod-time scan. Cold-boot
+      // recovery still goes through `fullRebuild` above.
+      if (this.reconcilePipeline) {
+        const reconcile = await this.reconcilePipeline.reconcileAll();
+        await this.sqliteCache.updateSyncState(this.deviceId, Date.now(), {});
+        await this.sqliteCache.save();
+        options.onProgress?.('Complete', 1, 1);
+        return this.createResult(
+          reconcile.success,
+          reconcile.eventsApplied,
+          reconcile.eventsSkipped,
+          reconcile.errors,
+          startTime,
+          []
+        );
       }
 
       const syncState = await this.sqliteCache.getSyncState(this.deviceId);
