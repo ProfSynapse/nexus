@@ -280,12 +280,31 @@ export class CacheBackendMigration {
       }
     }
     // Literal cache.db last (preserves recovery if conflicts deletion crashed).
+    // Retry-with-backoff: on Windows, Obsidian's filesystem watcher holds a
+    // brief handle on cache.db immediately after the migration FSM closes its
+    // own read. The lock typically clears within a few hundred ms — without
+    // retry, JANITOR fails to delete cache.db, the file persists, and
+    // runIfNeeded.legacyExists stays true on every boot, re-running the FSM.
+    // Conflict siblings (above) don't need this — only the literal is held.
+    const RETRY_DELAYS_MS = [100, 250, 500];
     for (const c of literal) {
-      try {
-        await this.opts.adapter.remove(c.full);
-        report.removed.push(c.full);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
+      let lastErr: unknown = null;
+      let removed = false;
+      for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt++) {
+        try {
+          await this.opts.adapter.remove(c.full);
+          report.removed.push(c.full);
+          removed = true;
+          break;
+        } catch (err) {
+          lastErr = err;
+          if (attempt < RETRY_DELAYS_MS.length) {
+            await new Promise(resolve => setTimeout(resolve, RETRY_DELAYS_MS[attempt]));
+          }
+        }
+      }
+      if (!removed) {
+        const message = lastErr instanceof Error ? lastErr.message : String(lastErr);
         report.failed.push({ path: c.full, error: message });
       }
     }
