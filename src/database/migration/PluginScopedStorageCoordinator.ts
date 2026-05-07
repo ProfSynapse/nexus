@@ -144,7 +144,16 @@ export class PluginScopedStorageCoordinator {
   private async saveState(state: PluginScopedStorageState): Promise<void> {
     await pluginDataLock.acquire(async () => {
       const pluginData = await this.loadPluginData();
-      pluginData.pluginStorage = state;
+      // Preserve cacheBackend across JSONL-migration state writes. saveState()
+      // operates on PluginScopedStorageState (the JSONL-migration shape) and
+      // does not carry cacheBackend in `state`; without this merge, every boot
+      // would clobber the persisted cacheBackend record from runCacheBackendMigration,
+      // forcing the cache-backend FSM to re-run on every restart (issue: Windows
+      // janitor file-lock + saveState clobber → infinite migration loop).
+      const existingCacheBackend = pluginData.pluginStorage?.cacheBackend;
+      pluginData.pluginStorage = existingCacheBackend !== undefined
+        ? { ...state, cacheBackend: existingCacheBackend }
+        : state;
       await this.plugin.saveData(pluginData);
     });
   }
