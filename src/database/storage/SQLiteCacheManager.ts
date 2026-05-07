@@ -37,16 +37,33 @@ import { SQLiteTransactionCoordinator } from './SQLiteTransactionCoordinator';
 import { SQLiteSyncStateStore } from './SQLiteSyncStateStore';
 import { SQLitePersistenceService } from './SQLitePersistenceService';
 import { SQLiteMaintenanceService, SQLiteMaintenanceStatistics } from './SQLiteMaintenanceService';
+import type { CacheBlobStore } from './CacheBlobStore';
+import { createCacheBlobStore, computeIdbKey } from './CacheBlobStoreFactory';
+import { resolveActivePluginFolderName } from './PluginStoragePathResolver';
 
 // Import schema from TypeScript module (esbuild compatible)
 import { SCHEMA_SQL } from '../schema/schema';
 import { SchemaMigrator } from '../schema/SchemaMigrator';
 
+import type { Plugin } from 'obsidian';
+
 export interface SQLiteCacheManagerOptions {
   app: App;
-  dbPath: string;  // e.g., '.nexus/cache.db'
+  dbPath: string;  // e.g., '.nexus/cache.db' (used by VaultAdapter backend on mobile)
   wasmPath?: string;
   autoSaveInterval?: number;  // ms between auto-saves (default: 30000)
+  /**
+   * Plugin used to compute the IDB key (manifest dir). Required when
+   * `blobStore` is omitted so the factory can build the desktop store with a
+   * stable per-install key. Tests can pass a pre-built `blobStore` instead.
+   */
+  plugin?: Plugin;
+  /**
+   * Pre-built backing store. When provided, the cache manager uses it directly
+   * instead of constructing one via the factory. Also enables migration code
+   * in HybridStorageAdapter to share the same store instance.
+   */
+  blobStore?: CacheBlobStore;
 }
 
 export interface QueryResult<T> {
@@ -100,6 +117,7 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
   private readonly transactionCoordinator: SQLiteTransactionCoordinator;
   private readonly syncStateStore: SQLiteSyncStateStore;
   private readonly persistenceService: SQLitePersistenceService;
+  private readonly blobStore: CacheBlobStore;
   private maintenanceService?: SQLiteMaintenanceService;
 
   constructor(options: SQLiteCacheManagerOptions) {
@@ -109,9 +127,9 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
     this.autoSaveInterval = options.autoSaveInterval ?? 30000;  // 30 seconds default
     this.bridge = new SQLiteWasmBridge();
     this.transactionCoordinator = new SQLiteTransactionCoordinator();
+    this.blobStore = options.blobStore ?? this.buildDefaultBlobStore(options);
     this.persistenceService = new SQLitePersistenceService({
-      app: this.app,
-      dbPath: this.dbPath,
+      blobStore: this.blobStore,
       bridge: this.bridge
     });
     this.syncStateStore = new SQLiteSyncStateStore(
@@ -132,6 +150,25 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
   }
 
   /**
+   * Expose the blob store so HybridStorageAdapter.rebuildCache() and the
+   * migration runner can share the same instance the cache manager uses.
+   */
+  getBlobStore(): CacheBlobStore {
+    return this.blobStore;
+  }
+
+  private buildDefaultBlobStore(options: SQLiteCacheManagerOptions): CacheBlobStore {
+    const pluginDir = options.plugin
+      ? resolveActivePluginFolderName(options.plugin)
+      : 'nexus';
+    return createCacheBlobStore({
+      app: options.app,
+      vaultRelativePath: options.dbPath,
+      idbKey: computeIdbKey(options.app, pluginDir)
+    });
+  }
+
+  /**
    * Update the database path before initialization.
    * Must be called before initialize() — has no effect after the DB is open.
    */
@@ -142,7 +179,7 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
     }
 
     this.dbPath = path;
-    this.persistenceService.setDbPath(path);
+    // persistenceService no longer tracks path — owned by CacheBlobStore now.
     if (this.maintenanceService) {
       this.maintenanceService.setDbPath(path);
     }
@@ -156,7 +193,8 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
         bridge: this.bridge,
         getDb: () => this.getDbOrThrow(),
         queryOne: <T>(sql: string, params?: QueryParams) => this.queryOne<T>(sql, params),
-        transaction: <T>(fn: () => Promise<T>) => this.transaction(fn)
+        transaction: <T>(fn: () => Promise<T>) => this.transaction(fn),
+        blobStore: this.blobStore
       });
     }
     return this.maintenanceService;
@@ -256,18 +294,25 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
         consoleRef.log = originalLog;
       }
 
-      // Ensure parent directory exists
+      // Ensure parent directory exists. Required regardless of backend
+      // because legacy migration reads/writes through this path on first
+      // launch, and the VaultAdapter mobile backend writes here in steady
+      // state. Cheap idempotent op when the dir is already present.
       const parentPath = this.dbPath.substring(0, this.dbPath.lastIndexOf('/'));
       const parentExists = await this.app.vault.adapter.exists(parentPath);
       if (!parentExists) {
         await this.app.vault.adapter.mkdir(parentPath);
       }
 
-      // Check if database file exists
-      const dbExists = await this.app.vault.adapter.exists(this.dbPath);
+      // Ask the blob store directly — getMetadata returns null when the blob
+      // is absent. This works uniformly across IDB (desktop) and the
+      // vault.adapter file path (mobile) without leaking which backend is in
+      // use into the cache manager.
+      const meta = await this.blobStore.getMetadata();
+      const dbExists = meta !== null && meta.size > 0;
 
       if (dbExists) {
-        // Load existing database from file
+        // Load existing database from blob store
         await this.loadFromFile();
       } else {
         const sqlite3 = this.getSqlite3OrThrow();
@@ -618,6 +663,17 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
    */
   async save(): Promise<void> {
     await this.saveToFile();
+  }
+
+  /**
+   * Stop the auto-save timer without closing the database. Used by the
+   * Rebuild Cache flow to suspend writes before clearing the blob store.
+   */
+  stopAutoSave(): void {
+    if (this.autoSaveTimer) {
+      clearInterval(this.autoSaveTimer);
+      this.autoSaveTimer = null;
+    }
   }
 
   /**

@@ -1,5 +1,4 @@
-import { App } from 'obsidian';
-
+import type { CacheBlobStore } from './CacheBlobStore';
 import {
   SQLiteWasmBridge,
   SQLiteWasmModule,
@@ -7,36 +6,28 @@ import {
 } from './SQLiteWasmBridge';
 
 interface SQLitePersistenceServiceOptions {
-  app: App;
-  dbPath: string;
+  blobStore: CacheBlobStore;
   bridge: SQLiteWasmBridge;
 }
 
 export class SQLitePersistenceService {
-  private readonly app: App;
-  private dbPath: string;
   private readonly bridge: SQLiteWasmBridge;
+  private readonly blobStore: CacheBlobStore;
 
   constructor(options: SQLitePersistenceServiceOptions) {
-    this.app = options.app;
-    this.dbPath = options.dbPath;
+    this.blobStore = options.blobStore;
     this.bridge = options.bridge;
-  }
-
-  setDbPath(dbPath: string): void {
-    this.dbPath = dbPath;
   }
 
   async loadDatabase(sqlite3: SQLiteWasmModule, schemaSql: string): Promise<SQLiteDatabaseHandle> {
     try {
-      const data = await this.app.vault.adapter.readBinary(this.dbPath);
-      const bytes = new Uint8Array(data);
+      const data = await this.blobStore.read();
 
-      if (bytes.length === 0) {
+      if (!data || data.byteLength === 0) {
         return this.createFreshDatabase(sqlite3, schemaSql);
       }
 
-      const db = this.bridge.deserializeDatabase(sqlite3, bytes);
+      const db = this.bridge.deserializeDatabase(sqlite3, new Uint8Array(data));
 
       try {
         const integrityResult = this.bridge.getIntegrityCheckResult(db);
@@ -52,7 +43,7 @@ export class SQLitePersistenceService {
 
       return db;
     } catch (error) {
-      console.error('[SQLiteCacheManager] Failed to load from file:', error);
+      console.error('[SQLiteCacheManager] Failed to load from blob store:', error);
       return this.recreateCorruptedDatabase(sqlite3, schemaSql);
     }
   }
@@ -70,16 +61,16 @@ export class SQLitePersistenceService {
         consoleRef.log = originalLog;
       }
 
-      await this.app.vault.adapter.writeBinary(this.dbPath, buffer);
+      await this.blobStore.write(buffer);
     } catch (error) {
-      console.error('[SQLiteCacheManager] Failed to save to file:', error);
+      console.error('[SQLiteCacheManager] Failed to save to blob store:', error);
       throw error;
     }
   }
 
   async recreateCorruptedDatabase(sqlite3: SQLiteWasmModule, schemaSql: string): Promise<SQLiteDatabaseHandle> {
     try {
-      await this.app.vault.adapter.remove(this.dbPath);
+      await this.blobStore.remove();
     } catch {
       void 0;
     }
