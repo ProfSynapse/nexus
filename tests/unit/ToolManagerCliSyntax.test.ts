@@ -587,16 +587,16 @@ describe('ToolCliNormalizer — direct parser coverage', () => {
       expect(call.params.tags).toEqual(['[broken']);
     });
 
-    it('falls back to CSV split on multi-item malformed JSON and preserves all items', () => {
+    it('strips outer array literal brackets on multi-item malformed JSON and preserves all items', () => {
       // `[a,b,c]` wraps with [] so the JSON-parse branch IS attempted, then
-      // throws (unquoted identifiers). The catch falls through to
-      // splitCsvRespectingQuotes, which splits on top-level commas. This is
-      // the real proof that the fallback preserves every item, not just the
-      // single-token case above.
+      // throws (unquoted identifiers). Outer `[...]` is then stripped by
+      // stripOuterArrayBrackets and the inner CSV splits on top-level commas
+      // — the wikilink frontmatter bug fix path. (Previously the outer
+      // brackets stayed glued to the first/last items.)
       const [call] = makeNormalizer().normalizeExecutionCalls({
         tool: 'numeric convert --tags "[a,b,c]"',
       });
-      expect(call.params.tags).toEqual(['[a', 'b', 'c]']);
+      expect(call.params.tags).toEqual(['a', 'b', 'c']);
     });
 
     it('non-wrapped multi-item raw input skips JSON branch and CSV-splits', () => {
@@ -714,15 +714,39 @@ describe('ToolCliNormalizer — direct parser coverage', () => {
       expect(call.params.value).toBe('   ');
     });
 
-    it('bracket-wrapped malformed JSON falls through to CSV split', () => {
-      // `[a,b,c]` wraps in brackets so the JSON branch is attempted, fails
-      // on unquoted identifiers, and falls through to splitCsvRespectingQuotes.
-      // Outer brackets stay attached to the first/last items. Matches the
-      // array<string> branch's fallback behavior (see Bug #2 characterization).
+    it('bracket-wrapped malformed JSON strips outer brackets before CSV split', () => {
+      // `[a,b,c]` wraps in brackets so the JSON branch is attempted and fails
+      // on unquoted identifiers. Previously the fallback split the raw string
+      // verbatim, gluing `[` to the first item and `]` to the last. Now the
+      // outer pair is stripped first via stripOuterArrayBrackets, recovering
+      // the intended three-item array.
       const [call] = makeNormalizer().normalizeExecutionCalls({
         tool: 'one-of set-prop "[a,b,c]"',
       });
-      expect(call.params.value).toEqual(['[a', 'b', 'c]']);
+      expect(call.params.value).toEqual(['a', 'b', 'c']);
+    });
+
+    it('Obsidian wikilinks wrapped in array literal — triple-bracket repro', () => {
+      // Real-world bug: setProperty --value "[[[A]],[[B]],[[C]]]" intends an
+      // array of three Obsidian wikilinks. JSON.parse fails (wikilinks aren't
+      // valid JSON); fallback used to split the raw string and write
+      // `[[[A]]` and `[[C]]]` to frontmatter. Now the outer `[...]` is
+      // stripped first, leaving `[[A]],[[B]],[[C]]` which CSV-splits cleanly.
+      const [call] = makeNormalizer().normalizeExecutionCalls({
+        tool: 'one-of set-prop "[[[A]],[[B]],[[C]]]"',
+      });
+      expect(call.params.value).toEqual(['[[A]]', '[[B]]', '[[C]]']);
+    });
+
+    it('bare CSV of wikilinks (no outer wrapper) preserved unchanged', () => {
+      // Counter-case: `[[A]],[[B]]` starts with `[` and ends with `]` but the
+      // outer pair is part of a wikilink, not a wrapper. stripOuterArrayBrackets
+      // must detect that depth zeroes out before the final char and leave the
+      // raw string alone, so CSV-split sees both wikilinks intact.
+      const [call] = makeNormalizer().normalizeExecutionCalls({
+        tool: 'one-of set-prop "[[A]],[[B]]"',
+      });
+      expect(call.params.value).toEqual(['[[A]]', '[[B]]']);
     });
 
     it('bracket-prefix-only (no closing bracket) skips JSON and splits as CSV', () => {
@@ -931,6 +955,26 @@ describe('ToolCliNormalizer — direct parser coverage', () => {
         tool: 'storage archive --paths "a,,b,"',
       });
       expect(call.params.paths).toEqual(['a', 'b']);
+    });
+
+    it('outer-bracket-wrapped non-JSON CSV strips outer brackets before split', () => {
+      // Symmetric with the oneOfArray fix: a `--flag "[a,b,c]"` value where the
+      // caller used array-literal shape but JSON.parse can't handle unquoted
+      // identifiers. Outer pair stripped, inner CSV-split clean.
+      const [call] = makeNormalizer().normalizeExecutionCalls({
+        tool: 'storage archive --paths "[a,b,c]"',
+      });
+      expect(call.params.paths).toEqual(['a', 'b', 'c']);
+    });
+
+    it('Obsidian wikilinks wrapped in array literal — array<string> path', () => {
+      // The setProperty bug also reaches the array<string> branch when a tool
+      // schema declares an explicit `array: { items: { type: 'string' } }`.
+      // Same fix applies via stripOuterArrayBrackets.
+      const [call] = makeNormalizer().normalizeExecutionCalls({
+        tool: 'storage archive --paths "[[[A]],[[B]]]"',
+      });
+      expect(call.params.paths).toEqual(['[[A]]', '[[B]]']);
     });
   });
 });
