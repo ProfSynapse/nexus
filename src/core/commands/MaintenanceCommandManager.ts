@@ -3,15 +3,60 @@
  * Handles maintenance and troubleshooting commands
  */
 
-import { Notice, Platform, type App, type Plugin } from 'obsidian';
+import { Modal, Notice, Platform, type App, type Plugin } from 'obsidian';
 import { CommandContext } from './CommandDefinitions';
 import type NexusPlugin from '../../main';
 type SyncableStorageAdapter = {
   sync(): Promise<unknown>;
 };
 
+type RebuildableStorageAdapter = {
+  rebuildCache(options?: { onProgress?: (label: string, done: number, total: number) => void }): Promise<void>;
+};
+
 function isSyncableStorageAdapter(value: unknown): value is SyncableStorageAdapter {
   return typeof value === 'object' && value !== null && 'sync' in value && typeof value.sync === 'function';
+}
+
+function isRebuildableStorageAdapter(value: unknown): value is RebuildableStorageAdapter {
+  return typeof value === 'object' && value !== null && 'rebuildCache' in value && typeof (value as RebuildableStorageAdapter).rebuildCache === 'function';
+}
+
+class RebuildCacheConfirmModal extends Modal {
+  private confirmed = false;
+
+  constructor(app: App, private onConfirm: () => void) {
+    super(app);
+  }
+
+  onOpen(): void {
+    this.titleEl.setText('Rebuild Nexus cache?');
+
+    const body = this.contentEl.createDiv();
+    body.createEl('p', {
+      text: 'This wipes the local cache and rebuilds it from the synced event store. Your conversations, workspaces, and tasks are not deleted — they live in the synced files which are not touched.'
+    });
+    body.createEl('p', {
+      text: 'The plugin will be unresponsive while the rebuild runs. This usually takes a few seconds.'
+    });
+
+    const buttonRow = this.contentEl.createDiv({ cls: 'modal-button-container' });
+    const cancelBtn = buttonRow.createEl('button', { text: 'Cancel' });
+    cancelBtn.addEventListener('click', () => this.close());
+
+    const confirmBtn = buttonRow.createEl('button', { text: 'Rebuild cache', cls: 'mod-warning' });
+    confirmBtn.addEventListener('click', () => {
+      this.confirmed = true;
+      this.close();
+    });
+  }
+
+  onClose(): void {
+    this.contentEl.empty();
+    if (this.confirmed) {
+      this.onConfirm();
+    }
+  }
 }
 
 type MaintenancePlugin = Plugin & {
@@ -47,6 +92,7 @@ export class MaintenanceCommandManager {
   registerMaintenanceCommands(): void {
     this.registerDiagnosticsCommand();
     this.registerRefreshSyncedDataCommand();
+    this.registerRebuildCacheCommand();
     this.registerClaudeHeadlessExperimentCommand();
   }
 
@@ -100,6 +146,49 @@ export class MaintenanceCommandManager {
         }
       }
     });
+  }
+
+  /**
+   * Register a command that wipes the local SQLite cache and rebuilds it from
+   * the JSONL event store. Use this when the cache backend is corrupted or
+   * out-of-sync with the JSONL source of truth (e.g. after manual file edits).
+   */
+  private registerRebuildCacheCommand(): void {
+    (this.context.plugin as unknown as MaintenancePlugin).addCommand({
+      id: 'rebuild-cache',
+      name: 'Rebuild cache',
+      callback: () => {
+        const plugin = this.context.plugin as unknown as MaintenancePlugin;
+        const modal = new RebuildCacheConfirmModal(plugin.app, () => {
+          void this.runRebuildCache();
+        });
+        modal.open();
+      }
+    });
+  }
+
+  private async runRebuildCache(): Promise<void> {
+    const stickyNotice = new Notice('Rebuilding Nexus cache...', 0);
+
+    try {
+      if (!this.context.getService) {
+        throw new Error('Service lookup unavailable');
+      }
+
+      const service = await this.context.getService('hybridStorageAdapter', 10000);
+      if (!isRebuildableStorageAdapter(service)) {
+        throw new Error('Hybrid storage adapter is not available');
+      }
+
+      await service.rebuildCache();
+      stickyNotice.hide();
+      new Notice('Nexus cache rebuilt successfully.');
+    } catch (error) {
+      stickyNotice.hide();
+      const message = error instanceof Error ? error.message : String(error);
+      console.error('[MaintenanceCommandManager] Failed to rebuild Nexus cache:', error);
+      new Notice(`Failed to rebuild Nexus cache: ${message}`);
+    }
   }
 
   /**

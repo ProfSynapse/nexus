@@ -60,10 +60,14 @@ import {
   VaultRootRelocationService,
   type VaultRootRelocationResult
 } from '../migration/VaultRootRelocationService';
-import { resolvePluginStorageRoot } from '../storage/PluginStoragePathResolver';
+import { resolvePluginStorageRoot, resolveActivePluginFolderName } from '../storage/PluginStoragePathResolver';
 import { resolveVaultRoot } from '../storage/VaultRootResolver';
 import { VaultEventStore } from '../storage/vaultRoot/VaultEventStore';
 import { DEFAULT_STORAGE_SETTINGS } from '../../types/plugin/PluginTypes';
+import { CacheBackendMigration, type CacheBackendStateAccessor } from '../migration/CacheBackendMigration';
+import { createCacheBlobStore, computeIdbKey } from '../storage/CacheBlobStoreFactory';
+import type { CacheBlobStore } from '../storage/CacheBlobStore';
+import { isDesktop } from '../../utils/platform';
 
 // Import all repositories
 import { WorkspaceRepository } from '../repositories/WorkspaceRepository';
@@ -188,6 +192,7 @@ export class HybridStorageAdapter implements IStorageAdapter {
   private queryCache: QueryCache;
   private storageCoordinator: PluginScopedStorageCoordinator;
   private vaultEventStore: VaultEventStore | null = null;
+  private cacheBlobStore: CacheBlobStore;
 
   // Repositories (composed)
   private workspaceRepo!: WorkspaceRepository;
@@ -215,10 +220,23 @@ export class HybridStorageAdapter implements IStorageAdapter {
       basePath: this.basePath
     });
 
+    // Build the cache-blob store ONCE here so the migration runner and the
+    // SQLiteCacheManager share the same instance. The store is selected by
+    // platform: IndexedDB on desktop (cloud-sync-immune), vault.adapter on
+    // mobile (iOS WKWebView IDB durability is insufficient for 150+ MB blobs).
+    const pluginFolderName = resolveActivePluginFolderName(this.plugin);
+    this.cacheBlobStore = createCacheBlobStore({
+      app: this.app,
+      vaultRelativePath: `${storageRoots.dataRoot}/cache.db`,
+      idbKey: computeIdbKey(this.app, pluginFolderName)
+    });
+
     this.sqliteCache = new SQLiteCacheManager({
       app: this.app,
       dbPath: `${storageRoots.dataRoot}/cache.db`,
-      wasmPath: `${storageRoots.pluginDir}/sqlite3.wasm`
+      wasmPath: `${storageRoots.pluginDir}/sqlite3.wasm`,
+      blobStore: this.cacheBlobStore,
+      plugin: this.plugin
     });
 
     this.syncCoordinator = new SyncCoordinator(
@@ -323,6 +341,12 @@ export class HybridStorageAdapter implements IStorageAdapter {
       let storagePlan = await this.storageCoordinator.prepareStoragePlan();
       this.applyStoragePlan(storagePlan);
       storagePlan = await this.backfillVaultEventStore(storagePlan);
+
+      // Cache-backend migration (cache.db file → IndexedDB on desktop). Runs
+      // foreground-blocking with a Notice; mobile bypasses immediately. Must
+      // execute BEFORE sqliteCache.initialize() so the cache manager loads
+      // bytes from the destination backend, not the legacy file.
+      await this.runCacheBackendMigration(storagePlan);
 
       // 1. Initialize SQLite cache
       await this.sqliteCache.initialize();
@@ -451,6 +475,32 @@ export class HybridStorageAdapter implements IStorageAdapter {
       deviceId: this.jsonlWriter.getDeviceId()
     });
     this.syncCoordinator.setReconcilePipeline(this.reconcilePipeline);
+  }
+
+  /**
+   * Kick off cache-backend migration before SQLite initializes. On desktop,
+   * reads any legacy `cache.db` from `vault.adapter` and writes it into IDB,
+   * verifies, and marks complete. On mobile (or after a verified run), this
+   * resolves immediately.
+   *
+   * Failure here is non-fatal: the migration runner persists 'failed' state,
+   * surfaces a Notice to the user, and returns. The cache manager then opens
+   * against an empty backend and the standard JSONL-replay path rebuilds it.
+   */
+  private async runCacheBackendMigration(plan: PluginScopedStoragePlan): Promise<void> {
+    const accessor: CacheBackendStateAccessor = {
+      read: () => this.storageCoordinator.readCacheBackendState(),
+      write: (state) => this.storageCoordinator.writeCacheBackendState(state)
+    };
+    const migration = new CacheBackendMigration({
+      adapter: this.app.vault.adapter,
+      legacyDbPath: plan.pluginCacheDbPath,
+      pluginDataRoot: plan.roots.dataRoot,
+      blobStore: this.cacheBlobStore,
+      stateAccessor: accessor,
+      isMobile: !isDesktop()
+    });
+    await migration.runIfNeeded();
   }
 
   private async backfillVaultEventStore(plan: PluginScopedStoragePlan): Promise<PluginScopedStoragePlan> {
@@ -882,6 +932,46 @@ export class HybridStorageAdapter implements IStorageAdapter {
       console.error('[HybridStorageAdapter] Error during close:', error);
       throw error;
     }
+  }
+
+  /**
+   * Wipe the cache backend and rebuild SQLite from the JSONL source of truth.
+   * Used by the "Nexus: Rebuild cache" command to recover from a corrupted or
+   * out-of-sync cache without touching the (synced) JSONL event store.
+   */
+  async rebuildCache(options: { onProgress?: (label: string, done: number, total: number) => void } = {}): Promise<void> {
+    if (!this.initialized) {
+      throw new Error('Storage adapter is not initialized; cannot rebuild cache');
+    }
+
+    options.onProgress?.('Stopping auto-save', 0, 1);
+    this.sqliteCache.stopAutoSave();
+
+    options.onProgress?.('Closing cache', 0, 1);
+    await this.sqliteCache.close();
+
+    options.onProgress?.('Removing cache blob', 0, 1);
+    await this.cacheBlobStore.remove();
+
+    options.onProgress?.('Reopening cache', 0, 1);
+    await this.sqliteCache.initialize();
+
+    if (!this.syncCoordinator) {
+      throw new Error('Sync coordinator unavailable; cannot rebuild from JSONL');
+    }
+
+    options.onProgress?.('Rebuilding from JSONL', 0, 1);
+    const result = await this.syncCoordinator.fullRebuild({
+      onProgress: options.onProgress
+    });
+
+    if (!result.success) {
+      const summary = result.errors.length > 0 ? result.errors.join('; ') : 'Unknown error';
+      throw new Error(`Cache rebuild failed: ${summary}`);
+    }
+
+    await this.sqliteCache.save();
+    options.onProgress?.('Complete', 1, 1);
   }
 
   // ============================================================================

@@ -3,6 +3,7 @@ import { App } from 'obsidian';
 import type { DatabaseStats } from '../interfaces/IStorageBackend';
 import type { QueryParams } from '../repositories/base/BaseRepository';
 import { SQLiteWasmBridge, SQLiteDatabaseHandle } from './SQLiteWasmBridge';
+import type { CacheBlobStore } from './CacheBlobStore';
 
 export interface SQLiteMaintenanceStatistics {
   workspaces: number;
@@ -23,6 +24,12 @@ interface SQLiteMaintenanceServiceOptions {
   getDb: () => SQLiteDatabaseHandle;
   queryOne: <T>(sql: string, params?: QueryParams) => Promise<T | null>;
   transaction: <T>(fn: () => Promise<T>) => Promise<T>;
+  /**
+   * Optional. When set, getStatistics() prefers this for `dbSizeBytes`. The
+   * IDB backend can answer instantly; the file-on-disk backend stat is the
+   * fallback used when the blob store returns null.
+   */
+  blobStore?: CacheBlobStore;
 }
 
 export class SQLiteMaintenanceService {
@@ -32,6 +39,7 @@ export class SQLiteMaintenanceService {
   private readonly getDb: () => SQLiteDatabaseHandle;
   private readonly queryOne: <T>(sql: string, params?: QueryParams) => Promise<T | null>;
   private readonly transaction: <T>(fn: () => Promise<T>) => Promise<T>;
+  private readonly blobStore?: CacheBlobStore;
 
   constructor(options: SQLiteMaintenanceServiceOptions) {
     this.app = options.app;
@@ -40,6 +48,7 @@ export class SQLiteMaintenanceService {
     this.getDb = options.getDb;
     this.queryOne = options.queryOne;
     this.transaction = options.transaction;
+    this.blobStore = options.blobStore;
   }
 
   setDbPath(dbPath: string): void {
@@ -112,10 +121,20 @@ export class SQLiteMaintenanceService {
 
     let dbSizeBytes = 0;
     try {
-      const exists = await this.app.vault.adapter.exists(this.dbPath);
-      if (exists) {
-        const stat = await this.app.vault.adapter.stat(this.dbPath);
-        dbSizeBytes = stat?.size ?? 0;
+      if (this.blobStore) {
+        const meta = await this.blobStore.getMetadata();
+        if (meta) {
+          dbSizeBytes = meta.size;
+        }
+      }
+      if (dbSizeBytes === 0) {
+        // Fallback to filesystem stat — handles legacy installs and the
+        // VaultAdapter mobile backend.
+        const exists = await this.app.vault.adapter.exists(this.dbPath);
+        if (exists) {
+          const stat = await this.app.vault.adapter.stat(this.dbPath);
+          dbSizeBytes = stat?.size ?? 0;
+        }
       }
     } catch {
       void 0;
