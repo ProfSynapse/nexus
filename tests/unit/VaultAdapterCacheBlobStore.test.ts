@@ -83,4 +83,29 @@ describe('VaultAdapterCacheBlobStore', () => {
     await store.write(new ArrayBuffer(0));
     expect(await store.read()).toBeNull();
   });
+
+  it('returns null metadata when adapter.stat returns null even though exists() was true', async () => {
+    const adapter = createFakeAdapter();
+    const store = new VaultAdapterCacheBlobStore({ adapter, path: 'cache/cache.db' });
+    await store.write(new Uint8Array([1, 2, 3]).buffer);
+    // Force stat() to return null while exists() still reports true. Models
+    // rare adapter races where the file disappears between the two calls.
+    (adapter.stat as jest.Mock).mockResolvedValueOnce(null);
+    expect(await store.getMetadata()).toBeNull();
+  });
+
+  it('skips mkdir when the parent directory already exists', async () => {
+    const adapter = createFakeAdapter();
+    adapter._dirs.add('a/b');
+    const store = new VaultAdapterCacheBlobStore({ adapter, path: 'a/b/cache.db' });
+    await store.write(new ArrayBuffer(4));
+    expect(adapter.mkdir).not.toHaveBeenCalled();
+  });
+
+  it('does not attempt mkdir for a top-level path with no parent', async () => {
+    const adapter = createFakeAdapter();
+    const store = new VaultAdapterCacheBlobStore({ adapter, path: 'cache.db' });
+    await store.write(new ArrayBuffer(4));
+    expect(adapter.mkdir).not.toHaveBeenCalled();
+  });
 });
