@@ -10,14 +10,16 @@ import type { CacheBlobStore } from '../storage/CacheBlobStore';
  * are gone, so on partial failure the next migration run can still read it.
  */
 export const CONFLICT_COPY_PATTERNS: ReadonlyArray<RegExp> = [
-  /^cache\.db$/,
-  /^cache \d+\.db$/,
-  /^cache \(\d+\)\.db$/,
-  /^cache_conf\d*\.db$/,
-  /^cache\[Conflict\].*\.db$/,
-  /^cache.*conflicted copy \d{4}-\d{2}-\d{2}\.db$/i,
-  /^cache \(Case Conflict\)\.db$/i,
-  /^cache\.db\.[a-f0-9]{6,}$/i
+  /^cache\.db$/,                                           // literal: cache.db
+  /^cache \d+\.db$/,                                       // iCloud:  cache 2.db
+  /^cache \(\d+\)\.db$/,                                   // generic: cache (1).db
+  /^cache_\d+\.db$/,                                       // underscore-numeric: cache_2.db, cache_3.db
+  /^cache_conf\d*\.db$/,                                   // sync helper: cache_conf.db, cache_conf2.db
+  /^cache\[Conflict\].*\.db$/,                             // suffix:  cache[Conflict].db
+  /^cache\.db \(Conflict\)$/i,                             // OneDrive: cache.db (Conflict)
+  /^cache.*conflicted copy \d{4}-\d{2}-\d{2}\.db$/i,       // Dropbox: cache (Pinky's conflicted copy 2026-01-15).db
+  /^cache \(Case Conflict\)\.db$/i,                        // case-fold: cache (Case Conflict).db
+  /^cache\.db\.[a-f0-9]{6,}$/i                             // hash-suffix: cache.db.a1b2c3
 ];
 
 const LITERAL_CACHE_PATTERN = CONFLICT_COPY_PATTERNS[0];
@@ -219,7 +221,19 @@ export class CacheBackendMigration {
     // Fallback: read full bytes and compare length. Slower but reliable
     // against backends with weak metadata.
     const data = await this.opts.blobStore.read();
-    return data !== null && data.byteLength === expectedBytes;
+    const ok = data !== null && data.byteLength === expectedBytes;
+    if (!ok) {
+      // Diagnostic only — does not change return semantics. Captures all three
+      // numbers so a length-mismatch failure is greppable in the user's
+      // console and the one-shot retry path in runStateMachine() still owns
+      // the recovery decision.
+      console.warn('[CacheBackendMigration] verifyIdb mismatch', {
+        expectedBytes,
+        metaSize: meta ? meta.size : null,
+        readBytes: data ? data.byteLength : null
+      });
+    }
+    return ok;
   }
 
   /**

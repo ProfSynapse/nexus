@@ -184,6 +184,14 @@ export class HybridStorageAdapter implements IStorageAdapter {
   private initResolve: (() => void) | null = null;
   private initError: Error | null = null;
 
+  /**
+   * Coalesces concurrent `rebuildCache` invocations. When a rebuild is in
+   * flight, subsequent calls return the same promise so a double-click on
+   * "Nexus: Rebuild cache" cannot start two simultaneous rebuilds (which
+   * would race over close/remove/initialize/save on `sqliteCache`).
+   */
+  private rebuildInFlight: Promise<void> | null = null;
+
   // Infrastructure (owned by adapter)
   private jsonlWriter: JSONLWriter;
   private sqliteCache: SQLiteCacheManager;
@@ -940,38 +948,55 @@ export class HybridStorageAdapter implements IStorageAdapter {
    * out-of-sync cache without touching the (synced) JSONL event store.
    */
   async rebuildCache(options: { onProgress?: (label: string, done: number, total: number) => void } = {}): Promise<void> {
-    if (!this.initialized) {
-      throw new Error('Storage adapter is not initialized; cannot rebuild cache');
+    // Coalesce concurrent invocations. A second click on "Nexus: Rebuild
+    // cache" while one is in flight returns the same promise — both callers
+    // settle on the same outcome, errors propagate to both.
+    if (this.rebuildInFlight) {
+      return this.rebuildInFlight;
     }
 
-    options.onProgress?.('Stopping auto-save', 0, 1);
-    this.sqliteCache.stopAutoSave();
+    this.rebuildInFlight = (async () => {
+      try {
+        if (!this.initialized) {
+          throw new Error('Storage adapter is not initialized; cannot rebuild cache');
+        }
 
-    options.onProgress?.('Closing cache', 0, 1);
-    await this.sqliteCache.close();
+        options.onProgress?.('Stopping auto-save', 0, 1);
+        this.sqliteCache.stopAutoSave();
 
-    options.onProgress?.('Removing cache blob', 0, 1);
-    await this.cacheBlobStore.remove();
+        options.onProgress?.('Closing cache', 0, 1);
+        await this.sqliteCache.close();
 
-    options.onProgress?.('Reopening cache', 0, 1);
-    await this.sqliteCache.initialize();
+        options.onProgress?.('Removing cache blob', 0, 1);
+        await this.cacheBlobStore.remove();
 
-    if (!this.syncCoordinator) {
-      throw new Error('Sync coordinator unavailable; cannot rebuild from JSONL');
-    }
+        options.onProgress?.('Reopening cache', 0, 1);
+        await this.sqliteCache.initialize();
 
-    options.onProgress?.('Rebuilding from JSONL', 0, 1);
-    const result = await this.syncCoordinator.fullRebuild({
-      onProgress: options.onProgress
-    });
+        if (!this.syncCoordinator) {
+          throw new Error('Sync coordinator unavailable; cannot rebuild from JSONL');
+        }
 
-    if (!result.success) {
-      const summary = result.errors.length > 0 ? result.errors.join('; ') : 'Unknown error';
-      throw new Error(`Cache rebuild failed: ${summary}`);
-    }
+        options.onProgress?.('Rebuilding from JSONL', 0, 1);
+        const result = await this.syncCoordinator.fullRebuild({
+          onProgress: options.onProgress
+        });
 
-    await this.sqliteCache.save();
-    options.onProgress?.('Complete', 1, 1);
+        if (!result.success) {
+          const summary = result.errors.length > 0 ? result.errors.join('; ') : 'Unknown error';
+          throw new Error(`Cache rebuild failed: ${summary}`);
+        }
+
+        await this.sqliteCache.save();
+        options.onProgress?.('Complete', 1, 1);
+      } finally {
+        // Clear on both success and failure so a follow-up rebuild can
+        // re-run; the original error (if any) still rejects this promise.
+        this.rebuildInFlight = null;
+      }
+    })();
+
+    return this.rebuildInFlight;
   }
 
   // ============================================================================
