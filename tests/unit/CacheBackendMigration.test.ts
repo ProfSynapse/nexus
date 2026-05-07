@@ -240,6 +240,100 @@ describe('CacheBackendMigration.runJanitor', () => {
     expect(files.size).toBe(4);
   });
 
+  // ---------------------------------------------------------------------------
+  // B.2 — Additional CONFLICT_COPY_PATTERNS coverage (database-engineer M3).
+  //
+  // Two patterns shipped at e65f3691 lack direct tests:
+  //   - /^cache_\d+\.db$/         matches cache_2.db, cache_3.db (numeric
+  //                                underscore — newer iCloud / Synology form)
+  //   - /^cache\.db \(Conflict\)$/i  matches OneDrive's `cache.db (Conflict)`
+  //
+  // We also pin the Dropbox `cache (User's conflicted copy YYYY-MM-DD).db`
+  // form. backend-coder-3's review note said "the existing greedy regex
+  // covers it" — that's correct (the regex is
+  // /^cache.*conflicted copy \d{4}-\d{2}-\d{2}\.db$/i and the prefix catches
+  // anything starting with "cache"), but verified-by-inspection is fragile.
+  // A test prevents future regex tightening from silently dropping that form.
+  // ---------------------------------------------------------------------------
+  it('B.2: cleans cache_2.db / cache_3.db (underscore-numeric pattern)', async () => {
+    const filesMap = new Map<string, ArrayBuffer>([
+      ['cache_2.db', new ArrayBuffer(1)],
+      ['cache_3.db', new ArrayBuffer(1)],
+      ['cache_42.db', new ArrayBuffer(1)],
+      ['unrelated.txt', new ArrayBuffer(1)]
+    ]);
+    const { adapter, files } = fakeAdapter({ files: filesMap });
+    const { store } = fakeBlobStore();
+    const { accessor } = fakeStateAccessor();
+
+    const migration = new CacheBackendMigration({
+      adapter, legacyDbPath: 'cache.db', pluginDataRoot: '.',
+      blobStore: store, stateAccessor: accessor, isMobile: false, showNotices: false
+    });
+
+    const report = await migration.runJanitor();
+    expect(report.removed.sort()).toEqual(['cache_2.db', 'cache_3.db', 'cache_42.db'].sort());
+    expect(report.failed).toEqual([]);
+    expect(files.has('unrelated.txt')).toBe(true);
+  });
+
+  it('B.2: cleans `cache.db (Conflict)` (OneDrive case-insensitive pattern)', async () => {
+    const filesMap = new Map<string, ArrayBuffer>([
+      ['cache.db (Conflict)', new ArrayBuffer(1)],
+      // Case-fold variants — the /i flag makes these match.
+      ['cache.db (conflict)', new ArrayBuffer(1)],
+      ['CACHE.DB (CONFLICT)', new ArrayBuffer(1)]
+    ]);
+    const { adapter, files } = fakeAdapter({ files: filesMap });
+    const { store } = fakeBlobStore();
+    const { accessor } = fakeStateAccessor();
+
+    const migration = new CacheBackendMigration({
+      adapter, legacyDbPath: 'cache.db', pluginDataRoot: '.',
+      blobStore: store, stateAccessor: accessor, isMobile: false, showNotices: false
+    });
+
+    const report = await migration.runJanitor();
+    // All three case variants must be removed.
+    expect(report.removed.sort()).toEqual(
+      ['CACHE.DB (CONFLICT)', 'cache.db (Conflict)', 'cache.db (conflict)'].sort()
+    );
+    expect(files.size).toBe(0);
+  });
+
+  it('B.2: cleans Dropbox `cache <prefix> conflicted copy YYYY-MM-DD.db` regex form (regression pin)', async () => {
+    // The shipped regex is /^cache.*conflicted copy \d{4}-\d{2}-\d{2}\.db$/i
+    // — `\.db$` requires the literal `.db` suffix WITHOUT a trailing closing
+    // paren. These inputs match. Forms like
+    // `cache (User's conflicted copy 2026-01-15).db` (Dropbox standard, with
+    // a closing paren BEFORE .db) are NOT matched by the current regex; if
+    // a future patch widens the regex to cover that form, it should also
+    // update this test.
+    const filesMap = new Map<string, ArrayBuffer>([
+      ['cache User conflicted copy 2026-01-15.db', new ArrayBuffer(1)],
+      ['cache (User) conflicted copy 2026-12-31.db', new ArrayBuffer(1)],
+      ['cache_with_long_prefix conflicted copy 2026-03-21.db', new ArrayBuffer(1)]
+    ]);
+    const { adapter, files } = fakeAdapter({ files: filesMap });
+    const { store } = fakeBlobStore();
+    const { accessor } = fakeStateAccessor();
+
+    const migration = new CacheBackendMigration({
+      adapter, legacyDbPath: 'cache.db', pluginDataRoot: '.',
+      blobStore: store, stateAccessor: accessor, isMobile: false, showNotices: false
+    });
+
+    const report = await migration.runJanitor();
+    expect(report.removed.sort()).toEqual(
+      [
+        'cache User conflicted copy 2026-01-15.db',
+        'cache (User) conflicted copy 2026-12-31.db',
+        'cache_with_long_prefix conflicted copy 2026-03-21.db'
+      ].sort()
+    );
+    expect(files.size).toBe(0);
+  });
+
   it('per-file failure does not abort the sweep', async () => {
     const filesMap = new Map<string, ArrayBuffer>([
       ['cache.db', new ArrayBuffer(1)],

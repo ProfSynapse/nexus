@@ -348,6 +348,73 @@ describe('CacheBackendMigration edge cases', () => {
     expect(current.value?.migrationState).toBe('verified');
   });
 
+  // -------------------------------------------------------------------------
+  // A.5 — MARK_VERIFIED-fail-after-VERIFY-success regression
+  // (database-engineer review M2).
+  //
+  // The state machine spec §5 says runIfNeeded must be idempotent on partial
+  // failure. The MARK_VERIFIED step (stateAccessor.write that flips persisted
+  // state to verified+idb) sits AFTER VERIFY succeeds. If MARK_VERIFIED throws
+  // — e.g. on a transient disk write failure that succeeds on retry — the
+  // bytes are already in IDB and VERIFY has confirmed them. The next launch
+  // must re-enter the state machine (because persisted state is still NOT
+  // verified+idb), re-verify, and successfully MARK_VERIFIED on the second
+  // attempt.
+  //
+  // Without this, a single transient stateAccessor.write failure would force
+  // a permanent re-migration loop with cache.db preserved indefinitely.
+  // -------------------------------------------------------------------------
+  it('A.5: MARK_VERIFIED throws once after VERIFY succeeds; next runIfNeeded lands verified', async () => {
+    const blob = new Uint8Array(2048).fill(0xab).buffer;
+    const { adapter } = fakeAdapter(new Map<string, ArrayBuffer>([['cache.db', blob]]));
+    const { store } = fakeBlobStore();
+    const { accessor, current } = fakeStateAccessor();
+
+    // First MARK_VERIFIED write throws; subsequent writes (including the
+    // post-failure failed-state write, AND the next-launch retry) succeed.
+    let writeCalls = 0;
+    const realWrite = accessor.write as jest.Mock;
+    realWrite.mockImplementation(async (state: CacheBackendState) => {
+      writeCalls += 1;
+      // Throw ONLY on the first attempt to mark verified+idb. Allow the
+      // failed-state write that follows it (line 188-192 of source) and any
+      // subsequent retry to succeed — we want to assert the system recovers
+      // on the next runIfNeeded call.
+      if (writeCalls === 1 && state.migrationState === 'verified' && state.backend === 'idb') {
+        throw new Error('disk full while persisting state');
+      }
+      current.value = state;
+    });
+
+    const migration = new CacheBackendMigration({
+      adapter,
+      legacyDbPath: 'cache.db',
+      pluginDataRoot: '.',
+      blobStore: store,
+      stateAccessor: accessor,
+      isMobile: false,
+      showNotices: false
+    });
+
+    // Launch 1: MARK_VERIFIED throws. The runner catches it and persists
+    // failed state via the catch path. Result outcome is 'failed'.
+    const first = await migration.runIfNeeded();
+    expect(first.outcome).toBe('failed');
+    expect(first.error).toMatch(/disk full/);
+    expect(current.value?.migrationState).toBe('failed');
+
+    // Launch 2: re-enters state machine because persisted state is `failed`,
+    // not `verified+idb`. WRITE_IDB succeeds (idempotent overwrite of the
+    // same bytes already in IDB), VERIFY succeeds (size matches), and now
+    // the stateAccessor.write succeeds — MARK_VERIFIED lands. The outcome
+    // must be 'verified' on this second attempt.
+    const second = await migration.runIfNeeded();
+    expect(second.outcome).toBe('verified');
+    expect(current.value?.migrationState).toBe('verified');
+    expect(current.value?.backend).toBe('idb');
+    expect(current.value?.migratedAt).toBeDefined();
+  });
+
   it('overrides prior failed state with verified+idb on a fresh-install short-circuit', async () => {
     const { adapter } = fakeAdapter();
     const { store } = fakeBlobStore();

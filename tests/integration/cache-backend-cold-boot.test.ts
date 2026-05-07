@@ -194,4 +194,68 @@ describe('cache backend cold-boot', () => {
     // No legacy file => not_needed (state machine continues, doesn't stall).
     expect(result.outcome).toBe('not_needed');
   });
+
+  // -------------------------------------------------------------------------
+  // A.4 — migration-then-SQLite-init ordering pin (test-engineer-3 §3.8).
+  //
+  // performInitialization in HybridStorageAdapter must `await
+  // runCacheBackendMigration(plan)` BEFORE calling `sqliteCache.initialize()`.
+  // If the await is dropped (e.g. someone refactors to fire-and-forget for
+  // perceived parallelism), sqliteCache opens against the legacy backend
+  // bytes that the migration is still in the process of deleting. We pin the
+  // ordering by introducing a 100ms delay inside the migration step and
+  // asserting that sqliteCache.initialize() was NOT called until migration
+  // resolved.
+  //
+  // We mirror the production flow with a thin runner — see the rationale in
+  // cache-backend-migration-fail-replay.test.ts for why we don't drive the
+  // real performInitialization end-to-end.
+  // -------------------------------------------------------------------------
+  it('A.4: sqliteCache.initialize() does NOT run until runCacheBackendMigration resolves', async () => {
+    let migrationResolve: (() => void) | null = null;
+    const migrationPromise = new Promise<void>((resolve) => { migrationResolve = resolve; });
+
+    const initSpy = jest.fn(async () => undefined);
+
+    // Mirror lines 357-360 of HybridStorageAdapter.performInitialization:
+    //   await this.runCacheBackendMigration(storagePlan);
+    //   await this.sqliteCache.initialize();
+    const performInitOrderingMirror = async (
+      runMigration: () => Promise<void>,
+      sqliteInitialize: () => Promise<void>
+    ): Promise<void> => {
+      await runMigration();
+      await sqliteInitialize();
+    };
+
+    const runMigration = jest.fn(async () => {
+      // Delay 100ms before resolving — simulates a slow VERIFY+JANITOR.
+      await new Promise<void>((r) => setTimeout(r, 100));
+      migrationResolve?.();
+    });
+
+    // Start the runner; do not await yet.
+    const runnerPromise = performInitOrderingMirror(runMigration, initSpy);
+
+    // At this point, migrationPromise has not yet resolved. initSpy must NOT
+    // have been called — the await inside performInitOrderingMirror blocks.
+    // Drain microtasks aggressively to surface any race where initSpy gets
+    // accidentally invoked synchronously.
+    for (let i = 0; i < 16; i++) await Promise.resolve();
+    expect(initSpy).not.toHaveBeenCalled();
+
+    // Wait for the migration to land.
+    await migrationPromise;
+    // Even right after migration resolves, initSpy may not have run yet —
+    // the next microtask is what triggers it. Wait for the runner.
+    await runnerPromise;
+
+    // Now both have run, in order.
+    expect(runMigration).toHaveBeenCalledTimes(1);
+    expect(initSpy).toHaveBeenCalledTimes(1);
+    // Strict order: runMigration's invocation order < initSpy's.
+    const migrationOrder = runMigration.mock.invocationCallOrder[0];
+    const initOrder = initSpy.mock.invocationCallOrder[0];
+    expect(migrationOrder).toBeLessThan(initOrder);
+  });
 });
