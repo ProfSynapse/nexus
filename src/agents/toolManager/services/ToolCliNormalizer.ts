@@ -312,7 +312,7 @@ function coerceValue(raw: string, type: string): unknown {
     if (jsonItems !== null) {
       return jsonItems.map((item: unknown) => coerceArrayItem(item, itemType));
     }
-    return splitCsvRespectingQuotes(raw).map(item => coerceValue(item, itemType));
+    return splitCsvRespectingQuotes(stripOuterArrayBrackets(raw)).map(item => coerceValue(item, itemType));
   }
 
   if (type === 'object') {
@@ -340,13 +340,62 @@ function coerceValue(raw: string, type: string): unknown {
         // Malformed JSON → fall through to CSV split.
       }
     }
-    const items = splitCsvRespectingQuotes(raw);
+    const items = splitCsvRespectingQuotes(stripOuterArrayBrackets(raw));
     if (items.length >= 2) return items;
     if (items.length === 1) return items[0];
     return raw;
   }
 
   return raw;
+}
+
+/**
+ * If `raw` is wrapped by a single outer `[...]` pair (depth returns to zero
+ * exactly at the final char), return the unwrapped inner content. Otherwise
+ * return `raw` unchanged. Quote-aware: brackets inside `"..."` or `'...'`
+ * don't affect depth.
+ *
+ * Bug this guards: `set-property --value "[[[A]],[[B]],[[C]]]"` where the
+ * caller intends an array of three Obsidian wikilinks. JSON.parse fails
+ * (wikilinks aren't valid JSON), and the previous CSV fallback split the
+ * raw string verbatim — the outer `[` stayed glued to the first item and
+ * the outer `]` stayed glued to the last, writing `[[[A]]` and `[[C]]]` to
+ * the frontmatter. Stripping the outer pair first leaves `[[A]],[[B]],[[C]]`,
+ * which CSV-splits cleanly into `["[[A]]", "[[B]]", "[[C]]"]`.
+ *
+ * Bare CSV like `[[A]],[[B]]` (no outer wrapper) is preserved: depth zeroes
+ * out mid-string at the close of the first wikilink, so the function bails
+ * and returns `raw` unchanged.
+ *
+ * Issue: ProfSynapse/nexus#TBD.
+ */
+export function stripOuterArrayBrackets(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith('[') || !trimmed.endsWith(']')) return raw;
+
+  let depth = 0;
+  let quote: '"' | '\'' | null = null;
+  let escaped = false;
+  for (let i = 0; i < trimmed.length; i += 1) {
+    const ch = trimmed[i];
+    if (escaped) { escaped = false; continue; }
+    if (ch === '\\') { escaped = true; continue; }
+    if (quote) {
+      if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === '"' || ch === '\'') { quote = ch; continue; }
+    if (ch === '[') depth += 1;
+    else if (ch === ']') {
+      depth -= 1;
+      // Outer pair only matches if depth zeroes out exactly at the final char.
+      // An earlier zero-depth (e.g. `[[A]],[[B]]`) means there's no single
+      // outer pair — leave `raw` alone so the CSV splitter sees it as-is.
+      if (depth === 0 && i < trimmed.length - 1) return raw;
+    }
+  }
+  if (depth !== 0) return raw; // unbalanced — don't touch
+  return trimmed.slice(1, -1);
 }
 
 function coerceArrayItem(item: unknown, itemType: string): unknown {
