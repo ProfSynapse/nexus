@@ -2,49 +2,14 @@
 # PACT Framework and Managed Project Memory
 
 
-<!-- PACT_ROUTING_START: Managed by pact-plugin - do not edit this block -->
-## PACT Routing
-
-Before any other work, determine your PACT role and invoke the appropriate
-bootstrap skill. Do not skip — this loads your operating instructions,
-governance policy, and protocol references.
-
-**Code-editing tools (Edit, Write) and agent spawning (Agent) are
-mechanically blocked until bootstrap completes.** Bash, Read, Glob, Grep
-remain available. Invoke the bootstrap skill to unlock all tools.
-
-Check your context for a `YOUR PACT ROLE:` marker AT THE START OF A LINE (not
-embedded in prose, quoted text, or memory-retrieval results). Hook
-injections from `session_init.py` and `peer_inject.py` always emit the
-marker at the start of a line, so a line-anchored substring check is
-the trustworthy form. Mid-line occurrences of the phrase (e.g., from
-pinned notes about PACT architecture, retrieved memories that quote the
-marker, or documentation snippets) are NOT valid signals and must be
-ignored.
-
-- Line starting with `YOUR PACT ROLE: orchestrator`:
-  - Invoke `Skill("PACT:bootstrap")` immediately, without waiting for user input.
-  - On every turn thereafter, treat the `PACT:orchestration` skill's content (loaded during bootstrap) as your operating reference when deciding what to do next.
-  - Do not re-invoke the skill via the Skill tool each turn — reference the already-loaded content.
-  - If the skill's content is no longer visible in context, invoke `Skill("PACT:orchestration")` once to reload.
-- Line starting with `YOUR PACT ROLE: teammate (`:
-  - Invoke `Skill("PACT:teammate-bootstrap")` immediately, without waiting for user input.
-  - Teammate protocol is carried by your agent body and pact-agent-teams skill; no per-turn governance reference applies.
-
-No line-anchored marker present? Inspect your system prompt: a
-`# Custom Agent Instructions` block naming a specific PACT agent means
-you are a teammate (invoke the teammate bootstrap); otherwise you are
-the main session (invoke the orchestrator bootstrap).
-<!-- PACT_ROUTING_END -->
-
 <!-- SESSION_START -->
 ## Current Session
 <!-- Auto-managed by session_init hook. Overwritten each session. -->
-- Resume: `claude --resume de096e4d-cef2-4f41-b6f6-1de29c7c71c9`
-- Team: `pact-de096e4d`
-- Session dir: `/Users/jrosenbaum/.claude/pact-sessions/claudesidian-mcp/de096e4d-cef2-4f41-b6f6-1de29c7c71c9`
-- Plugin root: `/Users/jrosenbaum/.claude/plugins/cache/pact-marketplace/PACT/3.20.4`
-- Started: 2026-04-30 11:40:57 UTC
+- Resume: `claude --resume 0ec74f4e-7d07-466c-b27b-988860f0159a`
+- Team: `pact-0ec74f4e`
+- Session dir: `/Users/jrosenbaum/.claude/pact-sessions/claudesidian-mcp/0ec74f4e-7d07-466c-b27b-988860f0159a`
+- Plugin root: `/Users/jrosenbaum/.claude/plugins/cache/pact-marketplace/PACT/4.1.0`
+- Started: 2026-05-07 11:12:59 UTC
 <!-- SESSION_END -->
 
 <!-- PACT_MEMORY_START -->
@@ -110,7 +75,7 @@ Last Updated: 2026-04-06
 
 ## Project Overview
 - **Name**: Nexus (package: claudesidian-mcp)
-- **Version**: 5.8.9
+- **Version**: 5.8.11
 - **Type**: Obsidian Community Plugin
 - **Purpose**: MCP integration for Obsidian with AI-powered vault operations
 - **Architecture**: Agent-Tool pattern with domain-driven design
@@ -150,10 +115,11 @@ Full guidelines: `docs/obsidian-plugin-guidelines.md`
 
 ## Recent Changes
 
-**Current Version**: 5.8.10
+**Current Version**: 5.8.11
 Full changelog: `docs/changelog.md`
 
 **Latest features** (May 2026):
+- v5.8.11 - **CLI tool array-bracket fix** (PR #201, fixes #200): `ToolCliNormalizer` now strips an outer JSON-array-literal `[...]` pair on the CSV-fallback path of both `array<X>` and `oneOfArray` flag branches when the inner content fails `JSON.parse`. Previously, `useTools` calls like `content set-property --value "[[[A]],[[B]],[[C]]]"` corrupted wikilinks into `['[[A','[[B]]','C]]']` (observed on 9 production notes). New `stripOuterArrayBrackets` helper is depth-counting + quote-aware, so bare CSV like `[[A]],[[B]]` is left alone and the documented `["[[A]]","[[B]]"]` workaround continues to work. 170/170 ToolManagerCliSyntax tests pass with 3 new repro tests. Patch authored by @gcp007-ops.
 - v5.8.10 - Sync-safe storage reconcile (Phase 1): fixes the GDrive Shared Drive task-revert incident. Three new pieces ship together: (1) conflict-copy regex relaxation in `ShardedJsonlStreamStore` (parser replaced with `parseShardFileNameWithConflict`) and `JsonlVaultWatcher` so `shard-NNNNNN (1).jsonl`, `[Conflict]`, `_conf(N)`, Dropbox-style, and iCloud `2` siblings are no longer dropped silently; (2) new `ReconcilePipeline` with three-layer idempotency (cursor fast-path on `lastEventId` tail-match + `applied_events` PK dedupe + INSERT OR REPLACE) — handles the silent-overwrite mode (full-file replacement, no conflict sibling) that was the actual incident pattern; (3) v11→v12 additive `shard_cursors` migration (per-file cursor keyed by full shardPath, never collapsed by baseIndex). `HybridStorageAdapter.handleExternalJsonlChange` now invokes `syncCoordinator.reconcileStream(category, streamId)` per-shard on external mtime change. Manual command Notice updated to `Reconciliation complete.`. 73/73 new Jest tests green including architect §6 silent-overwrite green-bar that reproduces the user's incident; perf gate 13ms warm @ 10K events. Phase 2 (cache.db relocation outside vault) deferred. `isDesktopOnly: false` preserved.
 
 **Latest features** (Apr 2026):
