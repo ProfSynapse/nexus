@@ -177,7 +177,15 @@ export class CacheBackendMigration {
       if (notice) {
         notice.hide();
         if (this.opts.showNotices !== false) {
-          new Notice('Nexus cache migration complete.', 3000);
+          // Sticky Notice (timeout=0): kept visible until user dismisses or restarts.
+          // Reason: post-migration boot has a known first-launch transient where some
+          // downstream services (e.g. TaskService for Task Board) hit waitForQueryReady
+          // timeouts during reconciliation. Restarting Obsidian once after migration
+          // skips the bad path entirely on every subsequent boot.
+          new Notice(
+            'Nexus cache migrated successfully — please restart Obsidian for the change to take effect, or task board and other features may appear stuck until you do.',
+            0
+          );
         }
       }
 
