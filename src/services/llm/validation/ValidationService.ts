@@ -130,6 +130,9 @@ export class LLMValidationService {
         case 'groq':
           result = await this.validateGroq(apiKey);
           break;
+        case 'deepseek':
+          result = await this.validateDeepSeek(apiKey);
+          break;
         case 'deepgram':
           result = await this.validateDeepgram(apiKey);
           break;
@@ -328,6 +331,39 @@ export class LLMValidationService {
       return { 
         success: false, 
         error: error instanceof Error ? error.message : 'Groq API key validation failed' 
+      };
+    }
+  }
+
+  private static async validateDeepSeek(apiKey: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      const response = await this.requestWithTimeout('deepseek', 'DeepSeek validation', {
+        url: 'https://api.deepseek.com/chat/completions',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model: 'deepseek-v4-flash',
+          messages: [{ role: 'user', content: 'Hi' }],
+          max_tokens: 5
+        })
+      });
+
+      if (response.status >= 200 && response.status < 300) {
+        return { success: true };
+      } else {
+        const errorData = (response.json ?? {});
+        return {
+          success: false,
+          error: errorData.error?.message || `HTTP ${response.status}`
+        };
+      }
+    } catch (error: unknown) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'DeepSeek API key validation failed'
       };
     }
   }

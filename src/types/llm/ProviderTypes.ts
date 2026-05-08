@@ -121,6 +121,10 @@ export const DEFAULT_LLM_PROVIDER_SETTINGS: LLMProviderSettings = {
       apiKey: '',
       enabled: false
     },
+    deepseek: {
+      apiKey: '',
+      enabled: false
+    },
     deepgram: {
       apiKey: '',
       enabled: false

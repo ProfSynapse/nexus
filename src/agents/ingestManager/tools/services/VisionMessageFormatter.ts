@@ -15,6 +15,7 @@ const PROVIDER_FAMILY_MAP: Record<string, VisionProviderFamily> = {
   'openai-codex': 'openai',
   'github-copilot': 'openai',
   groq: 'openai',
+  deepseek: 'openai',
   openrouter: 'openai',
   mistral: 'openai',
   requesty: 'openai',

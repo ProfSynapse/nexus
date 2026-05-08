@@ -24,6 +24,7 @@ export class ProviderUtils {
       'cohere': 'Cohere',
       'huggingface': 'Hugging Face',
       'groq': 'Groq',
+      'deepseek': 'DeepSeek',
       'perplexity': 'Perplexity',
       'requesty': 'Requesty'
     };
@@ -90,7 +91,8 @@ export class ProviderUtils {
       'cohere': '#39c6b9',
       'huggingface': '#ff9a00',
       'deepgram': '#13ef93',
-      'assemblyai': '#4f46e5'
+      'assemblyai': '#4f46e5',
+      'deepseek': '#4d6bfe'
     };
     return colors[providerId] || '#6b7280';
   }
@@ -114,7 +116,8 @@ export class ProviderUtils {
       'cohere': '🧬',
       'huggingface': '🤗',
       'deepgram': '🎙️',
-      'assemblyai': '📝'
+      'assemblyai': '📝',
+      'deepseek': '🐋'
     };
     return icons[providerId] || '🤖';
   }
@@ -151,7 +154,8 @@ export class ProviderUtils {
       'cohere': 'COH',
       'huggingface': 'HF',
       'deepgram': 'DGM',
-      'assemblyai': 'AAI'
+      'assemblyai': 'AAI',
+      'deepseek': 'DSK'
     };
     return abbreviations[providerId] || providerId.substring(0, 3).toUpperCase();
   }
@@ -172,6 +176,7 @@ export class ProviderUtils {
       'openrouter',
       'google',      // ✅ Google Gemini streaming via generateContentStream
       'groq',        // ✅ Groq streaming support
+      'deepseek',    // ✅ DeepSeek streaming via OpenAI-compatible SSE
       'github-copilot' // ✅ GitHub Copilot streaming via OpenAI-compatible SSE
     ];
     return streamingProviders.includes(providerId);
@@ -188,6 +193,7 @@ export class ProviderUtils {
       'webllm',      // ✅ [TOOL_CALLS] content format for fine-tuned models
       'openrouter',  // ✅ OpenAI-compatible function calling
       'groq',        // ✅ OpenAI-compatible function calling
+      'deepseek',    // ✅ OpenAI-compatible function calling
       'mistral',     // ✅ Native Mistral function calling
       'requesty',    // ✅ OpenAI-compatible function calling
       'anthropic',   // ✅ Native Claude tool calling
@@ -248,7 +254,7 @@ export class ProviderUtils {
       streaming: this.supportsStreaming(providerId),
       functionCalling: this.supportsFunctionCalling(providerId),
       imageInput: ['openai', 'anthropic', 'anthropic-claude-code', 'google', 'google-gemini-cli', 'github-copilot'].includes(providerId),
-      jsonMode: ['openai', 'mistral'].includes(providerId)
+      jsonMode: ['openai', 'mistral', 'deepseek'].includes(providerId)
     };
   }
 }

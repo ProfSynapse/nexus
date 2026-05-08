@@ -170,6 +170,8 @@ export const MOBILE_COMPATIBLE_PROVIDERS = [
     'google',       // Uses requestUrl-backed REST transport
     'mistral',      // Uses requestUrl-backed REST transport
     'groq',         // Uses requestUrl-backed REST transport
+    'deepseek',     // Uses requestUrl-backed REST transport
+
     'openrouter',   // Uses fetch - 400+ models via unified API
     'requesty',     // Uses fetch - Router for multiple providers
     'perplexity',   // Uses fetch - Web search focused
