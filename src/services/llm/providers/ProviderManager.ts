@@ -338,6 +338,11 @@ export class LLMProviderManager {
         description: 'Ultra-fast inference speeds for quick responses'
       },
       {
+        id: 'deepseek',
+        name: 'DeepSeek',
+        description: 'Cost-efficient reasoning models with 1M context'
+      },
+      {
         id: 'deepgram',
         name: 'Deepgram',
         description: 'Specialized speech-to-text with strong word timing and transcript structure'

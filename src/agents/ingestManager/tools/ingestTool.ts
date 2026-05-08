@@ -204,6 +204,7 @@ function formatProviderName(provider: string): string {
   const nameMap: Record<string, string> = {
     openai: 'OpenAI',
     groq: 'Groq',
+    deepseek: 'DeepSeek',
     google: 'Google Gemini',
     openrouter: 'OpenRouter',
     mistral: 'Mistral',

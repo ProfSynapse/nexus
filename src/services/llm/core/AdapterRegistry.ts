@@ -251,6 +251,11 @@ export class AdapterRegistry implements IAdapterRegistry {
       return new GroqAdapter(config.apiKey);
     });
 
+    await this.initializeProviderAsync('deepseek', providers.deepseek, async (config) => {
+      const { DeepSeekAdapter } = await import('../adapters/deepseek/DeepSeekAdapter');
+      return new DeepSeekAdapter(config.apiKey);
+    });
+
     // ═══════════════════════════════════════════════════════════════════════════
     // DESKTOP-ONLY PROVIDERS
     // ═══════════════════════════════════════════════════════════════════════════

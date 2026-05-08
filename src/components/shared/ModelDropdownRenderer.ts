@@ -23,6 +23,7 @@ const PROVIDER_NAMES: Record<string, string> = {
   'google-gemini-cli': 'Gemini CLI',
   mistral: 'Mistral AI',
   groq: 'Groq',
+  deepseek: 'DeepSeek',
   deepgram: 'Deepgram',
   assemblyai: 'AssemblyAI',
   openrouter: 'OpenRouter',

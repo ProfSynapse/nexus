@@ -35,6 +35,23 @@ export interface ProviderThinkingConfig {
   groq?: {
     reasoning_effort: 'low' | 'medium' | 'high';
   };
+  // DeepSeek: thinking.{type, reasoning_effort}
+  deepseek?: {
+    thinking: {
+      type: 'enabled';
+      reasoning_effort: 'high' | 'max';
+    };
+  };
+}
+
+/**
+ * Map our unified ThinkingEffort to DeepSeek's accepted reasoning_effort
+ * values. DeepSeek only supports 'high' and 'max'; we treat 'high' as the
+ * most aggressive option and use it for our internal 'high' setting, while
+ * 'low' and 'medium' both downshift to 'high' (the entry point).
+ */
+function mapDeepSeekEffort(effort: ThinkingEffort): 'high' | 'max' {
+  return effort === 'high' ? 'max' : 'high';
 }
 
 /**
@@ -124,6 +141,23 @@ export class ThinkingEffortMapper {
   }
 
   /**
+   * Get DeepSeek thinking parameters.
+   * DeepSeek's request body shape is { thinking: { type, reasoning_effort } }
+   * — distinct from Groq's top-level reasoning_effort.
+   */
+  static getDeepSeekParams(settings: ThinkingSettings): { thinking?: { type: 'enabled'; reasoning_effort: 'high' | 'max' } } | null {
+    if (!settings.enabled) {
+      return null;
+    }
+    return {
+      thinking: {
+        type: 'enabled',
+        reasoning_effort: mapDeepSeekEffort(settings.effort)
+      }
+    };
+  }
+
+  /**
    * Get provider-specific thinking configuration based on provider ID
    */
   static getProviderConfig(providerId: string, settings: ThinkingSettings): ProviderThinkingConfig | null {
@@ -167,6 +201,15 @@ export class ThinkingEffortMapper {
             reasoning_effort: settings.effort
           }
         };
+      case 'deepseek':
+        return {
+          deepseek: {
+            thinking: {
+              type: 'enabled',
+              reasoning_effort: mapDeepSeekEffort(settings.effort)
+            }
+          }
+        };
       default:
         // Unknown provider - return null
         return null;
@@ -177,7 +220,7 @@ export class ThinkingEffortMapper {
    * Check if a provider supports thinking/reasoning features
    */
   static providerSupportsThinking(providerId: string): boolean {
-    const supportedProviders = ['anthropic', 'openai', 'google', 'gemini', 'openrouter', 'groq'];
+    const supportedProviders = ['anthropic', 'openai', 'google', 'gemini', 'openrouter', 'groq', 'deepseek'];
     return supportedProviders.includes(providerId.toLowerCase());
   }
 
