@@ -118,9 +118,12 @@ export interface ReplaceParams extends CommonParameters {
   start: string;
 
   /**
-   * Verbatim text marking the end of the range. Must match exactly one
-   * location in the file as a contiguous line-block. Included in the range
-   * that gets replaced.
+   * Verbatim text marking the end of the range. Same rules as `start`
+   * (globally-unique whole-line anchor, multi-line via `\n`, non-whitespace,
+   * included in the replaced range). Should resolve to a line at or after
+   * `start`; order is checked at execution time and surfaces as an
+   * `end anchor is at line E but start anchor is at line S` error if reversed
+   * — it is not a JSON-schema-level invariant.
    */
   end: string;
 
