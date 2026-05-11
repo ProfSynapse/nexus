@@ -16,6 +16,7 @@ import { OPENAI_CODEX_MODELS } from './llm/adapters/openai-codex/OpenAICodexMode
 import { ANTHROPIC_CLAUDE_CODE_MODELS } from './llm/adapters/anthropic-claude-code/AnthropicClaudeCodeModels';
 import { GOOGLE_GEMINI_CLI_MODELS } from './llm/adapters/google-gemini-cli/GoogleGeminiCliModels';
 import { GITHUB_COPILOT_MODELS } from './llm/adapters/github-copilot/GithubCopilotModels';
+import { DEEPSEEK_MODELS } from './llm/adapters/deepseek/DeepSeekModels';
 import { getIngestionModelsForProvider } from '../agents/ingestManager/tools/services/IngestModelCatalog';
 import { getTranscriptionModelsForProvider } from './llm/types/VoiceTypes';
 
@@ -73,7 +74,8 @@ export class StaticModelsService {
       { provider: 'perplexity', models: PERPLEXITY_MODELS },
       { provider: 'openai-codex', models: OPENAI_CODEX_MODELS },
       { provider: 'anthropic-claude-code', models: ANTHROPIC_CLAUDE_CODE_MODELS },
-      { provider: 'github-copilot', models: GITHUB_COPILOT_MODELS }
+      { provider: 'github-copilot', models: GITHUB_COPILOT_MODELS },
+      { provider: 'deepseek', models: DEEPSEEK_MODELS }
     ];
 
     providerModels.forEach(({ provider: _provider, models }) => {
@@ -132,6 +134,9 @@ export class StaticModelsService {
         break;
       case 'github-copilot':
         providerModels = GITHUB_COPILOT_MODELS;
+        break;
+      case 'deepseek':
+        providerModels = DEEPSEEK_MODELS;
         break;
       default:
         return [];
@@ -223,7 +228,7 @@ export class StaticModelsService {
    * Get provider information
    */
   getAvailableProviders(): string[] {
-    return ['openai', 'anthropic', 'anthropic-claude-code', 'google', 'google-gemini-cli', 'github-copilot', 'mistral', 'groq', 'deepgram', 'assemblyai', 'openrouter', 'requesty', 'perplexity', 'openai-codex'];
+    return ['openai', 'anthropic', 'anthropic-claude-code', 'google', 'google-gemini-cli', 'github-copilot', 'mistral', 'groq', 'deepgram', 'assemblyai', 'openrouter', 'requesty', 'perplexity', 'openai-codex', 'deepseek'];
   }
 
   /**

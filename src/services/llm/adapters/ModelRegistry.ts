@@ -19,6 +19,7 @@ import { OPENAI_CODEX_MODELS, OPENAI_CODEX_DEFAULT_MODEL } from './openai-codex/
 import { ANTHROPIC_CLAUDE_CODE_MODELS, ANTHROPIC_CLAUDE_CODE_DEFAULT_MODEL } from './anthropic-claude-code/AnthropicClaudeCodeModels';
 import { GOOGLE_GEMINI_CLI_MODELS, GOOGLE_GEMINI_CLI_DEFAULT_MODEL } from './google-gemini-cli/GoogleGeminiCliModels';
 import { GITHUB_COPILOT_MODELS, GITHUB_COPILOT_DEFAULT_MODEL } from './github-copilot/GithubCopilotModels';
+import { DEEPSEEK_MODELS, DEEPSEEK_DEFAULT_MODEL } from './deepseek/DeepSeekModels';
 import type { LLMProviderSettings } from '../../../types';
 import type { ModelInfo } from './types';
 
@@ -48,7 +49,8 @@ export const AI_MODELS: Record<string, ModelSpec[]> = {
   openrouter: OPENROUTER_MODELS,
   requesty: REQUESTY_MODELS,
   groq: GROQ_MODELS,
-  'github-copilot': GITHUB_COPILOT_MODELS
+  'github-copilot': GITHUB_COPILOT_MODELS,
+  deepseek: DEEPSEEK_MODELS
 };
 
 /**
@@ -233,5 +235,6 @@ export const DEFAULT_MODELS: Record<string, string> = {
   openrouter: OPENROUTER_DEFAULT_MODEL,
   requesty: REQUESTY_DEFAULT_MODEL,
   groq: GROQ_DEFAULT_MODEL,
-  'github-copilot': GITHUB_COPILOT_DEFAULT_MODEL
+  'github-copilot': GITHUB_COPILOT_DEFAULT_MODEL,
+  deepseek: DEEPSEEK_DEFAULT_MODEL
 };
