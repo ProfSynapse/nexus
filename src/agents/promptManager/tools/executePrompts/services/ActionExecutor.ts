@@ -24,24 +24,6 @@ function isCommonResult(value: unknown): value is CommonResult {
 export class ActionExecutor {
   constructor(private agentManager?: AgentManager, private appGetter?: () => App | null | undefined) {}
 
-  private getReplaceRange(action: ContentAction): { startLine: number; endLine: number } | null {
-    if (typeof action.position === 'number') {
-      return {
-        startLine: action.position,
-        endLine: action.position
-      };
-    }
-
-    if (typeof action.startLine === 'number' && typeof action.endLine === 'number') {
-      return {
-        startLine: action.startLine,
-        endLine: action.endLine
-      };
-    }
-
-    return null;
-  }
-
   /**
    * Execute a ContentManager action with the LLM response
    */
@@ -157,7 +139,9 @@ export class ActionExecutor {
   }
 
   /**
-   * Execute replace content action — line-range uses 'replace', full-file uses 'write'
+   * Execute replace content action — uses ContentManager 'replace' with
+   * pattern anchors. Both `start` and `end` are required and must match
+   * exactly one location each in the target file.
    */
   private async executeReplaceAction(
     actionParams: Record<string, unknown>,
@@ -168,26 +152,14 @@ export class ActionExecutor {
       return { success: false, error: 'Agent manager not available' };
     }
 
-    let replaceResult: unknown;
-
-    const replaceRange = this.getReplaceRange(action);
-    if (replaceRange && typeof action.oldContent === 'string') {
-      replaceResult = await agentManager.executeAgentTool('contentManager', 'replace', {
-        path: action.targetPath,
-        oldContent: action.oldContent,
-        newContent: actionParams.content,
-        startLine: replaceRange.startLine,
-        endLine: replaceRange.endLine,
-        sessionId: actionParams.sessionId,
-        context: actionParams.context
-      });
-    } else {
-      replaceResult = await agentManager.executeAgentTool('contentManager', 'write', {
-        ...actionParams,
-        path: action.targetPath,
-        overwrite: true
-      });
-    }
+    const replaceResult = await agentManager.executeAgentTool('contentManager', 'replace', {
+      path: action.targetPath,
+      start: action.start,
+      end: action.end,
+      content: actionParams.content,
+      sessionId: actionParams.sessionId,
+      context: actionParams.context
+    });
 
     if (!isCommonResult(replaceResult)) {
       return { success: false, error: 'Invalid response from replace tool' };
@@ -276,39 +248,11 @@ export class ActionExecutor {
     }
 
     if (action.type === 'replace') {
-      const hasOldContent = typeof action.oldContent === 'string';
-      const hasStartLine = typeof action.startLine === 'number';
-      const hasEndLine = typeof action.endLine === 'number';
-      const hasPosition = typeof action.position === 'number';
+      const hasStart = typeof action.start === 'string' && action.start.trim().length > 0;
+      const hasEnd = typeof action.end === 'string' && action.end.trim().length > 0;
 
-      if (hasPosition) {
-        if (action.position! < 1) {
-          return { valid: false, error: 'position must be a positive line number for replace action' };
-        }
-        if (hasStartLine || hasEndLine) {
-          return { valid: false, error: 'position cannot be combined with startLine or endLine for replace action' };
-        }
-        if (!hasOldContent) {
-          return { valid: false, error: 'oldContent is required when using deprecated position for replace action' };
-        }
-      }
-
-      if (!hasPosition && (hasOldContent || hasStartLine || hasEndLine)) {
-        if (!hasOldContent || !hasStartLine || !hasEndLine) {
-          return { valid: false, error: 'replace line-range mode requires oldContent, startLine, and endLine' };
-        }
-      }
-
-      if (hasStartLine && action.startLine! < 1) {
-        return { valid: false, error: 'startLine must be a positive line number for replace action' };
-      }
-
-      if (hasEndLine && action.endLine! < 1) {
-        return { valid: false, error: 'endLine must be a positive line number for replace action' };
-      }
-
-      if (hasStartLine && hasEndLine && action.endLine! < action.startLine!) {
-        return { valid: false, error: 'endLine cannot be less than startLine for replace action' };
+      if (!hasStart || !hasEnd) {
+        return { valid: false, error: 'replace action requires both start and end anchors (non-whitespace text)' };
       }
     }
 

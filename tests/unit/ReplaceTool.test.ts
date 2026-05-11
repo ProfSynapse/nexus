@@ -1,16 +1,32 @@
 /**
- * ReplaceTool Unit Tests
+ * ReplaceTool Tests — full 17-scenario matrix from plan §8 plus adversarial cases.
  *
- * Tests the replace tool's content validation, sliding-window search,
- * CRLF normalization, delete mode, and diff output.
+ * Coverage map to docs/plans/replace-tool-anchor-redesign-plan.md §8:
+ *   §8.1  unique start/end multi-line range
+ *   §8.2  start === end single-line replace
+ *   §8.3  start not found
+ *   §8.4  end not found
+ *   §8.5  start matches twice — lists line numbers
+ *   §8.6  end matches twice (incl. before start) — lists line numbers
+ *   §8.7  end before start (both unique) — order error with both line numbers
+ *   §8.8  multi-line start anchor block
+ *   §8.9  content === "" deletes range, linesDelta negative
+ *   §8.10 NFKC drift tolerated
+ *   §8.11 empty start — validation error
+ *   §8.12 whitespace-only end — validation error
+ *   §8.13 file not found
+ *   §8.14 path is a folder
+ *   §8.15 sequential edits in one batch (anchors against post-first-edit state)
+ *   §8.16 identical start === end matches exactly once (explicit single-line)
+ *   §8.17 multi-line start partial-overlap with end-block — end search is unbounded
+ *
+ * Adversarial cases beyond §8: non-adjacent ambiguous anchors, NFKC drift on
+ * BOTH anchors simultaneously, anchors at file edges (first/last line), CRLF
+ * input normalization, multi-line end anchor.
  */
 
 import { ReplaceTool } from '../../src/agents/contentManager/tools/replace';
-import { App, TFile } from 'obsidian';
-
-// ============================================================================
-// Mock setup
-// ============================================================================
+import { App, TFile, TFolder } from 'obsidian';
 
 let mockFileContent = '';
 const mockFile = new TFile('note.md', 'test/note.md');
@@ -22,11 +38,6 @@ type MockApp = App & {
     modify: jest.Mock<Promise<void>, [TFile, string]>;
   };
   workspace: Record<string, never>;
-};
-
-type SchemaLike = {
-  properties: Record<string, { description?: string }>;
-  required: string[];
 };
 
 function createMockApp(fileExists = true): MockApp {
@@ -46,7 +57,7 @@ const baseParams = {
   context: { workspaceId: 'ws-1', sessionId: 'sess-1', memory: '', goal: 'test' },
 };
 
-describe('ReplaceTool', () => {
+describe('ReplaceTool (pattern anchors)', () => {
   let tool: ReplaceTool;
   let app: MockApp;
 
@@ -56,697 +67,671 @@ describe('ReplaceTool', () => {
     mockFileContent = '';
   });
 
-  // ========================================================================
-  // Successful replacement
-  // ========================================================================
-
-  describe('successful replacement', () => {
-    it('replaces content at correct lines', async () => {
-      mockFileContent = 'line 1\nline 2\nline 3';
-      const result = await tool.execute({
-        ...baseParams,
-        path: 'test/note.md',
-        oldContent: 'line 2',
-        newContent: 'CHANGED',
-        startLine: 2,
-        endLine: 2,
-      });
-
-      expect(result.success).toBe(true);
-      expect(result.linesDelta).toBe(0);
-      expect(result.totalLines).toBe(3);
-      expect(result.diff).toContain('-line 2');
-      expect(result.diff).toContain('+CHANGED');
-      expect(mockFileContent).toBe('line 1\nCHANGED\nline 3');
+  it('§8.1: replaces a range between two unique anchors (multi-line range)', async () => {
+    mockFileContent = 'alpha\nbeta\ngamma\ndelta\nepsilon';
+    const result = await tool.execute({
+      ...baseParams,
+      path: 'test/note.md',
+      start: 'beta',
+      end: 'delta',
+      content: 'REPLACED',
     });
 
-    it('replaces a multi-line range with more lines', async () => {
-      mockFileContent = 'a\nb\nc\nd\ne';
-      const result = await tool.execute({
-        ...baseParams,
-        path: 'test/note.md',
-        oldContent: 'b\nc',
-        newContent: 'x\ny\nz\nw',
-        startLine: 2,
-        endLine: 3,
-      });
-
-      expect(result.success).toBe(true);
-      expect(result.linesDelta).toBe(2);
-      expect(result.totalLines).toBe(7);
-      expect(mockFileContent).toBe('a\nx\ny\nz\nw\nd\ne');
-    });
-
-    it('replaces a range with fewer lines', async () => {
-      mockFileContent = 'a\nb\nc\nd\ne';
-      const result = await tool.execute({
-        ...baseParams,
-        path: 'test/note.md',
-        oldContent: 'b\nc\nd',
-        newContent: 'X',
-        startLine: 2,
-        endLine: 4,
-      });
-
-      expect(result.success).toBe(true);
-      expect(result.linesDelta).toBe(-2);
-      expect(result.totalLines).toBe(3);
-      expect(mockFileContent).toBe('a\nX\ne');
-    });
-
-    it('returns diff with @@ header', async () => {
-      mockFileContent = 'a\nb\nc\nd\ne';
-      const result = await tool.execute({
-        ...baseParams,
-        path: 'test/note.md',
-        oldContent: 'b',
-        newContent: 'x\ny\nz',
-        startLine: 2,
-        endLine: 2,
-      });
-
-      expect(result.diff).toMatch(/@@ -\d+,\d+ \+\d+,\d+ @@/);
-    });
+    expect(result.success).toBe(true);
+    expect(mockFileContent).toBe('alpha\nREPLACED\nepsilon');
+    // M4 (post-review fold-in) — assert the canonical write primitive was
+    // called exactly once with the expected file ref and content. Guards
+    // against regressions that bypass `vault.modify` via `vault.adapter.write`
+    // or similar and would otherwise still mutate `mockFileContent`.
+    expect(app.vault.modify).toHaveBeenCalledTimes(1);
+    expect(app.vault.modify).toHaveBeenCalledWith(mockFile, 'alpha\nREPLACED\nepsilon');
   });
 
-  // ========================================================================
-  // Delete mode (newContent = "")
-  // ========================================================================
-
-  describe('delete mode', () => {
-    it('deletes a single line when newContent is empty', async () => {
-      mockFileContent = 'a\nb\nc';
-      const result = await tool.execute({
-        ...baseParams,
-        path: 'test/note.md',
-        oldContent: 'b',
-        newContent: '',
-        startLine: 2,
-        endLine: 2,
-      });
-
-      expect(result.success).toBe(true);
-      expect(result.linesDelta).toBe(-1);
-      expect(result.totalLines).toBe(2);
-      expect(result.diff).toContain('-b');
-      expect(mockFileContent).toBe('a\nc');
+  it('§8.9: deletes the range when content is empty and reports negative linesDelta', async () => {
+    mockFileContent = 'alpha\nbeta\ngamma\ndelta\nepsilon';
+    const result = await tool.execute({
+      ...baseParams,
+      path: 'test/note.md',
+      start: 'beta',
+      end: 'delta',
+      content: '',
     });
 
-    it('deletes a range of lines', async () => {
-      mockFileContent = 'a\nb\nc\nd\ne';
-      const result = await tool.execute({
-        ...baseParams,
-        path: 'test/note.md',
-        oldContent: 'b\nc\nd',
-        newContent: '',
-        startLine: 2,
-        endLine: 4,
-      });
-
-      expect(result.success).toBe(true);
-      expect(result.linesDelta).toBe(-3);
-      expect(result.totalLines).toBe(2);
-      expect(mockFileContent).toBe('a\ne');
-    });
+    expect(result.success).toBe(true);
+    expect(mockFileContent).toBe('alpha\nepsilon');
+    expect(result.linesDelta).toBeLessThan(0);
+    expect(app.vault.modify).toHaveBeenCalledTimes(1);
+    expect(app.vault.modify).toHaveBeenCalledWith(mockFile, 'alpha\nepsilon');
   });
 
-  // ========================================================================
-  // Content mismatch — sliding window search
-  // ========================================================================
-
-  describe('content mismatch with search', () => {
-    it('reports correct lines when content found at one other location', async () => {
-      mockFileContent = 'a\nb\nTARGET\nd\ne';
-      const result = await tool.execute({
-        ...baseParams,
-        path: 'test/note.md',
-        oldContent: 'TARGET',
-        newContent: 'REPLACED',
-        startLine: 1,
-        endLine: 1,
-      });
-
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('Found at lines 3-3');
-      expect(result.error).toContain('Retry with the correct line numbers');
+  it('§8.3: errors when start anchor is not found', async () => {
+    mockFileContent = 'alpha\nbeta\ngamma';
+    const result = await tool.execute({
+      ...baseParams,
+      path: 'test/note.md',
+      start: 'missing',
+      end: 'gamma',
+      content: 'x',
     });
 
-    it('reports multiple locations when content found at several places', async () => {
-      mockFileContent = 'TARGET\na\nTARGET\nb\nTARGET';
-      const result = await tool.execute({
-        ...baseParams,
-        path: 'test/note.md',
-        oldContent: 'TARGET',
-        newContent: 'REPLACED',
-        startLine: 4,
-        endLine: 4,
-      });
-
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('multiple locations');
-      expect(result.error).toContain('lines 1-1');
-      expect(result.error).toContain('lines 3-3');
-      expect(result.error).toContain('lines 5-5');
-    });
-
-    it('reports content not found anywhere', async () => {
-      mockFileContent = 'a\nb\nc';
-      const result = await tool.execute({
-        ...baseParams,
-        path: 'test/note.md',
-        oldContent: 'NONEXISTENT',
-        newContent: 'REPLACED',
-        startLine: 1,
-        endLine: 1,
-      });
-
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('not found at lines 1-1 or anywhere else');
-      expect(result.error).toContain('may have been modified or removed');
-    });
-
-    it('handles multi-line oldContent in sliding search', async () => {
-      mockFileContent = 'a\nfoo\nbar\nc\nfoo\nbar\nd';
-      const result = await tool.execute({
-        ...baseParams,
-        path: 'test/note.md',
-        oldContent: 'foo\nbar',
-        newContent: 'REPLACED',
-        startLine: 1,
-        endLine: 2,
-      });
-
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('multiple locations');
-      expect(result.error).toContain('lines 2-3');
-      expect(result.error).toContain('lines 5-6');
-    });
+    expect(result.success).toBe(false);
+    // M3 — plan §6 verbatim message including re-read coaching suffix.
+    expect(result.error).toBe(
+      'start anchor not found in file. The content may have been edited since your last read — re-read the file and try again.'
+    );
+    expect(app.vault.modify).not.toHaveBeenCalled();
   });
 
-  // ========================================================================
-  // CRLF normalization
-  // ========================================================================
-
-  describe('CRLF normalization', () => {
-    it('normalizes CRLF in oldContent for comparison', async () => {
-      mockFileContent = 'line 1\nline 2\nline 3';
-      const result = await tool.execute({
-        ...baseParams,
-        path: 'test/note.md',
-        oldContent: 'line 2',  // LF only in oldContent
-        newContent: 'CHANGED',
-        startLine: 2,
-        endLine: 2,
-      });
-
-      expect(result.success).toBe(true);
+  // M1 (post-review fold-in) — an empty file with non-whitespace anchors must
+  // fail with the start-not-found message and must NOT call vault.modify.
+  it('§8.10b (M1): empty file with non-whitespace anchors returns "anchor not found" without writing', async () => {
+    mockFileContent = '';
+    const result = await tool.execute({
+      ...baseParams,
+      path: 'test/note.md',
+      start: 'anything',
+      end: 'anything',
+      content: 'should not be written',
     });
 
-    it('normalizes CRLF in multi-line oldContent', async () => {
-      mockFileContent = 'a\nb\nc';
-      const result = await tool.execute({
-        ...baseParams,
-        path: 'test/note.md',
-        oldContent: 'a\r\nb',  // CRLF in oldContent
-        newContent: 'X\nY',
-        startLine: 1,
-        endLine: 2,
-      });
-
-      expect(result.success).toBe(true);
-      expect(mockFileContent).toBe('X\nY\nc');
-    });
-
-    it('handles CRLF file content — single-line match succeeds', async () => {
-      // Simulate vault.read() returning CRLF content (Windows-style line endings)
-      mockFileContent = 'line 1\r\nline 2\r\nline 3';
-      const result = await tool.execute({
-        ...baseParams,
-        path: 'test/note.md',
-        oldContent: 'line 2',
-        newContent: 'CHANGED',
-        startLine: 2,
-        endLine: 2,
-      });
-
-      expect(result.success).toBe(true);
-      expect(result.linesDelta).toBe(0);
-      // Write-back content should be LF-only (CRLF stripped on read)
-      expect(mockFileContent).toBe('line 1\nCHANGED\nline 3');
-    });
-
-    it('handles CRLF file content — multi-line match succeeds', async () => {
-      mockFileContent = 'a\r\nb\r\nc\r\nd';
-      const result = await tool.execute({
-        ...baseParams,
-        path: 'test/note.md',
-        oldContent: 'b\nc',
-        newContent: 'X\nY\nZ',
-        startLine: 2,
-        endLine: 3,
-      });
-
-      expect(result.success).toBe(true);
-      expect(result.linesDelta).toBe(1);
-      expect(mockFileContent).toBe('a\nX\nY\nZ\nd');
-    });
-
-    it('handles CRLF file content — findContentInLines fallback reports correct location', async () => {
-      // Content at wrong startLine triggers sliding-window search
-      mockFileContent = 'header\r\nTARGET\r\nfooter';
-      const result = await tool.execute({
-        ...baseParams,
-        path: 'test/note.md',
-        oldContent: 'TARGET',
-        newContent: 'REPLACED',
-        startLine: 1,  // Wrong line — content is actually at line 2
-        endLine: 1,
-      });
-
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('Found at lines 2-2');
-      expect(result.error).toContain('Retry with the correct line numbers');
-    });
-
-    it('strips lone CR characters from file content', async () => {
-      // CR-only files (old Mac OS 9) have no \n at all — after stripping \r,
-      // content collapses to a single line. This verifies CRs are removed so
-      // they don't pollute line comparisons (the same mechanism that fixes CRLF).
-      mockFileContent = 'abc\rdef';
-      const result = await tool.execute({
-        ...baseParams,
-        path: 'test/note.md',
-        oldContent: 'abcdef',  // CRs stripped → single line
-        newContent: 'REPLACED',
-        startLine: 1,
-        endLine: 1,
-      });
-
-      expect(result.success).toBe(true);
-      expect(mockFileContent).toBe('REPLACED');
-    });
-
-    it('LF file content — baseline behavior unchanged', async () => {
-      mockFileContent = 'line 1\nline 2\nline 3';
-      const result = await tool.execute({
-        ...baseParams,
-        path: 'test/note.md',
-        oldContent: 'line 2',
-        newContent: 'CHANGED',
-        startLine: 2,
-        endLine: 2,
-      });
-
-      expect(result.success).toBe(true);
-      expect(mockFileContent).toBe('line 1\nCHANGED\nline 3');
-    });
+    expect(result.success).toBe(false);
+    expect(result.error).toBe(
+      'start anchor not found in file. The content may have been edited since your last read — re-read the file and try again.'
+    );
+    expect(mockFileContent).toBe('');
+    expect(app.vault.modify).not.toHaveBeenCalled();
   });
 
-  // ========================================================================
-  // Boundary validation
-  // ========================================================================
-
-  describe('boundary validation', () => {
-    it('rejects startLine < 1', async () => {
-      mockFileContent = 'line 1';
-      const result = await tool.execute({
-        ...baseParams,
-        path: 'test/note.md',
-        oldContent: 'line 1',
-        newContent: 'CHANGED',
-        startLine: 0,
-        endLine: 1,
-      });
-
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('Invalid startLine');
+  it('§8.5: errors when start anchor matches multiple lines and lists them', async () => {
+    mockFileContent = 'foo\nbar\nfoo\nbaz';
+    const result = await tool.execute({
+      ...baseParams,
+      path: 'test/note.md',
+      start: 'foo',
+      end: 'baz',
+      content: 'x',
     });
 
-    it('rejects negative startLine', async () => {
-      mockFileContent = 'line 1';
-      const result = await tool.execute({
-        ...baseParams,
-        path: 'test/note.md',
-        oldContent: 'line 1',
-        newContent: 'CHANGED',
-        startLine: -5,
-        endLine: 1,
-      });
-
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('Invalid startLine');
-    });
-
-    it('rejects endLine < startLine', async () => {
-      mockFileContent = 'line 1\nline 2\nline 3';
-      const result = await tool.execute({
-        ...baseParams,
-        path: 'test/note.md',
-        oldContent: 'test',
-        newContent: 'CHANGED',
-        startLine: 3,
-        endLine: 1,
-      });
-
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('cannot be less than startLine');
-    });
-
-    it('rejects startLine beyond file length', async () => {
-      mockFileContent = 'line 1';
-      const result = await tool.execute({
-        ...baseParams,
-        path: 'test/note.md',
-        oldContent: 'test',
-        newContent: 'CHANGED',
-        startLine: 100,
-        endLine: 100,
-      });
-
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('beyond file length');
-    });
-
-    it('rejects endLine beyond file length', async () => {
-      mockFileContent = 'line 1\nline 2';
-      const result = await tool.execute({
-        ...baseParams,
-        path: 'test/note.md',
-        oldContent: 'line 1',
-        newContent: 'CHANGED',
-        startLine: 1,
-        endLine: 100,
-      });
-
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('beyond file length');
-    });
-
-    it('returns error for non-existent file', async () => {
-      app = createMockApp(false);
-      tool = new ReplaceTool(app);
-
-      const result = await tool.execute({
-        ...baseParams,
-        path: 'missing.md',
-        oldContent: 'test',
-        newContent: 'CHANGED',
-        startLine: 1,
-        endLine: 1,
-      });
-
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('File not found');
-    });
+    expect(result.success).toBe(false);
+    // M3 — plan §6 verbatim message with full extension coaching suffix.
+    expect(result.error).toBe(
+      'start anchor matches 2 locations: lines [1, 3]. Make it unique by extending it — include the next line (or several) using \\n so it identifies one location only.'
+    );
+    expect(app.vault.modify).not.toHaveBeenCalled();
   });
 
-  // ========================================================================
-  // Schema
-  // ========================================================================
-
-  describe('schema', () => {
-    it('has self-documenting parameter descriptions', () => {
-      const schema = tool.getParameterSchema();
-      const properties = (schema as SchemaLike).properties;
-
-      expect(properties.oldContent.description).toContain('validated before any changes');
-      expect(properties.newContent.description).toContain('empty string');
-      expect(properties.startLine.description).toContain('1-indexed');
-      expect(properties.endLine.description).toContain('inclusive');
+  it('§8.6: errors when end anchor matches multiple lines (incl. before start)', async () => {
+    mockFileContent = 'start-here\nfoo\nend\nbar\nend';
+    const result = await tool.execute({
+      ...baseParams,
+      path: 'test/note.md',
+      start: 'start-here',
+      end: 'end',
+      content: 'x',
     });
 
-    it('requires all five parameters', () => {
-      const schema = tool.getParameterSchema();
-      const required = (schema as SchemaLike).required;
-
-      expect(required).toContain('path');
-      expect(required).toContain('oldContent');
-      expect(required).toContain('newContent');
-      expect(required).toContain('startLine');
-      expect(required).toContain('endLine');
-    });
-
-    it('result schema includes diff, totalLines, linesDelta', () => {
-      const schema = tool.getResultSchema();
-      const properties = (schema as SchemaLike).properties;
-
-      expect(properties.diff).toBeDefined();
-      expect(properties.totalLines).toBeDefined();
-      expect(properties.linesDelta).toBeDefined();
-    });
-
-    it('tool description mentions validation and line numbers', () => {
-      expect(tool.description).toContain('Validates');
-      expect(tool.description).toContain('line numbers');
-    });
+    expect(result.success).toBe(false);
+    // M3 — plan §6 verbatim for end-anchor ambiguity (end matches at lines 3, 5).
+    expect(result.error).toBe(
+      'end anchor matches 2 locations: lines [3, 5]. Make it unique by extending it — include the next line (or several) using \\n so it identifies one location only.'
+    );
+    expect(app.vault.modify).not.toHaveBeenCalled();
   });
 
-  // ========================================================================
-  // Unicode normalization (CODE-NexusReplaceF2Recurrence / issue #XXX)
-  //
-  // F2 was first reported 2026-04-24 and re-reproduced 2026-04-25 in a file
-  // with no escaped backticks (only PT-BR accents). Pre-fix, the comparator at
-  // replace.ts:147 ran a strict byte-equality check after CRLF normalization
-  // only — visually identical strings differing only in Unicode normalization
-  // form (NFC vs NFD) failed silently with "Content not found", forcing the
-  // operator to escalate to overwrite (which violates the minimum-edit rule).
-  //
-  // This block proves the class exists and pins the new tolerance contract:
-  // replace MUST treat NFC and NFD forms of the same code points as equal,
-  // both for the line-range check and for the sliding-window fallback.
-  // ========================================================================
-  describe('Unicode normalization tolerance', () => {
-    // Both lines render identically as "O pedido (e.3) é defensiva: cogita a
-    // hipótese" — the bytes differ. We use explicit escape sequences for the
-    // NFD line so that no editor / Prettier pass / git filter can quietly re-
-    // compose it into NFC and turn the tests below into tautologies.
-    //   NFC: é = U+00E9, ó = U+00F3                (one code point each)
-    //   NFD: é = U+0065 U+0301, ó = U+006F U+0301  (base + combining acute)
-    const NFC_LINE = 'O pedido (e.3) é defensiva: cogita a hipótese';
-    const NFD_LINE = 'O pedido (e.3) \u0065\u0301 defensiva: cogita a hip\u006F\u0301tese';
-
-    it('test fixtures are byte-distinct (sanity)', () => {
-      // If this fails, the constants above have been collapsed to the same
-      // Unicode form — every test in this block would then reduce to NFC===NFC
-      // and silently pass even if the comparator's NFC tolerance regresses.
-      expect(NFC_LINE).not.toBe(NFD_LINE);
-      expect(NFC_LINE.normalize('NFC')).toBe(NFD_LINE.normalize('NFC'));
+  it('§8.7: errors when end appears before start (both unique) and references both line numbers', async () => {
+    mockFileContent = 'tail\nmiddle\nhead';
+    const result = await tool.execute({
+      ...baseParams,
+      path: 'test/note.md',
+      start: 'head',
+      end: 'tail',
+      content: 'x',
     });
 
-    it('matches when file is NFC and oldContent is NFD (real-world repro)', async () => {
-      mockFileContent = `head\n${NFC_LINE}\ntail`;
-      const result = await tool.execute({
-        ...baseParams,
-        path: 'test/note.md',
-        oldContent: NFD_LINE,
-        newContent: 'O pedido (e.3) tem natureza defensiva.',
-        startLine: 2,
-        endLine: 2,
-      });
-
-      expect(result.success).toBe(true);
-      expect(mockFileContent).toBe('head\nO pedido (e.3) tem natureza defensiva.\ntail');
-    });
-
-    it('matches when file is NFD and oldContent is NFC (inverse drift)', async () => {
-      mockFileContent = `head\n${NFD_LINE}\ntail`;
-      const result = await tool.execute({
-        ...baseParams,
-        path: 'test/note.md',
-        oldContent: NFC_LINE,
-        newContent: 'CHANGED',
-        startLine: 2,
-        endLine: 2,
-      });
-
-      expect(result.success).toBe(true);
-      expect(mockFileContent).toBe('head\nCHANGED\ntail');
-    });
-
-    it('finds NFD oldContent at NFC location via sliding-window fallback', async () => {
-      // Caller provides wrong startLine/endLine; sliding-window must still
-      // recover the location even with normalization-form drift.
-      mockFileContent = `head\nfiller\n${NFC_LINE}\ntail`;
-      const result = await tool.execute({
-        ...baseParams,
-        path: 'test/note.md',
-        oldContent: NFD_LINE,
-        newContent: 'CHANGED',
-        startLine: 1,
-        endLine: 1,
-      });
-
-      // Either the fallback recovers (preferred), or it reports the correct
-      // line. Both are acceptable; what is NOT acceptable is "Content not
-      // found anywhere in the note" — that's the F2 silent failure.
-      if (result.success === false) {
-        expect(result.error).toContain('Found at lines 3-3');
-      } else {
-        // If your fix routes the comparator through a normalize step before
-        // the line-range check too, the operation succeeds outright.
-        expect(mockFileContent).toBe('head\nfiller\nCHANGED\ntail');
-      }
-    });
-
-    it('multi-line oldContent with mixed normalization matches', async () => {
-      mockFileContent = `${NFC_LINE}\nsegunda linha com ação\nterceira`;
-      const oldContent = `${NFD_LINE}\nsegunda linha com ação`;
-      const result = await tool.execute({
-        ...baseParams,
-        path: 'test/note.md',
-        oldContent,
-        newContent: 'BLOCO REESCRITO',
-        startLine: 1,
-        endLine: 2,
-      });
-
-      expect(result.success).toBe(true);
-      expect(mockFileContent).toBe('BLOCO REESCRITO\nterceira');
-    });
-
-    it('regression: truly-absent oldContent still fails with Content not found', async () => {
-      // The fix must not accidentally make every replace succeed. Content
-      // that genuinely does not exist (in any normalization) must still be
-      // reported as missing.
-      mockFileContent = `head\n${NFC_LINE}\ntail`;
-      const result = await tool.execute({
-        ...baseParams,
-        path: 'test/note.md',
-        oldContent: 'this string is genuinely not in the file',
-        newContent: 'CHANGED',
-        startLine: 2,
-        endLine: 2,
-      });
-
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('Content not found');
-    });
-
-    it('regression: ASCII-only content unchanged by normalization step', async () => {
-      // No accented chars → NFC normalization is a no-op. Confirms the fix
-      // is non-disruptive for the common case.
-      mockFileContent = 'line 1\nline 2\nline 3';
-      const result = await tool.execute({
-        ...baseParams,
-        path: 'test/note.md',
-        oldContent: 'line 2',
-        newContent: 'CHANGED',
-        startLine: 2,
-        endLine: 2,
-      });
-
-      expect(result.success).toBe(true);
-      expect(mockFileContent).toBe('line 1\nCHANGED\nline 3');
-    });
+    expect(result.success).toBe(false);
+    // M3 — plan §6 verbatim order-error message (E=1, S=3).
+    expect(result.error).toBe(
+      'end anchor is at line 1 but start anchor is at line 3 (3 > 1). Check that start and end are in the right order in the file.'
+    );
+    expect(app.vault.modify).not.toHaveBeenCalled();
   });
 
-  describe('Unicode compatibility normalization tolerance', () => {
-    const cases = [
-      {
-        name: 'masculine ordinal indicator',
-        fileLine: 'A multa do art. 1.026, §2º do CPC',
-        oldContent: 'A multa do art. 1.026, §2o do CPC',
+  it('§8.8: resolves multi-line start anchor block', async () => {
+    mockFileContent = '## Header\nLast updated: today\nbody-1\nbody-2\nFooter';
+    const result = await tool.execute({
+      ...baseParams,
+      path: 'test/note.md',
+      start: '## Header\nLast updated: today',
+      end: 'Footer',
+      content: 'REWRITTEN',
+    });
+
+    expect(result.success).toBe(true);
+    expect(mockFileContent).toBe('REWRITTEN');
+    expect(app.vault.modify).toHaveBeenCalledTimes(1);
+    expect(app.vault.modify).toHaveBeenCalledWith(mockFile, 'REWRITTEN');
+  });
+
+  it('§8.11: rejects whitespace-only start anchor', async () => {
+    mockFileContent = 'alpha\nbeta';
+    const result = await tool.execute({
+      ...baseParams,
+      path: 'test/note.md',
+      start: '   ',
+      end: 'beta',
+      content: 'x',
+    });
+
+    expect(result.success).toBe(false);
+    // M3 — plan §6 verbatim non-whitespace validation message.
+    expect(result.error).toBe(
+      'start and end must contain non-whitespace text. Pick distinctive lines from your read.'
+    );
+    expect(app.vault.modify).not.toHaveBeenCalled();
+  });
+
+  // M1 fold-in: split row 11 from row 12 so a regression that only breaks the
+  // `end` half of the combined guard surfaces in its own test.
+  it('§8.12: rejects whitespace-only end anchor', async () => {
+    mockFileContent = 'alpha\nbeta';
+    const result = await tool.execute({
+      ...baseParams,
+      path: 'test/note.md',
+      start: 'alpha',
+      end: '\t  \n  ',
+      content: 'x',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe(
+      'start and end must contain non-whitespace text. Pick distinctive lines from your read.'
+    );
+    expect(app.vault.modify).not.toHaveBeenCalled();
+  });
+
+  it('§8.13: errors when file does not exist', async () => {
+    app = createMockApp(false);
+    tool = new ReplaceTool(app);
+    const result = await tool.execute({
+      ...baseParams,
+      path: 'missing.md',
+      start: 'a',
+      end: 'b',
+      content: 'x',
+    });
+
+    expect(result.success).toBe(false);
+    // M3 — plan §6 verbatim file-not-found message with path interpolation
+    // and full storageManager/search content guidance suffix.
+    expect(result.error).toBe(
+      'File not found: "missing.md". Use search content to find files by name, or storageManager.list to explore folders.'
+    );
+    expect(app.vault.modify).not.toHaveBeenCalled();
+  });
+
+  // NFKC drift smoke (PR #184 intent — anchor text in a different Unicode
+  // normalization form than the file bytes must still match).
+  it('§8.10: tolerates NFKC compatibility drift in anchors', async () => {
+    mockFileContent = 'head\nA 1ª instância julgou o pedido\ntail';
+    const result = await tool.execute({
+      ...baseParams,
+      path: 'test/note.md',
+      // LLM typed plain ASCII; file has the compatibility form.
+      start: 'A 1a instância julgou o pedido',
+      end: 'A 1a instância julgou o pedido',
+      content: 'CHANGED',
+    });
+
+    expect(result.success).toBe(true);
+    expect(mockFileContent).toBe('head\nCHANGED\ntail');
+    expect(app.vault.modify).toHaveBeenCalledTimes(1);
+    expect(app.vault.modify).toHaveBeenCalledWith(mockFile, 'head\nCHANGED\ntail');
+  });
+
+  it('preserves CRLF-free output and returns positive linesDelta on growth', async () => {
+    mockFileContent = 'a\nb\nc\nd';
+    const result = await tool.execute({
+      ...baseParams,
+      path: 'test/note.md',
+      start: 'b',
+      end: 'c',
+      content: 'X\nY\nZ',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.linesDelta).toBe(1);
+    expect(mockFileContent).toBe('a\nX\nY\nZ\nd');
+    expect(app.vault.modify).toHaveBeenCalledTimes(1);
+    expect(app.vault.modify).toHaveBeenCalledWith(mockFile, 'a\nX\nY\nZ\nd');
+  });
+
+  it('exposes the new 4-field schema', () => {
+    const schema = tool.getParameterSchema() as { properties: Record<string, unknown>; required: string[] };
+    expect(Object.keys(schema.properties)).toEqual(expect.arrayContaining(['path', 'start', 'end', 'content']));
+    expect(schema.required).toEqual(expect.arrayContaining(['path', 'start', 'end', 'content']));
+    expect(schema.properties).not.toHaveProperty('oldContent');
+    expect(schema.properties).not.toHaveProperty('newContent');
+    expect(schema.properties).not.toHaveProperty('startLine');
+    expect(schema.properties).not.toHaveProperty('endLine');
+  });
+
+  // ---------------------------------------------------------------------------
+  // §8.2 — start === end (single-line replace)
+  // ---------------------------------------------------------------------------
+  it('§8.2: start === end performs a single-line replace', async () => {
+    mockFileContent = 'alpha\nbeta\ngamma\ndelta';
+    const result = await tool.execute({
+      ...baseParams,
+      path: 'test/note.md',
+      start: 'gamma',
+      end: 'gamma',
+      content: 'GAMMA-REPLACED',
+    });
+
+    expect(result.success).toBe(true);
+    expect(mockFileContent).toBe('alpha\nbeta\nGAMMA-REPLACED\ndelta');
+    expect(result.linesDelta).toBe(0);
+    expect(app.vault.modify).toHaveBeenCalledTimes(1);
+    expect(app.vault.modify).toHaveBeenCalledWith(mockFile, 'alpha\nbeta\nGAMMA-REPLACED\ndelta');
+  });
+
+  // ---------------------------------------------------------------------------
+  // §8.4 — end anchor not found (distinct from start not found)
+  // ---------------------------------------------------------------------------
+  it('§8.4: errors when end anchor is not found (start is unique)', async () => {
+    mockFileContent = 'alpha\nbeta\ngamma\ndelta';
+    const result = await tool.execute({
+      ...baseParams,
+      path: 'test/note.md',
+      start: 'beta',
+      end: 'nonexistent-marker',
+      content: 'x',
+    });
+
+    expect(result.success).toBe(false);
+    // M3 — plan §6 verbatim end-not-found message. Note: this assertion is the
+    // sole guard that the start-anchor message variant is NOT emitted when
+    // start resolved but end did not (avoids LLM-confusing message mix).
+    expect(result.error).toBe(
+      'end anchor not found in file. The content may have been edited since your last read — re-read the file and try again.'
+    );
+    expect(app.vault.modify).not.toHaveBeenCalled();
+  });
+
+  // ---------------------------------------------------------------------------
+  // §8.14 — path is a folder, not a file
+  // ---------------------------------------------------------------------------
+  it('§8.14: errors when path resolves to a folder', async () => {
+    const folder = Object.create(TFolder.prototype) as TFolder;
+    Object.assign(folder, { path: 'some/folder', name: 'folder' });
+    const folderApp = {
+      vault: {
+        getAbstractFileByPath: jest.fn().mockReturnValue(folder),
+        read: jest.fn(),
+        modify: jest.fn(),
       },
-      {
-        name: 'feminine ordinal indicator',
-        fileLine: 'A 1ª instância julgou o pedido',
-        oldContent: 'A 1a instância julgou o pedido',
-      },
-      {
-        name: 'ellipsis',
-        fileLine: 'A parte deve… pagar',
-        oldContent: 'A parte deve... pagar',
-      },
-      {
-        name: 'non-breaking space',
-        fileLine: 'valor\u00A0devido',
-        oldContent: 'valor devido',
-      },
-    ];
+      workspace: {},
+    } as unknown as MockApp;
+    const folderTool = new ReplaceTool(folderApp);
 
-    it.each(cases)('matches compatibility-normalized oldContent for $name', async ({ fileLine, oldContent }) => {
-      mockFileContent = `head\n${fileLine}\ntail`;
-      const result = await tool.execute({
-        ...baseParams,
-        path: 'test/note.md',
-        oldContent,
-        newContent: 'CHANGED',
-        startLine: 2,
-        endLine: 2,
-      });
-
-      expect(result.success).toBe(true);
-      expect(mockFileContent).toBe('head\nCHANGED\ntail');
+    const result = await folderTool.execute({
+      ...baseParams,
+      path: 'some/folder',
+      start: 'beta',
+      end: 'gamma',
+      content: 'x',
     });
 
-    it('finds compatibility-normalized content via sliding-window fallback', async () => {
-      mockFileContent = 'head\nfiller\nA multa do art. 1.026, §2º do CPC\ntail';
-      const result = await tool.execute({
-        ...baseParams,
-        path: 'test/note.md',
-        oldContent: 'A multa do art. 1.026, §2o do CPC',
-        newContent: 'CHANGED',
-        startLine: 1,
-        endLine: 1,
-      });
+    expect(result.success).toBe(false);
+    // M3 — plan §6 verbatim path-is-a-folder message with path interpolation
+    // and the storageManager.list guidance suffix.
+    expect(result.error).toBe(
+      'Path is a folder, not a file: "some/folder". Use storageManager.list to see its contents.'
+    );
+    expect(folderApp.vault.read).not.toHaveBeenCalled();
+    expect(folderApp.vault.modify).not.toHaveBeenCalled();
+  });
 
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('Found at lines 3-3');
-      expect(mockFileContent).toBe('head\nfiller\nA multa do art. 1.026, §2º do CPC\ntail');
+  // ---------------------------------------------------------------------------
+  // §8.15 — sequential edits in one batch (5-step batch, T-F1 fold-in)
+  //   Five tool.execute() calls in sequence on the same file. Each step uses
+  //   an anchor that ONLY exists because the previous step's content was
+  //   inserted. This proves per-step anchor re-resolution against the evolving
+  //   buffer (rather than against any cached pre-batch line-number model) and
+  //   catches state-corruption regressions if batch semantics change.
+  // ---------------------------------------------------------------------------
+  it('§8.15: sequential edits — 5-step batch, each step anchors against post-prior-step content', async () => {
+    mockFileContent = 'header\nold-block-A\nmiddle\nold-block-B\nfooter';
+
+    // Step 1: rename old-block-A → STEP1.
+    const r1 = await tool.execute({
+      ...baseParams,
+      path: 'test/note.md',
+      start: 'old-block-A',
+      end: 'old-block-A',
+      content: 'STEP1',
+    });
+    expect(r1.success).toBe(true);
+    expect(mockFileContent).toBe('header\nSTEP1\nmiddle\nold-block-B\nfooter');
+
+    // Step 2: rename old-block-B → STEP2. Independent of step 1.
+    const r2 = await tool.execute({
+      ...baseParams,
+      path: 'test/note.md',
+      start: 'old-block-B',
+      end: 'old-block-B',
+      content: 'STEP2',
+    });
+    expect(r2.success).toBe(true);
+    expect(mockFileContent).toBe('header\nSTEP1\nmiddle\nSTEP2\nfooter');
+
+    // Step 3: collapse [STEP1..STEP2] range into STEP3. Anchors STEP1 + STEP2
+    // ONLY exist because steps 1+2 wrote them — a line-number-cached client
+    // would have stale offsets here and fail.
+    const r3 = await tool.execute({
+      ...baseParams,
+      path: 'test/note.md',
+      start: 'STEP1',
+      end: 'STEP2',
+      content: 'STEP3',
+    });
+    expect(r3.success).toBe(true);
+    expect(mockFileContent).toBe('header\nSTEP3\nfooter');
+
+    // Step 4: replace STEP3 with a multi-line block. STEP3 anchor only exists
+    // because step 3 just wrote it.
+    const r4 = await tool.execute({
+      ...baseParams,
+      path: 'test/note.md',
+      start: 'STEP3',
+      end: 'STEP3',
+      content: 'STEP4-LINE-A\nSTEP4-LINE-B\nSTEP4-LINE-C',
+    });
+    expect(r4.success).toBe(true);
+    expect(mockFileContent).toBe(
+      'header\nSTEP4-LINE-A\nSTEP4-LINE-B\nSTEP4-LINE-C\nfooter'
+    );
+
+    // Step 5: use a multi-line anchor pulled from the step-4 output. The
+    // anchor [STEP4-LINE-A\nSTEP4-LINE-B] only resolves uniquely because
+    // step 4 wrote those two lines adjacent to each other.
+    const r5 = await tool.execute({
+      ...baseParams,
+      path: 'test/note.md',
+      start: 'STEP4-LINE-A\nSTEP4-LINE-B',
+      end: 'STEP4-LINE-C',
+      content: 'STEP5-COLLAPSED',
+    });
+    expect(r5.success).toBe(true);
+    expect(mockFileContent).toBe('header\nSTEP5-COLLAPSED\nfooter');
+
+    // Vault.modify should have been called exactly once per successful step.
+    expect(app.vault.modify).toHaveBeenCalledTimes(5);
+  });
+
+  // ---------------------------------------------------------------------------
+  // §8.16 — identical start === end matches exactly once (explicit single-line)
+  //   §8.2 already covers the simple case; this one verifies the tool does NOT
+  //   double-count a single match when start and end are textually identical.
+  // ---------------------------------------------------------------------------
+  it('§8.16: identical start === end on a unique line replaces exactly that line', async () => {
+    mockFileContent = 'preamble\nUNIQUE-LINE\npostscript';
+    const result = await tool.execute({
+      ...baseParams,
+      path: 'test/note.md',
+      start: 'UNIQUE-LINE',
+      end: 'UNIQUE-LINE',
+      content: 'REPLACED-UNIQUE',
     });
 
-    it('preserves untouched file bytes and writes newContent verbatim', async () => {
-      const preservedPrefix = 'prefix com ordinal §2º';
-      const replacement = 'novo texto com NBSP\u00A0preservado';
-      mockFileContent = `${preservedPrefix}\nA parte deve… pagar\ntail`;
+    expect(result.success).toBe(true);
+    expect(mockFileContent).toBe('preamble\nREPLACED-UNIQUE\npostscript');
+    // single line replaced by single line — totalLines unchanged.
+    expect(result.linesDelta).toBe(0);
+    expect(result.totalLines).toBe(3);
+    expect(app.vault.modify).toHaveBeenCalledTimes(1);
+    expect(app.vault.modify).toHaveBeenCalledWith(mockFile, 'preamble\nREPLACED-UNIQUE\npostscript');
+  });
 
-      const result = await tool.execute({
-        ...baseParams,
-        path: 'test/note.md',
-        oldContent: 'A parte deve... pagar',
-        newContent: replacement,
-        startLine: 2,
-        endLine: 2,
-      });
+  // ---------------------------------------------------------------------------
+  // §8.17 — multi-line start that partially overlaps an end-block region
+  //   The plan: "start is multi-line and matches a partial-overlap region (start
+  //   block ends mid-way through a candidate `end` block) — tool resolves
+  //   correctly — `end` search is over the full file, not bounded by start."
+  //   We construct a file where the start block extends into a region that
+  //   looks like the end block's prefix, but the actual unique end block lives
+  //   later in the file. The end search must find the LATER unique match,
+  //   not be confused by overlap.
+  // ---------------------------------------------------------------------------
+  it('§8.17: multi-line start whose tail overlaps a non-anchor region — end still resolves globally', async () => {
+    mockFileContent = [
+      'intro',
+      '## Section',           // line 2 — start block opens here
+      'first body line',      // line 3 — start block continues
+      'middle filler',        // line 4
+      '## Section',           // line 5 — NOT the start (different content follows)
+      'different body',       // line 6
+      'END-MARKER',           // line 7 — the unique end anchor
+      'trailing',
+    ].join('\n');
 
-      expect(result.success).toBe(true);
-      expect(mockFileContent).toBe(`${preservedPrefix}\n${replacement}\ntail`);
-      expect(mockFileContent).toContain('§2º');
-      expect(mockFileContent).toContain('\u00A0');
+    // The start block is the two lines [## Section, first body line] — unique.
+    // The end anchor is the single unique line "END-MARKER".
+    // A naive implementation that searches end ONLY after start would still
+    // find END-MARKER, but the contract is that end-search is global; if
+    // END-MARKER appeared earlier, we'd flag it via order-error or multi-match.
+    const result = await tool.execute({
+      ...baseParams,
+      path: 'test/note.md',
+      start: '## Section\nfirst body line',
+      end: 'END-MARKER',
+      content: 'REWRITTEN',
     });
 
-    it('reports multiple locations for duplicate compatibility-equivalent matches', async () => {
-      mockFileContent = '§2º\n§2o\nother';
-      const result = await tool.execute({
-        ...baseParams,
-        path: 'test/note.md',
-        oldContent: '§2o',
-        newContent: 'CHANGED',
-        startLine: 3,
-        endLine: 3,
-      });
+    expect(result.success).toBe(true);
+    expect(mockFileContent).toBe('intro\nREWRITTEN\ntrailing');
+    expect(app.vault.modify).toHaveBeenCalledTimes(1);
+    expect(app.vault.modify).toHaveBeenCalledWith(mockFile, 'intro\nREWRITTEN\ntrailing');
+  });
 
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('Found at multiple locations');
-      expect(result.error).toContain('lines 1-1');
-      expect(result.error).toContain('lines 2-2');
-      expect(mockFileContent).toBe('§2º\n§2o\nother');
+  // ---------------------------------------------------------------------------
+  // Adversarial: non-adjacent ambiguous start anchor
+  //   The existing §8.5 test has matches at lines 1 and 3 (adjacent). This
+  //   exercises a less convenient spread to confirm the line-list is
+  //   produced from the actual match positions, not assumed sequence.
+  // ---------------------------------------------------------------------------
+  it('adversarial: start anchor matching non-adjacent lines reports each line number', async () => {
+    mockFileContent = 'TAG\nlineB\nlineC\nlineD\nlineE\nTAG\nlineG\nlineH\nTAG';
+    const result = await tool.execute({
+      ...baseParams,
+      path: 'test/note.md',
+      start: 'TAG',
+      end: 'lineH',
+      content: 'x',
     });
 
-    it('regression: genuinely absent compatibility-normalized content still fails', async () => {
-      mockFileContent = 'head\nA parte deve… pagar\ntail';
-      const result = await tool.execute({
-        ...baseParams,
-        path: 'test/note.md',
-        oldContent: 'texto ausente',
-        newContent: 'CHANGED',
-        startLine: 2,
-        endLine: 2,
-      });
+    expect(result.success).toBe(false);
+    // M3 — plan §6 verbatim ambiguity message with non-adjacent line numbers
+    // [1, 6, 9]. Confirms the line-list format survives non-contiguous matches.
+    expect(result.error).toBe(
+      'start anchor matches 3 locations: lines [1, 6, 9]. Make it unique by extending it — include the next line (or several) using \\n so it identifies one location only.'
+    );
+    expect(app.vault.modify).not.toHaveBeenCalled();
+  });
 
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('Content not found');
-      expect(mockFileContent).toBe('head\nA parte deve… pagar\ntail');
+  // ---------------------------------------------------------------------------
+  // Adversarial: NFKC drift on BOTH anchors simultaneously
+  //   The existing §8.10 test drifts only one anchor (start === end). Confirm
+  //   tolerance when start and end carry independent compatibility-form drift.
+  // ---------------------------------------------------------------------------
+  it('adversarial: NFKC drift tolerated on both start and end simultaneously', async () => {
+    // File uses compatibility forms on both anchor lines (ordinals + ellipsis +
+    // NBSP). NFKC compatibility decomposition canonicalizes ordinals (º→o, ª→a),
+    // ellipsis (…→...), and NBSP (U+00A0 → U+0020), so anchors authored in
+    // ASCII form must still match. NOTE: canonical accents like á are NOT
+    // touched by NFKC — they remain á — so we keep them in the anchor.
+    mockFileContent = 'preamble\n1ª linha do bloco\nmiddle content\n2º parágrafo … ok\nfooter';
+    const result = await tool.execute({
+      ...baseParams,
+      path: 'test/note.md',
+      start: '1a linha do bloco',           // ª → a
+      end: '2o parágrafo ... ok',           // º → o, NBSP → space, … → ...
+      content: 'REWRITTEN',
     });
+
+    expect(result.success).toBe(true);
+    expect(mockFileContent).toBe('preamble\nREWRITTEN\nfooter');
+  });
+
+  // ---------------------------------------------------------------------------
+  // Adversarial: anchors at file edges (first line and last line)
+  // ---------------------------------------------------------------------------
+  it('adversarial: replacing from first line through last line rewrites whole file', async () => {
+    mockFileContent = 'first-line\nmiddle1\nmiddle2\nlast-line';
+    const result = await tool.execute({
+      ...baseParams,
+      path: 'test/note.md',
+      start: 'first-line',
+      end: 'last-line',
+      content: 'WHOLE-FILE-REPLACEMENT',
+    });
+
+    expect(result.success).toBe(true);
+    expect(mockFileContent).toBe('WHOLE-FILE-REPLACEMENT');
+    expect(result.totalLines).toBe(1);
+  });
+
+  it('adversarial: anchor matches the last line of the file', async () => {
+    mockFileContent = 'alpha\nbeta\nfinal-line';
+    const result = await tool.execute({
+      ...baseParams,
+      path: 'test/note.md',
+      start: 'beta',
+      end: 'final-line',
+      content: 'REPLACED',
+    });
+
+    expect(result.success).toBe(true);
+    expect(mockFileContent).toBe('alpha\nREPLACED');
+  });
+
+  // ---------------------------------------------------------------------------
+  // Adversarial: CRLF input is normalized to LF before anchor comparison
+  // ---------------------------------------------------------------------------
+  it('adversarial: CRLF line endings in the file are normalized before anchor matching', async () => {
+    mockFileContent = 'alpha\r\nbeta\r\ngamma\r\ndelta';
+    const result = await tool.execute({
+      ...baseParams,
+      path: 'test/note.md',
+      start: 'beta',
+      end: 'gamma',
+      content: 'CRLF-SAFE',
+    });
+
+    expect(result.success).toBe(true);
+    // After normalizeCRLF, output should be LF-only.
+    expect(mockFileContent).toBe('alpha\nCRLF-SAFE\ndelta');
+    expect(mockFileContent).not.toContain('\r');
+  });
+
+  // ---------------------------------------------------------------------------
+  // Adversarial: multi-line end anchor (mirror of §8.8 for symmetry)
+  // ---------------------------------------------------------------------------
+  it('adversarial: multi-line end anchor block resolves correctly', async () => {
+    mockFileContent = 'head\nbody-1\nbody-2\n## Footer\nLast updated: today\ntrailing';
+    const result = await tool.execute({
+      ...baseParams,
+      path: 'test/note.md',
+      start: 'body-1',
+      end: '## Footer\nLast updated: today',
+      content: 'REWRITTEN',
+    });
+
+    expect(result.success).toBe(true);
+    expect(mockFileContent).toBe('head\nREWRITTEN\ntrailing');
+  });
+
+  // ---------------------------------------------------------------------------
+  // Adversarial: empty content with start === end deletes a single line
+  //   Coverage cross of §8.2 (single-line) and §8.9 (delete).
+  // ---------------------------------------------------------------------------
+  it('adversarial: empty content with start === end deletes that single line', async () => {
+    mockFileContent = 'keep1\ndelete-me\nkeep2';
+    const result = await tool.execute({
+      ...baseParams,
+      path: 'test/note.md',
+      start: 'delete-me',
+      end: 'delete-me',
+      content: '',
+    });
+
+    expect(result.success).toBe(true);
+    expect(mockFileContent).toBe('keep1\nkeep2');
+    expect(result.linesDelta).toBe(-1);
+    expect(result.totalLines).toBe(2);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Adversarial: anchors that bound the entire file deleted
+  // ---------------------------------------------------------------------------
+  it('adversarial: deleting from first to last line leaves an empty file', async () => {
+    mockFileContent = 'one\ntwo\nthree';
+    const result = await tool.execute({
+      ...baseParams,
+      path: 'test/note.md',
+      start: 'one',
+      end: 'three',
+      content: '',
+    });
+
+    expect(result.success).toBe(true);
+    expect(mockFileContent).toBe('');
+    expect(result.totalLines).toBe(1); // ''.split('\n').length === 1
+    expect(result.linesDelta).toBe(-2);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Adversarial: leading-slash path is normalized
+  //   replace.ts strips a leading '/' before resolving the path; confirm this
+  //   doesn't accidentally produce a "File not found" when callers send
+  //   absolute-style paths.
+  // ---------------------------------------------------------------------------
+  it('adversarial: leading-slash path is normalized and resolves to the file', async () => {
+    mockFileContent = 'alpha\nbeta\ngamma';
+    const result = await tool.execute({
+      ...baseParams,
+      path: '/test/note.md',
+      start: 'beta',
+      end: 'beta',
+      content: 'B',
+    });
+
+    expect(result.success).toBe(true);
+    expect(app.vault.getAbstractFileByPath).toHaveBeenCalledWith('test/note.md');
+    expect(mockFileContent).toBe('alpha\nB\ngamma');
+    expect(app.vault.modify).toHaveBeenCalledTimes(1);
+    expect(app.vault.modify).toHaveBeenCalledWith(mockFile, 'alpha\nB\ngamma');
+  });
+
+  // ---------------------------------------------------------------------------
+  // Result-shape contract: success path returns diff + totalLines + linesDelta
+  // ---------------------------------------------------------------------------
+  it('result shape: success returns unified diff, totalLines, and linesDelta', async () => {
+    mockFileContent = 'a\nb\nc';
+    const result = await tool.execute({
+      ...baseParams,
+      path: 'test/note.md',
+      start: 'b',
+      end: 'b',
+      content: 'X\nY',
+    });
+
+    expect(result.success).toBe(true);
+    expect(typeof result.diff).toBe('string');
+    expect(result.diff).toContain('@@');
+    expect(result.totalLines).toBe(4);
+    expect(result.linesDelta).toBe(1);
+    expect(app.vault.modify).toHaveBeenCalledTimes(1);
+    expect(app.vault.modify).toHaveBeenCalledWith(mockFile, 'a\nX\nY\nc');
   });
 });

@@ -96,23 +96,39 @@ export interface WriteParams extends CommonParameters {
 export type WriteResult = CommonResult
 
 /**
- * Params for replacing or deleting content in a file
+ * Params for replacing or deleting content in a file using pattern anchors.
+ *
+ * The range is identified by two text anchors: `start` and `end`. Each anchor
+ * matches against whole lines in the file (multi-line anchors join lines with
+ * `\n`). Both anchors must be globally unique in the file; ambiguity is
+ * reported as an error that lists the matching line numbers and asks the
+ * model to extend the anchor to multiple lines until it is unique.
+ *
+ * Line numbers are never required.
  */
 export interface ReplaceParams extends CommonParameters {
-  /** Path to the file to modify */
+  /** Path to the file to modify. Do not include a leading slash. */
   path: string;
 
-  /** The exact text currently at lines startLine through endLine that you want to replace */
-  oldContent: string;
+  /**
+   * Verbatim text marking the start of the range. Must match exactly one
+   * location in the file as a contiguous line-block. Included in the range
+   * that gets replaced.
+   */
+  start: string;
 
-  /** The text to replace oldContent with. Set to empty string to delete the content. */
-  newContent: string;
+  /**
+   * Verbatim text marking the end of the range. Same rules as `start`
+   * (globally-unique whole-line anchor, multi-line via `\n`, non-whitespace,
+   * included in the replaced range). Should resolve to a line at or after
+   * `start`; order is checked at execution time and surfaces as an
+   * `end anchor is at line E but start anchor is at line S` error if reversed
+   * — it is not a JSON-schema-level invariant.
+   */
+  end: string;
 
-  /** The line number (1-indexed) where oldContent begins */
-  startLine: number;
-
-  /** The line number (1-indexed) where oldContent ends (inclusive) */
-  endLine: number;
+  /** Replacement text. Set to an empty string to delete the range. */
+  content: string;
 }
 
 /**

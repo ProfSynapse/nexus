@@ -73,7 +73,7 @@ Adapters at `src/services/llm/adapters/{provider}/`. Types at `src/services/llm/
 <!-- PACT_MANAGED_END -->
 
 # Claude Code Context Document
-Last Updated: 2026-04-06
+Last Updated: 2026-05-11
 
 ## Project Overview
 - **Name**: Nexus (package: claudesidian-mcp)

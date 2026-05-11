@@ -119,19 +119,27 @@ export interface ImagePromptConfig {
 }
 
 /**
- * Content action configuration
+ * Content action configuration.
+ *
+ * The `replace` action uses pattern anchors: `start` and `end` identify the
+ * range to replace. Anchors match whole lines; pass multi-line text via `\n`
+ * if a single line is not unique. Line numbers are never required.
  */
 export interface ContentAction {
   type: 'create' | 'append' | 'prepend' | 'replace' | 'findReplace';
   targetPath: string;
+  /** findReplace only: text to search for */
   findText?: string;
+  /** findReplace only: replace every occurrence (default false) */
   replaceAll?: boolean;
+  /** findReplace only: match case-sensitively (default true) */
   caseSensitive?: boolean;
+  /** findReplace only: match whole words only (default false) */
   wholeWord?: boolean;
-  oldContent?: string;
-  startLine?: number;
-  endLine?: number;
-  position?: number;
+  /** replace only: verbatim text marking the start of the range (whole-line match, must be unique) */
+  start?: string;
+  /** replace only: verbatim text marking the end of the range (whole-line match, must be unique) */
+  end?: string;
 }
 
 /**
