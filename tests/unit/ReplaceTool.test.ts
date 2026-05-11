@@ -79,6 +79,12 @@ describe('ReplaceTool (pattern anchors)', () => {
 
     expect(result.success).toBe(true);
     expect(mockFileContent).toBe('alpha\nREPLACED\nepsilon');
+    // M4 (post-review fold-in) — assert the canonical write primitive was
+    // called exactly once with the expected file ref and content. Guards
+    // against regressions that bypass `vault.modify` via `vault.adapter.write`
+    // or similar and would otherwise still mutate `mockFileContent`.
+    expect(app.vault.modify).toHaveBeenCalledTimes(1);
+    expect(app.vault.modify).toHaveBeenCalledWith(mockFile, 'alpha\nREPLACED\nepsilon');
   });
 
   it('§8.9: deletes the range when content is empty and reports negative linesDelta', async () => {
@@ -94,6 +100,8 @@ describe('ReplaceTool (pattern anchors)', () => {
     expect(result.success).toBe(true);
     expect(mockFileContent).toBe('alpha\nepsilon');
     expect(result.linesDelta).toBeLessThan(0);
+    expect(app.vault.modify).toHaveBeenCalledTimes(1);
+    expect(app.vault.modify).toHaveBeenCalledWith(mockFile, 'alpha\nepsilon');
   });
 
   it('§8.3: errors when start anchor is not found', async () => {
@@ -107,7 +115,31 @@ describe('ReplaceTool (pattern anchors)', () => {
     });
 
     expect(result.success).toBe(false);
-    expect(result.error).toContain('start anchor not found');
+    // M3 — plan §6 verbatim message including re-read coaching suffix.
+    expect(result.error).toBe(
+      'start anchor not found in file. The content may have been edited since your last read — re-read the file and try again.'
+    );
+    expect(app.vault.modify).not.toHaveBeenCalled();
+  });
+
+  // M1 (post-review fold-in) — an empty file with non-whitespace anchors must
+  // fail with the start-not-found message and must NOT call vault.modify.
+  it('§8.10b (M1): empty file with non-whitespace anchors returns "anchor not found" without writing', async () => {
+    mockFileContent = '';
+    const result = await tool.execute({
+      ...baseParams,
+      path: 'test/note.md',
+      start: 'anything',
+      end: 'anything',
+      content: 'should not be written',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe(
+      'start anchor not found in file. The content may have been edited since your last read — re-read the file and try again.'
+    );
+    expect(mockFileContent).toBe('');
+    expect(app.vault.modify).not.toHaveBeenCalled();
   });
 
   it('§8.5: errors when start anchor matches multiple lines and lists them', async () => {
@@ -121,8 +153,11 @@ describe('ReplaceTool (pattern anchors)', () => {
     });
 
     expect(result.success).toBe(false);
-    expect(result.error).toContain('start anchor matches 2 locations');
-    expect(result.error).toContain('lines [1, 3]');
+    // M3 — plan §6 verbatim message with full extension coaching suffix.
+    expect(result.error).toBe(
+      'start anchor matches 2 locations: lines [1, 3]. Make it unique by extending it — include the next line (or several) using \\n so it identifies one location only.'
+    );
+    expect(app.vault.modify).not.toHaveBeenCalled();
   });
 
   it('§8.6: errors when end anchor matches multiple lines (incl. before start)', async () => {
@@ -136,7 +171,11 @@ describe('ReplaceTool (pattern anchors)', () => {
     });
 
     expect(result.success).toBe(false);
-    expect(result.error).toContain('end anchor matches 2 locations');
+    // M3 — plan §6 verbatim for end-anchor ambiguity (end matches at lines 3, 5).
+    expect(result.error).toBe(
+      'end anchor matches 2 locations: lines [3, 5]. Make it unique by extending it — include the next line (or several) using \\n so it identifies one location only.'
+    );
+    expect(app.vault.modify).not.toHaveBeenCalled();
   });
 
   it('§8.7: errors when end appears before start (both unique) and references both line numbers', async () => {
@@ -150,9 +189,11 @@ describe('ReplaceTool (pattern anchors)', () => {
     });
 
     expect(result.success).toBe(false);
-    expect(result.error).toContain('right order');
-    expect(result.error).toContain('line 3');
-    expect(result.error).toContain('line 1');
+    // M3 — plan §6 verbatim order-error message (E=1, S=3).
+    expect(result.error).toBe(
+      'end anchor is at line 1 but start anchor is at line 3 (3 > 1). Check that start and end are in the right order in the file.'
+    );
+    expect(app.vault.modify).not.toHaveBeenCalled();
   });
 
   it('§8.8: resolves multi-line start anchor block', async () => {
@@ -167,9 +208,11 @@ describe('ReplaceTool (pattern anchors)', () => {
 
     expect(result.success).toBe(true);
     expect(mockFileContent).toBe('REWRITTEN');
+    expect(app.vault.modify).toHaveBeenCalledTimes(1);
+    expect(app.vault.modify).toHaveBeenCalledWith(mockFile, 'REWRITTEN');
   });
 
-  it('§8.11+§8.12: rejects empty/whitespace anchors', async () => {
+  it('§8.11: rejects whitespace-only start anchor', async () => {
     mockFileContent = 'alpha\nbeta';
     const result = await tool.execute({
       ...baseParams,
@@ -180,7 +223,30 @@ describe('ReplaceTool (pattern anchors)', () => {
     });
 
     expect(result.success).toBe(false);
-    expect(result.error).toContain('non-whitespace');
+    // M3 — plan §6 verbatim non-whitespace validation message.
+    expect(result.error).toBe(
+      'start and end must contain non-whitespace text. Pick distinctive lines from your read.'
+    );
+    expect(app.vault.modify).not.toHaveBeenCalled();
+  });
+
+  // M1 fold-in: split row 11 from row 12 so a regression that only breaks the
+  // `end` half of the combined guard surfaces in its own test.
+  it('§8.12: rejects whitespace-only end anchor', async () => {
+    mockFileContent = 'alpha\nbeta';
+    const result = await tool.execute({
+      ...baseParams,
+      path: 'test/note.md',
+      start: 'alpha',
+      end: '\t  \n  ',
+      content: 'x',
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe(
+      'start and end must contain non-whitespace text. Pick distinctive lines from your read.'
+    );
+    expect(app.vault.modify).not.toHaveBeenCalled();
   });
 
   it('§8.13: errors when file does not exist', async () => {
@@ -195,7 +261,12 @@ describe('ReplaceTool (pattern anchors)', () => {
     });
 
     expect(result.success).toBe(false);
-    expect(result.error).toContain('File not found');
+    // M3 — plan §6 verbatim file-not-found message with path interpolation
+    // and full storageManager/search content guidance suffix.
+    expect(result.error).toBe(
+      'File not found: "missing.md". Use search content to find files by name, or storageManager.list to explore folders.'
+    );
+    expect(app.vault.modify).not.toHaveBeenCalled();
   });
 
   // NFKC drift smoke (PR #184 intent — anchor text in a different Unicode
@@ -213,6 +284,8 @@ describe('ReplaceTool (pattern anchors)', () => {
 
     expect(result.success).toBe(true);
     expect(mockFileContent).toBe('head\nCHANGED\ntail');
+    expect(app.vault.modify).toHaveBeenCalledTimes(1);
+    expect(app.vault.modify).toHaveBeenCalledWith(mockFile, 'head\nCHANGED\ntail');
   });
 
   it('preserves CRLF-free output and returns positive linesDelta on growth', async () => {
@@ -228,6 +301,8 @@ describe('ReplaceTool (pattern anchors)', () => {
     expect(result.success).toBe(true);
     expect(result.linesDelta).toBe(1);
     expect(mockFileContent).toBe('a\nX\nY\nZ\nd');
+    expect(app.vault.modify).toHaveBeenCalledTimes(1);
+    expect(app.vault.modify).toHaveBeenCalledWith(mockFile, 'a\nX\nY\nZ\nd');
   });
 
   it('exposes the new 4-field schema', () => {
@@ -256,6 +331,8 @@ describe('ReplaceTool (pattern anchors)', () => {
     expect(result.success).toBe(true);
     expect(mockFileContent).toBe('alpha\nbeta\nGAMMA-REPLACED\ndelta');
     expect(result.linesDelta).toBe(0);
+    expect(app.vault.modify).toHaveBeenCalledTimes(1);
+    expect(app.vault.modify).toHaveBeenCalledWith(mockFile, 'alpha\nbeta\nGAMMA-REPLACED\ndelta');
   });
 
   // ---------------------------------------------------------------------------
@@ -272,9 +349,13 @@ describe('ReplaceTool (pattern anchors)', () => {
     });
 
     expect(result.success).toBe(false);
-    expect(result.error).toContain('end anchor not found');
-    expect(result.error).toContain('re-read');
-    expect(result.error).not.toContain('start anchor');
+    // M3 — plan §6 verbatim end-not-found message. Note: this assertion is the
+    // sole guard that the start-anchor message variant is NOT emitted when
+    // start resolved but end did not (avoids LLM-confusing message mix).
+    expect(result.error).toBe(
+      'end anchor not found in file. The content may have been edited since your last read — re-read the file and try again.'
+    );
+    expect(app.vault.modify).not.toHaveBeenCalled();
   });
 
   // ---------------------------------------------------------------------------
@@ -302,55 +383,90 @@ describe('ReplaceTool (pattern anchors)', () => {
     });
 
     expect(result.success).toBe(false);
-    expect(result.error).toContain('Path is a folder, not a file');
+    // M3 — plan §6 verbatim path-is-a-folder message with path interpolation
+    // and the storageManager.list guidance suffix.
+    expect(result.error).toBe(
+      'Path is a folder, not a file: "some/folder". Use storageManager.list to see its contents.'
+    );
     expect(folderApp.vault.read).not.toHaveBeenCalled();
     expect(folderApp.vault.modify).not.toHaveBeenCalled();
   });
 
   // ---------------------------------------------------------------------------
-  // §8.15 — sequential edits in one batch
-  //   Two tool.execute() calls in sequence on the same file. The second must
-  //   succeed using anchors that ONLY exist in the post-first-edit content,
-  //   proving content-based anchors survive prior edits (the design's advantage
-  //   over line-number-based addressing which would have drifted).
+  // §8.15 — sequential edits in one batch (5-step batch, T-F1 fold-in)
+  //   Five tool.execute() calls in sequence on the same file. Each step uses
+  //   an anchor that ONLY exists because the previous step's content was
+  //   inserted. This proves per-step anchor re-resolution against the evolving
+  //   buffer (rather than against any cached pre-batch line-number model) and
+  //   catches state-corruption regressions if batch semantics change.
   // ---------------------------------------------------------------------------
-  it('§8.15: sequential edits — second call anchors against post-first-edit content', async () => {
+  it('§8.15: sequential edits — 5-step batch, each step anchors against post-prior-step content', async () => {
     mockFileContent = 'header\nold-block-A\nmiddle\nold-block-B\nfooter';
 
-    // Edit 1: replace old-block-A with NEW-A
+    // Step 1: rename old-block-A → STEP1.
     const r1 = await tool.execute({
       ...baseParams,
       path: 'test/note.md',
       start: 'old-block-A',
       end: 'old-block-A',
-      content: 'NEW-A',
+      content: 'STEP1',
     });
     expect(r1.success).toBe(true);
-    expect(mockFileContent).toBe('header\nNEW-A\nmiddle\nold-block-B\nfooter');
+    expect(mockFileContent).toBe('header\nSTEP1\nmiddle\nold-block-B\nfooter');
 
-    // Edit 2: anchor on NEW-A (which only exists after edit 1) and replace
-    // old-block-B with NEW-B. The fact that the model can chain anchors
-    // against post-edit content is the §8.15 invariant.
+    // Step 2: rename old-block-B → STEP2. Independent of step 1.
     const r2 = await tool.execute({
       ...baseParams,
       path: 'test/note.md',
       start: 'old-block-B',
       end: 'old-block-B',
-      content: 'NEW-B',
+      content: 'STEP2',
     });
     expect(r2.success).toBe(true);
-    expect(mockFileContent).toBe('header\nNEW-A\nmiddle\nNEW-B\nfooter');
+    expect(mockFileContent).toBe('header\nSTEP1\nmiddle\nSTEP2\nfooter');
 
-    // And a third edit using BOTH new anchors as a range:
+    // Step 3: collapse [STEP1..STEP2] range into STEP3. Anchors STEP1 + STEP2
+    // ONLY exist because steps 1+2 wrote them — a line-number-cached client
+    // would have stale offsets here and fail.
     const r3 = await tool.execute({
       ...baseParams,
       path: 'test/note.md',
-      start: 'NEW-A',
-      end: 'NEW-B',
-      content: 'COLLAPSED',
+      start: 'STEP1',
+      end: 'STEP2',
+      content: 'STEP3',
     });
     expect(r3.success).toBe(true);
-    expect(mockFileContent).toBe('header\nCOLLAPSED\nfooter');
+    expect(mockFileContent).toBe('header\nSTEP3\nfooter');
+
+    // Step 4: replace STEP3 with a multi-line block. STEP3 anchor only exists
+    // because step 3 just wrote it.
+    const r4 = await tool.execute({
+      ...baseParams,
+      path: 'test/note.md',
+      start: 'STEP3',
+      end: 'STEP3',
+      content: 'STEP4-LINE-A\nSTEP4-LINE-B\nSTEP4-LINE-C',
+    });
+    expect(r4.success).toBe(true);
+    expect(mockFileContent).toBe(
+      'header\nSTEP4-LINE-A\nSTEP4-LINE-B\nSTEP4-LINE-C\nfooter'
+    );
+
+    // Step 5: use a multi-line anchor pulled from the step-4 output. The
+    // anchor [STEP4-LINE-A\nSTEP4-LINE-B] only resolves uniquely because
+    // step 4 wrote those two lines adjacent to each other.
+    const r5 = await tool.execute({
+      ...baseParams,
+      path: 'test/note.md',
+      start: 'STEP4-LINE-A\nSTEP4-LINE-B',
+      end: 'STEP4-LINE-C',
+      content: 'STEP5-COLLAPSED',
+    });
+    expect(r5.success).toBe(true);
+    expect(mockFileContent).toBe('header\nSTEP5-COLLAPSED\nfooter');
+
+    // Vault.modify should have been called exactly once per successful step.
+    expect(app.vault.modify).toHaveBeenCalledTimes(5);
   });
 
   // ---------------------------------------------------------------------------
@@ -373,6 +489,8 @@ describe('ReplaceTool (pattern anchors)', () => {
     // single line replaced by single line — totalLines unchanged.
     expect(result.linesDelta).toBe(0);
     expect(result.totalLines).toBe(3);
+    expect(app.vault.modify).toHaveBeenCalledTimes(1);
+    expect(app.vault.modify).toHaveBeenCalledWith(mockFile, 'preamble\nREPLACED-UNIQUE\npostscript');
   });
 
   // ---------------------------------------------------------------------------
@@ -412,6 +530,8 @@ describe('ReplaceTool (pattern anchors)', () => {
 
     expect(result.success).toBe(true);
     expect(mockFileContent).toBe('intro\nREWRITTEN\ntrailing');
+    expect(app.vault.modify).toHaveBeenCalledTimes(1);
+    expect(app.vault.modify).toHaveBeenCalledWith(mockFile, 'intro\nREWRITTEN\ntrailing');
   });
 
   // ---------------------------------------------------------------------------
@@ -431,8 +551,12 @@ describe('ReplaceTool (pattern anchors)', () => {
     });
 
     expect(result.success).toBe(false);
-    expect(result.error).toContain('start anchor matches 3 locations');
-    expect(result.error).toContain('lines [1, 6, 9]');
+    // M3 — plan §6 verbatim ambiguity message with non-adjacent line numbers
+    // [1, 6, 9]. Confirms the line-list format survives non-contiguous matches.
+    expect(result.error).toBe(
+      'start anchor matches 3 locations: lines [1, 6, 9]. Make it unique by extending it — include the next line (or several) using \\n so it identifies one location only.'
+    );
+    expect(app.vault.modify).not.toHaveBeenCalled();
   });
 
   // ---------------------------------------------------------------------------
@@ -585,6 +709,8 @@ describe('ReplaceTool (pattern anchors)', () => {
     expect(result.success).toBe(true);
     expect(app.vault.getAbstractFileByPath).toHaveBeenCalledWith('test/note.md');
     expect(mockFileContent).toBe('alpha\nB\ngamma');
+    expect(app.vault.modify).toHaveBeenCalledTimes(1);
+    expect(app.vault.modify).toHaveBeenCalledWith(mockFile, 'alpha\nB\ngamma');
   });
 
   // ---------------------------------------------------------------------------
@@ -605,5 +731,7 @@ describe('ReplaceTool (pattern anchors)', () => {
     expect(result.diff).toContain('@@');
     expect(result.totalLines).toBe(4);
     expect(result.linesDelta).toBe(1);
+    expect(app.vault.modify).toHaveBeenCalledTimes(1);
+    expect(app.vault.modify).toHaveBeenCalledWith(mockFile, 'a\nX\nY\nc');
   });
 });

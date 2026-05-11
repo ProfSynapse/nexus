@@ -237,7 +237,11 @@ describe('executePrompts action alignment (pattern anchors)', () => {
       );
 
       expect(result.success).toBe(false);
-      expect(result.error).toContain('File not found');
+      // M3 — plan §6 verbatim file-not-found message must propagate intact
+      // (no executor rewrap, no truncation of the storageManager guidance).
+      expect(result.error).toBe(
+        'File not found: "notes/missing.md". Use search content to find files by name, or storageManager.list to explore folders.'
+      );
       expect(executeAgentTool).toHaveBeenCalledTimes(1);
     });
 
@@ -260,7 +264,11 @@ describe('executePrompts action alignment (pattern anchors)', () => {
       );
 
       expect(result.success).toBe(false);
-      expect(result.error).toContain('start anchor not found');
+      // M3 — plan §6 verbatim start-anchor-not-found message (including the
+      // re-read coaching suffix) must propagate through executor unchanged.
+      expect(result.error).toBe(
+        'start anchor not found in file. The content may have been edited since your last read — re-read the file and try again.'
+      );
       expect(executeAgentTool).toHaveBeenCalledWith(
         'contentManager',
         'replace',
