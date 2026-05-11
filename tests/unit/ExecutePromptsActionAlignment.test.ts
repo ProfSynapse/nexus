@@ -172,5 +172,166 @@ describe('executePrompts action alignment (pattern anchors)', () => {
       });
       expect(executeAgentTool).not.toHaveBeenCalled();
     });
+
+    it('fails fast when targetPath is missing (validation gate before agentManager)', async () => {
+      const { executor, executeAgentTool } = createExecutor();
+
+      const result = await executor.executeContentAction(
+        { type: 'replace' } as unknown as Parameters<typeof executor.executeContentAction>[0],
+        'New content'
+      );
+
+      expect(result).toEqual({
+        success: false,
+        error: 'Target path is required',
+      });
+      expect(executeAgentTool).not.toHaveBeenCalled();
+    });
+
+    it('fails fast on missing action.type before invoking agentManager', async () => {
+      const { executor, executeAgentTool } = createExecutor();
+
+      const result = await executor.executeContentAction(
+        { targetPath: 'notes/demo.md' } as unknown as Parameters<typeof executor.executeContentAction>[0],
+        'New content'
+      );
+
+      expect(result).toEqual({
+        success: false,
+        error: 'Action type is required',
+      });
+      expect(executeAgentTool).not.toHaveBeenCalled();
+    });
+
+    it('returns "Unknown action type" for an action.type the executor does not recognise', async () => {
+      const { executor, executeAgentTool } = createExecutor();
+
+      const result = await executor.executeContentAction(
+        {
+          type: 'mutate' as unknown as 'replace',
+          targetPath: 'notes/demo.md',
+        },
+        'New content'
+      );
+
+      expect(result).toEqual({ success: false, error: 'Unknown action type' });
+      expect(executeAgentTool).not.toHaveBeenCalled();
+    });
+
+    it('propagates an underlying replace-tool error (non-existent file) through executeContentAction', async () => {
+      const executeAgentTool = jest.fn().mockResolvedValue({
+        success: false,
+        error: 'File not found: "notes/missing.md". Use search content to find files by name, or storageManager.list to explore folders.',
+      });
+      const agentManager = { executeAgentTool } as unknown as AgentManager;
+      const executor = new ActionExecutor(agentManager);
+
+      const result = await executor.executeContentAction(
+        {
+          type: 'replace',
+          targetPath: 'notes/missing.md',
+          start: '## Header',
+          end: '</details>',
+        },
+        'body'
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('File not found');
+      expect(executeAgentTool).toHaveBeenCalledTimes(1);
+    });
+
+    it('propagates an underlying replace-tool anchor-not-found error through executeContentAction', async () => {
+      const executeAgentTool = jest.fn().mockResolvedValue({
+        success: false,
+        error: 'start anchor not found in file. The content may have been edited since your last read — re-read the file and try again.',
+      });
+      const agentManager = { executeAgentTool } as unknown as AgentManager;
+      const executor = new ActionExecutor(agentManager);
+
+      const result = await executor.executeContentAction(
+        {
+          type: 'replace',
+          targetPath: 'notes/demo.md',
+          start: 'missing-anchor',
+          end: 'also-missing',
+        },
+        'body'
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('start anchor not found');
+      expect(executeAgentTool).toHaveBeenCalledWith(
+        'contentManager',
+        'replace',
+        expect.objectContaining({
+          path: 'notes/demo.md',
+          start: 'missing-anchor',
+          end: 'also-missing',
+          content: 'body',
+        })
+      );
+    });
+
+    it('reports "Invalid response from replace tool" when the agent returns a non-CommonResult shape', async () => {
+      const executeAgentTool = jest.fn().mockResolvedValue('totally-unexpected');
+      const agentManager = { executeAgentTool } as unknown as AgentManager;
+      const executor = new ActionExecutor(agentManager);
+
+      const result = await executor.executeContentAction(
+        {
+          type: 'replace',
+          targetPath: 'notes/demo.md',
+          start: 'A',
+          end: 'B',
+        },
+        'body'
+      );
+
+      expect(result).toEqual({
+        success: false,
+        error: 'Invalid response from replace tool',
+      });
+    });
+
+    it('reports "Agent manager not available" when no agentManager is wired', async () => {
+      const executor = new ActionExecutor(undefined);
+
+      const result = await executor.executeContentAction(
+        {
+          type: 'replace',
+          targetPath: 'notes/demo.md',
+          start: 'A',
+          end: 'B',
+        },
+        'body'
+      );
+
+      expect(result).toEqual({
+        success: false,
+        error: 'Agent manager not available',
+      });
+    });
+
+    it('catches a thrown error from agentManager.executeAgentTool and returns it as an error result', async () => {
+      const executeAgentTool = jest.fn().mockRejectedValue(new Error('tool blew up'));
+      const agentManager = { executeAgentTool } as unknown as AgentManager;
+      const executor = new ActionExecutor(agentManager);
+
+      const result = await executor.executeContentAction(
+        {
+          type: 'replace',
+          targetPath: 'notes/demo.md',
+          start: 'A',
+          end: 'B',
+        },
+        'body'
+      );
+
+      expect(result).toEqual({
+        success: false,
+        error: 'tool blew up',
+      });
+    });
   });
 });

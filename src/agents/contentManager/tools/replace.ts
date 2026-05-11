@@ -36,7 +36,7 @@ function normalizeCRLF(text: string): string {
  * in a different Unicode normalization form than what `vault.read()` returns.
  * This covers both canonical drift (NFC vs NFD accents) and compatibility
  * drift such as ordinal indicators (`º` -> `o`, `ª` -> `a`), ellipsis
- * (`…` -> `...`), and NBSP (` ` -> regular space).
+ * (`…` -> `...`), and NBSP (U+00A0 -> regular space).
  *
  * We normalize ONLY for the comparison, not for the rebuild — the file's
  * original normalization form is preserved in the parts the operator did
