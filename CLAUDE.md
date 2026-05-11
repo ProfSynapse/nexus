@@ -5,11 +5,11 @@
 <!-- SESSION_START -->
 ## Current Session
 <!-- Auto-managed by session_init hook. Overwritten each session. -->
-- Resume: `claude --resume 6e49d577-118e-4089-bc35-e87c9f3c46c6`
-- Team: `pact-6e49d577`
-- Session dir: `/Users/jrosenbaum/.claude/pact-sessions/claudesidian-mcp/6e49d577-118e-4089-bc35-e87c9f3c46c6`
-- Plugin root: `/Users/jrosenbaum/.claude/plugins/cache/pact-marketplace/PACT/4.1.2`
-- Started: 2026-05-08 12:52:27 UTC
+- Resume: `claude --resume 09e13c41-9aa5-4f2d-b598-8746dfcc1c7c`
+- Team: `pact-09e13c41`
+- Session dir: `/Users/jrosenbaum/.claude/pact-sessions/claudesidian-mcp/09e13c41-9aa5-4f2d-b598-8746dfcc1c7c`
+- Plugin root: `/Users/jrosenbaum/.claude/plugins/cache/pact-marketplace/PACT/4.1.5`
+- Started: 2026-05-11 14:01:11 UTC
 <!-- SESSION_END -->
 
 <!-- PACT_MEMORY_START -->
@@ -117,7 +117,7 @@ Full guidelines: `docs/obsidian-plugin-guidelines.md`
 
 ## Recent Changes
 
-**Current Version**: 5.8.14
+**Current Version**: 5.8.15
 Full changelog: `docs/changelog.md`
 
 **Latest features** (May 2026):
