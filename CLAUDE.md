@@ -5,11 +5,11 @@
 <!-- SESSION_START -->
 ## Current Session
 <!-- Auto-managed by session_init hook. Overwritten each session. -->
-- Resume: `claude --resume 09e13c41-9aa5-4f2d-b598-8746dfcc1c7c`
-- Team: `pact-09e13c41`
-- Session dir: `/Users/jrosenbaum/.claude/pact-sessions/claudesidian-mcp/09e13c41-9aa5-4f2d-b598-8746dfcc1c7c`
-- Plugin root: `/Users/jrosenbaum/.claude/plugins/cache/pact-marketplace/PACT/4.1.5`
-- Started: 2026-05-11 14:01:11 UTC
+- Resume: `claude --resume bcb62e81-aa57-4349-868b-d39c4dbd8f95`
+- Team: `pact-bcb62e81`
+- Session dir: `/Users/jrosenbaum/.claude/pact-sessions/claudesidian-mcp/bcb62e81-aa57-4349-868b-d39c4dbd8f95`
+- Plugin root: `/Users/jrosenbaum/.claude/plugins/cache/pact-marketplace/PACT/4.1.10`
+- Started: 2026-05-11 20:53:38 UTC
 <!-- SESSION_END -->
 
 <!-- PACT_MEMORY_START -->
@@ -25,9 +25,9 @@ Repo has `.gitattributes` declaring LF canonical across `.ts`/`.tsx`/`.js`/`.mjs
 ### Dynamic ToolManager sync: deferred refactor (issue #174)
 `AgentRegistrationService.syncToolManagerAgent` + `ToolManagerAgent.registerDynamicAgent/unregisterDynamicAgent` is a callback-wrap bridge that keeps `getTools` discovery in sync when `AppManager` installs/uninstalls app agents at runtime (v5.8.4). Works today because `AppManager` is the only dynamic registrar. **Does not compose** for a second one. When a remote-MCP loader / plugin-extension agent / other dynamic registrar lands, refactor to event-based: add `onAgentRegistered`/`onAgentUnregistered` to `AgentManager`, have `ToolManagerAgent` subscribe in its constructor, delete the bridge + the `instanceof ToolManagerAgent` concrete import in `AgentRegistrationService`. Do NOT do this refactor speculatively — wait for the triggering consumer. Tracking: https://github.com/ProfSynapse/nexus/issues/174.
 
-<!-- pinned: 2026-04-20 -->
-### ToolManager MCP contract: CLI-first only (as of v5.8.2 / PR #170)
-`useTools`/`getTools` accept ONLY top-level CLI shape: `tool` string + context fields (`workspaceId`, `sessionId`, `memory`, `goal`, `constraints?`) at top level. Legacy nested `{context: {...}, calls: [...]}` and `{request: [...]}` throw `Deprecated payload shape` at `src/agents/toolManager/services/ToolCliNormalizer.ts:444/462/495`. `UseToolParams` has no `calls`/`request` fields. `executePrompts` actions: `replace` uses `oldContent` + `startLine` + `endLine`; `position` deprecated (still accepted, normalized); `append`/`prepend` route to `insert`; `position < 1` rejected. CLI parser decodes `\uXXXX` in quoted strings.
+<!-- pinned: 2026-04-20, updated 2026-05-11 -->
+### ToolManager MCP contract: CLI-first only (as of v5.8.2 / PR #170; replace migrated v5.9.0)
+`useTools`/`getTools` accept ONLY top-level CLI shape: `tool` string + context fields (`workspaceId`, `sessionId`, `memory`, `goal`, `constraints?`) at top level. Legacy nested `{context: {...}, calls: [...]}` and `{request: [...]}` throw `Deprecated payload shape` at `src/agents/toolManager/services/ToolCliNormalizer.ts:444/462/495`. `UseToolParams` has no `calls`/`request` fields. `executePrompts` actions: `replace` uses 4-field pattern-anchored shape `{path, start, end, content}` (was `oldContent` + `startLine` + `endLine` + `position` pre-v5.9.0; old shape gets a clean validation error, no compat shim); `append`/`prepend` route to `insert`; `position < 1` rejected. CLI parser decodes `\uXXXX` in quoted strings.
 
 <!-- pinned: 2026-03-29 -->
 ### pdfjs-dist in Obsidian/Electron (legacy build + shared loader)
@@ -58,16 +58,14 @@ Adapters at `src/services/llm/adapters/{provider}/`. Types at `src/services/llm/
 ## Working Memory
 <!-- Auto-managed by pact-memory skill. Last 3 memories shown. Full history searchable via pact-memory skill. -->
 
-### 2026-05-07 16:24
-**Context**: Reusable IndexedDB testing patterns for the claudesidian-mcp codebase, extracted from the cloud-sync-aware cache.db backend TEST phase (session pact-2f3b5b63, 2026-05-07, task #16, 6 new test files / 53 new tests on top of 32 smoke tests). These patterns generalize to any future IDB-backed feature in this repo (or any Obsidian plugin using fake-indexeddb for unit tests). Source feature captured in memory 4bc0b8e2; this memory isolates the test-infrastructure patterns so they remain retrievable for unrelated IDB features (e.g. future credential cache, embedding store, search index relocation).
-**Goal**: Make IDB testing patterns retrievable independent of the originating feature so future agents writing IDB-backed code can find the validated approaches: real-blob synthesis, prototype-patch error paths, fake-indexeddb transaction throughput limits, and the modal-vs-storage seam-split decision rule.
-**Decisions**: Real-blob round-trip in IDB integration tests uses a synthesized small blob (16KB) with the format-specific magic header, NOT the production size, IDB error-path coverage uses prototype-patch pattern, not direct IDBRequest.error assignment, UI-shell vs storage-seam test split for modal-confirmation flows, HybridStorageAdapter test isolation via Object.create(prototype) + Object.assign field injection, jest.mock('@dao-xyz/sqlite3-vec/wasm', () => jest.fn(), { virtual: true }) is required at top of any test file importing HybridStorageAdapter, Accept branch-coverage gaps when missed branches are defensive sanity guards
-**Lessons**: fake-indexeddb is the right test scaffolding for IDB code in this repo (^6.2.5, MIT-licensed, ~600 LoC). Smoke and unit tests use IDBFactory directly - NOT the auto-shim - so each test gets isolated IDB state without polluting other tests., Modal-vs-storage seam-split test heuristic: when a UI shell wraps a business operation, ask 'does the UI shell have stable contract semantics in jsdom?' If no (Obsidian Modal, native dialog, OS-managed focus), thin-smoke the click->callback contract and integration-test the business operation independently at its underlying seam. The two tests cover the full feature without flake risk from the UI shell., fake-indexeddb transaction throughput is reliable below ~1MB and flake-prone above. Synthesize test data inside that envelope. For format validation, the magic header + a deterministic byte tail (e.g. 0x00..0xFF) gives byte-level assertion without scale., Test isolation via Object.create(prototype) + Object.assign is the right shape for testing methods on classes with expensive constructors when method-level behavior is the unit of interest. Trade-off: tests become structurally coupled to the class internals; that's a feature when you want structural changes to surface in tests, a bug when you want method-level behavior tests resilient to refactors., Branch-coverage gaps below threshold deserve case-by-case acceptance criteria: (a) which lines are missed, (b) why coverage fails to credit them, (c) whether driving to threshold is disproportionate. Document the gap in the HANDOFF so the reviewer can accept or escalate, rather than silently dropping the threshold.
-**Reasoning chains**: fake-indexeddb is fully managed -> IDBRequest.error is read-only post-resolution -> direct property assignment crashes transaction internals -> only safe path is replacing the IDBRequest entirely via prototype patch -> pattern: IDBObjectStore.prototype.get one-shot patch returning forge object with onerror/onabort/onsuccess fired via setTimeout, Modal lifecycle in jsdom is non-deterministic (focus, escape, animation) -> only click->callback contract is stable -> split into thin modal-smoke (UI shell contract) + storage-seam integration (business operation) -> seam-split heuristic generalizes to any UI-shell-wrapping-business-operation pattern in this codebase, HybridStorageAdapter constructor is heavy -> full instantiation in tests is slow + brittle to constructor changes -> Object.create(prototype) + Object.assign with only fields under test is faster + tighter coupling to the method under test -> structural changes surface in test, not silent regression
-**Memory ID**: ec0f9bfe2d6266bf5bdd50c39f26ab84
-
-### 2026-05-07 15:57
-**Summary**: Generalizable architectural and process patterns extracted from the cloud-sync-aware cache.db backend feature in claudes...
+### 2026-05-11 21:05
+**Context**: Generalizable workflow anti-pattern surfaced during the PR #206 (pattern-anchored content replace) dogfood handoff cycle in claudesidian-mcp session pact-bcb62e81 (2026-05-11). A teammate sent a wake-signal SendMessage to the team-lead BEFORE the on-disk artifacts (staged files + metadata.handoff in task store) had been persisted. The team-lead inspected immediately on receiving the wake, saw an empty state, and issued a false-negative HANDOFF rejection. The teammate then had to recover by persisting the artifacts and re-sending. This is a generic partial-state failure mode in any handoff protocol where the inspector reacts to a notification by reading state — the wake notification is faster than the persistence it announces. Surfaced by backend-reviewer during PR #206 review and flagged for institutional capture by the team-lead in the consolidation harvest dispatch.
+**Goal**: Make the artifact-race anti-pattern retrievable as a standalone workflow lesson independent of the originating PR. Future agents writing handoff code, dispatching peer reviews, or coordinating multi-step workflows should find this lesson via search on 'wake signal', 'handoff persistence', 'partial state notification', or related queries — and apply the persist-before-send ordering rule by default.
+**Decisions**: Capture artifact-race as a standalone memory rather than burying inside the PR #206 memory cc3d825d, Specify the canonical 4-step ordering verbatim (stage → metadata.handoff → intentional_wait → SendMessage)
+**Lessons**: Artifact-race anti-pattern: any wake-signal notification (SendMessage to a teammate or lead) MUST be the LAST step in a handoff sequence, sent only after all on-disk artifacts are persisted. The persistence-before-notification rule prevents the inspector from racing the persister and seeing partial state. Generalizes to any protocol where the inspector reads state in response to a notification., Symptom of artifact-race: false-negative HANDOFF rejection. The inspector receives the wake, reads state, sees nothing or stale state, issues a rejection. The persister then completes persistence, sees the rejection, and either retries (best case) or treats the rejection as authoritative (worst case — work is silently abandoned). Either way, a wasted round trip., Correct ordering for a dogfood handoff in PACT teams: (1) write or stage all output artifacts (git add, write to disk, save documents), (2) call TaskUpdate to write metadata.handoff with the 6-field schema (produced/decisions/reasoning_chain/uncertainty/integration/open_questions), (3) set intentional_wait{reason=awaiting_lead_*, expected_resolver=lead}, (4) ONLY THEN SendMessage the wake-signal to the lead. Steps 1-3 establish the state the lead is about to inspect; step 4 announces it., Same shape as 'git commit before git push': the notification (push) MUST follow the persistence (commit). Reviewers should recognize the structural similarity when reviewing any code that sends a notification to trigger inspection., Detection in review: when reviewing handoff or notification code, check whether the SendMessage / publish / notify call site appears AFTER all persistence calls in the source order. If a SendMessage appears before staged-file writes, write-to-disk calls, or commits, that is the artifact-race anti-pattern.
+**Reasoning chains**: Wake-signal SendMessage triggers immediate inspector read → if persistence is incomplete when the inspector reads, the inspector sees partial/empty state → inspector issues false-negative rejection → persister completes after the rejection, has to recover or silently abandons → invert ordering: persistence MUST be complete before the wake-signal is sent, Same structural shape as 'commit before push' for git → push without commit is a no-op or pushes stale state → SendMessage without artifact-on-disk is the analogous failure → reviewers can apply the same heuristic to both: source-order check (notification call AFTER all persistence calls)
+**Agreements**: Wake-signal SendMessage is ALWAYS the last step in a handoff sequence — after staging files, writing metadata.handoff, and setting intentional_wait, False-negative HANDOFF rejections caused by artifact-race are NOT a teammate-quality issue — they are an ordering bug in the handoff protocol; recovery is to persist, then re-send the wake
+**Memory ID**: 0e7ccbed113e4d9309faa055e5da1828
 <!-- PACT_MEMORY_END -->
 
 <!-- PACT_MANAGED_END -->
@@ -77,7 +75,7 @@ Last Updated: 2026-05-11
 
 ## Project Overview
 - **Name**: Nexus (package: claudesidian-mcp)
-- **Version**: 5.8.11
+- **Version**: 5.9.0
 - **Type**: Obsidian Community Plugin
 - **Purpose**: MCP integration for Obsidian with AI-powered vault operations
 - **Architecture**: Agent-Tool pattern with domain-driven design
@@ -117,7 +115,7 @@ Full guidelines: `docs/obsidian-plugin-guidelines.md`
 
 ## Recent Changes
 
-**Current Version**: 5.8.15
+**Current Version**: 5.9.0
 Full changelog: `docs/changelog.md`
 
 **Latest features** (May 2026):
@@ -250,6 +248,8 @@ Pre-existing `ModelAgentManager.test.ts` failure persists on main — out-of-sco
 Substrate lesson pinned for retrospective: spawned PACT subagents had inconsistent MCP-tool access in this session; fallback pattern is **self-contained dispatch** (skip teachback ceremony, do work via Edit/Write/Bash, commit+push directly) — used successfully for backend-coder-3 (e65f3691) and test-engineer-5 (51d9dc25). 3 review docs were retracted mid-session (architect, backend, synthesis) when discovered to contain confabulated content from imagined SendMessage payloads after silent agent-spawn failures.
 
 ### Current Work
+
+**Pattern-anchored `content replace` redesign (2026-05-11, MERGED → v5.9.0)** — PR #206 squash-merged to main as `bb00e524`. Branch + worktree deleted. Plan: `docs/plans/replace-tool-anchor-redesign-plan.md` (locked + IMPLEMENTED). Hard schema break landed: 4-field `{path, start, end, content}` replaces `{path, oldContent, newContent, startLine, endLine}` on both `ContentManager.replace` AND `executePrompts.replace` action in lockstep. No compat shim — old shape returns clean validation error. Findline-block helper subsumes `findContentInLines`; full-file `write` fallback in `executeReplaceAction` and `validate()` legacy branches deleted outright. PR #206 commits on the merge trace: `35864d6b` CODE, `6b5f5966` TEST, `0e29890a` JSDoc polish (A-F1+F2), `4f5a8784` test tightening (M1/M3/M4/T-F1). 46/46 jest green, `tsc --noEmit` clean. Reviewer verdicts: architect APPROVED 0/0/3 Future, test GREEN 0/4/3, backend GREEN 0/0/2. CLAUDE.md `## Pinned Context` updated in-place to reflect new shape (v5.9.0 marker on the CLI-first pin). **Session lesson worth pinning**: persist on-disk review artifacts BEFORE the wake-signal SendMessage — racing the wake with TaskGet/file-read produced a false-negative HANDOFF rejection cycle in this session. Pending: bump `package.json`/`manifest.json` to 5.9.0 and run `/nexus-release` skill when next at keyboard.
 
 **ThinkingLoader continuity fix (2026-04-17)** — Branch `fix/thinking-loader-during-tools` (worktree `.worktrees/fix-thinking-loader-during-tools`), commit `4fc646f6`. Animated loader (noodling/forging) now stays mounted through tool execution instead of being wiped by `contentElement.empty()` on every tool-call update. Reconciled via new `MessageBubble.syncLoadingIndicator` — loader lives in `.ai-loading-header` sibling outside `.message-content` and is torn down only when (a) first text chunk arrives via new `MessageDisplay.notifyStreamingStarted` hook from `ChatView`, or (b) `isLoading=false`. 5 files +191/-21. Tests + build clean. Build artifacts copied to main plugin dir for manual smoke. One MEDIUM uncertainty: subagent streaming path not yet wired to `notifyStreamingStarted` (pre-existing edge case; net-positive regardless). Next: user testing → PR or coder fixes.
 
