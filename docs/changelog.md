@@ -1,5 +1,18 @@
 # Nexus Changelog
 
+## May 2026
+
+**v5.9.0** — Pattern-anchored `content replace` (BREAKING)
+
+**Pattern-anchored replace** (lockstep migration: `content replace` + `executePrompts.replace`)
+- **BREAKING**: `content replace` schema replaces the 5-field shape (`path`, `oldContent`, `newContent`, `startLine`, `endLine`) with a 4-field shape (`path`, `start`, `end`, `content`). No backwards-compat shim — old payloads return a clean validation error so the model can self-correct on the next call.
+- `start` and `end` are text anchors matched against whole lines in the file. Multi-line anchors join lines with `\n`. Both anchors must match exactly one location each; ambiguity returns an error that lists the matching line numbers and asks the model to extend the anchor.
+- `content` replaces the inclusive range from `start` through `end`. Empty `content` deletes the range.
+- Eliminates the ~10K-token `oldContent` fingerprint for large ranges and survives sequential edits without re-reading: anchors are content-based, so prior edits that shift line numbers do not invalidate them.
+- `executePrompts.replace` action migrates in the same release: schema is `start` + `end` + `content`, mirroring the agent tool. The `position` deprecated alias and the line-range mode are both removed.
+- NFKC + CRLF normalization (PR #183/#184/#187 intent) preserved on the new anchor-compare path — anchors authored in a different Unicode form than the file bytes still match.
+- Schema descriptions updated end-to-end; no source code, JSDoc, or LLM-facing description still references `oldContent`/`newContent`/`startLine`/`endLine` on the replace path.
+
 ## April 2026
 
 **Apr 28**: v5.8.6 — Content safety, GPT-5.5 support, Windows Claude Code auth

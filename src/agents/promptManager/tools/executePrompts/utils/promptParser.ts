@@ -12,10 +12,8 @@ type ActionConfigLike = {
   type?: string;
   targetPath?: string;
   findText?: string;
-  oldContent?: string;
-  startLine?: number;
-  endLine?: number;
-  position?: number;
+  start?: string;
+  end?: string;
 };
 
 /**
@@ -137,43 +135,14 @@ export class PromptParser {
     }
 
     if (action.type === 'replace') {
-      const hasOldContent = typeof action.oldContent === 'string';
-      const hasStartLine = action.startLine !== undefined;
-      const hasEndLine = action.endLine !== undefined;
-      const hasPosition = action.position !== undefined;
+      const hasStart = typeof action.start === 'string' && action.start.trim().length > 0;
+      const hasEnd = typeof action.end === 'string' && action.end.trim().length > 0;
 
-      if (hasPosition) {
-        if (typeof action.position !== 'number' || action.position < 1) {
-          errors.push(`${prefix}: action.position must be a positive line number`);
-        }
-        if (hasStartLine || hasEndLine) {
-          errors.push(`${prefix}: action.position cannot be combined with action.startLine or action.endLine`);
-        }
-        if (!hasOldContent) {
-          errors.push(`${prefix}: action.oldContent is required when using deprecated action.position for replace`);
-        }
+      if (!hasStart) {
+        errors.push(`${prefix}: action.start is required for replace and must contain non-whitespace text`);
       }
-
-      if (!hasPosition && (hasOldContent || hasStartLine || hasEndLine)) {
-        if (!hasOldContent || !hasStartLine || !hasEndLine) {
-          errors.push(`${prefix}: action.replace line-range mode requires action.oldContent, action.startLine, and action.endLine`);
-        }
-      }
-
-      if (hasStartLine && (typeof action.startLine !== 'number' || action.startLine < 1)) {
-        errors.push(`${prefix}: action.startLine must be a positive line number`);
-      }
-
-      if (hasEndLine && (typeof action.endLine !== 'number' || action.endLine < 1)) {
-        errors.push(`${prefix}: action.endLine must be a positive line number`);
-      }
-
-      if (
-        typeof action.startLine === 'number' &&
-        typeof action.endLine === 'number' &&
-        action.endLine < action.startLine
-      ) {
-        errors.push(`${prefix}: action.endLine cannot be less than action.startLine`);
+      if (!hasEnd) {
+        errors.push(`${prefix}: action.end is required for replace and must contain non-whitespace text`);
       }
     }
 

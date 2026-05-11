@@ -428,24 +428,13 @@ export class ExecutePromptsTool extends BaseTool<BatchExecutePromptParams, Batch
                   replaceAll: { type: 'boolean' },
                   caseSensitive: { type: 'boolean' },
                   wholeWord: { type: 'boolean' },
-                  oldContent: {
+                  start: {
                     type: 'string',
-                    description: 'Required for line-range replace actions. Must match the exact current content being replaced.'
+                    description: 'Required for replace actions. The opening line(s) of the range to replace, copied verbatim from your read. Whole-line match. If a single line is not unique in the file, extend `start` to multiple lines using \\n until it identifies one location only.'
                   },
-                  startLine: {
-                    type: 'integer',
-                    minimum: 1,
-                    description: 'Required for line-range replace actions. 1-indexed start line.'
-                  },
-                  endLine: {
-                    type: 'integer',
-                    minimum: 1,
-                    description: 'Required for line-range replace actions. 1-indexed end line.'
-                  },
-                  position: {
-                    type: 'integer',
-                    minimum: 1,
-                    description: 'Deprecated single-line replace alias. Use startLine/endLine instead.'
+                  end: {
+                    type: 'string',
+                    description: 'Required for replace actions. The closing line(s) of the range. Same rules as `start`. Must come after `start` in the file.'
                   }
                 },
                 required: ['type', 'targetPath']
