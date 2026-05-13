@@ -151,7 +151,7 @@ export class ProgressBar {
             }
             
             // Hide the progress bar
-            setTimeout(() => {
+            window.setTimeout(() => {
                 this.hide();
             }, 2000); // Give user time to see completion
         };
@@ -166,7 +166,7 @@ export class ProgressBar {
                 this.progressText.setText(`Indexing cancelled: ${this.progress} / ${this.total}`);
                 
                 // Hide the progress bar after a delay
-                setTimeout(() => {
+                window.setTimeout(() => {
                     this.hide();
                 }, 1000);
             }

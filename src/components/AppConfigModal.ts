@@ -48,7 +48,7 @@ export class AppConfigModal extends Modal {
   private config: AppConfigModalConfig;
   private currentCredentials: Record<string, string>;
   private currentSettings: Record<string, string>;
-  private saveTimeout: ReturnType<typeof setTimeout> | null = null;
+  private saveTimeout: number | null = null;
 
   constructor(app: App, config: AppConfigModalConfig) {
     super(app);
@@ -218,9 +218,9 @@ export class AppConfigModal extends Modal {
 
   private debounceSave(): void {
     if (this.saveTimeout) {
-      clearTimeout(this.saveTimeout);
+      window.clearTimeout(this.saveTimeout);
     }
-    this.saveTimeout = setTimeout(() => {
+    this.saveTimeout = window.setTimeout(() => {
       void (async () => {
         try {
           await this.config.onSave(this.currentCredentials);
@@ -234,9 +234,9 @@ export class AppConfigModal extends Modal {
 
   private debounceSaveSettings(): void {
     if (this.saveTimeout) {
-      clearTimeout(this.saveTimeout);
+      window.clearTimeout(this.saveTimeout);
     }
-    this.saveTimeout = setTimeout(() => {
+    this.saveTimeout = window.setTimeout(() => {
       void (async () => {
         try {
           if (this.config.onSaveSettings) {
@@ -255,7 +255,7 @@ export class AppConfigModal extends Modal {
     if (statusEl) {
       statusEl.setText(text);
       statusEl.className = 'app-config-status app-config-status-saved';
-      setTimeout(() => {
+      window.setTimeout(() => {
         if (statusEl) {
           statusEl.setText('Ready');
           statusEl.className = 'app-config-status';
@@ -266,7 +266,7 @@ export class AppConfigModal extends Modal {
 
   onClose(): void {
     if (this.saveTimeout) {
-      clearTimeout(this.saveTimeout);
+      window.clearTimeout(this.saveTimeout);
     }
     this.contentEl.empty();
   }

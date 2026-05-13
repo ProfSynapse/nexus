@@ -580,7 +580,7 @@ export class OpenRouterAdapter extends BaseAdapter {
         // Linear backoff: 800ms, 1000ms, 1200ms, 1400ms, 1600ms
         if (attempt > 0) {
           const delay = baseDelay + (incrementDelay * attempt);
-          await new Promise(resolve => setTimeout(resolve, delay));
+          await new Promise(resolve => window.setTimeout(resolve, delay));
         }
 
         const response = await this.request<OpenRouterResponse>({

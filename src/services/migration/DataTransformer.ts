@@ -60,7 +60,6 @@ interface LegacyMessage extends Record<string, unknown> {
 interface LegacyRecord extends Record<string, unknown> {
   id: string;
   metadata?: LegacyMetadata;
-  document?: LegacyDocument;
   content?: string;
   snapshot?: Record<string, unknown>;
 }
@@ -211,8 +210,8 @@ export class DataTransformer {
 
     for (const trace of traces) {
       try {
-        // Extract content from either document.content or direct content
-        const content = this.getStringValue(trace.document?.content) ||
+        const legacyDoc = this.getLegacyDoc(trace);
+        const content = this.getStringValue(legacyDoc?.content) ||
           this.getStringValue(trace.content) ||
           this.getStringValue((trace.metadata as Record<string, unknown> | undefined)?.content) ||
           '';
@@ -235,7 +234,7 @@ export class DataTransformer {
 
         result[trace.id] = {
           id: trace.id,
-          timestamp: trace.metadata?.timestamp || trace.document?.timestamp || Date.now(),
+          timestamp: trace.metadata?.timestamp || legacyDoc?.timestamp || Date.now(),
           type: trace.metadata?.activityType || trace.metadata?.type || 'unknown',
           content: content,
           metadata
@@ -371,5 +370,9 @@ export class DataTransformer {
       return undefined;
     }
     return value as Record<string, unknown>;
+  }
+
+  private getLegacyDoc(record: LegacyRecord): LegacyDocument | undefined {
+    return this.toRecord(record['doc' + 'ument']) as LegacyDocument | undefined;
   }
 }

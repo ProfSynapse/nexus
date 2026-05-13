@@ -232,7 +232,7 @@ export class WorkflowRunService {
       if (typeof view.openConversationById === 'function') {
         await view.openConversationById(conversationId);
       }
-      await new Promise(resolve => setTimeout(resolve, 200));
+      await new Promise(resolve => window.setTimeout(resolve, 200));
     }
 
     return false;

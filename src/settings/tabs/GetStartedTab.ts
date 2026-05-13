@@ -400,7 +400,7 @@ export class GetStartedTab {
             try {
                 await navigator.clipboard.writeText(configJson);
                 copyBtn.textContent = 'Copied!';
-                setTimeout(() => {
+                window.setTimeout(() => {
                     copyBtn.textContent = 'Copy configuration';
                 }, 2000);
             } catch {
@@ -452,7 +452,7 @@ export class GetStartedTab {
             throw new Error(`${moduleName} is only available on desktop.`);
         }
 
-        const maybeRequire = (globalThis as typeof globalThis & {
+        const maybeRequire = (window.activeWindow as Window & {
             require?: (moduleId: string) => unknown;
         }).require;
 

@@ -19,6 +19,7 @@ import { SearchableCardManager } from '../../components/SearchableCardManager';
 export interface PromptsTabServices {
     customPromptStorage?: CustomPromptStorageService;
     component?: Component;
+    app?: App;
 }
 
 type PromptsView = 'list' | 'detail';
@@ -83,7 +84,7 @@ export class PromptsTab {
     private isNewPrompt = false;
 
     // Auto-save debounce
-    private saveTimeout?: ReturnType<typeof setTimeout>;
+    private saveTimeout?: number;
 
     // Searchable card manager for list view
     private searchableCardManager?: SearchableCardManager<CardItem>;
@@ -273,7 +274,7 @@ export class PromptsTab {
             .onClick(() => {
                 // Cancel any pending debounced save to prevent double-save
                 if (this.saveTimeout) {
-                    clearTimeout(this.saveTimeout);
+                    window.clearTimeout(this.saveTimeout);
                     this.saveTimeout = undefined;
                 }
                 void (async () => {
@@ -399,7 +400,7 @@ export class PromptsTab {
     }
 
     private async confirmDeletePrompt(promptName: string): Promise<boolean> {
-        const modalApp = (globalThis as typeof globalThis & { app?: App }).app;
+        const modalApp = this.services.app;
         if (!modalApp) {
             return false;
         }
@@ -413,10 +414,10 @@ export class PromptsTab {
      */
     private debouncedSave(): void {
         if (this.saveTimeout) {
-            clearTimeout(this.saveTimeout);
+            window.clearTimeout(this.saveTimeout);
         }
 
-        this.saveTimeout = setTimeout(() => {
+        this.saveTimeout = window.setTimeout(() => {
             void this.saveCurrentPrompt();
         }, 500);
     }
@@ -426,7 +427,7 @@ export class PromptsTab {
      */
     destroy(): void {
         if (this.saveTimeout) {
-            clearTimeout(this.saveTimeout);
+            window.clearTimeout(this.saveTimeout);
         }
     }
 }

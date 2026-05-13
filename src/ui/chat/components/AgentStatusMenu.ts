@@ -95,7 +95,7 @@ export class AgentStatusMenu {
     this.container.empty();
 
     // Create the button element
-    const button = document.createElement('button');
+    const button = window.activeDocument.createElement('button');
     button.addClass('clickable-icon', 'nexus-agent-status-button');
     button.setAttribute('aria-label', 'Running agents');
     button.setAttribute('title', 'Running agents');
@@ -231,7 +231,7 @@ export class AgentStatusMenu {
     if (!this.element) return;
 
     this.element.addClass('nexus-agent-completion-pulse');
-    this.timeouts.setTimeout(() => this.element?.removeClass('nexus-agent-completion-pulse'), 1000);
+    this.timeouts.schedule(() => this.element?.removeClass('nexus-agent-completion-pulse'), 1000);
   }
 
   /**

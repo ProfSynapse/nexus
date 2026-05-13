@@ -705,7 +705,7 @@ export abstract class BaseAdapter {
           throw error;
         }
 
-        await new Promise(resolve => setTimeout(resolve, delay));
+        await new Promise(resolve => window.setTimeout(resolve, delay));
         delay *= 2; // Exponential backoff: 50ms, 100ms, 200ms
       }
     }
@@ -875,7 +875,7 @@ export abstract class BaseAdapter {
 
         if (attempt < maxRetries) {
           const delay = baseDelay * Math.pow(2, attempt);
-          await new Promise(resolve => setTimeout(resolve, delay));
+          await new Promise(resolve => window.setTimeout(resolve, delay));
         }
       }
     }

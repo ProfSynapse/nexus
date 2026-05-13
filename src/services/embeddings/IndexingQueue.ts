@@ -438,7 +438,7 @@ export class IndexingQueue extends Events {
           console.error(`[IndexingQueue] Failed to embed ${notePath}:`, error);
         }
 
-        await new Promise(r => setTimeout(r, this.YIELD_INTERVAL_MS));
+        await new Promise(r => window.setTimeout(r, this.YIELD_INTERVAL_MS));
       }
 
       await this.db.save();
@@ -486,7 +486,7 @@ export class IndexingQueue extends Events {
    */
   private async waitForResume(): Promise<void> {
     while (this.isPaused && !this.abortController?.signal.aborted) {
-      await new Promise(r => setTimeout(r, 100));
+      await new Promise(r => window.setTimeout(r, 100));
     }
   }
 

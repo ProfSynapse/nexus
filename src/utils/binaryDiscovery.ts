@@ -29,7 +29,7 @@ function loadDesktopModule<TModuleName extends keyof DesktopModuleMap>(
         throw new Error(`${moduleName} is only available on desktop.`);
     }
 
-    const maybeRequire = (globalThis as typeof globalThis & {
+    const maybeRequire = (window.activeWindow as Window & {
         require?: (moduleId: string) => unknown;
     }).require;
 

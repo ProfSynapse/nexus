@@ -76,7 +76,7 @@ export class PluginLifecycleManager {
     private embeddingManager: EmbeddingManager | null = null;
 
     // Pending timer handles for cleanup on shutdown
-    private pendingTimers: ReturnType<typeof setTimeout>[] = [];
+    private pendingTimers: number[] = [];
 
     constructor(config: PluginLifecycleConfig) {
         this.config = config;
@@ -166,8 +166,8 @@ export class PluginLifecycleManager {
             await this.chatUIManager.registerViewEarly();
             await this.taskBoardUIManager.registerViewEarly();
 
-            // PHASE 4: Start background initialization via setTimeout(0)
-            const bgInitTimer = setTimeout(() => {
+            // PHASE 4: Start background initialization via window.setTimeout(0)
+            const bgInitTimer = window.setTimeout(() => {
                 this.startBackgroundInitialization().catch(error => {
                     console.error('[PluginLifecycleManager] Background initialization failed:', error);
                 });
@@ -219,7 +219,7 @@ export class PluginLifecycleManager {
             // Uses a fixed timeout from onload rather than onLayoutReady (which is unreliable, can take 13+s)
             // 3 second delay gives Obsidian enough time to finish loading screen
             if (!Platform.isMobile) {
-                const sqliteTimer = setTimeout(() => {
+                const sqliteTimer = window.setTimeout(() => {
                     void (async () => {
                         try {
                             const adapter = await this.config.serviceManager?.getService<HybridStorageAdapter>('hybridStorageAdapter');
@@ -347,7 +347,7 @@ export class PluginLifecycleManager {
         try {
             // Cancel any pending timers that haven't fired yet
             for (const timer of this.pendingTimers) {
-                clearTimeout(timer);
+                window.clearTimeout(timer);
             }
             this.pendingTimers = [];
 

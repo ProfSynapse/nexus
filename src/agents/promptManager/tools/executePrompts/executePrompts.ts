@@ -117,7 +117,7 @@ export class ExecutePromptsTool extends BaseTool<BatchExecutePromptParams, Batch
       }
       
       // Wait for the next check
-      await new Promise(resolve => setTimeout(resolve, checkInterval));
+      await new Promise(resolve => window.setTimeout(resolve, checkInterval));
     }
   }
 

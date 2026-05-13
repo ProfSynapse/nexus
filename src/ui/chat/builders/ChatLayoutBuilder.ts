@@ -139,11 +139,11 @@ export class ChatLayoutBuilder {
     warningBanner.createEl('span', { cls: 'warning-text', text: 'Use at your own risk.' });
 
     // Auto-hide warning after 5 seconds — guard against detached DOM
-    let fadeoutTimer: ReturnType<typeof setTimeout> | null = null;
-    const hideTimer = setTimeout(() => {
+    let fadeoutTimer: number | null = null;
+    const hideTimer = window.setTimeout(() => {
       if (!warningBanner.isConnected) return;
       warningBanner.addClass('chat-warning-banner-fadeout');
-      fadeoutTimer = setTimeout(() => {
+      fadeoutTimer = window.setTimeout(() => {
         if (!warningBanner.isConnected) return;
         warningBanner.addClass('chat-loading-overlay-hidden');
         fadeoutTimer = null;
@@ -153,8 +153,8 @@ export class ChatLayoutBuilder {
     // Clear timers if the banner is removed early (e.g., view closed)
     const observer = new MutationObserver(() => {
       if (!warningBanner.isConnected) {
-        clearTimeout(hideTimer);
-        if (fadeoutTimer) clearTimeout(fadeoutTimer);
+        window.clearTimeout(hideTimer);
+        if (fadeoutTimer) window.clearTimeout(fadeoutTimer);
         observer.disconnect();
       }
     });

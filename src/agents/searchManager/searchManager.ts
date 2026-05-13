@@ -20,7 +20,7 @@ const noop = (): void => {
 
 const noopAsync = async (): Promise<void> => Promise.resolve();
 
-const createFallbackElement = (): HTMLDivElement => document.createElement('div');
+const createFallbackElement = (): HTMLDivElement => window.activeDocument.createElement('div');
 
 const createFallbackCommand = () => ({ id: '', name: '', callback: noop });
 

@@ -299,7 +299,7 @@ export class CacheBackendMigration {
         } catch (err) {
           lastErr = err;
           if (attempt < RETRY_DELAYS_MS.length) {
-            await new Promise(resolve => setTimeout(resolve, RETRY_DELAYS_MS[attempt]));
+            await new Promise(resolve => window.setTimeout(resolve, RETRY_DELAYS_MS[attempt]));
           }
         }
       }

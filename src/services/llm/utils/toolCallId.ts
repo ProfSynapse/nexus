@@ -37,7 +37,7 @@
 export function synthesizeToolCallId(prefix?: string): string {
   // Prefer crypto.randomUUID() — eliminates Date.now() collision class.
   // Fallback for older runtimes uses Date.now() + Math.random().
-  const cryptoObj = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
+  const cryptoObj = (window.activeWindow as { crypto?: { randomUUID?: () => string } }).crypto;
   const id = cryptoObj?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
   return prefix ? `call_synth_${prefix}_${id}` : `call_synth_${id}`;
 }

@@ -34,7 +34,7 @@ export class OllamaProviderModal implements IProviderModal {
   private serverUrl = 'http://127.0.0.1:11434';
   private modelName = '';
   private isValidated = false;
-  private validationTimeout: ReturnType<typeof setTimeout> | null = null;
+  private validationTimeout: number | null = null;
 
   constructor(config: ProviderModalConfig, deps: ProviderModalDependencies) {
     this.config = config;
@@ -105,7 +105,7 @@ export class OllamaProviderModal implements IProviderModal {
 
     // Clear existing timeout
     if (this.validationTimeout) {
-      clearTimeout(this.validationTimeout);
+      window.clearTimeout(this.validationTimeout);
       this.validationTimeout = null;
     }
 
@@ -113,7 +113,7 @@ export class OllamaProviderModal implements IProviderModal {
       this.urlInput?.addClass('validating');
 
       // Auto-validate after delay
-      this.validationTimeout = setTimeout(() => {
+      this.validationTimeout = window.setTimeout(() => {
         if (this.modelName.trim()) {
           void this.testConnection();
         }
@@ -343,7 +343,7 @@ export class OllamaProviderModal implements IProviderModal {
    */
   destroy(): void {
     if (this.validationTimeout) {
-      clearTimeout(this.validationTimeout);
+      window.clearTimeout(this.validationTimeout);
       this.validationTimeout = null;
     }
 

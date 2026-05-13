@@ -136,7 +136,7 @@ export class TraceIndexer {
         }
 
         // Yield to UI
-        await new Promise(r => setTimeout(r, this.yieldIntervalMs));
+        await new Promise(r => window.setTimeout(r, this.yieldIntervalMs));
       }
 
       // Final save

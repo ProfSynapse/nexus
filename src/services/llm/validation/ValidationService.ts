@@ -109,7 +109,7 @@ export class LLMValidationService {
       }
       
       // Wait before validation
-      await new Promise(resolve => setTimeout(resolve, this.VALIDATION_DELAY));
+      await new Promise(resolve => window.setTimeout(resolve, this.VALIDATION_DELAY));
       
       // Perform actual validation
       let result: { success: boolean; error?: string };

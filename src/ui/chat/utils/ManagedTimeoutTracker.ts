@@ -1,7 +1,7 @@
 import type { Component } from 'obsidian';
 
 export class ManagedTimeoutTracker {
-  private ids = new Set<ReturnType<typeof setTimeout>>();
+  private ids = new Set<number>();
 
   constructor(component: Component) {
     // Ensure Component teardown cancels all pending timeouts automatically,
@@ -9,8 +9,8 @@ export class ManagedTimeoutTracker {
     component.register(() => this.clear());
   }
 
-  setTimeout(callback: () => void, delayMs: number): ReturnType<typeof setTimeout> {
-    const id = setTimeout(() => {
+  schedule(callback: () => void, delayMs: number): number {
+    const id = window.setTimeout(() => {
       this.ids.delete(id);
       callback();
     }, delayMs);
@@ -20,7 +20,7 @@ export class ManagedTimeoutTracker {
 
   clear(): void {
     for (const id of this.ids) {
-      clearTimeout(id);
+      window.clearTimeout(id);
     }
     this.ids.clear();
   }

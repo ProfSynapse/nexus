@@ -27,7 +27,7 @@ export interface StreamingControllerEvents {
 }
 
 export class StreamingController {
-  private activeAnimations = new Map<string, NodeJS.Timeout>(); // messageId -> intervalId
+  private activeAnimations = new Map<string, number>(); // messageId -> intervalId
   private streamingStates = new Map<string, StreamingState>(); // messageId -> streaming-markdown state
 
   constructor(
@@ -127,7 +127,7 @@ export class StreamingController {
     const dotsElement = element.querySelector('.dots');
     if (dotsElement) {
       let dotCount = 0;
-      const interval = setInterval(() => {
+      const interval = window.setInterval(() => {
         dotCount = (dotCount + 1) % 4;
         dotsElement.textContent = '.'.repeat(dotCount);
       }, 500);
@@ -152,7 +152,7 @@ export class StreamingController {
     const elementWithInterval = element as ElementWithLoadingInterval;
     const elementInterval = elementWithInterval._loadingInterval;
     if (elementInterval) {
-      clearInterval(elementInterval);
+      window.clearInterval(elementInterval);
       delete elementWithInterval._loadingInterval;
     }
 
@@ -161,7 +161,7 @@ export class StreamingController {
     if (messageId) {
       const interval = this.activeAnimations.get(messageId);
       if (interval) {
-        clearInterval(interval);
+        window.clearInterval(interval);
         this.activeAnimations.delete(messageId);
         this.events?.onAnimationStopped(messageId);
       }
@@ -173,7 +173,7 @@ export class StreamingController {
    */
   stopAllAnimations(): void {
     this.activeAnimations.forEach((interval, messageId) => {
-      clearInterval(interval);
+      window.clearInterval(interval);
       this.events?.onAnimationStopped(messageId);
     });
     this.activeAnimations.clear();
@@ -198,7 +198,7 @@ export class StreamingController {
     // Clean up from our tracking
     const interval = this.activeAnimations.get(messageId);
     if (interval) {
-      clearInterval(interval);
+      window.clearInterval(interval);
       this.activeAnimations.delete(messageId);
     }
   }

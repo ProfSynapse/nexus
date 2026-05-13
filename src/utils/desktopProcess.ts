@@ -1,7 +1,8 @@
 import { Platform } from 'obsidian';
 
-type ChildProcessModule = typeof import('child_process');
-type SpawnOptions = import('child_process').SpawnOptions;
+export type ChildProcessModule = typeof import('child_process');
+export type DesktopSpawnOptions = Parameters<ChildProcessModule['spawn']>[2];
+export type DesktopChildProcess = ReturnType<ChildProcessModule['spawn']>;
 
 function isWindowsCommandWrapper(command: string): boolean {
     if (!Platform.isWin) {
@@ -16,8 +17,8 @@ export function spawnDesktopProcess(
     childProcess: ChildProcessModule,
     command: string,
     args: string[],
-    options: SpawnOptions
-): ReturnType<ChildProcessModule['spawn']> {
+    options: DesktopSpawnOptions
+): DesktopChildProcess {
     return childProcess.spawn(command, args, {
         ...options,
         shell: options.shell ?? isWindowsCommandWrapper(command),

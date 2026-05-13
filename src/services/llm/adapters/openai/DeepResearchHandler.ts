@@ -195,12 +195,12 @@ export class DeepResearchHandler {
           throw new Error(`Deep research ${response.json.status}: ${response.json.error || 'Unknown error'}`);
         }
 
-        await new Promise((resolve) => setTimeout(resolve, pollInterval));
+        await new Promise((resolve) => window.setTimeout(resolve, pollInterval));
       } catch (error) {
         if (error instanceof Error && error.message.includes('Deep research')) {
           throw error;
         }
-        await new Promise((resolve) => setTimeout(resolve, pollInterval));
+        await new Promise((resolve) => window.setTimeout(resolve, pollInterval));
       }
     }
 

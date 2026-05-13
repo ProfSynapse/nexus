@@ -10,12 +10,12 @@ describe('ManagedTimeoutTracker', () => {
     jest.useRealTimers();
   });
 
-  describe('setTimeout', () => {
-    it('returns the same id that platform setTimeout would return', () => {
+  describe('schedule', () => {
+    it('returns a clearTimeout-compatible id', () => {
       const component = new Component();
       const tracker = new ManagedTimeoutTracker(component);
       const cb = jest.fn();
-      const id = tracker.setTimeout(cb, 100);
+      const id = tracker.schedule(cb, 100);
       // The id must be truthy and clearTimeout-compatible (number in browsers, Timeout object in Node/Jest)
       expect(id).toBeTruthy();
       expect(() => clearTimeout(id)).not.toThrow();
@@ -25,7 +25,7 @@ describe('ManagedTimeoutTracker', () => {
       const component = new Component();
       const tracker = new ManagedTimeoutTracker(component);
       const cb = jest.fn();
-      tracker.setTimeout(cb, 500);
+      tracker.schedule(cb, 500);
       expect(cb).not.toHaveBeenCalled();
       jest.advanceTimersByTime(500);
       expect(cb).toHaveBeenCalledTimes(1);
@@ -36,8 +36,8 @@ describe('ManagedTimeoutTracker', () => {
       const tracker = new ManagedTimeoutTracker(component);
       const cb1 = jest.fn();
       const cb2 = jest.fn();
-      tracker.setTimeout(cb1, 100);
-      tracker.setTimeout(cb2, 200);
+      tracker.schedule(cb1, 100);
+      tracker.schedule(cb2, 200);
       jest.advanceTimersByTime(100);
       expect(cb1).toHaveBeenCalledTimes(1);
       expect(cb2).not.toHaveBeenCalled();
@@ -49,7 +49,7 @@ describe('ManagedTimeoutTracker', () => {
       const component = new Component();
       const tracker = new ManagedTimeoutTracker(component);
       const cb = jest.fn();
-      tracker.setTimeout(cb, 50);
+      tracker.schedule(cb, 50);
       jest.advanceTimersByTime(50);
       // After firing, clear() should be a no-op (no pending ids)
       expect(() => tracker.clear()).not.toThrow();
@@ -62,8 +62,8 @@ describe('ManagedTimeoutTracker', () => {
       const tracker = new ManagedTimeoutTracker(component);
       const cb1 = jest.fn();
       const cb2 = jest.fn();
-      tracker.setTimeout(cb1, 100);
-      tracker.setTimeout(cb2, 200);
+      tracker.schedule(cb1, 100);
+      tracker.schedule(cb2, 200);
       tracker.clear();
       jest.runAllTimers();
       expect(cb1).not.toHaveBeenCalled();
@@ -73,7 +73,7 @@ describe('ManagedTimeoutTracker', () => {
     it('is idempotent — calling clear twice does not throw', () => {
       const component = new Component();
       const tracker = new ManagedTimeoutTracker(component);
-      tracker.setTimeout(jest.fn(), 100);
+      tracker.schedule(jest.fn(), 100);
       tracker.clear();
       expect(() => tracker.clear()).not.toThrow();
     });
@@ -97,7 +97,7 @@ describe('ManagedTimeoutTracker', () => {
       const component = new Component();
       const tracker = new ManagedTimeoutTracker(component);
       const cb = jest.fn();
-      tracker.setTimeout(cb, 500);
+      tracker.schedule(cb, 500);
       component.unload();
       jest.runAllTimers();
       expect(cb).not.toHaveBeenCalled();

@@ -156,7 +156,7 @@ export class BatchOperations {
       }
 
       if (delayBetweenBatches > 0 && batchNum < totalBatches - 1) {
-        await new Promise(resolve => setTimeout(resolve, delayBetweenBatches));
+        await new Promise(resolve => window.setTimeout(resolve, delayBetweenBatches));
       }
     }
 

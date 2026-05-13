@@ -193,7 +193,7 @@ export class PrefetchManager extends Events {
 
             // If there are more items, continue after a delay
             if (this.prefetchQueue.length > 0) {
-                setTimeout(() => {
+                window.setTimeout(() => {
                     this.isPrefetching = false;
                     void this.processPrefetchQueue();
                 }, this.options.prefetchDelay || this.defaultPrefetchDelay);

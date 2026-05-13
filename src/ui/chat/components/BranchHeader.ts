@@ -95,7 +95,7 @@ export class BranchHeader {
       this.element.remove();
     }
 
-    const header = document.createElement('div');
+    const header = window.activeDocument.createElement('div');
     header.addClass('nexus-branch-header');
 
     // Back button

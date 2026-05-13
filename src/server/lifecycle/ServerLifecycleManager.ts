@@ -288,7 +288,7 @@ export class ServerLifecycleManager {
             await Promise.race([
                 this.stopTransports(),
                 new Promise((_, reject) => 
-                    setTimeout(() => reject(new Error('Transport shutdown timeout')), 5000)
+                    window.setTimeout(() => reject(new Error('Transport shutdown timeout')), 5000)
                 )
             ]);
         } catch (error) {

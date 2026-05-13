@@ -96,7 +96,7 @@ export class EmbeddingManager {
 
       // Start background indexing after a brief delay
       // This ensures the plugin is fully loaded before we start heavy processing
-      setTimeout(() => {
+      window.setTimeout(() => {
         void this.runBackgroundIndexing();
       }, 3000); // 3-second delay
 

@@ -115,22 +115,23 @@ export class VaultSchemaProvider extends BaseSchemaProvider {
       const markdownFiles = this.app.vault.getMarkdownFiles();
       const rootFolder = this.app.vault.getRoot();
 
+      const isFolder = (child: unknown): child is TFolder => child instanceof TFolder;
+
       // Get root folders with file counts
       const rootFolders = rootFolder.children
-        .filter(child => child instanceof TFolder)
+        .filter(isFolder)
         .slice(0, this.MAX_FOLDERS_TO_SHOW) // Limit to prevent schema bloat
         .map(folder => {
-          const typedFolder = folder;
           const filesInFolder = markdownFiles.filter(file => 
-            file.path.startsWith(typedFolder.path + '/')
+            file.path.startsWith(folder.path + '/')
           ).length;
 
-          const subfolderCount = typedFolder.children
-            .filter(child => child instanceof TFolder)
+          const subfolderCount = folder.children
+            .filter(isFolder)
             .length;
 
           return {
-            name: typedFolder.name,
+            name: folder.name,
             fileCount: filesInFolder,
             subfolderCount
           };

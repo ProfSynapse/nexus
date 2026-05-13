@@ -101,7 +101,7 @@ export class ChatView extends ItemView {
   private isClosing = false;
 
   // Search debounce timer for conversation search input
-  private searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  private searchDebounceTimer: number | null = null;
 
   private sessionCoordinator: ChatSessionCoordinator;
   private sendCoordinator: ChatSendCoordinator;
@@ -176,7 +176,7 @@ export class ChatView extends ItemView {
 
   private getChatContainer(): HTMLElement | null {
     const container = this.containerEl.children[1];
-    return container instanceof HTMLElement ? container : null;
+    return container?.instanceOf(HTMLElement) ? container : null;
   }
 
   getViewType(): string {
@@ -242,7 +242,7 @@ export class ChatView extends ItemView {
       const startTime = Date.now();
 
       while (Date.now() - startTime < ChatView.SERVICE_POLL_TIMEOUT_MS) {
-        await new Promise(resolve => setTimeout(resolve, ChatView.SERVICE_POLL_INTERVAL_MS));
+        await new Promise(resolve => window.setTimeout(resolve, ChatView.SERVICE_POLL_INTERVAL_MS));
 
         // Stop polling if view was closed during the wait
         if (this.isClosing) return false;
@@ -289,7 +289,7 @@ export class ChatView extends ItemView {
     );
 
     while (true) {
-      await new Promise(resolve => setTimeout(resolve, ChatView.SERVICE_POLL_INTERVAL_MS));
+      await new Promise(resolve => window.setTimeout(resolve, ChatView.SERVICE_POLL_INTERVAL_MS));
 
       if (this.isClosing) return false;
 
@@ -351,7 +351,7 @@ export class ChatView extends ItemView {
 
     const poll = async (): Promise<void> => {
       while (Date.now() - startTime < ChatView.SERVICE_POLL_TIMEOUT_MS) {
-        await new Promise(resolve => setTimeout(resolve, ChatView.SERVICE_POLL_INTERVAL_MS));
+        await new Promise(resolve => window.setTimeout(resolve, ChatView.SERVICE_POLL_INTERVAL_MS));
 
         // Stop polling if view was closed during the wait
         if (this.isClosing) return;
@@ -698,7 +698,7 @@ export class ChatView extends ItemView {
     if (this.layoutElements.searchInput) {
       this.registerDomEvent(this.layoutElements.searchInput, 'input', () => {
         if (this.searchDebounceTimer) {
-          clearTimeout(this.searchDebounceTimer);
+          window.clearTimeout(this.searchDebounceTimer);
         }
         const query = this.layoutElements.searchInput.value.trim();
         if (query.length === 0) {
@@ -706,7 +706,7 @@ export class ChatView extends ItemView {
           void this.conversationManager.clearSearch();
           return;
         }
-        this.searchDebounceTimer = setTimeout(() => {
+        this.searchDebounceTimer = window.setTimeout(() => {
           this.searchDebounceTimer = null;
           void this.conversationManager.searchConversations(query);
         }, 300);
@@ -1030,7 +1030,7 @@ export class ChatView extends ItemView {
 
   private cleanup(): void {
     if (this.searchDebounceTimer) {
-      clearTimeout(this.searchDebounceTimer);
+      window.clearTimeout(this.searchDebounceTimer);
       this.searchDebounceTimer = null;
     }
     this.conversationList?.cleanup();

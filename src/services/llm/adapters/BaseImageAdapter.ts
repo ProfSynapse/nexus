@@ -136,7 +136,7 @@ export abstract class BaseImageAdapter extends BaseAdapter {
    */
   private createTimeoutPromise(timeoutMs: number): Promise<never> {
     return new Promise((_, reject) => {
-      setTimeout(() => {
+      window.setTimeout(() => {
         reject(new Error('Image generation timed out'));
       }, timeoutMs);
     });

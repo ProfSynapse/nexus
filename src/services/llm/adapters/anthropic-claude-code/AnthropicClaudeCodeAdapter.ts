@@ -1,5 +1,5 @@
 import { Platform, Vault } from 'obsidian';
-import type { ChildProcess } from 'child_process';
+import type { DesktopChildProcess } from '../../../../utils/desktopProcess';
 import { BaseAdapter } from '../BaseAdapter';
 import { resolveDesktopBinaryPath } from '../../../../utils/binaryDiscovery';
 import { getVaultBasePath, getConnectorPath } from '../../../../utils/cliPathUtils';
@@ -31,7 +31,7 @@ const MAX_SAFE_WINDOWS_ARGV_CHARS = 24_000;
 export class AnthropicClaudeCodeAdapter extends BaseAdapter {
   readonly name = 'anthropic-claude-code';
   readonly baseUrl = 'claude-code://local';
-  private activeProcess: ChildProcess | null = null;
+  private activeProcess: DesktopChildProcess | null = null;
 
   constructor(private vault: Vault) {
     super('claude-code-local-auth', 'claude-sonnet-4-6', 'claude-code://local', false);
@@ -318,7 +318,7 @@ export class AnthropicClaudeCodeAdapter extends BaseAdapter {
       throw new Error(`${moduleName} is only available on desktop.`);
     }
 
-    const maybeRequire = (globalThis as typeof globalThis & {
+    const maybeRequire = (window.activeWindow as Window & {
       require?: (moduleId: string) => unknown;
     }).require;
 
@@ -538,7 +538,7 @@ export class AnthropicClaudeCodeAdapter extends BaseAdapter {
     }
   }
 
-  private async writePromptToStdin(child: ChildProcess, prompt: string): Promise<void> {
+  private async writePromptToStdin(child: DesktopChildProcess, prompt: string): Promise<void> {
     const stdin = child.stdin;
     if (!stdin) {
       throw new LLMProviderError('Failed to open Claude Code stdin for prompt input.', this.name, 'CONFIGURATION_ERROR');

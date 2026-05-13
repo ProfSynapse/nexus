@@ -189,7 +189,7 @@ export class TaskBoardView extends ItemView {
 
         if (attempt < maxAttempts) {
           this.renderLoading('Waiting for services to start...');
-          await new Promise(resolve => setTimeout(resolve, delayMs));
+          await new Promise(resolve => window.setTimeout(resolve, delayMs));
         } else {
           this.renderError('Task board services did not become available. Please try again later.');
         }

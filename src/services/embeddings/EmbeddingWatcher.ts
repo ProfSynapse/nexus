@@ -25,7 +25,7 @@ import { EmbeddingService } from './EmbeddingService';
 export class EmbeddingWatcher {
   private app: App;
   private embeddingService: EmbeddingService;
-  private debounceTimers = new Map<string, NodeJS.Timeout>();
+  private debounceTimers = new Map<string, number>();
   private eventRefs: EventRef[] = [];
 
   // 10-second debounce: prevents re-embedding on every keystroke
@@ -69,7 +69,7 @@ export class EmbeddingWatcher {
           // Cancel any pending re-embedding
           const existing = this.debounceTimers.get(file.path);
           if (existing) {
-            clearTimeout(existing);
+            window.clearTimeout(existing);
             this.debounceTimers.delete(file.path);
           }
 
@@ -86,7 +86,7 @@ export class EmbeddingWatcher {
           // Cancel any pending re-embedding for old path
           const existing = this.debounceTimers.get(oldPath);
           if (existing) {
-            clearTimeout(existing);
+            window.clearTimeout(existing);
             this.debounceTimers.delete(oldPath);
           }
 
@@ -109,7 +109,7 @@ export class EmbeddingWatcher {
 
     // Clear all pending timers
     for (const timer of this.debounceTimers.values()) {
-      clearTimeout(timer);
+      window.clearTimeout(timer);
     }
     this.debounceTimers.clear();
   }
@@ -123,11 +123,11 @@ export class EmbeddingWatcher {
     // Clear existing timer if any
     const existing = this.debounceTimers.get(notePath);
     if (existing) {
-      clearTimeout(existing);
+      window.clearTimeout(existing);
     }
 
     // Schedule new timer
-    const timer = setTimeout(() => {
+    const timer = window.setTimeout(() => {
       this.debounceTimers.delete(notePath);
 
       void this.embeddingService.embedNote(notePath).catch((error) => {
@@ -147,7 +147,7 @@ export class EmbeddingWatcher {
     // Cancel any pending timer
     const existing = this.debounceTimers.get(notePath);
     if (existing) {
-      clearTimeout(existing);
+      window.clearTimeout(existing);
       this.debounceTimers.delete(notePath);
     }
 

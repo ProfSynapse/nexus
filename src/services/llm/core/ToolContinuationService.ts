@@ -113,7 +113,7 @@ export class ToolContinuationService {
       );
 
       // Small delay to allow file system operations to complete (prevents race conditions)
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise(resolve => window.setTimeout(resolve, 100));
 
       // Build complete tool calls with execution results
 	      completeToolCallsWithResults = detectedToolCalls.map(originalCall => {
@@ -326,7 +326,7 @@ export class ToolContinuationService {
       );
 
       // Small delay to allow file system operations to complete
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise(resolve => window.setTimeout(resolve, 100));
 
       // Build complete tool calls with recursive results
       const recursiveCompleteToolCalls: ChatToolCall[] = recursiveToolCalls.map((tc, index) => ({

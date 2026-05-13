@@ -58,8 +58,8 @@ export class LLMProviderModal extends Modal {
   private providerModal: IProviderModal | null = null;
 
   // Auto-save state
-  private autoSaveTimeout: ReturnType<typeof setTimeout> | null = null;
-  private statusResetTimeout: ReturnType<typeof setTimeout> | null = null;
+  private autoSaveTimeout: number | null = null;
+  private statusResetTimeout: number | null = null;
   private saveStatusEl: HTMLElement | null = null;
 
   constructor(app: App, config: LLMProviderModalConfig, providerManager: LLMProviderManager) {
@@ -99,11 +99,11 @@ export class LLMProviderModal extends Modal {
 
     // Clean up auto-save timeout
     if (this.autoSaveTimeout) {
-      clearTimeout(this.autoSaveTimeout);
+      window.clearTimeout(this.autoSaveTimeout);
       this.autoSaveTimeout = null;
     }
     if (this.statusResetTimeout) {
-      clearTimeout(this.statusResetTimeout);
+      window.clearTimeout(this.statusResetTimeout);
       this.statusResetTimeout = null;
     }
 
@@ -170,7 +170,7 @@ export class LLMProviderModal extends Modal {
     // OAuth connections must save immediately — debounce gets cancelled by onClose
     if (config.oauth?.connected) {
       if (this.autoSaveTimeout) {
-        clearTimeout(this.autoSaveTimeout);
+        window.clearTimeout(this.autoSaveTimeout);
         this.autoSaveTimeout = null;
       }
       await this.persistConfig(config);
@@ -184,12 +184,12 @@ export class LLMProviderModal extends Modal {
    */
   private autoSave(): void {
     if (this.autoSaveTimeout) {
-      clearTimeout(this.autoSaveTimeout);
+      window.clearTimeout(this.autoSaveTimeout);
     }
 
     this.showSaveStatus('Saving...');
 
-    this.autoSaveTimeout = setTimeout(() => {
+    this.autoSaveTimeout = window.setTimeout(() => {
       // Get final config from provider modal
       if (this.providerModal) {
         this.config.config = this.providerModal.getConfig();
@@ -204,7 +204,7 @@ export class LLMProviderModal extends Modal {
    */
   private async persistConfig(config: LLMProviderConfig): Promise<void> {
     if (this.statusResetTimeout) {
-      clearTimeout(this.statusResetTimeout);
+      window.clearTimeout(this.statusResetTimeout);
       this.statusResetTimeout = null;
     }
 
@@ -213,7 +213,7 @@ export class LLMProviderModal extends Modal {
     try {
       await this.config.onSave(config);
       this.showSaveStatus('Saved');
-      this.statusResetTimeout = setTimeout(() => {
+      this.statusResetTimeout = window.setTimeout(() => {
         this.showSaveStatus('Ready');
         this.statusResetTimeout = null;
       }, 2000);

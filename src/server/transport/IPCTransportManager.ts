@@ -3,13 +3,15 @@
  * Follows Single Responsibility Principle by focusing only on IPC transport
  */
 
-import type { Server as NetServer, Socket } from 'net';
 import { desktopRequire } from '../../utils/desktopRequire';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { Server as MCPSDKServer } from '@modelcontextprotocol/sdk/server/index.js';
 import { ServerConfiguration } from '../services/ServerConfiguration';
 import { StdioTransportManager } from './StdioTransportManager';
 import { logger } from '../../utils/logger';
+
+type NetServer = ReturnType<typeof import('net')['createServer']>;
+type Socket = import('net').Socket;
 
 /**
  * Service responsible for IPC transport management
@@ -158,7 +160,7 @@ export class IPCTransportManager {
                 try {
                     await Promise.race([
                         this.currentTransport.close(),
-                        new Promise(resolve => setTimeout(resolve, 500))
+                        new Promise(resolve => window.setTimeout(resolve, 500))
                     ]);
                 } catch (err) {
                     logger.systemError(err as Error, 'Proactive Transport Cleanup');

@@ -3,7 +3,7 @@ import type { CacheBlobMetadata, CacheBlobStore } from './CacheBlobStore';
 interface IndexedDBCacheBlobStoreOptions {
   /** Stable per-vault, per-plugin-install key for the blob entry. */
   idbKey: string;
-  /** Optional override for tests; defaults to globalThis.indexedDB. */
+  /** Optional override for tests; defaults to window.activeWindow.indexedDB. */
   factory?: IDBFactory;
 }
 
@@ -34,8 +34,8 @@ export class IndexedDBCacheBlobStore implements CacheBlobStore {
 
   constructor(opts: IndexedDBCacheBlobStoreOptions) {
     this.idbKey = opts.idbKey;
-    const fallback = (globalThis as { indexedDB?: IDBFactory }).indexedDB;
-    const factory = opts.factory ?? fallback;
+    const fallback = (window.activeWindow as { indexedDB?: IDBFactory }).indexedDB;
+    const factory = Object.prototype.hasOwnProperty.call(opts, 'factory') ? opts.factory : fallback;
     if (!factory) {
       throw new Error('[IndexedDBCacheBlobStore] indexedDB is not available in this environment');
     }
@@ -157,7 +157,7 @@ export class IndexedDBCacheBlobStore implements CacheBlobStore {
   private requestPersistOnce(): void {
     if (this.persistRequested) return;
     this.persistRequested = true;
-    const nav = (globalThis as { navigator?: { storage?: { persist?: () => Promise<boolean> } } }).navigator;
+    const nav = (window.activeWindow as { navigator?: { storage?: { persist?: () => Promise<boolean> } } }).navigator;
     const storage = nav?.storage;
     if (!storage || typeof storage.persist !== 'function') return;
     try {

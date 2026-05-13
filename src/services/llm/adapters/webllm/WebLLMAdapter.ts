@@ -539,7 +539,7 @@ export class WebLLMAdapter extends BaseAdapter {
     if (this.state.status === 'loading') {
       // Wait for loading to complete (poll every 500ms, max 60s)
       for (let i = 0; i < 120; i++) {
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise(resolve => window.setTimeout(resolve, 500));
         // Use type assertion to break TypeScript's type narrowing (status can change async)
         const currentStatus = this.state.status as WebLLMStatus;
         if (currentStatus === 'ready') return;

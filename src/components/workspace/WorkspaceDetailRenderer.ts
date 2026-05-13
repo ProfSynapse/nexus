@@ -84,7 +84,7 @@ export class WorkspaceDetailRenderer {
 
     private async confirmDangerousAction(message: string): Promise<boolean> {
         return await new Promise<boolean>((resolve) => {
-            const overlay = document.body.createDiv('modal-container');
+            const overlay = window.activeDocument.body.createDiv('modal-container');
             const modal = overlay.createDiv('modal nexus-workspace-confirm-modal');
             const content = modal.createDiv('modal-content');
 

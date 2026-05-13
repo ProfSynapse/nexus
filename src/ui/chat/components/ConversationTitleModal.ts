@@ -60,7 +60,7 @@ export class ConversationTitleModal extends Modal {
     this.modalEvents.registerDomEvent(createBtn, 'click', () => this.submit());
 
     // Focus the input after modal is fully rendered
-    setTimeout(() => {
+    window.setTimeout(() => {
       this.inputEl?.focus();
     }, 0);
   }
@@ -72,7 +72,7 @@ export class ConversationTitleModal extends Modal {
       if (this.inputEl) {
         this.inputEl.addClass('is-invalid');
         this.inputEl.focus();
-        setTimeout(() => {
+        window.setTimeout(() => {
           this.inputEl?.removeClass('is-invalid');
         }, 2000);
       }
@@ -100,6 +100,6 @@ export class ConversationTitleModal extends Modal {
     }
 
     // Restore focus to workspace so cursor is not trapped
-    activeWindow.document.body.focus();
+    window.activeDocument.body.focus();
   }
 }
