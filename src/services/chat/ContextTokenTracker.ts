@@ -4,12 +4,10 @@
  * Tracks token usage for context-limited models (especially Nexus/WebLLM).
  * Uses hybrid approach:
  * - Actual counts from generation usage (accurate)
- * - Estimates from gpt-tokenizer for new messages (approximate)
+ * - Lightweight estimates for new messages (approximate)
  *
  * Provides context status for system prompts and triggers auto-compaction.
  */
-
-import { encode } from 'gpt-tokenizer';
 
 export interface ContextStatus {
   usedTokens: number;
@@ -27,7 +25,9 @@ export interface TokenUsageRecord {
 
 /**
  * Thresholds for context management (as percentage of max tokens)
- * Using 90% for compaction trigger since gpt-tokenizer gives precise estimates
+ * Use a conservative 90% compaction trigger. Estimates are intentionally
+ * biased slightly high because provider usage remains the source of truth
+ * after generation completes.
  */
 const THRESHOLDS = {
   WARNING: 0.75,   // 75% - show warning in status
@@ -48,17 +48,24 @@ export class ContextTokenTracker {
   }
 
   /**
-   * Estimate token count for a string using gpt-tokenizer
-   * Accuracy: ~85-90% for Qwen/Nexus models
+   * Estimate token count for a string.
+   *
+   * This intentionally avoids bundling a full tokenizer. It is used only for
+   * pre-send compaction gating; actual provider usage corrects the running
+   * totals after each generation.
    */
   estimateTokens(text: string): number {
     if (!text) return 0;
-    try {
-      return encode(text).length;
-    } catch {
-      // Fallback: rough estimate based on character count
-      return Math.ceil(text.length / 4);
+    let asciiChars = 0;
+    for (let i = 0; i < text.length; i++) {
+      if (text.charCodeAt(i) <= 0x7F) {
+        asciiChars++;
+      }
     }
+    const nonAsciiChars = text.length - asciiChars;
+    const wordLikeSegments = (text.match(/[A-Za-z0-9_]+|[^\sA-Za-z0-9_]/g) || []).length;
+    const charEstimate = Math.ceil(asciiChars / 4) + Math.ceil(nonAsciiChars / 2);
+    return Math.max(1, Math.ceil(Math.max(charEstimate, wordLikeSegments) * 1.1));
   }
 
   /**

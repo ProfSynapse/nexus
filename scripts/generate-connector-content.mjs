@@ -2,8 +2,8 @@
  * Script to generate connectorContent.ts from the compiled connector.js
  *
  * This script reads connector.js and embeds its content as a string constant
- * in connectorContent.ts, which is used by ConnectorEnsurer to recreate
- * connector.js if it's missing.
+ * in connectorContent.ts, which the explicit Claude Desktop setup flow uses
+ * to create connector.js after user action.
  *
  * Run this after compiling connector.ts:
  *   node scripts/generate-connector-content.mjs
@@ -31,9 +31,9 @@ try {
         .replace(/\$\{/g, '\\${'); // Escape template expressions
 
     // Generate the TypeScript file
-    const outputContent = `/**
+const outputContent = `/**
  * Auto-generated file containing the embedded connector.js content.
- * This is used by ConnectorEnsurer to recreate connector.js if it's missing.
+ * This is used by the explicit Claude Desktop setup flow to create connector.js.
  *
  * DO NOT EDIT MANUALLY - This file is regenerated during the build process.
  * To update, modify connector.ts and rebuild.

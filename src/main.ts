@@ -80,12 +80,7 @@ export default class NexusPlugin extends Plugin {
             if (supportsMCPBridge()) {
                 try {
                     // Dynamic import - only loads on desktop, avoids Node.js deps on mobile
-                    const { ConnectorEnsurer } = await import('./utils/ConnectorEnsurer');
                     const { MCPConnector } = await import('./connector');
-
-                    // Ensure connector.js exists (self-healing if missing)
-                    const connectorEnsurer = new ConnectorEnsurer(this);
-                    await connectorEnsurer.ensureConnectorExists();
 
                     // Initialize connector skeleton (no agents yet)
                     this.connector = new MCPConnector(this.app, this);

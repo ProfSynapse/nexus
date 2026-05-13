@@ -4,6 +4,8 @@ Nexus works with any tool that supports the Model Context Protocol (MCP). Below 
 
 **Requires**: [Node.js](https://nodejs.org/) v18+ installed on your machine.
 
+Create or refresh `connector.js` from **Nexus settings -> Get started -> MCP integration** before adding Nexus to an external agent. Obsidian community releases only ship `main.js`, `manifest.json`, and `styles.css`, so `connector.js` is generated locally when you explicitly set up MCP.
+
 **The server entry** you'll be adding everywhere:
 - **Command**: `node`
 - **Arg**: `/path/to/Vault/.obsidian/plugins/nexus/connector.js`

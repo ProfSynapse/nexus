@@ -1,25 +1,25 @@
 # Apps
 
-Apps are downloadable tool domains that extend Nexus with third-party integrations. Each app brings its own tools, credentials, and API connections — install only what you need.
+Apps are optional tool domains that extend Nexus with third-party integrations and desktop workflows. Each app brings its own tools, credentials, and API connections; enable only what you need.
 
 ---
 
 ## Setup
 
-Configure apps in **Settings &rarr; Nexus &rarr; Apps**. Install an app, enter your API key, hit **Validate**, then toggle it on. Apps install as disabled so you can configure credentials before enabling them.
+Configure apps in **Settings -> Nexus -> Apps**. Install an app, enter your API key when required, hit **Validate**, then toggle it on. Built-in apps do not download extra npm packages when enabled.
 
 ---
 
 ## Available Apps
 
-> ⚠️ **Experimental**: Composer, Web Tools, and Nexus Ingester are new and may have rough edges. Please [report issues](https://github.com/ProfSynapse/claudesidian-mcp/issues) if you run into problems.
+> **Experimental**: Composer, Web Tools, and Nexus Ingester are new and may have rough edges. Please [report issues](https://github.com/ProfSynapse/claudesidian-mcp/issues) if you run into problems.
 
 | App | Tools | What It Does |
 |-----|-------|--------------|
-| **ElevenLabs** | textToSpeech, listVoices, soundEffects, generateMusic | AI audio generation — convert text to speech, create sound effects, and generate music. Audio files save directly to your vault. |
-| **Nexus Ingester** *(experimental)* | ingest, listCapabilities | Convert PDFs and audio files in your vault to sibling Markdown notes. Two modes: **Manual** — right-click any supported file and choose "Convert to Markdown". **Auto** — enable "Auto-convert new files" in Settings → Defaults → Ingestion and any supported file added to the vault is converted automatically. PDF extraction uses text mode (pdfjs-dist) or vision OCR. Audio transcription supports OpenAI (Whisper, GPT-4o Transcribe), Groq (Whisper), and Google Gemini multimodal audio. |
-| **Composer** *(experimental)* | compose, listFormats | Combine multiple files into one. Merge PDFs, concatenate Markdown files, or mix and concat audio tracks. Audio output supports WAV, WebM/Opus, and MP3 (via WASM). Supports per-track volume, offset, and fade controls for audio mixing. |
-| **Web Tools** *(experimental, desktop only)* | openWebpage, capturePagePdf, capturePagePng, captureToMarkdown, extractLinks | Open any webpage in a headless browser and capture it as a PDF, PNG, or clean Markdown (boilerplate stripped). Also extracts all links with their text and type. Requires desktop — not available on mobile. |
+| **ElevenLabs** | textToSpeech, listVoices, soundEffects, generateMusic | AI audio generation: convert text to speech, create sound effects, and generate music. Audio files save directly to your vault. |
+| **Nexus Ingester** *(experimental)* | ingest, listCapabilities | Convert PDF, DOCX, PPTX, and audio files in your vault to sibling Markdown notes. Two modes: **Manual** - right-click any supported file and choose "Convert to Markdown". **Auto** - enable "Auto-convert new files" in Settings -> Defaults -> Ingestion and any supported file added to the vault is converted automatically. PDF extraction uses text mode or vision OCR; the PDF worker is loaded only when PDF ingestion runs. Audio transcription supports OpenAI (Whisper, GPT-4o Transcribe), Groq (Whisper), and Google Gemini multimodal audio. XLSX ingestion is not included in the core release. |
+| **Composer** *(experimental)* | compose, listFormats | Combine multiple files into one. Merge PDFs, concatenate Markdown files, or mix and concat audio tracks. Audio input supports common browser-decodable formats such as MP3 and WAV. Audio output supports WAV and WebM/Opus. Supports per-track volume, offset, and fade controls for audio mixing. |
+| **Web Tools** *(experimental, desktop only)* | openWebpage, capturePagePdf, capturePagePng, captureToMarkdown, extractLinks | Open any webpage in a headless browser and capture it as a PDF, PNG, or clean Markdown (boilerplate stripped). Also extracts all links with their text and type. Requires desktop; not available on mobile. |
 
 ---
 
@@ -27,4 +27,4 @@ Configure apps in **Settings &rarr; Nexus &rarr; Apps**. Install an app, enter y
 
 Have an idea for a new app? [Open an issue](https://github.com/ProfSynapse/claudesidian-mcp/issues) with the `app-request` label.
 
-Want to build your own? See **[Building Apps](../docs/BUILDING_APPS.md)** — an agentic prompt you can feed to your AI coding assistant to create a new app from scratch. It covers the full pattern: manifest, agent class, tools, vault file saving, and registration.
+Want to build your own? See **[Building Apps](../docs/BUILDING_APPS.md)**, an agentic prompt you can feed to your AI coding assistant to create a new app from scratch. It covers the full pattern: manifest, agent class, tools, vault file saving, and registration.

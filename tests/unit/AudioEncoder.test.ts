@@ -1,16 +1,13 @@
 /**
- * AudioEncoder tests — validates WAV, WebM, and MP3 encoding paths.
+ * AudioEncoder tests - validates WAV and WebM encoding paths.
  *
  * Covers:
  * - WAV: 44-byte header structure + PCM data
  * - WebM: mocked MediaRecorder pipeline, audioCtx.close() in finally
- * - MP3: mocked wasm-media-encoders dynamic import, Float32Array[] per channel deviation
- * - downmixToStereo: OfflineAudioContext for >2 channel buffers
  * - Unsupported format error
  *
  * Auditor YELLOW notes addressed:
  * - WebM audioCtx.close() tested via mock verification
- * - downmixToStereo tested for channel averaging correctness
  */
 
 import { ComposerError, AudioOutputFormat } from '../../src/agents/apps/composer/types';
@@ -103,7 +100,6 @@ class MockBlob {
   }
 }
 
-// Mock OfflineAudioContext for downmixToStereo
 const mockCreateBuffer = jest.fn((channels: number, length: number, sampleRate: number) => {
   const data = Array.from({ length: channels }, () => new Float32Array(length));
   return {
@@ -151,17 +147,6 @@ globalForTests.MediaRecorder = jest.fn().mockImplementation(() => new MockMediaR
 
 // Mock Blob.prototype.arrayBuffer (not available in Node)
 globalForTests.Blob = MockBlob as unknown as typeof Blob;
-
-// Mock wasm-media-encoders dynamic import
-const mockEncoder = {
-  configure: jest.fn(),
-  encode: jest.fn().mockReturnValue(new Uint8Array([0xFF, 0xFB, 0x90])),
-  finalize: jest.fn().mockReturnValue(new Uint8Array([0x00])),
-};
-
-jest.mock('wasm-media-encoders', () => ({
-  createMp3Encoder: jest.fn().mockResolvedValue(mockEncoder),
-}), { virtual: true });
 
 // Import AFTER mocks are set up
 import { AudioEncoder } from '../../src/agents/apps/composer/services/AudioEncoder';
@@ -298,97 +283,6 @@ describe('AudioEncoder', () => {
     });
   });
 
-  describe('MP3 encoding', () => {
-    it('should dynamically import wasm-media-encoders', async () => {
-      const buffer = createMockAudioBuffer({
-        numberOfChannels: 2,
-        length: 4,
-        sampleRate: 44100,
-        channelData: [
-          new Float32Array([0.1, 0.2, 0.3, 0.4]),
-          new Float32Array([0.5, 0.6, 0.7, 0.8]),
-        ],
-      });
-
-      const result = await encoder.encode(buffer, 'mp3');
-
-      expect(result).toBeInstanceOf(Uint8Array);
-      // Encoded (3 bytes) + finalized (1 byte) = 4 bytes
-      expect(result.byteLength).toBe(4);
-    });
-
-    it('should configure encoder with correct sampleRate and channels', async () => {
-      const buffer = createMockAudioBuffer({
-        numberOfChannels: 2,
-        length: 4,
-        sampleRate: 48000,
-      });
-
-      await encoder.encode(buffer, 'mp3');
-
-      expect(mockEncoder.configure).toHaveBeenCalledWith({
-        sampleRate: 48000,
-        channels: 2,
-        vbrQuality: 2,
-      });
-    });
-
-    it('should pass Float32Array[] per channel (deviation from simple interleaved)', async () => {
-      const ch0 = new Float32Array([0.1, 0.2]);
-      const ch1 = new Float32Array([0.3, 0.4]);
-      const buffer = createMockAudioBuffer({
-        numberOfChannels: 2,
-        length: 2,
-        sampleRate: 44100,
-        channelData: [ch0, ch1],
-      });
-
-      await encoder.encode(buffer, 'mp3');
-
-      // The encoder.encode() receives Float32Array[] — one array per channel
-      const encodedArg = mockEncoder.encode.mock.calls[0][0];
-      expect(Array.isArray(encodedArg)).toBe(true);
-      expect(encodedArg).toHaveLength(2);
-      expect(encodedArg[0]).toBeInstanceOf(Float32Array);
-      expect(encodedArg[1]).toBeInstanceOf(Float32Array);
-    });
-
-    it('should concatenate encode + finalize output', async () => {
-      const buffer = createMockAudioBuffer();
-      mockEncoder.encode.mockReturnValue(new Uint8Array([0xAA, 0xBB]));
-      mockEncoder.finalize.mockReturnValue(new Uint8Array([0xCC]));
-
-      const result = await encoder.encode(buffer, 'mp3');
-
-      expect(result).toEqual(new Uint8Array([0xAA, 0xBB, 0xCC]));
-    });
-
-    it('should downmix >2 channels to stereo before encoding', async () => {
-      // 4-channel buffer
-      const buffer = createMockAudioBuffer({
-        numberOfChannels: 4,
-        length: 2,
-        sampleRate: 44100,
-        channelData: [
-          new Float32Array([1.0, 0.0]),  // ch0 (even → left)
-          new Float32Array([0.5, 0.0]),  // ch1 (odd → right)
-          new Float32Array([0.5, 0.0]),  // ch2 (even → left)
-          new Float32Array([0.5, 0.0]),  // ch3 (odd → right)
-        ],
-      });
-
-      await encoder.encode(buffer, 'mp3');
-
-      // After downmix: 2 channels
-      expect(mockEncoder.configure).toHaveBeenCalledWith(
-        expect.objectContaining({ channels: 2 })
-      );
-
-      // The encoded data should come from the downmixed 2-channel buffer
-      const encodedArg = mockEncoder.encode.mock.calls[0][0];
-      expect(encodedArg).toHaveLength(2);
-    });
-  });
 
   describe('unsupported format', () => {
     it('should throw ComposerError for unknown format', async () => {

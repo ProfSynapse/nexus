@@ -91,9 +91,6 @@ jest.mock('../../src/agents/apps/composer/services/AudioEncoder', () => ({
   })),
 }));
 
-// Mock wasm-media-encoders (prevent import failure)
-jest.mock('wasm-media-encoders', () => ({}), { virtual: true });
-
 import { AudioComposer } from '../../src/agents/apps/composer/services/AudioComposer';
 
 type MutableTFile = TFile & {

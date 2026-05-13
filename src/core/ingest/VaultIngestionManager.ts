@@ -244,7 +244,7 @@ export class VaultIngestionManager {
       };
     }
 
-    if (fileType.type === 'docx' || fileType.type === 'pptx' || fileType.type === 'xlsx') {
+    if (fileType.type === 'docx' || fileType.type === 'pptx') {
       return {
         ready: true,
         params: {
@@ -274,10 +274,6 @@ export class VaultIngestionManager {
   }
 
   private getOutputFile(file: TFile): TFile | null {
-    const fileType = detectFileType(file.path);
-    if (fileType?.type === 'xlsx') {
-      return null;
-    }
     return this.config.app.vault.getFileByPath(this.getOutputPath(file.path));
   }
 

@@ -71,6 +71,6 @@ describe('ListFormatsTool', () => {
     const result = await tool.execute({}) as ListFormatsResult;
     const audio = result.data.formats.find((f: FormatEntry) => f.format === 'audio');
 
-    expect(audio.outputFormats).toEqual(['wav', 'mp3', 'webm']);
+    expect(audio.outputFormats).toEqual(['wav', 'webm']);
   });
 });

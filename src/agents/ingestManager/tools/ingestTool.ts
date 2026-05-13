@@ -110,7 +110,7 @@ export class IngestTool extends BaseTool<IngestToolParameters, IngestToolResult>
       properties: {
         filePath: {
           type: 'string',
-          description: 'Path to the file to ingest (PDF, DOCX, PPTX, XLSX, or audio). Relative to vault root.',
+          description: 'Path to the file to ingest (PDF, DOCX, PPTX, or audio). Relative to vault root.',
         },
         mode: {
           type: 'string',
@@ -164,7 +164,7 @@ export class IngestTool extends BaseTool<IngestToolParameters, IngestToolResult>
         outputPaths: {
           type: 'array',
           items: { type: 'string' },
-          description: 'Paths to the created markdown notes. XLSX files may generate one note per sheet.'
+          description: 'Paths to the created markdown notes.'
         },
         pageCount: { type: 'number', description: 'Number of PDF pages processed (PDF only)' },
         durationSeconds: { type: 'number', description: 'Audio duration in seconds (audio only)' },
@@ -191,9 +191,9 @@ function buildToolDescription(): string {
     : 'no transcription providers configured';
 
   return (
-    'Ingest a PDF, DOCX, PPTX, XLSX, or audio file into a structured markdown note. ' +
+    'Ingest a PDF, DOCX, PPTX, or audio file into a structured markdown note. ' +
     'PDF supports text extraction (default, free) or vision-based OCR (requires provider/model). ' +
-    'DOCX, PPTX, and XLSX convert directly to markdown without an LLM call. ' +
+    'DOCX and PPTX convert directly to markdown without an LLM call. ' +
     `Audio supports transcription via ${providerList}. ` +
     'The output note is created alongside the original file with an ![[embed]] link.'
   );

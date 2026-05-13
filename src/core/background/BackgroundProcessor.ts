@@ -7,12 +7,10 @@
  * managing deferred operations and non-critical startup tasks.
  */
 
-import { Notice } from 'obsidian';
 import type { Plugin } from 'obsidian';
 import type { ServiceManager } from '../ServiceManager';
 import type { Settings } from '../../settings';
 import type { SettingsView } from '../../settings/SettingsView';
-import { UpdateManager } from '../../utils/UpdateManager';
 
 export interface BackgroundProcessorConfig {
     plugin: Plugin;
@@ -45,16 +43,6 @@ export class BackgroundProcessor {
         setTimeout(() => {
             void this.runBackgroundStartup();
         }, 2000); // 2 second delay to ensure Obsidian is fully loaded
-    }
-
-    /**
-     * Check for updates on startup in background
-     */
-    checkForUpdatesOnStartup(): void {
-        // Run in background to avoid blocking startup
-        setTimeout(() => {
-            void this.runStartupUpdateCheck();
-        }, 2000); // 2 second delay
     }
 
     validateSearchFunctionality(): void {
@@ -126,41 +114,4 @@ export class BackgroundProcessor {
         }
     }
 
-    private async runStartupUpdateCheck(): Promise<void> {
-        try {
-            // Skip custom update check if plugin is available in the community store
-            const storeAvailable = await UpdateManager.isStoreAvailable(this.config.plugin.manifest.id);
-            if (storeAvailable) return;
-
-            const { settings } = this.config;
-            const lastCheck = settings.settings.lastUpdateCheckDate;
-            if (lastCheck) {
-                const lastCheckTime = new Date(lastCheck);
-                const now = new Date();
-                const daysDiff = (now.getTime() - lastCheckTime.getTime()) / (1000 * 60 * 60 * 24);
-                if (daysDiff < 1) {
-                    return;
-                }
-            }
-
-            const updateManager = new UpdateManager(this.config.plugin);
-            const hasUpdate = await updateManager.checkForUpdate();
-
-            settings.settings.lastUpdateCheckDate = new Date().toISOString();
-
-            if (hasUpdate) {
-                const availableVersion = await updateManager.getLatestVersion();
-
-                settings.settings.availableUpdateVersion = availableVersion;
-
-                new Notice(`Plugin update available: v${availableVersion}. Check settings to update.`, 8000);
-            } else {
-                settings.settings.availableUpdateVersion = undefined;
-            }
-
-            await settings.saveSettings();
-        } catch (error) {
-            console.error('Failed to check for updates:', error);
-        }
-    }
 }

@@ -1,23 +1,16 @@
-import { Notice, Plugin, requestUrl } from 'obsidian';
-import { MCPSettings } from '../types';
+import { Plugin, requestUrl } from 'obsidian';
 
-interface ReleaseAsset {
-    name: string;
-    browser_download_url: string;
-}
-
-interface GitHubRelease {
+export interface GitHubRelease {
     tag_name: string;
-    assets: ReleaseAsset[];
+    html_url?: string;
 }
 
 /**
- * UpdateManager handles checking for and applying plugin updates from GitHub releases
- * Fetches the latest release info and downloads required files:
- * - main.js
- * - connector.js
- * - styles.css
- * - manifest.json
+ * UpdateManager handles read-only release checks.
+ *
+ * Community plugin installs must be updated through Obsidian's plugin updater.
+ * This class intentionally does not download or overwrite plugin assets at
+ * runtime.
  */
 export class UpdateManager {
     private static _isStoreAvailable: boolean | null = null;
@@ -53,7 +46,6 @@ export class UpdateManager {
         'https://api.github.com/repos/ProfSynapse/nexus',
         'https://api.github.com/repos/ProfSynapse/claudesidian-mcp'
     ];
-    private readonly REQUIRED_FILES = ['main.js', 'connector.js', 'styles.css', 'manifest.json'];
 
     constructor(private plugin: Plugin) {}
 
@@ -84,72 +76,11 @@ export class UpdateManager {
     }
 
     /**
-     * Download and install the latest version of the plugin
+     * Get the latest release page URL for manual installs.
      */
-    async updatePlugin(): Promise<void> {
-        try {
-            const release = await this.fetchLatestRelease();
-            const latestVersion = release.tag_name.replace('v', '');
-            
-            // Verify all required files exist in release
-            const assets = release.assets;
-            const missingFiles = this.REQUIRED_FILES.filter(file => 
-                !assets.some(asset => asset.name === file)
-            );
-
-            if (missingFiles.length > 0) {
-                throw new Error(`Release is missing required files: ${missingFiles.join(', ')}`);
-            }
-
-            // Download and save each file
-            for (const fileName of this.REQUIRED_FILES) {
-                const asset = assets.find((a: ReleaseAsset) => a.name === fileName);
-                if (!asset) continue;
-
-                const content = await this.downloadFile(asset.browser_download_url);
-                
-                // Handle file content appropriately based on type
-                await this.plugin.app.vault.adapter.writeBinary(
-                    `${this.plugin.manifest.dir}/${fileName}`,
-                    content
-                );
-            }
-
-            // Update settings to reflect the latest version
-            // Note: The manifest.json file has already been written to disk above
-            // The in-memory manifest will be updated when Obsidian restarts
-            await this.updateVersionInSettings(latestVersion);
-
-            new Notice(`Plugin updated successfully to version ${latestVersion}! Please refresh Obsidian to apply changes.`);
-        } catch (error) {
-            console.error('Failed to update plugin:', error);
-            new Notice('Failed to update plugin: ' + (error as Error).message);
-            throw error;
-        }
-    }
-
-    /**
-     * Update the version in the plugin settings
-     * @param version The version to set
-     */
-    private async updateVersionInSettings(version: string): Promise<void> {
-        try {
-            // Load current settings
-            const currentData = await this.plugin.loadData() as MCPSettings;
-            
-            // Create updated settings with version info
-            const updatedData = {
-                ...currentData,
-                lastUpdateVersion: version,
-                lastUpdateDate: new Date().toISOString()
-            };
-            
-            // Save the updated settings
-            await this.plugin.saveData(updatedData);
-        } catch (error) {
-            console.error('Failed to update version in settings:', error);
-            // Don't throw here to prevent blocking the update process
-        }
+    async getLatestReleaseUrl(): Promise<string> {
+        const release = await this.fetchLatestRelease();
+        return release.html_url ?? 'https://github.com/ProfSynapse/claudesidian-mcp/releases/latest';
     }
 
     /**
@@ -171,7 +102,7 @@ export class UpdateManager {
     /**
      * Fetch latest release information from GitHub
      */
-    private async fetchLatestRelease(): Promise<GitHubRelease> {
+    async fetchLatestRelease(): Promise<GitHubRelease> {
         const errors: Error[] = [];
 
         for (const endpoint of this.GITHUB_API_ENDPOINTS) {
@@ -198,21 +129,5 @@ export class UpdateManager {
 
         const lastError = errors[errors.length - 1];
         throw new Error(`Failed to fetch release info: ${lastError?.message ?? 'Unknown error'}`);
-    }
-
-    /**
-     * Download file content from URL
-     */
-    private async downloadFile(url: string): Promise<ArrayBuffer> {
-        const response = await requestUrl({
-            url: url,
-            method: 'GET'
-        });
-        
-        if (response.status !== 200) {
-            throw new Error(`Failed to download file: ${response.status}`);
-        }
-        
-        return response.arrayBuffer;
     }
 }

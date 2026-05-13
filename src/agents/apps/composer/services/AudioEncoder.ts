@@ -1,21 +1,15 @@
 /**
- * AudioEncoder — Format encoding for AudioBuffer to WAV/WebM/MP3.
+ * AudioEncoder - Format encoding for AudioBuffer to WAV/WebM.
  *
  * Located at: src/agents/apps/composer/services/AudioEncoder.ts
- * Three encoding paths:
+ * Two encoding paths:
  * - WAV: Direct PCM construction (zero deps, 44-byte header + interleaved Int16)
  * - WebM/Opus: MediaRecorder API (Chromium-native, zero deps, real-time speed)
- * - MP3: wasm-media-encoders (MIT, ~200KB WASM, dynamic import for tree-shaking)
  *
  * Design decisions:
- * - WAV is synchronous PCM construction — fastest, lossless, largest files.
+ * - WAV is synchronous PCM construction - fastest, lossless, largest files.
  * - WebM uses real-time AudioContext + MediaRecorder because MediaRecorder
  *   requires a live MediaStream. Encoding time equals audio duration.
- * - MP3 uses dynamic import() so WASM is only loaded when MP3 is requested,
- *   enabling tree-shaking for the common WAV case.
- * - MP3 encoder supports 1-2 channels only. Buffers with >2 channels are
- *   downmixed to stereo before encoding.
- *
  * Used by: AudioComposer after mixing/concatenation to produce final output.
  */
 
@@ -33,15 +27,13 @@ export class AudioEncoder {
         return this.encodeWav(buffer);
       case 'webm':
         return this.encodeWebm(buffer);
-      case 'mp3':
-        return this.encodeMp3(buffer);
       default:
         throw new ComposerError(`Unsupported audio output format: ${String(format)}`);
     }
   }
 
   /**
-   * WAV encoding — direct PCM from AudioBuffer.
+   * WAV encoding - direct PCM from AudioBuffer.
    * Zero dependencies. Constructs WAV header + interleaved 16-bit PCM data.
    */
   private encodeWav(buffer: AudioBuffer): Uint8Array {
@@ -95,7 +87,7 @@ export class AudioEncoder {
 
   /**
    * WebM/Opus encoding via MediaRecorder API.
-   * Available natively in Chromium/Electron — zero extra dependencies.
+   * Available natively in Chromium/Electron - zero extra dependencies.
    * Note: Encoding time equals audio duration (real-time playback required).
    */
   private async encodeWebm(buffer: AudioBuffer): Promise<Uint8Array> {
@@ -143,37 +135,6 @@ export class AudioEncoder {
     });
   }
 
-  /**
-   * MP3 encoding via wasm-media-encoders.
-   * MIT-licensed WASM module, ~200KB. Dynamic import for tree-shaking.
-   */
-  private async encodeMp3(buffer: AudioBuffer): Promise<Uint8Array> {
-    const { createMp3Encoder } = await import('wasm-media-encoders');
-    const encoder = await createMp3Encoder();
-
-    // wasm-media-encoders supports 1 or 2 channels only
-    let targetBuffer = buffer;
-    if (buffer.numberOfChannels > 2) {
-      targetBuffer = downmixToStereo(buffer);
-    }
-
-    encoder.configure({
-      sampleRate: targetBuffer.sampleRate,
-      channels: targetBuffer.numberOfChannels as 1 | 2,
-      vbrQuality: 2, // High quality VBR (~190kbps)
-    });
-
-    const channelData = getChannelDataArrays(targetBuffer);
-    const encoded = encoder.encode(channelData);
-    const flushed = encoder.finalize();
-
-    // Concatenate encoded + flushed
-    const result = new Uint8Array(encoded.length + flushed.length);
-    result.set(encoded, 0);
-    result.set(flushed, encoded.length);
-
-    return result;
-  }
 }
 
 /** Write an ASCII string into a DataView at the given offset. */
@@ -181,47 +142,4 @@ function writeString(view: DataView, offset: number, str: string): void {
   for (let i = 0; i < str.length; i++) {
     view.setUint8(offset + i, str.charCodeAt(i));
   }
-}
-
-/** Extract per-channel Float32Array data from an AudioBuffer. */
-function getChannelDataArrays(buffer: AudioBuffer): Float32Array[] {
-  const channels: Float32Array[] = [];
-  for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
-    channels.push(buffer.getChannelData(ch));
-  }
-  return channels;
-}
-
-/**
- * Downmix a multi-channel AudioBuffer to stereo (2 channels).
- * Averages all channels into L/R by splitting odd/even or averaging all.
- */
-function downmixToStereo(buffer: AudioBuffer): AudioBuffer {
-  // OfflineAudioContext used only for createBuffer (no startRendering call).
-  // OfflineAudioContext has no close() method — GC handles cleanup.
-  const ctx = new OfflineAudioContext(2, buffer.length, buffer.sampleRate);
-  const newBuffer = ctx.createBuffer(2, buffer.length, buffer.sampleRate);
-
-  const leftData = newBuffer.getChannelData(0);
-  const rightData = newBuffer.getChannelData(1);
-  const numChannels = buffer.numberOfChannels;
-
-  for (let i = 0; i < buffer.length; i++) {
-    let left = 0;
-    let right = 0;
-    for (let ch = 0; ch < numChannels; ch++) {
-      const sample = buffer.getChannelData(ch)[i];
-      if (ch % 2 === 0) {
-        left += sample;
-      } else {
-        right += sample;
-      }
-    }
-    const leftCount = Math.ceil(numChannels / 2);
-    const rightCount = Math.floor(numChannels / 2);
-    leftData[i] = left / leftCount;
-    rightData[i] = rightCount > 0 ? right / rightCount : left / leftCount;
-  }
-
-  return newBuffer;
 }

@@ -46,7 +46,7 @@ interface ComposeParams extends CommonParameters {
     fadeIn?: number;
     fadeOut?: number;
   }>;
-  outputFormat?: 'wav' | 'mp3' | 'webm';
+  outputFormat?: 'wav' | 'webm';
   duration?: number;
   overwrite?: boolean;
 }
@@ -379,7 +379,7 @@ export class ComposeTool extends BaseTool<ComposeParams, CommonResult> {
         },
         outputFormat: {
           type: 'string',
-          enum: ['wav', 'mp3', 'webm'],
+          enum: ['wav', 'webm'],
           description: 'Audio only: output encoding format. Default: "wav"',
         },
         duration: {

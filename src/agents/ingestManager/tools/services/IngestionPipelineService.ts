@@ -15,7 +15,6 @@ import {
   IngestToolResult,
   IngestProgressCallback,
   PdfPageContent,
-  SpreadsheetSheetContent,
   TranscriptionSegment,
 } from '../../types';
 import { detectFileType } from './FileTypeDetector';
@@ -24,16 +23,10 @@ import { extractPdfText } from './PdfTextExtractor';
 import { extractPptxContent } from './PptxExtractionService';
 import { ocrPdf, OcrServiceDeps } from './OcrService';
 import {
-  extractSpreadsheetSheets,
-  MAX_SHEET_COLUMNS,
-  MAX_SHEET_ROWS
-} from './SpreadsheetExtractionService';
-import {
   buildAudioNote,
   buildDocxNote,
   buildPdfNote,
   buildPptxNote,
-  buildSpreadsheetSheetNote
 } from './OutputNoteBuilder';
 import { TranscriptionService } from '../../../../services/llm/TranscriptionService';
 import { getTranscriptionProviders, type TranscriptionProvider } from '../../../../services/llm/types/VoiceTypes';
@@ -75,7 +68,7 @@ export async function processFile(
   if (!fileType) {
     return {
       success: false,
-      error: 'Unsupported file type. Supported: PDF, DOCX, PPTX, XLSX, MP3, WAV, M4A, OGG, FLAC, WEBM, AAC',
+      error: 'Unsupported file type. Supported: PDF, DOCX, PPTX, MP3, WAV, M4A, OGG, FLAC, WEBM, AAC',
     };
   }
 
@@ -117,11 +110,10 @@ export async function processFile(
     if (result.warnings) warnings.push(...result.warnings);
     onProgress?.({ filePath, stage: 'extracting', progress: 100 });
   } else {
-    onProgress?.({ filePath, stage: 'extracting', progress: 0 });
-    const result = await processSpreadsheet(fileData, file.name, filePath);
-    noteWrites = result.notes;
-    if (result.warnings) warnings.push(...result.warnings);
-    onProgress?.({ filePath, stage: 'extracting', progress: 100 });
+    return {
+      success: false,
+      error: 'Unsupported file type.',
+    };
   }
 
   onProgress?.({ filePath, stage: 'building' });
@@ -231,44 +223,6 @@ async function processPptx(
   };
 }
 
-/** Process an XLSX file */
-async function processSpreadsheet(
-  fileData: ArrayBuffer,
-  fileName: string,
-  filePath: string
-): Promise<{ notes: NoteWrite[]; warnings?: string[] }> {
-  const sheets = await extractSpreadsheetSheets(fileData);
-  const validSheets: SpreadsheetSheetContent[] = [];
-  const warnings: string[] = [];
-
-  for (const sheet of sheets) {
-    if (sheet.totalColumns > MAX_SHEET_COLUMNS || sheet.totalRows > MAX_SHEET_ROWS) {
-      warnings.push(
-        `Skipped sheet "${sheet.sheetName}" because it exceeds the spreadsheet limit ` +
-        `(${sheet.totalColumns} columns x ${sheet.totalRows} rows; max ${MAX_SHEET_COLUMNS} x ${MAX_SHEET_ROWS}).`
-      );
-      continue;
-    }
-
-    validSheets.push(sheet);
-  }
-
-  if (validSheets.length === 0) {
-    throw new Error(
-      `No sheets were converted. All sheets exceed the spreadsheet limit ` +
-      `(max ${MAX_SHEET_COLUMNS} columns x ${MAX_SHEET_ROWS} rows).`
-    );
-  }
-
-  return {
-    notes: validSheets.map((sheet) => ({
-      outputPath: buildSpreadsheetSheetOutputPath(filePath, sheet.sheetName),
-      content: buildSpreadsheetSheetNote(fileName, sheet)
-    })),
-    warnings: warnings.length > 0 ? warnings : undefined
-  };
-}
-
 /** Audio MIME types accepted by the transcription pipeline. */
 const SUPPORTED_AUDIO_MIME_TYPES = new Set([
   'audio/mpeg',
@@ -331,25 +285,10 @@ async function processAudio(
 
 /**
  * Build the output .md path from the source file path.
- * Example: "notes/report.pdf" → "notes/report.md"
+ * Example: "notes/report.pdf" -> "notes/report.md"
  */
 function buildOutputPath(filePath: string): string {
   const dotIndex = filePath.lastIndexOf('.');
   if (dotIndex === -1) return filePath + '.md';
   return filePath.slice(0, dotIndex) + '.md';
-}
-
-function buildSpreadsheetSheetOutputPath(filePath: string, sheetName: string): string {
-  const basePath = buildOutputPath(filePath).replace(/\.md$/i, '');
-  const safeSheetName = sanitizeSheetNameForPath(sheetName);
-  return `${basePath} - ${safeSheetName}.md`;
-}
-
-function sanitizeSheetNameForPath(sheetName: string): string {
-  const sanitized = sheetName
-    .replace(/[\\/:*?"<>|]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-  return sanitized || 'Sheet';
 }

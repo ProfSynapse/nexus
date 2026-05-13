@@ -10,12 +10,10 @@ import {
   buildAudioNote,
   buildDocxNote,
   buildPptxNote,
-  buildSpreadsheetSheetNote,
 } from '../../src/agents/ingestManager/tools/services/OutputNoteBuilder';
 import {
   PdfPageContent,
   PptxSlideContent,
-  SpreadsheetSheetContent,
   TranscriptionSegment
 } from '../../src/agents/ingestManager/types';
 
@@ -251,62 +249,4 @@ describe('OutputNoteBuilder', () => {
     });
   });
 
-  // ==========================================================================
-  // buildSpreadsheetSheetNote
-  // ==========================================================================
-
-  describe('buildSpreadsheetSheetNote', () => {
-    it('should include the sheet name as a heading', () => {
-      const sheet: SpreadsheetSheetContent = {
-        sheetName: 'Summary',
-        rows: [['Revenue']],
-        totalRows: 1,
-        totalColumns: 1
-      };
-
-      const result = buildSpreadsheetSheetNote('report.xlsx', sheet);
-
-      expect(result).toContain('# Summary');
-    });
-
-    it('should render rows as markdown tables with row numbers', () => {
-      const sheet: SpreadsheetSheetContent = {
-        sheetName: 'Budget',
-        rows: [['Name', 'Amount'], ['Marketing', '5000']],
-        totalRows: 2,
-        totalColumns: 2
-      };
-
-      const result = buildSpreadsheetSheetNote('budget.xlsx', sheet);
-
-      expect(result).toContain('| Row | Column 1 | Column 2 |');
-      expect(result).toContain('| 1 | Name | Amount |');
-      expect(result).toContain('| 2 | Marketing | 5000 |');
-    });
-
-    it('should render empty sheets clearly', () => {
-      const sheet: SpreadsheetSheetContent = {
-        sheetName: 'Empty',
-        rows: [],
-        totalRows: 0,
-        totalColumns: 0
-      };
-
-      const result = buildSpreadsheetSheetNote('empty.xlsx', sheet);
-      expect(result).toContain('_Empty sheet._');
-    });
-
-    it('should preserve special characters inside cells', () => {
-      const sheet: SpreadsheetSheetContent = {
-        sheetName: 'Flags',
-        rows: [['A|B', 'Line 1\nLine 2']],
-        totalRows: 1,
-        totalColumns: 2
-      };
-
-      const result = buildSpreadsheetSheetNote('flags.xlsx', sheet);
-      expect(result).toContain('A\\|B');
-      expect(result).toContain('Line 1<br>Line 2');
-    });
-  });
 });

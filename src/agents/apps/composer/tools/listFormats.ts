@@ -53,7 +53,7 @@ export class ListFormatsTool extends BaseTool<CommonParameters, CommonResult> {
           extensions: ['mp3', 'wav', 'ogg', 'webm', 'aac', 'm4a', 'flac'],
           platforms: ['desktop'],
           modes: ['concat', 'mix'],
-          outputFormats: ['wav', 'mp3', 'webm'],
+          outputFormats: ['wav', 'webm'],
           description: 'Compose audio — concat (sequential) or mix (layered tracks with volume/offset/fade). WebM encoding runs at real-time speed.',
         },
       ],

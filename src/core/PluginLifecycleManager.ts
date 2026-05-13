@@ -243,9 +243,6 @@ export class PluginLifecycleManager {
             // Register vault-level ingestion triggers
             this.vaultIngestionManager.register();
 
-            // Check for updates
-            void this.backgroundProcessor.checkForUpdatesOnStartup();
-
             // Update settings tab with loaded services
             this.backgroundProcessor.updateSettingsTabServices();
 

@@ -58,11 +58,11 @@ git push origin main
 
 ### 5. Create GitHub Release
 
-Always attach the **4 build artifacts**:
+Always attach the **3 Obsidian-supported build artifacts**:
 
 ```bash
 gh release create X.Y.Z \
-  main.js connector.js manifest.json styles.css \
+  main.js manifest.json styles.css \
   --title "X.Y.Z" \
   --notes "$(cat <<'EOF'
 ## What's New / Fixes
@@ -71,7 +71,7 @@ gh release create X.Y.Z \
 
 ## Install
 
-Download `main.js`, `connector.js`, `manifest.json`, and `styles.css` into your vault's `.obsidian/plugins/nexus/` folder.
+Download `main.js`, `manifest.json`, and `styles.css` into your vault's `.obsidian/plugins/nexus/` folder. For Claude Desktop/MCP setup, enable Nexus in Obsidian and use Settings -> Get started -> MCP integration to create `connector.js`.
 EOF
 )"
 ```
@@ -84,7 +84,6 @@ Release title rule: the GitHub release name must be the tag number only, with no
 | File | Purpose |
 |------|---------|
 | `main.js` | Plugin bundle (esbuild output) |
-| `connector.js` | MCP server connector |
 | `manifest.json` | Obsidian plugin manifest |
 | `styles.css` | Plugin styles |
 
@@ -92,5 +91,5 @@ Release title rule: the GitHub release name must be the tag number only, with no
 
 - Forgetting to rebuild after version bump (stale `connectorContent.ts`)
 - Missing one of the 3 version files
-- Not attaching all 4 release artifacts
+- Attaching unsupported release artifacts such as `connector.js`
 - Releasing from a feature branch instead of `main`

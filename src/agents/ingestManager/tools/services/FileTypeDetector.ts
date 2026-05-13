@@ -1,6 +1,6 @@
 /**
  * Location: src/agents/ingestManager/tools/services/FileTypeDetector.ts
- * Purpose: Detect file type (PDF, DOCX, PPTX, XLSX, or audio) from file extension.
+ * Purpose: Detect file type (PDF, DOCX, PPTX, or audio) from file extension.
  *
  * Used by: IngestionPipelineService, IngestTool
  * Dependencies: None (pure utility)
@@ -11,7 +11,6 @@ import { FileTypeInfo } from '../../types';
 const PDF_EXTENSIONS = new Set(['.pdf']);
 const DOCX_EXTENSIONS = new Set(['.docx']);
 const PPTX_EXTENSIONS = new Set(['.pptx']);
-const XLSX_EXTENSIONS = new Set(['.xlsx']);
 
 const AUDIO_EXTENSIONS = new Map<string, string>([
   ['.mp3', 'audio/mpeg'],
@@ -56,14 +55,6 @@ export function detectFileType(filePath: string): FileTypeInfo | null {
     };
   }
 
-  if (XLSX_EXTENSIONS.has(ext)) {
-    return {
-      type: 'xlsx',
-      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      extension: ext
-    };
-  }
-
   const audioMime = AUDIO_EXTENSIONS.get(ext);
   if (audioMime) {
     return { type: 'audio', mimeType: audioMime, extension: ext };
@@ -79,14 +70,12 @@ export function getSupportedExtensions(): {
   pdf: string[];
   docx: string[];
   pptx: string[];
-  xlsx: string[];
   audio: string[];
 } {
   return {
     pdf: Array.from(PDF_EXTENSIONS),
     docx: Array.from(DOCX_EXTENSIONS),
     pptx: Array.from(PPTX_EXTENSIONS),
-    xlsx: Array.from(XLSX_EXTENSIONS),
     audio: Array.from(AUDIO_EXTENSIONS.keys()),
   };
 }

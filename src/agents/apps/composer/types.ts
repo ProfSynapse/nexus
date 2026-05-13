@@ -75,7 +75,7 @@ export interface ComposeOptions {
 }
 
 /** Supported audio output encoding formats. */
-export type AudioOutputFormat = 'wav' | 'mp3' | 'webm';
+export type AudioOutputFormat = 'wav' | 'webm';
 
 /**
  * Result from the compose tool.

@@ -17,10 +17,10 @@ Nexus can be used in two ways:
 
 ## Setup
 
-- Install the latest release from [GitHub Releases](https://github.com/ProfSynapse/claudesidian-mcp/releases): `manifest.json`, `styles.css`, `main.js`, and `connector.js`
+- Install the latest release from [GitHub Releases](https://github.com/ProfSynapse/claudesidian-mcp/releases): `manifest.json`, `styles.css`, and `main.js`
 - Put them in `.obsidian/plugins/nexus/` and enable **Nexus** in Obsidian
 - Native chat in Obsidian: [Provider setup](guide/provider-setup.md) and [Native chat guide](guide/native-chat.md)
-- External agent over MCP: [MCP setup guide](guide/mcp-setup.md) and [Recommended system prompt](guide/recommended-system-prompt.md)
+- External agent over MCP: use **Nexus settings -> Get started -> MCP integration** to create `connector.js` and update Claude Desktop, then see [MCP setup guide](guide/mcp-setup.md) and [Recommended system prompt](guide/recommended-system-prompt.md)
 - Optional desktop features: [Semantic search](guide/semantic-search.md) and [Apps and integrations](guide/apps.md)
 
 Native chat works on desktop and mobile. MCP clients, local desktop providers, and semantic search are desktop-only.
@@ -56,7 +56,7 @@ Mobile support is new and may have bugs. Please [report issues on GitHub](https:
 | Merge PDFs, concat markdown, or mix audio tracks into one file *(experimental)* | [Apps](guide/apps.md) |
 | Create recurring routines and reusable workflows | [Workflow examples](guide/workflow-examples.md) |
 | Understand the MCP design and available tools | [Two-tool architecture](guide/two-tool-architecture.md) |
-| Extend Nexus with downloadable apps | [Apps](guide/apps.md) |
+| Extend Nexus with optional apps | [Apps](guide/apps.md) |
 
 ## Prompt For Your Agent
 

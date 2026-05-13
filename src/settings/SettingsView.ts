@@ -7,11 +7,6 @@ import { supportsMCPBridge } from '../utils/platform';
 import { Accordion } from '../components/Accordion';
 import { getConfigStatus, hasConfiguredProviders } from './getStartedStatus';
 
-// Type to access private method (should be refactored to make fetchLatestRelease public in UpdateManager)
-type UpdateManagerWithFetchRelease = {
-    fetchLatestRelease(): Promise<{ tag_name: string; assets: Array<{ name: string; browser_download_url: string }> }>;
-};
-
 // Services
 import { WorkspaceService } from '../services/WorkspaceService';
 import { MemoryService } from '../agents/memoryManager/services/MemoryService';
@@ -277,7 +272,7 @@ export class SettingsView extends PluginSettingTab {
             updateBtn
                 .setButtonText(
                     this.settingsManager.settings.availableUpdateVersion
-                        ? `Install v${this.settingsManager.settings.availableUpdateVersion}`
+                        ? `View v${this.settingsManager.settings.availableUpdateVersion}`
                         : 'Check for Updates'
                 )
                 .onClick(async () => {
@@ -298,12 +293,12 @@ export class SettingsView extends PluginSettingTab {
             this.settingsManager.settings.lastUpdateCheckDate = new Date().toISOString();
 
             if (hasUpdate) {
-                const release = await (updateManager as unknown as UpdateManagerWithFetchRelease).fetchLatestRelease();
-                const availableVersion = release.tag_name.replace('v', '');
+                const availableVersion = await updateManager.getLatestVersion();
                 this.settingsManager.settings.availableUpdateVersion = availableVersion;
 
-                await updateManager.updatePlugin();
-                this.settingsManager.settings.availableUpdateVersion = undefined;
+                const releaseUrl = await updateManager.getLatestReleaseUrl();
+                new Notice(`Update available: v${availableVersion}. Opening release page.`);
+                window.open(releaseUrl, '_blank');
                 this.display();
             } else {
                 this.settingsManager.settings.availableUpdateVersion = undefined;

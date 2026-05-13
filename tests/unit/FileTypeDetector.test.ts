@@ -46,7 +46,7 @@ describe('FileTypeDetector', () => {
   });
 
   // ==========================================================================
-  // detectFileType — DOCX/PPTX/XLSX
+  // detectFileType - DOCX/PPTX
   // ==========================================================================
 
   describe('detectFileType - Office', () => {
@@ -56,15 +56,6 @@ describe('FileTypeDetector', () => {
         type: 'docx',
         mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         extension: '.docx',
-      });
-    });
-
-    it('should detect .xlsx files', () => {
-      const result = detectFileType('spreadsheet.xlsx');
-      expect(result).toEqual({
-        type: 'xlsx',
-        mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        extension: '.xlsx',
       });
     });
 
@@ -80,7 +71,6 @@ describe('FileTypeDetector', () => {
     it('should detect office extensions case-insensitively', () => {
       expect(detectFileType('draft.DOCX')?.type).toBe('docx');
       expect(detectFileType('slides.PPTX')?.type).toBe('pptx');
-      expect(detectFileType('budget.XLSX')?.type).toBe('xlsx');
     });
   });
 
@@ -137,6 +127,7 @@ describe('FileTypeDetector', () => {
       expect(detectFileType('image.png')).toBeNull();
       expect(detectFileType('video.avi')).toBeNull();
       expect(detectFileType('script.js')).toBeNull();
+      expect(detectFileType('spreadsheet.xlsx')).toBeNull();
     });
 
     it('should return null for files with no extension', () => {
@@ -194,7 +185,6 @@ describe('FileTypeDetector', () => {
       const exts = getSupportedExtensions();
       expect(exts.docx).toEqual(['.docx']);
       expect(exts.pptx).toEqual(['.pptx']);
-      expect(exts.xlsx).toEqual(['.xlsx']);
     });
 
     it('should return all audio extensions', () => {
@@ -234,12 +224,12 @@ describe('FileTypeDetector', () => {
     it('should return true for office files', () => {
       expect(isSupportedFile('proposal.docx')).toBe(true);
       expect(isSupportedFile('deck.pptx')).toBe(true);
-      expect(isSupportedFile('forecast.xlsx')).toBe(true);
     });
 
     it('should return false for unsupported files', () => {
       expect(isSupportedFile('image.png')).toBe(false);
       expect(isSupportedFile('doc.txt')).toBe(false);
+      expect(isSupportedFile('forecast.xlsx')).toBe(false);
     });
 
     it('should return false for files with no extension', () => {
