@@ -61,7 +61,6 @@ const HTML_SUCCESS = `<!DOCTYPE html>
 <h1 style="color:#4ade80">Connected!</h1>
 <p>You can close this tab and return to Obsidian.</p>
 </div>
-<script>window.setTimeout(function(){window.close()},2000)</script>
 </body>
 </html>`;
 
