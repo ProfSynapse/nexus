@@ -5,8 +5,7 @@
  * Used by AnthropicClaudeCodeAdapter, GoogleGeminiCliAdapter, and GeminiCliAuthService.
  */
 import { Platform } from 'obsidian';
-import type { ChildProcess, SpawnOptions } from 'child_process';
-import { spawnDesktopProcess } from './desktopProcess';
+import { spawnDesktopProcess, type DesktopChildProcess, type DesktopSpawnOptions } from './desktopProcess';
 
 type CliProcessRunnerDesktopModuleMap = {
   child_process: typeof import('child_process');
@@ -19,7 +18,7 @@ function loadDesktopModule<TModuleName extends keyof CliProcessRunnerDesktopModu
     throw new Error(`${moduleName} is only available on desktop.`);
   }
 
-  const maybeRequire = (globalThis as typeof globalThis & {
+  const maybeRequire = (window.activeWindow as Window & {
     require?: (moduleId: string) => unknown;
   }).require;
 
@@ -38,7 +37,7 @@ export interface CliProcessResult {
 }
 
 export interface CliProcessHandle {
-  child: ChildProcess;
+  child: DesktopChildProcess;
   result: Promise<CliProcessResult>;
 }
 
@@ -61,7 +60,7 @@ export function runCliProcess(
 ): CliProcessHandle {
   const childProcess = loadDesktopModule('child_process');
 
-  const spawnOptions: SpawnOptions = {
+  const spawnOptions: DesktopSpawnOptions = {
     cwd: options?.cwd,
     env: options?.env,
     stdio: options?.stdinText !== undefined ? ['pipe', 'pipe', 'pipe'] : ['ignore', 'pipe', 'pipe']

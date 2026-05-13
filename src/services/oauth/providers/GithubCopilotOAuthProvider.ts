@@ -33,7 +33,7 @@ function loadDesktopModule<TModuleName extends keyof GithubCopilotOAuthDesktopMo
     throw new Error(`${moduleName} is only available on desktop.`);
   }
 
-  const maybeRequire = (globalThis as typeof globalThis & {
+  const maybeRequire = (window.activeWindow as Window & {
     require?: (moduleId: string) => unknown;
   }).require;
 
@@ -146,14 +146,14 @@ export class GithubCopilotOAuthProvider implements IOAuthProvider {
 
       if (res.error === 'authorization_pending') {
         // User hasn't completed flow yet — wait and retry
-        await new Promise(resolve => setTimeout(resolve, pollInterval));
+        await new Promise(resolve => window.setTimeout(resolve, pollInterval));
         continue;
       }
 
       if (res.error === 'slow_down') {
         // GitHub is asking us to increase the polling interval
         pollInterval = (res.interval ?? 10) * 1000;
-        await new Promise(resolve => setTimeout(resolve, pollInterval));
+        await new Promise(resolve => window.setTimeout(resolve, pollInterval));
         continue;
       }
 

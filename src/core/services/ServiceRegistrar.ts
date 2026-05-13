@@ -22,7 +22,7 @@ export class ServiceRegistrar {
     private context: ServiceCreationContext;
 
     // Pending timer handle for deferred migration work
-    private migrationTimer: ReturnType<typeof setTimeout> | null = null;
+    private migrationTimer: number | null = null;
 
     constructor(context: ServiceCreationContext) {
         this.context = context;
@@ -135,7 +135,7 @@ export class ServiceRegistrar {
 
             // DEFER heavy migration work to background (2 second delay)
             // This allows the UI to appear immediately while migrations run later
-            this.migrationTimer = setTimeout(() => {
+            this.migrationTimer = window.setTimeout(() => {
                 void this.runDeferredMigrations(plugin, serviceManager);
             }, 2000);
 
@@ -293,7 +293,7 @@ export class ServiceRegistrar {
             }
 
             // Wait before retrying
-            await new Promise(resolve => setTimeout(resolve, retryInterval));
+            await new Promise(resolve => window.setTimeout(resolve, retryInterval));
         }
 
         return null;
@@ -306,7 +306,7 @@ export class ServiceRegistrar {
      */
     shutdown(): void {
         if (this.migrationTimer !== null) {
-            clearTimeout(this.migrationTimer);
+            window.clearTimeout(this.migrationTimer);
             this.migrationTimer = null;
         }
     }

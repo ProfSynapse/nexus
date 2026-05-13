@@ -136,7 +136,7 @@ export class JsonlVaultWatcher {
 
   /** Accumulator of streams modified within the current debounce window. */
   private readonly pending = new Map<string, ModifiedStream>();
-  private debounceTimer?: ReturnType<typeof setTimeout>;
+  private debounceTimer?: number;
 
   private dispatching = false;
   private dispatchQueued = false;
@@ -187,7 +187,7 @@ export class JsonlVaultWatcher {
     this.eventRefs = [];
 
     if (this.debounceTimer !== undefined) {
-      clearTimeout(this.debounceTimer);
+      window.clearTimeout(this.debounceTimer);
       this.debounceTimer = undefined;
     }
 
@@ -300,7 +300,7 @@ export class JsonlVaultWatcher {
 
   private scheduleDispatch(): void {
     if (this.debounceTimer !== undefined) {
-      clearTimeout(this.debounceTimer);
+      window.clearTimeout(this.debounceTimer);
     }
 
     // Sweep expired suppression entries to prevent unbounded Map growth
@@ -312,7 +312,7 @@ export class JsonlVaultWatcher {
       }
     }
 
-    this.debounceTimer = setTimeout(() => {
+    this.debounceTimer = window.setTimeout(() => {
       this.debounceTimer = undefined;
       if (!this.running) {
         return;

@@ -34,7 +34,7 @@ interface MemoryPressureLevel {
 export class SimpleMemoryMonitor {
   private static instance: SimpleMemoryMonitor | null = null;
   private isMonitoring = false;
-  private checkInterval: NodeJS.Timeout | null = null;
+  private checkInterval: number | null = null;
   
   // Hardcoded balanced thresholds
   private readonly thresholds = {
@@ -60,7 +60,7 @@ export class SimpleMemoryMonitor {
     this.isMonitoring = true;
     
     // Check memory every 30 seconds
-    this.checkInterval = setInterval(() => {
+    this.checkInterval = window.setInterval(() => {
       this.checkMemoryPressure();
     }, 30000);
   }
@@ -70,7 +70,7 @@ export class SimpleMemoryMonitor {
     
     this.isMonitoring = false;
     if (this.checkInterval) {
-      clearInterval(this.checkInterval);
+      window.clearInterval(this.checkInterval);
       this.checkInterval = null;
     }
   }

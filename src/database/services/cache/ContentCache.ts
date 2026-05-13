@@ -100,7 +100,7 @@ export class ContentCache extends Events {
   private readonly maxMemoryMB: number;
 
   // Cleanup timer
-  private cleanupInterval: NodeJS.Timeout | null = null;
+  private cleanupInterval: number | null = null;
 
   constructor(
     private plugin: Plugin,
@@ -434,7 +434,7 @@ export class ContentCache extends Events {
    */
   shutdown(): void {
     if (this.cleanupInterval) {
-      clearInterval(this.cleanupInterval);
+      window.clearInterval(this.cleanupInterval);
       this.cleanupInterval = null;
     }
 
@@ -447,7 +447,7 @@ export class ContentCache extends Events {
 
   private startCleanupTimer(): void {
     // Clean up every 5 minutes
-    this.cleanupInterval = setInterval(() => {
+    this.cleanupInterval = window.setInterval(() => {
       this.cleanup();
     }, 5 * 60 * 1000);
   }

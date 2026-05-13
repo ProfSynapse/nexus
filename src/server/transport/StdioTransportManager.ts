@@ -7,7 +7,9 @@ import { Server as MCPSDKServer } from '@modelcontextprotocol/sdk/server/index.j
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import { logger } from '../../utils/logger';
-import type { Readable, Writable } from 'node:stream';
+
+type SocketReadable = import('node:stream').Readable;
+type SocketWritable = import('node:stream').Writable;
 
 /**
  * Service responsible for STDIO transport management
@@ -114,7 +116,7 @@ export class StdioTransportManager {
     /**
      * Create a new transport instance (for socket connections)
      */
-    createSocketTransport(inputStream: Readable, outputStream: Writable): StdioServerTransport {
+    createSocketTransport(inputStream: SocketReadable, outputStream: SocketWritable): StdioServerTransport {
         return new StdioServerTransport(inputStream, outputStream);
     }
 

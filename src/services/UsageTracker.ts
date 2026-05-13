@@ -53,7 +53,7 @@ export class UsageTracker {
     }
 
     private getLocalStorage(): Storage | null {
-        return typeof globalThis.localStorage === 'undefined' ? null : globalThis.localStorage;
+        return typeof window.activeWindow.localStorage === 'undefined' ? null : window.activeWindow.localStorage;
     }
 
     /**

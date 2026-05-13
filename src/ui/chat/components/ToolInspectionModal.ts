@@ -73,7 +73,7 @@ export class ToolInspectionModal extends Modal {
       if (this.pendingScrollFrame !== null) {
         return;
       }
-      this.pendingScrollFrame = requestAnimationFrame(() => {
+      this.pendingScrollFrame = window.requestAnimationFrame(() => {
         this.pendingScrollFrame = null;
         if (this.isDisposed) {
           return;
@@ -117,7 +117,7 @@ export class ToolInspectionModal extends Modal {
       this.nextCursor = firstPage.nextCursor;
       this.renderMessages();
 
-      requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
         if (!this.isDisposed) {
           this.scrollEl.scrollTop = this.scrollEl.scrollHeight;
         }
@@ -162,7 +162,7 @@ export class ToolInspectionModal extends Modal {
       this.nextCursor = pageResult.nextCursor;
       this.renderMessages();
 
-      requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
         if (this.isDisposed) {
           return;
         }

@@ -5,7 +5,7 @@
  * non-streaming (JSON output) mode and parses the result.
  */
 import { Platform, Vault } from 'obsidian';
-import type { ChildProcess } from 'child_process';
+import type { DesktopChildProcess } from '../../../../utils/desktopProcess';
 import { BaseAdapter } from '../BaseAdapter';
 import {
   GenerateOptions,
@@ -50,7 +50,7 @@ interface GeminiCliJsonResponse {
 export class GoogleGeminiCliAdapter extends BaseAdapter {
   readonly name = 'google-gemini-cli';
   readonly baseUrl = 'gemini-cli://local';
-  private activeProcess: ChildProcess | null = null;
+  private activeProcess: DesktopChildProcess | null = null;
 
   constructor(private vault: Vault) {
     super('gemini-cli-local-auth', GOOGLE_GEMINI_CLI_DEFAULT_MODEL, 'gemini-cli://local', false);
@@ -197,7 +197,7 @@ export class GoogleGeminiCliAdapter extends BaseAdapter {
       throw new Error(`${moduleName} is only available on desktop.`);
     }
 
-    const maybeRequire = (globalThis as typeof globalThis & {
+    const maybeRequire = (window.activeWindow as Window & {
       require?: (moduleId: string) => unknown;
     }).require;
 

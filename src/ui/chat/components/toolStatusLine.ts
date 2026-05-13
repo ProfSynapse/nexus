@@ -8,7 +8,7 @@ export class ToolStatusLine {
   private currentSlot: HTMLElement | null = null;
   private lastUpdate = 0;
   private queuedEntry: ToolStatusEntry | null = null;
-  private pendingTimeout: ReturnType<typeof setTimeout> | null = null;
+  private pendingTimeout: number | null = null;
   private timeouts: ManagedTimeoutTracker;
 
   constructor(private readonly slot: HTMLElement, component: Component) {
@@ -22,7 +22,7 @@ export class ToolStatusLine {
     if (this.lastUpdate !== 0 && elapsed < 400) {
       this.queuedEntry = entry;
       if (!this.pendingTimeout) {
-        this.pendingTimeout = this.timeouts.setTimeout(() => {
+        this.pendingTimeout = this.timeouts.schedule(() => {
           this.pendingTimeout = null;
           if (this.queuedEntry) {
             const queued = this.queuedEntry;
@@ -54,7 +54,7 @@ export class ToolStatusLine {
     if (this.currentSlot) {
       const oldSlot = this.currentSlot;
       oldSlot.classList.add('exiting');
-      this.timeouts.setTimeout(() => oldSlot.remove(), 200);
+      this.timeouts.schedule(() => oldSlot.remove(), 200);
     }
 
     const nextSlot = this.slot.createEl('div', {
@@ -63,7 +63,7 @@ export class ToolStatusLine {
     });
 
     this.currentSlot = nextSlot;
-    this.timeouts.setTimeout(() => {
+    this.timeouts.schedule(() => {
       nextSlot.removeClass('entering');
       nextSlot.addClass('active');
     }, 100);

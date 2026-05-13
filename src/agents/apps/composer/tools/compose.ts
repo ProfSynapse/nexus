@@ -238,7 +238,7 @@ export class ComposeTool extends BaseTool<ComposeParams, CommonResult> {
       output = await Promise.race([
         composer.compose(input, vault, options),
         new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new ComposerError('Composition timed out after 30 seconds')), COMPOSE_TIMEOUT_MS)
+          window.setTimeout(() => reject(new ComposerError('Composition timed out after 30 seconds')), COMPOSE_TIMEOUT_MS)
         ),
       ]);
     } catch (err) {

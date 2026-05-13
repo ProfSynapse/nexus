@@ -439,7 +439,7 @@ export class ConfigModal extends Modal {
             throw new Error(`${moduleName} is only available on desktop.`);
         }
 
-        const maybeRequire = (globalThis as typeof globalThis & {
+        const maybeRequire = (window.activeWindow as Window & {
             require?: (moduleId: string) => unknown;
         }).require;
 
@@ -476,7 +476,7 @@ export class ConfigModal extends Modal {
             copyButton.onclick = () => {
                 void navigator.clipboard.writeText(JSON.stringify(config, null, 2));
                 copyButton.setText('Copied!');
-                setTimeout(() => copyButton.setText('Copy configuration'), 2000);
+                window.setTimeout(() => copyButton.setText('Copy configuration'), 2000);
             };
         } catch (error) {
             console.error(`[ConfigModal] Failed to populate config for ${tabId}:`, error);

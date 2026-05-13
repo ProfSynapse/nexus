@@ -507,7 +507,7 @@ export class WebLLMEngine {
 
       // Add a timeout to prevent infinite hangs (5 minute timeout for large models)
       const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => reject(new Error('Model loading timed out after 5 minutes')), 5 * 60 * 1000);
+        window.setTimeout(() => reject(new Error('Model loading timed out after 5 minutes')), 5 * 60 * 1000);
       });
 
       this.engine = await Promise.race([enginePromise, timeoutPromise]);
@@ -658,7 +658,7 @@ export class WebLLMEngine {
       try {
         this.engine.interruptGenerate();
         // Longer wait for interrupt to take effect
-        await new Promise(resolve => setTimeout(resolve, 500));
+        await new Promise(resolve => window.setTimeout(resolve, 500));
       } catch {
         // Ignore interrupt errors
       }
@@ -678,14 +678,14 @@ export class WebLLMEngine {
 
       // For tool continuations, add a longer delay to let WebGPU fully release resources
       if (isToolContinuation) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise(resolve => window.setTimeout(resolve, 1000));
       }
 
       // Always reset KV cache BEFORE each generation to ensure clean state
       try {
         await this.resetChat();
         // Longer delay after reset for GPU to fully process
-        await new Promise(resolve => setTimeout(resolve, 300));
+        await new Promise(resolve => window.setTimeout(resolve, 300));
       } catch {
         // Ignore reset errors
       }

@@ -30,7 +30,7 @@ export class LMStudioProviderModal implements IProviderModal {
   private serverUrl = 'http://127.0.0.1:1234';
   private discoveredModels: string[] = [];
   private isValidated = false;
-  private validationTimeout: ReturnType<typeof setTimeout> | null = null;
+  private validationTimeout: number | null = null;
 
   constructor(config: ProviderModalConfig, deps: ProviderModalDependencies) {
     this.config = config;
@@ -100,7 +100,7 @@ export class LMStudioProviderModal implements IProviderModal {
 
     // Clear existing timeout
     if (this.validationTimeout) {
-      clearTimeout(this.validationTimeout);
+      window.clearTimeout(this.validationTimeout);
       this.validationTimeout = null;
     }
 
@@ -108,7 +108,7 @@ export class LMStudioProviderModal implements IProviderModal {
       this.urlInput?.addClass('validating');
 
       // Auto-discover after delay
-      this.validationTimeout = setTimeout(() => {
+      this.validationTimeout = window.setTimeout(() => {
         void this.discoverModels();
       }, 2000);
 
@@ -305,7 +305,7 @@ export class LMStudioProviderModal implements IProviderModal {
    */
   destroy(): void {
     if (this.validationTimeout) {
-      clearTimeout(this.validationTimeout);
+      window.clearTimeout(this.validationTimeout);
       this.validationTimeout = null;
     }
 

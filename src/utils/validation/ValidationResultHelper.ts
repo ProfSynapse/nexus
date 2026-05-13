@@ -136,7 +136,7 @@ type ValidationErrorDetails = Record<
 >;
 
 /**
- * Interface for CompatibilityMonitor if available on globalThis
+ * Interface for CompatibilityMonitor if available on activeWindow
  */
 interface CompatibilityMonitor {
   trackValidation(
@@ -149,7 +149,7 @@ interface CompatibilityMonitor {
 }
 
 /**
- * Extended globalThis interface with optional CompatibilityMonitor
+ * Extended activeWindow interface with optional CompatibilityMonitor
  */
 interface GlobalWithMonitor {
   CompatibilityMonitor?: CompatibilityMonitor;
@@ -426,7 +426,7 @@ export class ValidationResultHelper {
   ): void {
     // Integration with existing CompatibilityMonitor if available
     // Type-safe access using defined interface
-    const global = globalThis as GlobalWithMonitor;
+    const global = window.activeWindow as unknown as GlobalWithMonitor;
     if (global.CompatibilityMonitor) {
       global.CompatibilityMonitor.trackValidation(
         `ValidationResultHelper_${toolName}`,

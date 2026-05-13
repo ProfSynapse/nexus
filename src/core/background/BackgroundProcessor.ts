@@ -40,7 +40,7 @@ export class BackgroundProcessor {
         }
         
         // Run startup processing in background without blocking plugin initialization
-        setTimeout(() => {
+        window.setTimeout(() => {
             void this.runBackgroundStartup();
         }, 2000); // 2 second delay to ensure Obsidian is fully loaded
     }

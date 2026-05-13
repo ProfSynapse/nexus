@@ -91,12 +91,12 @@ export class DataTab {
             const jsonl = await this.storageAdapter.exportConversationsForFineTuning();
             const blob = new Blob([jsonl], { type: 'application/jsonl' });
             const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
+            const a = window.activeDocument.createElement('a');
             a.href = url;
             a.download = `assistant-data-export-${new Date().toISOString().slice(0, 10)}.jsonl`;
-            document.body.appendChild(a);
+            window.activeDocument.body.appendChild(a);
             a.click();
-            document.body.removeChild(a);
+            window.activeDocument.body.removeChild(a);
             URL.revokeObjectURL(url);
 
             new Notice('Export complete.');

@@ -547,7 +547,7 @@ export class CommonValidators {
     success: boolean
   ): void {
     // Integration with existing CompatibilityMonitor
-    const globalObj = globalThis as Record<string, unknown>;
+    const globalObj = window.activeWindow as unknown as Record<string, unknown>;
     const compatMonitor = globalObj.CompatibilityMonitor as {
       trackValidation?: (source: string, op: string, start: number, end: number, success: boolean) => void
     } | undefined;

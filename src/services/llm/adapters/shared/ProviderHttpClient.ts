@@ -354,23 +354,23 @@ export class ProviderHttpClient {
     timeoutMs: number
   ): Promise<Awaited<ReturnType<typeof requestUrl>>> {
       return new Promise((resolve, reject) => {
-      const timeoutId = setTimeout(() => {
+      const timeoutId = window.setTimeout(() => {
         reject(new Error(`Request timeout after ${timeoutMs}ms`));
       }, timeoutMs);
 
       requestUrl(request)
         .then((response) => {
-          clearTimeout(timeoutId);
+          window.clearTimeout(timeoutId);
           resolve(response);
         })
         .catch((error) => {
-          clearTimeout(timeoutId);
+          window.clearTimeout(timeoutId);
           reject(error instanceof Error ? error : new Error(String(error)));
         });
     });
   }
 
   private static sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+    return new Promise((resolve) => window.setTimeout(resolve, ms));
   }
 }

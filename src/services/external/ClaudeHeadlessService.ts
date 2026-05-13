@@ -1,9 +1,7 @@
 import { App, FileSystemAdapter, Plugin, Platform } from 'obsidian';
-import type { ChildProcessByStdio } from 'child_process';
-import type { Readable, Writable } from 'stream';
 import { getPrimaryServerKey } from '../../constants/branding';
 import { resolveDesktopBinaryPath } from '../../utils/binaryDiscovery';
-import { spawnDesktopProcess } from '../../utils/desktopProcess';
+import { spawnDesktopProcess, type DesktopChildProcess } from '../../utils/desktopProcess';
 
 const MAX_SAFE_WINDOWS_ARGV_CHARS = 24_000;
 
@@ -232,14 +230,23 @@ export class ClaudeHeadlessService {
             const stdio: ['pipe', 'pipe', 'pipe'] | ['ignore', 'pipe', 'pipe'] = stdinText !== undefined
                 ? ['pipe', 'pipe', 'pipe']
                 : ['ignore', 'pipe', 'pipe'];
-            const child = spawnDesktopProcess(childProcess, command, args, {
+            const child: DesktopChildProcess = spawnDesktopProcess(childProcess, command, args, {
                 cwd,
                 env,
                 stdio
-            }) as ChildProcessByStdio<Writable | null, Readable, Readable>;
+            });
 
             let stdout = '';
             let stderr = '';
+
+            if (!child.stdout || !child.stderr) {
+                resolve({
+                    stdout,
+                    stderr: 'Failed to capture Claude Code process output.',
+                    exitCode: null
+                });
+                return;
+            }
 
             if (stdinText !== undefined) {
                 if (!child.stdin) {
@@ -326,7 +333,7 @@ export class ClaudeHeadlessService {
             throw new Error(`${moduleName} is only available on desktop.`);
         }
 
-        const maybeRequire = (globalThis as typeof globalThis & {
+        const maybeRequire = (window.activeWindow as Window & {
             require?: (moduleId: string) => unknown;
         }).require;
 

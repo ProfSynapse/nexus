@@ -204,6 +204,6 @@ export class AssemblyAITranscriptionAdapter extends BaseTranscriptionAdapter {
   }
 
   private async sleep(ms: number): Promise<void> {
-    await new Promise(resolve => setTimeout(resolve, ms));
+    await new Promise(resolve => window.setTimeout(resolve, ms));
   }
 }

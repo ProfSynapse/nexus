@@ -77,7 +77,7 @@ export class NexusLoadingController extends Component {
 
     this.overlayEl.removeClass('is-visible');
 
-    this.timeouts.setTimeout(() => {
+    this.timeouts.schedule(() => {
       const overlayEl = this.overlayEl;
       if (!overlayEl) return;
 
@@ -142,7 +142,7 @@ export class NexusLoadingController extends Component {
     if (!this.overlayEl) return;
 
     this.overlayEl.removeClass('is-visible');
-    this.timeouts.setTimeout(() => {
+    this.timeouts.schedule(() => {
       const overlayEl = this.overlayEl;
       if (!overlayEl) return;
 

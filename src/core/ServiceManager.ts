@@ -240,7 +240,7 @@ export class ServiceManager implements IServiceManager {
             await this.initializeStage(ServiceStage.IMMEDIATE);
             await this.initializeStage(ServiceStage.FAST);
 
-            setTimeout(() => {
+            window.setTimeout(() => {
                 this.initializeStage(ServiceStage.BACKGROUND).catch(error => {
                     console.error('[ServiceManager] Background service initialization failed:', error);
                 });

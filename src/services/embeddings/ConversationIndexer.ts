@@ -225,7 +225,7 @@ export class ConversationIndexer {
 
         // Yield to main thread periodically
         if (i > startIndex && (i - startIndex) % yieldInterval === 0) {
-          await new Promise(r => setTimeout(r, 0));
+          await new Promise(r => window.setTimeout(r, 0));
         }
       }
 

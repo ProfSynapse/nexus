@@ -156,7 +156,7 @@ export class UIStateController {
       const errorEl = container.createDiv('chat-error');
       errorEl.textContent = message;
       
-      this.timeouts.setTimeout(() => errorEl.remove(), 5000);
+      this.timeouts.schedule(() => errorEl.remove(), 5000);
     }
   }
 

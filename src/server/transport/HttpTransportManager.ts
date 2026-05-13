@@ -8,17 +8,18 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { McpError, ErrorCode, isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { logger } from '../../utils/logger';
 import { desktopRequire } from '../../utils/desktopRequire';
-import type http from 'http';
 import express from 'express';
 import cors from 'cors';
 import { SERVER_LABELS } from '../../constants/branding';
+
+type HttpServer = ReturnType<typeof import('http')['createServer']>;
 
 /**
  * Modern HTTP transport manager using StreamableHTTP
  * Supports both JSON response mode and streaming
  */
 export class HttpTransportManager {
-    private httpServer: http.Server | null = null;
+    private httpServer: HttpServer | null = null;
     private app: express.Application;
     private isRunning = false;
     private port: number;
@@ -162,7 +163,7 @@ export class HttpTransportManager {
     /**
      * Start the HTTP transport
      */
-    async startTransport(): Promise<{ httpServer: http.Server; app: express.Application }> {
+    async startTransport(): Promise<{ httpServer: HttpServer; app: express.Application }> {
         if (this.httpServer) {
             return { httpServer: this.httpServer, app: this.app };
         }

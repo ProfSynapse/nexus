@@ -41,7 +41,7 @@ export class GenericProviderModal implements IProviderModal {
   private apiKey = '';
   private models: ModelWithProvider[] = [];
   private isValidated = false;
-  private validationTimeout: ReturnType<typeof setTimeout> | null = null;
+  private validationTimeout: number | null = null;
 
   // OAuth flow managers
   private primaryFlowManager: OAuthFlowManager | null = null;
@@ -231,7 +231,7 @@ export class GenericProviderModal implements IProviderModal {
     copyBtn.addEventListener('click', () => {
       void navigator.clipboard.writeText(userCode);
       copyBtn.textContent = 'Copied!';
-      setTimeout(() => {
+      window.setTimeout(() => {
         copyBtn.textContent = 'Copy';
       }, 2000);
     });
@@ -392,7 +392,7 @@ export class GenericProviderModal implements IProviderModal {
 
     // Clear existing timeout
     if (this.validationTimeout) {
-      clearTimeout(this.validationTimeout);
+      window.clearTimeout(this.validationTimeout);
       this.validationTimeout = null;
     }
 
@@ -400,7 +400,7 @@ export class GenericProviderModal implements IProviderModal {
       this.apiKeyInput?.addClass('validating');
 
       // Auto-validate after delay
-      this.validationTimeout = setTimeout(() => {
+      this.validationTimeout = window.setTimeout(() => {
         void this.validateApiKey();
       }, 2000);
 
@@ -628,7 +628,7 @@ export class GenericProviderModal implements IProviderModal {
    */
   destroy(): void {
     if (this.validationTimeout) {
-      clearTimeout(this.validationTimeout);
+      window.clearTimeout(this.validationTimeout);
       this.validationTimeout = null;
     }
 

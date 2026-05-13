@@ -25,7 +25,7 @@ import { ThinkingLoader } from './ThinkingLoader';
 export class MessageBubble extends Component {
   private element: HTMLElement | null = null;
   private loadingInterval: number | null = null;
-  private copyFeedbackTimeout: ReturnType<typeof setTimeout> | null = null;
+  private copyFeedbackTimeout: number | null = null;
   private thinkingLoader: ThinkingLoader | null = null;
   private branchNavigatorBinder: MessageBubbleBranchNavigatorBinder;
   private imageRenderer: MessageBubbleImageRenderer;
@@ -66,7 +66,7 @@ export class MessageBubble extends Component {
     const activeContent = state.activeContent;
 
     if (this.message.role === 'assistant') {
-      const wrapper = document.createElement('div');
+      const wrapper = window.activeDocument.createElement('div');
       wrapper.addClass('message-group');
       wrapper.setAttribute('data-message-id', this.message.id);
 
@@ -77,13 +77,13 @@ export class MessageBubble extends Component {
 
       if (this.message.branches && this.message.branches.length > 0) {
         const actions = this.textBubbleElement.querySelector('.message-actions-external');
-        if (actions instanceof HTMLElement) {
+        if (this.isHTMLElement(actions)) {
           this.branchNavigatorBinder.sync(actions, this.message);
         }
       }
 
       const contentElement = this.textBubbleElement.querySelector('.message-content');
-      if (contentElement instanceof HTMLElement && this.message.isLoading && !activeContent.trim()) {
+      if (this.isHTMLElement(contentElement) && this.message.isLoading && !activeContent.trim()) {
         this.appendLoadingIndicator(contentElement);
       }
 
@@ -97,7 +97,7 @@ export class MessageBubble extends Component {
   }
 
   private createStandardMessageContainer(messageContent: string): HTMLElement {
-    const messageContainer = document.createElement('div');
+    const messageContainer = window.activeDocument.createElement('div');
     messageContainer.addClass('message-container');
     messageContainer.addClass(this.message.role === 'tool' ? 'message-assistant' : `message-${this.message.role}`);
     messageContainer.setAttribute('data-message-id', this.message.id);
@@ -300,7 +300,7 @@ export class MessageBubble extends Component {
    */
   private startLoadingAnimation(container: HTMLElement): void {
     if (this.loadingInterval) {
-      clearInterval(this.loadingInterval);
+      window.clearInterval(this.loadingInterval);
       this.loadingInterval = null;
     }
 
@@ -320,7 +320,7 @@ export class MessageBubble extends Component {
    */
   stopLoadingAnimation(): void {
     if (this.loadingInterval) {
-      clearInterval(this.loadingInterval);
+      window.clearInterval(this.loadingInterval);
       this.loadingInterval = null;
     }
 
@@ -353,7 +353,7 @@ export class MessageBubble extends Component {
 
     this.renderContent(contentElement as HTMLElement, content).catch(error => {
       console.error('[MessageBubble] Error rendering content:', error);
-      const fallbackDiv = document.createElement('div');
+      const fallbackDiv = window.activeDocument.createElement('div');
       fallbackDiv.textContent = content;
       contentElement.appendChild(fallbackDiv);
     });
@@ -372,14 +372,14 @@ export class MessageBubble extends Component {
 
     if (this.element) {
       const actions = this.element.querySelector('.message-actions-external');
-      if (actions instanceof HTMLElement) {
+      if (this.isHTMLElement(actions)) {
         this.branchNavigatorBinder.sync(actions, newMessage);
       }
     }
 
     if (!this.element) return;
     const contentElement = this.element.querySelector('.message-content');
-    if (!(contentElement instanceof HTMLElement)) {
+    if (!this.isHTMLElement(contentElement)) {
       this.rebuildElement();
       return;
     }
@@ -391,7 +391,7 @@ export class MessageBubble extends Component {
       console.error('[MessageBubble] Error re-rendering content:', error);
     });
 
-    if (this.message.role === 'assistant' && this.element instanceof HTMLElement) {
+    if (this.message.role === 'assistant' && this.isHTMLElement(this.element)) {
       this.imageRenderer.renderLoadedToolResults(nextState.activeToolCalls, this.element);
       if (this.textBubbleElement && this.textBubbleElement.parentElement === this.element) {
         this.element.appendChild(this.textBubbleElement);
@@ -447,12 +447,30 @@ export class MessageBubble extends Component {
     loader.start(container);
   }
 
+  private isHTMLElement(value: Element | null | undefined): value is HTMLElement {
+    if (!value) {
+      return false;
+    }
+
+    const candidate = value as Element & {
+      instanceOf?: (type: typeof HTMLElement) => boolean;
+      setAttribute?: unknown;
+      appendChild?: unknown;
+    };
+
+    if (typeof candidate.instanceOf === 'function') {
+      return candidate.instanceOf(HTMLElement);
+    }
+
+    return typeof candidate.setAttribute === 'function' && typeof candidate.appendChild === 'function';
+  }
+
   /**
    * Show visual feedback when copy button is clicked
    */
   private showCopyFeedback(button: HTMLElement): void {
     if (this.copyFeedbackTimeout) {
-      clearTimeout(this.copyFeedbackTimeout);
+      window.clearTimeout(this.copyFeedbackTimeout);
       this.copyFeedbackTimeout = null;
     }
 
@@ -460,7 +478,7 @@ export class MessageBubble extends Component {
     button.setAttribute('title', 'Copied!');
     button.classList.add('copy-success');
 
-    this.copyFeedbackTimeout = setTimeout(() => {
+    this.copyFeedbackTimeout = window.setTimeout(() => {
       this.copyFeedbackTimeout = null;
       button.setAttribute('title', originalTitle);
       button.classList.remove('copy-success');
@@ -475,7 +493,7 @@ export class MessageBubble extends Component {
 
   cleanup(): void {
     if (this.copyFeedbackTimeout) {
-      clearTimeout(this.copyFeedbackTimeout);
+      window.clearTimeout(this.copyFeedbackTimeout);
       this.copyFeedbackTimeout = null;
     }
     this.stopLoadingAnimation();

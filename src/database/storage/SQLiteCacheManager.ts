@@ -113,7 +113,7 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
   private searchService: SQLiteSearchService;
   private hasUnsavedData = false;
   private autoSaveInterval: number;
-  private autoSaveTimer: NodeJS.Timeout | null = null;
+  private autoSaveTimer: number | null = null;
   private readonly transactionCoordinator: SQLiteTransactionCoordinator;
   private readonly syncStateStore: SQLiteSyncStateStore;
   private readonly persistenceService: SQLitePersistenceService;
@@ -332,7 +332,7 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
 
       // Start auto-save timer
       if (this.autoSaveInterval > 0) {
-        this.autoSaveTimer = setInterval(() => {
+        this.autoSaveTimer = window.setInterval(() => {
           if (this.hasUnsavedData) {
             this.saveToFile().catch(err => {
               console.error('[SQLiteCacheManager] Auto-save failed:', err);
@@ -394,7 +394,7 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
     try {
       // Stop auto-save timer
       if (this.autoSaveTimer) {
-        clearInterval(this.autoSaveTimer);
+        window.clearInterval(this.autoSaveTimer);
         this.autoSaveTimer = null;
       }
 
@@ -671,7 +671,7 @@ export class SQLiteCacheManager implements IStorageBackend, ISQLiteCacheManager 
    */
   stopAutoSave(): void {
     if (this.autoSaveTimer) {
-      clearInterval(this.autoSaveTimer);
+      window.clearInterval(this.autoSaveTimer);
       this.autoSaveTimer = null;
     }
   }

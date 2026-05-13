@@ -20,13 +20,13 @@ export class MessageEditController {
 
     // Find the sibling actions container
     const actionsContainerEl = element.querySelector('.message-actions-external');
-    const actionsContainer = actionsContainerEl instanceof HTMLElement ? actionsContainerEl : null;
+    const actionsContainer = actionsContainerEl?.instanceOf(HTMLElement) ? actionsContainerEl : null;
 
     // Hide existing action buttons and track them for restore
     const originalChildren: HTMLElement[] = [];
     if (actionsContainer) {
       Array.from(actionsContainer.children).forEach(child => {
-        if (child instanceof HTMLElement) {
+        if (child.instanceOf(HTMLElement)) {
           child.addClass('is-hidden');
           originalChildren.push(child);
         }
@@ -51,7 +51,7 @@ export class MessageEditController {
     if (confirmBtn) setIcon(confirmBtn, 'check');
 
     // Create textarea for editing
-    const textarea = document.createElement('textarea');
+    const textarea = window.activeDocument.createElement('textarea');
     textarea.className = 'message-edit-textarea';
     textarea.value = message.content;
 

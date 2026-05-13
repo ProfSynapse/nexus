@@ -16,7 +16,7 @@ export abstract class ContentEditableSuggester<T> {
   protected suggestionContainer: HTMLDivElement | null = null;
   protected selectedIndex = 0;
   protected currentSuggestions: SuggestionItem<T>[] = [];
-  protected debounceTimer: NodeJS.Timeout | null = null;
+  protected debounceTimer: number | null = null;
   protected isActive = false;
   protected component?: Component;
   private clickOutsideHandler?: (e: MouseEvent) => void;
@@ -66,13 +66,13 @@ export abstract class ContentEditableSuggester<T> {
     this.clickOutsideHandler = (e: MouseEvent) => {
       if (!this.suggestionContainer?.contains(e.target as Node) &&
           e.target !== this.element) {
-        setTimeout(() => this.closeSuggestions(), 100);
+        window.setTimeout(() => this.closeSuggestions(), 100);
       }
     };
     if (this.component) {
-      this.component.registerDomEvent(document, 'click', this.clickOutsideHandler);
+      this.component.registerDomEvent(window.activeDocument, 'click', this.clickOutsideHandler);
     } else {
-      document.addEventListener('click', this.clickOutsideHandler);
+      window.activeDocument.addEventListener('click', this.clickOutsideHandler);
     }
   }
 
@@ -85,7 +85,7 @@ export abstract class ContentEditableSuggester<T> {
 
     // Clear existing debounce timer
     if (this.debounceTimer) {
-      clearTimeout(this.debounceTimer);
+      window.clearTimeout(this.debounceTimer);
     }
 
     // Get text before cursor
@@ -101,7 +101,7 @@ export abstract class ContentEditableSuggester<T> {
     const query = match[1] || '';
 
     // Debounce the suggestion fetch
-    this.debounceTimer = setTimeout(() => {
+    this.debounceTimer = window.setTimeout(() => {
       void this.loadSuggestions(query);
     }, this.config.debounceDelay || 100);
   }
@@ -213,7 +213,7 @@ export abstract class ContentEditableSuggester<T> {
    * Create suggestion container
    */
   private createSuggestionContainer(): void {
-    this.suggestionContainer = document.body.createDiv('suggester-container');
+    this.suggestionContainer = window.activeDocument.body.createDiv('suggester-container');
     this.suggestionContainer.classList.add('suggester-container-positioned', 'suggester-container-hidden');
   }
 
@@ -284,12 +284,12 @@ export abstract class ContentEditableSuggester<T> {
    */
   destroy(): void {
     if (this.debounceTimer) {
-      clearTimeout(this.debounceTimer);
+      window.clearTimeout(this.debounceTimer);
     }
 
     // Remove document click listener
     if (this.clickOutsideHandler) {
-      document.removeEventListener('click', this.clickOutsideHandler);
+      window.activeDocument.removeEventListener('click', this.clickOutsideHandler);
     }
 
     if (this.suggestionContainer) {

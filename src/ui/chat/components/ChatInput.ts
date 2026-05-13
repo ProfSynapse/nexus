@@ -134,9 +134,9 @@ export class ChatInput {
         this.inputElement?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       };
       if (this.timeouts) {
-        this.timeouts.setTimeout(run, 300);
+        this.timeouts.schedule(run, 300);
       } else {
-        setTimeout(run, 300);
+        window.setTimeout(run, 300);
       }
     };
 

@@ -38,7 +38,7 @@ export class ContentEditableHelper {
    * Create a Range at a specific text offset
    */
   private static createRangeAtOffset(element: HTMLElement, offset: number): Range | null {
-    const range = document.createRange();
+    const range = window.activeDocument.createRange();
     let currentOffset = 0;
 
     const traverse = (node: Node): boolean => {
@@ -98,7 +98,7 @@ export class ContentEditableHelper {
     const range = selection.getRangeAt(0);
 
     // Create reference span
-    const refSpan = document.createElement('span');
+    const refSpan = window.activeDocument.createElement('span');
     refSpan.className = `chat-reference chat-reference-${type}`;
     refSpan.contentEditable = 'false';
     refSpan.setAttribute('data-type', type);
@@ -106,7 +106,7 @@ export class ContentEditableHelper {
     refSpan.textContent = displayText;
 
     // Add space after reference
-    const space = document.createTextNode(' ');
+    const space = window.activeDocument.createTextNode(' ');
 
     // Insert nodes
     range.deleteContents();
@@ -176,7 +176,7 @@ export class ContentEditableHelper {
     // Place cursor at end
     const selection = window.getSelection();
     if (selection) {
-      const range = document.createRange();
+      const range = window.activeDocument.createRange();
       range.selectNodeContents(element);
       range.collapse(false);
       selection.removeAllRanges();
@@ -199,7 +199,7 @@ export class ContentEditableHelper {
     if (!selection || selection.rangeCount === 0) return;
 
     const range = selection.getRangeAt(0);
-    const textNode = document.createTextNode(text);
+    const textNode = window.activeDocument.createTextNode(text);
 
     range.deleteContents();
     range.insertNode(textNode);

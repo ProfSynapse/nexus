@@ -17,7 +17,7 @@ export class FilePickerRenderer {
   private treeContainer?: HTMLElement;
   private searchComponent?: TextComponent;
   private searchQuery = '';
-  private searchTimeout?: ReturnType<typeof setTimeout>;
+  private searchTimeout?: number;
   private rootPath: string;
   private title: string;
 
@@ -102,9 +102,9 @@ export class FilePickerRenderer {
    */
   private debouncedSearch(query: string): void {
     if (this.searchTimeout) {
-      clearTimeout(this.searchTimeout);
+      window.clearTimeout(this.searchTimeout);
     }
-    this.searchTimeout = setTimeout(() => {
+    this.searchTimeout = window.setTimeout(() => {
       this.searchQuery = query.toLowerCase().trim();
       // When searching, auto-expand folders that have matches
       if (this.searchQuery) {

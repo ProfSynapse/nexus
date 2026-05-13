@@ -58,7 +58,7 @@ export class WorkspacesTab {
     private filePickerRenderer?: FilePickerRenderer;
 
     // Auto-save debounce
-    private saveTimeout?: ReturnType<typeof setTimeout>;
+    private saveTimeout?: number;
 
     // Loading state
     private isLoading = true;
@@ -238,7 +238,7 @@ export class WorkspacesTab {
         let workspaceService = this.services.workspaceService;
 
         if (this.services.serviceManager) {
-            const timeout = <T>(ms: number) => new Promise<T | undefined>(r => setTimeout(() => r(undefined), ms));
+            const timeout = <T>(ms: number) => new Promise<T | undefined>(r => window.setTimeout(() => r(undefined), ms));
             try {
                 const [service, adapter] = await Promise.all([
                     Promise.race([
@@ -758,14 +758,14 @@ export class WorkspacesTab {
     }
 
     private debouncedSave(): void {
-        if (this.saveTimeout) clearTimeout(this.saveTimeout);
-        this.saveTimeout = setTimeout(() => {
+        if (this.saveTimeout) window.clearTimeout(this.saveTimeout);
+        this.saveTimeout = window.setTimeout(() => {
             void this.saveCurrentWorkspace();
         }, 500);
     }
 
     destroy(): void {
-        if (this.saveTimeout) clearTimeout(this.saveTimeout);
+        if (this.saveTimeout) window.clearTimeout(this.saveTimeout);
         this.detailRenderer.destroyForm();
     }
 }

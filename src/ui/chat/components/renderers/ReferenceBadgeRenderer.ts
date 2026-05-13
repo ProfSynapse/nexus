@@ -134,7 +134,7 @@ export class ReferenceBadgeRenderer {
       'g'
     );
 
-    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+    const walker = window.activeDocument.createTreeWalker(container, NodeFilter.SHOW_TEXT);
     const nodesToProcess: Text[] = [];
     let currentNode = walker.nextNode();
     while (currentNode) {
@@ -149,7 +149,7 @@ export class ReferenceBadgeRenderer {
 
     nodesToProcess.forEach(node => {
       const originalText = node.nodeValue ?? '';
-      const fragment = document.createDocumentFragment();
+      const fragment = window.activeDocument.createDocumentFragment();
       let lastIndex = 0;
       const tokenPattern = new RegExp(pattern, 'g');
       let match: RegExpExecArray | null;
@@ -157,7 +157,7 @@ export class ReferenceBadgeRenderer {
       while ((match = tokenPattern.exec(originalText)) !== null) {
         const matchIndex = match.index;
         if (matchIndex > lastIndex) {
-          fragment.appendChild(document.createTextNode(originalText.slice(lastIndex, matchIndex)));
+          fragment.appendChild(window.activeDocument.createTextNode(originalText.slice(lastIndex, matchIndex)));
         }
 
         const placeholderIndex = Number(match[1]);
@@ -166,14 +166,14 @@ export class ReferenceBadgeRenderer {
         if (reference) {
           fragment.appendChild(ReferenceBadgeRenderer.createReferenceBadge(reference));
         } else {
-          fragment.appendChild(document.createTextNode(match[0]));
+          fragment.appendChild(window.activeDocument.createTextNode(match[0]));
         }
 
         lastIndex = matchIndex + match[0].length;
       }
 
       if (lastIndex < originalText.length) {
-        fragment.appendChild(document.createTextNode(originalText.slice(lastIndex)));
+        fragment.appendChild(window.activeDocument.createTextNode(originalText.slice(lastIndex)));
       }
 
       node.replaceWith(fragment);
@@ -184,7 +184,7 @@ export class ReferenceBadgeRenderer {
    * Create badge element for a reference
    */
   private static createReferenceBadge(reference: ExtractedReference): HTMLElement {
-    const badge = document.createElement('span');
+    const badge = window.activeDocument.createElement('span');
     badge.className = `chat-reference chat-reference-${reference.type}`;
     badge.setAttribute('data-type', reference.type);
     badge.setAttribute('data-name', reference.technicalName);

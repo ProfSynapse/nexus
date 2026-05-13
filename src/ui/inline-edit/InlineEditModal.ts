@@ -223,7 +223,7 @@ export class InlineEditModal extends Modal {
         });
 
         // Focus after render
-        requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
           textarea.inputEl.focus();
         });
       });

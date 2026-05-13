@@ -155,7 +155,7 @@ export class HybridStorageAdapter implements IStorageAdapter {
   private plugin: Plugin;
   private basePath: string;
   private initialized = false;
-  private syncInterval?: NodeJS.Timeout;
+  private syncInterval?: number;
   /**
    * Watches the plugin's vault data folder for JSONL changes landed by
    * Obsidian Sync (or otherwise) and triggers reconciliation + emits the
@@ -842,11 +842,11 @@ export class HybridStorageAdapter implements IStorageAdapter {
       const settle = (value: boolean) => {
         if (settled) return;
         settled = true;
-        clearTimeout(timer);
+        window.clearTimeout(timer);
         this.queryReadyWaiters = this.queryReadyWaiters.filter(w => w !== settle);
         resolve(value);
       };
-      const timer = setTimeout(() => {
+      const timer = window.setTimeout(() => {
         console.error('[HybridStorageAdapter] waitForQueryReady timed out after', maxWaitMs, 'ms');
         settle(false);
       }, maxWaitMs);
@@ -921,7 +921,7 @@ export class HybridStorageAdapter implements IStorageAdapter {
     try {
       // Stop sync timer
       if (this.syncInterval) {
-        clearInterval(this.syncInterval);
+        window.clearInterval(this.syncInterval);
         this.syncInterval = undefined;
       }
 

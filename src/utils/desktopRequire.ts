@@ -2,7 +2,7 @@
  * src/utils/desktopRequire.ts
  *
  * Lazy desktop module loader that bypasses ESLint no-require-imports rule.
- * Uses globalThis.require (available in Electron/Node but not on mobile).
+ * Uses window.activeWindow.require (available in Electron/Node but not on mobile).
  * Used by any file that needs Node.js built-ins at runtime on desktop only.
  */
 
@@ -13,7 +13,7 @@
  * @param moduleName - The module to require (e.g., 'node:fs', 'node:http')
  */
 export function desktopRequire<T>(moduleName: string): T {
-  const maybeRequire = (globalThis as typeof globalThis & {
+  const maybeRequire = (window.activeWindow as Window & {
     require?: (moduleId: string) => unknown;
   }).require;
 

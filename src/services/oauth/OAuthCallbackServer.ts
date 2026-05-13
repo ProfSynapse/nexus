@@ -10,8 +10,12 @@
  * Used by: OAuthService.ts (starts server before opening browser,
  * waits for callback, then shuts down).
  */
-import type { IncomingMessage, ServerResponse, Server } from 'node:http';
 import { desktopRequire } from '../../utils/desktopRequire';
+
+type NodeHttpModule = typeof import('node:http');
+type IncomingMessage = import('node:http').IncomingMessage;
+type ServerResponse = import('node:http').ServerResponse;
+type Server = ReturnType<NodeHttpModule['createServer']>;
 
 /** Common no-cache headers for all callback responses (prevents browser caching auth codes) */
 const NO_CACHE_HEADERS: Record<string, string> = {
@@ -57,7 +61,6 @@ const HTML_SUCCESS = `<!DOCTYPE html>
 <h1 style="color:#4ade80">Connected!</h1>
 <p>You can close this tab and return to Obsidian.</p>
 </div>
-<script>setTimeout(function(){window.close()},2000)</script>
 </body>
 </html>`;
 
@@ -113,12 +116,12 @@ export function startCallbackServer(options: CallbackServerOptions): Promise<Cal
     let settled = false;
     let callbackResolve: ((result: CallbackResult) => void) | null = null;
     let callbackReject: ((error: Error) => void) | null = null;
-    let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+    let timeoutHandle: number | null = null;
     let server: Server | null = null;
 
     const cleanup = () => {
       if (timeoutHandle) {
-        clearTimeout(timeoutHandle);
+        window.clearTimeout(timeoutHandle);
         timeoutHandle = null;
       }
       if (server) {
@@ -236,7 +239,7 @@ export function startCallbackServer(options: CallbackServerOptions): Promise<Cal
       server?.unref();
 
       // Set up timeout for auto-shutdown
-      timeoutHandle = setTimeout(() => {
+      timeoutHandle = window.setTimeout(() => {
         if (!settled) {
           settled = true;
           callbackReject?.(new Error('OAuth callback timeout: authorization took too long'));

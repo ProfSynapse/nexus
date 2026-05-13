@@ -35,7 +35,7 @@ export class PromptExecutor {
     try {
       // Add delay between concurrent requests to avoid overwhelming APIs
       if (index > 0) {
-        await new Promise(resolve => setTimeout(resolve, index * 100));
+        await new Promise(resolve => window.setTimeout(resolve, index * 100));
       }
       
       const startTime = performance.now();

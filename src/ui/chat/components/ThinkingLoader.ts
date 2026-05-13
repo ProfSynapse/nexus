@@ -25,11 +25,11 @@ export class ThinkingLoader extends Component {
 
   public stop(): void {
     if (this.typewriterInterval) {
-      clearInterval(this.typewriterInterval);
+      window.clearInterval(this.typewriterInterval);
       this.typewriterInterval = null;
     }
     if (this.cycleInterval) {
-      clearInterval(this.cycleInterval);
+      window.clearInterval(this.cycleInterval);
       this.cycleInterval = null;
     }
     this.container?.remove();
@@ -71,7 +71,7 @@ export class ThinkingLoader extends Component {
     if (!this.wordElement || this.isDisposed) return;
 
     if (this.typewriterInterval) {
-      clearInterval(this.typewriterInterval);
+      window.clearInterval(this.typewriterInterval);
       this.typewriterInterval = null;
     }
 
@@ -89,7 +89,7 @@ export class ThinkingLoader extends Component {
 
     this.typewriterInterval = window.setInterval(() => {
       if (this.isDisposed || !this.wordElement) {
-        if (this.typewriterInterval) clearInterval(this.typewriterInterval);
+        if (this.typewriterInterval) window.clearInterval(this.typewriterInterval);
         return;
       }
 
@@ -100,14 +100,14 @@ export class ThinkingLoader extends Component {
       }
 
       if (this.typewriterInterval) {
-        clearInterval(this.typewriterInterval);
+        window.clearInterval(this.typewriterInterval);
         this.typewriterInterval = null;
       }
 
       let dotsCount = 0;
       this.typewriterInterval = window.setInterval(() => {
         if (this.isDisposed || !this.wordElement) {
-          if (this.typewriterInterval) clearInterval(this.typewriterInterval);
+          if (this.typewriterInterval) window.clearInterval(this.typewriterInterval);
           return;
         }
         dotsCount = (dotsCount + 1) % 4;

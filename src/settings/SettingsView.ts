@@ -165,7 +165,7 @@ export class SettingsView extends PluginSettingTab {
                 } else {
                     workspaceService = await Promise.race([
                         this.serviceManager.getService<WorkspaceService>('workspaceService'),
-                        new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), 5000))
+                        new Promise<undefined>((resolve) => window.setTimeout(() => resolve(undefined), 5000))
                     ]);
                 }
             }
@@ -460,7 +460,8 @@ export class SettingsView extends PluginSettingTab {
             this.router,
             {
                 customPromptStorage: services.customPromptStorage,
-                component: this.plugin
+                component: this.plugin,
+                app: this.app
             }
         );
     }

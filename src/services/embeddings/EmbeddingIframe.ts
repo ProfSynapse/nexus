@@ -87,7 +87,7 @@ export class EmbeddingIframe {
     this.blobUrl = URL.createObjectURL(blob);
 
     // Create and configure iframe
-    this.iframe = document.createElement('iframe');
+    this.iframe = window.activeDocument.createElement('iframe');
     this.iframe.className = 'nexus-embedding-iframe-hidden';
     this.iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin');
 
@@ -102,18 +102,18 @@ export class EmbeddingIframe {
 
     // Wait for iframe to load and initialize
     await new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => {
+      const timeout = window.setTimeout(() => {
         reject(new Error('Iframe initialization timeout (60s)'));
       }, 60000);
 
       // Store the resolve for when we get the ready message
       this.pendingRequests.set(-1, {
         resolve: () => {
-          clearTimeout(timeout);
+          window.clearTimeout(timeout);
           resolve();
         },
         reject: (err: Error) => {
-          clearTimeout(timeout);
+          window.clearTimeout(timeout);
           reject(err);
         }
       });
@@ -125,7 +125,7 @@ export class EmbeddingIframe {
       }
 
       iframe.src = blobUrl;
-      document.body.appendChild(iframe);
+      window.activeDocument.body.appendChild(iframe);
     });
   }
 
@@ -259,7 +259,7 @@ export class EmbeddingIframe {
     const id = ++this.requestId;
 
     return new Promise((resolve, reject) => {
-      const timeoutId = setTimeout(() => {
+      const timeoutId = window.setTimeout(() => {
         if (this.pendingRequests.has(id)) {
           this.pendingRequests.delete(id);
           reject(new Error('Request timeout'));
@@ -269,18 +269,18 @@ export class EmbeddingIframe {
       // Cast resolve to accept void for Map compatibility (init uses void, regular requests use EmbeddingResponse)
       this.pendingRequests.set(id, {
         resolve: ((value: EmbeddingResponse | void) => {
-          clearTimeout(timeoutId);
+          window.clearTimeout(timeoutId);
           resolve(value as EmbeddingResponse);
         }),
         reject: ((error: Error) => {
-          clearTimeout(timeoutId);
+          window.clearTimeout(timeoutId);
           reject(error);
         })
       });
       const iframe = this.iframe;
       const contentWindow = iframe?.contentWindow;
       if (!iframe || !contentWindow) {
-        clearTimeout(timeoutId);
+        window.clearTimeout(timeoutId);
         reject(new Error('Iframe is not available'));
         return;
       }

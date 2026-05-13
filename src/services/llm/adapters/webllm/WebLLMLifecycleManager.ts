@@ -53,7 +53,7 @@ export class WebLLMLifecycleManager {
   private static readonly IDLE_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
 
   private adapter: WebLLMAdapter | null = null;
-  private idleTimer: ReturnType<typeof setTimeout> | null = null;
+  private idleTimer: number | null = null;
   private lastActivityTime = 0;
   private callbacks: WebLLMLifecycleCallbacks = {};
   private isLoading = false;
@@ -280,7 +280,7 @@ export class WebLLMLifecycleManager {
   private startIdleTimer(): void {
     if (this.idleTimer) return;
 
-    this.idleTimer = setTimeout(() => {
+    this.idleTimer = window.setTimeout(() => {
       void this.handleIdleTimeout();
     }, WebLLMLifecycleManager.IDLE_TIMEOUT_MS);
   }
@@ -290,7 +290,7 @@ export class WebLLMLifecycleManager {
    */
   private clearIdleTimer(): void {
     if (this.idleTimer) {
-      clearTimeout(this.idleTimer);
+      window.clearTimeout(this.idleTimer);
       this.idleTimer = null;
     }
   }

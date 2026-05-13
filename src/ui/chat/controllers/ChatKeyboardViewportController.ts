@@ -86,7 +86,7 @@ export class ChatKeyboardViewportController {
           return;
         }
         const sendButton = this.options.getSendButton();
-        if (sendButton && document.activeElement === sendButton) {
+        if (sendButton && window.activeDocument.activeElement === sendButton) {
           sendButton.blur();
         }
         this.nativeKeyboardOffset = 0;

@@ -28,7 +28,7 @@ type ToolEventData = ToolEventPayload;
 
 export class ToolEventCoordinator {
   private unsubscribe: (() => void) | null = null;
-  private hideTimer: ReturnType<typeof setTimeout> | null = null;
+  private hideTimer: number | null = null;
 
   constructor(
     private controller: ToolStatusBarController,
@@ -74,8 +74,8 @@ export class ToolEventCoordinator {
    * Schedule hiding the status bar. Cancels any pending hide timer.
    */
   private scheduleHide(delayMs: number): void {
-    if (this.hideTimer) clearTimeout(this.hideTimer);
-    this.hideTimer = setTimeout(() => {
+    if (this.hideTimer) window.clearTimeout(this.hideTimer);
+    this.hideTimer = window.setTimeout(() => {
       this.hideTimer = null;
       this.controller.getStatusBar().clearStatus();
     }, delayMs);
@@ -86,7 +86,7 @@ export class ToolEventCoordinator {
    */
   private cancelHide(): void {
     if (this.hideTimer) {
-      clearTimeout(this.hideTimer);
+      window.clearTimeout(this.hideTimer);
       this.hideTimer = null;
     }
   }
