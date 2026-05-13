@@ -45,11 +45,6 @@
         linear-gradient(160deg, var(--background-primary) 0%, var(--background-primary-alt) 100%);
 }
 
-body.theme-light .chat-textarea {
-    background: var(--background-primary);
-    border-color: rgba(0, 0, 0, 0.08);
-}
-
 /* ======================================== */
 /* LIGHT THEME OVERRIDES — Glass Material   */
 /* ======================================== */
@@ -68,7 +63,7 @@ body.theme-light .chat-layout {
         radial-gradient(ellipse at 80% 10%, color-mix(in srgb, var(--interactive-accent) 20%, var(--background-primary)) 0%, transparent 55%),
         radial-gradient(ellipse at 15% 90%, color-mix(in srgb, var(--interactive-accent) 12%, var(--background-primary)) 0%, transparent 55%),
         radial-gradient(ellipse at 50% 50%, color-mix(in srgb, var(--interactive-accent) 6%, var(--background-primary)) 0%, transparent 70%),
-        var(--background-primary) !important;
+        var(--background-primary);
 }
 
 /* User bubble: light accent tint */
@@ -172,7 +167,7 @@ body.theme-light .message-content {
         radial-gradient(ellipse at 15% 10%, color-mix(in srgb, var(--interactive-accent) 24%, var(--background-primary)) 0%, transparent 55%),
         radial-gradient(ellipse at 85% 50%, color-mix(in srgb, var(--interactive-accent) 15%, var(--background-primary)) 0%, transparent 55%),
         radial-gradient(ellipse at 20% 90%, color-mix(in srgb, var(--interactive-accent) 8%, var(--background-primary)) 0%, transparent 70%),
-        var(--background-primary) !important;
+        var(--background-primary);
 }
 
 /* Chat Sidebar */
@@ -339,6 +334,7 @@ body.theme-light .message-content {
 
 /* Individual action button styling */
 .conversation-action-btn {
+    --icon-size: 14px;
     width: 1.75rem;
     height: 1.75rem;
     display: flex;
@@ -356,10 +352,6 @@ body.theme-light .message-content {
 .conversation-action-btn:hover {
     background: var(--background-modifier-active-hover);
     color: var(--text-normal);
-}
-
-.conversation-action-btn {
-    --icon-size: 14px;
 }
 
 /* Edit button specific styling */
@@ -535,9 +527,9 @@ body.theme-light .message-content {
    No raised appearance, just the icon as the tap target. */
 .chat-hamburger-button,
 .chat-settings-button {
-    background: none !important;
-    border: none !important;
-    box-shadow: none !important;
+    background: none;
+    border: none;
+    box-shadow: none;
     color: var(--text-muted);
     cursor: pointer;
     padding: 4px;
@@ -550,13 +542,7 @@ body.theme-light .message-content {
 
 .chat-hamburger-button:hover,
 .chat-settings-button:hover {
-    background: none !important;
-    color: var(--text-normal);
-}
-
-.chat-hamburger-button:hover,
-.chat-settings-button:hover {
-    background: var(--background-modifier-hover);
+    background: none;
     color: var(--text-normal);
 }
 
@@ -595,6 +581,7 @@ body.theme-light .message-content {
     overflow: hidden;
     display: flex;
     flex-direction: column;
+    background: transparent;
 }
 
 /* Chat Input Container — transparent on the glass pane. */
@@ -747,6 +734,7 @@ body.theme-light .message-content {
     display: flex;
     flex-direction: column;
     gap: 0.16rem;
+    background: transparent;
 }
 
 .message-display-event-row {
@@ -814,21 +802,13 @@ body.theme-light .message-content {
     animation: messageSlideIn 0.3s ease-out;
     display: flex;
     flex-direction: column;
-    background: transparent !important;
+    background: transparent;
 }
 
 /* Ensure the assistant message group wrapper and all message parents
    are transparent so the gradient shows through. */
 .message-group {
-    background: transparent !important;
-}
-
-.messages-container {
-    background: transparent !important;
-}
-
-.message-display-container {
-    background: transparent !important;
+    background: transparent;
 }
 
 /* Wider screens - reduce bubble width for better readability */
@@ -866,6 +846,7 @@ body.theme-light .message-content {
     align-self: stretch;
     width: 100%;
     max-width: none;
+    margin-top: 1.4rem;
 }
 
 .message-container.message-image {
@@ -964,22 +945,6 @@ body.theme-light .message-content {
     box-sizing: border-box;
 }
 
-.message-container.message-assistant {
-    margin-top: 1.4rem;
-}
-
-.message-header {
-    display: flex;
-    align-items: center;
-    margin-bottom: 0.5rem;
-    justify-content: space-between;
-}
-
-/* User messages: icon on the right, actions on the left */
-.message-container.message-user .message-header {
-    flex-direction: row-reverse;
-}
-
 /* Role icons + message-header removed in the glass redesign. The header
    used to host the role icon and action buttons; both are now gone, so
    we collapse the header. */
@@ -1072,7 +1037,7 @@ body.theme-light .message-content {
    is ever painted on hover/active/focus — only the icon color changes. */
 .message-action-btn.message-action-btn:hover,
 .message-action-btn.clickable-icon:hover {
-    background: transparent !important;
+    background: transparent;
     color: var(--text-normal);
 }
 
@@ -1080,7 +1045,7 @@ body.theme-light .message-content {
 .message-action-btn.message-action-btn:focus-visible,
 .message-action-btn.clickable-icon:active,
 .message-action-btn.clickable-icon:focus-visible {
-    background: transparent !important;
+    background: transparent;
 }
 
 .message-action-btn.message-action-btn:active,
@@ -1343,6 +1308,7 @@ body.theme-light .message-content {
 /* Send button - circular, embedded and vertically centered in input */
 /* Send button — faux-glass circle: opaque accent-tinted fill matching the message bubble treatment */
 .chat-send-button {
+    --icon-size: 16px;
     position: absolute;
     top: 50%;
     right: 8px;
@@ -1396,13 +1362,9 @@ body.theme-light .message-content {
     50% { box-shadow: 0 0 0 4px rgba(var(--interactive-accent-rgb), 0); }
 }
 
-/* Icon sizing via Obsidian's --icon-size variable (used by clickable-icon class) */
-.chat-send-button {
-    --icon-size: 16px;
-}
-
 /* Stop button mode - red circular button */
 .chat-send-button.stop-mode {
+    --icon-size: 12px;
     background: var(--text-error);
     color: white;
     animation: pulse-stop 1.5s ease-in-out infinite;
@@ -1411,10 +1373,6 @@ body.theme-light .message-content {
 .chat-send-button.stop-mode:hover {
     background: var(--text-error);
     opacity: 0.9;
-}
-
-.chat-send-button.stop-mode {
-    --icon-size: 12px;
 }
 
 @keyframes pulse-stop {
@@ -1501,11 +1459,11 @@ body.theme-light .message-content {
 /* Extra small screens and narrow sidebars */
 @media (max-width: 480px), (max-width: 320px) {
     .message-container {
-        width: 95% !important;
+        width: 95%;
     }
 
     .chat-textarea {
-        font-size: 14px !important;
+        font-size: 14px;
     }
 }
 
@@ -1842,6 +1800,7 @@ body.theme-light .message-content {
 /* Settings Styles */
 .nexus-settings {
     padding: 12px;
+    max-width: 100%;
 }
 
 .nexus-settings textarea {
@@ -1960,17 +1919,17 @@ body.theme-light .message-content {
 }
 
 .memory-tab.active {
-    border-bottom: 2px solid var(--text-accent);
     color: var(--text-accent);
     background-color: var(--background-secondary);
-    border: 1px solid var(--background-modifier-border);
+    border-top: 1px solid var(--background-modifier-border);
+    border-right: 1px solid var(--background-modifier-border);
+    border-left: 1px solid var(--background-modifier-border);
     border-bottom: none;
 }
 
 .nexus-settings-tab.active {
     border: 1px solid var(--interactive-accent);
     background: var(--background-secondary);
-    border-bottom: 1px solid var(--interactive-accent);
 }
 
 .nexus-settings-accordion {
@@ -2551,14 +2510,6 @@ a:hover {
     font-style: italic;
 }
 
-/* Agent Management Modal Styles */
-.modal-button-container {
-    display: flex;
-    justify-content: flex-end;
-    gap: 10px;
-    margin-top: 20px;
-}
-
 /* Modal content styling */
 .modal-content h1 {
     margin-bottom: 20px;
@@ -2952,7 +2903,7 @@ a:hover {
     width: 100%;
 }
 
-.model-select {
+.model-selector .model-select {
     width: 100%;
     padding: 6px 8px;
     border: 1px solid var(--background-modifier-border);
@@ -3345,13 +3296,13 @@ a:hover {
   width: 16px;
   height: 16px;
 }
-/* !important + extra class repeat to outweigh Obsidian's .clickable-icon
-   justify-content: center default (which otherwise re-centers the chevron). */
+/* Extra class repeat outweighs Obsidian's .clickable-icon justify-content
+   default, which otherwise re-centers the chevron. */
 .message-action-btn.message-action-btn.message-branch-prev {
-  justify-content: flex-end !important;
+  justify-content: flex-end;
 }
 .message-action-btn.message-action-btn.message-branch-next {
-  justify-content: flex-start !important;
+  justify-content: flex-start;
 }
 /* Mobile touch-target override — restore comfortable tap size but keep the
    edge-align so the chevrons still cluster tightly to the indicator. */
@@ -3395,6 +3346,7 @@ body.is-mobile .message-action-btn.message-branch-next {
 
 .branch-navigator-visible {
   display: flex;
+  animation: branch-appear 0.3s ease;
 }
 
 /* Branch Navigation Buttons */
@@ -3456,8 +3408,8 @@ body.is-mobile .message-action-btn.message-branch-next {
 
 .chat-header:hover .branch-navigator-container,
 .chat-header .branch-navigator-container.branch-navigator-visible {
-  opacity: 1 !important;
-  transform: translateX(0) !important;
+  opacity: 1;
+  transform: translateX(0);
 }
 
 /* Branch Navigator Animations */
@@ -3470,10 +3422,6 @@ body.is-mobile .message-action-btn.message-branch-next {
     opacity: 1;
     transform: scale(1) translateX(0);
   }
-}
-
-.branch-navigator-visible {
-  animation: branch-appear 0.3s ease;
 }
 
 /* Dark Mode Adjustments */
@@ -3981,8 +3929,8 @@ body.is-mobile .message-action-btn.message-branch-next {
    =========================================== */
 
 /* Hidden utility - used for conditional visibility */
-.is-hidden {
-    display: none !important;
+.is-hidden.is-hidden {
+    display: none;
 }
 
 /* ===========================================
@@ -4171,11 +4119,6 @@ body.is-mobile .message-action-btn.message-branch-next {
 /* ===========================================
    Nexus Settings UI - Tab-Based Navigation
    =========================================== */
-
-/* Settings container */
-.nexus-settings {
-    max-width: 100%;
-}
 
 /* Header section */
 .nexus-settings-header {
@@ -5450,7 +5393,7 @@ body.is-mobile .message-action-btn.message-branch-next {
 }
 
 /* Hide the "Ready/Saved" status for Nexus - not applicable */
-.llm-provider-modal:has(.nexus-modal) .save-status {
+.llm-provider-modal.llm-provider-modal-nexus .save-status {
     display: none;
 }
 
@@ -5777,7 +5720,7 @@ body.is-mobile .chat-main {
 
 /* Hamburger always visible on mobile */
 body.is-mobile .chat-hamburger-button {
-    display: flex !important;
+    display: flex;
 }
 
 /* ------------------------------ */
@@ -5965,8 +5908,8 @@ body.is-mobile .modal-content {
     .loading-spinner,
     .chat-sidebar,
     .chat-backdrop {
-        animation: none !important;
-        transition: none !important;
+        animation: none;
+        transition: none;
     }
 
     .chat-input-compacting .chat-send-button.disabled-mode {
@@ -6370,6 +6313,8 @@ body.is-mobile .nexus-branch-task {
     max-height: 200px;
     overflow-y: auto;
     padding: 8px 0;
+    display: flex;
+    flex-direction: column;
 }
 
 .nexus-agent-section-header {
@@ -6664,14 +6609,6 @@ body.is-mobile .nexus-branch-task {
     max-width: 500px;
 }
 
-.nexus-agent-list {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    max-height: 400px;
-    overflow-y: auto;
-}
-
 .nexus-agent-item {
     padding: 12px;
     background: var(--background-secondary);
@@ -6684,26 +6621,6 @@ body.is-mobile .nexus-branch-task {
     align-items: center;
     justify-content: space-between;
     margin-bottom: 8px;
-}
-
-.nexus-agent-task {
-    font-weight: 500;
-    color: var(--text-normal);
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.nexus-agent-meta {
-    font-size: var(--font-ui-smaller);
-    color: var(--text-muted);
-}
-
-.nexus-agent-actions {
-    display: flex;
-    gap: 8px;
-    margin-top: 8px;
 }
 
 .nexus-no-agents {
@@ -6999,11 +6916,11 @@ body.is-mobile .nexus-branch-task {
 
 /* Loading Overlay Styles */
 .chat-loading-overlay-visible {
-    display: flex !important;
+    display: flex;
 }
 
 .chat-loading-overlay-hidden {
-    display: none !important;
+    display: none;
 }
 
 /* Chat Service Loading State */
@@ -8129,9 +8046,9 @@ body.is-mobile .nexus-task-board-shell {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: none !important;
-  border: none !important;
-  box-shadow: none !important;
+  background: none;
+  border: none;
+  box-shadow: none;
   border-radius: 0;
   color: var(--text-muted);
   cursor: pointer;
@@ -8145,7 +8062,7 @@ body.is-mobile .nexus-task-board-shell {
 
 .tool-status-row--meta button:hover {
   color: var(--text-normal);
-  background: none !important;
+  background: none;
 }
 
 .tool-status-row--meta button:focus-visible {

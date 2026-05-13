@@ -268,15 +268,12 @@ svg {
 }
 
 .chat-send-button.stop-mode {
+  --icon-size: 14px;
   background: var(--text-error);
   color: white;
   animation: pulse-stop 1.5s ease-in-out infinite;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
-}
-
-.chat-send-button.stop-mode {
-  --icon-size: 14px;
 }
 
 .chat-voice-visual {

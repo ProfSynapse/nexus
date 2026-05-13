@@ -73,6 +73,9 @@ export class LLMProviderModal extends Modal {
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass('llm-provider-modal');
+    if (this.config.providerId === 'webllm') {
+      contentEl.addClass('llm-provider-modal-nexus');
+    }
 
     // Modal title
     contentEl.createEl('h1', { text: `Configure ${this.config.providerName}` });

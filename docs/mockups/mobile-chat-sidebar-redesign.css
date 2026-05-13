@@ -812,7 +812,7 @@ body.mock-page {
 }
 
 .chat-loading-overlay-hidden {
-  display: none !important;
+  display: none;
 }
 
 .chat-warning-banner-fadeout {
