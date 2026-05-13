@@ -12,28 +12,6 @@
  */
 
 import { ModelRegistry } from './ModelRegistry';
-import { ProviderHttpClient } from './shared/ProviderHttpClient';
-
-/**
- * OpenAI tokenize API response
- */
-interface OpenAITokenizeResponse {
-  token_count?: number;
-}
-
-/**
- * Google countTokens API response
- */
-interface GoogleCountTokensResponse {
-  totalTokens?: number;
-}
-
-/**
- * Anthropic count tokens API response
- */
-interface AnthropicCountTokensResponse {
-  input_tokens?: number;
-}
 
 /**
  * OpenAI-style usage object (used by OpenAI, OpenRouter, Requesty)
@@ -82,7 +60,7 @@ interface ProviderResponse {
 }
 
 /**
- * Detailed token usage information from provider APIs or fallback tokenization
+ * Detailed token usage information from provider usage metadata or fallback tokenization
  */
 export interface DetailedTokenUsage {
   inputTokens: number;
@@ -137,114 +115,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * Provider-specific token counting functions
+ * Token counting helpers.
  */
 export class TokenCounter {
-  /**
-   * Count tokens using OpenAI's token counting API
-   */
-  static async countTokensOpenAI(text: string, model: string): Promise<number> {
-    try {
-      // Use OpenAI's token counting endpoint if available
-      const response = await ProviderHttpClient.request<OpenAITokenizeResponse>({
-        url: 'https://api.openai.com/v1/tokenize',
-        provider: 'openai',
-        operation: 'OpenAI token counting',
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          model: model,
-          text: text
-        }),
-        timeoutMs: 15_000,
-      });
-
-      if (response.ok) {
-        const data = response.json as OpenAITokenizeResponse;
-        return data.token_count || 0;
-      }
-    } catch {
-      // Swallow provider API failures and fall back to heuristic token counting below.
-    }
-
-    return this.fallbackTokenCount(text);
-  }
-
-  /**
-   * Count tokens using Google's token counting API
-   */
-  static async countTokensGoogle(text: string, model: string): Promise<number> {
-    try {
-      // Google's countTokens API
-      const response = await ProviderHttpClient.request<GoogleCountTokensResponse>({
-        url: `https://generativelanguage.googleapis.com/v1beta/models/${model}:countTokens?key=${process.env.GOOGLE_API_KEY}`,
-        provider: 'google',
-        operation: 'Google token counting',
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          contents: [{
-            parts: [{ text: text }]
-          }]
-        }),
-        timeoutMs: 15_000,
-      });
-
-      if (response.ok) {
-        const data = response.json as GoogleCountTokensResponse;
-        return data.totalTokens || 0;
-      }
-    } catch {
-      // Swallow provider API failures and fall back to heuristic token counting below.
-    }
-
-    return this.fallbackTokenCount(text);
-  }
-
-  /**
-   * Count tokens using Anthropic's token counting API
-   */
-  static async countTokensAnthropic(text: string, model: string): Promise<number> {
-    try {
-      const apiKey = process.env.ANTHROPIC_API_KEY;
-      if (!apiKey) {
-        return this.fallbackTokenCount(text);
-      }
-
-      // Anthropic's count tokens endpoint
-      const response = await ProviderHttpClient.request<AnthropicCountTokensResponse>({
-        url: 'https://api.anthropic.com/v1/messages/count_tokens',
-        provider: 'anthropic',
-        operation: 'Anthropic token counting',
-        method: 'POST',
-        headers: {
-          'x-api-key': apiKey,
-          'Content-Type': 'application/json',
-          'anthropic-version': '2023-06-01'
-        },
-        body: JSON.stringify({
-          model: model,
-          messages: [{ role: 'user', content: text }]
-        }),
-        timeoutMs: 15_000,
-      });
-
-      if (response.ok) {
-        const data = response.json as AnthropicCountTokensResponse;
-        return data.input_tokens || 0;
-      }
-    } catch {
-      // Swallow provider API failures and fall back to heuristic token counting below.
-    }
-
-    return this.fallbackTokenCount(text);
-  }
-
   /**
    * Fallback token counting using simple heuristics
    * Based on OpenAI's general rule: ~4 characters per token for English text
@@ -267,37 +140,13 @@ export class TokenCounter {
   /**
    * Count tokens for any provider with fallback
    */
-  static async countTokens(text: string, provider: string, model: string): Promise<DetailedTokenUsage> {
-    let tokenCount = 0;
-    let source: 'provider_api' | 'fallback_tokenizer' = 'fallback_tokenizer';
-
-    try {
-      switch (provider) {
-        case 'openai':
-          tokenCount = await this.countTokensOpenAI(text, model);
-          source = 'provider_api';
-          break;
-        case 'google':
-          tokenCount = await this.countTokensGoogle(text, model);
-          source = 'provider_api';
-          break;
-        case 'anthropic':
-          tokenCount = await this.countTokensAnthropic(text, model);
-          source = 'provider_api';
-          break;
-        default:
-          tokenCount = this.fallbackTokenCount(text);
-          break;
-      }
-    } catch {
-      tokenCount = this.fallbackTokenCount(text);
-    }
-
+  static countTokens(text: string, _provider: string, _model: string): DetailedTokenUsage {
+    const tokenCount = this.fallbackTokenCount(text);
     return {
       inputTokens: tokenCount,
       outputTokens: 0,
       totalTokens: tokenCount,
-      source
+      source: 'fallback_tokenizer'
     };
   }
 }
@@ -421,21 +270,21 @@ export class CostCalculator {
   /**
    * Calculate cost with automatic token counting if usage not provided
    */
-  static async calculateCostWithTokenCounting(
+  static calculateCostWithTokenCounting(
     provider: string,
     model: string,
     inputText: string,
     outputText: string,
     providedUsage?: DetailedTokenUsage
-  ): Promise<CostBreakdown | null> {
+  ): CostBreakdown | null {
     let tokenUsage: DetailedTokenUsage;
 
     if (providedUsage) {
       tokenUsage = providedUsage;
     } else {
       // Count tokens for input and output
-      const inputUsage = await TokenCounter.countTokens(inputText, provider, model);
-      const outputUsage = await TokenCounter.countTokens(outputText, provider, model);
+      const inputUsage = TokenCounter.countTokens(inputText, provider, model);
+      const outputUsage = TokenCounter.countTokens(outputText, provider, model);
       
       tokenUsage = {
         inputTokens: inputUsage.inputTokens,
