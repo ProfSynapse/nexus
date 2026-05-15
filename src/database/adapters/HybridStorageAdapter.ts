@@ -1,32 +1,37 @@
 /**
  * Location: src/database/adapters/HybridStorageAdapter.ts
  *
- * Hybrid Storage Adapter - Thin Facade Following SOLID Principles
+ * Hybrid Storage Adapter — facade over JSONL (source of truth) + SQLite (cache).
  *
- * This adapter coordinates JSONL (source of truth) + SQLite (cache) by:
- * 1. Owning infrastructure (JSONLWriter, SQLiteCache, SyncCoordinator, QueryCache)
- * 2. Delegating all entity operations to focused repositories
- * 3. Managing lifecycle (initialize, close, sync)
+ * SOLID layout (May 2026 refactor):
+ * - Composition root: lifecycle/StorageAdapterAssembler builds infrastructure.
+ * - Init saga: lifecycle/StorageInitializationPipeline runs ordered steps.
+ * - Plan + cache-backend wiring: lifecycle/StoragePlanApplier.
+ * - Missing-entity reconcile: lifecycle/MissingEntityReconcilers (registry).
+ * - External JSONL watcher + events: lifecycle/ExternalSyncController.
+ * - Rebuild cache: lifecycle/CacheRebuildOperation (coalesced).
+ * - Vault-root relocate: lifecycle/VaultRootRelocator.
  *
- * SOLID Compliance:
- * - S: Only orchestration/lifecycle, no business logic
- * - O: Extensible through new repositories
- * - L: Implements IStorageAdapter
- * - I: Clean interface segregation
- * - D: Depends on repository abstractions
+ * What stays on this class:
+ * - Public IStorageAdapter surface (delegation to repositories).
+ * - Lifecycle state queries (isReady, waitForQueryReady, getInitError).
+ * - Subscription pass-throughs for external sync events.
+ * - Thin pass-throughs for a handful of private methods that unit tests
+ *   pin by name (applyStoragePlan, runCacheBackendMigration,
+ *   reconcileMissing{Workspaces,Conversations,Tasks}).
  *
  * Related Files:
  * - src/database/repositories/* - Entity repositories
  * - src/database/services/* - Business services
- * - src/database/interfaces/IStorageAdapter.ts - Interface definition
+ * - src/database/adapters/lifecycle/* - Adapter sub-components
+ * - src/database/interfaces/IStorageAdapter.ts - Interface (now segregated)
  */
 
-import { App, Events, EventRef, Plugin } from 'obsidian';
+import { App, EventRef, Plugin } from 'obsidian';
 import { IStorageAdapter, QueryOptions, ImportOptions } from '../interfaces/IStorageAdapter';
 import { JSONLWriter } from '../storage/JSONLWriter';
 import { SQLiteCacheManager } from '../storage/SQLiteCacheManager';
 import { SyncCoordinator } from '../sync/SyncCoordinator';
-import { JsonlVaultWatcher, ModifiedStream } from '../sync/JsonlVaultWatcher';
 import { ReconcilePipeline } from '../sync/ReconcilePipeline';
 import { QueryCache } from '../optimizations/QueryCache';
 import { PaginatedResult, PaginationParams } from '../../types/pagination/PaginationTypes';
@@ -42,68 +47,48 @@ import {
   ExportData,
   SyncResult
 } from '../../types/storage/HybridStorageTypes';
-import { RepositoryDependencies } from '../repositories/base/BaseRepository';
-import { LegacyMigrator } from '../migration/LegacyMigrator';
-import { WorkspaceEvent, ConversationEvent, TaskEvent } from '../interfaces/StorageEvents';
-import { WorkspaceEventApplier } from '../sync/WorkspaceEventApplier';
-import { ConversationEventApplier } from '../sync/ConversationEventApplier';
-import { TaskEventApplier } from '../sync/TaskEventApplier';
-import { resolveWorkspaceId } from '../sync/resolveWorkspaceId';
 import {
   PluginScopedStorageCoordinator,
   PluginScopedStoragePlan
 } from '../migration/PluginScopedStorageCoordinator';
+import type { CacheBlobStore } from '../storage/CacheBlobStore';
 import {
   StartupHydrationController,
   type StartupHydrationState,
   shouldBlockStartupHydrationForVerifiedCutover
 } from './lifecycle/StartupHydrationController';
 import { InitLifecycleController } from './lifecycle/InitLifecycleController';
-import {
-  ReconciliationCoordinator,
-  type ReconcileCategory
-} from './lifecycle/ReconciliationCoordinator';
-import { VaultRootMigrationService } from '../migration/VaultRootMigrationService';
-import {
-  VaultRootRelocationService,
-  type VaultRootRelocationResult
-} from '../migration/VaultRootRelocationService';
-import { resolvePluginStorageRoot, resolveActivePluginFolderName } from '../storage/PluginStoragePathResolver';
-import { resolveVaultRoot } from '../storage/VaultRootResolver';
+import { ReconciliationCoordinator } from './lifecycle/ReconciliationCoordinator';
 import { VaultEventStore } from '../storage/vaultRoot/VaultEventStore';
-import { DEFAULT_STORAGE_SETTINGS } from '../../types/plugin/PluginTypes';
-import { CacheBackendMigration, type CacheBackendStateAccessor } from '../migration/CacheBackendMigration';
-import { createCacheBlobStore, computeIdbKey } from '../storage/CacheBlobStoreFactory';
-import type { CacheBlobStore } from '../storage/CacheBlobStore';
-import { isDesktop } from '../../utils/platform';
+import { type VaultRootRelocationResult } from '../migration/VaultRootRelocationService';
+import { assembleStorageAdapter } from './lifecycle/StorageAdapterAssembler';
+import { StoragePlanApplier } from './lifecycle/StoragePlanApplier';
+import { MissingEntityReconcilerRunner } from './lifecycle/MissingEntityReconcilers';
+import { ExternalSyncController, type ExternalSyncEvent } from './lifecycle/ExternalSyncController';
+import { CacheRebuildOperation } from './lifecycle/CacheRebuildOperation';
+import { VaultRootRelocator } from './lifecycle/VaultRootRelocator';
+import { StorageInitializationPipeline } from './lifecycle/StorageInitializationPipeline';
 
-// Import all repositories
+// Repository types (referenced by getter return types)
+import { MessageRepository } from '../repositories/MessageRepository';
+import { ProjectRepository } from '../repositories/ProjectRepository';
+import { TaskRepository } from '../repositories/TaskRepository';
 import { WorkspaceRepository } from '../repositories/WorkspaceRepository';
 import { SessionRepository } from '../repositories/SessionRepository';
 import { StateRepository } from '../repositories/StateRepository';
 import { TraceRepository } from '../repositories/TraceRepository';
 import { ConversationRepository } from '../repositories/ConversationRepository';
-import { MessageRepository } from '../repositories/MessageRepository';
-import { ProjectRepository } from '../repositories/ProjectRepository';
-import { TaskRepository } from '../repositories/TaskRepository';
-// Import services
 import { ExportService } from '../services/ExportService';
-
-type ExportServiceStateRepo = {
-  getStates(workspaceId: string, sessionId: string | undefined, options?: { pageSize?: number }): Promise<{ items: StateData[] }>;
-};
 
 /**
  * Configuration options for HybridStorageAdapter
  */
 export interface HybridStorageAdapterOptions {
-  /** Obsidian app instance */
   app: App;
-  /** Active plugin instance for plugin-scoped storage resolution */
   plugin: Plugin;
   /** Base path for storage (default: '.nexus') */
   basePath?: string;
-  /** Auto-sync on initialization (default: true) */
+  /** Auto-sync on initialization (default: true). Reserved for future use. */
   autoSync?: boolean;
   /** Query cache TTL in ms (default: 60000) */
   cacheTTL?: number;
@@ -111,462 +96,160 @@ export interface HybridStorageAdapterOptions {
   cacheMaxSize?: number;
 }
 
-/**
- * Payload delivered to subscribers of the adapter's `external-sync` event.
- * Fired after the JSONL vault watcher detects a change and the resulting
- * reconciliation has been applied to SQLite.
- */
-export interface ExternalSyncEvent {
-  /** Result of the reconciliation run that landed the remote JSONL events. */
-  result: SyncResult;
-  /**
-   * The logical streams that triggered this sync (deduped across the
-   * debounce window). UI consumers use this to decide whether content
-   * they are currently displaying needs to re-query from SQLite.
-   */
-  modified: ModifiedStream[];
-}
-
-export { StartupHydrationState, shouldBlockStartupHydrationForVerifiedCutover };
+export { ExternalSyncEvent, StartupHydrationState, shouldBlockStartupHydrationForVerifiedCutover };
 
 /**
- * Hybrid Storage Adapter
- *
- * Thin facade that composes repositories and handles lifecycle.
- * Reduced from 1,696 lines to ~350 lines by delegating to repositories.
+ * Hybrid Storage Adapter — thin facade. Implementation logic lives in
+ * `./lifecycle/*` modules; this class wires them together and exposes
+ * the IStorageAdapter surface.
  */
 export class HybridStorageAdapter implements IStorageAdapter {
   private app: App;
   private plugin: Plugin;
   private basePath: string;
-  private syncInterval?: number;
-  /**
-   * Watches the plugin's vault data folder for JSONL changes landed by
-   * Obsidian Sync (or otherwise) and triggers reconciliation + emits the
-   * `external-sync` event. See JsonlVaultWatcher for design notes.
-   */
-  private jsonlVaultWatcher?: JsonlVaultWatcher;
-  /**
-   * Typed event bus for adapter consumers. Currently emits one event:
-   *   `external-sync` — payload: { result: SyncResult, modified: ModifiedStream[] }
-   * fired after a watcher-triggered sync completes.
-   */
-  private readonly externalEvents = new Events();
+
+  // Lifecycle state machines
   private readonly hydration = new StartupHydrationController();
   private readonly initLifecycle = new InitLifecycleController();
 
-  /**
-   * Coalesces concurrent `rebuildCache` invocations. When a rebuild is in
-   * flight, subsequent calls return the same promise so a double-click on
-   * "Nexus: Rebuild cache" cannot start two simultaneous rebuilds (which
-   * would race over close/remove/initialize/save on `sqliteCache`).
-   */
-  private rebuildInFlight: Promise<void> | null = null;
-
-  // Infrastructure (owned by adapter)
+  // Infrastructure (assembled at construction)
   private jsonlWriter: JSONLWriter;
   private sqliteCache: SQLiteCacheManager;
   private syncCoordinator: SyncCoordinator;
-  private reconcilePipeline: ReconcilePipeline | null = null;
-  private reconciliationCoordinator!: ReconciliationCoordinator;
   private queryCache: QueryCache;
   private storageCoordinator: PluginScopedStorageCoordinator;
-  private vaultEventStore: VaultEventStore | null = null;
   private cacheBlobStore: CacheBlobStore;
 
-  // Repositories (composed)
-  private workspaceRepo!: WorkspaceRepository;
-  private sessionRepo!: SessionRepository;
-  private stateRepo!: StateRepository;
-  private traceRepo!: TraceRepository;
-  private conversationRepo!: ConversationRepository;
-  private messageRepo!: MessageRepository;
-  private projectRepo!: ProjectRepository;
-  private taskRepo!: TaskRepository;
+  // Adapter-managed state that crosses sub-components
+  private vaultEventStore: VaultEventStore | null = null;
+  private reconcilePipeline: ReconcilePipeline | null = null;
+  private reconciliationCoordinator!: ReconciliationCoordinator;
 
-  // Services
-  private exportService!: ExportService;
+  // Repositories (composed via the assembler)
+  private workspaceRepo: WorkspaceRepository;
+  private sessionRepo: SessionRepository;
+  private stateRepo: StateRepository;
+  private traceRepo: TraceRepository;
+  private conversationRepo: ConversationRepository;
+  private messageRepo: MessageRepository;
+  private projectRepo: ProjectRepository;
+  private taskRepo: TaskRepository;
+  private exportService: ExportService;
+
+  // Sub-components
+  private planApplier: StoragePlanApplier;
+  private reconcilers: MissingEntityReconcilerRunner;
+  private externalSync: ExternalSyncController;
+  private cacheRebuild: CacheRebuildOperation;
+  private vaultRootRelocator: VaultRootRelocator;
 
   constructor(options: HybridStorageAdapterOptions) {
     this.app = options.app;
     this.plugin = options.plugin;
     this.basePath = options.basePath ?? '.nexus';
-    const storageRoots = resolvePluginStorageRoot(this.app, this.plugin);
-    this.storageCoordinator = new PluginScopedStorageCoordinator(this.app, this.plugin, this.basePath);
 
-    // Initialize infrastructure
-    this.jsonlWriter = new JSONLWriter({
+    const bundle = assembleStorageAdapter({
       app: this.app,
-      basePath: this.basePath
+      plugin: this.plugin,
+      basePath: this.basePath,
+      cacheTTL: options.cacheTTL,
+      cacheMaxSize: options.cacheMaxSize
     });
 
-    // Build the cache-blob store ONCE here so the migration runner and the
-    // SQLiteCacheManager share the same instance. The store is selected by
-    // platform: IndexedDB on desktop (cloud-sync-immune), vault.adapter on
-    // mobile (iOS WKWebView IDB durability is insufficient for 150+ MB blobs).
-    const pluginFolderName = resolveActivePluginFolderName(this.plugin);
-    this.cacheBlobStore = createCacheBlobStore({
+    this.jsonlWriter = bundle.jsonlWriter;
+    this.sqliteCache = bundle.sqliteCache;
+    this.syncCoordinator = bundle.syncCoordinator;
+    this.queryCache = bundle.queryCache;
+    this.storageCoordinator = bundle.storageCoordinator;
+    this.cacheBlobStore = bundle.cacheBlobStore;
+    this.workspaceRepo = bundle.repositories.workspace;
+    this.sessionRepo = bundle.repositories.session;
+    this.stateRepo = bundle.repositories.state;
+    this.traceRepo = bundle.repositories.trace;
+    this.conversationRepo = bundle.repositories.conversation;
+    this.messageRepo = bundle.repositories.message;
+    this.projectRepo = bundle.repositories.project;
+    this.taskRepo = bundle.repositories.task;
+    this.exportService = bundle.exportService;
+
+    this.planApplier = new StoragePlanApplier({
       app: this.app,
-      vaultRelativePath: `${storageRoots.dataRoot}/cache.db`,
-      idbKey: computeIdbKey(this.app, pluginFolderName)
-    });
-
-    this.sqliteCache = new SQLiteCacheManager({
-      app: this.app,
-      dbPath: `${storageRoots.dataRoot}/cache.db`,
-      wasmPath: `${storageRoots.pluginDir}/sqlite3.wasm`,
-      blobStore: this.cacheBlobStore,
-      plugin: this.plugin
-    });
-
-    this.syncCoordinator = new SyncCoordinator(
-      this.jsonlWriter,
-      this.sqliteCache
-    );
-
-    this.queryCache = new QueryCache({
-      defaultTTL: options.cacheTTL ?? 60000,
-      maxSize: options.cacheMaxSize ?? 500
-    });
-
-    // Create repository dependencies
-    const deps: RepositoryDependencies = {
       jsonlWriter: this.jsonlWriter,
       sqliteCache: this.sqliteCache,
-      queryCache: this.queryCache
-    };
+      syncCoordinator: this.syncCoordinator,
+      storageCoordinator: this.storageCoordinator,
+      cacheBlobStore: this.cacheBlobStore,
+      onVaultEventStoreChanged: (store) => { this.vaultEventStore = store; },
+      onBasePathChanged: (path) => { this.basePath = path; }
+    });
 
-    // Initialize all repositories
-    this.workspaceRepo = new WorkspaceRepository(deps);
-    this.sessionRepo = new SessionRepository(deps);
-    this.stateRepo = new StateRepository(deps);
-    this.traceRepo = new TraceRepository(deps);
-    this.conversationRepo = new ConversationRepository(deps);
-    this.messageRepo = new MessageRepository(deps);
-    this.projectRepo = new ProjectRepository(deps);
-    this.taskRepo = new TaskRepository(deps);
+    this.reconcilers = new MissingEntityReconcilerRunner(
+      () => this.reconciliationCoordinator,
+      {
+        sqliteCache: this.sqliteCache,
+        workspaceRepo: this.workspaceRepo,
+        conversationRepo: this.conversationRepo
+      }
+    );
 
-    // Initialize services
-    this.exportService = new ExportService({
+    this.externalSync = new ExternalSyncController({
       app: this.app,
-      conversationRepo: this.conversationRepo,
-      messageRepo: this.messageRepo,
-      workspaceRepo: this.workspaceRepo,
-      sessionRepo: this.sessionRepo,
-      stateRepo: this.stateRepo as unknown as ExportServiceStateRepo,
-      traceRepo: this.traceRepo
+      getDataPath: () => this.basePath,
+      jsonlWriter: this.jsonlWriter,
+      syncCoordinator: this.syncCoordinator,
+      queryCache: this.queryCache,
+      reconcilers: this.reconcilers,
+      isReconcilePipelineWired: () => this.planApplier.getReconcilePipeline() !== null,
+      fallbackFullSync: () => this.sync()
+    });
+
+    this.cacheRebuild = new CacheRebuildOperation({
+      getSqliteCache: () => this.sqliteCache,
+      getSyncCoordinator: () => this.syncCoordinator,
+      getCacheBlobStore: () => this.cacheBlobStore,
+      getInitLifecycle: () => this.initLifecycle
+    });
+
+    this.vaultRootRelocator = new VaultRootRelocator({
+      app: this.app,
+      jsonlWriter: this.jsonlWriter,
+      queryCache: this.queryCache,
+      planApplier: this.planApplier,
+      externalSync: this.externalSync,
+      onBasePathChanged: (path) => { this.basePath = path; }
     });
   }
 
   // ============================================================================
-  // Lifecycle Management
+  // Lifecycle
   // ============================================================================
 
-  /**
-   * Initialize the storage adapter. By default, starts initialization in
-   * the background and returns immediately; use `waitForReady()` to await
-   * completion. Pass `blocking: true` to wait inline.
-   *
-   * The init promise is GUARANTEED to settle (via `InitLifecycleController`)
-   * regardless of how `performInitialization` resolves — this is what
-   * prevents `waitForQueryReady` callers from hanging for the full timeout
-   * window when an init step throws unexpectedly (issue #209).
-   */
   async initialize(blocking = false): Promise<void> {
     await this.initLifecycle.run(() => this.performInitialization(), { blocking });
   }
 
-  private async performInitialization(): Promise<void> {
-    try {
-      const migrator = new LegacyMigrator(this.app);
-      const migrationNeeded = await migrator.isMigrationNeeded();
-      let actuallyMigrated = false;
-
-      if (migrationNeeded) {
-        const migrationResult = await migrator.migrate();
-        // Only count as "actually migrated" if something was migrated
-        actuallyMigrated = migrationResult.needed &&
-          (migrationResult.stats.workspacesMigrated > 0 || migrationResult.stats.conversationsMigrated > 0);
-      }
-
-      let storagePlan = await this.storageCoordinator.prepareStoragePlan();
-      this.applyStoragePlan(storagePlan);
-      storagePlan = await this.backfillVaultEventStore(storagePlan);
-
-      // Cache-backend migration (cache.db file → IndexedDB on desktop). Runs
-      // foreground-blocking with a Notice; mobile bypasses immediately. Must
-      // execute BEFORE sqliteCache.initialize() so the cache manager loads
-      // bytes from the destination backend, not the legacy file.
-      await this.runCacheBackendMigration(storagePlan);
-
-      await this.sqliteCache.initialize();
-      this.reconciliationCoordinator = new ReconciliationCoordinator(this.jsonlWriter, this.sqliteCache);
-
-      const shouldBlockStartupHydration = await this.shouldBlockStartupHydration(storagePlan);
-      if (shouldBlockStartupHydration) {
-        this.hydration.startBlocking();
-      } else {
-        this.hydration.clear();
-      }
-
-      await this.jsonlWriter.ensureDirectory('workspaces');
-      await this.jsonlWriter.ensureDirectory('conversations');
-      await this.jsonlWriter.ensureDirectory('tasks');
-
-      // The SQLite schema is ready by this point — sync below populates
-      // data in the background, but the adapter is already usable. Waiters
-      // registered before now will settle when initLifecycle.run() returns.
-      const syncState = await this.sqliteCache.getSyncState(this.jsonlWriter.getDeviceId());
-      if (!syncState || actuallyMigrated || shouldBlockStartupHydration) {
-        try {
-          await this.syncCoordinator.fullRebuild({
-            onProgress: (stage, progress, total) => {
-              this.hydration.updateProgress(stage, progress, total, shouldBlockStartupHydration);
-            }
-          });
-        } catch (rebuildError) {
-          console.error('[HybridStorageAdapter] Full rebuild failed:', rebuildError);
-          this.hydration.fail(rebuildError instanceof Error ? rebuildError.message : String(rebuildError));
-        }
-      } else {
-        try {
-          await this.syncCoordinator.sync();
-        } catch (syncError) {
-          console.error('[HybridStorageAdapter] Incremental sync failed:', syncError);
-        }
-
-        await this.runReconcile('workspace', () => this.reconcileMissingWorkspaces());
-        await this.runReconcile('conversation', () => this.reconcileMissingConversations());
-        await this.runReconcile('task', () => this.reconcileMissingTasks());
-      }
-
-      if (shouldBlockStartupHydration && this.hydration.getState().phase !== 'error') {
-        this.hydration.complete();
-      }
-
-      // Watch the plugin data folder for JSONL changes landed by Obsidian
-      // Sync (or external tools). When something changes, reconcile SQLite
-      // and emit `external-sync` so open views can refresh.
-      this.startJsonlVaultWatcher();
-    } catch (error) {
+  private performInitialization(): Promise<void> {
+    const pipeline = new StorageInitializationPipeline({
+      app: this.app,
+      jsonlWriter: this.jsonlWriter,
+      sqliteCache: this.sqliteCache,
+      syncCoordinator: this.syncCoordinator,
+      storageCoordinator: this.storageCoordinator,
+      hydration: this.hydration,
+      planApplier: this.planApplier,
+      reconcilers: this.reconcilers,
+      onReconciliationCoordinatorReady: (coord) => {
+        this.reconciliationCoordinator = coord;
+        this.reconcilePipeline = this.planApplier.getReconcilePipeline();
+      },
+      startExternalSyncWatcher: () => this.externalSync.start()
+    });
+    return pipeline.run().catch((error: unknown) => {
       console.error('[HybridStorageAdapter] Initialization failed:', error);
       throw error;
-    }
-  }
-
-  private async runReconcile(label: string, fn: () => Promise<number>): Promise<void> {
-    try {
-      await fn();
-    } catch (e) {
-      console.error(`[HybridStorageAdapter] ${label} reconciliation failed:`, e);
-    }
-  }
-
-  private applyStoragePlan(plan: PluginScopedStoragePlan): void {
-    this.basePath = plan.vaultWriteBasePath;
-    this.vaultEventStore = new VaultEventStore({
-      app: this.app,
-      resolution: plan.vaultRoot
-    });
-    this.jsonlWriter.setBasePath(plan.vaultWriteBasePath);
-    this.jsonlWriter.setReadBasePaths(plan.legacyReadBasePaths);
-    this.jsonlWriter.setVaultEventStore(this.vaultEventStore);
-    this.jsonlWriter.setVaultEventStoreReadEnabled(
-      plan.state.migration.state === 'verified' || plan.state.migration.state === 'not_needed'
-    );
-    this.sqliteCache.setDbPath(plan.pluginCacheDbPath);
-    this.wireReconcilePipeline();
-  }
-
-  /**
-   * Construct the sync-safe reconcile pipeline once `vaultEventStore` is
-   * available and inject it into the `SyncCoordinator`. Called from
-   * `applyStoragePlan` and `relocateVaultRoot`. Idempotent: replaces the
-   * existing pipeline so cursor state from the old root is dropped.
-   */
-  private wireReconcilePipeline(): void {
-    if (!this.syncCoordinator || !this.sqliteCache || !this.jsonlWriter) {
-      this.reconcilePipeline = null;
-      return;
-    }
-    if (!this.vaultEventStore) {
-      this.reconcilePipeline = null;
-      this.syncCoordinator.setReconcilePipeline(null);
-      return;
-    }
-    const appliers = this.syncCoordinator.getAppliers();
-    this.reconcilePipeline = new ReconcilePipeline({
-      vaultEventStore: this.vaultEventStore,
-      syncStateStore: this.sqliteCache.getSyncStateStore(),
-      sqliteCache: this.sqliteCache,
-      workspaceApplier: appliers.workspace,
-      conversationApplier: appliers.conversation,
-      taskApplier: appliers.task,
-      deviceId: this.jsonlWriter.getDeviceId()
-    });
-    this.syncCoordinator.setReconcilePipeline(this.reconcilePipeline);
-  }
-
-  /**
-   * Kick off cache-backend migration before SQLite initializes. On desktop,
-   * reads any legacy `cache.db` from `vault.adapter` and writes it into IDB,
-   * verifies, and marks complete. On mobile (or after a verified run), this
-   * resolves immediately.
-   *
-   * Failure here is non-fatal: the migration runner persists 'failed' state,
-   * surfaces a Notice to the user, and returns. The cache manager then opens
-   * against an empty backend and the standard JSONL-replay path rebuilds it.
-   */
-  private async runCacheBackendMigration(plan: PluginScopedStoragePlan): Promise<void> {
-    const accessor: CacheBackendStateAccessor = {
-      read: () => this.storageCoordinator.readCacheBackendState(),
-      write: (state) => this.storageCoordinator.writeCacheBackendState(state)
-    };
-    const migration = new CacheBackendMigration({
-      adapter: this.app.vault.adapter,
-      legacyDbPath: plan.pluginCacheDbPath,
-      pluginDataRoot: plan.roots.dataRoot,
-      blobStore: this.cacheBlobStore,
-      stateAccessor: accessor,
-      isMobile: !isDesktop()
-    });
-    await migration.runIfNeeded();
-  }
-
-  private async backfillVaultEventStore(plan: PluginScopedStoragePlan): Promise<PluginScopedStoragePlan> {
-    if (plan.state.migration.state !== 'pending' || !this.vaultEventStore) {
-      return plan;
-    }
-
-    try {
-      const migrationService = new VaultRootMigrationService({
-        app: this.app,
-        vaultEventStore: this.vaultEventStore,
-        legacyRoots: plan.legacyReadBasePaths
-      });
-      const result = await migrationService.backfillLegacyRoots();
-
-      if (result.success && result.verified) {
-        const nextState = await this.storageCoordinator.persistMigrationState(plan, 'verified', {
-          completedAt: Date.now(),
-          verifiedAt: Date.now()
-        });
-        this.jsonlWriter.setVaultEventStoreReadEnabled(true);
-        return {
-          ...plan,
-          state: nextState
-        };
-      }
-
-      const failureMessage = result.errors[0] ?? result.message;
-      const nextState = await this.storageCoordinator.persistMigrationState(plan, 'failed', {
-        completedAt: Date.now(),
-        lastError: failureMessage
-      });
-      return {
-        ...plan,
-        state: nextState
-      };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      const nextState = await this.storageCoordinator.persistMigrationState(plan, 'failed', {
-        completedAt: Date.now(),
-        lastError: message
-      });
-      return {
-        ...plan,
-        state: nextState
-      };
-    }
-  }
-
-  private async shouldBlockStartupHydration(plan: PluginScopedStoragePlan): Promise<boolean> {
-    const conversationFiles = await this.jsonlWriter.listFiles('conversations');
-    const stats = await this.sqliteCache.getStatistics();
-    return shouldBlockStartupHydrationForVerifiedCutover({
-      migrationState: plan.state.migration.state,
-      sourceOfTruthLocation: plan.state.sourceOfTruthLocation,
-      conversationFileCount: conversationFiles.length,
-      cachedConversationCount: stats.conversations,
-      cachedMessageCount: stats.messages
     });
   }
 
-  /**
-   * Reconcile JSONL workspace files that are missing from SQLite.
-   * Handles the case where incremental sync skips same-device events.
-   */
-  private reconcileMissingWorkspaces(): Promise<number> {
-    const applier = new WorkspaceEventApplier(this.sqliteCache);
-    const category: ReconcileCategory<WorkspaceEvent> = {
-      label: 'workspace',
-      subdir: 'workspaces',
-      filenameRegex: /workspaces\/ws_(.+)\.jsonl$/,
-      existsInCache: async (id) => (await this.workspaceRepo.getById(id)) !== null,
-      shouldSkipEvents: (events) => {
-        // Skip deletes — no need to create then immediately delete.
-        if (events.some(e => e.type === 'workspace_deleted')) return true;
-        // Skip files with no workspace_created event (corrupt/incomplete).
-        return !events.some(e => e.type === 'workspace_created');
-      },
-      applyEvent: (e) => applier.apply(e)
-    };
-    return this.reconciliationCoordinator.reconcile(category);
-  }
-
-  /**
-   * Reconcile JSONL conversation files that are missing from SQLite.
-   * Handles the case where incremental sync skips remote files whose
-   * event timestamps predate the local sync watermark.
-   */
-  private reconcileMissingConversations(): Promise<number> {
-    const applier = new ConversationEventApplier(this.sqliteCache);
-    const category: ReconcileCategory<ConversationEvent> = {
-      label: 'conversation',
-      subdir: 'conversations',
-      filenameRegex: /conversations\/conv_(.+)\.jsonl$/,
-      existsInCache: async (id) => (await this.conversationRepo.getById(id)) !== null,
-      shouldSkipEvents: (events) => {
-        if (events.some(e => e.type === 'conversation_deleted')) return true;
-        return !events.some(e => e.type === 'metadata');
-      },
-      applyEvent: (e) => applier.apply(e)
-    };
-    return this.reconciliationCoordinator.reconcile(category);
-  }
-
-  /**
-   * Reconcile JSONL task files that are missing from SQLite.
-   *
-   * Note: tasks resolve the workspace id (name → UUID) and probe `projects`
-   * directly rather than going through a repository's getById — they are
-   * keyed by workspaceId, not entity id, so the standard "exists?" probe
-   * is a SQL count instead.
-   */
-  private reconcileMissingTasks(): Promise<number> {
-    const applier = new TaskEventApplier(this.sqliteCache);
-    const category: ReconcileCategory<TaskEvent> = {
-      label: 'tasks',
-      subdir: 'tasks',
-      filenameRegex: /tasks\/tasks_(.+)\.jsonl$/,
-      existsInCache: async (fileWorkspaceId) => {
-        const resolved = await resolveWorkspaceId(fileWorkspaceId, this.sqliteCache);
-        const effectiveId = resolved.id ?? fileWorkspaceId;
-        const projects = await this.sqliteCache.query<{ id: string }>(
-          'SELECT id FROM projects WHERE workspaceId = ? LIMIT 1',
-          [effectiveId]
-        );
-        return projects.length > 0;
-      },
-      shouldSkipEvents: () => false,
-      applyEvent: (e) => applier.apply(e)
-    };
-    return this.reconciliationCoordinator.reconcile(category);
-  }
-
-  /**
-   * Check if the adapter is ready for use
-   */
   isReady(): boolean {
     return this.initLifecycle.isReady();
   }
@@ -575,10 +258,6 @@ export class HybridStorageAdapter implements IStorageAdapter {
     return this.isReady() && this.hydration.isQueryReadyPhase();
   }
 
-  /**
-   * Wait for initialization to complete.
-   * @returns true if initialization succeeded, false if it failed
-   */
   waitForReady(): Promise<boolean> {
     return this.initLifecycle.waitForReady();
   }
@@ -595,19 +274,8 @@ export class HybridStorageAdapter implements IStorageAdapter {
     });
   }
 
-  /**
-   * Get initialization error if any
-   */
   getInitError(): Error | null {
     return this.initLifecycle.getError();
-  }
-
-  /**
-   * Get the underlying SQLite cache manager
-   * Used by EmbeddingManager for vector storage
-   */
-  get cache(): SQLiteCacheManager {
-    return this.sqliteCache;
   }
 
   getStartupHydrationState(): StartupHydrationState {
@@ -618,42 +286,30 @@ export class HybridStorageAdapter implements IStorageAdapter {
     return this.hydration.isBlocking();
   }
 
-  /**
-   * Get the message repository instance.
-   * Used by ConversationEmbeddingWatcher to register completion callbacks.
-   */
+  /** Used by EmbeddingManager for vector storage. */
+  get cache(): SQLiteCacheManager {
+    return this.sqliteCache;
+  }
+
+  /** Used by ConversationEmbeddingWatcher to register completion callbacks. */
   get messages(): MessageRepository {
     return this.messageRepo;
   }
 
-  /**
-   * Get the project repository instance.
-   * Used by TaskService for project operations.
-   */
+  /** Used by TaskService for project operations. */
   get projects(): ProjectRepository {
     return this.projectRepo;
   }
 
-  /**
-   * Get the task repository instance.
-   * Used by TaskService for task operations.
-   */
+  /** Used by TaskService for task operations. */
   get tasks(): TaskRepository {
     return this.taskRepo;
   }
 
   async close(): Promise<void> {
-    if (!this.initLifecycle.isInitialized()) {
-      return;
-    }
-
+    if (!this.initLifecycle.isInitialized()) return;
     try {
-      if (this.syncInterval) {
-        window.clearInterval(this.syncInterval);
-        this.syncInterval = undefined;
-      }
-
-      this.stopJsonlVaultWatcher();
+      this.externalSync.stop();
       this.queryCache.clear();
       await this.sqliteCache.close();
     } catch (error) {
@@ -662,278 +318,82 @@ export class HybridStorageAdapter implements IStorageAdapter {
     }
   }
 
-  /**
-   * Wipe the cache backend and rebuild SQLite from the JSONL source of truth.
-   * Used by the "Nexus: Rebuild cache" command to recover from a corrupted or
-   * out-of-sync cache without touching the (synced) JSONL event store.
-   */
-  async rebuildCache(options: { onProgress?: (label: string, done: number, total: number) => void } = {}): Promise<void> {
-    // Coalesce concurrent invocations. A second click on "Nexus: Rebuild
-    // cache" while one is in flight returns the same promise — both callers
-    // settle on the same outcome, errors propagate to both.
-    if (this.rebuildInFlight) {
-      return this.rebuildInFlight;
-    }
-
-    this.rebuildInFlight = (async () => {
-      try {
-        if (!this.initLifecycle.isInitialized()) {
-          throw new Error('Storage adapter is not initialized; cannot rebuild cache');
-        }
-
-        options.onProgress?.('Stopping auto-save', 0, 1);
-        this.sqliteCache.stopAutoSave();
-
-        options.onProgress?.('Closing cache', 0, 1);
-        await this.sqliteCache.close();
-
-        options.onProgress?.('Removing cache blob', 0, 1);
-        await this.cacheBlobStore.remove();
-
-        options.onProgress?.('Reopening cache', 0, 1);
-        await this.sqliteCache.initialize();
-
-        if (!this.syncCoordinator) {
-          throw new Error('Sync coordinator unavailable; cannot rebuild from JSONL');
-        }
-
-        options.onProgress?.('Rebuilding from JSONL', 0, 1);
-        const result = await this.syncCoordinator.fullRebuild({
-          onProgress: options.onProgress
-        });
-
-        if (!result.success) {
-          const summary = result.errors.length > 0 ? result.errors.join('; ') : 'Unknown error';
-          throw new Error(`Cache rebuild failed: ${summary}`);
-        }
-
-        await this.sqliteCache.save();
-        options.onProgress?.('Complete', 1, 1);
-      } finally {
-        // Clear on both success and failure so a follow-up rebuild can
-        // re-run; the original error (if any) still rejects this promise.
-        this.rebuildInFlight = null;
-      }
-    })();
-
-    return this.rebuildInFlight;
+  rebuildCache(options: { onProgress?: (label: string, done: number, total: number) => void } = {}): Promise<void> {
+    return this.cacheRebuild.run(options);
   }
 
   // ============================================================================
-  // External sync: vault-event-driven reconciliation
+  // External sync (vault-event-driven reconciliation)
   // ============================================================================
 
-  /**
-   * Subscribe to external-sync events. Fired after the JSONL vault watcher
-   * detects a change (e.g. a Sync-pushed JSONL from another device) and
-   * the resulting reconciliation has been applied to SQLite. Subscribers
-   * use the `modified` stream list to decide whether their currently-viewed
-   * content needs to re-query.
-   *
-   * Returns an Obsidian EventRef. Pass it to `offExternalSync()` (or use
-   * the plugin's `registerEvent(ref)` for auto-cleanup on unload).
-   */
   onExternalSync(callback: (event: ExternalSyncEvent) => void): EventRef {
-    // Obsidian's Events.on takes a variadic `unknown[]` handler; we narrow
-    // here by wrapping so callers get a typed API.
-    return this.externalEvents.on('external-sync', (...data: unknown[]) => {
-      callback(data[0] as ExternalSyncEvent);
-    });
+    return this.externalSync.on(callback);
   }
 
-  /** Remove a subscription previously added via `onExternalSync`. */
   offExternalSync(ref: EventRef): void {
-    this.externalEvents.offref(ref);
-  }
-
-  /**
-   * Start the JSONL vault watcher. Idempotent. Wires the before-write hook
-   * on `JSONLWriter` so self-writes don't echo back as sync triggers.
-   */
-  private startJsonlVaultWatcher(): void {
-    if (this.jsonlVaultWatcher) {
-      return;
-    }
-
-    const watcher = new JsonlVaultWatcher({
-      app: this.app,
-      dataPath: this.basePath,
-      onChange: async (modified) => {
-        await this.handleExternalJsonlChange(modified);
-      }
-    });
-
-    this.jsonlVaultWatcher = watcher;
-    this.jsonlWriter.setBeforeWriteHook((logicalPath) => {
-      watcher.suppressLogicalPath(logicalPath);
-    });
-
-    watcher.start();
-  }
-
-  /**
-   * Stop the watcher and tear down its hook. Safe if never started.
-   */
-  private stopJsonlVaultWatcher(): void {
-    if (!this.jsonlVaultWatcher) {
-      return;
-    }
-    this.jsonlWriter.setBeforeWriteHook(undefined);
-    this.jsonlVaultWatcher.stop();
-    this.jsonlVaultWatcher = undefined;
-  }
-
-  /**
-   * Reconcile after the watcher detects a modified stream set and emit
-   * `external-sync` so open UI can refresh only the affected content.
-   * Called by JsonlVaultWatcher's onChange callback.
-   *
-   * Phase 1 sync-safe reconcile: when the ReconcilePipeline is wired, scope
-   * reconcile to the precise streams that fired the modify event instead of
-   * sweeping the whole cache. Falls back to a full `sync()` if the pipeline
-   * isn't yet wired (e.g. legacy plugin-scoped storage layout) so behavior
-   * stays compatible.
-   */
-  private async handleExternalJsonlChange(modified: ModifiedStream[]): Promise<void> {
-    if (modified.length === 0) {
-      return;
-    }
-    try {
-      let result: SyncResult;
-      if (this.reconcilePipeline) {
-        for (const m of modified) {
-          await this.syncCoordinator.reconcileStream(m.category, m.streamId);
-        }
-        await this.runMissingEntityReconcilers();
-        this.queryCache.clear();
-        result = {
-          success: true,
-          eventsApplied: 0,
-          eventsSkipped: 0,
-          errors: [],
-          duration: 0,
-          filesProcessed: modified.map((m) => m.samplePath),
-          lastSyncTimestamp: Date.now()
-        };
-      } else {
-        result = await this.sync();
-      }
-      this.externalEvents.trigger('external-sync', { result, modified } satisfies ExternalSyncEvent);
-    } catch (error) {
-      console.error('[HybridStorageAdapter] External JSONL change sync failed:', error);
-    }
-  }
-
-  /**
-   * Run the post-sync entity-existence reconcilers (workspaces, conversations,
-   * tasks). Mirrors the existing `sync()` post-step so scoped reconcile via
-   * `ReconcilePipeline` stays semantically equivalent to the full sweep for
-   * cache-fill purposes. Errors are logged but do not propagate.
-   */
-  private async runMissingEntityReconcilers(): Promise<void> {
-    try {
-      await Promise.all([
-        this.reconcileMissingWorkspaces(),
-        this.reconcileMissingConversations(),
-        this.reconcileMissingTasks()
-      ]);
-    } catch (reconcileError) {
-      console.error('[HybridStorageAdapter] Post-sync reconciliation failed:', reconcileError);
-    }
+    this.externalSync.off(ref);
   }
 
   async sync(): Promise<SyncResult> {
     try {
       const result = await this.syncCoordinator.sync();
-
-      try {
-        await Promise.all([
-          this.reconcileMissingWorkspaces(),
-          this.reconcileMissingConversations(),
-          this.reconcileMissingTasks()
-        ]);
-      } catch (reconcileError) {
-        console.error('[HybridStorageAdapter] Post-sync reconciliation failed:', reconcileError);
-      }
-
-      // Invalidate all query cache on sync
+      await this.reconcilers.runAll();
+      // Invalidate all query cache on sync.
       this.queryCache.clear();
-
       return result;
-
     } catch (error) {
       console.error('[HybridStorageAdapter] Sync failed:', error);
       throw error;
     }
   }
 
-  /**
-   * Relocate the vault-root event store to a new path.
-   *
-   * Copies all events from the current store to the destination, verifies
-   * integrity, then hot-swaps internal state so all subsequent reads and
-   * writes use the new location. Returns `switched: true` only when the
-   * swap completed successfully.
-   */
   async relocateVaultRoot(
     targetRootPath: string,
     options?: { maxShardBytes?: number }
   ): Promise<VaultRootRelocationResult & { switched: boolean }> {
-    if (!this.vaultEventStore) {
-      return {
-        success: false,
-        verified: false,
-        relation: 'conflict',
-        durationMs: 0,
-        sourceRootPath: '',
-        destinationRootPath: targetRootPath,
-        sourceStreamCount: 0,
-        destinationStreamCountBefore: 0,
-        destinationStreamCountAfter: 0,
-        copiedEventCount: 0,
-        skippedEventCount: 0,
-        fileResults: [],
-        conflicts: [],
-        errors: ['Vault event store is not initialized.'],
-        switched: false
-      };
-    }
-
-    const maxShardBytes = options?.maxShardBytes ?? DEFAULT_STORAGE_SETTINGS.maxShardBytes;
-
-    const relocationService = new VaultRootRelocationService({
-      app: this.app,
-      sourceStore: this.vaultEventStore,
-      targetRootPath,
-      maxShardBytes
-    });
-
-    const result = await relocationService.relocateVaultRoot();
-
-    if (!result.success || !result.verified || !result.destinationStore) {
-      return { ...result, switched: false };
-    }
-
-    const resolution = resolveVaultRoot(
-      { storage: { rootPath: targetRootPath, maxShardBytes } },
-      { configDir: this.app.vault.configDir }
-    );
-
-    this.vaultEventStore = result.destinationStore;
-    this.basePath = resolution.dataPath;
-    this.jsonlWriter.setBasePath(resolution.dataPath);
-    this.jsonlWriter.setVaultEventStore(this.vaultEventStore);
-    this.jsonlWriter.setVaultEventStoreReadEnabled(true);
-    this.jsonlVaultWatcher?.setDataPath(resolution.dataPath);
-    this.wireReconcilePipeline();
-    this.queryCache.clear();
-
-    return { ...result, switched: true };
+    return this.vaultRootRelocator.relocate(targetRootPath, options);
   }
 
   // ============================================================================
-  // Workspace Operations - Delegate to WorkspaceRepository
+  // Test seams — thin pass-throughs to private helpers.
+  //
+  // These exist because tests pin the method names by calling them via
+  // `(adapter as any).<method>(...)` against a hand-constructed prototype.
+  // New code should call StoragePlanApplier / MissingEntityReconcilerRunner
+  // directly instead of going through the adapter.
   // ============================================================================
+
+  private applyStoragePlan(plan: PluginScopedStoragePlan): void {
+    this.planApplier.applyStoragePlan(plan);
+    this.reconcilePipeline = this.planApplier.getReconcilePipeline();
+  }
+
+  private runCacheBackendMigration(plan: PluginScopedStoragePlan): Promise<void> {
+    return this.planApplier.runCacheBackendMigration(plan);
+  }
+
+  private reconcileMissingWorkspaces(): Promise<number> {
+    return this.reconcilers.workspaces();
+  }
+
+  private reconcileMissingConversations(): Promise<number> {
+    return this.reconcilers.conversations();
+  }
+
+  private reconcileMissingTasks(): Promise<number> {
+    return this.reconcilers.tasks();
+  }
+
+  // ============================================================================
+  // IStorageAdapter delegations
+  //
+  // The verbosity below is unavoidable: 60+ external call sites depend on
+  // `adapter.<method>(...)` shape. Each method awaits init then forwards
+  // to its repository. Body intentionally one-liner-ish; logic lives in
+  // the repos.
+  // ============================================================================
+
+  // ---- Workspace -------------------------------------------------------------
 
   getWorkspace = async (id: string): Promise<WorkspaceMetadata | null> => {
     await this.ensureInitialized();
@@ -965,9 +425,7 @@ export class HybridStorageAdapter implements IStorageAdapter {
     return this.workspaceRepo.search(query);
   };
 
-  // ============================================================================
-  // Session Operations - Delegate to SessionRepository
-  // ============================================================================
+  // ---- Session ---------------------------------------------------------------
 
   getSession = async (id: string): Promise<SessionMetadata | null> => {
     await this.ensureInitialized();
@@ -986,7 +444,6 @@ export class HybridStorageAdapter implements IStorageAdapter {
 
   updateSession = async (workspaceId: string, sessionId: string, updates: Partial<SessionMetadata>): Promise<void> => {
     await this.ensureInitialized();
-    // Extract fields that are valid for UpdateSessionData (includes required workspaceId)
     const { name, description, endTime, isActive } = updates;
     return this.sessionRepo.update(sessionId, { name, description, endTime, isActive, workspaceId });
   };
@@ -1001,9 +458,7 @@ export class HybridStorageAdapter implements IStorageAdapter {
     return this.sessionRepo.delete(sessionId);
   };
 
-  // ============================================================================
-  // State Operations - Delegate to StateRepository
-  // ============================================================================
+  // ---- State -----------------------------------------------------------------
 
   getState = async (id: string): Promise<StateData | null> => {
     await this.ensureInitialized();
@@ -1038,9 +493,7 @@ export class HybridStorageAdapter implements IStorageAdapter {
     return this.stateRepo.countStates(workspaceId, sessionId);
   };
 
-  // ============================================================================
-  // Trace Operations - Delegate to TraceRepository
-  // ============================================================================
+  // ---- Trace -----------------------------------------------------------------
 
   getTraces = async (
     workspaceId: string,
@@ -1066,14 +519,11 @@ export class HybridStorageAdapter implements IStorageAdapter {
     sessionId?: string
   ): Promise<MemoryTraceData[]> => {
     await this.ensureInitialized();
-    // Repository returns paginated, but interface expects array
     const result = await this.traceRepo.searchTraces(workspaceId, query, sessionId);
     return result.items;
   };
 
-  // ============================================================================
-  // Conversation Operations - Delegate to ConversationRepository
-  // ============================================================================
+  // ---- Conversation ----------------------------------------------------------
 
   getConversation = async (id: string): Promise<ConversationMetadata | null> => {
     await this.ensureInitialized();
@@ -1098,20 +548,17 @@ export class HybridStorageAdapter implements IStorageAdapter {
   deleteConversation = async (id: string): Promise<void> => {
     await this.ensureInitialized();
 
-    // Cascade delete: find and delete any child branch conversations
+    // Cascade delete: find and delete any child branch conversations.
     const branches = await this.conversationRepo.getConversations({
       pageSize: 100,
       includeBranches: true
     });
-
     for (const branch of branches.items) {
       if (branch.metadata?.parentConversationId === id) {
-        // Recursively delete child branches (they may have their own branches)
         await this.deleteConversation(branch.id);
       }
     }
 
-    // Now delete the conversation itself
     return this.conversationRepo.delete(id);
   };
 
@@ -1120,9 +567,7 @@ export class HybridStorageAdapter implements IStorageAdapter {
     return this.conversationRepo.search(query);
   };
 
-  // ============================================================================
-  // Message Operations - Delegate to MessageRepository
-  // ============================================================================
+  // ---- Message ---------------------------------------------------------------
 
   getMessages = async (
     conversationId: string,
@@ -1152,25 +597,21 @@ export class HybridStorageAdapter implements IStorageAdapter {
   deleteMessage = async (conversationId: string, messageId: string): Promise<void> => {
     await this.ensureInitialized();
 
-    // Cascade delete: find and delete any branch conversations tied to this message
+    // Cascade delete: child branches tied to this message.
     const branches = await this.conversationRepo.getConversations({
       pageSize: 100,
       includeBranches: true
     });
-
     for (const branch of branches.items) {
       if (branch.metadata?.parentMessageId === messageId) {
         await this.deleteConversation(branch.id);
       }
     }
 
-    // Now delete the message itself
     return this.messageRepo.deleteMessage(conversationId, messageId);
   };
 
-  // ============================================================================
-  // Export/Import Operations - Delegate to ExportService
-  // ============================================================================
+  // ---- Export/Import ---------------------------------------------------------
 
   exportConversationsForFineTuning = async (filter?: ExportFilter): Promise<string> => {
     await this.ensureInitialized();
@@ -1192,14 +633,8 @@ export class HybridStorageAdapter implements IStorageAdapter {
   // Utilities
   // ============================================================================
 
-  /**
-   * Ensure the adapter is initialized before use.
-   * If initialization is in progress, waits for it to complete.
-   */
   private async ensureInitialized(): Promise<void> {
-    if (this.initLifecycle.isReady()) {
-      return;
-    }
+    if (this.initLifecycle.isReady()) return;
     if (!this.initLifecycle.hasStarted()) {
       throw new Error('HybridStorageAdapter not initialized. Call initialize() first.');
     }

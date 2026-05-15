@@ -40,6 +40,7 @@ jest.mock('../../src/database/migration/CacheBackendMigration', () => {
 });
 
 import { HybridStorageAdapter } from '../../src/database/adapters/HybridStorageAdapter';
+import { StoragePlanApplier } from '../../src/database/adapters/lifecycle/StoragePlanApplier';
 import { isDesktop } from '../../src/utils/platform';
 
 interface FakeStorageCoordinator {
@@ -65,10 +66,24 @@ function buildWiringHarness(): WiringHarness {
   };
 
   const adapter = Object.create(HybridStorageAdapter.prototype) as HybridStorageAdapter;
+  // The adapter delegates `runCacheBackendMigration` to StoragePlanApplier;
+  // recreate that wiring here against the same injected fields. Production
+  // ctor does the same in HybridStorageAdapter.constructor.
+  const planApplier = new StoragePlanApplier({
+    app: { vault: { adapter: fakeAdapterValue } } as never,
+    jsonlWriter: {} as never,
+    sqliteCache: {} as never,
+    syncCoordinator: {} as never,
+    storageCoordinator: storageCoordinator as never,
+    cacheBlobStore: fakeBlobStore as never,
+    onVaultEventStoreChanged: () => undefined,
+    onBasePathChanged: () => undefined
+  });
   Object.assign(adapter, {
     app: { vault: { adapter: fakeAdapterValue } },
     storageCoordinator,
-    cacheBlobStore: fakeBlobStore
+    cacheBlobStore: fakeBlobStore,
+    planApplier
   });
 
   return { adapter, fakeAdapterValue, fakeBlobStore, storageCoordinator };

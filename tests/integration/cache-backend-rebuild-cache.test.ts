@@ -17,6 +17,7 @@ import { IDBFactory } from 'fake-indexeddb';
 import { IndexedDBCacheBlobStore } from '../../src/database/storage/IndexedDBCacheBlobStore';
 import { HybridStorageAdapter } from '../../src/database/adapters/HybridStorageAdapter';
 import { InitLifecycleController } from '../../src/database/adapters/lifecycle/InitLifecycleController';
+import { CacheRebuildOperation } from '../../src/database/adapters/lifecycle/CacheRebuildOperation';
 
 interface CacheLifecycleMock {
   initialize: jest.Mock<Promise<void>, []>;
@@ -72,19 +73,26 @@ async function buildRebuildHarness(): Promise<RebuildHarness> {
   };
 
   // Instantiate using a stub — bypass the heavy constructor by Object.create
-  // and inject only the fields rebuildCache touches.
+  // and inject the fields rebuildCache touches, plus a CacheRebuildOperation
+  // wired to read those same fields off the adapter (production semantics).
+  // Tests still mutate `adapter.syncCoordinator` etc. and the rebuild
+  // operation will observe the mutation because its getters re-read.
   const adapter = Object.create(HybridStorageAdapter.prototype) as HybridStorageAdapter;
-  // Private-state injection by name. The test is intentionally tightly coupled
-  // to the rebuildCache implementation so a structural change to the call
-  // sequence will surface here.
   const initLifecycle = new InitLifecycleController();
-  // Drive the controller to the "ready" state by running a no-op.
   await initLifecycle.run(async () => undefined, { blocking: true });
+  type AdapterPrivates = { sqliteCache: unknown; syncCoordinator: unknown; cacheBlobStore: unknown };
+  const cacheRebuild = new CacheRebuildOperation({
+    getSqliteCache: () => (adapter as unknown as AdapterPrivates).sqliteCache as never,
+    getSyncCoordinator: () => (adapter as unknown as AdapterPrivates).syncCoordinator as never,
+    getCacheBlobStore: () => (adapter as unknown as AdapterPrivates).cacheBlobStore as never,
+    getInitLifecycle: () => (adapter as unknown as { initLifecycle: InitLifecycleController }).initLifecycle
+  });
   Object.assign(adapter, {
     initLifecycle,
     sqliteCache: cacheLifecycle as unknown,
     syncCoordinator: syncCoordinator as unknown,
-    cacheBlobStore: blobStore
+    cacheBlobStore: blobStore,
+    cacheRebuild
   });
 
   return { adapter, blobStore, cacheLifecycle, syncCoordinator, callOrder };

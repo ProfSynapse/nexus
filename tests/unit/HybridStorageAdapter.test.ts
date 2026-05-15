@@ -7,6 +7,8 @@ import {
 import { StartupHydrationController } from '../../src/database/adapters/lifecycle/StartupHydrationController';
 import { InitLifecycleController } from '../../src/database/adapters/lifecycle/InitLifecycleController';
 import { ReconciliationCoordinator } from '../../src/database/adapters/lifecycle/ReconciliationCoordinator';
+import { StoragePlanApplier } from '../../src/database/adapters/lifecycle/StoragePlanApplier';
+import { MissingEntityReconcilerRunner } from '../../src/database/adapters/lifecycle/MissingEntityReconcilers';
 import { ConversationEventApplier } from '../../src/database/sync/ConversationEventApplier';
 
 describe('HybridStorageAdapter', () => {
@@ -42,36 +44,36 @@ describe('HybridStorageAdapter', () => {
     });
   });
 
-  describe('applyStoragePlan', () => {
+  describe('StoragePlanApplier.applyStoragePlan', () => {
     it('wires the vault event store and read gating into JSONLWriter', () => {
-      const adapter = Object.create(HybridStorageAdapter.prototype) as HybridStorageAdapter & {
-        app: unknown;
-        basePath: string;
-        mobileLogPath?: string;
-        vaultEventStore: unknown;
-        jsonlWriter: {
-          setBasePath: jest.Mock<void, [string]>;
-          setReadBasePaths: jest.Mock<void, [string[]]>;
-          setVaultEventStore: jest.Mock<void, [unknown]>;
-          setVaultEventStoreReadEnabled: jest.Mock<void, [boolean]>;
-        };
-        sqliteCache: {
-          setDbPath: jest.Mock<void, [string]>;
-        };
-      };
-
-      adapter.app = { vault: { adapter: {} } };
-      adapter.jsonlWriter = {
+      const jsonlWriter = {
         setBasePath: jest.fn(),
         setReadBasePaths: jest.fn(),
         setVaultEventStore: jest.fn(),
-        setVaultEventStoreReadEnabled: jest.fn()
+        setVaultEventStoreReadEnabled: jest.fn(),
+        getDeviceId: jest.fn(() => 'test-device')
       };
-      adapter.sqliteCache = {
-        setDbPath: jest.fn()
+      const sqliteCache = {
+        setDbPath: jest.fn(),
+        getSyncStateStore: jest.fn(() => ({}))
+      };
+      const syncCoordinator = {
+        getAppliers: jest.fn(() => ({ workspace: {}, conversation: {}, task: {} })),
+        setReconcilePipeline: jest.fn()
       };
 
-      (adapter as any).applyStoragePlan({
+      const planApplier = new StoragePlanApplier({
+        app: { vault: { adapter: {} } } as never,
+        jsonlWriter: jsonlWriter as never,
+        sqliteCache: sqliteCache as never,
+        syncCoordinator: syncCoordinator as never,
+        storageCoordinator: {} as never,
+        cacheBlobStore: {} as never,
+        onVaultEventStoreChanged: () => undefined,
+        onBasePathChanged: () => undefined
+      });
+
+      planApplier.applyStoragePlan({
         vaultWriteBasePath: 'Nexus/data',
         legacyReadBasePaths: ['.obsidian/plugins/claudesidian-mcp/data', '.nexus'],
         pluginCacheDbPath: '.obsidian/plugins/claudesidian-mcp/data/cache.db',
@@ -93,16 +95,16 @@ describe('HybridStorageAdapter', () => {
           guidesPath: 'Nexus/guides',
           maxShardBytes: 1024
         }
-      });
+      } as never);
 
-      expect(adapter.jsonlWriter.setBasePath).toHaveBeenCalledWith('Nexus/data');
-      expect(adapter.jsonlWriter.setReadBasePaths).toHaveBeenCalledWith([
+      expect(jsonlWriter.setBasePath).toHaveBeenCalledWith('Nexus/data');
+      expect(jsonlWriter.setReadBasePaths).toHaveBeenCalledWith([
         '.obsidian/plugins/claudesidian-mcp/data',
         '.nexus'
       ]);
-      expect(adapter.jsonlWriter.setVaultEventStore).toHaveBeenCalledWith(expect.any(Object));
-      expect(adapter.jsonlWriter.setVaultEventStoreReadEnabled).toHaveBeenCalledWith(true);
-      expect(adapter.sqliteCache.setDbPath).toHaveBeenCalledWith('.obsidian/plugins/claudesidian-mcp/data/cache.db');
+      expect(jsonlWriter.setVaultEventStore).toHaveBeenCalledWith(expect.any(Object));
+      expect(jsonlWriter.setVaultEventStoreReadEnabled).toHaveBeenCalledWith(true);
+      expect(sqliteCache.setDbPath).toHaveBeenCalledWith('.obsidian/plugins/claudesidian-mcp/data/cache.db');
     });
   });
 
@@ -186,24 +188,9 @@ describe('HybridStorageAdapter', () => {
     });
   });
 
-  describe('reconcileMissingConversations', () => {
+  describe('MissingEntityReconcilerRunner.conversations', () => {
     it('replays missing conversation JSONL files into SQLite cache', async () => {
-      const adapter = Object.create(HybridStorageAdapter.prototype) as HybridStorageAdapter & {
-        jsonlWriter: {
-          listFiles: jest.Mock<Promise<string[]>, [string]>;
-          readEvents: jest.Mock<Promise<Array<{ type: string; timestamp: number }>>, [string]>;
-        };
-        conversationRepo: {
-          getById: jest.Mock<Promise<null>, [string]>;
-        };
-        sqliteCache: {
-          save: jest.Mock<Promise<void>, []>;
-        };
-        reconciliationCoordinator: ReconciliationCoordinator;
-        reconcileMissingConversations: () => Promise<number>;
-      };
-
-      adapter.jsonlWriter = {
+      const jsonlWriter = {
         listFiles: jest.fn().mockResolvedValue(['conversations/conv_desktop-sync.jsonl']),
         readEvents: jest.fn().mockResolvedValue([
           { type: 'message', timestamp: 20 },
@@ -211,15 +198,19 @@ describe('HybridStorageAdapter', () => {
           { type: 'message_updated', timestamp: 30 }
         ])
       };
-      adapter.conversationRepo = {
-        getById: jest.fn().mockResolvedValue(null)
-      };
-      adapter.sqliteCache = {
-        save: jest.fn().mockResolvedValue(undefined)
-      };
-      adapter.reconciliationCoordinator = new ReconciliationCoordinator(
-        adapter.jsonlWriter as never,
-        adapter.sqliteCache as never
+      const conversationRepo = { getById: jest.fn().mockResolvedValue(null) };
+      const sqliteCache = { save: jest.fn().mockResolvedValue(undefined) };
+      const coordinator = new ReconciliationCoordinator(
+        jsonlWriter as never,
+        sqliteCache as never
+      );
+      const runner = new MissingEntityReconcilerRunner(
+        () => coordinator,
+        {
+          sqliteCache: sqliteCache as never,
+          workspaceRepo: {} as never,
+          conversationRepo: conversationRepo as never
+        }
       );
 
       const applySpy = jest
@@ -227,15 +218,15 @@ describe('HybridStorageAdapter', () => {
         .mockResolvedValue(undefined);
 
       try {
-        await adapter.reconcileMissingConversations();
+        await runner.conversations();
 
-        expect(adapter.jsonlWriter.listFiles).toHaveBeenCalledWith('conversations');
-        expect(adapter.conversationRepo.getById).toHaveBeenCalledWith('desktop-sync');
+        expect(jsonlWriter.listFiles).toHaveBeenCalledWith('conversations');
+        expect(conversationRepo.getById).toHaveBeenCalledWith('desktop-sync');
         expect(applySpy).toHaveBeenCalledTimes(3);
         expect(applySpy.mock.calls[0][0]).toMatchObject({ type: 'metadata', timestamp: 10 });
         expect(applySpy.mock.calls[1][0]).toMatchObject({ type: 'message', timestamp: 20 });
         expect(applySpy.mock.calls[2][0]).toMatchObject({ type: 'message_updated', timestamp: 30 });
-        expect(adapter.sqliteCache.save).toHaveBeenCalledTimes(1);
+        expect(sqliteCache.save).toHaveBeenCalledTimes(1);
       } finally {
         applySpy.mockRestore();
       }
