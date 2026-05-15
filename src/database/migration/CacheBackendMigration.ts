@@ -107,7 +107,19 @@ export class CacheBackendMigration {
 
     const persisted = await this.opts.stateAccessor.read();
     if (persisted?.migrationState === 'verified' && persisted.backend === 'idb') {
-      return { outcome: 'verified' };
+      // Self-heal: a persisted `verified` marker only holds when the IDB blob
+      // is actually present under the current key. Vault-level cloud sync can
+      // carry data.json across machines without carrying the per-vault IDB
+      // record (different appId, or different plugin folder name pre/post
+      // community-store rename), leaving the marker stale. If the blob is
+      // missing we fall through and let DETECT decide: either re-migrate from
+      // a legacy cache.db, or mark verified afresh.
+      if (await this.idbBlobPresent()) {
+        return { outcome: 'verified' };
+      }
+      console.warn(
+        '[CacheBackendMigration] Persisted state is "verified" but the IDB blob is missing — re-running detection.'
+      );
     }
 
     const legacyExists = await this.adapterExists(this.opts.legacyDbPath);
@@ -315,6 +327,15 @@ export class CacheBackendMigration {
   private async adapterExists(path: string): Promise<boolean> {
     try {
       return await this.opts.adapter.exists(path);
+    } catch {
+      return false;
+    }
+  }
+
+  private async idbBlobPresent(): Promise<boolean> {
+    try {
+      const meta = await this.opts.blobStore.getMetadata();
+      return meta !== null && meta.size > 0;
     } catch {
       return false;
     }

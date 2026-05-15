@@ -16,6 +16,7 @@ import { IDBFactory } from 'fake-indexeddb';
 
 import { IndexedDBCacheBlobStore } from '../../src/database/storage/IndexedDBCacheBlobStore';
 import { HybridStorageAdapter } from '../../src/database/adapters/HybridStorageAdapter';
+import { InitLifecycleController } from '../../src/database/adapters/lifecycle/InitLifecycleController';
 
 interface CacheLifecycleMock {
   initialize: jest.Mock<Promise<void>, []>;
@@ -76,8 +77,11 @@ async function buildRebuildHarness(): Promise<RebuildHarness> {
   // Private-state injection by name. The test is intentionally tightly coupled
   // to the rebuildCache implementation so a structural change to the call
   // sequence will surface here.
+  const initLifecycle = new InitLifecycleController();
+  // Drive the controller to the "ready" state by running a no-op.
+  await initLifecycle.run(async () => undefined, { blocking: true });
   Object.assign(adapter, {
-    initialized: true,
+    initLifecycle,
     sqliteCache: cacheLifecycle as unknown,
     syncCoordinator: syncCoordinator as unknown,
     cacheBlobStore: blobStore
@@ -152,7 +156,8 @@ describe('HybridStorageAdapter.rebuildCache (storage seam)', () => {
 
   it('throws when adapter is not initialized', async () => {
     const h = await buildRebuildHarness();
-    Object.assign(h.adapter, { initialized: false });
+    // Swap in a fresh, never-run controller so isInitialized() is false.
+    Object.assign(h.adapter, { initLifecycle: new InitLifecycleController() });
     await expect(h.adapter.rebuildCache()).rejects.toThrow(/not initialized/);
     expect(h.cacheLifecycle.stopAutoSave).not.toHaveBeenCalled();
   });

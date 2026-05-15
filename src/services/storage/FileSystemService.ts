@@ -81,6 +81,9 @@ export class FileSystemService {
    */
   async listConversationIds(): Promise<string[]> {
     try {
+      if (!(await this.plugin.app.vault.adapter.exists(this.conversationsPath))) {
+        return [];
+      }
       const files = await this.vaultOperations.listDirectory(this.conversationsPath);
       const conversationIds = files.files
         .filter(file => file.endsWith('.json') && !file.endsWith('index.json'))
@@ -128,6 +131,9 @@ export class FileSystemService {
    */
   async listWorkspaceIds(): Promise<string[]> {
     try {
+      if (!(await this.plugin.app.vault.adapter.exists(this.workspacesPath))) {
+        return [];
+      }
       const files = await this.vaultOperations.listDirectory(this.workspacesPath);
       const workspaceIds = files.files
         .filter(file => {

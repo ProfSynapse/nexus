@@ -426,6 +426,99 @@ describe('CacheBackendMigration edge cases', () => {
     expect(current.value?.migratedAt).toBeDefined();
   });
 
+  // -------------------------------------------------------------------------
+  // Stale-verified self-heal (issue #209).
+  //
+  // A persisted state of { backend: 'idb', migrationState: 'verified' } only
+  // makes sense when the IDB blob actually exists under the current key.
+  // Vault-level cloud sync (Dropbox / iCloud) can carry data.json across
+  // machines without carrying the per-vault IDB record, and the community-
+  // store rename of the plugin folder (claudesidian-mcp → nexus) changes the
+  // computed idbKey on first boot. In either case, the verified marker is
+  // stale and the short-circuit would skip a needed migration / fresh-DB
+  // create. The fix re-runs DETECT when the IDB blob is missing.
+  // -------------------------------------------------------------------------
+  it('issue #209: verified marker with empty IDB falls through to fresh-install path', async () => {
+    const { adapter } = fakeAdapter(); // no legacy cache.db on disk
+    const { store } = fakeBlobStore(); // empty blob store
+    const { accessor, current } = fakeStateAccessor({
+      backend: 'idb',
+      migrationState: 'verified',
+      migratedAt: 1
+    });
+
+    const migration = new CacheBackendMigration({
+      adapter,
+      legacyDbPath: 'cache.db',
+      pluginDataRoot: '.',
+      blobStore: store,
+      stateAccessor: accessor,
+      isMobile: false,
+      showNotices: false
+    });
+
+    const result = await migration.runIfNeeded();
+    // Falls through to the no-legacy branch, which re-stamps verified afresh.
+    expect(result.outcome).toBe('not_needed');
+    expect(current.value?.backend).toBe('idb');
+    expect(current.value?.migrationState).toBe('verified');
+    // New migratedAt timestamp (different from the stale `1` above).
+    expect(current.value?.migratedAt).toBeGreaterThan(1);
+  });
+
+  it('issue #209: verified marker with present IDB still short-circuits', async () => {
+    const { adapter } = fakeAdapter();
+    const { store, data } = fakeBlobStore();
+    // Seed the blob store so the self-heal probe sees a real record.
+    data.value = new Uint8Array(64).buffer;
+    const { accessor, current } = fakeStateAccessor({
+      backend: 'idb',
+      migrationState: 'verified',
+      migratedAt: 12345
+    });
+
+    const migration = new CacheBackendMigration({
+      adapter,
+      legacyDbPath: 'cache.db',
+      pluginDataRoot: '.',
+      blobStore: store,
+      stateAccessor: accessor,
+      isMobile: false,
+      showNotices: false
+    });
+
+    const result = await migration.runIfNeeded();
+    expect(result.outcome).toBe('verified');
+    // Unchanged — the short-circuit must not rewrite state when the blob exists.
+    expect(current.value?.migratedAt).toBe(12345);
+    expect(accessor.write).not.toHaveBeenCalled();
+  });
+
+  it('issue #209: blobStore.getMetadata throwing is treated as blob-absent (re-run)', async () => {
+    const { adapter } = fakeAdapter();
+    const { store } = fakeBlobStore();
+    (store.getMetadata as jest.Mock).mockRejectedValue(new Error('IDB open failed'));
+    const { accessor, current } = fakeStateAccessor({
+      backend: 'idb',
+      migrationState: 'verified',
+      migratedAt: 1
+    });
+
+    const migration = new CacheBackendMigration({
+      adapter,
+      legacyDbPath: 'cache.db',
+      pluginDataRoot: '.',
+      blobStore: store,
+      stateAccessor: accessor,
+      isMobile: false,
+      showNotices: false
+    });
+
+    const result = await migration.runIfNeeded();
+    expect(result.outcome).toBe('not_needed');
+    expect(current.value?.migrationState).toBe('verified');
+  });
+
   it('overrides prior failed state with verified+idb on a fresh-install short-circuit', async () => {
     const { adapter } = fakeAdapter();
     const { store } = fakeBlobStore();
