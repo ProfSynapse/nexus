@@ -4,6 +4,9 @@ import {
   HybridStorageAdapter,
   shouldBlockStartupHydrationForVerifiedCutover
 } from '../../src/database/adapters/HybridStorageAdapter';
+import { StartupHydrationController } from '../../src/database/adapters/lifecycle/StartupHydrationController';
+import { InitLifecycleController } from '../../src/database/adapters/lifecycle/InitLifecycleController';
+import { ReconciliationCoordinator } from '../../src/database/adapters/lifecycle/ReconciliationCoordinator';
 import { ConversationEventApplier } from '../../src/database/sync/ConversationEventApplier';
 
 describe('HybridStorageAdapter', () => {
@@ -103,69 +106,70 @@ describe('HybridStorageAdapter', () => {
     });
   });
 
-  describe('waitForQueryReady (event-based)', () => {
+  describe('waitForQueryReady (event-based, via controllers)', () => {
     type AdapterPrivates = HybridStorageAdapter & {
-      initialized: boolean;
-      initError: Error | null;
-      initPromise?: Promise<void>;
-      startupHydrationState: { phase: 'idle' | 'running' | 'complete' | 'error'; [k: string]: unknown };
-      queryReadyWaiters: Array<(ready: boolean) => void>;
-      completeStartupHydration: () => void;
-      failStartupHydration: (error: string) => void;
-      clearStartupHydrationState: () => void;
+      hydration: StartupHydrationController;
+      initLifecycle: InitLifecycleController;
     };
 
     function makeAdapter(phase: 'idle' | 'running' | 'complete' | 'error' = 'running'): AdapterPrivates {
       const a = Object.create(HybridStorageAdapter.prototype) as AdapterPrivates;
-      a.initialized = true;
-      a.initError = null;
-      a.startupHydrationState = {
-        phase,
-        isBlocking: phase === 'running',
-        stage: '',
-        progress: 0,
-        total: 1,
-        percent: 0,
-        statusText: ''
-      };
-      a.queryReadyWaiters = [];
+      const hydration = new StartupHydrationController();
+      // Drive the controller to the requested phase via its public API.
+      if (phase === 'running') {
+        hydration.startBlocking();
+      } else if (phase === 'complete') {
+        hydration.complete();
+      } else if (phase === 'error') {
+        hydration.fail('seeded-error');
+      }
+      // phase === 'idle' is the default constructor state.
+      const initLifecycle = new InitLifecycleController();
+      // Mark the lifecycle as ready (init has succeeded) so isReady() is true
+      // independently of the hydration phase. We do this by running a no-op
+      // and awaiting it synchronously via a settled promise.
+      void initLifecycle.run(async () => undefined, { blocking: false });
+      (a as unknown as { hydration: StartupHydrationController }).hydration = hydration;
+      (a as unknown as { initLifecycle: InitLifecycleController }).initLifecycle = initLifecycle;
       return a;
     }
 
     it('returns true immediately when already query-ready', async () => {
       const a = makeAdapter('idle');
+      await a.initLifecycle.waitForReady();
       await expect(a.waitForQueryReady(50)).resolves.toBe(true);
     });
 
-    it('resolves true when completeStartupHydration fires', async () => {
+    it('resolves true when hydration completes', async () => {
       const a = makeAdapter('running');
+      await a.initLifecycle.waitForReady();
       const pending = a.waitForQueryReady(5_000);
-      expect(a.queryReadyWaiters).toHaveLength(1);
-      a.completeStartupHydration();
-      await expect(pending).resolves.toBe(true);
-      expect(a.queryReadyWaiters).toHaveLength(0);
-    });
-
-    it('resolves true when clearStartupHydrationState fires', async () => {
-      const a = makeAdapter('running');
-      const pending = a.waitForQueryReady(5_000);
-      a.clearStartupHydrationState();
+      a.hydration.complete();
       await expect(pending).resolves.toBe(true);
     });
 
-    it('resolves false when failStartupHydration fires', async () => {
+    it('resolves true when hydration is cleared', async () => {
       const a = makeAdapter('running');
+      await a.initLifecycle.waitForReady();
       const pending = a.waitForQueryReady(5_000);
-      a.failStartupHydration('boom');
+      a.hydration.clear();
+      await expect(pending).resolves.toBe(true);
+    });
+
+    it('resolves false when hydration fails', async () => {
+      const a = makeAdapter('running');
+      await a.initLifecycle.waitForReady();
+      const pending = a.waitForQueryReady(5_000);
+      a.hydration.fail('boom');
       await expect(pending).resolves.toBe(false);
     });
 
     it('resolves false on timeout when no transition fires', async () => {
       const a = makeAdapter('running');
+      await a.initLifecycle.waitForReady();
       const errSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
       try {
         await expect(a.waitForQueryReady(20)).resolves.toBe(false);
-        expect(a.queryReadyWaiters).toHaveLength(0);
       } finally {
         errSpy.mockRestore();
       }
@@ -173,13 +177,12 @@ describe('HybridStorageAdapter', () => {
 
     it('settles all concurrent waiters at the same transition', async () => {
       const a = makeAdapter('running');
+      await a.initLifecycle.waitForReady();
       const p1 = a.waitForQueryReady(5_000);
       const p2 = a.waitForQueryReady(5_000);
       const p3 = a.waitForQueryReady(5_000);
-      expect(a.queryReadyWaiters).toHaveLength(3);
-      a.completeStartupHydration();
+      a.hydration.complete();
       await expect(Promise.all([p1, p2, p3])).resolves.toEqual([true, true, true]);
-      expect(a.queryReadyWaiters).toHaveLength(0);
     });
   });
 
@@ -196,7 +199,8 @@ describe('HybridStorageAdapter', () => {
         sqliteCache: {
           save: jest.Mock<Promise<void>, []>;
         };
-        reconcileMissingConversations: () => Promise<void>;
+        reconciliationCoordinator: ReconciliationCoordinator;
+        reconcileMissingConversations: () => Promise<number>;
       };
 
       adapter.jsonlWriter = {
@@ -213,6 +217,10 @@ describe('HybridStorageAdapter', () => {
       adapter.sqliteCache = {
         save: jest.fn().mockResolvedValue(undefined)
       };
+      adapter.reconciliationCoordinator = new ReconciliationCoordinator(
+        adapter.jsonlWriter as never,
+        adapter.sqliteCache as never
+      );
 
       const applySpy = jest
         .spyOn(ConversationEventApplier.prototype, 'apply')

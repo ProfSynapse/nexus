@@ -91,7 +91,11 @@ describe('CacheBackendMigration.runIfNeeded', () => {
 
   it('returns verified short-circuit when persisted state is verified+idb', async () => {
     const { adapter } = fakeAdapter();
-    const { store } = fakeBlobStore();
+    const { store, data } = fakeBlobStore();
+    // Seed the blob so the self-heal probe (added for issue #209) sees a real
+    // record under the current IDB key. Without bytes here, the short-circuit
+    // would correctly fall through to DETECT.
+    data.value = new ArrayBuffer(128);
     const { accessor, current } = fakeStateAccessor();
     current.value = { backend: 'idb', migrationState: 'verified' };
 
