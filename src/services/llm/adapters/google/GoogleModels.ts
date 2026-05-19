@@ -40,6 +40,24 @@ export const GOOGLE_MODELS: ModelSpec[] = [
     }
   },
 
+  // Gemini 3.5 models
+  {
+    provider: 'google',
+    name: 'Gemini 3.5 Flash',
+    apiName: 'gemini-3.5-flash',
+    contextWindow: 1048576,
+    maxTokens: 65536,
+    inputCostPerMillion: 1.50,
+    outputCostPerMillion: 9.00,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+
   // Gemini 3.0 models
   {
     provider: 'google',
