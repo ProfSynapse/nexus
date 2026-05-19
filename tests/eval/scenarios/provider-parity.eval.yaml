@@ -1,13 +1,50 @@
 - name: parity-single-tool-call
   description: Same basic tool call scenario — should pass across all configured providers
-  toolSet: nexus
+  toolSet: meta
   turns:
     - userMessage: "Read the file notes/meeting.md"
       expectedTools:
-        - name: contentManager_read
+        - name: getTools
           params:
-            path: notes/meeting.md
+            tool: "content"
       mockResponses:
+        getTools:
+          success: true
+          result:
+            tools:
+              - agent: contentManager
+                tool: read
+                description: Read content from a file
+                command: "content read"
+                usage: "content read <path> <startLine>"
+                arguments:
+                  - name: path
+                    flag: --path
+                    type: string
+                    required: true
+                    positional: true
+                  - name: startLine
+                    flag: --start-line
+                    type: number
+                    required: true
+                    positional: true
+                examples:
+                  - 'content read "path-value" 1'
+
+    - expectedTools:
+        - name: useTools
+          params:
+            tool: "content read"
+      mockResponses:
+        useTools:
+          success: true
+          result:
+            results:
+              - tool: contentManager_read
+                success: true
+                result:
+                  content: "# Meeting Notes\n- Discussed roadmap\n- Budget approved"
+                  path: notes/meeting.md
         contentManager_read:
           success: true
           result:
@@ -16,13 +53,50 @@
 
 - name: parity-search-then-read
   description: Two-turn flow — search then read — should work across all providers
-  toolSet: nexus
+  toolSet: meta
   allowReorder: true
   turns:
     - userMessage: "Search for notes about meetings and read the first result"
       expectedTools:
-        - name: searchManager_searchContent
+        - name: getTools
+          params:
+            tool: "search"
       mockResponses:
+        getTools:
+          success: true
+          result:
+            tools:
+              - agent: searchManager
+                tool: searchContent
+                description: Search for notes by content keyword
+                command: "search content"
+                usage: "search content <query>"
+                arguments:
+                  - name: query
+                    flag: --query
+                    type: string
+                    required: true
+                    positional: true
+                examples:
+                  - 'search content "query-value"'
+
+    - expectedTools:
+        - name: useTools
+          params:
+            tool: "search content"
+      mockResponses:
+        useTools:
+          success: true
+          result:
+            results:
+              - tool: searchManager_searchContent
+                success: true
+                result:
+                  results:
+                    - path: notes/meeting.md
+                      score: 0.92
+                      snippet: "Meeting notes..."
+                  totalResults: 1
         searchManager_searchContent:
           success: true
           result:
@@ -33,8 +107,40 @@
             totalResults: 1
 
     - expectedTools:
-        - name: contentManager_read
+        - name: getTools
+          params:
+            tool: "content"
+          optional: true
+        - name: useTools
+          params:
+            tool: "content read"
       mockResponses:
+        getTools:
+          success: true
+          result:
+            tools:
+              - agent: contentManager
+                tool: read
+                description: Read content from a file
+                command: "content read"
+                usage: "content read <path> <startLine>"
+                arguments:
+                  - name: path
+                    flag: --path
+                    type: string
+                    required: true
+                    positional: true
+                examples:
+                  - 'content read "path-value" 1'
+        useTools:
+          success: true
+          result:
+            results:
+              - tool: contentManager_read
+                success: true
+                result:
+                  content: "# Meeting\n- Items discussed"
+                  path: notes/meeting.md
         contentManager_read:
           success: true
           result:
