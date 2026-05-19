@@ -61,22 +61,11 @@ interface SmokeTarget {
 const RUN_LIVE = process.env.RUN_MODEL_SMOKE === '1';
 const PROVIDERS: SmokeProvider[] = ['openai', 'openrouter', 'openai-codex', 'google'];
 
-function findDotEnv(): string | null {
-  const candidates = [
-    path.join(process.cwd(), '.env'),
-    '/Users/jrosenbaum/Documents/Code/.obsidian/plugins/claudesidian-mcp/.env',
-  ];
-  for (const c of candidates) {
-    if (fs.existsSync(c)) return c;
-  }
-  return null;
-}
-
 function readDotEnv(): Map<string, string> {
-  const envPath = findDotEnv();
+  const envPath = path.join(process.cwd(), '.env');
   const values = new Map<string, string>();
 
-  if (!envPath) {
+  if (!fs.existsSync(envPath)) {
     return values;
   }
 
