@@ -1,12 +1,12 @@
 /**
  * Google Model Specifications
- * Updated March 2026 with Gemini 3.1 models
+ * Updated May 2026 with Gemini 3.5 models
  */
 
 import { ModelSpec } from '../modelTypes';
 
 export const GOOGLE_MODELS: ModelSpec[] = [
-  // Gemini 3.1 models (latest)
+  // Gemini 3.1 models
   {
     provider: 'google',
     name: 'Gemini 3.1 Pro Preview',

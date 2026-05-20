@@ -231,7 +231,7 @@ async function callModel(target: SmokeTarget): Promise<LLMResponse> {
 
   // Codex currently rejects max_output_tokens on the OAuth endpoint.
   if (target.provider !== 'openai-codex') {
-    options.maxTokens = Number(getEnv('MODEL_SMOKE_MAX_TOKENS') || 16);
+    options.maxTokens = Number(getEnv('MODEL_SMOKE_MAX_TOKENS') || 64);
   }
 
   return adapter.generateUncached(
