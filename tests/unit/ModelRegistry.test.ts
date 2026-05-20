@@ -49,3 +49,25 @@ describe('ModelRegistry GPT-5.5 models', () => {
     expect(DEFAULT_MODELS['openai-codex']).toBe('gpt-5.5');
   });
 });
+
+describe('ModelRegistry Gemini 3.5 Flash models', () => {
+  it('registers Gemini 3.5 Flash for Google', () => {
+    expect(ModelRegistry.findModel('google', 'gemini-3.5-flash')).toEqual(expect.objectContaining({
+      name: 'Gemini 3.5 Flash',
+      contextWindow: 1048576,
+      maxTokens: 65536,
+      inputCostPerMillion: 1.5,
+      outputCostPerMillion: 9
+    }));
+  });
+
+  it('registers Gemini 3.5 Flash for OpenRouter with the provider namespace', () => {
+    expect(ModelRegistry.findModel('openrouter', 'google/gemini-3.5-flash')).toEqual(expect.objectContaining({
+      name: 'Gemini 3.5 Flash',
+      contextWindow: 1048576,
+      maxTokens: 65536,
+      inputCostPerMillion: 1.5,
+      outputCostPerMillion: 9
+    }));
+  });
+});

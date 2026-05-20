@@ -1,0 +1,23 @@
+mode: live
+testVaultPath: tests/eval/test-vault/
+
+providers:
+  openrouter:
+    apiKeyEnv: OPENROUTER_API_KEY
+    models:
+      - google/gemini-3.5-flash
+    enabled: true
+
+defaults:
+  temperature: 0
+  maxRetries: 1
+  retryDelayMs: 2000
+  timeout: 120000
+  systemPrompt: default
+
+capture:
+  enabled: true
+  dumpOnFailure: true
+  artifactsDir: test-artifacts/
+
+scenarios: tests/eval/scenarios/**/*.eval.yaml
