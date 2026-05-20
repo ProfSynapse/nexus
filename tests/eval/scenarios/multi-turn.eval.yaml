@@ -98,20 +98,20 @@
                 tool: move
                 description: Move a file to a new location
                 command: "storage move"
-                usage: "storage move <path> <destination>"
+                usage: "storage move <path> <newPath>"
                 arguments:
                   - name: path
                     flag: --path
                     type: string
                     required: true
                     positional: true
-                  - name: destination
-                    flag: --destination
+                  - name: newPath
+                    flag: --new-path
                     type: string
                     required: true
                     positional: true
                 examples:
-                  - 'storage move "path-value" "destination-value"'
+                  - 'storage move "path-value" "newPath-value"'
         useTools:
           success: true
           result:
@@ -141,7 +141,7 @@
           result:
             tools:
               - agent: searchManager
-                tool: searchContent
+                tool: content
                 description: Search for notes by content keyword
                 command: "search content"
                 usage: "search content <query>"
@@ -163,13 +163,13 @@
           success: true
           result:
             results:
-              - tool: searchManager_searchContent
+              - tool: searchManager_content
                 success: true
                 result:
                   results:
                     - path: notes/roadmap-q2.md
                       score: 0.95
-        searchManager_searchContent:
+        searchManager_content:
           success: true
           result:
             results:

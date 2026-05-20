@@ -120,7 +120,7 @@
           result:
             tools:
               - agent: searchManager
-                tool: searchContent
+                tool: content
                 description: Search for notes by content keyword
                 command: "search content"
                 usage: "search content <query>"
@@ -142,7 +142,7 @@
           success: true
           result:
             results:
-              - tool: searchManager_searchContent
+              - tool: searchManager_content
                 success: true
                 result:
                   results:
@@ -151,7 +151,7 @@
                       snippet: "Q2 roadmap priorities..."
                   totalResults: 1
                   query: project roadmap
-        searchManager_searchContent:
+        searchManager_content:
           success: true
           result:
             results:

@@ -109,7 +109,7 @@
           result:
             tools:
               - agent: searchManager
-                tool: searchContent
+                tool: content
                 description: Search for notes by content keyword
                 command: "search content"
                 usage: "search content <query>"
@@ -131,14 +131,14 @@
           success: true
           result:
             results:
-              - tool: searchManager_searchContent
+              - tool: searchManager_content
                 success: true
                 result:
                   results:
                     - path: notes/q2-review.md
                       score: 0.91
                   totalResults: 1
-        searchManager_searchContent:
+        searchManager_content:
           success: true
           result:
             results:

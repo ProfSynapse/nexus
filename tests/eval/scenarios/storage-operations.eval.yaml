@@ -18,20 +18,20 @@
                 tool: move
                 description: Move a file or folder
                 command: "storage move"
-                usage: "storage move <path> <destination>"
+                usage: "storage move <path> <newPath>"
                 arguments:
                   - name: path
                     flag: --path
                     type: string
                     required: true
                     positional: true
-                  - name: destination
-                    flag: --destination
+                  - name: newPath
+                    flag: --new-path
                     type: string
                     required: true
                     positional: true
                 examples:
-                  - 'storage move "path-value" "destination-value"'
+                  - 'storage move "path-value" "newPath-value"'
 
     - expectedTools:
         - name: useTools
@@ -103,20 +103,20 @@
                 tool: copy
                 description: Copy a file or folder
                 command: "storage copy"
-                usage: "storage copy <path> <destination>"
+                usage: "storage copy <path> <newPath>"
                 arguments:
                   - name: path
                     flag: --path
                     type: string
                     required: true
                     positional: true
-                  - name: destination
-                    flag: --destination
+                  - name: newPath
+                    flag: --new-path
                     type: string
                     required: true
                     positional: true
                 examples:
-                  - 'storage copy "path-value" "destination-value"'
+                  - 'storage copy "path-value" "newPath-value"'
 
     - expectedTools:
         - name: useTools

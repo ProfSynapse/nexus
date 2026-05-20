@@ -175,7 +175,7 @@ The fixture covers `contentManager` (4 of 5 tools), `storageManager` (5 of 6 too
 | `ingestManager_*` (full agent) | IngestManager | ingest, listCapabilities |
 | App agents (webTools, composer) | apps/ | openWebpage, capturePagePdf, capturePagePng, captureToMarkdown, extractLinks, compose, listFormats |
 
-The Task #8 eval run showed the LLM calling `searchManager_memory`, `canvasManager_list`, etc. — names that exist in production but were rejected as hallucinations by the harness because they are not in the fixture. After the Task #11 schema swap, this concern goes away: the LLM will only see `getTools`/`useTools` and discover available tools dynamically.
+The Task #8 eval run showed the LLM calling `searchManager_memory`, `canvasManager_list`, etc. — names that exist in production but were rejected as hallucinations by the harness because they are not in the fixture. The Task #11 schema swap removes those names from the callable tool schema, but the production system prompt can still mention agent/tool catalog entries, so live meta evals must still treat direct `agent_tool` calls as prompt-leak or model-behavior failures rather than assuming they cannot happen.
 
 ## Fixture-side tools NOT in production
 
@@ -185,9 +185,9 @@ None. Every fixture entry maps to a production tool class. The drifts above are 
 
 The audit confirms the team-lead's framing: the harness fixture has substantial drift across 8 of 11 entries plus 6+ missing production tools, but Task #11's plan is to swap the entire `NEXUS_TOOLS` array for the two-tool surface (`getTools` + `useTools`). After the swap:
 
-- The harness LLM only sees the two-tool MCP shape.
+- The callable tool schema exposes only the two-tool MCP shape (`getTools` and `useTools`).
 - The executor parses the `useTools.tool` CLI string via the real `ToolCliNormalizer`.
-- Drifts above stop mattering for the LLM-facing surface.
+- Drifts above stop mattering for the callable function surface, but stale CLI examples and prompt catalog text can still bias models toward invalid command names.
 - They still matter for the executor: when it parses `content replace --path foo.md --start "..." --end "..." --content "..."` it must route to the production 4-field schema, not the obsolete 3-field one. This audit is the reference for getting that routing right.
 
 ## Evidence Index
