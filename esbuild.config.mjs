@@ -9,6 +9,8 @@ const sqlite3VecPackageRoot = dirname(require.resolve("@dao-xyz/sqlite3-vec/pack
 const sqlite3VecWasmEntry = join(sqlite3VecPackageRoot, "index.mjs");
 const sqlite3VecBrowserEntry = join(sqlite3VecPackageRoot, "dist", "unified-browser.js");
 const sqlite3VecWasmBinary = join(sqlite3VecPackageRoot, "sqlite-wasm", "jswasm", "sqlite3.wasm");
+const lieShim = join(process.cwd(), "scripts", "esbuild-shims", "lie.js");
+const setImmediateShim = join(process.cwd(), "scripts", "esbuild-shims", "setimmediate.js");
 
 const banner =
 `/*
@@ -83,6 +85,11 @@ const context = await esbuild.context({
     // Use the raw WASM module to get access to sqlite3.capi for serialize/deserialize
     "@dao-xyz/sqlite3-vec/wasm": sqlite3VecWasmEntry,
     "@dao-xyz/sqlite3-vec": sqlite3VecBrowserEntry,
+    // JSZip's browser compatibility polyfills contain dynamic <script>
+    // fallbacks that trigger the Obsidian plugin-store scanner. Obsidian's
+    // Electron runtime has native Promise and timers, so use small local shims.
+    "lie": lieShim,
+    "setimmediate": setImmediateShim,
     // Note: @xenova/transformers is NOT bundled - loaded via iframe from CDN
     // This avoids all Electron/Node.js environment conflicts
   },

@@ -37,6 +37,20 @@ export default defineConfig([
     // eslint-plugin-depend, and JSON linting for package.json)
     ...obsidianPlugin.configs.recommended,
 
+    // eslint-plugin-obsidianmd 0.3.0 enables a few typed rules through a
+    // global wrapper. Keep package.json dependency checks, but do not run
+    // TypeScript parser-service rules on JSON.
+    {
+        files: ["package.json"],
+        rules: {
+            "obsidianmd/no-plugin-as-component": "off",
+            "obsidianmd/no-view-references-in-plugin": "off",
+            "obsidianmd/no-unsupported-api": "off",
+            "obsidianmd/prefer-file-manager-trash-file": "off",
+            "obsidianmd/prefer-instanceof": "off",
+        },
+    },
+
     // Type-aware linting for source files covered by tsconfig.json
     {
         files: ["**/*.ts", "**/*.tsx"],
@@ -74,7 +88,14 @@ export default defineConfig([
             "obsidianmd/ui/sentence-case": ["error", {
                 acronyms: [...DEFAULT_ACRONYMS, "MCP", "LLM"],
                 brands: [...DEFAULT_BRANDS, "Claude Desktop", "Claude", "Nexus", "LM Studio", "Ollama", "WebLLM"],
-                ignoreRegex: ["^e\\.g\\.", "^ollama\\s"],
+                ignoreRegex: [
+                    "^e\\.g\\.",
+                    "^ollama\\s",
+                    "^https?://",
+                    "^Enter your .* URL \\(default: https?://",
+                    "^Please enter a valid URL \\(e\\.g\\., https?://",
+                    "^Enter this code at github\\.com/login/device:$",
+                ],
             }],
         },
     },
