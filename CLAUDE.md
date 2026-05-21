@@ -74,7 +74,7 @@ Last Updated: 2026-05-13
 
 ## Project Overview
 - **Name**: Nexus (package: claudesidian-mcp)
-- **Version**: 5.9.4
+- **Version**: 5.9.5
 - **Type**: Obsidian Community Plugin
 - **Purpose**: MCP integration for Obsidian with AI-powered vault operations
 - **Architecture**: Agent-Tool pattern with domain-driven design
@@ -114,7 +114,7 @@ Full guidelines: `docs/obsidian-plugin-guidelines.md`
 
 ## Recent Changes
 
-**Current Version**: 5.9.4
+**Current Version**: 5.9.5
 Full changelog: `docs/changelog.md`
 
 **Latest** (May 2026):
