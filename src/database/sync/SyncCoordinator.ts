@@ -455,7 +455,13 @@ export class SyncCoordinator {
             await this.workspaceApplier.apply(event);
             await this.sqliteCache.markEventApplied(event.id);
           },
-          { batchSize: Math.min(batchSize, 10), delayBetweenBatches: 10 }
+          {
+            batchSize: Math.min(batchSize, 10),
+            delayBetweenBatches: 10,
+            onProgress: (completed, total) => {
+              options.onProgress?.('Processing workspace events', completed, total);
+            }
+          }
         );
 
         applied += result.totalProcessed;
@@ -499,7 +505,12 @@ export class SyncCoordinator {
             await this.conversationApplier.apply(event);
             await this.sqliteCache.markEventApplied(event.id);
           },
-          { batchSize }
+          {
+            batchSize,
+            onProgress: (completed, total) => {
+              options.onProgress?.('Processing conversation events', completed, total);
+            }
+          }
         );
 
         applied += result.totalProcessed;
@@ -593,7 +604,13 @@ export class SyncCoordinator {
             await this.taskApplier.apply(event);
             await this.sqliteCache.markEventApplied(event.id);
           },
-          { batchSize: Math.min(batchSize, 10), delayBetweenBatches: 10 }
+          {
+            batchSize: Math.min(batchSize, 10),
+            delayBetweenBatches: 10,
+            onProgress: (completed, total) => {
+              options.onProgress?.('Processing task events', completed, total);
+            }
+          }
         );
 
         applied += result.totalProcessed;

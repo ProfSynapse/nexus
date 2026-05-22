@@ -36,22 +36,38 @@ const INITIAL_STATE: StartupHydrationState = {
 };
 
 type Waiter = (ready: boolean) => void;
+type TimeoutMode = 'total' | 'idle';
+
+interface WaiterRecord {
+  settle: Waiter;
+  maxWaitMs: number;
+  timeoutMode: TimeoutMode;
+  onTimeout?: (maxWaitMs: number) => void;
+  timer: number;
+}
+
+interface IdleWatchdog {
+  idleTimeoutMs: number;
+  onTimeout: () => void;
+  timer: number;
+}
 
 /**
  * Encapsulates the startup-hydration phase machine and the query-ready
  * waiter queue for HybridStorageAdapter. Lifted out of the adapter so the
  * state machine has a single owner with a tight, testable API.
  *
- * Lifecycle: idle → (running) → complete | error.
+ * Lifecycle: idle -> (running) -> complete | error.
  *
  * Waiters registered via `waitForQueryReady` resolve when the phase leaves
- * `running`/`error`, or when their per-call timeout fires. Each `start*`
- * variant settles outstanding waiters first if the new phase is itself
- * terminal (complete/error/idle), preserving the previous adapter behavior.
+ * `running`/`error`, or when their timeout fires. Idle-mode waiters and the
+ * rebuild watchdog reset on progress so large rebuilds are not failed solely
+ * because their total duration exceeds a fixed wall-clock window.
  */
 export class StartupHydrationController {
   private state: StartupHydrationState = { ...INITIAL_STATE };
-  private waiters: Waiter[] = [];
+  private waiters: WaiterRecord[] = [];
+  private idleWatchdog: IdleWatchdog | null = null;
 
   getState(): StartupHydrationState {
     return { ...this.state };
@@ -75,6 +91,8 @@ export class StartupHydrationController {
       percent: 0,
       statusText: 'Updating local chat index...'
     };
+    this.armIdleWatchdog();
+    this.armIdleWaiters();
   }
 
   updateProgress(stage: string, progress: number, total: number, isBlocking: boolean): void {
@@ -91,9 +109,12 @@ export class StartupHydrationController {
         ? 'Local chat index updated'
         : `Updating local chat index: ${stage}`
     };
+    this.armIdleWatchdog();
+    this.armIdleWaiters();
   }
 
   complete(): void {
+    this.stopIdleWatchdog();
     this.state = {
       phase: 'complete',
       isBlocking: false,
@@ -107,6 +128,7 @@ export class StartupHydrationController {
   }
 
   fail(error: string): void {
+    this.stopIdleWatchdog();
     this.state = {
       phase: 'error',
       isBlocking: false,
@@ -121,8 +143,23 @@ export class StartupHydrationController {
   }
 
   clear(): void {
+    this.stopIdleWatchdog();
     this.state = { ...INITIAL_STATE };
     this.settleAll(true);
+  }
+
+  startIdleWatchdog(opts: {
+    idleTimeoutMs: number;
+    onTimeout: () => void;
+  }): () => void {
+    this.stopIdleWatchdog();
+    this.idleWatchdog = {
+      idleTimeoutMs: opts.idleTimeoutMs,
+      onTimeout: opts.onTimeout,
+      timer: 0
+    };
+    this.armIdleWatchdog();
+    return () => this.stopIdleWatchdog();
   }
 
   /**
@@ -136,6 +173,7 @@ export class StartupHydrationController {
    */
   waitForReady(opts: {
     maxWaitMs: number;
+    timeoutMode?: TimeoutMode;
     readyProbe?: () => boolean;
     onTimeout?: (maxWaitMs: number) => void;
   }): Promise<boolean> {
@@ -143,32 +181,78 @@ export class StartupHydrationController {
       return Promise.resolve(true);
     }
 
+    if (this.state.phase !== 'running') {
+      if (this.state.phase === 'error') {
+        return Promise.resolve(false);
+      }
+      if (!opts.readyProbe) {
+        return Promise.resolve(true);
+      }
+    }
+
     return new Promise<boolean>((resolve) => {
       let settled = false;
-      const settle = (value: boolean) => {
-        if (settled) return;
-        settled = true;
-        window.clearTimeout(timer);
-        this.waiters = this.waiters.filter(w => w !== settle);
-        resolve(value);
+      const waiter: WaiterRecord = {
+        maxWaitMs: opts.maxWaitMs,
+        timeoutMode: opts.timeoutMode ?? 'total',
+        onTimeout: opts.onTimeout,
+        timer: 0,
+        settle: (value: boolean) => {
+          if (settled) return;
+          settled = true;
+          window.clearTimeout(waiter.timer);
+          this.waiters = this.waiters.filter(w => w !== waiter);
+          resolve(value);
+        }
       };
-      const timer = window.setTimeout(() => {
-        opts.onTimeout?.(opts.maxWaitMs);
-        settle(false);
-      }, opts.maxWaitMs);
-      this.waiters.push(settle);
+      this.waiters.push(waiter);
+      this.armWaiter(waiter);
     });
   }
 
   /**
-   * Resolve every queued waiter with `ready`. Internal — exposed for tests.
+   * Resolve every queued waiter with `ready`. Internal - exposed for tests.
    */
   settleAll(ready: boolean): void {
     if (this.waiters.length === 0) return;
     const waiters = this.waiters;
     this.waiters = [];
-    for (const resolve of waiters) {
-      try { resolve(ready); } catch { /* swallow — waiter already settled */ }
+    for (const waiter of waiters) {
+      try { waiter.settle(ready); } catch { /* swallow - waiter already settled */ }
+    }
+  }
+
+  private armIdleWatchdog(): void {
+    if (!this.idleWatchdog) return;
+    window.clearTimeout(this.idleWatchdog.timer);
+    if (this.state.phase !== 'running') return;
+    const watchdog = this.idleWatchdog;
+    watchdog.timer = window.setTimeout(() => {
+      if (this.idleWatchdog !== watchdog) return;
+      this.idleWatchdog = null;
+      watchdog.onTimeout();
+    }, watchdog.idleTimeoutMs);
+  }
+
+  private stopIdleWatchdog(): void {
+    if (!this.idleWatchdog) return;
+    window.clearTimeout(this.idleWatchdog.timer);
+    this.idleWatchdog = null;
+  }
+
+  private armWaiter(waiter: WaiterRecord): void {
+    window.clearTimeout(waiter.timer);
+    waiter.timer = window.setTimeout(() => {
+      waiter.onTimeout?.(waiter.maxWaitMs);
+      waiter.settle(false);
+    }, waiter.maxWaitMs);
+  }
+
+  private armIdleWaiters(): void {
+    for (const waiter of this.waiters) {
+      if (waiter.timeoutMode === 'idle') {
+        this.armWaiter(waiter);
+      }
     }
   }
 }

@@ -59,6 +59,63 @@ describe('MemorySearchProcessor', () => {
     );
   });
 
+  it('expands compact canonical useTools batch results without legacy.result', async () => {
+    const storageAdapter = {
+      searchTraces: jest.fn().mockResolvedValue([
+        {
+          id: 'trace-1',
+          workspaceId: 'workspace-1',
+          sessionId: 'session-1',
+          timestamp: 100,
+          type: 'tool_call',
+          content: 'Used tools',
+          metadata: {
+            tool: { agent: 'toolManager', mode: 'useTools' },
+            input: {
+              arguments: {
+                tool: 'content write "canonical/probe.md" "hello", content replace "canonical/replaced.md" "old" "new" 1 1'
+              }
+            },
+            batch: {
+              results: [
+                {
+                  agent: 'contentManager',
+                  tool: 'write',
+                  success: true,
+                  params: { path: 'canonical/probe.md' }
+                },
+                {
+                  agent: 'contentManager',
+                  tool: 'replace',
+                  success: true
+                }
+              ]
+            }
+          }
+        }
+      ]),
+      getTraces: jest.fn().mockResolvedValue({ items: [] })
+    };
+    const processor = new MemorySearchProcessor(
+      {} as never,
+      undefined,
+      undefined,
+      storageAdapter as never
+    );
+
+    const results = await processor.executeSearch('replaced.md', {
+      workspaceId: 'workspace-1',
+      memoryTypes: ['traces']
+    });
+
+    expect(results).toHaveLength(1);
+    expect(results[0].trace).toEqual(
+      expect.objectContaining({
+        content: 'Updated canonical/replaced.md'
+      })
+    );
+  });
+
   it('searches activity text derived from useTools CLI commands when result params are omitted', async () => {
     const storageAdapter = {
       searchTraces: jest.fn().mockResolvedValue([]),

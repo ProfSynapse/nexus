@@ -144,4 +144,138 @@ describe('ToolCallTraceService', () => {
       })
     );
   });
+
+  it('records canonical metadata without duplicating bulky legacy params and result blocks', async () => {
+    const memoryService = {
+      recordActivityTrace: jest.fn().mockResolvedValue('trace-1')
+    };
+    const sessionContextManager = {
+      getWorkspaceContext: jest.fn().mockReturnValue(null),
+      setWorkspaceContext: jest.fn()
+    };
+    const workspaceService = {
+      getWorkspaceByNameOrId: jest.fn().mockResolvedValue({
+        id: 'workspace-uuid',
+        name: 'Workspace Name'
+      })
+    };
+    const service = new ToolCallTraceService(
+      memoryService as never,
+      sessionContextManager as never,
+      workspaceService as never,
+      {} as never
+    );
+    const largeParams = 'x'.repeat(20_000);
+    const largeResult = 'y'.repeat(40_000);
+
+    await service.captureToolCall(
+      'contentManager_read',
+      {
+        workspaceId: 'Workspace Name',
+        sessionId: 'session-1',
+        filePath: 'Projects/A.md',
+        prompt: largeParams,
+        context: {
+          memory: 'Trace payload regression test.',
+          goal: 'Avoid duplicate legacy storage.'
+        }
+      },
+      {
+        success: true,
+        content: largeResult,
+        filePath: 'Projects/A.md'
+      },
+      true,
+      12
+    );
+
+    const trace = memoryService.recordActivityTrace.mock.calls[0][0];
+    expect(trace.metadata).toEqual(
+      expect.objectContaining({
+        input: expect.objectContaining({
+          arguments: expect.objectContaining({
+            prompt: largeParams,
+            filePath: 'Projects/A.md'
+          }),
+          files: ['Projects/A.md']
+        }),
+        outcome: { success: true }
+      })
+    );
+    expect(trace.metadata.legacy).toBeUndefined();
+    expect(JSON.stringify(trace.metadata)).not.toContain(largeResult);
+  });
+
+  it('records compact canonical useTools batch results for search expansion', async () => {
+    const memoryService = {
+      recordActivityTrace: jest.fn().mockResolvedValue('trace-1')
+    };
+    const sessionContextManager = {
+      getWorkspaceContext: jest.fn().mockReturnValue(null),
+      setWorkspaceContext: jest.fn()
+    };
+    const workspaceService = {
+      getWorkspaceByNameOrId: jest.fn().mockResolvedValue({
+        id: 'workspace-uuid',
+        name: 'Workspace Name'
+      })
+    };
+    const service = new ToolCallTraceService(
+      memoryService as never,
+      sessionContextManager as never,
+      workspaceService as never,
+      {} as never
+    );
+    const bulkyResult = 'z'.repeat(40_000);
+
+    await service.captureToolCall(
+      'toolManager_useTools',
+      {
+        workspaceId: 'Workspace Name',
+        sessionId: 'session-1',
+        tool: 'content write "batch/probe.md" "hello", content read "batch/probe.md"'
+      },
+      {
+        success: true,
+        data: {
+          results: [
+            {
+              agent: 'contentManager',
+              tool: 'write',
+              success: true,
+              params: { path: 'batch/probe.md', body: bulkyResult },
+              content: bulkyResult
+            },
+            {
+              agent: 'contentManager',
+              tool: 'read',
+              success: true,
+              content: bulkyResult
+            }
+          ]
+        }
+      },
+      true,
+      12
+    );
+
+    const trace = memoryService.recordActivityTrace.mock.calls[0][0];
+    expect(trace.metadata.batch).toEqual({
+      results: [
+        {
+          agent: 'contentManager',
+          tool: 'write',
+          success: true,
+          params: { path: 'batch/probe.md' }
+        },
+        {
+          agent: 'contentManager',
+          tool: 'read',
+          success: true
+        }
+      ]
+    });
+    expect(trace.metadata.legacy).toBeUndefined();
+    expect(JSON.stringify(trace.metadata)).not.toContain(bulkyResult);
+  });
 });

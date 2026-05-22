@@ -6,6 +6,17 @@ import { resolveVaultRoot } from '../../database/storage/VaultRootResolver';
 import { DEFAULT_STORAGE_SETTINGS } from '../../types/plugin/PluginTypes';
 import { changeDataFolderPath } from '../storage/changeDataFolderPath';
 
+type RebuildableStorageAdapter = IStorageAdapter & {
+    rebuildCache(options?: { onProgress?: (label: string, done: number, total: number) => void }): Promise<void>;
+};
+
+function isRebuildableStorageAdapter(adapter: IStorageAdapter | null): adapter is RebuildableStorageAdapter {
+    return typeof adapter === 'object'
+        && adapter !== null
+        && 'rebuildCache' in adapter
+        && typeof adapter.rebuildCache === 'function';
+}
+
 export interface DataTabServices {
     app: App;
     settings: Settings;
@@ -39,6 +50,7 @@ export class DataTab {
 
         this.renderExportSection();
         this.renderStorageSection();
+        this.renderMaintenanceSection();
     }
 
     destroy(): void {
@@ -148,6 +160,49 @@ export class DataTab {
                     void this.handleStorageRootChange();
                 });
             });
+    }
+
+    private renderMaintenanceSection(): void {
+        const section = this.container.createDiv('csr-section');
+        section.createDiv('csr-section-header').setText('Maintenance');
+        const content = section.createDiv('csr-section-content');
+
+        new Setting(content)
+            .setName('Rebuild cache')
+            .setDesc('Wipe the local SQLite cache and rebuild it from synced event files.')
+            .addButton(button => button
+                .setButtonText('Rebuild cache')
+                .setIcon('refresh-cw')
+                .onClick(() => {
+                    void this.handleRebuildCache(button);
+                }));
+    }
+
+    private async handleRebuildCache(button: ButtonComponent): Promise<void> {
+        if (!this.storageAdapter) {
+            await this.initStorageAdapter();
+        }
+
+        if (!isRebuildableStorageAdapter(this.storageAdapter)) {
+            new Notice('Storage cache rebuild is not available. Please try again after startup finishes.');
+            return;
+        }
+
+        const stickyNotice = new Notice('Rebuilding Nexus cache...', 0);
+        button.setButtonText('Rebuilding cache...').setDisabled(true);
+
+        try {
+            await this.storageAdapter.rebuildCache();
+            stickyNotice.hide();
+            new Notice('Nexus cache rebuilt successfully.');
+        } catch (error) {
+            stickyNotice.hide();
+            const message = error instanceof Error ? error.message : String(error);
+            console.error('[DataTab] Cache rebuild failed:', error);
+            new Notice(`Cache rebuild failed: ${message}`);
+        } finally {
+            button.setButtonText('Rebuild cache').setDisabled(false);
+        }
     }
 
     private async handleStorageRootChange(): Promise<void> {

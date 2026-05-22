@@ -109,7 +109,11 @@ export interface HybridStorageAdapterOptions {
   cacheTTL?: number;
   /** Query cache max size (default: 500) */
   cacheMaxSize?: number;
+  /** Idle timeout for startup full rebuild progress (default: 120000) */
+  startupRebuildIdleTimeoutMs?: number;
 }
+
+export const DEFAULT_STARTUP_REBUILD_IDLE_TIMEOUT_MS = 120_000;
 
 /**
  * Payload delivered to subscribers of the adapter's `external-sync` event.
@@ -154,6 +158,7 @@ export class HybridStorageAdapter implements IStorageAdapter {
   private readonly externalEvents = new Events();
   private readonly hydration = new StartupHydrationController();
   private readonly initLifecycle = new InitLifecycleController();
+  private readonly startupRebuildIdleTimeoutMs: number;
 
   /**
    * Coalesces concurrent `rebuildCache` invocations. When a rebuild is in
@@ -191,6 +196,7 @@ export class HybridStorageAdapter implements IStorageAdapter {
     this.app = options.app;
     this.plugin = options.plugin;
     this.basePath = options.basePath ?? '.nexus';
+    this.startupRebuildIdleTimeoutMs = options.startupRebuildIdleTimeoutMs ?? DEFAULT_STARTUP_REBUILD_IDLE_TIMEOUT_MS;
     const storageRoots = resolvePluginStorageRoot(this.app, this.plugin);
     this.storageCoordinator = new PluginScopedStorageCoordinator(this.app, this.plugin, this.basePath);
 
@@ -318,16 +324,7 @@ export class HybridStorageAdapter implements IStorageAdapter {
       // registered before now will settle when initLifecycle.run() returns.
       const syncState = await this.sqliteCache.getSyncState(this.jsonlWriter.getDeviceId());
       if (!syncState || actuallyMigrated || shouldBlockStartupHydration) {
-        try {
-          await this.syncCoordinator.fullRebuild({
-            onProgress: (stage, progress, total) => {
-              this.hydration.updateProgress(stage, progress, total, shouldBlockStartupHydration);
-            }
-          });
-        } catch (rebuildError) {
-          console.error('[HybridStorageAdapter] Full rebuild failed:', rebuildError);
-          this.hydration.fail(rebuildError instanceof Error ? rebuildError.message : String(rebuildError));
-        }
+        await this.runStartupFullRebuild(shouldBlockStartupHydration);
       } else {
         try {
           await this.syncCoordinator.sync();
@@ -352,6 +349,56 @@ export class HybridStorageAdapter implements IStorageAdapter {
       console.error('[HybridStorageAdapter] Initialization failed:', error);
       throw error;
     }
+  }
+
+  private async runStartupFullRebuild(isBlockingHydration: boolean): Promise<void> {
+    let rejectIdleTimeout: ((error: Error) => void) | undefined;
+    const idleTimeoutPromise = isBlockingHydration
+      ? new Promise<never>((_, reject) => {
+        rejectIdleTimeout = reject;
+      })
+      : undefined;
+
+    const stopWatchdog = isBlockingHydration
+      ? this.hydration.startIdleWatchdog({
+        idleTimeoutMs: this.getStartupRebuildIdleTimeoutMs(),
+        onTimeout: () => {
+          const message = `Local chat index rebuild made no progress for ${this.getStartupRebuildIdleTimeoutMs()} ms`;
+          this.hydration.fail(message);
+          rejectIdleTimeout?.(new Error(message));
+        }
+      })
+      : undefined;
+
+    try {
+      const rebuildPromise = this.syncCoordinator.fullRebuild({
+        onProgress: (stage, progress, total) => {
+          this.hydration.updateProgress(stage, progress, total, isBlockingHydration);
+        }
+      });
+      const result = idleTimeoutPromise
+        ? await Promise.race([rebuildPromise, idleTimeoutPromise])
+        : await rebuildPromise;
+
+      if (!result.success) {
+        const summary = result.errors.length > 0 ? result.errors.join('; ') : 'Unknown error';
+        const message = `Local chat index rebuild failed: ${summary}`;
+        this.hydration.fail(message);
+        throw new Error(message);
+      }
+    } catch (rebuildError) {
+      console.error('[HybridStorageAdapter] Full rebuild failed:', rebuildError);
+      if (this.hydration.getState().phase !== 'error') {
+        this.hydration.fail(rebuildError instanceof Error ? rebuildError.message : String(rebuildError));
+      }
+      throw rebuildError instanceof Error ? rebuildError : new Error(String(rebuildError));
+    } finally {
+      stopWatchdog?.();
+    }
+  }
+
+  private getStartupRebuildIdleTimeoutMs(): number {
+    return this.startupRebuildIdleTimeoutMs ?? DEFAULT_STARTUP_REBUILD_IDLE_TIMEOUT_MS;
   }
 
   private async runReconcile(label: string, fn: () => Promise<number>): Promise<void> {
@@ -583,15 +630,28 @@ export class HybridStorageAdapter implements IStorageAdapter {
     return this.initLifecycle.waitForReady();
   }
 
-  waitForQueryReady(maxWaitMs = 60_000): Promise<boolean> {
+  waitForQueryReady(maxWaitMs = this.getStartupRebuildIdleTimeoutMs()): Promise<boolean> {
     if (this.isQueryReady()) return Promise.resolve(true);
     if (this.initLifecycle.isInitialized() && this.initLifecycle.getError()) {
       return Promise.resolve(false);
     }
+    if (this.initLifecycle.hasStarted() && !this.initLifecycle.isInitialized()) {
+      return this.initLifecycle.waitForReady().then((ready) => {
+        if (!ready) return false;
+        if (this.isQueryReady()) return true;
+        return this.hydration.waitForReady({
+          maxWaitMs,
+          timeoutMode: 'idle',
+          readyProbe: () => this.isQueryReady(),
+          onTimeout: (ms) => console.error('[HybridStorageAdapter] waitForQueryReady idle timed out after', ms, 'ms')
+        });
+      });
+    }
     return this.hydration.waitForReady({
       maxWaitMs,
+      timeoutMode: 'idle',
       readyProbe: () => this.isQueryReady(),
-      onTimeout: (ms) => console.error('[HybridStorageAdapter] waitForQueryReady timed out after', ms, 'ms')
+      onTimeout: (ms) => console.error('[HybridStorageAdapter] waitForQueryReady idle timed out after', ms, 'ms')
     });
   }
 

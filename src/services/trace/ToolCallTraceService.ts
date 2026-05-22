@@ -232,7 +232,7 @@ export class ToolCallTraceService {
 
     const outcome = this.buildOutcomeMetadata(options.success, options.response);
 
-    return TraceMetadataBuilder.create({
+    const metadata = TraceMetadataBuilder.create({
       tool: {
         id: `${options.agent}_${options.mode}`,
         agent: options.agent,
@@ -240,13 +240,10 @@ export class ToolCallTraceService {
       },
       context,
       input,
-      outcome,
-      legacy: {
-        params: options.params,
-        result: options.response,
-        relatedFiles: options.relatedFiles
-      }
+      outcome
     });
+    const batch = this.buildUseToolsBatchMetadata(options.agent, options.mode, options.params, options.response);
+    return batch ? { ...metadata, batch } : metadata;
   }
 
   private buildContextMetadata(
@@ -305,6 +302,100 @@ export class ToolCallTraceService {
             : undefined
       }
     };
+  }
+
+  private buildUseToolsBatchMetadata(
+    agent: string,
+    mode: string,
+    params: ToolCallParams,
+    response: ToolCallResponse
+  ): { results: Array<Record<string, unknown>> } | undefined {
+    if (agent !== 'toolManager' || (mode !== 'useTools' && mode !== 'useTool')) {
+      return undefined;
+    }
+
+    const paramsRecord = asRecord(params);
+    const responseRecord = asRecord(response);
+    const responseResults = this.extractUseToolsResponseResults(responseRecord);
+    const toolString = getString(paramsRecord.tool);
+    const segments = toolString ? splitTopLevelSegments(toolString) : [];
+    const resultCount = Math.max(responseResults.length, segments.length);
+
+    if (resultCount === 0) {
+      return undefined;
+    }
+
+    const results: Array<Record<string, unknown>> = [];
+    for (let index = 0; index < resultCount; index += 1) {
+      const responseResult = responseResults[index];
+      const segmentTool = segments[index] ? this.extractSegmentTool(segments[index]) : undefined;
+      const resultAgent = getString(responseResult?.agent) || segmentTool?.agent;
+      const resultTool = getString(responseResult?.tool) || segmentTool?.tool;
+
+      if (!resultAgent || !resultTool) {
+        continue;
+      }
+
+      const compactResult: Record<string, unknown> = {
+        agent: resultAgent,
+        tool: resultTool
+      };
+
+      const success = typeof responseResult?.success === 'boolean'
+        ? responseResult.success
+        : typeof responseRecord.success === 'boolean'
+          ? responseRecord.success
+          : undefined;
+      if (success !== undefined) {
+        compactResult.success = success;
+      }
+
+      const compactParams = this.extractCompactResultParams(responseResult);
+      if (compactParams) {
+        compactResult.params = compactParams;
+      }
+
+      results.push(compactResult);
+    }
+
+    return results.length > 0 ? { results } : undefined;
+  }
+
+  private extractUseToolsResponseResults(response: Record<string, unknown>): Array<Record<string, unknown>> {
+    const data = asRecord(response.data);
+    if (Array.isArray(data.results)) {
+      return data.results.filter(isRecord);
+    }
+
+    if (getString(response.agent) && getString(response.tool)) {
+      return [response];
+    }
+
+    return [];
+  }
+
+  private extractSegmentTool(segment: string): { agent: string; tool: string } | undefined {
+    const tokens = tokenizeWithMeta(segment);
+    if (tokens.length < 2) {
+      return undefined;
+    }
+
+    return {
+      agent: tokens[0].value,
+      tool: tokens[1].value
+    };
+  }
+
+  private extractCompactResultParams(result: Record<string, unknown> | undefined): Record<string, string> | undefined {
+    const params = asRecord(result?.params);
+    const compact: Record<string, string> = {};
+    for (const key of ['path', 'filePath', 'query', 'name']) {
+      if (typeof params[key] === 'string') {
+        compact[key] = params[key];
+      }
+    }
+
+    return Object.keys(compact).length > 0 ? compact : undefined;
   }
 
   /**

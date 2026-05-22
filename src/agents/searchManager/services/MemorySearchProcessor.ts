@@ -504,14 +504,17 @@ export class MemorySearchProcessor implements MemorySearchProcessorInterface {
       return [];
     }
 
+    const batch = metadata?.batch as Record<string, unknown> | undefined;
+    const canonicalResults = Array.isArray(batch?.results) ? batch.results : undefined;
     const legacy = metadata?.legacy as Record<string, unknown> | undefined;
     const result = legacy?.result as Record<string, unknown> | undefined;
     const data = result?.data as Record<string, unknown> | undefined;
-    const results = Array.isArray(data?.results)
-      ? data.results
-      : result?.agent && result.tool
-        ? [result]
-        : [];
+    const results = canonicalResults ||
+      (Array.isArray(data?.results)
+        ? data.results
+        : result?.agent && result.tool
+          ? [result]
+          : []);
 
     if (results.length === 0) {
       return [];
