@@ -552,7 +552,7 @@ export class MemoryService {
       async (adapter) => {
         const result = await adapter.getStates(workspaceId, sessionId, options);
         const convertedItems: StateItem[] = await Promise.all(result.items.map(async stateMeta => {
-          const fullState = stateMeta.tags ? null : await adapter.getState(stateMeta.id);
+          const fullState = await adapter.getState(stateMeta.id);
           const tags = stateMeta.tags || this.extractStateTagsFromContent(fullState?.content);
           return {
             id: stateMeta.id,
