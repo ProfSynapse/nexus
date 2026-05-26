@@ -710,17 +710,23 @@ export class MemoryService {
     sessionId: string,
     stateId: string
   ): Promise<void> {
-    const workspace = await this.workspaceService.getWorkspace(workspaceId);
+    return withDualBackend(
+      this.storageAdapterOrGetter,
+      async (adapter) => {
+        await adapter.deleteState(stateId);
+      },
+      async () => {
+        const workspace = await this.workspaceService.getWorkspace(workspaceId);
 
-    if (!workspace || !workspace.sessions[sessionId]) {
-      throw new Error('Session not found');
-    }
+        if (!workspace || !workspace.sessions[sessionId]) {
+          throw new Error('Session not found');
+        }
 
-    // Delete the state
-    delete workspace.sessions[sessionId].states[stateId];
+        delete workspace.sessions[sessionId].states[stateId];
 
-    // Save workspace
-    await this.workspaceService.updateWorkspace(workspaceId, workspace);
+        await this.workspaceService.updateWorkspace(workspaceId, workspace);
+      }
+    );
   }
 
 }
