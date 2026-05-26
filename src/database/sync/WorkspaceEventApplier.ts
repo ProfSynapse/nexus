@@ -13,6 +13,7 @@ import {
   SessionCreatedEvent,
   SessionUpdatedEvent,
   StateSavedEvent,
+  StateUpdatedEvent,
   StateDeletedEvent,
   TraceAddedEvent,
 } from '../interfaces/StorageEvents';
@@ -55,6 +56,9 @@ export class WorkspaceEventApplier {
         break;
       case 'state_saved':
         await this.applyStateSaved(event);
+        break;
+      case 'state_updated':
+        await this.applyStateUpdated(event);
         break;
       case 'state_deleted':
         await this.applyStateDeleted(event);
@@ -191,6 +195,38 @@ export class WorkspaceEventApplier {
         event.data.tags ? JSON.stringify(event.data.tags) : null
       ]
     );
+  }
+
+  private async applyStateUpdated(event: StateUpdatedEvent): Promise<void> {
+    if (!event.stateId) {
+      return;
+    }
+
+    const updates: string[] = [];
+    const values: unknown[] = [];
+
+    if (event.data.name !== undefined) {
+      updates.push('name = ?');
+      values.push(event.data.name);
+    }
+    if (event.data.description !== undefined) {
+      updates.push('description = ?');
+      values.push(event.data.description);
+    }
+    if (event.data.tags !== undefined) {
+      updates.push('tagsJson = ?');
+      values.push(JSON.stringify(event.data.tags));
+    }
+    // stateJson lives in JSONL only (not in the SQLite states table), so no
+    // SQLite column update is needed when only content changes.
+
+    if (updates.length > 0) {
+      values.push(event.stateId);
+      await this.sqliteCache.run(
+        `UPDATE states SET ${updates.join(', ')} WHERE id = ?`,
+        values
+      );
+    }
   }
 
   private async applyStateDeleted(event: StateDeletedEvent): Promise<void> {

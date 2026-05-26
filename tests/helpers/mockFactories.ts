@@ -51,6 +51,8 @@ interface MockStorageAdapter {
   addTrace: MockFn<[], Promise<string>>;
   getTraces: MockFn<[], Promise<Record<string, unknown>>>;
   saveState: MockFn<[], Promise<string>>;
+  updateState: MockFn;
+  deleteState: MockFn;
   getState: MockFn<[], Promise<unknown>>;
   getStates: MockFn<[], Promise<Record<string, unknown>>>;
   getConversations: MockFn<[], Promise<Record<string, unknown>>>;
@@ -174,6 +176,8 @@ export function createMockAdapter(ready: boolean): MockStorageAdapter {
     addTrace: jest.fn().mockResolvedValue('trace-new'),
     getTraces: jest.fn().mockResolvedValue({ ...EMPTY_PAGE }),
     saveState: jest.fn().mockResolvedValue('state-new'),
+    updateState: jest.fn(),
+    deleteState: jest.fn(),
     getState: jest.fn().mockResolvedValue(null),
     getStates: jest.fn().mockResolvedValue({ ...EMPTY_PAGE }),
     getConversations: jest.fn().mockResolvedValue({ ...EMPTY_PAGE }),

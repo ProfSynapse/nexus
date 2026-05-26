@@ -27,6 +27,18 @@ export interface SaveStateData {
 }
 
 /**
+ * Partial mutations allowed on an existing state. Only fields present here
+ * are mutable; the original `created` timestamp, `id`, `workspaceId`, and
+ * `sessionId` remain immutable.
+ */
+export interface UpdateStateData {
+  name?: string;
+  description?: string;
+  tags?: string[];
+  content?: unknown;
+}
+
+/**
  * State repository interface
  */
 export interface IStateRepository extends IRepository<StateMetadata> {
@@ -65,6 +77,17 @@ export interface IStateRepository extends IRepository<StateMetadata> {
     sessionId: string,
     data: SaveStateData
   ): Promise<string>;
+
+  /**
+   * Update an existing state's metadata or content.
+   * Writes a state_updated event to the workspace JSONL and patches the
+   * SQLite cache. Only fields present in `updates` are mutated.
+   *
+   * @param id - State ID
+   * @param updates - Partial fields to mutate
+   * @throws Error if the state does not exist
+   */
+  updateState(id: string, updates: UpdateStateData): Promise<void>;
 
   /**
    * Count states for a workspace or session
