@@ -21,11 +21,13 @@
 import { BaseRepository, RepositoryDependencies, DatabaseRow } from './base/BaseRepository';
 import {
   IStateRepository,
-  SaveStateData
+  SaveStateData,
+  UpdateStateData
 } from './interfaces/IStateRepository';
 import { StateMetadata, StateData } from '../../types/storage/HybridStorageTypes';
 import {
   StateSavedEvent,
+  StateUpdatedEvent,
   StateDeletedEvent
 } from '../interfaces/StorageEvents';
 import { PaginatedResult, PaginationParams } from '../../types/pagination/PaginationTypes';
@@ -203,23 +205,29 @@ export class StateRepository
       return null;
     }
 
-    // Read full state from JSONL file
+    // Read full state from JSONL file. Fold subsequent state_updated events
+    // over the original state_saved event so callers see the latest content.
     try {
-      const events = await this.jsonlWriter.readEvents<StateSavedEvent>(
+      const events = await this.jsonlWriter.readEvents<StateSavedEvent | StateUpdatedEvent>(
         this.jsonlPath(metadata.workspaceId)
       );
 
-      // Find the state saved event for this ID
-      const stateEvent = events.find(
-        e => e.type === 'state_saved' && e.data.id === id
+      const savedEvent = events.find(
+        (e): e is StateSavedEvent => e.type === 'state_saved' && e.data.id === id
       );
 
-      if (!stateEvent) {
+      if (!savedEvent) {
         this.logError('getStateData', `State event not found in JSONL: ${id}`);
         return null;
       }
 
-      const content = this.parseJsonValue<unknown>(stateEvent.data.stateJson);
+      let content = this.parseJsonValue<unknown>(savedEvent.data.stateJson);
+
+      for (const event of events) {
+        if (event.type === 'state_updated' && event.stateId === id && event.data.stateJson !== undefined) {
+          content = this.parseJsonValue<unknown>(event.data.stateJson);
+        }
+      }
 
       const stateData: StateData = {
         ...metadata,
@@ -299,6 +307,78 @@ export class StateRepository
       return id;
     } catch (error) {
       this.logError('saveState', error);
+      throw error;
+    }
+  }
+
+  async updateState(id: string, updates: UpdateStateData): Promise<void> {
+    if (
+      updates.name === undefined &&
+      updates.description === undefined &&
+      updates.tags === undefined &&
+      updates.content === undefined
+    ) {
+      return;
+    }
+
+    try {
+      await this.transaction(async () => {
+        const metadata = await this.getById(id);
+        if (!metadata) {
+          throw new Error(`State not found: ${id}`);
+        }
+
+        const eventData: StateUpdatedEvent['data'] = {};
+        if (updates.name !== undefined) eventData.name = updates.name;
+        if (updates.description !== undefined) eventData.description = updates.description;
+        if (updates.tags !== undefined) eventData.tags = updates.tags;
+        if (updates.content !== undefined) {
+          eventData.stateJson = JSON.stringify(updates.content);
+        }
+
+        await this.writeEvent<StateUpdatedEvent>(
+          this.jsonlPath(metadata.workspaceId),
+          {
+            type: 'state_updated',
+            workspaceId: metadata.workspaceId,
+            sessionId: metadata.sessionId,
+            stateId: id,
+            data: eventData
+          }
+        );
+
+        const setClauses: string[] = [];
+        const params: QueryParams = [];
+        if (updates.name !== undefined) {
+          setClauses.push('name = ?');
+          params.push(updates.name);
+        }
+        if (updates.description !== undefined) {
+          setClauses.push('description = ?');
+          params.push(updates.description);
+        }
+        if (updates.tags !== undefined) {
+          setClauses.push('tagsJson = ?');
+          params.push(JSON.stringify(updates.tags));
+        }
+
+        if (setClauses.length > 0) {
+          params.push(id);
+          await this.sqliteCache.run(
+            `UPDATE states SET ${setClauses.join(', ')} WHERE id = ?`,
+            params
+          );
+        }
+
+        // Invalidate content cache so the next getStateData re-reads the
+        // folded JSONL (state_saved + state_updated events).
+        this.stateContentCache.delete(id);
+      });
+
+      this.invalidateCache();
+      this.log('updateState', { id, fields: Object.keys(updates) });
+    } catch (error) {
+      this.logError('updateState', error);
       throw error;
     }
   }

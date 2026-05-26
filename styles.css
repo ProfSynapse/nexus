@@ -8328,3 +8328,141 @@ body.is-mobile .nexus-task-board-shell {
         flex-direction: column;
     }
 }
+
+/* ============================================================
+   States section (workspace detail → States)
+   ============================================================ */
+
+.nexus-states-section {
+    /* inherits .nexus-form-section spacing/borders */
+}
+
+.nexus-states-toolbar {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: var(--space-m);
+    flex-wrap: wrap;
+}
+
+.nexus-states-archived-toggle {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: var(--space-s);
+}
+
+.nexus-states-toolbar-label {
+    font-size: var(--font-ui-small);
+    color: var(--text-muted);
+}
+
+.nexus-states-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-s);
+}
+
+.nexus-states-row {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-m);
+    padding: var(--space-m);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s);
+    background: var(--background-secondary);
+}
+
+.nexus-states-row--archived {
+    opacity: 0.65;
+}
+
+.nexus-states-row-main {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xxs);
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.nexus-states-row-title {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: var(--space-s);
+    font-size: var(--font-ui-medium);
+    font-weight: var(--font-semibold);
+    color: var(--text-normal);
+    overflow-wrap: anywhere;
+}
+
+.nexus-states-archived-badge {
+    font-size: var(--font-ui-smaller);
+    font-weight: var(--font-normal);
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 2px var(--space-xs);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--radius-s);
+    background: var(--background-primary);
+}
+
+.nexus-states-row-meta {
+    font-size: var(--font-ui-smaller);
+    color: var(--text-muted);
+}
+
+.nexus-states-row-description {
+    font-size: var(--font-ui-small);
+    color: var(--text-normal);
+    overflow-wrap: anywhere;
+}
+
+.nexus-states-row-actions {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: var(--space-xs);
+    flex: 0 0 auto;
+}
+
+.nexus-states-action-btn {
+    /* clickable-icon supplies most styling; only tweak hit target */
+    padding: var(--space-xs);
+}
+
+.nexus-states-delete-btn:hover {
+    color: var(--text-error);
+}
+
+.nexus-states-error {
+    color: var(--text-error);
+}
+
+/* State edit modal */
+
+.nexus-state-edit-modal h2 {
+    margin-top: 0;
+}
+
+.nexus-state-edit-label {
+    display: block;
+    margin-top: var(--space-m);
+    margin-bottom: var(--space-xs);
+    font-size: var(--font-ui-small);
+    font-weight: var(--font-semibold);
+    color: var(--text-normal);
+}
+
+.nexus-state-edit-input {
+    width: 100%;
+}
+
+.nexus-state-edit-textarea {
+    width: 100%;
+    min-height: 96px;
+    resize: vertical;
+}

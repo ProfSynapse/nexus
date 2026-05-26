@@ -13,6 +13,8 @@ import type { WorkspaceTaskSummary } from '../taskManager/types';
 import { CreateStateTool } from './tools/states/createState';
 import { ListStatesTool } from './tools/states/listStates';
 import { LoadStateTool } from './tools/states/loadState';
+import { UpdateStateTool } from './tools/states/updateState';
+import { ArchiveStateTool } from './tools/states/archiveState';
 import { CreateWorkspaceTool } from './tools/workspaces/createWorkspace';
 import { ListWorkspacesTool } from './tools/workspaces/listWorkspaces';
 import { LoadWorkspaceTool } from './tools/workspaces/loadWorkspace';
@@ -102,7 +104,7 @@ export class MemoryManagerAgent extends BaseAgent {
     this.workspaceService = workspaceService;
     this.customPromptStorage = customPromptStorage;
 
-    // Register state tools (3 tools: create, list, load) - lazy loaded
+    // Register state tools (5 tools: create, list, load, update, archive) - lazy loaded
     this.registerLazyTool({
       slug: 'createState', name: 'Create State',
       description: 'Create a state with restoration context for later resumption',
@@ -120,6 +122,18 @@ export class MemoryManagerAgent extends BaseAgent {
       description: 'Load a saved workspace-scoped state with restored context',
       version: '2.0.0',
       factory: () => new LoadStateTool(this),
+    });
+    this.registerLazyTool({
+      slug: 'updateState', name: 'Update State',
+      description: 'Update state metadata (name, description, tags). Snapshot context is immutable.',
+      version: '1.0.0',
+      factory: () => new UpdateStateTool(this),
+    });
+    this.registerLazyTool({
+      slug: 'archiveState', name: 'Archive State',
+      description: 'Archive a state (soft delete). State will be hidden from lists but can be restored.',
+      version: '1.0.0',
+      factory: () => new ArchiveStateTool(this),
     });
 
     // Register workspace tools (6 tools: create, list, load, update, archive, run) - lazy loaded

@@ -670,7 +670,12 @@ export class MemoryService {
   }
 
   /**
-   * Update state
+   * Update an existing state's mutable fields. The inner snapshot `content`
+   * (WorkspaceState) is replaced wholesale when `state` is provided; other
+   * fields (`name`, `description`, `tags`) are patched independently.
+   *
+   * Routes through WorkspaceService.updateState, which writes a state_updated
+   * event to JSONL and patches the SQLite cache via the storage adapter.
    */
   async updateState(
     workspaceId: string,
@@ -678,24 +683,23 @@ export class MemoryService {
     stateId: string,
     updates: Partial<{
       name: string;
+      description: string;
+      tags: string[];
       state: WorkspaceState;
     }>
   ): Promise<void> {
-    const workspace = await this.workspaceService.getWorkspace(workspaceId);
+    const adapterUpdates: {
+      name?: string;
+      description?: string;
+      tags?: string[];
+      content?: unknown;
+    } = {};
+    if (updates.name !== undefined) adapterUpdates.name = updates.name;
+    if (updates.description !== undefined) adapterUpdates.description = updates.description;
+    if (updates.tags !== undefined) adapterUpdates.tags = updates.tags;
+    if (updates.state !== undefined) adapterUpdates.content = updates.state;
 
-    if (!workspace || !workspace.sessions[sessionId] || !workspace.sessions[sessionId].states[stateId]) {
-      throw new Error('State not found');
-    }
-
-    // Update the state
-    const state = workspace.sessions[sessionId].states[stateId];
-    workspace.sessions[sessionId].states[stateId] = {
-      ...state,
-      ...updates
-    };
-
-    // Save workspace
-    await this.workspaceService.updateWorkspace(workspaceId, workspace);
+    await this.workspaceService.updateState(workspaceId, sessionId, stateId, adapterUpdates);
   }
 
   /**
@@ -706,17 +710,23 @@ export class MemoryService {
     sessionId: string,
     stateId: string
   ): Promise<void> {
-    const workspace = await this.workspaceService.getWorkspace(workspaceId);
+    return withDualBackend(
+      this.storageAdapterOrGetter,
+      async (adapter) => {
+        await adapter.deleteState(stateId);
+      },
+      async () => {
+        const workspace = await this.workspaceService.getWorkspace(workspaceId);
 
-    if (!workspace || !workspace.sessions[sessionId]) {
-      throw new Error('Session not found');
-    }
+        if (!workspace || !workspace.sessions[sessionId]) {
+          throw new Error('Session not found');
+        }
 
-    // Delete the state
-    delete workspace.sessions[sessionId].states[stateId];
+        delete workspace.sessions[sessionId].states[stateId];
 
-    // Save workspace
-    await this.workspaceService.updateWorkspace(workspaceId, workspace);
+        await this.workspaceService.updateWorkspace(workspaceId, workspace);
+      }
+    );
   }
 
 }

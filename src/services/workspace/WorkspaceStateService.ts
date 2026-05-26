@@ -9,7 +9,7 @@ import { MemoryTrace, StateData } from '../../types/storage/StorageTypes';
 import * as HybridTypes from '../../types/storage/HybridStorageTypes';
 import { TraceMetadata } from '../../database/types/memory/MemoryTypes';
 import { WorkspaceState } from '../../database/types/session/SessionTypes';
-import { StorageAdapterOrGetter, resolveAdapter, withReadableBackend } from '../helpers/DualBackendExecutor';
+import { StorageAdapterOrGetter, resolveAdapter, withReadableBackend, withDualBackend } from '../helpers/DualBackendExecutor';
 
 /**
  * Dependencies injected from WorkspaceService to avoid circular references.
@@ -285,6 +285,53 @@ export class WorkspaceStateService {
         return states.find(
           state => state.name?.toLowerCase() === identifier.toLowerCase()
         ) || null;
+      }
+    );
+  }
+
+  /**
+   * Update an existing state's metadata or content. Only the fields present
+   * in `updates` are mutated; omitted fields are left unchanged.
+   *
+   * @param workspaceId - Parent workspace ID (used by legacy fallback lookup)
+   * @param sessionId - Parent session ID (used by legacy fallback lookup)
+   * @param stateId - State ID
+   * @param updates - Partial fields to mutate (name, description, tags, content)
+   */
+  async updateState(
+    workspaceId: string,
+    sessionId: string,
+    stateId: string,
+    updates: {
+      name?: string;
+      description?: string;
+      tags?: string[];
+      content?: unknown;
+    }
+  ): Promise<void> {
+    return withDualBackend(
+      this.storageAdapterOrGetter,
+      async (adapter) => {
+        await adapter.updateState(stateId, updates);
+        await adapter.updateWorkspace(workspaceId, { lastAccessed: Date.now() });
+      },
+      async () => {
+        const workspace = await this.fileSystem.readWorkspace(workspaceId);
+        if (!workspace || !workspace.sessions[sessionId] || !workspace.sessions[sessionId].states[stateId]) {
+          throw new Error(`State not found: ${stateId}`);
+        }
+        const existing = workspace.sessions[sessionId].states[stateId];
+        const next: StateData = { ...existing };
+        if (updates.name !== undefined) next.name = updates.name;
+        if (updates.description !== undefined) next.description = updates.description;
+        if (updates.tags !== undefined) next.tags = updates.tags;
+        if (updates.content !== undefined) {
+          next.state = this.coerceWorkspaceState(updates.content);
+        }
+        workspace.sessions[sessionId].states[stateId] = next;
+        workspace.lastAccessed = Date.now();
+        await this.fileSystem.writeWorkspace(workspaceId, workspace);
+        await this.indexManager.updateWorkspaceInIndex(workspace);
       }
     );
   }

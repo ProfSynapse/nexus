@@ -1088,6 +1088,19 @@ export class HybridStorageAdapter implements IStorageAdapter {
     return this.stateRepo.saveState(workspaceId, sessionId, state);
   };
 
+  updateState = async (
+    id: string,
+    updates: {
+      name?: string;
+      description?: string;
+      tags?: string[];
+      content?: unknown;
+    }
+  ): Promise<void> => {
+    await this.ensureInitialized();
+    return this.stateRepo.updateState(id, updates);
+  };
+
   deleteState = async (id: string): Promise<void> => {
     await this.ensureInitialized();
     return this.stateRepo.delete(id);

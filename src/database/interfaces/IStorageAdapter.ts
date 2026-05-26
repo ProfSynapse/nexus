@@ -306,6 +306,23 @@ export interface IStorageAdapter {
   ): Promise<string>;
 
   /**
+   * Update an existing state's metadata or content.
+   * Only fields present in `updates` are mutated; omitted fields are unchanged.
+   *
+   * @param id - State ID
+   * @param updates - Partial state fields to mutate (name, description, tags, content)
+   */
+  updateState(
+    id: string,
+    updates: {
+      name?: string;
+      description?: string;
+      tags?: string[];
+      content?: unknown;
+    }
+  ): Promise<void>;
+
+  /**
    * Delete a state
    *
    * @param id - State ID

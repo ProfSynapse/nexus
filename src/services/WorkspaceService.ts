@@ -565,6 +565,20 @@ export class WorkspaceService {
     return this.stateService.getStateByNameOrId(workspaceId, sessionId, identifier);
   }
 
+  async updateState(
+    workspaceId: string,
+    sessionId: string,
+    stateId: string,
+    updates: {
+      name?: string;
+      description?: string;
+      tags?: string[];
+      content?: unknown;
+    }
+  ): Promise<void> {
+    return this.stateService.updateState(workspaceId, sessionId, stateId, updates);
+  }
+
   // ============================================================================
   // Workspace Query Methods (kept — workspace-level concerns)
   // ============================================================================

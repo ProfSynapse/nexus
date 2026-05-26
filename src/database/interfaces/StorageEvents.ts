@@ -208,6 +208,33 @@ export interface StateDeletedEvent extends BaseStorageEvent {
   stateId: string;
 }
 
+/**
+ * Event: State updated
+ *
+ * Records a partial update to an existing state's metadata or content.
+ * Only the fields present in `data` are mutated; omitted fields are unchanged.
+ * Replay folds successive updates on top of the original state_saved event.
+ */
+export interface StateUpdatedEvent extends BaseStorageEvent {
+  type: 'state_updated';
+  /** Parent workspace ID */
+  workspaceId: string;
+  /** Parent session ID */
+  sessionId: string;
+  /** Target state ID */
+  stateId: string;
+  data: {
+    /** Updated state name */
+    name?: string;
+    /** Updated description */
+    description?: string;
+    /** Updated tags (replaces the prior tag list) */
+    tags?: string[];
+    /** Updated JSON-serialized state content (replaces the prior content) */
+    stateJson?: string;
+  };
+}
+
 // ============================================================================
 // Trace Events
 // ============================================================================
@@ -680,6 +707,7 @@ export type WorkspaceEvent =
   | SessionCreatedEvent
   | SessionUpdatedEvent
   | StateSavedEvent
+  | StateUpdatedEvent
   | StateDeletedEvent
   | TraceAddedEvent;
 
@@ -729,6 +757,7 @@ export function isWorkspaceEvent(event: StorageEvent): event is WorkspaceEvent {
     'session_created',
     'session_updated',
     'state_saved',
+    'state_updated',
     'state_deleted',
     'trace_added',
   ].includes(event.type);
@@ -797,6 +826,7 @@ export function isUpdateEvent(event: StorageEvent): boolean {
   return [
     'workspace_updated',
     'session_updated',
+    'state_updated',
     'conversation_updated',
     'message_updated',
     'branch_message_updated',
