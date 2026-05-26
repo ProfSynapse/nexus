@@ -3,7 +3,7 @@
  * Extracted from WorkspacesTab to keep the tab under 600 lines.
  */
 
-import { ButtonComponent, Component, DropdownComponent, Notice, TextAreaComponent, TextComponent } from 'obsidian';
+import { App, ButtonComponent, Component, DropdownComponent, Notice, TextAreaComponent, TextComponent } from 'obsidian';
 import { BreadcrumbNav, BreadcrumbNavItem } from '../../settings/components/BreadcrumbNav';
 import { WorkspaceFormRenderer } from './WorkspaceFormRenderer';
 import { CardItem } from '../CardManager';
@@ -14,6 +14,7 @@ import type { CreateTaskData, TaskListOptions, UpdateTaskData } from '../../agen
 import type { ProjectMetadata } from '../../database/repositories/interfaces/IProjectRepository';
 import type { TaskMetadata, TaskPriority, TaskStatus } from '../../database/repositories/interfaces/ITaskRepository';
 import type { PaginatedResult } from '../../types/pagination/PaginationTypes';
+import { StatesSectionRenderer, StatesSectionService } from './StatesSectionRenderer';
 
 type ProjectStatus = ProjectMetadata['status'];
 
@@ -72,10 +73,19 @@ export interface DetailCallbacks {
     onRefreshProjects: () => Promise<void>;
     onOpenProjectDetail: (project: ProjectMetadata) => void;
     safeRegisterDomEvent: <K extends keyof HTMLElementEventMap>(el: HTMLElement, eventName: K, handler: (event: HTMLElementEventMap[K]) => void) => void;
+    /**
+     * Resolves the service used by the States section. Returns null when the
+     * service is unavailable (e.g., MemoryService not yet initialized) so the
+     * section can render a placeholder.
+     */
+    getStatesService: () => Promise<StatesSectionService | null>;
+    /** Provides the Obsidian App instance for the States section's modals. */
+    getApp: () => App;
 }
 
 export class WorkspaceDetailRenderer {
     private formRenderer?: WorkspaceFormRenderer;
+    private statesRenderer?: StatesSectionRenderer;
     private component?: Component;
 
     constructor(component?: Component) {
@@ -155,6 +165,7 @@ export class WorkspaceDetailRenderer {
         this.formRenderer.render(formContainer);
 
         this.renderProjectsSection(container, workspace, callbacks);
+        this.renderStatesSection(container, workspace, callbacks);
 
         const actions = container.createDiv('nexus-form-actions');
 
@@ -207,6 +218,60 @@ export class WorkspaceDetailRenderer {
             .onClick(() => {
                 callbacks.onNavigateProjects();
             });
+    }
+
+    private renderStatesSection(
+        container: HTMLElement,
+        workspace: Partial<ProjectWorkspace>,
+        callbacks: DetailCallbacks
+    ): void {
+        const sectionHost = container.createDiv();
+
+        if (!workspace.id) {
+            const section = sectionHost.createDiv('nexus-form-section nexus-states-section');
+            section.createEl('h4', { text: 'States', cls: 'nexus-section-header' });
+            section.createEl('p', {
+                text: 'Save this workspace before managing states.',
+                cls: 'nexus-form-hint'
+            });
+            return;
+        }
+
+        const workspaceId = workspace.id;
+
+        // Render an initial placeholder so the section is visible while the
+        // service resolves; the StatesSectionRenderer will replace it when
+        // the service is ready (or render an error if not).
+        const placeholder = sectionHost.createDiv('nexus-form-section nexus-states-section');
+        placeholder.createEl('h4', { text: 'States', cls: 'nexus-section-header' });
+        placeholder.createEl('p', {
+            text: 'Loading states section...',
+            cls: 'nexus-loading-message'
+        });
+
+        void callbacks.getStatesService().then((service) => {
+            sectionHost.empty();
+            if (!service) {
+                const section = sectionHost.createDiv('nexus-form-section nexus-states-section');
+                section.createEl('h4', { text: 'States', cls: 'nexus-section-header' });
+                section.createEl('p', {
+                    text: 'States service is unavailable.',
+                    cls: 'nexus-form-hint'
+                });
+                return;
+            }
+            this.statesRenderer = new StatesSectionRenderer(callbacks.getApp(), service, this.component);
+            this.statesRenderer.render(sectionHost, workspaceId);
+        }).catch((error) => {
+            console.error('[WorkspaceDetailRenderer] Failed to resolve states service:', error);
+            sectionHost.empty();
+            const section = sectionHost.createDiv('nexus-form-section nexus-states-section');
+            section.createEl('h4', { text: 'States', cls: 'nexus-section-header' });
+            section.createEl('p', {
+                text: 'Failed to load states section.',
+                cls: 'nexus-form-hint nexus-states-error'
+            });
+        });
     }
 
     renderProjects(

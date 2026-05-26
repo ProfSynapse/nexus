@@ -17,6 +17,7 @@ import { FilePickerRenderer } from '../../components/workspace/FilePickerRendere
 import { WorkspaceListRenderer } from '../../components/workspace/WorkspaceListRenderer';
 import { WorkspaceDetailRenderer, DetailCallbacks } from '../../components/workspace/WorkspaceDetailRenderer';
 import { ProjectsManagerView } from '../../components/workspace/ProjectsManagerView';
+import { StatesSectionService, StateSummary } from '../../components/workspace/StatesSectionRenderer';
 import { ProjectWorkspace } from '../../database/workspace-types';
 import { WorkspaceService, type WorkspaceChangeEvent } from '../../services/WorkspaceService';
 import { CustomPromptStorageService } from '../../agents/promptManager/services/CustomPromptStorageService';
@@ -26,6 +27,7 @@ import type { ServiceManager } from '../../core/ServiceManager';
 import type { WorkflowRunService } from '../../services/workflows/WorkflowRunService';
 import type { ProjectMetadata } from '../../database/repositories/interfaces/IProjectRepository';
 import type { ExternalSyncEvent, HybridStorageAdapter } from '../../database/adapters/HybridStorageAdapter';
+import type { MemoryService } from '../../agents/memoryManager/services/MemoryService';
 
 export interface WorkspacesTabServices {
     app: App;
@@ -385,8 +387,88 @@ export class WorkspacesTab {
             getTaskService: () => this.projectsManager.getTaskService(),
             onRefreshProjects: () => this.projectsManager.refreshProjects(),
             onOpenProjectDetail: (project) => { void this.openProjectDetailAndRender(project); },
-            safeRegisterDomEvent: (el, eventName, handler) => this.safeRegisterDomEvent(el, eventName, handler)
+            safeRegisterDomEvent: (el, eventName, handler) => this.safeRegisterDomEvent(el, eventName, handler),
+            getStatesService: () => this.getStatesService(),
+            getApp: () => this.services.app
         };
+    }
+
+    /**
+     * Build the StatesSectionService implementation by composing MemoryService
+     * (read + update path) and HybridStorageAdapter (delete path).
+     *
+     * Backend contracts (issue #215, backend-coder confirmed):
+     * - Read: MemoryService.getStates(workspaceId) returns workspace-scoped
+     *   states across all sessions, with full snapshot under `item.state`.
+     *   Archive flag lives at `item.state.state.metadata.isArchived`.
+     * - Update: MemoryService.updateState(workspaceId, sessionId, stateId,
+     *   {name?, description?, tags?, state?}) routes through the adapter via
+     *   state_updated JSONL events + SQLite patch.
+     * - Archive: same updateState call with a full snapshot whose
+     *   `state.metadata.isArchived` is toggled.
+     * - Delete: HybridStorageAdapter.deleteState(stateId) directly.
+     */
+    private async getStatesService(): Promise<StatesSectionService | null> {
+        if (!this.services.serviceManager) return null;
+
+        try {
+            const [memoryService, adapter] = await Promise.all([
+                this.services.serviceManager.getService<MemoryService>('memoryService'),
+                this.services.serviceManager.getService<HybridStorageAdapter>('hybridStorageAdapter')
+            ]);
+            if (!memoryService || !adapter) return null;
+
+            const readArchiveFlag = (item: { state?: { state?: { metadata?: Record<string, unknown> } } }): boolean | undefined => {
+                const flag = item.state?.state?.metadata?.isArchived;
+                return typeof flag === 'boolean' ? flag : undefined;
+            };
+
+            return {
+                listStates: async (workspaceId, includeArchived) => {
+                    const result = await memoryService.getStates(workspaceId);
+                    const items: StateSummary[] = result.items.map(item => ({
+                        id: item.id,
+                        name: item.name,
+                        description: item.description,
+                        sessionId: item.sessionId,
+                        workspaceId: item.workspaceId,
+                        created: item.created,
+                        tags: item.tags,
+                        isArchived: readArchiveFlag(item)
+                    }));
+                    return includeArchived
+                        ? items
+                        : items.filter(item => !item.isArchived);
+                },
+                updateState: async (workspaceId, sessionId, stateId, patch) => {
+                    await memoryService.updateState(workspaceId, sessionId, stateId, patch);
+                },
+                archiveState: async (workspaceId, sessionId, stateId, restore) => {
+                    const existing = await memoryService.getState(workspaceId, sessionId, stateId);
+                    if (!existing) {
+                        throw new Error('State not found');
+                    }
+                    const nextInner = {
+                        workspace: existing.state?.workspace,
+                        recentTraces: existing.state?.recentTraces ?? [],
+                        contextFiles: existing.state?.contextFiles ?? [],
+                        metadata: {
+                            ...(existing.state?.metadata ?? {}),
+                            isArchived: !restore
+                        }
+                    };
+                    await memoryService.updateState(workspaceId, sessionId, stateId, {
+                        state: { ...existing, state: nextInner }
+                    });
+                },
+                deleteState: async (_workspaceId, _sessionId, stateId) => {
+                    await adapter.deleteState(stateId);
+                }
+            };
+        } catch (error) {
+            console.error('[WorkspacesTab] Failed to resolve states service:', error);
+            return null;
+        }
     }
 
     // --- Navigation ---
