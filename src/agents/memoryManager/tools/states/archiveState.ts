@@ -71,7 +71,12 @@ export class ArchiveStateTool extends BaseTool<ArchiveStateParameters, ArchiveSt
                 return this.prepareResult(false, undefined, `State "${params.name}" not found. Use listStates to see available states.`);
             }
 
-            const existingState = match.state;
+            const sessionId = match.sessionId || match.state?.sessionId;
+            if (!sessionId) {
+                return this.prepareResult(false, undefined, `State "${params.name}" has no session ID; cannot update.`);
+            }
+
+            const existingState = await memoryService.getState(workspace.id, sessionId, match.id);
             if (!existingState) {
                 return this.prepareResult(false, undefined, `State "${params.name}" data is missing.`);
             }
@@ -84,11 +89,6 @@ export class ArchiveStateTool extends BaseTool<ArchiveStateParameters, ArchiveSt
             }
             if (!isRestore && currentArchived) {
                 return this.prepareResult(false, undefined, `State "${params.name}" is already archived.`);
-            }
-
-            const sessionId = match.sessionId || existingState.sessionId;
-            if (!sessionId) {
-                return this.prepareResult(false, undefined, `State "${params.name}" has no session ID; cannot update.`);
             }
 
             const nextState: WorkspaceState = {
