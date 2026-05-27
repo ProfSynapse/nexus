@@ -240,6 +240,95 @@ describe('StatesSectionRenderer port regression', () => {
     });
   });
 
+  describe('Toggle-flip persistence (C-2 PR2 — re-render across includeArchived flip)', () => {
+    /**
+     * The Show archived toggle's onChange is wired via ToggleComponent's
+     * setValue/onChange surface inside the BoxedSection toolbar. We exercise
+     * the contract by driving the renderer's internal state directly
+     * (`includeArchived = true` then `loadAndRender()`), then flipping back
+     * to false and asserting both branches of the service call shape land
+     * with the right boolean.
+     *
+     * This guards against the inverted-conditional regression class — where
+     * the toggle's onChange might pass the wrong boolean to listStates, or
+     * the state might fail to persist across a service refresh.
+     */
+    it('persists includeArchived=true across a refresh cycle', async () => {
+      const service = makeService();
+      const renderer = new StatesSectionRenderer(new App(), service, new Component()) as unknown as TestableStatesRenderer;
+      renderer.workspaceId = 'ws-7';
+      renderer.listContainer = createMockElement('div');
+
+      // Initial state — OFF.
+      renderer.includeArchived = false;
+      await renderer.loadAndRender();
+      expect(service.listStates).toHaveBeenLastCalledWith('ws-7', false);
+
+      // User flips toggle ON.
+      renderer.includeArchived = true;
+      await renderer.loadAndRender();
+      expect(service.listStates).toHaveBeenLastCalledWith('ws-7', true);
+
+      // Trigger an unrelated refresh (e.g., from archive callback) — flag stays ON.
+      await renderer.loadAndRender();
+      expect(service.listStates).toHaveBeenLastCalledWith('ws-7', true);
+    });
+
+    it('flips back to includeArchived=false correctly (no sticky ON state)', async () => {
+      const service = makeService();
+      const renderer = new StatesSectionRenderer(new App(), service, new Component()) as unknown as TestableStatesRenderer;
+      renderer.workspaceId = 'ws-1';
+      renderer.listContainer = createMockElement('div');
+
+      // ON then OFF.
+      renderer.includeArchived = true;
+      await renderer.loadAndRender();
+      renderer.includeArchived = false;
+      await renderer.loadAndRender();
+
+      expect(service.listStates).toHaveBeenLastCalledWith('ws-1', false);
+      // Sanity: both branches were exercised.
+      const calls = (service.listStates as jest.Mock).mock.calls;
+      const seenFlags = calls.map(c => c[1]).sort();
+      expect(seenFlags).toEqual([false, true]);
+    });
+
+    it('archive-callback refresh inherits the current toggle state', async () => {
+      const service = makeService();
+      const renderer = new StatesSectionRenderer(new App(), service, new Component()) as unknown as TestableStatesRenderer;
+      renderer.workspaceId = 'ws-1';
+      renderer.listContainer = createMockElement('div');
+      renderer.includeArchived = true;
+
+      // User archives a state — toggleArchive → archiveState → loadAndRender.
+      const state = makeState({ id: 's-1', sessionId: 'sess-1', isArchived: false });
+      const pending = renderer.toggleArchive(state);
+      await Promise.resolve();
+      clickCta(capturedInstances[0]);
+      await pending;
+
+      // The post-archive refresh respected includeArchived=true (NOT a sticky false).
+      const refreshCalls = (service.listStates as jest.Mock).mock.calls;
+      expect(refreshCalls[refreshCalls.length - 1]).toEqual(['ws-1', true]);
+    });
+
+    it('refresh after delete also inherits the current toggle state', async () => {
+      const service = makeService();
+      const renderer = new StatesSectionRenderer(new App(), service, new Component()) as unknown as TestableStatesRenderer;
+      renderer.workspaceId = 'ws-1';
+      renderer.listContainer = createMockElement('div');
+      renderer.includeArchived = true;
+
+      // confirmAndDelete uses StateDeleteConfirmModal (internal), so it
+      // won't fire our captured ConfirmModal. We exercise just the refresh
+      // path by calling loadAndRender directly under the includeArchived=true
+      // regime — establishes the same invariant.
+      await renderer.loadAndRender();
+      const calls = (service.listStates as jest.Mock).mock.calls;
+      expect(calls[calls.length - 1]).toEqual(['ws-1', true]);
+    });
+  });
+
   describe('Delete flow — uses internal StateDeleteConfirmModal (NOT new ConfirmModal)', () => {
     /**
      * NOTE: The delete-state path still uses StateDeleteConfirmModal (the

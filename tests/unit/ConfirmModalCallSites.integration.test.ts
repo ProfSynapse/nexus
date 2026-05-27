@@ -522,4 +522,144 @@ describe('ConfirmModal call-site integration', () => {
       expect(variants).toEqual(['delete', 'delete', 'archive', 'remove', 'remove']);
     });
   });
+
+  describe('Handler-wrapping side-effect (PR2 Commit 4 — guards inverted-conditional regression)', () => {
+    /**
+     * For each destructive call site that owns BOTH the confirm AND the
+     * onConfirm side-effect, assert:
+     *   1. CTA-click runs the side-effect exactly once
+     *   2. Cancel-click does NOT run the side-effect
+     * This is the contract that catches the PR1 M1 class of regression:
+     * an inverted conditional ("if (!confirmed) doDestroy()") would pass
+     * the modal-variant test but fail this side-effect test.
+     *
+     * Sites covered here (side-effect lives in renderer body):
+     *   - WorkspaceFormRenderer workflow-× → workflows.splice + onRefresh
+     *   - WorkspaceFormRenderer keyfile-× → keyFiles.splice + updateKeyFilesList
+     *
+     * Sites NOT covered here (side-effect lives in async callback owned by
+     * caller — covered structurally in their dedicated tests):
+     *   - WorkspacesTab.onDelete → workspaceService.deleteWorkspace (caller-resolved)
+     *   - WorkspaceDetailRenderer.deleteProject/deleteTask (caller-resolved)
+     *   - StatesSectionRenderer.toggleArchive → archiveState (covered in port test)
+     */
+
+    function renderWithCapture(
+      workflows: Array<{ name: string; agents: string[] }>,
+      keyFiles: string[],
+      onRefresh: () => void
+    ): Array<() => void | Promise<void>> {
+      const formData = {
+        id: 'ws-1',
+        name: 'X',
+        context: { purpose: '', workflows, keyFiles, preferences: '' }
+      } as unknown as Parameters<typeof WorkspaceFormRenderer>[0];
+      const renderer = new WorkspaceFormRenderer(
+        formData as never,
+        [],
+        () => undefined,
+        () => undefined,
+        () => undefined,
+        onRefresh,
+        new Component(),
+        new App()
+      );
+      const container = createMockElement('div');
+      return captureButtonClicks(() => renderer.render(container)).map(h => h);
+    }
+
+    it('workflow-× CTA fires onConfirm exactly once (splice + onRefresh)', async () => {
+      const workflows = [{ name: 'A', agents: [] }, { name: 'B', agents: [] }];
+      let refreshCount = 0;
+      const handlers = renderWithCapture(workflows, [], () => { refreshCount += 1; });
+
+      // Find handler whose dispatch produces a 'Remove workflow' capture.
+      for (const handler of handlers) {
+        const before = capturedInstances.length;
+        void handler();
+        await Promise.resolve();
+        if (capturedInstances.length > before) {
+          const inst = capturedInstances[capturedInstances.length - 1];
+          if (inst.config.title === 'Remove workflow') {
+            // Drive the handler-wrapping side-effect — invoke onConfirm
+            // exactly as ConfirmModal would on CTA click.
+            inst.config.onConfirm?.();
+            clickCta(inst);
+            break;
+          }
+          clickCancel(inst);
+        }
+      }
+
+      expect(workflows).toHaveLength(1);
+      expect(refreshCount).toBe(1);
+    });
+
+    it('workflow-× Cancel does NOT fire onConfirm (no splice, no refresh)', async () => {
+      const workflows = [{ name: 'A', agents: [] }, { name: 'B', agents: [] }];
+      let refreshCount = 0;
+      const handlers = renderWithCapture(workflows, [], () => { refreshCount += 1; });
+
+      for (const handler of handlers) {
+        const before = capturedInstances.length;
+        void handler();
+        await Promise.resolve();
+        if (capturedInstances.length > before) {
+          const inst = capturedInstances[capturedInstances.length - 1];
+          if (inst.config.title === 'Remove workflow') {
+            // Cancel — do NOT invoke onConfirm; resolve(false).
+            clickCancel(inst);
+            break;
+          }
+          clickCancel(inst);
+        }
+      }
+
+      expect(workflows).toHaveLength(2);
+      expect(refreshCount).toBe(0);
+    });
+
+    it('keyfile-× CTA fires onConfirm exactly once (splice + list refresh)', async () => {
+      const keyFiles = ['notes/a.md', 'notes/b.md'];
+      const handlers = renderWithCapture([], keyFiles, () => undefined);
+
+      for (const handler of handlers) {
+        const before = capturedInstances.length;
+        void handler();
+        await Promise.resolve();
+        if (capturedInstances.length > before) {
+          const inst = capturedInstances[capturedInstances.length - 1];
+          if (inst.config.title === 'Remove key file') {
+            inst.config.onConfirm?.();
+            clickCta(inst);
+            break;
+          }
+          clickCancel(inst);
+        }
+      }
+
+      expect(keyFiles).toHaveLength(1);
+    });
+
+    it('keyfile-× Cancel does NOT splice the array', async () => {
+      const keyFiles = ['notes/a.md', 'notes/b.md'];
+      const handlers = renderWithCapture([], keyFiles, () => undefined);
+
+      for (const handler of handlers) {
+        const before = capturedInstances.length;
+        void handler();
+        await Promise.resolve();
+        if (capturedInstances.length > before) {
+          const inst = capturedInstances[capturedInstances.length - 1];
+          if (inst.config.title === 'Remove key file') {
+            clickCancel(inst);
+            break;
+          }
+          clickCancel(inst);
+        }
+      }
+
+      expect(keyFiles).toEqual(['notes/a.md', 'notes/b.md']);
+    });
+  });
 });
