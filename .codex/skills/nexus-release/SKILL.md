@@ -65,10 +65,10 @@ Get-Item main.js,manifest.json,styles.css | Select-Object Name,Length
 
 ### 4. Commit and Push Main
 
-Stage only the version bump and generated connector content if it changed:
+Stage only the version bump and release workflow changes:
 
 ```bash
-git add package.json manifest.json CLAUDE.md src/utils/connectorContent.ts
+git add package.json manifest.json CLAUDE.md .github/workflows/release.yml
 git commit -m "chore: bump version to X.Y.Z"
 git push origin main
 ```
