@@ -16,6 +16,8 @@
  */
 
 import { App, ButtonComponent, Component, Modal, Notice, TextAreaComponent, TextComponent, ToggleComponent, setIcon } from 'obsidian';
+import { BoxedSection } from '../../settings/components/BoxedSection';
+import { ConfirmModal } from '../../settings/components/ConfirmModal';
 
 /**
  * State summary shown in the list. Matches the projection returned by
@@ -76,38 +78,46 @@ export class StatesSectionRenderer {
         this.workspaceId = workspaceId;
         container.empty();
 
-        const section = container.createDiv('nexus-form-section nexus-states-section');
-        section.createEl('h4', { text: 'States', cls: 'nexus-section-header' });
-
         if (!workspaceId) {
-            section.createEl('p', {
-                text: 'Save this workspace before managing states.',
-                cls: 'nexus-form-hint'
-            });
+            new BoxedSection(container, {
+                title: 'States',
+                unbounded: true,
+                body: (body) => {
+                    body.createEl('p', {
+                        text: 'Save this workspace before managing states.',
+                        cls: 'nexus-form-hint'
+                    });
+                }
+            }, this.component);
             return;
         }
 
-        section.createEl('p', {
-            text: 'Snapshots of workspace context that can be resumed later. Edit, archive, or delete states here.',
-            cls: 'nexus-form-hint'
-        });
+        new BoxedSection(container, {
+            title: 'States',
+            unbounded: true,
+            toolbar: (toolbar) => {
+                const archivedLabel = toolbar.createDiv('nexus-states-archived-toggle');
+                archivedLabel.createSpan({ text: 'Show archived', cls: 'nexus-states-toolbar-label' });
+                new ToggleComponent(archivedLabel)
+                    .setValue(this.includeArchived)
+                    .onChange((value) => {
+                        this.includeArchived = value;
+                        void this.loadAndRender();
+                    });
 
-        // Toolbar: archived toggle + refresh
-        const toolbar = section.createDiv('nexus-states-toolbar');
-        const archivedLabel = toolbar.createDiv('nexus-states-archived-toggle');
-        archivedLabel.createSpan({ text: 'Show archived', cls: 'nexus-states-toolbar-label' });
-        new ToggleComponent(archivedLabel)
-            .setValue(this.includeArchived)
-            .onChange((value) => {
-                this.includeArchived = value;
-                void this.loadAndRender();
-            });
+                new ButtonComponent(toolbar)
+                    .setButtonText('Refresh')
+                    .onClick(() => { void this.loadAndRender(); });
+            },
+            body: (body) => {
+                body.createEl('p', {
+                    text: 'Snapshots of workspace context that can be resumed later. Edit, archive, or delete states here.',
+                    cls: 'nexus-form-hint'
+                });
+                this.listContainer = body.createDiv('nexus-states-list');
+            }
+        }, this.component);
 
-        new ButtonComponent(toolbar)
-            .setButtonText('Refresh')
-            .onClick(() => { void this.loadAndRender(); });
-
-        this.listContainer = section.createDiv('nexus-states-list');
         void this.loadAndRender();
     }
 
@@ -258,8 +268,16 @@ export class StatesSectionRenderer {
             new Notice('Cannot archive state: missing sessionId');
             return;
         }
+        const restore = !!state.isArchived;
+
+        // Confirm on archive (going to archived); restore is a one-click reversal,
+        // no confirmation needed.
+        if (!restore) {
+            const confirmed = await this.confirmArchive(state.name || 'Untitled state');
+            if (!confirmed) return;
+        }
+
         try {
-            const restore = !!state.isArchived;
             await this.service.archiveState(this.workspaceId, sessionId, state.id, restore);
             new Notice(restore ? 'State restored' : 'State archived');
             await this.loadAndRender();
@@ -267,6 +285,23 @@ export class StatesSectionRenderer {
             console.error('[StatesSectionRenderer] Failed to archive state:', error);
             new Notice('Failed to archive state');
         }
+    }
+
+    private confirmArchive(stateName: string): Promise<boolean> {
+        return new Promise<boolean>((resolve) => {
+            let confirmed = false;
+            const modal = new ConfirmModal(this.app, {
+                variant: 'archive',
+                title: 'Archive state?',
+                body: `Archive state "${stateName}"? You can restore it later from this list.`,
+                onConfirm: () => { confirmed = true; }
+            });
+            modal.onClose = () => {
+                modal.contentEl.empty();
+                resolve(confirmed);
+            };
+            modal.open();
+        });
     }
 
     private async confirmAndDelete(state: StateSummary): Promise<void> {

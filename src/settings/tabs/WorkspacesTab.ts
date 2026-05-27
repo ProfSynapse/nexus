@@ -9,9 +9,10 @@
  * - FilePickerRenderer (file picker)
  */
 
-import { App, Notice, Component, Modal, ButtonComponent } from 'obsidian';
+import { App, Notice, Component } from 'obsidian';
 import { SettingsRouter } from '../SettingsRouter';
 import { BreadcrumbNav, BreadcrumbNavItem } from '../components/BreadcrumbNav';
+import { ConfirmModal } from '../components/ConfirmModal';
 import { WorkflowEditorRenderer, Workflow } from '../../components/workspace/WorkflowEditorRenderer';
 import { FilePickerRenderer } from '../../components/workspace/FilePickerRenderer';
 import { WorkspaceListRenderer } from '../../components/workspace/WorkspaceListRenderer';
@@ -563,11 +564,17 @@ export class WorkspacesTab {
 
     private async confirmDeleteWorkspace(workspaceName = this.currentWorkspace?.name || 'Workspace'): Promise<boolean> {
         return new Promise<boolean>((resolve) => {
-            const modal = new WorkspaceDeleteConfirmModal(
-                this.services.app,
-                workspaceName,
-                resolve
-            );
+            let confirmed = false;
+            const modal = new ConfirmModal(this.services.app, {
+                variant: 'delete',
+                title: 'Delete workspace?',
+                body: `Delete workspace "${workspaceName}"? This cannot be undone.`,
+                onConfirm: () => { confirmed = true; }
+            });
+            modal.onClose = () => {
+                modal.contentEl.empty();
+                resolve(confirmed);
+            };
             modal.open();
         });
     }
@@ -852,53 +859,3 @@ export class WorkspacesTab {
     }
 }
 
-class WorkspaceDeleteConfirmModal extends Modal {
-    private resolved = false;
-
-    constructor(
-        app: App,
-        private readonly workspaceName: string,
-        private readonly onResolve: (confirmed: boolean) => void
-    ) {
-        super(app);
-    }
-
-    onOpen(): void {
-        const { contentEl } = this;
-        contentEl.empty();
-
-        contentEl.createEl('h2', { text: 'Delete workspace?' });
-        contentEl.createEl('p', {
-            text: `Delete workspace "${this.workspaceName}"? This cannot be undone.`,
-            cls: 'setting-item-description'
-        });
-
-        const buttonRow = contentEl.createDiv('modal-button-container');
-
-        new ButtonComponent(buttonRow)
-            .setButtonText('Cancel')
-            .onClick(() => {
-                this.resolve(false);
-                this.close();
-            });
-
-        new ButtonComponent(buttonRow)
-            .setButtonText('Delete')
-            .setWarning()
-            .onClick(() => {
-                this.resolve(true);
-                this.close();
-            });
-    }
-
-    onClose(): void {
-        this.resolve(false);
-        this.contentEl.empty();
-    }
-
-    private resolve(confirmed: boolean): void {
-        if (this.resolved) return;
-        this.resolved = true;
-        this.onResolve(confirmed);
-    }
-}
