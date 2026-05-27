@@ -4988,52 +4988,92 @@ body.is-mobile .message-action-btn.message-branch-next {
     margin-bottom: 12px;
 }
 
-.nexus-task-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: var(--font-ui-small);
-}
-
-.nexus-task-table th,
-.nexus-task-table td {
-    padding: 10px 8px;
-    border-bottom: 1px solid var(--background-modifier-border);
-    text-align: left;
-    vertical-align: middle;
-}
-
-.nexus-task-table th {
-    color: var(--text-muted);
-    font-weight: var(--font-semibold);
-}
-
-.nexus-task-title-cell {
-    min-width: 220px;
-}
-
-.nexus-task-title {
-    color: var(--text-normal);
-}
-
-.nexus-task-actions {
-    display: flex;
-    gap: 8px;
-    white-space: nowrap;
-}
-
-.nexus-task-checkbox-cell {
-    width: 48px;
-}
-
-.nexus-task-checkbox {
-    width: 16px;
-    height: 16px;
-}
-
 .nexus-task-form-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
     gap: 12px;
+}
+
+/* Row primitives — task + project rows in BoxedSection bodies */
+.ws-group-label {
+    font-size: 12px;
+    font-weight: var(--font-medium);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    padding: 12px 0 4px;
+    border-bottom: 1px solid var(--background-modifier-border);
+    margin-bottom: 4px;
+}
+
+.ws-group-label:first-child {
+    padding-top: 0;
+}
+
+.setting-item.is-task,
+.setting-item.is-project {
+    padding: 8px 0;
+    border-top: 1px solid var(--background-modifier-border);
+}
+
+.setting-item.is-task:first-child,
+.setting-item.is-project:first-child {
+    border-top: none;
+}
+
+.setting-item.is-task.is-done .setting-item-name {
+    text-decoration: line-through;
+    color: var(--text-muted);
+}
+
+.setting-item.is-project.is-archived .setting-item-name {
+    color: var(--text-muted);
+}
+
+.task-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 4px;
+}
+
+.task-meta-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.task-meta-item.is-overdue {
+    color: var(--text-error);
+}
+
+.task-meta-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--text-muted);
+}
+
+.task-meta-dot.is-critical { background: var(--text-error); }
+.task-meta-dot.is-high { background: var(--text-warning); }
+.task-meta-dot.is-medium { background: var(--text-accent); }
+.task-meta-dot.is-low { background: var(--text-faint); }
+
+/* Toolbar inline controls (Show archived toggle + label) */
+.nexus-section-toolbar-label {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin-right: 6px;
+}
+
+.nexus-projects-archived-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
 }
 
 .nexus-breadcrumb {

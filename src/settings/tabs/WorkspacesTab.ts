@@ -388,6 +388,7 @@ export class WorkspacesTab {
             getTaskService: () => this.projectsManager.getTaskService(),
             onRefreshProjects: () => this.projectsManager.refreshProjects(),
             onOpenProjectDetail: (project) => { void this.openProjectDetailAndRender(project); },
+            onToggleProjectArchive: (project) => this.toggleProjectArchive(project),
             safeRegisterDomEvent: (el, eventName, handler) => this.safeRegisterDomEvent(el, eventName, handler),
             getStatesService: () => this.getStatesService(),
             getApp: () => this.services.app
@@ -591,6 +592,26 @@ export class WorkspacesTab {
         if (success) {
             this.currentView = 'project-detail';
             this.render();
+        }
+    }
+
+    private async toggleProjectArchive(project: ProjectMetadata): Promise<void> {
+        const taskService = await this.projectsManager.getTaskService();
+        if (!taskService) {
+            new Notice('Task service is not available yet');
+            return;
+        }
+
+        const nextStatus: ProjectMetadata['status'] = project.status === 'archived' ? 'active' : 'archived';
+
+        try {
+            await taskService.updateProject(project.id, { status: nextStatus });
+            await this.projectsManager.refreshProjects();
+            this.render();
+            new Notice(nextStatus === 'archived' ? 'Project archived' : 'Project restored');
+        } catch (error) {
+            console.error('[WorkspacesTab] Failed to toggle project archive:', error);
+            new Notice('Failed to update project');
         }
     }
 

@@ -1,6 +1,5 @@
 import { App, Component, createMockElement } from 'obsidian';
 import { WorkspacesTab } from '../../src/settings/tabs/WorkspacesTab';
-import { WorkspaceDetailRenderer } from '../../src/components/workspace/WorkspaceDetailRenderer';
 import { SettingsRouter } from '../../src/settings/SettingsRouter';
 import { TaskService } from '../../src/agents/taskManager/services/TaskService';
 import { ProjectWorkspace } from '../../src/database/workspace-types';
@@ -28,18 +27,6 @@ interface TestableWorkspacesTab {
   confirmDeleteWorkspace(workspaceName?: string): Promise<boolean>;
   openProjectsPage(): Promise<void>;
   openProjectDetailAndRender(project: Record<string, unknown>): Promise<void>;
-}
-
-/**
- * Test-only interface exposing WorkspaceDetailRenderer's private
- * handleTaskCheckboxChange method.
- */
-interface TestableDetailRenderer {
-  handleTaskCheckboxChange(
-    task: Record<string, unknown>,
-    checked: boolean,
-    callbacks: Record<string, unknown>
-  ): Promise<void>;
 }
 
 function createMockTaskService(): jest.Mocked<TaskService> {
@@ -262,35 +249,5 @@ describe('WorkspacesTab task management', () => {
 
     const currentTask = tab.projectsManager.getCurrentTask();
     expect(currentTask.title).toBe('Draft timeline');
-  });
-
-  it('updates task status from checkbox changes', async () => {
-    const taskService = createMockTaskService();
-    const task = {
-      id: 'task-1',
-      projectId: 'proj-1',
-      workspaceId: 'ws-1',
-      title: 'Draft timeline',
-      status: 'todo' as const,
-      priority: 'medium' as const,
-      created: 1,
-      updated: 1
-    };
-
-    taskService.updateTask.mockResolvedValue();
-    const onNavigateProjectDetail = jest.fn();
-
-    const renderer = new WorkspaceDetailRenderer(new Component()) as unknown as TestableDetailRenderer;
-    const callbacks = {
-      getTaskService: jest.fn().mockResolvedValue(taskService),
-      onNavigateProjectDetail,
-      safeRegisterDomEvent: jest.fn()
-    };
-
-    await renderer.handleTaskCheckboxChange(task, true, callbacks);
-
-    expect(taskService.updateTask).toHaveBeenCalledWith('task-1', { status: 'done' });
-    expect(task.status).toBe('done');
-    expect(onNavigateProjectDetail).toHaveBeenCalled();
   });
 });

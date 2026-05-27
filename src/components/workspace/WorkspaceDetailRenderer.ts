@@ -3,13 +3,12 @@
  * Extracted from WorkspacesTab to keep the tab under 600 lines.
  */
 
-import { App, ButtonComponent, Component, DropdownComponent, Notice, TextAreaComponent, TextComponent } from 'obsidian';
+import { App, ButtonComponent, Component, DropdownComponent, Notice, setIcon, TextAreaComponent, TextComponent, ToggleComponent } from 'obsidian';
 import { BoxedSection } from '../../settings/components/BoxedSection';
 import { ConfirmModal } from '../../settings/components/ConfirmModal';
 import { BreadcrumbNav, BreadcrumbNavItem } from '../../settings/components/BreadcrumbNav';
 import { WorkspaceFormRenderer } from './WorkspaceFormRenderer';
-import { CardItem } from '../CardManager';
-import { SearchableCardManager } from '../SearchableCardManager';
+import { ProjectDetailRenderer, ProjectDetailCallbacks } from './ProjectDetailRenderer';
 import { ProjectWorkspace } from '../../database/workspace-types';
 import { CustomPrompt } from '../../types/mcp/CustomPromptTypes';
 import type { CreateTaskData, TaskListOptions, UpdateTaskData } from '../../agents/taskManager/types';
@@ -19,10 +18,6 @@ import type { PaginatedResult } from '../../types/pagination/PaginationTypes';
 import { StatesSectionRenderer, StatesSectionService } from './StatesSectionRenderer';
 
 type ProjectStatus = ProjectMetadata['status'];
-
-interface ProjectCardItem extends CardItem {
-    taskSummary: string;
-}
 
 interface ProjectEditorState {
     id?: string;
@@ -74,6 +69,7 @@ export interface DetailCallbacks {
     getTaskService: () => Promise<WorkspaceDetailTaskService | null>;
     onRefreshProjects: () => Promise<void>;
     onOpenProjectDetail: (project: ProjectMetadata) => void;
+    onToggleProjectArchive: (project: ProjectMetadata) => Promise<void>;
     safeRegisterDomEvent: <K extends keyof HTMLElementEventMap>(el: HTMLElement, eventName: K, handler: (event: HTMLElementEventMap[K]) => void) => void;
     /**
      * Resolves the service used by the States section. Returns null when the
@@ -88,7 +84,9 @@ export interface DetailCallbacks {
 export class WorkspaceDetailRenderer {
     private formRenderer?: WorkspaceFormRenderer;
     private statesRenderer?: StatesSectionRenderer;
+    private projectDetailRenderer: ProjectDetailRenderer | null = null;
     private component: Component;
+    private showArchivedProjects = false;
 
     constructor(component: Component) {
         this.component = component;
@@ -289,59 +287,122 @@ export class WorkspaceDetailRenderer {
         ]);
 
         container.createEl('h3', {
-            text: `${workspace.name || 'Workspace'} projects`,
+            text: 'Projects',
             cls: 'nexus-detail-title'
         });
 
-        const contentContainer = container.createDiv('nexus-settings-page-content');
-
-        const cardItems: ProjectCardItem[] = projects.map(project => {
-            const projectTasks = tasks.filter(task => task.projectId === project.id);
-            const openCount = projectTasks.filter(task => task.status !== 'done' && task.status !== 'cancelled').length;
-            const doneCount = projectTasks.filter(task => task.status === 'done').length;
-
-            return {
-                id: project.id,
-                name: project.name,
-                description: project.description || 'No description',
-                isEnabled: project.status !== 'archived',
-                taskSummary: `${projectTasks.length} tasks · ${openCount} open · ${doneCount} done`
-            };
-        });
-
-        const cardsWithSummary = cardItems.map(item => ({
-            ...item,
-            description: `${item.description}\n${item.taskSummary}`
-        }));
-
-        new SearchableCardManager<CardItem>({
-            containerEl: contentContainer,
-            cardManagerConfig: {
-                title: 'Projects',
-                addButtonText: '+ New project',
-                emptyStateText: 'No projects yet. Create one to get started.',
-                showToggle: false,
-                onAdd: () => {
-                    callbacks.onNavigateProjectDetail();
-                },
-                onToggle: () => {
-                    return;
-                },
-                onEdit: (item) => {
-                    const project = projects.find(entry => entry.id === item.id);
-                    if (project) {
-                        callbacks.onOpenProjectDetail(project);
-                    }
-                },
-                onDelete: (item) => {
-                    void this.deleteProject(item.id, callbacks);
-                }
+        new BoxedSection(container, {
+            title: 'Projects',
+            unbounded: true,
+            actionLabel: '+ New project',
+            onAction: () => callbacks.onNavigateProjectDetail(),
+            toolbar: (toolbar) => {
+                const archivedLabel = toolbar.createDiv('nexus-projects-archived-toggle');
+                archivedLabel.createSpan({ text: 'Show archived', cls: 'nexus-section-toolbar-label' });
+                new ToggleComponent(archivedLabel)
+                    .setValue(this.showArchivedProjects)
+                    .onChange((value) => {
+                        this.showArchivedProjects = value;
+                        callbacks.onRefreshDetail();
+                    });
             },
-            items: cardsWithSummary,
-            search: {
-                placeholder: 'Search projects...'
+            body: (body) => {
+                this.renderProjectGroups(body, projects, tasks, callbacks);
             }
+        }, this.component);
+    }
+
+    private renderProjectGroups(
+        body: HTMLElement,
+        projects: ProjectMetadata[],
+        tasks: TaskMetadata[],
+        callbacks: DetailCallbacks
+    ): void {
+        const visible = this.showArchivedProjects
+            ? projects
+            : projects.filter(p => p.status !== 'archived');
+
+        if (visible.length === 0) {
+            body.createEl('p', {
+                text: 'No projects yet. Create one to get started.',
+                cls: 'nexus-form-hint'
+            });
+            return;
+        }
+
+        const groups: Array<{ key: ProjectStatus; label: string }> = [
+            { key: 'active',    label: 'Active' },
+            { key: 'completed', label: 'Completed' },
+            { key: 'archived',  label: 'Archived' }
+        ];
+
+        for (const group of groups) {
+            const inGroup = visible.filter(p => p.status === group.key);
+            if (inGroup.length === 0) continue;
+
+            inGroup.sort((a, b) => (b.updated ?? b.created) - (a.updated ?? a.created));
+
+            body.createDiv({
+                cls: 'ws-group-label',
+                text: `${group.label} · ${inGroup.length}`
+            });
+
+            for (const project of inGroup) {
+                this.renderProjectRow(body, project, tasks, callbacks);
+            }
+        }
+    }
+
+    private renderProjectRow(
+        body: HTMLElement,
+        project: ProjectMetadata,
+        tasks: TaskMetadata[],
+        callbacks: DetailCallbacks
+    ): void {
+        const row = body.createDiv({
+            cls: 'setting-item is-project' + (project.status === 'archived' ? ' is-archived' : '')
         });
+
+        const info = row.createDiv('setting-item-info');
+        info.createDiv({ cls: 'setting-item-name', text: project.name });
+        info.createDiv({
+            cls: 'setting-item-description',
+            text: this.formatProjectDescription(project, tasks)
+        });
+
+        const control = row.createDiv('setting-item-control');
+
+        const editBtn = control.createEl('button', {
+            cls: 'clickable-icon',
+            attr: { 'aria-label': 'Edit project' }
+        });
+        setIcon(editBtn, 'pencil');
+        this.component.registerDomEvent(editBtn, 'click', () => callbacks.onOpenProjectDetail(project));
+
+        const isArchived = project.status === 'archived';
+        const archiveBtn = control.createEl('button', {
+            cls: 'clickable-icon',
+            attr: { 'aria-label': isArchived ? 'Restore project' : 'Archive project' }
+        });
+        setIcon(archiveBtn, isArchived ? 'archive-restore' : 'archive');
+        this.component.registerDomEvent(archiveBtn, 'click', () => void callbacks.onToggleProjectArchive(project));
+
+        const deleteBtn = control.createEl('button', {
+            cls: 'clickable-icon mod-warning',
+            attr: { 'aria-label': 'Delete project' }
+        });
+        setIcon(deleteBtn, 'trash');
+        this.component.registerDomEvent(deleteBtn, 'click', () => void this.deleteProject(project.id, callbacks));
+    }
+
+    private formatProjectDescription(project: ProjectMetadata, tasks: TaskMetadata[]): string {
+        const projectTasks = tasks.filter(task => task.projectId === project.id);
+        const total = projectTasks.length;
+        const open = projectTasks.filter(task => task.status !== 'done' && task.status !== 'cancelled').length;
+        const done = projectTasks.filter(task => task.status === 'done').length;
+        const desc = project.description?.trim() ?? '';
+        const summary = `${total} tasks · ${open} open · ${done} done`;
+        return desc ? `${desc} · ${summary}` : summary;
     }
 
     renderProjectDetail(
@@ -354,130 +415,22 @@ export class WorkspaceDetailRenderer {
         onSaveProject: () => Promise<void>,
         onOpenTaskDetail: (task?: TaskMetadata) => void
     ): void {
-        if (!workspace.id || !project) {
-            callbacks.onNavigateProjects();
-            return;
-        }
+        this.projectDetailRenderer ??= new ProjectDetailRenderer(callbacks.getApp(), this.component);
 
-        this.renderBreadcrumbs(container, [
-            { label: 'Workspaces', onClick: () => callbacks.onNavigateList() },
-            { label: workspace.name || 'Workspace', onClick: () => callbacks.onNavigateDetail() },
-            { label: 'Projects', onClick: () => callbacks.onNavigateProjects() },
-            { label: project.name || 'Project' }
-        ]);
+        const projectDetailCallbacks: ProjectDetailCallbacks = {
+            getWorkspace: () => workspace,
+            getProject: () => project,
+            getTasks: () => tasks,
+            onNavigateList: () => callbacks.onNavigateList(),
+            onNavigateDetail: () => callbacks.onNavigateDetail(),
+            onNavigateProjects: () => callbacks.onNavigateProjects(),
+            onSaveProject,
+            onDeleteProject: (projectId) => this.deleteProject(projectId, callbacks),
+            onOpenTaskDetail,
+            onDeleteTask: (taskId) => this.deleteTask(taskId, callbacks)
+        };
 
-        container.createEl('h3', {
-            text: project.id ? project.name || 'Project' : 'New Project',
-            cls: 'nexus-detail-title'
-        });
-
-        const formContainer = container.createDiv('nexus-workspace-form');
-        const section = formContainer.createDiv('nexus-form-section');
-        section.createEl('h4', { text: 'Project details', cls: 'nexus-section-header' });
-
-        const nameField = section.createDiv('nexus-form-field');
-        nameField.createEl('label', { text: 'Name', cls: 'nexus-form-label' });
-        const nameInput = new TextComponent(nameField);
-        nameInput.setPlaceholder('Project name');
-        nameInput.setValue(project.name ?? '');
-        nameInput.onChange((value) => { project.name = value; });
-
-        const descField = section.createDiv('nexus-form-field');
-        descField.createEl('label', { text: 'Description', cls: 'nexus-form-label' });
-        const descInput = new TextAreaComponent(descField);
-        descInput.setPlaceholder('Optional project description');
-        descInput.setValue(project.description ?? '');
-        descInput.onChange((value) => { project.description = value; });
-        descInput.inputEl.rows = 3;
-
-        const statusField = section.createDiv('nexus-form-field');
-        statusField.createEl('label', { text: 'Status', cls: 'nexus-form-label' });
-        const statusDropdown = new DropdownComponent(statusField);
-        statusDropdown.addOption('active', 'Active');
-        statusDropdown.addOption('completed', 'Completed');
-        statusDropdown.addOption('archived', 'Archived');
-        statusDropdown.setValue(project.status ?? '');
-        statusDropdown.onChange((value) => { project.status = value as ProjectStatus; });
-
-        const actions = container.createDiv('nexus-form-actions');
-        new ButtonComponent(actions)
-            .setButtonText('Save project')
-            .setCta()
-            .onClick(() => void onSaveProject());
-
-        if (project.id) {
-            new ButtonComponent(actions)
-                .setButtonText('Delete project')
-                .setWarning()
-                .onClick(() => {
-                    if (project.id) {
-                        void this.deleteProject(project.id, callbacks);
-                    }
-                });
-        }
-
-        if (!project.id) return;
-
-        const tasksSection = container.createDiv('nexus-form-section');
-        tasksSection.createEl('h4', { text: 'Tasks', cls: 'nexus-section-header' });
-
-        const taskToolbar = tasksSection.createDiv('nexus-task-toolbar');
-        new ButtonComponent(taskToolbar)
-            .setButtonText('+ new task')
-            .onClick(() => onOpenTaskDetail());
-
-        if (tasks.length === 0) {
-            tasksSection.createEl('p', {
-                text: 'No tasks yet. Add one to get started.',
-                cls: 'nexus-form-hint'
-            });
-            return;
-        }
-
-        const table = tasksSection.createEl('table', { cls: 'nexus-task-table' });
-        const head = table.createEl('thead');
-        const headerRow = head.createEl('tr');
-        ['Done', 'Title', 'Status', 'Priority', 'Due', 'Assignee', 'Actions'].forEach(title => {
-            headerRow.createEl('th', { text: title });
-        });
-
-        const body = table.createEl('tbody');
-        this.buildTaskRows(tasks).forEach(({ task, depth }) => {
-            const row = body.createEl('tr');
-            row.addClass('nexus-task-row');
-
-            const checkboxCell = row.createEl('td', { cls: 'nexus-task-checkbox-cell' });
-            const checkbox = checkboxCell.createEl('input', {
-                type: 'checkbox',
-                cls: 'nexus-task-checkbox'
-            });
-            checkbox.checked = task.status === 'done';
-            callbacks.safeRegisterDomEvent(checkbox, 'change', () => {
-                void this.handleTaskCheckboxChange(task, checkbox.checked, callbacks);
-            });
-
-            const titleCell = row.createEl('td', { cls: 'nexus-task-title-cell' });
-            titleCell.setAttribute('data-depth', String(depth));
-            titleCell.createEl('span', {
-                text: `${'— '.repeat(depth)}${task.title}`,
-                cls: 'nexus-task-title'
-            });
-
-            row.createEl('td', { text: this.formatTaskStatus(task.status) });
-            row.createEl('td', { text: task.priority });
-            row.createEl('td', { text: this.formatDate(task.dueDate) });
-            row.createEl('td', { text: task.assignee || '—' });
-
-            const actionsCell = row.createEl('td');
-            actionsCell.addClass('nexus-task-actions');
-            new ButtonComponent(actionsCell)
-                .setButtonText('Edit')
-                .onClick(() => onOpenTaskDetail(task));
-            new ButtonComponent(actionsCell)
-                .setButtonText('Delete')
-                .setWarning()
-                .onClick(() => void this.deleteTask(task.id, callbacks));
-        });
+        this.projectDetailRenderer.render(container, projectDetailCallbacks);
     }
 
     renderTaskDetail(
@@ -635,61 +588,6 @@ export class WorkspaceDetailRenderer {
         });
     }
 
-    buildTaskRows(tasks: TaskMetadata[]): Array<{ task: TaskMetadata; depth: number }> {
-        const children = new Map<string, TaskMetadata[]>();
-        const roots: TaskMetadata[] = [];
-
-        const sortTasks = (items: TaskMetadata[]) => items.sort((a, b) => {
-            const statusOrder: Record<TaskStatus, number> = {
-                todo: 0, in_progress: 1, done: 2, cancelled: 3
-            };
-            const priorityOrder: Record<TaskPriority, number> = {
-                critical: 0, high: 1, medium: 2, low: 3
-            };
-
-            const statusDiff = statusOrder[a.status] - statusOrder[b.status];
-            if (statusDiff !== 0) return statusDiff;
-
-            const priorityDiff = priorityOrder[a.priority] - priorityOrder[b.priority];
-            if (priorityDiff !== 0) return priorityDiff;
-
-            return a.created - b.created;
-        });
-
-        tasks.forEach(task => {
-            if (task.parentTaskId) {
-                const list = children.get(task.parentTaskId) || [];
-                list.push(task);
-                children.set(task.parentTaskId, list);
-            } else {
-                roots.push(task);
-            }
-        });
-
-        sortTasks(roots);
-        Array.from(children.values()).forEach(sortTasks);
-
-        const rows: Array<{ task: TaskMetadata; depth: number }> = [];
-        const visit = (task: TaskMetadata, depth: number) => {
-            rows.push({ task, depth });
-            const childRows = children.get(task.id) || [];
-            childRows.forEach(child => visit(child, depth + 1));
-        };
-
-        roots.forEach(task => visit(task, 0));
-        return rows;
-    }
-
-    private formatTaskStatus(status: TaskStatus): string {
-        if (status === 'in_progress') return 'In progress';
-        return status.charAt(0).toUpperCase() + status.slice(1);
-    }
-
-    private formatDate(timestamp?: number): string {
-        if (!timestamp) return '—';
-        return new Date(timestamp).toLocaleDateString();
-    }
-
     private async deleteProject(projectId: string, callbacks: DetailCallbacks): Promise<void> {
         const confirmed = await this.confirmDangerousAction(callbacks.getApp(), 'Delete this project and all its tasks? This cannot be undone.');
         if (!confirmed) return;
@@ -728,29 +626,6 @@ export class WorkspaceDetailRenderer {
         } catch (error) {
             console.error('[WorkspaceDetailRenderer] Failed to delete task:', error);
             new Notice('Failed to delete task');
-        }
-    }
-
-    private async handleTaskCheckboxChange(
-        task: TaskMetadata,
-        checked: boolean,
-        callbacks: DetailCallbacks
-    ): Promise<void> {
-        const taskService = await callbacks.getTaskService();
-        if (!taskService) {
-            new Notice('Task service is not available yet');
-            return;
-        }
-
-        try {
-            await taskService.updateTask(task.id, {
-                status: checked ? 'done' : 'todo'
-            });
-            task.status = checked ? 'done' : 'todo';
-            callbacks.onNavigateProjectDetail();
-        } catch (error) {
-            console.error('[WorkspaceDetailRenderer] Failed to update task status:', error);
-            new Notice('Failed to update task status');
         }
     }
 
