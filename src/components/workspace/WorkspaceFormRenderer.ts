@@ -1,5 +1,6 @@
-import { Component, DropdownComponent, TextComponent, TextAreaComponent, ButtonComponent } from 'obsidian';
+import { App, Component, DropdownComponent, TextComponent, TextAreaComponent, ButtonComponent } from 'obsidian';
 import { BoxedSection } from '../../settings/components/BoxedSection';
+import { ConfirmModal } from '../../settings/components/ConfirmModal';
 import { ProjectWorkspace } from '../../database/workspace-types';
 import type { WorkspaceWorkflow } from '../../database/types/workspace/WorkspaceTypes';
 import { CustomPrompt } from '../../types/mcp/CustomPromptTypes';
@@ -24,7 +25,8 @@ export class WorkspaceFormRenderer {
     private onWorkflowRun: (index: number) => void,
     private onFilePick: (index: number) => void,
     private onRefresh: () => void,
-    private component: Component
+    private component: Component,
+    private app: App
   ) {}
 
   /**
@@ -240,9 +242,17 @@ export class WorkspaceFormRenderer {
         new ButtonComponent(actions)
           .setButtonText('×')
           .setWarning()
-          .onClick(() => {
-            workflows.splice(index, 1);
-            this.onRefresh();
+          .onClick(async () => {
+            await ConfirmModal.confirm(this.app, {
+              variant: 'remove',
+              title: 'Remove workflow',
+              body: 'Remove this workflow from the workspace? It will not be deleted.',
+              ctaLabel: 'Remove',
+              onConfirm: () => {
+                workflows.splice(index, 1);
+                this.onRefresh();
+              }
+            });
           });
       });
     }
@@ -294,9 +304,17 @@ export class WorkspaceFormRenderer {
           new ButtonComponent(actions)
             .setButtonText('×')
             .setWarning()
-            .onClick(() => {
-              keyFiles.splice(index, 1);
-              updateKeyFilesList();
+            .onClick(async () => {
+              await ConfirmModal.confirm(this.app, {
+                variant: 'remove',
+                title: 'Remove key file',
+                body: 'Remove this key file from the workspace? The file itself will not be deleted.',
+                ctaLabel: 'Remove',
+                onConfirm: () => {
+                  keyFiles.splice(index, 1);
+                  updateKeyFilesList();
+                }
+              });
             });
         });
       }

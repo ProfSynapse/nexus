@@ -134,7 +134,8 @@ export class WorkspaceDetailRenderer {
             (index) => callbacks.onRunWorkflow(index),
             (index) => callbacks.onOpenFilePicker(index),
             () => callbacks.onRefreshDetail(),
-            this.component
+            this.component,
+            callbacks.getApp()
         );
 
         this.formRenderer.render(formContainer);
