@@ -88,28 +88,17 @@ export interface DetailCallbacks {
 export class WorkspaceDetailRenderer {
     private formRenderer?: WorkspaceFormRenderer;
     private statesRenderer?: StatesSectionRenderer;
-    private component?: Component;
+    private component: Component;
 
-    constructor(component?: Component) {
+    constructor(component: Component) {
         this.component = component;
     }
 
-    private async confirmDangerousAction(app: App, message: string): Promise<boolean> {
-        return await new Promise<boolean>((resolve) => {
-            let confirmed = false;
-            const modal = new ConfirmModal(app, {
-                variant: 'delete',
-                title: 'Confirm delete',
-                body: message,
-                onConfirm: () => {
-                    confirmed = true;
-                }
-            });
-            modal.onClose = () => {
-                modal.contentEl.empty();
-                resolve(confirmed);
-            };
-            modal.open();
+    private confirmDangerousAction(app: App, message: string): Promise<boolean> {
+        return ConfirmModal.confirm(app, {
+            variant: 'delete',
+            title: 'Confirm delete',
+            body: message
         });
     }
 
@@ -146,7 +135,8 @@ export class WorkspaceDetailRenderer {
             (index) => callbacks.onOpenWorkflowEditor(index),
             (index) => callbacks.onRunWorkflow(index),
             (index) => callbacks.onOpenFilePicker(index),
-            () => callbacks.onRefreshDetail()
+            () => callbacks.onRefreshDetail(),
+            this.component
         );
 
         this.formRenderer.render(formContainer);

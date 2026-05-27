@@ -112,7 +112,7 @@ describe('BoxedSection structural deepening', () => {
         actionLabel: '+ New thing',
         onAction: () => { void 0; },
         body: () => { void 0; }
-      });
+      }, new Component());
 
       const section = firstChild(container);
       const header = section._children.find(c => c.className === 'ws-section-header');
@@ -168,7 +168,7 @@ describe('BoxedSection structural deepening', () => {
         actionLabel: 'X',
         onAction: () => { void 0; },
         body: (b) => { b.createDiv('content'); }
-      });
+      }, new Component());
 
       const section = firstChild(container);
       // style object must remain empty — no inline mutations
@@ -296,24 +296,9 @@ describe('BoxedSection structural deepening', () => {
       // of the mock, not BoxedSection itself.
     });
 
-    it('falls back to addEventListener when NO component provided', () => {
-      const container = createMockContainer();
-      const handler = jest.fn();
-
-      new BoxedSection(container as unknown as HTMLElement, {
-        title: 'T',
-        actionLabel: 'Go',
-        onAction: handler,
-        body: () => { void 0; }
-      });
-
-      const section = firstChild(container);
-      const header = section._children.find(c => c.className === 'ws-section-header');
-      const toolbar = header?._children.find(c => c.className === 'ws-section-toolbar');
-      const action = toolbar?._children.find(c => c.className === 'ws-section-action');
-      expect(action?.addEventListener).toHaveBeenCalledTimes(1);
-      const [type] = (action?.addEventListener as jest.Mock).mock.calls[0];
-      expect(type).toBe('click');
-    });
+    // Wave 3 PR2 Commit 1 (Group A M-1): addEventListener fallback removed.
+    // BoxedSection now hard-requires Component to enforce Obsidian-safe DOM
+    // event registration. The pre-Group-A fallback test has been intentionally
+    // deleted — see the companion deletion in BoxedSection.test.ts.
   });
 });

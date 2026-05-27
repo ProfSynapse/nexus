@@ -32,11 +32,11 @@ import type { MemoryService } from '../../agents/memoryManager/services/MemorySe
 
 export interface WorkspacesTabServices {
     app: App;
+    component: Component;
     workspaceService?: WorkspaceService;
     customPromptStorage?: CustomPromptStorageService;
     prefetchedWorkspaces?: ProjectWorkspace[] | null;
     serviceManager?: ServiceManager;
-    component?: Component;
 }
 
 type WorkspacesView = 'list' | 'detail' | 'workflow' | 'filepicker' | 'projects' | 'project-detail' | 'task-detail';
@@ -562,20 +562,11 @@ export class WorkspacesTab {
         }
     }
 
-    private async confirmDeleteWorkspace(workspaceName = this.currentWorkspace?.name || 'Workspace'): Promise<boolean> {
-        return new Promise<boolean>((resolve) => {
-            let confirmed = false;
-            const modal = new ConfirmModal(this.services.app, {
-                variant: 'delete',
-                title: 'Delete workspace?',
-                body: `Delete workspace "${workspaceName}"? This cannot be undone.`,
-                onConfirm: () => { confirmed = true; }
-            });
-            modal.onClose = () => {
-                modal.contentEl.empty();
-                resolve(confirmed);
-            };
-            modal.open();
+    private confirmDeleteWorkspace(workspaceName = this.currentWorkspace?.name || 'Workspace'): Promise<boolean> {
+        return ConfirmModal.confirm(this.services.app, {
+            variant: 'delete',
+            title: 'Delete workspace?',
+            body: `Delete workspace "${workspaceName}"? This cannot be undone.`
         });
     }
 

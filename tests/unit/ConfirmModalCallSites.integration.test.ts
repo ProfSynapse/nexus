@@ -1,17 +1,14 @@
 /**
  * ConfirmModal Call-Site Integration Tests
  *
- * Asserts that the 3 in-scope PR1 call sites invoke `new ConfirmModal(app, config)`
- * with the right variant/title/body/onConfirm shape, and that the surrounding
- * `await confirm...` promise resolves correctly based on the user's choice.
+ * Asserts that the 3 in-scope PR1 call sites invoke `ConfirmModal.confirm(app, config)`
+ * (Group A M-2 static helper) with the right variant/title/body shape, and that
+ * the surrounding `await confirm...` promise resolves correctly based on the
+ * user's choice.
  *
- * Strategy: jest.mock the ConfirmModal module with a spy class that captures
- * constructor args + exposes synthetic open/close/confirm hooks. This isolates
- * each call site from real Modal DOM rendering and lets us assert on:
- *   1. The config passed to `new ConfirmModal(...)` per call site.
- *   2. The async promise resolution path:
- *        - user clicks CTA  → onConfirm() fires → onClose() resolves with `true`
- *        - user clicks Cancel → onClose() resolves with `false`
+ * Strategy: jest.mock the ConfirmModal module so its `confirm()` static is a
+ * jest.fn that captures (app, config) per call and returns a manually-resolvable
+ * Promise. Tests then drive resolution via `resolveLast(true|false)`.
  *
  * Coverage:
  *   - WorkspacesTab.confirmDeleteWorkspace (variant=delete)
@@ -21,44 +18,29 @@
 
 import { App, Component, createMockElement } from 'obsidian';
 
-// --- Spy class that replaces ConfirmModal ---
-// Captures (app, config) per construction; exposes the captured instances so
-// tests can synthetically fire onConfirm() then onClose() to drive the
-// resolve(true | false) path each call site wraps around.
-
-interface CapturedConfirmModal {
+interface CapturedConfirmCall {
   app: unknown;
   config: {
     variant: 'delete' | 'remove' | 'archive';
     title: string;
     body: string;
     ctaLabel?: string;
-    onConfirm: () => void | Promise<void>;
+    onConfirm?: () => void | Promise<void>;
   };
-  onClose: () => void;
-  open: () => void;
-  contentEl: HTMLElement;
+  resolve: (value: boolean) => void;
 }
 
-const capturedInstances: CapturedConfirmModal[] = [];
+const capturedInstances: CapturedConfirmCall[] = [];
 
 jest.mock('../../src/settings/components/ConfirmModal', () => {
   return {
-    ConfirmModal: jest.fn().mockImplementation(function (
-      this: CapturedConfirmModal,
-      app: unknown,
-      config: CapturedConfirmModal['config']
-    ) {
-      this.app = app;
-      this.config = config;
-      this.contentEl = createMockElement('div');
-      // onClose is assigned by the call site after construction
-      // (see WorkspacesTab.confirmDeleteWorkspace + sibling closures).
-      this.onClose = () => { void 0; };
-      this.open = () => { void 0; };
-      capturedInstances.push(this);
-      return this;
-    })
+    ConfirmModal: {
+      confirm: jest.fn().mockImplementation((app: unknown, config: CapturedConfirmCall['config']) => {
+        return new Promise<boolean>((resolve) => {
+          capturedInstances.push({ app, config, resolve });
+        });
+      })
+    }
   };
 });
 
@@ -95,18 +77,14 @@ function makeStatesService(): jest.Mocked<StatesSectionService> {
   } as unknown as jest.Mocked<StatesSectionService>;
 }
 
-/** Drive the spy modal through a successful CTA-click cycle. */
-function clickCta(instance: CapturedConfirmModal): void {
-  // Call site closure flips `confirmed = true` in onConfirm.
-  void Promise.resolve(instance.config.onConfirm());
-  // Then the modal closes — which fires onClose, which resolves the outer promise.
-  instance.onClose();
+/** Drive the spy through a successful CTA-click cycle (resolves true). */
+function clickCta(instance: CapturedConfirmCall): void {
+  instance.resolve(true);
 }
 
-/** Drive the spy modal through a Cancel-click cycle (no onConfirm fire). */
-function clickCancel(instance: CapturedConfirmModal): void {
-  // Cancel skips onConfirm. The wrapping promise still resolves via onClose.
-  instance.onClose();
+/** Drive the spy through a Cancel-click cycle (resolves false). */
+function clickCancel(instance: CapturedConfirmCall): void {
+  instance.resolve(false);
 }
 
 describe('ConfirmModal call-site integration', () => {
@@ -120,6 +98,7 @@ describe('ConfirmModal call-site integration', () => {
       const router = new SettingsRouter();
       const tab = new WorkspacesTab(container, router, {
         app: new App(),
+        component: new Component(),
         prefetchedWorkspaces: [],
         workspaceService: undefined
       });
@@ -271,7 +250,7 @@ describe('ConfirmModal call-site integration', () => {
       service: jest.Mocked<StatesSectionService>;
     } {
       const service = makeStatesService();
-      const renderer = new StatesSectionRenderer(new App(), service);
+      const renderer = new StatesSectionRenderer(new App(), service, new Component());
       return { renderer: renderer as unknown as TestableStatesRenderer, service };
     }
 
@@ -321,6 +300,7 @@ describe('ConfirmModal call-site integration', () => {
       // PR2 will introduce 'remove' for key-files row removal (out of PR1 scope).
       const tab = new WorkspacesTab(createMockElement('div'), new SettingsRouter(), {
         app: new App(),
+        component: new Component(),
         prefetchedWorkspaces: [],
         workspaceService: undefined
       }) as unknown as TestableWorkspacesTab;
@@ -330,14 +310,14 @@ describe('ConfirmModal call-site integration', () => {
       clickCancel(capturedInstances[0]);
       await p1;
 
-      const detail = new WorkspaceDetailRenderer() as unknown as TestableDetailRenderer;
+      const detail = new WorkspaceDetailRenderer(new Component()) as unknown as TestableDetailRenderer;
       const p2 = detail.confirmDangerousAction(new App(), 'x');
       await Promise.resolve();
       clickCancel(capturedInstances[1]);
       await p2;
 
       const service = makeStatesService();
-      const states = new StatesSectionRenderer(new App(), service) as unknown as TestableStatesRenderer;
+      const states = new StatesSectionRenderer(new App(), service, new Component()) as unknown as TestableStatesRenderer;
       const p3 = states.confirmArchive('s');
       await Promise.resolve();
       clickCancel(capturedInstances[2]);

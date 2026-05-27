@@ -17,37 +17,29 @@
 
 import { App, Component, createMockElement } from 'obsidian';
 
-// Mock ConfirmModal so we can drive the archive confirm flow synthetically
-// without rendering a real modal.
-interface CapturedConfirmModal {
+// Mock ConfirmModal.confirm() static so we can drive the archive confirm flow
+// synthetically without rendering a real modal.
+interface CapturedConfirmCall {
   app: unknown;
   config: {
     variant: 'delete' | 'remove' | 'archive';
     title: string;
     body: string;
-    onConfirm: () => void | Promise<void>;
+    onConfirm?: () => void | Promise<void>;
   };
-  onClose: () => void;
-  open: () => void;
-  contentEl: HTMLElement;
+  resolve: (value: boolean) => void;
 }
 
-const capturedInstances: CapturedConfirmModal[] = [];
+const capturedInstances: CapturedConfirmCall[] = [];
 
 jest.mock('../../src/settings/components/ConfirmModal', () => ({
-  ConfirmModal: jest.fn().mockImplementation(function (
-    this: CapturedConfirmModal,
-    app: unknown,
-    config: CapturedConfirmModal['config']
-  ) {
-    this.app = app;
-    this.config = config;
-    this.contentEl = createMockElement('div');
-    this.onClose = () => { void 0; };
-    this.open = () => { void 0; };
-    capturedInstances.push(this);
-    return this;
-  })
+  ConfirmModal: {
+    confirm: jest.fn().mockImplementation((app: unknown, config: CapturedConfirmCall['config']) => {
+      return new Promise<boolean>((resolve) => {
+        capturedInstances.push({ app, config, resolve });
+      });
+    })
+  }
 }));
 
 import { StatesSectionRenderer, StatesSectionService, StateSummary } from '../../src/components/workspace/StatesSectionRenderer';
@@ -86,10 +78,9 @@ function makeState(overrides: Partial<StateSummary> = {}): StateSummary {
   };
 }
 
-/** Drive the spy modal through a successful CTA-click cycle. */
-function clickCta(instance: CapturedConfirmModal): void {
-  void Promise.resolve(instance.config.onConfirm());
-  instance.onClose();
+/** Drive the spy through a successful CTA-click cycle (resolves true). */
+function clickCta(instance: CapturedConfirmCall): void {
+  instance.resolve(true);
 }
 
 describe('StatesSectionRenderer port regression', () => {
@@ -100,7 +91,7 @@ describe('StatesSectionRenderer port regression', () => {
   describe('render() — BoxedSection shell + workspaceId branch', () => {
     it('renders a "save first" hint inside BoxedSection when workspaceId is undefined', () => {
       const service = makeService();
-      const renderer = new StatesSectionRenderer(new App(), service);
+      const renderer = new StatesSectionRenderer(new App(), service, new Component());
       const container = createMockElement('div');
 
       renderer.render(container, undefined);
@@ -116,7 +107,7 @@ describe('StatesSectionRenderer port regression', () => {
       const service = makeService({
         listStates: jest.fn().mockResolvedValue([]) as jest.Mocked<StatesSectionService>['listStates']
       });
-      const renderer = new StatesSectionRenderer(new App(), service);
+      const renderer = new StatesSectionRenderer(new App(), service, new Component());
       const container = createMockElement('div');
 
       renderer.render(container, 'ws-42');
@@ -131,7 +122,7 @@ describe('StatesSectionRenderer port regression', () => {
   describe('Show archived toggle — both branches of the v5.9.7 fix', () => {
     it('calls listStates with includeArchived=false when toggle is OFF (default)', async () => {
       const service = makeService();
-      const renderer = new StatesSectionRenderer(new App(), service) as unknown as TestableStatesRenderer;
+      const renderer = new StatesSectionRenderer(new App(), service, new Component()) as unknown as TestableStatesRenderer;
       renderer.workspaceId = 'ws-1';
       renderer.listContainer = createMockElement('div');
       renderer.includeArchived = false;
@@ -143,7 +134,7 @@ describe('StatesSectionRenderer port regression', () => {
 
     it('calls listStates with includeArchived=true when toggle is ON', async () => {
       const service = makeService();
-      const renderer = new StatesSectionRenderer(new App(), service) as unknown as TestableStatesRenderer;
+      const renderer = new StatesSectionRenderer(new App(), service, new Component()) as unknown as TestableStatesRenderer;
       renderer.workspaceId = 'ws-1';
       renderer.listContainer = createMockElement('div');
       renderer.includeArchived = true;
@@ -165,7 +156,7 @@ describe('StatesSectionRenderer port regression', () => {
       const service = makeService({
         listStates: jest.fn().mockResolvedValue([archivedState]) as jest.Mocked<StatesSectionService>['listStates']
       });
-      const renderer = new StatesSectionRenderer(new App(), service) as unknown as TestableStatesRenderer;
+      const renderer = new StatesSectionRenderer(new App(), service, new Component()) as unknown as TestableStatesRenderer;
       renderer.workspaceId = 'ws-1';
       renderer.listContainer = createMockElement('div');
       renderer.includeArchived = true;
@@ -181,7 +172,7 @@ describe('StatesSectionRenderer port regression', () => {
   describe('Archive flow — ConfirmModal accept → archiveState → refresh', () => {
     it('calls archiveState(workspaceId, sessionId, stateId, restore=false) after user confirms', async () => {
       const service = makeService();
-      const renderer = new StatesSectionRenderer(new App(), service) as unknown as TestableStatesRenderer;
+      const renderer = new StatesSectionRenderer(new App(), service, new Component()) as unknown as TestableStatesRenderer;
       renderer.workspaceId = 'ws-1';
       renderer.listContainer = createMockElement('div');
 
@@ -203,7 +194,7 @@ describe('StatesSectionRenderer port regression', () => {
 
     it('does NOT call archiveState when user cancels the confirm modal', async () => {
       const service = makeService();
-      const renderer = new StatesSectionRenderer(new App(), service) as unknown as TestableStatesRenderer;
+      const renderer = new StatesSectionRenderer(new App(), service, new Component()) as unknown as TestableStatesRenderer;
       renderer.workspaceId = 'ws-1';
       renderer.listContainer = createMockElement('div');
 
@@ -211,8 +202,9 @@ describe('StatesSectionRenderer port regression', () => {
       const pending = renderer.toggleArchive(state);
 
       await Promise.resolve();
-      // Cancel: close without invoking onConfirm.
-      capturedInstances[0].onClose();
+      // Cancel: resolve the captured ConfirmModal promise with false to
+      // simulate the user clicking Cancel (helper static returns false).
+      capturedInstances[0].resolve(false);
 
       await pending;
 
@@ -223,7 +215,7 @@ describe('StatesSectionRenderer port regression', () => {
       // Per CODE intent: restore is reversible-of-reversible, so no confirm
       // gate — the user gets immediate restoration.
       const service = makeService();
-      const renderer = new StatesSectionRenderer(new App(), service) as unknown as TestableStatesRenderer;
+      const renderer = new StatesSectionRenderer(new App(), service, new Component()) as unknown as TestableStatesRenderer;
       renderer.workspaceId = 'ws-1';
       renderer.listContainer = createMockElement('div');
 
@@ -236,7 +228,7 @@ describe('StatesSectionRenderer port regression', () => {
 
     it('shows a Notice and does not call archiveState when sessionId is missing', async () => {
       const service = makeService();
-      const renderer = new StatesSectionRenderer(new App(), service) as unknown as TestableStatesRenderer;
+      const renderer = new StatesSectionRenderer(new App(), service, new Component()) as unknown as TestableStatesRenderer;
       renderer.workspaceId = 'ws-1';
       renderer.listContainer = createMockElement('div');
 
@@ -260,7 +252,7 @@ describe('StatesSectionRenderer port regression', () => {
      */
     it('does NOT construct the shared ConfirmModal for delete (uses StateDeleteConfirmModal)', async () => {
       const service = makeService();
-      const renderer = new StatesSectionRenderer(new App(), service) as unknown as TestableStatesRenderer;
+      const renderer = new StatesSectionRenderer(new App(), service, new Component()) as unknown as TestableStatesRenderer;
       renderer.workspaceId = 'ws-1';
       renderer.listContainer = createMockElement('div');
 

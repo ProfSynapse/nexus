@@ -72,6 +72,7 @@ describe('WorkspacesTab task management', () => {
     const router = new SettingsRouter();
     const tab = new WorkspacesTab(container, router, {
       app: new App(),
+      component: new Component(),
       prefetchedWorkspaces: [],
       workspaceService: undefined
     });
@@ -279,7 +280,7 @@ describe('WorkspacesTab task management', () => {
     taskService.updateTask.mockResolvedValue();
     const onNavigateProjectDetail = jest.fn();
 
-    const renderer = new WorkspaceDetailRenderer() as unknown as TestableDetailRenderer;
+    const renderer = new WorkspaceDetailRenderer(new Component()) as unknown as TestableDetailRenderer;
     const callbacks = {
       getTaskService: jest.fn().mockResolvedValue(taskService),
       onNavigateProjectDetail,

@@ -1,4 +1,4 @@
-import { DropdownComponent, TextComponent, TextAreaComponent, ButtonComponent } from 'obsidian';
+import { Component, DropdownComponent, TextComponent, TextAreaComponent, ButtonComponent } from 'obsidian';
 import { BoxedSection } from '../../settings/components/BoxedSection';
 import { ProjectWorkspace } from '../../database/workspace-types';
 import type { WorkspaceWorkflow } from '../../database/types/workspace/WorkspaceTypes';
@@ -23,7 +23,8 @@ export class WorkspaceFormRenderer {
     private onWorkflowEdit: (index?: number) => void,
     private onWorkflowRun: (index: number) => void,
     private onFilePick: (index: number) => void,
-    private onRefresh: () => void
+    private onRefresh: () => void,
+    private component: Component
   ) {}
 
   /**
@@ -87,7 +88,7 @@ export class WorkspaceFormRenderer {
           this.formData.rootFolder = value;
         });
       }
-    });
+    }, this.component);
   }
 
   /**
@@ -136,7 +137,7 @@ export class WorkspaceFormRenderer {
         // Workflows section (nested subsection — stays inline)
         this.renderWorkflowsSection(body);
       }
-    });
+    }, this.component);
   }
 
   /**
@@ -192,7 +193,7 @@ export class WorkspaceFormRenderer {
         // Key Files subsection (nested — stays inline)
         this.renderKeyFilesSection(body);
       }
-    });
+    }, this.component);
   }
 
   /**
