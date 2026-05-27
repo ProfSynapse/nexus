@@ -5042,7 +5042,7 @@ body.is-mobile .message-action-btn.message-branch-next {
     flex-wrap: wrap;
     gap: 8px;
     margin-bottom: 12px;
-    font-size: var(--font-ui-small);
+    font-size: 13px;
 }
 
 .nexus-breadcrumb .nexus-breadcrumb-link {
@@ -8465,4 +8465,130 @@ body.is-mobile .nexus-task-board-shell {
     width: 100%;
     min-height: 96px;
     resize: vertical;
+}
+
+/* =====================================================================
+ * Workspace settings — boxed section primitive (.ws-section family)
+ *
+ * Mockup: docs/mockups/workspace-tab-redesign-v3-subpages.html
+ * Used by: src/settings/components/BoxedSection.ts
+ * Sticky header + scrollable body (default max-height: 320px;
+ * pass `unbounded: true` to BoxedSection to remove the cap).
+ * ===================================================================== */
+
+.ws-section {
+    margin-top: 16px;
+    background: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.ws-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--background-modifier-border);
+    background: var(--background-secondary);
+    position: sticky;
+    top: 0;
+    z-index: 1;
+}
+
+.ws-section-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-normal);
+    margin: 0;
+}
+
+.ws-section-action {
+    appearance: none;
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+    border: 1px solid var(--interactive-accent);
+    padding: 4px 10px;
+    font-size: 12px;
+    font-family: inherit;
+    font-weight: 500;
+    cursor: pointer;
+    border-radius: 4px;
+    line-height: 1.3;
+}
+
+.ws-section-action:hover {
+    background: var(--interactive-accent-hover);
+    border-color: var(--interactive-accent-hover);
+}
+
+.ws-section-body {
+    max-height: 320px;
+    overflow-y: auto;
+    padding: 0 16px;
+}
+
+.ws-section-body.is-unbounded {
+    max-height: none;
+}
+
+.ws-section-body::-webkit-scrollbar {
+    width: 10px;
+}
+
+.ws-section-body::-webkit-scrollbar-thumb {
+    background: var(--background-modifier-border);
+    border-radius: 5px;
+    border: 2px solid var(--background-secondary);
+}
+
+.ws-section-body::-webkit-scrollbar-thumb:hover {
+    background: var(--background-modifier-border-hover);
+}
+
+/* Toolbar cluster — filter / sort / toggle / inline +action slot */
+.ws-section-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.ws-section-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    color: var(--text-muted);
+    cursor: pointer;
+    user-select: none;
+}
+
+.ws-section-toggle input[type="checkbox"] {
+    accent-color: var(--interactive-accent);
+    width: 14px;
+    height: 14px;
+    margin: 0;
+    cursor: pointer;
+}
+
+.ws-section-toggle:hover {
+    color: var(--text-normal);
+}
+
+.ws-section-select {
+    appearance: none;
+    background: transparent;
+    color: var(--text-muted);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    padding: 2px 8px;
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.ws-section-select:hover {
+    color: var(--text-normal);
+    border-color: var(--background-modifier-border-hover);
 }

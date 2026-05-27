@@ -4,6 +4,8 @@
  */
 
 import { App, ButtonComponent, Component, DropdownComponent, Notice, TextAreaComponent, TextComponent } from 'obsidian';
+import { BoxedSection } from '../../settings/components/BoxedSection';
+import { ConfirmModal } from '../../settings/components/ConfirmModal';
 import { BreadcrumbNav, BreadcrumbNavItem } from '../../settings/components/BreadcrumbNav';
 import { WorkspaceFormRenderer } from './WorkspaceFormRenderer';
 import { CardItem } from '../CardManager';
@@ -92,37 +94,22 @@ export class WorkspaceDetailRenderer {
         this.component = component;
     }
 
-    private async confirmDangerousAction(message: string): Promise<boolean> {
+    private async confirmDangerousAction(app: App, message: string): Promise<boolean> {
         return await new Promise<boolean>((resolve) => {
-            const overlay = window.activeDocument.body.createDiv('modal-container');
-            const modal = overlay.createDiv('modal nexus-workspace-confirm-modal');
-            const content = modal.createDiv('modal-content');
-
-            content.createEl('h2', { text: 'Confirm action' });
-            content.createEl('p', { text: message });
-
-            const buttons = content.createDiv('modal-button-container');
-            const cancelButton = buttons.createEl('button', {
-                text: 'Cancel',
-                cls: 'mod-cancel'
-            });
-            const confirmButton = buttons.createEl('button', {
-                text: 'Delete',
-                cls: 'mod-warning'
-            });
-
-            const cleanup = (result: boolean) => {
-                overlay.remove();
-                resolve(result);
-            };
-
-            cancelButton.addEventListener('click', () => cleanup(false));
-            confirmButton.addEventListener('click', () => cleanup(true));
-            overlay.addEventListener('click', (event) => {
-                if (event.target === overlay) {
-                    cleanup(false);
+            let confirmed = false;
+            const modal = new ConfirmModal(app, {
+                variant: 'delete',
+                title: 'Confirm delete',
+                body: message,
+                onConfirm: () => {
+                    confirmed = true;
                 }
             });
+            modal.onClose = () => {
+                modal.contentEl.empty();
+                resolve(confirmed);
+            };
+            modal.open();
         });
     }
 
@@ -197,27 +184,30 @@ export class WorkspaceDetailRenderer {
         workspace: Partial<ProjectWorkspace>,
         callbacks: DetailCallbacks
     ): void {
-        const section = container.createDiv('nexus-form-section');
-        section.createEl('h4', { text: 'Projects', cls: 'nexus-section-header' });
+        new BoxedSection(container, {
+            title: 'Projects',
+            unbounded: true,
+            body: (body) => {
+                if (!workspace.id) {
+                    body.createEl('p', {
+                        text: 'Save this workspace before managing projects and tasks.',
+                        cls: 'nexus-form-hint'
+                    });
+                    return;
+                }
 
-        if (!workspace.id) {
-            section.createEl('p', {
-                text: 'Save this workspace before managing projects and tasks.',
-                cls: 'nexus-form-hint'
-            });
-            return;
-        }
+                body.createEl('p', {
+                    text: 'Manage workspace projects and project tasks using the same settings navigation pattern as workflows.',
+                    cls: 'nexus-form-hint'
+                });
 
-        section.createEl('p', {
-            text: 'Manage workspace projects and project tasks using the same settings navigation pattern as workflows.',
-            cls: 'nexus-form-hint'
-        });
-
-        new ButtonComponent(section)
-            .setButtonText('Manage projects')
-            .onClick(() => {
-                callbacks.onNavigateProjects();
-            });
+                new ButtonComponent(body)
+                    .setButtonText('Manage projects')
+                    .onClick(() => {
+                        callbacks.onNavigateProjects();
+                    });
+            }
+        }, this.component);
     }
 
     private renderStatesSection(
@@ -228,12 +218,16 @@ export class WorkspaceDetailRenderer {
         const sectionHost = container.createDiv();
 
         if (!workspace.id) {
-            const section = sectionHost.createDiv('nexus-form-section nexus-states-section');
-            section.createEl('h4', { text: 'States', cls: 'nexus-section-header' });
-            section.createEl('p', {
-                text: 'Save this workspace before managing states.',
-                cls: 'nexus-form-hint'
-            });
+            new BoxedSection(sectionHost, {
+                title: 'States',
+                unbounded: true,
+                body: (body) => {
+                    body.createEl('p', {
+                        text: 'Save this workspace before managing states.',
+                        cls: 'nexus-form-hint'
+                    });
+                }
+            }, this.component);
             return;
         }
 
@@ -242,22 +236,30 @@ export class WorkspaceDetailRenderer {
         // Render an initial placeholder so the section is visible while the
         // service resolves; the StatesSectionRenderer will replace it when
         // the service is ready (or render an error if not).
-        const placeholder = sectionHost.createDiv('nexus-form-section nexus-states-section');
-        placeholder.createEl('h4', { text: 'States', cls: 'nexus-section-header' });
-        placeholder.createEl('p', {
-            text: 'Loading states section...',
-            cls: 'nexus-loading-message'
-        });
+        new BoxedSection(sectionHost, {
+            title: 'States',
+            unbounded: true,
+            body: (body) => {
+                body.createEl('p', {
+                    text: 'Loading states section...',
+                    cls: 'nexus-loading-message'
+                });
+            }
+        }, this.component);
 
         void callbacks.getStatesService().then((service) => {
             sectionHost.empty();
             if (!service) {
-                const section = sectionHost.createDiv('nexus-form-section nexus-states-section');
-                section.createEl('h4', { text: 'States', cls: 'nexus-section-header' });
-                section.createEl('p', {
-                    text: 'States service is unavailable.',
-                    cls: 'nexus-form-hint'
-                });
+                new BoxedSection(sectionHost, {
+                    title: 'States',
+                    unbounded: true,
+                    body: (body) => {
+                        body.createEl('p', {
+                            text: 'States service is unavailable.',
+                            cls: 'nexus-form-hint'
+                        });
+                    }
+                }, this.component);
                 return;
             }
             this.statesRenderer = new StatesSectionRenderer(callbacks.getApp(), service, this.component);
@@ -265,12 +267,16 @@ export class WorkspaceDetailRenderer {
         }).catch((error) => {
             console.error('[WorkspaceDetailRenderer] Failed to resolve states service:', error);
             sectionHost.empty();
-            const section = sectionHost.createDiv('nexus-form-section nexus-states-section');
-            section.createEl('h4', { text: 'States', cls: 'nexus-section-header' });
-            section.createEl('p', {
-                text: 'Failed to load states section.',
-                cls: 'nexus-form-hint nexus-states-error'
-            });
+            new BoxedSection(sectionHost, {
+                title: 'States',
+                unbounded: true,
+                body: (body) => {
+                    body.createEl('p', {
+                        text: 'Failed to load states section.',
+                        cls: 'nexus-form-hint nexus-states-error'
+                    });
+                }
+            }, this.component);
         });
     }
 
@@ -695,7 +701,7 @@ export class WorkspaceDetailRenderer {
     }
 
     private async deleteProject(projectId: string, callbacks: DetailCallbacks): Promise<void> {
-        const confirmed = await this.confirmDangerousAction('Delete this project and all its tasks? This cannot be undone.');
+        const confirmed = await this.confirmDangerousAction(callbacks.getApp(), 'Delete this project and all its tasks? This cannot be undone.');
         if (!confirmed) return;
 
         const taskService = await callbacks.getTaskService();
@@ -716,7 +722,7 @@ export class WorkspaceDetailRenderer {
     }
 
     private async deleteTask(taskId: string, callbacks: DetailCallbacks): Promise<void> {
-        const confirmed = await this.confirmDangerousAction('Delete this task? This cannot be undone.');
+        const confirmed = await this.confirmDangerousAction(callbacks.getApp(), 'Delete this task? This cannot be undone.');
         if (!confirmed) return;
 
         const taskService = await callbacks.getTaskService();

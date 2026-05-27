@@ -1,4 +1,5 @@
 import { DropdownComponent, TextComponent, TextAreaComponent, ButtonComponent } from 'obsidian';
+import { BoxedSection } from '../../settings/components/BoxedSection';
 import { ProjectWorkspace } from '../../database/workspace-types';
 import type { WorkspaceWorkflow } from '../../database/types/workspace/WorkspaceTypes';
 import { CustomPrompt } from '../../types/mcp/CustomPromptTypes';
@@ -52,37 +53,40 @@ export class WorkspaceFormRenderer {
    * Render Basic Info section
    */
   private renderBasicInfoSection(container: HTMLElement): void {
-    const section = container.createDiv('nexus-form-section');
-    section.createEl('h4', { text: 'Basic info', cls: 'nexus-section-header' });
+    new BoxedSection(container, {
+      title: 'Basic info',
+      unbounded: true,
+      body: (body) => {
+        // Name field
+        const nameField = body.createDiv('nexus-form-field');
+        nameField.createEl('label', { text: 'Name', cls: 'nexus-form-label' });
+        const nameInput = new TextComponent(nameField);
+        nameInput.setPlaceholder('My workspace');
+        nameInput.setValue(this.formData.name || '');
+        nameInput.onChange((value) => {
+          this.formData.name = value;
+        });
 
-    // Name field
-    const nameField = section.createDiv('nexus-form-field');
-    nameField.createEl('label', { text: 'Name', cls: 'nexus-form-label' });
-    const nameInput = new TextComponent(nameField);
-    nameInput.setPlaceholder('My workspace');
-    nameInput.setValue(this.formData.name || '');
-    nameInput.onChange((value) => {
-      this.formData.name = value;
-    });
+        // Description field
+        const descField = body.createDiv('nexus-form-field');
+        descField.createEl('label', { text: 'Description', cls: 'nexus-form-label' });
+        const descInput = new TextAreaComponent(descField);
+        descInput.setPlaceholder('Brief description of this workspace...');
+        descInput.setValue(this.formData.description || '');
+        descInput.onChange((value) => {
+          this.formData.description = value;
+        });
 
-    // Description field
-    const descField = section.createDiv('nexus-form-field');
-    descField.createEl('label', { text: 'Description', cls: 'nexus-form-label' });
-    const descInput = new TextAreaComponent(descField);
-    descInput.setPlaceholder('Brief description of this workspace...');
-    descInput.setValue(this.formData.description || '');
-    descInput.onChange((value) => {
-      this.formData.description = value;
-    });
-
-    // Root Folder field
-    const folderField = section.createDiv('nexus-form-field');
-    folderField.createEl('label', { text: 'Root folder', cls: 'nexus-form-label' });
-    const folderInput = new TextComponent(folderField);
-    folderInput.setPlaceholder('/');
-    folderInput.setValue(this.formData.rootFolder || '/');
-    folderInput.onChange((value) => {
-      this.formData.rootFolder = value;
+        // Root Folder field
+        const folderField = body.createDiv('nexus-form-field');
+        folderField.createEl('label', { text: 'Root folder', cls: 'nexus-form-label' });
+        const folderInput = new TextComponent(folderField);
+        folderInput.setPlaceholder('/');
+        folderInput.setValue(this.formData.rootFolder || '/');
+        folderInput.onChange((value) => {
+          this.formData.rootFolder = value;
+        });
+      }
     });
   }
 
@@ -90,9 +94,6 @@ export class WorkspaceFormRenderer {
    * Render Context section
    */
   private renderContextSection(container: HTMLElement): void {
-    const section = container.createDiv('nexus-form-section');
-    section.createEl('h4', { text: 'Context', cls: 'nexus-section-header' });
-
     // Ensure context exists
     if (!this.formData.context) {
       this.formData.context = {
@@ -103,42 +104,45 @@ export class WorkspaceFormRenderer {
       };
     }
 
-    // Purpose field
-    const purposeField = section.createDiv('nexus-form-field');
-    purposeField.createEl('label', { text: 'Purpose', cls: 'nexus-form-label' });
-    const purposeInput = new TextComponent(purposeField);
-    purposeInput.setPlaceholder('What is this workspace for?');
-    purposeInput.setValue(this.formData.context?.purpose || '');
-    purposeInput.onChange((value) => {
-      if (this.formData.context) {
-        this.formData.context.purpose = value;
+    new BoxedSection(container, {
+      title: 'Context',
+      unbounded: true,
+      body: (body) => {
+        // Purpose field
+        const purposeField = body.createDiv('nexus-form-field');
+        purposeField.createEl('label', { text: 'Purpose', cls: 'nexus-form-label' });
+        const purposeInput = new TextComponent(purposeField);
+        purposeInput.setPlaceholder('What is this workspace for?');
+        purposeInput.setValue(this.formData.context?.purpose || '');
+        purposeInput.onChange((value) => {
+          if (this.formData.context) {
+            this.formData.context.purpose = value;
+          }
+        });
+
+        // Preferences field
+        const prefsField = body.createDiv('nexus-form-field');
+        prefsField.createEl('label', { text: 'Preferences', cls: 'nexus-form-label' });
+        const prefsInput = new TextAreaComponent(prefsField);
+        prefsInput.setPlaceholder('Guidelines: tone, focus areas, constraints...');
+        prefsInput.setValue(this.formData.context?.preferences || '');
+        prefsInput.onChange((value) => {
+          if (this.formData.context) {
+            this.formData.context.preferences = value;
+          }
+        });
+        prefsInput.inputEl.rows = 3;
+
+        // Workflows section (nested subsection — stays inline)
+        this.renderWorkflowsSection(body);
       }
     });
-
-    // Preferences field
-    const prefsField = section.createDiv('nexus-form-field');
-    prefsField.createEl('label', { text: 'Preferences', cls: 'nexus-form-label' });
-    const prefsInput = new TextAreaComponent(prefsField);
-    prefsInput.setPlaceholder('Guidelines: tone, focus areas, constraints...');
-    prefsInput.setValue(this.formData.context?.preferences || '');
-    prefsInput.onChange((value) => {
-      if (this.formData.context) {
-        this.formData.context.preferences = value;
-      }
-    });
-    prefsInput.inputEl.rows = 3;
-
-    // Workflows section
-    this.renderWorkflowsSection(section);
   }
 
   /**
    * Render Agent & Files section
    */
   private renderAgentFilesSection(container: HTMLElement): void {
-    const section = container.createDiv('nexus-form-section');
-    section.createEl('h4', { text: 'Agent & files', cls: 'nexus-section-header' });
-
     // Ensure context exists
     if (!this.formData.context) {
       this.formData.context = {
@@ -149,40 +153,46 @@ export class WorkspaceFormRenderer {
       };
     }
 
-    // Dedicated Agent field
-    const agentField = section.createDiv('nexus-form-field');
-    agentField.createEl('label', { text: 'Dedicated agent', cls: 'nexus-form-label' });
+    new BoxedSection(container, {
+      title: 'Agent & files',
+      unbounded: true,
+      body: (body) => {
+        // Dedicated Agent field
+        const agentField = body.createDiv('nexus-form-field');
+        agentField.createEl('label', { text: 'Dedicated agent', cls: 'nexus-form-label' });
 
-    const dropdownContainer = agentField.createDiv('nexus-dropdown-container');
-    const dropdown = new DropdownComponent(dropdownContainer);
+        const dropdownContainer = agentField.createDiv('nexus-dropdown-container');
+        const dropdown = new DropdownComponent(dropdownContainer);
 
-    dropdown.addOption('', 'None');
-    this.availableAgents.forEach(agent => {
-      dropdown.addOption(agent.id, agent.name);
-    });
+        dropdown.addOption('', 'None');
+        this.availableAgents.forEach(agent => {
+          dropdown.addOption(agent.id, agent.name);
+        });
 
-    // Use top-level dedicatedAgentId field (matches backend MCP implementation)
-    // Field can contain either ID or name - find matching agent by either
-    const workspaceWithId = this.formData as ProjectWorkspace & { dedicatedAgentId?: string };
-    const dedicatedId = workspaceWithId.dedicatedAgentId || '';
+        // Use top-level dedicatedAgentId field (matches backend MCP implementation)
+        // Field can contain either ID or name - find matching agent by either
+        const workspaceWithId = this.formData as ProjectWorkspace & { dedicatedAgentId?: string };
+        const dedicatedId = workspaceWithId.dedicatedAgentId || '';
 
-    // Try to find agent by ID first, then by name
-    const matchingAgent = this.availableAgents.find(a => a.id === dedicatedId || a.name === dedicatedId);
-    const dropdownValue = matchingAgent?.id || '';
-    dropdown.setValue(dropdownValue);
+        // Try to find agent by ID first, then by name
+        const matchingAgent = this.availableAgents.find(a => a.id === dedicatedId || a.name === dedicatedId);
+        const dropdownValue = matchingAgent?.id || '';
+        dropdown.setValue(dropdownValue);
 
-    dropdown.onChange((value) => {
-      // Set top-level dedicatedAgentId field (string: ID or name)
-      const workspaceWithId = this.formData as ProjectWorkspace & { dedicatedAgentId?: string };
-      if (value) {
-        workspaceWithId.dedicatedAgentId = value;
-      } else {
-        delete workspaceWithId.dedicatedAgentId;
+        dropdown.onChange((value) => {
+          // Set top-level dedicatedAgentId field (string: ID or name)
+          const workspaceWithId = this.formData as ProjectWorkspace & { dedicatedAgentId?: string };
+          if (value) {
+            workspaceWithId.dedicatedAgentId = value;
+          } else {
+            delete workspaceWithId.dedicatedAgentId;
+          }
+        });
+
+        // Key Files subsection (nested — stays inline)
+        this.renderKeyFilesSection(body);
       }
     });
-
-    // Key Files section
-    this.renderKeyFilesSection(section);
   }
 
   /**
