@@ -1,7 +1,7 @@
 /**
  * OpenRouter Model Specifications
  * OpenRouter provides access to multiple providers through a unified API
- * Updated April 2026 with GPT-5.5, Claude Sonnet 4.6, and Gemini 3.1 models
+ * Updated May 2026 with Claude Opus 4.8
  */
 
 import { ModelSpec } from '../modelTypes';
@@ -109,6 +109,22 @@ export const OPENROUTER_MODELS: ModelSpec[] = [
     provider: 'openrouter',
     name: 'Claude Opus 4.7 (1M)',
     apiName: 'anthropic/claude-opus-4.7',
+    contextWindow: 1000000,
+    maxTokens: 128000,
+    inputCostPerMillion: 5.00,
+    outputCostPerMillion: 25.00,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+  {
+    provider: 'openrouter',
+    name: 'Claude Opus 4.8',
+    apiName: 'anthropic/claude-opus-4.8',
     contextWindow: 1000000,
     maxTokens: 128000,
     inputCostPerMillion: 5.00,
