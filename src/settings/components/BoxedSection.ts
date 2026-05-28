@@ -42,7 +42,7 @@ export class BoxedSection {
     private readonly sectionEl: HTMLElement;
     private readonly bodyEl: HTMLElement;
 
-    constructor(container: HTMLElement, config: BoxedSectionConfig, component?: Component) {
+    constructor(container: HTMLElement, config: BoxedSectionConfig, component: Component) {
         this.sectionEl = container.createEl('section', { cls: 'ws-section' });
         if (config.titleId) {
             this.sectionEl.setAttribute('aria-labelledby', config.titleId);
@@ -71,11 +71,7 @@ export class BoxedSection {
                     attr: { type: 'button' }
                 });
                 const handler = () => { config.onAction?.(); };
-                if (component) {
-                    component.registerDomEvent(button, 'click', handler);
-                } else {
-                    button.addEventListener('click', handler);
-                }
+                component.registerDomEvent(button, 'click', handler);
             }
         }
 

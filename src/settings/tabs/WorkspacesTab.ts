@@ -32,11 +32,11 @@ import type { MemoryService } from '../../agents/memoryManager/services/MemorySe
 
 export interface WorkspacesTabServices {
     app: App;
+    component: Component;
     workspaceService?: WorkspaceService;
     customPromptStorage?: CustomPromptStorageService;
     prefetchedWorkspaces?: ProjectWorkspace[] | null;
     serviceManager?: ServiceManager;
-    component?: Component;
 }
 
 type WorkspacesView = 'list' | 'detail' | 'workflow' | 'filepicker' | 'projects' | 'project-detail' | 'task-detail';
@@ -388,6 +388,7 @@ export class WorkspacesTab {
             getTaskService: () => this.projectsManager.getTaskService(),
             onRefreshProjects: () => this.projectsManager.refreshProjects(),
             onOpenProjectDetail: (project) => { void this.openProjectDetailAndRender(project); },
+            onToggleProjectArchive: (project) => this.toggleProjectArchive(project),
             safeRegisterDomEvent: (el, eventName, handler) => this.safeRegisterDomEvent(el, eventName, handler),
             getStatesService: () => this.getStatesService(),
             getApp: () => this.services.app
@@ -562,20 +563,11 @@ export class WorkspacesTab {
         }
     }
 
-    private async confirmDeleteWorkspace(workspaceName = this.currentWorkspace?.name || 'Workspace'): Promise<boolean> {
-        return new Promise<boolean>((resolve) => {
-            let confirmed = false;
-            const modal = new ConfirmModal(this.services.app, {
-                variant: 'delete',
-                title: 'Delete workspace?',
-                body: `Delete workspace "${workspaceName}"? This cannot be undone.`,
-                onConfirm: () => { confirmed = true; }
-            });
-            modal.onClose = () => {
-                modal.contentEl.empty();
-                resolve(confirmed);
-            };
-            modal.open();
+    private confirmDeleteWorkspace(workspaceName = this.currentWorkspace?.name || 'Workspace'): Promise<boolean> {
+        return ConfirmModal.confirm(this.services.app, {
+            variant: 'delete',
+            title: 'Delete workspace?',
+            body: `Delete workspace "${workspaceName}"? This cannot be undone.`
         });
     }
 
@@ -600,6 +592,26 @@ export class WorkspacesTab {
         if (success) {
             this.currentView = 'project-detail';
             this.render();
+        }
+    }
+
+    private async toggleProjectArchive(project: ProjectMetadata): Promise<void> {
+        const taskService = await this.projectsManager.getTaskService();
+        if (!taskService) {
+            new Notice('Task service is not available yet');
+            return;
+        }
+
+        const nextStatus: ProjectMetadata['status'] = project.status === 'archived' ? 'active' : 'archived';
+
+        try {
+            await taskService.updateProject(project.id, { status: nextStatus });
+            await this.projectsManager.refreshProjects();
+            this.render();
+            new Notice(nextStatus === 'archived' ? 'Project archived' : 'Project restored');
+        } catch (error) {
+            console.error('[WorkspacesTab] Failed to toggle project archive:', error);
+            new Notice('Failed to update project');
         }
     }
 

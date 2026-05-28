@@ -1,5 +1,6 @@
-import { DropdownComponent, TextComponent, TextAreaComponent, ButtonComponent } from 'obsidian';
+import { App, Component, DropdownComponent, TextComponent, TextAreaComponent, ButtonComponent } from 'obsidian';
 import { BoxedSection } from '../../settings/components/BoxedSection';
+import { ConfirmModal } from '../../settings/components/ConfirmModal';
 import { ProjectWorkspace } from '../../database/workspace-types';
 import type { WorkspaceWorkflow } from '../../database/types/workspace/WorkspaceTypes';
 import { CustomPrompt } from '../../types/mcp/CustomPromptTypes';
@@ -23,7 +24,9 @@ export class WorkspaceFormRenderer {
     private onWorkflowEdit: (index?: number) => void,
     private onWorkflowRun: (index: number) => void,
     private onFilePick: (index: number) => void,
-    private onRefresh: () => void
+    private onRefresh: () => void,
+    private component: Component,
+    private app: App
   ) {}
 
   /**
@@ -35,11 +38,11 @@ export class WorkspaceFormRenderer {
     // Basic Info section
     this.renderBasicInfoSection(form);
 
-    // Context section
+    // Context section — holds purpose/preferences + dedicated agent + key files
     this.renderContextSection(form);
 
-    // Agent & Files section
-    this.renderAgentFilesSection(form);
+    // Workflows section — its own top-level boxed section, sibling to Context
+    this.renderWorkflowsSection(form);
   }
 
   /**
@@ -87,7 +90,7 @@ export class WorkspaceFormRenderer {
           this.formData.rootFolder = value;
         });
       }
-    });
+    }, this.component);
   }
 
   /**
@@ -133,75 +136,51 @@ export class WorkspaceFormRenderer {
         });
         prefsInput.inputEl.rows = 3;
 
-        // Workflows section (nested subsection — stays inline)
-        this.renderWorkflowsSection(body);
-      }
-    });
-  }
-
-  /**
-   * Render Agent & Files section
-   */
-  private renderAgentFilesSection(container: HTMLElement): void {
-    // Ensure context exists
-    if (!this.formData.context) {
-      this.formData.context = {
-        purpose: '',
-        workflows: [],
-        keyFiles: [],
-        preferences: ''
-      };
-    }
-
-    new BoxedSection(container, {
-      title: 'Agent & files',
-      unbounded: true,
-      body: (body) => {
-        // Dedicated Agent field
-        const agentField = body.createDiv('nexus-form-field');
-        agentField.createEl('label', { text: 'Dedicated agent', cls: 'nexus-form-label' });
-
-        const dropdownContainer = agentField.createDiv('nexus-dropdown-container');
-        const dropdown = new DropdownComponent(dropdownContainer);
-
-        dropdown.addOption('', 'None');
-        this.availableAgents.forEach(agent => {
-          dropdown.addOption(agent.id, agent.name);
-        });
-
-        // Use top-level dedicatedAgentId field (matches backend MCP implementation)
-        // Field can contain either ID or name - find matching agent by either
-        const workspaceWithId = this.formData as ProjectWorkspace & { dedicatedAgentId?: string };
-        const dedicatedId = workspaceWithId.dedicatedAgentId || '';
-
-        // Try to find agent by ID first, then by name
-        const matchingAgent = this.availableAgents.find(a => a.id === dedicatedId || a.name === dedicatedId);
-        const dropdownValue = matchingAgent?.id || '';
-        dropdown.setValue(dropdownValue);
-
-        dropdown.onChange((value) => {
-          // Set top-level dedicatedAgentId field (string: ID or name)
-          const workspaceWithId = this.formData as ProjectWorkspace & { dedicatedAgentId?: string };
-          if (value) {
-            workspaceWithId.dedicatedAgentId = value;
-          } else {
-            delete workspaceWithId.dedicatedAgentId;
-          }
-        });
+        // Dedicated agent (single agent, top-level dedicatedAgentId binding)
+        this.renderDedicatedAgentField(body);
 
         // Key Files subsection (nested — stays inline)
         this.renderKeyFilesSection(body);
       }
+    }, this.component);
+  }
+
+  /**
+   * Render the dedicated-agent dropdown bound to the top-level dedicatedAgentId
+   * field (matches the backend MCP implementation). Single agent only.
+   */
+  private renderDedicatedAgentField(container: HTMLElement): void {
+    const agentField = container.createDiv('nexus-form-field');
+    agentField.createEl('label', { text: 'Dedicated agent', cls: 'nexus-form-label' });
+
+    const dropdownContainer = agentField.createDiv('nexus-dropdown-container');
+    const dropdown = new DropdownComponent(dropdownContainer);
+
+    dropdown.addOption('', 'None');
+    this.availableAgents.forEach(agent => {
+      dropdown.addOption(agent.id, agent.name);
+    });
+
+    // Field can contain either ID or name — find matching agent by either.
+    const workspaceWithId = this.formData as ProjectWorkspace & { dedicatedAgentId?: string };
+    const dedicatedId = workspaceWithId.dedicatedAgentId || '';
+    const matchingAgent = this.availableAgents.find(a => a.id === dedicatedId || a.name === dedicatedId);
+    dropdown.setValue(matchingAgent?.id || '');
+
+    dropdown.onChange((value) => {
+      const workspaceWithId = this.formData as ProjectWorkspace & { dedicatedAgentId?: string };
+      if (value) {
+        workspaceWithId.dedicatedAgentId = value;
+      } else {
+        delete workspaceWithId.dedicatedAgentId;
+      }
     });
   }
 
   /**
-   * Render Workflows subsection
+   * Render Workflows as its own top-level boxed section (sibling to Context).
    */
   private renderWorkflowsSection(container: HTMLElement): void {
-    const subsection = container.createDiv('nexus-form-field');
-    subsection.createEl('label', { text: 'Workflows', cls: 'nexus-form-label' });
-
     // Ensure workflows array exists
     if (!this.formData.context?.workflows) {
       this.formData.context = this.formData.context || {
@@ -212,43 +191,57 @@ export class WorkspaceFormRenderer {
 
     const workflows = this.formData.context.workflows;
 
-    const listContainer = subsection.createDiv('nexus-item-list');
+    new BoxedSection(container, {
+      title: 'Workflows',
+      unbounded: true,
+      body: (body) => {
+        const listContainer = body.createDiv('nexus-item-list');
 
-    if (workflows.length === 0) {
-      listContainer.createEl('span', { text: 'None', cls: 'nexus-form-hint' });
-    } else {
-      workflows.forEach((workflow, index) => {
-        const item = listContainer.createDiv('nexus-item-row');
+        if (workflows.length === 0) {
+          listContainer.createEl('span', { text: 'None', cls: 'nexus-form-hint' });
+        } else {
+          workflows.forEach((workflow, index) => {
+            const item = listContainer.createDiv('nexus-item-row');
 
-        const info = item.createDiv('nexus-item-info');
-        const workflowName = workflow.name || `Workflow ${index + 1}`;
-        info.createEl('span', { text: workflowName, cls: 'nexus-item-title' });
-        const summary = this.buildWorkflowSummary(workflow);
-        if (summary) {
-          info.createEl('span', { text: summary, cls: 'nexus-item-subtitle' });
+            const info = item.createDiv('nexus-item-info');
+            const workflowName = workflow.name || `Workflow ${index + 1}`;
+            info.createEl('span', { text: workflowName, cls: 'nexus-item-title' });
+            const summary = this.buildWorkflowSummary(workflow);
+            if (summary) {
+              info.createEl('span', { text: summary, cls: 'nexus-item-subtitle' });
+            }
+
+            const actions = item.createDiv('nexus-item-actions');
+            const runButton = new ButtonComponent(actions).setIcon('play');
+            runButton.buttonEl.addClass('clickable-icon');
+            runButton.buttonEl.setAttribute('aria-label', `Run ${workflowName} now`);
+            runButton.onClick(() => this.onWorkflowRun(index));
+            new ButtonComponent(actions)
+              .setButtonText('Edit')
+              .onClick(() => this.onWorkflowEdit(index));
+            new ButtonComponent(actions)
+              .setButtonText('×')
+              .setWarning()
+              .onClick(async () => {
+                await ConfirmModal.confirm(this.app, {
+                  variant: 'remove',
+                  title: 'Remove workflow',
+                  body: 'Remove this workflow from the workspace? It will not be deleted.',
+                  ctaLabel: 'Remove',
+                  onConfirm: () => {
+                    workflows.splice(index, 1);
+                    this.onRefresh();
+                  }
+                });
+              });
+          });
         }
 
-        const actions = item.createDiv('nexus-item-actions');
-        const runButton = new ButtonComponent(actions).setIcon('play');
-        runButton.buttonEl.addClass('clickable-icon');
-        runButton.buttonEl.setAttribute('aria-label', `Run ${workflowName} now`);
-        runButton.onClick(() => this.onWorkflowRun(index));
-        new ButtonComponent(actions)
-          .setButtonText('Edit')
-          .onClick(() => this.onWorkflowEdit(index));
-        new ButtonComponent(actions)
-          .setButtonText('×')
-          .setWarning()
-          .onClick(() => {
-            workflows.splice(index, 1);
-            this.onRefresh();
-          });
-      });
-    }
-
-    new ButtonComponent(subsection)
-      .setButtonText('Add workflow')
-      .onClick(() => this.onWorkflowEdit());
+        new ButtonComponent(body)
+          .setButtonText('Add workflow')
+          .onClick(() => this.onWorkflowEdit());
+      }
+    }, this.component);
   }
 
   /**
@@ -293,9 +286,17 @@ export class WorkspaceFormRenderer {
           new ButtonComponent(actions)
             .setButtonText('×')
             .setWarning()
-            .onClick(() => {
-              keyFiles.splice(index, 1);
-              updateKeyFilesList();
+            .onClick(async () => {
+              await ConfirmModal.confirm(this.app, {
+                variant: 'remove',
+                title: 'Remove key file',
+                body: 'Remove this key file from the workspace? The file itself will not be deleted.',
+                ctaLabel: 'Remove',
+                onConfirm: () => {
+                  keyFiles.splice(index, 1);
+                  updateKeyFilesList();
+                }
+              });
             });
         });
       }

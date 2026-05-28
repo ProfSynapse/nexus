@@ -66,7 +66,7 @@ export class StatesSectionRenderer {
     constructor(
         private app: App,
         private service: StatesSectionService,
-        private component?: Component
+        private component: Component
     ) {}
 
     /**
@@ -288,19 +288,10 @@ export class StatesSectionRenderer {
     }
 
     private confirmArchive(stateName: string): Promise<boolean> {
-        return new Promise<boolean>((resolve) => {
-            let confirmed = false;
-            const modal = new ConfirmModal(this.app, {
-                variant: 'archive',
-                title: 'Archive state?',
-                body: `Archive state "${stateName}"? You can restore it later from this list.`,
-                onConfirm: () => { confirmed = true; }
-            });
-            modal.onClose = () => {
-                modal.contentEl.empty();
-                resolve(confirmed);
-            };
-            modal.open();
+        return ConfirmModal.confirm(this.app, {
+            variant: 'archive',
+            title: 'Archive state?',
+            body: `Archive state "${stateName}"? You can restore it later from this list.`
         });
     }
 

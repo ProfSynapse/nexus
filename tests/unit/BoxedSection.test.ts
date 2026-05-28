@@ -234,7 +234,7 @@ describe('BoxedSection', () => {
         actionLabel: '+ New project',
         onAction: jest.fn(),
         body: () => { /* no-op */ }
-      });
+      }, new Component());
 
       const section = getFirstChild(container);
       const header = getFirstChild(section);
@@ -291,27 +291,10 @@ describe('BoxedSection', () => {
       );
     });
 
-    it('should fall back to addEventListener when no component provided', () => {
-      const container = createMockContainer();
-      const onAction = jest.fn();
-
-      new BoxedSection(container as unknown as HTMLElement, {
-        title: 'Projects',
-        actionLabel: '+ New project',
-        onAction,
-        body: () => { /* no-op */ }
-      });
-
-      const section = getFirstChild(container);
-      const header = getFirstChild(section);
-      // Toolbar is created (createDiv 'ws-section-toolbar') as the 2nd createDiv call after the action button button createEl call.
-      // The action button is created inside the toolbar via toolbar.createEl('button', ...). The handler is registered via addEventListener.
-      const toolbar = header._children.find(c => c.className === 'ws-section-toolbar');
-      expect(toolbar).toBeTruthy();
-      if (!toolbar) return;
-      const actionButton = toolbar._children[0];
-      expect(actionButton?.addEventListener).toHaveBeenCalledWith('click', expect.any(Function));
-    });
+    // Wave 3 PR2 Commit 1 (Group A M-1): addEventListener fallback removed.
+    // BoxedSection now hard-requires Component to enforce Obsidian-safe DOM
+    // event registration. The pre-Group-A test that exercised the fallback
+    // path has been intentionally deleted.
   });
 
   describe('getElement', () => {

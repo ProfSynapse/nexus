@@ -7,7 +7,7 @@
  * Pure DOM + Obsidian Modal — no Node.js imports. Mobile-compatible.
  */
 
-import { App, ButtonComponent, Modal } from 'obsidian';
+import { App, ButtonComponent, Modal, Notice } from 'obsidian';
 
 export type ConfirmVariant = 'delete' | 'remove' | 'archive';
 
@@ -17,8 +17,19 @@ export interface ConfirmModalConfig {
     body: string;
     /** Optional CTA label override. Defaults from variant. */
     ctaLabel?: string;
-    /** Invoked when user confirms. May return a Promise; modal closes after resolve. */
-    onConfirm: () => void | Promise<void>;
+    /**
+     * Optional side-effect callback invoked on CTA click. May return a Promise.
+     * The boolean Promise returned by `ConfirmModal.confirm()` reflects which
+     * button was clicked (Cancel=false / CTA=true), NOT this callback's return.
+     * If onConfirm rejects or throws, the failure is surfaced via Notice +
+     * console.error and the confirm-Promise resolves false.
+     */
+    onConfirm?: () => void | Promise<void>;
+    /**
+     * Internal resolver wired by `ConfirmModal.confirm()`. Receives the final
+     * confirmed boolean exactly once on modal close.
+     */
+    onResolve?: (confirmed: boolean) => void;
 }
 
 const DEFAULT_CTA: Record<ConfirmVariant, string> = {
@@ -29,10 +40,26 @@ const DEFAULT_CTA: Record<ConfirmVariant, string> = {
 
 export class ConfirmModal extends Modal {
     private readonly config: ConfirmModalConfig;
+    private confirmed = false;
 
     constructor(app: App, config: ConfirmModalConfig) {
         super(app);
         this.config = config;
+    }
+
+    /**
+     * Open a ConfirmModal and resolve with the user's choice.
+     * Cancel / dismiss -> false. CTA -> true (or false if onConfirm threw/rejected).
+     * The modal closes regardless of onConfirm outcome.
+     */
+    static confirm(app: App, config: ConfirmModalConfig): Promise<boolean> {
+        return new Promise<boolean>((resolve) => {
+            const modal = new ConfirmModal(app, {
+                ...config,
+                onResolve: resolve
+            });
+            modal.open();
+        });
     }
 
     onOpen(): void {
@@ -61,11 +88,21 @@ export class ConfirmModal extends Modal {
         }
 
         cta.onClick(() => {
-            void Promise.resolve(this.config.onConfirm()).finally(() => this.close());
+            void Promise.resolve(this.config.onConfirm?.())
+                .then(() => { this.confirmed = true; })
+                .catch((err) => this.handleConfirmError(err))
+                .finally(() => this.close());
         });
     }
 
     onClose(): void {
         this.contentEl.empty();
+        this.config.onResolve?.(this.confirmed);
+    }
+
+    private handleConfirmError(err: unknown): void {
+        console.error('ConfirmModal onConfirm threw:', err);
+        new Notice('Action failed');
+        this.confirmed = false;
     }
 }

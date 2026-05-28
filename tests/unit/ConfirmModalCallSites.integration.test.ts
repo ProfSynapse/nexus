@@ -1,70 +1,55 @@
 /**
  * ConfirmModal Call-Site Integration Tests
  *
- * Asserts that the 3 in-scope PR1 call sites invoke `new ConfirmModal(app, config)`
- * with the right variant/title/body/onConfirm shape, and that the surrounding
- * `await confirm...` promise resolves correctly based on the user's choice.
+ * Asserts that the 5 in-scope settings-UI call sites invoke
+ * `ConfirmModal.confirm(app, config)` (Group A M-2 static helper) with the
+ * right variant/title/body shape, and that the surrounding `await confirm...`
+ * promise resolves correctly based on the user's choice.
  *
- * Strategy: jest.mock the ConfirmModal module with a spy class that captures
- * constructor args + exposes synthetic open/close/confirm hooks. This isolates
- * each call site from real Modal DOM rendering and lets us assert on:
- *   1. The config passed to `new ConfirmModal(...)` per call site.
- *   2. The async promise resolution path:
- *        - user clicks CTA  → onConfirm() fires → onClose() resolves with `true`
- *        - user clicks Cancel → onClose() resolves with `false`
+ * Strategy: jest.mock the ConfirmModal module so its `confirm()` static is a
+ * jest.fn that captures (app, config) per call and returns a manually-resolvable
+ * Promise. Tests then drive resolution via `resolveLast(true|false)`.
  *
  * Coverage:
  *   - WorkspacesTab.confirmDeleteWorkspace (variant=delete)
  *   - WorkspaceDetailRenderer.confirmDangerousAction (variant=delete, uniform per CODE decision)
  *   - StatesSectionRenderer.confirmArchive (variant=archive, reversible accent)
+ *   - WorkspaceFormRenderer workflow-× (variant=remove, PR2 Group B)
+ *   - WorkspaceFormRenderer keyfile-× (variant=remove, PR2 Group B)
  */
 
-import { App, Component, createMockElement } from 'obsidian';
+import { App, ButtonComponent, Component, createMockElement } from 'obsidian';
 
-// --- Spy class that replaces ConfirmModal ---
-// Captures (app, config) per construction; exposes the captured instances so
-// tests can synthetically fire onConfirm() then onClose() to drive the
-// resolve(true | false) path each call site wraps around.
-
-interface CapturedConfirmModal {
+interface CapturedConfirmCall {
   app: unknown;
   config: {
     variant: 'delete' | 'remove' | 'archive';
     title: string;
     body: string;
     ctaLabel?: string;
-    onConfirm: () => void | Promise<void>;
+    onConfirm?: () => void | Promise<void>;
   };
-  onClose: () => void;
-  open: () => void;
-  contentEl: HTMLElement;
+  resolve: (value: boolean) => void;
 }
 
-const capturedInstances: CapturedConfirmModal[] = [];
+const capturedInstances: CapturedConfirmCall[] = [];
 
 jest.mock('../../src/settings/components/ConfirmModal', () => {
   return {
-    ConfirmModal: jest.fn().mockImplementation(function (
-      this: CapturedConfirmModal,
-      app: unknown,
-      config: CapturedConfirmModal['config']
-    ) {
-      this.app = app;
-      this.config = config;
-      this.contentEl = createMockElement('div');
-      // onClose is assigned by the call site after construction
-      // (see WorkspacesTab.confirmDeleteWorkspace + sibling closures).
-      this.onClose = () => { void 0; };
-      this.open = () => { void 0; };
-      capturedInstances.push(this);
-      return this;
-    })
+    ConfirmModal: {
+      confirm: jest.fn().mockImplementation((app: unknown, config: CapturedConfirmCall['config']) => {
+        return new Promise<boolean>((resolve) => {
+          capturedInstances.push({ app, config, resolve });
+        });
+      })
+    }
   };
 });
 
 // Imports MUST come after jest.mock for hoisting to take effect.
 import { WorkspacesTab } from '../../src/settings/tabs/WorkspacesTab';
 import { WorkspaceDetailRenderer } from '../../src/components/workspace/WorkspaceDetailRenderer';
+import { WorkspaceFormRenderer } from '../../src/components/workspace/WorkspaceFormRenderer';
 import { StatesSectionRenderer, StatesSectionService } from '../../src/components/workspace/StatesSectionRenderer';
 import { SettingsRouter } from '../../src/settings/SettingsRouter';
 
@@ -95,18 +80,35 @@ function makeStatesService(): jest.Mocked<StatesSectionService> {
   } as unknown as jest.Mocked<StatesSectionService>;
 }
 
-/** Drive the spy modal through a successful CTA-click cycle. */
-function clickCta(instance: CapturedConfirmModal): void {
-  // Call site closure flips `confirmed = true` in onConfirm.
-  void Promise.resolve(instance.config.onConfirm());
-  // Then the modal closes — which fires onClose, which resolves the outer promise.
-  instance.onClose();
+/** Drive the spy through a successful CTA-click cycle (resolves true). */
+function clickCta(instance: CapturedConfirmCall): void {
+  instance.resolve(true);
 }
 
-/** Drive the spy modal through a Cancel-click cycle (no onConfirm fire). */
-function clickCancel(instance: CapturedConfirmModal): void {
-  // Cancel skips onConfirm. The wrapping promise still resolves via onClose.
-  instance.onClose();
+/** Drive the spy through a Cancel-click cycle (resolves false). */
+function clickCancel(instance: CapturedConfirmCall): void {
+  instance.resolve(false);
+}
+
+/**
+ * Capture every ButtonComponent.onClick callback wired during a render pass,
+ * in DOM-construction order. Used by the WorkspaceFormRenderer × tests to
+ * reach the inline ConfirmModal.confirm call site without exposing a private
+ * test helper from the renderer itself.
+ */
+function captureButtonClicks(action: () => void): Array<() => void | Promise<void>> {
+  const handlers: Array<() => void | Promise<void>> = [];
+  const original = ButtonComponent.prototype.onClick;
+  ButtonComponent.prototype.onClick = function (this: ButtonComponent, callback: () => void) {
+    handlers.push(callback);
+    return original.call(this, callback);
+  };
+  try {
+    action();
+  } finally {
+    ButtonComponent.prototype.onClick = original;
+  }
+  return handlers;
 }
 
 describe('ConfirmModal call-site integration', () => {
@@ -120,6 +122,7 @@ describe('ConfirmModal call-site integration', () => {
       const router = new SettingsRouter();
       const tab = new WorkspacesTab(container, router, {
         app: new App(),
+        component: new Component(),
         prefetchedWorkspaces: [],
         workspaceService: undefined
       });
@@ -271,7 +274,7 @@ describe('ConfirmModal call-site integration', () => {
       service: jest.Mocked<StatesSectionService>;
     } {
       const service = makeStatesService();
-      const renderer = new StatesSectionRenderer(new App(), service);
+      const renderer = new StatesSectionRenderer(new App(), service, new Component());
       return { renderer: renderer as unknown as TestableStatesRenderer, service };
     }
 
@@ -315,12 +318,162 @@ describe('ConfirmModal call-site integration', () => {
     });
   });
 
+  describe('WorkspaceFormRenderer workflow-× (variant=remove)', () => {
+    function createFormRenderer(workflows: Array<{ name: string; agents: string[] }>, keyFiles: string[]) {
+      const formData = {
+        id: 'ws-1',
+        name: 'Test workspace',
+        context: { purpose: '', workflows, keyFiles, preferences: '' }
+      } as unknown as Parameters<typeof WorkspaceFormRenderer>[0];
+      return new WorkspaceFormRenderer(
+        formData as never,
+        [],
+        () => undefined,
+        () => undefined,
+        () => undefined,
+        () => undefined,
+        new Component(),
+        new App()
+      );
+    }
+
+    /**
+     * Render the form, invoke every captured ButtonComponent.onClick handler,
+     * and isolate the unique invocation that wires through ConfirmModal.confirm
+     * with the expected variant. Order-independent so the test survives unrelated
+     * ButtonComponent reorderings inside the renderer.
+     */
+    async function triggerRemoveOfType(
+      renderer: WorkspaceFormRenderer,
+      expectedTitle: string
+    ): Promise<CapturedConfirmCall> {
+      const container = createMockElement('div');
+      const handlers = captureButtonClicks(() => renderer.render(container));
+      for (const handler of handlers) {
+        const before = capturedInstances.length;
+        // Fire-and-forget — × handler awaits an unresolved ConfirmModal.confirm
+        // Promise (mock captures and waits for manual resolve). The synchronous
+        // body up through ConfirmModal.confirm(...) runs first and pushes to
+        // capturedInstances; awaiting the handler itself would deadlock.
+        void handler();
+        await Promise.resolve();
+        if (capturedInstances.length > before) {
+          const inst = capturedInstances[capturedInstances.length - 1];
+          if (inst.config.title === expectedTitle) {
+            return inst;
+          }
+          // Drain any non-matching capture (e.g., other × button on a multi-item list).
+          clickCancel(inst);
+        }
+      }
+      throw new Error(`No ConfirmModal.confirm call with title "${expectedTitle}"`);
+    }
+
+    it('constructs ConfirmModal with variant=remove + workflow-de-association copy', async () => {
+      const renderer = createFormRenderer([{ name: 'Daily ingest', agents: [] }], []);
+      const inst = await triggerRemoveOfType(renderer, 'Remove workflow');
+
+      expect(inst.config.variant).toBe('remove');
+      expect(inst.config.title).toBe('Remove workflow');
+      expect(inst.config.body).toBe('Remove this workflow from the workspace? It will not be deleted.');
+      expect(inst.config.ctaLabel).toBe('Remove');
+
+      clickCancel(inst);
+    });
+
+    it('invokes onConfirm side-effect (splice + onRefresh) only on CTA click', async () => {
+      let refreshCalls = 0;
+      const workflows = [{ name: 'wf-1', agents: [] }, { name: 'wf-2', agents: [] }];
+      const formData = {
+        id: 'ws-1',
+        name: 'Test',
+        context: { purpose: '', workflows, keyFiles: [], preferences: '' }
+      } as unknown as Parameters<typeof WorkspaceFormRenderer>[0];
+      const renderer = new WorkspaceFormRenderer(
+        formData as never,
+        [],
+        () => undefined,
+        () => undefined,
+        () => undefined,
+        () => { refreshCalls += 1; },
+        new Component(),
+        new App()
+      );
+
+      const inst = await triggerRemoveOfType(renderer, 'Remove workflow');
+
+      // Side effect runs synchronously inside the modal's CTA-click path.
+      inst.config.onConfirm?.();
+      clickCta(inst);
+
+      expect(refreshCalls).toBe(1);
+      expect(workflows).toHaveLength(1);
+    });
+  });
+
+  describe('WorkspaceFormRenderer keyfile-× (variant=remove)', () => {
+    function createFormRenderer(keyFiles: string[]) {
+      const formData = {
+        id: 'ws-1',
+        name: 'Test workspace',
+        context: { purpose: '', workflows: [], keyFiles, preferences: '' }
+      } as unknown as Parameters<typeof WorkspaceFormRenderer>[0];
+      return new WorkspaceFormRenderer(
+        formData as never,
+        [],
+        () => undefined,
+        () => undefined,
+        () => undefined,
+        () => undefined,
+        new Component(),
+        new App()
+      );
+    }
+
+    async function triggerRemoveOfType(
+      renderer: WorkspaceFormRenderer,
+      expectedTitle: string
+    ): Promise<CapturedConfirmCall> {
+      const container = createMockElement('div');
+      const handlers = captureButtonClicks(() => renderer.render(container));
+      for (const handler of handlers) {
+        const before = capturedInstances.length;
+        void handler();
+        await Promise.resolve();
+        if (capturedInstances.length > before) {
+          const inst = capturedInstances[capturedInstances.length - 1];
+          if (inst.config.title === expectedTitle) {
+            return inst;
+          }
+          clickCancel(inst);
+        }
+      }
+      throw new Error(`No ConfirmModal.confirm call with title "${expectedTitle}"`);
+    }
+
+    it('constructs ConfirmModal with variant=remove + keyfile-de-association copy', async () => {
+      const renderer = createFormRenderer(['notes/charter.md']);
+      const inst = await triggerRemoveOfType(renderer, 'Remove key file');
+
+      expect(inst.config.variant).toBe('remove');
+      expect(inst.config.title).toBe('Remove key file');
+      expect(inst.config.body).toBe(
+        'Remove this key file from the workspace? The file itself will not be deleted.'
+      );
+      expect(inst.config.ctaLabel).toBe('Remove');
+
+      clickCancel(inst);
+    });
+  });
+
   describe('Cross-site invariants', () => {
-    it('PR1 wires NO ConfirmModal call site to variant=remove (deferred to PR2)', async () => {
-      // Triple-touch every PR1 call site; assert none of them use 'remove'.
-      // PR2 will introduce 'remove' for key-files row removal (out of PR1 scope).
+    it('settings-UI wires ConfirmModal variants in canonical order: delete, delete, archive, remove, remove', async () => {
+      // Order locked per architect's integration note ("surfaces design intent
+      // at code-review time"): WorkspacesTab → WorkspaceDetailRenderer →
+      // StatesSectionRenderer → WorkspaceFormRenderer workflow-× → keyfile-×.
       const tab = new WorkspacesTab(createMockElement('div'), new SettingsRouter(), {
         app: new App(),
+        component: new Component(),
         prefetchedWorkspaces: [],
         workspaceService: undefined
       }) as unknown as TestableWorkspacesTab;
@@ -330,22 +483,183 @@ describe('ConfirmModal call-site integration', () => {
       clickCancel(capturedInstances[0]);
       await p1;
 
-      const detail = new WorkspaceDetailRenderer() as unknown as TestableDetailRenderer;
+      const detail = new WorkspaceDetailRenderer(new Component()) as unknown as TestableDetailRenderer;
       const p2 = detail.confirmDangerousAction(new App(), 'x');
       await Promise.resolve();
       clickCancel(capturedInstances[1]);
       await p2;
 
       const service = makeStatesService();
-      const states = new StatesSectionRenderer(new App(), service) as unknown as TestableStatesRenderer;
+      const states = new StatesSectionRenderer(new App(), service, new Component()) as unknown as TestableStatesRenderer;
       const p3 = states.confirmArchive('s');
       await Promise.resolve();
       clickCancel(capturedInstances[2]);
       await p3;
 
+      // Workflow-× then keyfile-× — two fresh WorkspaceFormRenderer instances
+      // since each only exercises one × in isolation.
+      const formW = new WorkspaceFormRenderer(
+        { id: 'ws-1', name: 'X', context: { purpose: '', workflows: [{ name: 'wf', agents: [] }], keyFiles: [], preferences: '' } } as never,
+        [],
+        () => undefined, () => undefined, () => undefined, () => undefined,
+        new Component(), new App()
+      );
+      const containerW = createMockElement('div');
+      const handlersW = captureButtonClicks(() => formW.render(containerW));
+      for (const h of handlersW) { void h(); await Promise.resolve(); }
+
+      const formK = new WorkspaceFormRenderer(
+        { id: 'ws-1', name: 'X', context: { purpose: '', workflows: [], keyFiles: ['p.md'], preferences: '' } } as never,
+        [],
+        () => undefined, () => undefined, () => undefined, () => undefined,
+        new Component(), new App()
+      );
+      const containerK = createMockElement('div');
+      const handlersK = captureButtonClicks(() => formK.render(containerK));
+      for (const h of handlersK) { void h(); await Promise.resolve(); }
+
       const variants = capturedInstances.map((i) => i.config.variant);
-      expect(variants).toEqual(['delete', 'delete', 'archive']);
-      expect(variants).not.toContain('remove');
+      expect(variants).toEqual(['delete', 'delete', 'archive', 'remove', 'remove']);
+    });
+  });
+
+  describe('Handler-wrapping side-effect (PR2 Commit 4 — guards inverted-conditional regression)', () => {
+    /**
+     * For each destructive call site that owns BOTH the confirm AND the
+     * onConfirm side-effect, assert:
+     *   1. CTA-click runs the side-effect exactly once
+     *   2. Cancel-click does NOT run the side-effect
+     * This is the contract that catches the PR1 M1 class of regression:
+     * an inverted conditional ("if (!confirmed) doDestroy()") would pass
+     * the modal-variant test but fail this side-effect test.
+     *
+     * Sites covered here (side-effect lives in renderer body):
+     *   - WorkspaceFormRenderer workflow-× → workflows.splice + onRefresh
+     *   - WorkspaceFormRenderer keyfile-× → keyFiles.splice + updateKeyFilesList
+     *
+     * Sites NOT covered here (side-effect lives in async callback owned by
+     * caller — covered structurally in their dedicated tests):
+     *   - WorkspacesTab.onDelete → workspaceService.deleteWorkspace (caller-resolved)
+     *   - WorkspaceDetailRenderer.deleteProject/deleteTask (caller-resolved)
+     *   - StatesSectionRenderer.toggleArchive → archiveState (covered in port test)
+     */
+
+    function renderWithCapture(
+      workflows: Array<{ name: string; agents: string[] }>,
+      keyFiles: string[],
+      onRefresh: () => void
+    ): Array<() => void | Promise<void>> {
+      const formData = {
+        id: 'ws-1',
+        name: 'X',
+        context: { purpose: '', workflows, keyFiles, preferences: '' }
+      } as unknown as Parameters<typeof WorkspaceFormRenderer>[0];
+      const renderer = new WorkspaceFormRenderer(
+        formData as never,
+        [],
+        () => undefined,
+        () => undefined,
+        () => undefined,
+        onRefresh,
+        new Component(),
+        new App()
+      );
+      const container = createMockElement('div');
+      return captureButtonClicks(() => renderer.render(container)).map(h => h);
+    }
+
+    it('workflow-× CTA fires onConfirm exactly once (splice + onRefresh)', async () => {
+      const workflows = [{ name: 'A', agents: [] }, { name: 'B', agents: [] }];
+      let refreshCount = 0;
+      const handlers = renderWithCapture(workflows, [], () => { refreshCount += 1; });
+
+      // Find handler whose dispatch produces a 'Remove workflow' capture.
+      for (const handler of handlers) {
+        const before = capturedInstances.length;
+        void handler();
+        await Promise.resolve();
+        if (capturedInstances.length > before) {
+          const inst = capturedInstances[capturedInstances.length - 1];
+          if (inst.config.title === 'Remove workflow') {
+            // Drive the handler-wrapping side-effect — invoke onConfirm
+            // exactly as ConfirmModal would on CTA click.
+            inst.config.onConfirm?.();
+            clickCta(inst);
+            break;
+          }
+          clickCancel(inst);
+        }
+      }
+
+      expect(workflows).toHaveLength(1);
+      expect(refreshCount).toBe(1);
+    });
+
+    it('workflow-× Cancel does NOT fire onConfirm (no splice, no refresh)', async () => {
+      const workflows = [{ name: 'A', agents: [] }, { name: 'B', agents: [] }];
+      let refreshCount = 0;
+      const handlers = renderWithCapture(workflows, [], () => { refreshCount += 1; });
+
+      for (const handler of handlers) {
+        const before = capturedInstances.length;
+        void handler();
+        await Promise.resolve();
+        if (capturedInstances.length > before) {
+          const inst = capturedInstances[capturedInstances.length - 1];
+          if (inst.config.title === 'Remove workflow') {
+            // Cancel — do NOT invoke onConfirm; resolve(false).
+            clickCancel(inst);
+            break;
+          }
+          clickCancel(inst);
+        }
+      }
+
+      expect(workflows).toHaveLength(2);
+      expect(refreshCount).toBe(0);
+    });
+
+    it('keyfile-× CTA fires onConfirm exactly once (splice + list refresh)', async () => {
+      const keyFiles = ['notes/a.md', 'notes/b.md'];
+      const handlers = renderWithCapture([], keyFiles, () => undefined);
+
+      for (const handler of handlers) {
+        const before = capturedInstances.length;
+        void handler();
+        await Promise.resolve();
+        if (capturedInstances.length > before) {
+          const inst = capturedInstances[capturedInstances.length - 1];
+          if (inst.config.title === 'Remove key file') {
+            inst.config.onConfirm?.();
+            clickCta(inst);
+            break;
+          }
+          clickCancel(inst);
+        }
+      }
+
+      expect(keyFiles).toHaveLength(1);
+    });
+
+    it('keyfile-× Cancel does NOT splice the array', async () => {
+      const keyFiles = ['notes/a.md', 'notes/b.md'];
+      const handlers = renderWithCapture([], keyFiles, () => undefined);
+
+      for (const handler of handlers) {
+        const before = capturedInstances.length;
+        void handler();
+        await Promise.resolve();
+        if (capturedInstances.length > before) {
+          const inst = capturedInstances[capturedInstances.length - 1];
+          if (inst.config.title === 'Remove key file') {
+            clickCancel(inst);
+            break;
+          }
+          clickCancel(inst);
+        }
+      }
+
+      expect(keyFiles).toEqual(['notes/a.md', 'notes/b.md']);
     });
   });
 });
