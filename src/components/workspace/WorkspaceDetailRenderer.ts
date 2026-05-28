@@ -3,7 +3,7 @@
  * Extracted from WorkspacesTab to keep the tab under 600 lines.
  */
 
-import { App, ButtonComponent, Component, DropdownComponent, Notice, setIcon, TextAreaComponent, TextComponent } from 'obsidian';
+import { App, ButtonComponent, Component, Notice, setIcon } from 'obsidian';
 import { BoxedSection } from '../../settings/components/BoxedSection';
 import { ConfirmModal } from '../../settings/components/ConfirmModal';
 import { BreadcrumbNav, BreadcrumbNavItem } from '../../settings/components/BreadcrumbNav';
@@ -13,7 +13,7 @@ import { ProjectWorkspace } from '../../database/workspace-types';
 import { CustomPrompt } from '../../types/mcp/CustomPromptTypes';
 import type { CreateTaskData, TaskListOptions, UpdateTaskData } from '../../agents/taskManager/types';
 import type { ProjectMetadata } from '../../database/repositories/interfaces/IProjectRepository';
-import type { TaskMetadata, TaskPriority, TaskStatus } from '../../database/repositories/interfaces/ITaskRepository';
+import type { TaskMetadata } from '../../database/repositories/interfaces/ITaskRepository';
 import type { PaginatedResult } from '../../types/pagination/PaginationTypes';
 import { StatesSectionRenderer, StatesSectionService } from './StatesSectionRenderer';
 
@@ -25,19 +25,6 @@ interface ProjectEditorState {
     name: string;
     description: string;
     status: ProjectStatus;
-}
-
-interface TaskEditorState {
-    id?: string;
-    projectId: string;
-    title: string;
-    description: string;
-    status: TaskStatus;
-    priority: TaskPriority;
-    dueDate: string;
-    assignee: string;
-    tags: string;
-    parentTaskId: string;
 }
 
 type WorkspaceTaskMoveTarget = {
@@ -410,159 +397,10 @@ export class WorkspaceDetailRenderer {
         this.projectDetailRenderer.render(container, projectDetailCallbacks);
     }
 
-    renderTaskDetail(
-        container: HTMLElement,
-        workspace: Partial<ProjectWorkspace>,
-        project: ProjectEditorState,
-        task: TaskEditorState,
-        editingTaskOriginal: TaskMetadata | null,
-        allProjects: ProjectMetadata[],
-        allTasks: TaskMetadata[],
-        callbacks: DetailCallbacks,
-        onSaveTask: () => Promise<void>
-    ): void {
-        if (!project.id || !workspace.id || !task) {
-            callbacks.onNavigateProjectDetail();
-            return;
-        }
-
-        this.renderBreadcrumbs(container, [
-            { label: 'Workspaces', onClick: () => callbacks.onNavigateList() },
-            { label: workspace.name || 'Workspace', onClick: () => callbacks.onNavigateDetail() },
-            { label: 'Projects', onClick: () => callbacks.onNavigateProjects() },
-            { label: project.name || 'Project', onClick: () => callbacks.onNavigateProjectDetail() },
-            { label: task.id ? (task.title || 'Task') : 'New Task' }
-        ]);
-
-        container.createEl('h3', {
-            text: task.id ? 'Edit task' : 'New task',
-            cls: 'nexus-detail-title'
-        });
-
-        const form = container.createDiv('nexus-workspace-form');
-        const details = form.createDiv('nexus-form-section');
-        details.createEl('h4', { text: 'Task details', cls: 'nexus-section-header' });
-
-        const titleField = details.createDiv('nexus-form-field');
-        titleField.createEl('label', { text: 'Title', cls: 'nexus-form-label' });
-        const titleInput = new TextComponent(titleField);
-        titleInput.setPlaceholder('Task title');
-        titleInput.setValue(task.title ?? '');
-        titleInput.onChange((value) => { task.title = value; });
-
-        const descriptionField = details.createDiv('nexus-form-field');
-        descriptionField.createEl('label', { text: 'Description', cls: 'nexus-form-label' });
-        const descriptionInput = new TextAreaComponent(descriptionField);
-        descriptionInput.setPlaceholder('Optional task description');
-        descriptionInput.setValue(task.description ?? '');
-        descriptionInput.onChange((value) => { task.description = value; });
-        descriptionInput.inputEl.rows = 4;
-
-        const metaGrid = details.createDiv('nexus-task-form-grid');
-
-        this.renderTaskDropdown(metaGrid, 'Status', task.status, [
-            ['todo', 'Todo'], ['in_progress', 'In progress'],
-            ['done', 'Done'], ['cancelled', 'Cancelled']
-        ], (value) => { task.status = value as TaskStatus; });
-
-        this.renderTaskDropdown(metaGrid, 'Priority', task.priority, [
-            ['critical', 'Critical'], ['high', 'High'],
-            ['medium', 'Medium'], ['low', 'Low']
-        ], (value) => { task.priority = value as TaskPriority; });
-
-        this.renderTaskDropdown(
-            metaGrid, 'Project', task.projectId,
-            allProjects.map(p => [p.id, p.name] as [string, string]),
-            (value) => { task.projectId = value; },
-            false
-        );
-
-        const parentOptions: Array<[string, string]> = [['', 'None']];
-        allTasks
-            .filter(t => t.id !== task.id)
-            .forEach(t => parentOptions.push([t.id, t.title]));
-        this.renderTaskDropdown(metaGrid, 'Parent Task', task.parentTaskId, parentOptions, (value) => {
-            task.parentTaskId = value;
-        });
-
-        this.renderTaskTextField(metaGrid, 'Assignee', task.assignee, (value) => {
-            task.assignee = value;
-        }, callbacks);
-
-        this.renderTaskTextField(metaGrid, 'Due Date', task.dueDate, (value) => {
-            task.dueDate = value;
-        }, callbacks, 'date');
-
-        const tagsField = details.createDiv('nexus-form-field');
-        tagsField.createEl('label', { text: 'Tags', cls: 'nexus-form-label' });
-        const tagsInput = new TextComponent(tagsField);
-        tagsInput.setPlaceholder('Comma-separated tags');
-        tagsInput.setValue(task.tags ?? '');
-        tagsInput.onChange((value) => { task.tags = value; });
-
-        const actions = container.createDiv('nexus-form-actions');
-        new ButtonComponent(actions)
-            .setButtonText('Save task')
-            .setCta()
-            .onClick(() => void onSaveTask());
-
-        if (task.id) {
-            new ButtonComponent(actions)
-                .setButtonText('Delete task')
-                .setWarning()
-                .onClick(() => {
-                    if (task.id) {
-                        void this.deleteTask(task.id, callbacks);
-                    }
-                });
-        }
-    }
-
     // --- Utility methods ---
 
     private renderBreadcrumbs(container: HTMLElement, items: BreadcrumbNavItem[]): void {
         new BreadcrumbNav(container, items, this.component);
-    }
-
-    private renderTaskDropdown(
-        container: HTMLElement,
-        label: string,
-        value: string,
-        options: Array<[string, string]>,
-        onChange: (value: string) => void,
-        includeEmpty = true
-    ): void {
-        const field = container.createDiv('nexus-form-field');
-        field.createEl('label', { text: label, cls: 'nexus-form-label' });
-        const dropdown = new DropdownComponent(field);
-        if (includeEmpty && !options.some(([optionValue]) => optionValue === '')) {
-            dropdown.addOption('', 'None');
-        }
-        for (const [optionValue, optionLabel] of options) {
-            dropdown.addOption(optionValue, optionLabel);
-        }
-        dropdown.setValue(value ?? '');
-        dropdown.onChange(onChange);
-    }
-
-    private renderTaskTextField(
-        container: HTMLElement,
-        label: string,
-        value: string,
-        onChange: (value: string) => void,
-        callbacks: DetailCallbacks,
-        type: 'text' | 'date' = 'text'
-    ): void {
-        const field = container.createDiv('nexus-form-field');
-        field.createEl('label', { text: label, cls: 'nexus-form-label' });
-        const input = field.createEl('input', {
-            cls: 'nexus-form-input',
-            type
-        });
-        input.value = value;
-        callbacks.safeRegisterDomEvent(input, 'input', () => {
-            onChange(input.value);
-        });
     }
 
     private async deleteProject(projectId: string, callbacks: DetailCallbacks): Promise<void> {

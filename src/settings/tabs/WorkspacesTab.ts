@@ -83,8 +83,12 @@ export class WorkspacesTab {
                 getCurrentWorkspace: () => this.currentWorkspace,
                 onNavigateList: () => this.showWorkspaceList(),
                 onNavigateDetail: () => this.showWorkspaceDetail(),
+                onNavigateProjectDetail: () => this.showProjectDetailView(),
+                onNavigateTaskDetail: () => this.showTaskDetailView(),
                 onRender: () => this.render(),
-                buildDetailCallbacks: () => this.buildDetailCallbacks()
+                buildDetailCallbacks: () => this.buildDetailCallbacks(),
+                getApp: () => this.services.app,
+                getComponent: () => this.services.component
             }
         );
 
@@ -593,6 +597,18 @@ export class WorkspacesTab {
             this.currentView = 'project-detail';
             this.render();
         }
+    }
+
+    /** Switch to the project-detail view (task-detail back-navigation). */
+    private showProjectDetailView(): void {
+        this.currentView = 'project-detail';
+        this.render();
+    }
+
+    /** Switch to the task-detail view (opening a task or jumping via a dep row). */
+    private showTaskDetailView(): void {
+        this.currentView = 'task-detail';
+        this.render();
     }
 
     private async toggleProjectArchive(project: ProjectMetadata): Promise<void> {
