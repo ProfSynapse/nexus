@@ -4639,6 +4639,13 @@ body.is-mobile .message-action-btn.message-branch-next {
     gap: var(--space-xs);
 }
 
+/* Breathing room between consecutive form-field groups (e.g., Context section
+   Purpose / Preferences / Dedicated agent / Key files). Targets only stacked
+   siblings, leaving .ws-section-body scroll/clip behavior untouched. */
+.nexus-form-field + .nexus-form-field {
+    margin-top: var(--space-m);
+}
+
 .nexus-form-field-inline {
     flex-direction: row;
     align-items: center;

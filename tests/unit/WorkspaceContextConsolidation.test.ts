@@ -218,6 +218,8 @@ describe('Wave 3 PR2 Commit 5 — Context consolidation + archiving-UI removal',
       expect(sectionText).toContain('Key files');
       expect(sectionText).toContain('Purpose');
       expect(sectionText).toContain('Preferences');
+      // Commit 6: Workflows is extracted to its own section — NOT inside Context.
+      expect(sectionText).not.toContain('Workflows');
     });
 
     it('preserves dedicatedAgentId binding — agent dropdown reads the top-level field', () => {
@@ -238,6 +240,63 @@ describe('Wave 3 PR2 Commit 5 — Context consolidation + archiving-UI removal',
       expect(() => renderer.render(container as unknown as HTMLElement)).not.toThrow();
       const sectionText = collectText(container);
       expect(sectionText).toContain('Dedicated agent');
+    });
+  });
+
+  describe('Commit 6 — Workflows extracted to its own top-level section (WorkspaceFormRenderer)', () => {
+    it('renders a standalone "Workflows" boxed section separate from "Context"', () => {
+      const container = makeEl();
+      const renderer = new WorkspaceFormRenderer(
+        makeFormData(),
+        [],
+        () => undefined, () => undefined, () => undefined, () => undefined,
+        new Component(),
+        new App()
+      );
+
+      renderer.render(container as unknown as HTMLElement);
+
+      const titles = findAllByClassFragment(container, 'ws-section-title').map(e => e.textContent);
+      expect(titles).toContain('Context');
+      expect(titles).toContain('Workflows');
+
+      // The Workflows section is a distinct boxed section, not the Context one.
+      const sections = findAllByClassFragment(container, 'ws-section');
+      const workflowsSection = sections.find(s =>
+        findAllByClassFragment(s, 'ws-section-title').some(t => t.textContent === 'Workflows')
+      );
+      const contextSection = sections.find(s =>
+        findAllByClassFragment(s, 'ws-section-title').some(t => t.textContent === 'Context')
+      );
+      expect(workflowsSection).toBeDefined();
+      expect(contextSection).toBeDefined();
+      expect(workflowsSection).not.toBe(contextSection);
+    });
+
+    it('renders the empty-state ("None") inside the Workflows section body', () => {
+      // Button labels (e.g. "Add workflow") are set via ButtonComponent and are
+      // not surfaced into the mock DOM textContent, so we assert the empty-state
+      // span — which IS createEl('span', {text}) — to prove the workflow list
+      // body renders inside the extracted section.
+      const container = makeEl();
+      const renderer = new WorkspaceFormRenderer(
+        makeFormData(),
+        [],
+        () => undefined, () => undefined, () => undefined, () => undefined,
+        new Component(),
+        new App()
+      );
+
+      renderer.render(container as unknown as HTMLElement);
+
+      const sections = findAllByClassFragment(container, 'ws-section');
+      const workflowsSection = sections.find(s =>
+        findAllByClassFragment(s, 'ws-section-title').some(t => t.textContent === 'Workflows')
+      );
+      expect(workflowsSection).toBeDefined();
+
+      const sectionText = collectText(workflowsSection!);
+      expect(sectionText).toContain('None');
     });
   });
 

@@ -38,8 +38,11 @@ export class WorkspaceFormRenderer {
     // Basic Info section
     this.renderBasicInfoSection(form);
 
-    // Context section — holds purpose/preferences + dedicated agent + key files + workflows
+    // Context section — holds purpose/preferences + dedicated agent + key files
     this.renderContextSection(form);
+
+    // Workflows section — its own top-level boxed section, sibling to Context
+    this.renderWorkflowsSection(form);
   }
 
   /**
@@ -138,9 +141,6 @@ export class WorkspaceFormRenderer {
 
         // Key Files subsection (nested — stays inline)
         this.renderKeyFilesSection(body);
-
-        // Workflows section (nested subsection — stays inline)
-        this.renderWorkflowsSection(body);
       }
     }, this.component);
   }
@@ -178,12 +178,9 @@ export class WorkspaceFormRenderer {
   }
 
   /**
-   * Render Workflows subsection
+   * Render Workflows as its own top-level boxed section (sibling to Context).
    */
   private renderWorkflowsSection(container: HTMLElement): void {
-    const subsection = container.createDiv('nexus-form-field');
-    subsection.createEl('label', { text: 'Workflows', cls: 'nexus-form-label' });
-
     // Ensure workflows array exists
     if (!this.formData.context?.workflows) {
       this.formData.context = this.formData.context || {
@@ -194,51 +191,57 @@ export class WorkspaceFormRenderer {
 
     const workflows = this.formData.context.workflows;
 
-    const listContainer = subsection.createDiv('nexus-item-list');
+    new BoxedSection(container, {
+      title: 'Workflows',
+      unbounded: true,
+      body: (body) => {
+        const listContainer = body.createDiv('nexus-item-list');
 
-    if (workflows.length === 0) {
-      listContainer.createEl('span', { text: 'None', cls: 'nexus-form-hint' });
-    } else {
-      workflows.forEach((workflow, index) => {
-        const item = listContainer.createDiv('nexus-item-row');
+        if (workflows.length === 0) {
+          listContainer.createEl('span', { text: 'None', cls: 'nexus-form-hint' });
+        } else {
+          workflows.forEach((workflow, index) => {
+            const item = listContainer.createDiv('nexus-item-row');
 
-        const info = item.createDiv('nexus-item-info');
-        const workflowName = workflow.name || `Workflow ${index + 1}`;
-        info.createEl('span', { text: workflowName, cls: 'nexus-item-title' });
-        const summary = this.buildWorkflowSummary(workflow);
-        if (summary) {
-          info.createEl('span', { text: summary, cls: 'nexus-item-subtitle' });
+            const info = item.createDiv('nexus-item-info');
+            const workflowName = workflow.name || `Workflow ${index + 1}`;
+            info.createEl('span', { text: workflowName, cls: 'nexus-item-title' });
+            const summary = this.buildWorkflowSummary(workflow);
+            if (summary) {
+              info.createEl('span', { text: summary, cls: 'nexus-item-subtitle' });
+            }
+
+            const actions = item.createDiv('nexus-item-actions');
+            const runButton = new ButtonComponent(actions).setIcon('play');
+            runButton.buttonEl.addClass('clickable-icon');
+            runButton.buttonEl.setAttribute('aria-label', `Run ${workflowName} now`);
+            runButton.onClick(() => this.onWorkflowRun(index));
+            new ButtonComponent(actions)
+              .setButtonText('Edit')
+              .onClick(() => this.onWorkflowEdit(index));
+            new ButtonComponent(actions)
+              .setButtonText('×')
+              .setWarning()
+              .onClick(async () => {
+                await ConfirmModal.confirm(this.app, {
+                  variant: 'remove',
+                  title: 'Remove workflow',
+                  body: 'Remove this workflow from the workspace? It will not be deleted.',
+                  ctaLabel: 'Remove',
+                  onConfirm: () => {
+                    workflows.splice(index, 1);
+                    this.onRefresh();
+                  }
+                });
+              });
+          });
         }
 
-        const actions = item.createDiv('nexus-item-actions');
-        const runButton = new ButtonComponent(actions).setIcon('play');
-        runButton.buttonEl.addClass('clickable-icon');
-        runButton.buttonEl.setAttribute('aria-label', `Run ${workflowName} now`);
-        runButton.onClick(() => this.onWorkflowRun(index));
-        new ButtonComponent(actions)
-          .setButtonText('Edit')
-          .onClick(() => this.onWorkflowEdit(index));
-        new ButtonComponent(actions)
-          .setButtonText('×')
-          .setWarning()
-          .onClick(async () => {
-            await ConfirmModal.confirm(this.app, {
-              variant: 'remove',
-              title: 'Remove workflow',
-              body: 'Remove this workflow from the workspace? It will not be deleted.',
-              ctaLabel: 'Remove',
-              onConfirm: () => {
-                workflows.splice(index, 1);
-                this.onRefresh();
-              }
-            });
-          });
-      });
-    }
-
-    new ButtonComponent(subsection)
-      .setButtonText('Add workflow')
-      .onClick(() => this.onWorkflowEdit());
+        new ButtonComponent(body)
+          .setButtonText('Add workflow')
+          .onClick(() => this.onWorkflowEdit());
+      }
+    }, this.component);
   }
 
   /**
