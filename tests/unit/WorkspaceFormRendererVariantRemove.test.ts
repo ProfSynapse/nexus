@@ -100,14 +100,6 @@ function makeFormData(): Partial<ProjectWorkspace> {
   } as Partial<ProjectWorkspace>;
 }
 
-function findRemoveButtonAt(handlers: Array<{ label: string; handler: () => void | Promise<void> }>, occurrence: number): () => void | Promise<void> {
-  const removes = handlers.filter(h => h.label === '×');
-  if (occurrence >= removes.length) {
-    throw new Error(`Expected ${occurrence + 1}+ '×' handlers, got ${removes.length}`);
-  }
-  return removes[occurrence].handler;
-}
-
 /**
  * Resolution helper for the index-vs-content mismatch:
  * `captureButtonClicks` tags each handler with the most-recently-set
@@ -163,19 +155,17 @@ describe('WorkspaceFormRenderer — variant=remove × wiring (C-7)', () => {
       const container = createMockElement('div');
 
       const handlers = captureButtonClicks(() => renderer.render(container));
-      const firstRemove = findRemoveButtonAt(handlers, 0); // workflow row 0
-      const pending = firstRemove();
-      await Promise.resolve();
+      // Order-independent: key files now render before workflows in the
+      // consolidated Context section, so match the × handler by ConfirmModal title.
+      const inst = await triggerRemoveByTitle(handlers, 'Remove workflow');
 
-      expect(capturedInstances).toHaveLength(1);
-      expect(capturedInstances[0].config.variant).toBe('remove');
-      expect(capturedInstances[0].config.title).toBe('Remove workflow');
-      expect(capturedInstances[0].config.body).toContain('Remove this workflow');
-      expect(capturedInstances[0].config.ctaLabel).toBe('Remove');
+      expect(inst.config.variant).toBe('remove');
+      expect(inst.config.title).toBe('Remove workflow');
+      expect(inst.config.body).toContain('Remove this workflow');
+      expect(inst.config.ctaLabel).toBe('Remove');
 
       // Resolve to avoid dangling promise.
-      capturedInstances[0].resolve(false);
-      await pending;
+      inst.resolve(false);
     });
 
     it('splices the workflow from the array AND calls onRefresh when user confirms', async () => {
@@ -195,16 +185,14 @@ describe('WorkspaceFormRenderer — variant=remove × wiring (C-7)', () => {
       const container = createMockElement('div');
 
       const handlers = captureButtonClicks(() => renderer.render(container));
-      // index 0 = workflow[0] '×' (Daily review)
-      const firstRemove = findRemoveButtonAt(handlers, 0);
 
       expect(formData.context!.workflows).toHaveLength(2);
 
-      const pending = firstRemove();
-      await Promise.resolve();
+      // Match workflow row 0's × by ConfirmModal title (order-independent).
+      const inst = await triggerRemoveByTitle(handlers, 'Remove workflow');
       // Resolve TRUE to fire onConfirm → splice + onRefresh.
-      capturedInstances[0].resolve(true);
-      await pending;
+      inst.resolve(true);
+      await Promise.resolve();
 
       expect(formData.context!.workflows).toHaveLength(1);
       expect(formData.context!.workflows![0].name).toBe('Weekly summary');
@@ -228,12 +216,10 @@ describe('WorkspaceFormRenderer — variant=remove × wiring (C-7)', () => {
       const container = createMockElement('div');
 
       const handlers = captureButtonClicks(() => renderer.render(container));
-      const firstRemove = findRemoveButtonAt(handlers, 0);
 
-      const pending = firstRemove();
+      const inst = await triggerRemoveByTitle(handlers, 'Remove workflow');
+      inst.resolve(false);
       await Promise.resolve();
-      capturedInstances[0].resolve(false);
-      await pending;
 
       expect(formData.context!.workflows).toHaveLength(2);
       expect(onRefresh).not.toHaveBeenCalled();

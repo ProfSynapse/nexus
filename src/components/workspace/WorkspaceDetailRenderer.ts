@@ -3,7 +3,7 @@
  * Extracted from WorkspacesTab to keep the tab under 600 lines.
  */
 
-import { App, ButtonComponent, Component, DropdownComponent, Notice, setIcon, TextAreaComponent, TextComponent, ToggleComponent } from 'obsidian';
+import { App, ButtonComponent, Component, DropdownComponent, Notice, setIcon, TextAreaComponent, TextComponent } from 'obsidian';
 import { BoxedSection } from '../../settings/components/BoxedSection';
 import { ConfirmModal } from '../../settings/components/ConfirmModal';
 import { BreadcrumbNav, BreadcrumbNavItem } from '../../settings/components/BreadcrumbNav';
@@ -86,7 +86,6 @@ export class WorkspaceDetailRenderer {
     private statesRenderer?: StatesSectionRenderer;
     private projectDetailRenderer: ProjectDetailRenderer | null = null;
     private component: Component;
-    private showArchivedProjects = false;
 
     constructor(component: Component) {
         this.component = component;
@@ -297,16 +296,6 @@ export class WorkspaceDetailRenderer {
             unbounded: true,
             actionLabel: '+ New project',
             onAction: () => callbacks.onNavigateProjectDetail(),
-            toolbar: (toolbar) => {
-                const archivedLabel = toolbar.createDiv('nexus-projects-archived-toggle');
-                archivedLabel.createSpan({ text: 'Show archived', cls: 'nexus-section-toolbar-label' });
-                new ToggleComponent(archivedLabel)
-                    .setValue(this.showArchivedProjects)
-                    .onChange((value) => {
-                        this.showArchivedProjects = value;
-                        callbacks.onRefreshDetail();
-                    });
-            },
             body: (body) => {
                 this.renderProjectGroups(body, projects, tasks, callbacks);
             }
@@ -319,9 +308,7 @@ export class WorkspaceDetailRenderer {
         tasks: TaskMetadata[],
         callbacks: DetailCallbacks
     ): void {
-        const visible = this.showArchivedProjects
-            ? projects
-            : projects.filter(p => p.status !== 'archived');
+        const visible = projects.filter(p => p.status !== 'archived');
 
         if (visible.length === 0) {
             body.createEl('p', {
@@ -333,8 +320,7 @@ export class WorkspaceDetailRenderer {
 
         const groups: Array<{ key: ProjectStatus; label: string }> = [
             { key: 'active',    label: 'Active' },
-            { key: 'completed', label: 'Completed' },
-            { key: 'archived',  label: 'Archived' }
+            { key: 'completed', label: 'Completed' }
         ];
 
         for (const group of groups) {
@@ -360,9 +346,7 @@ export class WorkspaceDetailRenderer {
         tasks: TaskMetadata[],
         callbacks: DetailCallbacks
     ): void {
-        const row = body.createDiv({
-            cls: 'setting-item is-project' + (project.status === 'archived' ? ' is-archived' : '')
-        });
+        const row = body.createDiv({ cls: 'setting-item is-project' });
 
         const info = row.createDiv('setting-item-info');
         info.createDiv({ cls: 'setting-item-name', text: project.name });
@@ -379,14 +363,6 @@ export class WorkspaceDetailRenderer {
         });
         setIcon(editBtn, 'pencil');
         this.component.registerDomEvent(editBtn, 'click', () => callbacks.onOpenProjectDetail(project));
-
-        const isArchived = project.status === 'archived';
-        const archiveBtn = control.createEl('button', {
-            cls: 'clickable-icon',
-            attr: { 'aria-label': isArchived ? 'Restore project' : 'Archive project' }
-        });
-        setIcon(archiveBtn, isArchived ? 'archive-restore' : 'archive');
-        this.component.registerDomEvent(archiveBtn, 'click', () => void callbacks.onToggleProjectArchive(project));
 
         const deleteBtn = control.createEl('button', {
             cls: 'clickable-icon mod-warning',

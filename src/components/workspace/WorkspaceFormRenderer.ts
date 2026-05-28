@@ -38,11 +38,8 @@ export class WorkspaceFormRenderer {
     // Basic Info section
     this.renderBasicInfoSection(form);
 
-    // Context section
+    // Context section — holds purpose/preferences + dedicated agent + key files + workflows
     this.renderContextSection(form);
-
-    // Agent & Files section
-    this.renderAgentFilesSection(form);
   }
 
   /**
@@ -136,6 +133,12 @@ export class WorkspaceFormRenderer {
         });
         prefsInput.inputEl.rows = 3;
 
+        // Dedicated agent (single agent, top-level dedicatedAgentId binding)
+        this.renderDedicatedAgentField(body);
+
+        // Key Files subsection (nested — stays inline)
+        this.renderKeyFilesSection(body);
+
         // Workflows section (nested subsection — stays inline)
         this.renderWorkflowsSection(body);
       }
@@ -143,59 +146,35 @@ export class WorkspaceFormRenderer {
   }
 
   /**
-   * Render Agent & Files section
+   * Render the dedicated-agent dropdown bound to the top-level dedicatedAgentId
+   * field (matches the backend MCP implementation). Single agent only.
    */
-  private renderAgentFilesSection(container: HTMLElement): void {
-    // Ensure context exists
-    if (!this.formData.context) {
-      this.formData.context = {
-        purpose: '',
-        workflows: [],
-        keyFiles: [],
-        preferences: ''
-      };
-    }
+  private renderDedicatedAgentField(container: HTMLElement): void {
+    const agentField = container.createDiv('nexus-form-field');
+    agentField.createEl('label', { text: 'Dedicated agent', cls: 'nexus-form-label' });
 
-    new BoxedSection(container, {
-      title: 'Agent & files',
-      unbounded: true,
-      body: (body) => {
-        // Dedicated Agent field
-        const agentField = body.createDiv('nexus-form-field');
-        agentField.createEl('label', { text: 'Dedicated agent', cls: 'nexus-form-label' });
+    const dropdownContainer = agentField.createDiv('nexus-dropdown-container');
+    const dropdown = new DropdownComponent(dropdownContainer);
 
-        const dropdownContainer = agentField.createDiv('nexus-dropdown-container');
-        const dropdown = new DropdownComponent(dropdownContainer);
+    dropdown.addOption('', 'None');
+    this.availableAgents.forEach(agent => {
+      dropdown.addOption(agent.id, agent.name);
+    });
 
-        dropdown.addOption('', 'None');
-        this.availableAgents.forEach(agent => {
-          dropdown.addOption(agent.id, agent.name);
-        });
+    // Field can contain either ID or name — find matching agent by either.
+    const workspaceWithId = this.formData as ProjectWorkspace & { dedicatedAgentId?: string };
+    const dedicatedId = workspaceWithId.dedicatedAgentId || '';
+    const matchingAgent = this.availableAgents.find(a => a.id === dedicatedId || a.name === dedicatedId);
+    dropdown.setValue(matchingAgent?.id || '');
 
-        // Use top-level dedicatedAgentId field (matches backend MCP implementation)
-        // Field can contain either ID or name - find matching agent by either
-        const workspaceWithId = this.formData as ProjectWorkspace & { dedicatedAgentId?: string };
-        const dedicatedId = workspaceWithId.dedicatedAgentId || '';
-
-        // Try to find agent by ID first, then by name
-        const matchingAgent = this.availableAgents.find(a => a.id === dedicatedId || a.name === dedicatedId);
-        const dropdownValue = matchingAgent?.id || '';
-        dropdown.setValue(dropdownValue);
-
-        dropdown.onChange((value) => {
-          // Set top-level dedicatedAgentId field (string: ID or name)
-          const workspaceWithId = this.formData as ProjectWorkspace & { dedicatedAgentId?: string };
-          if (value) {
-            workspaceWithId.dedicatedAgentId = value;
-          } else {
-            delete workspaceWithId.dedicatedAgentId;
-          }
-        });
-
-        // Key Files subsection (nested — stays inline)
-        this.renderKeyFilesSection(body);
+    dropdown.onChange((value) => {
+      const workspaceWithId = this.formData as ProjectWorkspace & { dedicatedAgentId?: string };
+      if (value) {
+        workspaceWithId.dedicatedAgentId = value;
+      } else {
+        delete workspaceWithId.dedicatedAgentId;
       }
-    }, this.component);
+    });
   }
 
   /**
