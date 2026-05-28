@@ -8523,6 +8523,13 @@ body.is-mobile .nexus-task-board-shell {
     color: var(--text-error);
 }
 
+/* Danger icon button (workspace rows): transparent clickable-icon that turns
+   red on hover — mirrors the StatesSectionRenderer delete idiom. Avoids
+   Obsidian's `mod-warning` filled-red-square background that swamps the glyph. */
+.clickable-icon.nexus-icon-danger:hover {
+    color: var(--text-error);
+}
+
 /* State edit modal */
 
 .nexus-state-edit-modal h2 {

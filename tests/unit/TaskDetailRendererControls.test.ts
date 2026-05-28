@@ -346,5 +346,37 @@ describe('TaskDetailRenderer — add-control + note-link wiring (§10 gap)', () 
       expect(getNoticeCalls()).toContain('Enter a note path');
       getTextSpy.mockRestore();
     });
+
+    // FIX 2 (PR3 UAT): the add-control reuses the NoteInputSuggester autocomplete,
+    // sourcing the embeddingService via the getEmbeddingService callback.
+    it('add-note control sources the embeddingService for the autocomplete suggester', () => {
+      const getEmbeddingService = jest.fn().mockReturnValue(null);
+      renderWith(makeCallbacks({ getLinkedNotes: () => [], getEmbeddingService }));
+      expect(getEmbeddingService).toHaveBeenCalled();
+    });
+  });
+
+  // FIX 1 (PR3 UAT): destructive icon-buttons must use the transparent
+  // `.nexus-icon-danger` class, NOT Obsidian's `mod-warning` (which paints a
+  // filled-red background that swamps the glyph → bare red square).
+  describe('FIX 1 — danger icon class on remove/unlink buttons', () => {
+    it('dependency remove button uses clickable-icon nexus-icon-danger (no mod-warning)', () => {
+      const deps: TaskDeps = {
+        upstream: [makeTask({ id: 'up-1', title: 'Upstream', projectId: 'p-1' })],
+        downstream: []
+      };
+      const { container } = renderWith(makeCallbacks({ getDeps: () => deps }));
+      const removeBtn = findByAttr(container, 'aria-label', 'Remove dependency')[0];
+      expect(removeBtn.className).toContain('nexus-icon-danger');
+      expect(removeBtn.className).not.toContain('mod-warning');
+    });
+
+    it('note-link unlink button uses clickable-icon nexus-icon-danger (no mod-warning)', () => {
+      const notes: NoteLink[] = [{ taskId: 'task-1', notePath: 'notes/Spec.md', linkType: 'reference', created: 1 }];
+      const { container } = renderWith(makeCallbacks({ getLinkedNotes: () => notes }));
+      const unlinkBtn = findByAttr(container, 'aria-label', 'Unlink Spec.md')[0];
+      expect(unlinkBtn.className).toContain('nexus-icon-danger');
+      expect(unlinkBtn.className).not.toContain('mod-warning');
+    });
   });
 });

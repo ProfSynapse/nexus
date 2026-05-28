@@ -11,6 +11,7 @@ import { ProjectWorkspace } from '../../database/workspace-types';
 import { TaskService } from '../../agents/taskManager/services/TaskService';
 import { DAGService } from '../../agents/taskManager/services/DAGService';
 import type { ServiceManager } from '../../core/ServiceManager';
+import type { EmbeddingService } from '../../services/embeddings/EmbeddingService';
 import type { HybridStorageAdapter } from '../../database/adapters/HybridStorageAdapter';
 import type { ProjectMetadata } from '../../database/repositories/interfaces/IProjectRepository';
 import type { LinkType, NoteLink, TaskMetadata, TaskPriority, TaskStatus } from '../../database/repositories/interfaces/ITaskRepository';
@@ -140,7 +141,9 @@ export class ProjectsManagerView {
             onRemoveTaskDep: (taskId, dependsOnTaskId) => this.removeTaskDep(taskId, dependsOnTaskId),
             onLinkNote: (taskId, notePath, linkType) => this.linkNote(taskId, notePath, linkType),
             onUnlinkNote: (taskId, notePath) => this.unlinkNote(taskId, notePath),
-            getApp: () => this.callbacks.getApp()
+            getApp: () => this.callbacks.getApp(),
+            getEmbeddingService: () =>
+                this.serviceManager?.getServiceIfReady<EmbeddingService>('embeddingService') ?? null
         };
     }
 

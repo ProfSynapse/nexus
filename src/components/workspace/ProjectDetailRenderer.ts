@@ -206,7 +206,7 @@ export class ProjectDetailRenderer {
         this.component.registerDomEvent(editBtn, 'click', () => callbacks.onOpenTaskDetail(task));
 
         const deleteBtn = control.createEl('button', {
-            cls: 'clickable-icon mod-warning',
+            cls: 'clickable-icon nexus-icon-danger',
             attr: { 'aria-label': 'Delete task' }
         });
         setIcon(deleteBtn, 'trash');

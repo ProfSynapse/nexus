@@ -19,10 +19,12 @@
  * Wave 3 PR3 — extracted from WorkspaceDetailRenderer.renderTaskDetail.
  */
 
-import { App, ButtonComponent, Component, DropdownComponent, Notice, setIcon, TextAreaComponent, TextComponent } from 'obsidian';
+import { App, ButtonComponent, Component, DropdownComponent, Notice, setIcon, TextAreaComponent, TextComponent, TFile } from 'obsidian';
 import { BoxedSection } from '../../settings/components/BoxedSection';
 import { BreadcrumbNav } from '../../settings/components/BreadcrumbNav';
+import { NoteInputSuggester } from '../../ui/tasks/NoteInputSuggester';
 import { ProjectWorkspace } from '../../database/workspace-types';
+import type { EmbeddingService } from '../../services/embeddings/EmbeddingService';
 import type { ProjectMetadata } from '../../database/repositories/interfaces/IProjectRepository';
 import type { TaskMetadata, TaskStatus, TaskPriority, NoteLink, LinkType } from '../../database/repositories/interfaces/ITaskRepository';
 
@@ -90,15 +92,23 @@ export interface TaskDetailCallbacks {
     onUnlinkNote: (taskId: string, notePath: string) => Promise<void>;
 
     getApp: () => App;
+    /** Optional — powers the note-link autocomplete suggester. Null degrades to filename search. */
+    getEmbeddingService?: () => EmbeddingService | null;
 }
 
 export class TaskDetailRenderer {
+    /** Active note-link suggesters — closed + cleared on every render to avoid orphaned dropdowns. */
+    private noteSuggesters: NoteInputSuggester[] = [];
+
     constructor(
         private app: App,
         private component: Component
     ) {}
 
     render(container: HTMLElement, callbacks: TaskDetailCallbacks): void {
+        this.noteSuggesters.forEach(s => s.close());
+        this.noteSuggesters = [];
+
         const workspace = callbacks.getWorkspace();
         const project = callbacks.getProject();
         const task = callbacks.getTask();
@@ -286,7 +296,7 @@ export class TaskDetailRenderer {
         this.component.registerDomEvent(openBtn, 'click', () => callbacks.onOpenTaskDetail(depTask));
 
         const removeBtn = control.createEl('button', {
-            cls: 'clickable-icon mod-warning',
+            cls: 'clickable-icon nexus-icon-danger',
             attr: { 'aria-label': 'Remove dependency' }
         });
         setIcon(removeBtn, 'x');
@@ -384,7 +394,7 @@ export class TaskDetailRenderer {
 
         const control = row.createDiv('setting-item-control');
         const removeBtn = control.createEl('button', {
-            cls: 'clickable-icon mod-warning',
+            cls: 'clickable-icon nexus-icon-danger',
             attr: { 'aria-label': `Unlink ${basename}` }
         });
         setIcon(removeBtn, 'x');
@@ -401,9 +411,19 @@ export class TaskDetailRenderer {
 
         const addRow = body.createDiv('ws-field ws-field-inline');
 
-        // Plain text path input — a FilePicker path-suggester is PR4 scope.
+        // Note path input + autocomplete suggester (reuses the TaskBoardEditModal idiom).
+        // The suggester writes the selected file path back into the input; we read
+        // the input value at click-time so manual typing also works.
         const pathInput = new TextComponent(addRow);
-        pathInput.setPlaceholder('path/to/note.md');
+        pathInput.setPlaceholder('Search notes…');
+
+        const suggester = new NoteInputSuggester(
+            this.app,
+            pathInput.inputEl,
+            callbacks.getEmbeddingService?.() ?? null,
+            (file: TFile) => { pathInput.setValue(file.path); }
+        );
+        this.noteSuggesters.push(suggester);
 
         const linkTypeDropdown = new DropdownComponent(addRow);
         linkTypeDropdown.addOption('reference', 'Reference');

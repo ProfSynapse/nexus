@@ -352,7 +352,7 @@ export class WorkspaceDetailRenderer {
         this.component.registerDomEvent(editBtn, 'click', () => callbacks.onOpenProjectDetail(project));
 
         const deleteBtn = control.createEl('button', {
-            cls: 'clickable-icon mod-warning',
+            cls: 'clickable-icon nexus-icon-danger',
             attr: { 'aria-label': 'Delete project' }
         });
         setIcon(deleteBtn, 'trash');
