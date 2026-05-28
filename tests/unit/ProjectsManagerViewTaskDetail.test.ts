@@ -209,19 +209,27 @@ describe('ProjectsManagerView — task-detail seam (T-1 / T-5 / T-8)', () => {
   // T-5 — immediate per-edge mutation + cycle-throw → Notice → no mutation
   // ==========================================================================
   describe('T-5 — immediate per-edge mutation', () => {
-    it('addTaskDep calls addDependency immediately, then re-fetches + re-renders', async () => {
-      const { pmv, service, callbacks } = makeHarness();
+    it('addTaskDep calls addDependency immediately, then re-fetches + re-renders + refreshes displayed deps', async () => {
+      const newUpstream = makeTask({ id: 'dep-2', title: 'New upstream' });
+      const service = makeService({
+        getDependencyTree: jest.fn()
+          .mockResolvedValueOnce({ task: makeTask(), dependencies: [], dependents: [] })       // at-navigation
+          .mockResolvedValueOnce({ task: makeTask(), dependencies: [treeNode(newUpstream)], dependents: [] }) // post-add refetch
+      });
+      const { pmv, callbacks } = makeHarness(service);
       // Seed currentTask so refetchCurrentTaskDeps has an id.
       await pmv.openTaskDetail(makeTask({ id: 't-1' }));
-      service.getDependencyTree.mockClear();
+      expect((pmv as unknown as { currentTaskDeps: TaskDeps }).currentTaskDeps.upstream).toEqual([]);
       callbacks.onRender.mockClear();
 
       await (pmv as unknown as { addTaskDep: (a: string, b: string) => Promise<void> }).addTaskDep('t-1', 'dep-2');
 
       expect(service.addDependency).toHaveBeenCalledWith('t-1', 'dep-2');
-      // Re-fetch after mutation (immediate, single call).
-      expect(service.getDependencyTree).toHaveBeenCalledTimes(1);
+      // Re-fetch after mutation (immediate, single call) — total 2 (nav + refetch).
+      expect(service.getDependencyTree).toHaveBeenCalledTimes(2);
       expect(callbacks.onRender).toHaveBeenCalledTimes(1);
+      // Displayed deps now reflect the refetch (state-refresh, not just a call).
+      expect((pmv as unknown as { currentTaskDeps: TaskDeps }).currentTaskDeps.upstream.map(t => t.id)).toEqual(['dep-2']);
     });
 
     it('removeTaskDep calls removeDependency immediately, then re-fetches + re-renders', async () => {
@@ -302,6 +310,58 @@ describe('ProjectsManagerView — task-detail seam (T-1 / T-5 / T-8)', () => {
       expect(service.unlinkNote).toHaveBeenCalledWith('t-1', 'notes/x.md');
       expect(service.getNoteLinks).toHaveBeenCalledTimes(1);
       expect(callbacks.onRender).toHaveBeenCalledTimes(1);
+    });
+
+    it('note-link re-render path (refetchCurrentTaskNotes) refreshes the DISPLAYED notes — symmetric to the dep re-render path', async () => {
+      // Auditor ADD: the dep mutation path re-fetches getDependencyTree and
+      // re-renders; assert the SYMMETRIC note path — after linkNote, the
+      // refetchCurrentTaskNotes result actually replaces currentTaskLinkedNotes
+      // (not just that getNoteLinks was called). Mirrors the dep-side state-
+      // refresh rigor so a "fetched but never stored" regression is caught.
+      const linkedAfter = [
+        { taskId: 't-1', notePath: 'notes/x.md', linkType: 'reference' as const, created: 1 }
+      ];
+      const service = makeService({
+        // First call (at-navigation) returns empty; second call (post-mutation
+        // refetch) returns the newly-linked note.
+        getNoteLinks: jest.fn()
+          .mockResolvedValueOnce([])
+          .mockResolvedValueOnce(linkedAfter)
+      });
+      const { pmv } = makeHarness(service);
+      await pmv.openTaskDetail(makeTask({ id: 't-1' }));
+
+      // Displayed notes start empty (the at-navigation fetch).
+      expect((pmv as unknown as { currentTaskLinkedNotes: unknown[] }).currentTaskLinkedNotes).toEqual([]);
+
+      await (pmv as unknown as { linkNote: (a: string, b: string, c: string) => Promise<void> }).linkNote('t-1', 'notes/x.md', 'reference');
+
+      // The post-mutation refetch result is now the displayed state.
+      expect((pmv as unknown as { currentTaskLinkedNotes: unknown[] }).currentTaskLinkedNotes).toEqual(linkedAfter);
+    });
+
+    it('note-link mutation FAILURE → Notice + NO state mutation + NO re-render (symmetric to dep cycle-guard)', async () => {
+      // Mirror of the dep cycle-guard on the note side: linkNote throws → the
+      // generic Notice fires, the early-return prevents refetch + re-render, and
+      // the displayed notes are untouched.
+      const service = makeService({
+        getNoteLinks: jest.fn().mockResolvedValue([]),
+        linkNote: jest.fn().mockRejectedValue(new Error('storage write failed'))
+      });
+      const { pmv, callbacks } = makeHarness(service);
+      await pmv.openTaskDetail(makeTask({ id: 't-1' }));
+      const before = (pmv as unknown as { currentTaskLinkedNotes: unknown }).currentTaskLinkedNotes;
+      service.getNoteLinks.mockClear();
+      callbacks.onRender.mockClear();
+      resetNoticeCalls();
+
+      await (pmv as unknown as { linkNote: (a: string, b: string, c: string) => Promise<void> }).linkNote('t-1', 'notes/x.md', 'reference');
+
+      expect(getNoticeCalls()).toEqual(['Failed to link note']);
+      expect(service.getNoteLinks).not.toHaveBeenCalled(); // no refetch
+      expect(callbacks.onRender).not.toHaveBeenCalled();   // no re-render
+      const after = (pmv as unknown as { currentTaskLinkedNotes: unknown }).currentTaskLinkedNotes;
+      expect(after).toBe(before); // displayed notes untouched
     });
   });
 
