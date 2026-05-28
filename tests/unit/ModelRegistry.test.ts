@@ -1,5 +1,41 @@
 import { ModelRegistry, DEFAULT_MODELS } from '../../src/services/llm/adapters/ModelRegistry';
 
+describe('ModelRegistry Claude Opus 4.8 models', () => {
+  it('registers Claude Opus 4.8 for Anthropic', () => {
+    expect(ModelRegistry.findModel('anthropic', 'claude-opus-4-8')).toEqual(expect.objectContaining({
+      name: 'Claude Opus 4.8',
+      contextWindow: 1000000,
+      maxTokens: 128000,
+      inputCostPerMillion: 5,
+      outputCostPerMillion: 25,
+      capabilities: expect.objectContaining({
+        supportsJSON: true,
+        supportsImages: true,
+        supportsFunctions: true,
+        supportsStreaming: true,
+        supportsThinking: true
+      })
+    }));
+  });
+
+  it('registers Claude Opus 4.8 for OpenRouter with the provider namespace', () => {
+    expect(ModelRegistry.findModel('openrouter', 'anthropic/claude-opus-4.8')).toEqual(expect.objectContaining({
+      name: 'Claude Opus 4.8',
+      contextWindow: 1000000,
+      maxTokens: 128000,
+      inputCostPerMillion: 5,
+      outputCostPerMillion: 25,
+      capabilities: expect.objectContaining({
+        supportsJSON: true,
+        supportsImages: true,
+        supportsFunctions: true,
+        supportsStreaming: true,
+        supportsThinking: true
+      })
+    }));
+  });
+});
+
 describe('ModelRegistry GPT-5.5 models', () => {
   it('registers GPT-5.5 and GPT-5.5 Pro for OpenAI', () => {
     expect(ModelRegistry.findModel('openai', 'gpt-5.5')).toEqual(expect.objectContaining({

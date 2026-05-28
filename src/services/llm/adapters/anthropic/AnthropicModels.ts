@@ -1,6 +1,6 @@
 /**
  * Anthropic Model Specifications
- * Updated April 2026 with Claude Opus 4.7
+ * Updated May 2026 with Claude Opus 4.8
  */
 
 import { ModelSpec } from '../modelTypes';
@@ -15,6 +15,24 @@ export const ANTHROPIC_MODELS: ModelSpec[] = [
     maxTokens: 64000,
     inputCostPerMillion: 1.00,
     outputCostPerMillion: 5.00,
+    capabilities: {
+      supportsJSON: true,
+      supportsImages: true,
+      supportsFunctions: true,
+      supportsStreaming: true,
+      supportsThinking: true
+    }
+  },
+
+  // Claude Opus 4.8
+  {
+    provider: 'anthropic',
+    name: 'Claude Opus 4.8',
+    apiName: 'claude-opus-4-8',
+    contextWindow: 1000000,
+    maxTokens: 128000,
+    inputCostPerMillion: 5.00,
+    outputCostPerMillion: 25.00,
     capabilities: {
       supportsJSON: true,
       supportsImages: true,
